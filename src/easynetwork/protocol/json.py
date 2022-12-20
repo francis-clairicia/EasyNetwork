@@ -14,7 +14,6 @@ from typing import Generator, TypeVar, final
 
 from typing_extensions import assert_never
 
-from .._utils.abc import concreteclass
 from .exceptions import DeserializeError
 from .stream.abc import StreamNetworkProtocol
 from .stream.exceptions import IncrementalDeserializeError
@@ -23,7 +22,6 @@ _ST_contra = TypeVar("_ST_contra", contravariant=True)
 _DT_co = TypeVar("_DT_co", covariant=True)
 
 
-@concreteclass
 class JSONNetworkProtocol(StreamNetworkProtocol[_ST_contra, _DT_co]):
     __slots__ = ("__e", "__d")
 

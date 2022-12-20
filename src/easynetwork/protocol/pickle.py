@@ -18,7 +18,6 @@ from typing import TYPE_CHECKING, Generator, TypeVar, final
 if TYPE_CHECKING:
     from pickle import _WritableFileobj, _ReadableFileobj
 
-from .._utils.abc import concreteclass
 from .exceptions import DeserializeError
 from .stream.abc import StreamNetworkProtocol
 from .stream.exceptions import IncrementalDeserializeError
@@ -27,7 +26,6 @@ _ST_contra = TypeVar("_ST_contra", contravariant=True)
 _DT_co = TypeVar("_DT_co", covariant=True)
 
 
-@concreteclass
 class PickleNetworkProtocol(StreamNetworkProtocol[_ST_contra, _DT_co]):
     __slots__ = ()
 

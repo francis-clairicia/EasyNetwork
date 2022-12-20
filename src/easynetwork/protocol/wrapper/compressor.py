@@ -16,7 +16,6 @@ import bz2
 import zlib
 from typing import Generator, Protocol, TypeVar, final
 
-from ..._utils.abc import concreteclass
 from ..abc import NetworkProtocol
 from ..exceptions import DeserializeError
 from ..stream.abc import StreamNetworkProtocol
@@ -184,7 +183,6 @@ class AbstractCompressorNetworkProtocol(StreamNetworkProtocol[_ST_contra, _DT_co
         return finish(decompressor.unused_data)
 
 
-@concreteclass
 class BZ2CompressorNetworkProtocol(AbstractCompressorNetworkProtocol[_ST_contra, _DT_co]):
     __slots__ = ("__compresslevel",)
 
@@ -201,7 +199,6 @@ class BZ2CompressorNetworkProtocol(AbstractCompressorNetworkProtocol[_ST_contra,
         return bz2.BZ2Decompressor()
 
 
-@concreteclass
 class ZlibCompressorNetworkProtocol(AbstractCompressorNetworkProtocol[_ST_contra, _DT_co]):
     __slots__ = ("__compresslevel",)
 

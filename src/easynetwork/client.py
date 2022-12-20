@@ -22,7 +22,6 @@ try:
 except ImportError:
     from selectors import SelectSelector as _Selector  # type: ignore[misc,assignment]
 
-from ._utils.abc import concreteclass
 from .protocol.abc import NetworkProtocol
 from .protocol.exceptions import DeserializeError
 from .protocol.stream.abc import StreamNetworkProtocol
@@ -87,7 +86,6 @@ class AbstractNetworkClient(metaclass=ABCMeta):
         raise NotImplementedError
 
 
-@concreteclass
 class TCPNetworkClient(AbstractNetworkClient, Generic[_SentPacketT, _ReceivedPacketT]):
     __slots__ = (
         "__socket",
@@ -450,7 +448,6 @@ class TCPNetworkClient(AbstractNetworkClient, Generic[_SentPacketT, _ReceivedPac
         return self.__closed
 
 
-@concreteclass
 class UDPNetworkClient(AbstractNetworkClient, Generic[_SentPacketT, _ReceivedPacketT]):
     __slots__ = (
         "__socket",

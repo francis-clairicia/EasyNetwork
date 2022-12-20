@@ -12,7 +12,6 @@ from abc import abstractmethod
 from struct import Struct, error as StructError
 from typing import Any, NamedTuple, TypeVar, final
 
-from .._utils.abc import concreteclass
 from .exceptions import DeserializeError
 from .stream.abc import FixedPacketSizeStreamNetworkProtocol
 
@@ -64,7 +63,6 @@ class AbstractStructNetworkProtocol(FixedPacketSizeStreamNetworkProtocol[_ST_con
 _NT = TypeVar("_NT", bound=NamedTuple)
 
 
-@concreteclass
 class NamedTupleNetworkProtocol(AbstractStructNetworkProtocol[_NT, _NT]):
     __slots__ = ("__namedtuple_cls",)
 

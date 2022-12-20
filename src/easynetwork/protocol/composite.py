@@ -10,14 +10,12 @@ __all__ = ["NetworkProtocolComposite"]
 
 from typing import TypeVar, final
 
-from .._utils.abc import concreteclass
 from .abc import NetworkPacketDeserializer, NetworkPacketSerializer, NetworkProtocol
 
 _ST_contra = TypeVar("_ST_contra", contravariant=True)
 _DT_co = TypeVar("_DT_co", covariant=True)
 
 
-@concreteclass
 class NetworkProtocolComposite(NetworkProtocol[_ST_contra, _DT_co]):
     __slots__ = ("__s", "__d")
 
