@@ -1,0 +1,4 @@
+-c ../requirements.txt
+
+pytest~=7.2
+pytest-mock~=3.10.0

@@ -1,0 +1,89 @@
+[build-system]
+requires = ["flit_core >=3.2,<4"]
+build-backend = "flit_core.buildapi"
+
+[project]
+name = "easynetwork"
+authors = [{name = "FrankySnow9", email = "clairicia.rcj.francis@gmail.com"}]
+requires-python = ">=3.10"
+readme = "README.md"
+license = {file = "LICENSE"}
+dependencies = [
+  "typing_extensions>=4.4.0,<5"
+]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Typing :: Typed"
+]
+dynamic = ["version", "description"]
+
+[project.urls]
+Home = "https://github.com/francis-clairicia/EasyNetwork"
+
+############################ Flit configuration ############################
+[tool.flit.sdist]
+include = [
+  ".flake8",
+]
+exclude = [
+  ".github/",
+  ".vscode/",
+  "devtools/",
+  "requirements/",
+  "tests/",
+  ".gitignore",
+  ".bumpversion.cfg",
+  ".pre-commit-config.yaml",
+  "tox.ini",
+]
+
+############################ Development tools configuration ############################
+
+[tool.isort]
+profile = "black"
+line_length = 130
+combine_as_imports = true
+sections = ["FUTURE", "STDLIB", "EASYNETWORK", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"]
+known_easynetwork = ["easynetwork"]
+add_imports = ["from __future__ import annotations"]
+
+[tool.black]
+line-length = 130
+target-version = ["py310"]
+
+[tool.mypy]
+mypy_path = "$MYPY_CONFIG_FILE_DIR/src"
+python_version = "3.10"
+show_error_codes = true
+warn_unused_configs = true
+disallow_any_generics = true
+disallow_any_unimported = true
+disallow_subclassing_any = true
+disallow_untyped_calls = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+no_implicit_reexport = true
+strict_equality = true
+enable_error_code = ["truthy-bool", "ignore-without-code"]
+
+[tool.pytest.ini_options]
+minversion = "7.1.2"
+testpaths = ["tests"]
+markers = [
+    "slow: marks tests as slow",
+    "functional: marks tests as functional tests",
+]

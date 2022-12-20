@@ -1,0 +1,91 @@
+name: Build
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+    paths-ignore:
+      - '**.pyi'
+      - '.bumpversion.cfg'
+      - '.flake8'
+      - '.pre-commit-config.yaml'
+      - '**.md'
+      - '!README.md'
+      - '.github/**'
+      - '!.github/actions/setup-tox/**'
+      - '!.github/workflows/build.yml'
+  push:
+    branches:
+      - main
+      - release/**
+    tags-ignore:
+      - '*'
+    paths-ignore:
+      - '**.pyi'
+      - '.bumpversion.cfg'
+      - '.flake8'
+      - '.pre-commit-config.yaml'
+      - '**.md'
+      - '!README.md'
+      - '.github/**'
+      - '!.github/actions/setup-tox/**'
+      - '!.github/workflows/build.yml'
+  workflow_dispatch:
+    inputs:
+      SOURCE_DATE_EPOCH:
+        description: 'SOURCE_DATE_EPOCH value for reproducible builds'
+        required: false
+        type: string
+      artifact-name:
+        description: 'Artifact name'
+        required: true
+        default: 'easynetwork-dist'
+        type: string
+  workflow_call:
+    inputs:
+      SOURCE_DATE_EPOCH:
+        description: 'SOURCE_DATE_EPOCH value for reproducible builds'
+        required: false
+        type: string
+      artifact-name:
+        description: 'Artifact name'
+        required: true
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Bump version:')
+    runs-on: ubuntu-20.04
+    env:
+      SOURCE_DATE_EPOCH: ${{ inputs.SOURCE_DATE_EPOCH }}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: Setup tox
+        uses: ./.github/actions/setup-tox
+      - name: Check source distribution consistency
+        if: github.event_name != 'workflow_call'
+        run: tox run -e check-build-sdist
+      - name: Post-check cleanup
+        if: always()
+        run: rm -rf .tox/check-build-sdist
+      - name: Compute SOURCE_DATE_EPOCH from commit date
+        if: env.SOURCE_DATE_EPOCH == ''
+        run: |
+          date=$(git show ${{ github.sha }} --pretty="%ct" --no-patch)
+          echo "Using SOURCE_DATE_EPOCH=${date}"
+          echo "SOURCE_DATE_EPOCH=${date}" >> $GITHUB_ENV
+      - name: Build packages
+        run: tox run -e build
+      - name: Upload packages as artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ inputs.artifact-name || 'easynetwork-dist' }}
+          path: dist
