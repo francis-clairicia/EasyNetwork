@@ -14,6 +14,7 @@ __all__ = [
 import abc
 import bz2
 import zlib
+from collections import deque
 from typing import Generator, Protocol, TypeVar, final
 
 from ..abc import NetworkProtocol
@@ -148,10 +149,15 @@ class AbstractCompressorNetworkProtocol(StreamNetworkProtocol[_ST_contra, _DT_co
                         "Missing data to create packet from compressed data stream",
                         remaining_data=unused_data,
                     )
-                return packet, remaining + unused_data
+                if remaining:
+                    raise IncrementalDeserializeError(
+                        "Extra data caught",
+                        remaining_data=unused_data,
+                    )
+                return packet, unused_data
 
         else:
-            _results: list[bytes] = []
+            _results: deque[bytes] = deque()
 
             def add_chunk(chunk: bytes) -> None:
                 _results.append(chunk)
