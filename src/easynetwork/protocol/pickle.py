@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Generator, TypeVar, final
 if TYPE_CHECKING:
     from pickle import _WritableFileobj, _ReadableFileobj
 
-from ..utils.abc import concreteclass
+from .._utils.abc import concreteclass
 from .exceptions import DeserializeError
 from .stream.abc import StreamNetworkProtocol
 from .stream.exceptions import IncrementalDeserializeError

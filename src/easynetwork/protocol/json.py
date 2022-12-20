@@ -14,7 +14,7 @@ from typing import Generator, TypeVar, final
 
 from typing_extensions import assert_never
 
-from ..utils.abc import concreteclass
+from .._utils.abc import concreteclass
 from .exceptions import DeserializeError
 from .stream.abc import StreamNetworkProtocol
 from .stream.exceptions import IncrementalDeserializeError

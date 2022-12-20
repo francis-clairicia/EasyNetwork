@@ -12,8 +12,7 @@ from abc import abstractmethod
 from struct import Struct, error as StructError
 from typing import Any, NamedTuple, TypeVar, final
 
-from ..utils.abc import concreteclass
-from ..utils.collections import is_namedtuple_class
+from .._utils.abc import concreteclass
 from .exceptions import DeserializeError
 from .stream.abc import FixedPacketSizeStreamNetworkProtocol
 
@@ -71,9 +70,25 @@ class NamedTupleNetworkProtocol(AbstractStructNetworkProtocol[_NT, _NT]):
 
     def __init__(self, format: str, namedtuple_cls: type[_NT]) -> None:
         super().__init__(format)
-        if not is_namedtuple_class(namedtuple_cls):
+        if not type(self).is_namedtuple_class(namedtuple_cls):
             raise TypeError("Expected namedtuple class")
         self.__namedtuple_cls: type[_NT] = namedtuple_cls
+
+    @staticmethod
+    def is_namedtuple_class(o: type[Any]) -> bool:
+        return (
+            issubclass(o, tuple)
+            and o is not tuple
+            and all(
+                callable(getattr(o, callable_attr, None))
+                for callable_attr in (
+                    "_make",
+                    "_asdict",
+                    "_replace",
+                )
+            )
+            and isinstance(getattr(o, "_fields", None), tuple)
+        )
 
     @final
     def to_tuple(self, packet: _NT) -> tuple[Any, ...]:

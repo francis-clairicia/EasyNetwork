@@ -22,7 +22,6 @@ import os
 from threading import Thread
 from typing import Any, Callable, TypeVar
 
-from ..utils.os import fork, has_fork
 from .abc import AbstractTCPNetworkServer, AbstractUDPNetworkServer, ConnectedClient
 
 _RequestT = TypeVar("_RequestT")
@@ -40,7 +39,7 @@ class ForkingMixIn:
 
     def collect_children(self, *, blocking: bool = False) -> None:
         """Internal routine to wait for children that have exited."""
-        if not has_fork():
+        if not hasattr(os, "fork"):
             raise NotImplementedError("fork() not supported on this platform")
 
         if self._active_children is None:
@@ -90,6 +89,10 @@ class ForkingMixIn:
         error_handler: Callable[[ConnectedClient[Any]], None],
     ) -> None:
         """Fork a new subprocess to process the request."""
+        try:
+            fork: Callable[[], int] = getattr(os, "fork")
+        except AttributeError:
+            raise NotImplementedError("Not supported on this platform") from None
         pid = fork()
         if pid:
             # Parent process

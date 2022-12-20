@@ -27,7 +27,7 @@ from ..client import TCPNetworkClient, UDPNetworkClient
 from ..protocol.abc import NetworkProtocol
 from ..protocol.exceptions import DeserializeError
 from ..protocol.stream.abc import StreamNetworkProtocol
-from ..socket import AF_INET, SocketAddress, create_server, guess_best_buffer_size, new_socket_address
+from ..tools.socket import AF_INET, SocketAddress, create_server, guess_best_buffer_size, new_socket_address
 from ..tools.stream import StreamNetworkDataConsumer, StreamNetworkDataProducer
 
 _RequestT = TypeVar("_RequestT")

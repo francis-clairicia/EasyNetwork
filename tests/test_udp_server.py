@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from threading import Thread
 from time import sleep
 from typing import Any
@@ -10,7 +11,6 @@ from easynetwork.client import UDPNetworkClient
 from easynetwork.protocol import PickleNetworkProtocol
 from easynetwork.server.abc import AbstractUDPNetworkServer, ConnectedClient
 from easynetwork.server.concurrency import AbstractForkingUDPNetworkServer, AbstractThreadingUDPNetworkServer
-from easynetwork.utils.os import has_fork
 
 import pytest
 
@@ -122,7 +122,7 @@ class _TestForkingServer(AbstractForkingUDPNetworkServer[Any, Any]):
         client.send_packet((request, getpid()))
 
 
-@pytest.mark.skipif(not has_fork(), reason="fork() not supported on this platform")
+@pytest.mark.skipif(not hasattr(os, "fork"), reason="fork() not supported on this platform")
 def test_forking_server() -> None:
     from os import getpid
 

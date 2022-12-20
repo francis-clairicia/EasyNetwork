@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from threading import Thread
 from time import sleep
 from typing import Any, ClassVar, Generator
@@ -10,8 +11,7 @@ from easynetwork.client import TCPNetworkClient
 from easynetwork.protocol import PickleNetworkProtocol, StreamNetworkProtocol
 from easynetwork.server.abc import AbstractTCPNetworkServer, ConnectedClient
 from easynetwork.server.concurrency import AbstractForkingTCPNetworkServer, AbstractThreadingTCPNetworkServer
-from easynetwork.socket import SocketAddress
-from easynetwork.utils.os import has_fork
+from easynetwork.tools.socket import SocketAddress
 
 import pytest
 
@@ -213,7 +213,7 @@ class _TestForkingServer(AbstractForkingTCPNetworkServer[Any, Any]):
         client.send_packet((request, getpid()))
 
 
-@pytest.mark.skipif(not has_fork(), reason="fork() not supported on this platform")
+@pytest.mark.skipif(not hasattr(os, "fork"), reason="fork() not supported on this platform")
 @pytest.mark.parametrize(
     "buffered_write", [pytest.param(False, id="buffered_write==False"), pytest.param(True, id="buffered_write==True")]
 )

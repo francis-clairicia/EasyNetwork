@@ -16,7 +16,7 @@ import bz2
 import zlib
 from typing import Generator, Protocol, TypeVar, final
 
-from ...utils.abc import concreteclass
+from ..._utils.abc import concreteclass
 from ..abc import NetworkProtocol
 from ..exceptions import DeserializeError
 from ..stream.abc import StreamNetworkProtocol
@@ -109,7 +109,7 @@ class AbstractCompressorNetworkProtocol(StreamNetworkProtocol[_ST_contra, _DT_co
         protocol = self.__protocol
 
         if isinstance(protocol, StreamNetworkProtocol):
-            from ...utils.itertools import NoStopIteration, consumer_start, send_return
+            from ..._utils.itertools import NoStopIteration, consumer_start, send_return
 
             _last_chunk: bytes | None = None
 

@@ -22,12 +22,12 @@ try:
 except ImportError:
     from selectors import SelectSelector as _Selector  # type: ignore[misc,assignment]
 
+from ._utils.abc import concreteclass
 from .protocol.abc import NetworkProtocol
 from .protocol.exceptions import DeserializeError
 from .protocol.stream.abc import StreamNetworkProtocol
-from .socket import SHUT_WR, AddressFamily, SocketAddress, create_connection, guess_best_buffer_size, new_socket_address
+from .tools.socket import SHUT_WR, AddressFamily, SocketAddress, create_connection, guess_best_buffer_size, new_socket_address
 from .tools.stream import StreamNetworkDataConsumer, StreamNetworkDataProducer
-from .utils.abc import concreteclass
 
 _T = TypeVar("_T")
 _ReceivedPacketT = TypeVar("_ReceivedPacketT")

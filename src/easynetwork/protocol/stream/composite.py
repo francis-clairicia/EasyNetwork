@@ -10,7 +10,7 @@ __all__ = ["StreamNetworkProtocolComposite"]
 
 from typing import Generator, TypeVar, final
 
-from ...utils.abc import concreteclass
+from ..._utils.abc import concreteclass
 from .abc import NetworkPacketIncrementalDeserializer, NetworkPacketIncrementalSerializer, StreamNetworkProtocol
 
 _ST_contra = TypeVar("_ST_contra", contravariant=True)

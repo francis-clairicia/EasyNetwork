@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import Generator, TypeAlias, TypeVar
 
-from easynetwork.utils.itertools import NoStopIteration, send_return
+from easynetwork._utils.itertools import NoStopIteration, send_return
 
 _T_co = TypeVar("_T_co", covariant=True)
 

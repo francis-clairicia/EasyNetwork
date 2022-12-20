@@ -22,7 +22,7 @@ from io import BytesIO
 from struct import Struct, error as StructError
 from typing import Any, Generator, TypeVar, final
 
-from ...utils.itertools import NoStopIteration, consumer_start, send_return
+from ..._utils.itertools import NoStopIteration, consumer_start, send_return
 from ..abc import NetworkPacketDeserializer, NetworkPacketSerializer, NetworkProtocol
 from ..exceptions import DeserializeError
 from .exceptions import IncrementalDeserializeError

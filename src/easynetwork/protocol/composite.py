@@ -10,7 +10,7 @@ __all__ = ["NetworkProtocolComposite"]
 
 from typing import TypeVar, final
 
-from ..utils.abc import concreteclass
+from .._utils.abc import concreteclass
 from .abc import NetworkPacketDeserializer, NetworkPacketSerializer, NetworkProtocol
 
 _ST_contra = TypeVar("_ST_contra", contravariant=True)

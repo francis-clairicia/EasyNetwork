@@ -15,10 +15,10 @@ from collections import deque
 from threading import RLock
 from typing import Generator, Generic, Literal, TypeVar, final
 
+from .._utils.itertools import NoStopIteration, consumer_start, send_return
 from ..protocol.exceptions import DeserializeError
 from ..protocol.stream.abc import NetworkPacketIncrementalDeserializer, NetworkPacketIncrementalSerializer
 from ..protocol.stream.exceptions import IncrementalDeserializeError
-from ..utils.itertools import NoStopIteration, consumer_start, send_return
 
 _ST_contra = TypeVar("_ST_contra", contravariant=True)
 _DT_co = TypeVar("_DT_co", covariant=True)
