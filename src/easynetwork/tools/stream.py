@@ -15,7 +15,6 @@ from collections import deque
 from threading import RLock
 from typing import Generator, Generic, Literal, TypeVar, final
 
-from .._utils.itertools import NoStopIteration, consumer_start, send_return
 from ..protocol.exceptions import DeserializeError
 from ..protocol.stream.abc import NetworkPacketIncrementalDeserializer, NetworkPacketIncrementalSerializer
 from ..protocol.stream.exceptions import IncrementalDeserializeError
@@ -102,10 +101,15 @@ class StreamNetworkDataConsumer(Generic[_DT_co]):
                 consumer, self.__c = self.__c, None
                 if consumer is None:
                     consumer = self.__d.incremental_deserialize()
-                    consumer_start(consumer)
+                    next(consumer)
                 packet: _DT_co
                 try:
-                    packet, chunk = send_return(consumer, chunk)
+                    consumer.send(chunk)
+                except StopIteration as exc:
+                    packet, chunk = exc.value
+                    self.__u = b""
+                    self.__b = chunk
+                    return packet
                 except IncrementalDeserializeError as exc:
                     self.__u = b""
                     self.__b = exc.remaining_data
@@ -115,16 +119,15 @@ class StreamNetworkDataConsumer(Generic[_DT_co]):
                     self.__u = b""
                     if on_error == "raise":
                         raise
-                except NoStopIteration:
-                    self.__u += chunk
-                    self.__c = consumer
+                except Exception as exc:
+                    self.__u = b""
+                    raise RuntimeError(str(exc)) from exc
                 except BaseException:
                     self.__u = b""
                     raise
                 else:
-                    self.__u = b""
-                    self.__b = chunk
-                    return packet
+                    self.__u += chunk
+                    self.__c = consumer
             raise StopIteration
 
     def feed(self, chunk: bytes) -> None:

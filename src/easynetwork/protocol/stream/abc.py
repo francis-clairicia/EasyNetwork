@@ -22,7 +22,6 @@ from io import BytesIO
 from struct import Struct, error as StructError
 from typing import Any, Generator, TypeVar, final
 
-from ..._utils.itertools import NoStopIteration, consumer_start, send_return
 from ..abc import NetworkPacketDeserializer, NetworkPacketSerializer, NetworkProtocol
 from ..exceptions import DeserializeError
 from .exceptions import IncrementalDeserializeError
@@ -49,12 +48,14 @@ class NetworkPacketIncrementalDeserializer(NetworkPacketDeserializer[_DT_co]):
 
     def deserialize(self, data: bytes) -> _DT_co:
         consumer: Generator[None, bytes, tuple[_DT_co, bytes]] = self.incremental_deserialize()
-        consumer_start(consumer)
+        next(consumer)
         packet: _DT_co
         remaining: bytes
         try:
-            packet, remaining = send_return(consumer, data)
-        except NoStopIteration:
+            consumer.send(data)
+        except StopIteration as exc:
+            packet, remaining = exc.value
+        else:
             consumer.close()
             raise DeserializeError("Missing data to create packet") from None
         if remaining:

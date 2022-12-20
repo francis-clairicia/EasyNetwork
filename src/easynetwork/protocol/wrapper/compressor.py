@@ -109,12 +109,10 @@ class AbstractCompressorNetworkProtocol(StreamNetworkProtocol[_ST_contra, _DT_co
         protocol = self.__protocol
 
         if isinstance(protocol, StreamNetworkProtocol):
-            from ..._utils.itertools import NoStopIteration, consumer_start, send_return
-
             _last_chunk: bytes | None = None
 
             _consumer = protocol.incremental_deserialize()
-            consumer_start(_consumer)
+            next(_consumer)
 
             def add_chunk(chunk: bytes) -> None:
                 nonlocal _last_chunk
@@ -135,20 +133,22 @@ class AbstractCompressorNetworkProtocol(StreamNetworkProtocol[_ST_contra, _DT_co
                 _last_chunk = chunk
 
             def finish(unused_data: bytes) -> tuple[_DT_co, bytes]:
+                packet: _DT_co
+                remaining: bytes
                 try:
-                    if _last_chunk is None:
-                        raise NoStopIteration
-                    packet, remaining = send_return(_consumer, _last_chunk)
+                    _consumer.send(_last_chunk or b"")
                 except DeserializeError as exc:
                     raise IncrementalDeserializeError(
                         f"Error while deserializing decompressed chunk: {exc}",
                         remaining_data=unused_data,
                     ) from exc
-                except NoStopIteration as exc:
+                except StopIteration as exc:
+                    packet, remaining = exc.value
+                else:
                     raise IncrementalDeserializeError(
                         "Missing data to create packet from compressed data stream",
                         remaining_data=unused_data,
-                    ) from exc
+                    )
                 return packet, remaining + unused_data
 
         else:
