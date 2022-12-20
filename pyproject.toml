@@ -8,9 +8,6 @@ authors = [{name = "FrankySnow9", email = "clairicia.rcj.francis@gmail.com"}]
 requires-python = ">=3.10"
 readme = "README.md"
 license = {file = "LICENSE"}
-dependencies = [
-  "typing_extensions>=4.4.0,<5"
-]
 classifiers = [
   "Development Status :: 2 - Pre-Alpha",
   "Intended Audience :: Developers",

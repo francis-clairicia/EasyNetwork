@@ -82,10 +82,9 @@ class AbstractCompressorNetworkProtocol(StreamNetworkProtocol[_ST_contra, _DT_co
         protocol = self.__protocol
         compressor = self.get_compressor()
         if isinstance(protocol, StreamNetworkProtocol):
-            for chunk in protocol.incremental_serialize(packet):
-                yield compressor.compress(chunk)
-        else:
-            yield compressor.compress(protocol.serialize(packet))
+            yield from filter(bool, map(compressor.compress, protocol.incremental_serialize(packet)))
+        elif data := compressor.compress(protocol.serialize(packet)):
+            yield data
         yield compressor.flush()
 
     @final

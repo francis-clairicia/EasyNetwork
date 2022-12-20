@@ -12,8 +12,6 @@ from collections import Counter
 from json import JSONDecodeError, JSONDecoder, JSONEncoder
 from typing import Generator, TypeVar, final
 
-from typing_extensions import assert_never
-
 from .exceptions import DeserializeError
 from .stream.abc import StreamNetworkProtocol
 from .stream.exceptions import IncrementalDeserializeError
@@ -43,7 +41,7 @@ class JSONNetworkProtocol(StreamNetworkProtocol[_ST_contra, _DT_co]):
             case JSONEncoder():
                 self.__e = encoder
             case _:
-                assert_never(encoder)
+                raise TypeError(f"Invalid encoder: expected json.JSONEncoder, got {type(encoder).__name__}")
 
         match decoder:
             case None:
@@ -51,7 +49,7 @@ class JSONNetworkProtocol(StreamNetworkProtocol[_ST_contra, _DT_co]):
             case JSONDecoder():
                 self.__d = decoder
             case _:
-                assert_never(decoder)
+                raise TypeError(f"Invalid decoder: expected json.JSONDecoder, got {type(decoder).__name__}")
 
     @final
     def serialize(self, packet: _ST_contra) -> bytes:
