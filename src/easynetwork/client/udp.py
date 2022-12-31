@@ -194,6 +194,11 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         timeout: float | None = None,
         flags: int = 0,
     ) -> None:
+        if timeout is not None:
+            if timeout < 0:
+                raise ValueError("Timeout out of range")
+            if timeout == 0:
+                raise ValueError("non-blocking sockets are not supported")
         address = self._verify_address(address)
         flags |= self.__default_send_flags
         self._check_not_closed()
@@ -211,6 +216,11 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         timeout: float | None = None,
         flags: int = 0,
     ) -> None:
+        if timeout is not None:
+            if timeout < 0:
+                raise ValueError("Timeout out of range")
+            if timeout == 0:
+                raise ValueError("non-blocking sockets are not supported")
         address = self._verify_address(address)
         flags |= self.__default_send_flags
         self._check_not_closed()
@@ -596,7 +606,7 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         return self.__endpoint.send_packet(None, packet, timeout=timeout, flags=flags)
 
     def send_packets(self, *packets: _SentPacketT, timeout: float | None = None, flags: int = 0) -> None:
-        return self.__endpoint.send_packet(None, *packets, timeout=timeout, flags=flags)
+        return self.__endpoint.send_packets(None, *packets, timeout=timeout, flags=flags)
 
     def recv_packet(self, *, flags: int = 0, on_error: Literal["raise", "ignore"] | None = None) -> _ReceivedPacketT:
         return self.__endpoint.recv_packet_from_remote(flags=flags, on_error=on_error)
