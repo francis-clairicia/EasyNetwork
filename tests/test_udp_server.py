@@ -63,7 +63,7 @@ from .test_tcp_server import _IntegerNetworkProtocol
 
 
 def test_request_handling() -> None:
-    with _TestServer(_RANDOM_HOST_PORT, protocol_cls=_IntegerNetworkProtocol) as server:
+    with _TestServer(_RANDOM_HOST_PORT, protocol_factory=_IntegerNetworkProtocol) as server:
         address = server.address
         run_server_in_thread(server, poll_interval=0.1)
         with (

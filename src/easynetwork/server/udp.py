@@ -37,14 +37,14 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     def __init__(
         self,
         address: tuple[str, int] | tuple[str, int, int, int],
-        protocol_cls: NetworkProtocolFactory[_ResponseT, _RequestT],
+        protocol_factory: NetworkProtocolFactory[_ResponseT, _RequestT],
         *,
         family: int = AF_INET,
         reuse_port: bool = False,
         send_flags: int = 0,
         recv_flags: int = 0,
     ) -> None:
-        protocol = protocol_cls()
+        protocol = protocol_factory()
         if not isinstance(protocol, NetworkProtocol):
             raise TypeError("Invalid arguments")
         send_flags = int(send_flags)
@@ -69,7 +69,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         self.__loop: bool = False
         self.__is_shutdown: Event = Event()
         self.__is_shutdown.set()
-        self.__protocol_cls: NetworkProtocolFactory[_ResponseT, _RequestT] = protocol_cls
+        self.__protocol_cls: NetworkProtocolFactory[_ResponseT, _RequestT] = protocol_factory
         super().__init__()
 
     def serve_forever(self, poll_interval: float = 0.5) -> None:

@@ -52,7 +52,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     def __init__(
         self,
         address: tuple[str, int] | tuple[str, int, int, int],
-        protocol_cls: StreamNetworkProtocolFactory[_ResponseT, _RequestT],
+        protocol_factory: StreamNetworkProtocolFactory[_ResponseT, _RequestT],
         *,
         family: int = AF_INET,
         backlog: int | None = None,
@@ -64,7 +64,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         buffered_write: bool = False,
         disable_nagle_algorithm: bool = False,
     ) -> None:
-        if not callable(protocol_cls):
+        if not callable(protocol_factory):
             raise TypeError("Invalid arguments")
         send_flags = int(send_flags)
         recv_flags = int(recv_flags)
@@ -80,7 +80,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         self.__default_backlog: int | None = backlog
         self.__addr: SocketAddress = new_socket_address(self.__socket.getsockname(), self.__socket.family)
         self.__closed: bool = False
-        self.__protocol_cls: StreamNetworkProtocolFactory[_ResponseT, _RequestT] = protocol_cls
+        self.__protocol_cls: StreamNetworkProtocolFactory[_ResponseT, _RequestT] = protocol_factory
         self.__lock: RLock = RLock()
         self.__loop: bool = False
         self.__is_shutdown: Event = Event()

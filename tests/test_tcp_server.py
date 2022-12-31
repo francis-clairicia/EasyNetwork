@@ -120,7 +120,7 @@ class _IntegerNetworkProtocol(StreamNetworkProtocol[int, int]):
 
 
 def test_request_handling() -> None:
-    with _TestServer(_RANDOM_HOST_PORT, protocol_cls=_IntegerNetworkProtocol) as server:
+    with _TestServer(_RANDOM_HOST_PORT, protocol_factory=_IntegerNetworkProtocol) as server:
         address = server.address.for_connection()
         run_server_in_thread(server, poll_interval=0)
         with (
