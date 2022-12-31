@@ -1,11 +1,13 @@
 [flake8]
 extend-exclude =
-    .mypy_cache
-    .pytest_cache
-    .venv
-    .vscode
-    dist
-    requirements
+    .mypy_cache,
+    .pytest_cache,
+    .venv,
+    .vscode,
+    devtools,
+    demo_resources,
+    dist,
+    requirements,
     site-packages
 doctest = true
 max-line-length = 130
@@ -30,7 +32,6 @@ per-file-ignores =
 
 [flake8:local-plugins]
 extension =
-    DAL = flake8_extensions:DunderAll
-    STB = flake8_extensions:Stubs
+    DAL = flake8_extensions.dunder_all:DunderAll
 paths =
-    ./devtools/lint
+    ./devtools/linting
