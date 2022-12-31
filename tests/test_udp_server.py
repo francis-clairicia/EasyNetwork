@@ -9,7 +9,7 @@ from typing import Any
 
 from easynetwork.client import UDPNetworkClient
 from easynetwork.protocol import PickleNetworkProtocol
-from easynetwork.server.abc import AbstractUDPNetworkServer, ConnectedClient
+from easynetwork.server import AbstractUDPNetworkServer, ConnectedClient
 from easynetwork.server.concurrency import AbstractForkingUDPNetworkServer, AbstractThreadingUDPNetworkServer
 
 import pytest

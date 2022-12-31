@@ -22,7 +22,9 @@ import os
 from threading import Thread
 from typing import Any, Callable, TypeVar
 
-from .abc import AbstractTCPNetworkServer, AbstractUDPNetworkServer, ConnectedClient
+from .abc import ConnectedClient
+from .tcp import AbstractTCPNetworkServer
+from .udp import AbstractUDPNetworkServer
 
 _RequestT = TypeVar("_RequestT")
 _ResponseT = TypeVar("_ResponseT")

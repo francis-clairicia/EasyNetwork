@@ -9,7 +9,7 @@ from typing import Any, ClassVar, Generator
 
 from easynetwork.client import TCPNetworkClient
 from easynetwork.protocol import PickleNetworkProtocol, StreamNetworkProtocol
-from easynetwork.server.abc import AbstractTCPNetworkServer, ConnectedClient
+from easynetwork.server import AbstractTCPNetworkServer, ConnectedClient
 from easynetwork.server.concurrency import AbstractForkingTCPNetworkServer, AbstractThreadingTCPNetworkServer
 from easynetwork.tools.socket import SocketAddress
 

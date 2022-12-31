@@ -5,7 +5,7 @@ from __future__ import annotations
 from socket import AF_INET, SOCK_DGRAM, socket as Socket
 from typing import Any
 
-from easynetwork.client import UDPNetworkClient
+from easynetwork.client.udp import UDPNetworkClient
 from easynetwork.protocol import JSONNetworkProtocol, PickleNetworkProtocol
 
 import pytest

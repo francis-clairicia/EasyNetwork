@@ -7,7 +7,7 @@ from functools import partial
 from socket import AF_INET, SOCK_STREAM, socket as Socket
 from typing import Any, Generator
 
-from easynetwork.client import TCPNetworkClient
+from easynetwork.client.tcp import TCPNetworkClient
 from easynetwork.protocol import JSONNetworkProtocol, PickleNetworkProtocol, StreamNetworkProtocol
 
 import pytest
