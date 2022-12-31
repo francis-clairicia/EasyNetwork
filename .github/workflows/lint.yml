@@ -9,7 +9,6 @@ on:
     paths:
       - 'src/**.pyi?'
       - 'tests/**.pyi?'
-      - 'devtools/**.pyi?'
       - 'tox.ini'
       - 'pyproject.toml'
       - 'requirements/*.in'
@@ -24,7 +23,6 @@ on:
     paths:
       - 'src/**.pyi?'
       - 'tests/**.pyi?'
-      - 'devtools/**.pyi?'
       - 'tox.ini'
       - 'pyproject.toml'
       - 'requirements/*.in'
@@ -46,6 +44,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
+        with:
+          submodules: true
       - uses: actions/setup-python@v4
         id: setup-python
         with:
