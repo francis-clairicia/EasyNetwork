@@ -26,7 +26,7 @@ from .protocol.abc import NetworkProtocol
 from .protocol.exceptions import DeserializeError
 from .protocol.stream.abc import StreamNetworkProtocol
 from .tools.socket import SHUT_WR, AddressFamily, SocketAddress, create_connection, guess_best_buffer_size, new_socket_address
-from .tools.stream import StreamNetworkDataConsumer, StreamNetworkDataProducer
+from .tools.stream import StreamNetworkDataConsumer, StreamNetworkDataProducerIterator
 
 _T = TypeVar("_T")
 _ReceivedPacketT = TypeVar("_ReceivedPacketT")
@@ -98,6 +98,7 @@ class TCPNetworkClient(AbstractNetworkClient, Generic[_SentPacketT, _ReceivedPac
         "__peer",
         "__default_send_flags",
         "__default_recv_flags",
+        "__buffered_write",
     )
 
     @overload
@@ -112,6 +113,8 @@ class TCPNetworkClient(AbstractNetworkClient, Generic[_SentPacketT, _ReceivedPac
         source_address: tuple[bytearray | bytes | str, int] | None = ...,
         send_flags: int = ...,
         recv_flags: int = ...,
+        on_recv_error: Literal["ignore", "raise"] = ...,
+        buffered_write: bool = ...,
     ) -> None:
         ...
 
@@ -125,6 +128,8 @@ class TCPNetworkClient(AbstractNetworkClient, Generic[_SentPacketT, _ReceivedPac
         give: bool = ...,
         send_flags: int = ...,
         recv_flags: int = ...,
+        on_recv_error: Literal["ignore", "raise"] = ...,
+        buffered_write: bool = ...,
     ) -> None:
         ...
 
@@ -136,6 +141,8 @@ class TCPNetworkClient(AbstractNetworkClient, Generic[_SentPacketT, _ReceivedPac
         *,
         send_flags: int = 0,
         recv_flags: int = 0,
+        on_recv_error: Literal["ignore", "raise"] = "raise",
+        buffered_write: bool = False,
         **kwargs: Any,
     ) -> None:
         if not isinstance(protocol, StreamNetworkProtocol):
@@ -170,10 +177,11 @@ class TCPNetworkClient(AbstractNetworkClient, Generic[_SentPacketT, _ReceivedPac
         self.__socket: Socket = socket
         self.__lock: RLock = RLock()
         self.__chunk_size: int = guess_best_buffer_size(socket)
-        self.__producer: StreamNetworkDataProducer[_SentPacketT] = StreamNetworkDataProducer(protocol)
-        self.__consumer: StreamNetworkDataConsumer[_ReceivedPacketT] = StreamNetworkDataConsumer(protocol)
+        self.__producer: StreamNetworkDataProducerIterator[_SentPacketT] = StreamNetworkDataProducerIterator(protocol)
+        self.__consumer: StreamNetworkDataConsumer[_ReceivedPacketT] = StreamNetworkDataConsumer(protocol, on_error=on_recv_error)
         self.__default_send_flags: int = send_flags
         self.__default_recv_flags: int = recv_flags
+        self.__buffered_write: bool = bool(buffered_write)
 
     def close(self) -> None:
         with self.__lock:
@@ -213,15 +221,17 @@ class TCPNetworkClient(AbstractNetworkClient, Generic[_SentPacketT, _ReceivedPac
                 raise ValueError("non-blocking sockets are not supported")
 
         flags |= self.__default_send_flags
-
-        data: bytes = self.__producer.read(-1)
-        if not data:
-            return
         socket: Socket = self.__socket
         with _use_timeout(socket, timeout):
-            socket.sendall(data, flags)
+            if self.__buffered_write:
+                with socket.makefile("wb", buffering=1) as socket_io:
+                    for chunk in self.__producer:
+                        socket_io.write(chunk)
+            else:
+                for chunk in self.__producer:
+                    socket.sendall(chunk, flags)
 
-    def recv_packet(self, *, flags: int = 0, on_error: Literal["raise", "ignore"] = "raise") -> _ReceivedPacketT:
+    def recv_packet(self, *, flags: int = 0, on_error: Literal["raise", "ignore"] | None = None) -> _ReceivedPacketT:
         self._check_not_closed()
         with self.__lock:
             while True:
@@ -235,13 +245,13 @@ class TCPNetworkClient(AbstractNetworkClient, Generic[_SentPacketT, _ReceivedPac
 
     @overload
     def recv_packet_no_block(
-        self, *, timeout: float = ..., flags: int = ..., on_error: Literal["raise", "ignore"] = ...
+        self, *, timeout: float = ..., flags: int = ..., on_error: Literal["raise", "ignore"] | None = ...
     ) -> _ReceivedPacketT:
         ...
 
     @overload
     def recv_packet_no_block(
-        self, *, default: _T, timeout: float = ..., flags: int = ..., on_error: Literal["raise", "ignore"] = ...
+        self, *, default: _T, timeout: float = ..., flags: int = ..., on_error: Literal["raise", "ignore"] | None = ...
     ) -> _ReceivedPacketT | _T:
         ...
 
@@ -251,7 +261,7 @@ class TCPNetworkClient(AbstractNetworkClient, Generic[_SentPacketT, _ReceivedPac
         default: Any = _NO_DEFAULT,
         timeout: float = 0,
         flags: int = 0,
-        on_error: Literal["raise", "ignore"] = "raise",
+        on_error: Literal["raise", "ignore"] | None = None,
     ) -> Any:
         timeout = float(timeout)
         self._check_not_closed()
@@ -278,7 +288,7 @@ class TCPNetworkClient(AbstractNetworkClient, Generic[_SentPacketT, _ReceivedPac
         *,
         timeout: float | None = 0,
         flags: int = 0,
-        on_error: Literal["raise", "ignore"] = "raise",
+        on_error: Literal["raise", "ignore"] | None = None,
     ) -> list[_ReceivedPacketT]:
         self._check_not_closed()
 
@@ -456,9 +466,9 @@ class UDPNetworkClient(AbstractNetworkClient, Generic[_SentPacketT, _ReceivedPac
         "__protocol",
         "__queue",
         "__lock",
-        "__max_packet_size",
         "__default_send_flags",
         "__default_recv_flags",
+        "__on_recv_error",
     )
 
     @overload
@@ -469,9 +479,9 @@ class UDPNetworkClient(AbstractNetworkClient, Generic[_SentPacketT, _ReceivedPac
         *,
         family: int = ...,
         source_address: tuple[bytearray | bytes | str, int] | None = ...,
-        max_packet_size: int = ...,
         send_flags: int = ...,
         recv_flags: int = ...,
+        on_recv_error: Literal["ignore", "raise"] = ...,
     ) -> None:
         ...
 
@@ -483,9 +493,9 @@ class UDPNetworkClient(AbstractNetworkClient, Generic[_SentPacketT, _ReceivedPac
         *,
         socket: Socket,
         give: bool = ...,
-        max_packet_size: int = ...,
         send_flags: int = ...,
         recv_flags: int = ...,
+        on_recv_error: Literal["ignore", "raise"] = ...,
     ) -> None:
         ...
 
@@ -494,9 +504,9 @@ class UDPNetworkClient(AbstractNetworkClient, Generic[_SentPacketT, _ReceivedPac
         /,
         protocol: NetworkProtocol[_SentPacketT, _ReceivedPacketT],
         *,
-        max_packet_size: int = 0,
         send_flags: int = 0,
         recv_flags: int = 0,
+        on_recv_error: Literal["ignore", "raise"] = "raise",
         **kwargs: Any,
     ) -> None:
         send_flags = int(send_flags)
@@ -504,6 +514,9 @@ class UDPNetworkClient(AbstractNetworkClient, Generic[_SentPacketT, _ReceivedPac
 
         if not isinstance(protocol, NetworkProtocol):
             raise TypeError("Invalid argument")
+
+        if on_recv_error not in ("raise", "ignore"):
+            raise ValueError("Invalid on_error value")
 
         super().__init__()
 
@@ -535,16 +548,13 @@ class UDPNetworkClient(AbstractNetworkClient, Generic[_SentPacketT, _ReceivedPac
         if socket.type != SOCK_DGRAM:
             raise ValueError("Invalid socket type")
 
-        if max_packet_size <= 0:
-            max_packet_size = 8192
-
         self.__closed: bool = False
         self.__socket: Socket = socket
         self.__queue: deque[tuple[bytes, SocketAddress]] = deque()
         self.__lock: RLock = RLock()
-        self.__max_packet_size: int = max_packet_size
         self.__default_send_flags: int = send_flags
         self.__default_recv_flags: int = recv_flags
+        self.__on_recv_error: Literal["ignore", "raise"] = on_recv_error
 
     def close(self) -> None:
         with self.__lock:
@@ -577,7 +587,7 @@ class UDPNetworkClient(AbstractNetworkClient, Generic[_SentPacketT, _ReceivedPac
         self,
         *,
         flags: int = 0,
-        on_error: Literal["raise", "ignore"] = "raise",
+        on_error: Literal["raise", "ignore"] | None = None,
     ) -> tuple[_ReceivedPacketT, SocketAddress]:
         self._check_not_closed()
         with self.__lock:
@@ -589,13 +599,13 @@ class UDPNetworkClient(AbstractNetworkClient, Generic[_SentPacketT, _ReceivedPac
 
     @overload
     def recv_packet_no_block(
-        self, *, flags: int = 0, timeout: float = ..., on_error: Literal["raise", "ignore"] = ...
+        self, *, flags: int = 0, timeout: float = ..., on_error: Literal["raise", "ignore"] | None = ...
     ) -> tuple[_ReceivedPacketT, SocketAddress]:
         ...
 
     @overload
     def recv_packet_no_block(
-        self, *, flags: int = 0, default: _T, timeout: float = ..., on_error: Literal["raise", "ignore"] = ...
+        self, *, flags: int = 0, default: _T, timeout: float = ..., on_error: Literal["raise", "ignore"] | None = ...
     ) -> tuple[_ReceivedPacketT, SocketAddress] | _T:
         ...
 
@@ -605,7 +615,7 @@ class UDPNetworkClient(AbstractNetworkClient, Generic[_SentPacketT, _ReceivedPac
         flags: int = 0,
         default: Any = _NO_DEFAULT,
         timeout: float = 0,
-        on_error: Literal["raise", "ignore"] = "raise",
+        on_error: Literal["raise", "ignore"] | None = None,
     ) -> Any:
         self._check_not_closed()
         timeout = float(timeout)
@@ -626,7 +636,7 @@ class UDPNetworkClient(AbstractNetworkClient, Generic[_SentPacketT, _ReceivedPac
         *,
         flags: int = 0,
         timeout: float | None = 0,
-        on_error: Literal["raise", "ignore"] = "raise",
+        on_error: Literal["raise", "ignore"] | None = None,
     ) -> list[tuple[_ReceivedPacketT, SocketAddress]]:
         self._check_not_closed()
 
@@ -659,7 +669,6 @@ class UDPNetworkClient(AbstractNetworkClient, Generic[_SentPacketT, _ReceivedPac
             raise ValueError("Timeout out of range")
 
         socket: Socket = self.__socket
-        bufsize: int = self.__max_packet_size
         queue: deque[tuple[bytes, SocketAddress]] = self.__queue
 
         if queue:
@@ -668,13 +677,15 @@ class UDPNetworkClient(AbstractNetworkClient, Generic[_SentPacketT, _ReceivedPac
             selector.register(socket, EVENT_READ)
             while timeout is None or selector.select(timeout=timeout):
                 timeout = 0  # Future select() must exit quickly
-                data, sender = socket.recvfrom(bufsize, flags)
+                data, sender = socket.recvfrom(65535, flags)
                 if not data:
                     continue
                 queue.append((data, new_socket_address(sender, socket.family)))
 
-    def __next_packet(self, *, on_error: Literal["raise", "ignore"]) -> tuple[_ReceivedPacketT, SocketAddress] | None:
-        if on_error not in ("raise", "ignore"):
+    def __next_packet(self, *, on_error: Literal["raise", "ignore"] | None) -> tuple[_ReceivedPacketT, SocketAddress] | None:
+        if on_error is None:
+            on_error = self.__on_recv_error
+        elif on_error not in ("raise", "ignore"):
             raise ValueError("Invalid on_error value")
         queue: deque[tuple[bytes, SocketAddress]] = self.__queue
         deserialize = self.__protocol.deserialize

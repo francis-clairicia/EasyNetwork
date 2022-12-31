@@ -136,11 +136,11 @@ class AutoSeparatedStreamNetworkProtocol(StreamNetworkProtocol[_ST_contra, _DT_c
 class AutoParsedStreamNetworkProtocol(StreamNetworkProtocol[_ST_contra, _DT_co]):
     __slots__ = ("__magic", "__algorithm")
 
-    def __init__(self, magic: bytes, *, checksum: str = "md5", **kwargs: Any) -> None:
+    def __init__(self, magic: bytes, *, checksum: str = "md5", checksum_guaranteed: bool = True, **kwargs: Any) -> None:
         assert isinstance(magic, bytes)
         if len(magic) != 4:
             raise ValueError("Magic bytes must be 4-byte length")
-        if checksum not in hashlib.algorithms_available:
+        if checksum not in (hashlib.algorithms_available if not checksum_guaranteed else hashlib.algorithms_guaranteed):
             raise ValueError(f"Unknown hashlib algorithm {checksum!r}")
         super().__init__(**kwargs)
         self.__magic: bytes = magic

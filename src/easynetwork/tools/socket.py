@@ -158,17 +158,12 @@ def create_server(
                 dualstack_ipv6=dualstack_ipv6,
             )
         case _socket.SOCK_DGRAM:
+            if backlog is not None:
+                raise ValueError("SOCK_DGRAM sockets does not support 'backlog' argument")
             sock = _socket.socket(family, type)
             try:
                 if dualstack_ipv6:
                     raise ValueError("dualstack IPv6 not supported for SOCK_DGRAM sockets")
-                if os.name not in ("nt", "cygwin"):
-
-                    try:
-                        sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
-                    except OSError:
-                        pass
-
                 if reuse_port:
                     if not hasattr(_socket, "SO_REUSEPORT"):
                         raise ValueError("SO_REUSEPORT not supported on this platform")
@@ -187,8 +182,6 @@ def create_server(
                         del IPPROTO_IPV6, IPV6_V6ONLY
 
                 sock.bind(address)
-                if backlog is not None:
-                    sock.listen(backlog)
             except BaseException:
                 sock.close()
                 raise

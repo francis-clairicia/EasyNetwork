@@ -28,7 +28,7 @@ from ..protocol.abc import NetworkProtocol
 from ..protocol.exceptions import DeserializeError
 from ..protocol.stream.abc import StreamNetworkProtocol
 from ..tools.socket import AF_INET, SocketAddress, create_server, guess_best_buffer_size, new_socket_address
-from ..tools.stream import StreamNetworkDataConsumer, StreamNetworkDataProducer
+from ..tools.stream import StreamNetworkDataConsumer, StreamNetworkDataProducerReader
 
 _RequestT = TypeVar("_RequestT")
 _ResponseT = TypeVar("_ResponseT")
@@ -629,7 +629,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
 
 @dataclass(init=False, slots=True)
 class _SelectorKeyData(Generic[_RequestT, _ResponseT]):
-    producer: StreamNetworkDataProducer[_ResponseT]
+    producer: StreamNetworkDataProducerReader[_ResponseT]
     consumer: StreamNetworkDataConsumer[_RequestT]
     chunk_size: int
     client: ConnectedClient[_ResponseT]
@@ -647,7 +647,7 @@ class _SelectorKeyData(Generic[_RequestT, _ResponseT]):
         is_closed: Callable[[Socket], bool],
         flush_on_send: bool,
     ) -> None:
-        self.producer = StreamNetworkDataProducer(protocol)
+        self.producer = StreamNetworkDataProducerReader(protocol)
         self.consumer = StreamNetworkDataConsumer(protocol)
         self.chunk_size = guess_best_buffer_size(socket)
         self.client = self.__ConnectedTCPClient(
@@ -679,7 +679,7 @@ class _SelectorKeyData(Generic[_RequestT, _ResponseT]):
         def __init__(
             self,
             *,
-            producer: StreamNetworkDataProducer[_ResponseT],
+            producer: StreamNetworkDataProducerReader[_ResponseT],
             socket: Socket,
             address: SocketAddress,
             flush: Callable[[Socket], None],
@@ -688,7 +688,7 @@ class _SelectorKeyData(Generic[_RequestT, _ResponseT]):
             flush_on_send: bool,
         ) -> None:
             super().__init__(address)
-            self.__p: StreamNetworkDataProducer[_ResponseT] = producer
+            self.__p: StreamNetworkDataProducerReader[_ResponseT] = producer
             self.__s: Socket | None = socket
             self.__flush: Callable[[Socket], None] = flush
             self.__on_close: Callable[[Socket], None] = on_close
@@ -765,7 +765,6 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         *,
         family: int = AF_INET,
         reuse_port: bool = False,
-        max_packet_size: int = 0,
         send_flags: int = 0,
         recv_flags: int = 0,
     ) -> None:
@@ -786,7 +785,6 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             protocol=protocol,
             socket=socket,
             give=True,
-            max_packet_size=max_packet_size,
             send_flags=send_flags,
             recv_flags=recv_flags,
         )

@@ -8,12 +8,12 @@ from __future__ import annotations
 
 __all__ = [
     "StreamNetworkDataConsumer",
-    "StreamNetworkDataProducer",
+    "StreamNetworkDataProducerReader",
 ]
 
 from collections import deque
 from threading import RLock
-from typing import Generator, Generic, Literal, TypeVar, final
+from typing import Generator, Generic, Iterator, Literal, TypeVar, final
 
 from ..protocol.exceptions import DeserializeError
 from ..protocol.stream.abc import NetworkPacketIncrementalDeserializer, NetworkPacketIncrementalSerializer
@@ -24,7 +24,7 @@ _DT_co = TypeVar("_DT_co", covariant=True)
 
 
 @final
-class StreamNetworkDataProducer(Generic[_ST_contra]):
+class StreamNetworkDataProducerReader(Generic[_ST_contra]):
     __slots__ = ("__s", "__q", "__b", "__lock")
 
     def __init__(self, serializer: NetworkPacketIncrementalSerializer[_ST_contra], *, lock: RLock | None = None) -> None:
@@ -80,10 +80,51 @@ class StreamNetworkDataProducer(Generic[_ST_contra]):
 
 
 @final
-class StreamNetworkDataConsumer(Generic[_DT_co]):
-    __slots__ = ("__d", "__b", "__c", "__u", "__lock")
+class StreamNetworkDataProducerIterator(Generic[_ST_contra]):
+    __slots__ = ("__s", "__q", "__lock")
 
-    def __init__(self, deserializer: NetworkPacketIncrementalDeserializer[_DT_co], *, lock: RLock | None = None) -> None:
+    def __init__(self, serializer: NetworkPacketIncrementalSerializer[_ST_contra], *, lock: RLock | None = None) -> None:
+        super().__init__()
+        assert isinstance(serializer, NetworkPacketIncrementalSerializer)
+        self.__s: NetworkPacketIncrementalSerializer[_ST_contra] = serializer
+        self.__q: deque[Generator[bytes, None, None]] = deque()
+        self.__lock: RLock = lock or RLock()
+
+    def __iter__(self) -> Iterator[bytes]:
+        return self
+
+    def __next__(self) -> bytes:
+        queue: deque[Generator[bytes, None, None]] = self.__q
+        while queue:
+            generator = queue[0]
+            try:
+                return next(generator)
+            except StopIteration:
+                del queue[0]
+            finally:
+                del generator
+        raise StopIteration
+
+    def queue(self, *packets: _ST_contra) -> None:
+        if not packets:
+            return
+        with self.__lock:
+            self.__q.extend(map(self.__s.incremental_serialize, packets))
+
+
+@final
+class StreamNetworkDataConsumer(Generic[_DT_co]):
+    __slots__ = ("__d", "__b", "__c", "__u", "__lock", "__on_error")
+
+    def __init__(
+        self,
+        deserializer: NetworkPacketIncrementalDeserializer[_DT_co],
+        *,
+        lock: RLock | None = None,
+        on_error: Literal["raise", "ignore"] = "raise",
+    ) -> None:
+        if on_error not in ("raise", "ignore"):
+            raise ValueError("Invalid on_error value")
         super().__init__()
         assert isinstance(deserializer, NetworkPacketIncrementalDeserializer)
         self.__d: NetworkPacketIncrementalDeserializer[_DT_co] = deserializer
@@ -91,9 +132,12 @@ class StreamNetworkDataConsumer(Generic[_DT_co]):
         self.__b: bytes = b""
         self.__u: bytes = b""
         self.__lock: RLock = lock or RLock()
+        self.__on_error: Literal["raise", "ignore"] = on_error
 
-    def next(self, *, on_error: Literal["raise", "ignore"] = "raise") -> _DT_co:
-        if on_error not in ("raise", "ignore"):
+    def next(self, *, on_error: Literal["raise", "ignore"] | None = None) -> _DT_co:
+        if on_error is None:
+            on_error = self.__on_error
+        elif on_error not in ("raise", "ignore"):
             raise ValueError("Invalid on_error value")
         with self.__lock:
             chunk, self.__b = self.__b, b""
