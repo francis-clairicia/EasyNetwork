@@ -575,7 +575,8 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             raise TypeError("Invalid arguments")
 
         remote_address = endpoint.getpeername()
-        assert remote_address is not None
+        if remote_address is None:
+            raise OSError("No remote address configured")
 
         super().__init__()
 
