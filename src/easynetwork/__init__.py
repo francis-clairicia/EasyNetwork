@@ -25,6 +25,7 @@ __all__ = [
     "ThreadingMixIn",
     "UDPInvalidPacket",
     "UDPNetworkClient",
+    "UDPNetworkEndpoint",
 ]
 
 __author__ = "FrankySnow9"

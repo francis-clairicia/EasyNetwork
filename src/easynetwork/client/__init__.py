@@ -7,7 +7,14 @@
 
 from __future__ import annotations
 
-__all__ = ["AbstractNetworkClient", "TCPInvalidPacket", "TCPNetworkClient", "UDPInvalidPacket", "UDPNetworkClient"]
+__all__ = [
+    "AbstractNetworkClient",
+    "TCPInvalidPacket",
+    "TCPNetworkClient",
+    "UDPInvalidPacket",
+    "UDPNetworkClient",
+    "UDPNetworkEndpoint",
+]
 
 from .abc import *
 from .tcp import *

@@ -7,7 +7,7 @@ from threading import Thread
 from time import sleep
 from typing import Any
 
-from easynetwork.client import UDPNetworkClient
+from easynetwork.client import UDPNetworkEndpoint
 from easynetwork.protocol import PickleNetworkProtocol
 from easynetwork.server import AbstractUDPNetworkServer, ConnectedClient
 from easynetwork.server.concurrency import AbstractForkingUDPNetworkServer, AbstractThreadingUDPNetworkServer
@@ -67,17 +67,17 @@ def test_request_handling() -> None:
         address = server.address
         run_server_in_thread(server, poll_interval=0.1)
         with (
-            UDPNetworkClient(protocol=_IntegerNetworkProtocol()) as client_1,
-            UDPNetworkClient(protocol=_IntegerNetworkProtocol()) as client_2,
-            UDPNetworkClient(protocol=_IntegerNetworkProtocol()) as client_3,
+            UDPNetworkEndpoint(protocol=_IntegerNetworkProtocol()) as client_1,
+            UDPNetworkEndpoint(protocol=_IntegerNetworkProtocol()) as client_2,
+            UDPNetworkEndpoint(protocol=_IntegerNetworkProtocol()) as client_3,
         ):
             client_1.send_packet(address, 350)
             client_2.send_packet(address, -634)
             client_3.send_packet(address, 0)
             sleep(0.2)
-            assert client_1.recv_packet()[0] == 350
-            assert client_2.recv_packet()[0] == -634
-            assert client_3.recv_packet()[0] == 0
+            assert client_1.recv_packet_from_anyone()[0] == 350
+            assert client_2.recv_packet_from_anyone()[0] == -634
+            assert client_3.recv_packet_from_anyone()[0] == 0
 
 
 class _TestThreadingServer(AbstractThreadingUDPNetworkServer[Any, Any]):
@@ -90,10 +90,10 @@ class _TestThreadingServer(AbstractThreadingUDPNetworkServer[Any, Any]):
 def test_threading_server() -> None:
     with _TestThreadingServer(_RANDOM_HOST_PORT, PickleNetworkProtocol) as server:
         run_server_in_thread(server, poll_interval=0)
-        with UDPNetworkClient[Any, Any](server.protocol()) as client:
+        with UDPNetworkEndpoint[Any, Any](server.protocol()) as client:
             packet = {"data": 1}
             client.send_packet(server.address, packet)
-            response: tuple[Any, bool] = client.recv_packet()[0]
+            response: tuple[Any, bool] = client.recv_packet_from_anyone()[0]
             assert response[0] == packet
             assert response[1] is True
 
@@ -111,9 +111,9 @@ def test_forking_server() -> None:
 
     with _TestForkingServer(_RANDOM_HOST_PORT, PickleNetworkProtocol) as server:
         run_server_in_thread(server, poll_interval=0)
-        with UDPNetworkClient[Any, Any](server.protocol()) as client:
+        with UDPNetworkEndpoint[Any, Any](server.protocol()) as client:
             packet = {"data": 1}
             client.send_packet(server.address, packet)
-            response: tuple[Any, int] = client.recv_packet()[0]
+            response: tuple[Any, int] = client.recv_packet_from_anyone()[0]
             assert response[0] == packet
             assert response[1] != getpid()

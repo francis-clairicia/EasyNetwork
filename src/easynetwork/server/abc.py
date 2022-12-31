@@ -80,9 +80,6 @@ class AbstractNetworkServer(Generic[_RequestT, _ResponseT]):
     if TYPE_CHECKING:
         __Self = TypeVar("__Self", bound="AbstractNetworkServer[Any, Any]")
 
-    def __init__(self) -> None:
-        super().__init__()
-
     def __enter__(self: __Self) -> __Self:
         return self
 

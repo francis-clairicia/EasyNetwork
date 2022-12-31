@@ -12,11 +12,11 @@ import pytest
 
 
 def test_default(udp_server: tuple[str, int]) -> None:
-    with UDPNetworkClient[Any, Any](PickleNetworkProtocol()) as client:
-        client.send_packet(udp_server, {"data": [5, 2]})
-        assert client.recv_packet()[0] == {"data": [5, 2]}
-        client.send_packet(udp_server, "Hello")
-        assert client.recv_packet()[0] == "Hello"
+    with UDPNetworkClient[Any, Any](udp_server, PickleNetworkProtocol()) as client:
+        client.send_packet({"data": [5, 2]})
+        assert client.recv_packet() == {"data": [5, 2]}
+        client.send_packet("Hello")
+        assert client.recv_packet() == "Hello"
         assert len(client.recv_packets(timeout=0)) == 0
         with pytest.raises(TimeoutError):
             client.recv_packet_no_block()
@@ -26,26 +26,27 @@ def test_default(udp_server: tuple[str, int]) -> None:
 def test_custom_socket(udp_server: tuple[str, int]) -> None:
     with Socket(AF_INET, SOCK_DGRAM) as socket:
         socket.bind(("", 0))
-        client: UDPNetworkClient[Any, Any] = UDPNetworkClient(PickleNetworkProtocol(), socket=socket)
-        client.send_packet(udp_server, {"data": [5, 2]})
-        assert client.recv_packet()[0] == {"data": [5, 2]}
-        client.send_packet(udp_server, "Hello")
-        assert client.recv_packet()[0] == "Hello"
+        socket.connect(udp_server)
+        client: UDPNetworkClient[Any, Any] = UDPNetworkClient(socket, PickleNetworkProtocol())
+        client.send_packet({"data": [5, 2]})
+        assert client.recv_packet() == {"data": [5, 2]}
+        client.send_packet("Hello")
+        assert client.recv_packet() == "Hello"
 
 
 def test_custom_protocol(udp_server: tuple[str, int]) -> None:
-    with UDPNetworkClient[Any, Any](protocol=JSONNetworkProtocol()) as client:
-        client.send_packet(udp_server, {"data": [5, 2]})
-        assert client.recv_packet()[0] == {"data": [5, 2]}
-        client.send_packet(udp_server, "Hello")
-        assert client.recv_packet()[0] == "Hello"
+    with UDPNetworkClient[Any, Any](udp_server, protocol=JSONNetworkProtocol()) as client:
+        client.send_packet({"data": [5, 2]})
+        assert client.recv_packet() == {"data": [5, 2]}
+        client.send_packet("Hello")
+        assert client.recv_packet() == "Hello"
 
 
 def test_several_successive_send(udp_server: tuple[str, int]) -> None:
-    with UDPNetworkClient[Any, Any](protocol=PickleNetworkProtocol()) as client:
-        client.send_packet(udp_server, {"data": [5, 2]})
-        client.send_packet(udp_server, "Hello")
-        client.send_packet(udp_server, 132)
-        assert client.recv_packet()[0] == {"data": [5, 2]}
-        assert client.recv_packet()[0] == "Hello"
-        assert client.recv_packet()[0] == 132
+    with UDPNetworkClient[Any, Any](udp_server, protocol=PickleNetworkProtocol()) as client:
+        client.send_packet({"data": [5, 2]})
+        client.send_packet("Hello")
+        client.send_packet(132)
+        assert client.recv_packet() == {"data": [5, 2]}
+        assert client.recv_packet() == "Hello"
+        assert client.recv_packet() == 132

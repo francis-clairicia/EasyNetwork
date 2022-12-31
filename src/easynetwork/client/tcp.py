@@ -40,7 +40,7 @@ class TCPInvalidPacket(ValueError):
         self.already_deserialized_packets: list[Any] = already_deserialized_packets or []
 
 
-class TCPNetworkClient(AbstractNetworkClient, Generic[_SentPacketT, _ReceivedPacketT]):
+class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Generic[_SentPacketT, _ReceivedPacketT]):
     __slots__ = (
         "__socket",
         "__owner",
@@ -64,7 +64,7 @@ class TCPNetworkClient(AbstractNetworkClient, Generic[_SentPacketT, _ReceivedPac
         *,
         timeout: float | None = ...,
         family: int | None = ...,
-        source_address: tuple[bytearray | bytes | str, int] | None = ...,
+        source_address: tuple[str, int] | None = ...,
         send_flags: int = ...,
         recv_flags: int = ...,
         on_recv_error: Literal["ignore", "raise"] = ...,
@@ -126,7 +126,7 @@ class TCPNetworkClient(AbstractNetworkClient, Generic[_SentPacketT, _ReceivedPac
         if socket.type != SOCK_STREAM:
             raise ValueError("Invalid socket type")
 
-        self.__peer: tuple[Any, ...] = socket.getpeername()
+        self.__peer: SocketAddress = new_socket_address(socket.getpeername(), socket.family)
         self.__closed: bool = False
         self.__socket: Socket = socket
         self.__lock: RLock = RLock()
@@ -298,12 +298,9 @@ class TCPNetworkClient(AbstractNetworkClient, Generic[_SentPacketT, _ReceivedPac
         self._check_not_closed()
         return new_socket_address(self.__socket.getsockname(), self.__socket.family)
 
-    def getpeername(self) -> SocketAddress | None:
+    def getpeername(self) -> SocketAddress:
         self._check_not_closed()
-        try:
-            return new_socket_address(self.__socket.getpeername(), self.__socket.family)
-        except OSError:
-            return None
+        return self.__peer
 
     def is_connected(self) -> bool:
         if self.__closed:
@@ -372,7 +369,7 @@ class TCPNetworkClient(AbstractNetworkClient, Generic[_SentPacketT, _ReceivedPac
             pass
         else:
             return
-        address: tuple[Any, ...] = self.__peer
+        address: tuple[Any, ...] = self.__peer.for_connection()
         former_timeout = socket.gettimeout()
         socket.settimeout(timeout)
         try:

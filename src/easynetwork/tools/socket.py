@@ -115,7 +115,7 @@ def create_connection(
     *,
     timeout: float | None = None,
     family: int | None = None,
-    source_address: tuple[bytearray | bytes | str, int] | None = None,
+    source_address: tuple[str, int] | None = None,
 ) -> _socket.socket:
     if family is not None:
         family = AddressFamily(family)

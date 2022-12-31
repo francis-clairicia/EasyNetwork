@@ -13,7 +13,7 @@ from socket import SOCK_DGRAM
 from threading import Event, RLock
 from typing import Any, Callable, Generic, TypeAlias, TypeVar, final, overload
 
-from ..client.udp import UDPNetworkClient
+from ..client.udp import UDPNetworkEndpoint
 from ..protocol.abc import NetworkProtocol
 from ..tools.socket import AF_INET, SocketAddress, create_server
 from .abc import AbstractNetworkServer, ConnectedClient
@@ -57,7 +57,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             reuse_port=reuse_port,
             dualstack_ipv6=False,
         )
-        self.__server: UDPNetworkClient[_ResponseT, _RequestT] = UDPNetworkClient(
+        self.__server: UDPNetworkEndpoint[_ResponseT, _RequestT] = UDPNetworkEndpoint(
             protocol=protocol,
             socket=socket,
             give=True,
@@ -84,7 +84,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             self.__is_shutdown.clear()
             self.__loop = True
 
-        server: UDPNetworkClient[_ResponseT, _RequestT] = self.__server
+        server: UDPNetworkEndpoint[_ResponseT, _RequestT] = self.__server
         make_connected_client = self.__ConnectedUDPClient
 
         handle_request = AbstractNetworkServer.handle_request
@@ -92,7 +92,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         def parse_requests() -> None:
             bad_request_address: SocketAddress | None = None
             try:
-                packets = server.recv_packets(timeout=0, on_error="raise")
+                packets = server.recv_packets_from_anyone(timeout=0, on_error="raise")
             except UDPInvalidPacket as exc:
                 bad_request_address = exc.sender
                 packets = exc.already_deserialized_packets
@@ -219,11 +219,11 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
 
         def __init__(
             self,
-            server: UDPNetworkClient[_ResponseT, Any] | None,
+            server: UDPNetworkEndpoint[_ResponseT, Any] | None,
             address: SocketAddress,
         ) -> None:
             super().__init__(address)
-            self.__s: UDPNetworkClient[_ResponseT, Any] | None = server
+            self.__s: UDPNetworkEndpoint[_ResponseT, Any] | None = server
 
         def close(self) -> None:
             with self.transaction():
@@ -231,7 +231,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
 
         def send_packet(self, packet: _ResponseT) -> None:
             with self.transaction():
-                server: UDPNetworkClient[_ResponseT, Any] | None = self.__s
+                server: UDPNetworkEndpoint[_ResponseT, Any] | None = self.__s
                 if server is None:
                     raise RuntimeError("Closed client")
                 server.send_packet(self.address, packet)
@@ -240,7 +240,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             if not packets:
                 return
             with self.transaction():
-                server: UDPNetworkClient[_ResponseT, Any] | None = self.__s
+                server: UDPNetworkEndpoint[_ResponseT, Any] | None = self.__s
                 if server is None:
                     raise RuntimeError("Closed client")
                 server.send_packets(self.address, *packets)
