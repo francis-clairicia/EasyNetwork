@@ -14,6 +14,8 @@ from easynetwork.server.concurrency import AbstractForkingUDPNetworkServer, Abst
 
 import pytest
 
+from ._utils import run_server_in_thread
+
 
 class _TestServer(AbstractUDPNetworkServer[Any, Any]):
     def process_request(self, request: Any, client: ConnectedClient[Any]) -> None:
@@ -44,25 +46,6 @@ def test_serve_forever_context_shut_down() -> None:
     assert not server.running()
 
 
-def test_serve_forever_in_thread_default() -> None:
-    with _TestServer(_RANDOM_HOST_PORT, PickleNetworkProtocol) as server:
-        t: Thread = server.serve_forever_in_thread(poll_interval=0.1)
-        sleep(0.15)
-        assert server.running()
-        server.shutdown()
-        t.join()
-        assert not server.running()
-
-
-def test_serve_forver_in_thread_context_shut_down() -> None:
-    with _TestServer(_RANDOM_HOST_PORT, PickleNetworkProtocol) as server:
-        t: Thread = server.serve_forever_in_thread(poll_interval=0.1)
-        sleep(0.15)
-        assert server.running()
-    assert not server.running()
-    assert not t.is_alive()
-
-
 class _TestServiceActionServer(_TestServer):
     def service_actions(self) -> None:
         super().service_actions()
@@ -71,7 +54,7 @@ class _TestServiceActionServer(_TestServer):
 
 def test_service_actions() -> None:
     with _TestServiceActionServer(_RANDOM_HOST_PORT, PickleNetworkProtocol) as server:
-        server.serve_forever_in_thread(poll_interval=0.1)
+        run_server_in_thread(server, poll_interval=0.1)
         sleep(0.3)
     assert getattr(server, "service_actions_called", False)
 
@@ -82,7 +65,7 @@ from .test_tcp_server import _IntegerNetworkProtocol
 def test_request_handling() -> None:
     with _TestServer(_RANDOM_HOST_PORT, protocol_cls=_IntegerNetworkProtocol) as server:
         address = server.address
-        server.serve_forever_in_thread(poll_interval=0.1)
+        run_server_in_thread(server, poll_interval=0.1)
         with (
             UDPNetworkClient(protocol=_IntegerNetworkProtocol()) as client_1,
             UDPNetworkClient(protocol=_IntegerNetworkProtocol()) as client_2,
@@ -106,7 +89,7 @@ class _TestThreadingServer(AbstractThreadingUDPNetworkServer[Any, Any]):
 
 def test_threading_server() -> None:
     with _TestThreadingServer(_RANDOM_HOST_PORT, PickleNetworkProtocol) as server:
-        server.serve_forever_in_thread(poll_interval=0)
+        run_server_in_thread(server, poll_interval=0)
         with UDPNetworkClient[Any, Any](server.protocol()) as client:
             packet = {"data": 1}
             client.send_packet(server.address, packet)
@@ -127,7 +110,7 @@ def test_forking_server() -> None:
     from os import getpid
 
     with _TestForkingServer(_RANDOM_HOST_PORT, PickleNetworkProtocol) as server:
-        server.serve_forever_in_thread(poll_interval=0)
+        run_server_in_thread(server, poll_interval=0)
         with UDPNetworkClient[Any, Any](server.protocol()) as client:
             packet = {"data": 1}
             client.send_packet(server.address, packet)

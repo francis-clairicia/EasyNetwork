@@ -15,6 +15,8 @@ from easynetwork.tools.socket import SocketAddress
 
 import pytest
 
+from ._utils import run_server_in_thread
+
 
 class _TestServer(AbstractTCPNetworkServer[Any, Any]):
     def process_request(self, request: Any, client: ConnectedClient[Any]) -> None:
@@ -46,25 +48,6 @@ def test_serve_forever_context_shut_down() -> None:
     assert not server.running()
 
 
-def test_serve_forever_in_thread_default() -> None:
-    with _TestServer(_RANDOM_HOST_PORT, PickleNetworkProtocol) as server:
-        t: Thread = server.serve_forever_in_thread(poll_interval=0.1)
-        sleep(0.15)
-        assert server.running()
-        server.shutdown()
-        t.join()
-        assert not server.running()
-
-
-def test_serve_forver_in_thread_context_shut_down() -> None:
-    with _TestServer(_RANDOM_HOST_PORT, PickleNetworkProtocol) as server:
-        t: Thread = server.serve_forever_in_thread(poll_interval=0.1)
-        sleep(0.15)
-        assert server.running()
-    assert not server.running()
-    assert not t.is_alive()
-
-
 class _TestServiceActionServer(_TestServer):
     def service_actions(self) -> None:
         super().service_actions()
@@ -73,7 +56,7 @@ class _TestServiceActionServer(_TestServer):
 
 def test_service_actions() -> None:
     with _TestServiceActionServer(_RANDOM_HOST_PORT, PickleNetworkProtocol) as server:
-        server.serve_forever_in_thread(poll_interval=0.1)
+        run_server_in_thread(server, poll_interval=0.1)
         sleep(0.3)
     assert getattr(server, "service_actions_called", False)
 
@@ -81,7 +64,7 @@ def test_service_actions() -> None:
 def test_client_connection() -> None:
     with _TestServer(_RANDOM_HOST_PORT, PickleNetworkProtocol) as server:
         address = server.address.for_connection()
-        server.serve_forever_in_thread(poll_interval=0.1)
+        run_server_in_thread(server, poll_interval=0.1)
         sleep(0.1)
         assert len(server.clients) == 0
         with TCPNetworkClient[Any, Any](address, server.protocol()):
@@ -100,7 +83,7 @@ class _TestWelcomeServer(_TestServer):
 def test_welcome_connection() -> None:
     with _TestWelcomeServer(_RANDOM_HOST_PORT, PickleNetworkProtocol, backlog=1) as server:
         address = server.address.for_connection()
-        server.serve_forever_in_thread(poll_interval=0.1)
+        run_server_in_thread(server, poll_interval=0.1)
         with TCPNetworkClient[Any, Any](address, server.protocol()) as client:
             assert client.recv_packet() == "Welcome !"
 
@@ -108,7 +91,7 @@ def test_welcome_connection() -> None:
 def test_multiple_connections() -> None:
     with _TestWelcomeServer(_RANDOM_HOST_PORT, PickleNetworkProtocol) as server:
         address = server.address.for_connection()
-        server.serve_forever_in_thread(poll_interval=0)
+        run_server_in_thread(server, poll_interval=0)
         with (
             TCPNetworkClient[Any, Any](address, server.protocol()) as client_1,
             TCPNetworkClient[Any, Any](address, server.protocol()) as client_2,
@@ -139,7 +122,7 @@ class _IntegerNetworkProtocol(StreamNetworkProtocol[int, int]):
 def test_request_handling() -> None:
     with _TestServer(_RANDOM_HOST_PORT, protocol_cls=_IntegerNetworkProtocol) as server:
         address = server.address.for_connection()
-        server.serve_forever_in_thread(poll_interval=0)
+        run_server_in_thread(server, poll_interval=0)
         with (
             TCPNetworkClient(address, protocol=_IntegerNetworkProtocol()) as client_1,
             TCPNetworkClient(address, protocol=_IntegerNetworkProtocol()) as client_2,
@@ -178,7 +161,7 @@ def test_request_handling() -> None:
 
 def test_disable_nagle_algorithm() -> None:
     with _TestServer(_RANDOM_HOST_PORT, PickleNetworkProtocol, buffered_write=True, disable_nagle_algorithm=True) as server:
-        server.serve_forever_in_thread(poll_interval=0)
+        run_server_in_thread(server, poll_interval=0)
         with (
             TCPNetworkClient(server.address.for_connection(), protocol=server.protocol()) as client_1,
             TCPNetworkClient(server.address.for_connection(), protocol=server.protocol()) as client_2,
@@ -197,7 +180,7 @@ class _TestThreadingServer(AbstractThreadingTCPNetworkServer[Any, Any]):
 
 def test_threading_server() -> None:
     with _TestThreadingServer(_RANDOM_HOST_PORT, PickleNetworkProtocol) as server:
-        server.serve_forever_in_thread(poll_interval=0)
+        run_server_in_thread(server, poll_interval=0)
         with TCPNetworkClient[Any, Any](server.address.for_connection(), server.protocol()) as client:
             packet = {"data": 1}
             client.send_packet(packet)
@@ -221,7 +204,7 @@ def test_forking_server(buffered_write: bool) -> None:
     from os import getpid
 
     with _TestForkingServer(_RANDOM_HOST_PORT, PickleNetworkProtocol, buffered_write=buffered_write) as server:
-        server.serve_forever_in_thread(poll_interval=0)
+        run_server_in_thread(server, poll_interval=0)
         with TCPNetworkClient[Any, Any](server.address.for_connection(), server.protocol()) as client:
             packet = {"data": 1}
             client.send_packet(packet)

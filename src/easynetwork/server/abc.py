@@ -19,7 +19,7 @@ from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from selectors import EVENT_READ, EVENT_WRITE, BaseSelector, DefaultSelector as _Selector, SelectorKey
 from socket import SHUT_WR, SOCK_DGRAM, SOCK_STREAM, socket as Socket
-from threading import Event, RLock, Thread, current_thread
+from threading import Event, RLock, Thread
 from typing import TYPE_CHECKING, Any, Callable, Final, Generic, Iterator, Sequence, TypeAlias, TypeVar, final, overload
 from weakref import WeakKeyDictionary
 
@@ -89,51 +89,22 @@ class ConnectedClient(Generic[_ResponseT]):
 
 
 class AbstractNetworkServer(Generic[_RequestT, _ResponseT]):
-    __slots__ = ("__t",)
-
     if TYPE_CHECKING:
         __Self = TypeVar("__Self", bound="AbstractNetworkServer[Any, Any]")
 
     def __init__(self) -> None:
         super().__init__()
-        self.__t: Thread | None = None
 
     def __enter__(self: __Self) -> __Self:
         return self
 
     def __exit__(self, *args: Any) -> None:
-        t: Thread | None = self.__t
-        self.__t = None
-        if t is not None:
-            if t is not current_thread() and t.is_alive():
-                self.shutdown()
-                t.join()
-        else:
-            self.shutdown()
+        self.shutdown()
         self.server_close()
 
     @abstractmethod
     def serve_forever(self, poll_interval: float = ...) -> None:
         raise NotImplementedError
-
-    def serve_forever_in_thread(
-        self,
-        poll_interval: float = 0.5,
-        *,
-        daemon: bool | None = None,
-        name: str | None = None,
-        **kwargs: Any,
-    ) -> Thread:
-        if self.running():
-            raise RuntimeError("Server already running")
-
-        t: Thread | None = self.__t
-        if t is not None and t.is_alive():
-            t.join()
-        t = Thread(target=self.serve_forever, args=(poll_interval,), kwargs=kwargs, daemon=daemon, name=name)
-        t.start()
-        self.__t = t
-        return t
 
     @abstractmethod
     def server_close(self) -> None:
