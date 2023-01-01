@@ -1,5 +1,5 @@
 # -*- coding: Utf-8 -*-
-# Copyright (c) 2021-2022, Francis Clairicia-Rose-Claire-Josephine
+# Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
 #
 #
 """The easiest way to use sockets in Python
@@ -30,7 +30,7 @@ __all__ = [
 
 __author__ = "FrankySnow9"
 __contact__ = "clairicia.rcj.francis@gmail.com"
-__copyright__ = "Copyright (c) 2021-2022, Francis Clairicia-Rose-Claire-Josephine"
+__copyright__ = "Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine"
 __credits__ = ["FrankySnow9"]
 __deprecated__ = False
 __email__ = "clairicia.rcj.francis@gmail.com"
