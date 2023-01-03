@@ -10,19 +10,13 @@ from __future__ import annotations
 __all__ = ["TCPInvalidPacket", "TCPNetworkClient"]
 
 from contextlib import contextmanager
-from selectors import EVENT_READ
 from socket import socket as Socket
 from threading import RLock
 from typing import Any, Generic, Iterator, Literal, TypeVar, final, overload
 
-try:
-    from selectors import PollSelector as _Selector  # type: ignore[attr-defined]
-except ImportError:
-    from selectors import SelectSelector as _Selector  # type: ignore[misc,assignment]
-
 from ..protocol.exceptions import DeserializeError
 from ..protocol.stream.abc import StreamNetworkProtocol
-from ..tools.socket import SHUT_WR, SocketAddress, create_connection, guess_best_buffer_size, new_socket_address
+from ..tools.socket import DEFAULT_TIMEOUT, SHUT_WR, SocketAddress, create_connection, guess_best_buffer_size, new_socket_address
 from ..tools.stream import StreamNetworkDataConsumer, StreamNetworkDataProducerIterator
 from .abc import AbstractNetworkClient
 
@@ -63,7 +57,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         protocol: StreamNetworkProtocol[_SentPacketT, _ReceivedPacketT],
         *,
         timeout: float | None = ...,
-        family: int | None = ...,
         source_address: tuple[str, int] | None = ...,
         send_flags: int = ...,
         recv_flags: int = ...,
@@ -153,13 +146,13 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             finally:
                 socket.close()
 
-    def send_packet(self, packet: _SentPacketT, *, timeout: float | None = None, flags: int = 0) -> None:
+    def send_packet(self, packet: _SentPacketT, *, timeout: float | None = DEFAULT_TIMEOUT, flags: int = 0) -> None:
         self._check_not_closed()
         with self.__lock:
             self.__producer.queue(packet)
             self.__write_on_socket(timeout=timeout, flags=flags)
 
-    def send_packets(self, *packets: _SentPacketT, timeout: float | None = None, flags: int = 0) -> None:
+    def send_packets(self, *packets: _SentPacketT, timeout: float | None = DEFAULT_TIMEOUT, flags: int = 0) -> None:
         self._check_not_closed()
         if not packets:
             return
@@ -168,12 +161,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             self.__write_on_socket(timeout=timeout, flags=flags)
 
     def __write_on_socket(self, *, timeout: float | None, flags: int) -> None:
-        if timeout is not None:
-            if timeout < 0:
-                raise ValueError("Timeout out of range")
-            if timeout == 0:
-                raise ValueError("non-blocking sockets are not supported")
-
         flags |= self.__default_send_flags
         socket: Socket = self.__socket
         with _use_timeout(socket, timeout):
@@ -246,6 +233,9 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
     ) -> list[_ReceivedPacketT]:
         self._check_not_closed()
 
+        if timeout is DEFAULT_TIMEOUT:
+            timeout = self.__socket.gettimeout()
+
         consumer: StreamNetworkDataConsumer[_ReceivedPacketT] = self.__consumer
 
         def generate_packets() -> list[_ReceivedPacketT]:
@@ -270,29 +260,24 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
 
     def __read_socket(self, *, timeout: float | None, flags: int) -> None:
         flags |= self.__default_recv_flags
-        if timeout is not None and timeout < 0:
-            raise ValueError("Timeout out of range")
-
         socket: Socket = self.__socket
         socket_recv = socket.recv
         chunk_size: int = self.__chunk_size
         consumer = self.__consumer
-        consumer_feed = consumer.feed
         if consumer.get_buffer():
             timeout = 0
-        with _Selector() as selector, _remove_timeout(socket):
-            selector.register(socket, EVENT_READ)
-            select = selector.select
-            while timeout is None or select(timeout=timeout):
-                timeout = 0  # Future select() must exit quickly
+        with _use_timeout(socket, timeout):
+            try:
                 chunk: bytes = socket_recv(chunk_size, flags)
-                if not chunk:
-                    if consumer.get_buffer():
-                        # consumer.feed() has been called
-                        # The next read_socket() will raise an EOFError
-                        return
-                    raise EOFError("Closed connection")
-                consumer_feed(chunk)
+            except (BlockingIOError, InterruptedError):
+                return
+            if not chunk:
+                if consumer.get_buffer():
+                    # consumer.feed() has been called
+                    # The next read_socket() will raise an EOFError
+                    return
+                raise EOFError("Closed connection")
+            consumer.feed(chunk)
 
     def getsockname(self) -> SocketAddress:
         self._check_not_closed()
@@ -410,17 +395,10 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
 
 
 @contextmanager
-def _remove_timeout(socket: Socket) -> Iterator[None]:
-    timeout: float | None = socket.gettimeout()
-    socket.settimeout(None)
-    try:
-        yield
-    finally:
-        socket.settimeout(timeout)
-
-
-@contextmanager
 def _use_timeout(socket: Socket, timeout: float | None) -> Iterator[None]:
+    if timeout is DEFAULT_TIMEOUT:
+        yield
+        return
     old_timeout: float | None = socket.gettimeout()
     socket.settimeout(timeout)
     try:

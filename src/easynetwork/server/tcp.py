@@ -123,6 +123,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         def verify_client(socket: Socket, address: SocketAddress) -> None:
             try:
                 accepted = self.verify_new_client(socket, address)
+                socket.settimeout(0)
             except Exception:
                 import traceback
 
@@ -152,11 +153,8 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                     is_closed=_client_is_closed_hook,
                     flush_on_send=not buffered_write,
                 )
-                selector_event_mask: int = EVENT_READ
-                if buffered_write:
-                    selector_event_mask |= EVENT_WRITE
                 self.__clients[socket] = key_data.client
-                selector.register(socket, selector_event_mask, key_data)
+                selector.register(socket, EVENT_READ | EVENT_WRITE, key_data)
 
         def _close_client_hook(socket: Socket) -> None:
             shutdown_client(socket, from_client=True)
@@ -171,7 +169,6 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         def new_client() -> None:
             try:
                 client_socket, address = server_socket.accept()
-                client_socket.settimeout(None)
             except OSError:
                 return
             if tcp_no_delay:
@@ -203,6 +200,8 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                     continue
                 try:
                     data = socket.recv(key_data.chunk_size, self.__recv_flags)
+                except (BlockingIOError, InterruptedError):
+                    pass
                 except OSError:
                     shutdown_client(socket, from_client=False)
                     self.handle_error(client)
@@ -251,24 +250,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                         continue
                     if not data:
                         continue
-                    try:
-                        nb_bytes_sent = socket.send(data, self.__send_flags)
-                    except BlockingIOError as exc:
-                        try:
-                            character_written: int = exc.characters_written
-                        except AttributeError:
-                            pass
-                        else:
-                            if character_written > 0:
-                                key_data.unsent_data = data[character_written:]
-                        finally:
-                            del exc
-                    except OSError:
-                        shutdown_client(socket, from_client=False)
-                        self.handle_error(client)
-                    else:
-                        if nb_bytes_sent < len(data):
-                            key_data.unsent_data = data[nb_bytes_sent:]
+                    _send_data_to_socket(socket, data, key_data)
 
         def flush_queue(socket: Socket) -> None:
             key_data: _SelectorKeyData[_RequestT, _ResponseT]
@@ -279,7 +261,32 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             with key_data.send_lock:
                 data: bytes = key_data.pop_data_to_send(read_all=True)
                 if data:
-                    return socket.sendall(data, self.__send_flags)
+                    return _send_data_to_socket(socket, data, key_data)
+
+        def _send_data_to_socket(
+            socket: Socket,
+            data: bytes,
+            key_data: _SelectorKeyData[_RequestT, _ResponseT],
+        ) -> None:
+            try:
+                nb_bytes_sent = socket.send(data, self.__send_flags)
+            except InterruptedError:
+                key_data.unsent_data = data
+            except BlockingIOError as exc:
+                try:
+                    character_written: int = exc.characters_written
+                except AttributeError:
+                    character_written = 0
+                finally:
+                    del exc
+                if character_written > 0:
+                    key_data.unsent_data = data[character_written:]
+            except OSError:
+                shutdown_client(socket, from_client=False)
+                self.handle_error(key_data.client)
+            else:
+                if nb_bytes_sent < len(data):
+                    key_data.unsent_data = data[nb_bytes_sent:]
 
         def shutdown_client(socket: Socket, *, from_client: bool) -> None:
             self.__clients.pop(socket, None)

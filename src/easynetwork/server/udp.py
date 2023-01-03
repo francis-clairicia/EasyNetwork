@@ -57,6 +57,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             reuse_port=reuse_port,
             dualstack_ipv6=False,
         )
+        socket.settimeout(0)
         self.__server: UDPNetworkEndpoint[_ResponseT, _RequestT] = UDPNetworkEndpoint(
             protocol=protocol,
             socket=socket,
@@ -91,6 +92,8 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             bad_request_address: SocketAddress | None = None
             try:
                 packets = server.recv_packets_from_anyone(timeout=0, on_error="raise")
+            except (BlockingIOError, InterruptedError):  # TODO: Already deserialized request not handled
+                return
             except UDPInvalidPacket as exc:
                 bad_request_address = exc.sender
                 packets = exc.already_deserialized_packets
@@ -109,6 +112,8 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 connected_client = make_connected_client(server, address)
                 try:
                     handle_request(self, request, connected_client)
+                except (BlockingIOError, InterruptedError):  # TODO: Store not sent packets for further retry
+                    return
                 except Exception:
                     self.handle_error(connected_client)
                 finally:
@@ -153,15 +158,15 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             self.__loop = False
         self.__is_shutdown.wait()
 
-    def send_packet(self, address: SocketAddress, packet: _ResponseT) -> None:
+    def send_packet(self, address: SocketAddress, packet: _ResponseT) -> None:  # TODO: handle BlockingIOError/InterruptedError
         self._check_not_closed()
         self.__server.send_packet(address, packet)
 
-    def send_packets(self, address: SocketAddress, *packets: _ResponseT) -> None:
+    def send_packets(self, address: SocketAddress, *packets: _ResponseT) -> None:  # TODO: handle BlockingIOError/InterruptedError
         self._check_not_closed()
         self.__server.send_packet(address, *packets)
 
-    def bad_request(self, client: ConnectedClient[_ResponseT]) -> None:
+    def bad_request(self, client: ConnectedClient[_ResponseT]) -> None:  # TODO: handle BlockingIOError/InterruptedError
         pass
 
     def protocol(self) -> NetworkProtocol[_ResponseT, _RequestT]:
