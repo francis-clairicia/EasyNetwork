@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import socket
 from threading import Thread
 from time import sleep
 from typing import Any, ClassVar, Generator
@@ -76,8 +77,9 @@ def test_client_connection() -> None:
 
 
 class _TestWelcomeServer(_TestServer):
-    def verify_new_client(self, client: TCPNetworkClient[Any, Any], address: SocketAddress) -> bool:
-        client.send_packet("Welcome !")
+    def verify_new_client(self, client_socket: socket.socket, address: SocketAddress) -> bool:
+        with TCPNetworkClient(client_socket, protocol=self.protocol()) as client:
+            client.send_packet("Welcome !")
         return True
 
 

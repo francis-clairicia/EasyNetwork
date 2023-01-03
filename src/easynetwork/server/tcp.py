@@ -17,7 +17,6 @@ from threading import Event, RLock, Thread
 from typing import Any, Callable, Final, Generic, Iterator, Sequence, TypeAlias, TypeVar, final, overload
 from weakref import WeakKeyDictionary
 
-from ..client.tcp import TCPNetworkClient
 from ..protocol.exceptions import DeserializeError
 from ..protocol.stream.abc import StreamNetworkProtocol
 from ..tools.socket import AF_INET, SocketAddress, create_server, guess_best_buffer_size, new_socket_address
@@ -122,10 +121,8 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             return [key for key in selector.get_map().values() if key.fileobj is not server_socket]
 
         def verify_client(socket: Socket, address: SocketAddress) -> None:
-            protocol = self.__protocol_cls()
             try:
-                with TCPNetworkClient(socket, protocol=protocol, give=False) as client:
-                    accepted = self.verify_new_client(client, address)
+                accepted = self.verify_new_client(socket, address)
             except Exception:
                 import traceback
 
@@ -141,33 +138,35 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                     socket.close()
                 return
 
-            def close_client(socket: Socket) -> None:
-                shutdown_client(socket, from_client=True)
-
-            def flush_client_data(socket: Socket) -> None:
-                with select_lock:
-                    return flush_queue(socket)
-
-            def client_is_closed(socket: Socket) -> bool:
-                return socket not in self.__clients
-
-            key_data = _SelectorKeyData(
-                protocol=protocol,
-                socket=socket,
-                address=address,
-                flush=flush_client_data,
-                on_close=close_client,
-                is_closed=client_is_closed,
-                flush_on_send=not buffered_write,
-            )
-            key_data.consumer.feed(client._get_buffer())
-            del client
-            selector_event_mask: int = EVENT_READ
-            if buffered_write:
-                selector_event_mask |= EVENT_WRITE
             with self.__lock:
+                if not self.__loop:  # shutdown can occur during verify_new_client()
+                    with suppress(Exception):
+                        socket.close()
+                    return
+                key_data = _SelectorKeyData(
+                    protocol=self.__protocol_cls(),
+                    socket=socket,
+                    address=address,
+                    flush=_flush_client_data_hook,
+                    on_close=_close_client_hook,
+                    is_closed=_client_is_closed_hook,
+                    flush_on_send=not buffered_write,
+                )
+                selector_event_mask: int = EVENT_READ
+                if buffered_write:
+                    selector_event_mask |= EVENT_WRITE
                 self.__clients[socket] = key_data.client
                 selector.register(socket, selector_event_mask, key_data)
+
+        def _close_client_hook(socket: Socket) -> None:
+            shutdown_client(socket, from_client=True)
+
+        def _flush_client_data_hook(socket: Socket) -> None:
+            with select_lock:
+                return flush_queue(socket)
+
+        def _client_is_closed_hook(socket: Socket) -> bool:
+            return socket not in self.__clients
 
         def new_client() -> None:
             try:
@@ -186,6 +185,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             address = new_socket_address(address, client_socket.family)
             if self.__verify_in_thread:
                 t = Thread(target=verify_client, args=(client_socket, address), daemon=True)
+                assert t.daemon
                 t.start()
             else:
                 verify_client(client_socket, address)
@@ -373,7 +373,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             self.__loop = False
         self.__is_shutdown.wait()
 
-    def verify_new_client(self, client: TCPNetworkClient[_ResponseT, _RequestT], address: SocketAddress) -> bool:
+    def verify_new_client(self, client_socket: Socket, address: SocketAddress) -> bool:
         return True
 
     def bad_request(self, client: ConnectedClient[_ResponseT]) -> None:
