@@ -144,6 +144,7 @@ class AbstractCompressorNetworkProtocol(StreamNetworkProtocol[_ST_contra, _DT_co
                     ) from exc
                 except StopIteration as exc:
                     packet, remaining = exc.value
+                    del exc
                 else:
                     raise IncrementalDeserializeError(
                         "Missing data to create packet from compressed data stream",

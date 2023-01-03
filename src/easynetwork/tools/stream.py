@@ -48,6 +48,9 @@ class StreamNetworkDataProducerReader(Generic[_ST_contra]):
                     try:
                         for chunk in generator:
                             data += chunk
+                    except Exception as exc:
+                        self.__b = data
+                        raise RuntimeError(str(exc)) from exc
                     except BaseException:
                         self.__b = data
                         raise
@@ -64,6 +67,9 @@ class StreamNetworkDataProducerReader(Generic[_ST_contra]):
                     data += chunk
                 except StopIteration:
                     del queue[0]
+                except Exception as exc:
+                    self.__b = data
+                    raise RuntimeError(str(exc)) from exc
                 except BaseException:
                     self.__b = data
                     raise
@@ -94,15 +100,18 @@ class StreamNetworkDataProducerIterator(Generic[_ST_contra]):
         return self
 
     def __next__(self) -> bytes:
-        queue: deque[Generator[bytes, None, None]] = self.__q
-        while queue:
-            generator = queue[0]
-            try:
-                return next(generator)
-            except StopIteration:
-                del queue[0]
-            finally:
-                del generator
+        with self.__lock:
+            queue: deque[Generator[bytes, None, None]] = self.__q
+            while queue:
+                generator = queue[0]
+                try:
+                    return next(generator)
+                except StopIteration:
+                    del queue[0]
+                except Exception as exc:
+                    raise RuntimeError(str(exc)) from exc
+                finally:
+                    del generator
         raise StopIteration
 
     def queue(self, *packets: _ST_contra) -> None:
@@ -150,15 +159,21 @@ class StreamNetworkDataConsumer(Generic[_DT_co]):
                 try:
                     consumer.send(chunk)
                 except StopIteration as exc:
-                    packet, chunk = exc.value
+                    try:
+                        packet, chunk = exc.value
+                    finally:
+                        del exc
                     self.__u = b""
                     self.__b = chunk
                     return packet
                 except IncrementalDeserializeError as exc:
                     self.__u = b""
                     self.__b = exc.remaining_data
-                    if on_error == "raise":
-                        raise DeserializeError(str(exc)) from exc
+                    try:
+                        if on_error == "raise":
+                            raise DeserializeError(str(exc)) from exc
+                    finally:
+                        del exc
                 except DeserializeError:
                     self.__u = b""
                     if on_error == "raise":

@@ -63,7 +63,7 @@ def test_multiple_requests(tcp_server: tuple[str, int]) -> None:
         client.send_packet("J\n")
         assert client.recv_packet() == "IJ"
 
-        with pytest.raises(ValueError):
+        with pytest.raises(RuntimeError):
             client.send_packet(5)  # type: ignore[arg-type]
 
 

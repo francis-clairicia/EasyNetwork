@@ -93,9 +93,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         self.__tcp_no_delay: bool = bool(disable_nagle_algorithm)
         self.__buffered_write: bool = bool(buffered_write)
 
-    def serve_forever(self, poll_interval: float = 0.5) -> None:
-        poll_interval = float(poll_interval)
-
+    def serve_forever(self) -> None:
         with self.__lock:
             self._check_not_closed()
             if self.running():
@@ -114,7 +112,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
 
         def select() -> dict[int, deque[SelectorKey]]:
             ready: defaultdict[int, deque[SelectorKey]] = defaultdict(deque)
-            for key, events in selector.select(timeout=poll_interval):
+            for key, events in selector.select(timeout=0):
                 for mask in {EVENT_READ, EVENT_WRITE}:
                     if events & mask:
                         ready[mask].append(key)
@@ -263,6 +261,8 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                         else:
                             if character_written > 0:
                                 key_data.unsent_data = data[character_written:]
+                        finally:
+                            del exc
                     except OSError:
                         shutdown_client(socket, from_client=False)
                         self.handle_error(client)

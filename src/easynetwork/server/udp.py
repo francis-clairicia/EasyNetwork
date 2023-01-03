@@ -72,10 +72,8 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         self.__protocol_cls: NetworkProtocolFactory[_ResponseT, _RequestT] = protocol_factory
         super().__init__()
 
-    def serve_forever(self, poll_interval: float = 0.5) -> None:
+    def serve_forever(self) -> None:
         from ..client import UDPInvalidPacket
-
-        poll_interval = float(poll_interval)
 
         with self.__lock:
             self._check_not_closed()
@@ -122,7 +120,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 while self.__loop:
                     ready: int
                     try:
-                        ready = selector.select(timeout=poll_interval)[0][1]
+                        ready = selector.select(timeout=0)[0][1]
                     except IndexError:
                         ready = 0
                     if not self.__loop:

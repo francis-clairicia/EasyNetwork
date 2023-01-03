@@ -88,7 +88,7 @@ class AbstractNetworkServer(Generic[_RequestT, _ResponseT]):
         self.server_close()
 
     @abstractmethod
-    def serve_forever(self, poll_interval: float = ...) -> None:
+    def serve_forever(self) -> None:
         raise NotImplementedError
 
     @abstractmethod
