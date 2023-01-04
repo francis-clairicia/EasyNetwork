@@ -13,7 +13,7 @@ from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from selectors import EVENT_READ, EVENT_WRITE, BaseSelector, DefaultSelector as _Selector, SelectorKey
 from socket import SHUT_WR, SOCK_STREAM, socket as Socket
-from threading import Event, RLock, Thread
+from threading import Event, RLock
 from typing import Any, Callable, Final, Generic, Iterator, Sequence, TypeAlias, TypeVar, final, overload
 from weakref import WeakKeyDictionary
 
@@ -41,7 +41,6 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         "__clients",
         "__selector",
         "__default_backlog",
-        "__verify_in_thread",
         "__tcp_no_delay",
         "__buffered_write",
         "__send_flags",
@@ -57,7 +56,6 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         backlog: int | None = None,
         reuse_port: bool = False,
         dualstack_ipv6: bool = False,
-        verify_client_in_thread: bool = False,
         send_flags: int = 0,
         recv_flags: int = 0,
         buffered_write: bool = False,
@@ -86,7 +84,6 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         self.__is_shutdown.set()
         self.__clients: WeakKeyDictionary[Socket, ConnectedClient[_ResponseT]] = WeakKeyDictionary()
         self.__selector: BaseSelector
-        self.__verify_in_thread: bool = bool(verify_client_in_thread)
         self.__send_flags: int = send_flags
         self.__recv_flags: int = recv_flags
         self.__tcp_no_delay: bool = bool(disable_nagle_algorithm)
@@ -180,12 +177,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                     client_socket.close()
                     raise
             address = new_socket_address(address, client_socket.family)
-            if self.__verify_in_thread:
-                t = Thread(target=verify_client, args=(client_socket, address), daemon=True)
-                assert t.daemon
-                t.start()
-            else:
-                verify_client(client_socket, address)
+            verify_client(client_socket, address)
 
         def receive_requests(ready: Sequence[SelectorKey]) -> None:
             for key in list(ready):
