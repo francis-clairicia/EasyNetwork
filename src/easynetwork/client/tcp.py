@@ -147,16 +147,16 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 socket.close()
 
     def send_packet(self, packet: _SentPacketT, *, timeout: float | None = DEFAULT_TIMEOUT, flags: int = 0) -> None:
-        self._check_not_closed()
         with self.__lock:
+            self._check_not_closed()
             self.__producer.queue(packet)
             self.__write_on_socket(timeout=timeout, flags=flags)
 
     def send_packets(self, *packets: _SentPacketT, timeout: float | None = DEFAULT_TIMEOUT, flags: int = 0) -> None:
-        self._check_not_closed()
         if not packets:
             return
         with self.__lock:
+            self._check_not_closed()
             self.__producer.queue(*packets)
             self.__write_on_socket(timeout=timeout, flags=flags)
 
@@ -173,8 +173,8 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                     socket.sendall(chunk, flags)
 
     def recv_packet(self, *, flags: int = 0, on_error: Literal["raise", "ignore"] | None = None) -> _ReceivedPacketT:
-        self._check_not_closed()
         with self.__lock:
+            self._check_not_closed()
             while True:
                 try:
                     return self.__consumer.next(on_error=on_error)
@@ -205,8 +205,8 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         on_error: Literal["raise", "ignore"] | None = None,
     ) -> Any:
         timeout = float(timeout)
-        self._check_not_closed()
         with self.__lock:
+            self._check_not_closed()
             try:
                 return self.__consumer.next(on_error=on_error)
             except DeserializeError as exc:
@@ -231,7 +231,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         flags: int = 0,
         on_error: Literal["raise", "ignore"] | None = None,
     ) -> list[_ReceivedPacketT]:
-        self._check_not_closed()
 
         if timeout is DEFAULT_TIMEOUT:
             timeout = self.__socket.gettimeout()
@@ -251,6 +250,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             return packets
 
         with self.__lock:
+            self._check_not_closed()
             if timeout is not None:
                 self.__read_socket(timeout=timeout, flags=flags)
                 return generate_packets()
@@ -279,47 +279,67 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 raise EOFError("Closed connection")
             consumer.feed(chunk)
 
-    def getsockname(self) -> SocketAddress:
-        self._check_not_closed()
-        return new_socket_address(self.__socket.getsockname(), self.__socket.family)
+    def get_local_address(self) -> SocketAddress:
+        with self.__lock:
+            self._check_not_closed()
+            return new_socket_address(self.__socket.getsockname(), self.__socket.family)
 
-    def getpeername(self) -> SocketAddress:
-        self._check_not_closed()
-        return self.__peer
+    def get_remote_address(self) -> SocketAddress:
+        with self.__lock:
+            self._check_not_closed()
+            return self.__peer
+
+    def get_timeout(self) -> float | None:
+        with self.__lock:
+            self._check_not_closed()
+            return self.__socket.gettimeout()
+
+    def set_timeout(self, timeout: float | None) -> None:
+        if timeout is DEFAULT_TIMEOUT:
+            from socket import getdefaulttimeout
+
+            timeout = getdefaulttimeout()
+        with self.__lock:
+            self._check_not_closed()
+            self.__socket.settimeout(timeout)
 
     def is_connected(self) -> bool:
-        if self.__closed:
-            return False
-        try:
-            self.__socket.getpeername()
-        except OSError:
-            return False
-        return True
+        with self.__lock:
+            if self.__closed:
+                return False
+            try:
+                self.__socket.getpeername()
+            except OSError:
+                return False
+            return True
 
     def fileno(self) -> int:
-        if self.__closed:
-            return -1
-        return self.__socket.fileno()
+        with self.__lock:
+            if self.__closed:
+                return -1
+            return self.__socket.fileno()
 
     def dup(self) -> Socket:
-        self._check_not_closed()
-        socket: Socket = self.__socket
-        return socket.dup()
+        with self.__lock:
+            self._check_not_closed()
+            socket: Socket = self.__socket
+            return socket.dup()
 
     def detach(self) -> Socket:
-        self._check_not_closed()
-        socket: Socket = self.__socket
-        fd: int = socket.detach()
-        if fd < 0:
-            raise OSError("Closed socket")
-        socket = Socket(socket.family, socket.type, socket.proto, fileno=fd)
-        try:
-            self.__owner = False
-            self.close()
-        except BaseException:
-            socket.close()
-            raise
-        return socket
+        with self.__lock:
+            self._check_not_closed()
+            socket: Socket = self.__socket
+            fd: int = socket.detach()
+            if fd < 0:
+                raise OSError("Closed socket")
+            socket = Socket(socket.family, socket.type, socket.proto, fileno=fd)
+            try:
+                self.__owner = False
+                self.close()
+            except BaseException:
+                socket.close()
+                raise
+            return socket
 
     @overload
     def getsockopt(self, __level: int, __optname: int, /) -> int:
@@ -330,8 +350,9 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         ...
 
     def getsockopt(self, *args: int) -> int | bytes:
-        self._check_not_closed()
-        return self.__socket.getsockopt(*args)
+        with self.__lock:
+            self._check_not_closed()
+            return self.__socket.getsockopt(*args)
 
     @overload
     def setsockopt(self, __level: int, __optname: int, __value: int | bytes, /) -> None:
@@ -342,25 +363,27 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         ...
 
     def setsockopt(self, *args: Any) -> None:
-        self._check_not_closed()
-        return self.__socket.setsockopt(*args)
+        with self.__lock:
+            self._check_not_closed()
+            return self.__socket.setsockopt(*args)
 
     def reconnect(self, timeout: float | None = None) -> None:
-        self._check_not_closed()
-        socket: Socket = self.__socket
-        try:
-            socket.getpeername()
-        except OSError:
-            pass
-        else:
-            return
-        address: tuple[Any, ...] = self.__peer.for_connection()
-        former_timeout = socket.gettimeout()
-        socket.settimeout(timeout)
-        try:
-            socket.connect(address)
-        finally:
-            socket.settimeout(former_timeout)
+        with self.__lock:
+            self._check_not_closed()
+            socket: Socket = self.__socket
+            try:
+                socket.getpeername()
+            except OSError:
+                pass
+            else:
+                return
+            address: tuple[Any, ...] = self.__peer.for_connection()
+            former_timeout = socket.gettimeout()
+            socket.settimeout(timeout)
+            try:
+                socket.connect(address)
+            finally:
+                socket.settimeout(former_timeout)
 
     def try_reconnect(self, timeout: float | None = None) -> bool:
         try:

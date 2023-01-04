@@ -189,15 +189,16 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         timeout: float | None = DEFAULT_TIMEOUT,
         flags: int = 0,
     ) -> None:
-        address = self._verify_address(address)
         flags |= self.__default_send_flags
-        self._check_not_closed()
-        socket = self.__socket
-        with self.__lock, _use_timeout(socket, timeout):
-            if self.__peer:
-                socket.send(self.__protocol.serialize(packet), flags)
-            else:
-                socket.sendto(self.__protocol.serialize(packet), flags, address)
+        with self.__lock:
+            address = self._verify_address(address)
+            self._check_not_closed()
+            socket = self.__socket
+            with _use_timeout(socket, timeout):
+                if self.__peer:
+                    socket.send(self.__protocol.serialize(packet), flags)
+                else:
+                    socket.sendto(self.__protocol.serialize(packet), flags, address)
 
     def send_packets(
         self,
@@ -206,21 +207,22 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         timeout: float | None = DEFAULT_TIMEOUT,
         flags: int = 0,
     ) -> None:
-        address = self._verify_address(address)
         flags |= self.__default_send_flags
-        self._check_not_closed()
         if not packets:
             return
-        socket = self.__socket
-        with self.__lock, _use_timeout(socket, timeout):
-            send: Callable[[bytes, int], int]
-            if self.__peer:
-                send = socket.send
-            else:
-                _sendto = socket.sendto
-                send = lambda data, flags: _sendto(data, flags, address)  # type: ignore[arg-type]
-            for data in map(self.__protocol.serialize, packets):
-                send(data, flags)
+        with self.__lock:
+            self._check_not_closed()
+            address = self._verify_address(address)
+            socket = self.__socket
+            with _use_timeout(socket, timeout):
+                send: Callable[[bytes, int], int]
+                if self.__peer:
+                    send = socket.send
+                else:
+                    _sendto = socket.sendto
+                    send = lambda data, flags: _sendto(data, flags, address)  # type: ignore[arg-type]
+                for data in map(self.__protocol.serialize, packets):
+                    send(data, flags)
 
     def _verify_address(self, address: _Address | None) -> _Address:
         if remote_addr := self.__peer:
@@ -322,8 +324,8 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         on_error: Literal["raise", "ignore"] | None,
         only_remote: bool,
     ) -> tuple[_ReceivedPacketT, SocketAddress]:
-        self._check_not_closed()
         with self.__lock:
+            self._check_not_closed()
             while True:
                 packet_tuple = self.__next_packet(on_error=on_error, only_remote=only_remote)
                 if packet_tuple is not None:
@@ -339,9 +341,9 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         on_error: Literal["raise", "ignore"] | None,
         only_remote: bool,
     ) -> tuple[_ReceivedPacketT, SocketAddress] | _T:
-        self._check_not_closed()
         timeout = float(timeout)
         with self.__lock:
+            self._check_not_closed()
             packet_tuple = self.__next_packet(on_error=on_error, only_remote=only_remote)
             if packet_tuple is not None:
                 return packet_tuple
@@ -361,8 +363,6 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         on_error: Literal["raise", "ignore"] | None,
         only_remote: bool,
     ) -> list[tuple[_ReceivedPacketT, SocketAddress]]:
-        self._check_not_closed()
-
         get_next_packet = self.__next_packet
 
         def generate_packets() -> list[tuple[_ReceivedPacketT, SocketAddress]]:
@@ -379,6 +379,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             return packets
 
         with self.__lock:
+            self._check_not_closed()
             if timeout is not None:
                 self.__recv_packets_from_socket(flags=flags, timeout=timeout)
                 return generate_packets()
@@ -435,38 +436,57 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             return packet, sender
         return None
 
-    def getsockname(self) -> SocketAddress:
-        self._check_not_closed()
-        return new_socket_address(self.__socket.getsockname(), self.__socket.family)
+    def get_local_address(self) -> SocketAddress:
+        with self.__lock:
+            self._check_not_closed()
+            return new_socket_address(self.__socket.getsockname(), self.__socket.family)
 
-    def getpeername(self) -> SocketAddress | None:
-        self._check_not_closed()
-        return self.__peer
+    def get_remote_address(self) -> SocketAddress | None:
+        with self.__lock:
+            self._check_not_closed()
+            return self.__peer
+
+    def get_timeout(self) -> float | None:
+        with self.__lock:
+            self._check_not_closed()
+            return self.__socket.gettimeout()
+
+    def set_timeout(self, timeout: float | None) -> None:
+        if timeout is DEFAULT_TIMEOUT:
+            from socket import getdefaulttimeout
+
+            timeout = getdefaulttimeout()
+        with self.__lock:
+            self._check_not_closed()
+            self.__socket.settimeout(timeout)
 
     def fileno(self) -> int:
-        if self.__closed:
-            return -1
-        return self.__socket.fileno()
+        with self.__lock:
+            if self.__closed:
+                return -1
+            return self.__socket.fileno()
 
     def dup(self) -> Socket:
-        self._check_not_closed()
-        socket: Socket = self.__socket
-        return socket.dup()
+        with self.__lock:
+            self._check_not_closed()
+            socket: Socket = self.__socket
+            return socket.dup()
 
     def detach(self) -> Socket:
-        self._check_not_closed()
-        socket: Socket = self.__socket
-        fd: int = socket.detach()
-        if fd < 0:
-            raise OSError("Closed socket")
-        socket = Socket(socket.family, socket.type, socket.proto, fileno=fd)
-        try:
-            self.__owner = False
-            self.close()
-        except BaseException:
-            socket.close()
-            raise
-        return socket
+        with self.__lock:
+            self._check_not_closed()
+            socket: Socket = self.__socket
+            fd: int = socket.detach()
+            if fd < 0:
+                raise OSError("Closed socket")
+            socket = Socket(socket.family, socket.type, socket.proto, fileno=fd)
+            try:
+                self.__owner = False
+                self.close()
+            except BaseException:
+                socket.close()
+                raise
+            return socket
 
     @overload
     def getsockopt(self, __level: int, __optname: int, /) -> int:
@@ -477,8 +497,9 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         ...
 
     def getsockopt(self, *args: int) -> int | bytes:
-        self._check_not_closed()
-        return self.__socket.getsockopt(*args)
+        with self.__lock:
+            self._check_not_closed()
+            return self.__socket.getsockopt(*args)
 
     @overload
     def setsockopt(self, __level: int, __optname: int, __value: int | bytes, /) -> None:
@@ -489,8 +510,9 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         ...
 
     def setsockopt(self, *args: Any) -> None:
-        self._check_not_closed()
-        return self.__socket.setsockopt(*args)
+        with self.__lock:
+            self._check_not_closed()
+            return self.__socket.setsockopt(*args)
 
     @final
     def _check_not_closed(self) -> None:
@@ -563,7 +585,7 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         else:
             raise TypeError("Invalid arguments")
 
-        remote_address = endpoint.getpeername()
+        remote_address = endpoint.get_remote_address()
         if remote_address is None:
             raise OSError("No remote address configured")
 
@@ -575,10 +597,10 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
     def close(self) -> None:
         self.__endpoint.close()
 
-    def getsockname(self) -> SocketAddress:
-        return self.__endpoint.getsockname()
+    def get_local_address(self) -> SocketAddress:
+        return self.__endpoint.get_local_address()
 
-    def getpeername(self) -> SocketAddress:
+    def get_remote_address(self) -> SocketAddress:
         return self.__peer
 
     def send_packet(self, packet: _SentPacketT, *, timeout: float | None = DEFAULT_TIMEOUT, flags: int = 0) -> None:
@@ -620,6 +642,12 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         on_error: Literal["raise", "ignore"] | None = None,
     ) -> list[_ReceivedPacketT]:
         return self.__endpoint.recv_packets_from_remote(flags=flags, timeout=timeout, on_error=on_error)
+
+    def get_timeout(self) -> float | None:
+        return self.__endpoint.get_timeout()
+
+    def set_timeout(self, timeout: float | None) -> None:
+        return self.__endpoint.set_timeout(timeout)
 
     def fileno(self) -> int:
         return self.__endpoint.fileno()

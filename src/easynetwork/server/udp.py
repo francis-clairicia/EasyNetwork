@@ -65,7 +65,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             send_flags=send_flags,
             recv_flags=recv_flags,
         )
-        self.__addr: SocketAddress = self.__server.getsockname()
+        self.__addr: SocketAddress = self.__server.get_local_address()
         self.__lock: RLock = RLock()
         self.__loop: bool = False
         self.__is_shutdown: Event = Event()

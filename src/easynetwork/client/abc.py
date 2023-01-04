@@ -37,11 +37,11 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
         raise NotImplementedError
 
     @abstractmethod
-    def getsockname(self) -> SocketAddress:
+    def get_local_address(self) -> SocketAddress:
         raise NotImplementedError
 
     @abstractmethod
-    def getpeername(self) -> SocketAddress:
+    def get_remote_address(self) -> SocketAddress:
         raise NotImplementedError
 
     @abstractmethod
@@ -89,6 +89,14 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
         flags: int = ...,
         on_error: Literal["raise", "ignore"] | None = ...,
     ) -> list[_ReceivedPacketT]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_timeout(self) -> float | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def set_timeout(self, timeout: float | None) -> None:
         raise NotImplementedError
 
     @abstractmethod
