@@ -219,14 +219,14 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                     continue
                 request: _RequestT
                 try:
-                    request = key_data.consumer.next(on_error="raise")
+                    request = key_data.consumer.next()
                 except DeserializeError:
                     try:
                         self.bad_request(client)
                     except Exception:
                         self.handle_error(client)
                     continue
-                except StopIteration:  # Not enough data
+                except EOFError:  # Not enough data
                     continue
                 try:
                     handle_request(self, request, client)
@@ -493,7 +493,7 @@ class _SelectorKeyData(Generic[_RequestT, _ResponseT]):
         flush_on_send: bool,
     ) -> None:
         self.producer = StreamNetworkDataProducerReader(protocol)
-        self.consumer = StreamNetworkDataConsumer(protocol)
+        self.consumer = StreamNetworkDataConsumer(protocol, on_error="raise")
         self.chunk_size = guess_best_buffer_size(socket)
         self.client = self.__ConnectedTCPClient(
             producer=self.producer,

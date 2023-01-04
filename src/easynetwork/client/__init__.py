@@ -9,6 +9,7 @@ from __future__ import annotations
 
 __all__ = [
     "AbstractNetworkClient",
+    "InvalidPacket",
     "TCPInvalidPacket",
     "TCPNetworkClient",
     "UDPInvalidPacket",

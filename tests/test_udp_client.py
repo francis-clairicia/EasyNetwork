@@ -17,7 +17,7 @@ def test_default(udp_server: tuple[str, int]) -> None:
         assert client.recv_packet() == {"data": [5, 2]}
         client.send_packet("Hello")
         assert client.recv_packet() == "Hello"
-        assert len(client.recv_packets(timeout=0)) == 0
+        assert len(client.recv_all_packets(timeout=0)) == 0
         with pytest.raises(TimeoutError):
             client.recv_packet_no_block()
         assert client.recv_packet_no_block(default=None) is None

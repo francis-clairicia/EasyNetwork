@@ -7,17 +7,24 @@
 
 from __future__ import annotations
 
-__all__ = ["AbstractNetworkClient"]
+__all__ = ["AbstractNetworkClient", "InvalidPacket"]
 
 from abc import ABCMeta, abstractmethod
 from socket import socket as Socket
-from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Generic, Iterator, Literal, TypeVar, overload
 
 from ..tools.socket import SocketAddress
 
 _T = TypeVar("_T")
 _ReceivedPacketT = TypeVar("_ReceivedPacketT")
 _SentPacketT = TypeVar("_SentPacketT")
+
+
+class InvalidPacket(ValueError):
+    def __init__(self, *args: Any) -> None:
+        if not args:
+            args = ("Received invalid data to handle",)
+        super().__init__(*args)
 
 
 class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=ABCMeta):
@@ -74,22 +81,35 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
     def recv_packet_no_block(
         self,
         *,
-        default: Any = ...,
+        default: _T = ...,
         timeout: float = ...,
         flags: int = ...,
         on_error: Literal["raise", "ignore"] | None = ...,
-    ) -> Any:
+    ) -> _ReceivedPacketT | _T:
         raise NotImplementedError
 
-    @abstractmethod
-    def recv_packets(
+    def iter_received_packets(
         self,
         *,
-        timeout: float | None = ...,
-        flags: int = ...,
-        on_error: Literal["raise", "ignore"] | None = ...,
+        timeout: float = 0,
+        flags: int = 0,
+        on_error: Literal["raise", "ignore"] | None = None,
+    ) -> Iterator[_ReceivedPacketT]:
+        timeout = float(timeout)
+        _not_received: Any = object()
+        while True:
+            packet = self.recv_packet_no_block(timeout=timeout, flags=flags, default=_not_received, on_error=on_error)
+            if packet is _not_received:
+                break
+            yield packet
+
+    def recv_all_packets(
+        self,
+        *,
+        timeout: float = 0,
+        flags: int = 0,
     ) -> list[_ReceivedPacketT]:
-        raise NotImplementedError
+        return list(self.iter_received_packets(timeout=timeout, flags=flags, on_error="ignore"))
 
     @abstractmethod
     def get_timeout(self) -> float | None:

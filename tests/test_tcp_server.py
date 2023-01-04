@@ -157,9 +157,9 @@ def test_request_handling() -> None:
             sleep(0.1)
             client_3.send_packet(0)
             sleep(0.3)
-            assert client_1.recv_packets() == [-634, 0]
-            assert client_2.recv_packets() == [350, 0]
-            assert client_3.recv_packets() == [350, -634]
+            assert client_1.recv_all_packets() == [-634, 0]
+            assert client_2.recv_all_packets() == [350, 0]
+            assert client_3.recv_all_packets() == [350, -634]
 
 
 def test_disable_nagle_algorithm() -> None:

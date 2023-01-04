@@ -89,16 +89,11 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         handle_request = AbstractNetworkServer.handle_request
 
         def parse_requests() -> None:
-            bad_request_address: SocketAddress | None = None
             try:
-                packets = server.recv_packets_from_anyone(timeout=0, on_error="raise")
-            except (BlockingIOError, InterruptedError):  # TODO: Already deserialized request not handled
-                return
+                request_tuple = server.recv_packet_no_block_from_anyone(default=None, timeout=0, on_error="raise")
             except UDPInvalidPacket as exc:
                 bad_request_address = exc.sender
-                packets = exc.already_deserialized_packets
-            process_requests(packets)
-            if bad_request_address is not None:
+                del exc
                 connected_client = make_connected_client(server, bad_request_address)
                 try:
                     self.bad_request(connected_client)
@@ -106,9 +101,10 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                     self.handle_error(connected_client)
                 finally:
                     connected_client.close()
-
-        def process_requests(packets: list[tuple[_RequestT, SocketAddress]]) -> None:
-            for request, address in packets:
+            else:
+                if request_tuple is None:
+                    return
+                request, address = request_tuple
                 connected_client = make_connected_client(server, address)
                 try:
                     handle_request(self, request, connected_client)

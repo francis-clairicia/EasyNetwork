@@ -187,7 +187,7 @@ class StreamNetworkDataConsumer(Generic[_DT_co]):
                 else:
                     self.__u += chunk
                     self.__c = consumer
-            raise StopIteration
+            raise EOFError
 
     def feed(self, chunk: bytes) -> None:
         assert isinstance(chunk, bytes)
