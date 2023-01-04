@@ -254,7 +254,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         with _use_timeout(socket, timeout):
             try:
                 chunk: bytes = socket.recv(self.__chunk_size, flags)
-            except (BlockingIOError, InterruptedError):
+            except (TimeoutError, BlockingIOError, InterruptedError):
                 return False
             if not chunk:
                 raise EOFError("Closed connection")

@@ -10,7 +10,7 @@ from typing import Any
 from easynetwork.client import UDPNetworkEndpoint
 from easynetwork.protocol import PickleNetworkProtocol
 from easynetwork.server import AbstractUDPNetworkServer, ConnectedClient
-from easynetwork.server.concurrency import AbstractForkingUDPNetworkServer, AbstractThreadingUDPNetworkServer
+from easynetwork.server.executors import ForkingRequestExecutor, ThreadingRequestExecutor
 
 import pytest
 
@@ -81,7 +81,7 @@ def test_request_handling() -> None:
             assert client_3.recv_packet_from_anyone()[0] == 0
 
 
-class _TestThreadingServer(AbstractThreadingUDPNetworkServer[Any, Any]):
+class _TestThreadingServer(AbstractUDPNetworkServer[Any, Any]):
     def process_request(self, request: Any, client: ConnectedClient[Any]) -> None:
         import threading
 
@@ -89,7 +89,7 @@ class _TestThreadingServer(AbstractThreadingUDPNetworkServer[Any, Any]):
 
 
 def test_threading_server() -> None:
-    with _TestThreadingServer(_RANDOM_HOST_PORT, PickleNetworkProtocol) as server:
+    with _TestThreadingServer(_RANDOM_HOST_PORT, PickleNetworkProtocol, request_executor=ThreadingRequestExecutor()) as server:
         run_server_in_thread(server)
         with UDPNetworkEndpoint[Any, Any](server.protocol()) as client:
             packet = {"data": 1}
@@ -99,7 +99,7 @@ def test_threading_server() -> None:
             assert response[1] is True
 
 
-class _TestForkingServer(AbstractForkingUDPNetworkServer[Any, Any]):
+class _TestForkingServer(AbstractUDPNetworkServer[Any, Any]):
     def process_request(self, request: Any, client: ConnectedClient[Any]) -> None:
         from os import getpid
 
@@ -110,11 +110,12 @@ class _TestForkingServer(AbstractForkingUDPNetworkServer[Any, Any]):
 def test_forking_server() -> None:
     from os import getpid
 
-    with _TestForkingServer(_RANDOM_HOST_PORT, PickleNetworkProtocol) as server:
+    with _TestForkingServer(_RANDOM_HOST_PORT, PickleNetworkProtocol, request_executor=ForkingRequestExecutor()) as server:
         run_server_in_thread(server)
         with UDPNetworkEndpoint[Any, Any](server.protocol()) as client:
-            packet = {"data": 1}
-            client.send_packet(server.address, packet)
-            response: tuple[Any, int] = client.recv_packet_from_anyone()[0]
-            assert response[0] == packet
-            assert response[1] != getpid()
+            for _ in range(2):
+                packet = {"data": 1}
+                client.send_packet(server.address, packet)
+                response: tuple[Any, int] = client.recv_packet_from_anyone()[0]
+                assert response[0] == packet
+                assert response[1] != getpid()

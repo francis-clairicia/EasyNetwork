@@ -11,7 +11,7 @@ from typing import Any, ClassVar, Generator
 from easynetwork.client import TCPNetworkClient
 from easynetwork.protocol import PickleNetworkProtocol, StreamNetworkProtocol
 from easynetwork.server import AbstractTCPNetworkServer, ConnectedClient
-from easynetwork.server.concurrency import AbstractForkingTCPNetworkServer, AbstractThreadingTCPNetworkServer
+from easynetwork.server.executors import ForkingRequestExecutor, ThreadingRequestExecutor
 from easynetwork.tools.socket import SocketAddress
 
 import pytest
@@ -174,7 +174,7 @@ def test_disable_nagle_algorithm() -> None:
             assert client_2.recv_packet() == packet
 
 
-class _TestThreadingServer(AbstractThreadingTCPNetworkServer[Any, Any]):
+class _TestThreadingServer(AbstractTCPNetworkServer[Any, Any]):
     def process_request(self, request: Any, client: ConnectedClient[Any]) -> None:
         import threading
 
@@ -182,7 +182,7 @@ class _TestThreadingServer(AbstractThreadingTCPNetworkServer[Any, Any]):
 
 
 def test_threading_server() -> None:
-    with _TestThreadingServer(_RANDOM_HOST_PORT, PickleNetworkProtocol) as server:
+    with _TestThreadingServer(_RANDOM_HOST_PORT, PickleNetworkProtocol, request_executor=ThreadingRequestExecutor()) as server:
         run_server_in_thread(server)
         with TCPNetworkClient[Any, Any](server.address.for_connection(), server.protocol()) as client:
             packet = {"data": 1}
@@ -192,7 +192,7 @@ def test_threading_server() -> None:
             assert response[1] is True
 
 
-class _TestForkingServer(AbstractForkingTCPNetworkServer[Any, Any]):
+class _TestForkingServer(AbstractTCPNetworkServer[Any, Any]):
     def process_request(self, request: Any, client: ConnectedClient[Any]) -> None:
         from os import getpid
 
@@ -206,14 +206,15 @@ class _TestForkingServer(AbstractForkingTCPNetworkServer[Any, Any]):
 def test_forking_server(buffered_write: bool) -> None:
     from os import getpid
 
-    with _TestForkingServer(_RANDOM_HOST_PORT, PickleNetworkProtocol, buffered_write=buffered_write) as server:
+    with _TestForkingServer(
+        _RANDOM_HOST_PORT, PickleNetworkProtocol, buffered_write=buffered_write, request_executor=ForkingRequestExecutor()
+    ) as server:
         run_server_in_thread(server)
         with TCPNetworkClient[Any, Any](server.address.for_connection(), server.protocol()) as client:
-            packet = {"data": 1}
-            client.send_packet(packet)
-            response: tuple[Any, int] = client.recv_packet()
-            assert response[0] == packet
-            assert response[1] != getpid()
-            sleep(0.1)
-            with pytest.raises(EOFError):
-                _ = client.recv_packet()
+            for _ in range(2):
+                packet = {"data": 1}
+                client.send_packet(packet)
+                response: tuple[Any, int] = client.recv_packet_no_block(timeout=5)
+                assert response[0] == packet
+                assert response[1] != getpid()
+                sleep(0.5)

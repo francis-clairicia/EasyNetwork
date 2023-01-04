@@ -8,6 +8,7 @@ from __future__ import annotations
 
 __all__ = ["AbstractUDPNetworkServer"]
 
+from abc import abstractmethod
 from selectors import EVENT_READ, DefaultSelector as _Selector
 from socket import SOCK_DGRAM
 from threading import Event, RLock
@@ -17,11 +18,15 @@ from ..client.udp import UDPNetworkEndpoint
 from ..protocol.abc import NetworkProtocol
 from ..tools.socket import AF_INET, SocketAddress, create_server
 from .abc import AbstractNetworkServer, ConnectedClient
+from .executors.abc import AbstractRequestExecutor
+from .executors.sync import SyncRequestExecutor
 
 _RequestT = TypeVar("_RequestT")
 _ResponseT = TypeVar("_ResponseT")
 
 NetworkProtocolFactory: TypeAlias = Callable[[], NetworkProtocol[_ResponseT, _RequestT]]
+
+_default_global_executor = SyncRequestExecutor()
 
 
 class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Generic[_RequestT, _ResponseT]):
@@ -32,6 +37,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         "__loop",
         "__is_shutdown",
         "__protocol_cls",
+        "__request_executor",
     )
 
     def __init__(
@@ -43,6 +49,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         reuse_port: bool = False,
         send_flags: int = 0,
         recv_flags: int = 0,
+        request_executor: AbstractRequestExecutor | None = None,
     ) -> None:
         protocol = protocol_factory()
         if not isinstance(protocol, NetworkProtocol):
@@ -65,6 +72,9 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             send_flags=send_flags,
             recv_flags=recv_flags,
         )
+        self.__request_executor: AbstractRequestExecutor = (
+            request_executor if request_executor is not None else _default_global_executor
+        )
         self.__addr: SocketAddress = self.__server.get_local_address()
         self.__lock: RLock = RLock()
         self.__loop: bool = False
@@ -86,7 +96,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         server: UDPNetworkEndpoint[_ResponseT, _RequestT] = self.__server
         make_connected_client = self.__ConnectedUDPClient
 
-        handle_request = AbstractNetworkServer.handle_request
+        request_executor: AbstractRequestExecutor = self.__request_executor
 
         def parse_requests() -> None:
             try:
@@ -107,11 +117,9 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 request, address = request_tuple
                 connected_client = make_connected_client(server, address)
                 try:
-                    handle_request(self, request, connected_client)
-                except (BlockingIOError, InterruptedError):  # TODO: Store not sent packets for further retry
-                    return
-                except Exception:
-                    self.handle_error(connected_client)
+                    request_executor.execute(self.process_request, None, None, request, connected_client, self.handle_error)
+                except Exception as exc:  # TODO: Store not sent packets for further retry
+                    raise RuntimeError(f"request_executor.execute() raised an exception: {exc}") from exc
                 finally:
                     connected_client.close()
 
@@ -129,6 +137,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                     with self.__lock:
                         if ready & EVENT_READ:
                             parse_requests()
+                        request_executor.service_actions()
                         self.service_actions()
             finally:
                 with self.__lock:
@@ -136,18 +145,38 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                     self.__is_shutdown.set()
 
     def server_close(self) -> None:
-        with self.__lock:
-            if not self.__is_shutdown.is_set():
-                raise RuntimeError("Cannot close running server. Use shutdown() first")
-            if not self.__server.closed:
-                self.__server.close()
+        try:
+            with self.__lock:
+                if not self.__is_shutdown.is_set():
+                    raise RuntimeError("Cannot close running server. Use shutdown() first")
+                if not self.__server.closed:
+                    self.__server.close()
+        finally:
+            self.__request_executor.on_server_close()
 
     def service_actions(self) -> None:
         pass
 
+    @final
     def running(self) -> bool:
         with self.__lock:
             return not self.__is_shutdown.is_set()
+
+    @abstractmethod
+    def process_request(self, request: _RequestT, client: ConnectedClient[_ResponseT]) -> None:
+        raise NotImplementedError
+
+    def handle_error(self, client: ConnectedClient[Any]) -> None:
+        from sys import exc_info, stderr
+        from traceback import print_exc
+
+        if exc_info() == (None, None, None):
+            return
+
+        print("-" * 40, file=stderr)
+        print(f"Exception occurred during processing of request from {client.address}", file=stderr)
+        print_exc(file=stderr)
+        print("-" * 40, file=stderr)
 
     def shutdown(self) -> None:
         with self.__lock:

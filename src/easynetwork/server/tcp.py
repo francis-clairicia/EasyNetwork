@@ -8,6 +8,8 @@ from __future__ import annotations
 
 __all__ = ["AbstractTCPNetworkServer"]
 
+import os
+from abc import abstractmethod
 from collections import defaultdict, deque
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
@@ -22,6 +24,8 @@ from ..protocol.stream.abc import StreamNetworkProtocol
 from ..tools.socket import AF_INET, SocketAddress, create_server, guess_best_buffer_size, new_socket_address
 from ..tools.stream import StreamNetworkDataConsumer, StreamNetworkDataProducerReader
 from .abc import AbstractNetworkServer, ConnectedClient
+from .executors.abc import AbstractRequestExecutor
+from .executors.sync import SyncRequestExecutor
 
 _RequestT = TypeVar("_RequestT")
 _ResponseT = TypeVar("_ResponseT")
@@ -29,11 +33,15 @@ _ResponseT = TypeVar("_ResponseT")
 StreamNetworkProtocolFactory: TypeAlias = Callable[[], StreamNetworkProtocol[_ResponseT, _RequestT]]
 
 
+_default_global_executor = SyncRequestExecutor()
+
+
 class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Generic[_RequestT, _ResponseT]):
     __slots__ = (
         "__socket",
         "__addr",
         "__protocol_cls",
+        "__request_executor",
         "__closed",
         "__lock",
         "__loop",
@@ -60,6 +68,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         recv_flags: int = 0,
         buffered_write: bool = False,
         disable_nagle_algorithm: bool = False,
+        request_executor: AbstractRequestExecutor | None = None,
     ) -> None:
         if not callable(protocol_factory):
             raise TypeError("Invalid arguments")
@@ -73,6 +82,9 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             backlog=backlog,
             reuse_port=reuse_port,
             dualstack_ipv6=dualstack_ipv6,
+        )
+        self.__request_executor: AbstractRequestExecutor = (
+            request_executor if request_executor is not None else _default_global_executor
         )
         self.__default_backlog: int | None = backlog
         self.__addr: SocketAddress = new_socket_address(self.__socket.getsockname(), self.__socket.family)
@@ -101,7 +113,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         tcp_no_delay: Final[bool] = self.__tcp_no_delay
         buffered_write: Final[bool] = self.__buffered_write
 
-        handle_request = AbstractNetworkServer.handle_request
+        request_executor: AbstractRequestExecutor = self.__request_executor
 
         server_socket: Final[Socket] = self.__socket
         select_lock: Final[RLock] = RLock()
@@ -220,10 +232,19 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                     continue
                 except EOFError:  # Not enough data
                     continue
+                request_teardown = None if not buffered_write else _buffered_write_request_teardown_hook
+                request_ctx = {"pid": os.getpid()}
                 try:
-                    handle_request(self, request, client)
-                except Exception:
-                    self.handle_error(client)
+                    request_executor.execute(
+                        self.process_request, request_teardown, request_ctx, request, client, self.handle_error
+                    )
+                except Exception as exc:
+                    raise RuntimeError(f"request_executor.execute() raised an exception: {exc}") from exc
+
+        def _buffered_write_request_teardown_hook(client: ConnectedClient[Any], ctx: dict[str, Any]) -> None:
+            if ctx["pid"] != os.getpid():  # Executed in a subprocess
+                if not client.closed:
+                    client.flush()
 
         def send_responses(ready: Sequence[SelectorKey]) -> None:
             data: bytes
@@ -337,6 +358,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                         with self.__lock:
                             receive_requests(ready.get(EVENT_READ, ()))
                             process_requests()
+                            request_executor.service_actions()
                             self.service_actions()
                             send_responses(ready.get(EVENT_WRITE, ()))
                             remove_closed_clients()
@@ -356,15 +378,34 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     def service_actions(self) -> None:
         pass
 
+    @abstractmethod
+    def process_request(self, request: _RequestT, client: ConnectedClient[_ResponseT]) -> None:
+        raise NotImplementedError
+
+    def handle_error(self, client: ConnectedClient[Any]) -> None:
+        from sys import exc_info, stderr
+        from traceback import print_exc
+
+        if exc_info() == (None, None, None):
+            return
+
+        print("-" * 40, file=stderr)
+        print(f"Exception occurred during processing of request from {client.address}", file=stderr)
+        print_exc(file=stderr)
+        print("-" * 40, file=stderr)
+
     def server_close(self) -> None:
-        with self.__lock:
-            if not self.__is_shutdown.is_set():
-                raise RuntimeError("Cannot close running server. Use shutdown() first")
-            if self.__closed:
-                return
-            self.__closed = True
-            self.__socket.close()
-            del self.__socket
+        try:
+            with self.__lock:
+                if not self.__is_shutdown.is_set():
+                    raise RuntimeError("Cannot close running server. Use shutdown() first")
+                if self.__closed:
+                    return
+                self.__closed = True
+                self.__socket.close()
+                del self.__socket
+        finally:
+            self.__request_executor.on_server_close()
 
     def shutdown(self) -> None:
         self._check_not_closed()

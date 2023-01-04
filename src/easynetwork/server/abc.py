@@ -11,10 +11,10 @@ __all__ = [
     "ConnectedClient",
 ]
 
-from abc import abstractmethod
+from abc import ABCMeta, abstractmethod
 from contextlib import contextmanager
 from threading import RLock
-from typing import TYPE_CHECKING, Any, Callable, Generic, Iterator, TypeVar, final
+from typing import TYPE_CHECKING, Any, Generic, Iterator, TypeVar, final
 
 from ..tools.socket import SocketAddress
 
@@ -22,7 +22,7 @@ _RequestT = TypeVar("_RequestT")
 _ResponseT = TypeVar("_ResponseT")
 
 
-class ConnectedClient(Generic[_ResponseT]):
+class ConnectedClient(Generic[_ResponseT], metaclass=ABCMeta):
     __slots__ = ("__addr", "__transaction_lock", "__weakref__")
 
     def __init__(self, address: SocketAddress) -> None:
@@ -76,7 +76,7 @@ class ConnectedClient(Generic[_ResponseT]):
         return self.__addr
 
 
-class AbstractNetworkServer(Generic[_RequestT, _ResponseT]):
+class AbstractNetworkServer(Generic[_RequestT, _ResponseT], metaclass=ABCMeta):
     if TYPE_CHECKING:
         __Self = TypeVar("__Self", bound="AbstractNetworkServer[Any, Any]")
 
@@ -102,40 +102,6 @@ class AbstractNetworkServer(Generic[_RequestT, _ResponseT]):
     @abstractmethod
     def shutdown(self) -> None:
         raise NotImplementedError
-
-    @final
-    def handle_request(self, request: _RequestT, client: ConnectedClient[_ResponseT]) -> None:
-        def process_request(client: ConnectedClient[_ResponseT]) -> None:
-            return self.process_request(request, client)
-
-        return self.__process_request_hook__(process_request, client, self.handle_error)
-
-    def __process_request_hook__(
-        self,
-        process_request: Callable[[ConnectedClient[Any]], None],
-        client: ConnectedClient[Any],
-        error_handler: Callable[[ConnectedClient[Any]], None],
-    ) -> None:
-        try:
-            return process_request(client)
-        except Exception:
-            error_handler(client)
-
-    @abstractmethod
-    def process_request(self, request: _RequestT, client: ConnectedClient[_ResponseT]) -> None:
-        raise NotImplementedError
-
-    def handle_error(self, client: ConnectedClient[Any]) -> None:
-        from sys import exc_info, stderr
-        from traceback import print_exc
-
-        if exc_info() == (None, None, None):
-            return
-
-        print("-" * 40, file=stderr)
-        print(f"Exception occurred during processing of request from {client.address}", file=stderr)
-        print_exc(file=stderr)
-        print("-" * 40, file=stderr)
 
     @property
     @abstractmethod
