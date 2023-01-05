@@ -20,6 +20,52 @@ _ST_contra = TypeVar("_ST_contra", contravariant=True)
 _DT_co = TypeVar("_DT_co", covariant=True)
 
 
+class _JSONParser:
+    @staticmethod
+    def raw_parse() -> Generator[None, bytes, tuple[bytes, bytes]]:
+        import struct
+
+        def escaped(partial_document: bytes) -> bool:
+            return ((len(partial_document) - len(partial_document.rstrip(b"\\"))) % 2) == 1
+
+        enclosure_counter: Counter[bytes] = Counter()
+        partial_document: bytes = b""
+        complete_document: bytes = b""
+        while not complete_document:
+            if not partial_document:
+                enclosure_counter.clear()
+            while not (chunk := (yield)):  # Skip empty bytes
+                continue
+            char: bytes
+            for nb_chars, char in enumerate(struct.unpack(f"{len(chunk)}c", chunk), start=1):
+                match char:
+                    case b'"' if not escaped(partial_document):
+                        enclosure_counter[b'"'] = 0 if enclosure_counter[b'"'] == 1 else 1
+                    case _ if enclosure_counter[b'"'] > 0:
+                        partial_document += char
+                        continue
+                    case b"{" | b"[":
+                        enclosure_counter[char] += 1
+                    case b"}":
+                        enclosure_counter[b"{"] -= 1
+                    case b"]":
+                        enclosure_counter[b"["] -= 1
+                    case b" " | b"\t" | b"\n" | b"\r":  # Optimization: Skip spaces
+                        continue
+                    case _ if not enclosure_counter:  # No enclosure, only value
+                        # Directly refused because we cannot know when data is valid
+                        raise IncrementalDeserializeError(
+                            "Do not received beginning of a string/array/object",
+                            remaining_data=chunk[nb_chars:],
+                        )
+                partial_document += char
+                if enclosure_counter[next(iter(enclosure_counter))] <= 0:  # 1st found is closed
+                    complete_document = partial_document
+                    partial_document = chunk[nb_chars:]
+                    break
+        return complete_document, partial_document
+
+
 class JSONNetworkProtocol(StreamNetworkProtocol[_ST_contra, _DT_co]):
     __slots__ = ("__e", "__d")
 
@@ -93,47 +139,9 @@ class JSONNetworkProtocol(StreamNetworkProtocol[_ST_contra, _DT_co]):
 
     @final
     def incremental_deserialize(self) -> Generator[None, bytes, tuple[_DT_co, bytes]]:
-        import struct
-
-        def escaped(partial_document: bytes) -> bool:
-            return ((len(partial_document) - len(partial_document.rstrip(b"\\"))) % 2) == 1
-
         encoding: str = "utf-8"
-        enclosure_counter: Counter[bytes] = Counter()
-        partial_document: bytes = b""
-        complete_document: bytes = b""
-        while not complete_document:
-            if not partial_document:
-                enclosure_counter.clear()
-            while not (chunk := (yield)):  # Skip empty bytes
-                continue
-            char: bytes
-            for nb_chars, char in enumerate(struct.unpack(f"{len(chunk)}c", chunk), start=1):
-                match char:
-                    case b'"' if not escaped(partial_document):
-                        enclosure_counter[b'"'] = 0 if enclosure_counter[b'"'] == 1 else 1
-                    case _ if enclosure_counter[b'"'] > 0:
-                        partial_document += char
-                        continue
-                    case b"{" | b"[":
-                        enclosure_counter[char] += 1
-                    case b"}":
-                        enclosure_counter[b"{"] -= 1
-                    case b"]":
-                        enclosure_counter[b"["] -= 1
-                    case b" " | b"\t" | b"\n" | b"\r":  # Optimization: Skip spaces
-                        continue
-                    case _ if not enclosure_counter:  # No enclosure, only value
-                        # Directly refused because we cannot know when data is valid
-                        raise IncrementalDeserializeError(
-                            "Do not received beginning of a string/array/object",
-                            remaining_data=chunk[nb_chars:],
-                        )
-                partial_document += char
-                if enclosure_counter[next(iter(enclosure_counter))] <= 0:  # 1st found is closed
-                    complete_document = partial_document
-                    partial_document = chunk[nb_chars:]
-                    break
+        complete_document, remaining_data = yield from _JSONParser.raw_parse()
+
         decoder = self.__d
         packet: _DT_co
         try:
@@ -141,16 +149,16 @@ class JSONNetworkProtocol(StreamNetworkProtocol[_ST_contra, _DT_co]):
         except UnicodeDecodeError as exc:
             raise IncrementalDeserializeError(
                 f"Unicode decode error: {exc}",
-                remaining_data=partial_document,
+                remaining_data=remaining_data,
             ) from exc
         try:
             packet, end = decoder.raw_decode(document)
         except JSONDecodeError as exc:
             raise IncrementalDeserializeError(
                 f"JSON decode error: {exc}",
-                remaining_data=partial_document,
+                remaining_data=remaining_data,
             ) from exc
-        return packet, (document[end:].encode(encoding) + partial_document).lstrip(b" \t\n\r")
+        return packet, (document[end:].encode(encoding) + remaining_data).lstrip(b" \t\n\r")
 
     def get_decoder(self) -> JSONDecoder:
         return self.__d

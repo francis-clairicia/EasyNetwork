@@ -11,7 +11,7 @@ __all__ = [
 ]
 
 from io import BytesIO
-from pickle import DEFAULT_PROTOCOL, Pickler, Unpickler
+from pickle import DEFAULT_PROTOCOL, STOP as STOP_OPCODE, Pickler, Unpickler
 from pickletools import optimize as pickletools_optimize
 from typing import TYPE_CHECKING, Generator, TypeVar, final
 
@@ -65,9 +65,12 @@ class PickleNetworkProtocol(StreamNetworkProtocol[_ST_contra, _DT_co]):
     def incremental_deserialize(self) -> Generator[None, bytes, tuple[_DT_co, bytes]]:
         with BytesIO() as data:
             while True:
-                while not (chunk := (yield)):  # Skip empty bytes
-                    continue
-                data.write(chunk)
+                chunk = b""
+                while STOP_OPCODE not in chunk:
+                    while not (chunk := (yield)):  # Skip empty bytes
+                        continue
+                    data.write(chunk)
+                del chunk
                 data.seek(0)
                 unpickler = self.get_unpickler(data)
                 assert isinstance(unpickler, Unpickler)

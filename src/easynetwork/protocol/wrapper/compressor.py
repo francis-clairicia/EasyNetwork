@@ -66,22 +66,22 @@ class AbstractCompressorNetworkProtocol(StreamNetworkProtocol[_ST_contra, _DT_co
         self.__trailing_error: type[Exception] | tuple[type[Exception], ...] = trailing_error
 
     @abc.abstractmethod
-    def get_compressor(self) -> Compressor:
+    def new_compressor_stream(self) -> Compressor:
         raise NotImplementedError
 
     @abc.abstractmethod
-    def get_decompressor(self) -> Decompressor:
+    def new_decompressor_stream(self) -> Decompressor:
         raise NotImplementedError
 
     @final
     def serialize(self, packet: _ST_contra) -> bytes:
-        compressor = self.get_compressor()
+        compressor = self.new_compressor_stream()
         return compressor.compress(self.__protocol.serialize(packet)) + compressor.flush()
 
     @final
     def incremental_serialize(self, packet: _ST_contra) -> Generator[bytes, None, None]:
         protocol = self.__protocol
-        compressor = self.get_compressor()
+        compressor = self.new_compressor_stream()
         if isinstance(protocol, StreamNetworkProtocol):
             yield from filter(bool, map(compressor.compress, protocol.incremental_serialize(packet)))
         elif data := compressor.compress(protocol.serialize(packet)):
@@ -92,7 +92,7 @@ class AbstractCompressorNetworkProtocol(StreamNetworkProtocol[_ST_contra, _DT_co
     def deserialize(self, data: bytes) -> _DT_co:
         if not data:
             raise DeserializeError("Empty bytes")
-        decompressor = self.get_decompressor()
+        decompressor = self.new_decompressor_stream()
         try:
             data = decompressor.decompress(data)
         except self.__trailing_error as exc:
@@ -174,7 +174,7 @@ class AbstractCompressorNetworkProtocol(StreamNetworkProtocol[_ST_contra, _DT_co
                     ) from exc
                 return packet, unused_data
 
-        decompressor = self.get_decompressor()
+        decompressor = self.new_decompressor_stream()
         while not decompressor.eof:
             while not (chunk := (yield)):
                 continue
@@ -198,11 +198,11 @@ class BZ2CompressorNetworkProtocol(AbstractCompressorNetworkProtocol[_ST_contra,
         self.__compresslevel: int = int(compresslevel)
 
     @final
-    def get_compressor(self) -> bz2.BZ2Compressor:
+    def new_compressor_stream(self) -> bz2.BZ2Compressor:
         return bz2.BZ2Compressor(self.__compresslevel)
 
     @final
-    def get_decompressor(self) -> bz2.BZ2Decompressor:
+    def new_decompressor_stream(self) -> bz2.BZ2Decompressor:
         return bz2.BZ2Decompressor()
 
 
@@ -215,9 +215,9 @@ class ZlibCompressorNetworkProtocol(AbstractCompressorNetworkProtocol[_ST_contra
         self.__compresslevel: int = int(compresslevel)
 
     @final
-    def get_compressor(self) -> zlib._Compress:
+    def new_compressor_stream(self) -> zlib._Compress:
         return zlib.compressobj(self.__compresslevel)
 
     @final
-    def get_decompressor(self) -> zlib._Decompress:
+    def new_decompressor_stream(self) -> zlib._Decompress:
         return zlib.decompressobj()

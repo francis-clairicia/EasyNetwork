@@ -10,7 +10,7 @@ __all__ = ["AbstractStructNetworkProtocol", "NamedTupleNetworkProtocol"]
 
 from abc import abstractmethod
 from struct import Struct, error as StructError
-from typing import Any, NamedTuple, TypeVar, final
+from typing import Any, Mapping, NamedTuple, TypeVar, final
 
 from .exceptions import DeserializeError
 from .stream.abc import FixedPacketSizeStreamNetworkProtocol
@@ -66,10 +66,14 @@ _NT = TypeVar("_NT", bound=NamedTuple)
 class NamedTupleNetworkProtocol(AbstractStructNetworkProtocol[_NT, _NT]):
     __slots__ = ("__namedtuple_cls",)
 
-    def __init__(self, format: str, namedtuple_cls: type[_NT]) -> None:
-        super().__init__(format)
+    def __init__(self, namedtuple_cls: type[_NT], fields_format: Mapping[str, str], format_endianness: str = "") -> None:
         if not type(self).is_namedtuple_class(namedtuple_cls):
             raise TypeError("Expected namedtuple class")
+
+        if format_endianness not in {"", "@", "=", "<", ">", "!"}:
+            raise ValueError("Invalid endianness value")
+
+        super().__init__(f"{format_endianness}{''.join(map(fields_format.__getitem__, namedtuple_cls._fields))}")
         self.__namedtuple_cls: type[_NT] = namedtuple_cls
 
     @staticmethod
