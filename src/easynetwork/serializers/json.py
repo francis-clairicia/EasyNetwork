@@ -10,14 +10,14 @@ __all__ = ["JSONSerializer"]
 
 from collections import Counter
 from json import JSONDecodeError, JSONDecoder, JSONEncoder
-from typing import Generator, TypeVar, final
+from typing import Any, Generator, TypeVar, final
 
 from .exceptions import DeserializeError
 from .stream.abc import IncrementalPacketSerializer
 from .stream.exceptions import IncrementalDeserializeError
 
-_ST_contra = TypeVar("_ST_contra", contravariant=True)
-_DT_co = TypeVar("_DT_co", covariant=True)
+_ST_contra = TypeVar("_ST_contra", contravariant=True, bound=list[Any] | dict[str, Any])
+_DT_co = TypeVar("_DT_co", covariant=True, bound=list[Any] | dict[str, Any])
 
 
 class _JSONParser:
@@ -40,6 +40,12 @@ class _JSONParser:
             for nb_chars, char in enumerate(struct.unpack(f"{len(chunk)}c", chunk), start=1):
                 match char:
                     case b'"' if not escaped(partial_document):
+                        if len(enclosure_counter) == 0:
+                            # Directly refused because we accepts only JSON Object or list at toplevel
+                            raise IncrementalDeserializeError(
+                                "Do not received beginning of a array/object",
+                                remaining_data=chunk[nb_chars:],
+                            )
                         enclosure_counter[b'"'] = 0 if enclosure_counter[b'"'] == 1 else 1
                     case _ if enclosure_counter[b'"'] > 0:
                         partial_document += char
@@ -52,10 +58,10 @@ class _JSONParser:
                         enclosure_counter[b"["] -= 1
                     case b" " | b"\t" | b"\n" | b"\r":  # Optimization: Skip spaces
                         continue
-                    case _ if not enclosure_counter:  # No enclosure, only value
-                        # Directly refused because we cannot know when data is valid
+                    case _ if len(enclosure_counter) == 0:  # No enclosure, only value
+                        # Directly refused because we accepts only JSON Object or list at toplevel
                         raise IncrementalDeserializeError(
-                            "Do not received beginning of a string/array/object",
+                            "Do not received beginning of a array/object",
                             remaining_data=chunk[nb_chars:],
                         )
                 partial_document += char
@@ -77,7 +83,7 @@ class JSONSerializer(IncrementalPacketSerializer[_ST_contra, _DT_co]):
             case None:
                 self.__e = JSONEncoder(
                     skipkeys=False,
-                    ensure_ascii=False,  # Unicode are accepted
+                    ensure_ascii=True,
                     check_circular=True,
                     allow_nan=True,
                     indent=None,
@@ -85,6 +91,8 @@ class JSONSerializer(IncrementalPacketSerializer[_ST_contra, _DT_co]):
                     default=None,
                 )
             case JSONEncoder():
+                if not encoder.ensure_ascii:
+                    raise ValueError("encoder.ensure_ascii set to False")
                 self.__e = encoder
             case _:
                 raise TypeError(f"Invalid encoder: expected json.JSONEncoder, got {type(encoder).__name__}")
@@ -99,35 +107,29 @@ class JSONSerializer(IncrementalPacketSerializer[_ST_contra, _DT_co]):
 
     @final
     def serialize(self, packet: _ST_contra) -> bytes:
+        if not isinstance(packet, (dict, list)):
+            raise TypeError("Top-level object must be a dict or a list")
         encoder = self.__e
-        encoding: str = "ascii" if encoder.ensure_ascii else "utf-8"
-        return encoder.encode(packet).encode(encoding)
+        encoder.ensure_ascii = True
+        return encoder.encode(packet).encode("ascii")
 
     @final
     def incremental_serialize(self, packet: _ST_contra) -> Generator[bytes, None, None]:
+        if not isinstance(packet, (dict, list)):
+            raise TypeError("Top-level object must be a dict or a list")
         encoder = self.__e
-        encoding: str = "ascii" if encoder.ensure_ascii else "utf-8"
-        encode_iterator = encoder.iterencode(packet)
-        try:
-            chunk = next(encode_iterator)
-        except StopIteration:
-            return
-        if chunk[0] not in ("{", "[", '"'):
-            raise ValueError("Plain values (except strings) forbidden in incremental context")
-        yield chunk.encode(encoding)
-        for chunk in encode_iterator:
-            yield chunk.encode(encoding)
-
-    def get_encoder(self) -> JSONEncoder:
-        return self.__e
+        for chunk in encoder.iterencode(packet):
+            yield chunk.encode("ascii")
 
     @final
     def deserialize(self, data: bytes) -> _DT_co:
         data = data.strip(b" \t\n\r")
         if not data:
             raise DeserializeError("Empty bytes after stripping whitespaces")
+        if not data.startswith((b"{", b"[")):
+            raise DeserializeError("Top-level object must be a JSON object or a list")
         try:
-            document: str = data.decode(encoding="utf-8")
+            document: str = data.decode("ascii")
         except UnicodeDecodeError as exc:
             raise DeserializeError(f"Unicode decode error: {exc}") from exc
         decoder = self.__d
@@ -139,13 +141,12 @@ class JSONSerializer(IncrementalPacketSerializer[_ST_contra, _DT_co]):
 
     @final
     def incremental_deserialize(self) -> Generator[None, bytes, tuple[_DT_co, bytes]]:
-        encoding: str = "utf-8"
         complete_document, remaining_data = yield from _JSONParser.raw_parse()
 
         decoder = self.__d
         packet: _DT_co
         try:
-            document: str = complete_document.decode(encoding)
+            document: str = complete_document.decode("ascii")
         except UnicodeDecodeError as exc:
             raise IncrementalDeserializeError(
                 f"Unicode decode error: {exc}",
@@ -158,7 +159,4 @@ class JSONSerializer(IncrementalPacketSerializer[_ST_contra, _DT_co]):
                 f"JSON decode error: {exc}",
                 remaining_data=remaining_data,
             ) from exc
-        return packet, (document[end:].encode(encoding) + remaining_data).lstrip(b" \t\n\r")
-
-    def get_decoder(self) -> JSONDecoder:
-        return self.__d
+        return packet, (document[end:].encode("ascii") + remaining_data).lstrip(b" \t\n\r")

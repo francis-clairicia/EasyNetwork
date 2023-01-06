@@ -12,20 +12,6 @@ import pytest
 from .base import BaseTestStreamIncrementalPacketDeserializer, DeserializerConsumer
 
 SERIALIZE_PARAMS: list[tuple[Any, bytes]] = [
-    (5, b"5"),
-    (-123, b"-123"),
-    (1.3, b"1.3"),
-    (1e5, b"100000.0"),
-    (float("nan"), b"NaN"),
-    (float("-inf"), b"-Infinity"),
-    (float("+inf"), b"Infinity"),
-    (True, b"true"),
-    (False, b"false"),
-    (None, b"null"),
-    ("", b'""'),
-    ("non-empty", b'"non-empty"'),
-    ('non-empty with "', b'"non-empty with \\""'),
-    ("non-empty with é", b'"non-empty with \xc3\xa9"'),  # Must handle unicode by default
     ([], b"[]"),
     ([1, 2, 3], b"[1,2,3]"),  # No whitespaces by default
     ({}, b"{}"),
@@ -42,10 +28,6 @@ INCREMENTAL_DESERIALIZE_PARAMS: list[tuple[bytes, Any]] = [(output, data) for da
     (
         b'[{"value": "a"}, {"value": 3.14}, {"value": true}, {"value": {"other": [Infinity]}}]',
         [{"value": "a"}, {"value": 3.14}, {"value": True}, {"value": {"other": [float("+inf")]}}],
-    ),
-    (
-        b'"[{\\"value\\": \\"a\\"}, {\\"value\\": 3.14}, {\\"value\\": True}, {\\"value\\": {\\"other\\": [float(\\"nan\\")]}}]"',
-        '[{"value": "a"}, {"value": 3.14}, {"value": True}, {"value": {"other": [float("nan")]}}]',
     ),
     (
         b'{"key": [{"key": "value", "key2": [4, 5, -Infinity]}], "other": null}',
@@ -69,11 +51,11 @@ class TestJSONPacketSerializer:
         # Arrange
 
         # Act
-        output = serializer.serialize(data)
+        output = serializer.serialize([data])
 
         # Assert
         assert isinstance(output, bytes)
-        assert output == expected_output
+        assert output == b"[" + expected_output + b"]"
 
     @pytest.mark.parametrize(["data", "expected_output"], INCREMENTAL_SERIALIZE_PARAMS)
     def test____incremental_serialize(self, serializer: JSONSerializer[Any, Any], data: Any, expected_output: bytes) -> None:
@@ -129,8 +111,8 @@ class TestJSONPacketDeserializer(BaseTestStreamIncrementalPacketDeserializer):
     @pytest.mark.parametrize(
         ["data", "expected_output", "expected_remainder"],
         [
-            pytest.param(b'    "leading-whitespaces""a"', "leading-whitespaces", b'"a"'),
-            pytest.param(b'"trailing-whitespaces"    "a"', "trailing-whitespaces", b'"a"'),
+            pytest.param(b'    ["leading-whitespaces"]"a"', ["leading-whitespaces"], b'"a"'),
+            pytest.param(b'["trailing-whitespaces"]    "a"', ["trailing-whitespaces"], b'"a"'),
         ],
         ids=repr,
     )

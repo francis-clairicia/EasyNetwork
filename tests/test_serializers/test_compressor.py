@@ -42,7 +42,7 @@ def json_data() -> Any:
 
 @pytest.fixture(scope="module")
 def json_encoder() -> json.JSONEncoder:
-    return json.JSONEncoder(ensure_ascii=False, separators=(",", ":"))
+    return json.JSONEncoder()
 
 
 @pytest.fixture(params=[BZ2CompressorSerializer, ZlibCompressorSerializer])
