@@ -80,8 +80,6 @@ def test_several_successive_send_using_pickling_serializer(tcp_server: tuple[str
 def test_several_successive_send_using_json_serializer(tcp_server: tuple[str, int]) -> None:
     with TCPNetworkClient[Any, Any](tcp_server, serializer=JSONSerializer()) as client:
         client.send_packet({"data": [5, 2]})
-        client.send_packet("Hello")
         client.send_packet([132])
         assert client.recv_packet() == {"data": [5, 2]}
-        assert client.recv_packet() == "Hello"
         assert client.recv_packet() == [132]

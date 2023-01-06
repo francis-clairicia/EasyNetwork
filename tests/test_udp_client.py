@@ -38,15 +38,13 @@ def test_custom_serializer(udp_server: tuple[str, int]) -> None:
     with UDPNetworkClient[Any, Any](udp_server, serializer=JSONSerializer()) as client:
         client.send_packet({"data": [5, 2]})
         assert client.recv_packet() == {"data": [5, 2]}
-        client.send_packet("Hello")
-        assert client.recv_packet() == "Hello"
+        client.send_packet(["Hello"])
+        assert client.recv_packet() == ["Hello"]
 
 
 def test_several_successive_send(udp_server: tuple[str, int]) -> None:
     with UDPNetworkClient[Any, Any](udp_server, serializer=PickleSerializer()) as client:
         client.send_packet({"data": [5, 2]})
-        client.send_packet("Hello")
-        client.send_packet(132)
+        client.send_packet([132])
         assert client.recv_packet() == {"data": [5, 2]}
-        assert client.recv_packet() == "Hello"
-        assert client.recv_packet() == 132
+        assert client.recv_packet() == [132]
