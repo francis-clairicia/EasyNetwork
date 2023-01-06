@@ -2,12 +2,12 @@
 # Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
 #
 #
-"""pickle-based network packet protocol module"""
+"""pickle-based network packet serializer module"""
 
 from __future__ import annotations
 
 __all__ = [
-    "PickleNetworkProtocol",
+    "PickleSerializer",
 ]
 
 from io import BytesIO
@@ -19,14 +19,14 @@ if TYPE_CHECKING:
     from pickle import _WritableFileobj, _ReadableFileobj
 
 from .exceptions import DeserializeError
-from .stream.abc import StreamNetworkProtocol
+from .stream.abc import IncrementalPacketSerializer
 from .stream.exceptions import IncrementalDeserializeError
 
 _ST_contra = TypeVar("_ST_contra", contravariant=True)
 _DT_co = TypeVar("_DT_co", covariant=True)
 
 
-class PickleNetworkProtocol(StreamNetworkProtocol[_ST_contra, _DT_co]):
+class PickleSerializer(IncrementalPacketSerializer[_ST_contra, _DT_co]):
     __slots__ = ()
 
     @final

@@ -2,24 +2,24 @@
 # Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
 #
 #
-"""struct.Struct-based network packet protocol module"""
+"""struct.Struct-based network packet serializer module"""
 
 from __future__ import annotations
 
-__all__ = ["AbstractStructNetworkProtocol", "NamedTupleNetworkProtocol"]
+__all__ = ["AbstractStructSerializer", "NamedTupleSerializer"]
 
 from abc import abstractmethod
 from struct import Struct, error as StructError
 from typing import Any, Iterable, Mapping, NamedTuple, TypeVar, final
 
 from .exceptions import DeserializeError
-from .stream.abc import FixedPacketSizeStreamNetworkProtocol
+from .stream.abc import FixedPacketSizePacketSerializer
 
 _ST_contra = TypeVar("_ST_contra", contravariant=True)
 _DT_co = TypeVar("_DT_co", covariant=True)
 
 
-class AbstractStructNetworkProtocol(FixedPacketSizeStreamNetworkProtocol[_ST_contra, _DT_co]):
+class AbstractStructSerializer(FixedPacketSizePacketSerializer[_ST_contra, _DT_co]):
     __slots__ = ("__s",)
 
     def __init__(self, format: str) -> None:
@@ -62,7 +62,7 @@ class AbstractStructNetworkProtocol(FixedPacketSizeStreamNetworkProtocol[_ST_con
 _NT = TypeVar("_NT", bound=NamedTuple)
 
 
-class NamedTupleNetworkProtocol(AbstractStructNetworkProtocol[_NT, _NT]):
+class NamedTupleSerializer(AbstractStructSerializer[_NT, _NT]):
     __slots__ = ("__namedtuple_cls",)
 
     def __init__(self, namedtuple_cls: type[_NT], fields_format: Mapping[str, str], format_endianness: str = "") -> None:

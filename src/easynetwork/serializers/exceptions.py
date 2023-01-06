@@ -2,7 +2,7 @@
 # Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
 #
 #
-"""Network packet protocol exceptions definition module"""
+"""Network packet serializer exceptions definition module"""
 
 from __future__ import annotations
 

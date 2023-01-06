@@ -2,7 +2,7 @@
 # Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
 #
 #
-"""Stream network packet protocol exceptions definition module"""
+"""Stream network packet serializer exceptions definition module"""
 
 from __future__ import annotations
 

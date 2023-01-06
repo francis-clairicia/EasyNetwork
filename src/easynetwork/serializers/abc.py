@@ -2,15 +2,11 @@
 # Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
 #
 #
-"""Abstract base network packet protocol module"""
+"""Abstract base network packet serializer module"""
 
 from __future__ import annotations
 
-__all__ = [
-    "NetworkPacketDeserializer",
-    "NetworkPacketSerializer",
-    "NetworkProtocol",
-]
+__all__ = ["PacketSerializer"]
 
 from abc import ABCMeta, abstractmethod
 from typing import Generic, TypeVar
@@ -19,21 +15,13 @@ _ST_contra = TypeVar("_ST_contra", contravariant=True)
 _DT_co = TypeVar("_DT_co", covariant=True)
 
 
-class NetworkPacketSerializer(Generic[_ST_contra], metaclass=ABCMeta):
+class PacketSerializer(Generic[_ST_contra, _DT_co], metaclass=ABCMeta):
     __slots__ = ("__weakref__",)
 
     @abstractmethod
     def serialize(self, packet: _ST_contra) -> bytes:
         raise NotImplementedError
 
-
-class NetworkPacketDeserializer(Generic[_DT_co], metaclass=ABCMeta):
-    __slots__ = ("__weakref__",)
-
     @abstractmethod
     def deserialize(self, data: bytes) -> _DT_co:
         raise NotImplementedError
-
-
-class NetworkProtocol(NetworkPacketSerializer[_ST_contra], NetworkPacketDeserializer[_DT_co], Generic[_ST_contra, _DT_co]):
-    __slots__ = ()

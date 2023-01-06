@@ -2,17 +2,15 @@
 # Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
 #
 #
-"""Stream network packet protocol handler module"""
+"""Stream network packet serializer handler module"""
 
 from __future__ import annotations
 
 __all__ = [
-    "AutoParsedStreamNetworkProtocol",
-    "AutoSeparatedStreamNetworkProtocol",
-    "FixedPacketSizeStreamNetworkProtocol",
-    "NetworkPacketIncrementalDeserializer",
-    "NetworkPacketIncrementalSerializer",
-    "StreamNetworkProtocol",
+    "AutoParsedPacketSerializer",
+    "AutoSeparatedPacketSerializer",
+    "FixedPacketSizePacketSerializer",
+    "IncrementalPacketSerializer",
 ]
 
 import hashlib
@@ -22,7 +20,7 @@ from io import BytesIO
 from struct import Struct, error as StructError
 from typing import Any, Generator, TypeVar, final
 
-from ..abc import NetworkPacketDeserializer, NetworkPacketSerializer, NetworkProtocol
+from ..abc import PacketSerializer
 from ..exceptions import DeserializeError
 from .exceptions import IncrementalDeserializeError
 
@@ -30,7 +28,7 @@ _ST_contra = TypeVar("_ST_contra", contravariant=True)
 _DT_co = TypeVar("_DT_co", covariant=True)
 
 
-class NetworkPacketIncrementalSerializer(NetworkPacketSerializer[_ST_contra]):
+class IncrementalPacketSerializer(PacketSerializer[_ST_contra, _DT_co]):
     __slots__ = ()
 
     def serialize(self, packet: _ST_contra) -> bytes:
@@ -41,10 +39,6 @@ class NetworkPacketIncrementalSerializer(NetworkPacketSerializer[_ST_contra]):
     @abstractmethod
     def incremental_serialize(self, packet: _ST_contra) -> Generator[bytes, None, None]:
         raise NotImplementedError
-
-
-class NetworkPacketIncrementalDeserializer(NetworkPacketDeserializer[_DT_co]):
-    __slots__ = ()
 
     def deserialize(self, data: bytes) -> _DT_co:
         consumer: Generator[None, bytes, tuple[_DT_co, bytes]] = self.incremental_deserialize()
@@ -68,15 +62,7 @@ class NetworkPacketIncrementalDeserializer(NetworkPacketDeserializer[_DT_co]):
         raise NotImplementedError
 
 
-class StreamNetworkProtocol(
-    NetworkProtocol[_ST_contra, _DT_co],
-    NetworkPacketIncrementalSerializer[_ST_contra],
-    NetworkPacketIncrementalDeserializer[_DT_co],
-):
-    __slots__ = ()
-
-
-class AutoSeparatedStreamNetworkProtocol(StreamNetworkProtocol[_ST_contra, _DT_co]):
+class AutoSeparatedPacketSerializer(IncrementalPacketSerializer[_ST_contra, _DT_co]):
     __slots__ = ("__separator", "__keepends")
 
     def __init__(self, separator: bytes, *, keepends: bool = False, **kwargs: Any) -> None:
@@ -134,7 +120,7 @@ class AutoSeparatedStreamNetworkProtocol(StreamNetworkProtocol[_ST_contra, _DT_c
         return self.__keepends
 
 
-class AutoParsedStreamNetworkProtocol(StreamNetworkProtocol[_ST_contra, _DT_co]):
+class AutoParsedPacketSerializer(IncrementalPacketSerializer[_ST_contra, _DT_co]):
     __slots__ = ("__magic", "__algorithm")
 
     def __init__(self, magic: bytes, *, checksum: str = "md5", checksum_guaranteed: bool = True, **kwargs: Any) -> None:
@@ -231,7 +217,7 @@ class AutoParsedStreamNetworkProtocol(StreamNetworkProtocol[_ST_contra, _DT_co])
         return self.__algorithm
 
 
-class FixedPacketSizeStreamNetworkProtocol(StreamNetworkProtocol[_ST_contra, _DT_co]):
+class FixedPacketSizePacketSerializer(IncrementalPacketSerializer[_ST_contra, _DT_co]):
     __slots__ = ("__size",)
 
     def __init__(self, size: int, **kwargs: Any) -> None:

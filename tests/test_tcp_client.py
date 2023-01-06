@@ -8,13 +8,13 @@ from socket import AF_INET, SOCK_STREAM, socket as Socket
 from typing import Any, Generator
 
 from easynetwork.client.tcp import TCPNetworkClient
-from easynetwork.protocol import JSONNetworkProtocol, PickleNetworkProtocol, StreamNetworkProtocol
+from easynetwork.serializers import IncrementalPacketSerializer, JSONSerializer, PickleSerializer
 
 import pytest
 
 
 def test_default(tcp_server: tuple[str, int]) -> None:
-    with TCPNetworkClient[Any, Any](tcp_server, PickleNetworkProtocol()) as client:
+    with TCPNetworkClient[Any, Any](tcp_server, PickleSerializer()) as client:
         client.send_packet({"data": [5, 2]})
         assert client.recv_packet() == {"data": [5, 2]}
         client.send_packet("Hello")
@@ -28,14 +28,14 @@ def test_default(tcp_server: tuple[str, int]) -> None:
 def test_custom_socket(tcp_server: tuple[str, int]) -> None:
     with Socket(AF_INET, SOCK_STREAM) as s:
         s.connect(tcp_server)
-        client: TCPNetworkClient[Any, Any] = TCPNetworkClient(s, PickleNetworkProtocol())
+        client: TCPNetworkClient[Any, Any] = TCPNetworkClient(s, PickleSerializer())
         client.send_packet({"data": [5, 2]})
         assert client.recv_packet() == {"data": [5, 2]}
         client.send_packet("Hello")
         assert client.recv_packet() == "Hello"
 
 
-class StringNetworkProtocol(StreamNetworkProtocol[str, str]):
+class StringSerializer(IncrementalPacketSerializer[str, str]):
     def incremental_serialize(self, packet: str) -> Generator[bytes, None, None]:
         if not isinstance(packet, str):
             raise ValueError("Invalid string")
@@ -51,7 +51,7 @@ class StringNetworkProtocol(StreamNetworkProtocol[str, str]):
 
 
 def test_multiple_requests(tcp_server: tuple[str, int]) -> None:
-    with TCPNetworkClient(tcp_server, protocol=StringNetworkProtocol()) as client:
+    with TCPNetworkClient(tcp_server, serializer=StringSerializer()) as client:
         client.send_packet("A\nB\nC\nD\n")
         time.sleep(0.1)
         assert client.recv_all_packets() == ["A", "B", "C", "D"]
@@ -67,8 +67,8 @@ def test_multiple_requests(tcp_server: tuple[str, int]) -> None:
             client.send_packet(5)  # type: ignore[arg-type]
 
 
-def test_several_successive_send_using_pickling_protocol(tcp_server: tuple[str, int]) -> None:
-    with TCPNetworkClient[Any, Any](tcp_server, protocol=PickleNetworkProtocol()) as client:
+def test_several_successive_send_using_pickling_serializer(tcp_server: tuple[str, int]) -> None:
+    with TCPNetworkClient[Any, Any](tcp_server, serializer=PickleSerializer()) as client:
         client.send_packet({"data": [5, 2]})
         client.send_packet("Hello")
         client.send_packet(132)
@@ -77,8 +77,8 @@ def test_several_successive_send_using_pickling_protocol(tcp_server: tuple[str, 
         assert client.recv_packet() == 132
 
 
-def test_several_successive_send_using_json_protocol(tcp_server: tuple[str, int]) -> None:
-    with TCPNetworkClient[Any, Any](tcp_server, protocol=JSONNetworkProtocol()) as client:
+def test_several_successive_send_using_json_serializer(tcp_server: tuple[str, int]) -> None:
+    with TCPNetworkClient[Any, Any](tcp_server, serializer=JSONSerializer()) as client:
         client.send_packet({"data": [5, 2]})
         client.send_packet("Hello")
         client.send_packet([132])

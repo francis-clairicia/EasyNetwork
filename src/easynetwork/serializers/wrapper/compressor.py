@@ -2,13 +2,13 @@
 # Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
 #
 #
-"""Data compressor protocol module"""
+"""Data compressor serializer module"""
 
 from __future__ import annotations
 
 __all__ = [
-    "BZ2CompressorNetworkProtocol",
-    "ZlibCompressorNetworkProtocol",
+    "BZ2CompressorSerializer",
+    "ZlibCompressorSerializer",
 ]
 
 import abc
@@ -17,9 +17,9 @@ import zlib
 from collections import deque
 from typing import Generator, Protocol, TypeVar, final
 
-from ..abc import NetworkProtocol
+from ..abc import PacketSerializer
 from ..exceptions import DeserializeError
-from ..stream.abc import StreamNetworkProtocol
+from ..stream.abc import IncrementalPacketSerializer
 from ..stream.exceptions import IncrementalDeserializeError
 
 _ST_contra = TypeVar("_ST_contra", contravariant=True)
@@ -52,17 +52,17 @@ class Decompressor(Protocol, metaclass=abc.ABCMeta):
         raise NotImplementedError
 
 
-class AbstractCompressorNetworkProtocol(StreamNetworkProtocol[_ST_contra, _DT_co]):
-    __slots__ = ("__protocol", "__trailing_error")
+class AbstractCompressorSerializer(IncrementalPacketSerializer[_ST_contra, _DT_co]):
+    __slots__ = ("__serializer", "__trailing_error")
 
     def __init__(
         self,
-        protocol: NetworkProtocol[_ST_contra, _DT_co],
+        serializer: PacketSerializer[_ST_contra, _DT_co],
         trailing_error: type[Exception] | tuple[type[Exception], ...],
     ) -> None:
-        assert isinstance(protocol, NetworkProtocol)
+        assert isinstance(serializer, PacketSerializer)
         super().__init__()
-        self.__protocol: NetworkProtocol[_ST_contra, _DT_co] = protocol
+        self.__serializer: PacketSerializer[_ST_contra, _DT_co] = serializer
         self.__trailing_error: type[Exception] | tuple[type[Exception], ...] = trailing_error
 
     @abc.abstractmethod
@@ -76,15 +76,15 @@ class AbstractCompressorNetworkProtocol(StreamNetworkProtocol[_ST_contra, _DT_co
     @final
     def serialize(self, packet: _ST_contra) -> bytes:
         compressor = self.new_compressor_stream()
-        return compressor.compress(self.__protocol.serialize(packet)) + compressor.flush()
+        return compressor.compress(self.__serializer.serialize(packet)) + compressor.flush()
 
     @final
     def incremental_serialize(self, packet: _ST_contra) -> Generator[bytes, None, None]:
-        protocol = self.__protocol
+        serializer = self.__serializer
         compressor = self.new_compressor_stream()
-        if isinstance(protocol, StreamNetworkProtocol):
-            yield from filter(bool, map(compressor.compress, protocol.incremental_serialize(packet)))
-        elif data := compressor.compress(protocol.serialize(packet)):
+        if isinstance(serializer, IncrementalPacketSerializer):
+            yield from filter(bool, map(compressor.compress, serializer.incremental_serialize(packet)))
+        elif data := compressor.compress(serializer.serialize(packet)):
             yield data
         yield compressor.flush()
 
@@ -101,16 +101,16 @@ class AbstractCompressorNetworkProtocol(StreamNetworkProtocol[_ST_contra, _DT_co
             raise DeserializeError("Compressed data ended before the end-of-stream marker was reached")
         if decompressor.unused_data:
             raise DeserializeError("Trailing data error")
-        return self.__protocol.deserialize(data)
+        return self.__serializer.deserialize(data)
 
     @final
     def incremental_deserialize(self) -> Generator[None, bytes, tuple[_DT_co, bytes]]:
-        protocol = self.__protocol
+        serializer = self.__serializer
 
-        if isinstance(protocol, StreamNetworkProtocol):
+        if isinstance(serializer, IncrementalPacketSerializer):
             _last_chunk: bytes | None = None
 
-            _consumer = protocol.incremental_deserialize()
+            _consumer = serializer.incremental_deserialize()
             next(_consumer)
 
             def add_chunk(chunk: bytes) -> None:
@@ -166,7 +166,7 @@ class AbstractCompressorNetworkProtocol(StreamNetworkProtocol[_ST_contra, _DT_co
             def finish(unused_data: bytes) -> tuple[_DT_co, bytes]:
                 data: bytes = b"".join(_results)
                 try:
-                    packet = protocol.deserialize(data)
+                    packet = serializer.deserialize(data)
                 except DeserializeError as exc:
                     raise IncrementalDeserializeError(
                         f"Error while deserializing decompressed data: {exc}",
@@ -190,11 +190,11 @@ class AbstractCompressorNetworkProtocol(StreamNetworkProtocol[_ST_contra, _DT_co
         return finish(decompressor.unused_data)
 
 
-class BZ2CompressorNetworkProtocol(AbstractCompressorNetworkProtocol[_ST_contra, _DT_co]):
+class BZ2CompressorSerializer(AbstractCompressorSerializer[_ST_contra, _DT_co]):
     __slots__ = ("__compresslevel",)
 
-    def __init__(self, protocol: NetworkProtocol[_ST_contra, _DT_co], *, compresslevel: int = 9) -> None:
-        super().__init__(protocol=protocol, trailing_error=OSError)
+    def __init__(self, serializer: PacketSerializer[_ST_contra, _DT_co], *, compresslevel: int = 9) -> None:
+        super().__init__(serializer=serializer, trailing_error=OSError)
         self.__compresslevel: int = int(compresslevel)
 
     @final
@@ -206,12 +206,12 @@ class BZ2CompressorNetworkProtocol(AbstractCompressorNetworkProtocol[_ST_contra,
         return bz2.BZ2Decompressor()
 
 
-class ZlibCompressorNetworkProtocol(AbstractCompressorNetworkProtocol[_ST_contra, _DT_co]):
+class ZlibCompressorSerializer(AbstractCompressorSerializer[_ST_contra, _DT_co]):
     __slots__ = ("__compresslevel",)
 
-    def __init__(self, protocol: NetworkProtocol[_ST_contra, _DT_co], *, compresslevel: int = zlib.Z_BEST_COMPRESSION) -> None:
-        assert isinstance(protocol, NetworkProtocol)
-        super().__init__(protocol=protocol, trailing_error=zlib.error)
+    def __init__(self, serializer: PacketSerializer[_ST_contra, _DT_co], *, compresslevel: int = zlib.Z_BEST_COMPRESSION) -> None:
+        assert isinstance(serializer, PacketSerializer)
+        super().__init__(serializer=serializer, trailing_error=zlib.error)
         self.__compresslevel: int = int(compresslevel)
 
     @final

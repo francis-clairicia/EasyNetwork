@@ -8,7 +8,7 @@ from time import sleep
 from typing import Any
 
 from easynetwork.client import UDPNetworkEndpoint
-from easynetwork.protocol import PickleNetworkProtocol
+from easynetwork.serializers import PickleSerializer
 from easynetwork.server import AbstractUDPNetworkServer
 from easynetwork.server.executors import ForkingRequestExecutor, ThreadingRequestExecutor
 from easynetwork.tools.socket import SocketAddress
@@ -27,7 +27,7 @@ _RANDOM_HOST_PORT = ("localhost", 0)
 
 
 def test_serve_forever_default() -> None:
-    with _TestServer(_RANDOM_HOST_PORT, PickleNetworkProtocol) as server:
+    with _TestServer(_RANDOM_HOST_PORT, PickleSerializer) as server:
         assert not server.running()
         t: Thread = Thread(target=server.serve_forever)
         t.start()
@@ -39,7 +39,7 @@ def test_serve_forever_default() -> None:
 
 
 def test_serve_forever_context_shut_down() -> None:
-    with _TestServer(_RANDOM_HOST_PORT, PickleNetworkProtocol) as server:
+    with _TestServer(_RANDOM_HOST_PORT, PickleSerializer) as server:
         t: Thread = Thread(target=server.serve_forever)
         t.start()
         sleep(0.15)
@@ -55,23 +55,23 @@ class _TestServiceActionServer(_TestServer):
 
 
 def test_service_actions() -> None:
-    with _TestServiceActionServer(_RANDOM_HOST_PORT, PickleNetworkProtocol) as server:
+    with _TestServiceActionServer(_RANDOM_HOST_PORT, PickleSerializer) as server:
         run_server_in_thread(server)
         sleep(0.3)
     assert getattr(server, "service_actions_called", False)
 
 
-from .test_tcp_server import _IntegerNetworkProtocol
+from .test_tcp_server import _IntegerSerializer
 
 
 def test_request_handling() -> None:
-    with _TestServer(_RANDOM_HOST_PORT, protocol_factory=_IntegerNetworkProtocol) as server:
+    with _TestServer(_RANDOM_HOST_PORT, serializer_factory=_IntegerSerializer) as server:
         address = server.address
         run_server_in_thread(server)
         with (
-            UDPNetworkEndpoint(protocol=_IntegerNetworkProtocol()) as client_1,
-            UDPNetworkEndpoint(protocol=_IntegerNetworkProtocol()) as client_2,
-            UDPNetworkEndpoint(protocol=_IntegerNetworkProtocol()) as client_3,
+            UDPNetworkEndpoint(serializer=_IntegerSerializer()) as client_1,
+            UDPNetworkEndpoint(serializer=_IntegerSerializer()) as client_2,
+            UDPNetworkEndpoint(serializer=_IntegerSerializer()) as client_3,
         ):
             client_1.send_packet(address, 350)
             client_2.send_packet(address, -634)
@@ -90,9 +90,9 @@ class _TestThreadingServer(AbstractUDPNetworkServer[Any, Any]):
 
 
 def test_threading_server() -> None:
-    with _TestThreadingServer(_RANDOM_HOST_PORT, PickleNetworkProtocol, request_executor=ThreadingRequestExecutor()) as server:
+    with _TestThreadingServer(_RANDOM_HOST_PORT, PickleSerializer, request_executor=ThreadingRequestExecutor()) as server:
         run_server_in_thread(server)
-        with UDPNetworkEndpoint[Any, Any](server.protocol()) as client:
+        with UDPNetworkEndpoint[Any, Any](server.serializer()) as client:
             packet = {"data": 1}
             client.send_packet(server.address, packet)
             response: tuple[Any, bool] = client.recv_packet_from_anyone()[0]
@@ -111,9 +111,9 @@ class _TestForkingServer(AbstractUDPNetworkServer[Any, Any]):
 def test_forking_server() -> None:
     from os import getpid
 
-    with _TestForkingServer(_RANDOM_HOST_PORT, PickleNetworkProtocol, request_executor=ForkingRequestExecutor()) as server:
+    with _TestForkingServer(_RANDOM_HOST_PORT, PickleSerializer, request_executor=ForkingRequestExecutor()) as server:
         run_server_in_thread(server)
-        with UDPNetworkEndpoint[Any, Any](server.protocol()) as client:
+        with UDPNetworkEndpoint[Any, Any](server.serializer()) as client:
             for _ in range(2):
                 packet = {"data": 1}
                 client.send_packet(server.address, packet)

@@ -2,18 +2,18 @@
 # Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
 #
 #
-"""json-based network packet protocol module"""
+"""json-based network packet serializer module"""
 
 from __future__ import annotations
 
-__all__ = ["JSONNetworkProtocol"]
+__all__ = ["JSONSerializer"]
 
 from collections import Counter
 from json import JSONDecodeError, JSONDecoder, JSONEncoder
 from typing import Generator, TypeVar, final
 
 from .exceptions import DeserializeError
-from .stream.abc import StreamNetworkProtocol
+from .stream.abc import IncrementalPacketSerializer
 from .stream.exceptions import IncrementalDeserializeError
 
 _ST_contra = TypeVar("_ST_contra", contravariant=True)
@@ -66,7 +66,7 @@ class _JSONParser:
         return complete_document, partial_document
 
 
-class JSONNetworkProtocol(StreamNetworkProtocol[_ST_contra, _DT_co]):
+class JSONSerializer(IncrementalPacketSerializer[_ST_contra, _DT_co]):
     __slots__ = ("__e", "__d")
 
     def __init__(self, *, encoder: JSONEncoder | None = None, decoder: JSONDecoder | None = None) -> None:

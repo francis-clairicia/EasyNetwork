@@ -2,7 +2,7 @@
 # Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
 #
 #
-"""Stream network packet protocol handler module"""
+"""Stream network packet serializer handler module"""
 
 from __future__ import annotations
 
@@ -13,11 +13,11 @@ __all__ = [
 
 from collections import deque
 from threading import RLock
-from typing import Generator, Generic, Iterator, Literal, TypeVar, final
+from typing import Any, Generator, Generic, Iterator, Literal, TypeVar, final
 
-from ..protocol.exceptions import DeserializeError
-from ..protocol.stream.abc import NetworkPacketIncrementalDeserializer, NetworkPacketIncrementalSerializer
-from ..protocol.stream.exceptions import IncrementalDeserializeError
+from ..serializers.exceptions import DeserializeError
+from ..serializers.stream.abc import IncrementalPacketSerializer
+from ..serializers.stream.exceptions import IncrementalDeserializeError
 
 _ST_contra = TypeVar("_ST_contra", contravariant=True)
 _DT_co = TypeVar("_DT_co", covariant=True)
@@ -27,10 +27,10 @@ _DT_co = TypeVar("_DT_co", covariant=True)
 class StreamNetworkDataProducerReader(Generic[_ST_contra]):
     __slots__ = ("__s", "__q", "__b", "__lock")
 
-    def __init__(self, serializer: NetworkPacketIncrementalSerializer[_ST_contra], *, lock: RLock | None = None) -> None:
+    def __init__(self, serializer: IncrementalPacketSerializer[_ST_contra, Any], *, lock: RLock | None = None) -> None:
         super().__init__()
-        assert isinstance(serializer, NetworkPacketIncrementalSerializer)
-        self.__s: NetworkPacketIncrementalSerializer[_ST_contra] = serializer
+        assert isinstance(serializer, IncrementalPacketSerializer)
+        self.__s: IncrementalPacketSerializer[_ST_contra, Any] = serializer
         self.__q: deque[Generator[bytes, None, None]] = deque()
         self.__b: bytes = b""
         self.__lock: RLock = lock or RLock()
@@ -89,10 +89,10 @@ class StreamNetworkDataProducerReader(Generic[_ST_contra]):
 class StreamNetworkDataProducerIterator(Generic[_ST_contra]):
     __slots__ = ("__s", "__q", "__lock")
 
-    def __init__(self, serializer: NetworkPacketIncrementalSerializer[_ST_contra], *, lock: RLock | None = None) -> None:
+    def __init__(self, serializer: IncrementalPacketSerializer[_ST_contra, Any], *, lock: RLock | None = None) -> None:
         super().__init__()
-        assert isinstance(serializer, NetworkPacketIncrementalSerializer)
-        self.__s: NetworkPacketIncrementalSerializer[_ST_contra] = serializer
+        assert isinstance(serializer, IncrementalPacketSerializer)
+        self.__s: IncrementalPacketSerializer[_ST_contra, Any] = serializer
         self.__q: deque[Generator[bytes, None, None]] = deque()
         self.__lock: RLock = lock or RLock()
 
@@ -123,11 +123,11 @@ class StreamNetworkDataProducerIterator(Generic[_ST_contra]):
 
 @final
 class StreamNetworkDataConsumer(Generic[_DT_co]):
-    __slots__ = ("__d", "__b", "__c", "__u", "__lock", "__on_error")
+    __slots__ = ("__s", "__b", "__c", "__u", "__lock", "__on_error")
 
     def __init__(
         self,
-        deserializer: NetworkPacketIncrementalDeserializer[_DT_co],
+        serializer: IncrementalPacketSerializer[Any, _DT_co],
         *,
         lock: RLock | None = None,
         on_error: Literal["raise", "ignore"] = "raise",
@@ -135,8 +135,8 @@ class StreamNetworkDataConsumer(Generic[_DT_co]):
         if on_error not in ("raise", "ignore"):
             raise ValueError("Invalid on_error value")
         super().__init__()
-        assert isinstance(deserializer, NetworkPacketIncrementalDeserializer)
-        self.__d: NetworkPacketIncrementalDeserializer[_DT_co] = deserializer
+        assert isinstance(serializer, IncrementalPacketSerializer)
+        self.__s: IncrementalPacketSerializer[Any, _DT_co] = serializer
         self.__c: Generator[None, bytes, tuple[_DT_co, bytes]] | None = None
         self.__b: bytes = b""
         self.__u: bytes = b""
@@ -153,7 +153,7 @@ class StreamNetworkDataConsumer(Generic[_DT_co]):
             if chunk:
                 consumer, self.__c = self.__c, None
                 if consumer is None:
-                    consumer = self.__d.incremental_deserialize()
+                    consumer = self.__s.incremental_deserialize()
                     next(consumer)
                 packet: _DT_co
                 try:

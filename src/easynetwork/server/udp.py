@@ -15,7 +15,7 @@ from threading import Event, RLock
 from typing import Any, Callable, Generic, TypeAlias, TypeVar, final, overload
 
 from ..client.udp import UDPNetworkEndpoint
-from ..protocol.abc import NetworkProtocol
+from ..serializers.abc import PacketSerializer
 from ..tools.socket import AF_INET, SocketAddress, create_server
 from .abc import AbstractNetworkServer
 from .executors.abc import AbstractRequestExecutor
@@ -24,7 +24,7 @@ from .executors.sync import SyncRequestExecutor
 _RequestT = TypeVar("_RequestT")
 _ResponseT = TypeVar("_ResponseT")
 
-NetworkProtocolFactory: TypeAlias = Callable[[], NetworkProtocol[_ResponseT, _RequestT]]
+PacketSerializerFactory: TypeAlias = Callable[[], PacketSerializer[_ResponseT, _RequestT]]
 
 _default_global_executor = SyncRequestExecutor()
 
@@ -36,14 +36,14 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         "__lock",
         "__loop",
         "__is_shutdown",
-        "__protocol_cls",
+        "__serializer_factory",
         "__request_executor",
     )
 
     def __init__(
         self,
         address: tuple[str, int] | tuple[str, int, int, int],
-        protocol_factory: NetworkProtocolFactory[_ResponseT, _RequestT],
+        serializer_factory: PacketSerializerFactory[_ResponseT, _RequestT],
         *,
         family: int = AF_INET,
         reuse_port: bool = False,
@@ -51,8 +51,8 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         recv_flags: int = 0,
         request_executor: AbstractRequestExecutor | None = None,
     ) -> None:
-        protocol = protocol_factory()
-        if not isinstance(protocol, NetworkProtocol):
+        serializer = serializer_factory()
+        if not isinstance(serializer, PacketSerializer):
             raise TypeError("Invalid arguments")
         send_flags = int(send_flags)
         recv_flags = int(recv_flags)
@@ -66,7 +66,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         )
         socket.settimeout(0)
         self.__server: UDPNetworkEndpoint[_ResponseT, _RequestT] = UDPNetworkEndpoint(
-            protocol=protocol,
+            serializer=serializer,
             socket=socket,
             give=True,
             send_flags=send_flags,
@@ -80,7 +80,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         self.__loop: bool = False
         self.__is_shutdown: Event = Event()
         self.__is_shutdown.set()
-        self.__protocol_cls: NetworkProtocolFactory[_ResponseT, _RequestT] = protocol_factory
+        self.__serializer_factory: PacketSerializerFactory[_ResponseT, _RequestT] = serializer_factory
         super().__init__()
 
     def serve_forever(self) -> None:
@@ -187,8 +187,8 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     def bad_request(self, client_address: SocketAddress) -> None:  # TODO: handle BlockingIOError/InterruptedError
         pass
 
-    def protocol(self) -> NetworkProtocol[_ResponseT, _RequestT]:
-        return self.__protocol_cls()
+    def serializer(self) -> PacketSerializer[_ResponseT, _RequestT]:
+        return self.__serializer_factory()
 
     @overload
     def getsockopt(self, __level: int, __optname: int, /) -> int:

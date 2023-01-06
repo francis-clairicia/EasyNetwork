@@ -2,13 +2,13 @@
 # Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
 #
 #
-"""EasyNetwork's packet protocol module"""
+"""EasyNetwork's packet serializer module"""
 
 from __future__ import annotations
 
 __all__ = [
-    "BZ2CompressorNetworkProtocol",
-    "ZlibCompressorNetworkProtocol",
+    "BZ2CompressorSerializer",
+    "ZlibCompressorSerializer",
 ]
 
 from .compressor import *

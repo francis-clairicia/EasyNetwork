@@ -14,8 +14,8 @@ from socket import socket as Socket
 from threading import RLock
 from typing import Any, Generic, Iterator, Literal, TypeVar, final, overload
 
-from ..protocol.exceptions import DeserializeError
-from ..protocol.stream.abc import StreamNetworkProtocol
+from ..serializers.exceptions import DeserializeError
+from ..serializers.stream.abc import IncrementalPacketSerializer
 from ..tools.socket import DEFAULT_TIMEOUT, SHUT_WR, SocketAddress, create_connection, guess_best_buffer_size, new_socket_address
 from ..tools.stream import StreamNetworkDataConsumer, StreamNetworkDataProducerIterator
 from .abc import AbstractNetworkClient, InvalidPacket
@@ -53,7 +53,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         self,
         address: tuple[str, int],
         /,
-        protocol: StreamNetworkProtocol[_SentPacketT, _ReceivedPacketT],
+        serializer: IncrementalPacketSerializer[_SentPacketT, _ReceivedPacketT],
         *,
         timeout: float | None = ...,
         source_address: tuple[str, int] | None = ...,
@@ -69,7 +69,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         self,
         socket: Socket,
         /,
-        protocol: StreamNetworkProtocol[_SentPacketT, _ReceivedPacketT],
+        serializer: IncrementalPacketSerializer[_SentPacketT, _ReceivedPacketT],
         *,
         give: bool = ...,
         send_flags: int = ...,
@@ -83,7 +83,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         self,
         __arg: Socket | tuple[str, int],
         /,
-        protocol: StreamNetworkProtocol[_SentPacketT, _ReceivedPacketT],
+        serializer: IncrementalPacketSerializer[_SentPacketT, _ReceivedPacketT],
         *,
         send_flags: int = 0,
         recv_flags: int = 0,
@@ -91,7 +91,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         buffered_write: bool = False,
         **kwargs: Any,
     ) -> None:
-        if not isinstance(protocol, StreamNetworkProtocol):
+        if not isinstance(serializer, IncrementalPacketSerializer):
             raise TypeError("Invalid argument")
         send_flags = int(send_flags)
         recv_flags = int(recv_flags)
@@ -123,8 +123,10 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         self.__socket: Socket = socket
         self.__lock: RLock = RLock()
         self.__chunk_size: int = guess_best_buffer_size(socket)
-        self.__producer: StreamNetworkDataProducerIterator[_SentPacketT] = StreamNetworkDataProducerIterator(protocol)
-        self.__consumer: StreamNetworkDataConsumer[_ReceivedPacketT] = StreamNetworkDataConsumer(protocol, on_error=on_recv_error)
+        self.__producer: StreamNetworkDataProducerIterator[_SentPacketT] = StreamNetworkDataProducerIterator(serializer)
+        self.__consumer: StreamNetworkDataConsumer[_ReceivedPacketT] = StreamNetworkDataConsumer(
+            serializer, on_error=on_recv_error
+        )
         self.__default_send_flags: int = send_flags
         self.__default_recv_flags: int = recv_flags
         self.__buffered_write: bool = bool(buffered_write)

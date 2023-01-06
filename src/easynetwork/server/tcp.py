@@ -22,8 +22,8 @@ from threading import Event, RLock
 from typing import Any, Callable, Final, Generic, Iterator, Sequence, TypeAlias, TypeVar, final, overload
 from weakref import WeakKeyDictionary
 
-from ..protocol.exceptions import DeserializeError
-from ..protocol.stream.abc import StreamNetworkProtocol
+from ..serializers.exceptions import DeserializeError
+from ..serializers.stream.abc import IncrementalPacketSerializer
 from ..tools.socket import AF_INET, SocketAddress, create_server, guess_best_buffer_size, new_socket_address
 from ..tools.stream import StreamNetworkDataConsumer, StreamNetworkDataProducerReader
 from .abc import AbstractNetworkServer
@@ -88,7 +88,7 @@ class ConnectedClient(Generic[_ResponseT], metaclass=ABCMeta):
         return self.__addr
 
 
-StreamNetworkProtocolFactory: TypeAlias = Callable[[], StreamNetworkProtocol[_ResponseT, _RequestT]]
+IncrementalPacketSerializerFactory: TypeAlias = Callable[[], IncrementalPacketSerializer[_ResponseT, _RequestT]]
 
 
 _default_global_executor = SyncRequestExecutor()
@@ -98,7 +98,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     __slots__ = (
         "__socket",
         "__addr",
-        "__protocol_cls",
+        "__serializer_factory",
         "__request_executor",
         "__closed",
         "__lock",
@@ -116,7 +116,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     def __init__(
         self,
         address: tuple[str, int] | tuple[str, int, int, int],
-        protocol_factory: StreamNetworkProtocolFactory[_ResponseT, _RequestT],
+        serializer_factory: IncrementalPacketSerializerFactory[_ResponseT, _RequestT],
         *,
         family: int = AF_INET,
         backlog: int | None = None,
@@ -128,7 +128,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         disable_nagle_algorithm: bool = False,
         request_executor: AbstractRequestExecutor | None = None,
     ) -> None:
-        if not callable(protocol_factory):
+        if not callable(serializer_factory):
             raise TypeError("Invalid arguments")
         send_flags = int(send_flags)
         recv_flags = int(recv_flags)
@@ -147,7 +147,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         self.__default_backlog: int | None = backlog
         self.__addr: SocketAddress = new_socket_address(self.__socket.getsockname(), self.__socket.family)
         self.__closed: bool = False
-        self.__protocol_cls: StreamNetworkProtocolFactory[_ResponseT, _RequestT] = protocol_factory
+        self.__serializer_factory: IncrementalPacketSerializerFactory[_ResponseT, _RequestT] = serializer_factory
         self.__lock: RLock = RLock()
         self.__loop: bool = False
         self.__is_shutdown: Event = Event()
@@ -206,7 +206,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                     socket.close()
                 return
             key_data = _SelectorKeyData(
-                protocol=self.__protocol_cls(),
+                serializer=self.__serializer_factory(),
                 socket=socket,
                 address=address,
                 flush=_flush_client_data_hook,
@@ -502,8 +502,8 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 with self.__lock:
                     selector.register(key.fileobj, key.events, key.data)
 
-    def protocol(self) -> StreamNetworkProtocol[_ResponseT, _RequestT]:
-        return self.__protocol_cls()
+    def serializer(self) -> IncrementalPacketSerializer[_ResponseT, _RequestT]:
+        return self.__serializer_factory()
 
     @overload
     def getsockopt(self, __level: int, __optname: int, /) -> int:
@@ -569,7 +569,7 @@ class _SelectorKeyData(Generic[_RequestT, _ResponseT]):
     def __init__(
         self,
         *,
-        protocol: StreamNetworkProtocol[_ResponseT, _RequestT],
+        serializer: IncrementalPacketSerializer[_ResponseT, _RequestT],
         socket: Socket,
         address: SocketAddress,
         flush: Callable[[Socket], None],
@@ -577,8 +577,8 @@ class _SelectorKeyData(Generic[_RequestT, _ResponseT]):
         is_closed: Callable[[Socket], bool],
         flush_on_send: bool,
     ) -> None:
-        self.producer = StreamNetworkDataProducerReader(protocol)
-        self.consumer = StreamNetworkDataConsumer(protocol, on_error="raise")
+        self.producer = StreamNetworkDataProducerReader(serializer)
+        self.consumer = StreamNetworkDataConsumer(serializer, on_error="raise")
         self.chunk_size = guess_best_buffer_size(socket)
         self.client = self.__ConnectedTCPClient(
             producer=self.producer,

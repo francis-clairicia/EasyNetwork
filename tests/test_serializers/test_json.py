@@ -5,11 +5,11 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from easynetwork.protocol.json import JSONNetworkProtocol
+from easynetwork.serializers.json import JSONSerializer
 
 import pytest
 
-from .base import BaseTestStreamPacketIncrementalDeserializer, DeserializerConsumer
+from .base import BaseTestStreamIncrementalPacketDeserializer, DeserializerConsumer
 
 SERIALIZE_PARAMS: list[tuple[Any, bytes]] = [
     (5, b"5"),
@@ -59,48 +59,48 @@ INCREMENTAL_DESERIALIZE_PARAMS: list[tuple[bytes, Any]] = [(output, data) for da
 
 
 @pytest.fixture
-def protocol() -> JSONNetworkProtocol[Any, Any]:
-    return JSONNetworkProtocol()
+def serializer() -> JSONSerializer[Any, Any]:
+    return JSONSerializer()
 
 
 class TestJSONPacketSerializer:
     @pytest.mark.parametrize(["data", "expected_output"], SERIALIZE_PARAMS)
-    def test____serialize(self, protocol: JSONNetworkProtocol[Any, Any], data: Any, expected_output: bytes) -> None:
+    def test____serialize(self, serializer: JSONSerializer[Any, Any], data: Any, expected_output: bytes) -> None:
         # Arrange
 
         # Act
-        output = protocol.serialize(data)
+        output = serializer.serialize(data)
 
         # Assert
         assert isinstance(output, bytes)
         assert output == expected_output
 
     @pytest.mark.parametrize(["data", "expected_output"], INCREMENTAL_SERIALIZE_PARAMS)
-    def test____incremental_serialize(self, protocol: JSONNetworkProtocol[Any, Any], data: Any, expected_output: bytes) -> None:
+    def test____incremental_serialize(self, serializer: JSONSerializer[Any, Any], data: Any, expected_output: bytes) -> None:
         # Arrange
 
         # Act
-        output = b"".join(protocol.incremental_serialize(data))
+        output = b"".join(serializer.incremental_serialize(data))
 
         # Assert
         assert isinstance(output, bytes)
         assert output == expected_output
 
 
-class TestJSONPacketDeserializer(BaseTestStreamPacketIncrementalDeserializer):
+class TestJSONPacketDeserializer(BaseTestStreamIncrementalPacketDeserializer):
     @pytest.fixture
     @staticmethod
-    def consumer(protocol: JSONNetworkProtocol[Any, Any]) -> DeserializerConsumer[Any]:
-        consumer = protocol.incremental_deserialize()
+    def consumer(serializer: JSONSerializer[Any, Any]) -> DeserializerConsumer[Any]:
+        consumer = serializer.incremental_deserialize()
         next(consumer)
         return consumer
 
     @pytest.mark.parametrize(["data", "expected_output"], DESERIALIZE_PARAMS)
-    def test____deserialize(self, protocol: JSONNetworkProtocol[Any, Any], data: bytes, expected_output: Any) -> None:
+    def test____deserialize(self, serializer: JSONSerializer[Any, Any], data: bytes, expected_output: Any) -> None:
         # Arrange
 
         # Act
-        output = protocol.deserialize(data)
+        output = serializer.deserialize(data)
 
         # Assert
         assert type(output) is type(expected_output)

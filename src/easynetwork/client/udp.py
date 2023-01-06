@@ -16,8 +16,8 @@ from socket import socket as Socket
 from threading import RLock
 from typing import TYPE_CHECKING, Any, Callable, Final, Generic, Iterator, Literal, TypeAlias, TypeVar, final, overload
 
-from ..protocol.abc import NetworkProtocol
-from ..protocol.exceptions import DeserializeError
+from ..serializers.abc import PacketSerializer
+from ..serializers.exceptions import DeserializeError
 from ..tools.socket import DEFAULT_TIMEOUT, AddressFamily, SocketAddress, new_socket_address
 from .abc import AbstractNetworkClient, InvalidPacket
 
@@ -45,7 +45,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         "__peer",
         "__owner",
         "__closed",
-        "__protocol",
+        "__serializer",
         "__queue",
         "__lock",
         "__default_send_flags",
@@ -62,7 +62,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
     def __init__(
         self,
         /,
-        protocol: NetworkProtocol[_SentPacketT, _ReceivedPacketT],
+        serializer: PacketSerializer[_SentPacketT, _ReceivedPacketT],
         *,
         family: int = ...,
         timeout: float | None = ...,
@@ -78,7 +78,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
     def __init__(
         self,
         /,
-        protocol: NetworkProtocol[_SentPacketT, _ReceivedPacketT],
+        serializer: PacketSerializer[_SentPacketT, _ReceivedPacketT],
         *,
         socket: Socket,
         give: bool = ...,
@@ -91,7 +91,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
     def __init__(
         self,
         /,
-        protocol: NetworkProtocol[_SentPacketT, _ReceivedPacketT],
+        serializer: PacketSerializer[_SentPacketT, _ReceivedPacketT],
         *,
         send_flags: int = 0,
         recv_flags: int = 0,
@@ -101,7 +101,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         send_flags = int(send_flags)
         recv_flags = int(recv_flags)
 
-        if not isinstance(protocol, NetworkProtocol):
+        if not isinstance(serializer, PacketSerializer):
             raise TypeError("Invalid argument")
 
         if on_recv_error not in ("raise", "ignore"):
@@ -109,7 +109,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
 
         super().__init__()
 
-        self.__protocol: NetworkProtocol[_SentPacketT, _ReceivedPacketT] = protocol
+        self.__serializer: PacketSerializer[_SentPacketT, _ReceivedPacketT] = serializer
 
         from socket import AF_INET, SOCK_DGRAM
 
@@ -196,9 +196,9 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             socket = self.__socket
             with _use_timeout(socket, timeout):
                 if self.__peer:
-                    socket.send(self.__protocol.serialize(packet), flags)
+                    socket.send(self.__serializer.serialize(packet), flags)
                 else:
-                    socket.sendto(self.__protocol.serialize(packet), flags, address)
+                    socket.sendto(self.__serializer.serialize(packet), flags, address)
 
     def send_packets(
         self,
@@ -221,7 +221,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
                 else:
                     _sendto = socket.sendto
                     send = lambda data, flags, address=address: _sendto(data, flags, address)  # type: ignore[misc]
-                for data in map(self.__protocol.serialize, packets):
+                for data in map(self.__serializer.serialize, packets):
                     send(data, flags)
 
     def _verify_address(self, address: _Address | None) -> _Address:
@@ -448,7 +448,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         else:
             remote_address = None
         queue: deque[tuple[bytes, SocketAddress]] = self.__queue
-        deserialize = self.__protocol.deserialize
+        deserialize = self.__serializer.deserialize
         while queue:
             data, sender = queue.popleft()
             if remote_address is not None and sender != remote_address:
@@ -569,7 +569,7 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         self,
         address: tuple[str, int],
         /,
-        protocol: NetworkProtocol[_SentPacketT, _ReceivedPacketT],
+        serializer: PacketSerializer[_SentPacketT, _ReceivedPacketT],
         *,
         family: int = ...,
         timeout: float | None = ...,
@@ -585,7 +585,7 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         self,
         socket: Socket,
         /,
-        protocol: NetworkProtocol[_SentPacketT, _ReceivedPacketT],
+        serializer: PacketSerializer[_SentPacketT, _ReceivedPacketT],
         *,
         give: bool = ...,
         send_flags: int = ...,
@@ -598,16 +598,16 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         self,
         __arg: Socket | tuple[str, int],
         /,
-        protocol: NetworkProtocol[_SentPacketT, _ReceivedPacketT],
+        serializer: PacketSerializer[_SentPacketT, _ReceivedPacketT],
         **kwargs: Any,
     ) -> None:
         endpoint: UDPNetworkEndpoint[_SentPacketT, _ReceivedPacketT]
         if isinstance(__arg, Socket):
             socket = __arg
-            endpoint = UDPNetworkEndpoint(protocol, socket=socket, **kwargs)
+            endpoint = UDPNetworkEndpoint(serializer, socket=socket, **kwargs)
         elif isinstance(__arg, tuple):
             address = __arg
-            endpoint = UDPNetworkEndpoint(protocol, remote_address=address, **kwargs)
+            endpoint = UDPNetworkEndpoint(serializer, remote_address=address, **kwargs)
         else:
             raise TypeError("Invalid arguments")
 

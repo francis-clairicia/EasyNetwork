@@ -11,7 +11,7 @@ _T_co = TypeVar("_T_co", covariant=True)
 DeserializerConsumer: TypeAlias = Generator[None, bytes, tuple[_T_co, bytes]]
 
 
-class BaseTestStreamPacketIncrementalDeserializer:
+class BaseTestStreamIncrementalPacketDeserializer:
     @staticmethod
     def deserialize_for_test(gen: Generator[None, bytes, tuple[_T_co, bytes]], chunk: bytes, /) -> tuple[_T_co, bytes]:
         try:
