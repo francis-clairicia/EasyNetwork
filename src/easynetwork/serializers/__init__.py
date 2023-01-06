@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 __all__ = [
+    "AbstractCompressorSerializer",
     "AbstractStructSerializer",
     "AutoParsedPacketSerializer",
     "AutoSeparatedPacketSerializer",
