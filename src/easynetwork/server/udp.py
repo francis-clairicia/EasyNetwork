@@ -117,7 +117,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 request, address = request_tuple
                 connected_client = make_connected_client(server, address)
                 try:
-                    request_executor.execute(self.process_request, None, None, request, connected_client, self.handle_error)
+                    request_executor.execute(self.process_request, None, request, connected_client, self.handle_error)
                 except Exception as exc:  # TODO: Store not sent packets for further retry
                     raise RuntimeError(f"request_executor.execute() raised an exception: {exc}") from exc
                 finally:

@@ -51,8 +51,7 @@ class ThreadingRequestExecutor(AbstractRequestExecutor):
     def process_request_thread(
         self,
         request_handler: Callable[[_RequestVar, _ClientVar], None],
-        request_teardown: Callable[[_ClientVar, dict[str, Any]], None] | None,
-        request_context: dict[str, Any] | None,
+        request_teardown: tuple[Callable[[_ClientVar, dict[str, Any]], None], dict[str, Any] | None] | None,
         request: _RequestVar,
         client: _ClientVar,
         error_handler: Callable[[_ClientVar], None],
@@ -64,15 +63,15 @@ class ThreadingRequestExecutor(AbstractRequestExecutor):
         finally:
             try:
                 if request_teardown is not None:
-                    request_teardown(client, request_context or {})
+                    request_teardown_func, request_context = request_teardown
+                    request_teardown_func(client, request_context or {})
             except Exception:
                 error_handler(client)
 
     def execute(
         self,
         request_handler: Callable[[_RequestVar, _ClientVar], None],
-        request_teardown: Callable[[_ClientVar, dict[str, Any]], None] | None,
-        request_context: dict[str, Any] | None,
+        request_teardown: tuple[Callable[[_ClientVar, dict[str, Any]], None], dict[str, Any] | None] | None,
         request: _RequestVar,
         client: _ClientVar,
         error_handler: Callable[[_ClientVar], None],

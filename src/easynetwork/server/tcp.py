@@ -232,12 +232,12 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                     continue
                 except EOFError:  # Not enough data
                     continue
-                request_teardown = None if not buffered_write else _buffered_write_request_teardown_hook
-                request_ctx = {"pid": os.getpid()}
+                if not buffered_write:
+                    request_teardown = None
+                else:
+                    request_teardown = (_buffered_write_request_teardown_hook, {"pid": os.getpid()})
                 try:
-                    request_executor.execute(
-                        self.process_request, request_teardown, request_ctx, request, client, self.handle_error
-                    )
+                    request_executor.execute(self.process_request, request_teardown, request, client, self.handle_error)
                 except Exception as exc:
                     raise RuntimeError(f"request_executor.execute() raised an exception: {exc}") from exc
 
