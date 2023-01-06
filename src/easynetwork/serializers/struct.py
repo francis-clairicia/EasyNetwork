@@ -39,7 +39,7 @@ class AbstractStructSerializer(FixedPacketSizePacketSerializer[_ST_contra, _DT_c
         return struct.pack(*self.iter_values(packet))
 
     @abstractmethod
-    def from_iterable(self, it: Iterable[Any]) -> _DT_co:
+    def from_tuple(self, t: tuple[Any, ...]) -> _DT_co:
         raise NotImplementedError
 
     @final
@@ -51,7 +51,7 @@ class AbstractStructSerializer(FixedPacketSizePacketSerializer[_ST_contra, _DT_c
             packet_tuple: tuple[Any, ...] = struct.unpack(data)
         except StructError as exc:
             raise DeserializeError(f"Invalid value: {exc}") from exc
-        return self.from_iterable(packet_tuple)
+        return self.from_tuple(packet_tuple)
 
     @property
     @final
@@ -97,5 +97,5 @@ class NamedTupleSerializer(AbstractStructSerializer[_NT, _NT]):
         return packet
 
     @final
-    def from_iterable(self, it: Iterable[Any]) -> _NT:
-        return self.__namedtuple_cls._make(it)
+    def from_tuple(self, t: tuple[Any, ...]) -> _NT:
+        return self.__namedtuple_cls._make(t)
