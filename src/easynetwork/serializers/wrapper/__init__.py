@@ -8,7 +8,9 @@ from __future__ import annotations
 
 __all__ = [
     "BZ2CompressorSerializer",
+    "Base64EncodedSerializer",
     "ZlibCompressorSerializer",
 ]
 
+from .base64 import *
 from .compressor import *

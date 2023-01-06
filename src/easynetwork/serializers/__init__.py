@@ -11,6 +11,7 @@ __all__ = [
     "AutoParsedPacketSerializer",
     "AutoSeparatedPacketSerializer",
     "BZ2CompressorSerializer",
+    "Base64EncodedSerializer",
     "DeserializeError",
     "FixedPacketSizePacketSerializer",
     "IncrementalDeserializeError",
