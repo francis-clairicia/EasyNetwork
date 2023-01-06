@@ -9,8 +9,9 @@ from typing import Any
 
 from easynetwork.client import UDPNetworkEndpoint
 from easynetwork.protocol import PickleNetworkProtocol
-from easynetwork.server import AbstractUDPNetworkServer, ConnectedClient
+from easynetwork.server import AbstractUDPNetworkServer
 from easynetwork.server.executors import ForkingRequestExecutor, ThreadingRequestExecutor
+from easynetwork.tools.socket import SocketAddress
 
 import pytest
 
@@ -18,8 +19,8 @@ from ._utils import run_server_in_thread
 
 
 class _TestServer(AbstractUDPNetworkServer[Any, Any]):
-    def process_request(self, request: Any, client: ConnectedClient[Any]) -> None:
-        client.send_packet(request)
+    def process_request(self, request: Any, client_address: SocketAddress) -> None:
+        self.send_packet(client_address, request)
 
 
 _RANDOM_HOST_PORT = ("localhost", 0)
@@ -82,10 +83,10 @@ def test_request_handling() -> None:
 
 
 class _TestThreadingServer(AbstractUDPNetworkServer[Any, Any]):
-    def process_request(self, request: Any, client: ConnectedClient[Any]) -> None:
+    def process_request(self, request: Any, client_address: SocketAddress) -> None:
         import threading
 
-        client.send_packet((request, threading.current_thread() is not threading.main_thread()))
+        self.send_packet(client_address, (request, threading.current_thread() is not threading.main_thread()))
 
 
 def test_threading_server() -> None:
@@ -100,10 +101,10 @@ def test_threading_server() -> None:
 
 
 class _TestForkingServer(AbstractUDPNetworkServer[Any, Any]):
-    def process_request(self, request: Any, client: ConnectedClient[Any]) -> None:
+    def process_request(self, request: Any, client_address: SocketAddress) -> None:
         from os import getpid
 
-        client.send_packet((request, getpid()))
+        self.send_packet(client_address, (request, getpid()))
 
 
 @pytest.mark.skipif(not hasattr(os, "fork"), reason="fork() not supported on this platform")

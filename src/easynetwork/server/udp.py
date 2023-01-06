@@ -17,7 +17,7 @@ from typing import Any, Callable, Generic, TypeAlias, TypeVar, final, overload
 from ..client.udp import UDPNetworkEndpoint
 from ..protocol.abc import NetworkProtocol
 from ..tools.socket import AF_INET, SocketAddress, create_server
-from .abc import AbstractNetworkServer, ConnectedClient
+from .abc import AbstractNetworkServer
 from .executors.abc import AbstractRequestExecutor
 from .executors.sync import SyncRequestExecutor
 
@@ -94,7 +94,6 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             self.__loop = True
 
         server: UDPNetworkEndpoint[_ResponseT, _RequestT] = self.__server
-        make_connected_client = self.__ConnectedUDPClient
 
         request_executor: AbstractRequestExecutor = self.__request_executor
 
@@ -102,26 +101,20 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             try:
                 request_tuple = server.recv_packet_no_block_from_anyone(default=None, timeout=0, on_error="raise")
             except UDPInvalidPacket as exc:
-                bad_request_address = exc.sender
+                address = exc.sender
                 del exc
-                connected_client = make_connected_client(server, bad_request_address)
                 try:
-                    self.bad_request(connected_client)
+                    self.bad_request(address)
                 except Exception:
-                    self.handle_error(connected_client)
-                finally:
-                    connected_client.close()
+                    self.handle_error(address)
             else:
                 if request_tuple is None:
                     return
                 request, address = request_tuple
-                connected_client = make_connected_client(server, address)
                 try:
-                    request_executor.execute(self.process_request, None, request, connected_client, self.handle_error)
+                    request_executor.execute(self.process_request, None, request, address, self.handle_error)
                 except Exception as exc:  # TODO: Store not sent packets for further retry
                     raise RuntimeError(f"request_executor.execute() raised an exception: {exc}") from exc
-                finally:
-                    connected_client.close()
 
         with _Selector() as selector:
             selector.register(server, EVENT_READ)
@@ -163,10 +156,10 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             return not self.__is_shutdown.is_set()
 
     @abstractmethod
-    def process_request(self, request: _RequestT, client: ConnectedClient[_ResponseT]) -> None:
+    def process_request(self, request: _RequestT, client_address: SocketAddress) -> None:
         raise NotImplementedError
 
-    def handle_error(self, client: ConnectedClient[Any]) -> None:
+    def handle_error(self, client_address: SocketAddress) -> None:
         from sys import exc_info, stderr
         from traceback import print_exc
 
@@ -174,7 +167,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             return
 
         print("-" * 40, file=stderr)
-        print(f"Exception occurred during processing of request from {client.address}", file=stderr)
+        print(f"Exception occurred during processing of request from {client_address}", file=stderr)
         print_exc(file=stderr)
         print("-" * 40, file=stderr)
 
@@ -191,7 +184,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         self._check_not_closed()
         self.__server.send_packet(address, *packets)
 
-    def bad_request(self, client: ConnectedClient[_ResponseT]) -> None:  # TODO: handle BlockingIOError/InterruptedError
+    def bad_request(self, client_address: SocketAddress) -> None:  # TODO: handle BlockingIOError/InterruptedError
         pass
 
     def protocol(self) -> NetworkProtocol[_ResponseT, _RequestT]:
@@ -240,43 +233,3 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     @final
     def recv_flags(self) -> int:
         return self.__server.default_recv_flags
-
-    @final
-    class __ConnectedUDPClient(ConnectedClient[_ResponseT]):
-        __slots__ = ("__s",)
-
-        def __init__(
-            self,
-            server: UDPNetworkEndpoint[_ResponseT, Any] | None,
-            address: SocketAddress,
-        ) -> None:
-            super().__init__(address)
-            self.__s: UDPNetworkEndpoint[_ResponseT, Any] | None = server
-
-        def close(self) -> None:
-            with self.transaction():
-                self.__s = None
-
-        def send_packet(self, packet: _ResponseT) -> None:
-            with self.transaction():
-                server: UDPNetworkEndpoint[_ResponseT, Any] | None = self.__s
-                if server is None:
-                    raise RuntimeError("Closed client")
-                server.send_packet(self.address, packet)
-
-        def send_packets(self, *packets: _ResponseT) -> None:
-            if not packets:
-                return
-            with self.transaction():
-                server: UDPNetworkEndpoint[_ResponseT, Any] | None = self.__s
-                if server is None:
-                    raise RuntimeError("Closed client")
-                server.send_packets(self.address, *packets)
-
-        def flush(self) -> None:
-            if self.closed:
-                raise RuntimeError("Closed client")
-
-        @property
-        def closed(self) -> bool:
-            return self.__s is None

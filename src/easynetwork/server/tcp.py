@@ -6,10 +6,13 @@
 
 from __future__ import annotations
 
-__all__ = ["AbstractTCPNetworkServer"]
+__all__ = [
+    "AbstractTCPNetworkServer",
+    "ConnectedClient",
+]
 
 import os
-from abc import abstractmethod
+from abc import ABCMeta, abstractmethod
 from collections import defaultdict, deque
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
@@ -23,12 +26,67 @@ from ..protocol.exceptions import DeserializeError
 from ..protocol.stream.abc import StreamNetworkProtocol
 from ..tools.socket import AF_INET, SocketAddress, create_server, guess_best_buffer_size, new_socket_address
 from ..tools.stream import StreamNetworkDataConsumer, StreamNetworkDataProducerReader
-from .abc import AbstractNetworkServer, ConnectedClient
+from .abc import AbstractNetworkServer
 from .executors.abc import AbstractRequestExecutor
 from .executors.sync import SyncRequestExecutor
 
 _RequestT = TypeVar("_RequestT")
 _ResponseT = TypeVar("_ResponseT")
+
+
+class ConnectedClient(Generic[_ResponseT], metaclass=ABCMeta):
+    __slots__ = ("__addr", "__transaction_lock", "__weakref__")
+
+    def __init__(self, address: SocketAddress) -> None:
+        super().__init__()
+        self.__addr: SocketAddress = address
+        self.__transaction_lock = RLock()
+
+    def __repr__(self) -> str:
+        return f"<connected client with address {self.__addr} at {id(self):#x}{' closed' if self.closed else ''}>"
+
+    @final
+    @contextmanager
+    def transaction(self) -> Iterator[None]:
+        with self.__transaction_lock:
+            yield
+
+    def shutdown(self) -> None:
+        with self.transaction():
+            if not self.closed:
+                try:
+                    self.flush()
+                finally:
+                    self.close()
+
+    @abstractmethod
+    def close(self) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def send_packet(self, packet: _ResponseT) -> None:
+        raise NotImplementedError
+
+    def send_packets(self, *packets: _ResponseT) -> None:
+        with self.transaction():
+            send_packet = self.send_packet
+            for packet in packets:
+                send_packet(packet)
+
+    @abstractmethod
+    def flush(self) -> None:
+        raise NotImplementedError
+
+    @property
+    @abstractmethod
+    def closed(self) -> bool:
+        raise NotImplementedError
+
+    @property
+    @final
+    def address(self) -> SocketAddress:
+        return self.__addr
+
 
 StreamNetworkProtocolFactory: TypeAlias = Callable[[], StreamNetworkProtocol[_ResponseT, _RequestT]]
 
@@ -147,23 +205,17 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 with suppress(Exception):
                     socket.close()
                 return
-
-            with self.__lock:
-                if not self.__loop:  # shutdown can occur during verify_new_client()
-                    with suppress(Exception):
-                        socket.close()
-                    return
-                key_data = _SelectorKeyData(
-                    protocol=self.__protocol_cls(),
-                    socket=socket,
-                    address=address,
-                    flush=_flush_client_data_hook,
-                    on_close=_close_client_hook,
-                    is_closed=_client_is_closed_hook,
-                    flush_on_send=not buffered_write,
-                )
-                self.__clients[socket] = key_data.client
-                selector.register(socket, EVENT_READ | EVENT_WRITE, key_data)
+            key_data = _SelectorKeyData(
+                protocol=self.__protocol_cls(),
+                socket=socket,
+                address=address,
+                flush=_flush_client_data_hook,
+                on_close=_close_client_hook,
+                is_closed=_client_is_closed_hook,
+                flush_on_send=not buffered_write,
+            )
+            self.__clients[socket] = key_data.client
+            selector.register(socket, EVENT_READ | EVENT_WRITE, key_data)
 
         def _close_client_hook(socket: Socket) -> None:
             shutdown_client(socket, from_client=True)
