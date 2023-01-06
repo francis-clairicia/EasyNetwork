@@ -88,6 +88,8 @@ class PickleNetworkProtocol(StreamNetworkProtocol[_ST_contra, _DT_co]):
                     ) from exc
                 else:
                     return (packet, data.read())
+                finally:
+                    del unpickler
 
     def get_unpickler(self, buffer: _ReadableFileobj) -> Unpickler:
         return Unpickler(buffer, fix_imports=False, encoding="utf-8", errors="strict", buffers=None)

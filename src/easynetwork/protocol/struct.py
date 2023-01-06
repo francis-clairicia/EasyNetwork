@@ -10,7 +10,7 @@ __all__ = ["AbstractStructNetworkProtocol", "NamedTupleNetworkProtocol"]
 
 from abc import abstractmethod
 from struct import Struct, error as StructError
-from typing import Any, Mapping, NamedTuple, TypeVar, final
+from typing import Any, Iterable, Mapping, NamedTuple, TypeVar, final
 
 from .exceptions import DeserializeError
 from .stream.abc import FixedPacketSizeStreamNetworkProtocol
@@ -30,17 +30,16 @@ class AbstractStructNetworkProtocol(FixedPacketSizeStreamNetworkProtocol[_ST_con
         self.__s: Struct = struct
 
     @abstractmethod
-    def to_tuple(self, packet: _ST_contra) -> tuple[Any, ...]:
+    def iter_values(self, packet: _ST_contra) -> Iterable[Any]:
         raise NotImplementedError
 
     @final
     def serialize(self, packet: _ST_contra) -> bytes:
         struct = self.__s
-        tuple_value = self.to_tuple(packet)
-        return struct.pack(*tuple_value)
+        return struct.pack(*self.iter_values(packet))
 
     @abstractmethod
-    def from_tuple(self, t: tuple[Any, ...]) -> _DT_co:
+    def from_iterable(self, it: Iterable[Any]) -> _DT_co:
         raise NotImplementedError
 
     @final
@@ -52,7 +51,7 @@ class AbstractStructNetworkProtocol(FixedPacketSizeStreamNetworkProtocol[_ST_con
             packet_tuple: tuple[Any, ...] = struct.unpack(data)
         except StructError as exc:
             raise DeserializeError(f"Invalid value: {exc}") from exc
-        return self.from_tuple(packet_tuple)
+        return self.from_iterable(packet_tuple)
 
     @property
     @final
@@ -93,10 +92,10 @@ class NamedTupleNetworkProtocol(AbstractStructNetworkProtocol[_NT, _NT]):
         )
 
     @final
-    def to_tuple(self, packet: _NT) -> tuple[Any, ...]:
+    def iter_values(self, packet: _NT) -> _NT:
         assert isinstance(packet, self.__namedtuple_cls)
         return packet
 
     @final
-    def from_tuple(self, t: tuple[Any, ...]) -> _NT:
-        return self.__namedtuple_cls._make(t)
+    def from_iterable(self, it: Iterable[Any]) -> _NT:
+        return self.__namedtuple_cls._make(it)
