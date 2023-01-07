@@ -275,14 +275,14 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                     continue
                 request: _RequestT
                 try:
-                    request = key_data.consumer.next()
+                    request = next(key_data.consumer)
                 except DeserializeError:
                     try:
                         self.bad_request(client)
                     except Exception:
                         self.handle_error(client)
                     continue
-                except EOFError:  # Not enough data
+                except StopIteration:  # Not enough data
                     continue
                 if not buffered_write:
                     request_teardown = None

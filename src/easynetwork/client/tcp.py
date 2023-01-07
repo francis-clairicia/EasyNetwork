@@ -164,12 +164,12 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
     def recv_packet(self, *, flags: int = 0) -> _ReceivedPacketT:
         with self.__lock:
             self._check_not_closed()
-            next_packet = self.__consumer.next
+            consumer = self.__consumer
             read_socket = self.__read_socket
             while True:
                 try:
-                    return next_packet()
-                except EOFError:
+                    return next(consumer)
+                except StopIteration:
                     pass
                 while not read_socket(timeout=None, flags=flags):
                     continue
@@ -191,15 +191,15 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         timeout = float(timeout)
         with self.__lock:
             self._check_not_closed()
-            next_packet = self.__consumer.next
+            consumer = self.__consumer
             try:
-                return next_packet()
-            except EOFError:
+                return next(consumer)
+            except StopIteration:
                 pass
             if self.__read_socket(timeout=timeout, flags=flags):
                 try:
-                    return next_packet()
-                except EOFError:
+                    return next(consumer)
+                except StopIteration:
                     pass
             if default is not _NO_DEFAULT:
                 return default
@@ -207,7 +207,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
 
     def iter_received_packets(self, *, timeout: float = 0, flags: int = 0) -> Iterator[_ReceivedPacketT]:
         timeout = float(timeout)
-        next_packet = self.__consumer.next
+        consumer = self.__consumer
         read_socket = self.__read_socket
         check_not_closed = self._check_not_closed
         lock = self.__lock
@@ -215,8 +215,8 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             with lock:
                 check_not_closed()
                 try:
-                    packet = next_packet()
-                except EOFError:
+                    packet = next(consumer)
+                except StopIteration:
                     if not read_socket(timeout=timeout, flags=flags):
                         return
                     continue

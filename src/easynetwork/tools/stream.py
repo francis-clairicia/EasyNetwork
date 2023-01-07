@@ -86,6 +86,7 @@ class StreamNetworkDataProducerReader(Generic[_ST_contra]):
 
 
 @final
+@Iterator.register
 class StreamNetworkDataProducerIterator(Generic[_ST_contra]):
     __slots__ = ("__s", "__q", "__lock")
 
@@ -122,6 +123,7 @@ class StreamNetworkDataProducerIterator(Generic[_ST_contra]):
 
 
 @final
+@Iterator.register
 class StreamNetworkDataConsumer(Generic[_DT_co]):
     __slots__ = ("__s", "__b", "__c", "__u", "__lock", "__on_error")
 
@@ -143,11 +145,10 @@ class StreamNetworkDataConsumer(Generic[_DT_co]):
         self.__lock: RLock = lock or RLock()
         self.__on_error: Literal["raise", "ignore"] = on_error
 
-    def next(self, *, on_error: Literal["raise", "ignore"] | None = None) -> _DT_co:
-        if on_error is None:
-            on_error = self.__on_error
-        elif on_error not in ("raise", "ignore"):
-            raise ValueError("Invalid on_error value")
+    def __iter__(self) -> Iterator[_DT_co]:
+        return self
+
+    def __next__(self) -> _DT_co:
         with self.__lock:
             chunk, self.__b = self.__b, b""
             if chunk:
@@ -170,13 +171,13 @@ class StreamNetworkDataConsumer(Generic[_DT_co]):
                     self.__u = b""
                     self.__b = exc.remaining_data
                     try:
-                        if on_error == "raise":
+                        if self.__on_error == "raise":
                             raise DeserializeError(str(exc)) from exc
                     finally:
                         del exc
                 except DeserializeError:
                     self.__u = b""
-                    if on_error == "raise":
+                    if self.__on_error == "raise":
                         raise
                 except Exception as exc:
                     self.__u = b""
@@ -187,7 +188,7 @@ class StreamNetworkDataConsumer(Generic[_DT_co]):
                 else:
                     self.__u += chunk
                     self.__c = consumer
-            raise EOFError
+            raise StopIteration
 
     def feed(self, chunk: bytes) -> None:
         assert isinstance(chunk, bytes)
