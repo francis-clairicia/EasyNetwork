@@ -93,7 +93,7 @@ def _launch_udp_server(socket: Socket, shutdown_requested: Event) -> None:
         selector.register(socket, EVENT_READ)
         while not shutdown_requested.is_set():
             if selector.select(0.1):
-                data, addr = socket.recvfrom(8192)
+                data, addr = socket.recvfrom(64 * 1024)
                 socket.sendto(data, addr)
 
 

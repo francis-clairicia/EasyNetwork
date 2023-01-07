@@ -235,147 +235,59 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             raise ValueError("Invalid address: must not be None")
         return address
 
-    def recv_packet_from_anyone(
+    def recv_packet(
         self,
         *,
         flags: int = 0,
-    ) -> tuple[_ReceivedPacketT, SocketAddress]:
-        return self.__recv_packet(flags=flags, only_remote=False)
-
-    @overload
-    def recv_packet_no_block_from_anyone(
-        self, *, flags: int = ..., timeout: float = ...
-    ) -> tuple[_ReceivedPacketT, SocketAddress]:
-        ...
-
-    @overload
-    def recv_packet_no_block_from_anyone(
-        self, *, flags: int = ..., default: _T, timeout: float = ...
-    ) -> tuple[_ReceivedPacketT, SocketAddress] | _T:
-        ...
-
-    def recv_packet_no_block_from_anyone(
-        self,
-        *,
-        flags: int = 0,
-        default: _T = _NO_DEFAULT,
-        timeout: float = 0,
-    ) -> tuple[_ReceivedPacketT, SocketAddress] | _T:
-        return self.__recv_packet_no_block(flags=flags, default=default, timeout=timeout, only_remote=False)
-
-    def iter_received_packets_from_anyone(
-        self,
-        *,
-        timeout: float = 0,
-        flags: int = 0,
-    ) -> Iterator[tuple[_ReceivedPacketT, SocketAddress]]:
-        return self.__iter_received_packets(flags=flags, timeout=timeout, only_remote=False)
-
-    def recv_all_packets_from_anyone(self, *, flags: int = 0, timeout: float = 0) -> list[tuple[_ReceivedPacketT, SocketAddress]]:
-        with self.__lock:
-            return list(self.__iter_received_packets(flags=flags, timeout=timeout, only_remote=False))
-
-    def recv_packet_from_remote(self, *, flags: int = 0) -> _ReceivedPacketT:
-        return self.__recv_packet(flags=flags, only_remote=True)[0]
-
-    @overload
-    def recv_packet_no_block_from_remote(self, *, flags: int = ..., timeout: float = ...) -> _ReceivedPacketT:
-        ...
-
-    @overload
-    def recv_packet_no_block_from_remote(self, *, flags: int = ..., default: _T, timeout: float = ...) -> _ReceivedPacketT | _T:
-        ...
-
-    def recv_packet_no_block_from_remote(
-        self,
-        *,
-        flags: int = 0,
-        default: _T = _NO_DEFAULT,
-        timeout: float = 0,
-    ) -> _ReceivedPacketT | _T:
-        try:
-            output = self.__recv_packet_no_block(
-                flags=flags,
-                default=_NO_DEFAULT,
-                timeout=timeout,
-                only_remote=True,
-            )
-        except TimeoutError:
-            if default is not _NO_DEFAULT:
-                return default
-            raise
-        return output[0]
-
-    def iter_received_packets_from_remote(
-        self,
-        *,
-        timeout: float = 0,
-        flags: int = 0,
-    ) -> Iterator[_ReceivedPacketT]:
-        return map(
-            itemgetter(0),
-            self.__iter_received_packets(
-                flags=flags,
-                timeout=timeout,
-                only_remote=True,
-            ),
-        )
-
-    def recv_all_packets_from_remote(
-        self,
-        *,
-        flags: int = 0,
-        timeout: float = 0,
-    ) -> list[_ReceivedPacketT]:
-        with self.__lock:
-            return list(self.iter_received_packets_from_remote(flags=flags, timeout=timeout))
-
-    def __recv_packet(
-        self,
-        *,
-        flags: int,
-        only_remote: bool,
     ) -> tuple[_ReceivedPacketT, SocketAddress]:
         with self.__lock:
             self._check_not_closed()
             next_packet = self.__next_packet
             recv_packets_from_socket = self.__recv_packets_from_socket
             while True:
-                packet_tuple = next_packet(only_remote=only_remote)
+                packet_tuple = next_packet()
                 if packet_tuple is not None:
                     return packet_tuple
                 while not recv_packets_from_socket(flags=flags, timeout=None):
                     continue
 
-    def __recv_packet_no_block(
+    @overload
+    def recv_packet_no_block(self, *, flags: int = ..., timeout: float = ...) -> tuple[_ReceivedPacketT, SocketAddress]:
+        ...
+
+    @overload
+    def recv_packet_no_block(
+        self, *, flags: int = ..., default: _T, timeout: float = ...
+    ) -> tuple[_ReceivedPacketT, SocketAddress] | _T:
+        ...
+
+    def recv_packet_no_block(
         self,
         *,
-        flags: int,
-        default: _T,
-        timeout: float,
-        only_remote: bool,
+        flags: int = 0,
+        default: _T = _NO_DEFAULT,
+        timeout: float = 0,
     ) -> tuple[_ReceivedPacketT, SocketAddress] | _T:
         timeout = float(timeout)
         with self.__lock:
             self._check_not_closed()
             next_packet = self.__next_packet
-            packet_tuple = next_packet(only_remote=only_remote)
+            packet_tuple = next_packet()
             if packet_tuple is not None:
                 return packet_tuple
             if self.__recv_packets_from_socket(flags=flags, timeout=timeout):
-                packet_tuple = next_packet(only_remote=only_remote)
+                packet_tuple = next_packet()
                 if packet_tuple is not None:
                     return packet_tuple
             if default is not _NO_DEFAULT:
                 return default
             raise TimeoutError("recv_packet() timed out")
 
-    def __iter_received_packets(
+    def iter_received_packets(
         self,
         *,
-        flags: int,
-        timeout: float,
-        only_remote: bool,
+        timeout: float = 0,
+        flags: int = 0,
     ) -> Iterator[tuple[_ReceivedPacketT, SocketAddress]]:
         timeout = float(timeout)
         next_packet = self.__next_packet
@@ -386,46 +298,41 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         while True:
             with lock:
                 check_not_closed()
-                packet_tuple = next_packet(only_remote=only_remote)
+                packet_tuple = next_packet()
                 if packet_tuple is None:
                     if not recv_packets_from_socket(flags=flags, timeout=timeout):
                         return
                     continue
             yield packet_tuple  # yield out of lock scope
 
+    def recv_all_packets(self, *, flags: int = 0, timeout: float = 0) -> list[tuple[_ReceivedPacketT, SocketAddress]]:
+        with self.__lock:
+            return list(self.iter_received_packets(flags=flags, timeout=timeout))
+
     def __recv_packets_from_socket(self, *, flags: int, timeout: float | None) -> bool:
         flags |= self.__default_recv_flags
 
         socket: Socket = self.__socket
+        remote_address: SocketAddress | None = self.__peer
 
         with _use_timeout(socket, timeout):
             try:
                 data, sender = socket.recvfrom(self.MAX_SIZE, flags)
             except (BlockingIOError, InterruptedError):
                 return False
-            if data:
-                self.__queue.append((data, new_socket_address(sender, socket.family)))
-                return True
-            return False
+            if not data:
+                return False
+            sender = new_socket_address(sender, socket.family)
+            if remote_address is not None and sender != remote_address:
+                return False
+            self.__queue.append((data, sender))
+            return True
 
-    def __next_packet(
-        self,
-        *,
-        only_remote: bool,
-    ) -> tuple[_ReceivedPacketT, SocketAddress] | None:
-        remote_address: SocketAddress | None
-        if only_remote:
-            remote_address = self.__peer
-            if remote_address is None:
-                raise ValueError("No remote address")
-        else:
-            remote_address = None
+    def __next_packet(self) -> tuple[_ReceivedPacketT, SocketAddress] | None:
         queue: deque[tuple[bytes, SocketAddress]] = self.__queue
         deserialize = self.__serializer.deserialize
         while queue:
             data, sender = queue.popleft()
-            if remote_address is not None and sender != remote_address:
-                continue
             try:
                 packet = deserialize(data)
             except DeserializeError as exc:
@@ -607,7 +514,7 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         return self.__endpoint.send_packets(None, *packets, timeout=timeout, flags=flags)
 
     def recv_packet(self, *, flags: int = 0) -> _ReceivedPacketT:
-        return self.__endpoint.recv_packet_from_remote(flags=flags)
+        return self.__endpoint.recv_packet(flags=flags)[0]
 
     @overload
     def recv_packet_no_block(self, *, timeout: float = ..., flags: int = ...) -> _ReceivedPacketT:
@@ -618,10 +525,15 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         ...
 
     def recv_packet_no_block(self, *, default: _T = _NO_DEFAULT, timeout: float = 0, flags: int = 0) -> _ReceivedPacketT | _T:
-        return self.__endpoint.recv_packet_no_block_from_remote(default=default, timeout=timeout, flags=flags)
+        try:
+            return self.__endpoint.recv_packet_no_block(timeout=timeout, flags=flags)[0]
+        except TimeoutError:
+            if default is not _NO_DEFAULT:
+                return default
+            raise
 
     def iter_received_packets(self, *, timeout: float = 0, flags: int = 0) -> Iterator[_ReceivedPacketT]:
-        return self.__endpoint.iter_received_packets_from_remote(timeout=timeout, flags=flags)
+        return map(itemgetter(0), self.__endpoint.iter_received_packets(timeout=timeout, flags=flags))
 
     def recv_all_packets(
         self,
@@ -629,7 +541,7 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         timeout: float = 0,
         flags: int = 0,
     ) -> list[_ReceivedPacketT]:
-        return self.__endpoint.recv_all_packets_from_remote(flags=flags, timeout=timeout)
+        return list(map(itemgetter(0), self.__endpoint.recv_all_packets(flags=flags, timeout=timeout)))
 
     def get_timeout(self) -> float | None:
         return self.__endpoint.get_timeout()
