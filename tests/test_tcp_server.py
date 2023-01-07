@@ -9,7 +9,7 @@ from time import sleep
 from typing import Any, ClassVar, Generator
 
 from easynetwork.client import TCPNetworkClient
-from easynetwork.serializers import IncrementalPacketSerializer, PickleSerializer
+from easynetwork.serializers import AbstractIncrementalPacketSerializer, PickleSerializer
 from easynetwork.server import AbstractTCPNetworkServer, ConnectedClient
 from easynetwork.server.executors import ForkingRequestExecutor, ThreadingRequestExecutor
 from easynetwork.tools.socket import SocketAddress
@@ -107,7 +107,7 @@ def test_multiple_connections() -> None:
             assert len(server.clients) == 3
 
 
-class _IntegerSerializer(IncrementalPacketSerializer[int, int]):
+class _IntegerSerializer(AbstractIncrementalPacketSerializer[int, int]):
     BYTES_LENGTH: ClassVar[int] = 8
 
     def incremental_serialize(self, packet: int) -> Generator[bytes, None, None]:

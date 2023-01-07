@@ -19,14 +19,14 @@ if TYPE_CHECKING:
     from pickle import _WritableFileobj, _ReadableFileobj
 
 from .exceptions import DeserializeError
-from .stream.abc import IncrementalPacketSerializer
+from .stream.abc import AbstractIncrementalPacketSerializer
 from .stream.exceptions import IncrementalDeserializeError
 
 _ST_contra = TypeVar("_ST_contra", contravariant=True)
 _DT_co = TypeVar("_DT_co", covariant=True)
 
 
-class PickleSerializer(IncrementalPacketSerializer[_ST_contra, _DT_co]):
+class PickleSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
     __slots__ = ()
 
     @final

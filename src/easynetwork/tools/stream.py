@@ -16,7 +16,7 @@ from threading import RLock
 from typing import Any, Generator, Generic, Iterator, Literal, TypeVar, final
 
 from ..serializers.exceptions import DeserializeError
-from ..serializers.stream.abc import IncrementalPacketSerializer
+from ..serializers.stream.abc import AbstractIncrementalPacketSerializer
 from ..serializers.stream.exceptions import IncrementalDeserializeError
 
 _ST_contra = TypeVar("_ST_contra", contravariant=True)
@@ -27,10 +27,10 @@ _DT_co = TypeVar("_DT_co", covariant=True)
 class StreamNetworkDataProducerReader(Generic[_ST_contra]):
     __slots__ = ("__s", "__q", "__b", "__lock")
 
-    def __init__(self, serializer: IncrementalPacketSerializer[_ST_contra, Any], *, lock: RLock | None = None) -> None:
+    def __init__(self, serializer: AbstractIncrementalPacketSerializer[_ST_contra, Any], *, lock: RLock | None = None) -> None:
         super().__init__()
-        assert isinstance(serializer, IncrementalPacketSerializer)
-        self.__s: IncrementalPacketSerializer[_ST_contra, Any] = serializer
+        assert isinstance(serializer, AbstractIncrementalPacketSerializer)
+        self.__s: AbstractIncrementalPacketSerializer[_ST_contra, Any] = serializer
         self.__q: deque[Generator[bytes, None, None]] = deque()
         self.__b: bytes = b""
         self.__lock: RLock = lock or RLock()
@@ -90,10 +90,10 @@ class StreamNetworkDataProducerReader(Generic[_ST_contra]):
 class StreamNetworkDataProducerIterator(Generic[_ST_contra]):
     __slots__ = ("__s", "__q", "__lock")
 
-    def __init__(self, serializer: IncrementalPacketSerializer[_ST_contra, Any], *, lock: RLock | None = None) -> None:
+    def __init__(self, serializer: AbstractIncrementalPacketSerializer[_ST_contra, Any], *, lock: RLock | None = None) -> None:
         super().__init__()
-        assert isinstance(serializer, IncrementalPacketSerializer)
-        self.__s: IncrementalPacketSerializer[_ST_contra, Any] = serializer
+        assert isinstance(serializer, AbstractIncrementalPacketSerializer)
+        self.__s: AbstractIncrementalPacketSerializer[_ST_contra, Any] = serializer
         self.__q: deque[Generator[bytes, None, None]] = deque()
         self.__lock: RLock = lock or RLock()
 
@@ -129,7 +129,7 @@ class StreamNetworkDataConsumer(Generic[_DT_co]):
 
     def __init__(
         self,
-        serializer: IncrementalPacketSerializer[Any, _DT_co],
+        serializer: AbstractIncrementalPacketSerializer[Any, _DT_co],
         *,
         lock: RLock | None = None,
         on_error: Literal["raise", "ignore"] = "raise",
@@ -137,8 +137,8 @@ class StreamNetworkDataConsumer(Generic[_DT_co]):
         if on_error not in ("raise", "ignore"):
             raise ValueError("Invalid on_error value")
         super().__init__()
-        assert isinstance(serializer, IncrementalPacketSerializer)
-        self.__s: IncrementalPacketSerializer[Any, _DT_co] = serializer
+        assert isinstance(serializer, AbstractIncrementalPacketSerializer)
+        self.__s: AbstractIncrementalPacketSerializer[Any, _DT_co] = serializer
         self.__c: Generator[None, bytes, tuple[_DT_co, bytes]] | None = None
         self.__b: bytes = b""
         self.__u: bytes = b""

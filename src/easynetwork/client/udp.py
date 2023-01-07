@@ -15,7 +15,7 @@ from socket import socket as Socket
 from threading import RLock
 from typing import TYPE_CHECKING, Any, Callable, Final, Generic, Iterator, Literal, TypeAlias, TypeVar, final, overload
 
-from ..serializers.abc import PacketSerializer
+from ..serializers.abc import AbstractPacketSerializer
 from ..serializers.exceptions import DeserializeError
 from ..tools.socket import DEFAULT_TIMEOUT, AddressFamily, SocketAddress, new_socket_address
 from .abc import AbstractNetworkClient
@@ -62,7 +62,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
     def __init__(
         self,
         /,
-        serializer: PacketSerializer[_SentPacketT, _ReceivedPacketT],
+        serializer: AbstractPacketSerializer[_SentPacketT, _ReceivedPacketT],
         *,
         family: int = ...,
         timeout: float | None = ...,
@@ -78,7 +78,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
     def __init__(
         self,
         /,
-        serializer: PacketSerializer[_SentPacketT, _ReceivedPacketT],
+        serializer: AbstractPacketSerializer[_SentPacketT, _ReceivedPacketT],
         *,
         socket: Socket,
         give: bool = ...,
@@ -91,7 +91,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
     def __init__(
         self,
         /,
-        serializer: PacketSerializer[_SentPacketT, _ReceivedPacketT],
+        serializer: AbstractPacketSerializer[_SentPacketT, _ReceivedPacketT],
         *,
         send_flags: int = 0,
         recv_flags: int = 0,
@@ -101,7 +101,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         send_flags = int(send_flags)
         recv_flags = int(recv_flags)
 
-        if not isinstance(serializer, PacketSerializer):
+        if not isinstance(serializer, AbstractPacketSerializer):
             raise TypeError("Invalid argument")
 
         if on_recv_error not in ("raise", "ignore"):
@@ -109,7 +109,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
 
         super().__init__()
 
-        self.__serializer: PacketSerializer[_SentPacketT, _ReceivedPacketT] = serializer
+        self.__serializer: AbstractPacketSerializer[_SentPacketT, _ReceivedPacketT] = serializer
 
         from socket import AF_INET, SOCK_DGRAM
 
@@ -449,7 +449,7 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         self,
         address: tuple[str, int],
         /,
-        serializer: PacketSerializer[_SentPacketT, _ReceivedPacketT],
+        serializer: AbstractPacketSerializer[_SentPacketT, _ReceivedPacketT],
         *,
         family: int = ...,
         timeout: float | None = ...,
@@ -464,7 +464,7 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         self,
         socket: Socket,
         /,
-        serializer: PacketSerializer[_SentPacketT, _ReceivedPacketT],
+        serializer: AbstractPacketSerializer[_SentPacketT, _ReceivedPacketT],
         *,
         give: bool = ...,
         send_flags: int = ...,
@@ -476,7 +476,7 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         self,
         __arg: Socket | tuple[str, int],
         /,
-        serializer: PacketSerializer[_SentPacketT, _ReceivedPacketT],
+        serializer: AbstractPacketSerializer[_SentPacketT, _ReceivedPacketT],
         **kwargs: Any,
     ) -> None:
         endpoint: UDPNetworkEndpoint[_SentPacketT, _ReceivedPacketT]

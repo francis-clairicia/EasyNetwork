@@ -18,9 +18,9 @@ import zlib
 from collections import deque
 from typing import Generator, Protocol, TypeVar, final
 
-from ..abc import PacketSerializer
+from ..abc import AbstractPacketSerializer
 from ..exceptions import DeserializeError
-from ..stream.abc import IncrementalPacketSerializer
+from ..stream.abc import AbstractIncrementalPacketSerializer
 from ..stream.exceptions import IncrementalDeserializeError
 
 _ST_contra = TypeVar("_ST_contra", contravariant=True)
@@ -53,17 +53,17 @@ class Decompressor(Protocol, metaclass=abc.ABCMeta):
         raise NotImplementedError
 
 
-class AbstractCompressorSerializer(IncrementalPacketSerializer[_ST_contra, _DT_co]):
+class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
     __slots__ = ("__serializer", "__trailing_error")
 
     def __init__(
         self,
-        serializer: PacketSerializer[_ST_contra, _DT_co],
+        serializer: AbstractPacketSerializer[_ST_contra, _DT_co],
         trailing_error: type[Exception] | tuple[type[Exception], ...],
     ) -> None:
-        assert isinstance(serializer, PacketSerializer)
+        assert isinstance(serializer, AbstractPacketSerializer)
         super().__init__()
-        self.__serializer: PacketSerializer[_ST_contra, _DT_co] = serializer
+        self.__serializer: AbstractPacketSerializer[_ST_contra, _DT_co] = serializer
         self.__trailing_error: type[Exception] | tuple[type[Exception], ...] = trailing_error
 
     @abc.abstractmethod
@@ -83,7 +83,7 @@ class AbstractCompressorSerializer(IncrementalPacketSerializer[_ST_contra, _DT_c
     def incremental_serialize(self, packet: _ST_contra) -> Generator[bytes, None, None]:
         serializer = self.__serializer
         compressor = self.new_compressor_stream()
-        if isinstance(serializer, IncrementalPacketSerializer):
+        if isinstance(serializer, AbstractIncrementalPacketSerializer):
             yield from filter(bool, map(compressor.compress, serializer.incremental_serialize(packet)))
         elif data := compressor.compress(serializer.serialize(packet)):
             yield data
@@ -108,7 +108,7 @@ class AbstractCompressorSerializer(IncrementalPacketSerializer[_ST_contra, _DT_c
     def incremental_deserialize(self) -> Generator[None, bytes, tuple[_DT_co, bytes]]:
         serializer = self.__serializer
 
-        if isinstance(serializer, IncrementalPacketSerializer):
+        if isinstance(serializer, AbstractIncrementalPacketSerializer):
             _last_chunk: bytes | None = None
 
             _consumer = serializer.incremental_deserialize()
@@ -194,7 +194,7 @@ class AbstractCompressorSerializer(IncrementalPacketSerializer[_ST_contra, _DT_c
 class BZ2CompressorSerializer(AbstractCompressorSerializer[_ST_contra, _DT_co]):
     __slots__ = ("__compresslevel",)
 
-    def __init__(self, serializer: PacketSerializer[_ST_contra, _DT_co], *, compresslevel: int = 9) -> None:
+    def __init__(self, serializer: AbstractPacketSerializer[_ST_contra, _DT_co], *, compresslevel: int = 9) -> None:
         super().__init__(serializer=serializer, trailing_error=OSError)
         self.__compresslevel: int = int(compresslevel)
 
@@ -210,8 +210,10 @@ class BZ2CompressorSerializer(AbstractCompressorSerializer[_ST_contra, _DT_co]):
 class ZlibCompressorSerializer(AbstractCompressorSerializer[_ST_contra, _DT_co]):
     __slots__ = ("__compresslevel",)
 
-    def __init__(self, serializer: PacketSerializer[_ST_contra, _DT_co], *, compresslevel: int = zlib.Z_BEST_COMPRESSION) -> None:
-        assert isinstance(serializer, PacketSerializer)
+    def __init__(
+        self, serializer: AbstractPacketSerializer[_ST_contra, _DT_co], *, compresslevel: int = zlib.Z_BEST_COMPRESSION
+    ) -> None:
+        assert isinstance(serializer, AbstractPacketSerializer)
         super().__init__(serializer=serializer, trailing_error=zlib.error)
         self.__compresslevel: int = int(compresslevel)
 

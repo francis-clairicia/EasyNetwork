@@ -15,7 +15,7 @@ from threading import Event, RLock
 from typing import Any, Callable, Generic, TypeAlias, TypeVar, final, overload
 
 from ..client.udp import UDPNetworkEndpoint
-from ..serializers.abc import PacketSerializer
+from ..serializers.abc import AbstractPacketSerializer
 from ..tools.socket import AF_INET, SocketAddress, create_server
 from .abc import AbstractNetworkServer
 from .executors.abc import AbstractRequestExecutor
@@ -24,7 +24,7 @@ from .executors.sync import SyncRequestExecutor
 _RequestT = TypeVar("_RequestT")
 _ResponseT = TypeVar("_ResponseT")
 
-PacketSerializerFactory: TypeAlias = Callable[[], PacketSerializer[_ResponseT, _RequestT]]
+PacketSerializerFactory: TypeAlias = Callable[[], AbstractPacketSerializer[_ResponseT, _RequestT]]
 
 _default_global_executor = SyncRequestExecutor()
 
@@ -52,7 +52,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         request_executor: AbstractRequestExecutor | None = None,
     ) -> None:
         serializer = serializer_factory()
-        if not isinstance(serializer, PacketSerializer):
+        if not isinstance(serializer, AbstractPacketSerializer):
             raise TypeError("Invalid arguments")
         send_flags = int(send_flags)
         recv_flags = int(recv_flags)
@@ -188,7 +188,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     def bad_request(self, client_address: SocketAddress) -> None:  # TODO: handle BlockingIOError/InterruptedError
         pass
 
-    def serializer(self) -> PacketSerializer[_ResponseT, _RequestT]:
+    def serializer(self) -> AbstractPacketSerializer[_ResponseT, _RequestT]:
         return self.__serializer_factory()
 
     @overload

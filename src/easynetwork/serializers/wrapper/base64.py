@@ -14,7 +14,7 @@ import base64
 import binascii
 from typing import TypeVar, final
 
-from ..abc import PacketSerializer
+from ..abc import AbstractPacketSerializer
 from ..exceptions import DeserializeError
 from ..stream.abc import AutoSeparatedPacketSerializer
 
@@ -25,10 +25,10 @@ _DT_co = TypeVar("_DT_co", covariant=True)
 class Base64EncodedSerializer(AutoSeparatedPacketSerializer[_ST_contra, _DT_co]):
     __slots__ = ("__serializer",)
 
-    def __init__(self, serializer: PacketSerializer[_ST_contra, _DT_co]) -> None:
-        assert isinstance(serializer, PacketSerializer)
+    def __init__(self, serializer: AbstractPacketSerializer[_ST_contra, _DT_co]) -> None:
+        assert isinstance(serializer, AbstractPacketSerializer)
         super().__init__(separator=b"\r\n", keepends=False)
-        self.__serializer: PacketSerializer[_ST_contra, _DT_co] = serializer
+        self.__serializer: AbstractPacketSerializer[_ST_contra, _DT_co] = serializer
 
     @final
     def serialize(self, packet: _ST_contra) -> bytes:

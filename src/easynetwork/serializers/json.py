@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Generator, TypeVar, final
 
 from .exceptions import DeserializeError
-from .stream.abc import IncrementalPacketSerializer
+from .stream.abc import AbstractIncrementalPacketSerializer
 from .stream.exceptions import IncrementalDeserializeError
 
 _ST_contra = TypeVar("_ST_contra", contravariant=True, bound=list[Any] | dict[str, Any])
@@ -96,7 +96,7 @@ class _JSONParser:
         return complete_document, partial_document
 
 
-class JSONSerializer(IncrementalPacketSerializer[_ST_contra, _DT_co]):
+class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
     __slots__ = ("__e", "__d")
 
     def __init__(self, *, encoder: JSONEncoderConfig | None = None, decoder: JSONDecoderConfig | None = None) -> None:

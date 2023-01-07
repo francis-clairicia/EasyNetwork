@@ -23,7 +23,7 @@ from typing import Any, Callable, Final, Generic, Iterator, Sequence, TypeAlias,
 from weakref import WeakKeyDictionary
 
 from ..serializers.exceptions import DeserializeError
-from ..serializers.stream.abc import IncrementalPacketSerializer
+from ..serializers.stream.abc import AbstractIncrementalPacketSerializer
 from ..tools.socket import AF_INET, SocketAddress, create_server, guess_best_buffer_size, new_socket_address
 from ..tools.stream import StreamNetworkDataConsumer, StreamNetworkDataProducerReader
 from .abc import AbstractNetworkServer
@@ -88,7 +88,7 @@ class ConnectedClient(Generic[_ResponseT], metaclass=ABCMeta):
         return self.__addr
 
 
-IncrementalPacketSerializerFactory: TypeAlias = Callable[[], IncrementalPacketSerializer[_ResponseT, _RequestT]]
+IncrementalPacketSerializerFactory: TypeAlias = Callable[[], AbstractIncrementalPacketSerializer[_ResponseT, _RequestT]]
 
 
 _default_global_executor = SyncRequestExecutor()
@@ -502,7 +502,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 with self.__lock:
                     selector.register(key.fileobj, key.events, key.data)
 
-    def serializer(self) -> IncrementalPacketSerializer[_ResponseT, _RequestT]:
+    def serializer(self) -> AbstractIncrementalPacketSerializer[_ResponseT, _RequestT]:
         return self.__serializer_factory()
 
     @overload
@@ -569,7 +569,7 @@ class _SelectorKeyData(Generic[_RequestT, _ResponseT]):
     def __init__(
         self,
         *,
-        serializer: IncrementalPacketSerializer[_ResponseT, _RequestT],
+        serializer: AbstractIncrementalPacketSerializer[_ResponseT, _RequestT],
         socket: Socket,
         address: SocketAddress,
         flush: Callable[[Socket], None],

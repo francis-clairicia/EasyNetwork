@@ -13,7 +13,7 @@ from socket import socket as Socket
 from threading import RLock
 from typing import Any, Generic, Iterator, TypeVar, final, overload
 
-from ..serializers.stream.abc import IncrementalPacketSerializer
+from ..serializers.stream.abc import AbstractIncrementalPacketSerializer
 from ..tools.socket import DEFAULT_TIMEOUT, SHUT_WR, SocketAddress, create_connection, guess_best_buffer_size, new_socket_address
 from ..tools.stream import StreamNetworkDataConsumer, StreamNetworkDataProducerIterator
 from .abc import AbstractNetworkClient
@@ -46,7 +46,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         self,
         address: tuple[str, int],
         /,
-        serializer: IncrementalPacketSerializer[_SentPacketT, _ReceivedPacketT],
+        serializer: AbstractIncrementalPacketSerializer[_SentPacketT, _ReceivedPacketT],
         *,
         timeout: float | None = ...,
         source_address: tuple[str, int] | None = ...,
@@ -61,7 +61,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         self,
         socket: Socket,
         /,
-        serializer: IncrementalPacketSerializer[_SentPacketT, _ReceivedPacketT],
+        serializer: AbstractIncrementalPacketSerializer[_SentPacketT, _ReceivedPacketT],
         *,
         give: bool = ...,
         send_flags: int = ...,
@@ -74,14 +74,14 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         self,
         __arg: Socket | tuple[str, int],
         /,
-        serializer: IncrementalPacketSerializer[_SentPacketT, _ReceivedPacketT],
+        serializer: AbstractIncrementalPacketSerializer[_SentPacketT, _ReceivedPacketT],
         *,
         send_flags: int = 0,
         recv_flags: int = 0,
         buffered_write: bool = False,
         **kwargs: Any,
     ) -> None:
-        if not isinstance(serializer, IncrementalPacketSerializer):
+        if not isinstance(serializer, AbstractIncrementalPacketSerializer):
             raise TypeError("Invalid argument")
         send_flags = int(send_flags)
         recv_flags = int(recv_flags)

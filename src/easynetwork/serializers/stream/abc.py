@@ -7,10 +7,10 @@
 from __future__ import annotations
 
 __all__ = [
+    "AbstractIncrementalPacketSerializer",
     "AutoParsedPacketSerializer",
     "AutoSeparatedPacketSerializer",
     "FixedPacketSizePacketSerializer",
-    "IncrementalPacketSerializer",
 ]
 
 import hashlib
@@ -20,7 +20,7 @@ from io import BytesIO
 from struct import Struct, error as StructError
 from typing import Any, Generator, TypeVar, final
 
-from ..abc import PacketSerializer
+from ..abc import AbstractPacketSerializer
 from ..exceptions import DeserializeError
 from .exceptions import IncrementalDeserializeError
 
@@ -28,7 +28,7 @@ _ST_contra = TypeVar("_ST_contra", contravariant=True)
 _DT_co = TypeVar("_DT_co", covariant=True)
 
 
-class IncrementalPacketSerializer(PacketSerializer[_ST_contra, _DT_co]):
+class AbstractIncrementalPacketSerializer(AbstractPacketSerializer[_ST_contra, _DT_co]):
     __slots__ = ()
 
     def serialize(self, packet: _ST_contra) -> bytes:
@@ -62,7 +62,7 @@ class IncrementalPacketSerializer(PacketSerializer[_ST_contra, _DT_co]):
         raise NotImplementedError
 
 
-class AutoSeparatedPacketSerializer(IncrementalPacketSerializer[_ST_contra, _DT_co]):
+class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
     __slots__ = ("__separator", "__keepends")
 
     def __init__(self, separator: bytes, *, keepends: bool = False, **kwargs: Any) -> None:
@@ -120,7 +120,7 @@ class AutoSeparatedPacketSerializer(IncrementalPacketSerializer[_ST_contra, _DT_
         return self.__keepends
 
 
-class AutoParsedPacketSerializer(IncrementalPacketSerializer[_ST_contra, _DT_co]):
+class AutoParsedPacketSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
     __slots__ = ("__magic", "__algorithm")
 
     def __init__(self, magic: bytes, *, checksum: str = "md5", checksum_guaranteed: bool = True, **kwargs: Any) -> None:
@@ -217,7 +217,7 @@ class AutoParsedPacketSerializer(IncrementalPacketSerializer[_ST_contra, _DT_co]
         return self.__algorithm
 
 
-class FixedPacketSizePacketSerializer(IncrementalPacketSerializer[_ST_contra, _DT_co]):
+class FixedPacketSizePacketSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
     __slots__ = ("__size",)
 
     def __init__(self, size: int, **kwargs: Any) -> None:

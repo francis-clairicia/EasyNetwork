@@ -8,6 +8,8 @@ from __future__ import annotations
 
 __all__ = [
     "AbstractCompressorSerializer",
+    "AbstractIncrementalPacketSerializer",
+    "AbstractPacketSerializer",
     "AbstractStructSerializer",
     "AutoParsedPacketSerializer",
     "AutoSeparatedPacketSerializer",
@@ -16,12 +18,10 @@ __all__ = [
     "DeserializeError",
     "FixedPacketSizePacketSerializer",
     "IncrementalDeserializeError",
-    "IncrementalPacketSerializer",
     "JSONDecoderConfig",
     "JSONEncoderConfig",
     "JSONSerializer",
     "NamedTupleSerializer",
-    "PacketSerializer",
     "PickleSerializer",
     "ZlibCompressorSerializer",
 ]

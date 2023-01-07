@@ -8,7 +8,7 @@ from socket import AF_INET, SOCK_STREAM, socket as Socket
 from typing import Any, Generator
 
 from easynetwork.client.tcp import TCPNetworkClient
-from easynetwork.serializers import IncrementalPacketSerializer, JSONSerializer, PickleSerializer
+from easynetwork.serializers import AbstractIncrementalPacketSerializer, JSONSerializer, PickleSerializer
 
 import pytest
 
@@ -35,7 +35,7 @@ def test_custom_socket(tcp_server: tuple[str, int]) -> None:
         assert client.recv_packet() == "Hello"
 
 
-class StringSerializer(IncrementalPacketSerializer[str, str]):
+class StringSerializer(AbstractIncrementalPacketSerializer[str, str]):
     def incremental_serialize(self, packet: str) -> Generator[bytes, None, None]:
         if not isinstance(packet, str):
             raise ValueError("Invalid string")

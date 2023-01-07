@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-__all__ = ["PacketSerializer"]
+__all__ = ["AbstractPacketSerializer"]
 
 from abc import ABCMeta, abstractmethod
 from typing import Generic, TypeVar
@@ -15,7 +15,7 @@ _ST_contra = TypeVar("_ST_contra", contravariant=True)
 _DT_co = TypeVar("_DT_co", covariant=True)
 
 
-class PacketSerializer(Generic[_ST_contra, _DT_co], metaclass=ABCMeta):
+class AbstractPacketSerializer(Generic[_ST_contra, _DT_co], metaclass=ABCMeta):
     __slots__ = ("__weakref__",)
 
     @abstractmethod
