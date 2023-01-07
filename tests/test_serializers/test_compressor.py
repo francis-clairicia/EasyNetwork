@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
+from dataclasses import asdict as dataclass_asdict
 from typing import Any, Callable
 
-from easynetwork.serializers.json import JSONSerializer
+from easynetwork.serializers.json import JSONEncoderConfig, JSONSerializer
 from easynetwork.serializers.wrapper.compressor import (
     AbstractCompressorSerializer,
     BZ2CompressorSerializer,
@@ -41,14 +42,19 @@ def json_data() -> Any:
 
 
 @pytest.fixture(scope="module")
-def json_encoder() -> json.JSONEncoder:
-    return json.JSONEncoder()
+def json_encoder_config() -> JSONEncoderConfig:
+    return JSONEncoderConfig()
+
+
+@pytest.fixture(scope="module")
+def json_encoder(json_encoder_config: JSONEncoderConfig) -> json.JSONEncoder:
+    return json.JSONEncoder(**dataclass_asdict(json_encoder_config))
 
 
 @pytest.fixture(params=[BZ2CompressorSerializer, ZlibCompressorSerializer])
-def compressor_serializer(request: Any, json_encoder: json.JSONEncoder) -> AbstractCompressorSerializer[Any, Any]:
+def compressor_serializer(request: Any, json_encoder_config: JSONEncoderConfig) -> AbstractCompressorSerializer[Any, Any]:
     factory: Callable[[Any], AbstractCompressorSerializer[Any, Any]] = request.param
-    return factory(JSONSerializer(encoder=json_encoder))
+    return factory(JSONSerializer(encoder=json_encoder_config))
 
 
 @pytest.fixture

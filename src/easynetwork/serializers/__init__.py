@@ -17,6 +17,8 @@ __all__ = [
     "FixedPacketSizePacketSerializer",
     "IncrementalDeserializeError",
     "IncrementalPacketSerializer",
+    "JSONDecoderConfig",
+    "JSONEncoderConfig",
     "JSONSerializer",
     "NamedTupleSerializer",
     "PacketSerializer",

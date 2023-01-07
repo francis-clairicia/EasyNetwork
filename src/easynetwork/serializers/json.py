@@ -6,11 +6,15 @@
 
 from __future__ import annotations
 
-__all__ = ["JSONSerializer"]
+__all__ = [
+    "JSONDecoderConfig",
+    "JSONEncoderConfig",
+    "JSONSerializer",
+]
 
 from collections import Counter
-from json import JSONDecodeError, JSONDecoder, JSONEncoder
-from typing import Any, Generator, TypeVar, final
+from dataclasses import dataclass
+from typing import Any, Callable, Generator, TypeVar, final
 
 from .exceptions import DeserializeError
 from .stream.abc import IncrementalPacketSerializer
@@ -18,6 +22,26 @@ from .stream.exceptions import IncrementalDeserializeError
 
 _ST_contra = TypeVar("_ST_contra", contravariant=True, bound=list[Any] | dict[str, Any])
 _DT_co = TypeVar("_DT_co", covariant=True, bound=list[Any] | dict[str, Any])
+
+
+@dataclass(kw_only=True, frozen=True)
+class JSONEncoderConfig:
+    skipkeys: bool = False
+    check_circular: bool = True
+    allow_nan: bool = True
+    indent: int | None = None
+    separators: tuple[str, str] | None = (",", ":")  # Compact JSON (w/o whitespaces)
+    default: Callable[..., Any] | None = None
+
+
+@dataclass(kw_only=True, frozen=True)
+class JSONDecoderConfig:
+    object_hook: Callable[[dict[str, Any]], None] | None = None
+    parse_int: Callable[[str], Any] | None = None
+    parse_float: Callable[[str], Any] | None = None
+    parse_constant: Callable[[str], Any] | None = None
+    object_pairs_hook: Callable[[list[tuple[str, Any]]], None] | None = None
+    strict: bool = True
 
 
 class _JSONParser:
@@ -75,35 +99,39 @@ class _JSONParser:
 class JSONSerializer(IncrementalPacketSerializer[_ST_contra, _DT_co]):
     __slots__ = ("__e", "__d")
 
-    def __init__(self, *, encoder: JSONEncoder | None = None, decoder: JSONDecoder | None = None) -> None:
+    def __init__(self, *, encoder: JSONEncoderConfig | None = None, decoder: JSONDecoderConfig | None = None) -> None:
+        from json import JSONDecoder, JSONEncoder
+
         super().__init__()
         self.__e: JSONEncoder
         self.__d: JSONDecoder
-        match encoder:
-            case None:
-                self.__e = JSONEncoder(
-                    skipkeys=False,
-                    ensure_ascii=True,
-                    check_circular=True,
-                    allow_nan=True,
-                    indent=None,
-                    separators=(",", ":"),  # Compact JSON (w/o whitespaces)
-                    default=None,
-                )
-            case JSONEncoder():
-                if not encoder.ensure_ascii:
-                    raise ValueError("encoder.ensure_ascii set to False")
-                self.__e = encoder
-            case _:
-                raise TypeError(f"Invalid encoder: expected json.JSONEncoder, got {type(encoder).__name__}")
 
-        match decoder:
-            case None:
-                self.__d = JSONDecoder(object_hook=None, object_pairs_hook=None, strict=True)
-            case JSONDecoder():
-                self.__d = decoder
-            case _:
-                raise TypeError(f"Invalid decoder: expected json.JSONDecoder, got {type(decoder).__name__}")
+        if encoder is None:
+            encoder = JSONEncoderConfig()
+        elif not isinstance(encoder, JSONEncoderConfig):
+            raise TypeError(f"Invalid encoder: expected {JSONEncoderConfig.__name__}, got {type(encoder).__name__}")
+        self.__e = JSONEncoder(
+            skipkeys=encoder.skipkeys,
+            ensure_ascii=True,
+            check_circular=encoder.check_circular,
+            allow_nan=encoder.allow_nan,
+            indent=encoder.indent,
+            separators=encoder.separators,
+            default=encoder.default,
+        )
+
+        if decoder is None:
+            decoder = JSONDecoderConfig()
+        elif not isinstance(decoder, JSONDecoderConfig):
+            raise TypeError(f"Invalid decoder: expected {JSONDecoderConfig.__name__}, got {type(decoder).__name__}")
+        self.__d = JSONDecoder(
+            object_hook=decoder.object_hook,
+            parse_int=decoder.parse_int,
+            parse_float=decoder.parse_float,
+            parse_constant=decoder.parse_constant,
+            object_pairs_hook=decoder.object_pairs_hook,
+            strict=decoder.strict,
+        )
 
     @final
     def serialize(self, packet: _ST_contra) -> bytes:
@@ -123,6 +151,8 @@ class JSONSerializer(IncrementalPacketSerializer[_ST_contra, _DT_co]):
 
     @final
     def deserialize(self, data: bytes) -> _DT_co:
+        from json import JSONDecodeError
+
         data = data.strip(b" \t\n\r")
         if not data:
             raise DeserializeError("Empty bytes after stripping whitespaces")
@@ -141,6 +171,8 @@ class JSONSerializer(IncrementalPacketSerializer[_ST_contra, _DT_co]):
 
     @final
     def incremental_deserialize(self) -> Generator[None, bytes, tuple[_DT_co, bytes]]:
+        from json import JSONDecodeError
+
         complete_document, remaining_data = yield from _JSONParser.raw_parse()
 
         decoder = self.__d
