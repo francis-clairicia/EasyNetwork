@@ -2,15 +2,12 @@
 # Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
 #
 #
-# mypy: no-warn-unused-ignores
 """Network client module"""
 
 from __future__ import annotations
 
 __all__ = [
     "AbstractNetworkClient",
-    "InvalidPacket",
-    "TCPInvalidPacket",
     "TCPNetworkClient",
     "UDPInvalidPacket",
     "UDPNetworkClient",

@@ -71,6 +71,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             give=True,
             send_flags=send_flags,
             recv_flags=recv_flags,
+            on_recv_error="raise",
         )
         self.__request_executor: AbstractRequestExecutor = (
             request_executor if request_executor is not None else _default_global_executor
@@ -99,7 +100,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
 
         def parse_requests() -> None:
             try:
-                request_tuple = server.recv_packet_no_block_from_anyone(default=None, timeout=0, on_error="raise")
+                request_tuple = server.recv_packet_no_block_from_anyone(default=None, timeout=0)
             except UDPInvalidPacket as exc:
                 address = exc.sender
                 del exc

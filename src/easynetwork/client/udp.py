@@ -2,7 +2,6 @@
 # Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
 #
 #
-# mypy: no-warn-unused-ignores
 """Network client module"""
 
 from __future__ import annotations
@@ -19,7 +18,7 @@ from typing import TYPE_CHECKING, Any, Callable, Final, Generic, Iterator, Liter
 from ..serializers.abc import PacketSerializer
 from ..serializers.exceptions import DeserializeError
 from ..tools.socket import DEFAULT_TIMEOUT, AddressFamily, SocketAddress, new_socket_address
-from .abc import AbstractNetworkClient, InvalidPacket
+from .abc import AbstractNetworkClient
 
 _T = TypeVar("_T")
 _ReceivedPacketT = TypeVar("_ReceivedPacketT")
@@ -33,9 +32,10 @@ _Address: TypeAlias = tuple[str, int] | tuple[str, int, int, int]  # type: ignor
 _NO_DEFAULT: Any = object()
 
 
-class UDPInvalidPacket(InvalidPacket):
-    def __init__(self, sender: SocketAddress) -> None:
-        super().__init__()
+class UDPInvalidPacket(Exception):
+    def __init__(self, reason: str, sender: SocketAddress) -> None:
+        super().__init__(f"Received invalid packet from {sender}: {reason}")
+        self.reason: str = reason
         self.sender: SocketAddress = sender
 
 
@@ -123,6 +123,8 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             if kwargs:
                 raise TypeError("Invalid arguments")
             self.__owner = bool(give)
+            if socket.getsockname()[1] == 0:
+                socket.bind(("", 0))
             try:
                 peername = new_socket_address(socket.getpeername(), socket.family)
             except OSError:
@@ -228,7 +230,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         if remote_addr := self.__peer:
             if address not in (None, remote_addr):
                 raise ValueError(f"Invalid address: must be None or {remote_addr}")
-            return remote_addr  # type: ignore[return-value]
+            return remote_addr
         if address is None:
             raise ValueError("Invalid address: must not be None")
         return address
@@ -237,19 +239,18 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         self,
         *,
         flags: int = 0,
-        on_error: Literal["raise", "ignore"] | None = None,
     ) -> tuple[_ReceivedPacketT, SocketAddress]:
-        return self.__recv_packet(flags=flags, on_error=on_error, only_remote=False)
+        return self.__recv_packet(flags=flags, only_remote=False)
 
     @overload
     def recv_packet_no_block_from_anyone(
-        self, *, flags: int = ..., timeout: float = ..., on_error: Literal["raise", "ignore"] | None = ...
+        self, *, flags: int = ..., timeout: float = ...
     ) -> tuple[_ReceivedPacketT, SocketAddress]:
         ...
 
     @overload
     def recv_packet_no_block_from_anyone(
-        self, *, flags: int = ..., default: _T, timeout: float = ..., on_error: Literal["raise", "ignore"] | None = ...
+        self, *, flags: int = ..., default: _T, timeout: float = ...
     ) -> tuple[_ReceivedPacketT, SocketAddress] | _T:
         ...
 
@@ -259,46 +260,30 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         flags: int = 0,
         default: _T = _NO_DEFAULT,
         timeout: float = 0,
-        on_error: Literal["raise", "ignore"] | None = None,
     ) -> tuple[_ReceivedPacketT, SocketAddress] | _T:
-        return self.__recv_packet_no_block(flags=flags, default=default, timeout=timeout, on_error=on_error, only_remote=False)
+        return self.__recv_packet_no_block(flags=flags, default=default, timeout=timeout, only_remote=False)
 
     def iter_received_packets_from_anyone(
         self,
         *,
         timeout: float = 0,
         flags: int = 0,
-        on_error: Literal["raise", "ignore"] | None = None,
     ) -> Iterator[tuple[_ReceivedPacketT, SocketAddress]]:
-        return self.__iter_received_packets(flags=flags, timeout=timeout, on_error=on_error, only_remote=False)
+        return self.__iter_received_packets(flags=flags, timeout=timeout, only_remote=False)
 
-    def recv_all_packets_from_anyone(
-        self,
-        *,
-        flags: int = 0,
-        timeout: float = 0,
-    ) -> list[tuple[_ReceivedPacketT, SocketAddress]]:
+    def recv_all_packets_from_anyone(self, *, flags: int = 0, timeout: float = 0) -> list[tuple[_ReceivedPacketT, SocketAddress]]:
         with self.__lock:
-            return list(self.__iter_received_packets(flags=flags, timeout=timeout, on_error="ignore", only_remote=False))
+            return list(self.__iter_received_packets(flags=flags, timeout=timeout, only_remote=False))
 
-    def recv_packet_from_remote(
-        self,
-        *,
-        flags: int = 0,
-        on_error: Literal["raise", "ignore"] | None = None,
-    ) -> _ReceivedPacketT:
-        return self.__recv_packet(flags=flags, on_error=on_error, only_remote=True)[0]
+    def recv_packet_from_remote(self, *, flags: int = 0) -> _ReceivedPacketT:
+        return self.__recv_packet(flags=flags, only_remote=True)[0]
 
     @overload
-    def recv_packet_no_block_from_remote(
-        self, *, flags: int = ..., timeout: float = ..., on_error: Literal["raise", "ignore"] | None = ...
-    ) -> _ReceivedPacketT:
+    def recv_packet_no_block_from_remote(self, *, flags: int = ..., timeout: float = ...) -> _ReceivedPacketT:
         ...
 
     @overload
-    def recv_packet_no_block_from_remote(
-        self, *, flags: int = ..., default: _T, timeout: float = ..., on_error: Literal["raise", "ignore"] | None = ...
-    ) -> _ReceivedPacketT | _T:
+    def recv_packet_no_block_from_remote(self, *, flags: int = ..., default: _T, timeout: float = ...) -> _ReceivedPacketT | _T:
         ...
 
     def recv_packet_no_block_from_remote(
@@ -307,14 +292,12 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         flags: int = 0,
         default: _T = _NO_DEFAULT,
         timeout: float = 0,
-        on_error: Literal["raise", "ignore"] | None = None,
     ) -> _ReceivedPacketT | _T:
         try:
             output = self.__recv_packet_no_block(
                 flags=flags,
                 default=_NO_DEFAULT,
                 timeout=timeout,
-                on_error=on_error,
                 only_remote=True,
             )
         except TimeoutError:
@@ -328,14 +311,12 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         *,
         timeout: float = 0,
         flags: int = 0,
-        on_error: Literal["raise", "ignore"] | None = None,
     ) -> Iterator[_ReceivedPacketT]:
         return map(
             itemgetter(0),
             self.__iter_received_packets(
                 flags=flags,
                 timeout=timeout,
-                on_error=on_error,
                 only_remote=True,
             ),
         )
@@ -347,13 +328,12 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         timeout: float = 0,
     ) -> list[_ReceivedPacketT]:
         with self.__lock:
-            return list(self.iter_received_packets_from_remote(flags=flags, timeout=timeout, on_error="ignore"))
+            return list(self.iter_received_packets_from_remote(flags=flags, timeout=timeout))
 
     def __recv_packet(
         self,
         *,
         flags: int,
-        on_error: Literal["raise", "ignore"] | None,
         only_remote: bool,
     ) -> tuple[_ReceivedPacketT, SocketAddress]:
         with self.__lock:
@@ -361,7 +341,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             next_packet = self.__next_packet
             recv_packets_from_socket = self.__recv_packets_from_socket
             while True:
-                packet_tuple = next_packet(on_error=on_error, only_remote=only_remote)
+                packet_tuple = next_packet(only_remote=only_remote)
                 if packet_tuple is not None:
                     return packet_tuple
                 while not recv_packets_from_socket(flags=flags, timeout=None):
@@ -373,18 +353,17 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         flags: int,
         default: _T,
         timeout: float,
-        on_error: Literal["raise", "ignore"] | None,
         only_remote: bool,
     ) -> tuple[_ReceivedPacketT, SocketAddress] | _T:
         timeout = float(timeout)
         with self.__lock:
             self._check_not_closed()
             next_packet = self.__next_packet
-            packet_tuple = next_packet(on_error=on_error, only_remote=only_remote)
+            packet_tuple = next_packet(only_remote=only_remote)
             if packet_tuple is not None:
                 return packet_tuple
             if self.__recv_packets_from_socket(flags=flags, timeout=timeout):
-                packet_tuple = next_packet(on_error=on_error, only_remote=only_remote)
+                packet_tuple = next_packet(only_remote=only_remote)
                 if packet_tuple is not None:
                     return packet_tuple
             if default is not _NO_DEFAULT:
@@ -396,7 +375,6 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         *,
         flags: int,
         timeout: float,
-        on_error: Literal["raise", "ignore"] | None,
         only_remote: bool,
     ) -> Iterator[tuple[_ReceivedPacketT, SocketAddress]]:
         timeout = float(timeout)
@@ -408,7 +386,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         while True:
             with lock:
                 check_not_closed()
-                packet_tuple = next_packet(on_error=on_error, only_remote=only_remote)
+                packet_tuple = next_packet(only_remote=only_remote)
                 if packet_tuple is None:
                     if not recv_packets_from_socket(flags=flags, timeout=timeout):
                         return
@@ -433,13 +411,8 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
     def __next_packet(
         self,
         *,
-        on_error: Literal["raise", "ignore"] | None,
         only_remote: bool,
     ) -> tuple[_ReceivedPacketT, SocketAddress] | None:
-        if on_error is None:
-            on_error = self.__on_recv_error
-        elif on_error not in ("raise", "ignore"):
-            raise ValueError("Invalid on_error value")
         remote_address: SocketAddress | None
         if only_remote:
             remote_address = self.__peer
@@ -456,8 +429,8 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             try:
                 packet = deserialize(data)
             except DeserializeError as exc:
-                if on_error == "raise":
-                    raise UDPInvalidPacket(sender) from exc
+                if self.__on_recv_error == "raise":
+                    raise UDPInvalidPacket(str(exc), sender) from exc
                 continue
             return packet, sender
         return None
@@ -576,7 +549,6 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         source_address: tuple[str, int] | None = ...,
         send_flags: int = ...,
         recv_flags: int = ...,
-        on_recv_error: Literal["ignore", "raise"] = ...,
     ) -> None:
         ...
 
@@ -590,7 +562,6 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         give: bool = ...,
         send_flags: int = ...,
         recv_flags: int = ...,
-        on_recv_error: Literal["ignore", "raise"] = ...,
     ) -> None:
         ...
 
@@ -604,10 +575,10 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         endpoint: UDPNetworkEndpoint[_SentPacketT, _ReceivedPacketT]
         if isinstance(__arg, Socket):
             socket = __arg
-            endpoint = UDPNetworkEndpoint(serializer, socket=socket, **kwargs)
+            endpoint = UDPNetworkEndpoint(serializer, socket=socket, on_recv_error="ignore", **kwargs)
         elif isinstance(__arg, tuple):
             address = __arg
-            endpoint = UDPNetworkEndpoint(serializer, remote_address=address, **kwargs)
+            endpoint = UDPNetworkEndpoint(serializer, remote_address=address, on_recv_error="ignore", **kwargs)
         else:
             raise TypeError("Invalid arguments")
 
@@ -635,35 +606,22 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
     def send_packets(self, *packets: _SentPacketT, timeout: float | None = DEFAULT_TIMEOUT, flags: int = 0) -> None:
         return self.__endpoint.send_packets(None, *packets, timeout=timeout, flags=flags)
 
-    def recv_packet(self, *, flags: int = 0, on_error: Literal["raise", "ignore"] | None = None) -> _ReceivedPacketT:
-        return self.__endpoint.recv_packet_from_remote(flags=flags, on_error=on_error)
+    def recv_packet(self, *, flags: int = 0) -> _ReceivedPacketT:
+        return self.__endpoint.recv_packet_from_remote(flags=flags)
 
     @overload
-    def recv_packet_no_block(
-        self, *, timeout: float = ..., flags: int = ..., on_error: Literal["raise", "ignore"] | None = ...
-    ) -> _ReceivedPacketT:
+    def recv_packet_no_block(self, *, timeout: float = ..., flags: int = ...) -> _ReceivedPacketT:
         ...
 
     @overload
-    def recv_packet_no_block(
-        self, *, default: _T, timeout: float = ..., flags: int = ..., on_error: Literal["raise", "ignore"] | None = ...
-    ) -> _ReceivedPacketT | _T:
+    def recv_packet_no_block(self, *, default: _T, timeout: float = ..., flags: int = ...) -> _ReceivedPacketT | _T:
         ...
 
-    def recv_packet_no_block(
-        self,
-        *,
-        default: _T = _NO_DEFAULT,
-        timeout: float = 0,
-        flags: int = 0,
-        on_error: Literal["raise", "ignore"] | None = None,
-    ) -> _ReceivedPacketT | _T:
-        return self.__endpoint.recv_packet_no_block_from_remote(default=default, timeout=timeout, flags=flags, on_error=on_error)
+    def recv_packet_no_block(self, *, default: _T = _NO_DEFAULT, timeout: float = 0, flags: int = 0) -> _ReceivedPacketT | _T:
+        return self.__endpoint.recv_packet_no_block_from_remote(default=default, timeout=timeout, flags=flags)
 
-    def iter_received_packets(
-        self, *, timeout: float = 0, flags: int = 0, on_error: Literal["raise", "ignore"] | None = None
-    ) -> Iterator[_ReceivedPacketT]:
-        return self.__endpoint.iter_received_packets_from_remote(timeout=timeout, flags=flags, on_error=on_error)
+    def iter_received_packets(self, *, timeout: float = 0, flags: int = 0) -> Iterator[_ReceivedPacketT]:
+        return self.__endpoint.iter_received_packets_from_remote(timeout=timeout, flags=flags)
 
     def recv_all_packets(
         self,

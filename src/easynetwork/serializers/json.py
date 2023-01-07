@@ -138,7 +138,6 @@ class JSONSerializer(IncrementalPacketSerializer[_ST_contra, _DT_co]):
         if not isinstance(packet, (dict, list)):
             raise TypeError("Top-level object must be a dict or a list")
         encoder = self.__e
-        encoder.ensure_ascii = True
         return encoder.encode(packet).encode("ascii")
 
     @final

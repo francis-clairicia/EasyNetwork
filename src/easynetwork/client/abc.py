@@ -2,29 +2,21 @@
 # Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
 #
 #
-# mypy: no-warn-unused-ignores
 """Network client module"""
 
 from __future__ import annotations
 
-__all__ = ["AbstractNetworkClient", "InvalidPacket"]
+__all__ = ["AbstractNetworkClient"]
 
 from abc import ABCMeta, abstractmethod
 from socket import socket as Socket
-from typing import TYPE_CHECKING, Any, Generic, Iterator, Literal, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Generic, Iterator, TypeVar, overload
 
 from ..tools.socket import SocketAddress
 
 _T = TypeVar("_T")
 _ReceivedPacketT = TypeVar("_ReceivedPacketT")
 _SentPacketT = TypeVar("_SentPacketT")
-
-
-class InvalidPacket(ValueError):
-    def __init__(self, *args: Any) -> None:
-        if not args:
-            args = ("Received invalid data to handle",)
-        super().__init__(*args)
 
 
 class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=ABCMeta):
@@ -60,56 +52,34 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
         raise NotImplementedError
 
     @abstractmethod
-    def recv_packet(self, *, flags: int = ..., on_error: Literal["raise", "ignore"] | None = ...) -> _ReceivedPacketT:
+    def recv_packet(self, *, flags: int = ...) -> _ReceivedPacketT:
         raise NotImplementedError
 
     @overload
     @abstractmethod
-    def recv_packet_no_block(
-        self, *, timeout: float = ..., flags: int = ..., on_error: Literal["raise", "ignore"] | None = ...
-    ) -> _ReceivedPacketT:
+    def recv_packet_no_block(self, *, timeout: float = ..., flags: int = ...) -> _ReceivedPacketT:
         ...
 
     @overload
     @abstractmethod
-    def recv_packet_no_block(
-        self, *, default: _T, timeout: float = ..., flags: int = ..., on_error: Literal["raise", "ignore"] | None = ...
-    ) -> _ReceivedPacketT | _T:
+    def recv_packet_no_block(self, *, default: _T, timeout: float = ..., flags: int = ...) -> _ReceivedPacketT | _T:
         ...
 
     @abstractmethod
-    def recv_packet_no_block(
-        self,
-        *,
-        default: _T = ...,
-        timeout: float = ...,
-        flags: int = ...,
-        on_error: Literal["raise", "ignore"] | None = ...,
-    ) -> _ReceivedPacketT | _T:
+    def recv_packet_no_block(self, *, default: _T = ..., timeout: float = ..., flags: int = ...) -> _ReceivedPacketT | _T:
         raise NotImplementedError
 
-    def iter_received_packets(
-        self,
-        *,
-        timeout: float = 0,
-        flags: int = 0,
-        on_error: Literal["raise", "ignore"] | None = None,
-    ) -> Iterator[_ReceivedPacketT]:
+    def iter_received_packets(self, *, timeout: float = 0, flags: int = 0) -> Iterator[_ReceivedPacketT]:
         timeout = float(timeout)
         _not_received: Any = object()
         while True:
-            packet = self.recv_packet_no_block(timeout=timeout, flags=flags, default=_not_received, on_error=on_error)
+            packet = self.recv_packet_no_block(timeout=timeout, flags=flags, default=_not_received)
             if packet is _not_received:
                 break
             yield packet
 
-    def recv_all_packets(
-        self,
-        *,
-        timeout: float = 0,
-        flags: int = 0,
-    ) -> list[_ReceivedPacketT]:
-        return list(self.iter_received_packets(timeout=timeout, flags=flags, on_error="ignore"))
+    def recv_all_packets(self, *, timeout: float = 0, flags: int = 0) -> list[_ReceivedPacketT]:
+        return list(self.iter_received_packets(timeout=timeout, flags=flags))
 
     @abstractmethod
     def get_timeout(self) -> float | None:

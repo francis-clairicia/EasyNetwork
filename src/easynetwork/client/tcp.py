@@ -2,23 +2,21 @@
 # Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
 #
 #
-# mypy: no-warn-unused-ignores
 """Network client module"""
 
 from __future__ import annotations
 
-__all__ = ["TCPInvalidPacket", "TCPNetworkClient"]
+__all__ = ["TCPNetworkClient"]
 
 from contextlib import contextmanager
 from socket import socket as Socket
 from threading import RLock
-from typing import Any, Generic, Iterator, Literal, TypeVar, final, overload
+from typing import Any, Generic, Iterator, TypeVar, final, overload
 
-from ..serializers.exceptions import DeserializeError
 from ..serializers.stream.abc import IncrementalPacketSerializer
 from ..tools.socket import DEFAULT_TIMEOUT, SHUT_WR, SocketAddress, create_connection, guess_best_buffer_size, new_socket_address
 from ..tools.stream import StreamNetworkDataConsumer, StreamNetworkDataProducerIterator
-from .abc import AbstractNetworkClient, InvalidPacket
+from .abc import AbstractNetworkClient
 
 _T = TypeVar("_T")
 _ReceivedPacketT = TypeVar("_ReceivedPacketT")
@@ -26,11 +24,6 @@ _SentPacketT = TypeVar("_SentPacketT")
 
 
 _NO_DEFAULT: Any = object()
-
-
-class TCPInvalidPacket(InvalidPacket):
-    def __init__(self) -> None:
-        super().__init__()
 
 
 class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Generic[_SentPacketT, _ReceivedPacketT]):
@@ -59,7 +52,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         source_address: tuple[str, int] | None = ...,
         send_flags: int = ...,
         recv_flags: int = ...,
-        on_recv_error: Literal["ignore", "raise"] = ...,
         buffered_write: bool = ...,
     ) -> None:
         ...
@@ -74,7 +66,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         give: bool = ...,
         send_flags: int = ...,
         recv_flags: int = ...,
-        on_recv_error: Literal["ignore", "raise"] = ...,
         buffered_write: bool = ...,
     ) -> None:
         ...
@@ -87,7 +78,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         *,
         send_flags: int = 0,
         recv_flags: int = 0,
-        on_recv_error: Literal["ignore", "raise"] = "raise",
         buffered_write: bool = False,
         **kwargs: Any,
     ) -> None:
@@ -124,9 +114,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         self.__lock: RLock = RLock()
         self.__chunk_size: int = guess_best_buffer_size(socket)
         self.__producer: StreamNetworkDataProducerIterator[_SentPacketT] = StreamNetworkDataProducerIterator(serializer)
-        self.__consumer: StreamNetworkDataConsumer[_ReceivedPacketT] = StreamNetworkDataConsumer(
-            serializer, on_error=on_recv_error
-        )
+        self.__consumer: StreamNetworkDataConsumer[_ReceivedPacketT] = StreamNetworkDataConsumer(serializer, on_error="ignore")
         self.__default_send_flags: int = send_flags
         self.__default_recv_flags: int = recv_flags
         self.__buffered_write: bool = bool(buffered_write)
@@ -173,14 +161,14 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 for chunk in self.__producer:
                     socket.sendall(chunk, flags)
 
-    def recv_packet(self, *, flags: int = 0, on_error: Literal["raise", "ignore"] | None = None) -> _ReceivedPacketT:
+    def recv_packet(self, *, flags: int = 0) -> _ReceivedPacketT:
         with self.__lock:
             self._check_not_closed()
-            next_packet = self.__next_packet
+            next_packet = self.__consumer.next
             read_socket = self.__read_socket
             while True:
                 try:
-                    return next_packet(on_error=on_error)
+                    return next_packet()
                 except EOFError:
                     pass
                 while not read_socket(timeout=None, flags=flags):
@@ -188,50 +176,38 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
 
     @overload
     def recv_packet_no_block(
-        self, *, timeout: float = ..., flags: int = ..., on_error: Literal["raise", "ignore"] | None = ...
+        self,
+        *,
+        timeout: float = ...,
+        flags: int = ...,
     ) -> _ReceivedPacketT:
         ...
 
     @overload
-    def recv_packet_no_block(
-        self, *, default: _T, timeout: float = ..., flags: int = ..., on_error: Literal["raise", "ignore"] | None = ...
-    ) -> _ReceivedPacketT | _T:
+    def recv_packet_no_block(self, *, default: _T, timeout: float = ..., flags: int = ...) -> _ReceivedPacketT | _T:
         ...
 
-    def recv_packet_no_block(
-        self,
-        *,
-        default: Any = _NO_DEFAULT,
-        timeout: float = 0,
-        flags: int = 0,
-        on_error: Literal["raise", "ignore"] | None = None,
-    ) -> Any:
+    def recv_packet_no_block(self, *, default: Any = _NO_DEFAULT, timeout: float = 0, flags: int = 0) -> Any:
         timeout = float(timeout)
         with self.__lock:
             self._check_not_closed()
-            next_packet = self.__next_packet
+            next_packet = self.__consumer.next
             try:
-                return next_packet(on_error=on_error)
+                return next_packet()
             except EOFError:
                 pass
             if self.__read_socket(timeout=timeout, flags=flags):
                 try:
-                    return next_packet(on_error=on_error)
+                    return next_packet()
                 except EOFError:
                     pass
             if default is not _NO_DEFAULT:
                 return default
             raise TimeoutError("recv_packet() timed out")
 
-    def iter_received_packets(
-        self,
-        *,
-        timeout: float = 0,
-        flags: int = 0,
-        on_error: Literal["raise", "ignore"] | None = None,
-    ) -> Iterator[_ReceivedPacketT]:
+    def iter_received_packets(self, *, timeout: float = 0, flags: int = 0) -> Iterator[_ReceivedPacketT]:
         timeout = float(timeout)
-        next_packet = self.__next_packet
+        next_packet = self.__consumer.next
         read_socket = self.__read_socket
         check_not_closed = self._check_not_closed
         lock = self.__lock
@@ -239,7 +215,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             with lock:
                 check_not_closed()
                 try:
-                    packet = next_packet(on_error=on_error)
+                    packet = next_packet()
                 except EOFError:
                     if not read_socket(timeout=timeout, flags=flags):
                         return
@@ -248,7 +224,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
 
     def recv_all_packets(self, *, timeout: float = 0, flags: int = 0) -> list[_ReceivedPacketT]:
         with self.__lock:
-            return list(self.iter_received_packets(timeout=timeout, flags=flags, on_error="ignore"))
+            return list(self.iter_received_packets(timeout=timeout, flags=flags))
 
     def __read_socket(self, *, timeout: float | None, flags: int) -> bool:
         flags |= self.__default_recv_flags
@@ -262,12 +238,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 raise EOFError("Closed connection")
             self.__consumer.feed(chunk)
             return True
-
-    def __next_packet(self, *, on_error: Literal["raise", "ignore"] | None) -> _ReceivedPacketT:
-        try:
-            return self.__consumer.next(on_error=on_error)
-        except DeserializeError as exc:
-            raise TCPInvalidPacket from exc
 
     def get_local_address(self) -> SocketAddress:
         with self.__lock:
