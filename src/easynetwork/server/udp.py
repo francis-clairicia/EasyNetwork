@@ -15,7 +15,8 @@ from threading import Event, RLock
 from typing import Any, Callable, Generic, TypeAlias, TypeVar, final, overload
 
 from ..client.udp import UDPNetworkEndpoint
-from ..serializers.abc import AbstractPacketSerializer
+from ..protocol import DatagramProtocol
+from ..tools.datagram import DatagramConsumerError
 from ..tools.socket import AF_INET, SocketAddress, create_server
 from .abc import AbstractNetworkServer
 from .executors.abc import AbstractRequestExecutor
@@ -24,7 +25,7 @@ from .executors.sync import SyncRequestExecutor
 _RequestT = TypeVar("_RequestT")
 _ResponseT = TypeVar("_ResponseT")
 
-PacketSerializerFactory: TypeAlias = Callable[[], AbstractPacketSerializer[_ResponseT, _RequestT]]
+DatagramProtocolFactory: TypeAlias = Callable[[], DatagramProtocol[_ResponseT, _RequestT]]
 
 _default_global_executor = SyncRequestExecutor()
 
@@ -36,14 +37,14 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         "__lock",
         "__loop",
         "__is_shutdown",
-        "__serializer_factory",
+        "__protocol_factory",
         "__request_executor",
     )
 
     def __init__(
         self,
         address: tuple[str, int] | tuple[str, int, int, int],
-        serializer_factory: PacketSerializerFactory[_ResponseT, _RequestT],
+        protocol_factory: DatagramProtocolFactory[_ResponseT, _RequestT],
         *,
         family: int = AF_INET,
         reuse_port: bool = False,
@@ -51,8 +52,8 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         recv_flags: int = 0,
         request_executor: AbstractRequestExecutor | None = None,
     ) -> None:
-        serializer = serializer_factory()
-        if not isinstance(serializer, AbstractPacketSerializer):
+        protocol = protocol_factory()
+        if not isinstance(protocol, DatagramProtocol):
             raise TypeError("Invalid arguments")
         send_flags = int(send_flags)
         recv_flags = int(recv_flags)
@@ -66,7 +67,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         )
         socket.settimeout(0)
         self.__server: UDPNetworkEndpoint[_ResponseT, _RequestT] = UDPNetworkEndpoint(
-            serializer=serializer,
+            protocol=protocol,
             socket=socket,
             give=True,
             send_flags=send_flags,
@@ -81,12 +82,10 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         self.__loop: bool = False
         self.__is_shutdown: Event = Event()
         self.__is_shutdown.set()
-        self.__serializer_factory: PacketSerializerFactory[_ResponseT, _RequestT] = serializer_factory
+        self.__protocol_factory: DatagramProtocolFactory[_ResponseT, _RequestT] = protocol_factory
         super().__init__()
 
     def serve_forever(self) -> None:
-        from ..client import UDPInvalidPacket
-
         with self.__lock:
             self._check_not_closed()
             if self.running():
@@ -101,11 +100,10 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         def parse_requests() -> None:
             try:
                 request_tuple = server.recv_packet_no_block(default=None, timeout=0)
-            except UDPInvalidPacket as exc:
+            except DatagramConsumerError as exc:
                 address = exc.sender
-                del exc
                 try:
-                    self.bad_request(address)
+                    self.bad_request(exc)
                 except Exception:
                     self.handle_error(address)
             else:
@@ -177,19 +175,18 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             self.__loop = False
         self.__is_shutdown.wait()
 
-    def send_packet(self, address: SocketAddress, packet: _ResponseT) -> None:  # TODO: handle BlockingIOError/InterruptedError
+    def send_packet(self, address: SocketAddress, packet: _ResponseT) -> None:
         self._check_not_closed()
         self.__server.send_packet(address, packet)
 
-    def send_packets(self, address: SocketAddress, *packets: _ResponseT) -> None:  # TODO: handle BlockingIOError/InterruptedError
-        self._check_not_closed()
-        self.__server.send_packet(address, *packets)
+    def send_packets(self, address: SocketAddress, *packets: _ResponseT) -> None:
+        raise NotImplementedError
 
-    def bad_request(self, client_address: SocketAddress) -> None:  # TODO: handle BlockingIOError/InterruptedError
+    def bad_request(self, exc: DatagramConsumerError) -> None:
         pass
 
-    def serializer(self) -> AbstractPacketSerializer[_ResponseT, _RequestT]:
-        return self.__serializer_factory()
+    def protocol(self) -> DatagramProtocol[_ResponseT, _RequestT]:
+        return self.__protocol_factory()
 
     @overload
     def getsockopt(self, __level: int, __optname: int, /) -> int:

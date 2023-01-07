@@ -7,30 +7,32 @@
 from __future__ import annotations
 
 __all__ = [
-    "StreamNetworkDataConsumer",
-    "StreamNetworkDataProducerReader",
+    "StreamDataConsumer",
+    "StreamDataConsumerError",
+    "StreamDataProducerIterator",
+    "StreamDataProducerReader",
 ]
 
 from collections import deque
 from threading import RLock
 from typing import Any, Generator, Generic, Iterator, Literal, TypeVar, final
 
-from ..serializers.exceptions import DeserializeError
-from ..serializers.stream.abc import AbstractIncrementalPacketSerializer
+from ..converter import PacketConversionError
+from ..protocol import StreamProtocol
 from ..serializers.stream.exceptions import IncrementalDeserializeError
 
-_ST_contra = TypeVar("_ST_contra", contravariant=True)
-_DT_co = TypeVar("_DT_co", covariant=True)
+_SentPacketT = TypeVar("_SentPacketT")
+_ReceivedPacketT = TypeVar("_ReceivedPacketT")
 
 
 @final
-class StreamNetworkDataProducerReader(Generic[_ST_contra]):
-    __slots__ = ("__s", "__q", "__b", "__lock")
+class StreamDataProducerReader(Generic[_SentPacketT]):
+    __slots__ = ("__p", "__q", "__b", "__lock")
 
-    def __init__(self, serializer: AbstractIncrementalPacketSerializer[_ST_contra, Any], *, lock: RLock | None = None) -> None:
+    def __init__(self, protocol: StreamProtocol[_SentPacketT, Any], *, lock: RLock | None = None) -> None:
         super().__init__()
-        assert isinstance(serializer, AbstractIncrementalPacketSerializer)
-        self.__s: AbstractIncrementalPacketSerializer[_ST_contra, Any] = serializer
+        assert isinstance(protocol, StreamProtocol)
+        self.__p: StreamProtocol[_SentPacketT, Any] = protocol
         self.__q: deque[Generator[bytes, None, None]] = deque()
         self.__b: bytes = b""
         self.__lock: RLock = lock or RLock()
@@ -69,31 +71,35 @@ class StreamNetworkDataProducerReader(Generic[_ST_contra]):
                     del queue[0]
                 except Exception as exc:
                     self.__b = data
+                    del queue[0]
                     raise RuntimeError(str(exc)) from exc
                 except BaseException:
                     self.__b = data
+                    del queue[0]
                     raise
                 finally:
                     del generator
             self.__b = data[bufsize:]
             return data[:bufsize]
 
-    def queue(self, *packets: _ST_contra) -> None:
+    def queue(self, *packets: _SentPacketT) -> None:
         if not packets:
             return
         with self.__lock:
-            self.__q.extend(map(self.__s.incremental_serialize, packets))
+            serializer = self.__p.serializer
+            converter = self.__p.converter
+            self.__q.extend(map(serializer.incremental_serialize, map(converter.convert_to_dto_packet, packets)))
 
 
 @final
 @Iterator.register
-class StreamNetworkDataProducerIterator(Generic[_ST_contra]):
-    __slots__ = ("__s", "__q", "__lock")
+class StreamDataProducerIterator(Generic[_SentPacketT]):
+    __slots__ = ("__p", "__q", "__lock")
 
-    def __init__(self, serializer: AbstractIncrementalPacketSerializer[_ST_contra, Any], *, lock: RLock | None = None) -> None:
+    def __init__(self, protocol: StreamProtocol[_SentPacketT, Any], *, lock: RLock | None = None) -> None:
         super().__init__()
-        assert isinstance(serializer, AbstractIncrementalPacketSerializer)
-        self.__s: AbstractIncrementalPacketSerializer[_ST_contra, Any] = serializer
+        assert isinstance(protocol, StreamProtocol)
+        self.__p: StreamProtocol[_SentPacketT, Any] = protocol
         self.__q: deque[Generator[bytes, None, None]] = deque()
         self.__lock: RLock = lock or RLock()
 
@@ -110,26 +116,38 @@ class StreamNetworkDataProducerIterator(Generic[_ST_contra]):
                 except StopIteration:
                     del queue[0]
                 except Exception as exc:
+                    del queue[0]
                     raise RuntimeError(str(exc)) from exc
+                except BaseException:
+                    del queue[0]
+                    raise
                 finally:
                     del generator
         raise StopIteration
 
-    def queue(self, *packets: _ST_contra) -> None:
+    def queue(self, *packets: _SentPacketT) -> None:
         if not packets:
             return
         with self.__lock:
-            self.__q.extend(map(self.__s.incremental_serialize, packets))
+            self.__q.extend(
+                map(self.__p.serializer.incremental_serialize, map(self.__p.converter.convert_to_dto_packet, packets))
+            )
+
+
+class StreamDataConsumerError(Exception):
+    def __init__(self, exception: IncrementalDeserializeError | PacketConversionError) -> None:
+        super().__init__(f"Error while deserializing data: {exception}")
+        self.exception: IncrementalDeserializeError | PacketConversionError = exception
 
 
 @final
 @Iterator.register
-class StreamNetworkDataConsumer(Generic[_DT_co]):
-    __slots__ = ("__s", "__b", "__c", "__u", "__lock", "__on_error")
+class StreamDataConsumer(Generic[_ReceivedPacketT]):
+    __slots__ = ("__p", "__b", "__c", "__u", "__lock", "__on_error")
 
     def __init__(
         self,
-        serializer: AbstractIncrementalPacketSerializer[Any, _DT_co],
+        protocol: StreamProtocol[Any, _ReceivedPacketT],
         *,
         lock: RLock | None = None,
         on_error: Literal["raise", "ignore"] = "raise",
@@ -137,26 +155,28 @@ class StreamNetworkDataConsumer(Generic[_DT_co]):
         if on_error not in ("raise", "ignore"):
             raise ValueError("Invalid on_error value")
         super().__init__()
-        assert isinstance(serializer, AbstractIncrementalPacketSerializer)
-        self.__s: AbstractIncrementalPacketSerializer[Any, _DT_co] = serializer
-        self.__c: Generator[None, bytes, tuple[_DT_co, bytes]] | None = None
+        assert isinstance(protocol, StreamProtocol)
+        self.__p: StreamProtocol[Any, _ReceivedPacketT] = protocol
+        self.__c: Generator[None, bytes, tuple[Any, bytes]] | None = None
         self.__b: bytes = b""
         self.__u: bytes = b""
         self.__lock: RLock = lock or RLock()
         self.__on_error: Literal["raise", "ignore"] = on_error
 
-    def __iter__(self) -> Iterator[_DT_co]:
+    def __iter__(self) -> Iterator[_ReceivedPacketT]:
         return self
 
-    def __next__(self) -> _DT_co:
+    def __next__(self) -> _ReceivedPacketT:
         with self.__lock:
-            chunk, self.__b = self.__b, b""
-            if chunk:
+            serializer = self.__p.serializer
+            converter = self.__p.converter
+            while chunk := self.__b:
+                self.__b = b""
                 consumer, self.__c = self.__c, None
                 if consumer is None:
-                    consumer = self.__s.incremental_deserialize()
+                    consumer = serializer.incremental_deserialize()
                     next(consumer)
-                packet: _DT_co
+                packet: Any
                 try:
                     consumer.send(chunk)
                 except StopIteration as exc:
@@ -166,19 +186,13 @@ class StreamNetworkDataConsumer(Generic[_DT_co]):
                         del exc
                     self.__u = b""
                     self.__b = chunk
-                    return packet
                 except IncrementalDeserializeError as exc:
                     self.__u = b""
                     self.__b = exc.remaining_data
-                    try:
-                        if self.__on_error == "raise":
-                            raise DeserializeError(str(exc)) from exc
-                    finally:
-                        del exc
-                except DeserializeError:
-                    self.__u = b""
+                    exc.remaining_data = b""
                     if self.__on_error == "raise":
-                        raise
+                        raise StreamDataConsumerError(exc) from exc
+                    continue
                 except Exception as exc:
                     self.__u = b""
                     raise RuntimeError(str(exc)) from exc
@@ -188,6 +202,19 @@ class StreamNetworkDataConsumer(Generic[_DT_co]):
                 else:
                     self.__u += chunk
                     self.__c = consumer
+                    continue
+
+                try:
+                    return converter.create_from_dto_packet(packet)
+                except PacketConversionError as exc:
+                    if self.__on_error == "raise":
+                        raise StreamDataConsumerError(exc) from exc
+                    continue
+                except Exception as exc:
+                    raise RuntimeError(str(exc)) from exc
+                finally:
+                    del packet
+
             raise StopIteration
 
     def feed(self, chunk: bytes) -> None:

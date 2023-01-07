@@ -20,7 +20,6 @@ __all__ = [
     "SyncRequestExecutor",
     "TCPNetworkClient",
     "ThreadingRequestExecutor",
-    "UDPInvalidPacket",
     "UDPNetworkClient",
     "UDPNetworkEndpoint",
 ]

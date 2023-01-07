@@ -13,9 +13,9 @@ from socket import socket as Socket
 from threading import RLock
 from typing import Any, Generic, Iterator, TypeVar, final, overload
 
-from ..serializers.stream.abc import AbstractIncrementalPacketSerializer
+from ..protocol import StreamProtocol
 from ..tools.socket import DEFAULT_TIMEOUT, SHUT_WR, SocketAddress, create_connection, guess_best_buffer_size, new_socket_address
-from ..tools.stream import StreamNetworkDataConsumer, StreamNetworkDataProducerIterator
+from ..tools.stream import StreamDataConsumer, StreamDataProducerIterator
 from .abc import AbstractNetworkClient
 
 _T = TypeVar("_T")
@@ -46,7 +46,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         self,
         address: tuple[str, int],
         /,
-        serializer: AbstractIncrementalPacketSerializer[_SentPacketT, _ReceivedPacketT],
+        protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
         *,
         timeout: float | None = ...,
         source_address: tuple[str, int] | None = ...,
@@ -61,7 +61,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         self,
         socket: Socket,
         /,
-        serializer: AbstractIncrementalPacketSerializer[_SentPacketT, _ReceivedPacketT],
+        protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
         *,
         give: bool = ...,
         send_flags: int = ...,
@@ -74,15 +74,16 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         self,
         __arg: Socket | tuple[str, int],
         /,
-        serializer: AbstractIncrementalPacketSerializer[_SentPacketT, _ReceivedPacketT],
+        protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
         *,
         send_flags: int = 0,
         recv_flags: int = 0,
         buffered_write: bool = False,
         **kwargs: Any,
     ) -> None:
-        if not isinstance(serializer, AbstractIncrementalPacketSerializer):
-            raise TypeError("Invalid argument")
+        self.__producer: StreamDataProducerIterator[_SentPacketT] = StreamDataProducerIterator(protocol)
+        self.__consumer: StreamDataConsumer[_ReceivedPacketT] = StreamDataConsumer(protocol, on_error="ignore")
+
         send_flags = int(send_flags)
         recv_flags = int(recv_flags)
         socket: Socket
@@ -113,8 +114,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         self.__socket: Socket = socket
         self.__lock: RLock = RLock()
         self.__chunk_size: int = guess_best_buffer_size(socket)
-        self.__producer: StreamNetworkDataProducerIterator[_SentPacketT] = StreamNetworkDataProducerIterator(serializer)
-        self.__consumer: StreamNetworkDataConsumer[_ReceivedPacketT] = StreamNetworkDataConsumer(serializer, on_error="ignore")
         self.__default_send_flags: int = send_flags
         self.__default_recv_flags: int = recv_flags
         self.__buffered_write: bool = bool(buffered_write)
@@ -135,22 +134,26 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             finally:
                 socket.close()
 
-    def send_packet(self, packet: _SentPacketT, *, timeout: float | None = DEFAULT_TIMEOUT, flags: int = 0) -> None:
+    def send_packet(self, packet: _SentPacketT, *, timeout: float | None = DEFAULT_TIMEOUT) -> None:
         with self.__lock:
             self._check_not_closed()
             self.__producer.queue(packet)
-            self.__write_on_socket(timeout=timeout, flags=flags)
+            self.__write_on_socket(timeout=timeout)
 
-    def send_packets(self, *packets: _SentPacketT, timeout: float | None = DEFAULT_TIMEOUT, flags: int = 0) -> None:
+    def send_packets(self, *packets: _SentPacketT, timeout: float | None = DEFAULT_TIMEOUT) -> None:
         if not packets:
             return
         with self.__lock:
             self._check_not_closed()
             self.__producer.queue(*packets)
-            self.__write_on_socket(timeout=timeout, flags=flags)
+            self.__write_on_socket(timeout=timeout)
 
-    def __write_on_socket(self, *, timeout: float | None, flags: int) -> None:
-        flags |= self.__default_send_flags
+    def flush(self) -> None:
+        with self.__lock:
+            self.__write_on_socket(timeout=0)
+
+    def __write_on_socket(self, *, timeout: float | None) -> None:
+        flags = self.__default_send_flags
         socket: Socket = self.__socket
         with _use_timeout(socket, timeout):
             if self.__buffered_write:
@@ -161,7 +164,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 for chunk in self.__producer:
                     socket.sendall(chunk, flags)
 
-    def recv_packet(self, *, flags: int = 0) -> _ReceivedPacketT:
+    def recv_packet(self) -> _ReceivedPacketT:
         with self.__lock:
             self._check_not_closed()
             consumer = self.__consumer
@@ -171,23 +174,18 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                     return next(consumer)
                 except StopIteration:
                     pass
-                while not read_socket(timeout=None, flags=flags):
+                while not read_socket(timeout=None):
                     continue
 
     @overload
-    def recv_packet_no_block(
-        self,
-        *,
-        timeout: float = ...,
-        flags: int = ...,
-    ) -> _ReceivedPacketT:
+    def recv_packet_no_block(self, *, timeout: float = ...) -> _ReceivedPacketT:
         ...
 
     @overload
-    def recv_packet_no_block(self, *, default: _T, timeout: float = ..., flags: int = ...) -> _ReceivedPacketT | _T:
+    def recv_packet_no_block(self, *, default: _T, timeout: float = ...) -> _ReceivedPacketT | _T:
         ...
 
-    def recv_packet_no_block(self, *, default: Any = _NO_DEFAULT, timeout: float = 0, flags: int = 0) -> Any:
+    def recv_packet_no_block(self, *, default: Any = _NO_DEFAULT, timeout: float = 0) -> Any:
         timeout = float(timeout)
         with self.__lock:
             self._check_not_closed()
@@ -196,7 +194,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 return next(consumer)
             except StopIteration:
                 pass
-            if self.__read_socket(timeout=timeout, flags=flags):
+            if self.__read_socket(timeout=timeout):
                 try:
                     return next(consumer)
                 except StopIteration:
@@ -205,7 +203,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 return default
             raise TimeoutError("recv_packet() timed out")
 
-    def iter_received_packets(self, *, timeout: float = 0, flags: int = 0) -> Iterator[_ReceivedPacketT]:
+    def iter_received_packets(self, *, timeout: float = 0) -> Iterator[_ReceivedPacketT]:
         timeout = float(timeout)
         consumer = self.__consumer
         read_socket = self.__read_socket
@@ -217,17 +215,17 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 try:
                     packet = next(consumer)
                 except StopIteration:
-                    if not read_socket(timeout=timeout, flags=flags):
+                    if not read_socket(timeout=timeout):
                         return
                     continue
             yield packet  # yield out of lock scope
 
-    def recv_all_packets(self, *, timeout: float = 0, flags: int = 0) -> list[_ReceivedPacketT]:
+    def recv_all_packets(self, *, timeout: float = 0) -> list[_ReceivedPacketT]:
         with self.__lock:
-            return list(self.iter_received_packets(timeout=timeout, flags=flags))
+            return list(self.iter_received_packets(timeout=timeout))
 
-    def __read_socket(self, *, timeout: float | None, flags: int) -> bool:
-        flags |= self.__default_recv_flags
+    def __read_socket(self, *, timeout: float | None) -> bool:
+        flags = self.__default_recv_flags
         socket: Socket = self.__socket
         with _use_timeout(socket, timeout):
             try:
