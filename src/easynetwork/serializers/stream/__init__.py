@@ -8,7 +8,6 @@ from __future__ import annotations
 
 __all__ = [
     "AbstractIncrementalPacketSerializer",
-    "AutoParsedPacketSerializer",
     "AutoSeparatedPacketSerializer",
     "FixedPacketSizePacketSerializer",
     "IncrementalDeserializeError",

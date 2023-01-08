@@ -8,16 +8,11 @@ from __future__ import annotations
 
 __all__ = [
     "AbstractIncrementalPacketSerializer",
-    "AutoParsedPacketSerializer",
     "AutoSeparatedPacketSerializer",
     "FixedPacketSizePacketSerializer",
 ]
 
-import hashlib
 from abc import abstractmethod
-from hmac import compare_digest
-from io import BytesIO
-from struct import Struct, error as StructError
 from typing import Any, Generator, TypeVar, final
 
 from ..abc import AbstractPacketSerializer
@@ -118,103 +113,6 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_ST_cont
     @final
     def keepends(self) -> bool:
         return self.__keepends
-
-
-class AutoParsedPacketSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
-    __slots__ = ("__magic", "__algorithm")
-
-    def __init__(self, magic: bytes, *, checksum: str = "md5", checksum_guaranteed: bool = True, **kwargs: Any) -> None:
-        assert isinstance(magic, bytes)
-        if len(magic) != 4:
-            raise ValueError("Magic bytes must be 4-byte length")
-        if checksum not in (hashlib.algorithms_available if not checksum_guaranteed else hashlib.algorithms_guaranteed):
-            raise ValueError(f"Unknown hashlib algorithm {checksum!r}")
-        super().__init__(**kwargs)
-        self.__magic: bytes = magic
-        self.__algorithm: str = checksum
-
-    @abstractmethod
-    def serialize(self, packet: _ST_contra) -> bytes:
-        raise NotImplementedError
-
-    @final
-    def incremental_serialize(self, packet: _ST_contra) -> Generator[bytes, None, None]:
-        data: bytes = self.serialize(packet)
-        header: bytes = Struct("!4sH").pack(self.__magic, len(data))
-        yield header
-        yield data
-        checksum = hashlib.new(self.__algorithm, usedforsecurity=False)
-        checksum.update(header)
-        checksum.update(data)
-        yield checksum.digest()
-
-    @abstractmethod
-    def deserialize(self, data: bytes) -> _DT_co:
-        raise NotImplementedError
-
-    @final
-    def incremental_deserialize(self) -> Generator[None, bytes, tuple[_DT_co, bytes]]:
-        header_struct: Struct = Struct("!4sH")
-        expected_magic: bytes = self.__magic
-        checksum_algorithm: str = self.__algorithm
-        header: bytes = b""
-        while len(header) < header_struct.size:
-            header += yield
-
-        with BytesIO(header[header_struct.size :]) as buffer:
-            header = header[: header_struct.size]
-            try:
-                magic: bytes
-                body_length: int
-                magic, body_length = header_struct.unpack(header)
-                if magic != expected_magic:
-                    raise StructError("Invalid magic number")
-            except StructError as exc:
-                # data may be corrupted
-                # Shift by 1 received data
-                raise IncrementalDeserializeError(
-                    "Invalid header",
-                    remaining_data=header[1:] + buffer.read(),
-                ) from exc
-
-            checksum = hashlib.new(checksum_algorithm, usedforsecurity=False)
-            checksum.update(header)
-            body_struct = Struct(f"{body_length}s{checksum.digest_size}s")
-            while len(buffer.getvalue()) < body_struct.size:
-                buffer.write((yield))
-
-            buffer.seek(0)
-            data = buffer.read(body_struct.size)
-            try:
-                body: bytes
-                checksum_digest: bytes
-                body, checksum_digest = body_struct.unpack(data)
-                checksum.update(body)
-                if not compare_digest(checksum.digest(), checksum_digest):  # Data really corrupted
-                    raise StructError("Invalid checksum")
-            except StructError as exc:
-                raise IncrementalDeserializeError(
-                    f"Data corrupted: {exc}",
-                    remaining_data=buffer.read(),
-                ) from exc
-            try:
-                packet: _DT_co = self.deserialize(body)
-            except DeserializeError as exc:
-                raise IncrementalDeserializeError(
-                    f"Error when deserializing data: {exc}",
-                    remaining_data=buffer.read(),
-                ) from exc
-            return (packet, buffer.read())
-
-    @property
-    @final
-    def magic(self) -> bytes:
-        return self.__magic
-
-    @property
-    @final
-    def checksum_algorithm(self) -> str:
-        return self.__algorithm
 
 
 class FixedPacketSizePacketSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):

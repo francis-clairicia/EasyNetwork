@@ -11,7 +11,6 @@ __all__ = [
     "AbstractIncrementalPacketSerializer",
     "AbstractPacketSerializer",
     "AbstractStructSerializer",
-    "AutoParsedPacketSerializer",
     "AutoSeparatedPacketSerializer",
     "BZ2CompressorSerializer",
     "Base64EncodedSerializer",
