@@ -515,8 +515,9 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         ...
 
     def getsockopt(self, *args: int) -> int | bytes:
-        self._check_not_closed()
-        return self.__socket.getsockopt(*args)
+        with self.__lock:
+            self._check_not_closed()
+            return self.__socket.getsockopt(*args)
 
     @overload
     def setsockopt(self, __level: int, __optname: int, __value: int | bytes, /) -> None:
@@ -527,8 +528,9 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         ...
 
     def setsockopt(self, *args: Any) -> None:
-        self._check_not_closed()
-        return self.__socket.setsockopt(*args)
+        with self.__lock:
+            self._check_not_closed()
+            return self.__socket.setsockopt(*args)
 
     @final
     def _check_not_closed(self) -> None:
@@ -553,8 +555,8 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     @property
     @final
     def clients(self) -> Sequence[ConnectedClient[_ResponseT]]:
-        self._check_not_closed()
         with self.__lock:
+            self._check_not_closed()
             return tuple(filter(lambda client: not client.closed, self.__clients.values()))
 
 

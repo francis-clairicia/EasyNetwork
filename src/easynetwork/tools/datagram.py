@@ -10,6 +10,7 @@ __all__ = [
     "DatagramConsumer",
     "DatagramConsumerError",
     "DatagramProducer",
+    "DatagramProducerError",
 ]
 
 from collections import deque
@@ -27,6 +28,13 @@ _ReceivedPacketT = TypeVar("_ReceivedPacketT")
 _AddressT = TypeVar("_AddressT", bound=tuple[Any, ...])
 
 
+class DatagramProducerError(Exception):
+    def __init__(self, sender: tuple[Any, ...], exception: Exception) -> None:
+        super().__init__(f"Error while serializing data: {exception}")
+        self.sender: tuple[Any, ...] = sender
+        self.exception: Exception = exception
+
+
 @final
 @Iterator.register
 class DatagramProducer(Generic[_SentPacketT, _AddressT]):
@@ -41,7 +49,7 @@ class DatagramProducer(Generic[_SentPacketT, _AddressT]):
         super().__init__()
         assert isinstance(protocol, DatagramProtocol)
         self.__p: DatagramProtocol[_SentPacketT, Any] = protocol
-        self.__q: deque[tuple[_SentPacketT, _AddressT]] = deque()
+        self.__q: deque[tuple[Any, _AddressT]] = deque()
         self.__lock: RLock = lock or RLock()
 
     def __iter__(self) -> Iterator[tuple[bytes, _AddressT]]:
@@ -54,12 +62,17 @@ class DatagramProducer(Generic[_SentPacketT, _AddressT]):
                 raise StopIteration
             packet, address = queue.popleft()
             serializer = self.__p.serializer
-            converter = self.__p.converter
-            return (serializer.serialize(converter.convert_to_dto_packet(packet)), address)
+            try:
+                return (serializer.serialize(packet), address)
+            except Exception as exc:
+                raise DatagramProducerError(address, exc) from exc
 
-    def queue(self, packet: _SentPacketT, address: _AddressT) -> None:
+    def queue(self, address: _AddressT, *packets: _SentPacketT) -> None:
+        if not packets:
+            return
         with self.__lock:
-            self.__q.append((packet, address))
+            convert = self.__p.converter.convert_to_dto_packet
+            self.__q.extend((convert(packet), address) for packet in packets)
 
 
 class DatagramConsumerError(Exception):

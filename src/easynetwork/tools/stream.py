@@ -129,9 +129,9 @@ class StreamDataProducerIterator(Generic[_SentPacketT]):
         if not packets:
             return
         with self.__lock:
-            self.__q.extend(
-                map(self.__p.serializer.incremental_serialize, map(self.__p.converter.convert_to_dto_packet, packets))
-            )
+            serializer = self.__p.serializer
+            converter = self.__p.converter
+            self.__q.extend(map(serializer.incremental_serialize, map(converter.convert_to_dto_packet, packets)))
 
 
 class StreamDataConsumerError(Exception):

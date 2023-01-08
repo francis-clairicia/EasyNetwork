@@ -11,6 +11,7 @@ __all__ = [
     "AF_INET6",
     "AddressFamily",
     "DEFAULT_TIMEOUT",
+    "MAX_DATAGRAM_SIZE",
     "SHUT_RD",
     "SHUT_RDWR",
     "SHUT_WR",
@@ -55,6 +56,9 @@ AF_INET6: Final[Literal[AddressFamily.AF_INET6]] = AddressFamily.AF_INET6
 SHUT_RD: Final[Literal[ShutdownFlag.SHUT_RD]] = ShutdownFlag.SHUT_RD
 SHUT_RDWR: Final[Literal[ShutdownFlag.SHUT_RDWR]] = ShutdownFlag.SHUT_RDWR
 SHUT_WR: Final[Literal[ShutdownFlag.SHUT_WR]] = ShutdownFlag.SHUT_WR
+
+
+MAX_DATAGRAM_SIZE: Final[int] = 64 * 1024  # 64 KiB
 
 
 class IPv4SocketAddress(NamedTuple):

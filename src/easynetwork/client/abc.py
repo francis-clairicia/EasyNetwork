@@ -44,15 +44,11 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
         raise NotImplementedError
 
     @abstractmethod
-    def send_packet(self, packet: _SentPacketT, *, timeout: float | None = ...) -> None:
+    def send_packet(self, packet: _SentPacketT) -> None:
         raise NotImplementedError
 
     @abstractmethod
-    def send_packets(self, *packets: _SentPacketT, timeout: float | None = ...) -> None:
-        raise NotImplementedError
-
-    @abstractmethod
-    def flush(self) -> None:
+    def send_packets(self, *packets: _SentPacketT) -> None:
         raise NotImplementedError
 
     @abstractmethod

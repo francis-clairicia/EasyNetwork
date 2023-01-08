@@ -14,7 +14,7 @@ from threading import RLock
 from typing import Any, Generic, Iterator, TypeVar, final, overload
 
 from ..protocol import StreamProtocol
-from ..tools.socket import DEFAULT_TIMEOUT, SHUT_WR, SocketAddress, create_connection, guess_best_buffer_size, new_socket_address
+from ..tools.socket import SHUT_WR, SocketAddress, create_connection, guess_best_buffer_size, new_socket_address
 from ..tools.stream import StreamDataConsumer, StreamDataProducerIterator
 from .abc import AbstractNetworkClient
 
@@ -38,7 +38,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         "__peer",
         "__default_send_flags",
         "__default_recv_flags",
-        "__buffered_write",
     )
 
     @overload
@@ -52,7 +51,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         source_address: tuple[str, int] | None = ...,
         send_flags: int = ...,
         recv_flags: int = ...,
-        buffered_write: bool = ...,
     ) -> None:
         ...
 
@@ -66,7 +64,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         give: bool = ...,
         send_flags: int = ...,
         recv_flags: int = ...,
-        buffered_write: bool = ...,
     ) -> None:
         ...
 
@@ -78,7 +75,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         *,
         send_flags: int = 0,
         recv_flags: int = 0,
-        buffered_write: bool = False,
         **kwargs: Any,
     ) -> None:
         self.__producer: StreamDataProducerIterator[_SentPacketT] = StreamDataProducerIterator(protocol)
@@ -116,7 +112,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         self.__chunk_size: int = guess_best_buffer_size(socket)
         self.__default_send_flags: int = send_flags
         self.__default_recv_flags: int = recv_flags
-        self.__buffered_write: bool = bool(buffered_write)
 
     def close(self) -> None:
         with self.__lock:
@@ -134,35 +129,26 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             finally:
                 socket.close()
 
-    def send_packet(self, packet: _SentPacketT, *, timeout: float | None = DEFAULT_TIMEOUT) -> None:
+    def send_packet(self, packet: _SentPacketT) -> None:
         with self.__lock:
             self._check_not_closed()
             self.__producer.queue(packet)
-            self.__write_on_socket(timeout=timeout)
+            self.__write_on_socket()
 
-    def send_packets(self, *packets: _SentPacketT, timeout: float | None = DEFAULT_TIMEOUT) -> None:
+    def send_packets(self, *packets: _SentPacketT) -> None:
         if not packets:
             return
         with self.__lock:
             self._check_not_closed()
             self.__producer.queue(*packets)
-            self.__write_on_socket(timeout=timeout)
+            self.__write_on_socket()
 
-    def flush(self) -> None:
-        with self.__lock:
-            self.__write_on_socket(timeout=0)
-
-    def __write_on_socket(self, *, timeout: float | None) -> None:
+    def __write_on_socket(self) -> None:
         flags = self.__default_send_flags
         socket: Socket = self.__socket
-        with _use_timeout(socket, timeout):
-            if self.__buffered_write:
-                with socket.makefile("wb", buffering=1) as socket_io:
-                    for chunk in self.__producer:
-                        socket_io.write(chunk)
-            else:
-                for chunk in self.__producer:
-                    socket.sendall(chunk, flags)
+        with _use_timeout(socket, None):
+            for chunk in self.__producer:
+                socket.sendall(chunk, flags)
 
     def recv_packet(self) -> _ReceivedPacketT:
         with self.__lock:
@@ -253,6 +239,8 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             return self.__socket.gettimeout()
 
     def set_timeout(self, timeout: float | None) -> None:
+        from ..tools.socket import DEFAULT_TIMEOUT
+
         if timeout is DEFAULT_TIMEOUT:
             from socket import getdefaulttimeout
 
@@ -377,9 +365,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
 
 @contextmanager
 def _use_timeout(socket: Socket, timeout: float | None) -> Iterator[None]:
-    if timeout is DEFAULT_TIMEOUT:
-        yield
-        return
     old_timeout: float | None = socket.gettimeout()
     socket.settimeout(timeout)
     try:

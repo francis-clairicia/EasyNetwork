@@ -10,15 +10,15 @@ __all__ = ["AbstractUDPNetworkServer"]
 
 import sys
 from abc import abstractmethod
-from selectors import EVENT_READ, DefaultSelector as _Selector
-from socket import SOCK_DGRAM
+from collections import deque
+from selectors import EVENT_READ, EVENT_WRITE, DefaultSelector as _Selector
+from socket import SOCK_DGRAM, socket as Socket
 from threading import Event, RLock
-from typing import TYPE_CHECKING, Any, Callable, Generic, TypeAlias, TypeVar, final, overload
+from typing import TYPE_CHECKING, Any, Callable, Generic, TypeAlias, TypeVar, cast, final, overload
 
-from ..client.udp import UDPNetworkEndpoint
 from ..protocol import DatagramProtocol
-from ..tools.datagram import DatagramConsumerError
-from ..tools.socket import AF_INET, SocketAddress, create_server
+from ..tools.datagram import DatagramConsumer, DatagramConsumerError, DatagramProducer, DatagramProducerError
+from ..tools.socket import AF_INET, MAX_DATAGRAM_SIZE, SocketAddress, create_server, new_socket_address
 from .abc import AbstractNetworkServer
 from .executors.abc import AbstractRequestExecutor
 from .executors.sync import SyncRequestExecutor
@@ -36,13 +36,19 @@ _default_global_executor = SyncRequestExecutor()
 
 class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Generic[_RequestT, _ResponseT]):
     __slots__ = (
-        "__server",
+        "__socket",
+        "__producer",
+        "__consumer",
         "__addr",
         "__lock",
         "__loop",
+        "__closed",
         "__is_shutdown",
         "__protocol_factory",
         "__request_executor",
+        "__default_send_flags",
+        "__default_recv_flags",
+        "__unsent_datagrams",
     )
 
     def __init__(
@@ -70,23 +76,22 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             dualstack_ipv6=False,
         )
         socket.settimeout(0)
-        self.__server: UDPNetworkEndpoint[_ResponseT, _RequestT] = UDPNetworkEndpoint(
-            protocol=protocol,
-            socket=socket,
-            give=True,
-            send_flags=send_flags,
-            recv_flags=recv_flags,
-            on_recv_error="raise",
-        )
+        self.__socket: Socket = socket
+        self.__producer: DatagramProducer[_ResponseT, SocketAddress] = DatagramProducer(protocol)
+        self.__consumer: DatagramConsumer[_RequestT] = DatagramConsumer(protocol, on_error="raise")
         self.__request_executor: AbstractRequestExecutor = (
             request_executor if request_executor is not None else _default_global_executor
         )
-        self.__addr: SocketAddress = self.__server.get_local_address()
+        self.__addr: SocketAddress = new_socket_address(socket.getsockname(), socket.family)
         self.__lock: RLock = RLock()
         self.__loop: bool = False
+        self.__closed: bool = False
         self.__is_shutdown: Event = Event()
         self.__is_shutdown.set()
         self.__protocol_factory: DatagramProtocolFactory[_ResponseT, _RequestT] = protocol_factory
+        self.__default_send_flags: int = int(send_flags)
+        self.__default_recv_flags: int = int(recv_flags)
+        self.__unsent_datagrams: deque[tuple[bytes, SocketAddress]] = deque()
         super().__init__()
 
     def serve_forever(self) -> None:
@@ -97,13 +102,23 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             self.__is_shutdown.clear()
             self.__loop = True
 
-        server: UDPNetworkEndpoint[_ResponseT, _RequestT] = self.__server
+        socket: Socket = self.__socket
 
         request_executor: AbstractRequestExecutor = self.__request_executor
 
-        def parse_requests() -> None:
+        def receive_requests() -> None:
             try:
-                request_tuple = server.recv_packet_no_block(default=None, timeout=0)
+                data, sender = socket.recvfrom(MAX_DATAGRAM_SIZE, self.__default_recv_flags)
+            except (TimeoutError, BlockingIOError, InterruptedError):
+                return
+            sender = new_socket_address(sender, socket.family)
+            self.__consumer.queue(data, sender)
+
+        def process_requests() -> None:
+            try:
+                request, address = next(self.__consumer)
+            except StopIteration:
+                return
             except DatagramConsumerError as exc:
                 address = exc.sender
                 try:
@@ -111,16 +126,13 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 except Exception:
                     self.handle_error(address, sys.exc_info())
             else:
-                if request_tuple is None:
-                    return
-                request, address = request_tuple
                 try:
                     request_executor.execute(self.process_request, None, request, address, self.handle_error)
-                except Exception as exc:  # TODO: Store not sent packets for further retry
+                except Exception as exc:
                     raise RuntimeError(f"request_executor.execute() raised an exception: {exc}") from exc
 
         with _Selector() as selector:
-            selector.register(server, EVENT_READ)
+            selector.register(socket, EVENT_READ | EVENT_WRITE)
             try:
                 while self.__loop:
                     ready: int
@@ -132,9 +144,13 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                         break  # type: ignore[unreachable]
                     with self.__lock:
                         if ready & EVENT_READ:
-                            parse_requests()
+                            receive_requests()
+                        process_requests()
                         request_executor.service_actions()
                         self.service_actions()
+                        if ready & EVENT_WRITE:
+                            self.__flush_responses()
+
             finally:
                 with self.__lock:
                     self.__loop = False
@@ -145,8 +161,11 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             with self.__lock:
                 if not self.__is_shutdown.is_set():
                     raise RuntimeError("Cannot close running server. Use shutdown() first")
-                if not self.__server.closed:
-                    self.__server.close()
+                if self.__closed:
+                    return
+                self.__closed = True
+                self.__socket.close()
+                del self.__socket
         finally:
             self.__request_executor.on_server_close()
 
@@ -180,11 +199,35 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         self.__is_shutdown.wait()
 
     def send_packet(self, address: SocketAddress, packet: _ResponseT) -> None:
-        self._check_not_closed()
-        self.__server.send_packet(address, packet)
+        with self.__lock:
+            self._check_not_closed()
+            self.__producer.queue(address, packet)
+            self.__flush_responses()
 
     def send_packets(self, address: SocketAddress, *packets: _ResponseT) -> None:
-        raise NotImplementedError
+        if not packets:
+            return
+        with self.__lock:
+            self._check_not_closed()
+            self.__producer.queue(address, *packets)
+            self.__flush_responses()
+
+    def __flush_responses(self) -> None:
+        socket = self.__socket
+        queue, self.__unsent_datagrams = self.__unsent_datagrams, deque()
+        while True:
+            try:
+                queue.append(next(self.__producer))
+            except StopIteration:
+                break
+            except DatagramProducerError as exc:
+                self.handle_error(cast(SocketAddress, exc.sender), sys.exc_info())
+        while queue:
+            response, address = queue.popleft()
+            try:
+                socket.sendto(response, self.__default_send_flags, address)
+            except (TimeoutError, BlockingIOError, InterruptedError):
+                self.__unsent_datagrams.append((response, address))
 
     def bad_request(self, exc: DatagramConsumerError) -> None:
         pass
@@ -201,8 +244,9 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         ...
 
     def getsockopt(self, *args: int) -> int | bytes:
-        self._check_not_closed()
-        return self.__server.getsockopt(*args)
+        with self.__lock:
+            self._check_not_closed()
+            return self.__socket.getsockopt(*args)
 
     @overload
     def setsockopt(self, __level: int, __optname: int, __value: int | bytes, /) -> None:
@@ -213,12 +257,13 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         ...
 
     def setsockopt(self, *args: Any) -> None:
-        self._check_not_closed()
-        return self.__server.setsockopt(*args)
+        with self.__lock:
+            self._check_not_closed()
+            return self.__socket.setsockopt(*args)
 
     @final
     def _check_not_closed(self) -> None:
-        if self.__server.closed:
+        if self.__closed:
             raise RuntimeError("Closed server")
 
     @property
@@ -229,9 +274,9 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     @property
     @final
     def send_flags(self) -> int:
-        return self.__server.default_send_flags
+        return self.__default_send_flags
 
     @property
     @final
     def recv_flags(self) -> int:
-        return self.__server.default_recv_flags
+        return self.__default_recv_flags
