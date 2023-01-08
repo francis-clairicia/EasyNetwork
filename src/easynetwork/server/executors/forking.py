@@ -9,9 +9,12 @@ from __future__ import annotations
 __all__ = ["ForkingRequestExecutor"]
 
 import os
-from typing import Any, Callable, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, TypeVar
 
 from .abc import AbstractRequestExecutor
+
+if TYPE_CHECKING:
+    from _typeshed import ExcInfo
 
 _RequestVar = TypeVar("_RequestVar")
 _ClientVar = TypeVar("_ClientVar")
@@ -75,7 +78,7 @@ class ForkingRequestExecutor(AbstractRequestExecutor):
         request_teardown: tuple[Callable[[_ClientVar, dict[str, Any]], None], dict[str, Any] | None] | None,
         request: _RequestVar,
         client: _ClientVar,
-        error_handler: Callable[[_ClientVar], None],
+        error_handler: Callable[[_ClientVar, ExcInfo], None],
     ) -> None:
         """Fork a new subprocess to process the request."""
         fork: Callable[[], int] = self.__fork
@@ -92,14 +95,14 @@ class ForkingRequestExecutor(AbstractRequestExecutor):
             request_handler(request, client)
             status = 0
         except Exception:
-            error_handler(client)
+            error_handler(client, self.get_exc_info())
         finally:
             try:
                 if request_teardown is not None:
                     request_teardown_func, request_context = request_teardown
                     request_teardown_func(client, request_context or {})
             except Exception:
-                error_handler(client)
+                error_handler(client, self.get_exc_info())
             finally:
                 os._exit(status)
 

@@ -12,6 +12,7 @@ __all__ = [
 ]
 
 import os
+import sys
 from abc import ABCMeta, abstractmethod
 from collections import defaultdict, deque
 from contextlib import contextmanager, suppress
@@ -19,7 +20,7 @@ from dataclasses import dataclass
 from selectors import EVENT_READ, EVENT_WRITE, BaseSelector, DefaultSelector as _Selector, SelectorKey
 from socket import SHUT_WR, SOCK_STREAM, socket as Socket
 from threading import Event, RLock
-from typing import Any, Callable, Final, Generic, Iterator, Sequence, TypeAlias, TypeVar, final, overload
+from typing import TYPE_CHECKING, Any, Callable, Final, Generic, Iterator, Sequence, TypeAlias, TypeVar, final, overload
 from weakref import WeakKeyDictionary
 
 from ..protocol import StreamProtocol
@@ -28,6 +29,9 @@ from ..tools.stream import StreamDataConsumer, StreamDataConsumerError, StreamDa
 from .abc import AbstractNetworkServer
 from .executors.abc import AbstractRequestExecutor
 from .executors.sync import SyncRequestExecutor
+
+if TYPE_CHECKING:
+    from _typeshed import OptExcInfo
 
 _RequestT = TypeVar("_RequestT")
 _ResponseT = TypeVar("_ResponseT")
@@ -257,7 +261,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                     pass
                 except OSError:
                     shutdown_client(socket, from_client=False)
-                    self.handle_error(client)
+                    self.handle_error(client, sys.exc_info())
                 else:
                     if not data:  # Closed connection (EOF)
                         shutdown_client(socket, from_client=False)
@@ -277,7 +281,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                     try:
                         self.bad_request(client, exc)
                     except Exception:
-                        self.handle_error(client)
+                        self.handle_error(client, sys.exc_info())
                     continue
                 except StopIteration:  # Not enough data
                     continue
@@ -308,7 +312,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                     try:
                         data = key_data.pop_data_to_send(read_all=False)
                     except Exception:
-                        self.handle_error(client)
+                        self.handle_error(client, sys.exc_info())
                         continue
                     if not data:
                         continue
@@ -345,7 +349,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                     key_data.unsent_data = data[character_written:]
             except OSError:
                 shutdown_client(socket, from_client=False)
-                self.handle_error(key_data.client)
+                self.handle_error(key_data.client, sys.exc_info())
             else:
                 if nb_bytes_sent < len(data):
                     key_data.unsent_data = data[nb_bytes_sent:]
@@ -380,7 +384,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             try:
                 self.on_disconnect(client)
             except Exception:
-                self.handle_error(client)
+                self.handle_error(client, sys.exc_info())
 
         def remove_closed_clients() -> None:
             for key in selector_client_keys():
@@ -431,16 +435,16 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     def process_request(self, request: _RequestT, client: ConnectedClient[_ResponseT]) -> None:
         raise NotImplementedError
 
-    def handle_error(self, client: ConnectedClient[Any]) -> None:
-        from sys import exc_info, stderr
-        from traceback import print_exc
+    def handle_error(self, client: ConnectedClient[Any], exc_info: OptExcInfo) -> None:
+        from sys import stderr
+        from traceback import print_exception
 
-        if exc_info() == (None, None, None):
+        if exc_info == (None, None, None):
             return
 
         print("-" * 40, file=stderr)
         print(f"Exception occurred during processing of request from {client.address}", file=stderr)
-        print_exc(file=stderr)
+        print_exception(*exc_info, file=stderr)
         print("-" * 40, file=stderr)
 
     def server_close(self) -> None:

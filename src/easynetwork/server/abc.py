@@ -20,6 +20,8 @@ _ResponseT = TypeVar("_ResponseT")
 
 
 class AbstractNetworkServer(Generic[_RequestT, _ResponseT], metaclass=ABCMeta):
+    __slots__ = ("__weakref__",)
+
     if TYPE_CHECKING:
         __Self = TypeVar("__Self", bound="AbstractNetworkServer[Any, Any]")
 

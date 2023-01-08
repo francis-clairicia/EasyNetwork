@@ -9,7 +9,10 @@ from __future__ import annotations
 __all__ = ["AbstractRequestExecutor"]
 
 from abc import ABCMeta, abstractmethod
-from typing import Any, Callable, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, TypeVar
+
+if TYPE_CHECKING:
+    from _typeshed import ExcInfo
 
 _RequestVar = TypeVar("_RequestVar")
 _ClientVar = TypeVar("_ClientVar")
@@ -25,7 +28,7 @@ class AbstractRequestExecutor(metaclass=ABCMeta):
         request_teardown: tuple[Callable[[_ClientVar, dict[str, Any]], None], dict[str, Any] | None] | None,
         request: _RequestVar,
         client: _ClientVar,
-        error_handler: Callable[[_ClientVar], None],
+        error_handler: Callable[[_ClientVar, ExcInfo], None],
     ) -> None:
         raise NotImplementedError
 
@@ -34,3 +37,13 @@ class AbstractRequestExecutor(metaclass=ABCMeta):
 
     def on_server_close(self) -> None:
         pass
+
+    @staticmethod
+    def get_exc_info() -> ExcInfo:
+        from sys import exc_info
+
+        _info = exc_info()
+
+        if _info == (None, None, None):
+            raise RuntimeError("No exception context")
+        return _info  # type: ignore[return-value]

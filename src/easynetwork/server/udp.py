@@ -8,11 +8,12 @@ from __future__ import annotations
 
 __all__ = ["AbstractUDPNetworkServer"]
 
+import sys
 from abc import abstractmethod
 from selectors import EVENT_READ, DefaultSelector as _Selector
 from socket import SOCK_DGRAM
 from threading import Event, RLock
-from typing import Any, Callable, Generic, TypeAlias, TypeVar, final, overload
+from typing import TYPE_CHECKING, Any, Callable, Generic, TypeAlias, TypeVar, final, overload
 
 from ..client.udp import UDPNetworkEndpoint
 from ..protocol import DatagramProtocol
@@ -21,6 +22,9 @@ from ..tools.socket import AF_INET, SocketAddress, create_server
 from .abc import AbstractNetworkServer
 from .executors.abc import AbstractRequestExecutor
 from .executors.sync import SyncRequestExecutor
+
+if TYPE_CHECKING:
+    from _typeshed import OptExcInfo
 
 _RequestT = TypeVar("_RequestT")
 _ResponseT = TypeVar("_ResponseT")
@@ -105,7 +109,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 try:
                     self.bad_request(exc)
                 except Exception:
-                    self.handle_error(address)
+                    self.handle_error(address, sys.exc_info())
             else:
                 if request_tuple is None:
                     return
@@ -158,16 +162,16 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     def process_request(self, request: _RequestT, client_address: SocketAddress) -> None:
         raise NotImplementedError
 
-    def handle_error(self, client_address: SocketAddress) -> None:
-        from sys import exc_info, stderr
-        from traceback import print_exc
+    def handle_error(self, client_address: SocketAddress, exc_info: OptExcInfo) -> None:
+        from sys import stderr
+        from traceback import print_exception
 
-        if exc_info() == (None, None, None):
+        if exc_info == (None, None, None):
             return
 
         print("-" * 40, file=stderr)
         print(f"Exception occurred during processing of request from {client_address}", file=stderr)
-        print_exc(file=stderr)
+        print_exception(*exc_info, file=stderr)
         print("-" * 40, file=stderr)
 
     def shutdown(self) -> None:
