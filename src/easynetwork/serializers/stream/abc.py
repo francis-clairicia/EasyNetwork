@@ -9,7 +9,7 @@ from __future__ import annotations
 __all__ = [
     "AbstractIncrementalPacketSerializer",
     "AutoSeparatedPacketSerializer",
-    "FixedPacketSizePacketSerializer",
+    "FixedSizePacketSerializer",
 ]
 
 from abc import abstractmethod
@@ -115,7 +115,7 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_ST_cont
         return self.__keepends
 
 
-class FixedPacketSizePacketSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
+class FixedSizePacketSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
     __slots__ = ("__size",)
 
     def __init__(self, size: int, **kwargs: Any) -> None:
@@ -152,7 +152,7 @@ class FixedPacketSizePacketSerializer(AbstractIncrementalPacketSerializer[_ST_co
         except DeserializeError as exc:
             raise IncrementalDeserializeError(
                 f"Error when deserializing data: {exc}",
-                remaining_data=data[1:] + buffer,
+                remaining_data=buffer,
             ) from exc
         return (packet, buffer)
 

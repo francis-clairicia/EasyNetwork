@@ -22,7 +22,7 @@ from ._utils import run_server_in_thread
 
 class _TestServer(AbstractTCPNetworkServer[Any, Any]):
     def process_request(self, request: Any, client: ConnectedClient[Any]) -> None:
-        for c in filter(lambda c: c is not client, self.clients):
+        for c in filter(lambda c: c is not client, self.get_clients()):
             c.send_packet(request)
 
 
@@ -69,12 +69,12 @@ def test_client_connection() -> None:
         address = server.address.for_connection()
         run_server_in_thread(server)
         sleep(0.1)
-        assert len(server.clients) == 0
+        assert len(server.get_clients()) == 0
         with TCPNetworkClient[Any, Any](address, server.protocol()):
             sleep(0.3)
-            assert len(server.clients) == 1
+            assert len(server.get_clients()) == 1
         sleep(0.3)
-        assert len(server.clients) == 0
+        assert len(server.get_clients()) == 0
 
 
 class _TestWelcomeServer(_TestServer):
@@ -105,7 +105,7 @@ def test_multiple_connections() -> None:
             assert client_2.recv_packet() == "Welcome !"
             assert client_3.recv_packet() == "Welcome !"
             sleep(0.2)
-            assert len(server.clients) == 3
+            assert len(server.get_clients()) == 3
 
 
 class _IntegerSerializer(AbstractIncrementalPacketSerializer[int, int]):
@@ -132,7 +132,7 @@ def test_request_handling() -> None:
             TCPNetworkClient(address, protocol=StreamProtocol(_IntegerSerializer())) as client_2,
             TCPNetworkClient(address, protocol=StreamProtocol(_IntegerSerializer())) as client_3,
         ):
-            while len(server.clients) < 3:
+            while len(server.get_clients()) < 3:
                 sleep(0.1)
             client_1.send_packet(350)
             sleep(0.3)

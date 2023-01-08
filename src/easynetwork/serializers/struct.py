@@ -13,13 +13,13 @@ from struct import Struct, error as StructError
 from typing import Any, Iterable, Mapping, NamedTuple, TypeVar, final
 
 from .exceptions import DeserializeError
-from .stream.abc import FixedPacketSizePacketSerializer
+from .stream.abc import FixedSizePacketSerializer
 
 _ST_contra = TypeVar("_ST_contra", contravariant=True)
 _DT_co = TypeVar("_DT_co", covariant=True)
 
 
-class AbstractStructSerializer(FixedPacketSizePacketSerializer[_ST_contra, _DT_co]):
+class AbstractStructSerializer(FixedSizePacketSerializer[_ST_contra, _DT_co]):
     __slots__ = ("__s",)
 
     def __init__(self, format: str) -> None:
@@ -51,7 +51,10 @@ class AbstractStructSerializer(FixedPacketSizePacketSerializer[_ST_contra, _DT_c
             packet_tuple: tuple[Any, ...] = struct.unpack(data)
         except StructError as exc:
             raise DeserializeError(f"Invalid value: {exc}") from exc
-        return self.from_tuple(packet_tuple)
+        try:
+            return self.from_tuple(packet_tuple)
+        except Exception as exc:
+            raise DeserializeError(f"Error when building packet from unpacked struct value: {exc}") from exc
 
     @property
     @final
@@ -69,7 +72,9 @@ class NamedTupleSerializer(AbstractStructSerializer[_NT, _NT]):
         if not type(self).is_namedtuple_class(namedtuple_cls):
             raise TypeError("Expected namedtuple class")
 
-        if format_endianness not in {"", "@", "=", "<", ">", "!"}:
+        if format_endianness == "":
+            format_endianness = "!"
+        elif format_endianness not in {"@", "=", "<", ">", "!"}:
             raise ValueError("Invalid endianness value")
 
         super().__init__(f"{format_endianness}{''.join(map(fields_format.__getitem__, namedtuple_cls._fields))}")

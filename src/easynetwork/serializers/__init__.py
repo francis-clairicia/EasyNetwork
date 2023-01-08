@@ -15,7 +15,7 @@ __all__ = [
     "BZ2CompressorSerializer",
     "Base64EncodedSerializer",
     "DeserializeError",
-    "FixedPacketSizePacketSerializer",
+    "FixedSizePacketSerializer",
     "IncrementalDeserializeError",
     "JSONDecoderConfig",
     "JSONEncoderConfig",

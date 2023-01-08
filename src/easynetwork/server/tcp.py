@@ -549,6 +549,12 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             self._check_not_closed()
             return self.__socket.getsockopt(*args)
 
+    @final
+    def get_clients(self) -> Sequence[ConnectedClient[_ResponseT]]:
+        with self.__lock:
+            self._check_not_closed()
+            return tuple(filter(lambda client: not client.closed, self.__clients.values()))
+
     @overload
     def setsockopt(self, __level: int, __optname: int, __value: int | bytes, /) -> None:
         ...
@@ -581,13 +587,6 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     @final
     def recv_flags(self) -> int:
         return self.__recv_flags
-
-    @property
-    @final
-    def clients(self) -> Sequence[ConnectedClient[_ResponseT]]:
-        with self.__lock:
-            self._check_not_closed()
-            return tuple(filter(lambda client: not client.closed, self.__clients.values()))
 
 
 @dataclass(init=False, slots=True)

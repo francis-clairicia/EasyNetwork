@@ -184,7 +184,7 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_ST_contr
             except self.__trailing_error as exc:
                 raise IncrementalDeserializeError(
                     message=f"Decompression error: {exc}",
-                    remaining_data=chunk[1:],
+                    remaining_data=b"",
                 ) from exc
             if chunk:
                 add_chunk(chunk)
