@@ -188,6 +188,8 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         def select() -> dict[int, deque[SelectorKey]]:
             ready: defaultdict[int, deque[SelectorKey]] = defaultdict(deque)
             for s in chain((self.__server_selector,), client_selectors):
+                if not s.get_map():  # Empty selector, bail out
+                    continue
                 for key, events in s.select(timeout=0):
                     for mask in {EVENT_READ, EVENT_WRITE}:
                         if events & mask:
