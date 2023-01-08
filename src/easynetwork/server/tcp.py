@@ -15,9 +15,10 @@ import os
 import sys
 from abc import ABCMeta, abstractmethod
 from collections import defaultdict, deque
-from contextlib import contextmanager, suppress
+from contextlib import ExitStack, contextmanager, suppress
 from dataclasses import dataclass
-from selectors import EVENT_READ, EVENT_WRITE, BaseSelector, DefaultSelector as _Selector, SelectorKey
+from itertools import chain
+from selectors import EVENT_READ, EVENT_WRITE, BaseSelector, DefaultSelector as _Selector, SelectorKey, SelectSelector
 from socket import SHUT_WR, SOCK_STREAM, socket as Socket
 from threading import Event, RLock
 from typing import TYPE_CHECKING, Any, Callable, Final, Generic, Iterator, Sequence, TypeAlias, TypeVar, final, overload
@@ -106,7 +107,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         "__loop",
         "__is_shutdown",
         "__clients",
-        "__selector",
+        "__server_selector",
         "__default_backlog",
         "__tcp_no_delay",
         "__buffered_write",
@@ -154,7 +155,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         self.__is_shutdown: Event = Event()
         self.__is_shutdown.set()
         self.__clients: WeakKeyDictionary[Socket, ConnectedClient[_ResponseT]] = WeakKeyDictionary()
-        self.__selector: BaseSelector
+        self.__server_selector: BaseSelector
         self.__send_flags: int = send_flags
         self.__recv_flags: int = recv_flags
         self.__tcp_no_delay: bool = bool(disable_nagle_algorithm)
@@ -166,8 +167,15 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             if self.running():
                 raise RuntimeError("Server already running")
             self.__is_shutdown.clear()
-            self.__selector = _Selector()
+            self.__server_selector = _Selector()
             self.__loop = True
+
+        # SelectSelector have a limit of file descriptor to manage, and the register() is not blocked if the limit is reached
+        # because the ValueError is raised when calling select.select() and FD_SETSIZE value cannot be retrieved on Python side.
+        # FD_SETSIZE is usually around 1024, so it is assumed that exceeding the limit will possibly cause the selector to fail.
+        client_selectors: deque[BaseSelector] = deque([_Selector()])  # At least one selector
+        client_selectors_stack = ExitStack()
+        client_selectors_map: WeakKeyDictionary[Socket, BaseSelector] = WeakKeyDictionary()
 
         tcp_no_delay: Final[bool] = self.__tcp_no_delay
         buffered_write: Final[bool] = self.__buffered_write
@@ -179,16 +187,28 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
 
         def select() -> dict[int, deque[SelectorKey]]:
             ready: defaultdict[int, deque[SelectorKey]] = defaultdict(deque)
-            for key, events in selector.select(timeout=0):
-                for mask in {EVENT_READ, EVENT_WRITE}:
-                    if events & mask:
-                        ready[mask].append(key)
+            for s in chain((self.__server_selector,), client_selectors):
+                for key, events in s.select(timeout=0):
+                    for mask in {EVENT_READ, EVENT_WRITE}:
+                        if events & mask:
+                            ready[mask].append(key)
             return ready
 
+        def unregister_from_selector(socket: Socket) -> SelectorKey:
+            try:
+                return client_selectors_map[socket].unregister(socket)
+            finally:
+                client_selectors_map.pop(socket, None)
+
+        def get_client_key_from_selector(socket: Socket) -> SelectorKey:
+            return client_selectors_map[socket].get_key(socket)
+
         def selector_client_keys() -> list[SelectorKey]:
-            return [key for key in selector.get_map().values() if key.fileobj is not server_socket]
+            return [key for key in chain.from_iterable(s.get_map().values() for s in client_selectors)]
 
         def verify_client(socket: Socket, address: SocketAddress) -> None:
+            nonlocal client_selectors_map
+
             try:
                 accepted = self.verify_new_client(socket, address)
                 socket.settimeout(0)
@@ -216,7 +236,14 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 flush_on_send=not buffered_write,
             )
             self.__clients[socket] = key_data.client
-            selector.register(socket, EVENT_READ | EVENT_WRITE, key_data)
+            client_selector = client_selectors[-1]
+            if _Selector is SelectSelector:  # type: ignore[comparison-overlap]
+                if len(client_selector.get_map()) >= 1000:  # Keep a margin from the 1024 ceiling, just to be sure
+                    client_selector = _Selector()
+                    client_selectors.append(client_selector)
+                    client_selectors_stack.enter_context(client_selector)
+            client_selector.register(socket, EVENT_READ | EVENT_WRITE, key_data)
+            client_selectors_map[socket] = client_selector
 
         def _close_client_hook(socket: Socket) -> None:
             shutdown_client(socket, from_client=True)
@@ -321,7 +348,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         def flush_queue(socket: Socket) -> None:
             key_data: _SelectorKeyData[_RequestT, _ResponseT]
             try:
-                key_data = selector.get_key(socket).data
+                key_data = get_client_key_from_selector(socket).data
             except KeyError:
                 return
             with key_data.send_lock:
@@ -362,12 +389,12 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                     with suppress(Exception):
                         flush_queue(socket)
                     try:
-                        key = selector.unregister(socket)
+                        key = unregister_from_selector(socket)
                     except KeyError:
                         return
             else:
                 try:
-                    key = selector.unregister(socket)
+                    key = unregister_from_selector(socket)
                 except KeyError:
                     return
             for key_sequences in ready.values():
@@ -400,8 +427,9 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 shutdown_client(socket, from_client=False)
 
         try:
-            with self.__selector as selector:
-                selector.register(server_socket, EVENT_READ)
+            with self.__server_selector, client_selectors_stack:
+                self.__server_selector.register(server_socket, EVENT_READ)
+                client_selectors_stack.enter_context(client_selectors[0])
                 try:
                     while self.__loop:
                         with select_lock:
@@ -420,7 +448,9 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                         destroy_all_clients()
         finally:
             with self.__lock:
-                del self.__selector
+                del self.__server_selector
+                client_selectors.clear()
+                client_selectors_map.clear()
                 self.__loop = False
                 self.__is_shutdown.set()
 
@@ -479,7 +509,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     def stop_listening(self) -> Iterator[None]:
         if not self.__loop:
             raise RuntimeError("Server is not running")
-        selector: BaseSelector = self.__selector
+        selector: BaseSelector = self.__server_selector
         server_socket: Socket = self.__socket
         key: SelectorKey | None
         with self.__lock:
