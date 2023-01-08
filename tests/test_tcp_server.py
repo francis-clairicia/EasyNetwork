@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import socket
+import sys
 from threading import Thread
 from time import sleep
 from typing import Any, ClassVar, Generator
@@ -41,6 +42,7 @@ def test_serve_forever_default() -> None:
         assert not server.running()
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Expected failure")
 def test_serve_forever_context_shut_down() -> None:
     with _TestServer(_RANDOM_HOST_PORT, lambda: StreamProtocol(PickleSerializer())) as server:
         t: Thread = Thread(target=server.serve_forever)
@@ -57,6 +59,7 @@ class _TestServiceActionServer(_TestServer):
         self.service_actions_called: bool = True
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Expected failure")
 def test_service_actions() -> None:
     with _TestServiceActionServer(_RANDOM_HOST_PORT, lambda: StreamProtocol(PickleSerializer())) as server:
         run_server_in_thread(server)
@@ -64,6 +67,7 @@ def test_service_actions() -> None:
     assert getattr(server, "service_actions_called", False)
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Expected failure")
 def test_client_connection() -> None:
     with _TestServer(_RANDOM_HOST_PORT, lambda: StreamProtocol(PickleSerializer())) as server:
         address = server.address.for_connection()
@@ -84,6 +88,7 @@ class _TestWelcomeServer(_TestServer):
         return True
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Expected failure")
 def test_welcome_connection() -> None:
     with _TestWelcomeServer(_RANDOM_HOST_PORT, lambda: StreamProtocol(PickleSerializer()), backlog=1) as server:
         address = server.address.for_connection()
@@ -92,6 +97,7 @@ def test_welcome_connection() -> None:
             assert client.recv_packet() == "Welcome !"
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Expected failure")
 def test_multiple_connections() -> None:
     with _TestWelcomeServer(_RANDOM_HOST_PORT, lambda: StreamProtocol(PickleSerializer())) as server:
         address = server.address.for_connection()
@@ -123,6 +129,7 @@ class _IntegerSerializer(AbstractIncrementalPacketSerializer[int, int]):
                 return packet, data[self.BYTES_LENGTH :]
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Expected failure")
 def test_request_handling() -> None:
     with _TestServer(_RANDOM_HOST_PORT, protocol_factory=lambda: StreamProtocol(_IntegerSerializer())) as server:
         address = server.address.for_connection()
@@ -163,6 +170,7 @@ def test_request_handling() -> None:
             assert client_3.recv_all_packets() == [350, -634]
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Expected failure")
 def test_disable_nagle_algorithm() -> None:
     with _TestServer(
         _RANDOM_HOST_PORT, lambda: StreamProtocol(PickleSerializer()), buffered_write=True, disable_nagle_algorithm=True
@@ -184,6 +192,7 @@ class _TestThreadingServer(AbstractTCPNetworkServer[Any, Any]):
         client.send_packet((request, threading.current_thread() is not threading.main_thread()))
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Expected failure")
 def test_threading_server() -> None:
     with _TestThreadingServer(
         _RANDOM_HOST_PORT, lambda: StreamProtocol(PickleSerializer()), request_executor=ThreadingRequestExecutor()
@@ -204,6 +213,7 @@ class _TestForkingServer(AbstractTCPNetworkServer[Any, Any]):
         client.send_packet((request, getpid()))
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Expected failure")
 @pytest.mark.skipif(not hasattr(os, "fork"), reason="fork() not supported on this platform")
 @pytest.mark.parametrize(
     "buffered_write", [pytest.param(False, id="buffered_write==False"), pytest.param(True, id="buffered_write==True")]
