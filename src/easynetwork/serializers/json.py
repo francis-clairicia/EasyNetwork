@@ -13,7 +13,7 @@ __all__ = [
 ]
 
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import asdict as dataclass_asdict, dataclass
 from typing import Any, Callable, Generator, TypeVar, final
 
 from .exceptions import DeserializeError
@@ -36,11 +36,11 @@ class JSONEncoderConfig:
 
 @dataclass(kw_only=True, frozen=True)
 class JSONDecoderConfig:
-    object_hook: Callable[[dict[str, Any]], None] | None = None
+    object_hook: Callable[..., Any] | None = None
     parse_int: Callable[[str], Any] | None = None
     parse_float: Callable[[str], Any] | None = None
     parse_constant: Callable[[str], Any] | None = None
-    object_pairs_hook: Callable[[list[tuple[str, Any]]], None] | None = None
+    object_pairs_hook: Callable[[list[tuple[str, Any]]], Any] | None = None
     strict: bool = True
 
 
@@ -110,28 +110,13 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
             encoder = JSONEncoderConfig()
         elif not isinstance(encoder, JSONEncoderConfig):
             raise TypeError(f"Invalid encoder: expected {JSONEncoderConfig.__name__}, got {type(encoder).__name__}")
-        self.__e = JSONEncoder(
-            skipkeys=encoder.skipkeys,
-            ensure_ascii=True,
-            check_circular=encoder.check_circular,
-            allow_nan=encoder.allow_nan,
-            indent=encoder.indent,
-            separators=encoder.separators,
-            default=encoder.default,
-        )
+        self.__e = JSONEncoder(**dataclass_asdict(encoder), ensure_ascii=True)
 
         if decoder is None:
             decoder = JSONDecoderConfig()
         elif not isinstance(decoder, JSONDecoderConfig):
             raise TypeError(f"Invalid decoder: expected {JSONDecoderConfig.__name__}, got {type(decoder).__name__}")
-        self.__d = JSONDecoder(
-            object_hook=decoder.object_hook,
-            parse_int=decoder.parse_int,
-            parse_float=decoder.parse_float,
-            parse_constant=decoder.parse_constant,
-            object_pairs_hook=decoder.object_pairs_hook,
-            strict=decoder.strict,
-        )
+        self.__d = JSONDecoder(**dataclass_asdict(decoder))
 
     @final
     def serialize(self, packet: _ST_contra) -> bytes:

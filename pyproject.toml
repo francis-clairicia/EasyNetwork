@@ -89,6 +89,10 @@ no_implicit_reexport = true
 strict_equality = true
 enable_error_code = ["truthy-bool", "ignore-without-code"]
 
+[[tool.mypy.overrides]]
+module = "cbor2"
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 minversion = "7.1.2"
 testpaths = ["tests"]

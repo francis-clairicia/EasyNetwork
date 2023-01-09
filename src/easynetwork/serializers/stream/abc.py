@@ -9,11 +9,13 @@ from __future__ import annotations
 __all__ = [
     "AbstractIncrementalPacketSerializer",
     "AutoSeparatedPacketSerializer",
+    "FileBasedIncrementalPacketSerializer",
     "FixedSizePacketSerializer",
 ]
 
 from abc import abstractmethod
-from typing import Any, Generator, TypeVar, final
+from io import BytesIO
+from typing import IO, Any, Generator, TypeVar, final
 
 from ..abc import AbstractPacketSerializer
 from ..exceptions import DeserializeError
@@ -160,3 +162,76 @@ class FixedSizePacketSerializer(AbstractIncrementalPacketSerializer[_ST_contra, 
     @final
     def packet_size(self) -> int:
         return self.__size
+
+
+class FileBasedIncrementalPacketSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
+    __slots__ = "__unrelated_error"
+
+    def __init__(
+        self,
+        unrelated_deserialize_error: type[Exception] | tuple[type[Exception], ...],
+    ) -> None:
+        super().__init__()
+        self.__unrelated_error: type[Exception] | tuple[type[Exception], ...] = unrelated_deserialize_error
+
+    @abstractmethod
+    def _serialize_to_file(self, packet: _ST_contra, file: IO[bytes]) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def _deserialize_from_file(self, file: IO[bytes]) -> _DT_co:
+        raise NotImplementedError
+
+    @final
+    def serialize(self, packet: _ST_contra) -> bytes:
+        with BytesIO() as buffer:
+            self._serialize_to_file(packet, buffer)
+            return buffer.getvalue()
+
+    @final
+    def incremental_serialize(self, packet: _ST_contra) -> Generator[bytes, None, None]:
+        yield self.serialize(packet)  # 'incremental' :)
+
+    @final
+    def deserialize(self, data: bytes) -> _DT_co:
+        if not data:
+            raise DeserializeError("Empty bytes")
+        with BytesIO(data) as buffer:
+            try:
+                packet: _DT_co = self._deserialize_from_file(buffer)
+            except EOFError as exc:
+                raise DeserializeError("Missing data to create packet") from exc
+            except self.__unrelated_error as exc:
+                raise DeserializeError(f"Unrelated error: {exc}") from exc
+            if buffer.read():  # There is still data after deserializing
+                raise DeserializeError("Extra data caught")
+        return packet
+
+    def wait_for_next_chunk(self, given_chunk: bytes) -> bool:
+        return False
+
+    @final
+    def incremental_deserialize(self) -> Generator[None, bytes, tuple[_DT_co, bytes]]:
+        with BytesIO() as buffer:
+            while True:
+                chunk: bytes = b""
+                wait_for_next_chunk = self.wait_for_next_chunk
+                while not chunk or wait_for_next_chunk(chunk):
+                    chunk = yield
+                buffer.write(chunk)
+                del chunk
+                buffer.seek(0)
+                try:
+                    packet: _DT_co = self._deserialize_from_file(buffer)
+                except EOFError:
+                    continue
+                except self.__unrelated_error as exc:
+                    remaining_data: bytes = buffer.read()
+                    if not remaining_data:  # Possibly an EOF error, give it a chance
+                        continue
+                    raise IncrementalDeserializeError(
+                        f"Unrelated error: {exc}",
+                        remaining_data=remaining_data,
+                    ) from exc
+                else:
+                    return (packet, buffer.read())
