@@ -38,6 +38,7 @@ exclude = [
   ".gitignore",
   ".gitmodules",
   ".bumpversion.cfg",
+  ".devtools.cfg",
   ".pre-commit-config.yaml",
   "tox.ini",
 ]
