@@ -24,6 +24,14 @@ dynamic = ["version", "description"]
 [project.urls]
 Home = "https://github.com/francis-clairicia/EasyNetwork"
 
+[project.optional-dependencies]
+cbor = [
+  "cbor2>=5.4,<6",
+]
+full = [
+  "cbor2>=5.4,<6",
+]
+
 ############################ Flit configuration ############################
 [tool.flit.sdist]
 include = [
@@ -80,6 +88,10 @@ warn_unreachable = true
 no_implicit_reexport = true
 strict_equality = true
 enable_error_code = ["truthy-bool", "ignore-without-code"]
+
+[[tool.mypy.overrides]]
+module = "cbor2"
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 minversion = "7.1.2"
