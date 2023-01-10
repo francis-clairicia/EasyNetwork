@@ -91,11 +91,13 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_ST_cont
     def incremental_deserialize(self) -> Generator[None, bytes, tuple[_DT_co, bytes]]:
         buffer: bytes = b""
         separator: bytes = self.__separator
-        keepends: bool = self.__keepends
-        while separator not in buffer:
-            buffer += yield
-        data, _, buffer = buffer.partition(separator)
-        if keepends:
+        while True:
+            data, found_separator, buffer = buffer.partition(separator)
+            if not found_separator:
+                buffer = data + (yield)
+                continue
+            break
+        if self.__keepends:
             data += separator
         try:
             packet = self.deserialize(data)
@@ -104,6 +106,8 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_ST_cont
                 f"Error when deserializing data: {exc}",
                 remaining_data=buffer,
             ) from exc
+        finally:
+            del data
         return (packet, buffer)
 
     @property
