@@ -12,7 +12,7 @@ import os
 import sys
 from abc import abstractmethod
 from collections import deque
-from selectors import EVENT_READ, EVENT_WRITE, DefaultSelector as _Selector
+from selectors import EVENT_READ, EVENT_WRITE, BaseSelector
 from socket import SOCK_DGRAM, socket as Socket
 from threading import Event, RLock
 from typing import TYPE_CHECKING, Any, Callable, Generic, TypeAlias, TypeVar, cast, final, overload
@@ -43,6 +43,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         "__closed",
         "__is_shutdown",
         "__protocol_factory",
+        "__selector_factory",
         "__request_executor",
         "__default_send_flags",
         "__default_recv_flags",
@@ -59,6 +60,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         send_flags: int = 0,
         recv_flags: int = 0,
         request_executor: AbstractRequestExecutor | None = None,
+        selector_factory: Callable[[], BaseSelector] | None = None,
     ) -> None:
         protocol = protocol_factory()
         if not isinstance(protocol, DatagramProtocol):
@@ -89,6 +91,15 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         self.__default_send_flags: int = int(send_flags)
         self.__default_recv_flags: int = int(recv_flags)
         self.__unsent_datagrams: deque[tuple[bytes, SocketAddress]] = deque()
+
+        self.__selector_factory: Callable[[], BaseSelector]
+        if selector_factory is None:
+            from selectors import DefaultSelector
+
+            self.__selector_factory = DefaultSelector
+        else:
+            self.__selector_factory = selector_factory
+
         super().__init__()
 
     def serve_forever(self) -> None:
@@ -134,7 +145,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                         raise RuntimeError(f"request_executor.execute() raised an exception: {exc}") from exc
                     raise RuntimeError(f"Error when processing request: {exc}") from exc
 
-        with _Selector() as selector:
+        with self.__selector_factory() as selector:
             selector.register(socket, EVENT_READ | EVENT_WRITE)
             try:
                 while self.__loop:

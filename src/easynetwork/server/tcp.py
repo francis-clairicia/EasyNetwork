@@ -18,7 +18,7 @@ from collections import defaultdict, deque
 from contextlib import ExitStack, contextmanager, suppress
 from dataclasses import dataclass
 from itertools import chain
-from selectors import EVENT_READ, EVENT_WRITE, BaseSelector, DefaultSelector as _Selector, SelectorKey, SelectSelector
+from selectors import EVENT_READ, EVENT_WRITE, BaseSelector, SelectorKey, SelectSelector
 from socket import SHUT_WR, SOCK_STREAM, socket as Socket
 from threading import Event, RLock
 from typing import TYPE_CHECKING, Any, Callable, Final, Generic, Iterator, Sequence, TypeAlias, TypeVar, final, overload
@@ -97,6 +97,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         "__socket",
         "__addr",
         "__protocol_factory",
+        "__selector_factory",
         "__request_executor",
         "__closed",
         "__lock",
@@ -125,6 +126,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         buffered_write: bool = False,
         disable_nagle_algorithm: bool = False,
         request_executor: AbstractRequestExecutor | None = None,
+        selector_factory: Callable[[], BaseSelector] | None = None,
     ) -> None:
         if not callable(protocol_factory):
             raise TypeError("Invalid arguments")
@@ -145,6 +147,13 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         self.__addr: SocketAddress = new_socket_address(self.__socket.getsockname(), self.__socket.family)
         self.__closed: bool = False
         self.__protocol_factory: StreamProtocolFactory[_ResponseT, _RequestT] = protocol_factory
+        self.__selector_factory: Callable[[], BaseSelector]
+        if selector_factory is None:
+            from selectors import DefaultSelector
+
+            self.__selector_factory = DefaultSelector
+        else:
+            self.__selector_factory = selector_factory
         self.__lock: RLock = RLock()
         self.__loop: bool = False
         self.__is_shutdown: Event = Event()
@@ -162,13 +171,13 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             if self.running():
                 raise RuntimeError("Server already running")
             self.__is_shutdown.clear()
-            self.__server_selector = _Selector()
+            self.__server_selector = self.__selector_factory()
             self.__loop = True
 
         # SelectSelector have a limit of file descriptor to manage, and the register() is not blocked if the limit is reached
         # because the ValueError is raised when calling select.select() and FD_SETSIZE value cannot be retrieved on Python side.
         # FD_SETSIZE is usually around 1024, so it is assumed that exceeding the limit will possibly cause the selector to fail.
-        client_selectors: deque[BaseSelector] = deque([_Selector()])  # At least one selector
+        client_selectors: deque[BaseSelector] = deque([self.__selector_factory()])  # At least one selector
         client_selectors_stack = ExitStack()
         client_selectors_map: WeakKeyDictionary[Socket, BaseSelector] = WeakKeyDictionary()
 
@@ -234,9 +243,9 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             )
             self.__clients[socket] = key_data.client
             client_selector = client_selectors[-1]
-            if _Selector is SelectSelector:  # type: ignore[comparison-overlap]
+            if isinstance(client_selector, SelectSelector):
                 if len(client_selector.get_map()) >= 1000:  # Keep a margin from the 1024 ceiling, just to be sure
-                    client_selector = _Selector()
+                    client_selector = self.__selector_factory()
                     client_selectors.append(client_selector)
                     client_selectors_stack.enter_context(client_selector)
             client_selector.register(socket, EVENT_READ | EVENT_WRITE, key_data)
