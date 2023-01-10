@@ -73,7 +73,7 @@ class PickleSerializer(FileBasedIncrementalPacketSerializer[_ST_contra, _DT_co])
             pickler.dump(packet)
             return
         with BytesIO() as buffer:
-            pickler = Pickler(file, **self.__pickler_conf, buffer_callback=None)
+            pickler = Pickler(buffer, **self.__pickler_conf, buffer_callback=None)
             pickler.dump(packet)
             file.write(pickletools_optimize(buffer.getvalue()))
 
