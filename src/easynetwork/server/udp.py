@@ -8,6 +8,7 @@ from __future__ import annotations
 
 __all__ = ["AbstractUDPNetworkServer"]
 
+import os
 import sys
 from abc import abstractmethod
 from collections import deque
@@ -21,7 +22,6 @@ from ..tools.datagram import DatagramConsumer, DatagramConsumerError, DatagramPr
 from ..tools.socket import AF_INET, MAX_DATAGRAM_SIZE, SocketAddress, create_server, new_socket_address
 from .abc import AbstractNetworkServer
 from .executors.abc import AbstractRequestExecutor
-from .executors.sync import SyncRequestExecutor
 
 if TYPE_CHECKING:
     from _typeshed import OptExcInfo
@@ -30,8 +30,6 @@ _RequestT = TypeVar("_RequestT")
 _ResponseT = TypeVar("_ResponseT")
 
 DatagramProtocolFactory: TypeAlias = Callable[[], DatagramProtocol[_ResponseT, _RequestT]]
-
-_default_global_executor = SyncRequestExecutor()
 
 
 class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Generic[_RequestT, _ResponseT]):
@@ -65,6 +63,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         protocol = protocol_factory()
         if not isinstance(protocol, DatagramProtocol):
             raise TypeError("Invalid arguments")
+        assert request_executor is None or isinstance(request_executor, AbstractRequestExecutor)
         send_flags = int(send_flags)
         recv_flags = int(recv_flags)
         socket = create_server(
@@ -79,9 +78,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         self.__socket: Socket = socket
         self.__producer: DatagramProducer[_ResponseT, SocketAddress] = DatagramProducer(protocol)
         self.__consumer: DatagramConsumer[_RequestT] = DatagramConsumer(protocol, on_error="raise")
-        self.__request_executor: AbstractRequestExecutor = (
-            request_executor if request_executor is not None else _default_global_executor
-        )
+        self.__request_executor: AbstractRequestExecutor | None = request_executor
         self.__addr: SocketAddress = new_socket_address(socket.getsockname(), socket.family)
         self.__lock: RLock = RLock()
         self.__loop: bool = False
@@ -104,7 +101,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
 
         socket: Socket = self.__socket
 
-        request_executor: AbstractRequestExecutor = self.__request_executor
+        request_executor: AbstractRequestExecutor | None = self.__request_executor
 
         def receive_requests() -> None:
             try:
@@ -125,11 +122,17 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                     self.bad_request(exc)
                 except Exception:
                     self.handle_error(address, sys.exc_info())
+                    socket.sendto(b"", self.__default_send_flags, address)
             else:
                 try:
-                    request_executor.execute(self.process_request, None, request, address, self.handle_error)
+                    if request_executor is not None:
+                        request_executor.execute(self.__execute_request, request, address, {"pid": os.getpid()})
+                    else:
+                        self.__execute_request(request, address, {})
                 except Exception as exc:
-                    raise RuntimeError(f"request_executor.execute() raised an exception: {exc}") from exc
+                    if request_executor is not None:
+                        raise RuntimeError(f"request_executor.execute() raised an exception: {exc}") from exc
+                    raise RuntimeError(f"Error when processing request: {exc}") from exc
 
         with _Selector() as selector:
             selector.register(socket, EVENT_READ | EVENT_WRITE)
@@ -146,7 +149,8 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                         if ready & EVENT_READ:
                             receive_requests()
                         process_requests()
-                        request_executor.service_actions()
+                        if request_executor is not None:
+                            request_executor.service_actions()
                         self.service_actions()
                         if ready & EVENT_WRITE:
                             self.__flush_responses()
@@ -167,7 +171,8 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 self.__socket.close()
                 del self.__socket
         finally:
-            self.__request_executor.on_server_close()
+            if (request_executor := self.__request_executor) is not None:
+                request_executor.on_server_close()
 
     def service_actions(self) -> None:
         pass
@@ -176,6 +181,18 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     def running(self) -> bool:
         with self.__lock:
             return not self.__is_shutdown.is_set()
+
+    def __execute_request(self, request: _RequestT, client_address: SocketAddress, ctx: dict[str, Any]) -> None:
+        try:
+            self.process_request(request, client_address)
+        except Exception:
+            self.handle_error(client_address, sys.exc_info())
+            self.__socket.sendto(b"", self.__default_send_flags, client_address)
+        finally:
+            pid = os.getpid()
+            if ctx.get("pid", pid) != pid:  # Executed in a subprocess
+                if not self.__closed:
+                    self.__flush_responses()
 
     @abstractmethod
     def process_request(self, request: _RequestT, client_address: SocketAddress) -> None:

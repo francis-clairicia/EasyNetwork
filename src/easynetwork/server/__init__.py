@@ -13,7 +13,6 @@ __all__ = [
     "AbstractUDPNetworkServer",
     "ConnectedClient",
     "ForkingRequestExecutor",
-    "SyncRequestExecutor",
     "ThreadingRequestExecutor",
 ]
 

@@ -9,15 +9,11 @@ from __future__ import annotations
 __all__ = ["ForkingRequestExecutor"]
 
 import os
-from typing import TYPE_CHECKING, Any, Callable, TypeVar
+from typing import Callable, ParamSpec
 
 from .abc import AbstractRequestExecutor
 
-if TYPE_CHECKING:
-    from _typeshed import ExcInfo
-
-_RequestVar = TypeVar("_RequestVar")
-_ClientVar = TypeVar("_ClientVar")
+_P = ParamSpec("_P")
 
 
 class ForkingRequestExecutor(AbstractRequestExecutor):
@@ -72,14 +68,7 @@ class ForkingRequestExecutor(AbstractRequestExecutor):
             except OSError:
                 pass
 
-    def execute(
-        self,
-        request_handler: Callable[[_RequestVar, _ClientVar], None],
-        request_teardown: tuple[Callable[[_ClientVar, dict[str, Any]], None], dict[str, Any] | None] | None,
-        request: _RequestVar,
-        client: _ClientVar,
-        error_handler: Callable[[_ClientVar, ExcInfo], None],
-    ) -> None:
+    def execute(self, __request_handler: Callable[_P, None], /, *args: _P.args, **kwargs: _P.kwargs) -> None:
         """Fork a new subprocess to process the request."""
         fork: Callable[[], int] = self.__fork
         pid = fork()
@@ -92,19 +81,10 @@ class ForkingRequestExecutor(AbstractRequestExecutor):
         # This must never return, hence os._exit()!
         status = 1
         try:
-            request_handler(request, client)
+            __request_handler(*args, **kwargs)
             status = 0
-        except Exception:
-            error_handler(client, self.get_exc_info())
         finally:
-            try:
-                if request_teardown is not None:
-                    request_teardown_func, request_context = request_teardown
-                    request_teardown_func(client, request_context or {})
-            except Exception:
-                error_handler(client, self.get_exc_info())
-            finally:
-                os._exit(status)
+            os._exit(status)
 
     def service_actions(self) -> None:
         """Collect the zombie child processes regularly in the ForkingRequestExecutor.

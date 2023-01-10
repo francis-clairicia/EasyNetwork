@@ -9,11 +9,9 @@ from __future__ import annotations
 __all__ = [
     "AbstractRequestExecutor",
     "ForkingRequestExecutor",
-    "SyncRequestExecutor",
     "ThreadingRequestExecutor",
 ]
 
 from .abc import *
 from .forking import *
-from .sync import *
 from .threading import *

@@ -9,15 +9,11 @@ from __future__ import annotations
 __all__ = ["ThreadingRequestExecutor"]
 
 from threading import Thread
-from typing import TYPE_CHECKING, Any, Callable, TypeVar
+from typing import Callable, ParamSpec
 
 from .abc import AbstractRequestExecutor
 
-if TYPE_CHECKING:
-    from _typeshed import ExcInfo
-
-_RequestVar = TypeVar("_RequestVar")
-_ClientVar = TypeVar("_ClientVar")
+_P = ParamSpec("_P")
 
 
 class _Threads(list[Thread]):
@@ -51,38 +47,9 @@ class ThreadingRequestExecutor(AbstractRequestExecutor):
         self.__threads: _Threads | None = _Threads() if block_on_close else None
         self.__daemon_threads: bool = bool(daemon_threads)
 
-    def process_request_thread(
-        self,
-        request_handler: Callable[[_RequestVar, _ClientVar], None],
-        request_teardown: tuple[Callable[[_ClientVar, dict[str, Any]], None], dict[str, Any] | None] | None,
-        request: _RequestVar,
-        client: _ClientVar,
-        error_handler: Callable[[_ClientVar, ExcInfo], None],
-    ) -> None:
-        try:
-            request_handler(request, client)
-        except Exception:
-            error_handler(client, self.get_exc_info())
-        finally:
-            try:
-                if request_teardown is not None:
-                    request_teardown_func, request_context = request_teardown
-                    request_teardown_func(client, request_context or {})
-            except Exception:
-                error_handler(client, self.get_exc_info())
-
-    def execute(
-        self,
-        request_handler: Callable[[_RequestVar, _ClientVar], None],
-        request_teardown: tuple[Callable[[_ClientVar, dict[str, Any]], None], dict[str, Any] | None] | None,
-        request: _RequestVar,
-        client: _ClientVar,
-        error_handler: Callable[[_ClientVar, ExcInfo], None],
-    ) -> None:
-        kwargs = {k: v for k, v in locals().items() if k != "self"}
-
+    def execute(self, __request_handler: Callable[_P, None], /, *args: _P.args, **kwargs: _P.kwargs) -> None:
         threads: _Threads | None = self.__threads
-        t = Thread(target=self.process_request_thread, kwargs=kwargs)
+        t = Thread(target=__request_handler, args=args, kwargs=kwargs)
         t.daemon = self.__daemon_threads
         if threads is not None:
             threads.append(t)

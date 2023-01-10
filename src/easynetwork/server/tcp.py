@@ -29,7 +29,6 @@ from ..tools.socket import AF_INET, SocketAddress, create_server, guess_best_buf
 from ..tools.stream import StreamDataConsumer, StreamDataConsumerError, StreamDataProducerReader
 from .abc import AbstractNetworkServer
 from .executors.abc import AbstractRequestExecutor
-from .executors.sync import SyncRequestExecutor
 
 if TYPE_CHECKING:
     from _typeshed import OptExcInfo
@@ -93,9 +92,6 @@ class ConnectedClient(Generic[_ResponseT], metaclass=ABCMeta):
 StreamProtocolFactory: TypeAlias = Callable[[], StreamProtocol[_ResponseT, _RequestT]]
 
 
-_default_global_executor = SyncRequestExecutor()
-
-
 class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Generic[_RequestT, _ResponseT]):
     __slots__ = (
         "__socket",
@@ -132,6 +128,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     ) -> None:
         if not callable(protocol_factory):
             raise TypeError("Invalid arguments")
+        assert request_executor is None or isinstance(request_executor, AbstractRequestExecutor)
         send_flags = int(send_flags)
         recv_flags = int(recv_flags)
         super().__init__()
@@ -143,9 +140,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             reuse_port=reuse_port,
             dualstack_ipv6=dualstack_ipv6,
         )
-        self.__request_executor: AbstractRequestExecutor = (
-            request_executor if request_executor is not None else _default_global_executor
-        )
+        self.__request_executor: AbstractRequestExecutor | None = request_executor
         self.__default_backlog: int | None = backlog
         self.__addr: SocketAddress = new_socket_address(self.__socket.getsockname(), self.__socket.family)
         self.__closed: bool = False
@@ -180,7 +175,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         tcp_no_delay: Final[bool] = self.__tcp_no_delay
         buffered_write: Final[bool] = self.__buffered_write
 
-        request_executor: AbstractRequestExecutor = self.__request_executor
+        request_executor: AbstractRequestExecutor | None = self.__request_executor
 
         server_socket: Final[Socket] = self.__socket
         select_lock: Final[RLock] = RLock()
@@ -314,19 +309,15 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                     continue
                 except StopIteration:  # Not enough data
                     continue
-                if not buffered_write:
-                    request_teardown = None
-                else:
-                    request_teardown = (_buffered_write_request_teardown_hook, {"pid": os.getpid()})
                 try:
-                    request_executor.execute(self.process_request, request_teardown, request, client, self.handle_error)
+                    if request_executor is not None:
+                        request_executor.execute(self.__execute_request, request, client, {"pid": os.getpid()})
+                    else:
+                        self.__execute_request(request, client, {})
                 except Exception as exc:
-                    raise RuntimeError(f"request_executor.execute() raised an exception: {exc}") from exc
-
-        def _buffered_write_request_teardown_hook(client: ConnectedClient[Any], ctx: dict[str, Any]) -> None:
-            if ctx["pid"] != os.getpid():  # Executed in a subprocess
-                if not client.closed:
-                    client.flush()
+                    if request_executor is not None:
+                        raise RuntimeError(f"request_executor.execute() raised an exception: {exc}") from exc
+                    raise RuntimeError(f"Error when processing request: {exc}") from exc
 
         def send_responses(ready: Sequence[SelectorKey]) -> None:
             data: bytes
@@ -441,7 +432,8 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                         with self.__lock:
                             receive_requests(ready.get(EVENT_READ, ()))
                             process_requests()
-                            request_executor.service_actions()
+                            if request_executor is not None:
+                                request_executor.service_actions()
                             self.service_actions()
                             send_responses(ready.get(EVENT_WRITE, ()))
                             remove_closed_clients()
@@ -462,6 +454,18 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
 
     def service_actions(self) -> None:
         pass
+
+    def __execute_request(self, request: _RequestT, client: ConnectedClient[_ResponseT], ctx: dict[str, Any]) -> None:
+        try:
+            self.process_request(request, client)
+        except Exception:
+            self.handle_error(client, sys.exc_info())
+            client.close()
+        finally:
+            pid = os.getpid()
+            if ctx.get("pid", pid) != pid:  # Executed in a subprocess
+                if not client.closed:
+                    client.flush()
 
     @abstractmethod
     def process_request(self, request: _RequestT, client: ConnectedClient[_ResponseT]) -> None:
@@ -490,7 +494,8 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 self.__socket.close()
                 del self.__socket
         finally:
-            self.__request_executor.on_server_close()
+            if (request_executor := self.__request_executor) is not None:
+                request_executor.on_server_close()
 
     def shutdown(self) -> None:
         self._check_not_closed()
