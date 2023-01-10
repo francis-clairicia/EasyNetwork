@@ -15,6 +15,7 @@ import os
 import sys
 from abc import ABCMeta, abstractmethod
 from collections import defaultdict, deque
+from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import ExitStack, contextmanager, suppress
 from dataclasses import dataclass
 from itertools import chain
@@ -106,7 +107,6 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         "__clients",
         "__server_selector",
         "__default_backlog",
-        "__tcp_no_delay",
         "__buffered_write",
         "__send_flags",
         "__recv_flags",
@@ -124,7 +124,6 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         send_flags: int = 0,
         recv_flags: int = 0,
         buffered_write: bool = False,
-        disable_nagle_algorithm: bool = False,
         request_executor: AbstractRequestExecutor | None = None,
         selector_factory: Callable[[], BaseSelector] | None = None,
     ) -> None:
@@ -162,7 +161,6 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         self.__server_selector: BaseSelector
         self.__send_flags: int = send_flags
         self.__recv_flags: int = recv_flags
-        self.__tcp_no_delay: bool = bool(disable_nagle_algorithm)
         self.__buffered_write: bool = bool(buffered_write)
 
     def serve_forever(self) -> None:
@@ -181,7 +179,6 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         client_selectors_stack = ExitStack()
         client_selectors_map: WeakKeyDictionary[Socket, BaseSelector] = WeakKeyDictionary()
 
-        tcp_no_delay: Final[bool] = self.__tcp_no_delay
         buffered_write: Final[bool] = self.__buffered_write
 
         request_executor: AbstractRequestExecutor | None = self.__request_executor
@@ -212,11 +209,9 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         def selector_client_keys() -> list[SelectorKey]:
             return [key for key in chain.from_iterable(s.get_map().values() for s in client_selectors)]
 
-        def verify_client(socket: Socket, address: SocketAddress) -> None:
-            nonlocal client_selectors_map
-
+        def add_client(future: Future[bool], socket: Socket, address: SocketAddress) -> None:
             try:
-                accepted = self.verify_new_client(socket, address)
+                accepted = future.result()
                 socket.settimeout(0)
             except Exception:
                 import traceback
@@ -241,15 +236,16 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 is_closed=_client_is_closed_hook,
                 flush_on_send=not buffered_write,
             )
-            self.__clients[socket] = key_data.client
-            client_selector = client_selectors[-1]
-            if isinstance(client_selector, SelectSelector):
-                if len(client_selector.get_map()) >= 1000:  # Keep a margin from the 1024 ceiling, just to be sure
-                    client_selector = self.__selector_factory()
-                    client_selectors.append(client_selector)
-                    client_selectors_stack.enter_context(client_selector)
-            client_selector.register(socket, EVENT_READ | EVENT_WRITE, key_data)
-            client_selectors_map[socket] = client_selector
+            with select_lock:
+                self.__clients[socket] = key_data.client
+                client_selector = client_selectors[-1]
+                if isinstance(client_selector, SelectSelector):
+                    if len(client_selector.get_map()) >= 1000:  # Keep a margin from the 1024 ceiling, just to be sure
+                        client_selector = self.__selector_factory()
+                        client_selectors.append(client_selector)
+                        client_selectors_stack.enter_context(client_selector)
+                client_selector.register(socket, EVENT_READ | EVENT_WRITE, key_data)
+                client_selectors_map[socket] = client_selector
 
         def _close_client_hook(socket: Socket) -> None:
             shutdown_client(socket, from_client=True)
@@ -266,16 +262,9 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 client_socket, address = server_socket.accept()
             except OSError:
                 return
-            if tcp_no_delay:
-                from socket import IPPROTO_TCP, TCP_NODELAY
-
-                try:
-                    client_socket.setsockopt(IPPROTO_TCP, TCP_NODELAY, True)
-                except BaseException:
-                    client_socket.close()
-                    raise
             address = new_socket_address(address, client_socket.family)
-            verify_client(client_socket, address)
+            future = verify_client_thread_pool.submit(self.verify_new_client, client_socket, address)
+            future.add_done_callback(lambda future: add_client(future, client_socket, address))
 
         def receive_requests(ready: Sequence[SelectorKey]) -> None:
             for key in list(ready):
@@ -428,8 +417,13 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 socket: Socket = key.fileobj  # type: ignore[assignment]
                 shutdown_client(socket, from_client=False)
 
+        # TODO: Better lock handling (fix potential dead locks)
         try:
-            with self.__server_selector, client_selectors_stack:
+            with (
+                self.__server_selector,
+                client_selectors_stack,
+                ThreadPoolExecutor(max_workers=2, thread_name_prefix="TCPServer[verify_client]") as verify_client_thread_pool,
+            ):
                 self.__server_selector.register(server_socket, EVENT_READ)
                 client_selectors_stack.enter_context(client_selectors[0])
                 try:

@@ -124,7 +124,9 @@ class _IntegerSerializer(AbstractIncrementalPacketSerializer[int, int]):
 
 
 def test_request_handling() -> None:
-    with _TestServer(_RANDOM_HOST_PORT, protocol_factory=lambda: StreamProtocol(_IntegerSerializer())) as server:
+    with _TestServer(
+        _RANDOM_HOST_PORT, protocol_factory=lambda: StreamProtocol(_IntegerSerializer()), buffered_write=True
+    ) as server:
         address = server.address.for_connection()
         run_server_in_thread(server)
         with (
@@ -161,20 +163,6 @@ def test_request_handling() -> None:
             assert client_1.recv_all_packets() == [-634, 0]
             assert client_2.recv_all_packets() == [350, 0]
             assert client_3.recv_all_packets() == [350, -634]
-
-
-def test_disable_nagle_algorithm() -> None:
-    with _TestServer(
-        _RANDOM_HOST_PORT, lambda: StreamProtocol(PickleSerializer()), buffered_write=True, disable_nagle_algorithm=True
-    ) as server:
-        run_server_in_thread(server)
-        with (
-            TCPNetworkClient(server.address.for_connection(), protocol=server.protocol()) as client_1,
-            TCPNetworkClient(server.address.for_connection(), protocol=server.protocol()) as client_2,
-        ):
-            packet = {"data": 1}
-            client_1.send_packet(packet)
-            assert client_2.recv_packet() == packet
 
 
 class _TestThreadingServer(AbstractTCPNetworkServer[Any, Any]):
