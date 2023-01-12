@@ -14,7 +14,7 @@ __all__ = [
 ]
 
 from collections import deque
-from threading import RLock
+from threading import Lock
 from typing import Any, Generator, Generic, Iterator, Literal, TypeVar, final
 
 from ..converter import PacketConversionError
@@ -29,13 +29,13 @@ _ReceivedPacketT = TypeVar("_ReceivedPacketT")
 class StreamDataProducerReader(Generic[_SentPacketT]):
     __slots__ = ("__p", "__q", "__b", "__lock")
 
-    def __init__(self, protocol: StreamProtocol[_SentPacketT, Any], *, lock: RLock | None = None) -> None:
+    def __init__(self, protocol: StreamProtocol[_SentPacketT, Any]) -> None:
         super().__init__()
         assert isinstance(protocol, StreamProtocol)
         self.__p: StreamProtocol[_SentPacketT, Any] = protocol
         self.__q: deque[Generator[bytes, None, None]] = deque()
         self.__b: bytes = b""
-        self.__lock: RLock = lock or RLock()
+        self.__lock = Lock()
 
     def read(self, bufsize: int = -1) -> bytes:
         if bufsize == 0:
@@ -96,12 +96,12 @@ class StreamDataProducerReader(Generic[_SentPacketT]):
 class StreamDataProducerIterator(Generic[_SentPacketT]):
     __slots__ = ("__p", "__q", "__lock")
 
-    def __init__(self, protocol: StreamProtocol[_SentPacketT, Any], *, lock: RLock | None = None) -> None:
+    def __init__(self, protocol: StreamProtocol[_SentPacketT, Any]) -> None:
         super().__init__()
         assert isinstance(protocol, StreamProtocol)
         self.__p: StreamProtocol[_SentPacketT, Any] = protocol
         self.__q: deque[Generator[bytes, None, None]] = deque()
-        self.__lock: RLock = lock or RLock()
+        self.__lock = Lock()
 
     def __iter__(self) -> Iterator[bytes]:
         return self
@@ -149,7 +149,6 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
         self,
         protocol: StreamProtocol[Any, _ReceivedPacketT],
         *,
-        lock: RLock | None = None,
         on_error: Literal["raise", "ignore"] = "raise",
     ) -> None:
         if on_error not in ("raise", "ignore"):
@@ -160,7 +159,7 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
         self.__c: Generator[None, bytes, tuple[Any, bytes]] | None = None
         self.__b: bytes = b""
         self.__u: bytes = b""
-        self.__lock: RLock = lock or RLock()
+        self.__lock = Lock()
         self.__on_error: Literal["raise", "ignore"] = on_error
 
     def __iter__(self) -> Iterator[_ReceivedPacketT]:

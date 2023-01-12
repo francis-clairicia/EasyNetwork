@@ -465,8 +465,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             self.handle_error(client, sys.exc_info())
             client.close()
         finally:
-            pid = os.getpid()
-            if ctx.get("pid", pid) != pid:  # Executed in a subprocess
+            if "pid" in ctx and ctx["pid"] != os.getpid():  # Executed in a subprocess
                 if not client.closed:
                     client.flush()
 

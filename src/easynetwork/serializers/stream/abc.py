@@ -222,7 +222,7 @@ class FileBasedIncrementalPacketSerializer(AbstractIncrementalPacketSerializer[_
                 wait_for_next_chunk = self.wait_for_next_chunk
                 while not chunk or wait_for_next_chunk(chunk):
                     chunk = yield
-                buffer.write(chunk)
+                    buffer.write(chunk)
                 del chunk
                 buffer.seek(0)
                 try:

@@ -160,7 +160,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                     return next(consumer)
                 except StopIteration:
                     pass
-                while not read_socket(timeout=None):
+                while not read_socket(timeout=10):
                     continue
 
     @overload

@@ -237,7 +237,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
                     return next(consumer)
                 except StopIteration:
                     pass
-                while not recv_packets_from_socket(timeout=None):
+                while not recv_packets_from_socket(timeout=10):
                     continue
 
     @overload
@@ -305,7 +305,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         with _use_timeout(socket, timeout):
             try:
                 data, sender = socket.recvfrom(MAX_DATAGRAM_SIZE, flags)
-            except (BlockingIOError, InterruptedError):
+            except (TimeoutError, BlockingIOError, InterruptedError):
                 return False
             sender = new_socket_address(sender, socket.family)
             if remote_address is not None and sender != remote_address:

@@ -14,7 +14,7 @@ __all__ = [
 ]
 
 from collections import deque
-from threading import RLock
+from threading import Lock
 from typing import Any, Generic, Iterator, Literal, TypeVar, final
 
 from ..converter import PacketConversionError
@@ -40,17 +40,12 @@ class DatagramProducerError(Exception):
 class DatagramProducer(Generic[_SentPacketT, _AddressT]):
     __slots__ = ("__p", "__q", "__lock")
 
-    def __init__(
-        self,
-        protocol: DatagramProtocol[_SentPacketT, Any],
-        *,
-        lock: RLock | None = None,
-    ) -> None:
+    def __init__(self, protocol: DatagramProtocol[_SentPacketT, Any]) -> None:
         super().__init__()
         assert isinstance(protocol, DatagramProtocol)
         self.__p: DatagramProtocol[_SentPacketT, Any] = protocol
         self.__q: deque[tuple[Any, _AddressT]] = deque()
-        self.__lock: RLock = lock or RLock()
+        self.__lock = Lock()
 
     def __iter__(self) -> Iterator[tuple[bytes, _AddressT]]:
         return self
@@ -91,7 +86,6 @@ class DatagramConsumer(Generic[_ReceivedPacketT]):
         self,
         protocol: DatagramProtocol[Any, _ReceivedPacketT],
         *,
-        lock: RLock | None = None,
         on_error: Literal["raise", "ignore"] = "raise",
     ) -> None:
         if on_error not in ("raise", "ignore"):
@@ -100,7 +94,7 @@ class DatagramConsumer(Generic[_ReceivedPacketT]):
         assert isinstance(protocol, DatagramProtocol)
         self.__p: DatagramProtocol[Any, _ReceivedPacketT] = protocol
         self.__q: deque[tuple[bytes, SocketAddress]] = deque()
-        self.__lock: RLock = lock or RLock()
+        self.__lock = Lock()
         self.__on_error: Literal["raise", "ignore"] = on_error
 
     def __iter__(self) -> Iterator[tuple[_ReceivedPacketT, SocketAddress]]:
