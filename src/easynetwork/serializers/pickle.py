@@ -14,7 +14,7 @@ from dataclasses import asdict as dataclass_asdict, dataclass
 from io import BytesIO
 from pickle import DEFAULT_PROTOCOL, STOP as STOP_OPCODE, Pickler, Unpickler, UnpicklingError
 from pickletools import optimize as pickletools_optimize
-from typing import IO, Any, Literal, TypeVar, final
+from typing import IO, Any, TypeVar, final
 
 from .stream.abc import FileBasedIncrementalPacketSerializer
 
@@ -35,13 +35,15 @@ class UnpicklerConfig:
 
 
 class PickleSerializer(FileBasedIncrementalPacketSerializer[_ST_contra, _DT_co]):
-    __slots__ = ("__optimize", "__pickler_conf", "__unpickler_conf")
+    __slots__ = ("__optimize", "__pickler_cls", "__pickler_conf", "__unpickler_cls", "__unpickler_conf")
 
     def __init__(
         self,
         pickler: PicklerConfig | None = None,
         unpickler: UnpicklerConfig | None = None,
         *,
+        pickler_cls: type[Pickler] | None = None,
+        unpickler_cls: type[Unpickler] | None = None,
         optimize: bool = False,
     ) -> None:
         super().__init__(
@@ -66,39 +68,26 @@ class PickleSerializer(FileBasedIncrementalPacketSerializer[_ST_contra, _DT_co])
             raise TypeError(f"Invalid unpickler config: expected {UnpicklerConfig.__name__}, got {type(unpickler).__name__}")
         self.__unpickler_conf = dataclass_asdict(unpickler)
 
+        self.__pickler_cls: type[Pickler] = pickler_cls or Pickler
+        self.__unpickler_cls: type[Unpickler] = unpickler_cls or Unpickler
+
     @final
     def _serialize_to_file(self, packet: _ST_contra, file: IO[bytes]) -> None:
         if not self.__optimize:
-            pickler = self.get_pickler(file, **self.__pickler_conf)
-            assert isinstance(pickler, Pickler)
+            pickler = self.__pickler_cls(file, **self.__pickler_conf, buffer_callback=None)
             pickler.dump(packet)
             return
         with BytesIO() as buffer:
-            pickler = self.get_pickler(buffer, **self.__pickler_conf)
-            assert isinstance(pickler, Pickler)
+            pickler = self.__pickler_cls(buffer, **self.__pickler_conf, buffer_callback=None)
             pickler.dump(packet)
             file.write(pickletools_optimize(buffer.getvalue()))
 
     @final
     def _deserialize_from_file(self, file: IO[bytes]) -> _DT_co:
-        unpickler = self.get_unpickler(file, **self.__unpickler_conf, errors="strict")
-        assert isinstance(unpickler, Unpickler)
+        unpickler = self.__unpickler_cls(file, **self.__unpickler_conf, errors="strict", buffers=None)
         packet: _DT_co = unpickler.load()
         return packet
 
     @final
     def wait_for_next_chunk(self, given_chunk: bytes) -> bool:
         return STOP_OPCODE not in given_chunk
-
-    def get_pickler(self, file: IO[bytes], *, protocol: int, fix_imports: bool) -> Pickler:
-        return Pickler(file, protocol=protocol, fix_imports=fix_imports, buffer_callback=None)
-
-    def get_unpickler(
-        self,
-        file: IO[bytes],
-        *,
-        fix_imports: bool,
-        encoding: str,
-        errors: Literal["strict", "error", "replace"],
-    ) -> Unpickler:
-        return Unpickler(file, fix_imports=fix_imports, encoding=encoding, errors=errors, buffers=None)
