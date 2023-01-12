@@ -18,11 +18,13 @@ SERIALIZE_PARAMS: list[tuple[Any, bytes]] = [
     ({"k": "v", "k2": "v2"}, b'{"k":"v","k2":"v2"}'),  # No whitespaces by default
 ]
 
-INCREMENTAL_SERIALIZE_PARAMS: list[tuple[Any, bytes]] = [(data, output) for data, output in SERIALIZE_PARAMS]
+INCREMENTAL_SERIALIZE_PARAMS: list[tuple[Any, bytes]] = [(data, output + b"\n") for data, output in SERIALIZE_PARAMS]
 
 DESERIALIZE_PARAMS: list[tuple[bytes, Any]] = [(output, data) for data, output in SERIALIZE_PARAMS]
 
-INCREMENTAL_DESERIALIZE_PARAMS: list[tuple[bytes, Any]] = [(output, data) for data, output in INCREMENTAL_SERIALIZE_PARAMS] + [
+INCREMENTAL_DESERIALIZE_PARAMS: list[tuple[bytes, Any]] = [
+    (output[:-1], data) for data, output in INCREMENTAL_SERIALIZE_PARAMS
+] + [
     (
         b'[{"value": "a"}, {"value": 3.14}, {"value": true}, {"value": {"other": [Infinity]}}]',
         [{"value": "a"}, {"value": 3.14}, {"value": True}, {"value": {"other": [float("+inf")]}}],

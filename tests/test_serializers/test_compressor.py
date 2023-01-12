@@ -95,7 +95,6 @@ class TestIncrementalDeserialize(BaseTestStreamIncrementalPacketDeserializer):
         deserialized_data, remaining = self.deserialize_for_test(deserializer_consumer, serialized_data)
 
         # Assert
-        assert serialized_data == compressor_serializer.serialize(json_data)
         assert deserialized_data == json_data
         assert isinstance(remaining, bytes)
         assert not remaining

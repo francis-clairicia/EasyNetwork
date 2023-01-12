@@ -64,12 +64,6 @@ class _JSONParser:
             for nb_chars, char in enumerate(struct.unpack(f"{len(chunk)}c", chunk), start=1):
                 match char:
                     case b'"' if not escaped(partial_document):
-                        if len(enclosure_counter) == 0:
-                            # Directly refused because we accepts only JSON Object or list at toplevel
-                            raise IncrementalDeserializeError(
-                                "Do not received beginning of a array/object",
-                                remaining_data=chunk[nb_chars:],
-                            )
                         enclosure_counter[b'"'] = 0 if enclosure_counter[b'"'] == 1 else 1
                     case _ if enclosure_counter[b'"'] > 0:
                         partial_document += char
@@ -83,17 +77,27 @@ class _JSONParser:
                     case b" " | b"\t" | b"\n" | b"\r":  # Optimization: Skip spaces
                         continue
                     case _ if len(enclosure_counter) == 0:  # No enclosure, only value
-                        # Directly refused because we accepts only JSON Object or list at toplevel
-                        raise IncrementalDeserializeError(
-                            "Do not received beginning of a array/object",
-                            remaining_data=chunk[nb_chars:],
-                        )
+                        assert not partial_document
+                        return (yield from _JSONParser._raw_parse_plain_value(char + chunk[nb_chars:]))
                 partial_document += char
                 if enclosure_counter[next(iter(enclosure_counter))] <= 0:  # 1st found is closed
                     complete_document = partial_document
                     partial_document = chunk[nb_chars:]
                     break
         return complete_document, partial_document
+
+    @staticmethod
+    def _raw_parse_plain_value(chunk: bytes) -> Generator[None, bytes, tuple[bytes, bytes]]:
+        import struct
+
+        result = bytearray()
+        while not chunk or chunk.isalnum():
+            result.extend(chunk)
+            chunk = yield
+        result.extend(chunk)
+        del chunk
+        idx: int = next(idx for idx, char in enumerate(struct.unpack(f"{len(result)}c", result)) if not char.isalnum())
+        return result[:idx], result[idx:]
 
 
 class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
@@ -120,28 +124,20 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
 
     @final
     def serialize(self, packet: _ST_contra) -> bytes:
-        if not isinstance(packet, (dict, list)):
-            raise TypeError("Top-level object must be a dict or a list")
         encoder = self.__e
         return encoder.encode(packet).encode("ascii")
 
     @final
     def incremental_serialize(self, packet: _ST_contra) -> Generator[bytes, None, None]:
-        if not isinstance(packet, (dict, list)):
-            raise TypeError("Top-level object must be a dict or a list")
         encoder = self.__e
         for chunk in encoder.iterencode(packet):
             yield chunk.encode("ascii")
+        yield b"\n"
 
     @final
     def deserialize(self, data: bytes) -> _DT_co:
         from json import JSONDecodeError
 
-        data = data.strip(b" \t\n\r")
-        if not data:
-            raise DeserializeError("Empty bytes after stripping whitespaces")
-        if not data.startswith((b"{", b"[")):
-            raise DeserializeError("Top-level object must be a JSON object or a list")
         try:
             document: str = data.decode("ascii")
         except UnicodeDecodeError as exc:

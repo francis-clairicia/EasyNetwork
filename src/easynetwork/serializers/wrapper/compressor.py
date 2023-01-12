@@ -107,74 +107,7 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_ST_contr
     @final
     def incremental_deserialize(self) -> Generator[None, bytes, tuple[_DT_co, bytes]]:
         serializer = self.__serializer
-
-        if isinstance(serializer, AbstractIncrementalPacketSerializer):
-            _last_chunk: bytes | None = None
-
-            _consumer = serializer.incremental_deserialize()
-            next(_consumer)
-
-            def add_chunk(chunk: bytes) -> None:
-                nonlocal _last_chunk
-
-                if _last_chunk is not None:
-                    try:
-                        _consumer.send(_last_chunk)
-                    except DeserializeError as exc:
-                        raise IncrementalDeserializeError(
-                            f"Error while deserializing decompressed chunk: {exc}",
-                            remaining_data=b"",
-                        ) from exc
-                    except StopIteration as exc:
-                        raise IncrementalDeserializeError(
-                            "Unexpected StopIteration",
-                            remaining_data=b"",
-                        ) from exc
-                _last_chunk = chunk
-
-            def finish(unused_data: bytes) -> tuple[_DT_co, bytes]:
-                packet: _DT_co
-                remaining: bytes
-                try:
-                    if _last_chunk is not None:
-                        _consumer.send(_last_chunk)
-                except DeserializeError as exc:
-                    raise IncrementalDeserializeError(
-                        f"Error while deserializing decompressed chunk: {exc}",
-                        remaining_data=unused_data,
-                    ) from exc
-                except StopIteration as exc:
-                    packet, remaining = exc.value
-                    del exc
-                else:
-                    raise IncrementalDeserializeError(
-                        "Missing data to create packet from compressed data stream",
-                        remaining_data=unused_data,
-                    )
-                if remaining:
-                    raise IncrementalDeserializeError(
-                        "Extra data caught",
-                        remaining_data=unused_data,
-                    )
-                return packet, unused_data
-
-        else:
-            _results: deque[bytes] = deque()
-
-            def add_chunk(chunk: bytes) -> None:
-                _results.append(chunk)
-
-            def finish(unused_data: bytes) -> tuple[_DT_co, bytes]:
-                data: bytes = b"".join(_results)
-                try:
-                    packet = serializer.deserialize(data)
-                except DeserializeError as exc:
-                    raise IncrementalDeserializeError(
-                        f"Error while deserializing decompressed data: {exc}",
-                        remaining_data=unused_data,
-                    ) from exc
-                return packet, unused_data
-
+        results: deque[bytes] = deque()
         decompressor = self.new_decompressor_stream()
         while not decompressor.eof:
             while not (chunk := (yield)):
@@ -187,8 +120,50 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_ST_contr
                     remaining_data=b"",
                 ) from exc
             if chunk:
-                add_chunk(chunk)
-        return finish(decompressor.unused_data)
+                results.append(chunk)
+
+        data = b"".join(results)
+        unused_data: bytes = decompressor.unused_data
+        del results, decompressor
+
+        packet: _DT_co
+        if isinstance(serializer, AbstractIncrementalPacketSerializer):
+            _consumer = serializer.incremental_deserialize()
+            next(_consumer)
+
+            remaining: bytes
+            try:
+                _consumer.send(data)
+            except DeserializeError as exc:
+                raise IncrementalDeserializeError(
+                    f"Error while deserializing decompressed chunk: {exc}",
+                    remaining_data=unused_data,
+                ) from exc
+            except StopIteration as exc:
+                packet, remaining = exc.value
+                del exc
+            else:
+                raise IncrementalDeserializeError(
+                    "Missing data to create packet from compressed data stream",
+                    remaining_data=unused_data,
+                )
+            if remaining:
+                raise IncrementalDeserializeError(
+                    "Extra data caught",
+                    remaining_data=unused_data,
+                )
+
+        else:
+
+            try:
+                packet = serializer.deserialize(data)
+            except DeserializeError as exc:
+                raise IncrementalDeserializeError(
+                    f"Error while deserializing decompressed data: {exc}",
+                    remaining_data=unused_data,
+                ) from exc
+
+        return packet, unused_data
 
 
 class BZ2CompressorSerializer(AbstractCompressorSerializer[_ST_contra, _DT_co]):
