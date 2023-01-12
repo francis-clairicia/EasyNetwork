@@ -155,6 +155,10 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
 
         complete_document, remaining_data = yield from _JSONParser.raw_parse()
 
+        if not complete_document:
+            complete_document = remaining_data
+            remaining_data = b""
+
         decoder = self.__d
         packet: _DT_co
         try:
