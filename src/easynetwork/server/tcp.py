@@ -79,6 +79,34 @@ class ConnectedClient(Generic[_ResponseT], metaclass=ABCMeta):
     def flush(self) -> None:
         raise NotImplementedError
 
+    @overload
+    @abstractmethod
+    def getsockopt(self, __level: int, __optname: int, /) -> int:
+        ...
+
+    @overload
+    @abstractmethod
+    def getsockopt(self, __level: int, __optname: int, __buflen: int, /) -> bytes:
+        ...
+
+    @abstractmethod
+    def getsockopt(self, *args: int) -> int | bytes:
+        raise NotImplementedError
+
+    @overload
+    @abstractmethod
+    def setsockopt(self, __level: int, __optname: int, __value: int | bytes, /) -> None:
+        ...
+
+    @overload
+    @abstractmethod
+    def setsockopt(self, __level: int, __optname: int, __value: None, __optlen: int, /) -> None:
+        ...
+
+    @abstractmethod
+    def setsockopt(self, *args: Any) -> None:
+        raise NotImplementedError
+
     @property
     @abstractmethod
     def closed(self) -> bool:
@@ -558,12 +586,6 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             self._check_not_closed()
             return self.__socket.getsockopt(*args)
 
-    @final
-    def get_clients(self) -> Sequence[ConnectedClient[_ResponseT]]:
-        with self.__lock:
-            self._check_not_closed()
-            return tuple(filter(lambda client: not client.closed, self.__clients.values()))
-
     @overload
     def setsockopt(self, __level: int, __optname: int, __value: int | bytes, /) -> None:
         ...
@@ -576,6 +598,12 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         with self.__lock:
             self._check_not_closed()
             return self.__socket.setsockopt(*args)
+
+    @final
+    def get_clients(self) -> Sequence[ConnectedClient[_ResponseT]]:
+        with self.__lock:
+            self._check_not_closed()
+            return tuple(filter(lambda client: not client.closed, self.__clients.values()))
 
     @final
     def _check_not_closed(self) -> None:
@@ -706,6 +734,32 @@ class _SelectorKeyData(Generic[_RequestT, _ResponseT]):
             with self.transaction():
                 socket = self.__check_not_closed()
                 return self.__flush(socket)
+
+        @overload
+        def getsockopt(self, __level: int, __optname: int, /) -> int:
+            ...
+
+        @overload
+        def getsockopt(self, __level: int, __optname: int, __buflen: int, /) -> bytes:
+            ...
+
+        def getsockopt(self, *args: int) -> int | bytes:
+            with self.transaction():
+                socket = self.__check_not_closed()
+                return socket.getsockopt(*args)
+
+        @overload
+        def setsockopt(self, __level: int, __optname: int, __value: int | bytes, /) -> None:
+            ...
+
+        @overload
+        def setsockopt(self, __level: int, __optname: int, __value: None, __optlen: int, /) -> None:
+            ...
+
+        def setsockopt(self, *args: Any) -> None:
+            with self.transaction():
+                socket = self.__check_not_closed()
+                return socket.setsockopt(*args)
 
         def __check_not_closed(self) -> Socket:
             socket = self.__s
