@@ -90,11 +90,10 @@ class _JSONParser:
     def _raw_parse_plain_value(chunk: bytes) -> Generator[None, bytes, tuple[bytes, bytes]]:
         import struct
 
-        result = bytearray()
+        result = bytearray(chunk)
         while not chunk or chunk.isalnum():
-            result.extend(chunk)
             chunk = yield
-        result.extend(chunk)
+            result.extend(chunk)
         del chunk
         idx: int = next(idx for idx, char in enumerate(struct.unpack(f"{len(result)}c", result)) if not char.isalnum())
         return result[:idx], result[idx:]

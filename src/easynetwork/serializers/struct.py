@@ -69,7 +69,7 @@ class NamedTupleSerializer(AbstractStructSerializer[_NT, _NT]):
     __slots__ = ("__namedtuple_cls",)
 
     def __init__(self, namedtuple_cls: type[_NT], fields_format: Mapping[str, str], format_endianness: str = "") -> None:
-        if not type(self).is_namedtuple_class(namedtuple_cls):
+        if not NamedTupleSerializer.is_namedtuple_class(namedtuple_cls):
             raise TypeError("Expected namedtuple class")
 
         if format_endianness == "":

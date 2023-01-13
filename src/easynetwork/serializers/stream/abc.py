@@ -89,7 +89,7 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_ST_cont
 
     @final
     def incremental_deserialize(self) -> Generator[None, bytes, tuple[_DT_co, bytes]]:
-        buffer: bytes = b""
+        buffer: bytes = yield
         separator: bytes = self.__separator
         while True:
             data, found_separator, buffer = buffer.partition(separator)
@@ -148,7 +148,7 @@ class FixedSizePacketSerializer(AbstractIncrementalPacketSerializer[_ST_contra, 
 
     @final
     def incremental_deserialize(self) -> Generator[None, bytes, tuple[_DT_co, bytes]]:
-        buffer: bytes = b""
+        buffer: bytes = yield
         packet_size: int = self.__size
         while len(buffer) < packet_size:
             buffer += yield
