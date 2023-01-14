@@ -184,7 +184,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 return next(consumer)
             except StopIteration:
                 pass
-            if self.__read_socket(timeout=timeout):
+            while self.__read_socket(timeout=timeout):
                 try:
                     return next(consumer)
                 except StopIteration:

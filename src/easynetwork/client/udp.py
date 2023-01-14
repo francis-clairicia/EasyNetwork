@@ -270,7 +270,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
                 return next(consumer)
             except StopIteration:
                 pass
-            if self.__recv_packets_from_socket(timeout=timeout):
+            while self.__recv_packets_from_socket(timeout=timeout):
                 try:
                     return next(consumer)
                 except StopIteration:
