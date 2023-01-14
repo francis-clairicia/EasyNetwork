@@ -59,7 +59,8 @@ class StreamDataProducer(Generic[_SentPacketT]):
         raise StopIteration
 
     def pending_packets(self) -> bool:
-        return bool(self.__q)
+        with self.__lock:
+            return bool(self.__q)
 
     def queue(self, *packets: _SentPacketT) -> None:
         if not packets:

@@ -39,7 +39,9 @@ from typing import (
 )
 from weakref import WeakKeyDictionary, ref
 
+from ..converter import PacketConversionError
 from ..protocol import StreamProtocol
+from ..serializers.exceptions import DeserializeError
 from ..tools.socket import AF_INET, SocketAddress, create_server, guess_best_buffer_size, new_socket_address
 from ..tools.stream import StreamDataConsumer, StreamDataConsumerError, StreamDataProducer
 from .abc import AbstractNetworkServer
@@ -394,7 +396,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             except StreamDataConsumerError as exc:
                 logger.info("Malformed request sent by %s", client.address)
                 try:
-                    self.bad_request(client, exc)
+                    self.bad_request(client, exc.exception)
                 except Exception:
                     try:
                         self.handle_error(client, sys.exc_info())
@@ -416,7 +418,10 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 raise RuntimeError(f"Error when processing request: {exc}") from exc
 
     def __execute_request(self, request: _RequestT, key: _SelectorKey[_RequestT, _ResponseT], pid: int | None = None) -> None:
+        in_subprocess: bool = pid is not None and pid != os.getpid()
         try:
+            if in_subprocess:
+                self.__execute_in_subprocess_setup(key)
             self.process_request(request, key.data.client)
         except Exception:
             try:
@@ -425,8 +430,14 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             finally:
                 self.__shutdown_client(key.fileobj, from_client=False)
         else:
-            if pid is not None and pid != os.getpid():
+            if in_subprocess:
                 self.__flush_client_unsent_data(key)
+
+    def __execute_in_subprocess_setup(self, key: _SelectorKey[_RequestT, _ResponseT]) -> None:
+        self.__listener_socket.close()
+        for client in self.get_clients():
+            if client is not key.data.client:
+                client.close()
 
     @abstractmethod
     def process_request(self, request: _RequestT, client: ConnectedClient[_ResponseT]) -> None:
@@ -540,7 +551,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     def verify_new_client(self, client_socket: Socket, address: SocketAddress) -> bool:
         return True
 
-    def bad_request(self, client: ConnectedClient[_ResponseT], exc: StreamDataConsumerError) -> None:
+    def bad_request(self, client: ConnectedClient[_ResponseT], exc: DeserializeError | PacketConversionError) -> None:
         pass
 
     def on_disconnect(self, client: ConnectedClient[_ResponseT]) -> None:
