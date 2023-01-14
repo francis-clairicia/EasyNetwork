@@ -25,12 +25,20 @@ class AbstractNetworkServer(Generic[_RequestT, _ResponseT], metaclass=ABCMeta):
     if TYPE_CHECKING:
         __Self = TypeVar("__Self", bound="AbstractNetworkServer[Any, Any]")
 
+    def __del__(self) -> None:
+        if not self.is_closed():
+            self.server_close()
+
     def __enter__(self: __Self) -> __Self:
         return self
 
     def __exit__(self, *args: Any) -> None:
         self.shutdown()
         self.server_close()
+
+    @abstractmethod
+    def is_closed(self) -> bool:
+        raise NotImplementedError
 
     @abstractmethod
     def serve_forever(self) -> None:

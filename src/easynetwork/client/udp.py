@@ -154,11 +154,19 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         self.__default_send_flags: int = send_flags
         self.__default_recv_flags: int = recv_flags
 
+    def __del__(self) -> None:
+        if not self.__closed:
+            self.close()
+
     def __enter__(self: __Self) -> __Self:
         return self
 
     def __exit__(self, *args: Any) -> None:
         self.close()
+
+    @final
+    def is_closed(self) -> bool:
+        return self.__closed
 
     def close(self) -> None:
         with self.__lock:
@@ -410,11 +418,6 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
     def default_recv_flags(self) -> int:
         return self.__default_recv_flags
 
-    @property
-    @final
-    def closed(self) -> bool:
-        return self.__closed
-
 
 class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Generic[_SentPacketT, _ReceivedPacketT]):
     __slots__ = ("__endpoint", "__peer")
@@ -472,6 +475,10 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
 
         self.__endpoint: UDPNetworkEndpoint[_SentPacketT, _ReceivedPacketT] = endpoint
         self.__peer: SocketAddress = remote_address
+
+    @final
+    def is_closed(self) -> bool:
+        return self.__endpoint.is_closed()
 
     def close(self) -> None:
         self.__endpoint.close()
@@ -563,11 +570,6 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
     @final
     def default_recv_flags(self) -> int:
         return self.__endpoint.default_recv_flags
-
-    @property
-    @final
-    def closed(self) -> bool:
-        return self.__endpoint.closed
 
 
 @contextmanager

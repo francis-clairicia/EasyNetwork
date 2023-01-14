@@ -9,8 +9,7 @@ from __future__ import annotations
 __all__ = [
     "StreamDataConsumer",
     "StreamDataConsumerError",
-    "StreamDataProducerIterator",
-    "StreamDataProducerReader",
+    "StreamDataProducer",
 ]
 
 from collections import deque
@@ -26,74 +25,8 @@ _ReceivedPacketT = TypeVar("_ReceivedPacketT")
 
 
 @final
-class StreamDataProducerReader(Generic[_SentPacketT]):
-    __slots__ = ("__p", "__q", "__b", "__lock")
-
-    def __init__(self, protocol: StreamProtocol[_SentPacketT, Any]) -> None:
-        super().__init__()
-        assert isinstance(protocol, StreamProtocol)
-        self.__p: StreamProtocol[_SentPacketT, Any] = protocol
-        self.__q: deque[Generator[bytes, None, None]] = deque()
-        self.__b: bytes = b""
-        self.__lock = Lock()
-
-    def read(self, bufsize: int = -1) -> bytes:
-        if bufsize == 0:
-            return b""
-        data: bytes = self.__b
-        with self.__lock:
-            queue: deque[Generator[bytes, None, None]] = self.__q
-
-            if bufsize < 0:
-                while queue:
-                    generator = queue[0]
-                    try:
-                        for chunk in generator:
-                            data += chunk
-                    except Exception as exc:
-                        self.__b = data
-                        raise RuntimeError(str(exc)) from exc
-                    except BaseException:
-                        self.__b = data
-                        raise
-                    finally:
-                        del queue[0], generator
-                self.__b = b""
-                return data
-
-            while len(data) < bufsize and queue:
-                generator = queue[0]
-                try:
-                    while not (chunk := next(generator)):  # Empty bytes are useless
-                        continue
-                    data += chunk
-                except StopIteration:
-                    del queue[0]
-                except Exception as exc:
-                    self.__b = data
-                    del queue[0]
-                    raise RuntimeError(str(exc)) from exc
-                except BaseException:
-                    self.__b = data
-                    del queue[0]
-                    raise
-                finally:
-                    del generator
-            self.__b = data[bufsize:]
-            return data[:bufsize]
-
-    def queue(self, *packets: _SentPacketT) -> None:
-        if not packets:
-            return
-        with self.__lock:
-            serializer = self.__p.serializer
-            converter = self.__p.converter
-            self.__q.extend(map(serializer.incremental_serialize, map(converter.convert_to_dto_packet, packets)))
-
-
-@final
 @Iterator.register
-class StreamDataProducerIterator(Generic[_SentPacketT]):
+class StreamDataProducer(Generic[_SentPacketT]):
     __slots__ = ("__p", "__q", "__lock")
 
     def __init__(self, protocol: StreamProtocol[_SentPacketT, Any]) -> None:
@@ -124,6 +57,9 @@ class StreamDataProducerIterator(Generic[_SentPacketT]):
                 finally:
                     del generator
         raise StopIteration
+
+    def pending_packets(self) -> bool:
+        return bool(self.__q)
 
     def queue(self, *packets: _SentPacketT) -> None:
         if not packets:

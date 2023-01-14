@@ -8,17 +8,19 @@ from __future__ import annotations
 
 __all__ = ["AbstractUDPNetworkServer"]
 
-import os
+import logging
 import sys
 from abc import abstractmethod
 from collections import deque
 from selectors import EVENT_READ, EVENT_WRITE, BaseSelector
 from socket import SOCK_DGRAM, socket as Socket
 from threading import Event, RLock
-from typing import TYPE_CHECKING, Any, Callable, Generic, TypeAlias, TypeVar, cast, final, overload
+from typing import TYPE_CHECKING, Any, Callable, Generic, Iterator, TypeAlias, TypeVar, final, overload
 
+from ..converter import PacketConversionError
 from ..protocol import DatagramProtocol
-from ..tools.datagram import DatagramConsumer, DatagramConsumerError, DatagramProducer, DatagramProducerError
+from ..serializers.exceptions import DeserializeError
+from ..tools.datagram import DatagramConsumer, DatagramConsumerError, DatagramProducer
 from ..tools.socket import AF_INET, MAX_DATAGRAM_SIZE, SocketAddress, create_server, new_socket_address
 from .abc import AbstractNetworkServer
 from .executors.abc import AbstractRequestExecutor
@@ -32,13 +34,16 @@ _ResponseT = TypeVar("_ResponseT")
 DatagramProtocolFactory: TypeAlias = Callable[[], DatagramProtocol[_ResponseT, _RequestT]]
 
 
+logger = logging.getLogger(__name__)
+
+
 class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Generic[_RequestT, _ResponseT]):
     __slots__ = (
         "__socket",
         "__producer",
         "__consumer",
         "__addr",
-        "__lock",
+        "__send_lock",
         "__loop",
         "__closed",
         "__is_shutdown",
@@ -82,7 +87,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         self.__consumer: DatagramConsumer[_RequestT] = DatagramConsumer(protocol, on_error="raise")
         self.__request_executor: AbstractRequestExecutor | None = request_executor
         self.__addr: SocketAddress = new_socket_address(socket.getsockname(), socket.family)
-        self.__lock: RLock = RLock()
+        self.__send_lock: RLock = RLock()
         self.__loop: bool = False
         self.__closed: bool = False
         self.__is_shutdown: Event = Event()
@@ -103,51 +108,21 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         super().__init__()
 
     def serve_forever(self) -> None:
-        with self.__lock:
-            self._check_not_closed()
-            if self.running():
-                raise RuntimeError("Server already running")
-            self.__is_shutdown.clear()
-            self.__loop = True
-
-        socket: Socket = self.__socket
+        self._check_not_closed()
+        if self.running():
+            raise RuntimeError("Server already running")
 
         request_executor: AbstractRequestExecutor | None = self.__request_executor
 
-        def receive_requests() -> None:
-            try:
-                data, sender = socket.recvfrom(MAX_DATAGRAM_SIZE, self.__default_recv_flags)
-            except (TimeoutError, BlockingIOError, InterruptedError):
-                return
-            sender = new_socket_address(sender, socket.family)
-            self.__consumer.queue(data, sender)
+        try:
+            self.__is_shutdown.clear()
+            self.__loop = True
 
-        def process_requests() -> None:
-            try:
-                request, address = next(self.__consumer)
-            except StopIteration:
-                return
-            except DatagramConsumerError as exc:
-                address = exc.sender
-                try:
-                    self.bad_request(exc)
-                except Exception:
-                    self.handle_error(address, sys.exc_info())
-                    socket.sendto(b"", self.__default_send_flags, address)
-            else:
-                try:
-                    if request_executor is not None:
-                        request_executor.execute(self.__execute_request, request, address, {"pid": os.getpid()})
-                    else:
-                        self.__execute_request(request, address, {})
-                except Exception as exc:
-                    if request_executor is not None:
-                        raise RuntimeError(f"request_executor.execute() raised an exception: {exc}") from exc
-                    raise RuntimeError(f"Error when processing request: {exc}") from exc
+            with self.__selector_factory() as selector:
+                selector_key = selector.register(self.__socket, EVENT_READ)
 
-        with self.__selector_factory() as selector:
-            selector.register(socket, EVENT_READ | EVENT_WRITE)
-            try:
+                logger.info("Start serving at %s", self.__addr)
+
                 while self.__loop:
                     ready: int
                     try:
@@ -156,31 +131,48 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                         ready = 0
                     if not self.__loop:
                         break  # type: ignore[unreachable]
-                    with self.__lock:
-                        if ready & EVENT_READ:
-                            receive_requests()
-                        process_requests()
-                        if request_executor is not None:
-                            request_executor.service_actions()
-                        self.service_actions()
-                        if ready & EVENT_WRITE:
-                            self.__flush_responses()
 
-            finally:
-                with self.__lock:
-                    self.__loop = False
-                    self.__is_shutdown.set()
+                    if ready & EVENT_WRITE:
+                        with self.__send_lock:
+                            self.__flush_unsent_datagrams()
+
+                    if ready & EVENT_READ:
+                        self.__receive_datagrams()
+                        self.__handle_received_datagrams()
+
+                    if request_executor is not None:
+                        request_executor.service_actions()
+                    self.service_actions()
+
+                    if self.__unsent_datagrams:
+                        if not (selector_key.events & EVENT_WRITE):
+                            selector_key = selector.modify(
+                                selector_key.fileobj,
+                                selector_key.events | EVENT_WRITE,
+                                selector_key.data,
+                            )
+                    else:
+                        if selector_key.events & EVENT_WRITE:
+                            selector_key = selector.modify(
+                                selector_key.fileobj,
+                                selector_key.events & ~EVENT_WRITE,
+                                selector_key.data,
+                            )
+
+        finally:
+            self.__loop = False
+            self.__is_shutdown.set()
+            logger.info("Server stopped")
 
     def server_close(self) -> None:
+        if not self.__is_shutdown.is_set():
+            raise RuntimeError("Cannot close running server. Use shutdown() first")
+        if self.__closed:
+            return
         try:
-            with self.__lock:
-                if not self.__is_shutdown.is_set():
-                    raise RuntimeError("Cannot close running server. Use shutdown() first")
-                if self.__closed:
-                    return
-                self.__closed = True
-                self.__socket.close()
-                del self.__socket
+            self.__closed = True
+            self.__socket.close()
+            del self.__socket
         finally:
             if (request_executor := self.__request_executor) is not None:
                 request_executor.on_server_close()
@@ -189,77 +181,143 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         pass
 
     @final
-    def running(self) -> bool:
-        with self.__lock:
-            return not self.__is_shutdown.is_set()
+    def is_closed(self) -> bool:
+        return self.__closed
 
-    def __execute_request(self, request: _RequestT, client_address: SocketAddress, ctx: dict[str, Any]) -> None:
+    @final
+    def running(self) -> bool:
+        return not self.__is_shutdown.is_set()
+
+    def __receive_datagrams(self) -> None:
+        socket: Socket = self.__socket
+        while True:
+            try:
+                data, sender = socket.recvfrom(MAX_DATAGRAM_SIZE, self.__default_recv_flags)
+            except (TimeoutError, BlockingIOError, InterruptedError):
+                return
+            sender = new_socket_address(sender, socket.family)
+            logger.debug("Received a datagram from %s", sender)
+            self.__consumer.queue(data, sender)
+
+    def __handle_received_datagrams(self) -> None:
+        request_executor: AbstractRequestExecutor | None = self.__request_executor
+        for request, address in self.__iter_consumer():
+            logger.info("Processing request sent by %s", address)
+            try:
+                if request_executor is not None:
+                    request_executor.execute(self.__execute_request, request, address)
+                else:
+                    self.__execute_request(request, address)
+            except Exception as exc:
+                if request_executor is not None:
+                    raise RuntimeError(f"request_executor.execute() raised an exception: {exc}") from exc
+                raise RuntimeError(f"Error when processing request: {exc}") from exc
+
+    def __iter_consumer(self) -> Iterator[tuple[_RequestT, SocketAddress]]:
+        while True:
+            try:
+                return (yield from self.__consumer)
+            except DatagramConsumerError as exc:
+                logger.info("Malformed request sent by %s", exc.sender)
+                try:
+                    self.bad_request(exc.sender, exc.exception)
+                except Exception:
+                    self.__on_client_error(exc.sender)
+
+    def __execute_request(self, request: _RequestT, client_address: SocketAddress) -> None:
         try:
             self.process_request(request, client_address)
         except Exception:
-            self.handle_error(client_address, sys.exc_info())
-            self.__socket.sendto(b"", self.__default_send_flags, client_address)
-        finally:
-            pid = os.getpid()
-            if ctx.get("pid", pid) != pid:  # Executed in a subprocess
-                if not self.__closed:
-                    self.__flush_responses()
+            self.__on_client_error(client_address)
 
     @abstractmethod
     def process_request(self, request: _RequestT, client_address: SocketAddress) -> None:
         raise NotImplementedError
 
     def handle_error(self, client_address: SocketAddress, exc_info: OptExcInfo) -> None:
-        from sys import stderr
-        from traceback import print_exception
-
         if exc_info == (None, None, None):
             return
 
-        print("-" * 40, file=stderr)
-        print(f"Exception occurred during processing of request from {client_address}", file=stderr)
-        print_exception(*exc_info, file=stderr)
-        print("-" * 40, file=stderr)
+        logger.error("-" * 40)
+        logger.error("Exception occurred during processing of request from %s", client_address, exc_info=exc_info)
+        logger.error("-" * 40)
 
     def shutdown(self) -> None:
-        with self.__lock:
-            self.__loop = False
+        self._check_not_closed()
+        self.__loop = False
         self.__is_shutdown.wait()
 
     def send_packet(self, address: SocketAddress, packet: _ResponseT) -> None:
-        with self.__lock:
+        with self.__send_lock:
             self._check_not_closed()
             self.__producer.queue(address, packet)
-            self.__flush_responses()
+            logger.debug("Put 1 packet to queue for %s", address)
+            self.__send_datagrams()
 
     def send_packets(self, address: SocketAddress, *packets: _ResponseT) -> None:
         if not packets:
             return
-        with self.__lock:
+        with self.__send_lock:
             self._check_not_closed()
             self.__producer.queue(address, *packets)
-            self.__flush_responses()
+            if (nb_packets := len(packets)) > 1:
+                logger.debug("Put %d packets to queue for %s", nb_packets, address)
+            else:
+                logger.debug("Put 1 packet to queue for %s", address)
+            self.__send_datagrams()
 
-    def __flush_responses(self) -> None:
+    def __send_datagrams(self) -> None:
         socket = self.__socket
-        queue, self.__unsent_datagrams = self.__unsent_datagrams, deque()
-        while True:
+        unsent_datagrams = self.__unsent_datagrams
+        flags: int = self.__default_send_flags
+        for response, address in self.__producer:
+            logger.info("A response will be sent to %s", address)
+            if unsent_datagrams:
+                logger.debug("-> There is unsent datagrams, queue it.")
+                unsent_datagrams.append((response, address))
+                continue
             try:
-                queue.append(next(self.__producer))
-            except StopIteration:
-                break
-            except DatagramProducerError as exc:
-                self.handle_error(cast(SocketAddress, exc.sender), sys.exc_info())
-        while queue:
-            response, address = queue.popleft()
-            try:
-                socket.sendto(response, self.__default_send_flags, address)
+                socket.sendto(response, flags, address)
             except (TimeoutError, BlockingIOError, InterruptedError):
-                self.__unsent_datagrams.append((response, address))
+                logger.debug("-> Failed to send datagram, queue it.")
+                unsent_datagrams.append((response, address))
+            except OSError:
+                logger.exception("-> Failed to send datagram")
+            else:
+                logger.debug("-> Datagram successfully sent.")
 
-    def bad_request(self, exc: DatagramConsumerError) -> None:
+    def __flush_unsent_datagrams(self) -> None:
+        socket = self.__socket
+        unsent_datagrams = self.__unsent_datagrams
+        flags: int = self.__default_send_flags
+        while unsent_datagrams:
+            response, address = unsent_datagrams[0]
+            logger.debug("Try to send saved datagram to %s", address)
+            try:
+                socket.sendto(response, flags, address)
+            except (TimeoutError, BlockingIOError, InterruptedError):
+                logger.debug("-> Failed to send datagram, bail out.")
+                return
+            except OSError:
+                logger.exception("-> Failed to send datagram")
+                return
+            else:
+                logger.debug("-> Datagram successfully sent.")
+                del unsent_datagrams[0]
+
+    def __on_client_error(self, client_address: SocketAddress) -> None:
+        try:
+            self.handle_error(client_address, sys.exc_info())
+        finally:
+            if not self.__unsent_datagrams:
+                self.__socket.sendto(b"", self.__default_send_flags, client_address)
+            else:
+                self.__unsent_datagrams.append((b"", client_address))
+
+    def bad_request(self, client_address: SocketAddress, exception: DeserializeError | PacketConversionError) -> None:
         pass
 
+    @final
     def protocol(self) -> DatagramProtocol[_ResponseT, _RequestT]:
         return self.__protocol_factory()
 
@@ -271,10 +329,10 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     def getsockopt(self, __level: int, __optname: int, __buflen: int, /) -> bytes:
         ...
 
+    @final
     def getsockopt(self, *args: int) -> int | bytes:
-        with self.__lock:
-            self._check_not_closed()
-            return self.__socket.getsockopt(*args)
+        self._check_not_closed()
+        return self.__socket.getsockopt(*args)
 
     @overload
     def setsockopt(self, __level: int, __optname: int, __value: int | bytes, /) -> None:
@@ -284,15 +342,20 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     def setsockopt(self, __level: int, __optname: int, __value: None, __optlen: int, /) -> None:
         ...
 
+    @final
     def setsockopt(self, *args: Any) -> None:
-        with self.__lock:
-            self._check_not_closed()
-            return self.__socket.setsockopt(*args)
+        self._check_not_closed()
+        return self.__socket.setsockopt(*args)
 
     @final
     def _check_not_closed(self) -> None:
         if self.__closed:
             raise RuntimeError("Closed server")
+
+    @property
+    @final
+    def logger(self) -> logging.Logger:
+        return logger
 
     @property
     @final

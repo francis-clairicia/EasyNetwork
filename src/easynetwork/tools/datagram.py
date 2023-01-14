@@ -10,7 +10,6 @@ __all__ = [
     "DatagramConsumer",
     "DatagramConsumerError",
     "DatagramProducer",
-    "DatagramProducerError",
 ]
 
 from collections import deque
@@ -26,13 +25,6 @@ _SentPacketT = TypeVar("_SentPacketT")
 _ReceivedPacketT = TypeVar("_ReceivedPacketT")
 
 _AddressT = TypeVar("_AddressT", bound=tuple[Any, ...])
-
-
-class DatagramProducerError(Exception):
-    def __init__(self, sender: tuple[Any, ...], exception: Exception) -> None:
-        super().__init__(f"Error while serializing data: {exception}")
-        self.sender: tuple[Any, ...] = sender
-        self.exception: Exception = exception
 
 
 @final
@@ -60,7 +52,7 @@ class DatagramProducer(Generic[_SentPacketT, _AddressT]):
             try:
                 return (serializer.serialize(packet), address)
             except Exception as exc:
-                raise DatagramProducerError(address, exc) from exc
+                raise RuntimeError(str(exc)) from exc
 
     def queue(self, address: _AddressT, *packets: _SentPacketT) -> None:
         if not packets:

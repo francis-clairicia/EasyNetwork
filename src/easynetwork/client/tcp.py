@@ -15,7 +15,7 @@ from typing import Any, Generic, Iterator, TypeVar, final, overload
 
 from ..protocol import StreamProtocol
 from ..tools.socket import SHUT_WR, SocketAddress, create_connection, guess_best_buffer_size, new_socket_address
-from ..tools.stream import StreamDataConsumer, StreamDataProducerIterator
+from ..tools.stream import StreamDataConsumer, StreamDataProducer
 from .abc import AbstractNetworkClient
 
 _T = TypeVar("_T")
@@ -32,7 +32,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         "__owner",
         "__closed",
         "__lock",
-        "__chunk_size",
+        "__recv_size",
         "__producer",
         "__consumer",
         "__peer",
@@ -77,7 +77,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         recv_flags: int = 0,
         **kwargs: Any,
     ) -> None:
-        self.__producer: StreamDataProducerIterator[_SentPacketT] = StreamDataProducerIterator(protocol)
+        self.__producer: StreamDataProducer[_SentPacketT] = StreamDataProducer(protocol)
         self.__consumer: StreamDataConsumer[_ReceivedPacketT] = StreamDataConsumer(protocol, on_error="ignore")
 
         send_flags = int(send_flags)
@@ -109,9 +109,13 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         self.__closed: bool = False
         self.__socket: Socket = socket
         self.__lock: RLock = RLock()
-        self.__chunk_size: int = guess_best_buffer_size(socket)
+        self.__recv_size: int = guess_best_buffer_size(socket)
         self.__default_send_flags: int = send_flags
         self.__default_recv_flags: int = recv_flags
+
+    @final
+    def is_closed(self) -> bool:
+        return self.__closed
 
     def close(self) -> None:
         with self.__lock:
@@ -215,7 +219,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         socket: Socket = self.__socket
         with _use_timeout(socket, timeout):
             try:
-                chunk: bytes = socket.recv(self.__chunk_size, flags)
+                chunk: bytes = socket.recv(self.__recv_size, flags)
             except (TimeoutError, BlockingIOError, InterruptedError):
                 return False
             if not chunk:
@@ -356,11 +360,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
     @final
     def default_recv_flags(self) -> int:
         return self.__default_recv_flags
-
-    @property
-    @final
-    def closed(self) -> bool:
-        return self.__closed
 
 
 @contextmanager

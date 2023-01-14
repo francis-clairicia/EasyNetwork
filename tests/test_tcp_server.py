@@ -125,7 +125,10 @@ class _IntegerSerializer(AbstractIncrementalPacketSerializer[int, int]):
 
 def test_request_handling() -> None:
     with _TestServer(
-        _RANDOM_HOST_PORT, protocol_factory=lambda: StreamProtocol(_IntegerSerializer()), buffered_write=True
+        _RANDOM_HOST_PORT,
+        protocol_factory=lambda: StreamProtocol(_IntegerSerializer()),
+        buffered_write=True,
+        disable_nagle_algorithm=True,
     ) as server:
         address = server.address.for_connection()
         run_server_in_thread(server)
