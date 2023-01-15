@@ -28,8 +28,12 @@ Home = "https://github.com/francis-clairicia/EasyNetwork"
 cbor = [
   "cbor2>=5.4,<6",
 ]
+encryption = [
+  "cryptography>=39,<40",
+]
 full = [
   "cbor2>=5.4,<6",
+  "cryptography>=39,<40",
 ]
 
 ############################ Flit configuration ############################
@@ -90,7 +94,10 @@ strict_equality = true
 enable_error_code = ["truthy-bool", "ignore-without-code"]
 
 [[tool.mypy.overrides]]
-module = "cbor2"
+module = [
+  "cbor2",
+  "cryptography.*",
+]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
