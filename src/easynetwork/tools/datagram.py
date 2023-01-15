@@ -8,7 +8,6 @@ from __future__ import annotations
 
 __all__ = [
     "DatagramConsumer",
-    "DatagramConsumerError",
     "DatagramProducer",
 ]
 
@@ -16,9 +15,7 @@ from collections import deque
 from threading import Lock
 from typing import Any, Generic, Iterator, Literal, TypeVar, final
 
-from ..converter import PacketConversionError
-from ..protocol import DatagramProtocol
-from ..serializers.exceptions import DeserializeError
+from ..protocol import DatagramProtocol, DatagramProtocolParseError
 from .socket import SocketAddress
 
 _SentPacketT = TypeVar("_SentPacketT")
@@ -36,7 +33,7 @@ class DatagramProducer(Generic[_SentPacketT, _AddressT]):
         super().__init__()
         assert isinstance(protocol, DatagramProtocol)
         self.__p: DatagramProtocol[_SentPacketT, Any] = protocol
-        self.__q: deque[tuple[Any, _AddressT]] = deque()
+        self.__q: deque[tuple[bytes, _AddressT]] = deque()
         self.__lock = Lock()
 
     def __iter__(self) -> Iterator[tuple[bytes, _AddressT]]:
@@ -47,26 +44,13 @@ class DatagramProducer(Generic[_SentPacketT, _AddressT]):
             queue = self.__q
             if not queue:
                 raise StopIteration
-            packet, address = queue.popleft()
-            serializer = self.__p.serializer
-            try:
-                return (serializer.serialize(packet), address)
-            except Exception as exc:
-                raise RuntimeError(str(exc)) from exc
+            return queue.popleft()
 
     def queue(self, address: _AddressT, *packets: _SentPacketT) -> None:
         if not packets:
             return
         with self.__lock:
-            convert = self.__p.converter.convert_to_dto_packet
-            self.__q.extend((convert(packet), address) for packet in packets)
-
-
-class DatagramConsumerError(Exception):
-    def __init__(self, sender: SocketAddress, exception: DeserializeError | PacketConversionError) -> None:
-        super().__init__(f"Error while deserializing data: {exception}")
-        self.sender: SocketAddress = sender
-        self.exception: DeserializeError | PacketConversionError = exception
+            self.__q.extend((self.__p.make_datagram(packet), address) for packet in packets)
 
 
 @final
@@ -94,23 +78,19 @@ class DatagramConsumer(Generic[_ReceivedPacketT]):
 
     def __next__(self) -> tuple[_ReceivedPacketT, SocketAddress]:
         with self.__lock:
-            serializer = self.__p.serializer
-            converter = self.__p.converter
             queue = self.__q
+            protocol = self.__p
             while queue:
                 data, sender = queue.popleft()
                 try:
-                    dto_packet = serializer.deserialize(data)
-                except DeserializeError as exc:
+                    packet = protocol.build_packet_from_datagram(data, sender)
+                except DatagramProtocolParseError:
                     if self.__on_error == "raise":
-                        raise DatagramConsumerError(sender, exc) from exc
+                        raise
                     continue
-                try:
-                    return (converter.create_from_dto_packet(dto_packet), sender)
-                except PacketConversionError as exc:
-                    if self.__on_error == "raise":
-                        raise DatagramConsumerError(sender, exc) from exc
-                    continue
+                except Exception as exc:
+                    raise RuntimeError(str(exc)) from exc
+                return packet, sender
             raise StopIteration
 
     def queue(self, data: bytes, address: SocketAddress) -> None:

@@ -40,10 +40,10 @@ from typing import (
 from weakref import WeakKeyDictionary, ref
 
 from ..converter import PacketConversionError
-from ..protocol import StreamProtocol
+from ..protocol import StreamProtocol, StreamProtocolParseError
 from ..serializers.exceptions import DeserializeError
 from ..tools.socket import AF_INET, SocketAddress, create_server, guess_best_buffer_size, new_socket_address
-from ..tools.stream import StreamDataConsumer, StreamDataConsumerError, StreamDataProducer
+from ..tools.stream import StreamDataConsumer, StreamDataProducer
 from .abc import AbstractNetworkServer
 from .executors.abc import AbstractRequestExecutor
 
@@ -396,7 +396,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             request: _RequestT
             try:
                 request = next(key_data.consumer)
-            except StreamDataConsumerError as exc:
+            except StreamProtocolParseError as exc:
                 logger.info("Malformed request sent by %s", client.address)
                 try:
                     self.bad_request(client, exc.exception)

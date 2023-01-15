@@ -18,9 +18,9 @@ from threading import Event, RLock
 from typing import TYPE_CHECKING, Any, Callable, Generic, Iterator, TypeAlias, TypeVar, final, overload
 
 from ..converter import PacketConversionError
-from ..protocol import DatagramProtocol
+from ..protocol import DatagramProtocol, DatagramProtocolParseError
 from ..serializers.exceptions import DeserializeError
-from ..tools.datagram import DatagramConsumer, DatagramConsumerError, DatagramProducer
+from ..tools.datagram import DatagramConsumer, DatagramProducer
 from ..tools.socket import AF_INET, MAX_DATAGRAM_SIZE, SocketAddress, create_server, new_socket_address
 from .abc import AbstractNetworkServer
 from .executors.abc import AbstractRequestExecutor
@@ -221,7 +221,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         while True:
             try:
                 return (yield from self.__consumer)
-            except DatagramConsumerError as exc:
+            except DatagramProtocolParseError as exc:
                 self.__logger.info("Malformed request sent by %s", exc.sender)
                 try:
                     self.bad_request(exc.sender, exc.exception)

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 __all__ = [
     "StreamDataConsumer",
-    "StreamDataConsumerError",
     "StreamDataProducer",
 ]
 
@@ -16,9 +15,7 @@ from collections import deque
 from threading import Lock
 from typing import Any, Generator, Generic, Iterator, Literal, TypeVar, final
 
-from ..converter import PacketConversionError
-from ..protocol import StreamProtocol
-from ..serializers.stream.exceptions import IncrementalDeserializeError
+from ..protocol import StreamProtocol, StreamProtocolParseError
 
 _SentPacketT = TypeVar("_SentPacketT")
 _ReceivedPacketT = TypeVar("_ReceivedPacketT")
@@ -66,15 +63,7 @@ class StreamDataProducer(Generic[_SentPacketT]):
         if not packets:
             return
         with self.__lock:
-            serializer = self.__p.serializer
-            converter = self.__p.converter
-            self.__q.extend(map(serializer.incremental_serialize, map(converter.convert_to_dto_packet, packets)))
-
-
-class StreamDataConsumerError(Exception):
-    def __init__(self, exception: IncrementalDeserializeError | PacketConversionError) -> None:
-        super().__init__(f"Error while deserializing data: {exception}")
-        self.exception: IncrementalDeserializeError | PacketConversionError = exception
+            self.__q.extend(map(self.__p.generate_chunks, packets))
 
 
 @final
@@ -93,7 +82,7 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
         super().__init__()
         assert isinstance(protocol, StreamProtocol)
         self.__p: StreamProtocol[Any, _ReceivedPacketT] = protocol
-        self.__c: Generator[None, bytes, tuple[Any, bytes]] | None = None
+        self.__c: Generator[None, bytes, tuple[_ReceivedPacketT, bytes]] | None = None
         self.__b: bytes = b""
         self.__u: bytes = b""
         self.__lock = Lock()
@@ -104,15 +93,14 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
 
     def __next__(self) -> _ReceivedPacketT:
         with self.__lock:
-            serializer = self.__p.serializer
-            converter = self.__p.converter
+            protocol = self.__p
             while chunk := self.__b:
                 self.__b = b""
                 consumer, self.__c = self.__c, None
                 if consumer is None:
-                    consumer = serializer.incremental_deserialize()
+                    consumer = protocol.build_packet_from_chunks()
                     next(consumer)
-                packet: Any
+                packet: _ReceivedPacketT
                 try:
                     consumer.send(chunk)
                 except StopIteration as exc:
@@ -122,12 +110,12 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
                         del exc
                     self.__u = b""
                     self.__b = chunk
-                except IncrementalDeserializeError as exc:
+                    return packet
+                except StreamProtocolParseError as exc:
                     self.__u = b""
                     self.__b = exc.remaining_data
-                    exc.remaining_data = b""
                     if self.__on_error == "raise":
-                        raise StreamDataConsumerError(exc) from exc
+                        raise
                     continue
                 except Exception as exc:
                     self.__u = b""
@@ -139,17 +127,6 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
                     self.__u += chunk
                     self.__c = consumer
                     continue
-
-                try:
-                    return converter.create_from_dto_packet(packet)
-                except PacketConversionError as exc:
-                    if self.__on_error == "raise":
-                        raise StreamDataConsumerError(exc) from exc
-                    continue
-                except Exception as exc:
-                    raise RuntimeError(str(exc)) from exc
-                finally:
-                    del packet
 
             raise StopIteration
 

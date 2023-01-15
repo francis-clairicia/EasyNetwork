@@ -6,14 +6,16 @@
 
 from __future__ import annotations
 
-__all__ = ["DatagramProtocol", "StreamProtocol"]
+__all__ = ["DatagramProtocol", "DatagramProtocolParseError", "StreamProtocol", "StreamProtocolParseError"]
 
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Generic, TypeVar, overload
+from typing import Any, Generator, Generic, TypeVar, final, overload
 
-from .converter import AbstractPacketConverter, NoPacketConversion
+from .converter import AbstractPacketConverter, PacketConversionError
 from .serializers.abc import AbstractPacketSerializer
+from .serializers.exceptions import DeserializeError
 from .serializers.stream.abc import AbstractIncrementalPacketSerializer
+from .serializers.stream.exceptions import IncrementalDeserializeError
+from .tools.socket import SocketAddress
 
 _SentDTOPacketT = TypeVar("_SentDTOPacketT")
 _ReceivedDTOPacketT = TypeVar("_ReceivedDTOPacketT")
@@ -22,55 +24,114 @@ _SentPacketT = TypeVar("_SentPacketT")
 _ReceivedPacketT = TypeVar("_ReceivedPacketT")
 
 
-@dataclass(frozen=True, slots=True)
+class DatagramProtocolParseError(Exception):
+    def __init__(self, sender: SocketAddress, exception: DeserializeError | PacketConversionError) -> None:
+        super().__init__(f"Error while parsing datagram: {exception}")
+        self.sender: SocketAddress = sender
+        self.exception: DeserializeError | PacketConversionError = exception
+
+
 class DatagramProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
-    serializer: AbstractPacketSerializer[Any, Any]
-    converter: AbstractPacketConverter[_SentPacketT, Any, _ReceivedPacketT, Any] = field(default_factory=NoPacketConversion)
+    __slots__ = ("__serializer", "__converter", "__weakref__")
 
-    if TYPE_CHECKING:
+    @overload
+    def __init__(
+        self,
+        serializer: AbstractPacketSerializer[_SentPacketT, _ReceivedPacketT],
+    ) -> None:
+        ...
 
-        @overload  # type: ignore[no-overload-impl]
-        def __init__(
-            self,
-            serializer: AbstractPacketSerializer[_SentPacketT, _ReceivedPacketT],
-        ) -> None:
-            ...
+    @overload
+    def __init__(
+        self,
+        serializer: AbstractPacketSerializer[_SentDTOPacketT, _ReceivedDTOPacketT],
+        converter: AbstractPacketConverter[_SentPacketT, _SentDTOPacketT, _ReceivedPacketT, _ReceivedDTOPacketT],
+    ) -> None:
+        ...
 
-        @overload
-        def __init__(
-            self,
-            serializer: AbstractPacketSerializer[_SentDTOPacketT, _ReceivedDTOPacketT],
-            converter: AbstractPacketConverter[_SentPacketT, _SentDTOPacketT, _ReceivedPacketT, _ReceivedDTOPacketT],
-        ) -> None:
-            ...
+    def __init__(
+        self,
+        serializer: AbstractPacketSerializer[Any, Any],
+        converter: AbstractPacketConverter[_SentPacketT, Any, _ReceivedPacketT, Any] | None = None,
+    ) -> None:
+        assert isinstance(serializer, AbstractPacketSerializer)
+        assert converter is None or isinstance(converter, AbstractPacketConverter)
+        self.__serializer: AbstractPacketSerializer[Any, Any] = serializer
+        self.__converter: AbstractPacketConverter[_SentPacketT, Any, _ReceivedPacketT, Any] | None = converter
 
-    def __post_init__(self) -> None:
-        assert isinstance(self.serializer, AbstractPacketSerializer)
-        assert isinstance(self.converter, AbstractPacketConverter)
+    @final
+    def make_datagram(self, packet: _SentPacketT) -> bytes:
+        if (converter := self.__converter) is not None:
+            packet = converter.convert_to_dto_packet(packet)
+        return self.__serializer.serialize(packet)
+
+    @final
+    def build_packet_from_datagram(self, datagram: bytes, sender: SocketAddress) -> _ReceivedPacketT:
+        try:
+            packet: _ReceivedPacketT = self.__serializer.deserialize(datagram)
+        except DeserializeError as exc:
+            raise DatagramProtocolParseError(sender, exc) from exc
+        if (converter := self.__converter) is not None:
+            try:
+                packet = converter.create_from_dto_packet(packet)
+            except PacketConversionError as exc:
+                raise DatagramProtocolParseError(sender, exc) from exc
+        return packet
 
 
-@dataclass(frozen=True, slots=True)
+class StreamProtocolParseError(Exception):
+    def __init__(self, exception: DeserializeError | PacketConversionError, remaining_data: bytes) -> None:
+        super().__init__(f"Error while parsing datagram: {exception}")
+        self.exception: DeserializeError | PacketConversionError = exception
+        self.remaining_data: bytes = remaining_data
+
+
 class StreamProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
-    serializer: AbstractIncrementalPacketSerializer[Any, Any]
-    converter: AbstractPacketConverter[_SentPacketT, Any, _ReceivedPacketT, Any] = field(default_factory=NoPacketConversion)
+    __slots__ = ("__serializer", "__converter", "__weakref__")
 
-    if TYPE_CHECKING:
+    @overload
+    def __init__(
+        self,
+        serializer: AbstractIncrementalPacketSerializer[_SentPacketT, _ReceivedPacketT],
+    ) -> None:
+        ...
 
-        @overload  # type: ignore[no-overload-impl]
-        def __init__(
-            self,
-            serializer: AbstractIncrementalPacketSerializer[_SentPacketT, _ReceivedPacketT],
-        ) -> None:
-            ...
+    @overload
+    def __init__(
+        self,
+        serializer: AbstractIncrementalPacketSerializer[_SentDTOPacketT, _ReceivedDTOPacketT],
+        converter: AbstractPacketConverter[_SentPacketT, _SentDTOPacketT, _ReceivedPacketT, _ReceivedDTOPacketT],
+    ) -> None:
+        ...
 
-        @overload
-        def __init__(
-            self,
-            serializer: AbstractIncrementalPacketSerializer[_SentDTOPacketT, _ReceivedDTOPacketT],
-            converter: AbstractPacketConverter[_SentPacketT, _SentDTOPacketT, _ReceivedPacketT, _ReceivedDTOPacketT],
-        ) -> None:
-            ...
+    def __init__(
+        self,
+        serializer: AbstractIncrementalPacketSerializer[Any, Any],
+        converter: AbstractPacketConverter[_SentPacketT, Any, _ReceivedPacketT, Any] | None = None,
+    ) -> None:
+        assert isinstance(serializer, AbstractIncrementalPacketSerializer)
+        assert converter is None or isinstance(converter, AbstractPacketConverter)
+        self.__serializer: AbstractIncrementalPacketSerializer[Any, Any] = serializer
+        self.__converter: AbstractPacketConverter[_SentPacketT, Any, _ReceivedPacketT, Any] | None = converter
 
-    def __post_init__(self) -> None:
-        assert isinstance(self.serializer, AbstractIncrementalPacketSerializer)
-        assert isinstance(self.converter, AbstractPacketConverter)
+    @final
+    def generate_chunks(self, packet: _SentPacketT) -> Generator[bytes, None, None]:
+        if (converter := self.__converter) is not None:
+            packet = converter.convert_to_dto_packet(packet)
+        return self.__serializer.incremental_serialize(packet)
+
+    @final
+    def build_packet_from_chunks(self) -> Generator[None, bytes, tuple[_ReceivedPacketT, bytes]]:
+        packet: _ReceivedPacketT
+        try:
+            packet, remaining_data = yield from self.__serializer.incremental_deserialize()
+        except IncrementalDeserializeError as exc:
+            raise StreamProtocolParseError(exc, exc.remaining_data) from exc
+
+        if (converter := self.__converter) is not None:
+            try:
+                packet = converter.create_from_dto_packet(packet)
+            except PacketConversionError as exc:
+                raise StreamProtocolParseError(exc, remaining_data) from exc
+
+        return packet, remaining_data
