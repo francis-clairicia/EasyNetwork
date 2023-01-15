@@ -211,7 +211,7 @@ class FileBasedIncrementalPacketSerializer(AbstractIncrementalPacketSerializer[_
                 raise DeserializeError("Extra data caught")
         return packet
 
-    def wait_for_next_chunk(self, given_chunk: bytes) -> bool:
+    def _wait_for_next_chunk(self, given_chunk: bytes) -> bool:
         return False
 
     @final
@@ -219,7 +219,7 @@ class FileBasedIncrementalPacketSerializer(AbstractIncrementalPacketSerializer[_
         with BytesIO() as buffer:
             while True:
                 chunk: bytes = b""
-                wait_for_next_chunk = self.wait_for_next_chunk
+                wait_for_next_chunk = self._wait_for_next_chunk
                 while not chunk or wait_for_next_chunk(chunk):
                     chunk = yield
                     buffer.write(chunk)

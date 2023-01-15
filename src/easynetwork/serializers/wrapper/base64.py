@@ -29,7 +29,6 @@ class Base64EncodedSerializer(AutoSeparatedPacketSerializer[_ST_contra, _DT_co])
     def __init__(
         self,
         serializer: AbstractPacketSerializer[_ST_contra, _DT_co],
-        *,
         signing_key: str | bytes | None = None,
     ) -> None:
         assert isinstance(serializer, AbstractPacketSerializer)

@@ -73,11 +73,10 @@ class CBORSerializer(FileBasedIncrementalPacketSerializer[_ST_contra, _DT_co]):
     def _serialize_to_file(self, packet: _ST_contra, file: IO[bytes]) -> None:
         from cbor2 import CBOREncoder
 
-        return CBOREncoder(file, **self.__e).encode(packet)
+        CBOREncoder(file, **self.__e).encode(packet)
 
     @final
     def _deserialize_from_file(self, file: IO[bytes]) -> _DT_co:
         from cbor2 import CBORDecoder
 
-        packet: _DT_co = CBORDecoder(file, **self.__d).decode()
-        return packet
+        return CBORDecoder(file, **self.__d).decode()

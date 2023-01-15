@@ -74,20 +74,16 @@ class PickleSerializer(FileBasedIncrementalPacketSerializer[_ST_contra, _DT_co])
     @final
     def _serialize_to_file(self, packet: _ST_contra, file: IO[bytes]) -> None:
         if not self.__optimize:
-            pickler = self.__pickler_cls(file, **self.__pickler_conf, buffer_callback=None)
-            pickler.dump(packet)
+            self.__pickler_cls(file, **self.__pickler_conf, buffer_callback=None).dump(packet)
             return
         with BytesIO() as buffer:
-            pickler = self.__pickler_cls(buffer, **self.__pickler_conf, buffer_callback=None)
-            pickler.dump(packet)
+            self.__pickler_cls(buffer, **self.__pickler_conf, buffer_callback=None).dump(packet)
             file.write(pickletools_optimize(buffer.getvalue()))
 
     @final
     def _deserialize_from_file(self, file: IO[bytes]) -> _DT_co:
-        unpickler = self.__unpickler_cls(file, **self.__unpickler_conf, errors="strict", buffers=None)
-        packet: _DT_co = unpickler.load()
-        return packet
+        return self.__unpickler_cls(file, **self.__unpickler_conf, errors="strict", buffers=None).load()
 
     @final
-    def wait_for_next_chunk(self, given_chunk: bytes) -> bool:
+    def _wait_for_next_chunk(self, given_chunk: bytes) -> bool:
         return STOP_OPCODE not in given_chunk
