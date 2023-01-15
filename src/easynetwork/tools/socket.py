@@ -10,7 +10,6 @@ __all__ = [
     "AF_INET",
     "AF_INET6",
     "AddressFamily",
-    "DEFAULT_TIMEOUT",
     "MAX_DATAGRAM_SIZE",
     "SHUT_RD",
     "SHUT_RDWR",
@@ -115,17 +114,17 @@ def new_socket_address(addr: tuple[Any, ...], family: int) -> SocketAddress:
             return IPv4SocketAddress(addr[0], addr[1])
 
 
-DEFAULT_TIMEOUT: Any = object()
+_DEFAULT_TIMEOUT: Any = object()
 
 
 def create_connection(
     address: tuple[str, int],
     *,
-    timeout: float | None = DEFAULT_TIMEOUT,
+    timeout: float | None = _DEFAULT_TIMEOUT,
     source_address: tuple[str, int] | None = None,
 ) -> _socket.socket:
     sock: _socket.socket
-    if timeout is not DEFAULT_TIMEOUT:
+    if timeout is not _DEFAULT_TIMEOUT:
         sock = _socket.create_connection(address, timeout=timeout, source_address=source_address)
     else:
         sock = _socket.create_connection(address, source_address=source_address)

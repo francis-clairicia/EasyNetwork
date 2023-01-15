@@ -105,6 +105,8 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         if socket.type != SOCK_STREAM:
             raise ValueError("Invalid socket type")
 
+        socket.settimeout(None)
+
         self.__peer: SocketAddress = new_socket_address(socket.getpeername(), socket.family)
         self.__closed: bool = False
         self.__socket: Socket = socket
@@ -241,17 +243,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         with self.__lock:
             self._check_not_closed()
             return self.__socket.gettimeout()
-
-    def set_timeout(self, timeout: float | None) -> None:
-        from ..tools.socket import DEFAULT_TIMEOUT
-
-        if timeout is DEFAULT_TIMEOUT:
-            from socket import getdefaulttimeout
-
-            timeout = getdefaulttimeout()
-        with self.__lock:
-            self._check_not_closed()
-            self.__socket.settimeout(timeout)
 
     def is_connected(self) -> bool:
         with self.__lock:

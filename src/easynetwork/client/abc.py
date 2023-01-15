@@ -90,14 +90,6 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
         return list(self.iter_received_packets(timeout=timeout))
 
     @abstractmethod
-    def get_timeout(self) -> float | None:
-        raise NotImplementedError
-
-    @abstractmethod
-    def set_timeout(self, timeout: float | None) -> None:
-        raise NotImplementedError
-
-    @abstractmethod
     def fileno(self) -> int:
         raise NotImplementedError
 

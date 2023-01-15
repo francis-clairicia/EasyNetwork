@@ -119,10 +119,10 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             except OSError:
                 peername = None
         else:
-            from ..tools.socket import DEFAULT_TIMEOUT
+            _default_timeout: Any = object()
 
             family = AddressFamily(kwargs.pop("family", AF_INET))
-            timeout: float | None = kwargs.pop("timeout", DEFAULT_TIMEOUT)
+            timeout: float | None = kwargs.pop("timeout", _default_timeout)
             remote_address: tuple[str, int] | None = kwargs.pop("remote_address", None)
             source_address: tuple[str, int] | None = kwargs.pop("source_address", None)
             if kwargs:
@@ -133,7 +133,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
                     socket.bind(("", 0))
                 else:
                     socket.bind(source_address)
-                if timeout is not DEFAULT_TIMEOUT:
+                if timeout is not _default_timeout:
                     socket.settimeout(timeout)
                 if remote_address is not None:
                     socket.connect(remote_address)
@@ -146,6 +146,8 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
 
         if socket.type != SOCK_DGRAM:
             raise ValueError("Invalid socket type")
+
+        socket.settimeout(None)
 
         self.__peer: SocketAddress | None = peername
         self.__closed: bool = False
@@ -333,22 +335,6 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             self._check_not_closed()
             return self.__peer
 
-    def get_timeout(self) -> float | None:
-        with self.__lock:
-            self._check_not_closed()
-            return self.__socket.gettimeout()
-
-    def set_timeout(self, timeout: float | None) -> None:
-        from ..tools.socket import DEFAULT_TIMEOUT
-
-        if timeout is DEFAULT_TIMEOUT:
-            from socket import getdefaulttimeout
-
-            timeout = getdefaulttimeout()
-        with self.__lock:
-            self._check_not_closed()
-            self.__socket.settimeout(timeout)
-
     def fileno(self) -> int:
         with self.__lock:
             if self.__closed:
@@ -523,12 +509,6 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         timeout: float = 0,
     ) -> list[_ReceivedPacketT]:
         return list(map(itemgetter(0), self.__endpoint.recv_all_packets(timeout=timeout)))
-
-    def get_timeout(self) -> float | None:
-        return self.__endpoint.get_timeout()
-
-    def set_timeout(self, timeout: float | None) -> None:
-        return self.__endpoint.set_timeout(timeout)
 
     def fileno(self) -> int:
         return self.__endpoint.fileno()
