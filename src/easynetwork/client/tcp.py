@@ -205,12 +205,11 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         read_socket = self.__read_socket
         check_not_closed = self._check_not_closed
         lock = self.__lock
+        null: Any = object()
         while True:
             with lock:
                 check_not_closed()
-                try:
-                    packet = next(consumer)
-                except StopIteration:
+                while (packet := next(consumer, null)) is null:
                     if not read_socket(timeout=timeout):
                         return
                     continue

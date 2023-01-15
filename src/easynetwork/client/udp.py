@@ -295,8 +295,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         while True:
             with lock:
                 check_not_closed()
-                packet_tuple = next(consumer, None)
-                if packet_tuple is None:
+                while (packet_tuple := next(consumer, None)) is None:
                     if not recv_packets_from_socket(timeout=timeout):
                         return
                     continue
