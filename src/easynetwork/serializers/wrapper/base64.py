@@ -12,7 +12,6 @@ __all__ = [
 
 import base64
 import binascii
-import os
 from hmac import compare_digest, digest as hmac_digest
 from typing import TypeVar, final
 
@@ -47,7 +46,9 @@ class Base64EncodedSerializer(AutoSeparatedPacketSerializer[_ST_contra, _DT_co])
 
     @classmethod
     def generate_key(cls) -> bytes:
-        return base64.urlsafe_b64encode(os.urandom(16))
+        from os import urandom
+
+        return base64.urlsafe_b64encode(urandom(16))
 
     @final
     def serialize(self, packet: _ST_contra) -> bytes:
@@ -64,6 +65,6 @@ class Base64EncodedSerializer(AutoSeparatedPacketSerializer[_ST_contra, _DT_co])
             raise DeserializeError("Invalid token") from None
         if key := self.__signing_key:
             data, signature = data[:-32], data[-32:]
-            if not compare_digest(hmac_digest(key, data, "sha256"), signature):
+            if len(signature) != 32 or not compare_digest(hmac_digest(key, data, "sha256"), signature):
                 raise DeserializeError("Invalid token")
         return self.__serializer.deserialize(data)
