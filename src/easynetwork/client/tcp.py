@@ -36,6 +36,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         "__producer",
         "__consumer",
         "__peer",
+        "__eof_reached",
         "__default_send_flags",
         "__default_recv_flags",
     )
@@ -111,6 +112,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         self.__closed: bool = False
         self.__socket: Socket = socket
         self.__lock: RLock = RLock()
+        self.__eof_reached: bool = False
         self.__recv_size: int = guess_best_buffer_size(socket)
         self.__default_send_flags: int = send_flags
         self.__default_recv_flags: int = recv_flags
@@ -123,6 +125,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         with self.__lock:
             if self.__closed:
                 return
+            self.__eof_reached = True
             self.__closed = True
             socket: Socket = self.__socket
             del self.__socket
@@ -152,6 +155,8 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
     def __write_on_socket(self) -> None:
         flags = self.__default_send_flags
         socket: Socket = self.__socket
+        if self.__eof_reached:
+            raise ConnectionAbortedError("Closed connection")
         with _use_timeout(socket, None):
             for chunk in self.__producer:
                 socket.sendall(chunk, flags)
@@ -219,12 +224,15 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
     def __read_socket(self, *, timeout: float | None) -> bool:
         flags = self.__default_recv_flags
         socket: Socket = self.__socket
+        if self.__eof_reached:
+            raise EOFError("Closed connection")
         with _use_timeout(socket, timeout):
             try:
                 chunk: bytes = socket.recv(self.__recv_size, flags)
             except (TimeoutError, BlockingIOError, InterruptedError):
                 return False
             if not chunk:
+                self.__eof_reached = True
                 raise EOFError("Closed connection")
             self.__consumer.feed(chunk)
             return True
@@ -246,7 +254,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
 
     def is_connected(self) -> bool:
         with self.__lock:
-            if self.__closed:
+            if self.__closed or self.__eof_reached:
                 return False
             try:
                 self.__socket.getpeername()
@@ -312,17 +320,19 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         with self.__lock:
             self._check_not_closed()
             socket: Socket = self.__socket
-            try:
-                socket.getpeername()
-            except OSError:
-                pass
-            else:
-                return
+            if not self.__eof_reached:
+                try:
+                    socket.getpeername()
+                except OSError:
+                    pass
+                else:
+                    return
             address: tuple[Any, ...] = self.__peer.for_connection()
             former_timeout = socket.gettimeout()
             socket.settimeout(timeout)
             try:
                 socket.connect(address)
+                self.__eof_reached = False
             finally:
                 socket.settimeout(former_timeout)
 
