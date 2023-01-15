@@ -8,7 +8,8 @@ from __future__ import annotations
 
 __all__ = ["ThreadingRequestExecutor"]
 
-from threading import Thread
+import concurrent.futures
+import itertools
 from typing import Callable, ParamSpec
 
 from .abc import AbstractRequestExecutor
@@ -16,46 +17,21 @@ from .abc import AbstractRequestExecutor
 _P = ParamSpec("_P")
 
 
-class _Threads(list[Thread]):
-    """
-    Joinable list of all non-daemon threads.
-    """
-
-    def append(self, thread: Thread) -> None:
-        self.reap()
-        if thread.daemon:
-            return
-        super().append(thread)
-
-    def pop_all(self) -> list[Thread]:
-        self[:], result = [], self[:]
-        return result
-
-    def join(self) -> None:
-        for thread in self.pop_all():
-            thread.join()
-
-    def reap(self) -> None:
-        self[:] = (thread for thread in self if thread.is_alive())
-
-
 class ThreadingRequestExecutor(AbstractRequestExecutor):
-    __slots__ = ("__threads", "__daemon_threads")
+    __slots__ = ("__pool",)
 
-    def __init__(self, *, daemon_threads: bool = False, block_on_close: bool = True) -> None:
+    __counter = itertools.count().__next__
+
+    def __init__(self, *, max_workers: int | None = None) -> None:
         super().__init__()
-        self.__threads: _Threads | None = _Threads() if block_on_close else None
-        self.__daemon_threads: bool = bool(daemon_threads)
+        self.__pool = concurrent.futures.ThreadPoolExecutor(
+            max_workers=max_workers,
+            thread_name_prefix=f"ThreadingRequestExecutor-{ThreadingRequestExecutor.__counter()}",
+        )
 
     def execute(self, __request_handler: Callable[_P, None], /, *args: _P.args, **kwargs: _P.kwargs) -> None:
-        threads: _Threads | None = self.__threads
-        t = Thread(target=__request_handler, args=args, kwargs=kwargs)
-        t.daemon = self.__daemon_threads
-        if threads is not None:
-            threads.append(t)
-        t.start()
+        self.__pool.submit(__request_handler, *args, **kwargs)
 
     def on_server_close(self) -> None:
         super().on_server_close()
-        if self.__threads:
-            self.__threads.join()
+        self.__pool.shutdown(wait=True, cancel_futures=True)

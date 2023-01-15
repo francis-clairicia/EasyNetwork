@@ -11,11 +11,11 @@ __all__ = [
     "ConnectedClient",
 ]
 
+import concurrent.futures
 import logging
 import os
 import sys
 from abc import ABCMeta, abstractmethod
-from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import ExitStack, contextmanager, suppress
 from dataclasses import dataclass
 from functools import partial
@@ -199,7 +199,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         self.__recv_flags: int = recv_flags
         self.__buffered_write: bool = bool(buffered_write)
         self.__disable_nagle_algorithm: bool = bool(disable_nagle_algorithm)
-        self.__verify_client_pool: ThreadPoolExecutor = ThreadPoolExecutor(
+        self.__verify_client_pool = concurrent.futures.ThreadPoolExecutor(
             max_workers=2,
             thread_name_prefix="TCPNetworkServer[verify_client]",
         )
@@ -279,7 +279,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         future = self.__verify_client_pool.submit(self.verify_new_client, client_socket, address)
         future.add_done_callback(partial(self.__add_client_callback, socket=client_socket, address=address))
 
-    def __add_client_callback(self, future: Future[bool], /, *, socket: Socket, address: SocketAddress) -> None:
+    def __add_client_callback(self, future: concurrent.futures.Future[bool], *, socket: Socket, address: SocketAddress) -> None:
         logger: logging.Logger = self.__logger
 
         try:
