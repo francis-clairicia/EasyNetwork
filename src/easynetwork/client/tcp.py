@@ -158,8 +158,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         if self.__eof_reached:
             raise ConnectionAbortedError("Closed connection")
         with _use_timeout(socket, None):
-            for chunk in self.__producer:
-                socket.sendall(chunk, flags)
+            socket.sendall(b"".join(list(self.__producer)), flags)
 
     def recv_packet(self) -> _ReceivedPacketT:
         with self.__lock:
