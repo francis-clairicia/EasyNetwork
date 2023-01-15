@@ -423,8 +423,6 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     def __execute_request(self, request: _RequestT, key: _SelectorKey[_RequestT, _ResponseT], pid: int | None = None) -> None:
         in_subprocess: bool = pid is not None and pid != os.getpid()
         try:
-            if in_subprocess:
-                self.__execute_in_subprocess_setup(key)
             self.process_request(request, key.data.client)
         except Exception:
             try:
@@ -434,12 +432,6 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         else:
             if in_subprocess:
                 self.__flush_client_data(key, only_unsent=False)
-
-    def __execute_in_subprocess_setup(self, key: _SelectorKey[_RequestT, _ResponseT]) -> None:
-        self.__listener_socket.close()
-        for client in self.get_clients():
-            if client is not key.data.client:
-                client.close()
 
     @abstractmethod
     def process_request(self, request: _RequestT, client: ConnectedClient[_ResponseT]) -> None:
