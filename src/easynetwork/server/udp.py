@@ -34,9 +34,6 @@ _ResponseT = TypeVar("_ResponseT")
 DatagramProtocolFactory: TypeAlias = Callable[[], DatagramProtocol[_ResponseT, _RequestT]]
 
 
-logger = logging.getLogger(__name__)
-
-
 class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Generic[_RequestT, _ResponseT]):
     __slots__ = (
         "__socket",
@@ -53,6 +50,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         "__default_send_flags",
         "__default_recv_flags",
         "__unsent_datagrams",
+        "__logger",
     )
 
     def __init__(
@@ -66,6 +64,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         recv_flags: int = 0,
         request_executor: AbstractRequestExecutor | None = None,
         selector_factory: Callable[[], BaseSelector] | None = None,
+        logger: logging.Logger | None = None,
     ) -> None:
         protocol = protocol_factory()
         if not isinstance(protocol, DatagramProtocol):
@@ -105,6 +104,8 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         else:
             self.__selector_factory = selector_factory
 
+        self.__logger: logging.Logger = logger or logging.getLogger(__name__)
+
         super().__init__()
 
     def serve_forever(self) -> None:
@@ -112,6 +113,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         if self.running():
             raise RuntimeError("Server already running")
 
+        logger: logging.Logger = self.__logger
         request_executor: AbstractRequestExecutor | None = self.__request_executor
 
         try:
@@ -189,6 +191,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         return not self.__is_shutdown.is_set()
 
     def __receive_datagrams(self) -> None:
+        logger: logging.Logger = self.__logger
         socket: Socket = self.__socket
         while True:
             try:
@@ -200,6 +203,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             self.__consumer.queue(data, sender)
 
     def __handle_received_datagrams(self) -> None:
+        logger: logging.Logger = self.__logger
         request_executor: AbstractRequestExecutor | None = self.__request_executor
         for request, address in self.__iter_consumer():
             logger.info("Processing request sent by %s", address)
@@ -218,7 +222,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             try:
                 return (yield from self.__consumer)
             except DatagramConsumerError as exc:
-                logger.info("Malformed request sent by %s", exc.sender)
+                self.__logger.info("Malformed request sent by %s", exc.sender)
                 try:
                     self.bad_request(exc.sender, exc.exception)
                 except Exception:
@@ -238,6 +242,8 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         if exc_info == (None, None, None):
             return
 
+        logger: logging.Logger = self.__logger
+
         logger.error("-" * 40)
         logger.error("Exception occurred during processing of request from %s", client_address, exc_info=exc_info)
         logger.error("-" * 40)
@@ -251,7 +257,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         with self.__send_lock:
             self._check_not_closed()
             self.__producer.queue(address, packet)
-            logger.debug("Put 1 packet to queue for %s", address)
+            self.__logger.debug("Put 1 packet to queue for %s", address)
             self.__send_datagrams()
 
     def send_packets(self, address: SocketAddress, *packets: _ResponseT) -> None:
@@ -261,12 +267,13 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             self._check_not_closed()
             self.__producer.queue(address, *packets)
             if (nb_packets := len(packets)) > 1:
-                logger.debug("Put %d packets to queue for %s", nb_packets, address)
+                self.__logger.debug("Put %d packets to queue for %s", nb_packets, address)
             else:
-                logger.debug("Put 1 packet to queue for %s", address)
+                self.__logger.debug("Put 1 packet to queue for %s", address)
             self.__send_datagrams()
 
     def __send_datagrams(self) -> None:
+        logger: logging.Logger = self.__logger
         socket = self.__socket
         unsent_datagrams = self.__unsent_datagrams
         flags: int = self.__default_send_flags
@@ -287,6 +294,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 logger.debug("-> Datagram successfully sent.")
 
     def __flush_unsent_datagrams(self) -> None:
+        logger: logging.Logger = self.__logger
         socket = self.__socket
         unsent_datagrams = self.__unsent_datagrams
         flags: int = self.__default_send_flags
@@ -355,7 +363,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     @property
     @final
     def logger(self) -> logging.Logger:
-        return logger
+        return self.__logger
 
     @property
     @final

@@ -57,9 +57,6 @@ _RequestT = TypeVar("_RequestT")
 _ResponseT = TypeVar("_ResponseT")
 
 
-logger = logging.getLogger(__name__)
-
-
 class ConnectedClient(Generic[_ResponseT], metaclass=ABCMeta):
     __slots__ = ("__addr", "__weakref__")
 
@@ -149,6 +146,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         "__send_flags",
         "__recv_flags",
         "__verify_client_pool",
+        "__logger",
     )
 
     def __init__(
@@ -166,6 +164,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         disable_nagle_algorithm: bool = False,
         request_executor: AbstractRequestExecutor | None = None,
         selector_factory: Callable[[], BaseSelector] | None = None,
+        logger: logging.Logger | None = None,
     ) -> None:
         if not callable(protocol_factory):
             raise TypeError("Invalid arguments")
@@ -204,6 +203,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             max_workers=2,
             thread_name_prefix="TCPNetworkServer[verify_client]",
         )
+        self.__logger: logging.Logger = logger or logging.getLogger(__name__)
 
     def serve_forever(self) -> None:
         self._check_not_closed()
@@ -212,6 +212,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
 
         server_selector: _ServerSocketSelector[_RequestT, _ResponseT] = self.__server_selector
         request_executor: AbstractRequestExecutor | None = self.__request_executor
+        logger: logging.Logger = self.__logger
 
         try:
             self.__is_shutdown.clear()
@@ -273,12 +274,14 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             return
         address = new_socket_address(address, client_socket.family)
 
-        logger.info("Accepted new connection (peername = %s)", address)
+        self.__logger.info("Accepted new connection (peername = %s)", address)
 
         future = self.__verify_client_pool.submit(self.verify_new_client, client_socket, address)
         future.add_done_callback(partial(self.__add_client_callback, socket=client_socket, address=address))
 
     def __add_client_callback(self, future: Future[bool], /, *, socket: Socket, address: SocketAddress) -> None:
+        logger: logging.Logger = self.__logger
+
         try:
             accepted = future.result()
         except BaseException:
@@ -356,6 +359,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         logger.info("A client (address = %s) was added", address)
 
     def __receive_data(self, key: _SelectorKey[_RequestT, _ResponseT]) -> None:
+        logger: logging.Logger = self.__logger
         socket: Socket = key.fileobj
         key_data: _SelectorKeyData[_RequestT, _ResponseT] = key.data
         client = key_data.client
@@ -382,6 +386,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 key_data.consumer.feed(data)
 
     def __handle_all_clients_requests(self) -> None:
+        logger: logging.Logger = self.__logger
         request_executor: AbstractRequestExecutor | None = self.__request_executor
         for key in self.__server_selector.get_all_client_keys():
             key_data: _SelectorKeyData[_RequestT, _ResponseT] = key.data
@@ -444,11 +449,15 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         if exc_info == (None, None, None):
             return
 
+        logger: logging.Logger = self.__logger
+
         logger.error("-" * 40)
         logger.error("Exception occurred during processing of request from %s", client.address, exc_info=exc_info)
         logger.error("-" * 40)
 
     def __send_data_to_client(self, key: _SelectorKey[_RequestT, _ResponseT]) -> None:
+        logger: logging.Logger = self.__logger
+
         if not key.data.producer.pending_packets():
             return
         logger.info("A response will be sent to %s", key.data.client.address)
@@ -458,6 +467,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         self.__flush_client_data(key, only_unsent=False)
 
     def __flush_client_data(self, key: _SelectorKey[_RequestT, _ResponseT], *, only_unsent: bool) -> None:
+        logger: logging.Logger = self.__logger
         socket: Socket = key.fileobj
         key_data = key.data
 
@@ -505,6 +515,8 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 logger.debug("%d byte(s) sent and %d byte(s) queued", nb_bytes_sent, len(key_data.unsent_data))
 
     def __shutdown_client(self, socket: Socket, *, from_client: bool) -> None:
+        logger: logging.Logger = self.__logger
+
         logger.info("Client shutdown requested")
         with self.__clients_lock:
             self.__clients.pop(socket, None)
@@ -606,7 +618,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     @property
     @final
     def logger(self) -> logging.Logger:
-        return logger
+        return self.__logger
 
     @property
     @final
