@@ -233,7 +233,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
 
                     for key in (key for key, event in ready_clients if event & EVENT_WRITE):
                         logger.debug("%s is ready for writing", key.data.client.address)
-                        self.__flush_client_unsent_data(key)
+                        self.__flush_client_data(key, only_unsent=True)
 
                     for key in (key for key, event in ready_clients if event & EVENT_READ):
                         logger.debug("%s is ready for reading", key.data.client.address)
@@ -304,8 +304,6 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 socket.setsockopt(IPPROTO_TCP, TCP_NODELAY, True)
             except Exception:
                 logger.exception("Failed to apply TCP_NODELAY socket option")
-                socket.close()
-                return
 
         selfref = ref(self)
 
@@ -323,7 +321,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 key = self.__server_selector.get_client_key(socket)
             except KeyError:
                 return
-            self.__flush_client_unsent_data(key)
+            self.__flush_client_data(key, only_unsent=False)
 
         def _send_data_to_client_hook(socket: Socket) -> None:
             self = selfref()
@@ -426,12 +424,11 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         except Exception:
             try:
                 self.handle_error(key.data.client, sys.exc_info())
-                self.__flush_client_unsent_data(key)
             finally:
-                self.__shutdown_client(key.fileobj, from_client=False)
+                self.__shutdown_client(key.fileobj, from_client=True)
         else:
             if in_subprocess:
-                self.__flush_client_unsent_data(key)
+                self.__flush_client_data(key, only_unsent=False)
 
     def __execute_in_subprocess_setup(self, key: _SelectorKey[_RequestT, _ResponseT]) -> None:
         self.__listener_socket.close()
@@ -458,20 +455,22 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         if key.data.unsent_data:  # A previous attempt failed
             logger.debug("-> There is unsent data, bail out.")
             return
-        self.__flush_client_unsent_data(key)
+        self.__flush_client_data(key, only_unsent=False)
 
-    def __flush_client_unsent_data(self, key: _SelectorKey[_RequestT, _ResponseT]) -> None:
+    def __flush_client_data(self, key: _SelectorKey[_RequestT, _ResponseT], *, only_unsent: bool) -> None:
         socket: Socket = key.fileobj
         key_data = key.data
 
-        if key_data.client.is_closed() or not key_data.producer.pending_packets():
+        if key_data.client.is_closed():
             return
 
         logger.debug("Sending data to %s", key_data.client.address)
 
         with key_data.send_lock:
-            data_to_send: bytes = key_data.unsent_data + b"".join(list(key_data.producer))
+            data_to_send: bytes = key_data.unsent_data
             key_data.unsent_data = b""
+            if not only_unsent:
+                data_to_send += b"".join(list(key_data.producer))
             if not data_to_send:
                 self.__server_selector.remove_client_writer(socket)
                 logger.debug("-> No data to send")
@@ -517,7 +516,8 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         with suppress(Exception):
             try:
                 if from_client:
-                    self.__flush_client_unsent_data(key)
+                    if key.data.unsent_data or key.data.producer.pending_packets():
+                        self.__flush_client_data(key, only_unsent=False)
                 else:
                     socket.shutdown(SHUT_WR)
             finally:
