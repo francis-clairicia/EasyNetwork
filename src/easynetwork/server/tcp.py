@@ -779,11 +779,12 @@ class _ServerSocketSelector(Generic[_RequestT, _ResponseT]):
         except KeyError:
             return
 
-        new_events: int = key.events & ~event
-        if not new_events:
-            selector.unregister(socket)
-        else:
-            selector.modify(socket, new_events, key.data)
+        if key.events & event:
+            new_events: int = key.events & ~event
+            if not new_events:
+                selector.unregister(socket)
+            else:
+                selector.modify(socket, new_events, key.data)
 
     def clients_select(self) -> list[tuple[_SelectorKey[_RequestT, _ResponseT], int]]:
         with self.__clients_lock:
