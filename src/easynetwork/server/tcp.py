@@ -42,7 +42,7 @@ from weakref import WeakKeyDictionary, ref
 from ..converter import PacketConversionError
 from ..protocol import StreamProtocol, StreamProtocolParseError
 from ..serializers.exceptions import DeserializeError
-from ..tools.socket import AF_INET, SocketAddress, create_server, guess_best_buffer_size, new_socket_address
+from ..tools.socket import AF_INET, SocketAddress, create_server, guess_best_recv_size, new_socket_address
 from ..tools.stream import StreamDataConsumer, StreamDataProducer
 from .abc import AbstractNetworkServer
 from .executors.abc import AbstractRequestExecutor
@@ -820,7 +820,7 @@ class _SelectorKeyData(Generic[_RequestT, _ResponseT]):
     ) -> None:
         self.producer = StreamDataProducer(protocol)
         self.consumer = StreamDataConsumer(protocol, on_error="raise")
-        self.recv_size = guess_best_buffer_size(socket)
+        self.recv_size = guess_best_recv_size(socket)
         self.client = self.__ConnectedTCPClient(
             producer=self.producer,
             socket=socket,

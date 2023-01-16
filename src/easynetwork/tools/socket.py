@@ -17,7 +17,7 @@ __all__ = [
     "ShutdownFlag",
     "create_connection",
     "create_server",
-    "guess_best_buffer_size",
+    "guess_best_recv_size",
     "new_socket_address",
 ]
 
@@ -187,7 +187,7 @@ def create_server(
     return sock
 
 
-def guess_best_buffer_size(socket: _socket.socket) -> int:
+def guess_best_recv_size(socket: _socket.socket) -> int:
     try:
         socket_stat = os.fstat(socket.fileno())
     except OSError:  # Will not work for sockets which have not a real file descriptor (e.g. on Windows)

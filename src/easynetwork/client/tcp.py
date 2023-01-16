@@ -14,7 +14,7 @@ from threading import RLock
 from typing import Any, Generic, Iterator, TypeVar, final, overload
 
 from ..protocol import StreamProtocol
-from ..tools.socket import SHUT_WR, SocketAddress, create_connection, guess_best_buffer_size, new_socket_address
+from ..tools.socket import SHUT_WR, SocketAddress, create_connection, guess_best_recv_size, new_socket_address
 from ..tools.stream import StreamDataConsumer, StreamDataProducer
 from .abc import AbstractNetworkClient
 
@@ -113,7 +113,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         self.__socket: Socket = socket
         self.__lock: RLock = RLock()
         self.__eof_reached: bool = False
-        self.__recv_size: int = guess_best_buffer_size(socket)
+        self.__recv_size: int = guess_best_recv_size(socket)
         self.__default_send_flags: int = send_flags
         self.__default_recv_flags: int = recv_flags
 

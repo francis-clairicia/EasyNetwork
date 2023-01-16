@@ -96,6 +96,7 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
             protocol = self.__p
             while chunk := self.__b:
                 self.__b = b""
+                unconsumed_data, self.__u = self.__u, b""
                 consumer, self.__c = self.__c, None
                 if consumer is None:
                     consumer = protocol.build_packet_from_chunks()
@@ -108,23 +109,17 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
                         packet, chunk = exc.value
                     finally:
                         del exc
-                    self.__u = b""
                     self.__b = chunk
                     return packet
                 except StreamProtocolParseError as exc:
-                    self.__u = b""
                     self.__b = exc.remaining_data
                     if self.__on_error == "raise":
                         raise
                     continue
                 except Exception as exc:
-                    self.__u = b""
                     raise RuntimeError(str(exc)) from exc
-                except BaseException:
-                    self.__u = b""
-                    raise
                 else:
-                    self.__u += chunk
+                    self.__u = unconsumed_data + chunk
                     self.__c = consumer
                     continue
 
