@@ -28,6 +28,7 @@ _DT_co = TypeVar("_DT_co", covariant=True, bound=list[Any] | dict[str, Any])
 class JSONEncoderConfig:
     skipkeys: bool = False
     check_circular: bool = True
+    ensure_ascii: bool = True
     allow_nan: bool = True
     indent: int | None = None
     separators: tuple[str, str] | None = (",", ":")  # Compact JSON (w/o whitespaces)
@@ -113,7 +114,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
             encoder = JSONEncoderConfig()
         elif not isinstance(encoder, JSONEncoderConfig):
             raise TypeError(f"Invalid encoder: expected {JSONEncoderConfig.__name__}, got {type(encoder).__name__}")
-        self.__e = JSONEncoder(**dataclass_asdict(encoder), ensure_ascii=True)
+        self.__e = JSONEncoder(**dataclass_asdict(encoder))
 
         if decoder is None:
             decoder = JSONDecoderConfig()
@@ -124,13 +125,13 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
     @final
     def serialize(self, packet: _ST_contra) -> bytes:
         encoder = self.__e
-        return encoder.encode(packet).encode("ascii")
+        return encoder.encode(packet).encode("utf-8")
 
     @final
     def incremental_serialize(self, packet: _ST_contra) -> Generator[bytes, None, None]:
         encoder = self.__e
         for chunk in encoder.iterencode(packet):
-            yield chunk.encode("ascii")
+            yield chunk.encode("utf-8")
         yield b"\n"
 
     @final
@@ -138,7 +139,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
         from json import JSONDecodeError
 
         try:
-            document: str = data.decode("ascii")
+            document: str = data.decode("utf-8")
         except UnicodeDecodeError as exc:
             raise DeserializeError(f"Unicode decode error: {exc}") from exc
         decoder = self.__d
@@ -161,7 +162,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
         decoder = self.__d
         packet: _DT_co
         try:
-            document: str = complete_document.decode("ascii")
+            document: str = complete_document.decode("utf-8")
         except UnicodeDecodeError as exc:
             raise IncrementalDeserializeError(
                 f"Unicode decode error: {exc}",
@@ -174,4 +175,4 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
                 f"JSON decode error: {exc}",
                 remaining_data=remaining_data,
             ) from exc
-        return packet, (document[end:].encode("ascii") + remaining_data).lstrip(b" \t\n\r")
+        return packet, (document[end:].encode("utf-8") + remaining_data).lstrip(b" \t\n\r")
