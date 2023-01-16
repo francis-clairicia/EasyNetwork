@@ -46,7 +46,6 @@ class AbstractIncrementalPacketSerializer(AbstractPacketSerializer[_ST_contra, _
             consumer.send(data)
         except StopIteration as exc:
             packet, remaining = exc.value
-            del exc
         else:
             consumer.close()
             raise DeserializeError("Missing data to create packet") from None

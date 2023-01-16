@@ -17,9 +17,7 @@ from socket import SOCK_DGRAM, socket as Socket
 from threading import Event, RLock
 from typing import TYPE_CHECKING, Any, Callable, Generic, Iterator, TypeAlias, TypeVar, final, overload
 
-from ..converter import PacketConversionError
-from ..protocol import DatagramProtocol, DatagramProtocolParseError
-from ..serializers.exceptions import DeserializeError
+from ..protocol import DatagramProtocol, DatagramProtocolParseError, ParseErrorType
 from ..tools.datagram import DatagramConsumer, DatagramProducer
 from ..tools.socket import AF_INET, MAX_DATAGRAM_SIZE, SocketAddress, create_server, new_socket_address
 from .abc import AbstractNetworkServer
@@ -224,7 +222,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             except DatagramProtocolParseError as exc:
                 self.__logger.info("Malformed request sent by %s", exc.sender)
                 try:
-                    self.bad_request(exc.sender, exc.exception)
+                    self.bad_request(exc.sender, exc.error_type, exc.message)
                 except Exception:
                     self.__on_client_error(exc.sender)
 
@@ -322,7 +320,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             else:
                 self.__unsent_datagrams.append((b"", client_address))
 
-    def bad_request(self, client_address: SocketAddress, exception: DeserializeError | PacketConversionError) -> None:
+    def bad_request(self, client_address: SocketAddress, error_type: ParseErrorType, message: str) -> None:
         pass
 
     @final

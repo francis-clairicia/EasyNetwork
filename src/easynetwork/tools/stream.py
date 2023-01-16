@@ -105,10 +105,7 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
                 try:
                     consumer.send(chunk)
                 except StopIteration as exc:
-                    try:
-                        packet, chunk = exc.value
-                    finally:
-                        del exc
+                    packet, chunk = exc.value
                     self.__b = chunk
                     return packet
                 except StreamProtocolParseError as exc:

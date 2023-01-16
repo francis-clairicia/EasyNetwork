@@ -39,9 +39,7 @@ from typing import (
 )
 from weakref import WeakKeyDictionary, ref
 
-from ..converter import PacketConversionError
-from ..protocol import StreamProtocol, StreamProtocolParseError
-from ..serializers.exceptions import DeserializeError
+from ..protocol import ParseErrorType, StreamProtocol, StreamProtocolParseError
 from ..tools.socket import AF_INET, SocketAddress, create_server, guess_best_recv_size, new_socket_address
 from ..tools.stream import StreamDataConsumer, StreamDataProducer
 from .abc import AbstractNetworkServer
@@ -399,7 +397,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             except StreamProtocolParseError as exc:
                 logger.info("Malformed request sent by %s", client.address)
                 try:
-                    self.bad_request(client, exc.exception)
+                    self.bad_request(client, exc.error_type, exc.message)
                 except Exception:
                     try:
                         self.handle_error(client, sys.exc_info())
@@ -488,8 +486,6 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                     character_written: int = exc.characters_written
                 except AttributeError:
                     character_written = 0
-                finally:
-                    del exc
                 key_data.unsent_data = data_to_send[character_written:]
                 self.__server_selector.add_client_writer(socket, key_data)
                 logger.debug("-> Failed to send data, bail out.")
@@ -555,7 +551,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     def verify_new_client(self, client_socket: Socket, address: SocketAddress) -> bool:
         return True
 
-    def bad_request(self, client: ConnectedClient[_ResponseT], exc: DeserializeError | PacketConversionError) -> None:
+    def bad_request(self, client: ConnectedClient[_ResponseT], error_type: ParseErrorType, message: str) -> None:
         pass
 
     def on_disconnect(self, client: ConnectedClient[_ResponseT]) -> None:
