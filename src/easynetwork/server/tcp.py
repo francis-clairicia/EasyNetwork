@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from functools import partial
 from itertools import chain
 from selectors import EVENT_READ, EVENT_WRITE, BaseSelector, SelectSelector
-from socket import SHUT_WR, SOCK_STREAM, socket as Socket
+from socket import SHUT_WR, socket as Socket
 from threading import Event, RLock
 from typing import (
     TYPE_CHECKING,
@@ -40,7 +40,7 @@ from typing import (
 from weakref import WeakKeyDictionary, ref
 
 from ..protocol import ParseErrorType, StreamProtocol, StreamProtocolParseError
-from ..tools.socket import AF_INET, SocketAddress, create_server, guess_best_recv_size, new_socket_address
+from ..tools.socket import AF_INET, SocketAddress, guess_best_recv_size, new_socket_address
 from ..tools.stream import StreamDataConsumer, StreamDataProducer
 from .abc import AbstractNetworkServer
 from .executors.abc import AbstractRequestExecutor
@@ -170,10 +170,12 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         send_flags = int(send_flags)
         recv_flags = int(recv_flags)
         super().__init__()
+
+        from socket import create_server
+
         self.__listener_socket: Socket = create_server(
             address,
             family=family,
-            type=SOCK_STREAM,
             backlog=backlog,
             reuse_port=reuse_port,
             dualstack_ipv6=dualstack_ipv6,

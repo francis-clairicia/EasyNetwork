@@ -13,13 +13,13 @@ import sys
 from abc import abstractmethod
 from collections import deque
 from selectors import EVENT_READ, EVENT_WRITE, BaseSelector
-from socket import SOCK_DGRAM, socket as Socket
+from socket import socket as Socket
 from threading import Event, RLock
 from typing import TYPE_CHECKING, Any, Callable, Generic, Iterator, TypeAlias, TypeVar, final, overload
 
 from ..protocol import DatagramProtocol, DatagramProtocolParseError, ParseErrorType
 from ..tools.datagram import DatagramConsumer, DatagramProducer
-from ..tools.socket import AF_INET, MAX_DATAGRAM_SIZE, SocketAddress, create_server, new_socket_address
+from ..tools.socket import AF_INET, MAX_DATAGRAM_SIZE, SocketAddress, new_socket_address
 from .abc import AbstractNetworkServer
 from .executors.abc import AbstractRequestExecutor
 
@@ -70,14 +70,27 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         assert request_executor is None or isinstance(request_executor, AbstractRequestExecutor)
         send_flags = int(send_flags)
         recv_flags = int(recv_flags)
-        socket = create_server(
-            address,
-            family=family,
-            type=SOCK_DGRAM,
-            backlog=None,
-            reuse_port=reuse_port,
-            dualstack_ipv6=False,
-        )
+
+        import socket as _socket
+
+        socket = _socket.socket(family, _socket.SOCK_DGRAM)
+        try:
+            if reuse_port:
+                if not hasattr(_socket, "SO_REUSEPORT"):
+                    raise ValueError("SO_REUSEPORT not supported on this platform")
+                socket.setsockopt(_socket.SOL_SOCKET, getattr(_socket, "SO_REUSEPORT"), 1)
+
+            if family == _socket.AF_INET6 and _socket.has_ipv6:
+                try:
+                    socket.setsockopt(_socket.IPPROTO_IPV6, _socket.IPV6_V6ONLY, 1)
+                except OSError:
+                    pass
+
+            socket.bind(address)
+        except BaseException:
+            socket.close()
+            raise
+
         socket.settimeout(0)
         self.__socket: Socket = socket
         self.__producer: DatagramProducer[_ResponseT, SocketAddress] = DatagramProducer(protocol)

@@ -14,7 +14,7 @@ from threading import RLock
 from typing import Any, Generic, Iterator, TypeVar, final, overload
 
 from ..protocol import StreamProtocol
-from ..tools.socket import SHUT_WR, SocketAddress, create_connection, guess_best_recv_size, new_socket_address
+from ..tools.socket import SHUT_WR, SocketAddress, guess_best_recv_size, new_socket_address
 from ..tools.stream import StreamDataConsumer, StreamDataProducer
 from .abc import AbstractNetworkClient
 
@@ -95,6 +95,8 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             socket = __arg
             self.__owner = bool(give)
         elif isinstance(__arg, tuple):
+            from socket import create_connection
+
             address: tuple[str, int] = __arg
             socket = create_connection(address, **kwargs)
             self.__owner = True

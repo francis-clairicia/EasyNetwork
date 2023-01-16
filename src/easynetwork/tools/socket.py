@@ -15,8 +15,6 @@ __all__ = [
     "SHUT_RDWR",
     "SHUT_WR",
     "ShutdownFlag",
-    "create_connection",
-    "create_server",
     "guess_best_recv_size",
     "new_socket_address",
 ]
@@ -112,79 +110,6 @@ def new_socket_address(addr: tuple[Any, ...], family: int) -> SocketAddress:
             return IPv6SocketAddress(*addr)
         case _:
             return IPv4SocketAddress(addr[0], addr[1])
-
-
-_DEFAULT_TIMEOUT: Any = object()
-
-
-def create_connection(
-    address: tuple[str, int],
-    *,
-    timeout: float | None = _DEFAULT_TIMEOUT,
-    source_address: tuple[str, int] | None = None,
-) -> _socket.socket:
-    sock: _socket.socket
-    if timeout is not _DEFAULT_TIMEOUT:
-        sock = _socket.create_connection(address, timeout=timeout, source_address=source_address)
-    else:
-        sock = _socket.create_connection(address, source_address=source_address)
-    return sock
-
-
-def create_server(
-    address: tuple[str, int] | tuple[str, int, int, int],
-    *,
-    family: int = AF_INET,
-    type: int = _socket.SOCK_STREAM,
-    backlog: int | None = None,
-    reuse_port: bool = False,
-    dualstack_ipv6: bool = False,
-) -> _socket.socket:
-    family = AddressFamily(family)
-    sock: _socket.socket
-    if backlog is not None and backlog <= 0:
-        raise ValueError("Negative or null backlog")
-    match type:
-        case _socket.SOCK_STREAM:
-            sock = _socket.create_server(
-                address,
-                family=family,
-                backlog=backlog,
-                reuse_port=reuse_port,
-                dualstack_ipv6=dualstack_ipv6,
-            )
-        case _socket.SOCK_DGRAM:
-            if backlog is not None:
-                raise ValueError("SOCK_DGRAM sockets does not support 'backlog' argument")
-            sock = _socket.socket(family, type)
-            try:
-                if dualstack_ipv6:
-                    raise ValueError("dualstack IPv6 not supported for SOCK_DGRAM sockets")
-                if reuse_port:
-                    if not hasattr(_socket, "SO_REUSEPORT"):
-                        raise ValueError("SO_REUSEPORT not supported on this platform")
-                    sock.setsockopt(_socket.SOL_SOCKET, getattr(_socket, "SO_REUSEPORT"), 1)
-
-                if family == AF_INET6 and _socket.has_ipv6:
-                    try:
-                        from socket import IPPROTO_IPV6, IPV6_V6ONLY
-                    except ImportError:
-                        pass
-                    else:
-                        try:
-                            sock.setsockopt(IPPROTO_IPV6, IPV6_V6ONLY, 1)
-                        except OSError:
-                            pass
-                        del IPPROTO_IPV6, IPV6_V6ONLY
-
-                sock.bind(address)
-            except BaseException:
-                sock.close()
-                raise
-        case _:
-            raise ValueError("Unsupported socket type")
-
-    return sock
 
 
 def guess_best_recv_size(socket: _socket.socket) -> int:
