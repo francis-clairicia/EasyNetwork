@@ -222,10 +222,10 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             return list(self.iter_received_packets(timeout=timeout))
 
     def __read_socket(self, *, timeout: float | None) -> bool:
-        flags = self.__default_recv_flags
-        socket: Socket = self.__socket
         if self.__eof_reached:
             raise EOFError("Closed connection")
+        flags = self.__default_recv_flags
+        socket: Socket = self.__socket
         with _use_timeout(socket, timeout):
             try:
                 chunk: bytes = socket.recv(self.__recv_size, flags)

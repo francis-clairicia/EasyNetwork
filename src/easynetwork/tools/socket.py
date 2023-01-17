@@ -62,7 +62,7 @@ class IPv4SocketAddress(NamedTuple):
     host: str
     port: int
 
-    def __str__(self) -> str:
+    def __str__(self) -> str:  # pragma: no cover
         return f"{self.host}:{self.port}"
 
     def for_connection(self) -> tuple[str, int]:
@@ -75,7 +75,7 @@ class IPv6SocketAddress(NamedTuple):
     flowinfo: int = 0
     scope_id: int = 0
 
-    def __str__(self) -> str:
+    def __str__(self) -> str:  # pragma: no cover
         return f"{self.host}:{self.port}"
 
     def for_connection(self) -> tuple[str, int]:
@@ -108,11 +108,13 @@ def new_socket_address(addr: tuple[Any, ...], family: int) -> SocketAddress:
             return IPv4SocketAddress(*addr)
         case AddressFamily.AF_INET6:
             return IPv6SocketAddress(*addr)
-        case _:
-            return IPv4SocketAddress(addr[0], addr[1])
+        case _:  # pragma: no cover
+            raise AssertionError
 
 
 def guess_best_recv_size(socket: _socket.socket) -> int:
+    if socket.type != _socket.SOCK_STREAM:
+        raise ValueError("Unsupported socket type")
     try:
         socket_stat = os.fstat(socket.fileno())
     except OSError:  # Will not work for sockets which have not a real file descriptor (e.g. on Windows)
