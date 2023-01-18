@@ -9,7 +9,6 @@ from easynetwork.tools.socket import (
     AddressFamily,
     IPv4SocketAddress,
     IPv6SocketAddress,
-    ShutdownFlag,
     SocketAddress,
     guess_best_recv_size,
     new_socket_address,
@@ -27,18 +26,6 @@ if TYPE_CHECKING:
 def test____AddressFamily____constants(name: str) -> None:
     # Arrange
     enum = AddressFamily[name]
-    constant = getattr(socket, name)
-
-    # Act
-
-    # Assert
-    assert enum.value == constant
-
-
-@pytest.mark.parametrize("name", list(ShutdownFlag.__members__))
-def test____ShutdownFlag_____constants(name: str) -> None:
-    # Arrange
-    enum = ShutdownFlag[name]
     constant = getattr(socket, name)
 
     # Act

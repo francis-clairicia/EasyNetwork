@@ -9,12 +9,12 @@ from __future__ import annotations
 __all__ = ["TCPNetworkClient"]
 
 from contextlib import contextmanager
-from socket import socket as Socket
+from socket import SHUT_WR, socket as Socket
 from threading import RLock
 from typing import Any, Generic, Iterator, TypeVar, final, overload
 
 from ..protocol import StreamProtocol
-from ..tools.socket import SHUT_WR, SocketAddress, guess_best_recv_size, new_socket_address
+from ..tools.socket import SocketAddress, guess_best_recv_size, new_socket_address
 from ..tools.stream import StreamDataConsumer, StreamDataProducer
 from .abc import AbstractNetworkClient
 

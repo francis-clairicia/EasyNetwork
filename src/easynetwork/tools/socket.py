@@ -11,10 +11,6 @@ __all__ = [
     "AF_INET6",
     "AddressFamily",
     "MAX_DATAGRAM_SIZE",
-    "SHUT_RD",
-    "SHUT_RDWR",
-    "SHUT_WR",
-    "ShutdownFlag",
     "guess_best_recv_size",
     "new_socket_address",
 ]
@@ -36,23 +32,8 @@ class AddressFamily(IntEnum):
     __str__ = __repr__
 
 
-@unique
-class ShutdownFlag(IntEnum):
-    SHUT_RD = _socket.SHUT_RD
-    SHUT_RDWR = _socket.SHUT_RDWR
-    SHUT_WR = _socket.SHUT_WR
-
-    def __repr__(self) -> str:
-        return f"{type(self).__name__}.{self.name}"
-
-    __str__ = __repr__
-
-
 AF_INET: Final[Literal[AddressFamily.AF_INET]] = AddressFamily.AF_INET
 AF_INET6: Final[Literal[AddressFamily.AF_INET6]] = AddressFamily.AF_INET6
-SHUT_RD: Final[Literal[ShutdownFlag.SHUT_RD]] = ShutdownFlag.SHUT_RD
-SHUT_RDWR: Final[Literal[ShutdownFlag.SHUT_RDWR]] = ShutdownFlag.SHUT_RDWR
-SHUT_WR: Final[Literal[ShutdownFlag.SHUT_WR]] = ShutdownFlag.SHUT_WR
 
 
 MAX_DATAGRAM_SIZE: Final[int] = 64 * 1024  # 64 KiB
