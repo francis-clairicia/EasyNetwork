@@ -32,6 +32,10 @@ class ThreadingRequestExecutor(AbstractRequestExecutor):
     def execute(self, __request_handler: Callable[_P, None], /, *args: _P.args, **kwargs: _P.kwargs) -> None:
         self.__pool.submit(__request_handler, *args, **kwargs)
 
+    def on_server_stop(self) -> None:
+        super().on_server_stop()
+        self.__pool.shutdown(wait=True, cancel_futures=False)
+
     def on_server_close(self) -> None:
         super().on_server_close()
         self.__pool.shutdown(wait=True, cancel_futures=True)

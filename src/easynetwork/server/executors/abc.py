@@ -24,5 +24,8 @@ class AbstractRequestExecutor(metaclass=ABCMeta):
     def service_actions(self) -> None:
         pass
 
+    def on_server_stop(self) -> None:
+        pass
+
     def on_server_close(self) -> None:
         pass

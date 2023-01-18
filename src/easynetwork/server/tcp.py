@@ -249,6 +249,11 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                             self.__send_data_to_client(key)
         finally:
             try:
+                with suppress(Exception):
+                    self.__verify_client_pool.shutdown()
+                if request_executor is not None:
+                    with suppress(Exception):
+                        request_executor.on_server_stop()
                 for key in self.__server_selector.get_all_client_keys():
                     self.__shutdown_client(key.fileobj, from_client=False)
             finally:

@@ -173,6 +173,11 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                             )
 
         finally:
+            if request_executor is not None:
+                try:
+                    request_executor.on_server_stop()
+                except Exception:
+                    pass
             self.__loop = False
             self.__is_shutdown.set()
             logger.info("Server stopped")
