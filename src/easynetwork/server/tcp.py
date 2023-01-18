@@ -822,7 +822,7 @@ class _SelectorKeyData(Generic[_RequestT, _ResponseT]):
         is_closed: Callable[[Socket], bool],
     ) -> None:
         self.producer = StreamDataProducer(protocol)
-        self.consumer = StreamDataConsumer(protocol, on_error="raise")
+        self.consumer = StreamDataConsumer(protocol)
         self.recv_size = guess_best_recv_size(socket)
         self.client = self.__ConnectedTCPClient(
             producer=self.producer,

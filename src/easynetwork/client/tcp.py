@@ -13,7 +13,7 @@ from socket import SHUT_WR, socket as Socket
 from threading import RLock
 from typing import Any, Generic, Iterator, TypeVar, final, overload
 
-from ..protocol import StreamProtocol
+from ..protocol import StreamProtocol, StreamProtocolParseError
 from ..tools.socket import SocketAddress, guess_best_recv_size, new_socket_address
 from ..tools.stream import StreamDataConsumer, StreamDataProducer
 from .abc import AbstractNetworkClient
@@ -79,7 +79,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         **kwargs: Any,
     ) -> None:
         self.__producer: StreamDataProducer[_SentPacketT] = StreamDataProducer(protocol)
-        self.__consumer: StreamDataConsumer[_ReceivedPacketT] = StreamDataConsumer(protocol, on_error="ignore")
+        self.__consumer: StreamDataConsumer[_ReceivedPacketT] = StreamDataConsumer(protocol)
 
         send_flags = int(send_flags)
         recv_flags = int(recv_flags)
@@ -176,42 +176,44 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                     continue
 
     @overload
-    def recv_packet_no_block(self, *, timeout: float = ...) -> _ReceivedPacketT:
+    def recv_packet_no_block(self, *, timeout: float = ..., ignore_errors: bool = ...) -> _ReceivedPacketT:
         ...
 
     @overload
-    def recv_packet_no_block(self, *, default: _T, timeout: float = ...) -> _ReceivedPacketT | _T:
+    def recv_packet_no_block(self, *, default: _T, timeout: float = ..., ignore_errors: bool = ...) -> _ReceivedPacketT | _T:
         ...
 
-    def recv_packet_no_block(self, *, default: Any = _NO_DEFAULT, timeout: float = 0) -> Any:
+    def recv_packet_no_block(self, *, default: Any = _NO_DEFAULT, timeout: float = 0, ignore_errors: bool = False) -> Any:
         timeout = float(timeout)
+        next_packet = self.__next_packet
         with self.__lock:
             self._check_not_closed()
             consumer = self.__consumer
             try:
-                return next(consumer)
+                return next_packet(consumer, ignore_errors)
             except StopIteration:
                 pass
             while self.__read_socket(timeout=timeout):
                 try:
-                    return next(consumer)
+                    return next_packet(consumer, ignore_errors)
                 except StopIteration:
                     pass
             if default is not _NO_DEFAULT:
                 return default
             raise TimeoutError("recv_packet() timed out")
 
-    def iter_received_packets(self, *, timeout: float = 0) -> Iterator[_ReceivedPacketT]:
+    def iter_received_packets(self, *, timeout: float = 0, ignore_errors: bool = False) -> Iterator[_ReceivedPacketT]:
         timeout = float(timeout)
         consumer = self.__consumer
         read_socket = self.__read_socket
         check_not_closed = self._check_not_closed
+        next_packet = self.__next_packet_or_default
         lock = self.__lock
         null: Any = object()
         while True:
             with lock:
                 check_not_closed()
-                while (packet := next(consumer, null)) is null:
+                while (packet := next_packet(consumer, null, ignore_errors)) is null:
                     if not read_socket(timeout=timeout):
                         return
                     continue
@@ -219,7 +221,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
 
     def recv_all_packets(self, *, timeout: float = 0) -> list[_ReceivedPacketT]:
         with self.__lock:
-            return list(self.iter_received_packets(timeout=timeout))
+            return list(self.iter_received_packets(timeout=timeout, ignore_errors=True))
 
     def __read_socket(self, *, timeout: float | None) -> bool:
         if self.__eof_reached:
@@ -236,6 +238,24 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 raise EOFError("Closed connection")
             self.__consumer.feed(chunk)
             return True
+
+    @staticmethod
+    def __next_packet(it: Iterator[_ReceivedPacketT], ignore_errors: bool) -> _ReceivedPacketT:
+        try:
+            return next(it)
+        except StreamProtocolParseError:
+            if not ignore_errors:
+                raise
+            raise StopIteration from None
+
+    @staticmethod
+    def __next_packet_or_default(it: Iterator[_ReceivedPacketT], default: _T, ignore_errors: bool) -> _ReceivedPacketT | _T:
+        try:
+            return next(it, default)
+        except StreamProtocolParseError:
+            if not ignore_errors:
+                raise
+            return default
 
     def get_local_address(self) -> SocketAddress:
         with self.__lock:

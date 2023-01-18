@@ -94,7 +94,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         socket.settimeout(0)
         self.__socket: Socket = socket
         self.__producer: DatagramProducer[_ResponseT, SocketAddress] = DatagramProducer(protocol)
-        self.__consumer: DatagramConsumer[_RequestT] = DatagramConsumer(protocol, on_error="raise")
+        self.__consumer: DatagramConsumer[_RequestT] = DatagramConsumer(protocol)
         self.__request_executor: AbstractRequestExecutor | None = request_executor
         self.__addr: SocketAddress = new_socket_address(socket.getsockname(), socket.family)
         self.__send_lock: RLock = RLock()

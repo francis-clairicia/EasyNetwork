@@ -65,29 +65,31 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
 
     @overload
     @abstractmethod
-    def recv_packet_no_block(self, *, timeout: float = ...) -> _ReceivedPacketT:
+    def recv_packet_no_block(self, *, timeout: float = ..., ignore_errors: bool = ...) -> _ReceivedPacketT:
         ...
 
     @overload
     @abstractmethod
-    def recv_packet_no_block(self, *, default: _T, timeout: float = ...) -> _ReceivedPacketT | _T:
+    def recv_packet_no_block(self, *, default: _T, timeout: float = ..., ignore_errors: bool = ...) -> _ReceivedPacketT | _T:
         ...
 
     @abstractmethod
-    def recv_packet_no_block(self, *, default: _T = ..., timeout: float = ...) -> _ReceivedPacketT | _T:
+    def recv_packet_no_block(
+        self, *, default: _T = ..., timeout: float = ..., ignore_errors: bool = ...
+    ) -> _ReceivedPacketT | _T:
         raise NotImplementedError
 
-    def iter_received_packets(self, *, timeout: float = 0) -> Iterator[_ReceivedPacketT]:
+    def iter_received_packets(self, *, timeout: float = 0, ignore_errors: bool = False) -> Iterator[_ReceivedPacketT]:
         timeout = float(timeout)
         _not_received: Any = object()
         while True:
-            packet = self.recv_packet_no_block(timeout=timeout, default=_not_received)
+            packet = self.recv_packet_no_block(timeout=timeout, default=_not_received, ignore_errors=ignore_errors)
             if packet is _not_received:
                 break
             yield packet
 
     def recv_all_packets(self, *, timeout: float = 0) -> list[_ReceivedPacketT]:
-        return list(self.iter_received_packets(timeout=timeout))
+        return list(self.iter_received_packets(timeout=timeout, ignore_errors=True))
 
     @abstractmethod
     def fileno(self) -> int:

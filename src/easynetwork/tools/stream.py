@@ -13,7 +13,7 @@ __all__ = [
 
 from collections import deque
 from threading import Lock
-from typing import Any, Generator, Generic, Iterator, Literal, TypeVar, final
+from typing import Any, Generator, Generic, Iterator, TypeVar, final
 
 from ..protocol import StreamProtocol, StreamProtocolParseError
 
@@ -69,16 +69,9 @@ class StreamDataProducer(Generic[_SentPacketT]):
 @final
 @Iterator.register
 class StreamDataConsumer(Generic[_ReceivedPacketT]):
-    __slots__ = ("__p", "__b", "__c", "__u", "__lock", "__on_error")
+    __slots__ = ("__p", "__b", "__c", "__u", "__lock")
 
-    def __init__(
-        self,
-        protocol: StreamProtocol[Any, _ReceivedPacketT],
-        *,
-        on_error: Literal["raise", "ignore"] = "raise",
-    ) -> None:
-        if on_error not in ("raise", "ignore"):
-            raise ValueError("Invalid on_error value")
+    def __init__(self, protocol: StreamProtocol[Any, _ReceivedPacketT]) -> None:
         super().__init__()
         assert isinstance(protocol, StreamProtocol)
         self.__p: StreamProtocol[Any, _ReceivedPacketT] = protocol
@@ -86,7 +79,6 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
         self.__b: bytes = b""
         self.__u: bytes = b""
         self.__lock = Lock()
-        self.__on_error: Literal["raise", "ignore"] = on_error
 
     def __iter__(self) -> Iterator[_ReceivedPacketT]:
         return self
@@ -110,9 +102,7 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
                     return packet
                 except StreamProtocolParseError as exc:
                     self.__b = exc.remaining_data
-                    if self.__on_error == "raise":
-                        raise
-                    continue
+                    raise
                 except Exception as exc:
                     raise RuntimeError(str(exc)) from exc
                 else:
