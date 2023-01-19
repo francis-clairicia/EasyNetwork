@@ -123,7 +123,7 @@ class StreamProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
     def generate_chunks(self, packet: _SentPacketT) -> Generator[bytes, None, None]:
         if (converter := self.__converter) is not None:
             packet = converter.convert_to_dto_packet(packet)
-        return self.__serializer.incremental_serialize(packet)
+        return (yield from self.__serializer.incremental_serialize(packet))
 
     @final
     def build_packet_from_chunks(self) -> Generator[None, bytes, tuple[_ReceivedPacketT, bytes]]:

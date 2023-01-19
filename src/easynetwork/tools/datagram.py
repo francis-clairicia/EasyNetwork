@@ -33,7 +33,7 @@ class DatagramProducer(Generic[_SentPacketT, _AddressT]):
         super().__init__()
         assert isinstance(protocol, DatagramProtocol)
         self.__p: DatagramProtocol[_SentPacketT, Any] = protocol
-        self.__q: deque[tuple[bytes, _AddressT]] = deque()
+        self.__q: deque[tuple[_SentPacketT, _AddressT]] = deque()
         self.__lock = Lock()
 
     def __iter__(self) -> Iterator[tuple[bytes, _AddressT]]:
@@ -44,13 +44,14 @@ class DatagramProducer(Generic[_SentPacketT, _AddressT]):
             queue = self.__q
             if not queue:
                 raise StopIteration
-            return queue.popleft()
+            packet, address = queue.popleft()
+            return self.__p.make_datagram(packet), address
 
     def queue(self, address: _AddressT, *packets: _SentPacketT) -> None:
         if not packets:
             return
         with self.__lock:
-            self.__q.extend((self.__p.make_datagram(packet), address) for packet in packets)
+            self.__q.extend((packet, address) for packet in packets)
 
 
 @final
