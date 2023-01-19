@@ -151,7 +151,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
 
                     if ready & EVENT_READ:
                         self.__receive_datagrams()
-                        self.__handle_received_datagrams()
+                    self.__handle_received_datagrams()
 
                     if request_executor is not None:
                         request_executor.service_actions()
@@ -164,13 +164,12 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                                 selector_key.events | EVENT_WRITE,
                                 selector_key.data,
                             )
-                    else:
-                        if selector_key.events & EVENT_WRITE:
-                            selector_key = selector.modify(
-                                selector_key.fileobj,
-                                selector_key.events & ~EVENT_WRITE,
-                                selector_key.data,
-                            )
+                    elif selector_key.events & EVENT_WRITE:
+                        selector_key = selector.modify(
+                            selector_key.fileobj,
+                            selector_key.events & ~EVENT_WRITE,
+                            selector_key.data,
+                        )
 
         finally:
             if request_executor is not None:
