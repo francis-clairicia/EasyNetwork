@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any, Callable, Generic, Iterator, TypeAlias, T
 
 from ..protocol import DatagramProtocol, DatagramProtocolParseError
 from ..tools.datagram import DatagramConsumer, DatagramProducer
-from ..tools.socket import MAX_DATAGRAM_SIZE, AddressFamily, SocketAddress, new_socket_address
+from ..tools.socket import AddressFamily, SocketAddress, guess_best_recv_size, new_socket_address
 from .abc import AbstractNetworkClient
 
 _T = TypeVar("_T")
@@ -45,6 +45,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         "__producer",
         "__consumer",
         "__lock",
+        "__recv_size",
         "__default_send_flags",
         "__default_recv_flags",
     )
@@ -150,6 +151,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         self.__closed: bool = False
         self.__socket: Socket = socket
         self.__lock: RLock = RLock()
+        self.__recv_size: int = guess_best_recv_size(socket)
         self.__default_send_flags: int = send_flags
         self.__default_recv_flags: int = recv_flags
 
@@ -316,7 +318,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
 
         with _use_timeout(socket, timeout):
             try:
-                data, sender = socket.recvfrom(MAX_DATAGRAM_SIZE, flags)
+                data, sender = socket.recvfrom(self.__recv_size, flags)
             except (TimeoutError, BlockingIOError, InterruptedError):
                 return False
             sender = new_socket_address(sender, socket.family)

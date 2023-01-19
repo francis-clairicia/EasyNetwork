@@ -69,7 +69,10 @@ class TestSocketAddress:
         assert isinstance(socket_address, expected_type)
 
 
-def test____guess_best_recv_size____return_socket_file_blocksize(mock_tcp_socket: MagicMock, mocker: MockerFixture) -> None:
+def test____guess_best_recv_size____tcp____return_socket_file_blocksize(
+    mock_tcp_socket: MagicMock,
+    mocker: MockerFixture,
+) -> None:
     # Arrange
     mock_tcp_socket.fileno.return_value = mocker.sentinel.fileno
     mock_os_fstat = mocker.patch("os.fstat")
@@ -93,7 +96,7 @@ def test____guess_best_recv_size____return_socket_file_blocksize(mock_tcp_socket
         pytest.param(None, id="undefined attribute"),
     ],
 )
-def test____guess_best_recv_size____return_io_default_buffer_size_if_blocksize_is_undefined(
+def test____guess_best_recv_size____tcp____return_io_default_buffer_size_if_blocksize_is_undefined(
     blksize: int | None,
     mock_tcp_socket: MagicMock,
     mocker: MockerFixture,
@@ -113,7 +116,7 @@ def test____guess_best_recv_size____return_io_default_buffer_size_if_blocksize_i
     assert best_recv_size is mocker.sentinel.DEFAULT_BUFFER_SIZE
 
 
-def test____guess_best_recv_size____return_io_default_buffer_size_if_fstat_does_not_support_socket_fd(
+def test____guess_best_recv_size____tcp____return_io_default_buffer_size_if_fstat_does_not_support_socket_fd(
     mock_tcp_socket: MagicMock,
     mocker: MockerFixture,
 ) -> None:
@@ -129,9 +132,22 @@ def test____guess_best_recv_size____return_io_default_buffer_size_if_fstat_does_
     assert best_recv_size is mocker.sentinel.DEFAULT_BUFFER_SIZE
 
 
-def test____guess_best_recv_size____invalid_socket_type(mock_udp_socket: MagicMock) -> None:
+def test____guess_best_recv_size____udp____return_max_supported_datagram_size(mock_udp_socket: MagicMock) -> None:
     # Arrange
+    expected_return = 2**16  # 64 KiB
+
+    # Act
+    best_recv_size: int = guess_best_recv_size(mock_udp_socket)
+
+    # Assert
+    assert best_recv_size == expected_return
+
+
+def test____guess_best_recv_size____invalid_socket_type(mocker: MockerFixture) -> None:
+    # Arrange
+    mock_invalid_socket = mocker.MagicMock()
+    mock_invalid_socket.type = -1
 
     # Act & Assert
     with pytest.raises(ValueError, match=r"^Unsupported socket type$"):
-        _ = guess_best_recv_size(mock_udp_socket)
+        _ = guess_best_recv_size(mock_invalid_socket)

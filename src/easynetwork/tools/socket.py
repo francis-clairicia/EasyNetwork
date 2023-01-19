@@ -10,7 +10,6 @@ __all__ = [
     "AF_INET",
     "AF_INET6",
     "AddressFamily",
-    "MAX_DATAGRAM_SIZE",
     "guess_best_recv_size",
     "new_socket_address",
 ]
@@ -34,9 +33,6 @@ class AddressFamily(IntEnum):
 
 AF_INET: Final[Literal[AddressFamily.AF_INET]] = AddressFamily.AF_INET
 AF_INET6: Final[Literal[AddressFamily.AF_INET6]] = AddressFamily.AF_INET6
-
-
-MAX_DATAGRAM_SIZE: Final[int] = 64 * 1024  # 64 KiB
 
 
 class IPv4SocketAddress(NamedTuple):
@@ -94,16 +90,20 @@ def new_socket_address(addr: tuple[Any, ...], family: int) -> SocketAddress:
 
 
 def guess_best_recv_size(socket: _socket.socket) -> int:
-    if socket.type != _socket.SOCK_STREAM:
-        raise ValueError("Unsupported socket type")
-    try:
-        socket_stat = os.fstat(socket.fileno())
-    except OSError:  # Will not work for sockets which have not a real file descriptor (e.g. on Windows)
-        pass
-    else:
-        if (blksize := getattr(socket_stat, "st_blksize", 0)) > 0:
-            return blksize
+    match socket.type:
+        case _socket.SOCK_STREAM:
+            try:
+                socket_stat = os.fstat(socket.fileno())
+            except OSError:  # Will not work for sockets which have not a real file descriptor (e.g. on Windows)
+                pass
+            else:
+                if (blksize := getattr(socket_stat, "st_blksize", 0)) > 0:
+                    return blksize
 
-    from io import DEFAULT_BUFFER_SIZE
+            from io import DEFAULT_BUFFER_SIZE
 
-    return DEFAULT_BUFFER_SIZE
+            return DEFAULT_BUFFER_SIZE
+        case _socket.SOCK_DGRAM:
+            return 65536  # 64 KiB
+        case _:
+            raise ValueError("Unsupported socket type")

@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Any, Callable, Generic, Iterator, TypeAlias, T
 
 from ..protocol import DatagramProtocol, DatagramProtocolParseError, ParseErrorType
 from ..tools.datagram import DatagramConsumer, DatagramProducer
-from ..tools.socket import AF_INET, MAX_DATAGRAM_SIZE, SocketAddress, new_socket_address
+from ..tools.socket import AF_INET, SocketAddress, guess_best_recv_size, new_socket_address
 from .abc import AbstractNetworkServer
 from .executors.abc import AbstractRequestExecutor
 
@@ -45,6 +45,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         "__protocol_factory",
         "__selector_factory",
         "__request_executor",
+        "__recv_size",
         "__default_send_flags",
         "__default_recv_flags",
         "__unsent_datagrams",
@@ -103,6 +104,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         self.__is_shutdown: Event = Event()
         self.__is_shutdown.set()
         self.__protocol_factory: DatagramProtocolFactory[_ResponseT, _RequestT] = protocol_factory
+        self.__recv_size: int = guess_best_recv_size(socket)
         self.__default_send_flags: int = int(send_flags)
         self.__default_recv_flags: int = int(recv_flags)
         self.__unsent_datagrams: deque[tuple[bytes, SocketAddress]] = deque()
@@ -208,9 +210,11 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     def __receive_datagrams(self) -> None:
         logger: logging.Logger = self.__logger
         socket: Socket = self.__socket
+        recv_size: int = self.__recv_size
+        recv_flags: int = self.__default_recv_flags
         while True:
             try:
-                data, sender = socket.recvfrom(MAX_DATAGRAM_SIZE, self.__default_recv_flags)
+                data, sender = socket.recvfrom(recv_size, recv_flags)
             except (TimeoutError, BlockingIOError, InterruptedError):
                 return
             sender = new_socket_address(sender, socket.family)
