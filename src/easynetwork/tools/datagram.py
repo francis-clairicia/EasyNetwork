@@ -47,6 +47,10 @@ class DatagramProducer(Generic[_SentPacketT, _AddressT]):
             packet, address = queue.popleft()
             return self.__p.make_datagram(packet), address
 
+    def pending_packets(self) -> bool:
+        with self.__lock:
+            return bool(self.__q)
+
     def queue(self, address: _AddressT, *packets: _SentPacketT) -> None:
         if not packets:
             return
@@ -76,6 +80,10 @@ class DatagramConsumer(Generic[_ReceivedPacketT]):
                 raise StopIteration
             data, sender = queue.popleft()
             return self.__p.build_packet_from_datagram(data, sender), sender
+
+    def pending_datagrams(self) -> bool:
+        with self.__lock:
+            return bool(self.__q)
 
     def queue(self, data: bytes, address: SocketAddress) -> None:
         assert isinstance(data, bytes)

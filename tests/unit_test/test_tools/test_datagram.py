@@ -62,6 +62,16 @@ class TestDatagramProducer:
         assert mock_make_datagram.mock_calls == [mocker.call(p) for p in packets]
         assert datagrams == [(p, mocker.sentinel.address) for p in packets]
 
+    def test____pending_packets____empty_producer(self, producer: DatagramProducer[Any, Any]) -> None:
+        assert not producer.pending_packets()
+
+    def test____pending_packets____queued_packet(self, producer: DatagramProducer[Any, Any], mocker: MockerFixture) -> None:
+        producer.queue(mocker.sentinel.address, mocker.sentinel.packet)
+        assert producer.pending_packets()
+
+        next(producer)
+        assert not producer.pending_packets()
+
 
 class TestDatagramConsumer:
     @pytest.fixture
@@ -106,3 +116,13 @@ class TestDatagramConsumer:
         # Assert
         assert mock_build_packet_from_datagram.mock_calls == [mocker.call(d, mocker.sentinel.sender) for d in datagrams]
         assert received_packets == [(packets[d], mocker.sentinel.sender) for d in datagrams]
+
+    def test____pending_datagrams____empty_consumer(self, consumer: DatagramConsumer[Any]) -> None:
+        assert not consumer.pending_datagrams()
+
+    def test____pending_datagrams____queued_datagram(self, consumer: DatagramConsumer[Any], mocker: MockerFixture) -> None:
+        consumer.queue(b"datagram", mocker.sentinel.sender)
+        assert consumer.pending_datagrams()
+
+        next(consumer)
+        assert not consumer.pending_datagrams()
