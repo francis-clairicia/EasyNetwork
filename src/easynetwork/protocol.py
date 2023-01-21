@@ -42,6 +42,7 @@ class DatagramProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
     def __init__(
         self,
         serializer: AbstractPacketSerializer[_SentPacketT, _ReceivedPacketT],
+        converter: None = ...,
     ) -> None:
         ...
 
@@ -98,6 +99,7 @@ class StreamProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
     def __init__(
         self,
         serializer: AbstractIncrementalPacketSerializer[_SentPacketT, _ReceivedPacketT],
+        converter: None = ...,
     ) -> None:
         ...
 
