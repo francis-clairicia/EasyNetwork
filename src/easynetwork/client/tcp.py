@@ -167,9 +167,10 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             self._check_not_closed()
             consumer = self.__consumer
             read_socket = self.__read_socket
+            next_packet = self.__next_packet
             while True:
                 try:
-                    return next(consumer)
+                    return next_packet(consumer, False)
                 except StopIteration:
                     pass
                 while not read_socket(timeout=10):
@@ -247,6 +248,10 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             if not ignore_errors:
                 raise
             raise StopIteration from None
+        except StopIteration:
+            raise
+        except Exception as exc:
+            raise RuntimeError(str(exc)) from exc
 
     @staticmethod
     def __next_packet_or_default(it: Iterator[_ReceivedPacketT], default: _T, ignore_errors: bool) -> _ReceivedPacketT | _T:
@@ -256,6 +261,8 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             if not ignore_errors:
                 raise
             return default
+        except Exception as exc:
+            raise RuntimeError(str(exc)) from exc
 
     def get_local_address(self) -> SocketAddress:
         with self.__lock:
@@ -362,10 +369,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         except OSError:
             return False
         return True
-
-    @final
-    def _get_buffer(self) -> bytes:
-        return self.__consumer.get_unconsumed_data()
 
     @final
     def _check_not_closed(self) -> None:

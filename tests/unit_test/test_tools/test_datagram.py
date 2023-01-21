@@ -43,7 +43,7 @@ class TestDatagramProducer:
         ],
         indirect=True,
     )
-    def test____dunder_next____serialize_queued_packets(
+    def test____next____serialize_queued_packets(
         self,
         packets: list[Any],
         producer: DatagramProducer[Any, Any],
@@ -63,12 +63,17 @@ class TestDatagramProducer:
         assert datagrams == [(p, mocker.sentinel.address) for p in packets]
 
     def test____pending_packets____empty_producer(self, producer: DatagramProducer[Any, Any]) -> None:
+        # Arrange
+
+        # Act & Assert
         assert not producer.pending_packets()
 
     def test____pending_packets____queued_packet(self, producer: DatagramProducer[Any, Any], mocker: MockerFixture) -> None:
+        # Arrange
         producer.queue(mocker.sentinel.address, mocker.sentinel.packet)
-        assert producer.pending_packets()
 
+        # Act & Assert
+        assert producer.pending_packets()
         next(producer)
         assert not producer.pending_packets()
 
@@ -96,7 +101,7 @@ class TestDatagramConsumer:
             pytest.param([b"d1", b"d2", b"d3"], id="several datagrams"),
         ],
     )
-    def test____dunder_next____deserialize_queued_datagrams(
+    def test____next____deserialize_queued_datagrams(
         self,
         datagrams: list[bytes],
         consumer: DatagramConsumer[Any],

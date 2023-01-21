@@ -24,52 +24,65 @@ _ReceivedPacketT = TypeVar("_ReceivedPacketT")
 @final
 @Iterator.register
 class StreamDataProducer(Generic[_SentPacketT]):
-    __slots__ = ("__p", "__q", "__lock")
+    __slots__ = ("__p", "__g", "__q", "__lock")
 
     def __init__(self, protocol: StreamProtocol[_SentPacketT, Any]) -> None:
         super().__init__()
         assert isinstance(protocol, StreamProtocol)
         self.__p: StreamProtocol[_SentPacketT, Any] = protocol
-        self.__q: deque[Generator[bytes, None, None]] = deque()
+        self.__g: Generator[bytes, None, None] | None = None
+        self.__q: deque[_SentPacketT] = deque()
         self.__lock = Lock()
+
+    def __del__(self) -> None:  # pragma: no cover
+        generator, self.__g = self.__g, None
+        try:
+            if generator is not None:
+                generator.close()
+        finally:
+            del generator
 
     def __iter__(self) -> Iterator[bytes]:
         return self
 
     def __next__(self) -> bytes:
         with self.__lock:
-            queue: deque[Generator[bytes, None, None]] = self.__q
-            while queue:
-                generator = queue[0]
+            protocol = self.__p
+            queue: deque[_SentPacketT] = self.__q
+            generator: Generator[bytes, None, None] | None
+            while (generator := self.__g) is not None or queue:
+                if generator is None:
+                    generator = protocol.generate_chunks(queue.popleft())
+                else:
+                    self.__g = None
                 try:
-                    return next(generator)
+                    while not (chunk := next(generator)):
+                        continue
                 except StopIteration:
-                    del queue[0]
-                except Exception as exc:
-                    del queue[0]
-                    raise RuntimeError(str(exc)) from exc
-                except BaseException:
-                    del queue[0]
-                    raise
+                    pass
+                else:
+                    assert isinstance(chunk, bytes)
+                    self.__g = generator
+                    return chunk
                 finally:
                     del generator
-        raise StopIteration
+            raise StopIteration
 
     def pending_packets(self) -> bool:
         with self.__lock:
-            return bool(self.__q)
+            return self.__g is not None or bool(self.__q)
 
     def queue(self, *packets: _SentPacketT) -> None:
         if not packets:
             return
         with self.__lock:
-            self.__q.extend(map(self.__p.generate_chunks, packets))
+            self.__q.extend(packets)
 
 
 @final
 @Iterator.register
 class StreamDataConsumer(Generic[_ReceivedPacketT]):
-    __slots__ = ("__p", "__b", "__c", "__u", "__lock")
+    __slots__ = ("__p", "__b", "__c", "__lock")
 
     def __init__(self, protocol: StreamProtocol[Any, _ReceivedPacketT]) -> None:
         super().__init__()
@@ -77,40 +90,46 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
         self.__p: StreamProtocol[Any, _ReceivedPacketT] = protocol
         self.__c: Generator[None, bytes, tuple[_ReceivedPacketT, bytes]] | None = None
         self.__b: bytes = b""
-        self.__u: bytes = b""
         self.__lock = Lock()
+
+    def __del__(self) -> None:  # pragma: no cover
+        consumer, self.__c = self.__c, None
+        try:
+            if consumer is not None:
+                consumer.close()
+        finally:
+            del consumer
 
     def __iter__(self) -> Iterator[_ReceivedPacketT]:
         return self
 
     def __next__(self) -> _ReceivedPacketT:
         with self.__lock:
-            protocol = self.__p
-            while chunk := self.__b:
-                self.__b = b""
-                unconsumed_data, self.__u = self.__u, b""
-                consumer, self.__c = self.__c, None
-                if consumer is None:
-                    consumer = protocol.build_packet_from_chunks()
-                    next(consumer)
-                packet: _ReceivedPacketT
+            chunk: bytes = self.__b
+            if not chunk:
+                raise StopIteration
+            consumer, self.__c = self.__c, None
+            if consumer is None:
+                consumer = self.__p.build_packet_from_chunks()
                 try:
-                    consumer.send(chunk)
-                except StopIteration as exc:
-                    packet, chunk = exc.value
-                    self.__b = chunk
-                    return packet
-                except StreamProtocolParseError as exc:
-                    self.__b = exc.remaining_data
-                    raise
-                except Exception as exc:
-                    raise RuntimeError(str(exc)) from exc
-                else:
-                    self.__u = unconsumed_data + chunk
-                    self.__c = consumer
-                    continue
-
-            raise StopIteration
+                    next(consumer)
+                except StopIteration:
+                    raise RuntimeError("protocol.build_packet_from_chunks() did not yield") from None
+            self.__b = b""
+            packet: _ReceivedPacketT
+            try:
+                consumer.send(chunk)
+            except StopIteration as exc:
+                packet, chunk = exc.value
+            except StreamProtocolParseError as exc:
+                self.__b, exc.remaining_data = exc.remaining_data, b""
+                raise
+            else:
+                self.__c = consumer
+                raise StopIteration
+            assert isinstance(chunk, bytes)
+            self.__b = chunk
+            return packet
 
     def feed(self, chunk: bytes) -> None:
         assert isinstance(chunk, bytes)
@@ -122,7 +141,3 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
     def get_buffer(self) -> bytes:
         with self.__lock:
             return self.__b
-
-    def get_unconsumed_data(self) -> bytes:
-        with self.__lock:
-            return self.__u + self.__b

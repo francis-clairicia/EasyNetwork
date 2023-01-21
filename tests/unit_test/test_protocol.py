@@ -169,8 +169,10 @@ class TestStreamProtocol:
     sentinel: Any
 
     @pytest.fixture(autouse=True)
-    def _bind_mocker_sentinel(self, mocker: MockerFixture) -> None:
+    def _bind_mocker_sentinel(self, mocker: MockerFixture) -> Generator[None, None, None]:
         self.sentinel = mocker.sentinel
+        yield
+        del self.sentinel
 
     @pytest.fixture
     @staticmethod

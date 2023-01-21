@@ -414,6 +414,8 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             except StopIteration:  # Not enough data
                 logger.debug("Missing data to process request sent by %s", client.address)
                 continue
+            except Exception as exc:
+                raise RuntimeError(str(exc)) from exc
             logger.info("Processing request sent by %s", client.address)
             try:
                 if request_executor is not None:
