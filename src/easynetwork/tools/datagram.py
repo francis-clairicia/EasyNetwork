@@ -15,7 +15,7 @@ from collections import deque
 from threading import Lock
 from typing import Any, Generic, Iterator, TypeVar, final
 
-from ..protocol import DatagramProtocol, DatagramProtocolParseError
+from ..protocol import DatagramProtocol
 from .socket import SocketAddress
 
 _SentPacketT = TypeVar("_SentPacketT")
@@ -75,13 +75,7 @@ class DatagramConsumer(Generic[_ReceivedPacketT]):
             if not queue:
                 raise StopIteration
             data, sender = queue.popleft()
-            try:
-                packet = self.__p.build_packet_from_datagram(data, sender)
-            except DatagramProtocolParseError:
-                raise
-            except Exception as exc:
-                raise RuntimeError(str(exc)) from exc
-            return packet, sender
+            return self.__p.build_packet_from_datagram(data, sender), sender
 
     def queue(self, data: bytes, address: SocketAddress) -> None:
         assert isinstance(data, bytes)

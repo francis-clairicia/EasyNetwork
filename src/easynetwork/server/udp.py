@@ -246,6 +246,8 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                     self.bad_request(exc.sender, exc.error_type, exc.message)
                 except Exception:
                     self.__on_client_error(exc.sender)
+            except Exception as exc:
+                raise RuntimeError(str(exc)) from exc
 
     def __execute_request(self, request: _RequestT, client_address: SocketAddress) -> None:
         try:
