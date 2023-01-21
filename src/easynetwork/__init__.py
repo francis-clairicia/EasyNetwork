@@ -16,7 +16,6 @@ __all__ = [
     "AbstractTCPNetworkServer",
     "AbstractUDPNetworkServer",
     "ConnectedClient",
-    "EmptyDatagramError",
     "ForkingRequestExecutor",
     "TCPNetworkClient",
     "ThreadingRequestExecutor",

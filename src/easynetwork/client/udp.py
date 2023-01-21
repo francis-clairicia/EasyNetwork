@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-__all__ = ["EmptyDatagramError", "UDPNetworkClient", "UDPNetworkEndpoint"]
+__all__ = ["UDPNetworkClient", "UDPNetworkEndpoint"]
 
 from contextlib import contextmanager
 from operator import itemgetter
@@ -29,11 +29,6 @@ _Address: TypeAlias = tuple[str, int] | tuple[str, int, int, int]  # type: ignor
 
 
 _NO_DEFAULT: Any = object()
-
-
-class EmptyDatagramError(Exception):
-    def __init__(self, sender: SocketAddress) -> None:
-        super().__init__(sender)
 
 
 class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
@@ -324,8 +319,6 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             sender = new_socket_address(sender, socket.family)
             if remote_address is not None and sender != remote_address:
                 return False
-            if not data:
-                raise EmptyDatagramError(sender)
             self.__consumer.queue(data, sender)
             return True
 
