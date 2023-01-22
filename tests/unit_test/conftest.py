@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Generator, final
+from typing import TYPE_CHECKING, Any, Callable, Generator, final
 
 from easynetwork.converter import AbstractPacketConverter
 from easynetwork.protocol import DatagramProtocol, StreamProtocol
@@ -43,25 +43,52 @@ class _PacketConverterFixture(AbstractPacketConverter[Any, Any, Any, Any]):
 
 
 @pytest.fixture
-def mock_serializer(mocker: MockerFixture) -> Any:
-    return mocker.NonCallableMagicMock(spec_set=_PacketSerializerFixture())
+def mock_serializer_factory(mocker: MockerFixture) -> Callable[[], Any]:
+    return lambda: mocker.NonCallableMagicMock(spec_set=_PacketSerializerFixture())
 
 
 @pytest.fixture
-def mock_incremental_serializer(mocker: MockerFixture) -> Any:
-    return mocker.NonCallableMagicMock(spec_set=_IncrementalPacketSerializerFixture())
+def mock_serializer(mock_serializer_factory: Callable[[], Any]) -> Any:
+    return mock_serializer_factory()
 
 
 @pytest.fixture
-def mock_converter(mocker: MockerFixture) -> Any:
-    return mocker.NonCallableMagicMock(spec_set=_PacketConverterFixture())
+def mock_incremental_serializer_factory(mocker: MockerFixture) -> Callable[[], Any]:
+    return lambda: mocker.NonCallableMagicMock(spec_set=_IncrementalPacketSerializerFixture())
 
 
 @pytest.fixture
-def mock_datagram_protocol(mocker: MockerFixture, mock_serializer: Any) -> Any:
-    return mocker.NonCallableMagicMock(spec_set=DatagramProtocol(mock_serializer))
+def mock_incremental_serializer(mock_incremental_serializer_factory: Callable[[], Any]) -> Any:
+    return mock_incremental_serializer_factory()
 
 
 @pytest.fixture
-def mock_stream_protocol(mocker: MockerFixture, mock_incremental_serializer: Any) -> Any:
-    return mocker.NonCallableMagicMock(spec_set=StreamProtocol(mock_incremental_serializer))
+def mock_converter_factory(mocker: MockerFixture) -> Callable[[], Any]:
+    return lambda: mocker.NonCallableMagicMock(spec_set=_PacketConverterFixture())
+
+
+@pytest.fixture
+def mock_converter(mock_converter_factory: Callable[[], Any]) -> Any:
+    return mock_converter_factory()
+
+
+@pytest.fixture
+def mock_datagram_protocol_factory(mocker: MockerFixture, mock_serializer_factory: Callable[[], Any]) -> Callable[[], Any]:
+    return lambda: mocker.NonCallableMagicMock(spec_set=DatagramProtocol(mock_serializer_factory()))
+
+
+@pytest.fixture
+def mock_datagram_protocol(mock_datagram_protocol_factory: Callable[[], Any]) -> Any:
+    return mock_datagram_protocol_factory()
+
+
+@pytest.fixture
+def mock_stream_protocol_factory(
+    mocker: MockerFixture, mock_incremental_serializer_factory: Callable[[], Any]
+) -> Callable[[], Any]:
+    return lambda: mocker.NonCallableMagicMock(spec_set=StreamProtocol(mock_incremental_serializer_factory()))
+
+
+@pytest.fixture
+def mock_stream_protocol(mock_stream_protocol_factory: Callable[[], Any]) -> Any:
+    return mock_stream_protocol_factory()
