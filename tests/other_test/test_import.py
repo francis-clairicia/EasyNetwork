@@ -57,7 +57,6 @@ def _catch_star_imports_within_packages() -> dict[str, list[str]]:
     return all_packages
 
 
-@pytest.mark.functional
 class TestStarImports:
     AUTO_IMPORTED_MODULES: dict[str, list[str]] = _catch_star_imports_within_packages()
 

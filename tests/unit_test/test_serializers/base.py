@@ -1,21 +1,18 @@
 # -*- coding: Utf-8 -*
 
-
 from __future__ import annotations
 
-from typing import Generator, TypeAlias, TypeVar
+from typing import Any, Callable
 
-_T_co = TypeVar("_T_co", covariant=True)
-
-
-DeserializerConsumer: TypeAlias = Generator[None, bytes, tuple[_T_co, bytes]]
+import pytest
 
 
-class BaseTestStreamIncrementalPacketDeserializer:
-    @staticmethod
-    def deserialize_for_test(gen: Generator[None, bytes, tuple[_T_co, bytes]], chunk: bytes, /) -> tuple[_T_co, bytes]:
-        try:
-            gen.send(chunk)
-        except StopIteration as exc:
-            return exc.value
-        raise EOFError
+class BaseSerializerConfigInstanceCheck:
+    def test____config____invalid_object(self, config_param: tuple[str, str], serializer_cls: Callable[..., Any]) -> None:
+        # Arrange
+        config_param_name, config_cls_name = config_param
+        kwargs: dict[str, Any] = {f"{config_param_name}_config": object()}
+
+        # Act & Assert
+        with pytest.raises(TypeError, match=f"^Invalid {config_param_name} config: expected {config_cls_name}, got object$"):
+            serializer_cls(**kwargs)

@@ -8,8 +8,8 @@ from __future__ import annotations
 
 __all__ = ["AbstractStructSerializer", "NamedTupleSerializer"]
 
+import struct as _struct
 from abc import abstractmethod
-from struct import Struct, error as StructError
 from typing import Any, Iterable, Mapping, NamedTuple, TypeVar, final
 
 from .exceptions import DeserializeError
@@ -25,9 +25,9 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_ST_contra, _DT_co]):
     def __init__(self, format: str) -> None:
         if format[0] not in {"@", "=", "<", ">", "!"}:
             format = f"!{format}"  # network byte order
-        struct = Struct(format)
+        struct = _struct.Struct(format)
         super().__init__(struct.size)
-        self.__s: Struct = struct
+        self.__s: _struct.Struct = struct
 
     @abstractmethod
     def iter_values(self, packet: _ST_contra) -> Iterable[Any]:
@@ -45,11 +45,9 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_ST_contra, _DT_co]):
     @final
     def deserialize(self, data: bytes) -> _DT_co:
         struct = self.__s
-        if len(data) != struct.size:
-            raise DeserializeError("Invalid data size")
         try:
             packet_tuple: tuple[Any, ...] = struct.unpack(data)
-        except StructError as exc:
+        except _struct.error as exc:
             raise DeserializeError(f"Invalid value: {exc}") from exc
         try:
             return self.from_tuple(packet_tuple)
@@ -58,7 +56,7 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_ST_contra, _DT_co]):
 
     @property
     @final
-    def struct(self) -> Struct:
+    def struct(self) -> _struct.Struct:
         return self.__s
 
 
@@ -72,10 +70,8 @@ class NamedTupleSerializer(AbstractStructSerializer[_NT, _NT]):
         if not NamedTupleSerializer.is_namedtuple_class(namedtuple_cls):
             raise TypeError("Expected namedtuple class")
 
-        if format_endianness == "":
+        if not format_endianness:
             format_endianness = "!"
-        elif format_endianness not in {"@", "=", "<", ">", "!"}:
-            raise ValueError("Invalid endianness value")
 
         super().__init__(f"{format_endianness}{''.join(map(fields_format.__getitem__, namedtuple_cls._fields))}")
         self.__namedtuple_cls: type[_NT] = namedtuple_cls

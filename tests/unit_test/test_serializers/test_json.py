@@ -2,174 +2,249 @@
 
 from __future__ import annotations
 
-import math
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from easynetwork.serializers.json import JSONSerializer
+from easynetwork.serializers.exceptions import DeserializeError
+from easynetwork.serializers.json import JSONDecoderConfig, JSONEncoderConfig, JSONSerializer
 
 import pytest
 
-from .base import BaseTestStreamIncrementalPacketDeserializer, DeserializerConsumer
+from .base import BaseSerializerConfigInstanceCheck
 
-SERIALIZE_PARAMS: list[tuple[Any, bytes]] = [
-    ([], b"[]"),
-    ([1, 2, 3], b"[1,2,3]"),  # No whitespaces by default
-    ({}, b"{}"),
-    ({"k": "v", "k2": "v2"}, b'{"k":"v","k2":"v2"}'),  # No whitespaces by default
-]
+if TYPE_CHECKING:
+    from unittest.mock import MagicMock
 
-INCREMENTAL_SERIALIZE_PARAMS: list[tuple[Any, bytes]] = [(data, output + b"\n") for data, output in SERIALIZE_PARAMS]
-
-DESERIALIZE_PARAMS: list[tuple[bytes, Any]] = [(output, data) for data, output in SERIALIZE_PARAMS]
-
-INCREMENTAL_DESERIALIZE_PARAMS: list[tuple[bytes, Any]] = [
-    (output[:-1], data) for data, output in INCREMENTAL_SERIALIZE_PARAMS
-] + [
-    (
-        b'[{"value": "a"}, {"value": 3.14}, {"value": true}, {"value": {"other": [Infinity]}}]',
-        [{"value": "a"}, {"value": 3.14}, {"value": True}, {"value": {"other": [float("+inf")]}}],
-    ),
-    (
-        b'{"key": [{"key": "value", "key2": [4, 5, -Infinity]}], "other": null}',
-        {"key": [{"key": "value", "key2": [4, 5, float("-inf")]}], "other": None},
-    ),
-    (
-        b'{"{\\"key\\": [{\\"key\\": \\"value\\", \\"key2\\": [4, 5, -Infinity]}], \\"other\\": null}": 42}',
-        {'{"key": [{"key": "value", "key2": [4, 5, -Infinity]}], "other": null}': 42},
-    ),
-]
+    from pytest_mock import MockerFixture
 
 
-@pytest.fixture
-def serializer() -> JSONSerializer[Any, Any]:
-    return JSONSerializer()
+class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
+    @pytest.fixture(scope="class")
+    @staticmethod
+    def serializer_cls() -> type[JSONSerializer[Any, Any]]:
+        return JSONSerializer
 
+    @pytest.fixture(params=["encoder", "decoder"])
+    @staticmethod
+    def config_param(request: Any) -> tuple[str, str]:
+        name: str = request.param
+        return (name, f"JSON{name.capitalize()}Config")
 
-class TestJSONPacketSerializer:
-    @pytest.mark.parametrize(["data", "expected_output"], SERIALIZE_PARAMS)
-    def test____serialize(self, serializer: JSONSerializer[Any, Any], data: Any, expected_output: bytes) -> None:
-        # Arrange
-
-        # Act
-        output = serializer.serialize([data])
-
-        # Assert
-        assert isinstance(output, bytes)
-        assert output == b"[" + expected_output + b"]"
-
-    @pytest.mark.parametrize(["data", "expected_output"], INCREMENTAL_SERIALIZE_PARAMS)
-    def test____incremental_serialize(self, serializer: JSONSerializer[Any, Any], data: Any, expected_output: bytes) -> None:
-        # Arrange
-
-        # Act
-        output = b"".join(serializer.incremental_serialize(data))
-
-        # Assert
-        assert isinstance(output, bytes)
-        assert output == expected_output
-
-
-class TestJSONPacketDeserializer(BaseTestStreamIncrementalPacketDeserializer):
     @pytest.fixture
     @staticmethod
-    def consumer(serializer: JSONSerializer[Any, Any]) -> DeserializerConsumer[Any]:
-        consumer = serializer.incremental_deserialize()
-        next(consumer)
-        return consumer
+    def mock_encoder(mocker: MockerFixture) -> MagicMock:
+        from json import JSONEncoder
 
-    @pytest.mark.parametrize(["data", "expected_output"], DESERIALIZE_PARAMS)
-    def test____deserialize(self, serializer: JSONSerializer[Any, Any], data: bytes, expected_output: Any) -> None:
-        # Arrange
+        return mocker.MagicMock(spec_set=JSONEncoder())
 
-        # Act
-        output = serializer.deserialize(data)
+    @pytest.fixture(autouse=True)
+    @staticmethod
+    def mock_encoder_cls(mocker: MockerFixture, mock_encoder: MagicMock) -> MagicMock:
+        return mocker.patch("json.JSONEncoder", autospec=True, return_value=mock_encoder)
 
-        # Assert
-        assert type(output) is type(expected_output)
-        if isinstance(expected_output, float) and math.isnan(expected_output):
-            assert math.isnan(output)
-        else:
-            assert output == expected_output
+    @pytest.fixture
+    @staticmethod
+    def mock_decoder(mocker: MockerFixture) -> MagicMock:
+        from json import JSONDecoder
 
-    @pytest.mark.parametrize(["data", "expected_output"], INCREMENTAL_DESERIALIZE_PARAMS)
-    def test____incremental_deserialize____oneshot_valid_packet(
+        return mocker.MagicMock(spec_set=JSONDecoder())
+
+    @pytest.fixture(autouse=True)
+    @staticmethod
+    def mock_decoder_cls(mocker: MockerFixture, mock_decoder: MagicMock) -> MagicMock:
+        return mocker.patch("json.JSONDecoder", autospec=True, return_value=mock_decoder)
+
+    @pytest.fixture(params=[True, False], ids=lambda boolean: f"default_encoder_config=={boolean}")
+    @staticmethod
+    def encoder_config(request: Any, mocker: MockerFixture) -> JSONEncoderConfig | None:
+        use_default_config: bool = request.param
+        if use_default_config:
+            return None
+        return JSONEncoderConfig(
+            skipkeys=mocker.sentinel.skipkeys,
+            check_circular=mocker.sentinel.check_circular,
+            ensure_ascii=mocker.sentinel.ensure_ascii,
+            allow_nan=mocker.sentinel.allow_nan,
+            indent=mocker.sentinel.indent,
+            separators=mocker.sentinel.separators,
+            default=mocker.sentinel.object_default,
+        )
+
+    @pytest.fixture(params=[True, False], ids=lambda boolean: f"default_decoder_config=={boolean}")
+    @staticmethod
+    def decoder_config(request: Any, mocker: MockerFixture) -> JSONDecoderConfig | None:
+        use_default_config: bool = request.param
+        if use_default_config:
+            return None
+        return JSONDecoderConfig(
+            object_hook=mocker.sentinel.object_hook,
+            parse_int=mocker.sentinel.parse_int,
+            parse_float=mocker.sentinel.parse_float,
+            parse_constant=mocker.sentinel.parse_constant,
+            object_pairs_hook=mocker.sentinel.object_pairs_hook,
+            strict=mocker.sentinel.strict,
+        )
+
+    def test____dunder_init____with_encoder_config(
         self,
-        consumer: DeserializerConsumer[Any],
-        data: bytes,
-        expected_output: Any,
+        encoder_config: JSONEncoderConfig | None,
+        mock_encoder_cls: MagicMock,
+        mocker: MockerFixture,
     ) -> None:
         # Arrange
 
         # Act
-        output, remainder = self.deserialize_for_test(consumer, data)
+        _ = JSONSerializer(encoder_config=encoder_config)
 
         # Assert
-        assert not remainder
-        assert type(output) is type(expected_output)
-        assert output == expected_output
+        mock_encoder_cls.assert_called_once_with(
+            skipkeys=mocker.sentinel.skipkeys if encoder_config is not None else False,
+            check_circular=mocker.sentinel.check_circular if encoder_config is not None else True,
+            ensure_ascii=mocker.sentinel.ensure_ascii if encoder_config is not None else True,
+            allow_nan=mocker.sentinel.allow_nan if encoder_config is not None else True,
+            indent=mocker.sentinel.indent if encoder_config is not None else None,
+            separators=mocker.sentinel.separators if encoder_config is not None else (",", ":"),
+            default=mocker.sentinel.object_default if encoder_config is not None else None,
+        )
 
-    @pytest.mark.parametrize(
-        ["data", "expected_output", "expected_remainder"],
-        [
-            pytest.param(b'    ["leading-whitespaces"]"a"', ["leading-whitespaces"], b'"a"'),
-            pytest.param(b'["trailing-whitespaces"]    "a"', ["trailing-whitespaces"], b'"a"'),
-        ],
-        ids=repr,
-    )
-    def test____incremental_deserialize____whitespace_handling(
+    def test____dunder_init____with_decoder_config(
         self,
-        consumer: DeserializerConsumer[Any],
-        data: bytes,
-        expected_output: Any,
-        expected_remainder: bytes,
+        decoder_config: JSONDecoderConfig | None,
+        mock_decoder_cls: MagicMock,
+        mocker: MockerFixture,
     ) -> None:
         # Arrange
 
         # Act
-        output, remainder = self.deserialize_for_test(consumer, data)
+        _ = JSONSerializer(decoder_config=decoder_config)
 
         # Assert
-        assert output == expected_output
-        assert remainder == expected_remainder
+        mock_decoder_cls.assert_called_once_with(
+            object_hook=mocker.sentinel.object_hook if decoder_config is not None else None,
+            parse_int=mocker.sentinel.parse_int if decoder_config is not None else None,
+            parse_float=mocker.sentinel.parse_float if decoder_config is not None else None,
+            parse_constant=mocker.sentinel.parse_constant if decoder_config is not None else None,
+            object_pairs_hook=mocker.sentinel.object_pairs_hook if decoder_config is not None else None,
+            strict=mocker.sentinel.strict if decoder_config is not None else True,
+        )
 
-    @pytest.mark.parametrize(["data", "expected_output"], INCREMENTAL_DESERIALIZE_PARAMS)
-    @pytest.mark.parametrize("expected_remainder", list(map(lambda v: v[0], INCREMENTAL_DESERIALIZE_PARAMS)))
-    def test____incremental_deserialize____chunk_with_remainder(
+    def test____serialize____encode_packet(
         self,
-        consumer: DeserializerConsumer[Any],
-        data: bytes,
-        expected_output: Any,
-        expected_remainder: bytes,
+        mock_encoder: MagicMock,
+        mocker: MockerFixture,
     ) -> None:
         # Arrange
-        data += expected_remainder
+        serializer: JSONSerializer[Any, Any] = JSONSerializer(
+            encoding=mocker.sentinel.encoding,
+            str_errors=mocker.sentinel.str_errors,
+        )
+        mock_string = mock_encoder.encode.return_value = mocker.MagicMock(spec=str())
+        mock_string.encode.return_value = mocker.sentinel.data
 
         # Act
-        output, remainder = self.deserialize_for_test(consumer, data)
+        data = serializer.serialize(mocker.sentinel.packet)
 
         # Assert
-        assert output == expected_output
-        assert remainder == expected_remainder
+        mock_encoder.encode.assert_called_once_with(mocker.sentinel.packet)
+        mock_string.encode.assert_called_once_with(mocker.sentinel.encoding, mocker.sentinel.str_errors)
+        assert data is mocker.sentinel.data
 
-    @pytest.mark.parametrize(["data", "expected_output"], INCREMENTAL_DESERIALIZE_PARAMS)
-    def test____incremental_deserialize____handle_partial_document(
+    def test____incremental_serialize____iterencode_packet(
         self,
-        consumer: DeserializerConsumer[Any],
-        data: bytes,
-        expected_output: Any,
+        mock_encoder: MagicMock,
+        mocker: MockerFixture,
     ) -> None:
         # Arrange
-        import struct
+        serializer: JSONSerializer[Any, Any] = JSONSerializer(
+            encoding=mocker.sentinel.encoding,
+            str_errors=mocker.sentinel.str_errors,
+        )
+        chunk_a = mocker.MagicMock(spec=str(), **{"encode.return_value": mocker.sentinel.chunk_a})
+        chunk_b = mocker.MagicMock(spec=str(), **{"encode.return_value": mocker.sentinel.chunk_b})
+        chunk_c = mocker.MagicMock(spec=str(), **{"encode.return_value": mocker.sentinel.chunk_c})
+        mock_encoder.iterencode.return_value = iter([chunk_a, chunk_b, chunk_c])
 
-        bytes_sequence: tuple[bytes, ...] = struct.unpack(f"{len(data)}c", data)
+        # Act & Assert
+        generator = serializer.incremental_serialize(mocker.sentinel.packet)
+        first_chunk = next(generator)
+        chunk_a.encode.assert_called_once_with(mocker.sentinel.encoding, mocker.sentinel.str_errors)
+        assert first_chunk is mocker.sentinel.chunk_a
+        del chunk_a, first_chunk
+        second_chunk = next(generator)
+        chunk_b.encode.assert_called_once_with(mocker.sentinel.encoding, mocker.sentinel.str_errors)
+        assert second_chunk is mocker.sentinel.chunk_b
+        del chunk_b, second_chunk
+        third_chunk = next(generator)
+        chunk_c.encode.assert_called_once_with(mocker.sentinel.encoding, mocker.sentinel.str_errors)
+        assert third_chunk is mocker.sentinel.chunk_c
+        del chunk_c, third_chunk
+        last_chunk = next(generator)
+        assert isinstance(last_chunk, bytes)
+        assert last_chunk == b"\n"
+        with pytest.raises(StopIteration):
+            next(generator)
+
+        mock_encoder.iterencode.assert_called_once_with(mocker.sentinel.packet)
+
+    def test____deserialize____decode_data(
+        self,
+        mock_decoder: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        serializer: JSONSerializer[Any, Any] = JSONSerializer(
+            encoding=mocker.sentinel.encoding,
+            str_errors=mocker.sentinel.str_errors,
+        )
+        mock_bytes = mocker.MagicMock(spec=bytes())
+        mock_bytes.decode.return_value = mocker.sentinel.document
+        mock_decoder.decode.return_value = mocker.sentinel.packet
 
         # Act
-        for chunk in bytes_sequence[:-1]:
-            with pytest.raises(EOFError):
-                _ = self.deserialize_for_test(consumer, chunk)
-        output, remainder = self.deserialize_for_test(consumer, bytes_sequence[-1])
+        packet = serializer.deserialize(mock_bytes)
 
         # Assert
-        assert not remainder
-        assert type(output) is type(expected_output)
-        assert output == expected_output
+        mock_bytes.decode.assert_called_once_with(mocker.sentinel.encoding, mocker.sentinel.str_errors)
+        mock_decoder.decode.assert_called_once_with(mocker.sentinel.document)
+        assert packet is mocker.sentinel.packet
+
+    def test____deserialize____translate_unicode_decode_errors(
+        self,
+        mock_decoder: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        serializer: JSONSerializer[Any, Any] = JSONSerializer()
+        mock_bytes = mocker.MagicMock(spec=bytes())
+        mock_bytes.decode.side_effect = UnicodeDecodeError("some encoding", b"invalid data", 0, 2, "Bad encoding ?")
+
+        # Act
+        with pytest.raises(DeserializeError) as exc_info:
+            _ = serializer.deserialize(mock_bytes)
+        exception = exc_info.value
+
+        # Assert
+        mock_bytes.decode.assert_called_once()
+        mock_decoder.decode.assert_not_called()
+        assert exception.__cause__ is mock_bytes.decode.side_effect
+
+    def test____deserialize____translate_json_decode_errors(
+        self,
+        mock_decoder: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        from json import JSONDecodeError
+
+        serializer: JSONSerializer[Any, Any] = JSONSerializer()
+        mock_bytes = mocker.MagicMock(spec=bytes())
+        mock_decoder.decode.side_effect = JSONDecodeError("Invalid payload", "document", 0)
+
+        # Act
+        with pytest.raises(DeserializeError) as exc_info:
+            _ = serializer.deserialize(mock_bytes)
+        exception = exc_info.value
+
+        # Assert
+        mock_bytes.decode.assert_called_once()
+        mock_decoder.decode.assert_called_once()
+        assert exception.__cause__ is mock_decoder.decode.side_effect

@@ -2,148 +2,145 @@
 
 from __future__ import annotations
 
-import math
-from typing import Any
+from typing import TYPE_CHECKING, Any, final
 
-from easynetwork.serializers.cbor import CBORSerializer
+from easynetwork.serializers.cbor import CBORDecoderConfig, CBOREncoderConfig, CBORSerializer
 
 import pytest
 
-from .base import BaseTestStreamIncrementalPacketDeserializer, DeserializerConsumer
+from .base import BaseSerializerConfigInstanceCheck
 
-SERIALIZE_PARAMS: list[tuple[Any, bytes]] = [
-    ([], b"\x80"),
-    ([1, 2, 3], b"\x83\x01\x02\x03"),
-    ({}, b"\xa0"),
-    ({"k": "v", "k2": "v2"}, b"\xa2akavbk2bv2"),  # No whitespaces by default
-]
+if TYPE_CHECKING:
+    from unittest.mock import MagicMock
 
-INCREMENTAL_SERIALIZE_PARAMS: list[tuple[Any, bytes]] = [(data, output) for data, output in SERIALIZE_PARAMS]
-
-DESERIALIZE_PARAMS: list[tuple[bytes, Any]] = [(output, data) for data, output in SERIALIZE_PARAMS]
-
-INCREMENTAL_DESERIALIZE_PARAMS: list[tuple[bytes, Any]] = [(output, data) for data, output in INCREMENTAL_SERIALIZE_PARAMS] + [
-    (
-        b"\x84\xa1evalueaa\xa1evalue\xfb@\t\x1e\xb8Q\xeb\x85\x1f\xa1evalue\xf5\xa1evalue\xa1eother\x81\xf9|\x00",
-        [{"value": "a"}, {"value": 3.14}, {"value": True}, {"value": {"other": [float("+inf")]}}],
-    ),
-    (
-        b"\xa2ckey\x81\xa2ckeyevaluedkey2\x83\x04\x05\xf9\xfc\x00eother\xf6",
-        {"key": [{"key": "value", "key2": [4, 5, float("-inf")]}], "other": None},
-    ),
-    (
-        b'\xa1xE{"key": [{"key": "value", "key2": [4, 5, -Infinity]}], "other": null}\x18*',
-        {'{"key": [{"key": "value", "key2": [4, 5, -Infinity]}], "other": null}': 42},
-    ),
-]
+    from pytest_mock import MockerFixture
 
 
-@pytest.fixture
-def serializer() -> CBORSerializer[Any, Any]:
-    return CBORSerializer()
+@final
+class TestCBORSerializer(BaseSerializerConfigInstanceCheck):
+    @pytest.fixture(scope="class")
+    @staticmethod
+    def serializer_cls() -> type[CBORSerializer[Any, Any]]:
+        return CBORSerializer
 
+    @pytest.fixture(params=["encoder", "decoder"])
+    @staticmethod
+    def config_param(request: Any) -> tuple[str, str]:
+        name: str = request.param
+        return (name, f"CBOR{name.capitalize()}Config")
 
-class TestCBORPacketSerializer:
-    @pytest.mark.parametrize(["data", "expected_output"], SERIALIZE_PARAMS)
-    def test____serialize(self, serializer: CBORSerializer[Any, Any], data: Any, expected_output: bytes) -> None:
-        # Arrange
-
-        # Act
-        output = serializer.serialize(data)
-
-        # Assert
-        assert isinstance(output, bytes)
-        assert output == expected_output
-
-    @pytest.mark.parametrize(["data", "expected_output"], INCREMENTAL_SERIALIZE_PARAMS)
-    def test____incremental_serialize(self, serializer: CBORSerializer[Any, Any], data: Any, expected_output: bytes) -> None:
-        # Arrange
-
-        # Act
-        output = b"".join(serializer.incremental_serialize(data))
-
-        # Assert
-        assert isinstance(output, bytes)
-        assert output == expected_output
-
-
-class TestCBORPacketDeserializer(BaseTestStreamIncrementalPacketDeserializer):
     @pytest.fixture
     @staticmethod
-    def consumer(serializer: CBORSerializer[Any, Any]) -> DeserializerConsumer[Any]:
-        consumer = serializer.incremental_deserialize()
-        next(consumer)
-        return consumer
+    def mock_encoder(mocker: MockerFixture) -> MagicMock:
+        from io import BytesIO
 
-    @pytest.mark.parametrize(["data", "expected_output"], DESERIALIZE_PARAMS)
-    def test____deserialize(self, serializer: CBORSerializer[Any, Any], data: bytes, expected_output: Any) -> None:
-        # Arrange
+        from cbor2 import CBOREncoder
 
-        # Act
-        output = serializer.deserialize(data)
+        return mocker.MagicMock(spec_set=CBOREncoder(BytesIO()))
 
-        # Assert
-        assert type(output) is type(expected_output)
-        if isinstance(expected_output, float) and math.isnan(expected_output):
-            assert math.isnan(output)
-        else:
-            assert output == expected_output
+    @pytest.fixture
+    @staticmethod
+    def mock_encoder_cls(mocker: MockerFixture, mock_encoder: MagicMock) -> MagicMock:
+        return mocker.patch("cbor2.CBOREncoder", autospec=True, return_value=mock_encoder)
 
-    @pytest.mark.parametrize(["data", "expected_output"], INCREMENTAL_DESERIALIZE_PARAMS)
-    def test____incremental_deserialize____oneshot_valid_packet(
+    @pytest.fixture
+    @staticmethod
+    def mock_decoder(mocker: MockerFixture) -> MagicMock:
+        from io import BytesIO
+
+        from cbor2 import CBORDecoder
+
+        return mocker.MagicMock(spec_set=CBORDecoder(BytesIO()))
+
+    @pytest.fixture
+    @staticmethod
+    def mock_decoder_cls(mocker: MockerFixture, mock_decoder: MagicMock) -> MagicMock:
+        return mocker.patch("cbor2.CBORDecoder", autospec=True, return_value=mock_decoder)
+
+    @pytest.fixture
+    @staticmethod
+    def mock_file(mocker: MockerFixture) -> MagicMock:
+        from io import BytesIO
+
+        return mocker.MagicMock(spec_set=BytesIO())
+
+    @pytest.fixture(params=[True, False], ids=lambda boolean: f"default_encoder_config=={boolean}")
+    @staticmethod
+    def encoder_config(request: Any, mocker: MockerFixture) -> CBOREncoderConfig | None:
+        use_default_config: bool = request.param
+        if use_default_config:
+            return None
+        return CBOREncoderConfig(
+            datetime_as_timestamp=mocker.sentinel.datetime_as_timestamp,
+            timezone=mocker.sentinel.timezone,
+            value_sharing=mocker.sentinel.value_sharing,
+            default=mocker.sentinel.object_default,
+            canonical=mocker.sentinel.canonical,
+            date_as_datetime=mocker.sentinel.date_as_datetime,
+            string_referencing=mocker.sentinel.string_referencing,
+        )
+
+    @pytest.fixture(params=[True, False], ids=lambda boolean: f"default_decoder_config=={boolean}")
+    @staticmethod
+    def decoder_config(request: Any, mocker: MockerFixture) -> CBORDecoderConfig | None:
+        use_default_config: bool = request.param
+        if use_default_config:
+            return None
+        return CBORDecoderConfig(
+            object_hook=mocker.sentinel.object_hook,
+            tag_hook=mocker.sentinel.tag_hook,
+            str_errors=mocker.sentinel.str_errors,
+        )
+
+    def test____serialize_to_file____with_config(
         self,
-        consumer: DeserializerConsumer[Any],
-        data: bytes,
-        expected_output: Any,
+        encoder_config: CBOREncoderConfig | None,
+        mock_encoder_cls: MagicMock,
+        mock_encoder: MagicMock,
+        mock_file: MagicMock,
+        mocker: MockerFixture,
     ) -> None:
         # Arrange
+        serializer: CBORSerializer[Any, Any] = CBORSerializer(encoder_config=encoder_config)
+        mock_encoder.encode.return_value = None
 
         # Act
-        output, remainder = self.deserialize_for_test(consumer, data)
+        serializer._serialize_to_file(mocker.sentinel.packet, mock_file)
 
         # Assert
-        assert not remainder
-        assert type(output) is type(expected_output)
-        assert output == expected_output
+        mock_encoder_cls.assert_called_once_with(
+            mock_file,
+            datetime_as_timestamp=mocker.sentinel.datetime_as_timestamp if encoder_config is not None else False,
+            timezone=mocker.sentinel.timezone if encoder_config is not None else None,
+            value_sharing=mocker.sentinel.value_sharing if encoder_config is not None else False,
+            default=mocker.sentinel.object_default if encoder_config is not None else None,
+            canonical=mocker.sentinel.canonical if encoder_config is not None else False,
+            date_as_datetime=mocker.sentinel.date_as_datetime if encoder_config is not None else False,
+            string_referencing=mocker.sentinel.string_referencing if encoder_config is not None else False,
+        )
+        mock_encoder.encode.assert_called_once_with(mocker.sentinel.packet)
 
-    @pytest.mark.parametrize(["data", "expected_output"], INCREMENTAL_DESERIALIZE_PARAMS)
-    @pytest.mark.parametrize("expected_remainder", list(map(lambda v: v[0], INCREMENTAL_DESERIALIZE_PARAMS)))
-    def test____incremental_deserialize____chunk_with_remainder(
+    def test____deserialize_from_file____with_config(
         self,
-        consumer: DeserializerConsumer[Any],
-        data: bytes,
-        expected_output: Any,
-        expected_remainder: bytes,
+        decoder_config: CBORDecoderConfig | None,
+        mock_decoder_cls: MagicMock,
+        mock_decoder: MagicMock,
+        mock_file: MagicMock,
+        mocker: MockerFixture,
     ) -> None:
         # Arrange
-        data += expected_remainder
+        serializer: CBORSerializer[Any, Any] = CBORSerializer(decoder_config=decoder_config)
+        mock_decoder.decode.return_value = mocker.sentinel.packet
 
         # Act
-        output, remainder = self.deserialize_for_test(consumer, data)
+        packet = serializer._deserialize_from_file(mock_file)
 
         # Assert
-        assert output == expected_output
-        assert remainder == expected_remainder
-
-    @pytest.mark.parametrize(["data", "expected_output"], INCREMENTAL_DESERIALIZE_PARAMS)
-    def test____incremental_deserialize____handle_partial_document(
-        self,
-        consumer: DeserializerConsumer[Any],
-        data: bytes,
-        expected_output: Any,
-    ) -> None:
-        # Arrange
-        import struct
-
-        bytes_sequence: tuple[bytes, ...] = struct.unpack(f"{len(data)}c", data)
-
-        # Act
-        for chunk in bytes_sequence[:-1]:
-            with pytest.raises(EOFError):
-                _ = self.deserialize_for_test(consumer, chunk)
-        output, remainder = self.deserialize_for_test(consumer, bytes_sequence[-1])
-
-        # Assert
-        assert not remainder
-        assert type(output) is type(expected_output)
-        assert output == expected_output
+        mock_decoder_cls.assert_called_once_with(
+            mock_file,
+            object_hook=mocker.sentinel.object_hook if decoder_config is not None else None,
+            tag_hook=mocker.sentinel.tag_hook if decoder_config is not None else None,
+            str_errors=mocker.sentinel.str_errors if decoder_config is not None else "strict",
+        )
+        mock_decoder.decode.assert_called_once_with()
+        assert packet is mocker.sentinel.packet

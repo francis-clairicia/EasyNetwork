@@ -1,0 +1,239 @@
+# -*- coding: Utf-8 -*
+
+from __future__ import annotations
+
+from pickle import DEFAULT_PROTOCOL, STOP as PICKLE_STOP, Pickler, Unpickler
+from typing import TYPE_CHECKING, Any, final
+
+from easynetwork.serializers.pickle import PicklerConfig, PickleSerializer, UnpicklerConfig
+
+import pytest
+
+from .base import BaseSerializerConfigInstanceCheck
+
+if TYPE_CHECKING:
+    from unittest.mock import MagicMock
+
+    from pytest_mock import MockerFixture
+
+
+@final
+class TestPickleSerializer(BaseSerializerConfigInstanceCheck):
+    @pytest.fixture(scope="class")
+    @staticmethod
+    def serializer_cls() -> type[PickleSerializer[Any, Any]]:
+        return PickleSerializer
+
+    @pytest.fixture(params=["pickler", "unpickler"])
+    @staticmethod
+    def config_param(request: Any) -> tuple[str, str]:
+        name: str = request.param
+        return (name, f"{name.capitalize()}Config")
+
+    @pytest.fixture
+    @staticmethod
+    def mock_pickler(mocker: MockerFixture) -> MagicMock:
+        from io import BytesIO
+
+        return mocker.MagicMock(spec_set=Pickler(BytesIO()))
+
+    @pytest.fixture
+    @staticmethod
+    def mock_pickler_cls(mocker: MockerFixture, mock_pickler: MagicMock) -> MagicMock:
+        return mocker.patch("pickle.Pickler", autospec=True, return_value=mock_pickler)
+
+    @pytest.fixture
+    @staticmethod
+    def mock_unpickler(mocker: MockerFixture) -> MagicMock:
+        from io import BytesIO
+
+        return mocker.MagicMock(spec_set=Unpickler(BytesIO()))
+
+    @pytest.fixture
+    @staticmethod
+    def mock_unpickler_cls(mocker: MockerFixture, mock_unpickler: MagicMock) -> MagicMock:
+        return mocker.patch("pickle.Unpickler", autospec=True, return_value=mock_unpickler)
+
+    @pytest.fixture
+    @staticmethod
+    def mock_file(mocker: MockerFixture) -> MagicMock:
+        from io import BytesIO
+
+        return mocker.MagicMock(spec_set=BytesIO())
+
+    @pytest.fixture(params=[True, False], ids=lambda boolean: f"default_pickler_config=={boolean}")
+    @staticmethod
+    def pickler_config(request: Any, mocker: MockerFixture) -> PicklerConfig | None:
+        use_default_config: bool = request.param
+        if use_default_config:
+            return None
+        return PicklerConfig(
+            protocol=mocker.sentinel.pickle_protocol,
+            fix_imports=mocker.sentinel.fix_imports,
+        )
+
+    @pytest.fixture(params=[True, False], ids=lambda boolean: f"default_unpickler_config=={boolean}")
+    @staticmethod
+    def unpickler_config(request: Any, mocker: MockerFixture) -> UnpicklerConfig | None:
+        use_default_config: bool = request.param
+        if use_default_config:
+            return None
+        return UnpicklerConfig(
+            fix_imports=mocker.sentinel.fix_imports,
+            encoding=mocker.sentinel.encoding,
+            errors=mocker.sentinel.errors,
+        )
+
+    @pytest.fixture(params=[False, True], ids=lambda boolean: f"optimize=={boolean}")
+    @staticmethod
+    def pickler_optimize(request: Any) -> bool:
+        return request.param
+
+    @pytest.fixture
+    @staticmethod
+    def mock_pickletools_optimize(mocker: MockerFixture) -> MagicMock:
+        return mocker.patch("pickletools.optimize", autospec=True)
+
+    def test____serialize_to_file____with_config(
+        self,
+        pickler_optimize: bool,
+        pickler_config: PicklerConfig | None,
+        mock_pickler_cls: MagicMock,
+        mock_pickler: MagicMock,
+        mock_file: MagicMock,
+        mock_pickletools_optimize: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_pickletools_optimize.return_value = mocker.sentinel.optimized_pickle
+        serializer: PickleSerializer[Any, Any] = PickleSerializer(pickler_config=pickler_config, optimize=pickler_optimize)
+
+        # Act
+        serializer._serialize_to_file(mocker.sentinel.packet, mock_file)
+
+        # Assert
+        if not pickler_optimize:
+            mock_pickler_cls.assert_called_once_with(
+                mock_file,
+                protocol=mocker.sentinel.pickle_protocol if pickler_config is not None else DEFAULT_PROTOCOL,
+                fix_imports=mocker.sentinel.fix_imports if pickler_config is not None else False,
+                buffer_callback=None,
+            )
+            mock_pickletools_optimize.assert_not_called()
+            mock_pickler.dump.assert_called_once_with(mocker.sentinel.packet)
+        else:
+            mock_pickler_cls.assert_called_once_with(
+                mocker.ANY,
+                protocol=mocker.sentinel.pickle_protocol if pickler_config is not None else DEFAULT_PROTOCOL,
+                fix_imports=mocker.sentinel.fix_imports if pickler_config is not None else False,
+                buffer_callback=None,
+            )
+            mock_pickler.dump.assert_called_once_with(mocker.sentinel.packet)
+            mock_pickletools_optimize.assert_called_once_with(mocker.ANY)
+            mock_file.write.assert_called_once_with(mocker.sentinel.optimized_pickle)
+
+    @pytest.mark.usefixtures("mock_pickletools_optimize")
+    def test____serialize_to_file____custom_pickler_cls(
+        self,
+        pickler_optimize: bool,
+        mock_pickler_cls: MagicMock,
+        mock_pickler: MagicMock,
+        mock_file: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_other_pickler_cls: MagicMock = mocker.MagicMock(spec_set=Pickler)
+        mock_other_pickler: MagicMock = mock_other_pickler_cls.return_value
+        serializer: PickleSerializer[Any, Any] = PickleSerializer(pickler_cls=mock_other_pickler_cls, optimize=pickler_optimize)
+        del mock_pickler.dump
+
+        # Act
+        serializer._serialize_to_file(mocker.sentinel.packet, mock_file)
+
+        # Assert
+        mock_pickler_cls.assert_not_called()
+        mock_other_pickler_cls.assert_called_once_with(
+            mocker.ANY,
+            protocol=mocker.ANY,
+            fix_imports=mocker.ANY,
+            buffer_callback=mocker.ANY,
+        )
+        mock_other_pickler.dump.assert_called_once_with(mocker.sentinel.packet)
+
+    def test____deserialize_from_file____with_config(
+        self,
+        unpickler_config: UnpicklerConfig | None,
+        mock_unpickler_cls: MagicMock,
+        mock_unpickler: MagicMock,
+        mock_file: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        serializer: PickleSerializer[Any, Any] = PickleSerializer(unpickler_config=unpickler_config)
+        mock_unpickler.load.return_value = mocker.sentinel.packet
+
+        # Act
+        packet = serializer._deserialize_from_file(mock_file)
+
+        # Assert
+        mock_unpickler_cls.assert_called_once_with(
+            mock_file,
+            fix_imports=mocker.sentinel.fix_imports if unpickler_config is not None else False,
+            encoding=mocker.sentinel.encoding if unpickler_config is not None else "utf-8",
+            errors=mocker.sentinel.errors if unpickler_config is not None else "strict",
+            buffers=None,
+        )
+        mock_unpickler.load.assert_called_once_with()
+        assert packet is mocker.sentinel.packet
+
+    def test____deserialize_from_file____custom_unpickler_cls(
+        self,
+        mock_unpickler_cls: MagicMock,
+        mock_unpickler: MagicMock,
+        mock_file: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_other_unpickler_cls: MagicMock = mocker.MagicMock(spec_set=Unpickler)
+        mock_other_unpickler: MagicMock = mock_other_unpickler_cls.return_value
+        serializer: PickleSerializer[Any, Any] = PickleSerializer(unpickler_cls=mock_other_unpickler_cls)
+        mock_other_unpickler.load.return_value = mocker.sentinel.packet
+        del mock_unpickler.load
+
+        # Act
+        packet = serializer._deserialize_from_file(mock_file)
+
+        # Assert
+        mock_unpickler_cls.assert_not_called()
+        mock_other_unpickler_cls.assert_called_once_with(
+            mocker.ANY,
+            fix_imports=mocker.ANY,
+            encoding=mocker.ANY,
+            errors=mocker.ANY,
+            buffers=mocker.ANY,
+        )
+        mock_other_unpickler.load.assert_called_once_with()
+        assert packet is mocker.sentinel.packet
+
+    @pytest.mark.parametrize(
+        ["chunk", "outcome"],
+        [
+            pytest.param(b"", True),
+            pytest.param(b"something", True),
+            pytest.param(b"something_including_%s_in" % PICKLE_STOP, False),
+        ],
+        ids=repr,
+    )
+    def test____wait_for_next_chunk____check_STOP_opcode(
+        self,
+        chunk: bytes,
+        outcome: bool,
+    ) -> None:
+        # Arrange
+        serializer: PickleSerializer[Any, Any] = PickleSerializer()
+
+        # Act
+        result: bool = serializer._wait_for_next_chunk(chunk)
+
+        # Assert
+        assert result is outcome

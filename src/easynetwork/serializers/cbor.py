@@ -43,40 +43,43 @@ class CBORDecoderConfig:
 
 
 class CBORSerializer(FileBasedIncrementalPacketSerializer[_ST_contra, _DT_co]):
-    __slots__ = ("__e", "__d")
+    __slots__ = ("__encoder_config", "__decoder_config")
 
-    def __init__(self, *, encoder: CBOREncoderConfig | None = None, decoder: CBORDecoderConfig | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        encoder_config: CBOREncoderConfig | None = None,
+        decoder_config: CBORDecoderConfig | None = None,
+    ) -> None:
         try:
             import cbor2
-        except ModuleNotFoundError as exc:
+        except ModuleNotFoundError as exc:  # pragma: no cover
             raise ModuleNotFoundError("cbor dependencies are missing. Consider adding 'cbor' extra") from exc
 
-        super().__init__(
-            unrelated_deserialize_error=cbor2.CBORDecodeError,
-        )
-        self.__e: dict[str, Any]
-        self.__d: dict[str, Any]
+        super().__init__(unrelated_deserialize_error=cbor2.CBORDecodeError)
+        self.__encoder_config: dict[str, Any]
+        self.__decoder_config: dict[str, Any]
 
-        if encoder is None:
-            encoder = CBOREncoderConfig()
-        elif not isinstance(encoder, CBOREncoderConfig):
-            raise TypeError(f"Invalid encoder: expected {CBOREncoderConfig.__name__}, got {type(encoder).__name__}")
-        self.__e = dataclass_asdict(encoder)
+        if encoder_config is None:
+            encoder_config = CBOREncoderConfig()
+        elif not isinstance(encoder_config, CBOREncoderConfig):
+            raise TypeError(f"Invalid encoder config: expected {CBOREncoderConfig.__name__}, got {type(encoder_config).__name__}")
+        self.__encoder_config = dataclass_asdict(encoder_config)
 
-        if decoder is None:
-            decoder = CBORDecoderConfig()
-        elif not isinstance(decoder, CBORDecoderConfig):
-            raise TypeError(f"Invalid decoder: expected {CBORDecoderConfig.__name__}, got {type(decoder).__name__}")
-        self.__d = dataclass_asdict(decoder)
+        if decoder_config is None:
+            decoder_config = CBORDecoderConfig()
+        elif not isinstance(decoder_config, CBORDecoderConfig):
+            raise TypeError(f"Invalid decoder config: expected {CBORDecoderConfig.__name__}, got {type(decoder_config).__name__}")
+        self.__decoder_config = dataclass_asdict(decoder_config)
 
     @final
     def _serialize_to_file(self, packet: _ST_contra, file: IO[bytes]) -> None:
         from cbor2 import CBOREncoder
 
-        CBOREncoder(file, **self.__e).encode(packet)
+        CBOREncoder(file, **self.__encoder_config).encode(packet)
 
     @final
     def _deserialize_from_file(self, file: IO[bytes]) -> _DT_co:
         from cbor2 import CBORDecoder
 
-        return CBORDecoder(file, **self.__d).decode()
+        return CBORDecoder(file, **self.__decoder_config).decode()
