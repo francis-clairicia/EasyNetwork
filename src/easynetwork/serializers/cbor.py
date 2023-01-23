@@ -20,8 +20,8 @@ from .stream.abc import FileBasedIncrementalPacketSerializer
 if TYPE_CHECKING:
     import datetime
 
-_ST_contra = TypeVar("_ST_contra", contravariant=True, bound=list[Any] | dict[str, Any])
-_DT_co = TypeVar("_DT_co", covariant=True, bound=list[Any] | dict[str, Any])
+_ST_contra = TypeVar("_ST_contra", contravariant=True)
+_DT_co = TypeVar("_DT_co", covariant=True)
 
 
 @dataclass(kw_only=True, frozen=True)

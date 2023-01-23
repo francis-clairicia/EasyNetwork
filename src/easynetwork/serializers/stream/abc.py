@@ -88,26 +88,28 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_ST_cont
 
     @final
     def incremental_deserialize(self) -> Generator[None, bytes, tuple[_DT_co, bytes]]:
-        buffer: bytes = yield
+        data = bytearray()
+        chunk: bytes = yield
         separator: bytes = self.__separator
         while True:
-            data, found_separator, buffer = buffer.partition(separator)
+            chunk, found_separator, remaining_data = chunk.partition(separator)
+            data.extend(chunk)
             if not found_separator:
-                buffer = data + (yield)
+                chunk = yield
                 continue
             break
         if self.__keepends:
-            data += separator
+            data.extend(separator)
         try:
-            packet = self.deserialize(data)
+            packet = self.deserialize(bytes(data))
         except DeserializeError as exc:
             raise IncrementalDeserializeError(
                 f"Error when deserializing data: {exc}",
-                remaining_data=buffer,
+                remaining_data=remaining_data,
             ) from exc
         finally:
             del data
-        return (packet, buffer)
+        return packet, remaining_data
 
     @property
     @final
@@ -159,7 +161,7 @@ class FixedSizePacketSerializer(AbstractIncrementalPacketSerializer[_ST_contra, 
                 f"Error when deserializing data: {exc}",
                 remaining_data=buffer,
             ) from exc
-        return (packet, buffer)
+        return packet, buffer
 
     @property
     @final
@@ -197,8 +199,6 @@ class FileBasedIncrementalPacketSerializer(AbstractIncrementalPacketSerializer[_
 
     @final
     def deserialize(self, data: bytes) -> _DT_co:
-        if not data:
-            raise DeserializeError("Empty bytes")
         with BytesIO(data) as buffer:
             try:
                 packet: _DT_co = self._deserialize_from_file(buffer)
@@ -237,4 +237,4 @@ class FileBasedIncrementalPacketSerializer(AbstractIncrementalPacketSerializer[_
                         remaining_data=remaining_data,
                     ) from exc
                 else:
-                    return (packet, buffer.read())
+                    return packet, buffer.read()

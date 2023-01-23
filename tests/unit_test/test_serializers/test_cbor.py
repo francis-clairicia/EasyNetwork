@@ -92,6 +92,11 @@ class TestCBORSerializer(BaseSerializerConfigInstanceCheck):
             str_errors=mocker.sentinel.str_errors,
         )
 
+    def test____base_class____implements_default_methods(self) -> None:
+        from easynetwork.serializers.stream.abc import FileBasedIncrementalPacketSerializer
+
+        assert issubclass(CBORSerializer, FileBasedIncrementalPacketSerializer)
+
     def test____serialize_to_file____with_config(
         self,
         encoder_config: CBOREncoderConfig | None,

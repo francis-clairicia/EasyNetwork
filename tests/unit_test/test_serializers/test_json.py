@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Generator
 
 from easynetwork.serializers.exceptions import DeserializeError
-from easynetwork.serializers.json import JSONDecoderConfig, JSONEncoderConfig, JSONSerializer
+from easynetwork.serializers.json import JSONDecoderConfig, JSONEncoderConfig, JSONSerializer, _JSONParser
+from easynetwork.serializers.stream.exceptions import IncrementalDeserializeError
 
 import pytest
 
@@ -84,6 +85,11 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
             strict=mocker.sentinel.strict,
         )
 
+    @pytest.fixture
+    @staticmethod
+    def mock_json_parser(mocker: MockerFixture) -> MagicMock:
+        return mocker.patch.object(_JSONParser, "raw_parse", autospec=True)
+
     def test____dunder_init____with_encoder_config(
         self,
         encoder_config: JSONEncoderConfig | None,
@@ -137,7 +143,7 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
             encoding=mocker.sentinel.encoding,
             str_errors=mocker.sentinel.str_errors,
         )
-        mock_string = mock_encoder.encode.return_value = mocker.MagicMock(spec=str())
+        mock_string = mock_encoder.encode.return_value = mocker.MagicMock()
         mock_string.encode.return_value = mocker.sentinel.data
 
         # Act
@@ -158,9 +164,9 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
             encoding=mocker.sentinel.encoding,
             str_errors=mocker.sentinel.str_errors,
         )
-        chunk_a = mocker.MagicMock(spec=str(), **{"encode.return_value": mocker.sentinel.chunk_a})
-        chunk_b = mocker.MagicMock(spec=str(), **{"encode.return_value": mocker.sentinel.chunk_b})
-        chunk_c = mocker.MagicMock(spec=str(), **{"encode.return_value": mocker.sentinel.chunk_c})
+        chunk_a = mocker.MagicMock(**{"encode.return_value": mocker.sentinel.chunk_a})
+        chunk_b = mocker.MagicMock(**{"encode.return_value": mocker.sentinel.chunk_b})
+        chunk_c = mocker.MagicMock(**{"encode.return_value": mocker.sentinel.chunk_c})
         mock_encoder.iterencode.return_value = iter([chunk_a, chunk_b, chunk_c])
 
         # Act & Assert
@@ -195,7 +201,7 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
             encoding=mocker.sentinel.encoding,
             str_errors=mocker.sentinel.str_errors,
         )
-        mock_bytes = mocker.MagicMock(spec=bytes())
+        mock_bytes = mocker.MagicMock()
         mock_bytes.decode.return_value = mocker.sentinel.document
         mock_decoder.decode.return_value = mocker.sentinel.packet
 
@@ -214,7 +220,7 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
     ) -> None:
         # Arrange
         serializer: JSONSerializer[Any, Any] = JSONSerializer()
-        mock_bytes = mocker.MagicMock(spec=bytes())
+        mock_bytes = mocker.MagicMock()
         mock_bytes.decode.side_effect = UnicodeDecodeError("some encoding", b"invalid data", 0, 2, "Bad encoding ?")
 
         # Act
@@ -236,7 +242,7 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         from json import JSONDecodeError
 
         serializer: JSONSerializer[Any, Any] = JSONSerializer()
-        mock_bytes = mocker.MagicMock(spec=bytes())
+        mock_bytes = mocker.MagicMock()
         mock_decoder.decode.side_effect = JSONDecodeError("Invalid payload", "document", 0)
 
         # Act
@@ -248,3 +254,110 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         mock_bytes.decode.assert_called_once()
         mock_decoder.decode.assert_called_once()
         assert exception.__cause__ is mock_decoder.decode.side_effect
+
+    def test____incremental_deserialize____parse_and_decode_data(
+        self,
+        mock_decoder: MagicMock,
+        mock_json_parser: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        def raw_parse_side_effect() -> Generator[None, bytes, tuple[bytes, bytes]]:
+            data = yield
+            assert data is mocker.sentinel.data
+            return mock_bytes, b"Hello World !"
+
+        serializer: JSONSerializer[Any, Any] = JSONSerializer(
+            encoding=mocker.sentinel.encoding,
+            str_errors=mocker.sentinel.str_errors,
+        )
+        mock_bytes = mocker.MagicMock()
+        mock_string_document = mock_bytes.decode.return_value = mocker.MagicMock()
+        mock_sliced_string = mock_string_document.__getitem__.return_value = mocker.MagicMock()
+        mock_sliced_string.encode.return_value = b"Trailing data + "
+        mock_decoder.raw_decode.return_value = mocker.sentinel.packet, 123456789
+        mock_json_parser.side_effect = raw_parse_side_effect
+
+        # Act
+        consumer = serializer.incremental_deserialize()
+        next(consumer)
+        with pytest.raises(StopIteration) as exc_info:
+            consumer.send(mocker.sentinel.data)
+        packet, remaining_data = exc_info.value.value
+
+        # Assert
+        mock_json_parser.assert_called_once_with()
+        mock_bytes.decode.assert_called_once_with(mocker.sentinel.encoding, mocker.sentinel.str_errors)
+        mock_decoder.raw_decode.assert_called_once_with(mock_string_document)
+        mock_string_document.__getitem__.assert_called_once_with(slice(123456789, None, None))
+        mock_sliced_string.encode.assert_called_once_with(mocker.sentinel.encoding, mocker.sentinel.str_errors)
+        assert packet is mocker.sentinel.packet
+        assert remaining_data == b"Trailing data + Hello World !"
+
+    def test____incremental_deserialize____translate_unicode_decode_errors(
+        self,
+        mock_decoder: MagicMock,
+        mock_json_parser: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        def raw_parse_side_effect() -> Generator[None, bytes, tuple[bytes, bytes]]:
+            data = yield
+            assert data is mocker.sentinel.data
+            return mock_bytes, mocker.sentinel.remaining_data
+
+        serializer: JSONSerializer[Any, Any] = JSONSerializer(
+            encoding=mocker.sentinel.encoding,
+            str_errors=mocker.sentinel.str_errors,
+        )
+        mock_bytes = mocker.MagicMock()
+        mock_bytes.decode.side_effect = UnicodeDecodeError("some encoding", b"invalid data", 0, 2, "Bad encoding ?")
+        mock_json_parser.side_effect = raw_parse_side_effect
+
+        # Act
+        consumer = serializer.incremental_deserialize()
+        next(consumer)
+        with pytest.raises(IncrementalDeserializeError) as exc_info:
+            _ = consumer.send(mocker.sentinel.data)
+        exception = exc_info.value
+
+        # Assert
+        mock_bytes.decode.assert_called_once()
+        mock_decoder.raw_decode.assert_not_called()
+        assert exception.remaining_data is mocker.sentinel.remaining_data
+        assert exception.__cause__ is mock_bytes.decode.side_effect
+
+    def test____incremental_deserialize____translate_json_decode_errors(
+        self,
+        mock_decoder: MagicMock,
+        mock_json_parser: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        from json import JSONDecodeError
+
+        def raw_parse_side_effect() -> Generator[None, bytes, tuple[bytes, bytes]]:
+            data = yield
+            assert data is mocker.sentinel.data
+            return mock_bytes, mocker.sentinel.remaining_data
+
+        serializer: JSONSerializer[Any, Any] = JSONSerializer(
+            encoding=mocker.sentinel.encoding,
+            str_errors=mocker.sentinel.str_errors,
+        )
+        mock_bytes = mocker.MagicMock()
+        mock_decoder.raw_decode.side_effect = JSONDecodeError("Invalid payload", "document", 0)
+        mock_json_parser.side_effect = raw_parse_side_effect
+
+        # Act
+        consumer = serializer.incremental_deserialize()
+        next(consumer)
+        with pytest.raises(IncrementalDeserializeError) as exc_info:
+            _ = consumer.send(mocker.sentinel.data)
+        exception = exc_info.value
+
+        # Assert
+        mock_bytes.decode.assert_called_once()
+        mock_decoder.raw_decode.assert_called_once()
+        assert exception.remaining_data is mocker.sentinel.remaining_data
+        assert exception.__cause__ is mock_decoder.raw_decode.side_effect

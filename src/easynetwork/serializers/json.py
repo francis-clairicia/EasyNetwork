@@ -21,8 +21,8 @@ from .exceptions import DeserializeError
 from .stream.abc import AbstractIncrementalPacketSerializer
 from .stream.exceptions import IncrementalDeserializeError
 
-_ST_contra = TypeVar("_ST_contra", contravariant=True, bound=list[Any] | dict[str, Any])
-_DT_co = TypeVar("_DT_co", covariant=True, bound=list[Any] | dict[str, Any])
+_ST_contra = TypeVar("_ST_contra", contravariant=True)
+_DT_co = TypeVar("_DT_co", covariant=True)
 
 
 _JSON_VALUE_BYTES: frozenset[int] = frozenset(bytes(string.digits + string.ascii_letters + string.punctuation, "ascii"))
@@ -60,9 +60,8 @@ class _JSONParser:
         enclosure_counter: Counter[bytes] = Counter()
         partial_document: bytes = b""
         complete_document: bytes = b""
+        first_enclosure: bytes = b""
         while not complete_document:
-            if not partial_document:
-                enclosure_counter.clear()
             while not (chunk := (yield)):  # Skip empty bytes
                 continue
             char: bytes
@@ -85,7 +84,9 @@ class _JSONParser:
                         assert not partial_document
                         return (yield from _JSONParser._raw_parse_plain_value(char + chunk[nb_chars:]))
                 partial_document += char
-                if enclosure_counter[next(iter(enclosure_counter))] <= 0:  # 1st found is closed
+                if not first_enclosure:
+                    first_enclosure = next(iter(enclosure_counter))
+                if enclosure_counter[first_enclosure] <= 0:  # 1st found is closed
                     complete_document = partial_document
                     partial_document = chunk[nb_chars:]
                     break

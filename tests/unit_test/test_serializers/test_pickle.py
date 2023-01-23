@@ -94,6 +94,11 @@ class TestPickleSerializer(BaseSerializerConfigInstanceCheck):
     def mock_pickletools_optimize(mocker: MockerFixture) -> MagicMock:
         return mocker.patch("pickletools.optimize", autospec=True)
 
+    def test____base_class____implements_default_methods(self) -> None:
+        from easynetwork.serializers.stream.abc import FileBasedIncrementalPacketSerializer
+
+        assert issubclass(PickleSerializer, FileBasedIncrementalPacketSerializer)
+
     def test____serialize_to_file____with_config(
         self,
         pickler_optimize: bool,
