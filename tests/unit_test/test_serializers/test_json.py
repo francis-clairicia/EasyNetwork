@@ -10,6 +10,7 @@ from easynetwork.serializers.stream.exceptions import IncrementalDeserializeErro
 
 import pytest
 
+from ..._utils import send_return
 from .base import BaseSerializerConfigInstanceCheck
 
 if TYPE_CHECKING:
@@ -281,9 +282,7 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         # Act
         consumer = serializer.incremental_deserialize()
         next(consumer)
-        with pytest.raises(StopIteration) as exc_info:
-            consumer.send(mocker.sentinel.data)
-        packet, remaining_data = exc_info.value.value
+        packet, remaining_data = send_return(consumer, mocker.sentinel.data)
 
         # Assert
         mock_json_parser.assert_called_once_with()

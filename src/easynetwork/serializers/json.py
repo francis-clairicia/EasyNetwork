@@ -58,10 +58,9 @@ class _JSONParser:
             return ((len(partial_document) - len(partial_document.rstrip(b"\\"))) % 2) == 1
 
         enclosure_counter: Counter[bytes] = Counter()
-        partial_document: bytes = b""
-        complete_document: bytes = b""
+        partial_document: bytearray = bytearray()
         first_enclosure: bytes = b""
-        while not complete_document:
+        while True:
             while not (chunk := (yield)):  # Skip empty bytes
                 continue
             char: bytes
@@ -70,7 +69,7 @@ class _JSONParser:
                     case b'"' if not escaped(partial_document):
                         enclosure_counter[b'"'] = 0 if enclosure_counter[b'"'] == 1 else 1
                     case _ if enclosure_counter[b'"'] > 0:
-                        partial_document += char
+                        partial_document.extend(char)
                         continue
                     case b"{" | b"[":
                         enclosure_counter[char] += 1
@@ -83,14 +82,12 @@ class _JSONParser:
                     case _ if len(enclosure_counter) == 0:  # No enclosure, only value
                         assert not partial_document
                         return (yield from _JSONParser._raw_parse_plain_value(char + chunk[nb_chars:]))
-                partial_document += char
+                assert len(enclosure_counter) > 0
+                partial_document.extend(char)
                 if not first_enclosure:
                     first_enclosure = next(iter(enclosure_counter))
                 if enclosure_counter[first_enclosure] <= 0:  # 1st found is closed
-                    complete_document = partial_document
-                    partial_document = chunk[nb_chars:]
-                    break
-        return complete_document, partial_document
+                    return bytes(partial_document), chunk[nb_chars:]
 
     @staticmethod
     def _raw_parse_plain_value(chunk: bytes) -> Generator[None, bytes, tuple[bytes, bytes]]:

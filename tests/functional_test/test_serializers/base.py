@@ -10,6 +10,8 @@ from easynetwork.serializers.stream.abc import AbstractIncrementalPacketSerializ
 
 import pytest
 
+from ..._utils import send_return
+
 
 class BaseTestSerializer(metaclass=ABCMeta):
     @classmethod
@@ -89,10 +91,7 @@ class BaseTestIncrementalSerializer(BaseTestSerializer):
         next(consumer)
 
         # Act
-        with pytest.raises(StopIteration) as exc_info:
-            consumer.send(data)
-
-        packet, remaining_data = exc_info.value.value
+        packet, remaining_data = send_return(consumer, data)
 
         # Assert
         assert isinstance(remaining_data, bytes)
@@ -113,10 +112,7 @@ class BaseTestIncrementalSerializer(BaseTestSerializer):
         next(consumer)
 
         # Act
-        with pytest.raises(StopIteration) as exc_info:
-            consumer.send(data + expected_remaining_data)
-
-        packet, remaining_data = exc_info.value.value
+        packet, remaining_data = send_return(consumer, data + expected_remaining_data)
 
         # Assert
         assert isinstance(remaining_data, bytes)
@@ -125,9 +121,11 @@ class BaseTestIncrementalSerializer(BaseTestSerializer):
         assert packet == expected_packet
 
     @final
+    @pytest.mark.parametrize("empty_bytes_before", [False, True], ids=lambda boolean: f"empty_bytes_before=={boolean}")
     def test____incremental_deserialize____give_chunk_byte_per_byte(
         self,
         serializer: AbstractIncrementalPacketSerializer[Any, Any],
+        empty_bytes_before: bool,
         data: bytes,
         expected_packet: Any,
     ) -> None:
@@ -147,6 +145,8 @@ class BaseTestIncrementalSerializer(BaseTestSerializer):
             # The generator can stop at any moment (no need to go to the last byte)
             # However, the remaining data returned should be empty
             for chunk in chunks_list:
+                if empty_bytes_before:
+                    consumer.send(b"")
                 consumer.send(chunk)
 
         packet, remaining_data = exc_info.value.value

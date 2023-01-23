@@ -43,7 +43,7 @@ def _tcp_client_loop(socket: Socket, shutdown_requested: Event) -> None:
     with socket, DefaultSelector() as selector:
         selector.register(socket, EVENT_READ)
         while not shutdown_requested.is_set():
-            if selector.select(0.1):
+            if selector.select(0.01):
                 if not (data := socket.recv(8192)):
                     break
                 socket.sendall(data)
@@ -56,7 +56,7 @@ def _launch_tcp_server(socket: Socket, shutdown_requested: Event) -> None:
         with DefaultSelector() as selector:
             selector.register(socket, EVENT_READ)
             while not shutdown_requested.is_set():
-                if selector.select(0.1):
+                if selector.select(0.01):
                     client_threads.append(_tcp_client_loop(socket.accept()[0], shutdown_requested))
                 client_threads = [t for t in client_threads if t.is_alive()]
     except BaseException:
@@ -86,7 +86,7 @@ def _launch_udp_server(socket: Socket, shutdown_requested: Event) -> None:
     with DefaultSelector() as selector:
         selector.register(socket, EVENT_READ)
         while not shutdown_requested.is_set():
-            if selector.select(0.1):
+            if selector.select(0.01):
                 data, addr = socket.recvfrom(64 * 1024)
                 socket.sendto(data, addr)
 
