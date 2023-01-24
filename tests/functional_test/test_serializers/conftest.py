@@ -67,6 +67,7 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
             pass
         else:
             parameters = _make_pytest_params_from_sample(metafunc.cls.get_oneshot_serialize_sample())
+            assert len(parameters) > 0
             metafunc.parametrize(argnames, parameters)
     if issubclass(metafunc.cls, BaseTestIncrementalSerializer):
         try:
@@ -75,9 +76,9 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
             pass
         else:
             parameters = _make_pytest_params_from_sample(metafunc.cls.get_incremental_serialize_sample())
+            assert len(parameters) > 0
             metafunc.parametrize(argnames, parameters)
             if "expected_remaining_data" in metafunc.fixturenames:
-                metafunc.parametrize(
-                    "expected_remaining_data",
-                    _make_pytest_params_from_remaining_data(metafunc.cls.get_possible_remaining_data()),
-                )
+                parameters = _make_pytest_params_from_remaining_data(metafunc.cls.get_possible_remaining_data())
+                assert len(parameters) > 0
+                metafunc.parametrize("expected_remaining_data", parameters)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import deque
 from contextlib import ExitStack
 from functools import partial, wraps
 from selectors import EVENT_READ, DefaultSelector
@@ -42,18 +43,30 @@ def thread_factory(
 def _launch_tcp_server(server_socket: Socket, shutdown_requested: Event) -> None:
     with ExitStack() as client_stack, DefaultSelector() as selector:
         selector.register(server_socket, EVENT_READ)
-        while not shutdown_requested.is_set():
-            for key, _ in selector.select(0.01):
-                sock: Socket = key.fileobj  # type: ignore[assignment]
-                if sock is server_socket:
-                    sock = client_stack.enter_context(server_socket.accept()[0])
-                    selector.register(sock, EVENT_READ)
-                    continue
-                if not (data := sock.recv(8192)):
-                    selector.unregister(sock)
-                    sock.close()
-                    continue
-                sock.sendall(data)
+        server_socket.settimeout(0)
+        clients: deque[Socket] = deque()
+        try:
+            while not shutdown_requested.is_set():
+                for key, _ in selector.select(0.01):
+                    sock: Socket = key.fileobj  # type: ignore[assignment]
+                    if sock is server_socket:
+                        sock = server_socket.accept()[0]
+                        clients.append(sock)
+                        selector.register(sock, EVENT_READ)
+                        sock.settimeout(0)
+                        continue
+                    try:
+                        if not (data := sock.recv(8192)):
+                            raise EOFError
+                        sock.sendall(data)
+                    except (BlockingIOError, InterruptedError):
+                        continue
+                    except (EOFError, OSError):
+                        selector.unregister(sock)
+                        sock.close()
+                        clients.remove(sock)
+        finally:
+            deque(client_stack.enter_context(s) for s in clients)
 
 
 @pytest.fixture(scope="package")
@@ -73,10 +86,14 @@ def tcp_server() -> Iterator[tuple[str, int]]:
 def _launch_udp_server(socket: Socket, shutdown_requested: Event) -> None:
     with DefaultSelector() as selector:
         selector.register(socket, EVENT_READ)
+        socket.settimeout(0)
         while not shutdown_requested.is_set():
             if selector.select(0.01):
-                data, addr = socket.recvfrom(64 * 1024)
-                socket.sendto(data, addr)
+                try:
+                    data, addr = socket.recvfrom(64 * 1024)
+                    socket.sendto(data, addr)
+                except (BlockingIOError, InterruptedError):
+                    continue
 
 
 @pytest.fixture(scope="package")
