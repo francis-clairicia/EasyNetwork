@@ -26,6 +26,7 @@ def _make_pytest_params_from_sample(sample_list: list[tuple[Any, bytes] | tuple[
             case _:
                 raise AssertionError("Invalid tuple")
 
+    assert len(params) > 0
     return params
 
 
@@ -43,6 +44,7 @@ def _make_pytest_params_from_remaining_data(sample_list: list[bytes | tuple[byte
             case _:
                 raise AssertionError("Invalid object")
 
+    assert len(params) > 0
     return params
 
 
@@ -66,19 +68,16 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
         except KeyError:
             pass
         else:
-            parameters = _make_pytest_params_from_sample(metafunc.cls.get_oneshot_serialize_sample())
-            assert len(parameters) > 0
-            metafunc.parametrize(argnames, parameters)
+            metafunc.parametrize(argnames, _make_pytest_params_from_sample(metafunc.cls.get_oneshot_serialize_sample()))
     if issubclass(metafunc.cls, BaseTestIncrementalSerializer):
         try:
             argnames = BASE_INCREMENTAL_SERIALIZER_TEST_PARAMS[metafunc.definition.originalname]
         except KeyError:
             pass
         else:
-            parameters = _make_pytest_params_from_sample(metafunc.cls.get_incremental_serialize_sample())
-            assert len(parameters) > 0
-            metafunc.parametrize(argnames, parameters)
+            metafunc.parametrize(argnames, _make_pytest_params_from_sample(metafunc.cls.get_incremental_serialize_sample()))
             if "expected_remaining_data" in metafunc.fixturenames:
-                parameters = _make_pytest_params_from_remaining_data(metafunc.cls.get_possible_remaining_data())
-                assert len(parameters) > 0
-                metafunc.parametrize("expected_remaining_data", parameters)
+                metafunc.parametrize(
+                    "expected_remaining_data",
+                    _make_pytest_params_from_remaining_data(metafunc.cls.get_possible_remaining_data()),
+                )
