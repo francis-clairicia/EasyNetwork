@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import time
-from functools import wraps
+from contextlib import ExitStack
+from functools import partial, wraps
 from selectors import EVENT_READ, DefaultSelector
 from socket import AF_INET, SOCK_DGRAM, SOCK_STREAM, socket as Socket
 from threading import Event, Thread
@@ -38,44 +38,32 @@ def thread_factory(
     return decorator
 
 
-@thread_factory()
-def _tcp_client_loop(socket: Socket, shutdown_requested: Event) -> None:
-    with socket, DefaultSelector() as selector:
-        selector.register(socket, EVENT_READ)
-        while not shutdown_requested.is_set():
-            if selector.select(0.01):
-                if not (data := socket.recv(8192)):
-                    break
-                socket.sendall(data)
-
-
 @thread_factory(daemon=True)
-def _launch_tcp_server(socket: Socket, shutdown_requested: Event) -> None:
-    client_threads: list[Thread] = []
-    try:
-        with DefaultSelector() as selector:
-            selector.register(socket, EVENT_READ)
-            while not shutdown_requested.is_set():
-                if selector.select(0.01):
-                    client_threads.append(_tcp_client_loop(socket.accept()[0], shutdown_requested))
-                client_threads = [t for t in client_threads if t.is_alive()]
-    except BaseException:
-        shutdown_requested.set()
-        raise
-    finally:
-        for t in client_threads:
-            t.join()
+def _launch_tcp_server(server_socket: Socket, shutdown_requested: Event) -> None:
+    with ExitStack() as client_stack, DefaultSelector() as selector:
+        selector.register(server_socket, EVENT_READ)
+        while not shutdown_requested.is_set():
+            for key, _ in selector.select(0.01):
+                sock: Socket = key.fileobj  # type: ignore[assignment]
+                if sock is server_socket:
+                    sock = client_stack.enter_context(server_socket.accept()[0])
+                    selector.register(sock, EVENT_READ)
+                    continue
+                if not (data := sock.recv(8192)):
+                    selector.unregister(sock)
+                    sock.close()
+                    continue
+                sock.sendall(data)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="package")
 def tcp_server() -> Iterator[tuple[str, int]]:
     shutdown_requested = Event()
 
     with Socket(AF_INET, SOCK_STREAM) as s:
-        s.bind(("localhost", 0))
+        s.bind(("", 0))
         s.listen()
         server_thread = _launch_tcp_server(s, shutdown_requested)
-        time.sleep(0.1)
         yield s.getsockname()
         shutdown_requested.set()
         server_thread.join()
@@ -91,17 +79,37 @@ def _launch_udp_server(socket: Socket, shutdown_requested: Event) -> None:
                 socket.sendto(data, addr)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="package")
 def udp_server() -> Iterator[tuple[str, int]]:
     shutdown_requested = Event()
 
     with Socket(AF_INET, SOCK_DGRAM) as s:
-        s.bind(("localhost", 0))
+        s.bind(("", 0))
         server_thread = _launch_udp_server(s, shutdown_requested)
-        time.sleep(0.1)
         yield s.getsockname()
         shutdown_requested.set()
         server_thread.join()
+
+
+@pytest.fixture
+def socket_factory() -> Iterator[Callable[[int], Socket]]:
+    socket_stack = ExitStack()
+
+    def socket_factory(type: int) -> Socket:
+        return socket_stack.enter_context(Socket(AF_INET, type))
+
+    with socket_stack:
+        yield socket_factory
+
+
+@pytest.fixture
+def tcp_socket_factory(socket_factory: Callable[[int], Socket]) -> Callable[[], Socket]:
+    return partial(socket_factory, SOCK_STREAM)
+
+
+@pytest.fixture
+def udp_socket_factory(socket_factory: Callable[[int], Socket]) -> Callable[[], Socket]:
+    return partial(socket_factory, SOCK_DGRAM)
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:

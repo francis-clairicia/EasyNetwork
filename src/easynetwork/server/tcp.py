@@ -492,10 +492,10 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 logger.debug("-> Failed to send data, bail out.")
             except BlockingIOError as exc:
                 try:
-                    character_written: int = exc.characters_written
-                except AttributeError:
-                    character_written = 0
-                key_data.unsent_data = data_to_send[character_written:]
+                    characters_written: int = max(exc.characters_written, 0)
+                except Exception:
+                    characters_written = 0
+                key_data.unsent_data = data_to_send[characters_written:]
                 self.__server_selector.add_client_writer(socket, key_data)
                 logger.debug("-> Failed to send data, bail out.")
             except OSError:

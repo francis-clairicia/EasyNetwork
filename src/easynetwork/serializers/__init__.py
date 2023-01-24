@@ -21,7 +21,7 @@ __all__ = [
     "JSONDecoderConfig",
     "JSONEncoderConfig",
     "JSONSerializer",
-    "NamedTupleSerializer",
+    "NamedTupleStructSerializer",
     "PickleSerializer",
     "ZlibCompressorSerializer",
 ]

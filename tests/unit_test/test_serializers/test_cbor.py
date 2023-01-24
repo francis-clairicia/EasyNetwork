@@ -92,10 +92,13 @@ class TestCBORSerializer(BaseSerializerConfigInstanceCheck):
             str_errors=mocker.sentinel.str_errors,
         )
 
-    def test____base_class____implements_default_methods(self) -> None:
+    @pytest.mark.parametrize("method", ["serialize", "incremental_serialize", "deserialize", "incremental_deserialize"])
+    def test____base_class____implements_default_methods(self, method: str) -> None:
+        # Arrange
         from easynetwork.serializers.stream.abc import FileBasedIncrementalPacketSerializer
 
-        assert issubclass(CBORSerializer, FileBasedIncrementalPacketSerializer)
+        # Act & Assert
+        assert getattr(CBORSerializer, method) is getattr(FileBasedIncrementalPacketSerializer, method)
 
     def test____serialize_to_file____with_config(
         self,

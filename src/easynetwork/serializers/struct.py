@@ -6,24 +6,30 @@
 
 from __future__ import annotations
 
-__all__ = ["AbstractStructSerializer", "NamedTupleSerializer"]
+__all__ = ["AbstractStructSerializer", "NamedTupleStructSerializer"]
 
 import struct as _struct
 from abc import abstractmethod
-from typing import Any, Iterable, Mapping, NamedTuple, TypeVar, final
+from typing import TYPE_CHECKING, Any, Iterable, NamedTuple, TypeVar, final
 
 from .exceptions import DeserializeError
 from .stream.abc import FixedSizePacketSerializer
 
+if TYPE_CHECKING:
+    from _typeshed import SupportsKeysAndGetItem
+
 _ST_contra = TypeVar("_ST_contra", contravariant=True)
 _DT_co = TypeVar("_DT_co", covariant=True)
+
+
+_ENDIANNESS_CHARACTERS: frozenset[str] = frozenset({"@", "=", "<", ">", "!"})
 
 
 class AbstractStructSerializer(FixedSizePacketSerializer[_ST_contra, _DT_co]):
     __slots__ = ("__s",)
 
     def __init__(self, format: str) -> None:
-        if format[0] not in {"@", "=", "<", ">", "!"}:
+        if format and format[0] not in _ENDIANNESS_CHARACTERS:
             format = f"!{format}"  # network byte order
         struct = _struct.Struct(format)
         super().__init__(struct.size)
@@ -35,8 +41,7 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_ST_contra, _DT_co]):
 
     @final
     def serialize(self, packet: _ST_contra) -> bytes:
-        struct = self.__s
-        return struct.pack(*self.iter_values(packet))
+        return self.__s.pack(*self.iter_values(packet))
 
     @abstractmethod
     def from_tuple(self, t: tuple[Any, ...]) -> _DT_co:
@@ -44,9 +49,8 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_ST_contra, _DT_co]):
 
     @final
     def deserialize(self, data: bytes) -> _DT_co:
-        struct = self.__s
         try:
-            packet_tuple: tuple[Any, ...] = struct.unpack(data)
+            packet_tuple: tuple[Any, ...] = self.__s.unpack(data)
         except _struct.error as exc:
             raise DeserializeError(f"Invalid value: {exc}") from exc
         try:
@@ -63,34 +67,21 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_ST_contra, _DT_co]):
 _NT = TypeVar("_NT", bound=NamedTuple)
 
 
-class NamedTupleSerializer(AbstractStructSerializer[_NT, _NT]):
+class NamedTupleStructSerializer(AbstractStructSerializer[_NT, _NT]):
     __slots__ = ("__namedtuple_cls",)
 
-    def __init__(self, namedtuple_cls: type[_NT], fields_format: Mapping[str, str], format_endianness: str = "") -> None:
-        if not NamedTupleSerializer.is_namedtuple_class(namedtuple_cls):
-            raise TypeError("Expected namedtuple class")
+    def __init__(
+        self,
+        namedtuple_cls: type[_NT],
+        field_formats: SupportsKeysAndGetItem[str, str],
+        format_endianness: str = "",
+    ) -> None:
+        for field in field_formats.keys():
+            if any(c in _ENDIANNESS_CHARACTERS for c in field_formats[field]):
+                raise ValueError(f"{field!r}: Invalid field format")
 
-        if not format_endianness:
-            format_endianness = "!"
-
-        super().__init__(f"{format_endianness}{''.join(map(fields_format.__getitem__, namedtuple_cls._fields))}")
+        super().__init__(f"{format_endianness}{''.join(map(field_formats.__getitem__, namedtuple_cls._fields))}")
         self.__namedtuple_cls: type[_NT] = namedtuple_cls
-
-    @staticmethod
-    def is_namedtuple_class(o: type[Any]) -> bool:
-        return (
-            issubclass(o, tuple)
-            and o is not tuple
-            and all(
-                callable(getattr(o, callable_attr, None))
-                for callable_attr in (
-                    "_make",
-                    "_asdict",
-                    "_replace",
-                )
-            )
-            and isinstance(getattr(o, "_fields", None), tuple)
-        )
 
     @final
     def iter_values(self, packet: _NT) -> _NT:
