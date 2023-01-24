@@ -24,7 +24,7 @@ class TestJSONSerializer(BaseTestIncrementalSerializer):
 
     @classmethod
     @cache
-    def get_oneshot_serialize_sample(cls) -> list[tuple[Any, bytes] | tuple[Any, bytes, str]]:
+    def get_oneshot_serialize_sample(cls) -> list[tuple[Any, bytes, str]]:
         import json
         from dataclasses import asdict
 
@@ -32,12 +32,12 @@ class TestJSONSerializer(BaseTestIncrementalSerializer):
 
     @classmethod
     @cache
-    def get_incremental_serialize_sample(cls) -> list[tuple[Any, bytes] | tuple[Any, bytes, str]]:
-        return [(p, s + b"\n", id) for p, s, id in cls.get_oneshot_serialize_sample()]  # type: ignore[misc]
+    def get_incremental_serialize_sample(cls) -> list[tuple[Any, bytes, str]]:
+        return [(p, s + b"\n", id) for p, s, id in cls.get_oneshot_serialize_sample()]
 
     @classmethod
     @cache
-    def get_possible_remaining_data(cls) -> list[bytes | tuple[bytes, str]]:
+    def get_possible_remaining_data(cls) -> list[tuple[bytes, str]]:
         import base64
         import os
 

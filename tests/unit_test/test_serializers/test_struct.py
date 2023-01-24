@@ -19,10 +19,10 @@ if TYPE_CHECKING:
 @final
 class _StructSerializerForTest(AbstractStructSerializer[Any, Any]):
     def iter_values(self, packet: Any) -> Iterable[Any]:
-        return packet
+        raise NotImplementedError
 
     def from_tuple(self, t: tuple[Any, ...]) -> Any:
-        return t
+        raise NotImplementedError
 
 
 class BaseTestStructBasedSerializer:

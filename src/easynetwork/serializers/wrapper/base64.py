@@ -38,16 +38,16 @@ class Base64EncodedSerializer(AutoSeparatedPacketSerializer[_ST_contra, _DT_co])
             try:
                 signing_key = base64.urlsafe_b64decode(signing_key)
             except binascii.Error as exc:
-                raise ValueError("signing key must be 16 url-safe base64-encoded bytes.") from exc
-            if len(signing_key) != 16:
-                raise ValueError("signing key must be 16 url-safe base64-encoded bytes.")
+                raise ValueError("signing key must be 32 url-safe base64-encoded bytes.") from exc
+            if len(signing_key) != 32:
+                raise ValueError("signing key must be 32 url-safe base64-encoded bytes.")
         self.__signing_key: bytes | None = signing_key
 
     @classmethod
     def generate_key(cls) -> bytes:
         from os import urandom
 
-        return base64.urlsafe_b64encode(urandom(16))
+        return base64.urlsafe_b64encode(urandom(32))
 
     @final
     def serialize(self, packet: _ST_contra) -> bytes:

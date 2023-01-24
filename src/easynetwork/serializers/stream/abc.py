@@ -88,28 +88,26 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_ST_cont
 
     @final
     def incremental_deserialize(self) -> Generator[None, bytes, tuple[_DT_co, bytes]]:
-        data = bytearray()
-        chunk: bytes = yield
+        buffer: bytes = yield
         separator: bytes = self.__separator
         while True:
-            chunk, found_separator, remaining_data = chunk.partition(separator)
-            data.extend(chunk)
+            data, found_separator, buffer = buffer.partition(separator)
             if not found_separator:
-                chunk = yield
+                buffer = data + (yield)
                 continue
             break
         if self.__keepends:
-            data.extend(separator)
+            data += separator
         try:
-            packet = self.deserialize(bytes(data))
+            packet = self.deserialize(data)
         except DeserializeError as exc:
             raise IncrementalDeserializeError(
                 f"Error when deserializing data: {exc}",
-                remaining_data=remaining_data,
+                remaining_data=buffer,
             ) from exc
         finally:
             del data
-        return packet, remaining_data
+        return packet, buffer
 
     @property
     @final
@@ -170,7 +168,7 @@ class FixedSizePacketSerializer(AbstractIncrementalPacketSerializer[_ST_contra, 
 
 
 class FileBasedIncrementalPacketSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
-    __slots__ = "__unrelated_error"
+    __slots__ = ("__unrelated_error",)
 
     def __init__(
         self,
@@ -195,7 +193,10 @@ class FileBasedIncrementalPacketSerializer(AbstractIncrementalPacketSerializer[_
 
     @final
     def incremental_serialize(self, packet: _ST_contra) -> Generator[bytes, None, None]:
-        yield self.serialize(packet)  # 'incremental' :)
+        with BytesIO() as buffer:
+            self._serialize_to_file(packet, buffer)
+            data = buffer.getvalue()
+        yield data  # 'incremental' :)
 
     @final
     def deserialize(self, data: bytes) -> _DT_co:

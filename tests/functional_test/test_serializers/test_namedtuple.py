@@ -34,7 +34,7 @@ class TestNamedTupleStructSerializer(BaseTestIncrementalSerializer):
 
     @classmethod
     @cache
-    def get_oneshot_serialize_sample(cls) -> list[tuple[Any, bytes] | tuple[Any, bytes, str]]:
+    def get_oneshot_serialize_sample(cls) -> list[tuple[Any, bytes, str]]:
         import struct
 
         s = struct.Struct("!10sqc")
@@ -49,13 +49,12 @@ class TestNamedTupleStructSerializer(BaseTestIncrementalSerializer):
 
     @classmethod
     @cache
-    def get_incremental_serialize_sample(cls) -> list[tuple[Any, bytes] | tuple[Any, bytes, str]]:
+    def get_incremental_serialize_sample(cls) -> list[tuple[Any, bytes, str]]:
         return cls.get_oneshot_serialize_sample()
 
     @classmethod
     @cache
-    def get_possible_remaining_data(cls) -> list[bytes | tuple[bytes, str]]:
-        import base64
+    def get_possible_remaining_data(cls) -> list[tuple[bytes, str]]:
         import os
 
-        return [(base64.b64encode(os.urandom(i)), f"remaining_data{i}") for i in range(1, 10)]
+        return [(os.urandom(i), f"remaining_data{i}") for i in range(1, 10)]

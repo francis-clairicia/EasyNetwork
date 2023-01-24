@@ -14,37 +14,22 @@ if TYPE_CHECKING:
     from _pytest.mark import ParameterSet
 
 
-def _make_pytest_params_from_sample(sample_list: list[tuple[Any, bytes] | tuple[Any, bytes, str]]) -> list[ParameterSet]:
+def _make_pytest_params_from_sample(
+    sample_list: list[tuple[Any, ...]],
+    *,
+    check_non_empty: bool = True,
+) -> list[ParameterSet]:
     params: list[ParameterSet] = []
 
     for sample in sample_list:
         match sample:
-            case (packet, data):
-                params.append(pytest.param(packet, data))
-            case (packet, data, id):
-                params.append(pytest.param(packet, data, id=id))
+            case (*p, id):
+                params.append(pytest.param(*p, id=id))
             case _:
                 raise AssertionError("Invalid tuple")
 
-    assert len(params) > 0
-    return params
-
-
-def _make_pytest_params_from_remaining_data(sample_list: list[bytes | tuple[bytes, str]]) -> list[ParameterSet]:
-    params: list[ParameterSet] = []
-
-    for sample in sample_list:
-        match sample:
-            case bytes() as data:
-                assert len(data) > 0
-                params.append(pytest.param(data))
-            case (data, id):
-                assert len(data) > 0
-                params.append(pytest.param(data, id=id))
-            case _:
-                raise AssertionError("Invalid object")
-
-    assert len(params) > 0
+    if check_non_empty:
+        assert len(params) > 0
     return params
 
 
@@ -69,6 +54,11 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
             pass
         else:
             metafunc.parametrize(argnames, _make_pytest_params_from_sample(metafunc.cls.get_oneshot_serialize_sample()))
+        if "invalid_complete_data" in metafunc.fixturenames:
+            metafunc.parametrize(
+                "invalid_complete_data",
+                _make_pytest_params_from_sample(metafunc.cls.get_invalid_complete_data(), check_non_empty=False),
+            )
     if issubclass(metafunc.cls, BaseTestIncrementalSerializer):
         try:
             argnames = BASE_INCREMENTAL_SERIALIZER_TEST_PARAMS[metafunc.definition.originalname]
@@ -76,8 +66,22 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
             pass
         else:
             metafunc.parametrize(argnames, _make_pytest_params_from_sample(metafunc.cls.get_incremental_serialize_sample()))
+        if "invalid_partial_data" in metafunc.fixturenames:
             if "expected_remaining_data" in metafunc.fixturenames:
                 metafunc.parametrize(
-                    "expected_remaining_data",
-                    _make_pytest_params_from_remaining_data(metafunc.cls.get_possible_remaining_data()),
+                    ["invalid_partial_data", "expected_remaining_data"],
+                    _make_pytest_params_from_sample(metafunc.cls.get_invalid_partial_data(), check_non_empty=False),
                 )
+            else:
+                metafunc.parametrize(
+                    "invalid_partial_data",
+                    _make_pytest_params_from_sample(
+                        [(p, id) for p, _, id in metafunc.cls.get_invalid_partial_data()],
+                        check_non_empty=False,
+                    ),
+                )
+        elif "expected_remaining_data" in metafunc.fixturenames:
+            metafunc.parametrize(
+                "expected_remaining_data",
+                _make_pytest_params_from_sample(metafunc.cls.get_possible_remaining_data()),
+            )

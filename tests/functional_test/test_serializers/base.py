@@ -6,7 +6,9 @@ from abc import ABCMeta, abstractmethod
 from typing import Any, final
 
 from easynetwork.serializers.abc import AbstractPacketSerializer
+from easynetwork.serializers.exceptions import DeserializeError
 from easynetwork.serializers.stream.abc import AbstractIncrementalPacketSerializer
+from easynetwork.serializers.stream.exceptions import IncrementalDeserializeError
 
 import pytest
 
@@ -16,8 +18,12 @@ from ..._utils import send_return
 class BaseTestSerializer(metaclass=ABCMeta):
     @classmethod
     @abstractmethod
-    def get_oneshot_serialize_sample(cls) -> list[tuple[Any, bytes] | tuple[Any, bytes, str]]:
+    def get_oneshot_serialize_sample(cls) -> list[tuple[Any, bytes, str]]:
         raise NotImplementedError
+
+    @classmethod
+    def get_invalid_complete_data(cls) -> list[tuple[bytes, str]]:
+        return []
 
     @final
     def test____serialize____sample(
@@ -51,17 +57,32 @@ class BaseTestSerializer(metaclass=ABCMeta):
         assert type(packet) is type(expected_packet)
         assert packet == expected_packet
 
+    def test____deserialize____invalid_data(
+        self,
+        serializer: AbstractPacketSerializer[Any, Any],
+        invalid_complete_data: bytes,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        with pytest.raises(DeserializeError):
+            _ = serializer.deserialize(invalid_complete_data)
+
 
 class BaseTestIncrementalSerializer(BaseTestSerializer):
     @classmethod
     @abstractmethod
-    def get_incremental_serialize_sample(cls) -> list[tuple[Any, bytes] | tuple[Any, bytes, str]]:
+    def get_incremental_serialize_sample(cls) -> list[tuple[Any, bytes, str]]:
         raise NotImplementedError
 
     @classmethod
     @abstractmethod
-    def get_possible_remaining_data(cls) -> list[bytes | tuple[bytes, str]]:
+    def get_possible_remaining_data(cls) -> list[tuple[bytes, str]]:
         raise NotImplementedError
+
+    @classmethod
+    def get_invalid_partial_data(cls) -> list[tuple[bytes, bytes, str]]:
+        return []
 
     @final
     def test____incremental_serialize____concatenated_chunks(
@@ -156,3 +177,32 @@ class BaseTestIncrementalSerializer(BaseTestSerializer):
         assert remaining_data == b""
         assert type(packet) is type(expected_packet)
         assert packet == expected_packet
+
+    def test____incremental_deserialize____invalid_data(
+        self,
+        serializer: AbstractIncrementalPacketSerializer[Any, Any],
+        invalid_partial_data: bytes,
+        expected_remaining_data: bytes,
+    ) -> None:
+        # Arrange
+        consumer = serializer.incremental_deserialize()
+        next(consumer)
+
+        # Act
+        with pytest.raises(IncrementalDeserializeError) as exc_info:
+            consumer.send(invalid_partial_data)
+        exception = exc_info.value
+
+        # Assert
+        assert exception.remaining_data == expected_remaining_data
+
+
+@final
+class NoSerialization(AbstractPacketSerializer[bytes, bytes]):
+    """Helper for serializer wrapper"""
+
+    def serialize(self, packet: bytes) -> bytes:
+        return packet
+
+    def deserialize(self, data: bytes) -> bytes:
+        return data
