@@ -83,7 +83,7 @@ class TestPickleSerializer(BaseTestIncrementalSerializer):
                 ({}, "empty dict"),
                 (int, "type"),
                 (int.to_bytes, "method"),
-                (Dummy(), "user-defined class object"),
+                (Dummy(), "user-defined class instance"),
                 (Dummy, "user-defined class type"),
                 (
                     {
