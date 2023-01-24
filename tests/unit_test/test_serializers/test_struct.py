@@ -244,7 +244,7 @@ class TestNamedTupleStructSerializer(BaseTestStructBasedSerializer):
 
         mock_struct_cls.assert_not_called()
 
-    def test____iter_values____return_given_instance(self) -> None:
+    def test____iter_values____return_given_instance_if_there_is_no_strings(self) -> None:
         # Arrange
         namedtuple_cls = collections.namedtuple("namedtuple_cls", ["x", "y"])
         namedtuple_instance = namedtuple_cls(1234, 56789)
@@ -256,7 +256,36 @@ class TestNamedTupleStructSerializer(BaseTestStructBasedSerializer):
         # Assert
         assert iterable is namedtuple_instance
 
-    def test____from_tuple____construct_nametuple(self) -> None:
+    def test____iter_values____return_given_instance_if_there_is_strings_but_no_encoding(self) -> None:
+        # Arrange
+        namedtuple_cls = collections.namedtuple("namedtuple_cls", ["x", "y"])
+        namedtuple_instance = namedtuple_cls("1234", "56789")
+        serializer = NamedTupleStructSerializer(namedtuple_cls, {"x": "4s", "y": "5s"}, encoding=None)
+
+        # Act
+        iterable = serializer.iter_values(namedtuple_instance)
+
+        # Assert
+        assert iterable is namedtuple_instance
+
+    def test____iter_values____return_transformed_instance_if_there_is_strings_and_encoding(self) -> None:
+        # Arrange
+        namedtuple_cls = collections.namedtuple("namedtuple_cls", ["x", "y"])
+        namedtuple_instance = namedtuple_cls("1234", "56789")
+        serializer = NamedTupleStructSerializer(namedtuple_cls, {"x": "4s", "y": "5s"}, encoding="utf-8")
+
+        # Act
+        iterable = serializer.iter_values(namedtuple_instance)
+
+        # Assert
+        assert isinstance(iterable, namedtuple_cls)
+        assert iterable is not namedtuple_instance
+        assert isinstance(iterable.x, bytes)
+        assert isinstance(iterable.y, bytes)
+        assert iterable.x == b"1234"
+        assert iterable.y == b"56789"
+
+    def test____from_tuple____construct_namedtuple____without_strings(self) -> None:
         # Arrange
         namedtuple_cls = collections.namedtuple("namedtuple_cls", ["x", "y"])
         serializer = NamedTupleStructSerializer(namedtuple_cls, {"x": "I", "y": "I"})
@@ -268,3 +297,78 @@ class TestNamedTupleStructSerializer(BaseTestStructBasedSerializer):
         assert isinstance(result, namedtuple_cls)
         assert result.x == 1234
         assert result.y == 56789
+
+    def test____from_tuple____construct_namedtuple____with_strings_but_no_encoding(self) -> None:
+        # Arrange
+        namedtuple_cls = collections.namedtuple("namedtuple_cls", ["x", "y"])
+        serializer = NamedTupleStructSerializer(namedtuple_cls, {"x": "4s", "y": "5s"}, encoding=None)
+
+        # Act
+        result = serializer.from_tuple((b"1234", b"56789"))
+
+        # Assert
+        assert isinstance(result, namedtuple_cls)
+        assert isinstance(result.x, bytes)
+        assert isinstance(result.y, bytes)
+        assert result.x == b"1234"
+        assert result.y == b"56789"
+
+    def test____from_tuple____construct_namedtuple____with_strings_and_encoding(self) -> None:
+        # Arrange
+        namedtuple_cls = collections.namedtuple("namedtuple_cls", ["x", "y"])
+        serializer = NamedTupleStructSerializer(namedtuple_cls, {"x": "4s", "y": "5s"}, encoding="utf-8")
+
+        # Act
+        result = serializer.from_tuple((b"1234", b"56789"))
+
+        # Assert
+        assert isinstance(result, namedtuple_cls)
+        assert isinstance(result.x, str)
+        assert isinstance(result.y, str)
+        assert result.x == "1234"
+        assert result.y == "56789"
+
+    @pytest.mark.parametrize(
+        "strip_string_trailing_nul_bytes",
+        [True, False],
+        ids=lambda boolean: f"strip_string_trailing_nul_bytes=={boolean}",
+    )
+    @pytest.mark.parametrize(
+        "encoding",
+        [None, "utf-8"],
+        ids=lambda value: f"encoding=={value}",
+    )
+    def test____from_tuple____construct_namedtuple____string_padding(
+        self,
+        strip_string_trailing_nul_bytes: bool,
+        encoding: str | None,
+    ) -> None:
+        # Arrange
+        namedtuple_cls = collections.namedtuple("namedtuple_cls", ["x", "y"])
+        serializer = NamedTupleStructSerializer(
+            namedtuple_cls,
+            {"x": "10s", "y": "10s"},
+            encoding=encoding,
+            strip_string_trailing_nul_bytes=strip_string_trailing_nul_bytes,
+        )
+        x, y = b"1234\x00\x00\x00\x00\x00\x00", b"56789\x00\x00\x00\x00\x00"
+        expected_x, expected_y = x, y
+        if strip_string_trailing_nul_bytes:
+            expected_x = expected_x.rstrip(b"\x00")
+            expected_y = expected_y.rstrip(b"\x00")
+
+        # Act
+        result = serializer.from_tuple((x, y))
+
+        # Assert
+        assert isinstance(result, namedtuple_cls)
+        if encoding is not None:
+            assert isinstance(result.x, str)
+            assert isinstance(result.y, str)
+            assert result.x == expected_x.decode(encoding)
+            assert result.y == expected_y.decode(encoding)
+        else:
+            assert isinstance(result.x, bytes)
+            assert isinstance(result.y, bytes)
+            assert result.x == expected_x
+            assert result.y == expected_y

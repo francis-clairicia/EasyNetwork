@@ -13,7 +13,7 @@ __all__ = [
 ]
 
 from dataclasses import asdict as dataclass_asdict, dataclass
-from typing import IO, TYPE_CHECKING, Any, Callable, Literal, TypeVar, final
+from typing import IO, TYPE_CHECKING, Any, Callable, TypeVar, final
 
 from .stream.abc import FileBasedIncrementalPacketSerializer
 
@@ -39,7 +39,7 @@ class CBOREncoderConfig:
 class CBORDecoderConfig:
     object_hook: Callable[..., Any] | None = None
     tag_hook: Callable[..., Any] | None = None
-    str_errors: Literal["strict", "error", "replace"] = "strict"
+    str_errors: str = "strict"
 
 
 class CBORSerializer(FileBasedIncrementalPacketSerializer[_ST_contra, _DT_co]):

@@ -64,6 +64,6 @@ class Base64EncodedSerializer(AutoSeparatedPacketSerializer[_ST_contra, _DT_co])
             raise DeserializeError("Invalid token") from None
         if key := self.__signing_key:
             data, signature = data[:-32], data[-32:]
-            if len(signature) != 32 or not compare_digest(hmac_digest(key, data, "sha256"), signature):
+            if not compare_digest(hmac_digest(key, data, "sha256"), signature):
                 raise DeserializeError("Invalid token")
         return self.__serializer.deserialize(data)

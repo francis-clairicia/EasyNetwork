@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
+pytest.register_assert_rewrite(f"{__package__}.base")
+
 from .base import BaseTestIncrementalSerializer, BaseTestSerializer
 
 if TYPE_CHECKING:

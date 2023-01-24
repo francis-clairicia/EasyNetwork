@@ -14,7 +14,7 @@ import pickle as _pickle
 import pickletools as _pickletools
 from dataclasses import asdict as dataclass_asdict, dataclass
 from io import BytesIO
-from typing import IO, Any, Literal, TypeVar, final
+from typing import IO, Any, TypeVar, final
 
 from .stream.abc import FileBasedIncrementalPacketSerializer
 
@@ -32,7 +32,7 @@ class PicklerConfig:
 class UnpicklerConfig:
     fix_imports: bool = False
     encoding: str = "utf-8"
-    errors: Literal["strict", "error", "replace"] = "strict"
+    errors: str = "strict"
 
 
 class PickleSerializer(FileBasedIncrementalPacketSerializer[_ST_contra, _DT_co]):

@@ -15,7 +15,7 @@ __all__ = [
 import string
 from collections import Counter
 from dataclasses import asdict as dataclass_asdict, dataclass
-from typing import Any, Callable, Generator, Literal, TypeVar, final
+from typing import Any, Callable, Generator, TypeVar, final
 
 from .exceptions import DeserializeError
 from .stream.abc import AbstractIncrementalPacketSerializer
@@ -113,7 +113,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
         encoder_config: JSONEncoderConfig | None = None,
         decoder_config: JSONDecoderConfig | None = None,
         encoding: str = "utf-8",
-        str_errors: Literal["strict", "error", "replace"] = "strict",
+        str_errors: str = "strict",
     ) -> None:
         from json import JSONDecoder, JSONEncoder
 
@@ -134,7 +134,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
         self.__decoder = JSONDecoder(**dataclass_asdict(decoder_config))
 
         self.__encoding: str = encoding
-        self.__str_errors: Literal["strict", "error", "replace"] = str_errors
+        self.__str_errors: str = str_errors
 
     @final
     def serialize(self, packet: _ST_contra) -> bytes:
@@ -143,7 +143,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
     @final
     def incremental_serialize(self, packet: _ST_contra) -> Generator[bytes, None, None]:
         encoding: str = self.__encoding
-        str_errors: Literal["strict", "error", "replace"] = self.__str_errors
+        str_errors: str = self.__str_errors
         for chunk in self.__encoder.iterencode(packet):
             yield chunk.encode(encoding, str_errors)
         yield b"\n"
