@@ -69,12 +69,19 @@ def _launch_tcp_server(server_socket: Socket, shutdown_requested: Event) -> None
             deque(client_stack.enter_context(s) for s in clients)
 
 
+@pytest.fixture(scope="session")
+def host_ip() -> str:
+    import socket
+
+    return socket.gethostbyname(socket.gethostname())
+
+
 @pytest.fixture(scope="package")
-def tcp_server() -> Iterator[tuple[str, int]]:
+def tcp_server(host_ip: str) -> Iterator[tuple[str, int]]:
     shutdown_requested = Event()
 
     with Socket(AF_INET, SOCK_STREAM) as s:
-        s.bind(("", 0))
+        s.bind((host_ip, 0))
         s.listen()
         server_thread = _launch_tcp_server(s, shutdown_requested)
         yield s.getsockname()
@@ -97,11 +104,11 @@ def _launch_udp_server(socket: Socket, shutdown_requested: Event) -> None:
 
 
 @pytest.fixture(scope="package")
-def udp_server() -> Iterator[tuple[str, int]]:
+def udp_server(host_ip: str) -> Iterator[tuple[str, int]]:
     shutdown_requested = Event()
 
     with Socket(AF_INET, SOCK_DGRAM) as s:
-        s.bind(("", 0))
+        s.bind((host_ip, 0))
         server_thread = _launch_udp_server(s, shutdown_requested)
         yield s.getsockname()
         shutdown_requested.set()

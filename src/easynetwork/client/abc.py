@@ -26,8 +26,11 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
         __Self = TypeVar("__Self", bound="AbstractNetworkClient[Any, Any]")
 
     def __del__(self) -> None:
-        if not self.is_closed():
-            self.close()
+        try:
+            if not self.is_closed():
+                self.close()
+        except AttributeError:  # __init__ was probably not completed
+            pass
 
     def __enter__(self: __Self) -> __Self:
         return self
