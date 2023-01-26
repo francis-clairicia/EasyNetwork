@@ -42,7 +42,7 @@ class AbstractIncrementalPacketSerializer(AbstractPacketSerializer[_ST_contra, _
         try:
             next(consumer)
         except StopIteration:
-            raise RuntimeError("self.incremental_serialize() generator did not yield") from None
+            raise RuntimeError("self.incremental_deserialize() generator did not yield") from None
         packet: _DT_co
         remaining: bytes
         try:
