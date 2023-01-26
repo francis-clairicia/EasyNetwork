@@ -334,33 +334,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             self._check_not_closed()
             return self.__socket.setsockopt(*args)
 
-    def reconnect(self, timeout: float | None = None) -> None:
-        with self.__lock:
-            self._check_not_closed()
-            socket: Socket = self.__socket
-            if not self.__eof_reached:
-                try:
-                    socket.getpeername()
-                except OSError:
-                    pass
-                else:
-                    return
-            address: tuple[Any, ...] = self.__peer.for_connection()
-            former_timeout = socket.gettimeout()
-            socket.settimeout(timeout)
-            try:
-                socket.connect(address)
-                self.__eof_reached = False
-            finally:
-                socket.settimeout(former_timeout)
-
-    def try_reconnect(self, timeout: float | None = None) -> bool:
-        try:
-            self.reconnect(timeout=timeout)
-        except OSError:
-            return False
-        return True
-
     @final
     def _check_not_closed(self) -> None:
         if self.__closed:
