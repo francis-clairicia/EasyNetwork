@@ -239,20 +239,18 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             next_packet = self.__next_packet
             while True:
                 try:
-                    return next_packet(consumer, False)
+                    return next_packet(consumer)
                 except StopIteration:
                     pass
                 while not recv_packets_from_socket(timeout=10):
                     continue
 
     @overload
-    def recv_packet_no_block(self, *, timeout: float = ..., ignore_errors: bool = ...) -> tuple[_ReceivedPacketT, SocketAddress]:
+    def recv_packet_no_block(self, *, timeout: float = ...) -> tuple[_ReceivedPacketT, SocketAddress]:
         ...
 
     @overload
-    def recv_packet_no_block(
-        self, *, default: _T, timeout: float = ..., ignore_errors: bool = ...
-    ) -> tuple[_ReceivedPacketT, SocketAddress] | _T:
+    def recv_packet_no_block(self, *, default: _T, timeout: float = ...) -> tuple[_ReceivedPacketT, SocketAddress] | _T:
         ...
 
     def recv_packet_no_block(
@@ -260,7 +258,6 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         *,
         default: _T = _NO_DEFAULT,
         timeout: float = 0,
-        ignore_errors: bool = False,
     ) -> tuple[_ReceivedPacketT, SocketAddress] | _T:
         timeout = float(timeout)
         next_packet = self.__next_packet
@@ -268,12 +265,13 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             self._check_not_closed()
             consumer = self.__consumer
             try:
-                return next_packet(consumer, ignore_errors)
+                return next_packet(consumer)
             except StopIteration:
                 pass
-            while self.__recv_packets_from_socket(timeout=timeout):
+            recv_packets_from_socket = self.__recv_packets_from_socket
+            while recv_packets_from_socket(timeout=timeout):
                 try:
-                    return next_packet(consumer, ignore_errors)
+                    return next_packet(consumer)
                 except StopIteration:
                     pass
             if default is not _NO_DEFAULT:
@@ -284,7 +282,6 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         self,
         *,
         timeout: float = 0,
-        ignore_errors: bool = False,
     ) -> Iterator[tuple[_ReceivedPacketT, SocketAddress]]:
         timeout = float(timeout)
         consumer = self.__consumer
@@ -296,15 +293,11 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         while True:
             with lock:
                 check_not_closed()
-                while (packet_tuple := next_packet(consumer, None, ignore_errors)) is None:
+                while (packet_tuple := next_packet(consumer, None)) is None:
                     if not recv_packets_from_socket(timeout=timeout):
                         return
                     continue
             yield packet_tuple  # yield out of lock scope
-
-    def recv_all_packets(self, *, timeout: float = 0) -> list[tuple[_ReceivedPacketT, SocketAddress]]:
-        with self.__lock:
-            return list(self.iter_received_packets(timeout=timeout, ignore_errors=True))
 
     def __recv_packets_from_socket(self, *, timeout: float | None) -> bool:
         flags = self.__default_recv_flags
@@ -324,30 +317,22 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             return True
 
     @staticmethod
-    def __next_packet(
-        it: Iterator[tuple[_ReceivedPacketT, SocketAddress]], ignore_errors: bool
-    ) -> tuple[_ReceivedPacketT, SocketAddress]:
+    def __next_packet(it: Iterator[tuple[_ReceivedPacketT, SocketAddress]]) -> tuple[_ReceivedPacketT, SocketAddress]:
         try:
             return next(it)
-        except DatagramProtocolParseError:
-            if not ignore_errors:
-                raise
-            raise StopIteration from None
-        except StopIteration:
+        except (StopIteration, DatagramProtocolParseError):
             raise
         except Exception as exc:
             raise RuntimeError(str(exc)) from exc
 
     @staticmethod
     def __next_packet_or_default(
-        it: Iterator[tuple[_ReceivedPacketT, SocketAddress]], default: _T, ignore_errors: bool
+        it: Iterator[tuple[_ReceivedPacketT, SocketAddress]], default: _T
     ) -> tuple[_ReceivedPacketT, SocketAddress] | _T:
         try:
             return next(it, default)
         except DatagramProtocolParseError:
-            if not ignore_errors:
-                raise
-            return default
+            raise
         except Exception as exc:
             raise RuntimeError(str(exc)) from exc
 
@@ -511,11 +496,11 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         return self.__endpoint.recv_packet()[0]
 
     @overload
-    def recv_packet_no_block(self, *, timeout: float = ..., ignore_errors: bool = ...) -> _ReceivedPacketT:
+    def recv_packet_no_block(self, *, timeout: float = ...) -> _ReceivedPacketT:
         ...
 
     @overload
-    def recv_packet_no_block(self, *, default: _T, timeout: float = ..., ignore_errors: bool = ...) -> _ReceivedPacketT | _T:
+    def recv_packet_no_block(self, *, default: _T, timeout: float = ...) -> _ReceivedPacketT | _T:
         ...
 
     def recv_packet_no_block(
@@ -523,24 +508,16 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         *,
         default: _T = _NO_DEFAULT,
         timeout: float = 0,
-        ignore_errors: bool = False,
     ) -> _ReceivedPacketT | _T:
         try:
-            return self.__endpoint.recv_packet_no_block(timeout=timeout, ignore_errors=ignore_errors)[0]
+            return self.__endpoint.recv_packet_no_block(timeout=timeout)[0]
         except TimeoutError:
             if default is not _NO_DEFAULT:
                 return default
             raise
 
-    def iter_received_packets(self, *, timeout: float = 0, ignore_errors: bool = False) -> Iterator[_ReceivedPacketT]:
-        return map(itemgetter(0), self.__endpoint.iter_received_packets(timeout=timeout, ignore_errors=ignore_errors))
-
-    def recv_all_packets(
-        self,
-        *,
-        timeout: float = 0,
-    ) -> list[_ReceivedPacketT]:
-        return list(map(itemgetter(0), self.__endpoint.recv_all_packets(timeout=timeout)))
+    def iter_received_packets(self, *, timeout: float = 0) -> Iterator[_ReceivedPacketT]:
+        return map(itemgetter(0), self.__endpoint.iter_received_packets(timeout=timeout))
 
     def fileno(self) -> int:
         return self.__endpoint.fileno()

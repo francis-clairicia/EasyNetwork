@@ -20,7 +20,7 @@ def test_default(tcp_server: tuple[str, int]) -> None:
         assert client.recv_packet() == {"data": [5, 2]}
         client.send_packet("Hello")
         assert client.recv_packet() == "Hello"
-        assert len(client.recv_all_packets(timeout=0)) == 0
+        assert len(list(client.iter_received_packets(timeout=0))) == 0
         with pytest.raises(TimeoutError):
             client.recv_packet_no_block()
         assert client.recv_packet_no_block(default=None) is None
@@ -55,12 +55,12 @@ def test_multiple_requests(tcp_server: tuple[str, int]) -> None:
     with TCPNetworkClient(tcp_server, protocol=StreamProtocol(StringSerializer())) as client:
         client.send_packet("A\nB\nC\nD\n")
         time.sleep(0.1)
-        assert client.recv_all_packets() == ["A", "B", "C", "D"]
+        assert list(client.iter_received_packets()) == ["A", "B", "C", "D"]
         client.send_packet("E\nF\nG\nH\nI")
         time.sleep(0.1)
         assert client.recv_packet() == "E"
         assert client.recv_packet() == "F"
-        assert client.recv_all_packets() == ["G", "H"]
+        assert list(client.iter_received_packets()) == ["G", "H"]
         client.send_packet("J\n")
         assert client.recv_packet() == "IJ"
 

@@ -170,40 +170,41 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             next_packet = self.__next_packet
             while True:
                 try:
-                    return next_packet(consumer, False)
+                    return next_packet(consumer)
                 except StopIteration:
                     pass
                 while not read_socket(timeout=10):
                     continue
 
     @overload
-    def recv_packet_no_block(self, *, timeout: float = ..., ignore_errors: bool = ...) -> _ReceivedPacketT:
+    def recv_packet_no_block(self, *, timeout: float = ...) -> _ReceivedPacketT:
         ...
 
     @overload
-    def recv_packet_no_block(self, *, default: _T, timeout: float = ..., ignore_errors: bool = ...) -> _ReceivedPacketT | _T:
+    def recv_packet_no_block(self, *, default: _T, timeout: float = ...) -> _ReceivedPacketT | _T:
         ...
 
-    def recv_packet_no_block(self, *, default: Any = _NO_DEFAULT, timeout: float = 0, ignore_errors: bool = False) -> Any:
+    def recv_packet_no_block(self, *, default: Any = _NO_DEFAULT, timeout: float = 0) -> Any:
         timeout = float(timeout)
         next_packet = self.__next_packet
         with self.__lock:
             self._check_not_closed()
             consumer = self.__consumer
             try:
-                return next_packet(consumer, ignore_errors)
+                return next_packet(consumer)
             except StopIteration:
                 pass
-            while self.__read_socket(timeout=timeout):
+            read_socket = self.__read_socket
+            while read_socket(timeout=timeout):
                 try:
-                    return next_packet(consumer, ignore_errors)
+                    return next_packet(consumer)
                 except StopIteration:
                     pass
             if default is not _NO_DEFAULT:
                 return default
             raise TimeoutError("recv_packet() timed out")
 
-    def iter_received_packets(self, *, timeout: float = 0, ignore_errors: bool = False) -> Iterator[_ReceivedPacketT]:
+    def iter_received_packets(self, *, timeout: float = 0) -> Iterator[_ReceivedPacketT]:
         timeout = float(timeout)
         consumer = self.__consumer
         read_socket = self.__read_socket
@@ -214,15 +215,11 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         while True:
             with lock:
                 check_not_closed()
-                while (packet := next_packet(consumer, null, ignore_errors)) is null:
+                while (packet := next_packet(consumer, null)) is null:
                     if not read_socket(timeout=timeout):
                         return
                     continue
             yield packet  # yield out of lock scope
-
-    def recv_all_packets(self, *, timeout: float = 0) -> list[_ReceivedPacketT]:
-        with self.__lock:
-            return list(self.iter_received_packets(timeout=timeout, ignore_errors=True))
 
     def __read_socket(self, *, timeout: float | None) -> bool:
         if self.__eof_reached:
@@ -241,26 +238,20 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             return True
 
     @staticmethod
-    def __next_packet(it: Iterator[_ReceivedPacketT], ignore_errors: bool) -> _ReceivedPacketT:
+    def __next_packet(it: Iterator[_ReceivedPacketT]) -> _ReceivedPacketT:
         try:
             return next(it)
-        except StreamProtocolParseError:
-            if not ignore_errors:
-                raise
-            raise StopIteration from None
-        except StopIteration:
+        except (StopIteration, StreamProtocolParseError):
             raise
         except Exception as exc:
             raise RuntimeError(str(exc)) from exc
 
     @staticmethod
-    def __next_packet_or_default(it: Iterator[_ReceivedPacketT], default: _T, ignore_errors: bool) -> _ReceivedPacketT | _T:
+    def __next_packet_or_default(it: Iterator[_ReceivedPacketT], default: _T) -> _ReceivedPacketT | _T:
         try:
             return next(it, default)
         except StreamProtocolParseError:
-            if not ignore_errors:
-                raise
-            return default
+            raise
         except Exception as exc:
             raise RuntimeError(str(exc)) from exc
 
