@@ -242,7 +242,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
                     return next_packet(consumer)
                 except StopIteration:
                     pass
-                while not recv_packets_from_socket(timeout=10):
+                while not recv_packets_from_socket(timeout=None):
                     continue
 
     @overload

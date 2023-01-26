@@ -125,7 +125,7 @@ class TestDatagramProtocol:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_serializer.deserialize.side_effect = DeserializeError("Deserialization error")
+        mock_serializer.deserialize.side_effect = DeserializeError("Deserialization error", error_info=mocker.sentinel.error_info)
         mock_convert_func: MagicMock = mock_converter.create_from_dto_packet
 
         # Act
@@ -139,6 +139,7 @@ class TestDatagramProtocol:
         assert exception.error_type == "deserialization"
         assert exception.sender is mocker.sentinel.sender
         assert exception.message == "Deserialization error"
+        assert exception.error_info is mocker.sentinel.error_info
         assert exception.__cause__ is mock_serializer.deserialize.side_effect
 
     def test____build_packet_from_datagram____conversion_error(
@@ -148,7 +149,10 @@ class TestDatagramProtocol:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_converter.create_from_dto_packet.side_effect = PacketConversionError("Conversion error")
+        mock_converter.create_from_dto_packet.side_effect = PacketConversionError(
+            "Conversion error",
+            error_info=mocker.sentinel.error_info,
+        )
         mock_convert_func: MagicMock = mock_converter.create_from_dto_packet
 
         # Act
@@ -162,6 +166,7 @@ class TestDatagramProtocol:
         assert exception.error_type == "conversion"
         assert exception.sender is mocker.sentinel.sender
         assert exception.message == "Conversion error"
+        assert exception.error_info is mocker.sentinel.error_info
         assert exception.__cause__ is mock_convert_func.side_effect
 
 
@@ -206,10 +211,9 @@ class TestStreamProtocol:
         data = yield
         return self.sentinel.deserialized_packet, data
 
-    @staticmethod
-    def build_packet_from_chunks_side_effect_deserialize_error() -> Generator[None, bytes, tuple[Any, bytes]]:
+    def build_packet_from_chunks_side_effect_deserialize_error(self) -> Generator[None, bytes, tuple[Any, bytes]]:
         data = yield
-        raise IncrementalDeserializeError("Deserialization error", data)
+        raise IncrementalDeserializeError("Deserialization error", data, error_info=self.sentinel.error_info)
 
     def test____generate_chunk____without_converter(
         self,
@@ -322,6 +326,7 @@ class TestStreamProtocol:
         assert exception.error_type == "deserialization"
         assert exception.remaining_data is mocker.sentinel.chunk
         assert exception.message == "Deserialization error"
+        assert exception.error_info is mocker.sentinel.error_info
         assert isinstance(exception.__cause__, DeserializeError)
 
     def test____build_packet_from_chunks____conversion_error(
@@ -335,7 +340,7 @@ class TestStreamProtocol:
         mock_incremental_deserialize_func: MagicMock = mock_incremental_serializer.incremental_deserialize
         mock_incremental_deserialize_func.side_effect = self.build_packet_from_chunks_side_effect
         mock_convert_func: MagicMock = mock_converter.create_from_dto_packet
-        mock_convert_func.side_effect = PacketConversionError("Conversion error")
+        mock_convert_func.side_effect = PacketConversionError("Conversion error", error_info=mocker.sentinel.error_info)
 
         # Act
         gen = protocol_with_converter.build_packet_from_chunks()
@@ -350,4 +355,5 @@ class TestStreamProtocol:
         assert exception.error_type == "conversion"
         assert exception.remaining_data is mocker.sentinel.chunk
         assert exception.message == "Conversion error"
+        assert exception.error_info is mocker.sentinel.error_info
         assert exception.__cause__ is mock_convert_func.side_effect

@@ -9,7 +9,7 @@ from __future__ import annotations
 __all__ = ["AbstractPacketConverter", "PacketConversionError"]
 
 from abc import ABCMeta, abstractmethod
-from typing import Callable, Generic, TypeVar, final
+from typing import Any, Callable, Generic, TypeVar, final
 
 _SentDTOPacketT = TypeVar("_SentDTOPacketT")
 _ReceivedDTOPacketT = TypeVar("_ReceivedDTOPacketT")
@@ -19,8 +19,9 @@ _ReceivedPacketT = TypeVar("_ReceivedPacketT")
 
 
 class PacketConversionError(Exception):
-    def __init__(self, message: str) -> None:
+    def __init__(self, message: str, error_info: Any = None) -> None:
         super().__init__(message)
+        self.error_info: Any = error_info
 
 
 class AbstractPacketConverter(Generic[_SentPacketT, _SentDTOPacketT, _ReceivedPacketT, _ReceivedDTOPacketT], metaclass=ABCMeta):

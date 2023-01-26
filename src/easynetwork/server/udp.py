@@ -243,7 +243,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             except DatagramProtocolParseError as exc:
                 self.__logger.info("Malformed request sent by %s", exc.sender)
                 try:
-                    self.bad_request(exc.sender, exc.error_type, exc.message)
+                    self.bad_request(exc.sender, exc.error_type, exc.message, exc.error_info)
                 except Exception:
                     self.__on_client_error(exc.sender)
             except Exception as exc:
@@ -343,7 +343,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             else:
                 self.__unsent_datagrams.append((b"", client_address))
 
-    def bad_request(self, client_address: SocketAddress, error_type: ParseErrorType, message: str) -> None:
+    def bad_request(self, client_address: SocketAddress, error_type: ParseErrorType, message: str, error_info: Any) -> None:
         pass
 
     @final

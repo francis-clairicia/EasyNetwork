@@ -39,7 +39,10 @@ class AbstractIncrementalPacketSerializer(AbstractPacketSerializer[_ST_contra, _
 
     def deserialize(self, data: bytes) -> _DT_co:
         consumer: Generator[None, bytes, tuple[_DT_co, bytes]] = self.incremental_deserialize()
-        next(consumer)
+        try:
+            next(consumer)
+        except StopIteration:
+            raise RuntimeError("self.incremental_serialize() generator did not yield") from None
         packet: _DT_co
         remaining: bytes
         try:

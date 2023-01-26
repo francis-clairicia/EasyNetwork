@@ -8,7 +8,10 @@ from __future__ import annotations
 
 __all__ = ["DeserializeError"]
 
+from typing import Any
+
 
 class DeserializeError(Exception):
-    def __init__(self, message: str) -> None:
+    def __init__(self, message: str, error_info: Any = None) -> None:
         super().__init__(message)
+        self.error_info: Any = error_info

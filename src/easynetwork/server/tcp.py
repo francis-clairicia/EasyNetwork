@@ -404,7 +404,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             except StreamProtocolParseError as exc:
                 logger.info("Malformed request sent by %s", client.address)
                 try:
-                    self.bad_request(client, exc.error_type, exc.message)
+                    self.bad_request(client, exc.error_type, exc.message, exc.error_info)
                 except Exception:
                     try:
                         self.handle_error(client, sys.exc_info())
@@ -560,7 +560,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     def verify_new_client(self, client_socket: Socket, address: SocketAddress) -> bool:
         return True
 
-    def bad_request(self, client: ConnectedClient[_ResponseT], error_type: ParseErrorType, message: str) -> None:
+    def bad_request(self, client: ConnectedClient[_ResponseT], error_type: ParseErrorType, message: str, error_info: Any) -> None:
         pass
 
     def on_disconnect(self, client: ConnectedClient[_ResponseT]) -> None:

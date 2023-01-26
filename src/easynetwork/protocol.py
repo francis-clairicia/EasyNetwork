@@ -8,7 +8,7 @@ from __future__ import annotations
 
 __all__ = ["DatagramProtocol", "DatagramProtocolParseError", "StreamProtocol", "StreamProtocolParseError"]
 
-from typing import Any, Generator, Generic, Literal, TypeAlias, TypeVar, final, overload
+from typing import Any, Generator, Generic, Literal, TypeAlias, TypeVar, overload
 
 from .converter import AbstractPacketConverter, PacketConversionError
 from .serializers.abc import AbstractPacketSerializer
@@ -28,10 +28,11 @@ ParseErrorType: TypeAlias = Literal["deserialization", "conversion"]
 
 
 class DatagramProtocolParseError(Exception):
-    def __init__(self, sender: SocketAddress, error_type: ParseErrorType, message: str) -> None:
+    def __init__(self, sender: SocketAddress, error_type: ParseErrorType, message: str, error_info: Any = None) -> None:
         super().__init__(f"Error while parsing datagram: {message}")
         self.sender: SocketAddress = sender
         self.error_type: ParseErrorType = error_type
+        self.error_info: Any = error_info
         self.message: str = message
 
 
@@ -64,32 +65,31 @@ class DatagramProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
         self.__serializer: AbstractPacketSerializer[Any, Any] = serializer
         self.__converter: AbstractPacketConverter[_SentPacketT, Any, _ReceivedPacketT, Any] | None = converter
 
-    @final
     def make_datagram(self, packet: _SentPacketT) -> bytes:
         if (converter := self.__converter) is not None:
             packet = converter.convert_to_dto_packet(packet)
         return self.__serializer.serialize(packet)
 
-    @final
     def build_packet_from_datagram(self, datagram: bytes, sender: SocketAddress) -> _ReceivedPacketT:
         try:
             packet: _ReceivedPacketT = self.__serializer.deserialize(datagram)
         except DeserializeError as exc:
-            raise DatagramProtocolParseError(sender, "deserialization", str(exc)) from exc
+            raise DatagramProtocolParseError(sender, "deserialization", str(exc), error_info=exc.error_info) from exc
         if (converter := self.__converter) is not None:
             try:
                 packet = converter.create_from_dto_packet(packet)
             except PacketConversionError as exc:
-                raise DatagramProtocolParseError(sender, "conversion", str(exc)) from exc
+                raise DatagramProtocolParseError(sender, "conversion", str(exc), error_info=exc.error_info) from exc
         return packet
 
 
 class StreamProtocolParseError(Exception):
-    def __init__(self, remaining_data: bytes, error_type: ParseErrorType, message: str) -> None:
+    def __init__(self, remaining_data: bytes, error_type: ParseErrorType, message: str, error_info: Any = None) -> None:
         super().__init__(f"Error while parsing datagram: {message}")
         self.remaining_data: bytes = remaining_data
         self.error_type: ParseErrorType = error_type
         self.message: str = message
+        self.error_info: Any = error_info
 
 
 class StreamProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
@@ -121,24 +121,24 @@ class StreamProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
         self.__serializer: AbstractIncrementalPacketSerializer[Any, Any] = serializer
         self.__converter: AbstractPacketConverter[_SentPacketT, Any, _ReceivedPacketT, Any] | None = converter
 
-    @final
     def generate_chunks(self, packet: _SentPacketT) -> Generator[bytes, None, None]:
         if (converter := self.__converter) is not None:
             packet = converter.convert_to_dto_packet(packet)
         return (yield from self.__serializer.incremental_serialize(packet))
 
-    @final
     def build_packet_from_chunks(self) -> Generator[None, bytes, tuple[_ReceivedPacketT, bytes]]:
         packet: _ReceivedPacketT
         try:
             packet, remaining_data = yield from self.__serializer.incremental_deserialize()
         except IncrementalDeserializeError as exc:
-            raise StreamProtocolParseError(exc.remaining_data, "deserialization", str(exc)) from exc
+            raise StreamProtocolParseError(exc.remaining_data, "deserialization", str(exc), error_info=exc.error_info) from exc
+        except DeserializeError as exc:  # pragma: no cover
+            raise RuntimeError(str(exc)) from exc
 
         if (converter := self.__converter) is not None:
             try:
                 packet = converter.create_from_dto_packet(packet)
             except PacketConversionError as exc:
-                raise StreamProtocolParseError(remaining_data, "conversion", str(exc)) from exc
+                raise StreamProtocolParseError(remaining_data, "conversion", str(exc), error_info=exc.error_info) from exc
 
         return packet, remaining_data
