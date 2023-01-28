@@ -199,7 +199,8 @@ class FileBasedIncrementalPacketSerializer(AbstractIncrementalPacketSerializer[_
         with BytesIO() as buffer:
             self._serialize_to_file(packet, buffer)
             data = buffer.getvalue()
-        yield data  # 'incremental' :)
+        if data:
+            yield data  # 'incremental' :)
 
     @final
     def deserialize(self, data: bytes) -> _DT_co:

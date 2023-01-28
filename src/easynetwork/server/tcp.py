@@ -16,6 +16,7 @@ import logging
 import os
 import sys
 from abc import ABCMeta, abstractmethod
+from collections import defaultdict
 from contextlib import ExitStack, contextmanager, suppress
 from dataclasses import dataclass
 from functools import partial
@@ -23,24 +24,11 @@ from itertools import chain
 from selectors import EVENT_READ, EVENT_WRITE, BaseSelector, SelectSelector
 from socket import SHUT_WR, socket as Socket
 from threading import Event, RLock
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Callable,
-    ContextManager,
-    Generic,
-    Iterator,
-    NamedTuple,
-    Sequence,
-    TypeAlias,
-    TypeVar,
-    final,
-    overload,
-)
+from typing import TYPE_CHECKING, Any, Callable, ContextManager, Generic, Iterator, Sequence, TypeAlias, TypeVar, final, overload
 from weakref import WeakKeyDictionary, ref
 
 from ..protocol import ParseErrorType, StreamProtocol, StreamProtocolParseError
-from ..tools.socket import AF_INET, SocketAddress, guess_best_recv_size, new_socket_address
+from ..tools.socket import AF_INET, SocketAddress, new_socket_address
 from ..tools.stream import StreamDataConsumer, StreamDataProducer
 from .abc import AbstractNetworkServer
 from .executors.abc import AbstractRequestExecutor
@@ -135,8 +123,6 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         "__closed",
         "__loop",
         "__is_shutdown",
-        "__clients",
-        "__clients_lock",
         "__server_selector",
         "__default_backlog",
         "__buffered_write",
@@ -146,6 +132,8 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         "__verify_client_pool",
         "__logger",
     )
+
+    max_size: int = 256 * 1024  # Buffer size passed to recv().
 
     def __init__(
         self,
@@ -162,6 +150,8 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         disable_nagle_algorithm: bool = False,
         request_executor: AbstractRequestExecutor | None = None,
         selector_factory: Callable[[], BaseSelector] | None = None,
+        listener_poll_interval: float = 0.1,
+        clients_poll_interval: float = 0.1,
         logger: logging.Logger | None = None,
     ) -> None:
         if not callable(protocol_factory):
@@ -192,9 +182,11 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         self.__loop: bool = False
         self.__is_shutdown: Event = Event()
         self.__is_shutdown.set()
-        self.__clients: WeakKeyDictionary[Socket, _SelectorKeyData[_RequestT, _ResponseT]] = WeakKeyDictionary()
-        self.__clients_lock = RLock()
-        self.__server_selector: _ServerSocketSelector[_RequestT, _ResponseT] = _ServerSocketSelector(selector_factory)
+        self.__server_selector: _ServerSocketSelector[_RequestT, _ResponseT] = _ServerSocketSelector(
+            selector_factory,
+            listener_poll_interval=listener_poll_interval,
+            clients_poll_interval=clients_poll_interval,
+        )
         self.__send_flags: int = send_flags
         self.__recv_flags: int = recv_flags
         self.__buffered_write: bool = bool(buffered_write)
@@ -224,29 +216,29 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 logger.info("Start serving at %s", self.__addr)
 
                 while self.__loop:
-                    ready_listeners = server_selector.listener_select()
-                    ready_clients = server_selector.clients_select()
+                    ready = server_selector.select()
                     if not self.__loop:
                         break  # type: ignore[unreachable]
 
-                    for listener_socket in ready_listeners:
+                    for listener_socket in ready["listeners"]:
                         self.__accept_new_client(listener_socket)
 
-                    for key in (key for key, event in ready_clients if event & EVENT_WRITE):
-                        logger.debug("%s is ready for writing", key.data.client.address)
-                        self.__flush_client_data(key, only_unsent=True)
+                    for socket, event, key_data in ready["clients"]:
+                        if event & EVENT_WRITE:
+                            logger.debug("%s is ready for writing", key_data.client.address)
+                            self.__flush_client_data(socket, key_data, only_unsent=True)
 
-                    for key in (key for key, event in ready_clients if event & EVENT_READ):
-                        logger.debug("%s is ready for reading", key.data.client.address)
-                        self.__receive_data(key)
+                        if event & EVENT_READ:
+                            logger.debug("%s is ready for reading", key_data.client.address)
+                            self.__receive_data(socket, key_data)
                     self.__handle_all_clients_requests()
 
                     if request_executor is not None:
                         request_executor.service_actions()
                     self.service_actions()
                     if self.__buffered_write:
-                        for key in self.__server_selector.get_all_client_keys():
-                            self.__send_data_to_client(key)
+                        for key in self.__server_selector.get_all_active_client_keys(lambda data: data.has_data_to_send()):
+                            self.__send_data_to_client(*key)
         finally:
             try:
                 with suppress(Exception):
@@ -254,8 +246,8 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 if request_executor is not None:
                     with suppress(Exception):
                         request_executor.on_server_stop()
-                for key in self.__server_selector.get_all_client_keys():
-                    self.__shutdown_client(key.fileobj, from_client=False)
+                for socket, _ in self.__server_selector.get_all_active_client_keys():
+                    self.__shutdown_client(socket, from_client=False)
             finally:
                 self.__loop = False
                 self.__is_shutdown.set()
@@ -282,7 +274,10 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         self.__logger.info("Accepted new connection (peername = %s)", address)
 
         future = self.__verify_client_pool.submit(self.verify_new_client, client_socket, address)
-        future.add_done_callback(partial(self.__add_client_callback, socket=client_socket, address=address))
+        try:
+            future.add_done_callback(partial(self.__add_client_callback, socket=client_socket, address=address))
+        finally:
+            del future
 
     def __add_client_callback(self, future: concurrent.futures.Future[bool], *, socket: Socket, address: SocketAddress) -> None:
         logger: logging.Logger = self.__logger
@@ -326,27 +321,26 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             if self is None:
                 return
             try:
-                key = self.__server_selector.get_client_key(socket)
+                key_data = self.__server_selector.get_client_data(socket)
             except KeyError:
                 return
-            self.__flush_client_data(key, only_unsent=False)
+            self.__flush_client_data(socket, key_data, only_unsent=False)
 
         def _send_data_to_client_hook(socket: Socket) -> None:
             self = selfref()
             if self is None or self.__buffered_write:
                 return
             try:
-                key = self.__server_selector.get_client_key(socket)
+                key_data = self.__server_selector.get_client_data(socket)
             except KeyError:
                 return
-            self.__send_data_to_client(key)
+            self.__send_data_to_client(socket, key_data)
 
         def _client_is_closed_hook(socket: Socket) -> bool:
             self = selfref()
             if self is None:
-                return False
-            with self.__clients_lock:
-                return socket not in self.__clients
+                return True
+            return not self.__server_selector.has_client(socket)
 
         key_data = _SelectorKeyData(
             protocol=self.__protocol_factory(),
@@ -357,16 +351,12 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             on_close=_close_client_hook,
             is_closed=_client_is_closed_hook,
         )
-        self.__server_selector.add_client_reader(socket, key_data)
-        with self.__clients_lock:
-            self.__clients[socket] = key_data
-
+        self.__server_selector.register_client(socket, key_data)
+        self.__server_selector.add_client_reader(socket)
         logger.info("A client (address = %s) was added", address)
 
-    def __receive_data(self, key: _SelectorKey[_RequestT, _ResponseT]) -> None:
+    def __receive_data(self, socket: Socket, key_data: _SelectorKeyData[_RequestT, _ResponseT]) -> None:
         logger: logging.Logger = self.__logger
-        socket: Socket = key.fileobj
-        key_data: _SelectorKeyData[_RequestT, _ResponseT] = key.data
         client = key_data.client
         data: bytes
         logger.debug("Receiving data from %s", client.address)
@@ -374,7 +364,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             logger.warning("-> Tried to read on closed client (address = %s)", client.address)
             return
         try:
-            data = socket.recv(key_data.recv_size, self.__recv_flags)
+            data = socket.recv(self.max_size, self.__recv_flags)
         except (BlockingIOError, InterruptedError):
             logger.debug("-> Interruped. Will try later")
         except OSError:
@@ -393,10 +383,9 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     def __handle_all_clients_requests(self) -> None:
         logger: logging.Logger = self.__logger
         request_executor: AbstractRequestExecutor | None = self.__request_executor
-        for key in self.__server_selector.get_all_client_keys():
-            key_data: _SelectorKeyData[_RequestT, _ResponseT] = key.data
+        for socket, key_data in self.__server_selector.get_all_active_client_keys(lambda data: data.consumer.get_buffer()):
             client = key_data.client
-            if client.is_closed() or not key_data.consumer.get_buffer():
+            if client.is_closed():
                 continue
             request: _RequestT
             try:
@@ -409,7 +398,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                     try:
                         self.handle_error(client, sys.exc_info())
                     finally:
-                        self.__shutdown_client(key.fileobj, from_client=False)
+                        self.__shutdown_client(socket, from_client=False)
                 continue
             except StopIteration:  # Not enough data
                 logger.debug("Missing data to process request sent by %s", client.address)
@@ -419,26 +408,32 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             logger.info("Processing request sent by %s", client.address)
             try:
                 if request_executor is not None:
-                    request_executor.execute(self.__execute_request, request, key, pid=os.getpid())
+                    request_executor.execute(self.__execute_request, request, socket, key_data, pid=os.getpid())
                 else:
-                    self.__execute_request(request, key)
+                    self.__execute_request(request, socket, key_data)
             except Exception as exc:
                 if request_executor is not None:
                     raise RuntimeError(f"request_executor.execute() raised an exception: {exc}") from exc
                 raise RuntimeError(f"Error when processing request: {exc}") from exc
 
-    def __execute_request(self, request: _RequestT, key: _SelectorKey[_RequestT, _ResponseT], pid: int | None = None) -> None:
+    def __execute_request(
+        self,
+        request: _RequestT,
+        socket: Socket,
+        key_data: _SelectorKeyData[_RequestT, _ResponseT],
+        pid: int | None = None,
+    ) -> None:
         in_subprocess: bool = pid is not None and pid != os.getpid()
         try:
-            self.process_request(request, key.data.client)
+            self.process_request(request, key_data.client)
         except Exception:
             try:
-                self.handle_error(key.data.client, sys.exc_info())
+                self.handle_error(key_data.client, sys.exc_info())
             finally:
-                self.__shutdown_client(key.fileobj, from_client=True)
+                self.__shutdown_client(socket, from_client=True)
         else:
             if in_subprocess:
-                self.__flush_client_data(key, only_unsent=False)
+                self.__flush_client_data(socket, key_data, only_unsent=False)
 
     @abstractmethod
     def process_request(self, request: _RequestT, client: ConnectedClient[_ResponseT]) -> None:
@@ -454,21 +449,25 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         logger.error("Exception occurred during processing of request from %s", client.address, exc_info=exc_info)
         logger.error("-" * 40)
 
-    def __send_data_to_client(self, key: _SelectorKey[_RequestT, _ResponseT]) -> None:
+    def __send_data_to_client(self, socket: Socket, key_data: _SelectorKeyData[_RequestT, _ResponseT]) -> None:
         logger: logging.Logger = self.__logger
 
-        if not key.data.producer.pending_packets():
+        if not key_data.producer.pending_packets():
             return
-        logger.info("A response will be sent to %s", key.data.client.address)
-        if key.data.unsent_data:  # A previous attempt failed
+        logger.info("A response will be sent to %s", key_data.client.address)
+        if key_data.unsent_data:  # A previous attempt failed
             logger.debug("-> There is unsent data, bail out.")
             return
-        self.__flush_client_data(key, only_unsent=False)
+        self.__flush_client_data(socket, key_data, only_unsent=False)
 
-    def __flush_client_data(self, key: _SelectorKey[_RequestT, _ResponseT], *, only_unsent: bool) -> None:
+    def __flush_client_data(
+        self,
+        socket: Socket,
+        key_data: _SelectorKeyData[_RequestT, _ResponseT],
+        *,
+        only_unsent: bool,
+    ) -> None:
         logger: logging.Logger = self.__logger
-        socket: Socket = key.fileobj
-        key_data = key.data
 
         if key_data.client.is_closed():
             return
@@ -488,7 +487,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 nb_bytes_sent = socket.send(data_to_send, self.__send_flags)
             except (TimeoutError, InterruptedError):
                 key_data.unsent_data = data_to_send
-                self.__server_selector.add_client_writer(socket, key_data)
+                self.__server_selector.add_client_writer(socket)
                 logger.debug("-> Failed to send data, bail out.")
             except BlockingIOError as exc:
                 try:
@@ -496,8 +495,12 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 except Exception:
                     characters_written = 0
                 key_data.unsent_data = data_to_send[characters_written:]
-                self.__server_selector.add_client_writer(socket, key_data)
-                logger.debug("-> Failed to send data, bail out.")
+                self.__server_selector.add_client_writer(socket)
+                logger.debug(
+                    "-> Failed to send data (%d/%d characters written), bail out.",
+                    characters_written,
+                    len(data_to_send),
+                )
             except OSError:
                 try:
                     self.handle_error(key_data.client, sys.exc_info())
@@ -506,7 +509,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             else:
                 if nb_bytes_sent < len(data_to_send):
                     key_data.unsent_data = data_to_send[nb_bytes_sent:]
-                    self.__server_selector.add_client_writer(socket, key_data)
+                    self.__server_selector.add_client_writer(socket)
                 else:
                     self.__server_selector.remove_client_writer(socket)
                 logger.debug("%d byte(s) sent and %d byte(s) queued", nb_bytes_sent, len(key_data.unsent_data))
@@ -515,23 +518,21 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         logger: logging.Logger = self.__logger
 
         logger.info("Client shutdown requested")
-        with self.__clients_lock:
-            self.__clients.pop(socket, None)
         try:
-            key = self.__server_selector.unregister_client(socket)
+            key_data = self.__server_selector.unregister_client(socket)
         except KeyError:
             logger.warning("-> Unknown client")
             return
         with suppress(Exception):
             try:
                 if from_client:
-                    if key.data.unsent_data or key.data.producer.pending_packets():
-                        self.__flush_client_data(key, only_unsent=False)
+                    if key_data.has_data_to_send():
+                        self.__flush_client_data(socket, key_data, only_unsent=False)
                 else:
                     socket.shutdown(SHUT_WR)
             finally:
                 socket.close()
-        client = key.data.client
+        client = key_data.client
         try:
             self.on_disconnect(client)
         except Exception:
@@ -603,9 +604,8 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
 
     @final
     def get_clients(self) -> Sequence[ConnectedClient[_ResponseT]]:
-        with self.__clients_lock:
-            self._check_not_closed()
-            return tuple(filter(lambda client: not client.is_closed(), (k.client for k in self.__clients.values())))
+        self._check_not_closed()
+        return self.__server_selector.get_connected_clients_list()
 
     @final
     def _check_not_closed(self) -> None:
@@ -634,50 +634,84 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
 
 
 if TYPE_CHECKING:
+    from typing import TypedDict as _TypedDict
 
     @type_check_only
-    class _SelectorKey(NamedTuple, Generic[_RequestT, _ResponseT]):
-        fileobj: Socket
-        fd: int
-        events: int
-        data: _SelectorKeyData[_RequestT, _ResponseT]
+    class _ServerSocketSelectResult(_TypedDict, Generic[_RequestT, _ResponseT]):
+        listeners: list[Socket]
+        clients: list[tuple[Socket, int, _SelectorKeyData[_RequestT, _ResponseT]]]
 
 
 class _ServerSocketSelector(Generic[_RequestT, _ResponseT]):
     __slots__ = (
         "__factory",
         "__listener_sock_selector",
+        "__listener_poll_interval",
         "__clients_selectors_list",
-        "__clients_selectors_map",
+        "__client_to_selector_map",
+        "__client_data_map",
+        "__selector_clients_map",
+        "__clients_poll_interval",
         "__selector_exit_stack",
         "__listener_lock",
         "__clients_lock",
     )
 
-    def __init__(self, factory: Callable[[], BaseSelector]) -> None:
+    def __init__(
+        self,
+        factory: Callable[[], BaseSelector],
+        listener_poll_interval: float,
+        clients_poll_interval: float,
+    ) -> None:
+        listener_poll_interval = float(listener_poll_interval)
+        clients_poll_interval = float(clients_poll_interval)
+        if listener_poll_interval < 0:
+            raise ValueError("'listener_poll_interval': Negative value")
+        if clients_poll_interval < 0:
+            raise ValueError("'clients_poll_interval': Negative value")
         self.__factory: Callable[[], BaseSelector] = factory
         self.__listener_sock_selector: BaseSelector = factory()
         self.__clients_selectors_list: list[BaseSelector] = [factory()]  # At least one selector
-        self.__clients_selectors_map: WeakKeyDictionary[Socket, BaseSelector] = WeakKeyDictionary()
+        self.__client_to_selector_map: WeakKeyDictionary[Socket, BaseSelector] = WeakKeyDictionary()
+        self.__client_data_map: WeakKeyDictionary[Socket, _SelectorKeyData[_RequestT, _ResponseT]] = WeakKeyDictionary()
+        self.__selector_clients_map: defaultdict[BaseSelector, set[Socket]] = defaultdict(set)
         self.__selector_exit_stack = ExitStack()
         self.__listener_lock = RLock()
         self.__clients_lock = RLock()
+        self.__listener_poll_interval = listener_poll_interval
+        self.__clients_poll_interval = clients_poll_interval
+        self.__selector_exit_stack.callback(self.__client_data_map.clear)
+        self.__selector_exit_stack.callback(self.__client_to_selector_map.clear)
+        self.__selector_exit_stack.callback(self.__selector_clients_map.clear)
+        self.__selector_exit_stack.callback(self.__clients_selectors_list.clear)
         self.__selector_exit_stack.enter_context(self.__listener_sock_selector)
         self.__selector_exit_stack.enter_context(self.__clients_selectors_list[0])
 
     def __enter__(self) -> None:
         return
 
-    def __exit__(self, *args: Any) -> None:
-        self.close()
-
-    def close(self) -> None:
+    def __exit__(self, *args: Any) -> bool:
         with self.__listener_lock, self.__clients_lock:
             try:
-                self.__selector_exit_stack.close()
+                return self.__selector_exit_stack.__exit__(*args)
             finally:
-                self.__clients_selectors_list.clear()
-                self.__clients_selectors_map.clear()
+                type(self).__init__(
+                    self,
+                    factory=self.__factory,
+                    listener_poll_interval=self.__listener_poll_interval,
+                    clients_poll_interval=self.__clients_poll_interval,
+                )
+
+    def select(self) -> _ServerSocketSelectResult[_RequestT, _ResponseT]:
+        ready_clients = self.__clients_select(self.__clients_poll_interval)
+        if ready_clients:
+            ready_listeners = self.__listeners_select(0)
+        else:
+            ready_listeners = self.__listeners_select(self.__listener_poll_interval)
+        return {
+            "listeners": ready_listeners,
+            "clients": ready_clients,
+        }
 
     def add_listener_socket(self, socket: Socket) -> None:
         with self.__listener_lock:
@@ -706,45 +740,47 @@ class _ServerSocketSelector(Generic[_RequestT, _ResponseT]):
             with self.__listener_lock:
                 selector.register(key.fileobj, key.events, key.data)
 
-    def listener_select(self) -> list[Socket]:
+    def __listeners_select(self, timeout: float) -> list[Socket]:
         with self.__listener_lock:
             if not self.__listener_sock_selector.get_map():
                 return []
-            return [key.fileobj for key, _ in self.__listener_sock_selector.select(timeout=0)]  # type: ignore[misc]
+            return [key.fileobj for key, _ in self.__listener_sock_selector.select(timeout=timeout)]  # type: ignore[misc]
 
-    def unregister_client(self, socket: Socket) -> _SelectorKey[_RequestT, _ResponseT]:
+    def register_client(self, socket: Socket, data: _SelectorKeyData[_RequestT, _ResponseT]) -> None:
         with self.__clients_lock:
-            client_selector = self.__clients_selectors_map.pop(socket)
-            return client_selector.unregister(socket)  # type: ignore[return-value]
+            self.__client_to_selector_map[socket] = client_selector = self.__get_client_selector_for_new_client()
+            self.__selector_clients_map[client_selector].add(socket)
+            self.__client_data_map[socket] = data
 
-    def add_client_reader(self, socket: Socket, data: _SelectorKeyData[_RequestT, _ResponseT]) -> None:
+    def unregister_client(self, socket: Socket) -> _SelectorKeyData[_RequestT, _ResponseT]:
         with self.__clients_lock:
-            try:
-                client_selector = self.__clients_selectors_map[socket]
-            except KeyError:
-                self.__clients_selectors_map[socket] = client_selector = self.__get_client_selector_for_new_client()
-                client_selector.register(socket, EVENT_READ, data)
-            else:
-                self.__add_event_mask_or_register(socket, client_selector, EVENT_READ, data)
+            data = self.__client_data_map.pop(socket)
+            client_selector = self.__client_to_selector_map.pop(socket)
+            self.__selector_clients_map[client_selector].discard(socket)
+            with suppress(KeyError):
+                client_selector.unregister(socket)
+            return data
+
+    def add_client_reader(self, socket: Socket) -> None:
+        with self.__clients_lock:
+            client_selector = self.__client_to_selector_map[socket]
+            data = self.__client_data_map[socket]
+            self.__add_event_mask_or_register(socket, client_selector, EVENT_READ, data)
 
     def remove_client_reader(self, socket: Socket) -> None:
         with self.__clients_lock:
-            client_selector = self.__clients_selectors_map[socket]
+            client_selector = self.__client_to_selector_map[socket]
             self.__remove_event_mask_or_unregister(socket, client_selector, EVENT_READ)
 
-    def add_client_writer(self, socket: Socket, data: _SelectorKeyData[_RequestT, _ResponseT]) -> None:
+    def add_client_writer(self, socket: Socket) -> None:
         with self.__clients_lock:
-            try:
-                client_selector = self.__clients_selectors_map[socket]
-            except KeyError:
-                self.__clients_selectors_map[socket] = client_selector = self.__get_client_selector_for_new_client()
-                client_selector.register(socket, EVENT_WRITE, data)
-            else:
-                self.__add_event_mask_or_register(socket, client_selector, EVENT_WRITE, data)
+            client_selector = self.__client_to_selector_map[socket]
+            data = self.__client_data_map[socket]
+            self.__add_event_mask_or_register(socket, client_selector, EVENT_WRITE, data)
 
     def remove_client_writer(self, socket: Socket) -> None:
         with self.__clients_lock:
-            client_selector = self.__clients_selectors_map[socket]
+            client_selector = self.__client_to_selector_map[socket]
             self.__remove_event_mask_or_unregister(socket, client_selector, EVENT_WRITE)
 
     def __get_client_selector_for_new_client(self) -> BaseSelector:
@@ -753,7 +789,7 @@ class _ServerSocketSelector(Generic[_RequestT, _ResponseT]):
         # FD_SETSIZE is usually around 1024, so it is assumed that exceeding the limit will possibly cause the selector to fail.
         client_selector: BaseSelector = self.__clients_selectors_list[-1]
         if isinstance(client_selector, SelectSelector):
-            if len(client_selector.get_map()) >= 512:  # Keep a margin from the 1024 ceiling, just to be sure
+            if len(self.__selector_clients_map[client_selector]) >= 512:  # Keep a margin from the 1024 ceiling, just to be sure
                 client_selector = self.__factory()
                 self.__clients_selectors_list.append(client_selector)
                 self.__selector_exit_stack.enter_context(client_selector)
@@ -783,31 +819,49 @@ class _ServerSocketSelector(Generic[_RequestT, _ResponseT]):
             else:
                 selector.modify(socket, new_events, key.data)
 
-    def clients_select(self) -> list[tuple[_SelectorKey[_RequestT, _ResponseT], int]]:
+    def __clients_select(self, timeout: float) -> list[tuple[Socket, int, _SelectorKeyData[_RequestT, _ResponseT]]]:
         with self.__clients_lock:
-            return list(
-                chain.from_iterable(
-                    client_selector.select(timeout=0)  # type: ignore[misc]
+            return [
+                (key.fileobj, event, key.data)  # type: ignore[misc]
+                for key, event in chain.from_iterable(
+                    client_selector.select(timeout=timeout)
                     for client_selector in self.__clients_selectors_list
                     if client_selector.get_map()
                 )
-            )
+            ]
 
-    def get_client_key(self, socket: Socket) -> _SelectorKey[_RequestT, _ResponseT]:
+    def has_client(self, socket: Socket) -> bool:
         with self.__clients_lock:
-            client_selector = self.__clients_selectors_map[socket]
-            return client_selector.get_key(socket)  # type: ignore[return-value]
+            return socket in self.__client_data_map
 
-    def get_all_client_keys(self) -> list[_SelectorKey[_RequestT, _ResponseT]]:
+    def get_client_data(self, socket: Socket) -> _SelectorKeyData[_RequestT, _ResponseT]:
         with self.__clients_lock:
-            return list(chain.from_iterable(s.get_map().values() for s in self.__clients_selectors_list))  # type: ignore[misc]
+            return self.__client_data_map[socket]
+
+    def get_all_active_client_keys(
+        self,
+        predicate: Callable[[_SelectorKeyData[_RequestT, _ResponseT]], Any] | None = None,
+    ) -> list[tuple[Socket, _SelectorKeyData[_RequestT, _ResponseT]]]:
+        with self.__clients_lock:
+            iterator: Iterator[__DefaultSelectorKey]
+            iterator = chain.from_iterable(s.get_map().values() for s in self.__clients_selectors_list)
+            if predicate is not None:
+                _cast_predicate = predicate
+                iterator = filter(lambda k: _cast_predicate(k.data), iterator)
+            try:
+                return [(k.fileobj, k.data) for k in iterator]  # type: ignore[misc]
+            finally:
+                del iterator
+
+    def get_connected_clients_list(self) -> tuple[ConnectedClient[_ResponseT], ...]:
+        with self.__clients_lock:
+            return tuple(filter(lambda c: not c.is_closed(), (k.client for k in self.__client_data_map.values())))
 
 
 @dataclass(init=False, slots=True)
 class _SelectorKeyData(Generic[_RequestT, _ResponseT]):
     producer: StreamDataProducer[_ResponseT]
     consumer: StreamDataConsumer[_RequestT]
-    recv_size: int
     client: ConnectedClient[_ResponseT]
     unsent_data: bytes
     send_lock: RLock
@@ -825,7 +879,6 @@ class _SelectorKeyData(Generic[_RequestT, _ResponseT]):
     ) -> None:
         self.producer = StreamDataProducer(protocol)
         self.consumer = StreamDataConsumer(protocol)
-        self.recv_size = guess_best_recv_size(socket)
         self.client = self.__ConnectedTCPClient(
             producer=self.producer,
             socket=socket,
@@ -837,6 +890,10 @@ class _SelectorKeyData(Generic[_RequestT, _ResponseT]):
         )
         self.unsent_data = b""
         self.send_lock = RLock()
+
+    def has_data_to_send(self) -> bool:
+        with self.send_lock:
+            return True if self.unsent_data or self.producer.pending_packets() else False
 
     @final
     class __ConnectedTCPClient(ConnectedClient[_ResponseT]):

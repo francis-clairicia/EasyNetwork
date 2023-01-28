@@ -56,8 +56,7 @@ class StreamDataProducer(Generic[_SentPacketT]):
                 else:
                     self.__g = None
                 try:
-                    while not (chunk := next(generator)):
-                        continue
+                    chunk = next(filter(None, generator))
                 except StopIteration:
                     pass
                 else:

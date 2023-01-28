@@ -14,7 +14,7 @@ from threading import RLock
 from typing import Any, Generic, Iterator, TypeVar, final, overload
 
 from ..protocol import StreamProtocol, StreamProtocolParseError
-from ..tools.socket import SocketAddress, guess_best_recv_size, new_socket_address
+from ..tools.socket import SocketAddress, new_socket_address
 from ..tools.stream import StreamDataConsumer, StreamDataProducer
 from .abc import AbstractNetworkClient
 
@@ -32,7 +32,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         "__owner",
         "__closed",
         "__lock",
-        "__recv_size",
         "__producer",
         "__consumer",
         "__peer",
@@ -40,6 +39,8 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         "__default_send_flags",
         "__default_recv_flags",
     )
+
+    max_size: int = 256 * 1024  # Buffer size passed to recv().
 
     @overload
     def __init__(
@@ -115,7 +116,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         self.__socket: Socket = socket
         self.__lock: RLock = RLock()
         self.__eof_reached: bool = False
-        self.__recv_size: int = guess_best_recv_size(socket)
         self.__default_send_flags: int = send_flags
         self.__default_recv_flags: int = recv_flags
 
@@ -228,7 +228,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         socket: Socket = self.__socket
         with _use_timeout(socket, timeout):
             try:
-                chunk: bytes = socket.recv(self.__recv_size, flags)
+                chunk: bytes = socket.recv(self.max_size, flags)
             except (TimeoutError, BlockingIOError, InterruptedError):
                 return False
             if not chunk:

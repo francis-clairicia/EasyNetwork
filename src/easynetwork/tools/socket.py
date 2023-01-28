@@ -10,11 +10,9 @@ __all__ = [
     "AF_INET",
     "AF_INET6",
     "AddressFamily",
-    "guess_best_recv_size",
     "new_socket_address",
 ]
 
-import os
 import socket as _socket
 from enum import IntEnum, unique
 from typing import Any, Final, Literal, NamedTuple, TypeAlias, overload
@@ -87,23 +85,3 @@ def new_socket_address(addr: tuple[Any, ...], family: int) -> SocketAddress:
             return IPv6SocketAddress(*addr)
         case _:  # pragma: no cover
             raise AssertionError
-
-
-def guess_best_recv_size(socket: _socket.socket) -> int:
-    match socket.type:
-        case _socket.SOCK_STREAM:
-            try:
-                socket_stat = os.fstat(socket.fileno())
-            except OSError:  # Will not work for sockets which have not a real file descriptor (e.g. on Windows)
-                pass
-            else:
-                if (blksize := getattr(socket_stat, "st_blksize", 0)) > 0:
-                    return blksize
-
-            from io import DEFAULT_BUFFER_SIZE
-
-            return DEFAULT_BUFFER_SIZE
-        case _socket.SOCK_DGRAM:
-            return 65536  # 64 KiB
-        case _:
-            raise ValueError("Unsupported socket type")

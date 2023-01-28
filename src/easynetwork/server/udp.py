@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Any, Callable, Generic, Iterator, TypeAlias, T
 
 from ..protocol import DatagramProtocol, DatagramProtocolParseError, ParseErrorType
 from ..tools.datagram import DatagramConsumer, DatagramProducer
-from ..tools.socket import AF_INET, SocketAddress, guess_best_recv_size, new_socket_address
+from ..tools.socket import AF_INET, SocketAddress, new_socket_address
 from .abc import AbstractNetworkServer
 from .executors.abc import AbstractRequestExecutor
 
@@ -45,7 +45,6 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         "__protocol_factory",
         "__selector_factory",
         "__request_executor",
-        "__recv_size",
         "__default_send_flags",
         "__default_recv_flags",
         "__unsent_datagrams",
@@ -104,7 +103,6 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         self.__is_shutdown: Event = Event()
         self.__is_shutdown.set()
         self.__protocol_factory: DatagramProtocolFactory[_ResponseT, _RequestT] = protocol_factory
-        self.__recv_size: int = guess_best_recv_size(socket)
         self.__default_send_flags: int = int(send_flags)
         self.__default_recv_flags: int = int(recv_flags)
         self.__unsent_datagrams: deque[tuple[bytes, SocketAddress]] = deque()
@@ -210,11 +208,10 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     def __receive_datagrams(self) -> None:
         logger: logging.Logger = self.__logger
         socket: Socket = self.__socket
-        recv_size: int = self.__recv_size
         recv_flags: int = self.__default_recv_flags
         while True:
             try:
-                data, sender = socket.recvfrom(recv_size, recv_flags)
+                data, sender = socket.recvfrom(65536, recv_flags)
             except (TimeoutError, BlockingIOError, InterruptedError):
                 return
             sender = new_socket_address(sender, socket.family)
@@ -245,7 +242,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 try:
                     self.bad_request(exc.sender, exc.error_type, exc.message, exc.error_info)
                 except Exception:
-                    self.__on_client_error(exc.sender)
+                    self.handle_error(exc.sender, sys.exc_info())
             except Exception as exc:
                 raise RuntimeError(str(exc)) from exc
 
@@ -253,7 +250,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         try:
             self.process_request(request, client_address)
         except Exception:
-            self.__on_client_error(client_address)
+            self.handle_error(client_address, sys.exc_info())
 
     @abstractmethod
     def process_request(self, request: _RequestT, client_address: SocketAddress) -> None:
@@ -333,15 +330,6 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             else:
                 logger.debug("-> Datagram successfully sent.")
                 del unsent_datagrams[0]
-
-    def __on_client_error(self, client_address: SocketAddress) -> None:
-        try:
-            self.handle_error(client_address, sys.exc_info())
-        finally:
-            if not self.__unsent_datagrams:
-                self.__socket.sendto(b"", self.__default_send_flags, client_address)
-            else:
-                self.__unsent_datagrams.append((b"", client_address))
 
     def bad_request(self, client_address: SocketAddress, error_type: ParseErrorType, message: str, error_info: Any) -> None:
         pass
