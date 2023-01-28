@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-JSON_SAMPLES: list[tuple[Any, str]] = [
+SAMPLES: list[tuple[Any, str]] = [
     (5, "positive integer"),
     (-123, "negative integer"),
     (1.3, "positive float"),
@@ -228,4 +228,4 @@ BIG_JSON: Any = [
     },
 ]
 
-JSON_SAMPLES += [(BIG_JSON, "big json")]
+SAMPLES += [(BIG_JSON, "big json")]

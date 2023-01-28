@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from functools import cache
+import dataclasses
 from typing import Any, final
 
 from easynetwork.serializers.cbor import CBOREncoderConfig, CBORSerializer
@@ -10,28 +10,72 @@ from easynetwork.serializers.cbor import CBOREncoderConfig, CBORSerializer
 import pytest
 
 from .base import BaseTestIncrementalSerializer
-from .samples.json import JSON_SAMPLES
+from .samples.json import SAMPLES
 
 
 @final
 class TestCBORSerializer(BaseTestIncrementalSerializer):
+    #### Serializers
+
     ENCODER_CONFIG = CBOREncoderConfig()
 
     @pytest.fixture(scope="class")
     @classmethod
-    def serializer(cls) -> CBORSerializer[Any, Any]:
+    def serializer_for_serialization(cls) -> CBORSerializer[Any, Any]:
         return CBORSerializer(encoder_config=cls.ENCODER_CONFIG)
 
-    @classmethod
-    @cache
-    def get_oneshot_serialize_sample(cls) -> list[tuple[Any, bytes, str]]:
-        from dataclasses import asdict
+    @pytest.fixture(scope="class")
+    @staticmethod
+    def serializer_for_deserialization() -> CBORSerializer[Any, Any]:
+        return CBORSerializer()
 
+    #### Packets to test
+
+    @pytest.fixture(scope="class", params=[pytest.param(p, id=f"packet: {id}") for p, id in SAMPLES])
+    @staticmethod
+    def packet_to_serialize(request: Any) -> Any:
+        return request.param
+
+    #### One-shot Serialize
+
+    @pytest.fixture(scope="class")
+    @classmethod
+    def expected_complete_data(cls, packet_to_serialize: Any) -> bytes:
         import cbor2
 
-        return [(p, cbor2.dumps(p, **asdict(cls.ENCODER_CONFIG)), id) for p, id in JSON_SAMPLES]
+        return cbor2.dumps(packet_to_serialize, **dataclasses.asdict(cls.ENCODER_CONFIG))
 
-    @classmethod
-    @cache
-    def get_incremental_serialize_sample(cls) -> list[tuple[Any, bytes, str]]:
-        return cls.get_oneshot_serialize_sample()
+    #### Incremental Serialize
+
+    @pytest.fixture(scope="class")
+    @staticmethod
+    def expected_joined_data(expected_complete_data: bytes) -> bytes:
+        return expected_complete_data
+
+    #### One-shot Deserialize
+
+    @pytest.fixture(scope="class")
+    @staticmethod
+    def complete_data(packet_to_serialize: Any) -> bytes:
+        import cbor2
+
+        return cbor2.dumps(packet_to_serialize)
+
+    #### Incremental Deserialize
+
+    @pytest.fixture(scope="class")
+    @staticmethod
+    def complete_data_for_incremental_deserialize(complete_data: bytes) -> bytes:
+        return complete_data
+
+    #### Invalid data
+
+    @pytest.fixture(scope="class", params=[])
+    @staticmethod
+    def invalid_complete_data() -> bytes:
+        raise NotImplementedError
+
+    @pytest.fixture(scope="class", params=[])
+    @staticmethod
+    def invalid_partial_data() -> bytes:
+        raise NotImplementedError

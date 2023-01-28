@@ -86,7 +86,3 @@ class PickleSerializer(FileBasedIncrementalPacketSerializer[_ST_contra, _DT_co])
     @final
     def _deserialize_from_file(self, file: IO[bytes]) -> _DT_co:
         return self.__unpickler_cls(file, **self.__unpickler_config, buffers=None).load()
-
-    @final
-    def _wait_for_next_chunk(self, given_chunk: bytes) -> bool:
-        return _pickle.STOP not in given_chunk

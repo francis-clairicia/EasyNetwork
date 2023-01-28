@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from functools import cache
 from typing import Any, NamedTuple, final
 
 from easynetwork.serializers.struct import NamedTupleStructSerializer
@@ -25,29 +24,82 @@ POINT_FIELD_FORMATS = {
 }
 
 
+STRUCT_FORMAT = f"!{''.join(map(POINT_FIELD_FORMATS.__getitem__, Point._fields))}"
+
+
 @final
 class TestNamedTupleStructSerializer(BaseTestIncrementalSerializer):
+    #### Serializers
+
     @pytest.fixture(scope="class")
     @classmethod
     def serializer(cls) -> NamedTupleStructSerializer[Point]:
         return NamedTupleStructSerializer(Point, POINT_FIELD_FORMATS)
 
-    @classmethod
-    @cache
-    def get_oneshot_serialize_sample(cls) -> list[tuple[Any, bytes, str]]:
-        import struct
+    @pytest.fixture(scope="class")
+    @staticmethod
+    def serializer_for_serialization(serializer: NamedTupleStructSerializer[Point]) -> NamedTupleStructSerializer[Point]:
+        return serializer
 
-        s = struct.Struct("!10sqc")
+    @pytest.fixture(scope="class")
+    @staticmethod
+    def serializer_for_deserialization(serializer: NamedTupleStructSerializer[Point]) -> NamedTupleStructSerializer[Point]:
+        return serializer
 
-        return [
-            (p, s.pack(p.name.encode(), p.x, p.y), repr(p))
+    #### Packets to test
+
+    @pytest.fixture(
+        scope="class",
+        params=[
+            pytest.param(p, id=f"packet: {p!r}")
             for p in [
                 Point("", 0, b"\0"),
                 Point("string", -4, b"y"),
             ]
-        ]
+        ],
+    )
+    @staticmethod
+    def packet_to_serialize(request: Any) -> Any:
+        return request.param
 
+    #### One-shot Serialize
+
+    @pytest.fixture(scope="class")
     @classmethod
-    @cache
-    def get_incremental_serialize_sample(cls) -> list[tuple[Any, bytes, str]]:
-        return cls.get_oneshot_serialize_sample()
+    def expected_complete_data(cls, packet_to_serialize: Point) -> bytes:
+        import struct
+
+        return struct.pack(STRUCT_FORMAT, packet_to_serialize.name.encode(), packet_to_serialize.x, packet_to_serialize.y)
+
+    #### Incremental Serialize
+
+    @pytest.fixture(scope="class")
+    @staticmethod
+    def expected_joined_data(expected_complete_data: bytes) -> bytes:
+        return expected_complete_data
+
+    #### One-shot Deserialize
+
+    @pytest.fixture(scope="class")
+    @staticmethod
+    def complete_data(expected_complete_data: bytes) -> bytes:
+        return expected_complete_data
+
+    #### Incremental Deserialize
+
+    @pytest.fixture(scope="class")
+    @staticmethod
+    def complete_data_for_incremental_deserialize(complete_data: bytes) -> bytes:
+        return complete_data
+
+    #### Invalid data
+
+    @pytest.fixture(scope="class", params=[])
+    @staticmethod
+    def invalid_complete_data() -> bytes:
+        raise NotImplementedError
+
+    @pytest.fixture(scope="class", params=[])
+    @staticmethod
+    def invalid_partial_data() -> bytes:
+        raise NotImplementedError

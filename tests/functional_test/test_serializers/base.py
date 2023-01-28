@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from abc import ABCMeta, abstractmethod
+from abc import ABCMeta
 from typing import Any, final
 
 from easynetwork.serializers.abc import AbstractPacketSerializer
@@ -16,144 +16,141 @@ from ..._utils import send_return
 
 
 class BaseTestSerializer(metaclass=ABCMeta):
-    @classmethod
-    @abstractmethod
-    def get_oneshot_serialize_sample(cls) -> list[tuple[Any, bytes, str]]:
-        raise NotImplementedError
+    @pytest.fixture(scope="class")
+    @staticmethod
+    def extra_data() -> bytes:
+        return b"remaining_data"
 
-    @classmethod
-    def get_invalid_complete_data(cls) -> list[tuple[bytes, str]]:
-        return []
-
-    @final
     def test____serialize____sample(
         self,
-        serializer: AbstractPacketSerializer[Any, Any],
-        packet: Any,
-        expected_data: bytes,
+        serializer_for_serialization: AbstractPacketSerializer[Any, Any],
+        packet_to_serialize: Any,
+        expected_complete_data: bytes,
     ) -> None:
         # Arrange
 
         # Act
-        data = serializer.serialize(packet)
+        data = serializer_for_serialization.serialize(packet_to_serialize)
 
         # Assert
         assert isinstance(data, bytes)
-        assert data == expected_data
+        assert data == expected_complete_data
 
-    @final
     def test____deserialize____sample(
         self,
-        serializer: AbstractPacketSerializer[Any, Any],
-        data: bytes,
-        expected_packet: Any,
+        serializer_for_deserialization: AbstractPacketSerializer[Any, Any],
+        complete_data: bytes,
+        packet_to_serialize: Any,
     ) -> None:
         # Arrange
 
         # Act
-        packet = serializer.deserialize(data)
+        packet = serializer_for_deserialization.deserialize(complete_data)
 
         # Assert
-        assert type(packet) is type(expected_packet)
-        assert packet == expected_packet
+        assert type(packet) is type(packet_to_serialize)
+        assert packet == packet_to_serialize
 
     def test____deserialize____invalid_data(
         self,
-        serializer: AbstractPacketSerializer[Any, Any],
+        serializer_for_deserialization: AbstractPacketSerializer[Any, Any],
         invalid_complete_data: bytes,
     ) -> None:
         # Arrange
 
         # Act & Assert
         with pytest.raises(DeserializeError):
-            _ = serializer.deserialize(invalid_complete_data)
+            _ = serializer_for_deserialization.deserialize(invalid_complete_data)
+
+    def test____deserialize____extra_data(
+        self,
+        serializer_for_deserialization: AbstractPacketSerializer[Any, Any],
+        complete_data: bytes,
+        extra_data: bytes,
+    ) -> None:
+        # Arrange
+        assert len(extra_data) > 0
+
+        # Act & Assert
+        with pytest.raises(DeserializeError):
+            _ = serializer_for_deserialization.deserialize(complete_data + extra_data)
 
 
 class BaseTestIncrementalSerializer(BaseTestSerializer):
-    @classmethod
-    @abstractmethod
-    def get_incremental_serialize_sample(cls) -> list[tuple[Any, bytes, str]]:
-        raise NotImplementedError
-
-    @classmethod
-    def get_invalid_partial_data(cls) -> list[tuple[bytes, bytes, str]]:
-        return []
-
-    @final
     def test____incremental_serialize____concatenated_chunks(
         self,
-        serializer: AbstractIncrementalPacketSerializer[Any, Any],
-        packet: Any,
-        expected_data: bytes,
+        serializer_for_serialization: AbstractIncrementalPacketSerializer[Any, Any],
+        packet_to_serialize: Any,
+        expected_joined_data: bytes,
     ) -> None:
         # Arrange
 
         # Act
-        data: bytes = b"".join(serializer.incremental_serialize(packet))
+        data: bytes = b"".join(serializer_for_serialization.incremental_serialize(packet_to_serialize))
 
         # Assert
         assert isinstance(data, bytes)
-        assert data == expected_data
+        assert data == expected_joined_data
 
-    @final
     def test____incremental_deserialize____one_shot_chunk(
         self,
-        serializer: AbstractIncrementalPacketSerializer[Any, Any],
-        data: bytes,
-        expected_packet: Any,
+        serializer_for_deserialization: AbstractIncrementalPacketSerializer[Any, Any],
+        complete_data_for_incremental_deserialize: bytes,
+        packet_to_serialize: Any,
     ) -> None:
         # Arrange
-        consumer = serializer.incremental_deserialize()
+        consumer = serializer_for_deserialization.incremental_deserialize()
         next(consumer)
 
         # Act
-        packet, remaining_data = send_return(consumer, data)
+        packet, remaining_data = send_return(consumer, complete_data_for_incremental_deserialize)
 
         # Assert
         assert isinstance(remaining_data, bytes)
         assert remaining_data == b""
-        assert type(packet) is type(expected_packet)
-        assert packet == expected_packet
+        assert type(packet) is type(packet_to_serialize)
+        assert packet == packet_to_serialize
 
-    @final
     def test____incremental_deserialize____with_remaining_data(
         self,
-        serializer: AbstractIncrementalPacketSerializer[Any, Any],
-        data: bytes,
-        expected_packet: Any,
-        expected_remaining_data: bytes,
+        serializer_for_deserialization: AbstractIncrementalPacketSerializer[Any, Any],
+        complete_data_for_incremental_deserialize: bytes,
+        packet_to_serialize: Any,
+        extra_data: bytes,
     ) -> None:
         # Arrange
-        consumer = serializer.incremental_deserialize()
+        assert len(extra_data) > 0
+        consumer = serializer_for_deserialization.incremental_deserialize()
         next(consumer)
 
         # Act
-        packet, remaining_data = send_return(consumer, data + expected_remaining_data)
+        packet, remaining_data = send_return(consumer, complete_data_for_incremental_deserialize + extra_data)
 
         # Assert
         assert isinstance(remaining_data, bytes)
-        assert remaining_data == expected_remaining_data
-        assert type(packet) is type(expected_packet)
-        assert packet == expected_packet
+        assert remaining_data == extra_data
+        assert type(packet) is type(packet_to_serialize)
+        assert packet == packet_to_serialize
 
-    @final
     @pytest.mark.parametrize("empty_bytes_before", [False, True], ids=lambda boolean: f"empty_bytes_before=={boolean}")
     def test____incremental_deserialize____give_chunk_byte_per_byte(
         self,
-        serializer: AbstractIncrementalPacketSerializer[Any, Any],
+        serializer_for_deserialization: AbstractIncrementalPacketSerializer[Any, Any],
         empty_bytes_before: bool,
-        data: bytes,
-        expected_packet: Any,
+        complete_data_for_incremental_deserialize: bytes,
+        packet_to_serialize: Any,
     ) -> None:
         # Arrange
         import struct
 
-        chunks_list: list[bytes] = list(struct.unpack(f"{len(data)}c", data))
-        assert all(len(b) == 1 for b in chunks_list) and b"".join(chunks_list) == data
+        chunks_list: list[bytes] = list(
+            struct.unpack(f"{len(complete_data_for_incremental_deserialize)}c", complete_data_for_incremental_deserialize)
+        )
+        assert all(len(b) == 1 for b in chunks_list) and b"".join(chunks_list) == complete_data_for_incremental_deserialize
 
-        del data, struct
+        del complete_data_for_incremental_deserialize, struct
 
-        consumer = serializer.incremental_deserialize()
+        consumer = serializer_for_deserialization.incremental_deserialize()
         next(consumer)
 
         # Act
@@ -162,7 +159,10 @@ class BaseTestIncrementalSerializer(BaseTestSerializer):
             # However, the remaining data returned should be empty
             for chunk in chunks_list:
                 if empty_bytes_before:
-                    consumer.send(b"")
+                    try:
+                        consumer.send(b"")
+                    except StopIteration:
+                        raise RuntimeError("consumer stopped when sending empty bytes")
                 consumer.send(chunk)
 
         packet, remaining_data = exc_info.value.value
@@ -170,17 +170,18 @@ class BaseTestIncrementalSerializer(BaseTestSerializer):
         # Assert
         assert isinstance(remaining_data, bytes)
         assert remaining_data == b""
-        assert type(packet) is type(expected_packet)
-        assert packet == expected_packet
+        assert type(packet) is type(packet_to_serialize)
+        assert packet == packet_to_serialize
 
     def test____incremental_deserialize____invalid_data(
         self,
-        serializer: AbstractIncrementalPacketSerializer[Any, Any],
+        serializer_for_deserialization: AbstractIncrementalPacketSerializer[Any, Any],
         invalid_partial_data: bytes,
-        expected_remaining_data: bytes,
+        extra_data: bytes,
     ) -> None:
         # Arrange
-        consumer = serializer.incremental_deserialize()
+        assert len(extra_data) > 0
+        consumer = serializer_for_deserialization.incremental_deserialize()
         next(consumer)
 
         # Act
@@ -189,7 +190,7 @@ class BaseTestIncrementalSerializer(BaseTestSerializer):
         exception = exc_info.value
 
         # Assert
-        assert exception.remaining_data == expected_remaining_data
+        assert exception.remaining_data == extra_data
 
 
 @final

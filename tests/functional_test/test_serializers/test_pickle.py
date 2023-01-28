@@ -2,116 +2,117 @@
 
 from __future__ import annotations
 
-from functools import cache
+import dataclasses
+import pickle
+import pickletools
 from typing import Any, final
 
-from easynetwork.serializers.pickle import PickleSerializer
+from easynetwork.serializers.pickle import PicklerConfig, PickleSerializer, UnpicklerConfig
 
 import pytest
 
 from .base import BaseTestIncrementalSerializer
+from .samples.pickle import SAMPLES
 
-
-class Dummy:
-    def __init__(self) -> None:
-        self.attr = "attr"
-
-    def __eq__(self, __o: object) -> bool:
-        if not isinstance(__o, Dummy):
-            return NotImplemented
-        return self.attr == __o.attr
-
-
-class BigDummy:
-    def __init__(self, level: int) -> None:
-        assert level > 0
-        level -= 1
-        if level == 0:
-            self.dummy = {}
-        else:
-            self.dummy = {
-                "dummy1": BigDummy(level),
-                "dummy2": {
-                    "subdummy1": BigDummy(level),
-                    "subdummy2": [BigDummy(level) for _ in range(10)],
-                },
-                "dummy3": [
-                    {
-                        "subdummy1": [BigDummy(level) for _ in range(5)],
-                        "subdummy2": {
-                            "sub-subdummy": BigDummy(level),
-                        },
-                    }
-                    for _ in range(20)
-                ],
-            }
-
-    def __eq__(self, __o: object) -> bool:
-        if not isinstance(__o, BigDummy):
-            return NotImplemented
-        return self.dummy == __o.dummy
+ALL_PROTOCOLS: tuple[int, ...] = tuple(range(0, pickle.HIGHEST_PROTOCOL + 1))
 
 
 @final
 class TestPickleSerializer(BaseTestIncrementalSerializer):
+    @pytest.fixture(scope="class", params=ALL_PROTOCOLS, ids=lambda p: f"pickle_data_protocol=={p}")
+    @staticmethod
+    def pickle_data_protocol(request: Any) -> int:
+        return request.param
+
+    #### Serializers
+
     @pytest.fixture(scope="class")
     @staticmethod
-    def serializer() -> PickleSerializer[Any, Any]:
-        return PickleSerializer()
+    def pickler_config(pickle_data_protocol: int) -> PicklerConfig:
+        return PicklerConfig(protocol=pickle_data_protocol)
 
-    @classmethod
-    @cache
-    def get_oneshot_serialize_sample(cls) -> list[tuple[Any, bytes, str]]:
-        import pickle
+    @pytest.fixture(scope="class", params=[False, True], ids=lambda boolean: f"optimize=={boolean}")
+    @staticmethod
+    def pickler_optimize(request: Any) -> bool:
+        return request.param
 
-        return [
-            (p, pickle.dumps(p), id)
-            for p, id in [
-                (4, "positive integer"),
-                (-4, "negative integer"),
-                (3.14, "float"),
-                (1 + 3j, "complex number"),
-                (float("-inf"), "-Infinity"),
-                (float("+inf"), "Infinity"),
-                ("something", "string"),
-                (b"something", "bytes"),
-                (b"something%sother" % pickle.STOP, "bytes with STOP opcode"),
-                (True, "True"),
-                (False, "False"),
-                (None, "None"),
-                ([], "empty list"),
-                ({}, "empty dict"),
-                (int, "type"),
-                (int.to_bytes, "method"),
-                (Dummy(), "user-defined class instance"),
-                (Dummy, "user-defined class type"),
-                (
-                    {
-                        "data1": True,
-                        "data2": [
-                            {
-                                "user": "something",
-                                "password": "other_thing",
-                            }
-                        ],
-                        "data3": {
-                            "value": [1, 2, 3, 4],
-                            "salt": "azerty",
-                        },
-                        "data4": 3.14,
-                        "data5": [
-                            float("+inf"),
-                            float("-inf"),
-                            None,
-                        ],
-                    },
-                    "json-like object",
-                ),
-                (BigDummy(level=3), "big object"),
-            ]
-        ]
+    @pytest.fixture(
+        scope="class",
+        params=[UnpicklerConfig(encoding=encoding) for encoding in ["utf-8", "ascii"]],
+        ids=repr,
+    )
+    @staticmethod
+    def unpickler_config(request: Any) -> UnpicklerConfig:
+        return request.param
 
-    @classmethod
-    @cache
-    def get_incremental_serialize_sample(cls) -> list[tuple[Any, bytes, str]]:
-        return cls.get_oneshot_serialize_sample()
+    @pytest.fixture(scope="class")
+    @staticmethod
+    def serializer_for_serialization(pickler_config: PicklerConfig, pickler_optimize: bool) -> PickleSerializer[Any, Any]:
+        return PickleSerializer(pickler_config=pickler_config, optimize=pickler_optimize)
+
+    @pytest.fixture(scope="class")
+    @staticmethod
+    def serializer_for_deserialization(unpickler_config: UnpicklerConfig) -> PickleSerializer[Any, Any]:
+        return PickleSerializer(unpickler_config=unpickler_config)
+
+    #### Packets to test
+
+    @pytest.fixture(scope="class", params=[pytest.param(p, id=f"packet: {id}") for p, id in SAMPLES])
+    @staticmethod
+    def packet_to_serialize(request: Any) -> Any:
+        return request.param
+
+    #### One-shot Serialize
+
+    @pytest.fixture(scope="class")
+    @staticmethod
+    def expected_complete_data(packet_to_serialize: Any, pickler_config: PicklerConfig | None, pickler_optimize: bool) -> bytes:
+        if pickler_config is None:
+            pickler_config = PicklerConfig()
+        data = pickle.dumps(packet_to_serialize, **dataclasses.asdict(pickler_config), buffer_callback=None)
+        if pickler_optimize:
+            data = pickletools.optimize(data)
+        return data
+
+    #### Incremental Serialize
+
+    @pytest.fixture(scope="class")
+    @staticmethod
+    def expected_joined_data(expected_complete_data: bytes) -> bytes:
+        return expected_complete_data
+
+    #### One-shot Deserialize
+
+    @pytest.fixture(scope="class")
+    @staticmethod
+    def complete_data(
+        packet_to_serialize: Any,
+        pickle_data_protocol: int,
+        unpickler_config: UnpicklerConfig | None,
+        pickler_optimize: bool,
+    ) -> bytes:
+        if unpickler_config is None:
+            unpickler_config = UnpicklerConfig()
+        data = pickle.dumps(packet_to_serialize, protocol=pickle_data_protocol, fix_imports=unpickler_config.fix_imports)
+        if pickler_optimize:
+            data = pickletools.optimize(data)
+        return data
+
+    #### Incremental Deserialize
+
+    @pytest.fixture(scope="class")
+    @staticmethod
+    def complete_data_for_incremental_deserialize(complete_data: bytes) -> bytes:
+        return complete_data
+
+    #### Invalid data
+
+    @pytest.fixture(scope="class", params=[])
+    @staticmethod
+    def invalid_complete_data() -> bytes:
+        raise NotImplementedError
+
+    @pytest.fixture(scope="class", params=[])
+    @staticmethod
+    def invalid_partial_data() -> bytes:
+        raise NotImplementedError

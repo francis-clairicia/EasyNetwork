@@ -217,18 +217,13 @@ class FileBasedIncrementalPacketSerializer(AbstractIncrementalPacketSerializer[_
                 raise DeserializeError("Extra data caught")
         return packet
 
-    def _wait_for_next_chunk(self, given_chunk: bytes) -> bool:
-        return False
-
     @final
     def incremental_deserialize(self) -> Generator[None, bytes, tuple[_DT_co, bytes]]:
         with BytesIO() as buffer:
             while True:
-                chunk: bytes = b""
-                wait_for_next_chunk = self._wait_for_next_chunk
-                while not chunk or wait_for_next_chunk(chunk):
-                    chunk = yield
-                    buffer.write(chunk)
+                while not (chunk := (yield)):
+                    continue
+                buffer.write(chunk)
                 del chunk
                 buffer.seek(0)
                 try:

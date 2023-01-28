@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pickle import DEFAULT_PROTOCOL, STOP as PICKLE_STOP, Pickler, Unpickler
+from pickle import DEFAULT_PROTOCOL, Pickler, Unpickler
 from typing import TYPE_CHECKING, Any, final
 
 from easynetwork.serializers.pickle import PicklerConfig, PickleSerializer, UnpicklerConfig
@@ -222,26 +222,3 @@ class TestPickleSerializer(BaseSerializerConfigInstanceCheck):
         )
         mock_other_unpickler.load.assert_called_once_with()
         assert packet is mocker.sentinel.packet
-
-    @pytest.mark.parametrize(
-        ["chunk", "outcome"],
-        [
-            pytest.param(b"", True),
-            pytest.param(b"something", True),
-            pytest.param(b"something_including_%s_in" % PICKLE_STOP, False),
-        ],
-        ids=repr,
-    )
-    def test____wait_for_next_chunk____check_STOP_opcode(
-        self,
-        chunk: bytes,
-        outcome: bool,
-    ) -> None:
-        # Arrange
-        serializer: PickleSerializer[Any, Any] = PickleSerializer()
-
-        # Act
-        result: bool = serializer._wait_for_next_chunk(chunk)
-
-        # Assert
-        assert result is outcome
