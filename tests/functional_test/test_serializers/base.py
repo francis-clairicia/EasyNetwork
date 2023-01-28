@@ -76,11 +76,6 @@ class BaseTestIncrementalSerializer(BaseTestSerializer):
         raise NotImplementedError
 
     @classmethod
-    @abstractmethod
-    def get_possible_remaining_data(cls) -> list[tuple[bytes, str]]:
-        raise NotImplementedError
-
-    @classmethod
     def get_invalid_partial_data(cls) -> list[tuple[bytes, bytes, str]]:
         return []
 

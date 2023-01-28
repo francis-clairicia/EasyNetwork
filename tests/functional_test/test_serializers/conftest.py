@@ -47,7 +47,13 @@ BASE_INCREMENTAL_SERIALIZER_TEST_PARAMS = {
 
 
 def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
+    import random
+
+    remaining_data_list: list[ParameterSet] | None = None
     if issubclass(metafunc.cls, BaseTestSerializer):
+        remaining_data_list = _make_pytest_params_from_sample(
+            [random.choice([(s, id) for _, s, id in metafunc.cls.get_oneshot_serialize_sample()])]
+        )
         try:
             argnames = BASE_SERIALIZER_TEST_PARAMS[metafunc.definition.originalname]
         except KeyError:
@@ -72,6 +78,7 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
                     ["invalid_partial_data", "expected_remaining_data"],
                     _make_pytest_params_from_sample(metafunc.cls.get_invalid_partial_data(), check_non_empty=False),
                 )
+                remaining_data_list = None
             else:
                 metafunc.parametrize(
                     "invalid_partial_data",
@@ -80,8 +87,7 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
                         check_non_empty=False,
                     ),
                 )
-        elif "expected_remaining_data" in metafunc.fixturenames:
-            metafunc.parametrize(
-                "expected_remaining_data",
-                _make_pytest_params_from_sample(metafunc.cls.get_possible_remaining_data()),
-            )
+    if issubclass(metafunc.cls, BaseTestSerializer):
+        if "expected_remaining_data" in metafunc.fixturenames:
+            if remaining_data_list is not None:
+                metafunc.parametrize("expected_remaining_data", remaining_data_list)

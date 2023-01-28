@@ -54,17 +54,17 @@ class Decompressor(Protocol, metaclass=abc.ABCMeta):
 
 
 class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
-    __slots__ = ("__serializer", "__trailing_error")
+    __slots__ = ("__serializer", "__expected_error")
 
     def __init__(
         self,
         serializer: AbstractPacketSerializer[_ST_contra, _DT_co],
-        trailing_error: type[Exception] | tuple[type[Exception], ...],
+        expected_error: type[Exception] | tuple[type[Exception], ...],
     ) -> None:
         assert isinstance(serializer, AbstractPacketSerializer)
         super().__init__()
         self.__serializer: AbstractPacketSerializer[_ST_contra, _DT_co] = serializer
-        self.__trailing_error: type[Exception] | tuple[type[Exception], ...] = trailing_error
+        self.__expected_error: type[Exception] | tuple[type[Exception], ...] = expected_error
 
     @abc.abstractmethod
     def new_compressor_stream(self) -> Compressor:
@@ -87,17 +87,16 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_ST_contr
 
     @final
     def deserialize(self, data: bytes) -> _DT_co:
-        if not data:
-            raise DeserializeError("Empty bytes")
         decompressor = self.new_decompressor_stream()
         try:
             data = decompressor.decompress(data)
-        except self.__trailing_error as exc:
-            raise DeserializeError("Trailing data error") from exc
+        except self.__expected_error as exc:
+            raise DeserializeError(str(exc)) from exc
         if not decompressor.eof:
             raise DeserializeError("Compressed data ended before the end-of-stream marker was reached")
         if decompressor.unused_data:
             raise DeserializeError("Trailing data error")
+        del decompressor
         return self.__serializer.deserialize(data)
 
     @final
@@ -110,7 +109,7 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_ST_contr
                 continue
             try:
                 chunk = decompressor.decompress(chunk)
-            except self.__trailing_error as exc:
+            except self.__expected_error as exc:
                 raise IncrementalDeserializeError(
                     message=f"Decompression error: {exc}",
                     remaining_data=b"",
@@ -128,6 +127,7 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_ST_contr
             raise IncrementalDeserializeError(
                 f"Error while deserializing decompressed data: {exc}",
                 remaining_data=unused_data,
+                error_info=exc.error_info,
             ) from exc
 
         return packet, unused_data
@@ -137,7 +137,7 @@ class BZ2CompressorSerializer(AbstractCompressorSerializer[_ST_contra, _DT_co]):
     __slots__ = ("__compresslevel",)
 
     def __init__(self, serializer: AbstractPacketSerializer[_ST_contra, _DT_co], *, compresslevel: int = 9) -> None:
-        super().__init__(serializer=serializer, trailing_error=OSError)
+        super().__init__(serializer=serializer, expected_error=OSError)
         self.__compresslevel: int = compresslevel
 
     @final
@@ -158,8 +158,7 @@ class ZlibCompressorSerializer(AbstractCompressorSerializer[_ST_contra, _DT_co])
         *,
         compresslevel: int = zlib.Z_BEST_COMPRESSION,
     ) -> None:
-        assert isinstance(serializer, AbstractPacketSerializer)
-        super().__init__(serializer=serializer, trailing_error=zlib.error)
+        super().__init__(serializer=serializer, expected_error=zlib.error)
         self.__compresslevel: int = compresslevel
 
     @final

@@ -34,11 +34,3 @@ class TestJSONSerializer(BaseTestIncrementalSerializer):
     @cache
     def get_incremental_serialize_sample(cls) -> list[tuple[Any, bytes, str]]:
         return [(p, s + b"\n", id) for p, s, id in cls.get_oneshot_serialize_sample()]
-
-    @classmethod
-    @cache
-    def get_possible_remaining_data(cls) -> list[tuple[bytes, str]]:
-        import base64
-        import os
-
-        return [(base64.b64encode(os.urandom(i)), f"remaining_data{i}") for i in range(1, 10)]

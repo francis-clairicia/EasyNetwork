@@ -41,15 +41,7 @@ class BaseTestStructBasedSerializer:
         return mocker.patch("struct.Struct", return_value=mock_struct)
 
 
-class TestStructBasedSerializer(BaseTestStructBasedSerializer):
-    @pytest.mark.parametrize("method", ["incremental_serialize", "incremental_deserialize"])
-    def test____base_class____implements_default_methods(self, method: str) -> None:
-        # Arrange
-        from easynetwork.serializers.stream.abc import FixedSizePacketSerializer
-
-        # Act & Assert
-        assert getattr(AbstractStructSerializer, method) is getattr(FixedSizePacketSerializer, method)
-
+class TestAbstractStructSerializer(BaseTestStructBasedSerializer):
     @pytest.fixture
     @staticmethod
     def mock_serializer_iter_values(mocker: MockerFixture) -> MagicMock:
@@ -59,6 +51,14 @@ class TestStructBasedSerializer(BaseTestStructBasedSerializer):
     @staticmethod
     def mock_serializer_from_tuple(mocker: MockerFixture) -> MagicMock:
         return mocker.patch.object(_StructSerializerForTest, "from_tuple")
+
+    @pytest.mark.parametrize("method", ["incremental_serialize", "incremental_deserialize"])
+    def test____base_class____implements_default_methods(self, method: str) -> None:
+        # Arrange
+        from easynetwork.serializers.stream.abc import FixedSizePacketSerializer
+
+        # Act & Assert
+        assert getattr(AbstractStructSerializer, method) is getattr(FixedSizePacketSerializer, method)
 
     @pytest.mark.parametrize("endianness", sorted(_ENDIANNESS_CHARACTERS.union([""])), ids=repr)
     def test____dunder_init____format_with_endianness(

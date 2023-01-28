@@ -107,6 +107,7 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_ST_cont
             raise IncrementalDeserializeError(
                 f"Error when deserializing data: {exc}",
                 remaining_data=buffer,
+                error_info=exc.error_info,
             ) from exc
         finally:
             del data
@@ -161,6 +162,7 @@ class FixedSizePacketSerializer(AbstractIncrementalPacketSerializer[_ST_contra, 
             raise IncrementalDeserializeError(
                 f"Error when deserializing data: {exc}",
                 remaining_data=buffer,
+                error_info=exc.error_info,
             ) from exc
         return packet, buffer
 
@@ -171,14 +173,14 @@ class FixedSizePacketSerializer(AbstractIncrementalPacketSerializer[_ST_contra, 
 
 
 class FileBasedIncrementalPacketSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
-    __slots__ = ("__unrelated_error",)
+    __slots__ = ("__expected_error",)
 
     def __init__(
         self,
-        unrelated_deserialize_error: type[Exception] | tuple[type[Exception], ...],
+        expected_deserialize_error: type[Exception] | tuple[type[Exception], ...],
     ) -> None:
         super().__init__()
-        self.__unrelated_error: type[Exception] | tuple[type[Exception], ...] = unrelated_deserialize_error
+        self.__expected_error: type[Exception] | tuple[type[Exception], ...] = expected_deserialize_error
 
     @abstractmethod
     def _serialize_to_file(self, packet: _ST_contra, file: IO[bytes]) -> None:
@@ -209,8 +211,8 @@ class FileBasedIncrementalPacketSerializer(AbstractIncrementalPacketSerializer[_
                 packet: _DT_co = self._deserialize_from_file(buffer)
             except EOFError as exc:
                 raise DeserializeError("Missing data to create packet") from exc
-            except self.__unrelated_error as exc:
-                raise DeserializeError(f"Unrelated error: {exc}") from exc
+            except self.__expected_error as exc:
+                raise DeserializeError(str(exc)) from exc
             if buffer.read():  # There is still data after deserializing
                 raise DeserializeError("Extra data caught")
         return packet
@@ -233,12 +235,12 @@ class FileBasedIncrementalPacketSerializer(AbstractIncrementalPacketSerializer[_
                     packet: _DT_co = self._deserialize_from_file(buffer)
                 except EOFError:
                     continue
-                except self.__unrelated_error as exc:
+                except self.__expected_error as exc:
                     remaining_data: bytes = buffer.read()
                     if not remaining_data:  # Possibly an EOF error, give it a chance
                         continue
                     raise IncrementalDeserializeError(
-                        f"Unrelated error: {exc}",
+                        f"Deserialize error: {exc}",
                         remaining_data=remaining_data,
                     ) from exc
                 else:

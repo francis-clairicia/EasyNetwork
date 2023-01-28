@@ -53,13 +53,6 @@ class BaseTestBase64EncodedSerializer(BaseTestIncrementalSerializer):
 
     @classmethod
     @cache
-    def get_possible_remaining_data(cls) -> list[tuple[bytes, str]]:
-        import os
-
-        return [(os.urandom(i), f"remaining_data{i}") for i in range(1, 10)]
-
-    @classmethod
-    @cache
     def get_invalid_complete_data(cls) -> list[tuple[bytes, str]]:
         return [
             (s[:-1], f"{id} (minus one byte)")  # Remove one byte at last will break the padding

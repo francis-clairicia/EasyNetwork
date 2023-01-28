@@ -48,7 +48,7 @@ class PickleSerializer(FileBasedIncrementalPacketSerializer[_ST_contra, _DT_co])
         optimize: bool = False,
     ) -> None:
         super().__init__(
-            unrelated_deserialize_error=(
+            expected_deserialize_error=(
                 _pickle.UnpicklingError,
                 ValueError,
             ),  # pickle.Unpickler does not only raise UnpicklingError... :)

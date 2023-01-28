@@ -51,10 +51,3 @@ class TestNamedTupleStructSerializer(BaseTestIncrementalSerializer):
     @cache
     def get_incremental_serialize_sample(cls) -> list[tuple[Any, bytes, str]]:
         return cls.get_oneshot_serialize_sample()
-
-    @classmethod
-    @cache
-    def get_possible_remaining_data(cls) -> list[tuple[bytes, str]]:
-        import os
-
-        return [(os.urandom(i), f"remaining_data{i}") for i in range(1, 10)]

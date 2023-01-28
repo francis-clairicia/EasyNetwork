@@ -56,7 +56,7 @@ class CBORSerializer(FileBasedIncrementalPacketSerializer[_ST_contra, _DT_co]):
         except ModuleNotFoundError as exc:  # pragma: no cover
             raise ModuleNotFoundError("cbor dependencies are missing. Consider adding 'cbor' extra") from exc
 
-        super().__init__(unrelated_deserialize_error=cbor2.CBORDecodeError)
+        super().__init__(expected_deserialize_error=cbor2.CBORDecodeError)
         self.__encoder_config: dict[str, Any]
         self.__decoder_config: dict[str, Any]
 

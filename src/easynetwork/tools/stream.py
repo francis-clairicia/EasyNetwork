@@ -60,7 +60,7 @@ class StreamDataProducer(Generic[_SentPacketT]):
                 except StopIteration:
                     pass
                 else:
-                    assert isinstance(chunk, bytes)
+                    assert isinstance(chunk, (bytes, bytearray))
                     self.__g = generator
                     return chunk
                 finally:
@@ -126,12 +126,12 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
             else:
                 self.__c = consumer
                 raise StopIteration
-            assert isinstance(chunk, bytes)
-            self.__b = chunk
+            assert isinstance(chunk, (bytes, bytearray))
+            self.__b = bytes(chunk)
             return packet
 
     def feed(self, chunk: bytes) -> None:
-        assert isinstance(chunk, bytes)
+        assert isinstance(chunk, (bytes, bytearray))
         if not chunk:
             return
         with self.__lock:
