@@ -25,7 +25,7 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
     if TYPE_CHECKING:
         __Self = TypeVar("__Self", bound="AbstractNetworkClient[Any, Any]")
 
-    def __del__(self) -> None:
+    def __del__(self) -> None:  # pragma: no cover
         try:
             if not self.is_closed():
                 self.close()

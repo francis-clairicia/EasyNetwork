@@ -148,9 +148,12 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         self.__default_send_flags: int = send_flags
         self.__default_recv_flags: int = recv_flags
 
-    def __del__(self) -> None:
-        if not self.__closed:
-            self.close()
+    def __del__(self) -> None:  # pragma: no cover
+        try:
+            if not self.is_closed():
+                self.close()
+        except AttributeError:  # __init__ was probably not completed
+            pass
 
     def __enter__(self: __Self) -> __Self:
         return self

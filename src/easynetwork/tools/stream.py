@@ -35,7 +35,10 @@ class StreamDataProducer(Generic[_SentPacketT]):
         self.__lock = Lock()
 
     def __del__(self) -> None:  # pragma: no cover
-        generator, self.__g = self.__g, None
+        try:
+            generator, self.__g = self.__g, None
+        except AttributeError:
+            return
         try:
             if generator is not None:
                 generator.close()
@@ -92,7 +95,10 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
         self.__lock = Lock()
 
     def __del__(self) -> None:  # pragma: no cover
-        consumer, self.__c = self.__c, None
+        try:
+            consumer, self.__c = self.__c, None
+        except AttributeError:
+            return
         try:
             if consumer is not None:
                 consumer.close()
