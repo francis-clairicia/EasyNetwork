@@ -167,9 +167,9 @@ class TestAbstractCompressorSerializer:
             pass
 
         if give_as_tuple:
-            serializer = _CompressorSerializerForTest(mock_serializer, expected_error=(MyStreamAPIBaseException,))
+            serializer = _CompressorSerializerForTest(mock_serializer, expected_decompress_error=(MyStreamAPIBaseException,))
         else:
-            serializer = _CompressorSerializerForTest(mock_serializer, expected_error=MyStreamAPIBaseException)
+            serializer = _CompressorSerializerForTest(mock_serializer, expected_decompress_error=MyStreamAPIBaseException)
         mock_decompressor_stream.decompress.side_effect = MyStreamAPIValueError()
 
         # Act
@@ -286,9 +286,9 @@ class TestAbstractCompressorSerializer:
             pass
 
         if give_as_tuple:
-            serializer = _CompressorSerializerForTest(mock_serializer, expected_error=(MyStreamAPIBaseException,))
+            serializer = _CompressorSerializerForTest(mock_serializer, expected_decompress_error=(MyStreamAPIBaseException,))
         else:
-            serializer = _CompressorSerializerForTest(mock_serializer, expected_error=MyStreamAPIBaseException)
+            serializer = _CompressorSerializerForTest(mock_serializer, expected_decompress_error=MyStreamAPIBaseException)
         mock_decompressor_stream_eof.side_effect = [False]
         mock_decompressor_stream.decompress.side_effect = MyStreamAPIValueError()
 

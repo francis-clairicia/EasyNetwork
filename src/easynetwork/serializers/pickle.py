@@ -48,7 +48,7 @@ class PickleSerializer(FileBasedIncrementalPacketSerializer[_ST_contra, _DT_co])
         optimize: bool = False,
     ) -> None:
         super().__init__(
-            expected_deserialize_error=(
+            expected_load_error=(
                 _pickle.UnpicklingError,
                 ValueError,
             ),  # pickle.Unpickler does not only raise UnpicklingError... :)
@@ -75,7 +75,7 @@ class PickleSerializer(FileBasedIncrementalPacketSerializer[_ST_contra, _DT_co])
         self.__unpickler_cls: type[_pickle.Unpickler] = unpickler_cls or _pickle.Unpickler
 
     @final
-    def _serialize_to_file(self, packet: _ST_contra, file: IO[bytes]) -> None:
+    def dump_to_file(self, packet: _ST_contra, file: IO[bytes]) -> None:
         if not self.__optimize:
             self.__pickler_cls(file, **self.__pickler_config, buffer_callback=None).dump(packet)
             return
@@ -84,5 +84,5 @@ class PickleSerializer(FileBasedIncrementalPacketSerializer[_ST_contra, _DT_co])
             file.write(_pickletools.optimize(buffer.getvalue()))
 
     @final
-    def _deserialize_from_file(self, file: IO[bytes]) -> _DT_co:
+    def load_from_file(self, file: IO[bytes]) -> _DT_co:
         return self.__unpickler_cls(file, **self.__unpickler_config, buffers=None).load()

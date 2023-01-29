@@ -56,7 +56,7 @@ class CBORSerializer(FileBasedIncrementalPacketSerializer[_ST_contra, _DT_co]):
         except ModuleNotFoundError as exc:  # pragma: no cover
             raise ModuleNotFoundError("cbor dependencies are missing. Consider adding 'cbor' extra") from exc
 
-        super().__init__(expected_deserialize_error=cbor2.CBORDecodeError)
+        super().__init__(expected_load_error=cbor2.CBORDecodeError)
         self.__encoder_config: dict[str, Any]
         self.__decoder_config: dict[str, Any]
 
@@ -73,13 +73,13 @@ class CBORSerializer(FileBasedIncrementalPacketSerializer[_ST_contra, _DT_co]):
         self.__decoder_config = dataclass_asdict(decoder_config)
 
     @final
-    def _serialize_to_file(self, packet: _ST_contra, file: IO[bytes]) -> None:
+    def dump_to_file(self, packet: _ST_contra, file: IO[bytes]) -> None:
         from cbor2 import CBOREncoder
 
         CBOREncoder(file, **self.__encoder_config).encode(packet)
 
     @final
-    def _deserialize_from_file(self, file: IO[bytes]) -> _DT_co:
+    def load_from_file(self, file: IO[bytes]) -> _DT_co:
         from cbor2 import CBORDecoder
 
         return CBORDecoder(file, **self.__decoder_config).decode()

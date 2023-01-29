@@ -59,12 +59,15 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_ST_contr
     def __init__(
         self,
         serializer: AbstractPacketSerializer[_ST_contra, _DT_co],
-        expected_error: type[Exception] | tuple[type[Exception], ...],
+        expected_decompress_error: type[Exception] | tuple[type[Exception], ...],
     ) -> None:
         assert isinstance(serializer, AbstractPacketSerializer)
+        if not isinstance(expected_decompress_error, tuple):
+            expected_decompress_error = (expected_decompress_error,)
+        assert all(issubclass(e, Exception) for e in expected_decompress_error)
         super().__init__()
         self.__serializer: AbstractPacketSerializer[_ST_contra, _DT_co] = serializer
-        self.__expected_error: type[Exception] | tuple[type[Exception], ...] = expected_error
+        self.__expected_error: tuple[type[Exception], ...] = expected_decompress_error
 
     @abc.abstractmethod
     def new_compressor_stream(self) -> Compressor:
@@ -137,7 +140,7 @@ class BZ2CompressorSerializer(AbstractCompressorSerializer[_ST_contra, _DT_co]):
     __slots__ = ("__compresslevel",)
 
     def __init__(self, serializer: AbstractPacketSerializer[_ST_contra, _DT_co], *, compresslevel: int = 9) -> None:
-        super().__init__(serializer=serializer, expected_error=OSError)
+        super().__init__(serializer=serializer, expected_decompress_error=OSError)
         self.__compresslevel: int = compresslevel
 
     @final
@@ -158,7 +161,7 @@ class ZlibCompressorSerializer(AbstractCompressorSerializer[_ST_contra, _DT_co])
         *,
         compresslevel: int = zlib.Z_BEST_COMPRESSION,
     ) -> None:
-        super().__init__(serializer=serializer, expected_error=zlib.error)
+        super().__init__(serializer=serializer, expected_decompress_error=zlib.error)
         self.__compresslevel: int = compresslevel
 
     @final

@@ -102,7 +102,7 @@ class TestPickleSerializer(BaseSerializerConfigInstanceCheck):
         # Act & Assert
         assert getattr(PickleSerializer, method) is getattr(FileBasedIncrementalPacketSerializer, method)
 
-    def test____serialize_to_file____with_config(
+    def test____dump_to_file____with_config(
         self,
         pickler_optimize: bool,
         pickler_config: PicklerConfig | None,
@@ -117,7 +117,7 @@ class TestPickleSerializer(BaseSerializerConfigInstanceCheck):
         serializer: PickleSerializer[Any, Any] = PickleSerializer(pickler_config=pickler_config, optimize=pickler_optimize)
 
         # Act
-        serializer._serialize_to_file(mocker.sentinel.packet, mock_file)
+        serializer.dump_to_file(mocker.sentinel.packet, mock_file)
 
         # Assert
         if not pickler_optimize:
@@ -141,7 +141,7 @@ class TestPickleSerializer(BaseSerializerConfigInstanceCheck):
             mock_file.write.assert_called_once_with(mocker.sentinel.optimized_pickle)
 
     @pytest.mark.usefixtures("mock_pickletools_optimize")
-    def test____serialize_to_file____custom_pickler_cls(
+    def test____dump_to_file____custom_pickler_cls(
         self,
         pickler_optimize: bool,
         mock_pickler_cls: MagicMock,
@@ -156,7 +156,7 @@ class TestPickleSerializer(BaseSerializerConfigInstanceCheck):
         del mock_pickler.dump
 
         # Act
-        serializer._serialize_to_file(mocker.sentinel.packet, mock_file)
+        serializer.dump_to_file(mocker.sentinel.packet, mock_file)
 
         # Assert
         mock_pickler_cls.assert_not_called()
@@ -168,7 +168,7 @@ class TestPickleSerializer(BaseSerializerConfigInstanceCheck):
         )
         mock_other_pickler.dump.assert_called_once_with(mocker.sentinel.packet)
 
-    def test____deserialize_from_file____with_config(
+    def test____load_from_file____with_config(
         self,
         unpickler_config: UnpicklerConfig | None,
         mock_unpickler_cls: MagicMock,
@@ -181,7 +181,7 @@ class TestPickleSerializer(BaseSerializerConfigInstanceCheck):
         mock_unpickler.load.return_value = mocker.sentinel.packet
 
         # Act
-        packet = serializer._deserialize_from_file(mock_file)
+        packet = serializer.load_from_file(mock_file)
 
         # Assert
         mock_unpickler_cls.assert_called_once_with(
@@ -194,7 +194,7 @@ class TestPickleSerializer(BaseSerializerConfigInstanceCheck):
         mock_unpickler.load.assert_called_once_with()
         assert packet is mocker.sentinel.packet
 
-    def test____deserialize_from_file____custom_unpickler_cls(
+    def test____load_from_file____custom_unpickler_cls(
         self,
         mock_unpickler_cls: MagicMock,
         mock_unpickler: MagicMock,
@@ -209,7 +209,7 @@ class TestPickleSerializer(BaseSerializerConfigInstanceCheck):
         del mock_unpickler.load
 
         # Act
-        packet = serializer._deserialize_from_file(mock_file)
+        packet = serializer.load_from_file(mock_file)
 
         # Assert
         mock_unpickler_cls.assert_not_called()

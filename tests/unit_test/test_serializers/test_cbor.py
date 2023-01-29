@@ -100,7 +100,7 @@ class TestCBORSerializer(BaseSerializerConfigInstanceCheck):
         # Act & Assert
         assert getattr(CBORSerializer, method) is getattr(FileBasedIncrementalPacketSerializer, method)
 
-    def test____serialize_to_file____with_config(
+    def test____dump_to_file____with_config(
         self,
         encoder_config: CBOREncoderConfig | None,
         mock_encoder_cls: MagicMock,
@@ -113,7 +113,7 @@ class TestCBORSerializer(BaseSerializerConfigInstanceCheck):
         mock_encoder.encode.return_value = None
 
         # Act
-        serializer._serialize_to_file(mocker.sentinel.packet, mock_file)
+        serializer.dump_to_file(mocker.sentinel.packet, mock_file)
 
         # Assert
         mock_encoder_cls.assert_called_once_with(
@@ -128,7 +128,7 @@ class TestCBORSerializer(BaseSerializerConfigInstanceCheck):
         )
         mock_encoder.encode.assert_called_once_with(mocker.sentinel.packet)
 
-    def test____deserialize_from_file____with_config(
+    def test____load_from_file____with_config(
         self,
         decoder_config: CBORDecoderConfig | None,
         mock_decoder_cls: MagicMock,
@@ -141,7 +141,7 @@ class TestCBORSerializer(BaseSerializerConfigInstanceCheck):
         mock_decoder.decode.return_value = mocker.sentinel.packet
 
         # Act
-        packet = serializer._deserialize_from_file(mock_file)
+        packet = serializer.load_from_file(mock_file)
 
         # Assert
         mock_decoder_cls.assert_called_once_with(

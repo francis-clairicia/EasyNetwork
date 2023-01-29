@@ -178,29 +178,32 @@ class FileBasedIncrementalPacketSerializer(AbstractIncrementalPacketSerializer[_
 
     def __init__(
         self,
-        expected_deserialize_error: type[Exception] | tuple[type[Exception], ...],
+        expected_load_error: type[Exception] | tuple[type[Exception], ...],
     ) -> None:
+        if not isinstance(expected_load_error, tuple):
+            expected_load_error = (expected_load_error,)
+        assert all(issubclass(e, Exception) for e in expected_load_error)
         super().__init__()
-        self.__expected_error: type[Exception] | tuple[type[Exception], ...] = expected_deserialize_error
+        self.__expected_error: tuple[type[Exception], ...] = expected_load_error
 
     @abstractmethod
-    def _serialize_to_file(self, packet: _ST_contra, file: IO[bytes]) -> None:
+    def dump_to_file(self, packet: _ST_contra, file: IO[bytes]) -> None:
         raise NotImplementedError
 
     @abstractmethod
-    def _deserialize_from_file(self, file: IO[bytes]) -> _DT_co:
+    def load_from_file(self, file: IO[bytes]) -> _DT_co:
         raise NotImplementedError
 
     @final
     def serialize(self, packet: _ST_contra) -> bytes:
         with BytesIO() as buffer:
-            self._serialize_to_file(packet, buffer)
+            self.dump_to_file(packet, buffer)
             return buffer.getvalue()
 
     @final
     def incremental_serialize(self, packet: _ST_contra) -> Generator[bytes, None, None]:
         with BytesIO() as buffer:
-            self._serialize_to_file(packet, buffer)
+            self.dump_to_file(packet, buffer)
             data = buffer.getvalue()
         if data:
             yield data  # 'incremental' :)
@@ -208,8 +211,9 @@ class FileBasedIncrementalPacketSerializer(AbstractIncrementalPacketSerializer[_
     @final
     def deserialize(self, data: bytes) -> _DT_co:
         with BytesIO(data) as buffer:
+            del data
             try:
-                packet: _DT_co = self._deserialize_from_file(buffer)
+                packet: _DT_co = self.load_from_file(buffer)
             except EOFError as exc:
                 raise DeserializeError("Missing data to create packet") from exc
             except self.__expected_error as exc:
@@ -228,7 +232,7 @@ class FileBasedIncrementalPacketSerializer(AbstractIncrementalPacketSerializer[_
                 del chunk
                 buffer.seek(0)
                 try:
-                    packet: _DT_co = self._deserialize_from_file(buffer)
+                    packet: _DT_co = self.load_from_file(buffer)
                 except EOFError:
                     continue
                 except self.__expected_error as exc:
