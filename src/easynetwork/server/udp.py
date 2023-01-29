@@ -48,6 +48,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         "__default_send_flags",
         "__default_recv_flags",
         "__unsent_datagrams",
+        "__poll_interval",
         "__logger",
     )
 
@@ -63,6 +64,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         request_executor: AbstractRequestExecutor | None = None,
         selector_factory: Callable[[], BaseSelector] | None = None,
         logger: logging.Logger | None = None,
+        poll_interval: float = 0.1,
     ) -> None:
         protocol = protocol_factory()
         if not isinstance(protocol, DatagramProtocol):
@@ -70,6 +72,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         assert request_executor is None or isinstance(request_executor, AbstractRequestExecutor)
         send_flags = int(send_flags)
         recv_flags = int(recv_flags)
+        poll_interval = float(poll_interval)
 
         import socket as _socket
 
@@ -106,6 +109,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         self.__default_send_flags: int = int(send_flags)
         self.__default_recv_flags: int = int(recv_flags)
         self.__unsent_datagrams: deque[tuple[bytes, SocketAddress]] = deque()
+        self.__poll_interval: float = poll_interval
 
         self.__selector_factory: Callable[[], BaseSelector]
         if selector_factory is None:
@@ -139,16 +143,14 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 while self.__loop:
                     ready: int
                     try:
-                        ready = selector.select(timeout=0)[0][1]
+                        ready = selector.select(timeout=self.__poll_interval)[0][1]
                     except IndexError:
                         ready = 0
                     if not self.__loop:
                         break  # type: ignore[unreachable]
 
                     if ready & EVENT_WRITE:
-                        with self.__send_lock:
-                            self.__flush_unsent_datagrams()
-
+                        self.__flush_unsent_datagrams()
                     if ready & EVENT_READ:
                         self.__receive_datagrams()
                     self.__handle_received_datagrams()
@@ -316,20 +318,21 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         socket = self.__socket
         unsent_datagrams = self.__unsent_datagrams
         flags: int = self.__default_send_flags
-        while unsent_datagrams:
-            response, address = unsent_datagrams[0]
-            logger.debug("Try to send saved datagram to %s", address)
-            try:
-                socket.sendto(response, flags, address)
-            except (TimeoutError, BlockingIOError, InterruptedError):
-                logger.debug("-> Failed to send datagram, bail out.")
-                return
-            except OSError:
-                logger.exception("-> Failed to send datagram")
-                return
-            else:
-                logger.debug("-> Datagram successfully sent.")
-                del unsent_datagrams[0]
+        with self.__send_lock:
+            while unsent_datagrams:
+                response, address = unsent_datagrams[0]
+                logger.debug("Try to send saved datagram to %s", address)
+                try:
+                    socket.sendto(response, flags, address)
+                except (TimeoutError, BlockingIOError, InterruptedError):
+                    logger.debug("-> Failed to send datagram, bail out.")
+                    return
+                except OSError:
+                    logger.exception("-> Failed to send datagram")
+                    return
+                else:
+                    logger.debug("-> Datagram successfully sent.")
+                    del unsent_datagrams[0]
 
     def bad_request(self, client_address: SocketAddress, error_type: ParseErrorType, message: str, error_info: Any) -> None:
         pass
