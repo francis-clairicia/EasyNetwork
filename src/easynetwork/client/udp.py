@@ -84,13 +84,13 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         recv_flags: int = 0,
         **kwargs: Any,
     ) -> None:
+        super().__init__()
+
         send_flags = int(send_flags)
         recv_flags = int(recv_flags)
 
         self.__producer: DatagramProducer[_SentPacketT, _Address] = DatagramProducer(protocol)
         self.__consumer: DatagramConsumer[_ReceivedPacketT] = DatagramConsumer(protocol)
-
-        super().__init__()
 
         from socket import AF_INET, SOCK_DGRAM
 
@@ -452,6 +452,8 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
         **kwargs: Any,
     ) -> None:
+        super().__init__()
+
         endpoint: UDPNetworkEndpoint[_SentPacketT, _ReceivedPacketT]
         if isinstance(__arg, Socket):
             socket = __arg
@@ -465,8 +467,6 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         remote_address = endpoint.get_remote_address()
         if remote_address is None:
             raise OSError("No remote address configured")
-
-        super().__init__()
 
         self.__endpoint: UDPNetworkEndpoint[_SentPacketT, _ReceivedPacketT] = endpoint
         self.__peer: SocketAddress = remote_address

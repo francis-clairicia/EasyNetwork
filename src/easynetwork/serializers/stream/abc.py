@@ -129,10 +129,10 @@ class FixedSizePacketSerializer(AbstractIncrementalPacketSerializer[_ST_contra, 
     __slots__ = ("__size",)
 
     def __init__(self, size: int, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
         size = int(size)
         if size <= 0:
             raise ValueError("size must be a positive integer")
-        super().__init__(**kwargs)
         self.__size: int = size
 
     @abstractmethod
@@ -180,10 +180,10 @@ class FileBasedIncrementalPacketSerializer(AbstractIncrementalPacketSerializer[_
         self,
         expected_load_error: type[Exception] | tuple[type[Exception], ...],
     ) -> None:
+        super().__init__()
         if not isinstance(expected_load_error, tuple):
             expected_load_error = (expected_load_error,)
         assert all(issubclass(e, Exception) for e in expected_load_error)
-        super().__init__()
         self.__expected_error: tuple[type[Exception], ...] = expected_load_error
 
     @abstractmethod

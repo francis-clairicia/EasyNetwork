@@ -154,12 +154,12 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         clients_poll_interval: float = 0.1,
         logger: logging.Logger | None = None,
     ) -> None:
+        super().__init__()
         if not callable(protocol_factory):
             raise TypeError("Invalid arguments")
         assert request_executor is None or isinstance(request_executor, AbstractRequestExecutor)
         send_flags = int(send_flags)
         recv_flags = int(recv_flags)
-        super().__init__()
 
         from socket import create_server
 

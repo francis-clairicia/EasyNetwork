@@ -20,12 +20,12 @@ class ForkingRequestExecutor(AbstractRequestExecutor):
     __slots__ = ("__fork", "__max_children", "__block_on_close", "__active_children")
 
     def __init__(self, *, max_children: int = 40, block_on_close: bool = True) -> None:
+        super().__init__()
+
         try:
             fork: Callable[[], int] = getattr(os, "fork")
         except AttributeError:
             raise NotImplementedError("fork() not supported on this platform")
-
-        super().__init__()
 
         max_children = int(max_children)
         if max_children <= 0:

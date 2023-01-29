@@ -31,8 +31,8 @@ class Base64EncodedSerializer(AutoSeparatedPacketSerializer[_ST_contra, _DT_co])
         serializer: AbstractPacketSerializer[_ST_contra, _DT_co],
         signing_key: str | bytes | None = None,
     ) -> None:
-        assert isinstance(serializer, AbstractPacketSerializer)
         super().__init__(separator=b"\r\n", keepends=False)
+        assert isinstance(serializer, AbstractPacketSerializer)
         self.__serializer: AbstractPacketSerializer[_ST_contra, _DT_co] = serializer
         if signing_key is not None:
             try:

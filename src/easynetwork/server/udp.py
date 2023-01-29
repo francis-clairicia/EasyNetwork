@@ -66,6 +66,8 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         logger: logging.Logger | None = None,
         poll_interval: float = 0.1,
     ) -> None:
+        super().__init__()
+
         protocol = protocol_factory()
         if not isinstance(protocol, DatagramProtocol):
             raise TypeError("Invalid arguments")
@@ -120,8 +122,6 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             self.__selector_factory = selector_factory
 
         self.__logger: logging.Logger = logger or logging.getLogger(__name__)
-
-        super().__init__()
 
     def serve_forever(self) -> None:
         self._check_not_closed()

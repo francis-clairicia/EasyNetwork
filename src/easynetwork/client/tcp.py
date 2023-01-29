@@ -79,14 +79,13 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         recv_flags: int = 0,
         **kwargs: Any,
     ) -> None:
+        super().__init__()
         self.__producer: StreamDataProducer[_SentPacketT] = StreamDataProducer(protocol)
         self.__consumer: StreamDataConsumer[_ReceivedPacketT] = StreamDataConsumer(protocol)
 
         send_flags = int(send_flags)
         recv_flags = int(recv_flags)
         socket: Socket
-
-        super().__init__()
 
         self.__owner: bool
         if isinstance(__arg, Socket):
