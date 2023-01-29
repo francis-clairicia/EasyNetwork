@@ -134,13 +134,3 @@ def tcp_socket_factory(socket_factory: Callable[[int], Socket]) -> Callable[[], 
 @pytest.fixture
 def udp_socket_factory(socket_factory: Callable[[int], Socket]) -> Callable[[], Socket]:
     return partial(socket_factory, SOCK_DGRAM)
-
-
-def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
-    package_name = __package__.replace(".", "/")
-    for item in items:
-        parent_node = item.getparent(pytest.Package)
-        if parent_node is None:
-            continue
-        if package_name in str(item.fspath):
-            item.add_marker(pytest.mark.functional)
