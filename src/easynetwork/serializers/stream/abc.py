@@ -80,7 +80,8 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_ST_cont
     def incremental_serialize(self, packet: _ST_contra) -> Generator[bytes, None, None]:
         data: bytes = self.serialize(packet)
         separator: bytes = self.__separator
-        data = data.rstrip(separator)
+        while data.endswith(separator):
+            data = data.removesuffix(separator)
         if separator in data:
             raise ValueError(f"{separator!r} separator found in serialized packet {packet!r} which was not at the end")
         yield data + separator

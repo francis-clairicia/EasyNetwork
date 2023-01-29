@@ -92,4 +92,5 @@ class TestBase64EncodedSerializer:
         # Assert
         mock_b64decode.assert_called_once_with(mocker.sentinel.data_encoded)
         mock_serializer.deserialize.assert_not_called()
+        assert exception.__context__ is mock_b64decode.side_effect
         assert exception.__cause__ is None

@@ -32,7 +32,7 @@ class EncryptorSerializer(AutoSeparatedPacketSerializer[_ST_contra, _DT_co]):
     ) -> None:
         try:
             import cryptography.fernet
-        except ModuleNotFoundError as exc:
+        except ModuleNotFoundError as exc:  # pragma: no cover
             raise ModuleNotFoundError("encryption dependencies are missing. Consider adding 'encryption' extra") from exc
 
         assert isinstance(serializer, AbstractPacketSerializer)

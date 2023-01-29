@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABCMeta
-from typing import Any, final
+from typing import Any, Callable, final
 
 from easynetwork.serializers.abc import AbstractPacketSerializer
 from easynetwork.serializers.exceptions import DeserializeError
@@ -18,14 +18,19 @@ from ..._utils import send_return
 class BaseTestSerializer(metaclass=ABCMeta):
     @pytest.fixture(scope="class")
     @staticmethod
-    def extra_data() -> bytes:
+    def oneshot_extra_data() -> bytes:
+        return b"remaining_data"
+
+    @pytest.fixture(scope="class")
+    @staticmethod
+    def incremental_extra_data() -> bytes:
         return b"remaining_data"
 
     def test____serialize____sample(
         self,
         serializer_for_serialization: AbstractPacketSerializer[Any, Any],
         packet_to_serialize: Any,
-        expected_complete_data: bytes,
+        expected_complete_data: bytes | Callable[[bytes], None],
     ) -> None:
         # Arrange
 
@@ -34,7 +39,10 @@ class BaseTestSerializer(metaclass=ABCMeta):
 
         # Assert
         assert isinstance(data, bytes)
-        assert data == expected_complete_data
+        if callable(expected_complete_data):
+            expected_complete_data(data)
+        else:
+            assert data == expected_complete_data
 
     def test____deserialize____sample(
         self,
@@ -66,14 +74,14 @@ class BaseTestSerializer(metaclass=ABCMeta):
         self,
         serializer_for_deserialization: AbstractPacketSerializer[Any, Any],
         complete_data: bytes,
-        extra_data: bytes,
+        oneshot_extra_data: bytes,
     ) -> None:
         # Arrange
-        assert len(extra_data) > 0
+        assert len(oneshot_extra_data) > 0
 
         # Act & Assert
         with pytest.raises(DeserializeError):
-            _ = serializer_for_deserialization.deserialize(complete_data + extra_data)
+            _ = serializer_for_deserialization.deserialize(complete_data + oneshot_extra_data)
 
 
 class BaseTestIncrementalSerializer(BaseTestSerializer):
@@ -81,7 +89,7 @@ class BaseTestIncrementalSerializer(BaseTestSerializer):
         self,
         serializer_for_serialization: AbstractIncrementalPacketSerializer[Any, Any],
         packet_to_serialize: Any,
-        expected_joined_data: bytes,
+        expected_joined_data: bytes | Callable[[bytes], None],
     ) -> None:
         # Arrange
 
@@ -90,7 +98,10 @@ class BaseTestIncrementalSerializer(BaseTestSerializer):
 
         # Assert
         assert isinstance(data, bytes)
-        assert data == expected_joined_data
+        if callable(expected_joined_data):
+            expected_joined_data(data)
+        else:
+            assert data == expected_joined_data
 
     def test____incremental_deserialize____one_shot_chunk(
         self,
@@ -116,19 +127,19 @@ class BaseTestIncrementalSerializer(BaseTestSerializer):
         serializer_for_deserialization: AbstractIncrementalPacketSerializer[Any, Any],
         complete_data_for_incremental_deserialize: bytes,
         packet_to_serialize: Any,
-        extra_data: bytes,
+        incremental_extra_data: bytes,
     ) -> None:
         # Arrange
-        assert len(extra_data) > 0
+        assert len(incremental_extra_data) > 0
         consumer = serializer_for_deserialization.incremental_deserialize()
         next(consumer)
 
         # Act
-        packet, remaining_data = send_return(consumer, complete_data_for_incremental_deserialize + extra_data)
+        packet, remaining_data = send_return(consumer, complete_data_for_incremental_deserialize + incremental_extra_data)
 
         # Assert
         assert isinstance(remaining_data, bytes)
-        assert remaining_data == extra_data
+        assert remaining_data == incremental_extra_data
         assert type(packet) is type(packet_to_serialize)
         assert packet == packet_to_serialize
 
@@ -177,10 +188,10 @@ class BaseTestIncrementalSerializer(BaseTestSerializer):
         self,
         serializer_for_deserialization: AbstractIncrementalPacketSerializer[Any, Any],
         invalid_partial_data: bytes,
-        extra_data: bytes,
+        incremental_extra_data: bytes,
     ) -> None:
         # Arrange
-        assert len(extra_data) > 0
+        assert len(incremental_extra_data) > 0
         consumer = serializer_for_deserialization.incremental_deserialize()
         next(consumer)
 
@@ -190,7 +201,7 @@ class BaseTestIncrementalSerializer(BaseTestSerializer):
         exception = exc_info.value
 
         # Assert
-        assert exception.remaining_data == extra_data
+        assert exception.remaining_data == incremental_extra_data
 
 
 @final

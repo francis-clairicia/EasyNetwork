@@ -100,10 +100,10 @@ class BaseTestBase64EncodedSerializer(BaseTestIncrementalSerializer):
 
     @pytest.fixture(scope="class")
     @staticmethod
-    def invalid_complete_data(expected_complete_data: bytes) -> bytes:
-        if not expected_complete_data:
+    def invalid_complete_data(complete_data: bytes) -> bytes:
+        if not complete_data:
             pytest.skip("empty bytes")
-        return expected_complete_data[:-1]  # Remove one byte at last will break the padding
+        return complete_data[:-1]  # Remove one byte at last will break the padding
 
     @pytest.fixture(scope="class", params=[])
     @staticmethod
@@ -112,10 +112,10 @@ class BaseTestBase64EncodedSerializer(BaseTestIncrementalSerializer):
 
     #### Other
 
-    @pytest.fixture(scope="class", params=[])
+    @pytest.fixture(scope="class")
     @staticmethod
-    def extra_data() -> bytes:
-        raise NotImplementedError
+    def oneshot_extra_data() -> bytes:
+        pytest.skip("Does not recognize extra data")
 
 
 @final
