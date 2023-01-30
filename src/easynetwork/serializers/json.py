@@ -108,9 +108,9 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
 
     def __init__(
         self,
-        *,
         encoder_config: JSONEncoderConfig | None = None,
         decoder_config: JSONDecoderConfig | None = None,
+        *,
         encoding: str = "utf-8",
         str_errors: str = "strict",
     ) -> None:

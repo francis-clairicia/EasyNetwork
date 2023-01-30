@@ -47,7 +47,6 @@ class CBORSerializer(FileBasedIncrementalPacketSerializer[_ST_contra, _DT_co]):
 
     def __init__(
         self,
-        *,
         encoder_config: CBOREncoderConfig | None = None,
         decoder_config: CBORDecoderConfig | None = None,
     ) -> None:
