@@ -152,6 +152,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         selector_factory: Callable[[], BaseSelector] | None = None,
         listener_poll_interval: float = 0.1,
         clients_poll_interval: float = 0.1,
+        verify_client_pool_size: int = 2,
         logger: logging.Logger | None = None,
     ) -> None:
         super().__init__()
@@ -192,7 +193,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         self.__buffered_write: bool = bool(buffered_write)
         self.__disable_nagle_algorithm: bool = bool(disable_nagle_algorithm)
         self.__verify_client_pool = concurrent.futures.ThreadPoolExecutor(
-            max_workers=2,
+            max_workers=int(verify_client_pool_size),
             thread_name_prefix="TCPNetworkServer[verify_client]",
         )
         self.__logger: logging.Logger = logger or logging.getLogger(__name__)
@@ -403,8 +404,12 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             except StopIteration:  # Not enough data
                 logger.debug("Missing data to process request sent by %s", client.address)
                 continue
-            except Exception as exc:
-                raise RuntimeError(str(exc)) from exc
+            except Exception:
+                try:
+                    self.handle_error(client, sys.exc_info())
+                finally:
+                    self.__shutdown_client(socket, from_client=False)
+                continue
             logger.info("Processing request sent by %s", client.address)
             try:
                 if request_executor is not None:

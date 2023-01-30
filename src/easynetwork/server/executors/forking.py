@@ -25,7 +25,7 @@ class ForkingRequestExecutor(AbstractRequestExecutor):
         try:
             fork: Callable[[], int] = getattr(os, "fork")
         except AttributeError:
-            raise NotImplementedError("fork() not supported on this platform")
+            raise NotImplementedError("fork() not supported on this platform") from None
 
         max_children = int(max_children)
         if max_children <= 0:

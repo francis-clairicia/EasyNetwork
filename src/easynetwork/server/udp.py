@@ -245,7 +245,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                     self.bad_request(exc.sender, exc.error_type, exc.message, exc.error_info)
                 except Exception:
                     self.handle_error(exc.sender, sys.exc_info())
-            except Exception as exc:
+            except Exception as exc:  # TODO: Find a way to get sender address in order to call self.handle_error()
                 raise RuntimeError(str(exc)) from exc
 
     def __execute_request(self, request: _RequestT, client_address: SocketAddress) -> None:
