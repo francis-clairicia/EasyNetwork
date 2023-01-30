@@ -6,8 +6,7 @@ from typing import TYPE_CHECKING, Any, Generator
 
 from easynetwork.converter import PacketConversionError
 from easynetwork.protocol import DatagramProtocol, DatagramProtocolParseError, StreamProtocol, StreamProtocolParseError
-from easynetwork.serializers.exceptions import DeserializeError
-from easynetwork.serializers.stream.exceptions import IncrementalDeserializeError
+from easynetwork.serializers.exceptions import DeserializeError, IncrementalDeserializeError
 
 import pytest
 

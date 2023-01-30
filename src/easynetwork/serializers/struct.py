@@ -12,8 +12,8 @@ import struct as _struct
 from abc import abstractmethod
 from typing import TYPE_CHECKING, Any, Generic, Iterable, NamedTuple, TypeVar, final
 
+from .base_stream import FixedSizePacketSerializer
 from .exceptions import DeserializeError
-from .stream.abc import FixedSizePacketSerializer
 
 if TYPE_CHECKING:
     from _typeshed import SupportsKeysAndGetItem

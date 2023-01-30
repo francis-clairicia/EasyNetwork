@@ -15,7 +15,7 @@ __all__ = [
 from dataclasses import asdict as dataclass_asdict, dataclass
 from typing import IO, TYPE_CHECKING, Any, Callable, TypeVar, final
 
-from .stream.abc import FileBasedIncrementalPacketSerializer
+from .base_stream import FileBasedIncrementalPacketSerializer
 
 if TYPE_CHECKING:
     import datetime

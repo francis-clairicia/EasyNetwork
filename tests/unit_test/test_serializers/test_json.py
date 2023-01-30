@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Generator
 
-from easynetwork.serializers.exceptions import DeserializeError
+from easynetwork.serializers.exceptions import DeserializeError, IncrementalDeserializeError
 from easynetwork.serializers.json import JSONDecoderConfig, JSONEncoderConfig, JSONSerializer, _JSONParser
-from easynetwork.serializers.stream.exceptions import IncrementalDeserializeError
 
 import pytest
 

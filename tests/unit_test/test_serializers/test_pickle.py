@@ -97,7 +97,7 @@ class TestPickleSerializer(BaseSerializerConfigInstanceCheck):
     @pytest.mark.parametrize("method", ["serialize", "incremental_serialize", "deserialize", "incremental_deserialize"])
     def test____base_class____implements_default_methods(self, method: str) -> None:
         # Arrange
-        from easynetwork.serializers.stream.abc import FileBasedIncrementalPacketSerializer
+        from easynetwork.serializers.base_stream import FileBasedIncrementalPacketSerializer
 
         # Act & Assert
         assert getattr(PickleSerializer, method) is getattr(FileBasedIncrementalPacketSerializer, method)

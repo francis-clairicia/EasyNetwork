@@ -6,8 +6,7 @@ from typing import TYPE_CHECKING, Any, Callable, Generator, final
 
 from easynetwork.converter import AbstractPacketConverter
 from easynetwork.protocol import DatagramProtocol, StreamProtocol
-from easynetwork.serializers.abc import AbstractPacketSerializer
-from easynetwork.serializers.stream.abc import AbstractIncrementalPacketSerializer
+from easynetwork.serializers.abc import AbstractIncrementalPacketSerializer, AbstractPacketSerializer
 
 import pytest
 

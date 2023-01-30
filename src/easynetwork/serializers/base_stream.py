@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 __all__ = [
-    "AbstractIncrementalPacketSerializer",
     "AutoSeparatedPacketSerializer",
     "FileBasedIncrementalPacketSerializer",
     "FixedSizePacketSerializer",
@@ -17,48 +16,11 @@ from abc import abstractmethod
 from io import BytesIO
 from typing import IO, Any, Generator, TypeVar, final
 
-from ..abc import AbstractPacketSerializer
-from ..exceptions import DeserializeError
-from .exceptions import IncrementalDeserializeError
+from .abc import AbstractIncrementalPacketSerializer
+from .exceptions import DeserializeError, IncrementalDeserializeError
 
 _ST_contra = TypeVar("_ST_contra", contravariant=True)
 _DT_co = TypeVar("_DT_co", covariant=True)
-
-
-class AbstractIncrementalPacketSerializer(AbstractPacketSerializer[_ST_contra, _DT_co]):
-    __slots__ = ()
-
-    def serialize(self, packet: _ST_contra) -> bytes:
-        # The list call should be roughly
-        # equivalent to the PySequence_Fast that ''.join() would do.
-        return b"".join(list(self.incremental_serialize(packet)))
-
-    @abstractmethod
-    def incremental_serialize(self, packet: _ST_contra) -> Generator[bytes, None, None]:
-        raise NotImplementedError
-
-    def deserialize(self, data: bytes) -> _DT_co:
-        consumer: Generator[None, bytes, tuple[_DT_co, bytes]] = self.incremental_deserialize()
-        try:
-            next(consumer)
-        except StopIteration:
-            raise RuntimeError("self.incremental_deserialize() generator did not yield") from None
-        packet: _DT_co
-        remaining: bytes
-        try:
-            consumer.send(data)
-        except StopIteration as exc:
-            packet, remaining = exc.value
-        else:
-            consumer.close()
-            raise DeserializeError("Missing data to create packet") from None
-        if remaining:
-            raise DeserializeError("Extra data caught")
-        return packet
-
-    @abstractmethod
-    def incremental_deserialize(self) -> Generator[None, bytes, tuple[_DT_co, bytes]]:
-        raise NotImplementedError
 
 
 class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):

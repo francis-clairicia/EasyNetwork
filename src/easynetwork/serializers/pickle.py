@@ -8,6 +8,8 @@ from __future__ import annotations
 
 __all__ = [
     "PickleSerializer",
+    "PicklerConfig",
+    "UnpicklerConfig",
 ]
 
 import pickle as _pickle
@@ -16,7 +18,7 @@ from dataclasses import asdict as dataclass_asdict, dataclass
 from io import BytesIO
 from typing import IO, Any, TypeVar, final
 
-from .stream.abc import FileBasedIncrementalPacketSerializer
+from .base_stream import FileBasedIncrementalPacketSerializer
 
 _ST_contra = TypeVar("_ST_contra", contravariant=True)
 _DT_co = TypeVar("_DT_co", covariant=True)

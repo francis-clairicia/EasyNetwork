@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Iterator
 
-from easynetwork.serializers.exceptions import DeserializeError
-from easynetwork.serializers.stream.exceptions import IncrementalDeserializeError
+from easynetwork.serializers.exceptions import DeserializeError, IncrementalDeserializeError
 from easynetwork.serializers.wrapper.compressor import (
     AbstractCompressorSerializer,
     BZ2CompressorSerializer,

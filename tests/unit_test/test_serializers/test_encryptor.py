@@ -31,7 +31,7 @@ class TestEncryptorSerializer:
     @pytest.mark.parametrize("method", ["incremental_serialize", "incremental_deserialize"])
     def test____base_class____implements_default_methods(self, method: str) -> None:
         # Arrange
-        from easynetwork.serializers.stream.abc import AutoSeparatedPacketSerializer
+        from easynetwork.serializers.base_stream import AutoSeparatedPacketSerializer
 
         # Act & Assert
         assert getattr(EncryptorSerializer, method) is getattr(AutoSeparatedPacketSerializer, method)

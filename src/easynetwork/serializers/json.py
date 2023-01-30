@@ -17,9 +17,8 @@ from collections import Counter
 from dataclasses import asdict as dataclass_asdict, dataclass
 from typing import Any, Callable, Generator, TypeVar, final
 
-from .exceptions import DeserializeError
-from .stream.abc import AbstractIncrementalPacketSerializer
-from .stream.exceptions import IncrementalDeserializeError
+from .abc import AbstractIncrementalPacketSerializer
+from .exceptions import DeserializeError, IncrementalDeserializeError
 
 _ST_contra = TypeVar("_ST_contra", contravariant=True)
 _DT_co = TypeVar("_DT_co", covariant=True)

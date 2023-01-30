@@ -13,8 +13,8 @@ __all__ = [
 from typing import TypeVar, final
 
 from ..abc import AbstractPacketSerializer
+from ..base_stream import AutoSeparatedPacketSerializer
 from ..exceptions import DeserializeError
-from ..stream.abc import AutoSeparatedPacketSerializer
 
 _ST_contra = TypeVar("_ST_contra", contravariant=True)
 _DT_co = TypeVar("_DT_co", covariant=True)

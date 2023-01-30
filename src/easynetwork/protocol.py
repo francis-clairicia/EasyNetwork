@@ -11,10 +11,8 @@ __all__ = ["DatagramProtocol", "DatagramProtocolParseError", "StreamProtocol", "
 from typing import Any, Generator, Generic, Literal, TypeAlias, TypeVar, overload
 
 from .converter import AbstractPacketConverter, PacketConversionError
-from .serializers.abc import AbstractPacketSerializer
-from .serializers.exceptions import DeserializeError
-from .serializers.stream.abc import AbstractIncrementalPacketSerializer
-from .serializers.stream.exceptions import IncrementalDeserializeError
+from .serializers.abc import AbstractIncrementalPacketSerializer, AbstractPacketSerializer
+from .serializers.exceptions import DeserializeError, IncrementalDeserializeError
 from .tools.socket import SocketAddress
 
 _SentDTOPacketT = TypeVar("_SentDTOPacketT")

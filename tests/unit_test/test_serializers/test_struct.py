@@ -55,7 +55,7 @@ class TestAbstractStructSerializer(BaseTestStructBasedSerializer):
     @pytest.mark.parametrize("method", ["incremental_serialize", "incremental_deserialize"])
     def test____base_class____implements_default_methods(self, method: str) -> None:
         # Arrange
-        from easynetwork.serializers.stream.abc import FixedSizePacketSerializer
+        from easynetwork.serializers.base_stream import FixedSizePacketSerializer
 
         # Act & Assert
         assert getattr(AbstractStructSerializer, method) is getattr(FixedSizePacketSerializer, method)
