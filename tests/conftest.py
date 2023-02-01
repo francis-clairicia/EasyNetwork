@@ -12,6 +12,10 @@ if TYPE_CHECKING:
 
     from pytest_mock import MockerFixture
 
+import random
+
+random.seed(42)  # Fully deterministic random output
+
 
 @pytest.fixture
 def mock_socket_cls(mocker: MockerFixture) -> MagicMock:

@@ -58,12 +58,16 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_ST_cont
         separator: bytes = self.__separator
         while True:
             data, found_separator, buffer = buffer.partition(separator)
-            if not found_separator:
-                buffer = data + (yield)
-                continue
-            break
+            if found_separator:
+                if not data:  # There was successive separators
+                    continue
+                break
+            assert not buffer
+            buffer = data + (yield)
         if self.__keepends:
             data += separator
+        while buffer.startswith(separator):  # Remove successive separators which can already be eliminated
+            buffer = buffer.removeprefix(separator)
         try:
             packet = self.deserialize(data)
         except DeserializeError as exc:
@@ -138,11 +142,8 @@ class FixedSizePacketSerializer(AbstractIncrementalPacketSerializer[_ST_contra, 
 class FileBasedIncrementalPacketSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
     __slots__ = ("__expected_error",)
 
-    def __init__(
-        self,
-        expected_load_error: type[Exception] | tuple[type[Exception], ...],
-    ) -> None:
-        super().__init__()
+    def __init__(self, expected_load_error: type[Exception] | tuple[type[Exception], ...], **kwargs: Any) -> None:
+        super().__init__(**kwargs)
         if not isinstance(expected_load_error, tuple):
             expected_load_error = (expected_load_error,)
         assert all(issubclass(e, Exception) for e in expected_load_error)
@@ -168,7 +169,7 @@ class FileBasedIncrementalPacketSerializer(AbstractIncrementalPacketSerializer[_
             self.dump_to_file(packet, buffer)
             data = buffer.getvalue()
         if data:
-            yield data  # 'incremental' :)
+            yield data
 
     @final
     def deserialize(self, data: bytes) -> _DT_co:
@@ -180,7 +181,7 @@ class FileBasedIncrementalPacketSerializer(AbstractIncrementalPacketSerializer[_
                 raise DeserializeError("Missing data to create packet") from exc
             except self.__expected_error as exc:
                 raise DeserializeError(str(exc)) from exc
-            if buffer.read():  # There is still data after deserializing
+            if buffer.read():  # There is still data after deserialization
                 raise DeserializeError("Extra data caught")
         return packet
 

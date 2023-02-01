@@ -247,7 +247,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 if request_executor is not None:
                     with suppress(Exception):
                         request_executor.on_server_stop()
-                for socket, _ in self.__server_selector.get_all_active_client_keys():
+                for socket, _ in self.__server_selector.get_all_registered_clients():
                     self.__shutdown_client(socket, from_client=False)
             finally:
                 self.__loop = False
@@ -435,7 +435,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             try:
                 self.handle_error(key_data.client, sys.exc_info())
             finally:
-                self.__shutdown_client(socket, from_client=True)
+                key_data.client.close()
         else:
             if in_subprocess:
                 self.__flush_client_data(socket, key_data, only_unsent=False)
@@ -842,6 +842,10 @@ class _ServerSocketSelector(Generic[_RequestT, _ResponseT]):
     def get_client_data(self, socket: Socket) -> _SelectorKeyData[_RequestT, _ResponseT]:
         with self.__clients_lock:
             return self.__client_data_map[socket]
+
+    def get_all_registered_clients(self) -> list[tuple[Socket, _SelectorKeyData[_RequestT, _ResponseT]]]:
+        with self.__clients_lock:
+            return list(self.__client_data_map.items())
 
     def get_all_active_client_keys(
         self,
