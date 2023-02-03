@@ -162,7 +162,7 @@ class TestAbstractCompressorSerializer:
         class MyStreamAPIBaseException(Exception):
             pass
 
-        class MyStreamAPIValueError(MyStreamAPIBaseException):
+        class MyStreamAPIValueError(MyStreamAPIBaseException, ValueError):
             pass
 
         if give_as_tuple:
@@ -275,13 +275,12 @@ class TestAbstractCompressorSerializer:
         mock_decompressor_stream: MagicMock,
         mock_decompressor_stream_eof: MagicMock,
         mock_decompressor_stream_unused_data: MagicMock,
-        mocker: MockerFixture,
     ) -> None:
         # Arrange
         class MyStreamAPIBaseException(Exception):
             pass
 
-        class MyStreamAPIValueError(MyStreamAPIBaseException):
+        class MyStreamAPIValueError(MyStreamAPIBaseException, ValueError):
             pass
 
         if give_as_tuple:
@@ -307,7 +306,7 @@ class TestAbstractCompressorSerializer:
         assert exception.__cause__ is mock_decompressor_stream.decompress.side_effect
         assert exception.remaining_data == b""
 
-    def test____incremental_deserialize____translate_serialize_errors(
+    def test____incremental_deserialize____translate_deserialize_errors(
         self,
         mock_serializer: MagicMock,
         mock_serializer_new_decompressor_stream: MagicMock,
@@ -420,7 +419,7 @@ class TestBZ2CompressorSerializer(BaseTestCompressorSerializerImplementation):
         assert stream is mocker.sentinel.stream
 
 
-class TestZlibCompressorSerializer:
+class TestZlibCompressorSerializer(BaseTestCompressorSerializerImplementation):
     @pytest.fixture(scope="class")
     @staticmethod
     def serializer_cls() -> type[ZlibCompressorSerializer[Any, Any]]:
