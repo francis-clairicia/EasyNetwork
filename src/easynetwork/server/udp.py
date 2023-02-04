@@ -18,7 +18,6 @@ from threading import Event, RLock
 from typing import TYPE_CHECKING, Any, Callable, Generic, Iterator, TypeAlias, TypeVar, final, overload
 
 from ..protocol import DatagramProtocol, DatagramProtocolParseError, ParseErrorType
-from ..tools.datagram import DatagramConsumer, DatagramProducer
 from ..tools.socket import AF_INET, SocketAddress, new_socket_address
 from .abc import AbstractNetworkServer
 from .executors.abc import AbstractRequestExecutor
@@ -35,8 +34,6 @@ DatagramProtocolFactory: TypeAlias = Callable[[], DatagramProtocol[_ResponseT, _
 class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Generic[_RequestT, _ResponseT]):
     __slots__ = (
         "__socket",
-        "__producer",
-        "__consumer",
         "__addr",
         "__send_lock",
         "__loop",
@@ -47,6 +44,9 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         "__request_executor",
         "__default_send_flags",
         "__default_recv_flags",
+        "__protocol",
+        "__packets_to_send",
+        "__received_datagrams",
         "__unsent_datagrams",
         "__poll_interval",
         "__logger",
@@ -69,8 +69,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         super().__init__()
 
         protocol = protocol_factory()
-        if not isinstance(protocol, DatagramProtocol):
-            raise TypeError("Invalid arguments")
+        assert isinstance(protocol, DatagramProtocol)
         assert request_executor is None or isinstance(request_executor, AbstractRequestExecutor)
         send_flags = int(send_flags)
         recv_flags = int(recv_flags)
@@ -98,8 +97,6 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
 
         socket.settimeout(0)
         self.__socket: Socket = socket
-        self.__producer: DatagramProducer[_ResponseT, SocketAddress] = DatagramProducer(protocol)
-        self.__consumer: DatagramConsumer[_RequestT] = DatagramConsumer(protocol)
         self.__request_executor: AbstractRequestExecutor | None = request_executor
         self.__addr: SocketAddress = new_socket_address(socket.getsockname(), socket.family)
         self.__send_lock: RLock = RLock()
@@ -110,6 +107,9 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         self.__protocol_factory: DatagramProtocolFactory[_ResponseT, _RequestT] = protocol_factory
         self.__default_send_flags: int = int(send_flags)
         self.__default_recv_flags: int = int(recv_flags)
+        self.__protocol: DatagramProtocol[_ResponseT, _RequestT] = protocol
+        self.__packets_to_send: deque[tuple[_ResponseT, SocketAddress]] = deque()
+        self.__received_datagrams: deque[tuple[bytes, SocketAddress]] = deque()
         self.__unsent_datagrams: deque[tuple[bytes, SocketAddress]] = deque()
         self.__poll_interval: float = poll_interval
 
@@ -218,7 +218,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 return
             sender = new_socket_address(sender, socket.family)
             logger.debug("Received a datagram from %s", sender)
-            self.__consumer.queue(data, sender)
+            self.__received_datagrams.append((data, sender))
 
     def __handle_received_datagrams(self) -> None:
         logger: logging.Logger = self.__logger
@@ -230,23 +230,27 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                     request_executor.execute(self.__execute_request, request, address)
                 else:
                     self.__execute_request(request, address)
-            except Exception as exc:
-                if request_executor is not None:
-                    raise RuntimeError(f"request_executor.execute() raised an exception: {exc}") from exc
-                raise RuntimeError(f"Error when processing request: {exc}") from exc
+            except Exception:
+                self.handle_error(address, sys.exc_info())
 
     def __iter_consumer(self) -> Iterator[tuple[_RequestT, SocketAddress]]:
-        while True:
+        queue = self.__received_datagrams
+        build_packet_from_datagram = self.__protocol.build_packet_from_datagram
+        while queue:
+            data, sender = queue.popleft()
             try:
-                return (yield from self.__consumer)
+                packet = build_packet_from_datagram(data)
             except DatagramProtocolParseError as exc:
-                self.__logger.info("Malformed request sent by %s", exc.sender)
+                self.__logger.info("Malformed request sent by %s", sender)
                 try:
-                    self.bad_request(exc.sender, exc.error_type, exc.message, exc.error_info)
+                    self.bad_request(sender, exc.error_type, exc.message, exc.error_info)
                 except Exception:
-                    self.handle_error(exc.sender, sys.exc_info())
-            except Exception as exc:  # TODO: Find a way to get sender address in order to call self.handle_error()
-                raise RuntimeError(str(exc)) from exc
+                    self.handle_error(sender, sys.exc_info())
+            except Exception:
+                self.handle_error(sender, sys.exc_info())
+            else:
+                del data
+                yield packet, sender
 
     def __execute_request(self, request: _RequestT, client_address: SocketAddress) -> None:
         try:
@@ -276,7 +280,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     def send_packet(self, address: SocketAddress, packet: _ResponseT) -> None:
         with self.__send_lock:
             self._check_not_closed()
-            self.__producer.queue(address, packet)
+            self.__packets_to_send.append((packet, address))
             self.__logger.debug("Put 1 packet to queue for %s", address)
             self.__send_datagrams()
 
@@ -285,7 +289,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             return
         with self.__send_lock:
             self._check_not_closed()
-            self.__producer.queue(address, *packets)
+            self.__packets_to_send.extend((packet, address) for packet in packets)
             if (nb_packets := len(packets)) > 1:
                 self.__logger.debug("Put %d packets to queue for %s", nb_packets, address)
             else:
@@ -297,7 +301,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         socket = self.__socket
         unsent_datagrams = self.__unsent_datagrams
         flags: int = self.__default_send_flags
-        for response, address in self.__producer:
+        for response, address in self.__iter_producer():
             logger.info("A response will be sent to %s", address)
             if unsent_datagrams:
                 logger.debug("-> There is unsent datagrams, queue it.")
@@ -312,6 +316,18 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 logger.exception("-> Failed to send datagram")
             else:
                 logger.debug("-> Datagram successfully sent.")
+
+    def __iter_producer(self) -> Iterator[tuple[bytes, SocketAddress]]:
+        queue = self.__packets_to_send
+        make_datagram = self.__protocol.make_datagram
+        while queue:
+            packet, address = queue.popleft()
+            try:
+                data = make_datagram(packet)
+            except Exception:
+                self.__logger.exception("Failed to serialize response for %s", address)
+            else:
+                yield data, address
 
     def __flush_unsent_datagrams(self) -> None:
         logger: logging.Logger = self.__logger

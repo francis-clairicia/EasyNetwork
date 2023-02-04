@@ -96,7 +96,3 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
     @abstractmethod
     def dup(self) -> Socket:
         raise NotImplementedError
-
-    @abstractmethod
-    def detach(self) -> Socket:
-        raise NotImplementedError

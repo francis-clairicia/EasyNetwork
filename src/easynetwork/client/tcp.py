@@ -9,7 +9,7 @@ from __future__ import annotations
 __all__ = ["TCPNetworkClient"]
 
 from contextlib import contextmanager
-from socket import SHUT_WR, socket as Socket
+from socket import socket as Socket
 from threading import RLock
 from typing import Any, Generic, Iterator, TypeVar, final, overload
 
@@ -133,6 +133,8 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             if not self.__owner:
                 return
             try:
+                from socket import SHUT_WR
+
                 socket.shutdown(SHUT_WR)
             except OSError:
                 pass
@@ -237,18 +239,18 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             return True
 
     @staticmethod
-    def __next_packet(it: Iterator[_ReceivedPacketT]) -> _ReceivedPacketT:
+    def __next_packet(consumer: StreamDataConsumer[_ReceivedPacketT]) -> _ReceivedPacketT:
         try:
-            return next(it)
+            return next(consumer)
         except (StopIteration, StreamProtocolParseError):
             raise
         except Exception as exc:
             raise RuntimeError(str(exc)) from exc
 
     @staticmethod
-    def __next_packet_or_default(it: Iterator[_ReceivedPacketT], default: _T) -> _ReceivedPacketT | _T:
+    def __next_packet_or_default(consumer: StreamDataConsumer[_ReceivedPacketT], default: _T) -> _ReceivedPacketT | _T:
         try:
-            return next(it, default)
+            return next(consumer, default)
         except StreamProtocolParseError:
             raise
         except Exception as exc:
@@ -290,22 +292,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             self._check_not_closed()
             socket: Socket = self.__socket
             return socket.dup()
-
-    def detach(self) -> Socket:
-        with self.__lock:
-            self._check_not_closed()
-            socket: Socket = self.__socket
-            fd: int = socket.detach()
-            if fd < 0:
-                raise OSError("Closed socket")
-            socket = Socket(socket.family, socket.type, socket.proto, fileno=fd)
-            try:
-                self.__owner = False
-                self.close()
-            except BaseException:
-                socket.close()
-                raise
-            return socket
 
     @overload
     def getsockopt(self, __level: int, __optname: int, /) -> int:

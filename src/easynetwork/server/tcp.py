@@ -416,10 +416,11 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                     request_executor.execute(self.__execute_request, request, socket, key_data, pid=os.getpid())
                 else:
                     self.__execute_request(request, socket, key_data)
-            except Exception as exc:
-                if request_executor is not None:
-                    raise RuntimeError(f"request_executor.execute() raised an exception: {exc}") from exc
-                raise RuntimeError(f"Error when processing request: {exc}") from exc
+            except Exception:
+                try:
+                    self.handle_error(client, sys.exc_info())
+                finally:
+                    self.__shutdown_client(socket, from_client=False)
 
     def __execute_request(
         self,

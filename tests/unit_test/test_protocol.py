@@ -89,7 +89,7 @@ class TestDatagramProtocol:
         mock_deserialize_func.return_value = mocker.sentinel.packet
 
         # Act
-        packet = protocol_without_converter.build_packet_from_datagram(mocker.sentinel.data, mocker.sentinel.sender)
+        packet = protocol_without_converter.build_packet_from_datagram(mocker.sentinel.data)
 
         # Assert
         mock_deserialize_func.assert_called_once_with(mocker.sentinel.data)
@@ -109,7 +109,7 @@ class TestDatagramProtocol:
         mock_convert_func.return_value = mocker.sentinel.packet
 
         # Act
-        packet = protocol_with_converter.build_packet_from_datagram(mocker.sentinel.data, mocker.sentinel.sender)
+        packet = protocol_with_converter.build_packet_from_datagram(mocker.sentinel.data)
 
         # Assert
         mock_deserialize_func.assert_called_once_with(mocker.sentinel.data)
@@ -129,14 +129,13 @@ class TestDatagramProtocol:
 
         # Act
         with pytest.raises(DatagramProtocolParseError) as exc_info:
-            _ = protocol.build_packet_from_datagram(mocker.sentinel.data, mocker.sentinel.sender)
+            _ = protocol.build_packet_from_datagram(mocker.sentinel.data)
 
         exception = exc_info.value
 
         # Assert
         mock_convert_func.assert_not_called()
         assert exception.error_type == "deserialization"
-        assert exception.sender is mocker.sentinel.sender
         assert exception.message == "Deserialization error"
         assert exception.error_info is mocker.sentinel.error_info
         assert exception.__cause__ is mock_serializer.deserialize.side_effect
@@ -156,14 +155,13 @@ class TestDatagramProtocol:
 
         # Act
         with pytest.raises(DatagramProtocolParseError) as exc_info:
-            _ = protocol_with_converter.build_packet_from_datagram(mocker.sentinel.data, mocker.sentinel.sender)
+            _ = protocol_with_converter.build_packet_from_datagram(mocker.sentinel.data)
 
         exception = exc_info.value
 
         # Assert
         mock_convert_func.assert_called_once()
         assert exception.error_type == "conversion"
-        assert exception.sender is mocker.sentinel.sender
         assert exception.message == "Conversion error"
         assert exception.error_info is mocker.sentinel.error_info
         assert exception.__cause__ is mock_convert_func.side_effect

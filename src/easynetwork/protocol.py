@@ -13,7 +13,6 @@ from typing import Any, Generator, Generic, Literal, TypeAlias, TypeVar, overloa
 from .converter import AbstractPacketConverter, PacketConversionError
 from .serializers.abc import AbstractIncrementalPacketSerializer, AbstractPacketSerializer
 from .serializers.exceptions import DeserializeError, IncrementalDeserializeError
-from .tools.socket import SocketAddress
 
 _SentDTOPacketT = TypeVar("_SentDTOPacketT")
 _ReceivedDTOPacketT = TypeVar("_ReceivedDTOPacketT")
@@ -26,9 +25,8 @@ ParseErrorType: TypeAlias = Literal["deserialization", "conversion"]
 
 
 class DatagramProtocolParseError(Exception):
-    def __init__(self, sender: SocketAddress, error_type: ParseErrorType, message: str, error_info: Any = None) -> None:
+    def __init__(self, error_type: ParseErrorType, message: str, error_info: Any = None) -> None:
         super().__init__(f"Error while parsing datagram: {message}")
-        self.sender: SocketAddress = sender
         self.error_type: ParseErrorType = error_type
         self.error_info: Any = error_info
         self.message: str = message
@@ -68,16 +66,16 @@ class DatagramProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
             packet = converter.convert_to_dto_packet(packet)
         return self.__serializer.serialize(packet)
 
-    def build_packet_from_datagram(self, datagram: bytes, sender: SocketAddress) -> _ReceivedPacketT:
+    def build_packet_from_datagram(self, datagram: bytes) -> _ReceivedPacketT:
         try:
             packet: _ReceivedPacketT = self.__serializer.deserialize(datagram)
         except DeserializeError as exc:
-            raise DatagramProtocolParseError(sender, "deserialization", str(exc), error_info=exc.error_info) from exc
+            raise DatagramProtocolParseError("deserialization", str(exc), error_info=exc.error_info) from exc
         if (converter := self.__converter) is not None:
             try:
                 packet = converter.create_from_dto_packet(packet)
             except PacketConversionError as exc:
-                raise DatagramProtocolParseError(sender, "conversion", str(exc), error_info=exc.error_info) from exc
+                raise DatagramProtocolParseError("conversion", str(exc), error_info=exc.error_info) from exc
         return packet
 
 

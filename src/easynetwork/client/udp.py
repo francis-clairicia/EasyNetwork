@@ -8,17 +8,18 @@ from __future__ import annotations
 
 __all__ = ["UDPNetworkClient", "UDPNetworkEndpoint"]
 
+from collections import deque
 from contextlib import contextmanager
 from operator import itemgetter
 from socket import socket as Socket
 from threading import RLock
-from typing import TYPE_CHECKING, Any, Callable, Generic, Iterator, TypeAlias, TypeVar, final, overload
+from typing import TYPE_CHECKING, Any, Callable, Generic, Iterator, ParamSpec, TypeAlias, TypeVar, final, overload
 
 from ..protocol import DatagramProtocol, DatagramProtocolParseError
-from ..tools.datagram import DatagramConsumer, DatagramProducer
 from ..tools.socket import AddressFamily, SocketAddress, new_socket_address
 from .abc import AbstractNetworkClient
 
+_P = ParamSpec("_P")
 _T = TypeVar("_T")
 _ReceivedPacketT = TypeVar("_ReceivedPacketT")
 _SentPacketT = TypeVar("_SentPacketT")
@@ -37,8 +38,9 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         "__peer",
         "__owner",
         "__closed",
-        "__producer",
-        "__consumer",
+        "__protocol",
+        "__packets_to_send",
+        "__received_datagrams",
         "__lock",
         "__default_send_flags",
         "__default_recv_flags",
@@ -86,11 +88,13 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
     ) -> None:
         super().__init__()
 
+        assert isinstance(protocol, DatagramProtocol)
         send_flags = int(send_flags)
         recv_flags = int(recv_flags)
 
-        self.__producer: DatagramProducer[_SentPacketT, _Address] = DatagramProducer(protocol)
-        self.__consumer: DatagramConsumer[_ReceivedPacketT] = DatagramConsumer(protocol)
+        self.__protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT] = protocol
+        self.__packets_to_send: deque[tuple[_SentPacketT, _Address]] = deque()
+        self.__received_datagrams: deque[tuple[bytes, SocketAddress]] = deque()
 
         from socket import AF_INET, SOCK_DGRAM
 
@@ -185,7 +189,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         with self.__lock:
             self._check_not_closed()
             address = self._verify_address(address)
-            self.__producer.queue(address, packet)
+            self.__packets_to_send.append((packet, address))
             self.__write_on_socket()
 
     def send_packets(
@@ -198,7 +202,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         with self.__lock:
             self._check_not_closed()
             address = self._verify_address(address)
-            self.__producer.queue(address, *packets)
+            self.__packets_to_send.extend((packet, address) for packet in packets)
             self.__write_on_socket()
 
     def _verify_address(self, address: _Address | None) -> _Address:
@@ -216,31 +220,37 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         ensure_send = UDPNetworkEndpoint._ensure_send
         with _use_timeout(socket, None):
             if self.__peer:
-                for data, _ in self.__producer:
-                    ensure_send(lambda: socket.send(data, flags))
+                for data, _ in self.__produce_datagrams():
+                    ensure_send(socket.send, data, flags)
             else:
-                for data, address in self.__producer:
-                    ensure_send(lambda: socket.sendto(data, flags, address))
+                for data, address in self.__produce_datagrams():
+                    ensure_send(socket.sendto, data, flags, address)  # type: ignore[call-arg, arg-type]
 
     @staticmethod
-    def _ensure_send(send_callback: Callable[[], int]) -> None:
+    def _ensure_send(send_callback: Callable[_P, int], /, *args: _P.args, **kwargs: _P.kwargs) -> None:
         while True:
             try:
-                nb_bytes_sent: int = send_callback()
+                nb_bytes_sent: int = send_callback(*args, **kwargs)
                 if nb_bytes_sent > 0:
                     return
             except (BlockingIOError, InterruptedError):
                 pass
 
+    def __produce_datagrams(self) -> Iterator[tuple[bytes, _Address]]:
+        queue = self.__packets_to_send
+        make_datagram = self.__protocol.make_datagram
+        while queue:
+            packet, address = queue.popleft()
+            yield make_datagram(packet), address
+
     def recv_packet(self) -> tuple[_ReceivedPacketT, SocketAddress]:
         with self.__lock:
             self._check_not_closed()
-            consumer = self.__consumer
             recv_packets_from_socket = self.__recv_packets_from_socket
             next_packet = self.__next_packet
             while True:
                 try:
-                    return next_packet(consumer)
+                    return next_packet()
                 except StopIteration:
                     pass
                 while not recv_packets_from_socket(timeout=None):
@@ -264,15 +274,14 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         next_packet = self.__next_packet
         with self.__lock:
             self._check_not_closed()
-            consumer = self.__consumer
             try:
-                return next_packet(consumer)
+                return next_packet()
             except StopIteration:
                 pass
             recv_packets_from_socket = self.__recv_packets_from_socket
             while recv_packets_from_socket(timeout=timeout):
                 try:
-                    return next_packet(consumer)
+                    return next_packet()
                 except StopIteration:
                     pass
             if default is not _NO_DEFAULT:
@@ -285,16 +294,15 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         timeout: float = 0,
     ) -> Iterator[tuple[_ReceivedPacketT, SocketAddress]]:
         timeout = float(timeout)
-        consumer = self.__consumer
         recv_packets_from_socket = self.__recv_packets_from_socket
-        next_packet = self.__next_packet_or_default
+        next_packet_or_default = self.__next_packet_or_default
         check_not_closed = self._check_not_closed
         lock = self.__lock
 
         while True:
             with lock:
                 check_not_closed()
-                while (packet_tuple := next_packet(consumer, None)) is None:
+                while (packet_tuple := next_packet_or_default(None)) is None:
                     if not recv_packets_from_socket(timeout=timeout):
                         return
                     continue
@@ -314,28 +322,26 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             sender = new_socket_address(sender, socket.family)
             if remote_address is not None and sender != remote_address:
                 return False
-            self.__consumer.queue(data, sender)
+            self.__received_datagrams.append((data, sender))
             return True
 
-    @staticmethod
-    def __next_packet(it: Iterator[tuple[_ReceivedPacketT, SocketAddress]]) -> tuple[_ReceivedPacketT, SocketAddress]:
+    def __next_packet(self) -> tuple[_ReceivedPacketT, SocketAddress]:
+        queue = self.__received_datagrams
+        if not queue:
+            raise StopIteration
+        data, sender = queue.popleft()
         try:
-            return next(it)
-        except (StopIteration, DatagramProtocolParseError):
-            raise
-        except Exception as exc:
-            raise RuntimeError(str(exc)) from exc
-
-    @staticmethod
-    def __next_packet_or_default(
-        it: Iterator[tuple[_ReceivedPacketT, SocketAddress]], default: _T
-    ) -> tuple[_ReceivedPacketT, SocketAddress] | _T:
-        try:
-            return next(it, default)
+            return self.__protocol.build_packet_from_datagram(data), sender
         except DatagramProtocolParseError:
             raise
         except Exception as exc:
             raise RuntimeError(str(exc)) from exc
+
+    def __next_packet_or_default(self, default: _T) -> tuple[_ReceivedPacketT, SocketAddress] | _T:
+        try:
+            return self.__next_packet()
+        except StopIteration:
+            return default
 
     def get_local_address(self) -> SocketAddress:
         with self.__lock:
@@ -358,22 +364,6 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             self._check_not_closed()
             socket: Socket = self.__socket
             return socket.dup()
-
-    def detach(self) -> Socket:
-        with self.__lock:
-            self._check_not_closed()
-            socket: Socket = self.__socket
-            fd: int = socket.detach()
-            if fd < 0:
-                raise OSError("Closed socket")
-            socket = Socket(socket.family, socket.type, socket.proto, fileno=fd)
-            try:
-                self.__owner = False
-                self.close()
-            except BaseException:
-                socket.close()
-                raise
-            return socket
 
     @overload
     def getsockopt(self, __level: int, __optname: int, /) -> int:
@@ -525,9 +515,6 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
 
     def dup(self) -> Socket:
         return self.__endpoint.dup()
-
-    def detach(self) -> Socket:
-        return self.__endpoint.detach()
 
     @overload
     def getsockopt(self, __level: int, __optname: int, /) -> int:
