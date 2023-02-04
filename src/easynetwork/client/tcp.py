@@ -14,7 +14,7 @@ from threading import RLock
 from typing import Any, Generic, Iterator, TypeVar, final, overload
 
 from ..protocol import StreamProtocol, StreamProtocolParseError
-from ..tools.socket import SocketAddress, new_socket_address
+from ..tools.socket import SocketAddress, SocketProxy, new_socket_address
 from ..tools.stream import StreamDataConsumer, StreamDataProducer
 from .abc import AbstractNetworkClient
 
@@ -29,11 +29,13 @@ _NO_DEFAULT: Any = object()
 class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Generic[_SentPacketT, _ReceivedPacketT]):
     __slots__ = (
         "__socket",
+        "__socket_proxy",
         "__owner",
         "__closed",
         "__lock",
         "__producer",
         "__consumer",
+        "__addr",
         "__peer",
         "__eof_reached",
         "__default_send_flags",
@@ -110,13 +112,22 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
 
         socket.settimeout(None)
 
+        self.__addr: SocketAddress = new_socket_address(socket.getsockname(), socket.family)
         self.__peer: SocketAddress = new_socket_address(socket.getpeername(), socket.family)
         self.__closed: bool = False
         self.__socket: Socket = socket
+        self.__socket_proxy: SocketProxy | None = SocketProxy(socket)
         self.__lock: RLock = RLock()
         self.__eof_reached: bool = False
         self.__default_send_flags: int = send_flags
         self.__default_recv_flags: int = recv_flags
+
+    def __repr__(self) -> str:
+        try:
+            socket = self.__socket
+        except AttributeError:
+            return f"<{type(self).__name__} closed>"
+        return f"<{type(self).__name__} socket={socket!r}"
 
     @final
     def is_closed(self) -> bool:
@@ -130,6 +141,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             self.__closed = True
             socket: Socket = self.__socket
             del self.__socket
+            self.__socket_proxy = None
             if not self.__owner:
                 return
             try:
@@ -159,7 +171,10 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         flags = self.__default_send_flags
         socket: Socket = self.__socket
         if self.__eof_reached:
-            raise ConnectionAbortedError("Closed connection")
+            import errno
+            import os
+
+            raise OSError(errno.EPIPE, os.strerror(errno.EPIPE))
         with _use_timeout(socket, None):
             socket.sendall(b"".join(list(self.__producer)), flags)
 
@@ -259,17 +274,12 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
     def get_local_address(self) -> SocketAddress:
         with self.__lock:
             self._check_not_closed()
-            return new_socket_address(self.__socket.getsockname(), self.__socket.family)
+            return self.__addr
 
     def get_remote_address(self) -> SocketAddress:
         with self.__lock:
             self._check_not_closed()
             return self.__peer
-
-    def get_timeout(self) -> float | None:
-        with self.__lock:
-            self._check_not_closed()
-            return self.__socket.gettimeout()
 
     def is_connected(self) -> bool:
         with self.__lock:
@@ -287,42 +297,19 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 return -1
             return self.__socket.fileno()
 
-    def dup(self) -> Socket:
-        with self.__lock:
-            self._check_not_closed()
-            socket: Socket = self.__socket
-            return socket.dup()
-
-    @overload
-    def getsockopt(self, __level: int, __optname: int, /) -> int:
-        ...
-
-    @overload
-    def getsockopt(self, __level: int, __optname: int, __buflen: int, /) -> bytes:
-        ...
-
-    def getsockopt(self, *args: int) -> int | bytes:
-        with self.__lock:
-            self._check_not_closed()
-            return self.__socket.getsockopt(*args)
-
-    @overload
-    def setsockopt(self, __level: int, __optname: int, __value: int | bytes, /) -> None:
-        ...
-
-    @overload
-    def setsockopt(self, __level: int, __optname: int, __value: None, __optlen: int, /) -> None:
-        ...
-
-    def setsockopt(self, *args: Any) -> None:
-        with self.__lock:
-            self._check_not_closed()
-            return self.__socket.setsockopt(*args)
-
     @final
     def _check_not_closed(self) -> None:
         if self.__closed:
             raise RuntimeError("Closed client")
+
+    @property
+    @final
+    def socket(self) -> SocketProxy:
+        with self.__lock:
+            socket = self.__socket_proxy
+            if socket is None:
+                raise RuntimeError("Closed client")
+            return socket
 
     @property
     @final

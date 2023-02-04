@@ -9,7 +9,6 @@ from __future__ import annotations
 __all__ = ["AbstractNetworkClient"]
 
 from abc import ABCMeta, abstractmethod
-from socket import socket as Socket
 from typing import TYPE_CHECKING, Any, Generic, Iterator, TypeVar, overload
 
 from ..tools.socket import SocketAddress
@@ -91,8 +90,4 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
 
     @abstractmethod
     def fileno(self) -> int:
-        raise NotImplementedError
-
-    @abstractmethod
-    def dup(self) -> Socket:
         raise NotImplementedError

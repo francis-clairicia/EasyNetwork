@@ -16,7 +16,7 @@ from threading import RLock
 from typing import TYPE_CHECKING, Any, Callable, Generic, Iterator, ParamSpec, TypeAlias, TypeVar, final, overload
 
 from ..protocol import DatagramProtocol, DatagramProtocolParseError
-from ..tools.socket import AddressFamily, SocketAddress, new_socket_address
+from ..tools.socket import SocketAddress, SocketProxy, new_socket_address
 from .abc import AbstractNetworkClient
 
 _P = ParamSpec("_P")
@@ -35,6 +35,8 @@ _NO_DEFAULT: Any = object()
 class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
     __slots__ = (
         "__socket",
+        "__socket_proxy",
+        "__addr",
         "__peer",
         "__owner",
         "__closed",
@@ -96,7 +98,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         self.__packets_to_send: deque[tuple[_SentPacketT, _Address]] = deque()
         self.__received_datagrams: deque[tuple[bytes, SocketAddress]] = deque()
 
-        from socket import AF_INET, SOCK_DGRAM
+        from socket import AF_INET, AF_INET6, SOCK_DGRAM
 
         socket: Socket
         peername: SocketAddress | None = None
@@ -107,6 +109,8 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             give: bool = kwargs.pop("give", False)
             if kwargs:
                 raise TypeError("Invalid arguments")
+            if socket.family not in (AF_INET, AF_INET6):
+                raise ValueError("Currently, only AF_INET and AF_INET6 families are supported")
             self.__owner = bool(give)
             if socket.getsockname()[1] == 0:
                 socket.bind(("", 0))
@@ -117,12 +121,14 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         else:
             _default_timeout: Any = object()
 
-            family = AddressFamily(kwargs.pop("family", AF_INET))
+            family = kwargs.pop("family", AF_INET)
             timeout: float | None = kwargs.pop("timeout", _default_timeout)
             remote_address: tuple[str, int] | None = kwargs.pop("remote_address", None)
             source_address: tuple[str, int] | None = kwargs.pop("source_address", None)
             if kwargs:
                 raise TypeError("Invalid arguments")
+            if family not in (AF_INET, AF_INET6):
+                raise ValueError("Currently, only AF_INET and AF_INET6 families are supported")
             socket = Socket(family, SOCK_DGRAM)
             try:
                 if source_address is None:
@@ -145,9 +151,11 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
 
         socket.settimeout(None)
 
+        self.__addr: SocketAddress = new_socket_address(socket.getsockname(), socket.family)
         self.__peer: SocketAddress | None = peername
         self.__closed: bool = False
         self.__socket: Socket = socket
+        self.__socket_proxy: SocketProxy | None = SocketProxy(socket)
         self.__lock: RLock = RLock()
         self.__default_send_flags: int = send_flags
         self.__default_recv_flags: int = recv_flags
@@ -158,6 +166,13 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
                 self.close()
         except AttributeError:  # __init__ was probably not completed
             pass
+
+    def __repr__(self) -> str:
+        try:
+            socket = self.__socket
+        except AttributeError:
+            return f"<{type(self).__name__} closed>"
+        return f"<{type(self).__name__} socket={socket!r}"
 
     def __enter__(self: __Self) -> __Self:
         return self
@@ -177,6 +192,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             self.__peer = None
             socket: Socket = self.__socket
             del self.__socket
+            self.__socket_proxy = None
             if not self.__owner:
                 return
             socket.close()
@@ -346,7 +362,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
     def get_local_address(self) -> SocketAddress:
         with self.__lock:
             self._check_not_closed()
-            return new_socket_address(self.__socket.getsockname(), self.__socket.family)
+            return self.__addr
 
     def get_remote_address(self) -> SocketAddress | None:
         with self.__lock:
@@ -359,42 +375,19 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
                 return -1
             return self.__socket.fileno()
 
-    def dup(self) -> Socket:
-        with self.__lock:
-            self._check_not_closed()
-            socket: Socket = self.__socket
-            return socket.dup()
-
-    @overload
-    def getsockopt(self, __level: int, __optname: int, /) -> int:
-        ...
-
-    @overload
-    def getsockopt(self, __level: int, __optname: int, __buflen: int, /) -> bytes:
-        ...
-
-    def getsockopt(self, *args: int) -> int | bytes:
-        with self.__lock:
-            self._check_not_closed()
-            return self.__socket.getsockopt(*args)
-
-    @overload
-    def setsockopt(self, __level: int, __optname: int, __value: int | bytes, /) -> None:
-        ...
-
-    @overload
-    def setsockopt(self, __level: int, __optname: int, __value: None, __optlen: int, /) -> None:
-        ...
-
-    def setsockopt(self, *args: Any) -> None:
-        with self.__lock:
-            self._check_not_closed()
-            return self.__socket.setsockopt(*args)
-
     @final
     def _check_not_closed(self) -> None:
         if self.__closed:
             raise RuntimeError("Closed client")
+
+    @property
+    @final
+    def socket(self) -> SocketProxy:
+        with self.__lock:
+            socket = self.__socket_proxy
+            if socket is None:
+                raise RuntimeError("Closed client")
+            return socket
 
     @property
     @final
@@ -464,6 +457,9 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         self.__endpoint: UDPNetworkEndpoint[_SentPacketT, _ReceivedPacketT] = endpoint
         self.__peer: SocketAddress = remote_address
 
+    def __repr__(self) -> str:
+        return f"<{type(self).__name__} endpoint={self.__endpoint!r}"
+
     @final
     def is_closed(self) -> bool:
         return self.__endpoint.is_closed()
@@ -513,30 +509,10 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
     def fileno(self) -> int:
         return self.__endpoint.fileno()
 
-    def dup(self) -> Socket:
-        return self.__endpoint.dup()
-
-    @overload
-    def getsockopt(self, __level: int, __optname: int, /) -> int:
-        ...
-
-    @overload
-    def getsockopt(self, __level: int, __optname: int, __buflen: int, /) -> bytes:
-        ...
-
-    def getsockopt(self, *args: int) -> int | bytes:
-        return self.__endpoint.getsockopt(*args)
-
-    @overload
-    def setsockopt(self, __level: int, __optname: int, __value: int | bytes, /) -> None:
-        ...
-
-    @overload
-    def setsockopt(self, __level: int, __optname: int, __value: None, __optlen: int, /) -> None:
-        ...
-
-    def setsockopt(self, *args: Any) -> None:
-        return self.__endpoint.setsockopt(*args)
+    @property
+    @final
+    def socket(self) -> SocketProxy:
+        return self.__endpoint.socket
 
     @property
     @final

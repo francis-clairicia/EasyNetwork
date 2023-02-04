@@ -22,13 +22,14 @@ from dataclasses import dataclass
 from functools import partial
 from itertools import chain
 from selectors import EVENT_READ, EVENT_WRITE, BaseSelector, SelectSelector
-from socket import SHUT_WR, socket as Socket
+from socket import socket as Socket
 from threading import Event, RLock
 from typing import TYPE_CHECKING, Any, Callable, ContextManager, Generic, Iterator, Sequence, TypeAlias, TypeVar, final, overload
 from weakref import WeakKeyDictionary, ref
 
+from ..client.tcp import TCPNetworkClient
 from ..protocol import ParseErrorType, StreamProtocol, StreamProtocolParseError
-from ..tools.socket import AF_INET, SocketAddress, new_socket_address
+from ..tools.socket import AF_INET, SocketAddress, SocketProxy, new_socket_address
 from ..tools.stream import StreamDataConsumer, StreamDataProducer
 from .abc import AbstractNetworkServer
 from .executors.abc import AbstractRequestExecutor
@@ -73,36 +74,13 @@ class ConnectedClient(Generic[_ResponseT], metaclass=ABCMeta):
     def send_packets(self, *packets: _ResponseT) -> None:
         raise NotImplementedError
 
-    @overload
-    @abstractmethod
-    def getsockopt(self, __level: int, __optname: int, /) -> int:
-        ...
-
-    @overload
-    @abstractmethod
-    def getsockopt(self, __level: int, __optname: int, __buflen: int, /) -> bytes:
-        ...
-
-    @abstractmethod
-    def getsockopt(self, *args: int) -> int | bytes:
-        raise NotImplementedError
-
-    @overload
-    @abstractmethod
-    def setsockopt(self, __level: int, __optname: int, __value: int | bytes, /) -> None:
-        ...
-
-    @overload
-    @abstractmethod
-    def setsockopt(self, __level: int, __optname: int, __value: None, __optlen: int, /) -> None:
-        ...
-
-    @abstractmethod
-    def setsockopt(self, *args: Any) -> None:
-        raise NotImplementedError
-
     @abstractmethod
     def is_closed(self) -> bool:
+        raise NotImplementedError
+
+    @property
+    @abstractmethod
+    def socket(self) -> SocketProxy:
         raise NotImplementedError
 
     @property
@@ -274,7 +252,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
 
         self.__logger.info("Accepted new connection (peername = %s)", address)
 
-        future = self.__verify_client_pool.submit(self.verify_new_client, client_socket, address)
+        future = self.__verify_client_pool.submit(self.__verify_client_task, client_socket, address)
         try:
             future.add_done_callback(partial(self.__add_client_callback, socket=client_socket, address=address))
         finally:
@@ -491,22 +469,10 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 return
             try:
                 nb_bytes_sent = socket.send(data_to_send, self.__send_flags)
-            except (TimeoutError, InterruptedError):
+            except (TimeoutError, BlockingIOError, InterruptedError):
                 key_data.unsent_data = data_to_send
                 self.__server_selector.add_client_writer(socket)
                 logger.debug("-> Failed to send data, bail out.")
-            except BlockingIOError as exc:
-                try:
-                    characters_written: int = max(exc.characters_written, 0)
-                except Exception:
-                    characters_written = 0
-                key_data.unsent_data = data_to_send[characters_written:]
-                self.__server_selector.add_client_writer(socket)
-                logger.debug(
-                    "-> Failed to send data (%d/%d characters written), bail out.",
-                    characters_written,
-                    len(data_to_send),
-                )
             except OSError:
                 try:
                     self.handle_error(key_data.client, sys.exc_info())
@@ -535,6 +501,8 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                     if key_data.has_data_to_send():
                         self.__flush_client_data(socket, key_data, only_unsent=False)
                 else:
+                    from socket import SHUT_WR
+
                     socket.shutdown(SHUT_WR)
             finally:
                 socket.close()
@@ -564,7 +532,11 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         self.__loop = False
         self.__is_shutdown.wait()
 
-    def verify_new_client(self, client_socket: Socket, address: SocketAddress) -> bool:
+    def __verify_client_task(self, client_socket: Socket, address: SocketAddress) -> bool:
+        with TCPNetworkClient(client_socket, protocol=self.__protocol_factory(), give=False) as client:
+            return self.verify_new_client(client, address)
+
+    def verify_new_client(self, client: TCPNetworkClient[_ResponseT, _RequestT], address: SocketAddress) -> bool:
         return True
 
     def bad_request(self, client: ConnectedClient[_ResponseT], error_type: ParseErrorType, message: str, error_info: Any) -> None:
@@ -907,7 +879,7 @@ class _SelectorKeyData(Generic[_RequestT, _ResponseT]):
 
     @final
     class __ConnectedTCPClient(ConnectedClient[_ResponseT]):
-        __slots__ = ("__p", "__s", "__transaction_lock", "__flush", "__send", "__on_close", "__is_closed")
+        __slots__ = ("__p", "__s", "__sp", "__transaction_lock", "__flush", "__send", "__on_close", "__is_closed")
 
         def __init__(
             self,
@@ -923,6 +895,7 @@ class _SelectorKeyData(Generic[_RequestT, _ResponseT]):
             super().__init__(address)
             self.__p: StreamDataProducer[_ResponseT] = producer
             self.__s: Socket | None = socket
+            self.__sp: SocketProxy | None = SocketProxy(socket)
             self.__flush: Callable[[Socket], None] = flush
             self.__send: Callable[[Socket], None] = send
             self.__on_close: Callable[[Socket], None] = on_close
@@ -933,6 +906,7 @@ class _SelectorKeyData(Generic[_RequestT, _ResponseT]):
             with self.__transaction_lock:
                 socket = self.__s
                 self.__s = None
+                self.__sp = None
                 if socket is not None and not self.__is_closed(socket):
                     self.__on_close(socket)
 
@@ -950,6 +924,8 @@ class _SelectorKeyData(Generic[_RequestT, _ResponseT]):
                         self.__flush(socket)
                     finally:
                         try:
+                            from socket import SHUT_WR
+
                             socket.shutdown(SHUT_WR)
                         except OSError:
                             pass
@@ -968,32 +944,6 @@ class _SelectorKeyData(Generic[_RequestT, _ResponseT]):
                 self.__p.queue(*packets)
                 self.__send(socket)
 
-        @overload
-        def getsockopt(self, __level: int, __optname: int, /) -> int:
-            ...
-
-        @overload
-        def getsockopt(self, __level: int, __optname: int, __buflen: int, /) -> bytes:
-            ...
-
-        def getsockopt(self, *args: int) -> int | bytes:
-            with self.__transaction_lock:
-                socket = self.__check_not_closed()
-                return socket.getsockopt(*args)
-
-        @overload
-        def setsockopt(self, __level: int, __optname: int, __value: int | bytes, /) -> None:
-            ...
-
-        @overload
-        def setsockopt(self, __level: int, __optname: int, __value: None, __optlen: int, /) -> None:
-            ...
-
-        def setsockopt(self, *args: Any) -> None:
-            with self.__transaction_lock:
-                socket = self.__check_not_closed()
-                return socket.setsockopt(*args)
-
         def __check_not_closed(self) -> Socket:
             socket = self.__s
             if socket is None or self.__is_closed(socket):
@@ -1004,3 +954,10 @@ class _SelectorKeyData(Generic[_RequestT, _ResponseT]):
         def is_closed(self) -> bool:
             with self.__transaction_lock:
                 return (socket := self.__s) is None or self.__is_closed(socket)
+
+        @property
+        def socket(self) -> SocketProxy:
+            socket = self.__sp
+            if socket is None:
+                raise RuntimeError("Closed client")
+            return socket
