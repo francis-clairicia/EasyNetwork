@@ -281,16 +281,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             self._check_not_closed()
             return self.__peer
 
-    def is_connected(self) -> bool:
-        with self.__lock:
-            if self.__closed or self.__eof_reached:
-                return False
-            try:
-                self.__socket.getpeername()
-            except OSError:
-                return False
-            return True
-
     def fileno(self) -> int:
         with self.__lock:
             if self.__closed:
@@ -298,9 +288,13 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             return self.__socket.fileno()
 
     @final
+    def _get_buffer(self) -> bytes:
+        return self.__consumer.get_buffer()
+
+    @final
     def _check_not_closed(self) -> None:
         if self.__closed:
-            raise RuntimeError("Closed client")
+            raise OSError("Closed client")
 
     @property
     @final
@@ -308,7 +302,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         with self.__lock:
             socket = self.__socket_proxy
             if socket is None:
-                raise RuntimeError("Closed client")
+                raise OSError("Closed client")
             return socket
 
     @property

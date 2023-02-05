@@ -9,6 +9,7 @@ from __future__ import annotations
 __all__ = ["AbstractUDPNetworkServer"]
 
 import logging
+import os
 import sys
 from abc import abstractmethod
 from collections import deque
@@ -227,7 +228,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             logger.info("Processing request sent by %s", address)
             try:
                 if request_executor is not None:
-                    request_executor.execute(self.__execute_request, request, address)
+                    request_executor.execute(self.__execute_request, request, address, pid=os.getpid())
                 else:
                     self.__execute_request(request, address)
             except Exception:
@@ -252,11 +253,14 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 del data
                 yield packet, sender
 
-    def __execute_request(self, request: _RequestT, client_address: SocketAddress) -> None:
+    def __execute_request(self, request: _RequestT, client_address: SocketAddress, pid: int | None = None) -> None:
+        in_subprocess: bool = pid is not None and pid != os.getpid()
         try:
             self.process_request(request, client_address)
         except Exception:
             self.handle_error(client_address, sys.exc_info())
+            if in_subprocess:
+                raise
 
     @abstractmethod
     def process_request(self, request: _RequestT, client_address: SocketAddress) -> None:
@@ -266,11 +270,14 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         if exc_info == (None, None, None):
             return
 
-        logger: logging.Logger = self.__logger
+        try:
+            logger: logging.Logger = self.__logger
 
-        logger.error("-" * 40)
-        logger.error("Exception occurred during processing of request from %s", client_address, exc_info=exc_info)
-        logger.error("-" * 40)
+            logger.error("-" * 40)
+            logger.error("Exception occurred during processing of request from %s", client_address, exc_info=exc_info)
+            logger.error("-" * 40)
+        finally:
+            del exc_info
 
     def shutdown(self) -> None:
         self._check_not_closed()

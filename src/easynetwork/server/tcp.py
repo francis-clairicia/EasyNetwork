@@ -258,11 +258,17 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         finally:
             del future
 
-    def __add_client_callback(self, future: concurrent.futures.Future[bool], *, socket: Socket, address: SocketAddress) -> None:
+    def __add_client_callback(
+        self,
+        future: concurrent.futures.Future[tuple[bool, bytes]],
+        *,
+        socket: Socket,
+        address: SocketAddress,
+    ) -> None:
         logger: logging.Logger = self.__logger
 
         try:
-            accepted = future.result()
+            accepted, remaining_data = future.result()
         except BaseException:
             logger.exception("An exception occured when verifying client %s", address)
             with suppress(Exception):
@@ -330,6 +336,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             on_close=_close_client_hook,
             is_closed=_client_is_closed_hook,
         )
+        key_data.consumer.feed(remaining_data)
         self.__server_selector.register_client(socket, key_data)
         self.__server_selector.add_client_reader(socket)
         logger.info("A client (address = %s) was added", address)
@@ -415,6 +422,8 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 self.handle_error(key_data.client, sys.exc_info())
             finally:
                 key_data.client.close()
+            if in_subprocess:
+                raise
         else:
             if in_subprocess:
                 self.__flush_client_data(socket, key_data, only_unsent=False)
@@ -427,11 +436,14 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         if exc_info == (None, None, None):
             return
 
-        logger: logging.Logger = self.__logger
+        try:
+            logger: logging.Logger = self.__logger
 
-        logger.error("-" * 40)
-        logger.error("Exception occurred during processing of request from %s", client.address, exc_info=exc_info)
-        logger.error("-" * 40)
+            logger.error("-" * 40)
+            logger.error("Exception occurred during processing of request from %s", client.address, exc_info=exc_info)
+            logger.error("-" * 40)
+        finally:
+            del exc_info
 
     def __send_data_to_client(self, socket: Socket, key_data: _SelectorKeyData[_RequestT, _ResponseT]) -> None:
         logger: logging.Logger = self.__logger
@@ -510,7 +522,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         try:
             self.on_disconnect(client)
         except Exception:
-            self.handle_error(client, sys.exc_info())
+            logger.exception("Error when calling self.on_disconnect()")
         finally:
             logger.info("%s disconnected", client.address)
 
@@ -532,9 +544,10 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         self.__loop = False
         self.__is_shutdown.wait()
 
-    def __verify_client_task(self, client_socket: Socket, address: SocketAddress) -> bool:
+    def __verify_client_task(self, client_socket: Socket, address: SocketAddress) -> tuple[bool, bytes]:
         with TCPNetworkClient(client_socket, protocol=self.__protocol_factory(), give=False) as client:
-            return self.verify_new_client(client, address)
+            accepted = self.verify_new_client(client, address)
+            return accepted, client._get_buffer()
 
     def verify_new_client(self, client: TCPNetworkClient[_ResponseT, _RequestT], address: SocketAddress) -> bool:
         return True
@@ -623,7 +636,7 @@ if TYPE_CHECKING:
 class _ServerSocketSelector(Generic[_RequestT, _ResponseT]):
     __slots__ = (
         "__factory",
-        "__listener_sock_selector",
+        "__listener_selector",
         "__listener_poll_interval",
         "__clients_selectors_list",
         "__client_to_selector_map",
@@ -648,7 +661,7 @@ class _ServerSocketSelector(Generic[_RequestT, _ResponseT]):
         if clients_poll_interval < 0:
             raise ValueError("'clients_poll_interval': Negative value")
         self.__factory: Callable[[], BaseSelector] = factory
-        self.__listener_sock_selector: BaseSelector = factory()
+        self.__listener_selector: BaseSelector = factory()
         self.__clients_selectors_list: list[BaseSelector] = [factory()]  # At least one selector
         self.__client_to_selector_map: WeakKeyDictionary[Socket, BaseSelector] = WeakKeyDictionary()
         self.__client_data_map: WeakKeyDictionary[Socket, _SelectorKeyData[_RequestT, _ResponseT]] = WeakKeyDictionary()
@@ -662,7 +675,7 @@ class _ServerSocketSelector(Generic[_RequestT, _ResponseT]):
         self.__selector_exit_stack.callback(self.__client_to_selector_map.clear)
         self.__selector_exit_stack.callback(self.__selector_clients_map.clear)
         self.__selector_exit_stack.callback(self.__clients_selectors_list.clear)
-        self.__selector_exit_stack.enter_context(self.__listener_sock_selector)
+        self.__selector_exit_stack.enter_context(self.__listener_selector)
         self.__selector_exit_stack.enter_context(self.__clients_selectors_list[0])
 
     def __enter__(self) -> None:
@@ -693,12 +706,12 @@ class _ServerSocketSelector(Generic[_RequestT, _ResponseT]):
 
     def add_listener_socket(self, socket: Socket) -> None:
         with self.__listener_lock:
-            self.__listener_sock_selector.register(socket, EVENT_READ)
+            self.__listener_selector.register(socket, EVENT_READ)
 
     @contextmanager
     def stop_listener_socket_context(self, socket: Socket, default_backlog: int | None = None) -> Iterator[None]:
         key: __DefaultSelectorKey | None
-        selector: BaseSelector = self.__listener_sock_selector
+        selector: BaseSelector = self.__listener_selector
         with self.__listener_lock:
             try:
                 key = selector.unregister(socket)
@@ -720,9 +733,9 @@ class _ServerSocketSelector(Generic[_RequestT, _ResponseT]):
 
     def __listeners_select(self, timeout: float) -> list[Socket]:
         with self.__listener_lock:
-            if not self.__listener_sock_selector.get_map():
+            if not self.__listener_selector.get_map():
                 return []
-            return [key.fileobj for key, _ in self.__listener_sock_selector.select(timeout=timeout)]  # type: ignore[misc]
+            return [key.fileobj for key, _ in self.__listener_selector.select(timeout=timeout)]  # type: ignore[misc]
 
     def register_client(self, socket: Socket, data: _SelectorKeyData[_RequestT, _ResponseT]) -> None:
         with self.__clients_lock:

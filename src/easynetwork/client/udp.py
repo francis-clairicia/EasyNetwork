@@ -378,7 +378,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
     @final
     def _check_not_closed(self) -> None:
         if self.__closed:
-            raise RuntimeError("Closed client")
+            raise OSError("Closed client")
 
     @property
     @final
@@ -386,7 +386,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         with self.__lock:
             socket = self.__socket_proxy
             if socket is None:
-                raise RuntimeError("Closed client")
+                raise OSError("Closed client")
             return socket
 
     @property

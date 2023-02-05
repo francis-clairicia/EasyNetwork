@@ -96,3 +96,6 @@ class ForkingRequestExecutor(AbstractRequestExecutor):
     def on_server_close(self) -> None:
         super().on_server_close()
         self.collect_children(blocking=self.__block_on_close)
+
+    def get_active_children(self) -> frozenset[int]:
+        return frozenset(self.__active_children)

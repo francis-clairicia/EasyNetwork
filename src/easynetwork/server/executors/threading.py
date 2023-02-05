@@ -22,11 +22,13 @@ class ThreadingRequestExecutor(AbstractRequestExecutor):
 
     __counter = itertools.count().__next__
 
-    def __init__(self, *, max_workers: int | None = None) -> None:
+    def __init__(self, *, max_workers: int | None = None, thread_name_prefix: str | None = None) -> None:
         super().__init__()
+        if thread_name_prefix is None:
+            thread_name_prefix = f"ThreadingRequestExecutor-{ThreadingRequestExecutor.__counter()}"
         self.__pool = concurrent.futures.ThreadPoolExecutor(
             max_workers=max_workers,
-            thread_name_prefix=f"ThreadingRequestExecutor-{ThreadingRequestExecutor.__counter()}",
+            thread_name_prefix=thread_name_prefix,
         )
 
     def execute(self, __request_handler: Callable[_P, None], /, *args: _P.args, **kwargs: _P.kwargs) -> None:
