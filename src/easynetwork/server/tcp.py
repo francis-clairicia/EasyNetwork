@@ -814,9 +814,8 @@ class _ServerSocketSelector(Generic[_RequestT, _ResponseT]):
             return [
                 (key.fileobj, event, key.data)  # type: ignore[misc]
                 for key, event in chain.from_iterable(
-                    client_selector.select(timeout=timeout)
-                    for client_selector in self.__clients_selectors_list
-                    if client_selector.get_map()
+                    client_selector.select(timeout=timeout if idx == 0 else 0)
+                    for idx, client_selector in enumerate(filter(lambda s: s.get_map(), self.__clients_selectors_list))
                 )
             ]
 
