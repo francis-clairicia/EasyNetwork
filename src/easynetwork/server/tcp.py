@@ -38,8 +38,6 @@ if TYPE_CHECKING:
     from selectors import SelectorKey as __DefaultSelectorKey
     from typing import type_check_only
 
-    from _typeshed import OptExcInfo
-
 _RequestT = TypeVar("_RequestT")
 _ResponseT = TypeVar("_ResponseT")
 
@@ -355,7 +353,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             logger.debug("-> Interruped. Will try later")
         except OSError:
             try:
-                self.handle_error(client, sys.exc_info())
+                self.handle_error(client, _get_exception)
             finally:
                 self.__shutdown_client(socket, from_client=False)
         else:
@@ -382,7 +380,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                     self.bad_request(client, exc.error_type, exc.message, exc.error_info)
                 except Exception:
                     try:
-                        self.handle_error(client, sys.exc_info())
+                        self.handle_error(client, _get_exception)
                     finally:
                         self.__shutdown_client(socket, from_client=False)
                 continue
@@ -391,7 +389,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 continue
             except Exception:
                 try:
-                    self.handle_error(client, sys.exc_info())
+                    self.handle_error(client, _get_exception)
                 finally:
                     self.__shutdown_client(socket, from_client=False)
                 continue
@@ -403,7 +401,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                     self.__execute_request(request, socket, key_data)
             except Exception:
                 try:
-                    self.handle_error(client, sys.exc_info())
+                    self.handle_error(client, _get_exception)
                 finally:
                     self.__shutdown_client(socket, from_client=False)
 
@@ -419,7 +417,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             self.process_request(request, key_data.client)
         except Exception:
             try:
-                self.handle_error(key_data.client, sys.exc_info())
+                self.handle_error(key_data.client, _get_exception)
             finally:
                 key_data.client.close()
             if in_subprocess:
@@ -432,18 +430,19 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     def process_request(self, request: _RequestT, client: ConnectedClient[_ResponseT]) -> None:
         raise NotImplementedError
 
-    def handle_error(self, client: ConnectedClient[Any], exc_info: OptExcInfo) -> None:
-        if exc_info == (None, None, None):
+    def handle_error(self, client: ConnectedClient[Any], exc_info: Callable[[], BaseException | None]) -> None:
+        exception = exc_info()
+        if exception is None:
             return
 
         try:
             logger: logging.Logger = self.__logger
 
             logger.error("-" * 40)
-            logger.error("Exception occurred during processing of request from %s", client.address, exc_info=exc_info)
+            logger.error("Exception occurred during processing of request from %s", client.address, exc_info=exception)
             logger.error("-" * 40)
         finally:
-            del exc_info
+            del exception
 
     def __send_data_to_client(self, socket: Socket, key_data: _SelectorKeyData[_RequestT, _ResponseT]) -> None:
         logger: logging.Logger = self.__logger
@@ -487,7 +486,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 logger.debug("-> Failed to send data, bail out.")
             except OSError:
                 try:
-                    self.handle_error(key_data.client, sys.exc_info())
+                    self.handle_error(key_data.client, _get_exception)
                 finally:
                     self.__shutdown_client(socket, from_client=False)
             else:
@@ -974,3 +973,7 @@ class _SelectorKeyData(Generic[_RequestT, _ResponseT]):
             if socket is None:
                 raise RuntimeError("Closed client")
             return socket
+
+
+def _get_exception() -> BaseException | None:
+    return sys.exc_info()[1]

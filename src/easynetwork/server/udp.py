@@ -16,15 +16,12 @@ from collections import deque
 from selectors import EVENT_READ, EVENT_WRITE, BaseSelector
 from socket import socket as Socket
 from threading import Event, RLock
-from typing import TYPE_CHECKING, Any, Callable, Generic, Iterator, TypeAlias, TypeVar, final, overload
+from typing import Any, Callable, Generic, Iterator, TypeAlias, TypeVar, final, overload
 
 from ..protocol import DatagramProtocol, DatagramProtocolParseError, ParseErrorType
 from ..tools.socket import AF_INET, SocketAddress, new_socket_address
 from .abc import AbstractNetworkServer
 from .executors.abc import AbstractRequestExecutor
-
-if TYPE_CHECKING:
-    from _typeshed import OptExcInfo
 
 _RequestT = TypeVar("_RequestT")
 _ResponseT = TypeVar("_ResponseT")
@@ -232,7 +229,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 else:
                     self.__execute_request(request, address)
             except Exception:
-                self.handle_error(address, sys.exc_info())
+                self.handle_error(address, _get_exception)
 
     def __iter_consumer(self) -> Iterator[tuple[_RequestT, SocketAddress]]:
         queue = self.__received_datagrams
@@ -246,9 +243,9 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 try:
                     self.bad_request(sender, exc.error_type, exc.message, exc.error_info)
                 except Exception:
-                    self.handle_error(sender, sys.exc_info())
+                    self.handle_error(sender, _get_exception)
             except Exception:
-                self.handle_error(sender, sys.exc_info())
+                self.handle_error(sender, _get_exception)
             else:
                 del data
                 yield packet, sender
@@ -258,7 +255,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         try:
             self.process_request(request, client_address)
         except Exception:
-            self.handle_error(client_address, sys.exc_info())
+            self.handle_error(client_address, _get_exception)
             if in_subprocess:
                 raise
 
@@ -266,18 +263,19 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     def process_request(self, request: _RequestT, client_address: SocketAddress) -> None:
         raise NotImplementedError
 
-    def handle_error(self, client_address: SocketAddress, exc_info: OptExcInfo) -> None:
-        if exc_info == (None, None, None):
+    def handle_error(self, client_address: SocketAddress, exc_info: Callable[[], BaseException | None]) -> None:
+        exception = exc_info()
+        if exception is None:
             return
 
         try:
             logger: logging.Logger = self.__logger
 
             logger.error("-" * 40)
-            logger.error("Exception occurred during processing of request from %s", client_address, exc_info=exc_info)
+            logger.error("Exception occurred during processing of request from %s", client_address, exc_info=exception)
             logger.error("-" * 40)
         finally:
-            del exc_info
+            del exception
 
     def shutdown(self) -> None:
         self._check_not_closed()
@@ -414,3 +412,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     @final
     def recv_flags(self) -> int:
         return self.__default_recv_flags
+
+
+def _get_exception() -> BaseException | None:
+    return sys.exc_info()[1]

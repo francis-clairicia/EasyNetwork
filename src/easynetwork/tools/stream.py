@@ -132,6 +132,8 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
             else:
                 self.__c = consumer
                 raise StopIteration
+            finally:
+                del consumer
             assert isinstance(chunk, (bytes, bytearray))
             self.__b = bytes(chunk)
             return packet
