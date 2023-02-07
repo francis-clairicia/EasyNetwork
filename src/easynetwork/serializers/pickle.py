@@ -15,8 +15,9 @@ __all__ = [
 import pickle as _pickle
 import pickletools as _pickletools
 from dataclasses import asdict as dataclass_asdict, dataclass
+from functools import partial
 from io import BytesIO
-from typing import IO, Any, TypeVar, final
+from typing import IO, Callable, TypeVar, final
 
 from .base_stream import FileBasedIncrementalPacketSerializer
 
@@ -38,7 +39,7 @@ class UnpicklerConfig:
 
 
 class PickleSerializer(FileBasedIncrementalPacketSerializer[_ST_contra, _DT_co]):
-    __slots__ = ("__optimize", "__pickler_cls", "__pickler_config", "__unpickler_cls", "__unpickler_config")
+    __slots__ = ("__optimize", "__pickler_cls", "__unpickler_cls")
 
     def __init__(
         self,
@@ -56,14 +57,13 @@ class PickleSerializer(FileBasedIncrementalPacketSerializer[_ST_contra, _DT_co])
             ),  # pickle.Unpickler does not only raise UnpicklingError... :)
         )
         self.__optimize = bool(optimize)
-        self.__pickler_config: dict[str, Any]
-        self.__unpickler_config: dict[str, Any]
+        self.__pickler_cls: Callable[[IO[bytes]], _pickle.Pickler]
+        self.__unpickler_cls: Callable[[IO[bytes]], _pickle.Unpickler]
 
         if pickler_config is None:
             pickler_config = PicklerConfig()
         elif not isinstance(pickler_config, PicklerConfig):
             raise TypeError(f"Invalid pickler config: expected {PicklerConfig.__name__}, got {type(pickler_config).__name__}")
-        self.__pickler_config = dataclass_asdict(pickler_config)
 
         if unpickler_config is None:
             unpickler_config = UnpicklerConfig()
@@ -71,20 +71,19 @@ class PickleSerializer(FileBasedIncrementalPacketSerializer[_ST_contra, _DT_co])
             raise TypeError(
                 f"Invalid unpickler config: expected {UnpicklerConfig.__name__}, got {type(unpickler_config).__name__}"
             )
-        self.__unpickler_config = dataclass_asdict(unpickler_config)
 
-        self.__pickler_cls: type[_pickle.Pickler] = pickler_cls or _pickle.Pickler
-        self.__unpickler_cls: type[_pickle.Unpickler] = unpickler_cls or _pickle.Unpickler
+        self.__pickler_cls = partial(pickler_cls or _pickle.Pickler, **dataclass_asdict(pickler_config), buffer_callback=None)
+        self.__unpickler_cls = partial(unpickler_cls or _pickle.Unpickler, **dataclass_asdict(unpickler_config), buffers=None)
 
     @final
     def dump_to_file(self, packet: _ST_contra, file: IO[bytes]) -> None:
         if not self.__optimize:
-            self.__pickler_cls(file, **self.__pickler_config, buffer_callback=None).dump(packet)
+            self.__pickler_cls(file).dump(packet)
             return
         with BytesIO() as buffer:
-            self.__pickler_cls(buffer, **self.__pickler_config, buffer_callback=None).dump(packet)
+            self.__pickler_cls(buffer).dump(packet)
             file.write(_pickletools.optimize(buffer.getvalue()))
 
     @final
     def load_from_file(self, file: IO[bytes]) -> _DT_co:
-        return self.__unpickler_cls(file, **self.__unpickler_config, buffers=None).load()
+        return self.__unpickler_cls(file).load()
