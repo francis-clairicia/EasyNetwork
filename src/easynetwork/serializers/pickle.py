@@ -25,13 +25,13 @@ _ST_contra = TypeVar("_ST_contra", contravariant=True)
 _DT_co = TypeVar("_DT_co", covariant=True)
 
 
-@dataclass(kw_only=True, frozen=True)
+@dataclass(kw_only=True)
 class PicklerConfig:
     protocol: int = _pickle.DEFAULT_PROTOCOL
     fix_imports: bool = False
 
 
-@dataclass(kw_only=True, frozen=True)
+@dataclass(kw_only=True)
 class UnpicklerConfig:
     fix_imports: bool = False
     encoding: str = "utf-8"

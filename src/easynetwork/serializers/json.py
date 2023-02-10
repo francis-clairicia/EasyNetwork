@@ -27,7 +27,7 @@ _DT_co = TypeVar("_DT_co", covariant=True)
 _JSON_VALUE_BYTES: frozenset[int] = frozenset(bytes(string.digits + string.ascii_letters + string.punctuation, "ascii"))
 
 
-@dataclass(kw_only=True, frozen=True)
+@dataclass(kw_only=True)
 class JSONEncoderConfig:
     skipkeys: bool = False
     check_circular: bool = True
@@ -38,7 +38,7 @@ class JSONEncoderConfig:
     default: Callable[..., Any] | None = None
 
 
-@dataclass(kw_only=True, frozen=True)
+@dataclass(kw_only=True)
 class JSONDecoderConfig:
     object_hook: Callable[..., Any] | None = None
     parse_int: Callable[[str], Any] | None = None

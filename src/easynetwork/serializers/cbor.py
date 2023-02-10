@@ -25,7 +25,7 @@ _ST_contra = TypeVar("_ST_contra", contravariant=True)
 _DT_co = TypeVar("_DT_co", covariant=True)
 
 
-@dataclass(kw_only=True, frozen=True)
+@dataclass(kw_only=True)
 class CBOREncoderConfig:
     datetime_as_timestamp: bool = False
     timezone: datetime.tzinfo | None = None
@@ -36,7 +36,7 @@ class CBOREncoderConfig:
     string_referencing: bool = False
 
 
-@dataclass(kw_only=True, frozen=True)
+@dataclass(kw_only=True)
 class CBORDecoderConfig:
     object_hook: Callable[..., Any] | None = None
     tag_hook: Callable[..., Any] | None = None
