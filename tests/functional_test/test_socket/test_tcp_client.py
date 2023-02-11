@@ -29,7 +29,7 @@ def test_default(tcp_server: tuple[str, int]) -> None:
 def test_custom_socket(tcp_server: tuple[str, int]) -> None:
     with Socket(AF_INET, SOCK_STREAM) as s:
         s.connect(tcp_server)
-        client: TCPNetworkClient[Any, Any] = TCPNetworkClient(s, StreamProtocol(PickleSerializer()))
+        client: TCPNetworkClient[Any, Any] = TCPNetworkClient(s, StreamProtocol(PickleSerializer()), give=False)
         client.send_packet({"data": [5, 2]})
         assert client.recv_packet() == {"data": [5, 2]}
         client.send_packet("Hello")

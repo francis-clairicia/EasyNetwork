@@ -10,16 +10,16 @@ __all__ = ["AbstractUDPNetworkServer"]
 
 import logging
 import os
+import socket as _socket
 import sys
 from abc import abstractmethod
 from collections import deque
 from selectors import EVENT_READ, EVENT_WRITE, BaseSelector
-from socket import socket as Socket
 from threading import Event, RLock
 from typing import Any, Callable, Generic, Iterator, TypeAlias, TypeVar, final, overload
 
 from ..protocol import DatagramProtocol, DatagramProtocolParseError, ParseErrorType
-from ..tools.socket import AF_INET, SocketAddress, new_socket_address
+from ..tools.socket import SocketAddress, new_socket_address
 from .abc import AbstractNetworkServer
 from .executors.abc import AbstractRequestExecutor
 
@@ -55,7 +55,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         address: tuple[str, int] | tuple[str, int, int, int],
         protocol_factory: DatagramProtocolFactory[_ResponseT, _RequestT],
         *,
-        family: int = AF_INET,
+        family: int = _socket.AF_INET,
         reuse_port: bool = False,
         send_flags: int = 0,
         recv_flags: int = 0,
@@ -94,7 +94,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             raise
 
         socket.settimeout(0)
-        self.__socket: Socket = socket
+        self.__socket: _socket.socket = socket
         self.__request_executor: AbstractRequestExecutor | None = request_executor
         self.__addr: SocketAddress = new_socket_address(socket.getsockname(), socket.family)
         self.__send_lock: RLock = RLock()
@@ -207,7 +207,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
 
     def __receive_datagrams(self) -> None:
         logger: logging.Logger = self.__logger
-        socket: Socket = self.__socket
+        socket: _socket.socket = self.__socket
         recv_flags: int = self.__default_recv_flags
         while True:
             try:

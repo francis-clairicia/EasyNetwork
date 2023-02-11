@@ -25,7 +25,7 @@ class AddressFamily(IntEnum):
     AF_INET6 = _socket.AF_INET6
 
     def __repr__(self) -> str:
-        return f"<{type(self).__name__}.{self.name}: {self.value}>"
+        return f"{type(self).__name__}.{self.name}"
 
     __str__ = __repr__
 

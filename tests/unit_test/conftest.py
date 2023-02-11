@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, Callable
 from easynetwork.converter import AbstractPacketConverter
 from easynetwork.protocol import DatagramProtocol, StreamProtocol
 from easynetwork.serializers.abc import AbstractIncrementalPacketSerializer, AbstractPacketSerializer
+from easynetwork.tools.stream import StreamDataConsumer, StreamDataProducer
 
 import pytest
 
@@ -20,7 +21,7 @@ if TYPE_CHECKING:
 @pytest.fixture
 def mock_tcp_socket_factory(mocker: MockerFixture) -> Callable[[], MagicMock]:
     def factory() -> MagicMock:
-        mock_socket = mocker.MagicMock(spec=Socket)
+        mock_socket = mocker.NonCallableMagicMock(spec=Socket)
         mock_socket.family = AF_INET
         mock_socket.type = SOCK_STREAM
         mock_socket.proto = IPPROTO_TCP
@@ -37,7 +38,7 @@ def mock_tcp_socket(mock_tcp_socket_factory: Callable[[], MagicMock]) -> MagicMo
 @pytest.fixture
 def mock_udp_socket_factory(mocker: MockerFixture) -> Callable[[], MagicMock]:
     def factory() -> MagicMock:
-        mock_socket = mocker.MagicMock(spec=Socket)
+        mock_socket = mocker.NonCallableMagicMock(spec=Socket)
         mock_socket.family = AF_INET
         mock_socket.type = SOCK_DGRAM
         mock_socket.proto = IPPROTO_UDP
@@ -99,3 +100,23 @@ def mock_stream_protocol_factory(mocker: MockerFixture) -> Callable[[], Any]:
 @pytest.fixture
 def mock_stream_protocol(mock_stream_protocol_factory: Callable[[], Any]) -> Any:
     return mock_stream_protocol_factory()
+
+
+@pytest.fixture
+def mock_stream_data_producer_factory(mocker: MockerFixture) -> Callable[[], Any]:
+    return lambda: mocker.NonCallableMagicMock(spec_set=StreamDataProducer)
+
+
+@pytest.fixture
+def mock_stream_data_producer(mock_stream_data_producer_factory: Callable[[], Any]) -> Any:
+    return mock_stream_data_producer_factory()
+
+
+@pytest.fixture
+def mock_stream_data_consumer_factory(mocker: MockerFixture) -> Callable[[], Any]:
+    return lambda: mocker.NonCallableMagicMock(spec_set=StreamDataConsumer)
+
+
+@pytest.fixture
+def mock_stream_data_consumer(mock_stream_data_consumer_factory: Callable[[], Any]) -> Any:
+    return mock_stream_data_consumer_factory()

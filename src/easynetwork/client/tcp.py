@@ -8,8 +8,8 @@ from __future__ import annotations
 
 __all__ = ["TCPNetworkClient"]
 
+import socket as _socket
 from contextlib import contextmanager
-from socket import socket as Socket
 from threading import RLock
 from typing import Any, Generic, Iterator, TypeVar, final, overload
 
@@ -30,6 +30,8 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
     __slots__ = (
         "__socket",
         "__socket_proxy",
+        "__socket_sendall",
+        "__socket_recv",
         "__owner",
         "__closed",
         "__lock",
@@ -61,11 +63,11 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
     @overload
     def __init__(
         self,
-        socket: Socket,
+        socket: _socket.socket,
         /,
         protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
         *,
-        give: bool = ...,
+        give: bool,
         send_flags: int = ...,
         recv_flags: int = ...,
     ) -> None:
@@ -73,7 +75,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
 
     def __init__(
         self,
-        __arg: Socket | tuple[str, int],
+        __arg: _socket.socket | tuple[str, int],
         /,
         protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
         *,
@@ -82,45 +84,48 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         **kwargs: Any,
     ) -> None:
         super().__init__()
+        self.__lock: RLock = RLock()
+        self.__closed: bool = True  # If any exception occurs, the client will already be in a closed state
         self.__producer: StreamDataProducer[_SentPacketT] = StreamDataProducer(protocol)
         self.__consumer: StreamDataConsumer[_ReceivedPacketT] = StreamDataConsumer(protocol)
 
-        send_flags = int(send_flags)
-        recv_flags = int(recv_flags)
-        socket: Socket
-
+        socket: _socket.socket
         self.__owner: bool
-        if isinstance(__arg, Socket):
-            give: bool = kwargs.pop("give", False)
+        if isinstance(__arg, _socket.socket):
+            try:
+                give: bool = kwargs.pop("give")
+            except KeyError:
+                raise TypeError("Missing keyword argument 'give'") from None
             if kwargs:
                 raise TypeError("Invalid arguments")
             socket = __arg
             self.__owner = bool(give)
         elif isinstance(__arg, tuple):
-            from socket import create_connection
-
             address: tuple[str, int] = __arg
-            socket = create_connection(address, **kwargs)
+            socket = _socket.create_connection(address, **kwargs)
             self.__owner = True
         else:
             raise TypeError("Invalid arguments")
 
-        from socket import SOCK_STREAM
+        try:
+            if socket.type != _socket.SOCK_STREAM:
+                raise ValueError("Invalid socket type")
 
-        if socket.type != SOCK_STREAM:
-            raise ValueError("Invalid socket type")
+            self.__addr: SocketAddress = new_socket_address(socket.getsockname(), socket.family)
+            self.__peer: SocketAddress = new_socket_address(socket.getpeername(), socket.family)
+            self.__socket_proxy = SocketProxy(socket)
+            self.__eof_reached: bool = False
+            self.__default_send_flags: int = send_flags
+            self.__default_recv_flags: int = recv_flags
+        except BaseException:
+            if self.__owner:
+                socket.close()
+            raise
 
-        socket.settimeout(None)
-
-        self.__addr: SocketAddress = new_socket_address(socket.getsockname(), socket.family)
-        self.__peer: SocketAddress = new_socket_address(socket.getpeername(), socket.family)
-        self.__closed: bool = False
-        self.__socket: Socket = socket
-        self.__socket_proxy: SocketProxy | None = SocketProxy(socket)
-        self.__lock: RLock = RLock()
-        self.__eof_reached: bool = False
-        self.__default_send_flags: int = send_flags
-        self.__default_recv_flags: int = recv_flags
+        self.__socket: _socket.socket = socket
+        self.__socket_sendall = socket.sendall
+        self.__socket_recv = socket.recv
+        self.__closed = False  # There was no errors
 
     def __repr__(self) -> str:
         try:
@@ -133,21 +138,21 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
     def is_closed(self) -> bool:
         return self.__closed
 
-    def close(self) -> None:
+    def close(self, *, shutdown: int | None = -1) -> None:
+        if shutdown is not None and shutdown == -1:
+            shutdown = _socket.SHUT_WR
         with self.__lock:
             if self.__closed:
                 return
             self.__eof_reached = True
             self.__closed = True
-            socket: Socket = self.__socket
+            socket: _socket.socket = self.__socket
             del self.__socket
-            self.__socket_proxy = None
             if not self.__owner:
                 return
             try:
-                from socket import SHUT_WR
-
-                socket.shutdown(SHUT_WR)
+                if shutdown is not None:
+                    socket.shutdown(shutdown)
             except OSError:
                 pass
             finally:
@@ -156,27 +161,14 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
     def send_packet(self, packet: _SentPacketT) -> None:
         with self.__lock:
             self._check_not_closed()
-            self.__producer.queue(packet)
-            self.__write_on_socket()
+            if self.__eof_reached:
+                import errno
+                import os
 
-    def send_packets(self, *packets: _SentPacketT) -> None:
-        if not packets:
-            return
-        with self.__lock:
-            self._check_not_closed()
-            self.__producer.queue(*packets)
-            self.__write_on_socket()
-
-    def __write_on_socket(self) -> None:
-        flags = self.__default_send_flags
-        socket: Socket = self.__socket
-        if self.__eof_reached:
-            import errno
-            import os
-
-            raise OSError(errno.EPIPE, os.strerror(errno.EPIPE))
-        with _use_timeout(socket, None):
-            socket.sendall(b"".join(list(self.__producer)), flags)
+                raise OSError(errno.EPIPE, os.strerror(errno.EPIPE))
+            with _use_timeout(self.__socket, None):
+                self.__producer.queue(packet)
+                self.__socket_sendall(b"".join(list(self.__producer)), self.__default_send_flags)
 
     def recv_packet(self) -> _ReceivedPacketT:
         with self.__lock:
@@ -220,31 +212,31 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 return default
             raise TimeoutError("recv_packet() timed out")
 
-    def iter_received_packets(self, *, timeout: float = 0) -> Iterator[_ReceivedPacketT]:
-        timeout = float(timeout)
+    def iter_received_packets(self, *, timeout: float | None = 0) -> Iterator[_ReceivedPacketT]:
         consumer = self.__consumer
         read_socket = self.__read_socket
         check_not_closed = self._check_not_closed
         next_packet = self.__next_packet_or_default
         lock = self.__lock
-        null: Any = object()
+        null: Any = _NO_DEFAULT
+
         while True:
             with lock:
                 check_not_closed()
                 while (packet := next_packet(consumer, null)) is null:
-                    if not read_socket(timeout=timeout):
+                    if timeout is None:
+                        while not read_socket(timeout=None):
+                            continue
+                    elif not read_socket(timeout=timeout):
                         return
-                    continue
             yield packet  # yield out of lock scope
 
     def __read_socket(self, *, timeout: float | None) -> bool:
         if self.__eof_reached:
             raise EOFError("Closed connection")
-        flags = self.__default_recv_flags
-        socket: Socket = self.__socket
-        with _use_timeout(socket, timeout):
+        with _use_timeout(self.__socket, timeout):
             try:
-                chunk: bytes = socket.recv(self.max_size, flags)
+                chunk: bytes = self.__socket_recv(self.max_size, self.__default_recv_flags)
             except (TimeoutError, BlockingIOError, InterruptedError):
                 return False
             if not chunk:
@@ -259,7 +251,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             return next(consumer)
         except (StopIteration, StreamProtocolParseError):
             raise
-        except Exception as exc:
+        except Exception as exc:  # pragma: no cover
             raise RuntimeError(str(exc)) from exc
 
     @staticmethod
@@ -268,18 +260,14 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             return next(consumer, default)
         except StreamProtocolParseError:
             raise
-        except Exception as exc:
+        except Exception as exc:  # pragma: no cover
             raise RuntimeError(str(exc)) from exc
 
     def get_local_address(self) -> SocketAddress:
-        with self.__lock:
-            self._check_not_closed()
-            return self.__addr
+        return self.__addr
 
     def get_remote_address(self) -> SocketAddress:
-        with self.__lock:
-            self._check_not_closed()
-            return self.__peer
+        return self.__peer
 
     def fileno(self) -> int:
         with self.__lock:
@@ -299,11 +287,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
     @property
     @final
     def socket(self) -> SocketProxy:
-        with self.__lock:
-            socket = self.__socket_proxy
-            if socket is None:
-                raise OSError("Closed client")
-            return socket
+        return self.__socket_proxy
 
     @property
     @final
@@ -317,9 +301,10 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
 
 
 @contextmanager
-def _use_timeout(socket: Socket, timeout: float | None) -> Iterator[None]:
+def _use_timeout(socket: _socket.socket, timeout: float | None) -> Iterator[None]:
     old_timeout: float | None = socket.gettimeout()
-    socket.settimeout(timeout)
+    if timeout != old_timeout:
+        socket.settimeout(timeout)
     try:
         yield
     finally:

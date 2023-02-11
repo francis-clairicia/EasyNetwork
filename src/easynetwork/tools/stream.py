@@ -147,4 +147,4 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
 
     def get_buffer(self) -> bytes:
         with self.__lock:
-            return self.__b
+            return bytes(self.__b)

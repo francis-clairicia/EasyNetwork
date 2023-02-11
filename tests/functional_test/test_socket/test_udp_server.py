@@ -74,13 +74,13 @@ def test_request_handling() -> None:
             UDPNetworkEndpoint(protocol=DatagramProtocol(_IntegerSerializer())) as client_2,
             UDPNetworkEndpoint(protocol=DatagramProtocol(_IntegerSerializer())) as client_3,
         ):
-            client_1.send_packet(address, 350)
-            client_2.send_packet(address, -634)
-            client_3.send_packet(address, 0)
+            client_1.send_packet_to(address, 350)
+            client_2.send_packet_to(address, -634)
+            client_3.send_packet_to(address, 0)
             sleep(0.2)
-            assert client_1.recv_packet()[0] == 350
-            assert client_2.recv_packet()[0] == -634
-            assert client_3.recv_packet()[0] == 0
+            assert client_1.recv_packet_from()[0] == 350
+            assert client_2.recv_packet_from()[0] == -634
+            assert client_3.recv_packet_from()[0] == 0
 
 
 class _TestThreadingServer(AbstractUDPNetworkServer[Any, Any]):
@@ -97,8 +97,8 @@ def test_threading_server() -> None:
         run_server_in_thread(server)
         with UDPNetworkEndpoint[Any, Any](server.protocol()) as client:
             packet = {"data": 1}
-            client.send_packet(server.address, packet)
-            response: tuple[Any, bool] = client.recv_packet()[0]
+            client.send_packet_to(server.address, packet)
+            response: tuple[Any, bool] = client.recv_packet_from()[0]
             assert response[0] == packet
             assert response[1] is True
 
@@ -121,7 +121,7 @@ def test_forking_server() -> None:
         with UDPNetworkEndpoint[Any, Any](server.protocol()) as client:
             for _ in range(2):
                 packet = {"data": 1}
-                client.send_packet(server.address, packet)
-                response: tuple[Any, int] = client.recv_packet()[0]
+                client.send_packet_to(server.address, packet)
+                response: tuple[Any, int] = client.recv_packet_from()[0]
                 assert response[0] == packet
                 assert response[1] != getpid()

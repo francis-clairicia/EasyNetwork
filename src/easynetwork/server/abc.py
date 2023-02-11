@@ -39,6 +39,9 @@ class AbstractNetworkServer(Generic[_RequestT, _ResponseT], metaclass=ABCMeta):
         self.shutdown()
         self.server_close()
 
+    def __getstate__(self) -> Any:  # pragma: no cover
+        raise TypeError(f"cannot pickle {self.__class__.__name__!r} object")
+
     @abstractmethod
     def is_closed(self) -> bool:
         raise NotImplementedError

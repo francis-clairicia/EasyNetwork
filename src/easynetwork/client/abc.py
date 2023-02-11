@@ -37,6 +37,9 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
     def __exit__(self, *args: Any) -> None:
         self.close()
 
+    def __getstate__(self) -> Any:  # pragma: no cover
+        raise TypeError(f"cannot pickle {self.__class__.__name__!r} object")
+
     @abstractmethod
     def is_closed(self) -> bool:
         raise NotImplementedError
@@ -58,10 +61,6 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
         raise NotImplementedError
 
     @abstractmethod
-    def send_packets(self, *packets: _SentPacketT) -> None:
-        raise NotImplementedError
-
-    @abstractmethod
     def recv_packet(self) -> _ReceivedPacketT:
         raise NotImplementedError
 
@@ -79,11 +78,16 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
     def recv_packet_no_block(self, *, default: _T = ..., timeout: float = ...) -> _ReceivedPacketT | _T:
         raise NotImplementedError
 
-    def iter_received_packets(self, *, timeout: float = 0) -> Iterator[_ReceivedPacketT]:
-        timeout = float(timeout)
+    def iter_received_packets(self, *, timeout: float | None = 0) -> Iterator[_ReceivedPacketT]:
+        if timeout is None:
+            recv_packet = self.recv_packet
+            while True:
+                yield recv_packet()
+
         _not_received: Any = object()
+        recv_packet_no_block = self.recv_packet_no_block
         while True:
-            packet = self.recv_packet_no_block(timeout=timeout, default=_not_received)
+            packet = recv_packet_no_block(timeout=timeout, default=_not_received)
             if packet is _not_received:
                 break
             yield packet

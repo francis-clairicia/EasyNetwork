@@ -12,7 +12,7 @@ __all__ = [
 ]
 
 from abc import ABCMeta, abstractmethod
-from typing import Generator, Generic, TypeVar
+from typing import Any, Generator, Generic, TypeVar
 
 _ST_contra = TypeVar("_ST_contra", contravariant=True)
 _DT_co = TypeVar("_DT_co", covariant=True)
@@ -20,6 +20,9 @@ _DT_co = TypeVar("_DT_co", covariant=True)
 
 class AbstractPacketSerializer(Generic[_ST_contra, _DT_co], metaclass=ABCMeta):
     __slots__ = ("__weakref__",)
+
+    def __getstate__(self) -> Any:  # pragma: no cover
+        raise TypeError(f"cannot pickle {self.__class__.__name__!r} object")
 
     @abstractmethod
     def serialize(self, packet: _ST_contra) -> bytes:

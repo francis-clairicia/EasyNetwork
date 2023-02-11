@@ -14,6 +14,7 @@ __all__ = [
 import concurrent.futures
 import logging
 import os
+import socket as _socket
 import sys
 from abc import ABCMeta, abstractmethod
 from collections import defaultdict
@@ -22,14 +23,13 @@ from dataclasses import dataclass
 from functools import partial
 from itertools import chain
 from selectors import EVENT_READ, EVENT_WRITE, BaseSelector, SelectSelector
-from socket import socket as Socket
 from threading import Event, RLock
 from typing import TYPE_CHECKING, Any, Callable, ContextManager, Generic, Iterator, Sequence, TypeAlias, TypeVar, final, overload
 from weakref import WeakKeyDictionary, ref
 
 from ..client.tcp import TCPNetworkClient
 from ..protocol import ParseErrorType, StreamProtocol, StreamProtocolParseError
-from ..tools.socket import AF_INET, SocketAddress, SocketProxy, new_socket_address
+from ..tools.socket import SocketAddress, SocketProxy, new_socket_address
 from ..tools.stream import StreamDataConsumer, StreamDataProducer
 from .abc import AbstractNetworkServer
 from .executors.abc import AbstractRequestExecutor
@@ -116,7 +116,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         address: tuple[str, int] | tuple[str, int, int, int],
         protocol_factory: StreamProtocolFactory[_ResponseT, _RequestT],
         *,
-        family: int = AF_INET,
+        family: int = _socket.AF_INET,
         backlog: int | None = None,
         reuse_port: bool = False,
         dualstack_ipv6: bool = False,
@@ -138,9 +138,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         send_flags = int(send_flags)
         recv_flags = int(recv_flags)
 
-        from socket import create_server
-
-        self.__listener_socket: Socket = create_server(
+        self.__listener_socket: _socket.socket = _socket.create_server(
             address,
             family=family,
             backlog=backlog,
@@ -241,7 +239,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     def service_actions(self) -> None:
         pass
 
-    def __accept_new_client(self, listener_socket: Socket) -> None:
+    def __accept_new_client(self, listener_socket: _socket.socket) -> None:
         try:
             client_socket, address = listener_socket.accept()
         except OSError:
@@ -260,7 +258,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         self,
         future: concurrent.futures.Future[tuple[bool, bytes]],
         *,
-        socket: Socket,
+        socket: _socket.socket,
         address: SocketAddress,
     ) -> None:
         logger: logging.Logger = self.__logger
@@ -284,22 +282,20 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         socket.settimeout(0)
 
         if self.__disable_nagle_algorithm:
-            from socket import IPPROTO_TCP, TCP_NODELAY
-
             try:
-                socket.setsockopt(IPPROTO_TCP, TCP_NODELAY, True)
+                socket.setsockopt(_socket.IPPROTO_TCP, _socket.TCP_NODELAY, True)
             except Exception:
                 logger.exception("Failed to apply TCP_NODELAY socket option")
 
         selfref = ref(self)
 
-        def _close_client_hook(socket: Socket) -> None:
+        def _close_client_hook(socket: _socket.socket) -> None:
             self = selfref()
             if self is None:
                 return
             self.__shutdown_client(socket, from_client=True)
 
-        def _flush_client_data_hook(socket: Socket) -> None:
+        def _flush_client_data_hook(socket: _socket.socket) -> None:
             self = selfref()
             if self is None:
                 return
@@ -309,7 +305,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 return
             self.__flush_client_data(socket, key_data, only_unsent=False)
 
-        def _send_data_to_client_hook(socket: Socket) -> None:
+        def _send_data_to_client_hook(socket: _socket.socket) -> None:
             self = selfref()
             if self is None or self.__buffered_write:
                 return
@@ -319,7 +315,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 return
             self.__send_data_to_client(socket, key_data)
 
-        def _client_is_closed_hook(socket: Socket) -> bool:
+        def _client_is_closed_hook(socket: _socket.socket) -> bool:
             self = selfref()
             if self is None:
                 return True
@@ -339,7 +335,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         self.__server_selector.add_client_reader(socket)
         logger.info("A client (address = %s) was added", address)
 
-    def __receive_data(self, socket: Socket, key_data: _SelectorKeyData[_RequestT, _ResponseT]) -> None:
+    def __receive_data(self, socket: _socket.socket, key_data: _SelectorKeyData[_RequestT, _ResponseT]) -> None:
         logger: logging.Logger = self.__logger
         client = key_data.client
         data: bytes
@@ -408,7 +404,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     def __execute_request(
         self,
         request: _RequestT,
-        socket: Socket,
+        socket: _socket.socket,
         key_data: _SelectorKeyData[_RequestT, _ResponseT],
         pid: int | None = None,
     ) -> None:
@@ -444,7 +440,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         finally:
             del exception
 
-    def __send_data_to_client(self, socket: Socket, key_data: _SelectorKeyData[_RequestT, _ResponseT]) -> None:
+    def __send_data_to_client(self, socket: _socket.socket, key_data: _SelectorKeyData[_RequestT, _ResponseT]) -> None:
         logger: logging.Logger = self.__logger
 
         if not key_data.producer.pending_packets():
@@ -457,7 +453,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
 
     def __flush_client_data(
         self,
-        socket: Socket,
+        socket: _socket.socket,
         key_data: _SelectorKeyData[_RequestT, _ResponseT],
         *,
         only_unsent: bool,
@@ -497,7 +493,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                     self.__server_selector.remove_client_writer(socket)
                 logger.debug("%d byte(s) sent and %d byte(s) queued", nb_bytes_sent, len(key_data.unsent_data))
 
-    def __shutdown_client(self, socket: Socket, *, from_client: bool) -> None:
+    def __shutdown_client(self, socket: _socket.socket, *, from_client: bool) -> None:
         logger: logging.Logger = self.__logger
 
         logger.info("Client shutdown requested")
@@ -512,9 +508,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                     if key_data.has_data_to_send():
                         self.__flush_client_data(socket, key_data, only_unsent=False)
                 else:
-                    from socket import SHUT_WR
-
-                    socket.shutdown(SHUT_WR)
+                    socket.shutdown(_socket.SHUT_WR)
             finally:
                 socket.close()
         client = key_data.client
@@ -543,7 +537,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         self.__loop = False
         self.__is_shutdown.wait()
 
-    def __verify_client_task(self, client_socket: Socket, address: SocketAddress) -> tuple[bool, bytes]:
+    def __verify_client_task(self, client_socket: _socket.socket, address: SocketAddress) -> tuple[bool, bytes]:
         with TCPNetworkClient(client_socket, protocol=self.__protocol_factory(), give=False) as client:
             accepted = self.verify_new_client(client, address)
             return accepted, client._get_buffer()
@@ -628,8 +622,8 @@ if TYPE_CHECKING:
 
     @type_check_only
     class _ServerSocketSelectResult(_TypedDict, Generic[_RequestT, _ResponseT]):
-        listeners: list[Socket]
-        clients: list[tuple[Socket, int, _SelectorKeyData[_RequestT, _ResponseT]]]
+        listeners: list[_socket.socket]
+        clients: list[tuple[_socket.socket, int, _SelectorKeyData[_RequestT, _ResponseT]]]
 
 
 class _ServerSocketSelector(Generic[_RequestT, _ResponseT]):
@@ -662,9 +656,9 @@ class _ServerSocketSelector(Generic[_RequestT, _ResponseT]):
         self.__factory: Callable[[], BaseSelector] = factory
         self.__listener_selector: BaseSelector = factory()
         self.__clients_selectors_list: list[BaseSelector] = [factory()]  # At least one selector
-        self.__client_to_selector_map: WeakKeyDictionary[Socket, BaseSelector] = WeakKeyDictionary()
-        self.__client_data_map: WeakKeyDictionary[Socket, _SelectorKeyData[_RequestT, _ResponseT]] = WeakKeyDictionary()
-        self.__selector_clients_map: defaultdict[BaseSelector, set[Socket]] = defaultdict(set)
+        self.__client_to_selector_map: WeakKeyDictionary[_socket.socket, BaseSelector] = WeakKeyDictionary()
+        self.__client_data_map: WeakKeyDictionary[_socket.socket, _SelectorKeyData[_RequestT, _ResponseT]] = WeakKeyDictionary()
+        self.__selector_clients_map: defaultdict[BaseSelector, set[_socket.socket]] = defaultdict(set)
         self.__selector_exit_stack = ExitStack()
         self.__listener_lock = RLock()
         self.__clients_lock = RLock()
@@ -703,12 +697,12 @@ class _ServerSocketSelector(Generic[_RequestT, _ResponseT]):
             "clients": ready_clients,
         }
 
-    def add_listener_socket(self, socket: Socket) -> None:
+    def add_listener_socket(self, socket: _socket.socket) -> None:
         with self.__listener_lock:
             self.__listener_selector.register(socket, EVENT_READ)
 
     @contextmanager
-    def stop_listener_socket_context(self, socket: Socket, default_backlog: int | None = None) -> Iterator[None]:
+    def stop_listener_socket_context(self, socket: _socket.socket, default_backlog: int | None = None) -> Iterator[None]:
         key: __DefaultSelectorKey | None
         selector: BaseSelector = self.__listener_selector
         with self.__listener_lock:
@@ -730,19 +724,19 @@ class _ServerSocketSelector(Generic[_RequestT, _ResponseT]):
             with self.__listener_lock:
                 selector.register(key.fileobj, key.events, key.data)
 
-    def __listeners_select(self, timeout: float) -> list[Socket]:
+    def __listeners_select(self, timeout: float) -> list[_socket.socket]:
         with self.__listener_lock:
             if not self.__listener_selector.get_map():
                 return []
             return [key.fileobj for key, _ in self.__listener_selector.select(timeout=timeout)]  # type: ignore[misc]
 
-    def register_client(self, socket: Socket, data: _SelectorKeyData[_RequestT, _ResponseT]) -> None:
+    def register_client(self, socket: _socket.socket, data: _SelectorKeyData[_RequestT, _ResponseT]) -> None:
         with self.__clients_lock:
             self.__client_to_selector_map[socket] = client_selector = self.__get_client_selector_for_new_client()
             self.__selector_clients_map[client_selector].add(socket)
             self.__client_data_map[socket] = data
 
-    def unregister_client(self, socket: Socket) -> _SelectorKeyData[_RequestT, _ResponseT]:
+    def unregister_client(self, socket: _socket.socket) -> _SelectorKeyData[_RequestT, _ResponseT]:
         with self.__clients_lock:
             data = self.__client_data_map.pop(socket)
             client_selector = self.__client_to_selector_map.pop(socket)
@@ -751,24 +745,24 @@ class _ServerSocketSelector(Generic[_RequestT, _ResponseT]):
                 client_selector.unregister(socket)
             return data
 
-    def add_client_reader(self, socket: Socket) -> None:
+    def add_client_reader(self, socket: _socket.socket) -> None:
         with self.__clients_lock:
             client_selector = self.__client_to_selector_map[socket]
             data = self.__client_data_map[socket]
             self.__add_event_mask_or_register(socket, client_selector, EVENT_READ, data)
 
-    def remove_client_reader(self, socket: Socket) -> None:
+    def remove_client_reader(self, socket: _socket.socket) -> None:
         with self.__clients_lock:
             client_selector = self.__client_to_selector_map[socket]
             self.__remove_event_mask_or_unregister(socket, client_selector, EVENT_READ)
 
-    def add_client_writer(self, socket: Socket) -> None:
+    def add_client_writer(self, socket: _socket.socket) -> None:
         with self.__clients_lock:
             client_selector = self.__client_to_selector_map[socket]
             data = self.__client_data_map[socket]
             self.__add_event_mask_or_register(socket, client_selector, EVENT_WRITE, data)
 
-    def remove_client_writer(self, socket: Socket) -> None:
+    def remove_client_writer(self, socket: _socket.socket) -> None:
         with self.__clients_lock:
             client_selector = self.__client_to_selector_map[socket]
             self.__remove_event_mask_or_unregister(socket, client_selector, EVENT_WRITE)
@@ -786,7 +780,7 @@ class _ServerSocketSelector(Generic[_RequestT, _ResponseT]):
         return client_selector
 
     @staticmethod
-    def __add_event_mask_or_register(socket: Socket, selector: BaseSelector, event: int, data: Any) -> None:
+    def __add_event_mask_or_register(socket: _socket.socket, selector: BaseSelector, event: int, data: Any) -> None:
         try:
             actual_key: __DefaultSelectorKey = selector.get_key(socket)
         except KeyError:
@@ -796,7 +790,7 @@ class _ServerSocketSelector(Generic[_RequestT, _ResponseT]):
             selector.modify(socket, actual_key.events | event, data)
 
     @staticmethod
-    def __remove_event_mask_or_unregister(socket: Socket, selector: BaseSelector, event: int) -> None:
+    def __remove_event_mask_or_unregister(socket: _socket.socket, selector: BaseSelector, event: int) -> None:
         try:
             key: __DefaultSelectorKey = selector.get_key(socket)
         except KeyError:
@@ -809,7 +803,7 @@ class _ServerSocketSelector(Generic[_RequestT, _ResponseT]):
             else:
                 selector.modify(socket, new_events, key.data)
 
-    def __clients_select(self, timeout: float) -> list[tuple[Socket, int, _SelectorKeyData[_RequestT, _ResponseT]]]:
+    def __clients_select(self, timeout: float) -> list[tuple[_socket.socket, int, _SelectorKeyData[_RequestT, _ResponseT]]]:
         with self.__clients_lock:
             return [
                 (key.fileobj, event, key.data)  # type: ignore[misc]
@@ -819,22 +813,22 @@ class _ServerSocketSelector(Generic[_RequestT, _ResponseT]):
                 )
             ]
 
-    def has_client(self, socket: Socket) -> bool:
+    def has_client(self, socket: _socket.socket) -> bool:
         with self.__clients_lock:
             return socket in self.__client_data_map
 
-    def get_client_data(self, socket: Socket) -> _SelectorKeyData[_RequestT, _ResponseT]:
+    def get_client_data(self, socket: _socket.socket) -> _SelectorKeyData[_RequestT, _ResponseT]:
         with self.__clients_lock:
             return self.__client_data_map[socket]
 
-    def get_all_registered_clients(self) -> list[tuple[Socket, _SelectorKeyData[_RequestT, _ResponseT]]]:
+    def get_all_registered_clients(self) -> list[tuple[_socket.socket, _SelectorKeyData[_RequestT, _ResponseT]]]:
         with self.__clients_lock:
             return list(self.__client_data_map.items())
 
     def get_all_active_client_keys(
         self,
         predicate: Callable[[_SelectorKeyData[_RequestT, _ResponseT]], Any] | None = None,
-    ) -> list[tuple[Socket, _SelectorKeyData[_RequestT, _ResponseT]]]:
+    ) -> list[tuple[_socket.socket, _SelectorKeyData[_RequestT, _ResponseT]]]:
         with self.__clients_lock:
             iterator: Iterator[__DefaultSelectorKey]
             iterator = chain.from_iterable(s.get_map().values() for s in self.__clients_selectors_list)
@@ -863,12 +857,12 @@ class _SelectorKeyData(Generic[_RequestT, _ResponseT]):
         self,
         *,
         protocol: StreamProtocol[_ResponseT, _RequestT],
-        socket: Socket,
+        socket: _socket.socket,
         address: SocketAddress,
-        flush: Callable[[Socket], None],
-        send: Callable[[Socket], None],
-        on_close: Callable[[Socket], None],
-        is_closed: Callable[[Socket], bool],
+        flush: Callable[[_socket.socket], None],
+        send: Callable[[_socket.socket], None],
+        on_close: Callable[[_socket.socket], None],
+        is_closed: Callable[[_socket.socket], bool],
     ) -> None:
         self.producer = StreamDataProducer(protocol)
         self.consumer = StreamDataConsumer(protocol)
@@ -896,21 +890,21 @@ class _SelectorKeyData(Generic[_RequestT, _ResponseT]):
             self,
             *,
             producer: StreamDataProducer[_ResponseT],
-            socket: Socket,
+            socket: _socket.socket,
             address: SocketAddress,
-            flush: Callable[[Socket], None],
-            send: Callable[[Socket], None],
-            on_close: Callable[[Socket], None],
-            is_closed: Callable[[Socket], bool],
+            flush: Callable[[_socket.socket], None],
+            send: Callable[[_socket.socket], None],
+            on_close: Callable[[_socket.socket], None],
+            is_closed: Callable[[_socket.socket], bool],
         ) -> None:
             super().__init__(address)
             self.__p: StreamDataProducer[_ResponseT] = producer
-            self.__s: Socket | None = socket
+            self.__s: _socket.socket | None = socket
             self.__sp: SocketProxy | None = SocketProxy(socket)
-            self.__flush: Callable[[Socket], None] = flush
-            self.__send: Callable[[Socket], None] = send
-            self.__on_close: Callable[[Socket], None] = on_close
-            self.__is_closed: Callable[[Socket], bool] = is_closed
+            self.__flush: Callable[[_socket.socket], None] = flush
+            self.__send: Callable[[_socket.socket], None] = send
+            self.__on_close: Callable[[_socket.socket], None] = on_close
+            self.__is_closed: Callable[[_socket.socket], bool] = is_closed
             self.__transaction_lock = RLock()
 
         def close(self) -> None:
@@ -935,9 +929,7 @@ class _SelectorKeyData(Generic[_RequestT, _ResponseT]):
                         self.__flush(socket)
                     finally:
                         try:
-                            from socket import SHUT_WR
-
-                            socket.shutdown(SHUT_WR)
+                            socket.shutdown(_socket.SHUT_WR)
                         except OSError:
                             pass
                         finally:
@@ -955,7 +947,7 @@ class _SelectorKeyData(Generic[_RequestT, _ResponseT]):
                 self.__p.queue(*packets)
                 self.__send(socket)
 
-        def __check_not_closed(self) -> Socket:
+        def __check_not_closed(self) -> _socket.socket:
             socket = self.__s
             if socket is None or self.__is_closed(socket):
                 self.__s = None

@@ -24,6 +24,31 @@ class BaseTestSerializer(metaclass=ABCMeta):
     def incremental_extra_data() -> bytes:
         return b"remaining_data"
 
+    def test____fixture____consistency(
+        self,
+        serializer_for_serialization: AbstractPacketSerializer[Any, Any],
+        serializer_for_deserialization: AbstractPacketSerializer[Any, Any],
+    ) -> None:
+        assert type(serializer_for_serialization) is type(serializer_for_deserialization)
+
+    def test____slots____no_dict(
+        self,
+        serializer_for_serialization: AbstractPacketSerializer[Any, Any],
+        serializer_for_deserialization: AbstractPacketSerializer[Any, Any],
+    ) -> None:
+        assert not hasattr(serializer_for_serialization, "__dict__")
+        assert not hasattr(serializer_for_deserialization, "__dict__")
+
+    def test____slots____weakref(
+        self,
+        serializer_for_serialization: AbstractPacketSerializer[Any, Any],
+        serializer_for_deserialization: AbstractPacketSerializer[Any, Any],
+    ) -> None:
+        import weakref
+
+        assert weakref.ref(serializer_for_serialization)() is serializer_for_serialization
+        assert weakref.ref(serializer_for_deserialization)() is serializer_for_deserialization
+
     def test____serialize____sample(
         self,
         serializer_for_serialization: AbstractPacketSerializer[Any, Any],
