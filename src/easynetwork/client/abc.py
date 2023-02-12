@@ -82,12 +82,19 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
         if timeout is None:
             recv_packet = self.recv_packet
             while True:
-                yield recv_packet()
+                try:
+                    packet = recv_packet()
+                except OSError:
+                    return
+                yield packet
 
         _not_received: Any = object()
         recv_packet_no_block = self.recv_packet_no_block
         while True:
-            packet = recv_packet_no_block(timeout=timeout, default=_not_received)
+            try:
+                packet = recv_packet_no_block(timeout=timeout, default=_not_received)
+            except OSError:
+                return
             if packet is _not_received:
                 break
             yield packet

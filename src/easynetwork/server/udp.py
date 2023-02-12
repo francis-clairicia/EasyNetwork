@@ -19,7 +19,7 @@ from threading import Event, RLock
 from typing import Any, Callable, Generic, Iterator, TypeAlias, TypeVar, final, overload
 
 from ..protocol import DatagramProtocol, DatagramProtocolParseError, ParseErrorType
-from ..tools.socket import SocketAddress, new_socket_address
+from ..tools.socket import MAX_DATAGRAM_BUFSIZE, SocketAddress, new_socket_address
 from .abc import AbstractNetworkServer
 from .executors.abc import AbstractRequestExecutor
 
@@ -211,7 +211,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         recv_flags: int = self.__default_recv_flags
         while True:
             try:
-                data, sender = socket.recvfrom(65536, recv_flags)
+                data, sender = socket.recvfrom(MAX_DATAGRAM_BUFSIZE, recv_flags)
             except (TimeoutError, BlockingIOError, InterruptedError):
                 return
             sender = new_socket_address(sender, socket.family)

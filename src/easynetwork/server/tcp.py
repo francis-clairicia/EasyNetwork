@@ -29,7 +29,7 @@ from weakref import WeakKeyDictionary, ref
 
 from ..client.tcp import TCPNetworkClient
 from ..protocol import ParseErrorType, StreamProtocol, StreamProtocolParseError
-from ..tools.socket import SocketAddress, SocketProxy, new_socket_address
+from ..tools.socket import MAX_STREAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
 from ..tools.stream import StreamDataConsumer, StreamDataProducer
 from .abc import AbstractNetworkServer
 from .executors.abc import AbstractRequestExecutor
@@ -109,7 +109,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         "__logger",
     )
 
-    max_size: int = 256 * 1024  # Buffer size passed to recv().
+    max_size: int = MAX_STREAM_BUFSIZE  # Buffer size passed to recv().
 
     def __init__(
         self,

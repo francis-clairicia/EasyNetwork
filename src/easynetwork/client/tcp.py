@@ -14,7 +14,7 @@ from threading import RLock
 from typing import Any, Generic, Iterator, TypeVar, final, overload
 
 from ..protocol import StreamProtocol, StreamProtocolParseError
-from ..tools.socket import SocketAddress, SocketProxy, new_socket_address
+from ..tools.socket import MAX_STREAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
 from ..tools.stream import StreamDataConsumer, StreamDataProducer
 from .abc import AbstractNetworkClient
 
@@ -44,7 +44,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         "__default_recv_flags",
     )
 
-    max_size: int = 256 * 1024  # Buffer size passed to recv().
+    max_size: int = MAX_STREAM_BUFSIZE  # Buffer size passed to recv().
 
     @overload
     def __init__(
@@ -181,8 +181,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                     return next_packet(consumer)
                 except StopIteration:
                     pass
-                while not read_socket(timeout=None):
-                    continue
+                read_socket(timeout=None)
 
     @overload
     def recv_packet_no_block(self, *, timeout: float = ...) -> _ReceivedPacketT:
@@ -216,18 +215,18 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         consumer = self.__consumer
         read_socket = self.__read_socket
         check_not_closed = self._check_not_closed
-        next_packet = self.__next_packet_or_default
+        next_packet_or_default = self.__next_packet_or_default
         lock = self.__lock
         null: Any = _NO_DEFAULT
 
         while True:
             with lock:
                 check_not_closed()
-                while (packet := next_packet(consumer, null)) is null:
-                    if timeout is None:
-                        while not read_socket(timeout=None):
-                            continue
-                    elif not read_socket(timeout=timeout):
+                while (packet := next_packet_or_default(consumer, null)) is null:
+                    try:
+                        if not read_socket(timeout=timeout):
+                            return
+                    except (OSError, EOFError):
                         return
             yield packet  # yield out of lock scope
 
@@ -237,13 +236,15 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         with _use_timeout(self.__socket, timeout):
             try:
                 chunk: bytes = self.__socket_recv(self.max_size, self.__default_recv_flags)
-            except (TimeoutError, BlockingIOError, InterruptedError):
+            except (TimeoutError, BlockingIOError) as exc:
+                if timeout is None:  # pragma: no cover
+                    raise RuntimeError("socket.recv() timed out ?") from exc
                 return False
-            if not chunk:
-                self.__eof_reached = True
-                raise EOFError("Closed connection")
-            self.__consumer.feed(chunk)
-            return True
+        if not chunk:
+            self.__eof_reached = True
+            raise EOFError("Closed connection")
+        self.__consumer.feed(chunk)
+        return True
 
     @staticmethod
     def __next_packet(consumer: StreamDataConsumer[_ReceivedPacketT]) -> _ReceivedPacketT:
@@ -277,7 +278,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
 
     @final
     def _get_buffer(self) -> bytes:
-        return self.__consumer.get_buffer()
+        return self.__consumer.get_unconsumed_data()
 
     @final
     def _check_not_closed(self) -> None:

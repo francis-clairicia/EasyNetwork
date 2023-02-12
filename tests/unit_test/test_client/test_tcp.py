@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import deque
 from socket import AF_INET6
-from typing import TYPE_CHECKING, Any, Iterator
+from typing import TYPE_CHECKING, Any, Callable, Iterator
 
 from easynetwork.client.tcp import TCPNetworkClient
 from easynetwork.tools.socket import IPv4SocketAddress, IPv6SocketAddress
@@ -170,6 +170,30 @@ class TestTCPNetworkClient:
             send_flags=mocker.sentinel.send_flags,
             recv_flags=mocker.sentinel.recv_flags,
         )
+
+    @pytest.fixture
+    @staticmethod
+    def client(client_without_socket_ownership: TCPNetworkClient[Any, Any]) -> TCPNetworkClient[Any, Any]:
+        return client_without_socket_ownership
+
+    @pytest.fixture(
+        params=[
+            pytest.param(None, id="blocking"),
+            pytest.param(123456789, id="non_blocking"),
+        ]
+    )
+    @staticmethod
+    def recv_timeout(request: Any) -> Any:
+        return request.param
+
+    @pytest.fixture
+    @staticmethod
+    def client_recv_packet(client: TCPNetworkClient[Any, Any], recv_timeout: int | None) -> Any:
+        from functools import partial
+
+        if recv_timeout is None:
+            return client.recv_packet
+        return partial(client.recv_packet_no_block, timeout=recv_timeout)
 
     def test____dunder_init____connect_to_remote(
         self,
@@ -463,13 +487,12 @@ class TestTCPNetworkClient:
     @pytest.mark.parametrize("client_closed", [False, True], ids=lambda p: f"client_closed=={p}")
     def test____get_local_address____return_saved_address(
         self,
+        client: TCPNetworkClient[Any, Any],
         client_closed: bool,
         socket_family: int,
         mock_tcp_socket: MagicMock,
-        mock_stream_protocol: MagicMock,
     ) -> None:
         # Arrange
-        client: TCPNetworkClient[Any, Any] = TCPNetworkClient(mock_tcp_socket, protocol=mock_stream_protocol, give=False)
         mock_tcp_socket.getsockname.reset_mock()
         if client_closed:
             client.close()
@@ -490,13 +513,12 @@ class TestTCPNetworkClient:
     @pytest.mark.parametrize("client_closed", [False, True], ids=lambda p: f"client_closed=={p}")
     def test____get_remote_address____return_saved_address(
         self,
+        client: TCPNetworkClient[Any, Any],
         client_closed: bool,
         socket_family: int,
         mock_tcp_socket: MagicMock,
-        mock_stream_protocol: MagicMock,
     ) -> None:
         # Arrange
-        client: TCPNetworkClient[Any, Any] = TCPNetworkClient(mock_tcp_socket, protocol=mock_stream_protocol, give=False)
         mock_tcp_socket.getpeername.reset_mock()
         if client_closed:
             client.close()
@@ -516,12 +538,11 @@ class TestTCPNetworkClient:
 
     def test____fileno____default(
         self,
+        client: TCPNetworkClient[Any, Any],
         mock_tcp_socket: MagicMock,
-        mock_stream_protocol: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        client: TCPNetworkClient[Any, Any] = TCPNetworkClient(mock_tcp_socket, protocol=mock_stream_protocol, give=False)
         mock_tcp_socket.fileno.return_value = mocker.sentinel.fileno
 
         # Act
@@ -533,11 +554,10 @@ class TestTCPNetworkClient:
 
     def test____fileno____closed_client(
         self,
+        client: TCPNetworkClient[Any, Any],
         mock_tcp_socket: MagicMock,
-        mock_stream_protocol: MagicMock,
     ) -> None:
         # Arrange
-        client: TCPNetworkClient[Any, Any] = TCPNetworkClient(mock_tcp_socket, protocol=mock_stream_protocol, give=False)
         client.close()
         assert client.is_closed()
 
@@ -551,18 +571,12 @@ class TestTCPNetworkClient:
     @pytest.mark.usefixtures("setup_producer_mock")
     def test____send_packet____send_bytes_to_socket(
         self,
+        client: TCPNetworkClient[Any, Any],
         mock_tcp_socket: MagicMock,
-        mock_stream_protocol: MagicMock,
         mock_stream_data_producer: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        client: TCPNetworkClient[Any, Any] = TCPNetworkClient(
-            mock_tcp_socket,
-            protocol=mock_stream_protocol,
-            give=False,
-            send_flags=mocker.sentinel.send_flags,
-        )
 
         # Act
         client.send_packet(mocker.sentinel.packet)
@@ -575,18 +589,12 @@ class TestTCPNetworkClient:
     @pytest.mark.usefixtures("setup_producer_mock")
     def test____send_packet____closed_client_error(
         self,
+        client: TCPNetworkClient[Any, Any],
         mock_tcp_socket: MagicMock,
-        mock_stream_protocol: MagicMock,
         mock_stream_data_producer: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        client: TCPNetworkClient[Any, Any] = TCPNetworkClient(
-            mock_tcp_socket,
-            protocol=mock_stream_protocol,
-            give=False,
-            send_flags=mocker.sentinel.send_flags,
-        )
         client.close()
         assert client.is_closed()
 
@@ -600,50 +608,39 @@ class TestTCPNetworkClient:
         mock_tcp_socket.sendall.assert_not_called()
 
     @pytest.mark.usefixtures("setup_consumer_mock")
-    def test____recv_packet____receive_bytes_from_socket(
+    def test____recv_packet_blocking_or_not____receive_bytes_from_socket(
         self,
+        client_recv_packet: Callable[[], Any],
+        recv_timeout: int | None,
         mock_tcp_socket: MagicMock,
-        mock_stream_protocol: MagicMock,
         mock_stream_data_consumer: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        client: TCPNetworkClient[Any, Any] = TCPNetworkClient(
-            mock_tcp_socket,
-            protocol=mock_stream_protocol,
-            give=False,
-            recv_flags=mocker.sentinel.recv_flags,
-        )
         mock_tcp_socket.recv.side_effect = [b"packet\n"]
 
         # Act
-        packet: Any = client.recv_packet()
+        packet: Any = client_recv_packet()
 
         # Assert
-        assert mock_tcp_socket.settimeout.mock_calls == [mocker.call(None), mocker.call(mocker.sentinel.default_timeout)]
+        assert mock_tcp_socket.settimeout.mock_calls == [mocker.call(recv_timeout), mocker.call(mocker.sentinel.default_timeout)]
         mock_tcp_socket.recv.assert_called_once_with(TCPNetworkClient.max_size, mocker.sentinel.recv_flags)
         mock_stream_data_consumer.feed.assert_called_once_with(b"packet\n")
         assert packet is mocker.sentinel.packet
 
     @pytest.mark.usefixtures("setup_consumer_mock")
-    def test____recv_packet____partial_data(
+    def test____recv_packet_blocking_or_not____partial_data(
         self,
+        client_recv_packet: Callable[[], Any],
         mock_tcp_socket: MagicMock,
-        mock_stream_protocol: MagicMock,
         mock_stream_data_consumer: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        client: TCPNetworkClient[Any, Any] = TCPNetworkClient(
-            mock_tcp_socket,
-            protocol=mock_stream_protocol,
-            give=False,
-            recv_flags=mocker.sentinel.recv_flags,
-        )
         mock_tcp_socket.recv.side_effect = [b"pac", b"ket\n"]
 
         # Act
-        packet: Any = client.recv_packet()
+        packet: Any = client_recv_packet()
 
         # Assert
         assert mock_tcp_socket.recv.mock_calls == [
@@ -653,25 +650,19 @@ class TestTCPNetworkClient:
         assert packet is mocker.sentinel.packet
 
     @pytest.mark.usefixtures("setup_consumer_mock")
-    def test____recv_packet____extra_data(
+    def test____recv_packet_blocking_or_not____extra_data(
         self,
+        client_recv_packet: Callable[[], Any],
         mock_tcp_socket: MagicMock,
-        mock_stream_protocol: MagicMock,
         mock_stream_data_consumer: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        client: TCPNetworkClient[Any, Any] = TCPNetworkClient(
-            mock_tcp_socket,
-            protocol=mock_stream_protocol,
-            give=False,
-            recv_flags=mocker.sentinel.recv_flags,
-        )
         mock_tcp_socket.recv.side_effect = [b"pac", b"ket_1\npa", b"ck", b"et", b"_2\n"]
 
         # Act
-        packet_1: Any = client.recv_packet()
-        packet_2: Any = client.recv_packet()
+        packet_1: Any = client_recv_packet()
+        packet_2: Any = client_recv_packet()
 
         # Assert
         assert mock_tcp_socket.recv.mock_calls == [
@@ -688,25 +679,19 @@ class TestTCPNetworkClient:
         assert packet_2 is mocker.sentinel.packet_2
 
     @pytest.mark.usefixtures("setup_consumer_mock")
-    def test____recv_packet____avoid_unnecessary_socket_recv_call(
+    def test____recv_packet_blocking_or_not____avoid_unnecessary_socket_recv_call(
         self,
+        client_recv_packet: Callable[[], Any],
         mock_tcp_socket: MagicMock,
-        mock_stream_protocol: MagicMock,
         mock_stream_data_consumer: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        client: TCPNetworkClient[Any, Any] = TCPNetworkClient(
-            mock_tcp_socket,
-            protocol=mock_stream_protocol,
-            give=False,
-            recv_flags=mocker.sentinel.recv_flags,
-        )
         mock_tcp_socket.recv.side_effect = [b"packet_1\npacket_2\n"]
 
         # Act
-        packet_1: Any = client.recv_packet()
-        packet_2: Any = client.recv_packet()
+        packet_1: Any = client_recv_packet()
+        packet_2: Any = client_recv_packet()
 
         # Assert
         mock_tcp_socket.recv.assert_called_once_with(TCPNetworkClient.max_size, mocker.sentinel.recv_flags)
@@ -715,81 +700,42 @@ class TestTCPNetworkClient:
         assert packet_2 is mocker.sentinel.packet_2
 
     @pytest.mark.usefixtures("setup_consumer_mock")
-    def test____recv_packet____retry_on_interruption(
+    def test____recv_packet_blocking_or_not____eof_error(
         self,
+        client_recv_packet: Callable[[], Any],
         mock_tcp_socket: MagicMock,
-        mock_stream_protocol: MagicMock,
         mock_stream_data_consumer: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        client: TCPNetworkClient[Any, Any] = TCPNetworkClient(
-            mock_tcp_socket,
-            protocol=mock_stream_protocol,
-            give=False,
-            recv_flags=mocker.sentinel.recv_flags,
-        )
-        mock_tcp_socket.recv.side_effect = [b"pac", InterruptedError, b"ket\n"]
-
-        # Act
-        packet: Any = client.recv_packet()
-
-        # Assert
-        assert mock_tcp_socket.recv.mock_calls == [
-            mocker.call(TCPNetworkClient.max_size, mocker.sentinel.recv_flags) for _ in range(3)
-        ]
-        assert mock_stream_data_consumer.feed.mock_calls == [mocker.call(b"pac"), mocker.call(b"ket\n")]
-        assert packet is mocker.sentinel.packet
-
-    @pytest.mark.usefixtures("setup_consumer_mock")
-    def test____recv_packet____eof_error(
-        self,
-        mock_tcp_socket: MagicMock,
-        mock_stream_protocol: MagicMock,
-        mock_stream_data_consumer: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        client: TCPNetworkClient[Any, Any] = TCPNetworkClient(
-            mock_tcp_socket,
-            protocol=mock_stream_protocol,
-            give=False,
-            recv_flags=mocker.sentinel.recv_flags,
-        )
         mock_tcp_socket.recv.side_effect = [b""]
 
         # Act
         with pytest.raises(EOFError):
-            _ = client.recv_packet()
+            _ = client_recv_packet()
 
         # Assert
         mock_tcp_socket.recv.assert_called_once_with(TCPNetworkClient.max_size, mocker.sentinel.recv_flags)
         mock_stream_data_consumer.feed.assert_not_called()
 
     @pytest.mark.usefixtures("setup_consumer_mock")
-    def test____recv_packet____protocol_parse_error(
+    def test____recv_packet_blocking_or_not____protocol_parse_error(
         self,
+        client_recv_packet: Callable[[], Any],
         mock_tcp_socket: MagicMock,
-        mock_stream_protocol: MagicMock,
         mock_stream_data_consumer: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
         from easynetwork.protocol import StreamProtocolParseError
 
-        client: TCPNetworkClient[Any, Any] = TCPNetworkClient(
-            mock_tcp_socket,
-            protocol=mock_stream_protocol,
-            give=False,
-            recv_flags=mocker.sentinel.recv_flags,
-        )
         mock_tcp_socket.recv.side_effect = [b"packet\n"]
         expected_error = StreamProtocolParseError(b"", "deserialization", "Sorry")
         mock_stream_data_consumer.__next__.side_effect = [StopIteration, expected_error]
 
         # Act
         with pytest.raises(StreamProtocolParseError) as exc_info:
-            _ = client.recv_packet()
+            _ = client_recv_packet()
         exception = exc_info.value
 
         # Assert
@@ -798,26 +744,20 @@ class TestTCPNetworkClient:
         assert exception is expected_error
 
     @pytest.mark.usefixtures("setup_consumer_mock")
-    def test____recv_packet____closed_client_error(
+    def test____recv_packet_blocking_or_not____closed_client_error(
         self,
+        client: TCPNetworkClient[Any, Any],
+        client_recv_packet: Callable[[], Any],
         mock_tcp_socket: MagicMock,
-        mock_stream_protocol: MagicMock,
         mock_stream_data_consumer: MagicMock,
-        mocker: MockerFixture,
     ) -> None:
         # Arrange
-        client: TCPNetworkClient[Any, Any] = TCPNetworkClient(
-            mock_tcp_socket,
-            protocol=mock_stream_protocol,
-            give=False,
-            recv_flags=mocker.sentinel.recv_flags,
-        )
         client.close()
         assert client.is_closed()
 
         # Act
         with pytest.raises(OSError, match=r"^Closed client$"):
-            _ = client.recv_packet()
+            _ = client_recv_packet()
 
         # Assert
         mock_tcp_socket.settimeout.assert_not_called()

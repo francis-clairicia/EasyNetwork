@@ -84,7 +84,7 @@ class StreamDataProducer(Generic[_SentPacketT]):
 @final
 @Iterator.register
 class StreamDataConsumer(Generic[_ReceivedPacketT]):
-    __slots__ = ("__p", "__b", "__c", "__lock")
+    __slots__ = ("__p", "__b", "__c", "__u", "__lock")
 
     def __init__(self, protocol: StreamProtocol[Any, _ReceivedPacketT]) -> None:
         super().__init__()
@@ -92,6 +92,7 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
         self.__p: StreamProtocol[Any, _ReceivedPacketT] = protocol
         self.__c: Generator[None, bytes, tuple[_ReceivedPacketT, bytes]] | None = None
         self.__b: bytes = b""
+        self.__u: bytes = b""
         self.__lock = Lock()
 
     def __del__(self) -> None:  # pragma: no cover
@@ -121,6 +122,7 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
                 except StopIteration:
                     raise RuntimeError("protocol.build_packet_from_chunks() did not yield") from None
             self.__b = b""
+            unconsumed_data, self.__u = self.__u, b""
             packet: _ReceivedPacketT
             try:
                 consumer.send(chunk)
@@ -130,10 +132,11 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
                 self.__b, exc.remaining_data = exc.remaining_data, b""
                 raise
             else:
+                self.__u = unconsumed_data + chunk
                 self.__c = consumer
                 raise StopIteration
             finally:
-                del consumer
+                del consumer, unconsumed_data
             assert isinstance(chunk, (bytes, bytearray))
             self.__b = bytes(chunk)
             return packet
@@ -148,3 +151,7 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
     def get_buffer(self) -> bytes:
         with self.__lock:
             return bytes(self.__b)
+
+    def get_unconsumed_data(self) -> bytes:
+        with self.__lock:
+            return self.__u + self.__b

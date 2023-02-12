@@ -10,13 +10,15 @@ __all__ = [
     "AF_INET",
     "AF_INET6",
     "AddressFamily",
+    "MAX_DATAGRAM_BUFSIZE",
+    "MAX_STREAM_BUFSIZE",
     "SocketProxy",
     "new_socket_address",
 ]
 
 import socket as _socket
 from enum import IntEnum, unique
-from typing import Any, Final, Literal, NamedTuple, NoReturn, TypeAlias, overload
+from typing import Any, Final, Literal, NamedTuple, TypeAlias, overload
 
 
 @unique
@@ -88,6 +90,10 @@ def new_socket_address(addr: tuple[Any, ...], family: int) -> SocketAddress:
             raise AssertionError
 
 
+MAX_STREAM_BUFSIZE: Final[int] = 256 * 1024  # 256KiB
+MAX_DATAGRAM_BUFSIZE: Final[int] = 64 * 1024  # 64KiB
+
+
 class SocketProxy:
     __slots__ = ("__socket", "__weakref__")
 
@@ -113,8 +119,8 @@ class SocketProxy:
 
         return f"{s}>"
 
-    def __getstate__(self) -> NoReturn:  # pragma: no cover
-        raise TypeError(f"Cannot serialize {type(self).__module__}.{type(self).__qualname__} object")
+    def __getstate__(self) -> Any:  # pragma: no cover
+        raise TypeError(f"cannot pickle {self.__class__.__name__!r} object")
 
     def fileno(self) -> int:
         return self.__socket.fileno()

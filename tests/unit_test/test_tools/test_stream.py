@@ -274,17 +274,21 @@ class TestStreamDataConsumer:
 
         # Act & Assert
         consumer.feed(b"Hello")
+        assert consumer.get_unconsumed_data() == b"Hello"
         with pytest.raises(StopIteration):
             next(consumer)
         mock_build_packet_from_chunks_func.assert_called_once_with()
         assert not consumer.get_buffer()
+        assert consumer.get_unconsumed_data() == b"Hello"
 
         mock_build_packet_from_chunks_func.reset_mock()
         consumer.feed(b"World")
+        assert consumer.get_unconsumed_data() == b"HelloWorld"
         packet = next(consumer)
         mock_build_packet_from_chunks_func.assert_not_called()
         assert packet is mocker.sentinel.packet
         assert consumer.get_buffer() == b"Bye"
+        assert consumer.get_unconsumed_data() == b"Bye"
 
     def test____next____concatenate_feed_buffer(
         self,

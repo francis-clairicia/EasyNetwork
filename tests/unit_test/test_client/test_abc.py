@@ -84,16 +84,37 @@ class TestAbstractNetworkClient:
         assert mock_recv_packet_no_block.mock_calls == [mocker.call(timeout=123456789, default=mocker.ANY) for _ in range(4)]
         assert packets == [mocker.sentinel.packet_a, mocker.sentinel.packet_b, mocker.sentinel.packet_c]
 
-    def test____iter_received_packets____wait_and_yield_if_timeout_is_None(
+    def test____iter_received_packets____with_given_timeout_stop_if_an_error_occurs(
         self,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
         client = _ClientForTest()
-        mock_recv_packet = mocker.patch.object(client, "recv_packet", side_effect=[mocker.sentinel.packet])
+        mock_recv_packet_no_block = mocker.patch.object(
+            client,
+            "recv_packet_no_block",
+            side_effect=[
+                mocker.sentinel.packet_a,
+                OSError,
+            ],
+        )
 
         # Act
-        packet = next(client.iter_received_packets(timeout=None))
+        packets = list(client.iter_received_packets(timeout=123456789))
 
-        mock_recv_packet.assert_called_once_with()
-        assert packet is mocker.sentinel.packet
+        assert mock_recv_packet_no_block.mock_calls == [mocker.call(timeout=123456789, default=mocker.ANY) for _ in range(2)]
+        assert packets == [mocker.sentinel.packet_a]
+
+    def test____iter_received_packets____wait_and_yield_if_timeout_is_None_until_an_error_occured(
+        self,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        client = _ClientForTest()
+        mock_recv_packet = mocker.patch.object(client, "recv_packet", side_effect=[mocker.sentinel.packet, OSError])
+
+        # Act
+        packets = list(client.iter_received_packets(timeout=None))
+
+        assert mock_recv_packet.mock_calls == [mocker.call() for _ in range(2)]
+        assert packets == [mocker.sentinel.packet]

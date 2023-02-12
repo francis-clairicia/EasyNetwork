@@ -16,7 +16,7 @@ from threading import RLock
 from typing import TYPE_CHECKING, Any, Generic, Iterator, TypeAlias, TypeVar, final, overload
 
 from ..protocol import DatagramProtocol, DatagramProtocolParseError
-from ..tools.socket import SocketAddress, SocketProxy, new_socket_address
+from ..tools.socket import MAX_DATAGRAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
 from .abc import AbstractNetworkClient
 
 _T = TypeVar("_T")
@@ -272,29 +272,30 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             with lock:
                 check_not_closed()
                 while (packet_tuple := next_packet_or_default(None)) is None:
-                    if timeout is None:
-                        while not recv_packets_from_socket(timeout=None):
-                            continue
-                    elif not recv_packets_from_socket(timeout=timeout):
+                    try:
+                        if not recv_packets_from_socket(timeout=timeout):
+                            return
+                    except OSError:
                         return
             yield packet_tuple  # yield out of lock scope
 
     def __recv_packets_from_socket(self, *, timeout: float | None) -> bool:
         flags = self.__default_recv_flags
-
         socket: _socket.socket = self.__socket
         remote_address: SocketAddress | None = self.__peer
 
         with _use_timeout(socket, timeout):
             try:
-                data, sender = socket.recvfrom(65536, flags)
-            except (TimeoutError, BlockingIOError, InterruptedError):
+                data, sender = socket.recvfrom(MAX_DATAGRAM_BUFSIZE, flags)
+            except (TimeoutError, BlockingIOError) as exc:
+                if timeout is None:  # pragma: no cover
+                    raise RuntimeError("socket.recvfrom() timed out ?") from exc
                 return False
-            sender = new_socket_address(sender, socket.family)
-            if remote_address is not None and sender != remote_address:
-                return False
-            self.__received_datagrams.append((data, sender))
-            return True
+        sender = new_socket_address(sender, socket.family)
+        if remote_address is not None and sender != remote_address:
+            return False
+        self.__received_datagrams.append((data, sender))
+        return True
 
     def __next_packet(self) -> tuple[_ReceivedPacketT, SocketAddress]:
         queue = self.__received_datagrams
@@ -412,7 +413,7 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         return self.__endpoint.is_closed()
 
     def close(self) -> None:
-        self.__endpoint.close()
+        return self.__endpoint.close()
 
     def get_local_address(self) -> SocketAddress:
         return self.__endpoint.get_local_address()
