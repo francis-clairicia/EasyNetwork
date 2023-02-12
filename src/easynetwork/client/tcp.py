@@ -283,7 +283,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
     @final
     def _check_not_closed(self) -> None:
         if self.__closed:
-            raise OSError("Closed client")
+            raise RuntimeError("Closed client")
 
     @property
     @final

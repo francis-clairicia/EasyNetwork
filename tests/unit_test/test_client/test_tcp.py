@@ -17,6 +17,11 @@ if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
 
+@pytest.fixture(scope="module", autouse=True)
+def setup_dummy_lock(module_mocker: MockerFixture, dummy_lock_cls: Any) -> None:
+    module_mocker.patch(f"{TCPNetworkClient.__module__}.RLock", new=dummy_lock_cls)
+
+
 class TestTCPNetworkClient:
     @pytest.fixture(scope="class", params=["AF_INET", "AF_INET6"])
     @staticmethod
@@ -112,7 +117,7 @@ class TestTCPNetworkClient:
             case invalid:
                 pytest.fail(f"Invalid fixture param: Got {invalid!r}")
 
-    @pytest.fixture
+    @pytest.fixture  # DO NOT set autouse=True
     @staticmethod
     def setup_producer_mock(mock_stream_data_producer: MagicMock) -> None:
         bytes_queue: deque[bytes] = deque()
@@ -132,7 +137,7 @@ class TestTCPNetworkClient:
         mock_stream_data_producer.__iter__.side_effect = lambda: mock_stream_data_producer
         mock_stream_data_producer.__next__.side_effect = next_side_effect
 
-    @pytest.fixture
+    @pytest.fixture  # DO NOT set autouse=True
     @staticmethod
     def setup_consumer_mock(mock_stream_data_consumer: MagicMock, mocker: MockerFixture) -> None:
         bytes_buffer: bytes = b""
@@ -599,7 +604,7 @@ class TestTCPNetworkClient:
         assert client.is_closed()
 
         # Act
-        with pytest.raises(OSError, match=r"^Closed client$"):
+        with pytest.raises(RuntimeError, match=r"^Closed client$"):
             client.send_packet(mocker.sentinel.packet)
 
         # Assert
@@ -756,10 +761,262 @@ class TestTCPNetworkClient:
         assert client.is_closed()
 
         # Act
-        with pytest.raises(OSError, match=r"^Closed client$"):
+        with pytest.raises(RuntimeError, match=r"^Closed client$"):
             _ = client_recv_packet()
 
         # Assert
         mock_tcp_socket.settimeout.assert_not_called()
         mock_stream_data_consumer.feed.assert_not_called()
         mock_tcp_socket.recv.assert_not_called()
+
+    @pytest.mark.parametrize(
+        ["timeout", "recv_exception"],
+        [
+            pytest.param(0, BlockingIOError, id="null timeout"),
+            pytest.param(123456789, TimeoutError, id="strictly positive timeout"),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "return_default",
+        [
+            pytest.param(False, id="raise TimeoutError"),
+            pytest.param(True, id="return given default"),
+        ],
+    )
+    @pytest.mark.usefixtures("setup_consumer_mock")
+    def test____recv_packet_no_block____timeout(
+        self,
+        client: TCPNetworkClient[Any, Any],
+        timeout: int,
+        recv_exception: type[BaseException],
+        return_default: bool,
+        mock_tcp_socket: MagicMock,
+        mock_stream_data_consumer: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_tcp_socket.recv.side_effect = recv_exception
+
+        # Act & Assert
+        if return_default:
+            packet = client.recv_packet_no_block(timeout=timeout, default=mocker.sentinel.default_value)
+            assert packet is mocker.sentinel.default_value
+        else:
+            with pytest.raises(TimeoutError, match=r"^recv_packet\(\) timed out$"):
+                _ = client.recv_packet_no_block(timeout=timeout)
+
+        mock_tcp_socket.recv.assert_called_once_with(TCPNetworkClient.max_size, mocker.sentinel.recv_flags)
+        mock_stream_data_consumer.feed.assert_not_called()
+
+    @pytest.mark.parametrize(
+        ["timeout", "recv_exception"],
+        [
+            pytest.param(0, BlockingIOError, id="null timeout"),
+            pytest.param(123456789, TimeoutError, id="strictly positive timeout"),
+        ],
+    )
+    @pytest.mark.usefixtures("setup_consumer_mock")
+    def test____iter_received_packets____yields_available_packets_with_given_timeout(
+        self,
+        client: TCPNetworkClient[Any, Any],
+        timeout: int,
+        recv_exception: type[BaseException],
+        mock_tcp_socket: MagicMock,
+        mock_stream_data_consumer: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_tcp_socket.recv.side_effect = [b"pac", b"ket_1\npa", b"ck", b"et", b"_2\n", recv_exception]
+
+        # Act
+        packets = list(client.iter_received_packets(timeout=timeout))
+
+        # Assert
+        assert mock_tcp_socket.recv.mock_calls == [
+            mocker.call(TCPNetworkClient.max_size, mocker.sentinel.recv_flags) for _ in range(6)
+        ]
+        assert mock_stream_data_consumer.feed.mock_calls == [
+            mocker.call(b"pac"),
+            mocker.call(b"ket_1\npa"),
+            mocker.call(b"ck"),
+            mocker.call(b"et"),
+            mocker.call(b"_2\n"),
+        ]
+        assert packets == [mocker.sentinel.packet_1, mocker.sentinel.packet_2]
+
+    @pytest.mark.parametrize("timeout", [0, 123456789, None], ids=lambda t: f"timeout=={t}")
+    @pytest.mark.usefixtures("setup_consumer_mock")
+    def test____iter_received_packets____yields_available_packets_until_eof(
+        self,
+        client: TCPNetworkClient[Any, Any],
+        timeout: int | None,
+        mock_tcp_socket: MagicMock,
+        mock_stream_data_consumer: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_tcp_socket.recv.side_effect = [b"pac", b"ket_1\npa", b"ck", b"et", b"_2\n", b""]
+
+        # Act
+        packets = list(client.iter_received_packets(timeout=timeout))
+
+        # Assert
+        assert mock_tcp_socket.recv.mock_calls == [
+            mocker.call(TCPNetworkClient.max_size, mocker.sentinel.recv_flags) for _ in range(6)
+        ]
+        assert mock_stream_data_consumer.feed.mock_calls == [
+            mocker.call(b"pac"),
+            mocker.call(b"ket_1\npa"),
+            mocker.call(b"ck"),
+            mocker.call(b"et"),
+            mocker.call(b"_2\n"),
+        ]
+        assert packets == [mocker.sentinel.packet_1, mocker.sentinel.packet_2]
+
+    @pytest.mark.parametrize("timeout", [0, 123456789, None], ids=lambda t: f"timeout=={t}")
+    @pytest.mark.usefixtures("setup_consumer_mock")
+    def test____iter_received_packets____yields_available_packets_until_error(
+        self,
+        client: TCPNetworkClient[Any, Any],
+        timeout: int | None,
+        mock_tcp_socket: MagicMock,
+        mock_stream_data_consumer: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_tcp_socket.recv.side_effect = [b"pac", b"ket_1\npa", b"ck", b"et", b"_2\n", OSError]
+
+        # Act
+        packets = list(client.iter_received_packets(timeout=timeout))
+
+        # Assert
+        assert mock_tcp_socket.recv.mock_calls == [
+            mocker.call(TCPNetworkClient.max_size, mocker.sentinel.recv_flags) for _ in range(6)
+        ]
+        assert mock_stream_data_consumer.feed.mock_calls == [
+            mocker.call(b"pac"),
+            mocker.call(b"ket_1\npa"),
+            mocker.call(b"ck"),
+            mocker.call(b"et"),
+            mocker.call(b"_2\n"),
+        ]
+        assert packets == [mocker.sentinel.packet_1, mocker.sentinel.packet_2]
+
+    @pytest.mark.parametrize("timeout", [0, 123456789, None], ids=lambda t: f"timeout=={t}")
+    @pytest.mark.usefixtures("setup_consumer_mock")
+    def test____iter_received_packets____protocol_parse_error(
+        self,
+        client: TCPNetworkClient[Any, Any],
+        timeout: int | None,
+        mock_stream_data_consumer: MagicMock,
+    ) -> None:
+        # Arrange
+        from easynetwork.protocol import StreamProtocolParseError
+
+        mock_stream_data_consumer.__next__.side_effect = StreamProtocolParseError(b"", "deserialization", "Sorry")
+
+        # Act
+        with pytest.raises(StreamProtocolParseError) as exc_info:
+            _ = next(client.iter_received_packets(timeout=timeout))
+        exception = exc_info.value
+
+        # Assert
+        assert exception is mock_stream_data_consumer.__next__.side_effect
+
+    @pytest.mark.parametrize("timeout", [0, 123456789, None], ids=lambda t: f"timeout=={t}")
+    @pytest.mark.parametrize("several_generators", [False, True], ids=lambda t: f"several_generators=={t}")
+    @pytest.mark.usefixtures("setup_consumer_mock")
+    def test____iter_received_packets____avoid_unnecessary_socket_recv_call(
+        self,
+        client: TCPNetworkClient[Any, Any],
+        several_generators: bool,
+        timeout: int | None,
+        mock_tcp_socket: MagicMock,
+        mock_stream_data_consumer: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_tcp_socket.recv.side_effect = [b"packet_1\npacket_2\n"]
+
+        # Act
+        if several_generators:
+            packet_1 = next(client.iter_received_packets(timeout=timeout))
+            packet_2 = next(client.iter_received_packets(timeout=timeout))
+        else:
+            iterator = client.iter_received_packets(timeout=timeout)
+            packet_1 = next(iterator)
+            packet_2 = next(iterator)
+
+        # Assert
+        mock_tcp_socket.recv.assert_called_once_with(TCPNetworkClient.max_size, mocker.sentinel.recv_flags)
+        mock_stream_data_consumer.feed.assert_called_once_with(b"packet_1\npacket_2\n")
+        assert packet_1 is mocker.sentinel.packet_1
+        assert packet_2 is mocker.sentinel.packet_2
+
+    @pytest.mark.parametrize("timeout", [0, 123456789, None], ids=lambda t: f"timeout=={t}")
+    @pytest.mark.usefixtures("setup_consumer_mock")
+    def test____iter_received_packets____release_internal_lock_before_yield(
+        self,
+        client: TCPNetworkClient[Any, Any],
+        timeout: int | None,
+        mock_tcp_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        from threading import RLock
+
+        mock_acquire = mocker.patch.object(RLock, "acquire", return_value=True)
+        mock_release = mocker.patch.object(RLock, "release", return_value=None)
+        mock_tcp_socket.recv.side_effect = [b"packet_1\npacket_2\n"]
+
+        # Act & Assert
+        iterator = client.iter_received_packets(timeout=timeout)
+        mock_acquire.assert_not_called()
+        mock_release.assert_not_called()
+        packet_1 = next(iterator)
+        mock_acquire.assert_called_once_with()
+        mock_release.assert_called_once_with()
+        mock_acquire.reset_mock()
+        mock_release.reset_mock()
+        packet_2 = next(iterator)
+        mock_acquire.assert_called_once_with()
+        mock_release.assert_called_once_with()
+        assert packet_1 is mocker.sentinel.packet_1
+        assert packet_2 is mocker.sentinel.packet_2
+
+    @pytest.mark.parametrize("timeout", [0, 123456789, None], ids=lambda t: f"timeout=={t}")
+    @pytest.mark.usefixtures("setup_consumer_mock")
+    def test____iter_received_packets____closed_client_during_iteration(
+        self,
+        client: TCPNetworkClient[Any, Any],
+        timeout: int | None,
+        mock_tcp_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_tcp_socket.recv.side_effect = [b"packet_1\n"]
+
+        # Act & Assert
+        iterator = client.iter_received_packets(timeout=timeout)
+        packet_1 = next(iterator)
+        assert packet_1 is mocker.sentinel.packet_1
+        client.close()
+        assert client.is_closed()
+        with pytest.raises(RuntimeError, match=r"^Closed client$"):
+            _ = next(iterator)
+
+    def test____get_buffer____return_unconsumed_data(
+        self,
+        client: TCPNetworkClient[Any, Any],
+        mock_stream_data_consumer: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_stream_data_consumer.get_unconsumed_data.return_value = mocker.sentinel.data
+
+        # Act
+        data: bytes = client._get_buffer()
+
+        # Assert
+        mock_stream_data_consumer.get_unconsumed_data.assert_called_once_with()
+        assert data is mocker.sentinel.data
