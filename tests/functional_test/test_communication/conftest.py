@@ -10,6 +10,8 @@ from socket import AF_INET, SOCK_DGRAM, SOCK_STREAM, socket as Socket
 from threading import Event, Thread
 from typing import Any, Callable, Iterator, ParamSpec
 
+from easynetwork.tools.socket import MAX_DATAGRAM_BUFSIZE, MAX_STREAM_BUFSIZE
+
 import pytest
 
 _P = ParamSpec("_P")
@@ -53,14 +55,11 @@ def _launch_tcp_server(server_socket: Socket, shutdown_requested: Event) -> None
                         sock = server_socket.accept()[0]
                         clients.append(sock)
                         selector.register(sock, EVENT_READ)
-                        sock.settimeout(0)
                         continue
                     try:
-                        if not (data := sock.recv(8192)):
+                        if not (data := sock.recv(MAX_STREAM_BUFSIZE)):
                             raise EOFError
                         sock.sendall(data)
-                    except (BlockingIOError, InterruptedError):
-                        continue
                     except (EOFError, OSError):
                         selector.unregister(sock)
                         sock.close()
@@ -69,7 +68,7 @@ def _launch_tcp_server(server_socket: Socket, shutdown_requested: Event) -> None
             deque(client_stack.enter_context(s) for s in clients)
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="package")
 def host_ip() -> str:
     import socket
 
@@ -93,14 +92,10 @@ def tcp_server(host_ip: str) -> Iterator[tuple[str, int]]:
 def _launch_udp_server(socket: Socket, shutdown_requested: Event) -> None:
     with DefaultSelector() as selector:
         selector.register(socket, EVENT_READ)
-        socket.settimeout(0)
         while not shutdown_requested.is_set():
             if selector.select(0.01):
-                try:
-                    data, addr = socket.recvfrom(64 * 1024)
-                    socket.sendto(data, addr)
-                except (BlockingIOError, InterruptedError):
-                    continue
+                data, addr = socket.recvfrom(MAX_DATAGRAM_BUFSIZE)
+                socket.sendto(data, addr)
 
 
 @pytest.fixture(scope="package")
