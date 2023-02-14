@@ -14,8 +14,8 @@ from easynetwork.serializers import AbstractIncrementalPacketSerializer, JSONSer
 import pytest
 
 
-def test_default(tcp_server: tuple[str, int]) -> None:
-    with TCPNetworkClient[Any, Any](tcp_server, StreamProtocol(PickleSerializer())) as client:
+def test_default(mirror_tcp_server: tuple[str, int]) -> None:
+    with TCPNetworkClient[Any, Any](mirror_tcp_server, StreamProtocol(PickleSerializer())) as client:
         client.send_packet({"data": [5, 2]})
         assert client.recv_packet() == {"data": [5, 2]}
         client.send_packet("Hello")
@@ -26,9 +26,9 @@ def test_default(tcp_server: tuple[str, int]) -> None:
         assert client.recv_packet_no_block(default=None) is None
 
 
-def test_custom_socket(tcp_server: tuple[str, int]) -> None:
+def test_custom_socket(mirror_tcp_server: tuple[str, int]) -> None:
     with Socket(AF_INET, SOCK_STREAM) as s:
-        s.connect(tcp_server)
+        s.connect(mirror_tcp_server)
         client: TCPNetworkClient[Any, Any] = TCPNetworkClient(s, StreamProtocol(PickleSerializer()), give=False)
         client.send_packet({"data": [5, 2]})
         assert client.recv_packet() == {"data": [5, 2]}
@@ -51,8 +51,8 @@ class StringSerializer(AbstractIncrementalPacketSerializer[str, str]):
                 return packet, data.encode("ascii")
 
 
-def test_multiple_requests(tcp_server: tuple[str, int]) -> None:
-    with TCPNetworkClient(tcp_server, protocol=StreamProtocol(StringSerializer())) as client:
+def test_multiple_requests(mirror_tcp_server: tuple[str, int]) -> None:
+    with TCPNetworkClient(mirror_tcp_server, protocol=StreamProtocol(StringSerializer())) as client:
         client.send_packet("A\nB\nC\nD\n")
         time.sleep(0.1)
         assert list(client.iter_received_packets()) == ["A", "B", "C", "D"]
@@ -68,8 +68,8 @@ def test_multiple_requests(tcp_server: tuple[str, int]) -> None:
             client.send_packet(5)  # type: ignore[arg-type]
 
 
-def test_several_successive_send_using_pickling_serializer(tcp_server: tuple[str, int]) -> None:
-    with TCPNetworkClient[Any, Any](tcp_server, protocol=StreamProtocol(PickleSerializer())) as client:
+def test_several_successive_send_using_pickling_serializer(mirror_tcp_server: tuple[str, int]) -> None:
+    with TCPNetworkClient[Any, Any](mirror_tcp_server, protocol=StreamProtocol(PickleSerializer())) as client:
         client.send_packet({"data": [5, 2]})
         client.send_packet("Hello")
         client.send_packet(132)
@@ -78,8 +78,8 @@ def test_several_successive_send_using_pickling_serializer(tcp_server: tuple[str
         assert client.recv_packet() == 132
 
 
-def test_several_successive_send_using_json_serializer(tcp_server: tuple[str, int]) -> None:
-    with TCPNetworkClient[Any, Any](tcp_server, protocol=StreamProtocol(JSONSerializer())) as client:
+def test_several_successive_send_using_json_serializer(mirror_tcp_server: tuple[str, int]) -> None:
+    with TCPNetworkClient[Any, Any](mirror_tcp_server, protocol=StreamProtocol(JSONSerializer())) as client:
         client.send_packet({"data": [5, 2]})
         client.send_packet([132])
         assert client.recv_packet() == {"data": [5, 2]}

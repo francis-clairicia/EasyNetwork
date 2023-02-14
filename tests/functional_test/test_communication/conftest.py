@@ -76,7 +76,7 @@ def host_ip() -> str:
 
 
 @pytest.fixture(scope="package")
-def tcp_server(host_ip: str) -> Iterator[tuple[str, int]]:
+def mirror_tcp_server(host_ip: str) -> Iterator[tuple[str, int]]:
     shutdown_requested = Event()
 
     with Socket(AF_INET, SOCK_STREAM) as s:
@@ -99,7 +99,7 @@ def _launch_udp_server(socket: Socket, shutdown_requested: Event) -> None:
 
 
 @pytest.fixture(scope="package")
-def udp_server(host_ip: str) -> Iterator[tuple[str, int]]:
+def mirror_udp_server(host_ip: str) -> Iterator[tuple[str, int]]:
     shutdown_requested = Event()
 
     with Socket(AF_INET, SOCK_DGRAM) as s:
