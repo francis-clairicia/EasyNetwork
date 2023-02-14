@@ -9,7 +9,7 @@ from __future__ import annotations
 __all__ = ["AbstractNetworkClient"]
 
 from abc import ABCMeta, abstractmethod
-from typing import TYPE_CHECKING, Any, Generic, Iterator, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Generic, Iterator, TypeVar
 
 from ..tools.socket import SocketAddress
 
@@ -61,42 +61,16 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
         raise NotImplementedError
 
     @abstractmethod
-    def recv_packet(self) -> _ReceivedPacketT:
+    def recv_packet(self, timeout: float | None = ...) -> _ReceivedPacketT:
         raise NotImplementedError
 
-    @overload
-    @abstractmethod
-    def recv_packet_no_block(self, *, timeout: float = ...) -> _ReceivedPacketT:
-        ...
-
-    @overload
-    @abstractmethod
-    def recv_packet_no_block(self, *, default: _T, timeout: float = ...) -> _ReceivedPacketT | _T:
-        ...
-
-    @abstractmethod
-    def recv_packet_no_block(self, *, default: _T = ..., timeout: float = ...) -> _ReceivedPacketT | _T:
-        raise NotImplementedError
-
-    def iter_received_packets(self, *, timeout: float | None = 0) -> Iterator[_ReceivedPacketT]:
-        if timeout is None:
-            recv_packet = self.recv_packet
-            while True:
-                try:
-                    packet = recv_packet()
-                except OSError:
-                    return
-                yield packet
-
-        _not_received: Any = object()
-        recv_packet_no_block = self.recv_packet_no_block
+    def iter_received_packets(self, timeout: float | None = 0) -> Iterator[_ReceivedPacketT]:
+        recv_packet = self.recv_packet
         while True:
             try:
-                packet = recv_packet_no_block(timeout=timeout, default=_not_received)
-            except OSError:
+                packet = recv_packet(timeout)
+            except (EOFError, OSError):
                 return
-            if packet is _not_received:
-                break
             yield packet
 
     @abstractmethod

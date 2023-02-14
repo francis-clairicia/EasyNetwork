@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 from collections import deque
-from typing import TYPE_CHECKING, Any, TypeVar, final, overload
+from typing import TYPE_CHECKING, Any, final
 
 from easynetwork.client.abc import AbstractNetworkClient
 from easynetwork.tools.socket import SocketAddress
 
+import pytest
+
 if TYPE_CHECKING:
     from pytest_mock import MockerFixture
-
-_T = TypeVar("_T")
 
 
 @final
@@ -31,18 +31,7 @@ class _ClientForTest(AbstractNetworkClient[Any, Any]):
     def send_packet(self, packet: Any) -> None:
         raise NotImplementedError
 
-    def recv_packet(self) -> Any:
-        raise NotImplementedError
-
-    @overload
-    def recv_packet_no_block(self, *, timeout: float = ...) -> Any:
-        ...
-
-    @overload
-    def recv_packet_no_block(self, *, default: _T, timeout: float = ...) -> Any | _T:
-        ...
-
-    def recv_packet_no_block(self, *, default: _T = ..., timeout: float = ...) -> Any | _T:
+    def recv_packet(self, timeout: float | None = ...) -> Any:
         raise NotImplementedError
 
     def fileno(self) -> int:
@@ -69,52 +58,42 @@ class TestAbstractNetworkClient:
         # Arrange
         received_packets_queue = deque([mocker.sentinel.packet_a, mocker.sentinel.packet_b, mocker.sentinel.packet_c])
 
-        def side_effect(timeout: Any, default: Any) -> Any:
+        def side_effect(timeout: Any) -> Any:
             try:
                 return received_packets_queue.popleft()
             except IndexError:
-                return default
+                raise TimeoutError
 
         client = _ClientForTest()
-        mock_recv_packet_no_block = mocker.patch.object(client, "recv_packet_no_block", side_effect=side_effect)
+        mock_recv_packet = mocker.patch.object(client, "recv_packet", side_effect=side_effect)
 
         # Act
         packets = list(client.iter_received_packets(timeout=123456789))
 
-        assert mock_recv_packet_no_block.mock_calls == [mocker.call(timeout=123456789, default=mocker.ANY) for _ in range(4)]
+        assert mock_recv_packet.mock_calls == [mocker.call(123456789) for _ in range(4)]
         assert packets == [mocker.sentinel.packet_a, mocker.sentinel.packet_b, mocker.sentinel.packet_c]
 
+    @pytest.mark.parametrize("timeout", [123456789, None])
+    @pytest.mark.parametrize("error", [OSError, EOFError])
     def test____iter_received_packets____with_given_timeout_stop_if_an_error_occurs(
         self,
+        timeout: int | None,
+        error: type[BaseException],
         mocker: MockerFixture,
     ) -> None:
         # Arrange
         client = _ClientForTest()
-        mock_recv_packet_no_block = mocker.patch.object(
+        mock_recv_packet = mocker.patch.object(
             client,
-            "recv_packet_no_block",
+            "recv_packet",
             side_effect=[
                 mocker.sentinel.packet_a,
-                OSError,
+                error,
             ],
         )
 
         # Act
-        packets = list(client.iter_received_packets(timeout=123456789))
+        packets = list(client.iter_received_packets(timeout=timeout))
 
-        assert mock_recv_packet_no_block.mock_calls == [mocker.call(timeout=123456789, default=mocker.ANY) for _ in range(2)]
+        assert mock_recv_packet.mock_calls == [mocker.call(timeout) for _ in range(2)]
         assert packets == [mocker.sentinel.packet_a]
-
-    def test____iter_received_packets____wait_and_yield_if_timeout_is_None_until_an_error_occured(
-        self,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        client = _ClientForTest()
-        mock_recv_packet = mocker.patch.object(client, "recv_packet", side_effect=[mocker.sentinel.packet, OSError])
-
-        # Act
-        packets = list(client.iter_received_packets(timeout=None))
-
-        assert mock_recv_packet.mock_calls == [mocker.call() for _ in range(2)]
-        assert packets == [mocker.sentinel.packet]

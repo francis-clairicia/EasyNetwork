@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from socket import AF_INET6, SOCK_DGRAM
-from typing import TYPE_CHECKING, Any, Callable, ContextManager, Literal
+from typing import TYPE_CHECKING, Any, ContextManager, Literal
 
 from easynetwork.client.udp import UDPNetworkClient, UDPNetworkEndpoint
-from easynetwork.tools.socket import MAX_DATAGRAM_BUFSIZE, IPv4SocketAddress, IPv6SocketAddress, SocketAddress
+from easynetwork.tools.socket import MAX_DATAGRAM_BUFSIZE, IPv4SocketAddress, IPv6SocketAddress
 
 import pytest
 
@@ -20,7 +20,7 @@ from .base import BaseTestClient
 
 @pytest.fixture(scope="module", autouse=True)
 def setup_dummy_lock(module_mocker: MockerFixture, dummy_lock_cls: Any) -> None:
-    module_mocker.patch(f"{UDPNetworkEndpoint.__module__}.RLock", new=dummy_lock_cls)
+    module_mocker.patch(f"{UDPNetworkEndpoint.__module__}.Lock", new=dummy_lock_cls)
 
 
 class TestUDPNetworkEndpoint(BaseTestClient):
@@ -184,15 +184,6 @@ class TestUDPNetworkEndpoint(BaseTestClient):
     @staticmethod
     def recv_timeout(request: Any) -> Any:
         return request.param
-
-    @pytest.fixture
-    @staticmethod
-    def client_recv_packet_from(client: UDPNetworkEndpoint[Any, Any], recv_timeout: int | None) -> Any:
-        from functools import partial
-
-        if recv_timeout is None:
-            return client.recv_packet_from
-        return partial(client.recv_packet_from_no_block, timeout=recv_timeout)
 
     def test____dunder_init____create_datagram_endpoint____default(
         self,
@@ -669,7 +660,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         assert client.is_closed()
 
         # Act
-        with pytest.raises(RuntimeError, match=r"^Closed client$"):
+        with pytest.raises(OSError, match=r"^Closed client$"):
             client.send_packet_to(remote_address, mocker.sentinel.packet)
 
         # Assert
@@ -680,7 +671,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
     @pytest.mark.usefixtures("setup_protocol_mock")
     def test____recv_packet_from_blocking_or_not____receive_bytes_from_socket(
         self,
-        client_recv_packet_from: Callable[[], tuple[Any, SocketAddress]],
+        client: UDPNetworkEndpoint[Any, Any],
         sender_address: tuple[str, int],
         recv_timeout: int | None,
         mock_udp_socket: MagicMock,
@@ -691,7 +682,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         mock_udp_socket.recvfrom.side_effect = [(b"packet", sender_address)]
 
         # Act
-        packet, sender = client_recv_packet_from()
+        packet, sender = client.recv_packet_from(timeout=recv_timeout)
 
         # Assert
         assert mock_udp_socket.settimeout.mock_calls == [mocker.call(recv_timeout), mocker.call(mocker.sentinel.default_timeout)]
@@ -705,7 +696,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
     @pytest.mark.usefixtures("setup_protocol_mock")
     def test____recv_packet_from_blocking_or_not____without_remote____receive_bytes_from_anyone(
         self,
-        client_recv_packet_from: Callable[[], tuple[Any, SocketAddress]],
+        client: UDPNetworkEndpoint[Any, Any],
         sender_address: tuple[str, int],
         recv_timeout: int | None,
         mock_udp_socket: MagicMock,
@@ -716,7 +707,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         mock_udp_socket.recvfrom.side_effect = [(b"packet", sender_address)]
 
         # Act
-        packet, sender = client_recv_packet_from()
+        packet, sender = client.recv_packet_from(timeout=recv_timeout)
 
         # Assert
         assert mock_udp_socket.settimeout.mock_calls == [mocker.call(recv_timeout), mocker.call(mocker.sentinel.default_timeout)]
@@ -730,7 +721,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
     @pytest.mark.usefixtures("setup_protocol_mock")
     def test____recv_packet_from_blocking_or_not____with_remote____refuse_sender_which_is_not_configured_remote(
         self,
-        client_recv_packet_from: Callable[[], tuple[Any, SocketAddress]],
+        client: UDPNetworkEndpoint[Any, Any],
         sender_address: tuple[str, int],
         remote_address: tuple[str, int],
         recv_timeout: int | None,
@@ -745,7 +736,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         if recv_timeout == 0:
             ## One attempt will be done
             with pytest.raises(TimeoutError, match=r"^recv_packet\(\) timed out$"):
-                _ = client_recv_packet_from()
+                _ = client.recv_packet_from(timeout=recv_timeout)
             assert mock_udp_socket.settimeout.mock_calls == [
                 mocker.call(recv_timeout),
                 mocker.call(mocker.sentinel.default_timeout),
@@ -753,7 +744,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
             mock_udp_socket.recvfrom.assert_called_once_with(MAX_DATAGRAM_BUFSIZE, mocker.sentinel.recv_flags)
             mock_datagram_protocol.build_packet_from_datagram.assert_not_called()
         else:
-            packet, sender = client_recv_packet_from()
+            packet, sender = client.recv_packet_from(timeout=recv_timeout)
 
             if recv_timeout is None:
                 assert mock_udp_socket.settimeout.mock_calls == [
@@ -776,8 +767,9 @@ class TestUDPNetworkEndpoint(BaseTestClient):
     @pytest.mark.usefixtures("setup_protocol_mock")
     def test____recv_packet_from_blocking_or_not____protocol_parse_error(
         self,
-        client_recv_packet_from: Callable[[], tuple[Any, SocketAddress]],
+        client: UDPNetworkEndpoint[Any, Any],
         sender_address: tuple[str, int],
+        recv_timeout: int | None,
         mock_udp_socket: MagicMock,
         mock_datagram_protocol: MagicMock,
         mocker: MockerFixture,
@@ -791,7 +783,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
 
         # Act
         with pytest.raises(DatagramProtocolParseError) as exc_info:
-            _ = client_recv_packet_from()
+            _ = client.recv_packet_from(timeout=recv_timeout)
         exception = exc_info.value
 
         # Assert
@@ -803,7 +795,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
     def test____recv_packet_from_blocking_or_not____closed_client_error(
         self,
         client: UDPNetworkEndpoint[Any, Any],
-        client_recv_packet_from: Callable[[], tuple[Any, SocketAddress]],
+        recv_timeout: int | None,
         mock_udp_socket: MagicMock,
         mock_datagram_protocol: MagicMock,
     ) -> None:
@@ -812,8 +804,8 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         assert client.is_closed()
 
         # Act
-        with pytest.raises(RuntimeError, match=r"^Closed client$"):
-            _ = client_recv_packet_from()
+        with pytest.raises(OSError, match=r"^Closed client$"):
+            _ = client.recv_packet_from(timeout=recv_timeout)
 
         # Assert
         mock_udp_socket.settimeout.assert_not_called()
@@ -821,26 +813,18 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         mock_datagram_protocol.build_packet_from_datagram.assert_not_called()
 
     @pytest.mark.parametrize(
-        ["timeout", "recv_exception"],
+        ["recv_timeout", "recv_exception"],
         [
             pytest.param(0, BlockingIOError, id="null timeout"),
             pytest.param(123456789, TimeoutError, id="strictly positive timeout"),
-        ],
-    )
-    @pytest.mark.parametrize(
-        "return_default",
-        [
-            pytest.param(False, id="raise TimeoutError"),
-            pytest.param(True, id="return given default"),
         ],
     )
     @pytest.mark.usefixtures("setup_protocol_mock")
     def test____recv_packet_from_no_block____timeout(
         self,
         client: UDPNetworkEndpoint[Any, Any],
-        timeout: int,
+        recv_timeout: int,
         recv_exception: type[BaseException],
-        return_default: bool,
         mock_udp_socket: MagicMock,
         mock_datagram_protocol: MagicMock,
         mocker: MockerFixture,
@@ -849,18 +833,14 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         mock_udp_socket.recvfrom.side_effect = recv_exception
 
         # Act & Assert
-        if return_default:
-            packet = client.recv_packet_from_no_block(timeout=timeout, default=mocker.sentinel.default_value)
-            assert packet is mocker.sentinel.default_value
-        else:
-            with pytest.raises(TimeoutError, match=r"^recv_packet\(\) timed out$"):
-                _ = client.recv_packet_from_no_block(timeout=timeout)
+        with pytest.raises(TimeoutError, match=r"^recv_packet\(\) timed out$"):
+            _ = client.recv_packet_from(timeout=recv_timeout)
 
         mock_udp_socket.recvfrom.assert_called_once_with(MAX_DATAGRAM_BUFSIZE, mocker.sentinel.recv_flags)
         mock_datagram_protocol.build_packet_from_datagram.assert_not_called()
 
     @pytest.mark.parametrize(
-        ["timeout", "recv_exception"],
+        ["recv_timeout", "recv_exception"],
         [
             pytest.param(0, BlockingIOError, id="null timeout"),
             pytest.param(123456789, TimeoutError, id="strictly positive timeout"),
@@ -871,7 +851,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         self,
         client: UDPNetworkEndpoint[Any, Any],
         sender_address: tuple[str, int],
-        timeout: int,
+        recv_timeout: int,
         recv_exception: type[BaseException],
         mock_udp_socket: MagicMock,
         mock_datagram_protocol: MagicMock,
@@ -885,7 +865,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         ]
 
         # Act
-        packets = [(p, (s.host, s.port)) for p, s in client.iter_received_packets_from(timeout=timeout)]
+        packets = [(p, (s.host, s.port)) for p, s in client.iter_received_packets_from(timeout=recv_timeout)]
 
         # Assert
         assert mock_udp_socket.recvfrom.mock_calls == [
@@ -970,10 +950,10 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        from threading import RLock
+        from threading import Lock
 
-        mock_acquire = mocker.patch.object(RLock, "acquire", return_value=True)
-        mock_release = mocker.patch.object(RLock, "release", return_value=None)
+        mock_acquire = mocker.patch.object(Lock, "acquire", return_value=True)
+        mock_release = mocker.patch.object(Lock, "release", return_value=None)
         mock_udp_socket.recvfrom.side_effect = [(b"packet_1", sender_address), (b"packet_2", sender_address)]
 
         # Act & Assert
@@ -1220,61 +1200,29 @@ class TestUDPNetworkClient:
         mock_udp_endpoint.recv_packet_from.return_value = (mocker.sentinel.packet, ("remote_address", 5000))
 
         # Act
-        packet = client.recv_packet()
+        packet = client.recv_packet(timeout=mocker.sentinel.timeout)
 
         # Assert
-        mock_udp_endpoint.recv_packet_from.assert_called_once_with()
+        mock_udp_endpoint.recv_packet_from.assert_called_once_with(timeout=mocker.sentinel.timeout)
         assert packet is mocker.sentinel.packet
 
-    def test____recv_packet_no_block____default(
+    def test____recv_packet____timeout_error(
         self,
         client: UDPNetworkClient[Any, Any],
         mock_udp_endpoint: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_udp_endpoint.recv_packet_from_no_block.return_value = (mocker.sentinel.packet, ("remote_address", 5000))
-
-        # Act
-        packet = client.recv_packet_no_block(timeout=mocker.sentinel.timeout)
-
-        # Assert
-        mock_udp_endpoint.recv_packet_from_no_block.assert_called_once_with(timeout=mocker.sentinel.timeout)
-        assert packet is mocker.sentinel.packet
-
-    def test____recv_packet_no_block____timeout_error(
-        self,
-        client: UDPNetworkClient[Any, Any],
-        mock_udp_endpoint: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        mock_udp_endpoint.recv_packet_from_no_block.side_effect = TimeoutError("recv_packet() timed out")
+        mock_udp_endpoint.recv_packet_from.side_effect = TimeoutError("recv_packet() timed out")
 
         # Act
         with pytest.raises(TimeoutError) as exc_info:
-            _ = client.recv_packet_no_block(timeout=mocker.sentinel.timeout)
+            _ = client.recv_packet(timeout=mocker.sentinel.timeout)
         exception = exc_info.value
 
         # Assert
-        mock_udp_endpoint.recv_packet_from_no_block.assert_called_once_with(timeout=mocker.sentinel.timeout)
-        assert exception is mock_udp_endpoint.recv_packet_from_no_block.side_effect
-
-    def test____recv_packet_no_block____timeout_return_default_value(
-        self,
-        client: UDPNetworkClient[Any, Any],
-        mock_udp_endpoint: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        mock_udp_endpoint.recv_packet_from_no_block.side_effect = TimeoutError("recv_packet() timed out")
-
-        # Act
-        packet = client.recv_packet_no_block(timeout=mocker.sentinel.timeout, default=mocker.sentinel.default)
-
-        # Assert
-        mock_udp_endpoint.recv_packet_from_no_block.assert_called_once_with(timeout=mocker.sentinel.timeout)
-        assert packet is mocker.sentinel.default
+        mock_udp_endpoint.recv_packet_from.assert_called_once_with(timeout=mocker.sentinel.timeout)
+        assert exception is mock_udp_endpoint.recv_packet_from.side_effect
 
     def test____iter_received_packets____default(
         self,

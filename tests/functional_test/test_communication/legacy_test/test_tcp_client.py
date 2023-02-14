@@ -22,8 +22,7 @@ def test_default(mirror_tcp_server: tuple[str, int]) -> None:
         assert client.recv_packet() == "Hello"
         assert len(list(client.iter_received_packets(timeout=0))) == 0
         with pytest.raises(TimeoutError):
-            client.recv_packet_no_block()
-        assert client.recv_packet_no_block(default=None) is None
+            client.recv_packet(timeout=0)
 
 
 def test_custom_socket(mirror_tcp_server: tuple[str, int]) -> None:

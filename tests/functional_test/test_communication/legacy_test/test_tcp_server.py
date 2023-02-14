@@ -142,19 +142,19 @@ def test_request_handling() -> None:
             assert client_2.recv_packet() == 350
             assert client_3.recv_packet() == 350
             with pytest.raises(TimeoutError):
-                client_1.recv_packet_no_block()
+                client_1.recv_packet(timeout=0)
             client_2.send_packet(-634)
             sleep(0.3)
             assert client_1.recv_packet() == -634
             assert client_3.recv_packet() == -634
             with pytest.raises(TimeoutError):
-                client_2.recv_packet_no_block()
+                client_2.recv_packet(timeout=0)
             client_3.send_packet(0)
             sleep(0.3)
             assert client_1.recv_packet() == 0
             assert client_2.recv_packet() == 0
             with pytest.raises(TimeoutError):
-                client_3.recv_packet_no_block()
+                client_3.recv_packet(timeout=0)
             client_1.send_packet(350)
             sleep(0.1)
             client_2.send_packet(-634)
@@ -211,7 +211,7 @@ def test_forking_server(buffered_write: bool) -> None:
             for _ in range(2):
                 packet = {"data": 1}
                 client.send_packet(packet)
-                response: tuple[Any, int] = client.recv_packet_no_block(timeout=5)
+                response: tuple[Any, int] = client.recv_packet(timeout=5)
                 assert response[0] == packet
                 assert response[1] != getpid()
                 sleep(0.5)

@@ -11,7 +11,7 @@ __all__ = ["UDPNetworkClient", "UDPNetworkEndpoint"]
 import socket as _socket
 from contextlib import contextmanager
 from operator import itemgetter
-from threading import RLock
+from threading import Lock
 from time import monotonic as _time_monotonic
 from typing import TYPE_CHECKING, Any, Generic, Iterator, TypeAlias, TypeVar, final, overload
 
@@ -87,7 +87,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
     ) -> None:
         self.__closed: bool = True  # If any exception occurs, the client will already be in a closed state
         super().__init__()
-        self.__lock: RLock = RLock()
+        self.__lock = Lock()
 
         assert isinstance(protocol, DatagramProtocol)
 
@@ -208,7 +208,8 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         packet: _SentPacketT,
     ) -> None:
         with self.__lock:
-            self._check_not_closed()
+            if self.__closed:
+                raise OSError("Closed client")
             socket: _socket.socket = self.__socket
             if (remote_addr := self.__peer) is not None:
                 if address is not None and new_socket_address(address, socket.family) != remote_addr:
@@ -225,93 +226,61 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
                 else:
                     socket.sendto(data, flags, address)
 
-    def recv_packet_from(self) -> tuple[_ReceivedPacketT, SocketAddress]:
+    def recv_packet_from(self, timeout: float | None = None) -> tuple[_ReceivedPacketT, SocketAddress]:
         with self.__lock:
-            self._check_not_closed()
-            return self.__recv_packet_from_socket(timeout=None)
+            if self.__closed:
+                raise OSError("Closed client")
+            flags = self.__default_recv_flags
+            socket: _socket.socket = self.__socket
+            socket_recvfrom = socket.recvfrom
+            socket_settimeout = socket.settimeout
+            remote_address: SocketAddress | None = self.__peer
+            bufsize: int = MAX_DATAGRAM_BUFSIZE  # pull value to local namespace
+            monotonic = _time_monotonic  # pull function to local namespace
 
-    @overload
-    def recv_packet_from_no_block(self, *, timeout: float = ...) -> tuple[_ReceivedPacketT, SocketAddress]:
-        ...
+            with _restore_timeout_at_end(socket):
+                socket_settimeout(timeout)
+                while True:
+                    try:
+                        _start = monotonic()
+                        data, sender = socket_recvfrom(bufsize, flags)
+                        _end = monotonic()
+                    except (TimeoutError, BlockingIOError) as exc:
+                        if timeout is None:  # pragma: no cover
+                            raise RuntimeError("socket.recvfrom() timed out with timeout=None ?") from exc
+                        break
+                    sender = new_socket_address(sender, socket.family)
+                    if remote_address is not None and sender != remote_address:
+                        if timeout is not None:
+                            if timeout == 0:
+                                break
+                            timeout -= _end - _start
+                            if timeout < 0:  # pragma: no cover
+                                timeout = 0
+                            socket_settimeout(timeout)
+                        continue
+                    try:
+                        return self.__protocol.build_packet_from_datagram(data), sender
+                    except DatagramProtocolParseError:
+                        raise
+                    except Exception as exc:  # pragma: no cover
+                        raise RuntimeError(str(exc)) from exc
+                    finally:
+                        del data
+                # Loop break
+                raise TimeoutError("recv_packet() timed out")
 
-    @overload
-    def recv_packet_from_no_block(self, *, default: _T, timeout: float = ...) -> tuple[_ReceivedPacketT, SocketAddress] | _T:
-        ...
-
-    def recv_packet_from_no_block(
-        self,
-        *,
-        default: _T = _NO_DEFAULT,
-        timeout: float = 0,
-    ) -> tuple[_ReceivedPacketT, SocketAddress] | _T:
-        timeout = float(timeout)
-        with self.__lock:
-            self._check_not_closed()
-            try:
-                return self.__recv_packet_from_socket(timeout=timeout)
-            except StopIteration:
-                pass
-            if default is not _NO_DEFAULT:
-                return default
-            raise TimeoutError("recv_packet() timed out")
-
-    def iter_received_packets_from(
-        self,
-        *,
-        timeout: float | None = 0,
-    ) -> Iterator[tuple[_ReceivedPacketT, SocketAddress]]:
-        recv_packet_from_socket = self.__recv_packet_from_socket
-        lock = self.__lock
+    def iter_received_packets_from(self, timeout: float | None = 0) -> Iterator[tuple[_ReceivedPacketT, SocketAddress]]:
+        recv_packet_from = self.recv_packet_from
 
         while True:
-            with lock:
-                if self.__closed:
-                    return
-                try:
-                    packet_tuple = recv_packet_from_socket(timeout=timeout)
-                except (StopIteration, OSError):
-                    return
+            if self.__closed:
+                return
+            try:
+                packet_tuple = recv_packet_from(timeout=timeout)
+            except OSError:
+                return
             yield packet_tuple  # yield out of lock scope
-
-    def __recv_packet_from_socket(self, *, timeout: float | None) -> tuple[_ReceivedPacketT, SocketAddress]:
-        flags = self.__default_recv_flags
-        socket: _socket.socket = self.__socket
-        socket_recvfrom = socket.recvfrom
-        socket_settimeout = socket.settimeout
-        remote_address: SocketAddress | None = self.__peer
-        bufsize: int = MAX_DATAGRAM_BUFSIZE  # pull value to local namespace
-        monotonic = _time_monotonic  # pull function to local namespace
-
-        with _restore_timeout_at_end(socket):
-            socket_settimeout(timeout)
-            while True:
-                try:
-                    _start = monotonic()
-                    data, sender = socket_recvfrom(bufsize, flags)
-                    _end = monotonic()
-                except (TimeoutError, BlockingIOError) as exc:
-                    if timeout is None:  # pragma: no cover
-                        raise RuntimeError("socket.recvfrom() timed out with timeout=None ?") from exc
-                    raise StopIteration from None
-                sender = new_socket_address(sender, socket.family)
-                if remote_address is not None and sender != remote_address:
-                    if timeout is not None:
-                        if timeout == 0:
-                            raise StopIteration
-                        timeout -= _end - _start
-                        if timeout < 0:  # pragma: no cover
-                            timeout = 0
-                        socket_settimeout(timeout)
-                    continue
-                break
-        try:
-            return self.__protocol.build_packet_from_datagram(data), sender
-        except DatagramProtocolParseError:
-            raise
-        except Exception as exc:  # pragma: no cover
-            raise RuntimeError(str(exc)) from exc
-        finally:
-            del data
 
     def get_local_address(self) -> SocketAddress:
         return self.__addr
@@ -324,11 +293,6 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             if self.__closed:
                 return -1
             return self.__socket.fileno()
-
-    @final
-    def _check_not_closed(self) -> None:
-        if self.__closed:
-            raise RuntimeError("Closed client")
 
     @property
     @final
@@ -436,31 +400,10 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
     def send_packet(self, packet: _SentPacketT) -> None:
         return self.__endpoint.send_packet_to(None, packet)
 
-    def recv_packet(self) -> _ReceivedPacketT:
-        return self.__endpoint.recv_packet_from()[0]
+    def recv_packet(self, timeout: float | None = None) -> _ReceivedPacketT:
+        return self.__endpoint.recv_packet_from(timeout=timeout)[0]
 
-    @overload
-    def recv_packet_no_block(self, *, timeout: float = ...) -> _ReceivedPacketT:
-        ...
-
-    @overload
-    def recv_packet_no_block(self, *, default: _T, timeout: float = ...) -> _ReceivedPacketT | _T:
-        ...
-
-    def recv_packet_no_block(
-        self,
-        *,
-        default: _T = _NO_DEFAULT,
-        timeout: float = 0,
-    ) -> _ReceivedPacketT | _T:
-        try:
-            return self.__endpoint.recv_packet_from_no_block(timeout=timeout)[0]
-        except TimeoutError:
-            if default is not _NO_DEFAULT:
-                return default
-            raise
-
-    def iter_received_packets(self, *, timeout: float | None = 0) -> Iterator[_ReceivedPacketT]:
+    def iter_received_packets(self, timeout: float | None = 0) -> Iterator[_ReceivedPacketT]:
         return map(itemgetter(0), self.__endpoint.iter_received_packets_from(timeout=timeout))
 
     def fileno(self) -> int:
