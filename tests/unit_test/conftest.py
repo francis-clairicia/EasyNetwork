@@ -27,6 +27,11 @@ def dummy_lock_cls(package_mocker: MockerFixture) -> Any:
     return DummyLock
 
 
+@pytest.fixture(scope="package", autouse=True)
+def original_socket_cls() -> type[Socket]:
+    return Socket
+
+
 @pytest.fixture
 def mock_tcp_socket_factory(mocker: MockerFixture) -> Callable[[], MagicMock]:
     def factory() -> MagicMock:

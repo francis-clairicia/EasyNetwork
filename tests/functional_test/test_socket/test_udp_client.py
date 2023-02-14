@@ -28,7 +28,7 @@ def test_custom_socket(udp_server: tuple[str, int]) -> None:
     with Socket(AF_INET, SOCK_DGRAM) as socket:
         socket.bind(("", 0))
         socket.connect(udp_server)
-        client: UDPNetworkClient[Any, Any] = UDPNetworkClient(socket, DatagramProtocol(PickleSerializer()))
+        client: UDPNetworkClient[Any, Any] = UDPNetworkClient(socket, DatagramProtocol(PickleSerializer()), give=False)
         client.send_packet({"data": [5, 2]})
         assert client.recv_packet() == {"data": [5, 2]}
         client.send_packet("Hello")
