@@ -43,9 +43,12 @@ class EncryptorSerializer(AutoSeparatedPacketSerializer[_ST_contra, _DT_co]):
 
     @classmethod
     def generate_key(cls) -> bytes:
-        from cryptography.fernet import Fernet
+        try:
+            import cryptography.fernet
+        except ModuleNotFoundError as exc:  # pragma: no cover
+            raise ModuleNotFoundError("encryption dependencies are missing. Consider adding 'encryption' extra") from exc
 
-        return Fernet.generate_key()
+        return cryptography.fernet.Fernet.generate_key()
 
     @final
     def serialize(self, packet: _ST_contra) -> bytes:
