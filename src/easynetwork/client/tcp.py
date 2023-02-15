@@ -93,7 +93,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 give: bool = kwargs.pop("give")
             except KeyError:
                 raise TypeError("Missing keyword argument 'give'") from None
-            if kwargs:
+            if kwargs:  # pragma: no cover
                 raise TypeError("Invalid arguments")
             socket = __arg
             self.__owner = bool(give)
@@ -101,7 +101,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             address: tuple[str, int] = __arg
             socket = _socket.create_connection(address, **kwargs)
             self.__owner = True
-        else:
+        else:  # pragma: no cover
             raise TypeError("Invalid arguments")
 
         try:

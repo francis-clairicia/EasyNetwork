@@ -95,13 +95,13 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         if "socket" in kwargs:
             external_socket = True
             socket = kwargs.pop("socket")
-            if not isinstance(socket, _socket.socket):
+            if not isinstance(socket, _socket.socket):  # pragma: no cover
                 raise TypeError("Invalid arguments")
             try:
                 give: bool = kwargs.pop("give")
             except KeyError:
                 raise TypeError("Missing keyword argument 'give'") from None
-            if kwargs:
+            if kwargs:  # pragma: no cover
                 raise TypeError("Invalid arguments")
             if socket.family not in (_socket.AF_INET, _socket.AF_INET6):
                 raise ValueError("Only AF_INET and AF_INET6 families are supported")
@@ -113,7 +113,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             timeout: float | None = kwargs.pop("timeout", _default_timeout)
             remote_address: tuple[str, int] | None = kwargs.pop("remote_address", None)
             source_address: tuple[str, int] | None = kwargs.pop("source_address", None)
-            if kwargs:
+            if kwargs:  # pragma: no cover
                 raise TypeError("Invalid arguments")
             if family not in (_socket.AF_INET, _socket.AF_INET6):
                 raise ValueError("Only AF_INET and AF_INET6 families are supported")
@@ -354,7 +354,7 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             address = __arg
             endpoint = UDPNetworkEndpoint(protocol=protocol, remote_address=address, **kwargs)
         else:
-            raise TypeError("Invalid arguments")
+            raise TypeError("Invalid arguments")  # pragma: no cover
 
         try:
             self.__endpoint: UDPNetworkEndpoint[_SentPacketT, _ReceivedPacketT] = endpoint

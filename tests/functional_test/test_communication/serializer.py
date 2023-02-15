@@ -34,15 +34,15 @@ class StringSerializer(AbstractIncrementalPacketSerializer[str, str]):
             raise DeserializeError(str(exc)) from exc
 
     def incremental_deserialize(self) -> Generator[None, bytes, tuple[str, bytes]]:
-        data: bytes = b""
+        buffer: bytes = b""
         while True:
-            data += yield
-            if b"\n" not in data:
+            buffer += yield
+            if b"\n" not in buffer:
                 continue
-            packet, data = data.split(b"\n", 1)
-            if not packet:
+            data, buffer = buffer.split(b"\n", 1)
+            if not data:
                 continue
             try:
-                return packet.decode(encoding=self.encoding), data
+                return data.decode(encoding=self.encoding), buffer
             except UnicodeDecodeError as exc:
-                raise IncrementalDeserializeError(str(exc), data) from exc
+                raise IncrementalDeserializeError(str(exc), buffer) from exc
