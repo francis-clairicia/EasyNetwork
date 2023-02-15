@@ -158,10 +158,11 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             if self.__closed:
                 raise OSError(errno.EPIPE, os.strerror(errno.EPIPE))
             socket: _socket.socket = self.__socket
+            producer = self.__producer
             with _restore_timeout_at_end(socket):
                 socket.settimeout(None)
-                self.__producer.queue(packet)
-                socket.sendall(b"".join(list(self.__producer)), self.__default_send_flags)
+                producer.queue(packet)
+                socket.sendall(b"".join(list(producer)), self.__default_send_flags)
 
     def recv_packet(self, timeout: float | None = None) -> _ReceivedPacketT:
         with self.__lock:

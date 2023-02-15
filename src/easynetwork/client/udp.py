@@ -19,16 +19,12 @@ from ..protocol import DatagramProtocol, DatagramProtocolParseError
 from ..tools.socket import MAX_DATAGRAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
 from .abc import AbstractNetworkClient
 
-_T = TypeVar("_T")
 _ReceivedPacketT = TypeVar("_ReceivedPacketT")
 _SentPacketT = TypeVar("_SentPacketT")
 
 
 _Address: TypeAlias = tuple[str, int] | tuple[str, int, int, int]  # type: ignore[misc]
 # False positive, see https://github.com/python/mypy/issues/11098
-
-
-_NO_DEFAULT: Any = object()
 
 
 class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
