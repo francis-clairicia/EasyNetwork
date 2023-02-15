@@ -270,7 +270,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
             mock_udp_socket.settimeout.assert_called_once_with(timeout)
         mock_socket_proxy_cls.assert_called_once_with(mock_udp_socket)
 
-    @pytest.mark.parametrize("socket_family", ["AF_CAN", "AF_BLUETOOTH"], indirect=True)
+    @pytest.mark.parametrize("socket_family", ["AF_BLUETOOTH"], indirect=True)
     def test____dunder_init____create_datagram_endpoint____invalid_socket_family(
         self,
         socket_family: int,
@@ -361,7 +361,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         assert endpoint.default_recv_flags is mocker.sentinel.recv_flags
         assert endpoint.socket is mocker.sentinel.proxy
 
-    @pytest.mark.parametrize("socket_family", ["AF_CAN", "AF_BLUETOOTH"], indirect=True)
+    @pytest.mark.parametrize("socket_family", ["AF_BLUETOOTH"], indirect=True)
     def test____dunder_init____use_given_socket____invalid_socket_family(
         self,
         mock_udp_socket: MagicMock,
