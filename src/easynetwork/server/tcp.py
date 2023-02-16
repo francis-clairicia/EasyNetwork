@@ -36,6 +36,7 @@ from .executors.abc import AbstractRequestExecutor
 
 if TYPE_CHECKING:
     from selectors import SelectorKey as __DefaultSelectorKey
+    from types import TracebackType
     from typing import type_check_only
 
 _RequestT = TypeVar("_RequestT")
@@ -674,17 +675,20 @@ class _ServerSocketSelector(Generic[_RequestT, _ResponseT]):
     def __enter__(self) -> None:
         return
 
-    def __exit__(self, *args: Any) -> bool:
-        with self.__listener_lock, self.__clients_lock:
-            try:
-                return self.__selector_exit_stack.__exit__(*args)
-            finally:
-                type(self).__init__(
-                    self,
-                    factory=self.__factory,
-                    listener_poll_interval=self.__listener_poll_interval,
-                    clients_poll_interval=self.__clients_poll_interval,
-                )
+    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None) -> bool:
+        try:
+            with self.__listener_lock, self.__clients_lock:
+                try:
+                    return self.__selector_exit_stack.__exit__(exc_type, exc_val, exc_tb)
+                finally:
+                    type(self).__init__(
+                        self,
+                        factory=self.__factory,
+                        listener_poll_interval=self.__listener_poll_interval,
+                        clients_poll_interval=self.__clients_poll_interval,
+                    )
+        finally:
+            del exc_val, exc_tb  # Break potential cyclic reference
 
     def select(self) -> _ServerSocketSelectResult[_RequestT, _ResponseT]:
         ready_clients = self.__clients_select(self.__clients_poll_interval)

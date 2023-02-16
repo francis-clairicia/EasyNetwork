@@ -13,6 +13,9 @@ from typing import TYPE_CHECKING, Any, Generic, Iterator, TypeVar
 
 from ..tools.socket import SocketAddress
 
+if TYPE_CHECKING:
+    from types import TracebackType
+
 _ReceivedPacketT = TypeVar("_ReceivedPacketT")
 _SentPacketT = TypeVar("_SentPacketT")
 
@@ -26,7 +29,7 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
     def __enter__(self: __Self) -> __Self:
         return self
 
-    def __exit__(self, *args: Any) -> None:
+    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None) -> None:
         self.close()
 
     def __getstate__(self) -> Any:  # pragma: no cover
