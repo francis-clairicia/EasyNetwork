@@ -228,11 +228,13 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
                 raise OSError("Closed client")
             flags = self.__default_recv_flags
             socket: _socket.socket = self.__socket
+            family: int = socket.family
             socket_recvfrom = socket.recvfrom
             socket_settimeout = socket.settimeout
             remote_address: SocketAddress | None = self.__peer
             bufsize: int = MAX_DATAGRAM_BUFSIZE  # pull value to local namespace
             monotonic = _time_monotonic  # pull function to local namespace
+            convert_address = new_socket_address  # pull function to local namespace
 
             with _restore_timeout_at_end(socket):
                 socket_settimeout(timeout)
@@ -245,7 +247,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
                         if timeout is None:  # pragma: no cover
                             raise RuntimeError("socket.recvfrom() timed out with timeout=None ?") from exc
                         break
-                    sender = new_socket_address(sender, socket.family)
+                    sender = convert_address(sender, family)
                     if remote_address is not None and sender != remote_address:
                         if timeout is not None:
                             if timeout == 0:
