@@ -39,6 +39,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         "__lock",
         "__default_send_flags",
         "__default_recv_flags",
+        "__weakref__",
     )
 
     if TYPE_CHECKING:
