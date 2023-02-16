@@ -163,10 +163,12 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
 
     def __del__(self) -> None:  # pragma: no cover
         try:
-            if not self.is_closed():
-                self.close()
-        except AttributeError:  # __init__ was probably not completed
-            pass
+            socket: _socket.socket = self.__socket
+            owner: bool = self.__owner
+        except AttributeError:
+            return
+        if owner:
+            socket.close()
 
     def __repr__(self) -> str:
         try:

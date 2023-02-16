@@ -25,13 +25,6 @@ class AbstractNetworkServer(Generic[_RequestT, _ResponseT], metaclass=ABCMeta):
     if TYPE_CHECKING:
         __Self = TypeVar("__Self", bound="AbstractNetworkServer[Any, Any]")
 
-    def __del__(self) -> None:  # pragma: no cover
-        try:
-            if not self.is_closed():
-                self.server_close()
-        except AttributeError:  # __init__ was probably not completed
-            pass
-
     def __enter__(self: __Self) -> __Self:
         return self
 

@@ -122,6 +122,15 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         self.__socket: _socket.socket = socket
         self.__closed = False  # There was no errors
 
+    def __del__(self) -> None:  # pragma: no cover
+        try:
+            socket: _socket.socket = self.__socket
+            owner: bool = self.__owner
+        except AttributeError:
+            return
+        if owner:
+            socket.close()
+
     def __repr__(self) -> str:
         try:
             socket = self.__socket

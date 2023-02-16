@@ -13,7 +13,6 @@ from typing import TYPE_CHECKING, Any, Generic, Iterator, TypeVar
 
 from ..tools.socket import SocketAddress
 
-_T = TypeVar("_T")
 _ReceivedPacketT = TypeVar("_ReceivedPacketT")
 _SentPacketT = TypeVar("_SentPacketT")
 
@@ -23,13 +22,6 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
 
     if TYPE_CHECKING:
         __Self = TypeVar("__Self", bound="AbstractNetworkClient[Any, Any]")
-
-    def __del__(self) -> None:  # pragma: no cover
-        try:
-            if not self.is_closed():
-                self.close()
-        except AttributeError:  # __init__ was probably not completed
-            pass
 
     def __enter__(self: __Self) -> __Self:
         return self
