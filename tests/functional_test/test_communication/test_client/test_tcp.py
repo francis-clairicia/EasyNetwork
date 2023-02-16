@@ -8,6 +8,7 @@ from typing import Any, Callable, Iterator
 
 from easynetwork.client.tcp import TCPNetworkClient
 from easynetwork.protocol import StreamProtocol, StreamProtocolParseError
+from easynetwork.tools.socket import IPv4SocketAddress, IPv6SocketAddress
 
 import pytest
 
@@ -143,7 +144,7 @@ class TestTCPNetworkClient:
             finally:
                 end_time = monotonic()
         assert start_time > 0 and end_time > start_time
-        assert 0.6 <= (end_time - start_time) < 0.61
+        assert (end_time - start_time) == pytest.approx(0.6, rel=1e-2)
         server.sendall(b"F\n")
         assert client.recv_packet(timeout=None) == "ABCDEF"
 
@@ -158,9 +159,10 @@ class TestTCPNetworkClient:
             client.recv_packet()
 
     def test____recv_packet____invalid_data(self, client: TCPNetworkClient[str, str], server: Socket) -> None:
-        server.sendall("\u00E1\n".encode("latin-1"))
+        server.sendall("\u00E1\nvalid\n".encode("latin-1"))
         with pytest.raises(StreamProtocolParseError):
             client.recv_packet()
+        assert client.recv_packet() == "valid"
 
     def test____fileno____consistency(self, client: TCPNetworkClient[str, str]) -> None:
         assert client.fileno() == client.socket.fileno()
@@ -170,7 +172,17 @@ class TestTCPNetworkClient:
         assert client.fileno() == -1
 
     def test____get_local_address____consistency(self, client: TCPNetworkClient[str, str]) -> None:
-        assert client.get_local_address() == client.socket.getsockname()
+        address = client.get_local_address()
+        if client.socket.family == int(AF_INET):
+            assert isinstance(address, IPv4SocketAddress)
+        else:
+            assert isinstance(address, IPv6SocketAddress)
+        assert address == client.socket.getsockname()
 
     def test____get_remote_address____consistency(self, client: TCPNetworkClient[str, str]) -> None:
-        assert client.get_remote_address() == client.socket.getpeername()
+        address = client.get_remote_address()
+        if client.socket.family == int(AF_INET):
+            assert isinstance(address, IPv4SocketAddress)
+        else:
+            assert isinstance(address, IPv6SocketAddress)
+        assert address == client.socket.getpeername()

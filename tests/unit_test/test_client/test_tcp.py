@@ -229,7 +229,7 @@ class TestTCPNetworkClient(BaseTestClient):
             timeout=mocker.sentinel.timeout,
             source_address=mocker.sentinel.source_address,
         )
-        mock_socket_proxy_cls.assert_called_once_with(mock_tcp_socket)
+        mock_socket_proxy_cls.assert_called_once_with(mock_tcp_socket, lock=mocker.ANY)
         mock_tcp_socket.getsockname.assert_called_once_with()
         mock_tcp_socket.getpeername.assert_called_once_with()
         assert client.default_send_flags is mocker.sentinel.send_flags
@@ -264,7 +264,7 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_stream_data_producer_cls.assert_called_once_with(mock_stream_protocol)
         mock_stream_data_consumer_cls.assert_called_once_with(mock_stream_protocol)
         mock_socket_create_connection.assert_not_called()
-        mock_socket_proxy_cls.assert_called_once_with(mock_tcp_socket)
+        mock_socket_proxy_cls.assert_called_once_with(mock_tcp_socket, lock=mocker.ANY)
         mock_tcp_socket.getsockname.assert_called_once_with()
         mock_tcp_socket.getpeername.assert_called_once_with()
         assert client.default_send_flags is mocker.sentinel.send_flags

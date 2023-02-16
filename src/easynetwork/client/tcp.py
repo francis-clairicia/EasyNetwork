@@ -30,7 +30,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         "__socket",
         "__socket_proxy",
         "__owner",
-        "__closed",
         "__lock",
         "__producer",
         "__consumer",
@@ -80,7 +79,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         recv_flags: int = 0,
         **kwargs: Any,
     ) -> None:
-        self.__closed: bool = True  # If any exception occurs, the client will already be in a closed state
+        self.__socket: _socket.socket | None = None  # If any exception occurs, the client will already be in a closed state
         super().__init__()
         self.__lock = Lock()
         self.__producer: StreamDataProducer[_SentPacketT] = StreamDataProducer(protocol)
@@ -110,7 +109,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
 
             self.__addr: SocketAddress = new_socket_address(socket.getsockname(), socket.family)
             self.__peer: SocketAddress = new_socket_address(socket.getpeername(), socket.family)
-            self.__socket_proxy = SocketProxy(socket)
+            self.__socket_proxy = SocketProxy(socket, lock=self.__lock)
             self.__eof_reached: bool = False
             self.__default_send_flags: int = send_flags
             self.__default_recv_flags: int = recv_flags
@@ -119,39 +118,36 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 socket.close()
             raise
 
-        self.__socket: _socket.socket = socket
-        self.__closed = False  # There was no errors
+        self.__socket = socket  # There was no errors
 
     def __del__(self) -> None:  # pragma: no cover
         try:
-            socket: _socket.socket = self.__socket
+            socket: _socket.socket | None = self.__socket
             owner: bool = self.__owner
         except AttributeError:
             return
-        if owner:
+        if owner and socket is not None:
             socket.close()
 
     def __repr__(self) -> str:
-        try:
-            socket = self.__socket
-        except AttributeError:
+        socket = self.__socket
+        if socket is None:
             return f"<{type(self).__name__} closed>"
         return f"<{type(self).__name__} socket={socket!r}>"
 
     @final
     def is_closed(self) -> bool:
-        return self.__closed
+        with self.__lock:
+            return self.__socket is None
 
     def close(self, *, shutdown: int | None = -1) -> None:
         if shutdown is not None and shutdown == -1:
             shutdown = _socket.SHUT_WR
         with self.__lock:
-            if self.__closed:
+            if (socket := self.__socket) is None:
                 return
             self.__eof_reached = True
-            self.__closed = True
-            socket: _socket.socket = self.__socket
-            del self.__socket
+            self.__socket = None
             if not self.__owner:
                 return
             try:
@@ -164,9 +160,8 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
 
     def send_packet(self, packet: _SentPacketT) -> None:
         with self.__lock:
-            if self.__closed:
+            if (socket := self.__socket) is None:
                 raise OSError(errno.EPIPE, os.strerror(errno.EPIPE))
-            socket: _socket.socket = self.__socket
             producer = self.__producer
             with _restore_timeout_at_end(socket):
                 socket.settimeout(None)
@@ -181,10 +176,9 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 return next_packet(consumer)  # If there is enough data from last call to create a packet, return immediately
             except StopIteration:
                 pass
-            if self.__closed or self.__eof_reached:  # Do not need to call socket.recv()
+            if (socket := self.__socket) is None or self.__eof_reached:  # Do not need to call socket.recv()
                 raise EOFError("Closed connection")
             flags = self.__default_recv_flags
-            socket: _socket.socket = self.__socket
             socket_recv = socket.recv
             socket_settimeout = socket.settimeout
             bufsize: int = self.max_size
@@ -237,9 +231,9 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
 
     def fileno(self) -> int:
         with self.__lock:
-            if self.__closed:
+            if (socket := self.__socket) is None:
                 return -1
-            return self.__socket.fileno()
+            return socket.fileno()
 
     @final
     def _get_buffer(self) -> bytes:

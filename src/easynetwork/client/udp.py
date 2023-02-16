@@ -37,7 +37,6 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         "__addr",
         "__peer",
         "__owner",
-        "__closed",
         "__protocol",
         "__lock",
         "__default_send_flags",
@@ -85,7 +84,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         recv_flags: int = 0,
         **kwargs: Any,
     ) -> None:
-        self.__closed: bool = True  # If any exception occurs, the client will already be in a closed state
+        self.__socket: _socket.socket | None = None  # If any exception occurs, the client will already be in a closed state
         super().__init__()
         self.__lock = Lock()
 
@@ -154,23 +153,22 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
 
             self.__addr: SocketAddress = new_socket_address(socket.getsockname(), socket.family)
             self.__peer: SocketAddress | None = peername
-            self.__socket_proxy = SocketProxy(socket)
+            self.__socket_proxy = SocketProxy(socket, lock=self.__lock)
             self.__default_send_flags: int = send_flags
             self.__default_recv_flags: int = recv_flags
         except BaseException:
             if self.__owner:
                 socket.close()
             raise
-        self.__socket: _socket.socket = socket
-        self.__closed = False
+        self.__socket = socket
 
     def __del__(self) -> None:  # pragma: no cover
         try:
-            socket: _socket.socket = self.__socket
+            socket: _socket.socket | None = self.__socket
             owner: bool = self.__owner
         except AttributeError:
             return
-        if owner:
+        if owner and socket is not None:
             socket.close()
 
     def __repr__(self) -> str:
@@ -191,15 +189,14 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
 
     @final
     def is_closed(self) -> bool:
-        return self.__closed
+        with self.__lock:
+            return self.__socket is None
 
     def close(self) -> None:
         with self.__lock:
-            if self.__closed:
+            if (socket := self.__socket) is None:
                 return
-            self.__closed = True
-            socket: _socket.socket = self.__socket
-            del self.__socket
+            self.__socket = None
             if not self.__owner:
                 return
             socket.close()
@@ -210,9 +207,8 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         packet: _SentPacketT,
     ) -> None:
         with self.__lock:
-            if self.__closed:
+            if (socket := self.__socket) is None:
                 raise OSError("Closed client")
-            socket: _socket.socket = self.__socket
             if (remote_addr := self.__peer) is not None:
                 if address is not None and new_socket_address(address, socket.family) != remote_addr:
                     raise ValueError(f"Invalid address: must be None or {remote_addr}")
@@ -230,10 +226,9 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
 
     def recv_packet_from(self, timeout: float | None = None) -> tuple[_ReceivedPacketT, SocketAddress]:
         with self.__lock:
-            if self.__closed:
+            if (socket := self.__socket) is None:
                 raise OSError("Closed client")
             flags = self.__default_recv_flags
-            socket: _socket.socket = self.__socket
             family: int = socket.family
             socket_recvfrom = socket.recvfrom
             socket_settimeout = socket.settimeout
@@ -278,7 +273,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         recv_packet_from = self.recv_packet_from
 
         while True:
-            if self.__closed:
+            if self.__socket is None:
                 return
             try:
                 packet_tuple = recv_packet_from(timeout=timeout)
@@ -294,9 +289,9 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
 
     def fileno(self) -> int:
         with self.__lock:
-            if self.__closed:
+            if (socket := self.__socket) is None:
                 return -1
-            return self.__socket.fileno()
+            return socket.fileno()
 
     @property
     @final

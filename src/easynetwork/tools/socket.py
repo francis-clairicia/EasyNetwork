@@ -16,9 +16,13 @@ __all__ = [
     "new_socket_address",
 ]
 
+import contextlib
 import socket as _socket
 from enum import IntEnum, unique
-from typing import Any, Final, Literal, NamedTuple, TypeAlias, overload
+from typing import TYPE_CHECKING, Any, ContextManager, Final, Literal, NamedTuple, TypeAlias, overload
+
+if TYPE_CHECKING:
+    import threading as _threading
 
 
 @unique
@@ -95,15 +99,17 @@ MAX_DATAGRAM_BUFSIZE: Final[int] = 64 * 1024  # 64KiB
 
 
 class SocketProxy:
-    __slots__ = ("__socket", "__weakref__")
+    __slots__ = ("__socket", "__lock_ctx", "__weakref__")
 
-    def __init__(self, socket: _socket.socket) -> None:
+    def __init__(self, socket: _socket.socket, *, lock: _threading.Lock | _threading.RLock | None = None) -> None:
         self.__socket: _socket.socket = socket
+        self.__lock_ctx: ContextManager[bool] = lock if lock is not None else contextlib.nullcontext(True)
 
     def __repr__(self) -> str:
-        s = f"<{type(self).__name__} fd={self.fileno()}, " f"family={self.family!s}, type={self.type!s}, " f"proto={self.proto}"
+        fd: int = self.fileno()
+        s = f"<{type(self).__name__} fd={fd}, " f"family={self.family!s}, type={self.type!s}, " f"proto={self.proto}"
 
-        if self.fileno() != -1:
+        if fd != -1:
             try:
                 laddr = self.getsockname()
                 if laddr:
@@ -123,13 +129,16 @@ class SocketProxy:
         raise TypeError(f"cannot pickle {self.__class__.__name__!r} object")
 
     def fileno(self) -> int:
-        return self.__socket.fileno()
+        with self.__lock_ctx:
+            return self.__socket.fileno()
 
     def dup(self) -> _socket.socket:
-        return self.__socket.dup()
+        with self.__lock_ctx:
+            return self.__socket.dup()
 
     def get_inheritable(self) -> bool:
-        return self.__socket.get_inheritable()
+        with self.__lock_ctx:
+            return self.__socket.get_inheritable()
 
     @overload
     def getsockopt(self, __level: int, __optname: int, /) -> int:
@@ -140,7 +149,8 @@ class SocketProxy:
         ...
 
     def getsockopt(self, *args: Any) -> int | bytes:
-        return self.__socket.getsockopt(*args)
+        with self.__lock_ctx:
+            return self.__socket.getsockopt(*args)
 
     @overload
     def setsockopt(self, __level: int, __optname: int, __value: int | bytes, /) -> None:
@@ -151,15 +161,18 @@ class SocketProxy:
         ...
 
     def setsockopt(self, *args: Any) -> None:
-        self.__socket.setsockopt(*args)
+        with self.__lock_ctx:
+            self.__socket.setsockopt(*args)
 
     def getpeername(self) -> SocketAddress:
-        socket = self.__socket
-        return new_socket_address(socket.getpeername(), socket.family)
+        with self.__lock_ctx:
+            socket = self.__socket
+            return new_socket_address(socket.getpeername(), socket.family)
 
     def getsockname(self) -> SocketAddress:
-        socket = self.__socket
-        return new_socket_address(socket.getsockname(), socket.family)
+        with self.__lock_ctx:
+            socket = self.__socket
+            return new_socket_address(socket.getsockname(), socket.family)
 
     @property
     def family(self) -> AddressFamily:
