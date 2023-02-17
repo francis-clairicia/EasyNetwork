@@ -18,11 +18,17 @@ _P = ParamSpec("_P")
 
 
 class ThreadingRequestExecutor(AbstractRequestExecutor):
-    __slots__ = ("__pool",)
+    __slots__ = ("__pool", "__block_on_close")
 
     __counter = itertools.count().__next__
 
-    def __init__(self, *, max_workers: int | None = None, thread_name_prefix: str | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        max_workers: int | None = None,
+        thread_name_prefix: str | None = None,
+        block_on_close: bool = True,
+    ) -> None:
         super().__init__()
         if thread_name_prefix is None:
             thread_name_prefix = f"ThreadingRequestExecutor-{ThreadingRequestExecutor.__counter()}"
@@ -30,14 +36,13 @@ class ThreadingRequestExecutor(AbstractRequestExecutor):
             max_workers=max_workers,
             thread_name_prefix=thread_name_prefix,
         )
+        self.__block_on_close: bool = bool(block_on_close)
 
     def execute(self, __request_handler: Callable[_P, None], /, *args: _P.args, **kwargs: _P.kwargs) -> None:
         self.__pool.submit(__request_handler, *args, **kwargs)
 
-    def on_server_stop(self) -> None:
-        super().on_server_stop()
-        self.__pool.shutdown(wait=True, cancel_futures=False)
-
     def on_server_close(self) -> None:
-        super().on_server_close()
-        self.__pool.shutdown(wait=True, cancel_futures=True)
+        try:
+            self.__pool.shutdown(wait=self.__block_on_close, cancel_futures=False)
+        finally:
+            super().on_server_close()
