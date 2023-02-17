@@ -162,7 +162,7 @@ class SocketProxy:
 
     def setsockopt(self, *args: Any) -> None:
         with self.__lock_ctx:
-            self.__socket.setsockopt(*args)
+            return self.__socket.setsockopt(*args)
 
     def getpeername(self) -> SocketAddress:
         with self.__lock_ctx:
