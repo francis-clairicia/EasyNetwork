@@ -181,6 +181,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             flags = self.__default_recv_flags
             socket_recv = socket.recv
             socket_settimeout = socket.settimeout
+            consumer_feed = consumer.feed
             bufsize: int = self.max_size
             monotonic = _time_monotonic  # pull function to local namespace
 
@@ -199,7 +200,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                         self.__eof_reached = True
                         raise EOFError("Closed connection")
                     try:
-                        consumer.feed(chunk)
+                        consumer_feed(chunk)
                     finally:
                         del chunk
                     try:
