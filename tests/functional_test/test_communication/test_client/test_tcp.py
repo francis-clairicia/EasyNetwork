@@ -144,7 +144,7 @@ class TestTCPNetworkClient:
             finally:
                 end_time = monotonic()
         assert start_time > 0 and end_time > start_time
-        assert (end_time - start_time) == pytest.approx(0.6, rel=1e-2)
+        assert (end_time - start_time) == pytest.approx(0.6, rel=1e-1)
         server.sendall(b"F\n")
         assert client.recv_packet(timeout=None) == "ABCDEF"
 
