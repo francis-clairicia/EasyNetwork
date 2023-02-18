@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from socket import AF_INET, AF_INET6, SOCK_STREAM, socket as Socket
+from socket import AF_INET, SOCK_STREAM, socket as Socket
 from typing import Any, Callable, Iterator
 
 from easynetwork.client.tcp import TCPNetworkClient
@@ -17,24 +17,17 @@ from ..serializer import StringSerializer
 
 # Origin: https://gist.github.com/4325783, by Geert Jansen.  Public domain.
 # Cannot use socket.socketpair() vendored with Python on unix since it is required to use AF_UNIX family :)
-@pytest.fixture(params=[AF_INET, AF_INET6])
-def socket_pair(request: Any) -> Iterator[tuple[Socket, Socket]]:
-    family: int = request.param
-    if family == AF_INET:
-        host = "127.0.0.1"
-    elif family == AF_INET6:
-        host = "::1"
-    else:
-        pytest.fail("Invalid family")
+@pytest.fixture
+def socket_pair(localhost: str, socket_family: int) -> Iterator[tuple[Socket, Socket]]:
     # We create a connected TCP socket. Note the trick with
     # setblocking(False) that prevents us from having to create a thread.
-    lsock = Socket(family, SOCK_STREAM)
+    lsock = Socket(socket_family, SOCK_STREAM)
     try:
-        lsock.bind((host, 0))
+        lsock.bind((localhost, 0))
         lsock.listen()
         # On IPv6, ignore flow_info and scope_id
         addr, port = lsock.getsockname()[:2]
-        csock = Socket(family, SOCK_STREAM)
+        csock = Socket(socket_family, SOCK_STREAM)
         try:
             csock.setblocking(False)
             try:
@@ -171,17 +164,17 @@ class TestTCPNetworkClient:
         client.close()
         assert client.fileno() == -1
 
-    def test____get_local_address____consistency(self, client: TCPNetworkClient[str, str]) -> None:
+    def test____get_local_address____consistency(self, socket_family: int, client: TCPNetworkClient[str, str]) -> None:
         address = client.get_local_address()
-        if client.socket.family == int(AF_INET):
+        if socket_family == AF_INET:
             assert isinstance(address, IPv4SocketAddress)
         else:
             assert isinstance(address, IPv6SocketAddress)
         assert address == client.socket.getsockname()
 
-    def test____get_remote_address____consistency(self, client: TCPNetworkClient[str, str]) -> None:
+    def test____get_remote_address____consistency(self, socket_family: int, client: TCPNetworkClient[str, str]) -> None:
         address = client.get_remote_address()
-        if client.socket.family == int(AF_INET):
+        if socket_family == AF_INET:
             assert isinstance(address, IPv4SocketAddress)
         else:
             assert isinstance(address, IPv6SocketAddress)

@@ -6,18 +6,35 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 from functools import partial
-from socket import AF_INET, SOCK_DGRAM, SOCK_STREAM, socket as Socket
+from socket import AF_INET, AF_INET6, SOCK_DGRAM, SOCK_STREAM, socket as Socket
 from typing import Any, Callable, Iterator
 
 import pytest
 
+_FAMILY_TO_LOCALHOST: dict[int, str] = {
+    AF_INET: "127.0.0.1",
+    AF_INET6: "::1",
+}
+
+_SUPPORTED_FAMILIES = tuple(_FAMILY_TO_LOCALHOST)
+
+
+@pytest.fixture(params=_SUPPORTED_FAMILIES)
+def socket_family(request: Any) -> int:
+    return request.param
+
+
+@pytest.fixture()
+def localhost(socket_family: int) -> str:
+    return _FAMILY_TO_LOCALHOST[socket_family]
+
 
 @pytest.fixture
-def socket_factory() -> Iterator[Callable[[int], Socket]]:
+def socket_factory(socket_family: int) -> Iterator[Callable[[int], Socket]]:
     socket_stack = ExitStack()
 
     def socket_factory(type: int) -> Socket:
-        return socket_stack.enter_context(Socket(AF_INET, type))
+        return socket_stack.enter_context(Socket(socket_family, type))
 
     with socket_stack:
         yield socket_factory
