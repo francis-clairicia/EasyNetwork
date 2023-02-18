@@ -8,14 +8,15 @@ from __future__ import annotations
 
 __all__ = ["UDPNetworkClient", "UDPNetworkEndpoint"]
 
+import errno
+import os
 import socket as _socket
-from contextlib import contextmanager
 from operator import itemgetter
 from threading import Lock
-from time import monotonic as _time_monotonic
 from typing import TYPE_CHECKING, Any, Generic, Iterator, TypeAlias, TypeVar, final, overload
 
 from ..protocol import DatagramProtocol, DatagramProtocolParseError
+from ..tools._utils import check_real_socket_state as _check_real_socket_state, restore_timeout_at_end as _restore_timeout_at_end
 from ..tools.socket import MAX_DATAGRAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
 from .abc import AbstractNetworkClient
 
@@ -54,7 +55,6 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
         *,
         family: int = ...,
-        timeout: float | None = ...,
         remote_address: tuple[str, int] | None = ...,
         source_address: tuple[str, int] | None = ...,
         send_flags: int = ...,
@@ -111,9 +111,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             self.__owner = bool(give)
         else:
             external_socket = False
-            _default_timeout: Any = object()
             family = kwargs.pop("family", _socket.AF_INET)
-            timeout: float | None = kwargs.pop("timeout", _default_timeout)
             remote_address: tuple[str, int] | None = kwargs.pop("remote_address", None)
             source_address: tuple[str, int] | None = kwargs.pop("source_address", None)
             if kwargs:  # pragma: no cover
@@ -127,8 +125,6 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
                 else:
                     source_host, source_port = source_address
                     socket.bind((source_host, source_port))
-                if timeout is not _default_timeout:
-                    socket.settimeout(timeout)
                 if remote_address is not None:
                     remote_host, remote_port = remote_address
                     socket.connect((remote_host, remote_port))
@@ -203,11 +199,13 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
 
     def send_packet_to(
         self,
-        address: _Address | None,
         packet: _SentPacketT,
+        address: _Address | None,
     ) -> None:
         with self.__lock:
             if (socket := self.__socket) is None:
+                if self.__peer is not None:
+                    raise OSError(errno.ECONNREFUSED, os.strerror(errno.ECONNREFUSED))
                 raise OSError("Closed client")
             if (remote_addr := self.__peer) is not None:
                 if address is not None and new_socket_address(address, socket.family) != remote_addr:
@@ -223,6 +221,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
                     socket.send(data, flags)
                 else:
                     socket.sendto(data, flags, address)
+                _check_real_socket_state(socket)
 
     def recv_packet_from(self, timeout: float | None = None) -> tuple[_ReceivedPacketT, SocketAddress]:
         with self.__lock:
@@ -232,32 +231,19 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             family: int = socket.family
             socket_recvfrom = socket.recvfrom
             socket_settimeout = socket.settimeout
-            remote_address: SocketAddress | None = self.__peer
             bufsize: int = MAX_DATAGRAM_BUFSIZE  # pull value to local namespace
-            monotonic = _time_monotonic  # pull function to local namespace
             convert_address = new_socket_address  # pull function to local namespace
 
             with _restore_timeout_at_end(socket):
                 socket_settimeout(timeout)
                 while True:
                     try:
-                        _start = monotonic()
                         data, sender = socket_recvfrom(bufsize, flags)
-                        _end = monotonic()
                     except (TimeoutError, BlockingIOError) as exc:
                         if timeout is None:  # pragma: no cover
                             raise RuntimeError("socket.recvfrom() timed out with timeout=None ?") from exc
                         break
                     sender = convert_address(sender, family)
-                    if remote_address is not None and sender != remote_address:
-                        if timeout is not None:
-                            if timeout == 0:
-                                break
-                            timeout -= _end - _start
-                            if timeout < 0:  # pragma: no cover
-                                timeout = 0
-                            socket_settimeout(timeout)
-                        continue
                     try:
                         return self.__protocol.build_packet_from_datagram(data), sender
                     except DatagramProtocolParseError:
@@ -320,7 +306,6 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
         *,
         family: int = ...,
-        timeout: float | None = ...,
         source_address: tuple[str, int] | None = ...,
         send_flags: int = ...,
         recv_flags: int = ...,
@@ -397,7 +382,7 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         return self.__peer
 
     def send_packet(self, packet: _SentPacketT) -> None:
-        return self.__endpoint.send_packet_to(None, packet)
+        return self.__endpoint.send_packet_to(packet, None)
 
     def recv_packet(self, timeout: float | None = None) -> _ReceivedPacketT:
         return self.__endpoint.recv_packet_from(timeout=timeout)[0]
@@ -422,12 +407,3 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
     @final
     def default_recv_flags(self) -> int:
         return self.__endpoint.default_recv_flags
-
-
-@contextmanager
-def _restore_timeout_at_end(socket: _socket.socket) -> Iterator[float | None]:
-    old_timeout: float | None = socket.gettimeout()
-    try:
-        yield old_timeout
-    finally:
-        socket.settimeout(old_timeout)

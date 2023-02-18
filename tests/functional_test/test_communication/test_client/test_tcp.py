@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from socket import AF_INET, SOCK_STREAM, socket as Socket
+from socket import AF_INET, socket as Socket
 from typing import Any, Callable, Iterator
 
 from easynetwork.client.tcp import TCPNetworkClient
@@ -12,22 +12,20 @@ from easynetwork.tools.socket import IPv4SocketAddress, IPv6SocketAddress
 
 import pytest
 
-from ..serializer import StringSerializer
-
 
 # Origin: https://gist.github.com/4325783, by Geert Jansen.  Public domain.
 # Cannot use socket.socketpair() vendored with Python on unix since it is required to use AF_UNIX family :)
 @pytest.fixture
-def socket_pair(localhost: str, socket_family: int) -> Iterator[tuple[Socket, Socket]]:
+def socket_pair(localhost: str, tcp_socket_factory: Callable[[], Socket]) -> Iterator[tuple[Socket, Socket]]:
     # We create a connected TCP socket. Note the trick with
     # setblocking(False) that prevents us from having to create a thread.
-    lsock = Socket(socket_family, SOCK_STREAM)
+    lsock = tcp_socket_factory()
     try:
         lsock.bind((localhost, 0))
         lsock.listen()
         # On IPv6, ignore flow_info and scope_id
         addr, port = lsock.getsockname()[:2]
-        csock = Socket(socket_family, SOCK_STREAM)
+        csock = tcp_socket_factory()
         try:
             csock.setblocking(False)
             try:
@@ -41,16 +39,11 @@ def socket_pair(localhost: str, socket_family: int) -> Iterator[tuple[Socket, So
             raise
     finally:
         lsock.close()
-    with ssock, csock:
+    with ssock:  # csock will be closed later by tcp_socket_factory() teardown
         yield ssock, csock
 
 
 class TestTCPNetworkClient:
-    @pytest.fixture(scope="class")
-    @staticmethod
-    def protocol() -> StreamProtocol[str, str]:
-        return StreamProtocol(StringSerializer())
-
     @pytest.fixture
     @staticmethod
     def server(socket_pair: tuple[Socket, Socket]) -> Socket:
@@ -58,8 +51,11 @@ class TestTCPNetworkClient:
 
     @pytest.fixture
     @staticmethod
-    def client(socket_pair: tuple[Socket, Socket], protocol: StreamProtocol[str, str]) -> Iterator[TCPNetworkClient[str, str]]:
-        with TCPNetworkClient(socket_pair[1], protocol, give=False) as client:
+    def client(
+        socket_pair: tuple[Socket, Socket],
+        stream_protocol: StreamProtocol[str, str],
+    ) -> Iterator[TCPNetworkClient[str, str]]:
+        with TCPNetworkClient(socket_pair[1], stream_protocol, give=False) as client:
             yield client
 
     def test____close____double_close(self, client: TCPNetworkClient[str, str]) -> None:
@@ -73,9 +69,14 @@ class TestTCPNetworkClient:
         client.send_packet("ABCDEF")
         assert server.recv(1024) == b"ABCDEF\n"
 
+    def test____send_packet____broken_pipe(self, client: TCPNetworkClient[str, str], server: Socket) -> None:
+        server.close()
+        with pytest.raises(BrokenPipeError):
+            client.send_packet("ABCDEF")
+
     def test____send_packet____closed_client(self, client: TCPNetworkClient[str, str]) -> None:
         client.close()
-        with pytest.raises(OSError):
+        with pytest.raises(BrokenPipeError):
             client.send_packet("ABCDEF")
 
     def test____recv_packet____default(self, client: TCPNetworkClient[str, str], server: Socket) -> None:
@@ -118,7 +119,7 @@ class TestTCPNetworkClient:
         server.sendall(b"ABC")
         schedule_call_in_thread(0.1, lambda: server.sendall(b"DEF\n"))
         with pytest.raises(TimeoutError):
-            client.recv_packet(timeout=0.01)
+            client.recv_packet(timeout=0)
         assert client.recv_packet(timeout=0.2) == "ABCDEF"
 
         # Case 2: Several recv() within timeout
@@ -156,6 +157,14 @@ class TestTCPNetworkClient:
         with pytest.raises(StreamProtocolParseError):
             client.recv_packet()
         assert client.recv_packet() == "valid"
+
+    def test____iter_received_packets____yields_available_packets(
+        self,
+        client: TCPNetworkClient[str, str],
+        server: Socket,
+    ) -> None:
+        server.sendall(b"A\nB\nC\nD\nE\nF\n")
+        assert list(client.iter_received_packets()) == ["A", "B", "C", "D", "E", "F"]
 
     def test____fileno____consistency(self, client: TCPNetworkClient[str, str]) -> None:
         assert client.fileno() == client.socket.fileno()

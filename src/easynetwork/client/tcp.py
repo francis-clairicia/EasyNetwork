@@ -11,12 +11,12 @@ __all__ = ["TCPNetworkClient"]
 import errno
 import os
 import socket as _socket
-from contextlib import contextmanager
 from threading import Lock
 from time import monotonic as _time_monotonic
-from typing import Any, Generic, Iterator, TypeVar, final, overload
+from typing import Any, Generic, TypeVar, final, overload
 
 from ..protocol import StreamProtocol, StreamProtocolParseError
+from ..tools._utils import check_real_socket_state as _check_real_socket_state, restore_timeout_at_end as _restore_timeout_at_end
 from ..tools.socket import MAX_STREAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
 from ..tools.stream import StreamDataConsumer, StreamDataProducer
 from .abc import AbstractNetworkClient
@@ -175,6 +175,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 socket.settimeout(None)
                 producer.queue(packet)
                 socket.sendall(b"".join(list(producer)), self.__default_send_flags)
+                _check_real_socket_state(socket)
 
     def recv_packet(self, timeout: float | None = None) -> _ReceivedPacketT:
         with self.__lock:
@@ -269,12 +270,3 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
     @final
     def default_recv_flags(self) -> int:
         return self.__default_recv_flags
-
-
-@contextmanager
-def _restore_timeout_at_end(socket: _socket.socket) -> Iterator[float | None]:
-    old_timeout: float | None = socket.gettimeout()
-    try:
-        yield old_timeout
-    finally:
-        socket.settimeout(old_timeout)

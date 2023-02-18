@@ -6,10 +6,14 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 from functools import partial
-from socket import AF_INET, AF_INET6, SOCK_DGRAM, SOCK_STREAM, socket as Socket
+from socket import AF_INET, AF_INET6, SOCK_DGRAM, SOCK_STREAM, has_ipv6 as HAS_IPV6, socket as Socket
 from typing import Any, Callable, Iterator
 
+from easynetwork.protocol import DatagramProtocol, StreamProtocol
+
 import pytest
+
+from .serializer import StringSerializer
 
 _FAMILY_TO_LOCALHOST: dict[int, str] = {
     AF_INET: "127.0.0.1",
@@ -31,6 +35,9 @@ def localhost(socket_family: int) -> str:
 
 @pytest.fixture
 def socket_factory(socket_family: int) -> Iterator[Callable[[int], Socket]]:
+    if not HAS_IPV6:
+        pytest.skip("IPv6 not supported.")
+
     socket_stack = ExitStack()
 
     def socket_factory(type: int) -> Socket:
@@ -63,3 +70,13 @@ def schedule_call_in_thread() -> Iterator[Callable[[float, Callable[[], Any]], N
             executor.submit(task, time_to_sleep, callback)
 
         yield schedule_call
+
+
+@pytest.fixture(scope="package")
+def stream_protocol() -> StreamProtocol[str, str]:
+    return StreamProtocol(StringSerializer())
+
+
+@pytest.fixture(scope="package")
+def datagram_protocol() -> DatagramProtocol[str, str]:
+    return DatagramProtocol(StringSerializer())

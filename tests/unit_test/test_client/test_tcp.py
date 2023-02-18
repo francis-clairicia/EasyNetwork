@@ -93,6 +93,7 @@ class TestTCPNetworkClient(BaseTestClient):
     ) -> None:
         mock_tcp_socket.family = socket_family
         mock_tcp_socket.gettimeout.return_value = mocker.sentinel.default_timeout
+        mock_tcp_socket.getsockopt.return_value = 0  # Needed for tests dealing with send_packet()
 
     @pytest.fixture  # DO NOT set autouse=True
     @staticmethod
@@ -710,6 +711,7 @@ class TestTCPNetworkClient(BaseTestClient):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
+        from socket import SO_ERROR, SOL_SOCKET
 
         # Act
         client.send_packet(mocker.sentinel.packet)
@@ -718,6 +720,7 @@ class TestTCPNetworkClient(BaseTestClient):
         assert mock_tcp_socket.settimeout.mock_calls == [mocker.call(None), mocker.call(mocker.sentinel.default_timeout)]
         mock_stream_data_producer.queue.assert_called_once_with(mocker.sentinel.packet)
         mock_tcp_socket.sendall.assert_called_once_with(b"packet\n", mocker.sentinel.send_flags)
+        mock_tcp_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_ERROR)
 
     @pytest.mark.usefixtures("setup_producer_mock")
     def test____send_packet____closed_client_error(
@@ -739,6 +742,7 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_tcp_socket.settimeout.assert_not_called()
         mock_stream_data_producer.queue.assert_not_called()
         mock_tcp_socket.sendall.assert_not_called()
+        mock_tcp_socket.getsockopt.assert_not_called()
 
     @pytest.mark.usefixtures("setup_consumer_mock")
     def test____recv_packet_blocking_or_not____receive_bytes_from_socket(
