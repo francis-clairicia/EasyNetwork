@@ -208,9 +208,10 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
                     raise OSError(errno.ECONNREFUSED, os.strerror(errno.ECONNREFUSED))
                 raise OSError("Closed client")
             if (remote_addr := self.__peer) is not None:
-                if address is not None and new_socket_address(address, socket.family) != remote_addr:
-                    raise ValueError(f"Invalid address: must be None or {remote_addr}")
-                address = None
+                if address is not None:
+                    if new_socket_address(address, socket.family) != remote_addr:
+                        raise ValueError(f"Invalid address: must be None or {remote_addr}")
+                    address = None
             elif address is None:
                 raise ValueError("Invalid address: must not be None")
             data: bytes = self.__protocol.make_datagram(packet)
