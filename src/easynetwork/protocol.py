@@ -6,7 +6,13 @@
 
 from __future__ import annotations
 
-__all__ = ["DatagramProtocol", "DatagramProtocolParseError", "StreamProtocol", "StreamProtocolParseError"]
+__all__ = [
+    "BaseProtocolParseError",
+    "DatagramProtocol",
+    "DatagramProtocolParseError",
+    "StreamProtocol",
+    "StreamProtocolParseError",
+]
 
 from typing import Any, Generator, Generic, Literal, TypeAlias, TypeVar, overload
 
@@ -24,12 +30,16 @@ _ReceivedPacketT = TypeVar("_ReceivedPacketT")
 ParseErrorType: TypeAlias = Literal["deserialization", "conversion"]
 
 
-class DatagramProtocolParseError(Exception):
+class BaseProtocolParseError(Exception):
     def __init__(self, error_type: ParseErrorType, message: str, error_info: Any = None) -> None:
-        super().__init__(f"Error while parsing datagram: {message}")
+        super().__init__(f"Error while parsing data: {message}")
         self.error_type: ParseErrorType = error_type
         self.error_info: Any = error_info
         self.message: str = message
+
+
+class DatagramProtocolParseError(BaseProtocolParseError):
+    pass
 
 
 class DatagramProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
@@ -79,13 +89,14 @@ class DatagramProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
         return packet
 
 
-class StreamProtocolParseError(Exception):
+class StreamProtocolParseError(BaseProtocolParseError):
     def __init__(self, remaining_data: bytes, error_type: ParseErrorType, message: str, error_info: Any = None) -> None:
-        super().__init__(f"Error while parsing datagram: {message}")
+        super().__init__(
+            error_type=error_type,
+            message=message,
+            error_info=error_info,
+        )
         self.remaining_data: bytes = remaining_data
-        self.error_type: ParseErrorType = error_type
-        self.message: str = message
-        self.error_info: Any = error_info
 
 
 class StreamProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
