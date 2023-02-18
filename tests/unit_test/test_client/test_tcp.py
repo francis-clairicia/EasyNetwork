@@ -7,7 +7,7 @@ from socket import AF_INET6
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.client.tcp import TCPNetworkClient
-from easynetwork.tools.socket import IPv4SocketAddress, IPv6SocketAddress
+from easynetwork.tools.socket import MAX_STREAM_BUFSIZE, IPv4SocketAddress, IPv6SocketAddress
 
 import pytest
 
@@ -138,10 +138,16 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_stream_data_consumer.__iter__.side_effect = lambda: mock_stream_data_consumer
         mock_stream_data_consumer.__next__.side_effect = next_side_effect
 
+    @pytest.fixture
+    @staticmethod
+    def max_recv_size(request: Any) -> int | None:
+        return getattr(request, "param", None)
+
     @pytest.fixture(params=["REMOTE_ADDRESS", "SOCKET_WITH_EXPLICIT_GIVE"])
     @staticmethod
     def client_with_socket_ownership(
         request: Any,
+        max_recv_size: int | None,
         remote_address: tuple[str, int],
         mock_tcp_socket: MagicMock,
         mock_stream_protocol: MagicMock,
@@ -154,6 +160,7 @@ class TestTCPNetworkClient(BaseTestClient):
                     mock_stream_protocol,
                     send_flags=mocker.sentinel.send_flags,
                     recv_flags=mocker.sentinel.recv_flags,
+                    max_recv_size=max_recv_size,
                 )
             case "SOCKET_WITH_EXPLICIT_GIVE":
                 return TCPNetworkClient(
@@ -162,6 +169,7 @@ class TestTCPNetworkClient(BaseTestClient):
                     give=True,
                     send_flags=mocker.sentinel.send_flags,
                     recv_flags=mocker.sentinel.recv_flags,
+                    max_recv_size=max_recv_size,
                 )
             case invalid:
                 pytest.fail(f"Invalid fixture param: Got {invalid!r}")
@@ -169,6 +177,7 @@ class TestTCPNetworkClient(BaseTestClient):
     @pytest.fixture
     @staticmethod
     def client_without_socket_ownership(
+        max_recv_size: int | None,
         mock_tcp_socket: MagicMock,
         mock_stream_protocol: MagicMock,
         mocker: MockerFixture,
@@ -179,6 +188,7 @@ class TestTCPNetworkClient(BaseTestClient):
             give=False,
             send_flags=mocker.sentinel.send_flags,
             recv_flags=mocker.sentinel.recv_flags,
+            max_recv_size=max_recv_size,
         )
 
     @pytest.fixture
@@ -296,8 +306,8 @@ class TestTCPNetworkClient(BaseTestClient):
             )
 
         # Assert
-        mock_stream_data_producer_cls.assert_called_once_with(mock_stream_protocol)
-        mock_stream_data_consumer_cls.assert_called_once_with(mock_stream_protocol)
+        mock_stream_data_producer_cls.assert_not_called()
+        mock_stream_data_consumer_cls.assert_not_called()
         mock_socket_create_connection.assert_not_called()
         mock_socket_proxy_cls.assert_not_called()
         mock_udp_socket.getsockname.assert_not_called()
@@ -335,8 +345,8 @@ class TestTCPNetworkClient(BaseTestClient):
 
         # Assert
         assert exc_info.value is enotconn_exception
-        mock_stream_data_producer_cls.assert_called_once_with(mock_stream_protocol)
-        mock_stream_data_consumer_cls.assert_called_once_with(mock_stream_protocol)
+        mock_stream_data_producer_cls.assert_not_called()
+        mock_stream_data_consumer_cls.assert_not_called()
         mock_socket_create_connection.assert_not_called()
         mock_socket_proxy_cls.assert_not_called()
         mock_tcp_socket.getsockname.assert_called_once_with()
@@ -369,10 +379,131 @@ class TestTCPNetworkClient(BaseTestClient):
             )
 
         # Assert
-        mock_stream_data_producer_cls.assert_called_once_with(mock_stream_protocol)
-        mock_stream_data_consumer_cls.assert_called_once_with(mock_stream_protocol)
+        mock_stream_data_producer_cls.assert_not_called()
+        mock_stream_data_consumer_cls.assert_not_called()
         mock_socket_create_connection.assert_not_called()
         mock_socket_proxy_cls.assert_not_called()
+        mock_tcp_socket.close.assert_not_called()
+
+    @pytest.mark.parametrize("max_recv_size", [None, 1, 2**64], ids=lambda p: f"max_recv_size=={p}")
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    def test____dunder_init____with_ownership____max_size____valid_value(
+        self,
+        max_recv_size: int | None,
+        use_socket: bool,
+        remote_address: tuple[str, int],
+        mock_tcp_socket: MagicMock,
+        mock_stream_protocol: MagicMock,
+    ) -> None:
+        # Arrange
+        expected_size: int = max_recv_size if max_recv_size is not None else MAX_STREAM_BUFSIZE
+
+        # Act
+        client: TCPNetworkClient[Any, Any]
+        if use_socket:
+            client = TCPNetworkClient(
+                mock_tcp_socket,
+                protocol=mock_stream_protocol,
+                give=True,
+                max_recv_size=max_recv_size,
+            )
+        else:
+            client = TCPNetworkClient(
+                remote_address,
+                protocol=mock_stream_protocol,
+                max_recv_size=max_recv_size,
+            )
+
+        # Assert
+        assert client.max_recv_bufsize == expected_size
+
+    @pytest.mark.parametrize("max_recv_size", [0, -1, 10.4], ids=lambda p: f"max_recv_size=={p}")
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    def test____dunder_init____with_ownership____max_size____invalid_value(
+        self,
+        max_recv_size: Any,
+        use_socket: bool,
+        remote_address: tuple[str, int],
+        mock_tcp_socket: MagicMock,
+        mock_stream_protocol: MagicMock,
+        mock_stream_data_producer_cls: MagicMock,
+        mock_stream_data_consumer_cls: MagicMock,
+        mock_socket_proxy_cls: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act
+        with pytest.raises(ValueError, match=r"^max_size must be a strict positive integer$"):
+            if use_socket:
+                _ = TCPNetworkClient(
+                    mock_tcp_socket,
+                    protocol=mock_stream_protocol,
+                    give=True,
+                    max_recv_size=max_recv_size,
+                )
+            else:
+                _ = TCPNetworkClient(
+                    remote_address,
+                    protocol=mock_stream_protocol,
+                    max_recv_size=max_recv_size,
+                )
+
+        # Assert
+        mock_stream_data_producer_cls.assert_not_called()
+        mock_stream_data_consumer_cls.assert_not_called()
+        mock_socket_proxy_cls.assert_not_called()
+        mock_tcp_socket.getsockname.assert_not_called()
+        mock_tcp_socket.getpeername.assert_not_called()
+        mock_tcp_socket.close.assert_called_once_with()
+
+    @pytest.mark.parametrize("max_recv_size", [None, 1, 2**64], ids=lambda p: f"max_recv_size=={p}")
+    def test____dunder_init____without_ownership____max_size____valid_value(
+        self,
+        max_recv_size: int | None,
+        mock_tcp_socket: MagicMock,
+        mock_stream_protocol: MagicMock,
+    ) -> None:
+        # Arrange
+        expected_size: int = max_recv_size if max_recv_size is not None else MAX_STREAM_BUFSIZE
+
+        # Act
+        client: TCPNetworkClient[Any, Any] = TCPNetworkClient(
+            mock_tcp_socket,
+            protocol=mock_stream_protocol,
+            give=False,
+            max_recv_size=max_recv_size,
+        )
+
+        # Assert
+        assert client.max_recv_bufsize == expected_size
+
+    @pytest.mark.parametrize("max_recv_size", [0, -1, 10.4], ids=lambda p: f"max_recv_size=={p}")
+    def test____dunder_init____without_ownership____max_size____invalid_value(
+        self,
+        max_recv_size: Any,
+        mock_tcp_socket: MagicMock,
+        mock_stream_protocol: MagicMock,
+        mock_stream_data_producer_cls: MagicMock,
+        mock_stream_data_consumer_cls: MagicMock,
+        mock_socket_proxy_cls: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act
+        with pytest.raises(ValueError, match=r"^max_size must be a strict positive integer$"):
+            _ = TCPNetworkClient(
+                mock_tcp_socket,
+                protocol=mock_stream_protocol,
+                give=False,
+                max_recv_size=max_recv_size,
+            )
+
+        # Assert
+        mock_stream_data_producer_cls.assert_not_called()
+        mock_stream_data_consumer_cls.assert_not_called()
+        mock_socket_proxy_cls.assert_not_called()
+        mock_tcp_socket.getsockname.assert_not_called()
+        mock_tcp_socket.getpeername.assert_not_called()
         mock_tcp_socket.close.assert_not_called()
 
     @pytest.mark.parametrize(
@@ -626,12 +757,13 @@ class TestTCPNetworkClient(BaseTestClient):
 
         # Assert
         assert mock_tcp_socket.settimeout.mock_calls == [mocker.call(recv_timeout), mocker.call(mocker.sentinel.default_timeout)]
-        mock_tcp_socket.recv.assert_called_once_with(TCPNetworkClient.max_size, mocker.sentinel.recv_flags)
+        mock_tcp_socket.recv.assert_called_once_with(MAX_STREAM_BUFSIZE, mocker.sentinel.recv_flags)
         mock_stream_data_consumer.feed.assert_called_once_with(b"packet\n")
         assert packet is mocker.sentinel.packet
 
+    @pytest.mark.parametrize("recv_timeout", [None, 123456789], indirect=True)  # Do not test with timeout==0
     @pytest.mark.usefixtures("setup_consumer_mock")
-    def test____recv_packet_blocking_or_not____partial_data(
+    def test____recv_packet____blocking____partial_data(
         self,
         client: TCPNetworkClient[Any, Any],
         recv_timeout: int | None,
@@ -646,7 +778,7 @@ class TestTCPNetworkClient(BaseTestClient):
         packet: Any = client.recv_packet(timeout=recv_timeout)
 
         # Assert
-        if recv_timeout is None or recv_timeout == 0:
+        if recv_timeout is None:
             assert mock_tcp_socket.settimeout.mock_calls == [
                 mocker.call(recv_timeout),
                 mocker.call(mocker.sentinel.default_timeout),
@@ -657,44 +789,53 @@ class TestTCPNetworkClient(BaseTestClient):
                 mocker.call(mocker.ANY),
                 mocker.call(mocker.sentinel.default_timeout),
             ]
-        assert mock_tcp_socket.recv.mock_calls == [
-            mocker.call(TCPNetworkClient.max_size, mocker.sentinel.recv_flags) for _ in range(2)
-        ]
+        assert mock_tcp_socket.recv.mock_calls == [mocker.call(MAX_STREAM_BUFSIZE, mocker.sentinel.recv_flags) for _ in range(2)]
         assert mock_stream_data_consumer.feed.mock_calls == [mocker.call(b"pac"), mocker.call(b"ket\n")]
         assert packet is mocker.sentinel.packet
 
+    @pytest.mark.parametrize("recv_timeout", [0], indirect=True)  # Only test with timeout==0
+    @pytest.mark.parametrize(
+        "max_recv_size",
+        [
+            pytest.param(3, id="chunk_matching_bufsize"),
+            pytest.param(1024, id="chunk_not_matching_bufsize"),
+        ],
+        indirect=True,
+    )
     @pytest.mark.usefixtures("setup_consumer_mock")
-    def test____recv_packet_blocking_or_not____extra_data(
+    def test____recv_packet_____non_blocking____partial_data(
         self,
         client: TCPNetworkClient[Any, Any],
+        max_recv_size: int,
         recv_timeout: int | None,
         mock_tcp_socket: MagicMock,
         mock_stream_data_consumer: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_tcp_socket.recv.side_effect = [b"pac", b"ket_1\npa", b"ck", b"et", b"_2\n"]
+        mock_tcp_socket.recv.side_effect = [b"pac", b"ket", b"\n"]
 
-        # Act
-        packet_1: Any = client.recv_packet(timeout=recv_timeout)
-        packet_2: Any = client.recv_packet(timeout=recv_timeout)
+        # Act & Assert
+        if max_recv_size == 3:
+            packet: Any = client.recv_packet(timeout=recv_timeout)
 
-        # Assert
-        assert mock_tcp_socket.recv.mock_calls == [
-            mocker.call(TCPNetworkClient.max_size, mocker.sentinel.recv_flags) for _ in range(5)
+            assert mock_tcp_socket.recv.mock_calls == [mocker.call(max_recv_size, mocker.sentinel.recv_flags) for _ in range(3)]
+            assert mock_stream_data_consumer.feed.mock_calls == [mocker.call(b"pac"), mocker.call(b"ket"), mocker.call(b"\n")]
+            assert packet is mocker.sentinel.packet
+        else:
+            with pytest.raises(TimeoutError, match=r"^recv_packet\(\) timed out$"):
+                client.recv_packet(timeout=recv_timeout)
+
+            mock_tcp_socket.recv.assert_called_once_with(max_recv_size, mocker.sentinel.recv_flags)
+            mock_stream_data_consumer.feed.assert_called_once_with(b"pac")
+
+        assert mock_tcp_socket.settimeout.mock_calls == [
+            mocker.call(recv_timeout),
+            mocker.call(mocker.sentinel.default_timeout),
         ]
-        assert mock_stream_data_consumer.feed.mock_calls == [
-            mocker.call(b"pac"),
-            mocker.call(b"ket_1\npa"),
-            mocker.call(b"ck"),
-            mocker.call(b"et"),
-            mocker.call(b"_2\n"),
-        ]
-        assert packet_1 is mocker.sentinel.packet_1
-        assert packet_2 is mocker.sentinel.packet_2
 
     @pytest.mark.usefixtures("setup_consumer_mock")
-    def test____recv_packet_blocking_or_not____avoid_unnecessary_socket_recv_call(
+    def test____recv_packet____blocking_or_not____extra_data(
         self,
         client: TCPNetworkClient[Any, Any],
         recv_timeout: int | None,
@@ -708,18 +849,17 @@ class TestTCPNetworkClient(BaseTestClient):
         # Act
         packet_1: Any = client.recv_packet(timeout=recv_timeout)
         mock_tcp_socket.settimeout.reset_mock()
-        mock_tcp_socket.recv.reset_mock()
         packet_2: Any = client.recv_packet(timeout=recv_timeout)
 
         # Assert
+        mock_tcp_socket.recv.assert_called_once()
         mock_tcp_socket.settimeout.assert_not_called()
-        mock_tcp_socket.recv.assert_not_called()
         mock_stream_data_consumer.feed.assert_called_once_with(b"packet_1\npacket_2\n")
         assert packet_1 is mocker.sentinel.packet_1
         assert packet_2 is mocker.sentinel.packet_2
 
     @pytest.mark.usefixtures("setup_consumer_mock")
-    def test____recv_packet_blocking_or_not____eof_error(
+    def test____recv_packet____blocking_or_not____eof_error(
         self,
         client: TCPNetworkClient[Any, Any],
         recv_timeout: int | None,
@@ -736,11 +876,11 @@ class TestTCPNetworkClient(BaseTestClient):
 
         # Assert
         assert mock_tcp_socket.settimeout.mock_calls == [mocker.call(recv_timeout), mocker.call(mocker.sentinel.default_timeout)]
-        mock_tcp_socket.recv.assert_called_once_with(TCPNetworkClient.max_size, mocker.sentinel.recv_flags)
+        mock_tcp_socket.recv.assert_called_once_with(MAX_STREAM_BUFSIZE, mocker.sentinel.recv_flags)
         mock_stream_data_consumer.feed.assert_not_called()
 
     @pytest.mark.usefixtures("setup_consumer_mock")
-    def test____recv_packet_blocking_or_not____protocol_parse_error(
+    def test____recv_packet____blocking_or_not____protocol_parse_error(
         self,
         client: TCPNetworkClient[Any, Any],
         recv_timeout: int | None,
@@ -762,12 +902,12 @@ class TestTCPNetworkClient(BaseTestClient):
 
         # Assert
         assert mock_tcp_socket.settimeout.mock_calls == [mocker.call(recv_timeout), mocker.call(mocker.sentinel.default_timeout)]
-        mock_tcp_socket.recv.assert_called_once_with(TCPNetworkClient.max_size, mocker.sentinel.recv_flags)
+        mock_tcp_socket.recv.assert_called_once_with(MAX_STREAM_BUFSIZE, mocker.sentinel.recv_flags)
         mock_stream_data_consumer.feed.assert_called_once_with(b"packet\n")
         assert exception is expected_error
 
     @pytest.mark.usefixtures("setup_consumer_mock")
-    def test____recv_packet_blocking_or_not____closed_client_error(
+    def test____recv_packet____blocking_or_not____closed_client_error(
         self,
         client: TCPNetworkClient[Any, Any],
         recv_timeout: int | None,
@@ -811,7 +951,7 @@ class TestTCPNetworkClient(BaseTestClient):
         with pytest.raises(TimeoutError, match=r"^recv_packet\(\) timed out$"):
             _ = client.recv_packet(timeout=recv_timeout)
 
-        mock_tcp_socket.recv.assert_called_once_with(TCPNetworkClient.max_size, mocker.sentinel.recv_flags)
+        mock_tcp_socket.recv.assert_called_once_with(MAX_STREAM_BUFSIZE, mocker.sentinel.recv_flags)
         mock_stream_data_consumer.feed.assert_not_called()
 
     @pytest.mark.parametrize(
@@ -821,10 +961,12 @@ class TestTCPNetworkClient(BaseTestClient):
             pytest.param(123456789, TimeoutError, id="strictly positive timeout"),
         ],
     )
+    @pytest.mark.parametrize("max_recv_size", [3], indirect=True)  # Needed for timeout==0
     @pytest.mark.usefixtures("setup_consumer_mock")
     def test____iter_received_packets____yields_available_packets_with_given_timeout(
         self,
         client: TCPNetworkClient[Any, Any],
+        max_recv_size: int,
         recv_timeout: int,
         recv_exception: type[BaseException],
         mock_tcp_socket: MagicMock,
@@ -832,77 +974,78 @@ class TestTCPNetworkClient(BaseTestClient):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_tcp_socket.recv.side_effect = [b"pac", b"ket_1\npa", b"ck", b"et", b"_2\n", recv_exception]
+        mock_tcp_socket.recv.side_effect = [b"pac", b"ket", b"_1\np", b"ack", b"et_", b"2\n", recv_exception]
 
         # Act
         packets = list(client.iter_received_packets(timeout=recv_timeout))
 
         # Assert
-        assert mock_tcp_socket.recv.mock_calls == [
-            mocker.call(TCPNetworkClient.max_size, mocker.sentinel.recv_flags) for _ in range(6)
-        ]
+        assert mock_tcp_socket.recv.mock_calls == [mocker.call(max_recv_size, mocker.sentinel.recv_flags) for _ in range(7)]
         assert mock_stream_data_consumer.feed.mock_calls == [
             mocker.call(b"pac"),
-            mocker.call(b"ket_1\npa"),
-            mocker.call(b"ck"),
-            mocker.call(b"et"),
-            mocker.call(b"_2\n"),
+            mocker.call(b"ket"),
+            mocker.call(b"_1\np"),
+            mocker.call(b"ack"),
+            mocker.call(b"et_"),
+            mocker.call(b"2\n"),
         ]
         assert packets == [mocker.sentinel.packet_1, mocker.sentinel.packet_2]
 
+    @pytest.mark.parametrize("max_recv_size", [3], indirect=True)  # Needed for timeout==0
     @pytest.mark.usefixtures("setup_consumer_mock")
     def test____iter_received_packets____yields_available_packets_until_eof(
         self,
         client: TCPNetworkClient[Any, Any],
+        max_recv_size: int,
         recv_timeout: int | None,
         mock_tcp_socket: MagicMock,
         mock_stream_data_consumer: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_tcp_socket.recv.side_effect = [b"pac", b"ket_1\npa", b"ck", b"et", b"_2\n", b""]
+        mock_tcp_socket.recv.side_effect = [b"pac", b"ket", b"_1\np", b"ack", b"et_", b"2\n", b""]
 
         # Act
         packets = list(client.iter_received_packets(timeout=recv_timeout))
 
         # Assert
-        assert mock_tcp_socket.recv.mock_calls == [
-            mocker.call(TCPNetworkClient.max_size, mocker.sentinel.recv_flags) for _ in range(6)
-        ]
+        assert mock_tcp_socket.recv.mock_calls == [mocker.call(max_recv_size, mocker.sentinel.recv_flags) for _ in range(7)]
         assert mock_stream_data_consumer.feed.mock_calls == [
             mocker.call(b"pac"),
-            mocker.call(b"ket_1\npa"),
-            mocker.call(b"ck"),
-            mocker.call(b"et"),
-            mocker.call(b"_2\n"),
+            mocker.call(b"ket"),
+            mocker.call(b"_1\np"),
+            mocker.call(b"ack"),
+            mocker.call(b"et_"),
+            mocker.call(b"2\n"),
         ]
         assert packets == [mocker.sentinel.packet_1, mocker.sentinel.packet_2]
 
+    @pytest.mark.parametrize("max_recv_size", [3], indirect=True)  # Needed for timeout==0
     @pytest.mark.usefixtures("setup_consumer_mock")
     def test____iter_received_packets____yields_available_packets_until_error(
         self,
         client: TCPNetworkClient[Any, Any],
+        max_recv_size: int,
         recv_timeout: int | None,
         mock_tcp_socket: MagicMock,
         mock_stream_data_consumer: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_tcp_socket.recv.side_effect = [b"pac", b"ket_1\npa", b"ck", b"et", b"_2\n", OSError]
+        mock_tcp_socket.recv.side_effect = [b"pac", b"ket", b"_1\np", b"ack", b"et_", b"2\n", OSError]
 
         # Act
         packets = list(client.iter_received_packets(timeout=recv_timeout))
 
         # Assert
-        assert mock_tcp_socket.recv.mock_calls == [
-            mocker.call(TCPNetworkClient.max_size, mocker.sentinel.recv_flags) for _ in range(6)
-        ]
+        assert mock_tcp_socket.recv.mock_calls == [mocker.call(max_recv_size, mocker.sentinel.recv_flags) for _ in range(7)]
         assert mock_stream_data_consumer.feed.mock_calls == [
             mocker.call(b"pac"),
-            mocker.call(b"ket_1\npa"),
-            mocker.call(b"ck"),
-            mocker.call(b"et"),
-            mocker.call(b"_2\n"),
+            mocker.call(b"ket"),
+            mocker.call(b"_1\np"),
+            mocker.call(b"ack"),
+            mocker.call(b"et_"),
+            mocker.call(b"2\n"),
         ]
         assert packets == [mocker.sentinel.packet_1, mocker.sentinel.packet_2]
 
@@ -950,7 +1093,7 @@ class TestTCPNetworkClient(BaseTestClient):
             packet_2 = next(iterator)
 
         # Assert
-        mock_tcp_socket.recv.assert_called_once_with(TCPNetworkClient.max_size, mocker.sentinel.recv_flags)
+        mock_tcp_socket.recv.assert_called_once_with(MAX_STREAM_BUFSIZE, mocker.sentinel.recv_flags)
         mock_stream_data_consumer.feed.assert_called_once_with(b"packet_1\npacket_2\n")
         assert packet_1 is mocker.sentinel.packet_1
         assert packet_2 is mocker.sentinel.packet_2

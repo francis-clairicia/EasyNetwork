@@ -38,9 +38,8 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         "__eof_reached",
         "__default_send_flags",
         "__default_recv_flags",
+        "__max_recv_bufsize",
     )
-
-    max_size: int = MAX_STREAM_BUFSIZE  # Buffer size passed to recv().
 
     @overload
     def __init__(
@@ -53,6 +52,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         source_address: tuple[str, int] | None = ...,
         send_flags: int = ...,
         recv_flags: int = ...,
+        max_recv_size: int | None = ...,
     ) -> None:
         ...
 
@@ -66,6 +66,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         give: bool,
         send_flags: int = ...,
         recv_flags: int = ...,
+        max_recv_size: int | None = ...,
     ) -> None:
         ...
 
@@ -77,13 +78,12 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         *,
         send_flags: int = 0,
         recv_flags: int = 0,
+        max_recv_size: int | None = None,
         **kwargs: Any,
     ) -> None:
         self.__socket: _socket.socket | None = None  # If any exception occurs, the client will already be in a closed state
         super().__init__()
         self.__lock = Lock()
-        self.__producer: StreamDataProducer[_SentPacketT] = StreamDataProducer(protocol)
-        self.__consumer: StreamDataConsumer[_ReceivedPacketT] = StreamDataConsumer(protocol)
 
         socket: _socket.socket
         self.__owner: bool
@@ -107,12 +107,20 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             if socket.type != _socket.SOCK_STREAM:
                 raise ValueError("Invalid socket type")
 
+            if max_recv_size is None:
+                max_recv_size = MAX_STREAM_BUFSIZE
+            if not isinstance(max_recv_size, int) or max_recv_size <= 0:
+                raise ValueError("max_size must be a strict positive integer")
+
             self.__addr: SocketAddress = new_socket_address(socket.getsockname(), socket.family)
             self.__peer: SocketAddress = new_socket_address(socket.getpeername(), socket.family)
+            self.__producer: StreamDataProducer[_SentPacketT] = StreamDataProducer(protocol)
+            self.__consumer: StreamDataConsumer[_ReceivedPacketT] = StreamDataConsumer(protocol)
             self.__socket_proxy = SocketProxy(socket, lock=self.__lock)
             self.__eof_reached: bool = False
             self.__default_send_flags: int = send_flags
             self.__default_recv_flags: int = recv_flags
+            self.__max_recv_bufsize: int = max_recv_size
         except BaseException:
             if self.__owner:
                 socket.close()
@@ -182,7 +190,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             socket_recv = socket.recv
             socket_settimeout = socket.settimeout
             consumer_feed = consumer.feed
-            bufsize: int = self.max_size
+            bufsize: int = self.__max_recv_bufsize
             monotonic = _time_monotonic  # pull function to local namespace
 
             with _restore_timeout_at_end(socket):
@@ -199,19 +207,21 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                     if not chunk:
                         self.__eof_reached = True
                         raise EOFError("Closed connection")
-                    try:
-                        consumer_feed(chunk)
-                    finally:
-                        del chunk
+                    consumer_feed(chunk)
                     try:
                         return next_packet(consumer)
                     except StopIteration:
-                        if timeout is not None and timeout > 0:
-                            timeout -= _end - _start
-                            if timeout < 0:  # pragma: no cover
-                                timeout = 0
-                            socket_settimeout(timeout)
+                        if timeout is not None:
+                            if timeout > 0:
+                                timeout -= _end - _start
+                                if timeout < 0:  # pragma: no cover
+                                    timeout = 0
+                                socket_settimeout(timeout)
+                            elif len(chunk) < bufsize:
+                                break
                         continue
+                    finally:
+                        del chunk
                 # Loop break
                 raise TimeoutError("recv_packet() timed out")
 
@@ -244,6 +254,11 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
     @final
     def socket(self) -> SocketProxy:
         return self.__socket_proxy
+
+    @property
+    @final
+    def max_recv_bufsize(self) -> int:
+        return self.__max_recv_bufsize
 
     @property
     @final
