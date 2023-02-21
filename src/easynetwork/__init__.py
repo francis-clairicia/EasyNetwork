@@ -9,16 +9,7 @@ EasyNetwork is a high-level interface for networking in Python
 
 from __future__ import annotations
 
-__all__ = [
-    "AbstractNetworkClient",
-    "AbstractNetworkServer",
-    "AbstractTCPNetworkServer",
-    "AbstractUDPNetworkServer",
-    "ConnectedClient",
-    "TCPNetworkClient",
-    "UDPNetworkClient",
-    "UDPNetworkEndpoint",
-]
+__all__ = []  # type: list[str]
 
 __author__ = "FrankySnow9"
 __contact__ = "clairicia.rcj.francis@gmail.com"
@@ -30,8 +21,3 @@ __license__ = "MIT"
 __maintainer__ = "FrankySnow9"
 __status__ = "Development"
 __version__ = "1.0.0.dev0"
-
-
-############ Package initialization ############
-from .client import *
-from .server import *

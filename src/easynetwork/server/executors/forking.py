@@ -8,10 +8,11 @@ from __future__ import annotations
 
 __all__ = ["ForkingRequestExecutor"]
 
+import concurrent.futures
 import os
 from typing import Callable, ParamSpec
 
-from .abc import AbstractRequestExecutor
+from .abc import AbstractRequestExecutor, RequestFuture
 
 _P = ParamSpec("_P")
 
@@ -33,7 +34,7 @@ class ForkingRequestExecutor(AbstractRequestExecutor):
         self.__fork: Callable[[], int] = fork
         self.__max_children: int = max_children
         self.__block_on_close: bool = bool(block_on_close)
-        self.__active_children: set[int] = set()
+        self.__active_children: dict[int, concurrent.futures.Future[None]] = {}
 
     def collect_children(self, *, blocking: bool = False) -> None:
         """Internal routine to wait for children that have exited."""
@@ -47,10 +48,10 @@ class ForkingRequestExecutor(AbstractRequestExecutor):
         while len(self.__active_children) >= self.__max_children:
             try:
                 pid, _ = os.waitpid(-1, 0)
-                self.__active_children.discard(pid)
+                self.__discard_children(pid)
             except ChildProcessError:
                 # we don't have any children, we're done
-                self.__active_children.clear()
+                self.__discard_all_children()
             except OSError:
                 break
 
@@ -61,21 +62,38 @@ class ForkingRequestExecutor(AbstractRequestExecutor):
                 pid, _ = os.waitpid(pid, flags)
                 # if the child hasn't exited yet, pid will be 0 and ignored by
                 # discard() below
-                self.__active_children.discard(pid)
+                self.__discard_children(pid)
             except ChildProcessError:
                 # someone else reaped it
-                self.__active_children.discard(pid)
+                self.__discard_children(pid)
             except OSError:
                 pass
 
-    def execute(self, __request_handler: Callable[_P, None], /, *args: _P.args, **kwargs: _P.kwargs) -> None:
+    def __discard_children(self, pid: int) -> None:
+        future = self.__active_children.pop(pid, None)
+        if future is not None and not future.done():
+            future.set_result(None)
+
+    def __discard_all_children(self) -> None:
+        children, self.__active_children = self.__active_children, {}
+        for future in list(children.values()):
+            if not future.done():
+                future.set_result(None)
+
+    def execute(self, __request_handler: Callable[_P, None], /, *args: _P.args, **kwargs: _P.kwargs) -> RequestFuture:
         """Fork a new subprocess to process the request."""
         fork: Callable[[], int] = self.__fork
         pid = fork()
         if pid:
             # Parent process
-            self.__active_children.add(pid)
-            return
+            try:
+                fut = self.__active_children[pid]
+            except KeyError:
+                pass
+            else:
+                fut.cancel()
+            self.__active_children[pid] = fut = concurrent.futures.Future()
+            return RequestFuture(fut)
 
         # Child process.
         # This must never return, hence os._exit()!
@@ -93,9 +111,11 @@ class ForkingRequestExecutor(AbstractRequestExecutor):
         super().service_actions()
         self.collect_children()
 
-    def on_server_close(self) -> None:
-        super().on_server_close()
-        self.collect_children(blocking=self.__block_on_close)
+    def shutdown(self) -> None:
+        try:
+            self.collect_children(blocking=self.__block_on_close)
+        finally:
+            super().shutdown()
 
     def get_active_children(self) -> frozenset[int]:
         return frozenset(self.__active_children)

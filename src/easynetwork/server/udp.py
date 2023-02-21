@@ -14,9 +14,10 @@ import socket as _socket
 import sys
 from abc import abstractmethod
 from collections import deque
+from contextlib import ExitStack
 from selectors import EVENT_READ, EVENT_WRITE, BaseSelector
 from threading import Event, RLock
-from typing import Any, Callable, Generic, Iterator, TypeAlias, TypeVar, final, overload
+from typing import Any, Callable, Generic, TypeVar, final
 
 from ..protocol import DatagramProtocol, DatagramProtocolParseError, ParseErrorType
 from ..tools.socket import MAX_DATAGRAM_BUFSIZE, SocketAddress, new_socket_address
@@ -26,20 +27,17 @@ from .executors.abc import AbstractRequestExecutor
 _RequestT = TypeVar("_RequestT")
 _ResponseT = TypeVar("_ResponseT")
 
-DatagramProtocolFactory: TypeAlias = Callable[[], DatagramProtocol[_ResponseT, _RequestT]]
-
 
 class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Generic[_RequestT, _ResponseT]):
     __slots__ = (
         "__socket",
         "__addr",
-        "__send_lock",
-        "__loop",
-        "__closed",
+        "__transaction_lock",
+        "__looping",
         "__is_shutdown",
-        "__protocol_factory",
-        "__selector_factory",
-        "__request_executor",
+        "__protocol",
+        "__selector",
+        "__request_executor_factory",
         "__default_send_flags",
         "__default_recv_flags",
         "__protocol",
@@ -53,25 +51,20 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     def __init__(
         self,
         address: tuple[str, int] | tuple[str, int, int, int],
-        protocol_factory: DatagramProtocolFactory[_ResponseT, _RequestT],
+        protocol: DatagramProtocol[_ResponseT, _RequestT],
         *,
         family: int = _socket.AF_INET,
         reuse_port: bool = False,
         send_flags: int = 0,
         recv_flags: int = 0,
-        request_executor: AbstractRequestExecutor | None = None,
+        request_executor_factory: Callable[[], AbstractRequestExecutor] | None = None,
         selector_factory: Callable[[], BaseSelector] | None = None,
         logger: logging.Logger | None = None,
         poll_interval: float = 0.1,
     ) -> None:
         super().__init__()
 
-        protocol = protocol_factory()
         assert isinstance(protocol, DatagramProtocol)
-        assert request_executor is None or isinstance(request_executor, AbstractRequestExecutor)
-        send_flags = int(send_flags)
-        recv_flags = int(recv_flags)
-        poll_interval = float(poll_interval)
 
         import socket as _socket
 
@@ -94,168 +87,179 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             raise
 
         socket.settimeout(0)
-        self.__socket: _socket.socket = socket
-        self.__request_executor: AbstractRequestExecutor | None = request_executor
+        self.__socket: _socket.socket | None = socket
+        self.__request_executor_factory: Callable[[], AbstractRequestExecutor] | None = request_executor_factory
         self.__addr: SocketAddress = new_socket_address(socket.getsockname(), socket.family)
-        self.__send_lock: RLock = RLock()
-        self.__loop: bool = False
-        self.__closed: bool = False
+        self.__transaction_lock: RLock = RLock()
+        self.__looping: bool = False
         self.__is_shutdown: Event = Event()
         self.__is_shutdown.set()
-        self.__protocol_factory: DatagramProtocolFactory[_ResponseT, _RequestT] = protocol_factory
         self.__default_send_flags: int = int(send_flags)
         self.__default_recv_flags: int = int(recv_flags)
         self.__protocol: DatagramProtocol[_ResponseT, _RequestT] = protocol
-        self.__packets_to_send: deque[tuple[_ResponseT, SocketAddress]] = deque()
-        self.__received_datagrams: deque[tuple[bytes, SocketAddress]] = deque()
         self.__unsent_datagrams: deque[tuple[bytes, SocketAddress]] = deque()
         self.__poll_interval: float = poll_interval
 
-        self.__selector_factory: Callable[[], BaseSelector]
+        self.__selector: BaseSelector | None
         if selector_factory is None:
             from selectors import DefaultSelector
 
-            self.__selector_factory = DefaultSelector
+            self.__selector = DefaultSelector()
         else:
-            self.__selector_factory = selector_factory
+            self.__selector = selector_factory()
 
         self.__logger: logging.Logger = logger or logging.getLogger(__name__)
 
     def serve_forever(self) -> None:
-        self._check_not_closed()
+        if (socket := self.__socket) is None:
+            raise RuntimeError("Closed server")
         if self.running():
             raise RuntimeError("Server already running")
 
         logger: logging.Logger = self.__logger
-        request_executor: AbstractRequestExecutor | None = self.__request_executor
+        request_executor: AbstractRequestExecutor | None = None
+        if self.__request_executor_factory is not None:
+            request_executor = self.__request_executor_factory()
+            assert isinstance(request_executor, AbstractRequestExecutor)
+        selector: BaseSelector | None = self.__selector
+        if selector is None:
+            raise RuntimeError("server_forever() cannot be called twice")
 
-        try:
+        with ExitStack() as server_exit_stack:
+            server_exit_stack.callback(logger.info, "Server stopped")
+
             self.__is_shutdown.clear()
-            self.__loop = True
+            server_exit_stack.callback(self.__is_shutdown.set)
 
-            with self.__selector_factory() as selector:
-                selector_key = selector.register(self.__socket, EVENT_READ)
+            self.__looping = True
 
-                logger.info("Start serving at %s", self.__addr)
+            def _reset_values(self: AbstractUDPNetworkServer[Any, Any]) -> None:
+                self.__looping = False
+                self.__selector = None
 
-                while self.__loop:
-                    ready: int
-                    try:
-                        ready = selector.select(timeout=self.__poll_interval)[0][1]
-                    except IndexError:
-                        ready = 0
-                    if not self.__loop:
-                        break  # type: ignore[unreachable]
+            server_exit_stack.callback(_reset_values, self)
 
-                    if ready & EVENT_WRITE:
-                        self.__flush_unsent_datagrams()
-                    if ready & EVENT_READ:
-                        self.__receive_datagrams()
-                    self.__handle_received_datagrams()
+            if request_executor is not None:
+                server_exit_stack.callback(request_executor.shutdown)
 
-                    if request_executor is not None:
-                        request_executor.service_actions()
-                    self.service_actions()
+            selector_key = selector.register(socket, EVENT_READ)
+            logger.info("Start serving at %s", self.__addr)
 
-                    if self.__unsent_datagrams:
-                        if not (selector_key.events & EVENT_WRITE):
-                            selector_key = selector.modify(
-                                selector_key.fileobj,
-                                selector_key.events | EVENT_WRITE,
-                                selector_key.data,
-                            )
-                    elif selector_key.events & EVENT_WRITE:
+            # pull methods to local namespace
+            debug_log = logger.debug
+            select = selector.select
+            flush_unsent_datagrams = self.__flush_unsent_datagrams
+            handle_received_datagram = self.__handle_received_datagram
+            service_actions = self.service_actions
+
+            # Pull globals to local namespace
+            unsent_datagrams: deque[tuple[bytes, SocketAddress]] = self.__unsent_datagrams
+            poll_interval: float = self.__poll_interval
+            event_read_mask: int = EVENT_READ
+            event_write_mask: int = EVENT_WRITE
+
+            while self.__looping:
+                ready: int
+                try:
+                    ready = select(poll_interval)[0][1]
+                except IndexError:
+                    ready = 0
+                if not self.__looping:
+                    break  # type: ignore[unreachable]
+
+                if ready & event_write_mask:
+                    debug_log("socket is ready for writing")
+                    flush_unsent_datagrams()
+                if ready & event_read_mask:
+                    debug_log("socket is ready for reading")
+                    handle_received_datagram(request_executor)
+
+                service_actions()
+
+                if unsent_datagrams:
+                    if not (selector_key.events & event_write_mask):
                         selector_key = selector.modify(
                             selector_key.fileobj,
-                            selector_key.events & ~EVENT_WRITE,
+                            selector_key.events | event_write_mask,
                             selector_key.data,
                         )
+                elif selector_key.events & event_write_mask:
+                    selector_key = selector.modify(
+                        selector_key.fileobj,
+                        selector_key.events & ~event_write_mask,
+                        selector_key.data,
+                    )
 
-        finally:
-            if request_executor is not None:
-                try:
-                    request_executor.on_server_stop()
-                except Exception:
-                    pass
-            self.__loop = False
-            self.__is_shutdown.set()
-            logger.info("Server stopped")
+                if request_executor is not None:
+                    request_executor.service_actions()
 
     def server_close(self) -> None:
         if not self.__is_shutdown.is_set():
             raise RuntimeError("Cannot close running server. Use shutdown() first")
-        if self.__closed:
+        if (socket := self.__socket) is None:
             return
-        try:
-            self.__closed = True
-            self.__socket.close()
-            del self.__socket
-        finally:
-            if (request_executor := self.__request_executor) is not None:
-                request_executor.on_server_close()
+        if (selector := self.__selector) is not None:
+            self.__selector = None
+            selector.close()
+        self.__socket = None
+        socket.close()
 
     def service_actions(self) -> None:
         pass
 
     @final
     def is_closed(self) -> bool:
-        return self.__closed
+        return self.__socket is None
 
     @final
     def running(self) -> bool:
         return not self.__is_shutdown.is_set()
 
-    def __receive_datagrams(self) -> None:
+    def __handle_received_datagram(self, request_executor: AbstractRequestExecutor | None) -> None:
+        socket: _socket.socket | None = self.__socket
+        assert socket is not None
         logger: logging.Logger = self.__logger
-        socket: _socket.socket = self.__socket
-        recv_flags: int = self.__default_recv_flags
-        while True:
-            try:
-                data, sender = socket.recvfrom(MAX_DATAGRAM_BUFSIZE, recv_flags)
-            except (TimeoutError, BlockingIOError, InterruptedError):
-                return
-            sender = new_socket_address(sender, socket.family)
-            logger.debug("Received a datagram from %s", sender)
-            self.__received_datagrams.append((data, sender))
+        try:
+            datagram, client_address = socket.recvfrom(MAX_DATAGRAM_BUFSIZE, self.__default_recv_flags)
+        except (TimeoutError, BlockingIOError, InterruptedError):
+            return
+        client_address = new_socket_address(client_address, socket.family)
+        logger.debug("Received a datagram from %s", client_address)
 
-    def __handle_received_datagrams(self) -> None:
-        logger: logging.Logger = self.__logger
-        request_executor: AbstractRequestExecutor | None = self.__request_executor
-        for request, address in self.__iter_consumer():
-            logger.info("Processing request sent by %s", address)
-            try:
-                if request_executor is not None:
-                    request_executor.execute(self.__execute_request, request, address, pid=os.getpid())
-                else:
-                    self.__execute_request(request, address)
-            except Exception:
-                self.handle_error(address, _get_exception)
+        if not self.accept_request_from(client_address):
+            logger.warning("A client (address = %s) was not accepted by verification", client_address)
+            return
 
-    def __iter_consumer(self) -> Iterator[tuple[_RequestT, SocketAddress]]:
-        queue = self.__received_datagrams
-        build_packet_from_datagram = self.__protocol.build_packet_from_datagram
-        while queue:
-            data, sender = queue.popleft()
+        try:
+            request: _RequestT = self.__protocol.build_packet_from_datagram(datagram)
+        except DatagramProtocolParseError as exc:
+            logger.info("Malformed request sent by %s", client_address)
             try:
-                packet = build_packet_from_datagram(data)
-            except DatagramProtocolParseError as exc:
-                self.__logger.info("Malformed request sent by %s", sender)
-                try:
-                    self.bad_request(sender, exc.error_type, exc.message, exc.error_info)
-                except Exception:
-                    self.handle_error(sender, _get_exception)
+                self.bad_request(client_address, exc.error_type, exc.message, exc.error_info)
             except Exception:
-                self.handle_error(sender, _get_exception)
+                self.__request_handling_error(client_address)
+            return
+        except Exception:
+            self.__request_handling_error(client_address)
+            return
+        else:
+            del datagram
+
+        logger.info("Processing request sent by %s", client_address)
+        try:
+            if request_executor is not None:
+                request_executor.execute(self.__execute_request, request, client_address, os.getpid())
             else:
-                del data
-                yield packet, sender
+                self.__execute_request(request, client_address)
+        except Exception:
+            self.__request_handling_error(client_address)
 
     def __execute_request(self, request: _RequestT, client_address: SocketAddress, pid: int | None = None) -> None:
         in_subprocess: bool = pid is not None and pid != os.getpid()
         try:
             self.process_request(request, client_address)
         except Exception:
-            self.handle_error(client_address, _get_exception)
+            self.__request_handling_error(client_address)
             if in_subprocess:
                 raise
 
@@ -263,7 +267,11 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     def process_request(self, request: _RequestT, client_address: SocketAddress) -> None:
         raise NotImplementedError
 
-    def handle_error(self, client_address: SocketAddress, exc_info: Callable[[], BaseException | None]) -> None:
+    def __request_handling_error(self, client_address: SocketAddress) -> None:
+        self.__log_request_handling_error(client_address, _get_exception)
+        self.handle_error(client_address, _get_exception)
+
+    def __log_request_handling_error(self, client_address: SocketAddress, exc_info: Callable[[], BaseException | None]) -> None:
         exception = exc_info()
         if exception is None:
             return
@@ -277,41 +285,33 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         finally:
             del exception
 
+    def handle_error(self, client_address: SocketAddress, exc_info: Callable[[], BaseException | None]) -> None:
+        pass
+
     def shutdown(self) -> None:
-        self._check_not_closed()
-        self.__loop = False
+        if self.__socket is None:
+            raise RuntimeError("Closed server")
+        self.__looping = False
         self.__is_shutdown.wait()
 
     def send_packet(self, address: SocketAddress, packet: _ResponseT) -> None:
-        with self.__send_lock:
-            self._check_not_closed()
-            self.__packets_to_send.append((packet, address))
-            self.__logger.debug("Put 1 packet to queue for %s", address)
-            self.__send_datagrams()
-
-    def send_packets(self, address: SocketAddress, *packets: _ResponseT) -> None:
-        if not packets:
-            return
-        with self.__send_lock:
-            self._check_not_closed()
-            self.__packets_to_send.extend((packet, address) for packet in packets)
-            if (nb_packets := len(packets)) > 1:
-                self.__logger.debug("Put %d packets to queue for %s", nb_packets, address)
-            else:
-                self.__logger.debug("Put 1 packet to queue for %s", address)
-            self.__send_datagrams()
-
-    def __send_datagrams(self) -> None:
+        if (socket := self.__socket) is None:
+            raise RuntimeError("Closed server")
         logger: logging.Logger = self.__logger
-        socket = self.__socket
         unsent_datagrams = self.__unsent_datagrams
         flags: int = self.__default_send_flags
-        for response, address in self.__iter_producer():
+        try:
+            response: bytes = self.__protocol.make_datagram(packet)
+        except Exception:
+            self.__logger.exception("Failed to serialize response for %s", address)
+            return
+
+        with self.__transaction_lock:
             logger.info("A response will be sent to %s", address)
             if unsent_datagrams:
                 logger.debug("-> There is unsent datagrams, queue it.")
                 unsent_datagrams.append((response, address))
-                continue
+                return
             try:
                 socket.sendto(response, flags, address)
             except (TimeoutError, BlockingIOError, InterruptedError):
@@ -322,30 +322,20 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             else:
                 logger.debug("-> Datagram successfully sent.")
 
-    def __iter_producer(self) -> Iterator[tuple[bytes, SocketAddress]]:
-        queue = self.__packets_to_send
-        make_datagram = self.__protocol.make_datagram
-        while queue:
-            packet, address = queue.popleft()
-            try:
-                data = make_datagram(packet)
-            except Exception:
-                self.__logger.exception("Failed to serialize response for %s", address)
-            else:
-                yield data, address
-
     def __flush_unsent_datagrams(self) -> None:
+        socket: _socket.socket | None = self.__socket
+        assert socket is not None
         logger: logging.Logger = self.__logger
-        socket = self.__socket
         unsent_datagrams = self.__unsent_datagrams
         flags: int = self.__default_send_flags
-        with self.__send_lock:
+        with self.__transaction_lock:
             while unsent_datagrams:
-                response, address = unsent_datagrams[0]
+                response, address = unsent_datagrams.popleft()
                 logger.debug("Try to send saved datagram to %s", address)
                 try:
                     socket.sendto(response, flags, address)
                 except (TimeoutError, BlockingIOError, InterruptedError):
+                    unsent_datagrams.appendleft((response, address))
                     logger.debug("-> Failed to send datagram, bail out.")
                     return
                 except OSError:
@@ -353,45 +343,16 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                     return
                 else:
                     logger.debug("-> Datagram successfully sent.")
-                    del unsent_datagrams[0]
+
+    def accept_request_from(self, client_address: SocketAddress) -> bool:
+        return True
 
     def bad_request(self, client_address: SocketAddress, error_type: ParseErrorType, message: str, error_info: Any) -> None:
         pass
 
     @final
     def protocol(self) -> DatagramProtocol[_ResponseT, _RequestT]:
-        return self.__protocol_factory()
-
-    @overload
-    def getsockopt(self, __level: int, __optname: int, /) -> int:
-        ...
-
-    @overload
-    def getsockopt(self, __level: int, __optname: int, __buflen: int, /) -> bytes:
-        ...
-
-    @final
-    def getsockopt(self, *args: int) -> int | bytes:
-        self._check_not_closed()
-        return self.__socket.getsockopt(*args)
-
-    @overload
-    def setsockopt(self, __level: int, __optname: int, __value: int | bytes, /) -> None:
-        ...
-
-    @overload
-    def setsockopt(self, __level: int, __optname: int, __value: None, __optlen: int, /) -> None:
-        ...
-
-    @final
-    def setsockopt(self, *args: Any) -> None:
-        self._check_not_closed()
-        return self.__socket.setsockopt(*args)
-
-    @final
-    def _check_not_closed(self) -> None:
-        if self.__closed:
-            raise RuntimeError("Closed server")
+        return self.__protocol
 
     @property
     @final

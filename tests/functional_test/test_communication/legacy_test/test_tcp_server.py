@@ -5,13 +5,13 @@ from __future__ import annotations
 import os
 from threading import Thread
 from time import sleep
-from typing import Any, ClassVar, Generator
+from typing import Any, Callable, ClassVar, Generator
 
 from easynetwork.client import TCPNetworkClient
 from easynetwork.protocol import StreamProtocol
 from easynetwork.serializers import AbstractIncrementalPacketSerializer, PickleSerializer
 from easynetwork.server import AbstractTCPNetworkServer, ConnectedClient
-from easynetwork.server.executors import ForkingRequestExecutor, ThreadingRequestExecutor
+from easynetwork.server.executors import AbstractRequestExecutor, ForkingRequestExecutor, ThreadingRequestExecutor
 from easynetwork.tools.socket import SocketAddress
 
 import pytest
@@ -20,16 +20,28 @@ from ._utils import run_server_in_thread
 
 
 class _TestServer(AbstractTCPNetworkServer[Any, Any]):
+    def __init__(
+        self,
+        protocol: StreamProtocol[Any, Any],
+        *,
+        request_executor_factory: Callable[[], AbstractRequestExecutor] | None = None,
+    ) -> None:
+        super().__init__(("127.0.0.1", 0), protocol, request_executor_factory=request_executor_factory)
+        self.clients: set[ConnectedClient[Any]] = set()
+
+    def on_connection(self, client: ConnectedClient[Any]) -> None:
+        self.clients.add(client)
+
+    def on_disconnection(self, client: ConnectedClient[Any]) -> None:
+        self.clients.discard(client)
+
     def process_request(self, request: Any, client: ConnectedClient[Any]) -> None:
-        for c in filter(lambda c: c is not client, self.get_clients()):
+        for c in filter(lambda c: c is not client, list(self.clients)):
             c.send_packet(request)
 
 
-_RANDOM_HOST_PORT = ("localhost", 0)
-
-
 def test_serve_forever_default() -> None:
-    with _TestServer(_RANDOM_HOST_PORT, lambda: StreamProtocol(PickleSerializer())) as server:
+    with _TestServer(StreamProtocol(PickleSerializer())) as server:
         assert not server.running()
         t: Thread = Thread(target=server.serve_forever)
         t.start()
@@ -41,7 +53,7 @@ def test_serve_forever_default() -> None:
 
 
 def test_serve_forever_context_shut_down() -> None:
-    with _TestServer(_RANDOM_HOST_PORT, lambda: StreamProtocol(PickleSerializer())) as server:
+    with _TestServer(StreamProtocol(PickleSerializer())) as server:
         t: Thread = Thread(target=server.serve_forever)
         t.start()
         sleep(0.15)
@@ -57,23 +69,23 @@ class _TestServiceActionServer(_TestServer):
 
 
 def test_service_actions() -> None:
-    with _TestServiceActionServer(_RANDOM_HOST_PORT, lambda: StreamProtocol(PickleSerializer())) as server:
+    with _TestServiceActionServer(StreamProtocol(PickleSerializer())) as server:
         run_server_in_thread(server)
         sleep(0.3)
     assert getattr(server, "service_actions_called", False)
 
 
 def test_client_connection() -> None:
-    with _TestServer(_RANDOM_HOST_PORT, lambda: StreamProtocol(PickleSerializer())) as server:
+    with _TestServer(StreamProtocol(PickleSerializer())) as server:
         address = server.address.for_connection()
         run_server_in_thread(server)
         sleep(0.1)
-        assert len(server.get_clients()) == 0
+        assert len(server.clients) == 0
         with TCPNetworkClient[Any, Any](address, server.protocol()):
             sleep(0.3)
-            assert len(server.get_clients()) == 1
+            assert len(server.clients) == 1
         sleep(0.3)
-        assert len(server.get_clients()) == 0
+        assert len(server.clients) == 0
 
 
 class _TestWelcomeServer(_TestServer):
@@ -83,7 +95,7 @@ class _TestWelcomeServer(_TestServer):
 
 
 def test_welcome_connection() -> None:
-    with _TestWelcomeServer(_RANDOM_HOST_PORT, lambda: StreamProtocol(PickleSerializer()), backlog=1) as server:
+    with _TestWelcomeServer(StreamProtocol(PickleSerializer())) as server:
         address = server.address.for_connection()
         run_server_in_thread(server)
         with TCPNetworkClient[Any, Any](address, server.protocol()) as client:
@@ -91,7 +103,7 @@ def test_welcome_connection() -> None:
 
 
 def test_multiple_connections() -> None:
-    with _TestWelcomeServer(_RANDOM_HOST_PORT, lambda: StreamProtocol(PickleSerializer())) as server:
+    with _TestWelcomeServer(StreamProtocol(PickleSerializer())) as server:
         address = server.address.for_connection()
         run_server_in_thread(server)
         with (
@@ -102,8 +114,8 @@ def test_multiple_connections() -> None:
             assert client_1.recv_packet() == "Welcome !"
             assert client_2.recv_packet() == "Welcome !"
             assert client_3.recv_packet() == "Welcome !"
-            sleep(0.2)
-            assert len(server.get_clients()) == 3
+            sleep(0.5)
+            assert len(server.clients) == 3
 
 
 class _IntegerSerializer(AbstractIncrementalPacketSerializer[int, int]):
@@ -122,12 +134,7 @@ class _IntegerSerializer(AbstractIncrementalPacketSerializer[int, int]):
 
 
 def test_request_handling() -> None:
-    with _TestServer(
-        _RANDOM_HOST_PORT,
-        protocol_factory=lambda: StreamProtocol(_IntegerSerializer()),
-        buffered_write=True,
-        disable_nagle_algorithm=True,
-    ) as server:
+    with _TestServer(StreamProtocol(_IntegerSerializer())) as server:
         address = server.address.for_connection()
         run_server_in_thread(server)
         with (
@@ -135,7 +142,7 @@ def test_request_handling() -> None:
             TCPNetworkClient(address, protocol=StreamProtocol(_IntegerSerializer())) as client_2,
             TCPNetworkClient(address, protocol=StreamProtocol(_IntegerSerializer())) as client_3,
         ):
-            while len(server.get_clients()) < 3:
+            while len(server.clients) < 3:
                 sleep(0.1)
             client_1.send_packet(350)
             sleep(0.3)
@@ -166,7 +173,7 @@ def test_request_handling() -> None:
             assert list(client_3.iter_received_packets()) == [350, -634]
 
 
-class _TestThreadingServer(AbstractTCPNetworkServer[Any, Any]):
+class _TestThreadingServer(_TestServer):
     def process_request(self, request: Any, client: ConnectedClient[Any]) -> None:
         import threading
 
@@ -174,9 +181,7 @@ class _TestThreadingServer(AbstractTCPNetworkServer[Any, Any]):
 
 
 def test_threading_server() -> None:
-    with _TestThreadingServer(
-        _RANDOM_HOST_PORT, lambda: StreamProtocol(PickleSerializer()), request_executor=ThreadingRequestExecutor()
-    ) as server:
+    with _TestThreadingServer(StreamProtocol(PickleSerializer()), request_executor_factory=ThreadingRequestExecutor) as server:
         run_server_in_thread(server)
         with TCPNetworkClient[Any, Any](server.address.for_connection(), server.protocol()) as client:
             packet = {"data": 1}
@@ -186,7 +191,7 @@ def test_threading_server() -> None:
             assert response[1] is True
 
 
-class _TestForkingServer(AbstractTCPNetworkServer[Any, Any]):
+class _TestForkingServer(_TestServer):
     def process_request(self, request: Any, client: ConnectedClient[Any]) -> None:
         from os import getpid
 
@@ -200,12 +205,7 @@ class _TestForkingServer(AbstractTCPNetworkServer[Any, Any]):
 def test_forking_server(buffered_write: bool) -> None:
     from os import getpid
 
-    with _TestForkingServer(
-        _RANDOM_HOST_PORT,
-        lambda: StreamProtocol(PickleSerializer()),
-        buffered_write=buffered_write,
-        request_executor=ForkingRequestExecutor(),
-    ) as server:
+    with _TestForkingServer(StreamProtocol(PickleSerializer()), request_executor_factory=ForkingRequestExecutor) as server:
         run_server_in_thread(server)
         with TCPNetworkClient[Any, Any](server.address.for_connection(), server.protocol()) as client:
             for _ in range(2):

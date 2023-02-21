@@ -12,7 +12,7 @@ import concurrent.futures
 import itertools
 from typing import Callable, ParamSpec
 
-from .abc import AbstractRequestExecutor
+from .abc import AbstractRequestExecutor, RequestFuture
 
 _P = ParamSpec("_P")
 
@@ -38,11 +38,11 @@ class ThreadingRequestExecutor(AbstractRequestExecutor):
         )
         self.__block_on_close: bool = bool(block_on_close)
 
-    def execute(self, __request_handler: Callable[_P, None], /, *args: _P.args, **kwargs: _P.kwargs) -> None:
-        self.__pool.submit(__request_handler, *args, **kwargs)
+    def execute(self, __request_handler: Callable[_P, None], /, *args: _P.args, **kwargs: _P.kwargs) -> RequestFuture:
+        return RequestFuture(self.__pool.submit(__request_handler, *args, **kwargs))
 
-    def on_server_close(self) -> None:
+    def shutdown(self) -> None:
         try:
             self.__pool.shutdown(wait=self.__block_on_close, cancel_futures=False)
         finally:
-            super().on_server_close()
+            super().shutdown()
