@@ -168,7 +168,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
 
     def send_packet(self, packet: _SentPacketT) -> None:
         with self.__lock:
-            if (socket := self.__socket) is None:
+            if (socket := self.__socket) is None or self.__eof_reached:
                 raise OSError(errno.EPIPE, os.strerror(errno.EPIPE))
             producer = self.__producer
             with _restore_timeout_at_end(socket):

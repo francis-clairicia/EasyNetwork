@@ -723,6 +723,31 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_tcp_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_ERROR)
 
     @pytest.mark.usefixtures("setup_producer_mock")
+    def test____send_packet____raise_error_saved_in_SO_ERROR_option(
+        self,
+        client: TCPNetworkClient[Any, Any],
+        mock_tcp_socket: MagicMock,
+        mock_stream_data_producer: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        from errno import ECONNRESET
+        from socket import SO_ERROR, SOL_SOCKET
+
+        mock_tcp_socket.getsockopt.return_value = ECONNRESET
+
+        # Act
+        with pytest.raises(OSError) as exc_info:
+            client.send_packet(mocker.sentinel.packet)
+
+        # Assert
+        assert exc_info.value.errno == ECONNRESET
+        assert mock_tcp_socket.settimeout.mock_calls == [mocker.call(None), mocker.call(mocker.sentinel.default_timeout)]
+        mock_stream_data_producer.queue.assert_called_once_with(mocker.sentinel.packet)
+        mock_tcp_socket.sendall.assert_called_once_with(b"packet\n", mocker.sentinel.send_flags)
+        mock_tcp_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_ERROR)
+
+    @pytest.mark.usefixtures("setup_producer_mock")
     def test____send_packet____closed_client_error(
         self,
         client: TCPNetworkClient[Any, Any],

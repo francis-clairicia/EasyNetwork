@@ -16,8 +16,10 @@ from typing import Iterator
 def check_real_socket_state(socket: _socket.socket) -> None:
     """Verify socket saved error and raise OSError if there is one
 
-    There is some functions such as socket.send() which do not immediately fail and save the errno in SO_ERROR socket option
-    because the error spawn after the action was sent to the kernel (Something weird)
+    On Unix: There is some functions such as socket.send() which do not immediately fail and save the errno
+    in SO_ERROR socket option because the error spawn after the action was sent to the kernel (Something weird)
+
+    On Windows: (TODO) There is a similar system but actually this function does not handle it.
     """
     errno = socket.getsockopt(_socket.SOL_SOCKET, _socket.SO_ERROR)
     if errno > 0:

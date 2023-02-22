@@ -228,33 +228,22 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         with self.__lock:
             if (socket := self.__socket) is None:
                 raise OSError("Closed client")
-            flags = self.__default_recv_flags
-            family: int = socket.family
-            socket_recvfrom = socket.recvfrom
-            socket_settimeout = socket.settimeout
-            bufsize: int = MAX_DATAGRAM_BUFSIZE  # pull value to local namespace
-            convert_address = new_socket_address  # pull function to local namespace
-
             with _restore_timeout_at_end(socket):
-                socket_settimeout(timeout)
-                while True:
-                    try:
-                        data, sender = socket_recvfrom(bufsize, flags)
-                    except (TimeoutError, BlockingIOError) as exc:
-                        if timeout is None:  # pragma: no cover
-                            raise RuntimeError("socket.recvfrom() timed out with timeout=None ?") from exc
-                        break
-                    sender = convert_address(sender, family)
-                    try:
-                        return self.__protocol.build_packet_from_datagram(data), sender
-                    except DatagramProtocolParseError:
-                        raise
-                    except Exception as exc:  # pragma: no cover
-                        raise RuntimeError(str(exc)) from exc
-                    finally:
-                        del data
-                # Loop break
-                raise TimeoutError("recv_packet() timed out")
+                socket.settimeout(timeout)
+                try:
+                    data, sender = socket.recvfrom(MAX_DATAGRAM_BUFSIZE, self.__default_recv_flags)
+                except (TimeoutError, BlockingIOError) as exc:
+                    if timeout is None:  # pragma: no cover
+                        raise RuntimeError("socket.recvfrom() timed out with timeout=None ?") from exc
+                    raise TimeoutError("recv_packet() timed out") from None
+                try:
+                    return self.__protocol.build_packet_from_datagram(data), new_socket_address(sender, socket.family)
+                except DatagramProtocolParseError:
+                    raise
+                except Exception as exc:  # pragma: no cover
+                    raise RuntimeError(str(exc)) from exc
+                finally:
+                    del data
 
     def iter_received_packets_from(self, timeout: float | None = 0) -> Iterator[tuple[_ReceivedPacketT, SocketAddress]]:
         recv_packet_from = self.recv_packet_from
@@ -386,7 +375,8 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         return self.__endpoint.send_packet_to(packet, None)
 
     def recv_packet(self, timeout: float | None = None) -> _ReceivedPacketT:
-        return self.__endpoint.recv_packet_from(timeout=timeout)[0]
+        packet, _ = self.__endpoint.recv_packet_from(timeout=timeout)
+        return packet
 
     def iter_received_packets(self, timeout: float | None = 0) -> Iterator[_ReceivedPacketT]:
         return map(itemgetter(0), self.__endpoint.iter_received_packets_from(timeout=timeout))

@@ -58,6 +58,17 @@ class TestUDPNetworkClient:
         with pytest.raises(ConnectionRefusedError):
             client.send_packet("ABCDEF")
 
+    def test____send_packet____connection_refused____after_previous_successful_try(
+        self,
+        client: UDPNetworkClient[str, str],
+        server: Socket,
+    ) -> None:
+        client.send_packet("ABC")
+        assert server.recvfrom(1024) == (b"ABC", client.get_local_address())
+        server.close()
+        with pytest.raises(ConnectionRefusedError):
+            client.send_packet("DEF")
+
     def test____send_packet____closed_client(self, client: UDPNetworkClient[str, str]) -> None:
         client.close()
         with pytest.raises(ConnectionRefusedError):
@@ -103,10 +114,11 @@ class TestUDPNetworkClient:
         client: UDPNetworkClient[str, str],
         server: Socket,
     ) -> None:
-        # NOTE: This test works because the 2 sockets are in the same machine, but the datagrams can be received in any order.
         for p in [b"A", b"B", b"C", b"D", b"E", b"F"]:
             server.sendto(p, client.get_local_address())
-        assert list(client.iter_received_packets()) == ["A", "B", "C", "D", "E", "F"]
+
+        # NOTE: Comparison using set because equality check does not verify order
+        assert set(client.iter_received_packets()) == {"A", "B", "C", "D", "E", "F"}
 
     def test____fileno____consistency(self, client: UDPNetworkClient[str, str]) -> None:
         assert client.fileno() == client.socket.fileno()
@@ -232,6 +244,19 @@ class TestUDPNetworkEndpoint:
         with pytest.raises(ConnectionRefusedError):
             client.send_packet_to("ABCDEF", address)
 
+    @pytest.mark.parametrize("client", ["WITH_REMOTE"], indirect=True)
+    def test____send_packet____connection_refused____after_previous_successful_try(
+        self,
+        client: UDPNetworkEndpoint[str, str],
+        server: Socket,
+    ) -> None:
+        address = server.getsockname()
+        client.send_packet_to("ABC", address)
+        assert server.recvfrom(1024) == (b"ABC", client.get_local_address())
+        server.close()
+        with pytest.raises(ConnectionRefusedError):
+            client.send_packet_to("DEF", address)
+
     def test____send_packet_to____closed_client(self, client: UDPNetworkEndpoint[str, str], server: Socket) -> None:
         address = server.getsockname()
         client.close()
@@ -292,7 +317,7 @@ class TestUDPNetworkEndpoint:
         assert client.recv_packet_from(timeout=0.2) == ("ABCDEF", new_socket_address(server.getsockname(), socket_family))
 
     @pytest.mark.parametrize("client", ["WITH_REMOTE"], indirect=True)
-    def test____recv_packet____ignore_other_socket_packets(
+    def test____recv_packet_from____ignore_other_socket_packets(
         self,
         client: UDPNetworkEndpoint[str, str],
         udp_socket_factory: Callable[[], Socket],
@@ -318,17 +343,19 @@ class TestUDPNetworkEndpoint:
         socket_family: int,
         server: Socket,
     ) -> None:
-        # NOTE: This test works because the 2 sockets are in the same machine, but the datagrams can be received in any order.
+        server_address = new_socket_address(server.getsockname(), socket_family)
         for p in [b"A", b"B", b"C", b"D", b"E", b"F"]:
             server.sendto(p, client.get_local_address())
-        assert list(client.iter_received_packets_from()) == [
-            ("A", new_socket_address(server.getsockname(), socket_family)),
-            ("B", new_socket_address(server.getsockname(), socket_family)),
-            ("C", new_socket_address(server.getsockname(), socket_family)),
-            ("D", new_socket_address(server.getsockname(), socket_family)),
-            ("E", new_socket_address(server.getsockname(), socket_family)),
-            ("F", new_socket_address(server.getsockname(), socket_family)),
-        ]
+
+        # NOTE: Comparison using set because equality check does not verify order
+        assert set(client.iter_received_packets_from()) == {
+            ("A", server_address),
+            ("B", server_address),
+            ("C", server_address),
+            ("D", server_address),
+            ("E", server_address),
+            ("F", server_address),
+        }
 
     def test____fileno____consistency(self, client: UDPNetworkEndpoint[str, str]) -> None:
         assert client.fileno() == client.socket.fileno()

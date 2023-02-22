@@ -104,9 +104,9 @@ ignore_missing_imports = true
 minversion = "7.1.2"
 testpaths = ["tests"]
 markers = [
-    "slow: marks tests as slow",
-    "functional: marks tests as functional tests",
-    "serializer: marks serializers tests",
+  "slow: marks tests as slow",
+  "functional: marks tests as functional tests",
+  "serializer: marks serializers tests",
 ]
 
 [tool.coverage.run]

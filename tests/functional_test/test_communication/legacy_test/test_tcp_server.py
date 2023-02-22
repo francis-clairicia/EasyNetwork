@@ -82,7 +82,8 @@ def test_client_connection() -> None:
         sleep(0.1)
         assert len(server.clients) == 0
         with TCPNetworkClient[Any, Any](address, server.protocol()):
-            sleep(0.3)
+            while not server.clients:
+                sleep(0.1)
             assert len(server.clients) == 1
         sleep(0.3)
         assert len(server.clients) == 0
@@ -114,7 +115,8 @@ def test_multiple_connections() -> None:
             assert client_1.recv_packet() == "Welcome !"
             assert client_2.recv_packet() == "Welcome !"
             assert client_3.recv_packet() == "Welcome !"
-            sleep(0.5)
+            while len(server.clients) < 3:
+                sleep(0.1)
             assert len(server.clients) == 3
 
 

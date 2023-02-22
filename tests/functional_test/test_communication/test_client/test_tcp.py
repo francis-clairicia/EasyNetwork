@@ -69,10 +69,36 @@ class TestTCPNetworkClient:
         client.send_packet("ABCDEF")
         assert server.recv(1024) == b"ABCDEF\n"
 
-    def test____send_packet____broken_pipe(self, client: TCPNetworkClient[str, str], server: Socket) -> None:
+    def test____send_packet____connection_error____fresh_connection_closed_by_server(
+        self,
+        client: TCPNetworkClient[str, str],
+        server: Socket,
+    ) -> None:
         server.close()
-        with pytest.raises(BrokenPipeError):
+        with pytest.raises(ConnectionError):
             client.send_packet("ABCDEF")
+
+    def test____send_packet____connection_error____after_previous_successful_try(
+        self,
+        client: TCPNetworkClient[str, str],
+        server: Socket,
+    ) -> None:
+        client.send_packet("ABCDEF")
+        assert server.recv(1024) == b"ABCDEF\n"
+        server.close()
+        with pytest.raises(ConnectionError):
+            client.send_packet("ABCDEF")
+
+    def test____send_packet____connection_error____partial_read_then_close(
+        self,
+        client: TCPNetworkClient[str, str],
+        server: Socket,
+    ) -> None:
+        client.send_packet("ABC")
+        assert server.recv(1) == b"A"
+        server.close()
+        with pytest.raises(ConnectionError):
+            client.send_packet("DEF")
 
     def test____send_packet____closed_client(self, client: TCPNetworkClient[str, str]) -> None:
         client.close()
