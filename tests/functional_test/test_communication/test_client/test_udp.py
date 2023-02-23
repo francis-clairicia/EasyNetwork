@@ -5,6 +5,7 @@ from __future__ import annotations
 from socket import AF_INET, socket as Socket
 from typing import Any, Callable, Iterator
 
+from easynetwork.client.exceptions import ClientClosedError
 from easynetwork.client.udp import UDPNetworkClient, UDPNetworkEndpoint
 from easynetwork.protocol import DatagramProtocol, DatagramProtocolParseError
 from easynetwork.tools.socket import IPv4SocketAddress, IPv6SocketAddress, new_socket_address
@@ -73,7 +74,7 @@ class TestUDPNetworkClient:
 
     def test____send_packet____closed_client(self, client: UDPNetworkClient[str, str]) -> None:
         client.close()
-        with pytest.raises(ConnectionRefusedError):
+        with pytest.raises(ClientClosedError):
             client.send_packet("ABCDEF")
 
     def test____recv_packet____default(self, client: UDPNetworkClient[str, str], server: Socket) -> None:
@@ -264,12 +265,7 @@ class TestUDPNetworkEndpoint:
     def test____send_packet_to____closed_client(self, client: UDPNetworkEndpoint[str, str], server: Socket) -> None:
         address = server.getsockname()
         client.close()
-        expected_error = (
-            pytest.raises(OSError, match=r"^Closed client$")
-            if client.get_remote_address() is None
-            else pytest.raises(ConnectionRefusedError)
-        )
-        with expected_error:
+        with pytest.raises(ClientClosedError):
             client.send_packet_to("ABCDEF", address)
 
     @pytest.mark.parametrize("client", ["WITHOUT_REMOTE"], indirect=True)

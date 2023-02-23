@@ -6,6 +6,7 @@ import time
 from socket import AF_INET, socket as Socket
 from typing import Any, Callable, Iterator
 
+from easynetwork.client.exceptions import ClientClosedError
 from easynetwork.client.tcp import TCPNetworkClient
 from easynetwork.protocol import StreamProtocol, StreamProtocolParseError
 from easynetwork.tools.socket import IPv4SocketAddress, IPv6SocketAddress
@@ -104,7 +105,7 @@ class TestTCPNetworkClient:
 
     def test____send_packet____closed_client(self, client: TCPNetworkClient[str, str]) -> None:
         client.close()
-        with pytest.raises(BrokenPipeError):
+        with pytest.raises(ClientClosedError):
             client.send_packet("ABCDEF")
 
     def test____recv_packet____default(self, client: TCPNetworkClient[str, str], server: Socket) -> None:
@@ -172,12 +173,12 @@ class TestTCPNetworkClient:
 
     def test____recv_packet____eof(self, client: TCPNetworkClient[str, str], server: Socket) -> None:
         server.close()
-        with pytest.raises(EOFError):
+        with pytest.raises(ConnectionAbortedError):
             client.recv_packet()
 
-    def test____recv_packet____client_close_considered_as_eof(self, client: TCPNetworkClient[str, str]) -> None:
+    def test____recv_packet____client_close_error(self, client: TCPNetworkClient[str, str]) -> None:
         client.close()
-        with pytest.raises(EOFError):
+        with pytest.raises(ClientClosedError):
             client.recv_packet()
 
     def test____recv_packet____invalid_data(self, client: TCPNetworkClient[str, str], server: Socket) -> None:
@@ -186,13 +187,22 @@ class TestTCPNetworkClient:
             client.recv_packet()
         assert client.recv_packet() == "valid"
 
-    def test____iter_received_packets____yields_available_packets(
+    def test____iter_received_packets____yields_available_packets_until_timeout(
         self,
         client: TCPNetworkClient[str, str],
         server: Socket,
     ) -> None:
         server.sendall(b"A\nB\nC\nD\nE\nF\n")
         assert list(client.iter_received_packets()) == ["A", "B", "C", "D", "E", "F"]
+
+    def test____iter_received_packets____yields_available_packets_until_eof(
+        self,
+        client: TCPNetworkClient[str, str],
+        server: Socket,
+    ) -> None:
+        server.sendall(b"A\nB\nC\nD\nE\nF")
+        server.close()
+        assert list(client.iter_received_packets(timeout=None)) == ["A", "B", "C", "D", "E"]
 
     def test____fileno____consistency(self, client: TCPNetworkClient[str, str]) -> None:
         assert client.fileno() == client.socket.fileno()

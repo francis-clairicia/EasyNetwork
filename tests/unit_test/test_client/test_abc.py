@@ -70,11 +70,12 @@ class TestAbstractNetworkClient:
         # Act
         packets = list(client.iter_received_packets(timeout=123456789))
 
+        # Assert
         assert mock_recv_packet.mock_calls == [mocker.call(123456789) for _ in range(4)]
         assert packets == [mocker.sentinel.packet_a, mocker.sentinel.packet_b, mocker.sentinel.packet_c]
 
     @pytest.mark.parametrize("timeout", [123456789, None])
-    @pytest.mark.parametrize("error", [OSError, EOFError])
+    @pytest.mark.parametrize("error", [OSError])
     def test____iter_received_packets____with_given_timeout_stop_if_an_error_occurs(
         self,
         timeout: int | None,
@@ -95,5 +96,6 @@ class TestAbstractNetworkClient:
         # Act
         packets = list(client.iter_received_packets(timeout=timeout))
 
+        # Assert
         assert mock_recv_packet.mock_calls == [mocker.call(timeout) for _ in range(2)]
         assert packets == [mocker.sentinel.packet_a]

@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from collections import deque
 from socket import AF_INET6
 from typing import TYPE_CHECKING, Any
 
+from easynetwork.client.exceptions import ClientClosedError
 from easynetwork.client.tcp import TCPNetworkClient
 from easynetwork.tools.socket import MAX_STREAM_BUFSIZE, IPv4SocketAddress, IPv6SocketAddress
 
@@ -25,6 +25,11 @@ def setup_dummy_lock(module_mocker: MockerFixture, dummy_lock_cls: Any) -> None:
 
 
 class TestTCPNetworkClient(BaseTestClient):
+    @pytest.fixture
+    @staticmethod
+    def mock_stream_data_producer() -> MagicMock:
+        pytest.fail("StreamDataProducer is not used")
+
     @pytest.fixture(scope="class", params=["AF_INET", "AF_INET6"])
     @staticmethod
     def socket_family(request: Any) -> Any:
@@ -51,11 +56,6 @@ class TestTCPNetworkClient(BaseTestClient):
     @staticmethod
     def mock_socket_proxy_cls(mocker: MockerFixture, mock_tcp_socket: MagicMock) -> MagicMock:
         return mocker.patch(f"{TCPNetworkClient.__module__}.SocketProxy", return_value=mock_tcp_socket)
-
-    @pytest.fixture(autouse=True)
-    @staticmethod
-    def mock_stream_data_producer_cls(mocker: MockerFixture, mock_stream_data_producer: MagicMock) -> MagicMock:
-        return mocker.patch(f"{TCPNetworkClient.__module__}.StreamDataProducer", return_value=mock_stream_data_producer)
 
     @pytest.fixture(autouse=True)
     @staticmethod
@@ -97,23 +97,10 @@ class TestTCPNetworkClient(BaseTestClient):
 
     @pytest.fixture  # DO NOT set autouse=True
     @staticmethod
-    def setup_producer_mock(mock_stream_data_producer: MagicMock) -> None:
-        bytes_queue: deque[bytes] = deque()
-
-        def queue_side_effect(*packets: Any) -> None:
-            nonlocal bytes_queue
-            bytes_queue.extend(str(p).encode("ascii").removeprefix(b"sentinel.") + b"\n" for p in packets)
-
-        def next_side_effect() -> bytes:
-            nonlocal bytes_queue
-            try:
-                return bytes_queue.popleft()
-            except IndexError:
-                raise StopIteration from None
-
-        mock_stream_data_producer.queue.side_effect = queue_side_effect
-        mock_stream_data_producer.__iter__.side_effect = lambda: mock_stream_data_producer
-        mock_stream_data_producer.__next__.side_effect = next_side_effect
+    def setup_producer_mock(mock_stream_protocol: MagicMock) -> None:
+        mock_stream_protocol.generate_chunks.side_effect = lambda packet: iter(
+            [str(packet).encode("ascii").removeprefix(b"sentinel.") + b"\n"]
+        )
 
     @pytest.fixture  # DO NOT set autouse=True
     @staticmethod
@@ -214,7 +201,6 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_tcp_socket: MagicMock,
         mock_socket_create_connection: MagicMock,
         mock_socket_proxy_cls: MagicMock,
-        mock_stream_data_producer_cls: MagicMock,
         mock_stream_data_consumer_cls: MagicMock,
         mock_stream_protocol: MagicMock,
         mocker: MockerFixture,
@@ -233,7 +219,6 @@ class TestTCPNetworkClient(BaseTestClient):
         )
 
         # Assert
-        mock_stream_data_producer_cls.assert_called_once_with(mock_stream_protocol)
         mock_stream_data_consumer_cls.assert_called_once_with(mock_stream_protocol)
         mock_socket_create_connection.assert_called_once_with(
             remote_address,
@@ -254,7 +239,6 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_tcp_socket: MagicMock,
         mock_socket_create_connection: MagicMock,
         mock_socket_proxy_cls: MagicMock,
-        mock_stream_data_producer_cls: MagicMock,
         mock_stream_data_consumer_cls: MagicMock,
         mock_stream_protocol: MagicMock,
         mocker: MockerFixture,
@@ -272,7 +256,6 @@ class TestTCPNetworkClient(BaseTestClient):
         )
 
         # Assert
-        mock_stream_data_producer_cls.assert_called_once_with(mock_stream_protocol)
         mock_stream_data_consumer_cls.assert_called_once_with(mock_stream_protocol)
         mock_socket_create_connection.assert_not_called()
         mock_socket_proxy_cls.assert_called_once_with(mock_tcp_socket, lock=mocker.ANY)
@@ -289,7 +272,6 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_udp_socket: MagicMock,
         mock_socket_create_connection: MagicMock,
         mock_socket_proxy_cls: MagicMock,
-        mock_stream_data_producer_cls: MagicMock,
         mock_stream_data_consumer_cls: MagicMock,
         mock_stream_protocol: MagicMock,
         mocker: MockerFixture,
@@ -307,7 +289,6 @@ class TestTCPNetworkClient(BaseTestClient):
             )
 
         # Assert
-        mock_stream_data_producer_cls.assert_not_called()
         mock_stream_data_consumer_cls.assert_not_called()
         mock_socket_create_connection.assert_not_called()
         mock_socket_proxy_cls.assert_not_called()
@@ -326,7 +307,6 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_tcp_socket: MagicMock,
         mock_socket_create_connection: MagicMock,
         mock_socket_proxy_cls: MagicMock,
-        mock_stream_data_producer_cls: MagicMock,
         mock_stream_data_consumer_cls: MagicMock,
         mock_stream_protocol: MagicMock,
         mocker: MockerFixture,
@@ -346,7 +326,6 @@ class TestTCPNetworkClient(BaseTestClient):
 
         # Assert
         assert exc_info.value is enotconn_exception
-        mock_stream_data_producer_cls.assert_not_called()
         mock_stream_data_consumer_cls.assert_not_called()
         mock_socket_create_connection.assert_not_called()
         mock_socket_proxy_cls.assert_not_called()
@@ -363,7 +342,6 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_tcp_socket: MagicMock,
         mock_socket_create_connection: MagicMock,
         mock_socket_proxy_cls: MagicMock,
-        mock_stream_data_producer_cls: MagicMock,
         mock_stream_data_consumer_cls: MagicMock,
         mock_stream_protocol: MagicMock,
         mocker: MockerFixture,
@@ -380,7 +358,6 @@ class TestTCPNetworkClient(BaseTestClient):
             )
 
         # Assert
-        mock_stream_data_producer_cls.assert_not_called()
         mock_stream_data_consumer_cls.assert_not_called()
         mock_socket_create_connection.assert_not_called()
         mock_socket_proxy_cls.assert_not_called()
@@ -427,7 +404,6 @@ class TestTCPNetworkClient(BaseTestClient):
         remote_address: tuple[str, int],
         mock_tcp_socket: MagicMock,
         mock_stream_protocol: MagicMock,
-        mock_stream_data_producer_cls: MagicMock,
         mock_stream_data_consumer_cls: MagicMock,
         mock_socket_proxy_cls: MagicMock,
     ) -> None:
@@ -450,7 +426,6 @@ class TestTCPNetworkClient(BaseTestClient):
                 )
 
         # Assert
-        mock_stream_data_producer_cls.assert_not_called()
         mock_stream_data_consumer_cls.assert_not_called()
         mock_socket_proxy_cls.assert_not_called()
         mock_tcp_socket.getsockname.assert_not_called()
@@ -484,7 +459,6 @@ class TestTCPNetworkClient(BaseTestClient):
         max_recv_size: Any,
         mock_tcp_socket: MagicMock,
         mock_stream_protocol: MagicMock,
-        mock_stream_data_producer_cls: MagicMock,
         mock_stream_data_consumer_cls: MagicMock,
         mock_socket_proxy_cls: MagicMock,
     ) -> None:
@@ -500,7 +474,6 @@ class TestTCPNetworkClient(BaseTestClient):
             )
 
         # Assert
-        mock_stream_data_producer_cls.assert_not_called()
         mock_stream_data_consumer_cls.assert_not_called()
         mock_socket_proxy_cls.assert_not_called()
         mock_tcp_socket.getsockname.assert_not_called()
@@ -707,7 +680,7 @@ class TestTCPNetworkClient(BaseTestClient):
         self,
         client: TCPNetworkClient[Any, Any],
         mock_tcp_socket: MagicMock,
-        mock_stream_data_producer: MagicMock,
+        mock_stream_protocol: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -718,7 +691,7 @@ class TestTCPNetworkClient(BaseTestClient):
 
         # Assert
         assert mock_tcp_socket.settimeout.mock_calls == [mocker.call(None), mocker.call(mocker.sentinel.default_timeout)]
-        mock_stream_data_producer.queue.assert_called_once_with(mocker.sentinel.packet)
+        mock_stream_protocol.generate_chunks.assert_called_once_with(mocker.sentinel.packet)
         mock_tcp_socket.sendall.assert_called_once_with(b"packet\n", mocker.sentinel.send_flags)
         mock_tcp_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_ERROR)
 
@@ -727,7 +700,7 @@ class TestTCPNetworkClient(BaseTestClient):
         self,
         client: TCPNetworkClient[Any, Any],
         mock_tcp_socket: MagicMock,
-        mock_stream_data_producer: MagicMock,
+        mock_stream_protocol: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -743,7 +716,7 @@ class TestTCPNetworkClient(BaseTestClient):
         # Assert
         assert exc_info.value.errno == ECONNRESET
         assert mock_tcp_socket.settimeout.mock_calls == [mocker.call(None), mocker.call(mocker.sentinel.default_timeout)]
-        mock_stream_data_producer.queue.assert_called_once_with(mocker.sentinel.packet)
+        mock_stream_protocol.generate_chunks.assert_called_once_with(mocker.sentinel.packet)
         mock_tcp_socket.sendall.assert_called_once_with(b"packet\n", mocker.sentinel.send_flags)
         mock_tcp_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_ERROR)
 
@@ -752,7 +725,7 @@ class TestTCPNetworkClient(BaseTestClient):
         self,
         client: TCPNetworkClient[Any, Any],
         mock_tcp_socket: MagicMock,
-        mock_stream_data_producer: MagicMock,
+        mock_stream_protocol: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -760,12 +733,12 @@ class TestTCPNetworkClient(BaseTestClient):
         assert client.is_closed()
 
         # Act
-        with pytest.raises(BrokenPipeError):
+        with pytest.raises(ClientClosedError):
             client.send_packet(mocker.sentinel.packet)
 
         # Assert
         mock_tcp_socket.settimeout.assert_not_called()
-        mock_stream_data_producer.queue.assert_not_called()
+        mock_stream_protocol.generate_chunks.assert_not_called()
         mock_tcp_socket.sendall.assert_not_called()
         mock_tcp_socket.getsockopt.assert_not_called()
 
@@ -888,7 +861,7 @@ class TestTCPNetworkClient(BaseTestClient):
         assert packet_2 is mocker.sentinel.packet_2
 
     @pytest.mark.usefixtures("setup_consumer_mock")
-    def test____recv_packet____blocking_or_not____eof_error(
+    def test____recv_packet____blocking_or_not____eof_error____default(
         self,
         client: TCPNetworkClient[Any, Any],
         recv_timeout: int | None,
@@ -900,7 +873,7 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_tcp_socket.recv.side_effect = [b""]
 
         # Act
-        with pytest.raises(EOFError, match=r"^Closed connection$"):
+        with pytest.raises(ConnectionAbortedError):
             _ = client.recv_packet(timeout=recv_timeout)
 
         # Assert
@@ -948,7 +921,7 @@ class TestTCPNetworkClient(BaseTestClient):
         assert client.is_closed()
 
         # Act
-        with pytest.raises(EOFError, match=r"^Closed connection$"):
+        with pytest.raises(ClientClosedError):
             _ = client.recv_packet(timeout=recv_timeout)
 
         # Assert
@@ -1193,3 +1166,51 @@ class TestTCPNetworkClient(BaseTestClient):
         # Assert
         mock_stream_data_consumer.get_unconsumed_data.assert_called_once_with()
         assert data is mocker.sentinel.data
+
+    @pytest.mark.usefixtures("setup_producer_mock", "setup_consumer_mock")
+    def test____special_case____send_packet____eof_error____do_not_try_socket_send(
+        self,
+        client: TCPNetworkClient[Any, Any],
+        mock_tcp_socket: MagicMock,
+        mock_stream_protocol: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_tcp_socket.recv.side_effect = [b""]
+        with pytest.raises(ConnectionAbortedError):
+            _ = client.recv_packet()
+
+        mock_tcp_socket.recv.reset_mock()
+        mock_tcp_socket.settimeout.reset_mock()
+
+        # Act
+        with pytest.raises(ConnectionAbortedError):
+            client.send_packet(mocker.sentinel.packet)
+
+        # Assert
+        mock_stream_protocol.generate_chunks.assert_not_called()
+        mock_tcp_socket.settimeout.assert_not_called()
+        mock_tcp_socket.sendall.assert_not_called()
+
+    @pytest.mark.usefixtures("setup_consumer_mock")
+    def test____special_case____recv_packet____blocking_or_not____eof_error____do_not_try_socket_recv_on_next_call(
+        self,
+        client: TCPNetworkClient[Any, Any],
+        recv_timeout: int | None,
+        mock_tcp_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_tcp_socket.recv.side_effect = [b""]
+        with pytest.raises(ConnectionAbortedError):
+            _ = client.recv_packet(timeout=recv_timeout)
+
+        mock_tcp_socket.recv.reset_mock()
+        mock_tcp_socket.settimeout.reset_mock()
+
+        # Act
+        with pytest.raises(ConnectionAbortedError):
+            _ = client.recv_packet(timeout=recv_timeout)
+
+        # Assert
+        mock_tcp_socket.recv.assert_not_called()
+        mock_tcp_socket.settimeout.assert_not_called()

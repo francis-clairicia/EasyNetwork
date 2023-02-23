@@ -8,8 +8,6 @@ from __future__ import annotations
 
 __all__ = ["UDPNetworkClient", "UDPNetworkEndpoint"]
 
-import errno
-import os
 import socket as _socket
 from operator import itemgetter
 from threading import Lock
@@ -19,6 +17,7 @@ from ..protocol import DatagramProtocol, DatagramProtocolParseError
 from ..tools._utils import check_real_socket_state as _check_real_socket_state, restore_timeout_at_end as _restore_timeout_at_end
 from ..tools.socket import MAX_DATAGRAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
 from .abc import AbstractNetworkClient
+from .exceptions import ClientClosedError
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -204,9 +203,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
     ) -> None:
         with self.__lock:
             if (socket := self.__socket) is None:
-                if self.__peer is not None:
-                    raise OSError(errno.ECONNREFUSED, os.strerror(errno.ECONNREFUSED))
-                raise OSError("Closed client")
+                raise ClientClosedError("Closed client")
             if (remote_addr := self.__peer) is not None:
                 if address is not None:
                     if new_socket_address(address, socket.family) != remote_addr:
@@ -227,7 +224,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
     def recv_packet_from(self, timeout: float | None = None) -> tuple[_ReceivedPacketT, SocketAddress]:
         with self.__lock:
             if (socket := self.__socket) is None:
-                raise OSError("Closed client")
+                raise ClientClosedError("Closed client")
             with _restore_timeout_at_end(socket):
                 socket.settimeout(timeout)
                 try:

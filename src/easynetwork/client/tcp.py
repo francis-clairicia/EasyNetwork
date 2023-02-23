@@ -13,13 +13,14 @@ import os
 import socket as _socket
 from threading import Lock
 from time import monotonic as _time_monotonic
-from typing import Any, Generic, TypeVar, final, overload
+from typing import Any, Callable, Generic, Iterator, TypeVar, final, overload
 
 from ..protocol import StreamProtocol, StreamProtocolParseError
 from ..tools._utils import check_real_socket_state as _check_real_socket_state, restore_timeout_at_end as _restore_timeout_at_end
 from ..tools.socket import MAX_STREAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
-from ..tools.stream import StreamDataConsumer, StreamDataProducer
+from ..tools.stream import StreamDataConsumer
 from .abc import AbstractNetworkClient
+from .exceptions import ClientClosedError
 
 _ReceivedPacketT = TypeVar("_ReceivedPacketT")
 _SentPacketT = TypeVar("_SentPacketT")
@@ -114,7 +115,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
 
             self.__addr: SocketAddress = new_socket_address(socket.getsockname(), socket.family)
             self.__peer: SocketAddress = new_socket_address(socket.getpeername(), socket.family)
-            self.__producer: StreamDataProducer[_SentPacketT] = StreamDataProducer(protocol)
+            self.__producer: Callable[[_SentPacketT], Iterator[bytes]] = protocol.generate_chunks
             self.__consumer: StreamDataConsumer[_ReceivedPacketT] = StreamDataConsumer(protocol)
             self.__socket_proxy = SocketProxy(socket, lock=self.__lock)
             self.__eof_reached: bool = False
@@ -154,7 +155,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         with self.__lock:
             if (socket := self.__socket) is None:
                 return
-            self.__eof_reached = True
             self.__socket = None
             if not self.__owner:
                 return
@@ -168,13 +168,13 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
 
     def send_packet(self, packet: _SentPacketT) -> None:
         with self.__lock:
-            if (socket := self.__socket) is None or self.__eof_reached:
-                raise OSError(errno.EPIPE, os.strerror(errno.EPIPE))
-            producer = self.__producer
+            if (socket := self.__socket) is None:
+                raise ClientClosedError("Closed client")
+            if self.__eof_reached:
+                raise OSError(errno.ECONNABORTED, os.strerror(errno.ECONNABORTED))
             with _restore_timeout_at_end(socket):
                 socket.settimeout(None)
-                producer.queue(packet)
-                socket.sendall(b"".join(list(producer)), self.__default_send_flags)
+                socket.sendall(b"".join(list(self.__producer(packet))), self.__default_send_flags)
                 _check_real_socket_state(socket)
 
     def recv_packet(self, timeout: float | None = None) -> _ReceivedPacketT:
@@ -185,21 +185,20 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 return next_packet(consumer)  # If there is enough data from last call to create a packet, return immediately
             except StopIteration:
                 pass
-            if (socket := self.__socket) is None or self.__eof_reached:  # Do not need to call socket.recv()
-                raise EOFError("Closed connection")
+            if (socket := self.__socket) is None:
+                raise ClientClosedError("Closed client")
+            if self.__eof_reached:  # Do not need to call socket.recv()
+                raise OSError(errno.ECONNABORTED, os.strerror(errno.ECONNABORTED))
             flags = self.__default_recv_flags
-            socket_recv = socket.recv
-            socket_settimeout = socket.settimeout
-            consumer_feed = consumer.feed
             bufsize: int = self.__max_recv_bufsize
             monotonic = _time_monotonic  # pull function to local namespace
 
             with _restore_timeout_at_end(socket):
-                socket_settimeout(timeout)
+                socket.settimeout(timeout)
                 while True:
                     try:
                         _start = monotonic()
-                        chunk: bytes = socket_recv(bufsize, flags)
+                        chunk: bytes = socket.recv(bufsize, flags)
                         _end = monotonic()
                     except (TimeoutError, BlockingIOError) as exc:
                         if timeout is None:  # pragma: no cover
@@ -207,8 +206,8 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                         break
                     if not chunk:
                         self.__eof_reached = True
-                        raise EOFError("Closed connection")
-                    consumer_feed(chunk)
+                        raise OSError(errno.ECONNABORTED, os.strerror(errno.ECONNABORTED))
+                    consumer.feed(chunk)
                     try:
                         return next_packet(consumer)
                     except StopIteration:
@@ -217,7 +216,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                                 timeout -= _end - _start
                                 if timeout < 0:  # pragma: no cover
                                     timeout = 0
-                                socket_settimeout(timeout)
+                                socket.settimeout(timeout)
                             elif len(chunk) < bufsize:
                                 break
                         continue

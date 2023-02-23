@@ -5,6 +5,7 @@ from __future__ import annotations
 from socket import AF_INET6, SOCK_DGRAM
 from typing import TYPE_CHECKING, Any
 
+from easynetwork.client.exceptions import ClientClosedError
 from easynetwork.client.udp import UDPNetworkClient, UDPNetworkEndpoint
 from easynetwork.tools.socket import MAX_DATAGRAM_BUFSIZE, IPv4SocketAddress, IPv6SocketAddress
 
@@ -682,14 +683,9 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         # Arrange
         client.close()
         assert client.is_closed()
-        expected_error = (
-            pytest.raises(OSError, match=r"^Closed client$")
-            if client.get_remote_address() is None
-            else pytest.raises(ConnectionRefusedError)
-        )
 
         # Act
-        with expected_error:
+        with pytest.raises(ClientClosedError):
             client.send_packet_to(mocker.sentinel.packet, remote_address)
 
         # Assert

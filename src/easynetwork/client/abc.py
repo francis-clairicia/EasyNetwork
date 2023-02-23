@@ -64,7 +64,7 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
         while True:
             try:
                 packet = recv_packet(timeout)
-            except (EOFError, OSError):
+            except OSError:
                 return
             yield packet
 
