@@ -149,22 +149,20 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         with self.__lock:
             return self.__socket is None
 
-    def close(self, *, shutdown: int | None = -1) -> None:
-        if shutdown is not None and shutdown == -1:
-            shutdown = _socket.SHUT_WR
+    def close(self) -> None:
         with self.__lock:
             if (socket := self.__socket) is None:
                 return
             self.__socket = None
             if not self.__owner:
                 return
-            try:
-                if shutdown is not None:
-                    socket.shutdown(shutdown)
-            except OSError:
-                pass
-            finally:
-                socket.close()
+            socket.close()
+
+    def shutdown(self, how: int) -> None:
+        with self.__lock:
+            if (socket := self.__socket) is None:
+                raise ClientClosedError("Closed client")
+            socket.shutdown(how)
 
     def send_packet(self, packet: _SentPacketT) -> None:
         with self.__lock:
