@@ -69,6 +69,7 @@ class TestTCPNetworkClient:
         client.send_packet("ABCDEF")
         assert server.recv(1024) == b"ABCDEF\n"
 
+    @pytest.mark.skip_platform_win32  # Windows raise ConnectionAbortedError but in the 2nd send() call
     def test____send_packet____connection_error____fresh_connection_closed_by_server(
         self,
         client: TCPNetworkClient[str, str],
@@ -78,6 +79,7 @@ class TestTCPNetworkClient:
         with pytest.raises(ConnectionError):
             client.send_packet("ABCDEF")
 
+    @pytest.mark.skip_platform_win32  # Windows raise ConnectionAbortedError but in the 2nd send() call
     def test____send_packet____connection_error____after_previous_successful_try(
         self,
         client: TCPNetworkClient[str, str],

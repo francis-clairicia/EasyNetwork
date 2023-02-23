@@ -53,11 +53,13 @@ class TestUDPNetworkClient:
         client.send_packet("ABCDEF")
         assert server.recvfrom(1024) == (b"ABCDEF", client.get_local_address())
 
+    @pytest.mark.skip_platform_win32  # Windows does not raise errors
     def test____send_packet____connection_refused(self, client: UDPNetworkClient[str, str], server: Socket) -> None:
         server.close()
         with pytest.raises(ConnectionRefusedError):
             client.send_packet("ABCDEF")
 
+    @pytest.mark.skip_platform_win32  # Windows does not raise errors
     def test____send_packet____connection_refused____after_previous_successful_try(
         self,
         client: UDPNetworkClient[str, str],
@@ -237,6 +239,7 @@ class TestUDPNetworkEndpoint:
             with pytest.raises(ValueError):
                 client.send_packet_to("ABCDEF", other_client_address)
 
+    @pytest.mark.skip_platform_win32  # Windows does not raise errors
     @pytest.mark.parametrize("client", ["WITH_REMOTE"], indirect=True)
     def test____send_packet_to____connection_refused(self, client: UDPNetworkEndpoint[str, str], server: Socket) -> None:
         address = server.getsockname()
@@ -244,6 +247,7 @@ class TestUDPNetworkEndpoint:
         with pytest.raises(ConnectionRefusedError):
             client.send_packet_to("ABCDEF", address)
 
+    @pytest.mark.skip_platform_win32  # Windows does not raise errors
     @pytest.mark.parametrize("client", ["WITH_REMOTE"], indirect=True)
     def test____send_packet____connection_refused____after_previous_successful_try(
         self,
