@@ -25,7 +25,7 @@ _ST_contra = TypeVar("_ST_contra", contravariant=True)
 _DT_co = TypeVar("_DT_co", covariant=True)
 
 
-class Compressor(Protocol, metaclass=abc.ABCMeta):
+class CompressorInterface(Protocol, metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def compress(self, __data: bytes, /) -> bytes:
         raise NotImplementedError
@@ -35,7 +35,7 @@ class Compressor(Protocol, metaclass=abc.ABCMeta):
         raise NotImplementedError
 
 
-class Decompressor(Protocol, metaclass=abc.ABCMeta):
+class DecompressorInterface(Protocol, metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def decompress(self, __data: bytes, /) -> bytes:
         raise NotImplementedError
@@ -68,27 +68,27 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_ST_contr
         self.__expected_error: tuple[type[Exception], ...] = expected_decompress_error
 
     @abc.abstractmethod
-    def new_compressor_stream(self) -> Compressor:
+    def new_compressor_stream(self) -> CompressorInterface:
         raise NotImplementedError
 
     @abc.abstractmethod
-    def new_decompressor_stream(self) -> Decompressor:
+    def new_decompressor_stream(self) -> DecompressorInterface:
         raise NotImplementedError
 
     @final
     def serialize(self, packet: _ST_contra) -> bytes:
-        compressor = self.new_compressor_stream()
+        compressor: CompressorInterface = self.new_compressor_stream()
         return compressor.compress(self.__serializer.serialize(packet)) + compressor.flush()
 
     @final
     def incremental_serialize(self, packet: _ST_contra) -> Generator[bytes, None, None]:
-        compressor = self.new_compressor_stream()
+        compressor: CompressorInterface = self.new_compressor_stream()
         yield compressor.compress(self.__serializer.serialize(packet))
         yield compressor.flush()
 
     @final
     def deserialize(self, data: bytes) -> _DT_co:
-        decompressor = self.new_decompressor_stream()
+        decompressor: DecompressorInterface = self.new_decompressor_stream()
         try:
             data = decompressor.decompress(data)
         except self.__expected_error as exc:
@@ -102,7 +102,6 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_ST_contr
 
     @final
     def incremental_deserialize(self) -> Generator[None, bytes, tuple[_DT_co, bytes]]:
-        serializer = self.__serializer
         results: deque[bytes] = deque()
         decompressor = self.new_decompressor_stream()
         while not decompressor.eof:
@@ -117,13 +116,14 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_ST_contr
                 ) from exc
             if chunk:
                 results.append(chunk)
+            del chunk
 
         data = b"".join(results)
         unused_data: bytes = decompressor.unused_data
         del results, decompressor
 
         try:
-            packet: _DT_co = serializer.deserialize(data)
+            packet: _DT_co = self.__serializer.deserialize(data)
         except DeserializeError as exc:
             raise IncrementalDeserializeError(
                 f"Error while deserializing decompressed data: {exc}",
