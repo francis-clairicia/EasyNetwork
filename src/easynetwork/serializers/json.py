@@ -80,7 +80,7 @@ class _JSONParser:
                         continue
                     case _ if len(enclosure_counter) == 0:  # No enclosure, only value
                         assert not partial_document
-                        return (yield from _JSONParser._raw_parse_plain_value(char + chunk[nb_chars:]))
+                        return (yield from _JSONParser._raw_parse_plain_value(partial_document, chunk[nb_chars - 1 :]))
                 assert len(enclosure_counter) > 0
                 partial_document.extend(char)
                 if not first_enclosure:
@@ -89,8 +89,7 @@ class _JSONParser:
                     return bytes(partial_document), chunk[nb_chars:]
 
     @staticmethod
-    def _raw_parse_plain_value(chunk: bytes) -> Generator[None, bytes, tuple[bytes, bytes]]:
-        buffer_array = bytearray()
+    def _raw_parse_plain_value(buffer_array: bytearray, chunk: bytes) -> Generator[None, bytes, tuple[bytes, bytes]]:
         while True:
             non_printable_idx: int = next((idx for idx, byte in enumerate(chunk) if byte not in _JSON_VALUE_BYTES), -1)
             if non_printable_idx < 0:
@@ -124,12 +123,13 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
             encoder_config = JSONEncoderConfig()
         elif not isinstance(encoder_config, JSONEncoderConfig):
             raise TypeError(f"Invalid encoder config: expected {JSONEncoderConfig.__name__}, got {type(encoder_config).__name__}")
-        self.__encoder = JSONEncoder(**dataclass_asdict(encoder_config))
 
         if decoder_config is None:
             decoder_config = JSONDecoderConfig()
         elif not isinstance(decoder_config, JSONDecoderConfig):
             raise TypeError(f"Invalid decoder config: expected {JSONDecoderConfig.__name__}, got {type(decoder_config).__name__}")
+
+        self.__encoder = JSONEncoder(**dataclass_asdict(encoder_config))
         self.__decoder = JSONDecoder(**dataclass_asdict(decoder_config))
 
         self.__encoding: str = encoding
@@ -186,4 +186,8 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
                 f"JSON decode error: {exc} (document={document!r})",
                 remaining_data=remaining_data,
             ) from exc
-        return packet, (document[end:].encode(self.__encoding, self.__str_errors) + remaining_data).lstrip(b" \t\n\r")
+        try:
+            remaining_data = document[end:].encode(self.__encoding, self.__str_errors) + remaining_data
+        except UnicodeError:  # pragma: no cover  # Should not happen but it must not pass
+            pass
+        return packet, remaining_data.lstrip(b" \t\n\r")  # Optimization: Skip leading spaces
