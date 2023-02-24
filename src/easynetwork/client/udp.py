@@ -39,8 +39,6 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         "__owner",
         "__protocol",
         "__lock",
-        "__default_send_flags",
-        "__default_recv_flags",
         "__weakref__",
     )
 
@@ -56,8 +54,6 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         family: int = ...,
         remote_address: tuple[str, int] | None = ...,
         source_address: tuple[str, int] | None = ...,
-        send_flags: int = ...,
-        recv_flags: int = ...,
     ) -> None:
         ...
 
@@ -69,8 +65,6 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         *,
         socket: _socket.socket,
         give: bool,
-        send_flags: int = ...,
-        recv_flags: int = ...,
     ) -> None:
         ...
 
@@ -78,9 +72,6 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         self,
         /,
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
-        *,
-        send_flags: int = 0,
-        recv_flags: int = 0,
         **kwargs: Any,
     ) -> None:
         self.__socket: _socket.socket | None = None  # If any exception occurs, the client will already be in a closed state
@@ -149,8 +140,6 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             self.__addr: SocketAddress = new_socket_address(socket.getsockname(), socket.family)
             self.__peer: SocketAddress | None = peername
             self.__socket_proxy = SocketProxy(socket, lock=self.__lock)
-            self.__default_send_flags: int = send_flags
-            self.__default_recv_flags: int = recv_flags
         except BaseException:
             if self.__owner:
                 socket.close()
@@ -212,13 +201,12 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             elif address is None:
                 raise ValueError("Invalid address: must not be None")
             data: bytes = self.__protocol.make_datagram(packet)
-            flags: int = self.__default_send_flags
             with _restore_timeout_at_end(socket):
                 socket.settimeout(None)
                 if address is None:
-                    socket.send(data, flags)
+                    socket.send(data)
                 else:
-                    socket.sendto(data, flags, address)
+                    socket.sendto(data, address)
                 _check_real_socket_state(socket)
 
     def recv_packet_from(self, timeout: float | None = None) -> tuple[_ReceivedPacketT, SocketAddress]:
@@ -228,7 +216,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             with _restore_timeout_at_end(socket):
                 socket.settimeout(timeout)
                 try:
-                    data, sender = socket.recvfrom(MAX_DATAGRAM_BUFSIZE, self.__default_recv_flags)
+                    data, sender = socket.recvfrom(MAX_DATAGRAM_BUFSIZE)
                 except (TimeoutError, BlockingIOError) as exc:
                     if timeout is None:  # pragma: no cover
                         raise RuntimeError("socket.recvfrom() timed out with timeout=None ?") from exc
@@ -271,16 +259,6 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
     def socket(self) -> SocketProxy:
         return self.__socket_proxy
 
-    @property
-    @final
-    def default_send_flags(self) -> int:
-        return self.__default_send_flags
-
-    @property
-    @final
-    def default_recv_flags(self) -> int:
-        return self.__default_recv_flags
-
 
 class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Generic[_SentPacketT, _ReceivedPacketT]):
     __slots__ = ("__endpoint", "__peer")
@@ -294,8 +272,6 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         *,
         family: int = ...,
         source_address: tuple[str, int] | None = ...,
-        send_flags: int = ...,
-        recv_flags: int = ...,
     ) -> None:
         ...
 
@@ -307,8 +283,6 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
         *,
         give: bool = ...,
-        send_flags: int = ...,
-        recv_flags: int = ...,
     ) -> None:
         ...
 
@@ -385,13 +359,3 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
     @final
     def socket(self) -> SocketProxy:
         return self.__endpoint.socket
-
-    @property
-    @final
-    def default_send_flags(self) -> int:
-        return self.__endpoint.default_send_flags
-
-    @property
-    @final
-    def default_recv_flags(self) -> int:
-        return self.__endpoint.default_recv_flags

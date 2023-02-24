@@ -94,8 +94,6 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         "__server_selector",
         "__disable_nagle_algorithm",
         "__busy_clients",
-        "__send_flags",
-        "__recv_flags",
         "__verify_client_pool",
         "__logger",
     )
@@ -112,8 +110,6 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         backlog: int | None = None,
         reuse_port: bool = False,
         dualstack_ipv6: bool = False,
-        send_flags: int = 0,
-        recv_flags: int = 0,
         disable_nagle_algorithm: bool = False,
         request_executor_factory: Callable[[], AbstractRequestExecutor] | None = None,
         selector_factory: Callable[[], BaseSelector] | None = None,
@@ -144,8 +140,6 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             selector_factory,
             poll_interval=poll_interval,
         )
-        self.__send_flags: int = send_flags
-        self.__recv_flags: int = recv_flags
         self.__disable_nagle_algorithm: bool = bool(disable_nagle_algorithm)
         self.__verify_client_pool = concurrent.futures.ThreadPoolExecutor(
             max_workers=1,  # Do not need more than that
@@ -300,7 +294,6 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             server_selector=server_selector,
             on_close=self.on_disconnection,
             logger=logger,
-            send_flags=self.__send_flags,
         )
         key_data.consumer.feed(remaining_data)
         server_selector.register_client(socket, key_data)
@@ -313,7 +306,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         data: bytes
         logger.debug("Receiving data from %s", socket.getsockname())
         try:
-            data = socket.recv(self.max_recv_size, self.__recv_flags)
+            data = socket.recv(self.max_recv_size)
         except (TimeoutError, BlockingIOError, InterruptedError):
             logger.debug("-> Interruped. Will try later")
             return
@@ -471,16 +464,6 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     @final
     def address(self) -> SocketAddress:
         return self.__addr
-
-    @property
-    @final
-    def send_flags(self) -> int:
-        return self.__send_flags
-
-    @property
-    @final
-    def recv_flags(self) -> int:
-        return self.__recv_flags
 
 
 if TYPE_CHECKING:
@@ -656,7 +639,6 @@ class _SelectorKeyData(Generic[_RequestT, _ResponseT]):
         server_selector: _ServerSocketSelector[_RequestT, _ResponseT],
         on_close: Callable[[ConnectedClient[_ResponseT]], Any],
         logger: logging.Logger,
-        send_flags: int,
     ) -> None:
         self.consumer = StreamDataConsumer(protocol)
         self.lock = RLock()
@@ -668,7 +650,6 @@ class _SelectorKeyData(Generic[_RequestT, _ResponseT]):
             lock=self.lock,
             on_close=on_close,
             logger=logger,
-            send_flags=send_flags,
         )
 
     @final
@@ -682,7 +663,6 @@ class _SelectorKeyData(Generic[_RequestT, _ResponseT]):
             "__unsent_data",
             "__on_close",
             "__logger",
-            "__send_flags",
         )
 
         def __init__(
@@ -695,7 +675,6 @@ class _SelectorKeyData(Generic[_RequestT, _ResponseT]):
             lock: RLock,
             on_close: Callable[[ConnectedClient[_ResponseT]], Any],
             logger: logging.Logger,
-            send_flags: int,
         ) -> None:
             super().__init__(address)
             self.__lock: RLock = lock
@@ -705,7 +684,6 @@ class _SelectorKeyData(Generic[_RequestT, _ResponseT]):
             self.__server_selector: _ServerSocketSelector[Any, _ResponseT] = server_selector
             self.__unsent_data: bytes = b""
             self.__on_close: Callable[[ConnectedClient[_ResponseT]], Any] = on_close
-            self.__send_flags: int = send_flags
             self.__logger: logging.Logger = logger
 
         def close(self) -> None:
@@ -749,7 +727,7 @@ class _SelectorKeyData(Generic[_RequestT, _ResponseT]):
                 if unsent_data:
                     logger.debug("Try sending remaining data to %s", self.address)
                     try:
-                        nb_bytes_sent = socket.send(unsent_data, self.__send_flags)
+                        nb_bytes_sent = socket.send(unsent_data)
                         _check_real_socket_state(socket)
                     except (TimeoutError, BlockingIOError, InterruptedError):
                         self.__unsent_data = unsent_data
@@ -780,11 +758,10 @@ class _SelectorKeyData(Generic[_RequestT, _ResponseT]):
             socket: _socket.socket | None = self.__socket
             assert socket is not None
             socket_send = socket.send
-            send_flags: int = self.__send_flags
             total_nb_bytes_sent: int = 0
             for chunk in self.__producer:
                 try:
-                    nb_bytes_sent = socket_send(chunk, send_flags)
+                    nb_bytes_sent = socket_send(chunk)
                     _check_real_socket_state(socket)
                 except (TimeoutError, BlockingIOError, InterruptedError):
                     self.__unsent_data = chunk

@@ -37,8 +37,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         "__addr",
         "__peer",
         "__eof_reached",
-        "__default_send_flags",
-        "__default_recv_flags",
         "__max_recv_bufsize",
     )
 
@@ -51,8 +49,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         *,
         timeout: float | None = ...,
         source_address: tuple[str, int] | None = ...,
-        send_flags: int = ...,
-        recv_flags: int = ...,
         max_recv_size: int | None = ...,
     ) -> None:
         ...
@@ -65,8 +61,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
         *,
         give: bool,
-        send_flags: int = ...,
-        recv_flags: int = ...,
         max_recv_size: int | None = ...,
     ) -> None:
         ...
@@ -77,8 +71,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         /,
         protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
         *,
-        send_flags: int = 0,
-        recv_flags: int = 0,
         max_recv_size: int | None = None,
         **kwargs: Any,
     ) -> None:
@@ -119,8 +111,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             self.__consumer: StreamDataConsumer[_ReceivedPacketT] = StreamDataConsumer(protocol)
             self.__socket_proxy = SocketProxy(socket, lock=self.__lock)
             self.__eof_reached: bool = False
-            self.__default_send_flags: int = send_flags
-            self.__default_recv_flags: int = recv_flags
             self.__max_recv_bufsize: int = max_recv_size
         except BaseException:
             if self.__owner:
@@ -172,7 +162,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 raise OSError(errno.ECONNABORTED, os.strerror(errno.ECONNABORTED))
             with _restore_timeout_at_end(socket):
                 socket.settimeout(None)
-                socket.sendall(b"".join(list(self.__producer(packet))), self.__default_send_flags)
+                socket.sendall(b"".join(list(self.__producer(packet))))
                 _check_real_socket_state(socket)
 
     def recv_packet(self, timeout: float | None = None) -> _ReceivedPacketT:
@@ -187,7 +177,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 raise ClientClosedError("Closed client")
             if self.__eof_reached:  # Do not need to call socket.recv()
                 raise OSError(errno.ECONNABORTED, os.strerror(errno.ECONNABORTED))
-            flags = self.__default_recv_flags
             bufsize: int = self.__max_recv_bufsize
             monotonic = _time_monotonic  # pull function to local namespace
 
@@ -196,7 +185,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 while True:
                     try:
                         _start = monotonic()
-                        chunk: bytes = socket.recv(bufsize, flags)
+                        chunk: bytes = socket.recv(bufsize)
                         _end = monotonic()
                     except (TimeoutError, BlockingIOError) as exc:
                         if timeout is None:  # pragma: no cover
@@ -257,13 +246,3 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
     @final
     def max_recv_bufsize(self) -> int:
         return self.__max_recv_bufsize
-
-    @property
-    @final
-    def default_send_flags(self) -> int:
-        return self.__default_send_flags
-
-    @property
-    @final
-    def default_recv_flags(self) -> int:
-        return self.__default_recv_flags

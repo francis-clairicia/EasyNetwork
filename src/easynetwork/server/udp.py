@@ -38,8 +38,6 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         "__protocol",
         "__selector",
         "__request_executor_factory",
-        "__default_send_flags",
-        "__default_recv_flags",
         "__protocol",
         "__packets_to_send",
         "__received_datagrams",
@@ -55,8 +53,6 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         *,
         family: int = _socket.AF_INET,
         reuse_port: bool = False,
-        send_flags: int = 0,
-        recv_flags: int = 0,
         request_executor_factory: Callable[[], AbstractRequestExecutor] | None = None,
         selector_factory: Callable[[], BaseSelector] | None = None,
         logger: logging.Logger | None = None,
@@ -94,8 +90,6 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         self.__looping: bool = False
         self.__is_shutdown: Event = Event()
         self.__is_shutdown.set()
-        self.__default_send_flags: int = int(send_flags)
-        self.__default_recv_flags: int = int(recv_flags)
         self.__protocol: DatagramProtocol[_ResponseT, _RequestT] = protocol
         self.__unsent_datagrams: deque[tuple[bytes, SocketAddress]] = deque()
         self.__poll_interval: float = poll_interval
@@ -220,7 +214,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         assert socket is not None
         logger: logging.Logger = self.__logger
         try:
-            datagram, client_address = socket.recvfrom(MAX_DATAGRAM_BUFSIZE, self.__default_recv_flags)
+            datagram, client_address = socket.recvfrom(MAX_DATAGRAM_BUFSIZE)
         except (TimeoutError, BlockingIOError, InterruptedError):
             return
         client_address = new_socket_address(client_address, socket.family)
@@ -299,7 +293,6 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             raise RuntimeError("Closed server")
         logger: logging.Logger = self.__logger
         unsent_datagrams = self.__unsent_datagrams
-        flags: int = self.__default_send_flags
         try:
             response: bytes = self.__protocol.make_datagram(packet)
         except Exception:
@@ -313,7 +306,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 unsent_datagrams.append((response, address))
                 return
             try:
-                socket.sendto(response, flags, address)
+                socket.sendto(response, address)
             except (TimeoutError, BlockingIOError, InterruptedError):
                 logger.debug("-> Failed to send datagram, queue it.")
                 unsent_datagrams.append((response, address))
@@ -327,13 +320,12 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         assert socket is not None
         logger: logging.Logger = self.__logger
         unsent_datagrams = self.__unsent_datagrams
-        flags: int = self.__default_send_flags
         with self.__transaction_lock:
             while unsent_datagrams:
                 response, address = unsent_datagrams.popleft()
                 logger.debug("Try to send saved datagram to %s", address)
                 try:
-                    socket.sendto(response, flags, address)
+                    socket.sendto(response, address)
                 except (TimeoutError, BlockingIOError, InterruptedError):
                     unsent_datagrams.appendleft((response, address))
                     logger.debug("-> Failed to send datagram, bail out.")
@@ -363,16 +355,6 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     @final
     def address(self) -> SocketAddress:
         return self.__addr
-
-    @property
-    @final
-    def send_flags(self) -> int:
-        return self.__default_send_flags
-
-    @property
-    @final
-    def recv_flags(self) -> int:
-        return self.__default_recv_flags
 
 
 def _get_exception() -> BaseException | None:

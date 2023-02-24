@@ -122,24 +122,12 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         remote_address: tuple[str, int] | None,
         mock_udp_socket: MagicMock,
         mock_datagram_protocol: MagicMock,
-        mocker: MockerFixture,
     ) -> UDPNetworkEndpoint[Any, Any]:
         match request.param:
             case "REMOTE_ADDRESS":
-                return UDPNetworkEndpoint(
-                    protocol=mock_datagram_protocol,
-                    remote_address=remote_address,
-                    send_flags=mocker.sentinel.send_flags,
-                    recv_flags=mocker.sentinel.recv_flags,
-                )
+                return UDPNetworkEndpoint(protocol=mock_datagram_protocol, remote_address=remote_address)
             case "SOCKET_WITH_EXPLICIT_GIVE":
-                return UDPNetworkEndpoint(
-                    socket=mock_udp_socket,
-                    protocol=mock_datagram_protocol,
-                    give=True,
-                    send_flags=mocker.sentinel.send_flags,
-                    recv_flags=mocker.sentinel.recv_flags,
-                )
+                return UDPNetworkEndpoint(socket=mock_udp_socket, protocol=mock_datagram_protocol, give=True)
             case invalid:
                 pytest.fail(f"Invalid fixture param: Got {invalid!r}")
 
@@ -148,16 +136,9 @@ class TestUDPNetworkEndpoint(BaseTestClient):
     def client_without_socket_ownership(
         mock_udp_socket: MagicMock,
         mock_datagram_protocol: MagicMock,
-        mocker: MockerFixture,
         remote_address: tuple[str, int] | None,  # Only for fixture dependency, do not remove
     ) -> UDPNetworkEndpoint[Any, Any]:
-        return UDPNetworkEndpoint(
-            mock_datagram_protocol,
-            socket=mock_udp_socket,
-            give=False,
-            send_flags=mocker.sentinel.send_flags,
-            recv_flags=mocker.sentinel.recv_flags,
-        )
+        return UDPNetworkEndpoint(mock_datagram_protocol, socket=mock_udp_socket, give=False)
 
     @pytest.fixture
     @staticmethod
@@ -200,12 +181,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         mock_socket_proxy_cls.return_value = mocker.sentinel.proxy
 
         # Act
-        endpoint: UDPNetworkEndpoint[Any, Any] = UDPNetworkEndpoint(
-            protocol=mock_datagram_protocol,
-            family=socket_family,
-            send_flags=mocker.sentinel.send_flags,
-            recv_flags=mocker.sentinel.recv_flags,
-        )
+        endpoint: UDPNetworkEndpoint[Any, Any] = UDPNetworkEndpoint(protocol=mock_datagram_protocol, family=socket_family)
 
         # Assert
         mock_socket_cls.assert_called_once_with(socket_family, SOCK_DGRAM)
@@ -214,8 +190,6 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         mock_udp_socket.settimeout.assert_not_called()
         mock_udp_socket.getpeername.assert_not_called()
         mock_socket_proxy_cls.assert_called_once_with(mock_udp_socket, lock=mocker.ANY)
-        assert endpoint.default_send_flags is mocker.sentinel.send_flags
-        assert endpoint.default_recv_flags is mocker.sentinel.recv_flags
         assert endpoint.socket is mocker.sentinel.proxy
 
     @pytest.mark.parametrize("source_address", [None, ("local_address", 12345)], ids=lambda p: f"source_address=={p}")
@@ -260,18 +234,12 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         self,
         socket_family: int,
         mock_datagram_protocol: MagicMock,
-        mocker: MockerFixture,
     ) -> None:
         # Arrange
 
         # Act & Assert
         with pytest.raises(ValueError, match=r"^Only AF_INET and AF_INET6 families are supported$"):
-            _ = UDPNetworkEndpoint(
-                protocol=mock_datagram_protocol,
-                family=socket_family,
-                send_flags=mocker.sentinel.send_flags,
-                recv_flags=mocker.sentinel.recv_flags,
-            )
+            _ = UDPNetworkEndpoint(protocol=mock_datagram_protocol, family=socket_family)
 
     @pytest.mark.parametrize("error_on", ["bind", "connect"])
     @pytest.mark.parametrize("remote_address", [True], indirect=True)
@@ -283,7 +251,6 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         socket_family: int,
         mock_udp_socket: MagicMock,
         mock_datagram_protocol: MagicMock,
-        mocker: MockerFixture,
     ) -> None:
         # Arrange
         mock_method: MagicMock = getattr(mock_udp_socket, error_on)
@@ -296,8 +263,6 @@ class TestUDPNetworkEndpoint(BaseTestClient):
                 family=socket_family,
                 source_address=local_address,
                 remote_address=remote_address,
-                send_flags=mocker.sentinel.send_flags,
-                recv_flags=mocker.sentinel.recv_flags,
             )
         assert exc_info.value is mock_method.side_effect
         mock_udp_socket.close.assert_called_once_with()
@@ -324,8 +289,6 @@ class TestUDPNetworkEndpoint(BaseTestClient):
             protocol=mock_datagram_protocol,
             socket=mock_udp_socket,
             give=give_ownership,
-            send_flags=mocker.sentinel.send_flags,
-            recv_flags=mocker.sentinel.recv_flags,
         )
 
         # Assert
@@ -338,8 +301,6 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         mock_udp_socket.settimeout.assert_not_called()
         mock_udp_socket.getpeername.assert_called_once_with()
         mock_socket_proxy_cls.assert_called_once_with(mock_udp_socket, lock=mocker.ANY)
-        assert endpoint.default_send_flags is mocker.sentinel.send_flags
-        assert endpoint.default_recv_flags is mocker.sentinel.recv_flags
         assert endpoint.socket is mocker.sentinel.proxy
 
     @pytest.mark.parametrize("socket_family", ["AF_BLUETOOTH"], indirect=True)
@@ -347,7 +308,6 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         self,
         mock_udp_socket: MagicMock,
         mock_datagram_protocol: MagicMock,
-        mocker: MockerFixture,
     ) -> None:
         # Arrange
 
@@ -357,8 +317,6 @@ class TestUDPNetworkEndpoint(BaseTestClient):
                 protocol=mock_datagram_protocol,
                 socket=mock_udp_socket,
                 give=False,
-                send_flags=mocker.sentinel.send_flags,
-                recv_flags=mocker.sentinel.recv_flags,
             )
 
     @pytest.mark.parametrize("give_ownership", [False, True], ids=lambda p: f"give=={p}")
@@ -368,7 +326,6 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         mock_tcp_socket: MagicMock,
         mock_socket_proxy_cls: MagicMock,
         mock_datagram_protocol: MagicMock,
-        mocker: MockerFixture,
     ) -> None:
         # Arrange
 
@@ -378,8 +335,6 @@ class TestUDPNetworkEndpoint(BaseTestClient):
                 protocol=mock_datagram_protocol,
                 socket=mock_tcp_socket,
                 give=give_ownership,
-                send_flags=mocker.sentinel.send_flags,
-                recv_flags=mocker.sentinel.recv_flags,
             )
 
         # Assert
@@ -406,8 +361,6 @@ class TestUDPNetworkEndpoint(BaseTestClient):
             _ = UDPNetworkEndpoint(  # type: ignore[call-overload]
                 protocol=mock_datagram_protocol,
                 socket=mock_udp_socket,
-                send_flags=mocker.sentinel.send_flags,
-                recv_flags=mocker.sentinel.recv_flags,
             )
 
         # Assert
@@ -568,7 +521,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
 
         # Assert
         assert mock_udp_socket.settimeout.mock_calls == [mocker.call(None), mocker.call(mocker.sentinel.default_timeout)]
-        mock_udp_socket.sendto.assert_called_once_with(b"packet", mocker.sentinel.send_flags, target_address)
+        mock_udp_socket.sendto.assert_called_once_with(b"packet", target_address)
         mock_datagram_protocol.make_datagram.assert_called_once_with(mocker.sentinel.packet)
         mock_udp_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_ERROR)
 
@@ -614,7 +567,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         # Assert
         assert mock_udp_socket.settimeout.mock_calls == [mocker.call(None), mocker.call(mocker.sentinel.default_timeout)]
         mock_udp_socket.sendto.assert_not_called()
-        mock_udp_socket.send.assert_called_once_with(b"packet", mocker.sentinel.send_flags)
+        mock_udp_socket.send.assert_called_once_with(b"packet")
         mock_datagram_protocol.make_datagram.assert_called_once_with(mocker.sentinel.packet)
         mock_udp_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_ERROR)
 
@@ -712,7 +665,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
 
         # Assert
         assert mock_udp_socket.settimeout.mock_calls == [mocker.call(recv_timeout), mocker.call(mocker.sentinel.default_timeout)]
-        mock_udp_socket.recvfrom.assert_called_once_with(MAX_DATAGRAM_BUFSIZE, mocker.sentinel.recv_flags)
+        mock_udp_socket.recvfrom.assert_called_once_with(MAX_DATAGRAM_BUFSIZE)
         mock_datagram_protocol.build_packet_from_datagram.assert_called_once_with(b"packet")
         assert packet is mocker.sentinel.packet
         assert (sender.host, sender.port) == sender_address
@@ -737,7 +690,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
 
         # Assert
         assert mock_udp_socket.settimeout.mock_calls == [mocker.call(recv_timeout), mocker.call(mocker.sentinel.default_timeout)]
-        mock_udp_socket.recvfrom.assert_called_once_with(MAX_DATAGRAM_BUFSIZE, mocker.sentinel.recv_flags)
+        mock_udp_socket.recvfrom.assert_called_once_with(MAX_DATAGRAM_BUFSIZE)
         mock_datagram_protocol.build_packet_from_datagram.assert_called_once_with(b"packet")
         assert packet is mocker.sentinel.packet
         assert (sender.host, sender.port) == sender_address
@@ -765,7 +718,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         exception = exc_info.value
 
         # Assert
-        mock_udp_socket.recvfrom.assert_called_once_with(MAX_DATAGRAM_BUFSIZE, mocker.sentinel.recv_flags)
+        mock_udp_socket.recvfrom.assert_called_once_with(MAX_DATAGRAM_BUFSIZE)
         mock_datagram_protocol.build_packet_from_datagram.assert_called_once_with(b"packet")
         assert exception is expected_error
 
@@ -814,7 +767,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         with pytest.raises(TimeoutError, match=r"^recv_packet\(\) timed out$"):
             _ = client.recv_packet_from(timeout=recv_timeout)
 
-        mock_udp_socket.recvfrom.assert_called_once_with(MAX_DATAGRAM_BUFSIZE, mocker.sentinel.recv_flags)
+        mock_udp_socket.recvfrom.assert_called_once_with(MAX_DATAGRAM_BUFSIZE)
         mock_datagram_protocol.build_packet_from_datagram.assert_not_called()
 
     @pytest.mark.parametrize(
@@ -846,9 +799,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         packets = [(p, (s.host, s.port)) for p, s in client.iter_received_packets_from(timeout=recv_timeout)]
 
         # Assert
-        assert mock_udp_socket.recvfrom.mock_calls == [
-            mocker.call(MAX_DATAGRAM_BUFSIZE, mocker.sentinel.recv_flags) for _ in range(3)
-        ]
+        assert mock_udp_socket.recvfrom.mock_calls == [mocker.call(MAX_DATAGRAM_BUFSIZE) for _ in range(3)]
         assert mock_datagram_protocol.build_packet_from_datagram.mock_calls == [
             mocker.call(b"packet_1"),
             mocker.call(b"packet_2"),
@@ -879,9 +830,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         packets = [(p, (s.host, s.port)) for p, s in client.iter_received_packets_from(timeout=recv_timeout)]
 
         # Assert
-        assert mock_udp_socket.recvfrom.mock_calls == [
-            mocker.call(MAX_DATAGRAM_BUFSIZE, mocker.sentinel.recv_flags) for _ in range(3)
-        ]
+        assert mock_udp_socket.recvfrom.mock_calls == [mocker.call(MAX_DATAGRAM_BUFSIZE) for _ in range(3)]
         assert mock_datagram_protocol.build_packet_from_datagram.mock_calls == [
             mocker.call(b"packet_1"),
             mocker.call(b"packet_2"),
@@ -914,7 +863,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         exception = exc_info.value
 
         # Assert
-        mock_udp_socket.recvfrom.assert_called_once_with(MAX_DATAGRAM_BUFSIZE, mocker.sentinel.recv_flags)
+        mock_udp_socket.recvfrom.assert_called_once_with(MAX_DATAGRAM_BUFSIZE)
         mock_datagram_protocol.build_packet_from_datagram.assert_called_once_with(b"packet")
         assert exception is expected_error
 
@@ -978,8 +927,6 @@ class TestUDPNetworkClient:
         mock = mocker.NonCallableMagicMock(spec_set=UDPNetworkEndpoint)
         mock.get_local_address.return_value = ("local_address", 12345)
         mock.get_remote_address.return_value = ("remote_address", 5000)
-        mock.default_send_flags = mocker.sentinel.send_flags
-        mock.default_recv_flags = mocker.sentinel.recv_flags
         mock.socket = mock_udp_socket
         return mock
 
@@ -993,14 +940,11 @@ class TestUDPNetworkClient:
     def client(
         mock_udp_socket: MagicMock,
         mock_datagram_protocol: MagicMock,
-        mocker: MockerFixture,
     ) -> UDPNetworkClient[Any, Any]:
         return UDPNetworkClient(
             mock_udp_socket,
             mock_datagram_protocol,
             give=False,
-            send_flags=mocker.sentinel.send_flags,
-            recv_flags=mocker.sentinel.recv_flags,
         )
 
     def test____dunder_init____with_remote_address(
@@ -1020,8 +964,6 @@ class TestUDPNetworkClient:
             mock_datagram_protocol,
             family=mocker.sentinel.family,
             source_address=mocker.sentinel.source_address,
-            send_flags=mocker.sentinel.send_flags,
-            recv_flags=mocker.sentinel.recv_flags,
         )
 
         # Assert
@@ -1030,12 +972,8 @@ class TestUDPNetworkClient:
             remote_address=remote_address,
             family=mocker.sentinel.family,
             source_address=mocker.sentinel.source_address,
-            send_flags=mocker.sentinel.send_flags,
-            recv_flags=mocker.sentinel.recv_flags,
         )
         mock_udp_endpoint.get_remote_address.assert_called_once_with()
-        assert client.default_send_flags is mocker.sentinel.send_flags
-        assert client.default_recv_flags is mocker.sentinel.recv_flags
         assert client.socket is mock_udp_socket
 
     def test____dunder_init____with_socket(
@@ -1053,8 +991,6 @@ class TestUDPNetworkClient:
             mock_udp_socket,
             mock_datagram_protocol,
             give=mocker.sentinel.give_ownership,
-            send_flags=mocker.sentinel.send_flags,
-            recv_flags=mocker.sentinel.recv_flags,
         )
 
         # Assert
@@ -1062,12 +998,8 @@ class TestUDPNetworkClient:
             protocol=mock_datagram_protocol,
             socket=mock_udp_socket,
             give=mocker.sentinel.give_ownership,
-            send_flags=mocker.sentinel.send_flags,
-            recv_flags=mocker.sentinel.recv_flags,
         )
         mock_udp_endpoint.get_remote_address.assert_called_once_with()
-        assert client.default_send_flags is mocker.sentinel.send_flags
-        assert client.default_recv_flags is mocker.sentinel.recv_flags
         assert client.socket is mock_udp_socket
 
     def test____dunder_init____error_no_remote_address(
@@ -1086,8 +1018,6 @@ class TestUDPNetworkClient:
                 mock_udp_socket,
                 mock_datagram_protocol,
                 give=mocker.sentinel.give_ownership,
-                send_flags=mocker.sentinel.send_flags,
-                recv_flags=mocker.sentinel.recv_flags,
             )
         mock_udp_endpoint.close.assert_called_once_with()
 
