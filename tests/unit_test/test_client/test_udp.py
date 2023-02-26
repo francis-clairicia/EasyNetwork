@@ -34,12 +34,12 @@ class TestUDPNetworkEndpoint(BaseTestClient):
 
     @pytest.fixture(scope="class")
     @staticmethod
-    def class_local_address() -> tuple[str, int]:
+    def global_local_address() -> tuple[str, int]:
         return ("local_address", 12345)
 
     @pytest.fixture(scope="class")
     @staticmethod
-    def class_remote_address() -> tuple[str, int]:
+    def global_remote_address() -> tuple[str, int]:
         return ("remote_address", 5000)
 
     @pytest.fixture(autouse=True)
@@ -66,10 +66,10 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         cls,
         mock_udp_socket: MagicMock,
         socket_family: int,
-        class_local_address: tuple[str, int],
+        global_local_address: tuple[str, int],
     ) -> tuple[str, int]:
-        cls.set_local_address_to_socket_mock(mock_udp_socket, socket_family, class_local_address)
-        return class_local_address
+        cls.set_local_address_to_socket_mock(mock_udp_socket, socket_family, global_local_address)
+        return global_local_address
 
     @pytest.fixture(autouse=True, params=[False, True], ids=lambda p: f"remote_address=={p}")
     @classmethod
@@ -78,12 +78,12 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         request: Any,
         mock_udp_socket: MagicMock,
         socket_family: int,
-        class_remote_address: tuple[str, int],
+        global_remote_address: tuple[str, int],
     ) -> tuple[str, int] | None:
         match request.param:
             case True:
-                cls.set_remote_address_to_socket_mock(mock_udp_socket, socket_family, class_remote_address)
-                return class_remote_address
+                cls.set_remote_address_to_socket_mock(mock_udp_socket, socket_family, global_remote_address)
+                return global_remote_address
             case False:
                 cls.configure_socket_mock_to_raise_ENOTCONN(mock_udp_socket)
                 return None
@@ -147,13 +147,13 @@ class TestUDPNetworkEndpoint(BaseTestClient):
 
     @pytest.fixture
     @staticmethod
-    def sender_address(request: Any, class_remote_address: tuple[str, int]) -> tuple[str, int]:
+    def sender_address(request: Any, global_remote_address: tuple[str, int]) -> tuple[str, int]:
         try:
             param: Any = request.param
         except AttributeError:
-            return class_remote_address
+            return global_remote_address
         if param == "REMOTE":
-            return class_remote_address
+            return global_remote_address
         host, port = param
         return host, port
 
@@ -597,7 +597,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
     def test____send_packet_to____raise_error_saved_in_SO_ERROR_option(
         self,
         client: UDPNetworkEndpoint[Any, Any],
-        class_remote_address: tuple[str, int],
+        global_remote_address: tuple[str, int],
         mock_udp_socket: MagicMock,
         mock_datagram_protocol: MagicMock,
         mocker: MockerFixture,
@@ -610,7 +610,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
 
         # Act
         with pytest.raises(OSError) as exc_info:
-            client.send_packet_to(mocker.sentinel.packet, class_remote_address)
+            client.send_packet_to(mocker.sentinel.packet, global_remote_address)
 
         # Assert
         assert exc_info.value.errno == ECONNREFUSED
@@ -924,7 +924,7 @@ class TestUDPNetworkClient:
     @pytest.fixture
     @staticmethod
     def mock_udp_endpoint(mock_udp_socket: MagicMock, mocker: MockerFixture) -> MagicMock:
-        mock = mocker.NonCallableMagicMock(spec_set=UDPNetworkEndpoint)
+        mock = mocker.NonCallableMagicMock(spec=UDPNetworkEndpoint)
         mock.get_local_address.return_value = ("local_address", 12345)
         mock.get_remote_address.return_value = ("remote_address", 5000)
         mock.socket = mock_udp_socket

@@ -76,7 +76,7 @@ def mock_udp_socket(mock_udp_socket_factory: Callable[[], MagicMock]) -> MagicMo
 
 @pytest.fixture
 def mock_serializer_factory(mocker: MockerFixture) -> Callable[[], Any]:
-    return lambda: mocker.NonCallableMagicMock(spec_set=AbstractPacketSerializer)
+    return lambda: mocker.NonCallableMagicMock(spec=AbstractPacketSerializer)
 
 
 @pytest.fixture
@@ -86,7 +86,7 @@ def mock_serializer(mock_serializer_factory: Callable[[], Any]) -> Any:
 
 @pytest.fixture
 def mock_incremental_serializer_factory(mocker: MockerFixture) -> Callable[[], Any]:
-    return lambda: mocker.NonCallableMagicMock(spec_set=AbstractIncrementalPacketSerializer)
+    return lambda: mocker.NonCallableMagicMock(spec=AbstractIncrementalPacketSerializer)
 
 
 @pytest.fixture
@@ -96,7 +96,7 @@ def mock_incremental_serializer(mock_incremental_serializer_factory: Callable[[]
 
 @pytest.fixture
 def mock_converter_factory(mocker: MockerFixture) -> Callable[[], Any]:
-    return lambda: mocker.NonCallableMagicMock(spec_set=AbstractPacketConverter)
+    return lambda: mocker.NonCallableMagicMock(spec=AbstractPacketConverter)
 
 
 @pytest.fixture
@@ -106,7 +106,7 @@ def mock_converter(mock_converter_factory: Callable[[], Any]) -> Any:
 
 @pytest.fixture
 def mock_datagram_protocol_factory(mocker: MockerFixture) -> Callable[[], Any]:
-    return lambda: mocker.NonCallableMagicMock(spec_set=DatagramProtocol)
+    return lambda: mocker.NonCallableMagicMock(spec=DatagramProtocol)
 
 
 @pytest.fixture
@@ -116,7 +116,7 @@ def mock_datagram_protocol(mock_datagram_protocol_factory: Callable[[], Any]) ->
 
 @pytest.fixture
 def mock_stream_protocol_factory(mocker: MockerFixture) -> Callable[[], Any]:
-    return lambda: mocker.NonCallableMagicMock(spec_set=StreamProtocol)
+    return lambda: mocker.NonCallableMagicMock(spec=StreamProtocol)
 
 
 @pytest.fixture
@@ -126,7 +126,7 @@ def mock_stream_protocol(mock_stream_protocol_factory: Callable[[], Any]) -> Any
 
 @pytest.fixture
 def mock_stream_data_producer_factory(mocker: MockerFixture) -> Callable[[], Any]:
-    return lambda: mocker.NonCallableMagicMock(spec_set=StreamDataProducer)
+    return lambda: mocker.NonCallableMagicMock(spec=StreamDataProducer)
 
 
 @pytest.fixture
@@ -136,7 +136,7 @@ def mock_stream_data_producer(mock_stream_data_producer_factory: Callable[[], An
 
 @pytest.fixture
 def mock_stream_data_consumer_factory(mocker: MockerFixture) -> Callable[[], Any]:
-    return lambda: mocker.NonCallableMagicMock(spec_set=StreamDataConsumer)
+    return lambda: mocker.NonCallableMagicMock(spec=StreamDataConsumer)
 
 
 @pytest.fixture

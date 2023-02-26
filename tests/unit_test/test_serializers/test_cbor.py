@@ -36,7 +36,7 @@ class TestCBORSerializer(BaseSerializerConfigInstanceCheck):
 
         from cbor2 import CBOREncoder
 
-        return mocker.MagicMock(spec_set=CBOREncoder(BytesIO()))
+        return mocker.MagicMock(spec=CBOREncoder(BytesIO()))
 
     @pytest.fixture
     @staticmethod
@@ -50,7 +50,7 @@ class TestCBORSerializer(BaseSerializerConfigInstanceCheck):
 
         from cbor2 import CBORDecoder
 
-        return mocker.MagicMock(spec_set=CBORDecoder(BytesIO()))
+        return mocker.MagicMock(spec=CBORDecoder(BytesIO()))
 
     @pytest.fixture
     @staticmethod
@@ -62,7 +62,7 @@ class TestCBORSerializer(BaseSerializerConfigInstanceCheck):
     def mock_file(mocker: MockerFixture) -> MagicMock:
         from io import BytesIO
 
-        return mocker.MagicMock(spec_set=BytesIO())
+        return mocker.MagicMock(spec=BytesIO())
 
     @pytest.fixture(params=[True, False], ids=lambda boolean: f"default_encoder_config=={boolean}")
     @staticmethod

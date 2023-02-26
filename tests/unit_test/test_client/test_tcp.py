@@ -39,12 +39,12 @@ class TestTCPNetworkClient(BaseTestClient):
 
     @pytest.fixture(scope="class")
     @staticmethod
-    def class_local_address() -> tuple[str, int]:
+    def global_local_address() -> tuple[str, int]:
         return ("local_address", 12345)
 
     @pytest.fixture(scope="class")
     @staticmethod
-    def class_remote_address() -> tuple[str, int]:
+    def global_remote_address() -> tuple[str, int]:
         return ("remote_address", 5000)
 
     @pytest.fixture(autouse=True)
@@ -68,10 +68,10 @@ class TestTCPNetworkClient(BaseTestClient):
         cls,
         mock_tcp_socket: MagicMock,
         socket_family: int,
-        class_local_address: tuple[str, int],
+        global_local_address: tuple[str, int],
     ) -> tuple[str, int]:
-        cls.set_local_address_to_socket_mock(mock_tcp_socket, socket_family, class_local_address)
-        return class_local_address
+        cls.set_local_address_to_socket_mock(mock_tcp_socket, socket_family, global_local_address)
+        return global_local_address
 
     @pytest.fixture(autouse=True)
     @classmethod
@@ -79,10 +79,10 @@ class TestTCPNetworkClient(BaseTestClient):
         cls,
         mock_tcp_socket: MagicMock,
         socket_family: int,
-        class_remote_address: tuple[str, int],
+        global_remote_address: tuple[str, int],
     ) -> tuple[str, int]:
-        cls.set_remote_address_to_socket_mock(mock_tcp_socket, socket_family, class_remote_address)
-        return class_remote_address
+        cls.set_remote_address_to_socket_mock(mock_tcp_socket, socket_family, global_remote_address)
+        return global_remote_address
 
     @pytest.fixture(autouse=True)
     @staticmethod

@@ -33,33 +33,29 @@ class TestPickleSerializer(BaseSerializerConfigInstanceCheck):
     @pytest.fixture
     @staticmethod
     def mock_pickler(mocker: MockerFixture) -> MagicMock:
-        from io import BytesIO
-
-        return mocker.MagicMock(spec_set=Pickler(BytesIO()))
+        return mocker.MagicMock(spec=Pickler)
 
     @pytest.fixture
     @staticmethod
     def mock_pickler_cls(mocker: MockerFixture, mock_pickler: MagicMock) -> MagicMock:
-        return mocker.patch("pickle.Pickler", autospec=True, return_value=mock_pickler)
+        return mocker.patch("pickle.Pickler", return_value=mock_pickler)
 
     @pytest.fixture
     @staticmethod
     def mock_unpickler(mocker: MockerFixture) -> MagicMock:
-        from io import BytesIO
-
-        return mocker.MagicMock(spec_set=Unpickler(BytesIO()))
+        return mocker.MagicMock(spec=Unpickler)
 
     @pytest.fixture
     @staticmethod
     def mock_unpickler_cls(mocker: MockerFixture, mock_unpickler: MagicMock) -> MagicMock:
-        return mocker.patch("pickle.Unpickler", autospec=True, return_value=mock_unpickler)
+        return mocker.patch("pickle.Unpickler", return_value=mock_unpickler)
 
     @pytest.fixture
     @staticmethod
     def mock_file(mocker: MockerFixture) -> MagicMock:
         from io import BytesIO
 
-        return mocker.MagicMock(spec_set=BytesIO())
+        return mocker.MagicMock(spec=BytesIO)
 
     @pytest.fixture(params=[True, False], ids=lambda boolean: f"default_pickler_config=={boolean}")
     @staticmethod
@@ -150,7 +146,7 @@ class TestPickleSerializer(BaseSerializerConfigInstanceCheck):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_other_pickler_cls: MagicMock = mocker.MagicMock(spec_set=Pickler)
+        mock_other_pickler_cls: MagicMock = mocker.MagicMock(spec=Pickler)
         mock_other_pickler: MagicMock = mock_other_pickler_cls.return_value
         serializer: PickleSerializer[Any, Any] = PickleSerializer(pickler_cls=mock_other_pickler_cls, optimize=pickler_optimize)
         del mock_pickler.dump
@@ -202,7 +198,7 @@ class TestPickleSerializer(BaseSerializerConfigInstanceCheck):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_other_unpickler_cls: MagicMock = mocker.MagicMock(spec_set=Unpickler)
+        mock_other_unpickler_cls: MagicMock = mocker.MagicMock(spec=Unpickler)
         mock_other_unpickler: MagicMock = mock_other_unpickler_cls.return_value
         serializer: PickleSerializer[Any, Any] = PickleSerializer(unpickler_cls=mock_other_unpickler_cls)
         mock_other_unpickler.load.return_value = mocker.sentinel.packet

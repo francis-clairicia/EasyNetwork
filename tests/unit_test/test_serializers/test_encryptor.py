@@ -21,12 +21,12 @@ class TestEncryptorSerializer:
     def mock_fernet(mocker: MockerFixture) -> MagicMock:
         from cryptography.fernet import Fernet
 
-        return mocker.MagicMock(spec_set=Fernet(Fernet.generate_key()))
+        return mocker.MagicMock(spec=Fernet)
 
     @pytest.fixture(autouse=True)
     @staticmethod
     def mock_fernet_cls(mocker: MockerFixture, mock_fernet: MagicMock) -> MagicMock:
-        return mocker.patch("cryptography.fernet.Fernet", autospec=True, return_value=mock_fernet)
+        return mocker.patch("cryptography.fernet.Fernet", return_value=mock_fernet)
 
     @pytest.mark.parametrize("method", ["incremental_serialize", "incremental_deserialize"])
     def test____base_class____implements_default_methods(self, method: str) -> None:

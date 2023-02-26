@@ -35,24 +35,24 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
     def mock_encoder(mocker: MockerFixture) -> MagicMock:
         from json import JSONEncoder
 
-        return mocker.MagicMock(spec_set=JSONEncoder())
+        return mocker.MagicMock(spec=JSONEncoder)
 
     @pytest.fixture(autouse=True)
     @staticmethod
     def mock_encoder_cls(mocker: MockerFixture, mock_encoder: MagicMock) -> MagicMock:
-        return mocker.patch("json.JSONEncoder", autospec=True, return_value=mock_encoder)
+        return mocker.patch("json.JSONEncoder", return_value=mock_encoder)
 
     @pytest.fixture
     @staticmethod
     def mock_decoder(mocker: MockerFixture) -> MagicMock:
         from json import JSONDecoder
 
-        return mocker.MagicMock(spec_set=JSONDecoder())
+        return mocker.MagicMock(spec=JSONDecoder)
 
     @pytest.fixture(autouse=True)
     @staticmethod
     def mock_decoder_cls(mocker: MockerFixture, mock_decoder: MagicMock) -> MagicMock:
-        return mocker.patch("json.JSONDecoder", autospec=True, return_value=mock_decoder)
+        return mocker.patch("json.JSONDecoder", return_value=mock_decoder)
 
     @pytest.fixture(params=[True, False], ids=lambda boolean: f"default_encoder_config=={boolean}")
     @staticmethod
