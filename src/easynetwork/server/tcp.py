@@ -623,17 +623,15 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
             self._flush_unsent_data_and_packets(closing_context=False)
 
     def process_pending_request(self, request_executor: _ThreadPoolExecutor | None) -> None:
-        request_future: _Future[None] | None = None
         with self._lock:
             if self._socket is None:
                 return
             if self._request_future is not None:
                 return
             logger: _logging.Logger = self._logger
-            request: _RequestT
             try:
                 try:
-                    request = next(self._consumer)
+                    request: _RequestT = next(self._consumer)
                 except StopIteration:  # Not enough data
                     return
                 except StreamProtocolParseError as exc:
@@ -641,11 +639,15 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
                     self._server.bad_request(self._api, exc.error_type, exc.message, exc.error_info)
                     return
                 logger.debug("Processing request sent by %s", self._api.address)
-                if request_executor is not None:
+                request_future: _Future[None] | None
+                if request_executor is None:
+                    request_future = None
+                else:
                     try:
-                        self._request_future = request_future = request_executor.submit(self._execute_request, request)
+                        request_future = request_executor.submit(self._execute_request, request)
                     except RuntimeError:  # shutdown() asked
                         return
+                    self._request_future = request_future
                     self._selector.remove_client_for_reading(self)
             except Exception:
                 self._request_error_handling_and_close()
