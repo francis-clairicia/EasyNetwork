@@ -55,4 +55,4 @@ jobs:
       - name: Setup tox
         uses: ./.github/actions/setup-tox
       - name: Launch checks
-        run: tox run -f mypy
+        run: tox run-parallel -f mypy
