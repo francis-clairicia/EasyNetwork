@@ -104,6 +104,7 @@ ignore_missing_imports = true
 addopts = "--strict-markers"
 minversion = "7.1.2"
 testpaths = ["tests"]
+norecursedirs = ["scripts"]
 markers = [
   "slow: marks tests as slow",
   "functional: marks tests as functional tests",
