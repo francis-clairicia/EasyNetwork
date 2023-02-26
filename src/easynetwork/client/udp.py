@@ -9,8 +9,8 @@ from __future__ import annotations
 __all__ = ["UDPNetworkClient", "UDPNetworkEndpoint"]
 
 import socket as _socket
-from operator import itemgetter
-from threading import Lock
+from operator import itemgetter as _itemgetter
+from threading import Lock as _Lock
 from typing import TYPE_CHECKING, Any, Generic, Iterator, TypeAlias, TypeVar, final, overload
 
 from ..protocol import DatagramProtocol, DatagramProtocolParseError
@@ -76,7 +76,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
     ) -> None:
         self.__socket: _socket.socket | None = None  # If any exception occurs, the client will already be in a closed state
         super().__init__()
-        self.__lock = Lock()
+        self.__lock = _Lock()
 
         assert isinstance(protocol, DatagramProtocol)
 
@@ -350,7 +350,7 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         return packet
 
     def iter_received_packets(self, timeout: float | None = 0) -> Iterator[_ReceivedPacketT]:
-        return map(itemgetter(0), self.__endpoint.iter_received_packets_from(timeout=timeout))
+        return map(_itemgetter(0), self.__endpoint.iter_received_packets_from(timeout=timeout))
 
     def fileno(self) -> int:
         return self.__endpoint.fileno()

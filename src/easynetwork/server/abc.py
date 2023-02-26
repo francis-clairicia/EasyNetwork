@@ -11,7 +11,7 @@ __all__ = [
 ]
 
 from abc import ABCMeta, abstractmethod
-from typing import TYPE_CHECKING, Any, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, Sequence, TypeVar
 
 from ..tools.socket import SocketAddress
 
@@ -32,7 +32,6 @@ class AbstractNetworkServer(Generic[_RequestT, _ResponseT], metaclass=ABCMeta):
         return self
 
     def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None) -> None:
-        self.shutdown()
         self.server_close()
 
     def __getstate__(self) -> Any:  # pragma: no cover
@@ -58,7 +57,6 @@ class AbstractNetworkServer(Generic[_RequestT, _ResponseT], metaclass=ABCMeta):
     def shutdown(self) -> None:
         raise NotImplementedError
 
-    @property
     @abstractmethod
-    def address(self) -> SocketAddress:
+    def get_addresses(self) -> Sequence[SocketAddress]:
         raise NotImplementedError

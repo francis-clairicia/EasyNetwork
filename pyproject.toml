@@ -107,6 +107,7 @@ testpaths = ["tests"]
 markers = [
   "slow: marks tests as slow",
   "functional: marks tests as functional tests",
+  "unit: marks tests as unit tests",
   "serializer: marks serializers tests",
   # Platform-specific tests
   "platform_win32: marks tests as runnable on win32 (Windows)",

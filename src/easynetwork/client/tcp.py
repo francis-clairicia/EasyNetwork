@@ -8,10 +8,10 @@ from __future__ import annotations
 
 __all__ = ["TCPNetworkClient"]
 
-import errno
-import os
+import errno as _errno
+import os as _os
 import socket as _socket
-from threading import Lock
+from threading import Lock as _Lock
 from time import monotonic as _time_monotonic
 from typing import Any, Callable, Generic, Iterator, TypeVar, final, overload
 
@@ -76,7 +76,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
     ) -> None:
         self.__socket: _socket.socket | None = None  # If any exception occurs, the client will already be in a closed state
         super().__init__()
-        self.__lock = Lock()
+        self.__lock = _Lock()
 
         socket: _socket.socket
         self.__owner: bool
@@ -159,7 +159,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             if (socket := self.__socket) is None:
                 raise ClientClosedError("Closed client")
             if self.__eof_reached:
-                raise OSError(errno.ECONNABORTED, os.strerror(errno.ECONNABORTED))
+                raise OSError(_errno.ECONNABORTED, _os.strerror(_errno.ECONNABORTED))
             with _restore_timeout_at_end(socket):
                 socket.settimeout(None)
                 socket.sendall(b"".join(list(self.__producer(packet))))
@@ -176,7 +176,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             if (socket := self.__socket) is None:
                 raise ClientClosedError("Closed client")
             if self.__eof_reached:  # Do not need to call socket.recv()
-                raise OSError(errno.ECONNABORTED, os.strerror(errno.ECONNABORTED))
+                raise OSError(_errno.ECONNABORTED, _os.strerror(_errno.ECONNABORTED))
             bufsize: int = self.__max_recv_bufsize
             monotonic = _time_monotonic  # pull function to local namespace
 
@@ -193,7 +193,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                         break
                     if not chunk:
                         self.__eof_reached = True
-                        raise OSError(errno.ECONNABORTED, os.strerror(errno.ECONNABORTED))
+                        raise OSError(_errno.ECONNABORTED, _os.strerror(_errno.ECONNABORTED))
                     consumer.feed(chunk)
                     try:
                         return next_packet(consumer)
