@@ -28,7 +28,7 @@ def socket_family(request: Any) -> int:
     return request.param
 
 
-@pytest.fixture()
+@pytest.fixture
 def localhost(socket_family: int) -> str:
     return _FAMILY_TO_LOCALHOST[socket_family]
 
@@ -57,17 +57,18 @@ def udp_socket_factory(socket_factory: Callable[[int], Socket]) -> Callable[[], 
     return partial(socket_factory, SOCK_DGRAM)
 
 
-@pytest.fixture(scope="package")
-def schedule_call_in_thread() -> Iterator[Callable[[float, Callable[[], Any]], None]]:
-    with ThreadPoolExecutor(thread_name_prefix="pytest-easynetwork") as executor:
+@pytest.fixture
+def schedule_call_in_thread(request: pytest.FixtureRequest) -> Iterator[Callable[[float, Callable[[], Any]], None]]:
+    with ThreadPoolExecutor(thread_name_prefix=f"pytest-easynetwork_{request.node.name}") as executor:
 
-        def task(time_to_sleep: float, callback: Callable[[], Any]) -> None:
+        def task(time_to_sleep: float, callback: Callable[[], Any], submit_timestamp: float) -> None:
+            time_to_sleep -= time.monotonic() - submit_timestamp
             if time_to_sleep > 0:
                 time.sleep(time_to_sleep)
             callback()
 
         def schedule_call(time_to_sleep: float, callback: Callable[[], Any]) -> None:
-            executor.submit(task, time_to_sleep, callback)
+            executor.submit(task, time_to_sleep, callback, time.monotonic())
 
         yield schedule_call
 

@@ -86,7 +86,7 @@ class _JSONParser:
                 if not first_enclosure:
                     first_enclosure = next(iter(enclosure_counter))
                 if enclosure_counter[first_enclosure] <= 0:  # 1st found is closed
-                    return bytes(partial_document), chunk[nb_chars:]
+                    return partial_document, chunk[nb_chars:]
 
     @staticmethod
     def _raw_parse_plain_value(buffer_array: bytearray, chunk: bytes) -> Generator[None, bytes, tuple[bytes, bytes]]:
@@ -99,7 +99,7 @@ class _JSONParser:
                 continue
             break
         buffer_array.extend(chunk[:non_printable_idx])
-        return bytes(buffer_array), chunk[non_printable_idx:]
+        return buffer_array, chunk[non_printable_idx:]
 
 
 class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
@@ -153,7 +153,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
 
         try:
             document: str = data.decode(self.__encoding, self.__str_errors)
-        except UnicodeDecodeError as exc:
+        except UnicodeError as exc:
             raise DeserializeError(f"Unicode decode error: {exc}") from exc
         try:
             packet: _DT_co = self.__decoder.decode(document)
@@ -174,7 +174,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
         packet: _DT_co
         try:
             document: str = complete_document.decode(self.__encoding, self.__str_errors)
-        except UnicodeDecodeError as exc:
+        except UnicodeError as exc:
             raise IncrementalDeserializeError(
                 f"Unicode decode error: {exc}",
                 remaining_data=remaining_data,

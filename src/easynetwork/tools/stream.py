@@ -137,7 +137,6 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
                 raise StopIteration
             finally:
                 del consumer, unconsumed_data
-            assert isinstance(chunk, (bytes, bytearray))
             self.__b = bytes(chunk)
             return packet
 
@@ -150,7 +149,7 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
 
     def get_buffer(self) -> bytes:
         with self.__lock:
-            return bytes(self.__b)
+            return self.__b[:]
 
     def get_unconsumed_data(self) -> bytes:
         with self.__lock:

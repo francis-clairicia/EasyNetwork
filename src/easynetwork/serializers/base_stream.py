@@ -118,11 +118,12 @@ class FixedSizePacketSerializer(AbstractIncrementalPacketSerializer[_ST_contra, 
 
     @final
     def incremental_deserialize(self) -> Generator[None, bytes, tuple[_DT_co, bytes]]:
-        buffer: bytes = yield
+        buffer = bytearray((yield))
         packet_size: int = self.__size
         while len(buffer) < packet_size:
-            buffer += yield
-        data, buffer = buffer[:packet_size], buffer[packet_size:]
+            buffer.extend((yield))
+        data = buffer[:packet_size]
+        del buffer[:packet_size]
         try:
             packet = self.deserialize(data)
         except DeserializeError as exc:

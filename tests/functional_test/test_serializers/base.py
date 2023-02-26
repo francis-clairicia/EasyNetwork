@@ -61,7 +61,7 @@ class BaseTestSerializer(metaclass=ABCMeta):
         data = serializer_for_serialization.serialize(packet_to_serialize)
 
         # Assert
-        assert isinstance(data, bytes)
+        assert isinstance(data, (bytes, bytearray))
         if callable(expected_complete_data):
             expected_complete_data(data)
         else:
@@ -120,7 +120,6 @@ class BaseTestIncrementalSerializer(BaseTestSerializer):
         data: bytes = b"".join(serializer_for_serialization.incremental_serialize(packet_to_serialize))
 
         # Assert
-        assert isinstance(data, bytes)
         if callable(expected_joined_data):
             expected_joined_data(data)
         else:
@@ -140,7 +139,7 @@ class BaseTestIncrementalSerializer(BaseTestSerializer):
         packet, remaining_data = send_return(consumer, complete_data_for_incremental_deserialize)
 
         # Assert
-        assert isinstance(remaining_data, bytes)
+        assert isinstance(remaining_data, (bytes, bytearray))
         assert remaining_data == b""
         assert type(packet) is type(packet_to_serialize)
         assert packet == packet_to_serialize
@@ -161,7 +160,7 @@ class BaseTestIncrementalSerializer(BaseTestSerializer):
         packet, remaining_data = send_return(consumer, complete_data_for_incremental_deserialize + incremental_extra_data)
 
         # Assert
-        assert isinstance(remaining_data, bytes)
+        assert isinstance(remaining_data, (bytes, bytearray))
         assert remaining_data == incremental_extra_data
         assert type(packet) is type(packet_to_serialize)
         assert packet == packet_to_serialize
@@ -202,7 +201,7 @@ class BaseTestIncrementalSerializer(BaseTestSerializer):
         packet, remaining_data = exc_info.value.value
 
         # Assert
-        assert isinstance(remaining_data, bytes)
+        assert isinstance(remaining_data, (bytes, bytearray))
         assert remaining_data == b""
         assert type(packet) is type(packet_to_serialize)
         assert packet == packet_to_serialize

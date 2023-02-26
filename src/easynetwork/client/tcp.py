@@ -160,9 +160,14 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 raise ClientClosedError("Closed client")
             if self.__eof_reached:
                 raise OSError(_errno.ECONNABORTED, _os.strerror(_errno.ECONNABORTED))
+
+            # The list call should be roughly
+            # equivalent to the PySequence_Fast that ''.join() would do.
+            data: bytes = b"".join(list(self.__producer(packet)))
+
             with _restore_timeout_at_end(socket):
                 socket.settimeout(None)
-                socket.sendall(b"".join(list(self.__producer(packet))))
+                socket.sendall(data)
                 _check_real_socket_state(socket)
 
     def recv_packet(self, timeout: float | None = None) -> _ReceivedPacketT:
