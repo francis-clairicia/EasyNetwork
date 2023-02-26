@@ -24,3 +24,6 @@ runs:
       with:
         path: .tox
         key: tox|${{ runner.os }}|${{ github.workflow }}|${{ github.job }}|${{ steps.python.outputs.checksum }}|${{ hashFiles( 'tox.ini' , 'requirements*.txt') }}
+    - name: Disable tox parallel spinner by default
+      run: echo "TOX_PARALLEL_NO_SPINNER=1" >> $GITHUB_ENV
+      shell: bash
