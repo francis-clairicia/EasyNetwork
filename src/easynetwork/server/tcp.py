@@ -433,10 +433,11 @@ class _ServerSocketSelector(Generic[_RequestT, _ResponseT]):
         return self.__selector_exit_stack.close()
 
     def select(self) -> _ServerSocketSelectResult[_RequestT, _ResponseT]:
-        ready_clients = self.__clients_select(self.__poll_interval)
         if self.__clients_set:
+            ready_clients = self.__clients_select(self.__poll_interval)
             ready_listeners = self.__listeners_select(0)
         else:
+            ready_clients = self.__clients_select(0)
             ready_listeners = self.__listeners_select(self.__poll_interval)
         return {
             "listeners": ready_listeners,
@@ -772,14 +773,10 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
 
             self.__client_ref: Callable[[], _ClientPayload[_RequestT, _ResponseT] | None] = weakref.ref(client)
             self.__socket_proxy: SocketProxy = SocketProxy(client._socket, lock=client._lock)
-            self.__h: int
+            self.__h: int = hash(client)
 
         def __hash__(self) -> int:
-            try:
-                return self.__h
-            except AttributeError:
-                self.__h = h = hash(self.__client_ref)
-                return h
+            return self.__h
 
         def is_closed(self) -> bool:
             return self.__client_ref() is None
