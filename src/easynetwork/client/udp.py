@@ -11,7 +11,7 @@ __all__ = ["UDPNetworkClient", "UDPNetworkEndpoint"]
 import socket as _socket
 from operator import itemgetter as _itemgetter
 from threading import Lock as _Lock
-from typing import TYPE_CHECKING, Any, Generic, Iterator, TypeAlias, TypeVar, final, overload
+from typing import TYPE_CHECKING, Any, Generic, Iterator, TypeVar, final, overload
 
 from ..protocol import DatagramProtocol, DatagramProtocolParseError
 from ..tools._utils import check_real_socket_state as _check_real_socket_state, restore_timeout_at_end as _restore_timeout_at_end
@@ -24,10 +24,6 @@ if TYPE_CHECKING:
 
 _ReceivedPacketT = TypeVar("_ReceivedPacketT")
 _SentPacketT = TypeVar("_SentPacketT")
-
-
-_Address: TypeAlias = tuple[str, int] | tuple[str, int, int, int]  # type: ignore[misc]
-# False positive, see https://github.com/python/mypy/issues/11098
 
 
 class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
@@ -188,7 +184,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
     def send_packet_to(
         self,
         packet: _SentPacketT,
-        address: _Address | None,
+        address: tuple[str, int] | tuple[str, int, int, int] | None,
     ) -> None:
         with self.__lock:
             if (socket := self.__socket) is None:
