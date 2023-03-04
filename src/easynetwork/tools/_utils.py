@@ -4,6 +4,7 @@ from __future__ import annotations
 
 __all__ = [
     "check_real_socket_state",
+    "error_from_errno",
     "restore_timeout_at_end",
 ]
 
@@ -11,6 +12,10 @@ import contextlib
 import os
 import socket as _socket
 from typing import Iterator
+
+
+def error_from_errno(errno: int) -> OSError:
+    return OSError(errno, os.strerror(errno))
 
 
 def check_real_socket_state(socket: _socket.socket) -> None:
@@ -25,7 +30,7 @@ def check_real_socket_state(socket: _socket.socket) -> None:
     errno = socket.getsockopt(_socket.SOL_SOCKET, _socket.SO_ERROR)
     if errno > 0:
         # The SO_ERROR is automatically reset to zero after getting the value
-        raise OSError(errno, os.strerror(errno))
+        raise error_from_errno(errno)
 
 
 @contextlib.contextmanager
