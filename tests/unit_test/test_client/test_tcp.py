@@ -1058,23 +1058,6 @@ class TestTCPNetworkClient(BaseTestClient):
         with pytest.raises(StopIteration):
             _ = next(iterator)
 
-    @pytest.mark.parametrize("socket_family", ["AF_INET"], indirect=True)
-    def test____get_buffer____return_unconsumed_data(
-        self,
-        client: TCPNetworkClient[Any, Any],
-        mock_stream_data_consumer: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        mock_stream_data_consumer.get_unconsumed_data.return_value = mocker.sentinel.data
-
-        # Act
-        data: bytes = client._get_buffer()
-
-        # Assert
-        mock_stream_data_consumer.get_unconsumed_data.assert_called_once_with()
-        assert data is mocker.sentinel.data
-
     @pytest.mark.usefixtures("setup_producer_mock", "setup_consumer_mock")
     def test____special_case____send_packet____eof_error____do_not_try_socket_send(
         self,

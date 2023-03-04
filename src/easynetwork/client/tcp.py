@@ -238,10 +238,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 return -1
             return socket.fileno()
 
-    @final
-    def _get_buffer(self) -> bytes:
-        return self.__consumer.get_unconsumed_data()
-
     @property
     @final
     def socket(self) -> SocketProxy:

@@ -34,7 +34,7 @@ class MyTCPServer(AbstractTCPNetworkServer[str, str]):
     max_recv_size = 1024
 
     def __init__(self) -> None:
-        super().__init__(("", PORT), StreamProtocol(MyServerSerializer()))
+        super().__init__(host="", port=PORT, protocol=StreamProtocol(MyServerSerializer()))
 
     def process_request(self, request: str, client: ConnectedClient[str]) -> None:
         client.send_packet(request.upper())
@@ -42,7 +42,7 @@ class MyTCPServer(AbstractTCPNetworkServer[str, str]):
 
 class MyUDPServer(AbstractUDPNetworkServer[str, str]):
     def __init__(self) -> None:
-        super().__init__(("", PORT), DatagramProtocol(MyServerSerializer()), thread_pool_size=1)
+        super().__init__(host="", port=PORT, protocol=DatagramProtocol(MyServerSerializer()))
 
     def process_request(self, request: str, client_address: SocketAddress) -> None:
         self.send_packet_to(request.upper(), client_address)

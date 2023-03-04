@@ -89,7 +89,8 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
 
     def __init__(
         self,
-        address: tuple[str, int] | tuple[str, int, int, int],
+        host: str,
+        port: int,
         protocol: StreamProtocol[_ResponseT, _RequestT],
         *,
         family: int = _socket.AF_INET,
@@ -110,7 +111,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
 
         self.__listener_socket: _socket.socket | None = None
         listener_socket: _socket.socket = _socket.create_server(
-            address,
+            (host, port),
             family=family,
             backlog=backlog,
             reuse_port=reuse_port,
@@ -286,7 +287,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
 
     def _add_client_callback(
         self,
-        future: _Future[tuple[bool, bytes]],
+        future: _Future[bool],
         *,
         socket: _socket.socket,
         address: SocketAddress,
@@ -296,7 +297,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         logger: _logging.Logger = self.__logger
 
         try:
-            accepted, remaining_data = future.result()
+            accepted = future.result()
             server_selector: _ServerSocketSelector[_RequestT, _ResponseT] | None = self.__server_selector
             assert server_selector is not None
         except CancelledError:  # shutdown requested
@@ -329,13 +330,12 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         )
         server_selector.register_client(client)
         server_selector.add_client_for_reading(client)
-        client._consumer.feed(remaining_data)
         self.on_connection(client._api)
 
-    def _verify_client_task(self, client_socket: _socket.socket, address: SocketAddress) -> tuple[bool, bytes]:
+    def _verify_client_task(self, client_socket: _socket.socket, address: SocketAddress) -> bool:
         with TCPNetworkClient(client_socket, protocol=self.__protocol, give=False) as client:
             accepted = self.verify_new_client(client, address)
-            return accepted, client._get_buffer()
+            return bool(accepted)
 
     def verify_new_client(self, client: TCPNetworkClient[_ResponseT, _RequestT], address: SocketAddress) -> bool:
         return True
@@ -402,6 +402,7 @@ class _ServerSocketSelector(Generic[_RequestT, _ResponseT]):
         "__selector_exit_stack",
         "__listener_lock",
         "__clients_lock",
+        "__weakref__",
     )
 
     EVENT_READ = _selectors.EVENT_READ
@@ -561,6 +562,8 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
         server: AbstractTCPNetworkServer[_RequestT, _ResponseT],
         selector: _ServerSocketSelector[_RequestT, _ResponseT],
     ) -> None:
+        import weakref
+
         protocol = server.protocol()
         self._socket: _socket.socket | None = socket
         self._consumer: StreamDataConsumer[_RequestT] = StreamDataConsumer(protocol)
@@ -568,9 +571,9 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
         self._lock = _threading.RLock()
         self._request_future: _Future[None] | None = None
         self._unsent_data: bytearray = bytearray()
-        self._server: AbstractTCPNetworkServer[_RequestT, _ResponseT] = server
+        self._server: AbstractTCPNetworkServer[_RequestT, _ResponseT] = weakref.proxy(server)
         self._logger: _logging.Logger = server.logger
-        self._selector: _ServerSocketSelector[_RequestT, _ResponseT] = selector
+        self._selector: _ServerSocketSelector[_RequestT, _ResponseT] = weakref.proxy(selector)
         self._api: _ClientPayload._ConnectedClientAPI[_ResponseT] = self._ConnectedClientAPI(self, address)
 
     def fileno(self) -> int:  # Needed for selector
@@ -586,13 +589,12 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
             with _contextlib.suppress(Exception), _contextlib.ExitStack() as stack:
                 stack.callback(self._logger.info, "%s disconnected", self._api.address)
                 stack.callback(self._server.on_disconnection, self._api)
-                stack.callback(setattr, self, "_server", None)  # Explicit reference break
                 stack.callback(setattr, self, "_socket", None)
                 stack.callback(socket.close)
                 stack.callback(socket.shutdown, _socket.SHUT_WR)
                 stack.callback(self._api._put_to_closed_state)
                 stack.callback(self._selector.unregister_client, self)
-                stack.callback(self._flush_unsent_data_and_packets, closing_context=True)
+                stack.callback(self._send_all_unsent_data_and_packets_before_close)
 
     def ready_for_reading(self) -> None:
         with self._lock:
@@ -619,9 +621,37 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
 
     def ready_for_writing(self) -> None:
         with self._lock:
-            if self._socket is None:
+            if (socket := self._socket) is None:
                 return
-            self._flush_unsent_data_and_packets(closing_context=False)
+            logger: _logging.Logger = self._logger
+            unsent_data: bytearray = self._unsent_data
+            if unsent_data:
+                logger.debug("Try sending remaining data to %s", self._api.address)
+                try:
+                    nb_bytes_sent = socket.send(unsent_data)
+                    _check_real_socket_state(socket)
+                except (TimeoutError, BlockingIOError, InterruptedError):
+                    logger.debug("Failed to send data, bail out.")
+                    self._selector.add_client_for_writing(self)
+                    return
+                except ConnectionError:
+                    self.close()
+                    return
+                except OSError:
+                    self._request_error_handling_and_close()
+                    return
+                del unsent_data[:nb_bytes_sent]
+                if unsent_data:
+                    self._selector.add_client_for_writing(self)
+                    logger.debug(
+                        "%d byte(s) sent to %s and %d byte(s) queued", nb_bytes_sent, self._api.address, len(unsent_data)
+                    )
+                    return
+                logger.debug("%d byte(s) sent to %s", nb_bytes_sent, self._api.address)
+            self._selector.remove_client_for_writing(self)
+            if self._producer.pending_packets():
+                logger.debug("Try sending queued packets to %s", self._api.address)
+                self._send_queued_packets()
 
     def process_pending_request(self, request_executor: _ThreadPoolExecutor | None) -> None:
         with self._lock:
@@ -649,7 +679,6 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
                     except RuntimeError:  # shutdown() asked
                         return
                     self._request_future = request_future
-                    self._selector.remove_client_for_reading(self)
             except Exception:
                 self._request_error_handling_and_close()
                 return
@@ -675,51 +704,10 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
             with self._lock:
                 assert future is self._request_future
                 self._request_future = None
-                if not future.cancelled():
-                    try:
-                        self._selector.add_client_for_reading(self)
-                    except KeyError:  # Closed client
-                        pass
         finally:
             del future
 
-    def _flush_unsent_data_and_packets(self, *, closing_context: bool) -> None:
-        socket: _socket.socket | None = self._socket
-        assert socket is not None
-
-        logger: _logging.Logger = self._logger
-        unsent_data: bytearray = self._unsent_data
-        if unsent_data:
-            logger.debug("Try sending remaining data to %s", self._api.address)
-            try:
-                nb_bytes_sent = socket.send(unsent_data)
-                _check_real_socket_state(socket)
-            except (TimeoutError, BlockingIOError, InterruptedError):
-                logger.debug("Failed to send data, bail out.")
-                if not closing_context:
-                    self._selector.add_client_for_writing(self)
-                return
-            except ConnectionError:
-                if not closing_context:
-                    self.close()
-                return
-            except OSError:
-                if not closing_context:
-                    self._request_error_handling_and_close()
-                return
-            del unsent_data[:nb_bytes_sent]
-            if unsent_data:
-                self._selector.add_client_for_writing(self)
-                logger.debug("%d byte(s) sent to %s and %d byte(s) queued", nb_bytes_sent, self._api.address, len(unsent_data))
-                return
-            logger.debug("%d byte(s) sent to %s", nb_bytes_sent, self._api.address)
-        if not closing_context:
-            self._selector.remove_client_for_writing(self)
-        if self._producer.pending_packets():
-            logger.debug("Try sending queued packets to %s", self._api.address)
-            self._send_queued_packets(closing_context=closing_context)
-
-    def _send_queued_packets(self, *, closing_context: bool) -> None:
+    def _send_queued_packets(self) -> None:
         socket: _socket.socket | None = self._socket
         assert socket is not None
 
@@ -734,25 +722,35 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
                 _check_real_socket_state(socket)
             except (TimeoutError, BlockingIOError, InterruptedError):
                 unsent_data.extend(chunk)
-                if not closing_context:
-                    self._selector.add_client_for_writing(self)
+                self._selector.add_client_for_writing(self)
                 break
             except ConnectionError:
-                if not closing_context:
-                    self.close()
+                self.close()
                 return
             except OSError:
-                if not closing_context:
-                    self._request_error_handling_and_close()
+                self._request_error_handling_and_close()
                 return
 
             total_nb_bytes_sent += nb_bytes_sent
             if nb_bytes_sent < len(chunk):
                 unsent_data.extend(chunk[nb_bytes_sent:])
-                if not closing_context:
-                    self._selector.add_client_for_writing(self)
+                self._selector.add_client_for_writing(self)
                 break
         logger.debug("%d byte(s) sent to %s and %d byte(s) queued", total_nb_bytes_sent, self._api.address, len(unsent_data))
+
+    def _send_all_unsent_data_and_packets_before_close(self) -> None:
+        socket: _socket.socket | None = self._socket
+        assert socket is not None
+
+        unsent_data: bytes = b"".join([self._unsent_data, *self._producer])
+        self._unsent_data.clear()
+
+        if unsent_data:
+            self._logger.debug("Try sending remaining data to %s before closing", self._api.address)
+            try:
+                socket.sendall(unsent_data)
+            except OSError:
+                return
 
     def _request_error_handling_and_close(self) -> None:
         try:
@@ -802,7 +800,7 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
                     client._logger.debug("A response has been queued for %s", self.address)
                 else:
                     client._logger.debug("A response will be sent to %s", self.address)
-                    client._send_queued_packets(closing_context=False)
+                    client._send_queued_packets()
 
         @property
         def socket(self) -> SocketProxy:
