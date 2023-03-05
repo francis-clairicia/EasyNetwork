@@ -438,8 +438,8 @@ class _ServerSocketSelector(Generic[_RequestT, _ResponseT]):
 
     def close(self) -> None:
         # All remaining clients must be closed before
-        for client in list(self.__clients_set):
-            self.__selector_exit_stack.callback(client.close)
+        for client in self.__clients_set:
+            self.__selector_exit_stack.callback(client._api.close)
         return self.__selector_exit_stack.close()
 
     def select(self) -> _ServerSocketSelectResult[_RequestT, _ResponseT]:
@@ -594,20 +594,6 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
                 return -1
             return socket.fileno()
 
-    def close(self) -> None:
-        with self._lock:
-            if (socket := self._socket) is None:
-                return
-            with _contextlib.suppress(Exception), _contextlib.ExitStack() as stack:
-                stack.callback(self._logger.info, "%s disconnected", self._api.address)
-                stack.callback(self._server.on_disconnection, self._api)
-                stack.callback(setattr, self, "_socket", None)
-                stack.callback(socket.close)
-                stack.callback(socket.shutdown, _socket.SHUT_WR)
-                stack.callback(self._api._put_to_closed_state)
-                stack.callback(self._selector.unregister_client, self)
-                stack.callback(self._send_all_unsent_data_and_packets_before_close)
-
     def ready_for_reading(self) -> None:
         with self._lock:
             if (socket := self._socket) is None:
@@ -623,10 +609,12 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
                 logger.debug("Blocking IO error when reading %s. Will try later.", self._api.address)
                 return
             except ConnectionError:
-                self.close()
+                self._erase_all_data_and_packets_to_send()
+                self._api.close()
                 return
             except OSError:
-                self._request_error_handling_and_close()
+                self._erase_all_data_and_packets_to_send()
+                self._request_error_handling_and_close(close_client_before=True)
                 return
             logger.debug("Received %d bytes from %s", len(data), self._api.address)
             self._consumer.feed(data)
@@ -647,10 +635,12 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
                     self._selector.add_client_for_writing(self)
                     return
                 except ConnectionError:
-                    self.close()
+                    self._erase_all_data_and_packets_to_send()
+                    self._api.close()
                     return
                 except OSError:
-                    self._request_error_handling_and_close()
+                    self._erase_all_data_and_packets_to_send()
+                    self._request_error_handling_and_close(close_client_before=True)
                     return
                 del unsent_data[:nb_bytes_sent]
                 if unsent_data:
@@ -692,7 +682,7 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
                         return
                     self._request_future = request_future
             except Exception:
-                self._request_error_handling_and_close()
+                self._request_error_handling_and_close(close_client_before=False)
                 return
 
         # Blocking operation out of lock scope (deadlock possible if not)
@@ -709,7 +699,7 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
         try:
             self._server.process_request(request, self._api)
         except Exception:
-            self._request_error_handling_and_close()
+            self._request_error_handling_and_close(close_client_before=False)
 
     def _request_task_done(self, future: _Future[None]) -> None:
         try:
@@ -743,10 +733,12 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
                 self._selector.add_client_for_writing(self)
                 break
             except ConnectionError:
-                self.close()
+                self._erase_all_data_and_packets_to_send()
+                self._api.close()
                 return
             except OSError:
-                self._request_error_handling_and_close()
+                self._erase_all_data_and_packets_to_send()
+                self._request_error_handling_and_close(close_client_before=True)
                 return
 
             total_nb_bytes_sent += nb_bytes_sent
@@ -756,12 +748,27 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
                 break
         logger.debug("%d byte(s) sent to %s and %d byte(s) queued", total_nb_bytes_sent, self._api.address, len(unsent_data))
 
+    def _erase_all_data_and_packets_to_send(self) -> None:
+        from collections import deque
+
+        self._unsent_data.clear()
+        while self._producer.pending_packets():
+            try:
+                deque(self._producer, maxlen=None)  # Consume iterator at C level
+            except Exception:
+                pass
+
     def _send_all_unsent_data_and_packets_before_close(self) -> None:
         socket: _socket.socket | None = self._socket
         assert socket is not None
 
-        unsent_data: bytes = b"".join([self._unsent_data, *self._producer])
+        unsent_data: bytes = bytes(self._unsent_data)
         self._unsent_data.clear()
+
+        try:
+            unsent_data = b"".join([unsent_data, *self._producer])
+        except Exception:
+            pass
 
         if unsent_data:
             self._logger.debug("Try sending remaining data to %s before closing", self._api.address)
@@ -770,11 +777,22 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
             except OSError:
                 return
 
-    def _request_error_handling_and_close(self) -> None:
-        try:
-            self._server.handle_error(self._api, _get_exception)
-        finally:
-            self.close()
+    def _request_error_handling_and_close(self, *, close_client_before: bool) -> None:
+        if close_client_before:
+            exc: BaseException | None = _get_exception()
+            exc_cb: Callable[[], BaseException | None] = lambda: exc
+            try:
+                try:
+                    self._api.close()
+                finally:
+                    self._server.handle_error(self._api, exc_cb)
+            finally:
+                del exc_cb, exc
+        else:
+            try:
+                self._server.handle_error(self._api, _get_exception)
+            finally:
+                self._api.close()
 
     @final
     class _ConnectedClientAPI(ConnectedClient[_ResponseT]):
@@ -801,10 +819,21 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
             client = self.__client_ref()
             if client is None:
                 return
-            client.close()
-
-        def _put_to_closed_state(self) -> None:
             self.__client_ref = lambda: None
+
+            with client._lock:
+
+                if (socket := client._socket) is None:
+                    return
+
+                with _contextlib.suppress(Exception), _contextlib.ExitStack() as stack:
+                    stack.callback(client._logger.info, "%s disconnected", self.address)
+                    stack.callback(client._server.on_disconnection, self)
+                    stack.callback(setattr, client, "_socket", None)
+                    stack.callback(socket.close)
+                    stack.callback(socket.shutdown, _socket.SHUT_WR)
+                    stack.callback(client._selector.unregister_client, client)
+                    stack.callback(client._send_all_unsent_data_and_packets_before_close)
 
         def send_packet(self, packet: _ResponseT) -> None:
             client = self.__client_ref()

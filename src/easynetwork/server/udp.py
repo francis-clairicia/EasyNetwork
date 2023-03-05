@@ -195,8 +195,15 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
 
                 if ready & EVENT_WRITE:
                     flush_unsent_datagrams()
+
+                if socket not in server_selector.get_map():  # Error occured during process
+                    break
+
                 if ready & EVENT_READ:
                     handle_received_datagram(request_executor)
+
+                if socket not in server_selector.get_map():  # Error occured during process
+                    break
 
                 service_actions()
 
@@ -204,6 +211,8 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         pass
 
     def _handle_received_datagram(self, request_executor: _ThreadPoolExecutor | None) -> None:
+        if (selector := self.__server_selector) is None:
+            raise RuntimeError("Closed server")
         socket: _socket.socket | None = self.__socket
         if socket is None:
             return
@@ -211,6 +220,11 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         try:
             datagram, client_address = socket.recvfrom(MAX_DATAGRAM_BUFSIZE)
         except (TimeoutError, BlockingIOError, InterruptedError):
+            return
+        except OSError:
+            logger.exception("socket.recvfrom(): Error occured")
+            _remove_event_mask(selector, socket, _selectors.EVENT_READ | _selectors.EVENT_WRITE)
+            self.__looping = False  # The socket is not usable anymore, shutdown server loop
             return
         client_address = new_socket_address(client_address, socket.family)
         logger.debug("Received a datagram from %s", client_address)
@@ -302,6 +316,8 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 _add_event_mask(selector, socket, _selectors.EVENT_WRITE)
             except OSError:
                 logger.exception("Failed to send datagram to %s", client_address)
+                _remove_event_mask(selector, socket, _selectors.EVENT_READ | _selectors.EVENT_WRITE)
+                self.__looping = False  # The socket is not usable anymore, shutdown server loop
             else:
                 logger.debug("Datagram successfully sent to %s.", client_address)
 
@@ -327,7 +343,9 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                     return
                 except OSError:
                     logger.exception("Failed to send datagram to %s", client_address)
-                    break
+                    _remove_event_mask(selector, socket, _selectors.EVENT_READ | _selectors.EVENT_WRITE)
+                    self.__looping = False  # The socket is not usable anymore, shutdown server loop
+                    return
                 else:
                     logger.debug("Datagram successfully sent to %s.", client_address)
             # end while
