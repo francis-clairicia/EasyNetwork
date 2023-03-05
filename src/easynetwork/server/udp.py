@@ -120,8 +120,8 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     def serve_forever(self) -> None:
         if (socket := self.__socket) is None:
             raise RuntimeError("Closed server")
-        if self.running():
-            raise RuntimeError("Server already running")
+        if not self.__is_shutdown.is_set():
+            raise RuntimeError("Server is already running")
 
         with _contextlib.ExitStack() as server_exit_stack:
             # Final log
@@ -131,18 +131,22 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             # Wake up server
             self.__is_shutdown.clear()
             server_exit_stack.callback(self.__is_shutdown.set)
+
+            def _reset_loop_state(self: AbstractUDPNetworkServer[Any, Any]) -> None:
+                self.__looping = False
+
+            self.__looping = True
+            server_exit_stack.callback(_reset_loop_state, self)
             ################
 
             # Setup selector
             server_selector: _selectors.BaseSelector = self.__selector_factory()
-            self.__looping = True
-            self.__server_selector = server_selector
 
-            def _reset_values(self: AbstractUDPNetworkServer[Any, Any]) -> None:
+            def _reset_selector(self: AbstractUDPNetworkServer[Any, Any]) -> None:
                 self.__server_selector = None
-                self.__looping = False
 
-            server_exit_stack.callback(_reset_values, self)
+            self.__server_selector = server_selector
+            server_exit_stack.callback(_reset_selector, self)
             server_exit_stack.callback(server_selector.close)
             ################
 

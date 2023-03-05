@@ -179,8 +179,8 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     def serve_forever(self) -> None:
         if (listener_socket := self.__listener_socket) is None:
             raise RuntimeError("Closed server")
-        if self.running():
-            raise RuntimeError("Server already running")
+        if not self.__is_shutdown.is_set():
+            raise RuntimeError("Server is already running")
 
         with _contextlib.ExitStack() as server_exit_stack:
             # Final log
@@ -190,6 +190,12 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             # Wake up server
             self.__is_shutdown.clear()
             server_exit_stack.callback(self.__is_shutdown.set)
+
+            def _reset_loop_state(self: AbstractTCPNetworkServer[Any, Any]) -> None:
+                self.__looping = False
+
+            self.__looping = True
+            server_exit_stack.callback(_reset_loop_state, self)
             ################
 
             # Setup selector
@@ -197,14 +203,12 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 factory=self.__selector_factory,
                 poll_interval=self.__selector_poll_interval,
             )
-            self.__looping = True
-            self.__server_selector = server_selector
 
-            def _reset_values(self: AbstractTCPNetworkServer[Any, Any]) -> None:
+            def _reset_selector(self: AbstractTCPNetworkServer[Any, Any]) -> None:
                 self.__server_selector = None
-                self.__looping = False
 
-            server_exit_stack.callback(_reset_values, self)
+            self.__server_selector = server_selector
+            server_exit_stack.callback(_reset_selector, self)
             server_exit_stack.callback(server_selector.close)
             ################
 
@@ -323,7 +327,8 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             try:
                 socket.setsockopt(_socket.IPPROTO_TCP, _socket.TCP_NODELAY, True)
             except Exception:
-                logger.warning("Failed to disable Nagle algorithm")
+                if logger.isEnabledFor(_logging.DEBUG):
+                    logger.warning("[%s] Failed to disable Nagle algorithm", address)
 
         client = _ClientPayload(
             socket=socket,
