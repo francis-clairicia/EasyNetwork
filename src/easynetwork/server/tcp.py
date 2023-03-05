@@ -212,14 +212,6 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             server_exit_stack.callback(server_selector.close)
             ################
 
-            # Setup client verification's thread pool
-            verify_client_executor: _ThreadPoolExecutor = _ThreadPoolExecutor(
-                max_workers=1,  # Do not need more than that
-                thread_name_prefix=f"{self.__class__.__name__}[verify_client]",
-            )
-            server_exit_stack.callback(verify_client_executor.shutdown, wait=True, cancel_futures=True)
-            #########################################
-
             # Setup client requests' thread pool
             request_executor: _ThreadPoolExecutor | None = None
             if self.__thread_pool_size is None or self.__thread_pool_size != 0:
@@ -229,6 +221,14 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 )
                 server_exit_stack.callback(request_executor.shutdown, wait=True, cancel_futures=False)
             ####################################
+
+            # Setup client verification's thread pool
+            verify_client_executor: _ThreadPoolExecutor = _ThreadPoolExecutor(
+                max_workers=1,  # Do not need more than that
+                thread_name_prefix=f"{self.__class__.__name__}[verify_client]",
+            )
+            server_exit_stack.callback(verify_client_executor.shutdown, wait=True, cancel_futures=True)
+            #########################################
 
             # Enable listener
             server_selector.add_listener_socket(listener_socket)
