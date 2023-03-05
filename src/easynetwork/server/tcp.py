@@ -20,7 +20,7 @@ import sys as _sys
 import threading as _threading
 from abc import ABCMeta, abstractmethod
 from concurrent.futures import Future as _Future, ThreadPoolExecutor as _ThreadPoolExecutor
-from typing import TYPE_CHECKING, Any, Callable, Generic, TypeVar, final
+from typing import TYPE_CHECKING, Any, Callable, Generic, Iterator, TypeVar, final
 from weakref import WeakSet as _WeakSet
 
 from ..client.tcp import TCPNetworkClient
@@ -81,6 +81,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         "__selector_factory",
         "__selector_poll_interval",
         "__disable_nagle_algorithm",
+        "__incremental_write",
         "__thread_pool_size",
         "__logger",
     )
@@ -97,6 +98,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         backlog: int | None = None,
         reuse_port: bool = False,
         dualstack_ipv6: bool = False,
+        incremental_write: bool = False,
         disable_nagle_algorithm: bool = False,
         selector_factory: Callable[[], _selectors.BaseSelector] | None = None,
         poll_interval: float = 0.1,
@@ -130,6 +132,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             self.__selector_factory: Callable[[], _selectors.BaseSelector] = selector_factory
             self.__server_selector: _ServerSocketSelector[_RequestT, _ResponseT] | None = None
             self.__selector_poll_interval: float = float(poll_interval)
+            self.__incremental_write: bool = bool(incremental_write)
             self.__disable_nagle_algorithm: bool = bool(disable_nagle_algorithm)
             self.__logger: _logging.Logger = logger or _logging.getLogger(__name__)
         except BaseException:
@@ -327,6 +330,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             address=address,
             server=self,
             selector=server_selector,
+            incremental_write=self.__incremental_write,
         )
         server_selector.register_client(client)
         server_selector.add_client_for_reading(client)
@@ -552,6 +556,7 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
         "_server",
         "_selector",
         "_logger",
+        "_incremental_write",
         "__weakref__",
     )
 
@@ -561,6 +566,7 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
         address: SocketAddress,
         server: AbstractTCPNetworkServer[_RequestT, _ResponseT],
         selector: _ServerSocketSelector[_RequestT, _ResponseT],
+        incremental_write: bool,
     ) -> None:
         import weakref
 
@@ -575,6 +581,7 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
         self._logger: _logging.Logger = server.logger
         self._selector: _ServerSocketSelector[_RequestT, _ResponseT] = weakref.proxy(selector)
         self._api: _ClientPayload._ConnectedClientAPI[_ResponseT] = self._ConnectedClientAPI(self, address)
+        self._incremental_write: bool = incremental_write
 
     def fileno(self) -> int:  # Needed for selector
         with self._lock:
@@ -716,7 +723,13 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
         socket_send = socket.send
         total_nb_bytes_sent: int = 0
 
-        for chunk in self._producer:
+        chunk_iterator: Iterator[bytes]
+        if self._incremental_write:
+            chunk_iterator = self._producer
+        else:
+            chunk_iterator = iter([b"".join(list(self._producer))])
+
+        for chunk in chunk_iterator:
             try:
                 nb_bytes_sent = socket_send(chunk)
                 _check_real_socket_state(socket)
