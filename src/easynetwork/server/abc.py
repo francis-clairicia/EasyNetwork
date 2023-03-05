@@ -11,7 +11,7 @@ __all__ = [
 ]
 
 from abc import ABCMeta, abstractmethod
-from typing import TYPE_CHECKING, Any, Generic, Sequence, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from ..tools.socket import SocketAddress
 
@@ -58,5 +58,5 @@ class AbstractNetworkServer(Generic[_RequestT, _ResponseT], metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    def get_addresses(self) -> Sequence[SocketAddress]:
+    def get_address(self) -> SocketAddress | None:
         raise NotImplementedError

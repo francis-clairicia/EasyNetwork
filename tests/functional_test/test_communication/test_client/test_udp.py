@@ -108,7 +108,7 @@ class TestUDPNetworkClient:
             client.recv_packet()
 
     def test____recv_packet____invalid_data(self, client: UDPNetworkClient[str, str], server: Socket) -> None:
-        server.sendto("\u00E1".encode("latin-1"), client.get_local_address())
+        server.sendto("\u00E9".encode("latin-1"), client.get_local_address())
         with pytest.raises(DatagramProtocolParseError):
             client.recv_packet()
 
@@ -333,7 +333,7 @@ class TestUDPNetworkEndpoint:
             client.recv_packet_from()
 
     def test____recv_packet_from____invalid_data(self, client: UDPNetworkEndpoint[str, str], server: Socket) -> None:
-        server.sendto("\u00E1".encode("latin-1"), client.get_local_address())
+        server.sendto("\u00E9".encode("latin-1"), client.get_local_address())
         with pytest.raises(DatagramProtocolParseError):
             client.recv_packet_from()
 

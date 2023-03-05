@@ -77,6 +77,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         "__protocol",
         "__looping",
         "__is_shutdown",
+        "__is_up",
         "__server_selector",
         "__selector_factory",
         "__selector_poll_interval",
@@ -127,6 +128,8 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             self.__looping: bool = False
             self.__is_shutdown: _threading.Event = _threading.Event()
             self.__is_shutdown.set()
+            self.__is_up: _threading.Event = _threading.Event()
+            self.__is_up.clear()
             if selector_factory is None:
                 selector_factory = _selectors.DefaultSelector
             self.__selector_factory: Callable[[], _selectors.BaseSelector] = selector_factory
@@ -143,7 +146,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
 
         self.__listener_socket = listener_socket
 
-    def __del__(self) -> None:
+    def __del__(self) -> None:  # pragma: no cover
         try:
             listener_socket: _socket.socket | None = self.__listener_socket
         except AttributeError:
@@ -159,6 +162,10 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     @final
     def running(self) -> bool:
         return not self.__is_shutdown.is_set()
+
+    @final
+    def wait_for_server_to_be_up(self, timeout: float | None = None) -> bool:
+        return self.__is_up.wait(timeout=timeout)
 
     def server_close(self) -> None:
         with self.__listener_lock:
@@ -190,12 +197,6 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             # Wake up server
             self.__is_shutdown.clear()
             server_exit_stack.callback(self.__is_shutdown.set)
-
-            def _reset_loop_state(self: AbstractTCPNetworkServer[Any, Any]) -> None:
-                self.__looping = False
-
-            self.__looping = True
-            server_exit_stack.callback(_reset_loop_state, self)
             ################
 
             # Setup selector
@@ -236,11 +237,13 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
 
             # Enable listener
             server_selector.add_listener_socket(listener_socket)
-            self.__logger.info("Start serving at %s", ", ".join(map(str, self.get_addresses())))
+            self.__logger.info("Start serving at %s", self.get_address())
             #################
 
             # Pull methods to local namespace
             select = server_selector.select
+            nb_listeners = server_selector.nb_listeners
+            nb_clients = server_selector.nb_clients
             get_clients_with_pending_requests = server_selector.get_clients_with_pending_requests
             accept_new_client = self._accept_new_client
             service_actions = self.service_actions
@@ -251,8 +254,20 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             EVENT_WRITE: int = _selectors.EVENT_WRITE
             #################################
 
+            # Server is up
+            def _reset_loop_state(self: AbstractTCPNetworkServer[Any, Any]) -> None:
+                self.__looping = False
+
+            self.__looping = True
+            server_exit_stack.callback(_reset_loop_state, self)
+            self.__is_up.set()
+            server_exit_stack.callback(self.__is_up.clear)
+            ##############
+
             # Main loop
             while self.__looping:
+                if nb_listeners() < 1 and nb_clients() < 1:
+                    break
                 ready = select()
                 if not self.__looping:  # shutdown() called during select()
                     break  # type: ignore[unreachable]
@@ -280,11 +295,9 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         verify_client_executor: _ThreadPoolExecutor,
     ) -> None:
         with self.__listener_lock:
-            if self.__listener_socket is None:  # all listeners are closed
-                return
             try:
                 client_socket, address = listener_socket.accept()
-            except OSError:
+            except OSError:  # listener closed while waiting for lock
                 return
         address = new_socket_address(address, client_socket.family)
 
@@ -315,7 +328,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             socket.close()
             return
         except BaseException:
-            logger.exception("An exception occured when verifying client %s", address)
+            logger.exception("Error occured when verifying client %s", address)
             socket.close()
             return
         finally:
@@ -351,20 +364,20 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             return bool(accepted)
 
     def verify_new_client(self, client: TCPNetworkClient[_ResponseT, _RequestT], address: SocketAddress) -> bool:
-        return True
+        return True  # pragma: no cover
 
     def on_connection(self, client: ConnectedClient[_ResponseT]) -> None:
-        pass
+        pass  # pragma: no cover
 
     def on_disconnection(self, client: ConnectedClient[_ResponseT]) -> None:
-        pass
+        pass  # pragma: no cover
 
     @abstractmethod
     def process_request(self, request: _RequestT, client: ConnectedClient[_ResponseT]) -> None:
         raise NotImplementedError
 
     def bad_request(self, client: ConnectedClient[_ResponseT], error_type: ParseErrorType, message: str, error_info: Any) -> None:
-        pass
+        pass  # pragma: no cover
 
     def handle_error(self, client: ConnectedClient[Any], exc_info: Callable[[], BaseException | None]) -> None:
         exception = exc_info()
@@ -385,10 +398,10 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         return self.__protocol
 
     @final
-    def get_addresses(self) -> tuple[SocketAddress, ...]:
+    def get_address(self) -> SocketAddress | None:
         if (listener := self.__listener_socket) is None:
-            return ()
-        return (new_socket_address(listener.getsockname(), listener.family),)
+            return None
+        return new_socket_address(listener.getsockname(), listener.family)
 
     @property
     @final
@@ -472,6 +485,10 @@ class _ServerSocketSelector(Generic[_RequestT, _ResponseT]):
                 return []
             return [key.fileobj for key, _ in self.__listener_selector.select(timeout=timeout)]  # type: ignore[misc]
 
+    def nb_listeners(self) -> int:
+        with self.__listener_lock:
+            return len(self.__listener_selector.get_map())
+
     def register_client(self, client: _ClientPayload[_RequestT, _ResponseT]) -> None:
         with self.__clients_lock:
             self.__clients_set.add(client)
@@ -533,13 +550,9 @@ class _ServerSocketSelector(Generic[_RequestT, _ResponseT]):
                 return []
             return [(key.fileobj, event) for key, event in self.__client_selector.select(timeout=timeout)]  # type: ignore[misc]
 
-    def has_client(self, client: _ClientPayload[_RequestT, _ResponseT]) -> bool:
+    def nb_clients(self) -> int:
         with self.__clients_lock:
-            return client in self.__clients_set
-
-    def get_all_registered_clients(self) -> list[_ClientPayload[_RequestT, _ResponseT]]:
-        with self.__clients_lock:
-            return list(self.__clients_set)
+            return len(self.__clients_set)
 
     def get_clients_with_pending_requests(self) -> list[_ClientPayload[_RequestT, _ResponseT]]:
         with self.__clients_lock:

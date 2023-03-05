@@ -89,7 +89,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
 
         self.__socket = socket
 
-    def __del__(self) -> None:
+    def __del__(self) -> None:  # pragma: no cover
         try:
             socket: _socket.socket | None = self.__socket
         except AttributeError:
@@ -171,7 +171,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
 
             # Enable socket
             server_selector.register(socket, _selectors.EVENT_READ)
-            self.__logger.info("Start serving at %s", ", ".join(map(str, self.get_addresses())))
+            self.__logger.info("Start serving at %s", self.get_address())
             #################
 
             # Pull methods to local namespace
@@ -364,13 +364,6 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         if (socket := self.__socket) is None:
             return None
         return new_socket_address(socket.getsockname(), socket.family)
-
-    @final
-    def get_addresses(self) -> tuple[SocketAddress, ...]:
-        address = self.get_address()
-        if address is None:
-            return ()
-        return (address,)
 
     @property
     @final

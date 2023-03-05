@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from socket import AF_INET, socket as Socket
 from typing import Any, Callable, Iterator
 
@@ -12,6 +11,8 @@ from easynetwork.protocol import StreamProtocol, StreamProtocolParseError
 from easynetwork.tools.socket import IPv4SocketAddress, IPv6SocketAddress
 
 import pytest
+
+from ....tools import TimeTest
 
 
 # Origin: https://gist.github.com/4325783, by Geert Jansen.  Public domain.
@@ -152,22 +153,13 @@ class TestTCPNetworkClient:
         assert client.recv_packet(timeout=0.2) == "ABCDEF"
 
         # Case 2: Several recv() within timeout
-        monotonic = time.monotonic
         schedule_call_in_thread(0.1, lambda: server.sendall(b"A"))
         schedule_call_in_thread(0.2, lambda: server.sendall(b"B"))
         schedule_call_in_thread(0.3, lambda: server.sendall(b"C"))
         schedule_call_in_thread(0.4, lambda: server.sendall(b"D"))
         schedule_call_in_thread(0.5, lambda: server.sendall(b"E"))
-        start_time: float = -1
-        end_time: float = -1
-        with pytest.raises(TimeoutError):
-            start_time = monotonic()
-            try:
-                client.recv_packet(timeout=0.6)
-            finally:
-                end_time = monotonic()
-        assert start_time > 0 and end_time > start_time
-        assert (end_time - start_time) == pytest.approx(0.6, rel=1e-1)
+        with pytest.raises(TimeoutError), TimeTest(0.6, approx=1e-1):
+            client.recv_packet(timeout=0.6)
         server.sendall(b"F\n")
         assert client.recv_packet(timeout=None) == "ABCDEF"
 
@@ -182,7 +174,7 @@ class TestTCPNetworkClient:
             client.recv_packet()
 
     def test____recv_packet____invalid_data(self, client: TCPNetworkClient[str, str], server: Socket) -> None:
-        server.sendall("\u00E1\nvalid\n".encode("latin-1"))
+        server.sendall("\u00E9\nvalid\n".encode("latin-1"))
         with pytest.raises(StreamProtocolParseError):
             client.recv_packet()
         assert client.recv_packet() == "valid"

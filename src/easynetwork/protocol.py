@@ -139,7 +139,7 @@ class StreamProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
             packet, remaining_data = yield from self.__serializer.incremental_deserialize()
         except IncrementalDeserializeError as exc:
             raise StreamProtocolParseError(exc.remaining_data, "deserialization", str(exc), error_info=exc.error_info) from exc
-        except DeserializeError as exc:  # pragma: no cover
+        except DeserializeError as exc:
             raise RuntimeError(str(exc)) from exc
 
         if (converter := self.__converter) is not None:

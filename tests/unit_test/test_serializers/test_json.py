@@ -9,7 +9,7 @@ from easynetwork.serializers.json import JSONDecoderConfig, JSONEncoderConfig, J
 
 import pytest
 
-from ..._utils import send_return
+from ...tools import send_return
 from .base import BaseSerializerConfigInstanceCheck
 
 if TYPE_CHECKING:

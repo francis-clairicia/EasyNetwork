@@ -25,7 +25,11 @@ class StringSerializer(AbstractIncrementalPacketSerializer[str, str]):
             raise TypeError("is not a string")
         if "\n" in packet:
             raise ValueError(r"remove '\n' character")
-        yield packet.encode(encoding=self.encoding) + b"\n"
+        for idx, word in enumerate(packet.split()):
+            if idx:
+                yield b" "
+            yield word.encode(encoding=self.encoding)
+        yield b"\n"
 
     def deserialize(self, data: bytes) -> str:
         try:

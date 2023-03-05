@@ -10,7 +10,7 @@ from easynetwork.serializers.exceptions import DeserializeError, IncrementalDese
 
 import pytest
 
-from ..._utils import send_return
+from ...tools import send_return
 
 
 class BaseTestSerializer(metaclass=ABCMeta):

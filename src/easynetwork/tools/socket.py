@@ -19,10 +19,12 @@ __all__ = [
 import contextlib
 import socket as _socket
 from enum import IntEnum, unique
-from typing import TYPE_CHECKING, Any, ContextManager, Final, Literal, NamedTuple, TypeAlias, overload
+from typing import TYPE_CHECKING, Any, ContextManager, Final, Literal, NamedTuple, TypeAlias, final, overload
 
 if TYPE_CHECKING:
     import threading as _threading
+
+    from _typeshed import ReadableBuffer
 
 
 @unique
@@ -98,8 +100,12 @@ MAX_STREAM_BUFSIZE: Final[int] = 256 * 1024  # 256KiB
 MAX_DATAGRAM_BUFSIZE: Final[int] = 64 * 1024  # 64KiB
 
 
+@final
 class SocketProxy:
     __slots__ = ("__socket", "__lock_ctx", "__weakref__")
+
+    def __init_subclass__(cls) -> None:  # pragma: no cover
+        raise TypeError("SocketProxy cannot be subclassed")
 
     def __init__(self, socket: _socket.socket, *, lock: _threading.Lock | _threading.RLock | None = None) -> None:
         self.__socket: _socket.socket = socket
@@ -153,7 +159,7 @@ class SocketProxy:
             return self.__socket.getsockopt(*args)
 
     @overload
-    def setsockopt(self, __level: int, __optname: int, __value: int | bytes, /) -> None:
+    def setsockopt(self, __level: int, __optname: int, __value: int | ReadableBuffer, /) -> None:
         ...
 
     @overload
