@@ -230,6 +230,10 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             server_exit_stack.callback(verify_client_executor.shutdown, wait=True, cancel_futures=True)
             #########################################
 
+            # Thread pool shutdown log
+            server_exit_stack.callback(self.__logger.info, "Server loop break, waiting for thread pools to be closed...")
+            ##########################
+
             # Enable listener
             server_selector.add_listener_socket(listener_socket)
             self.__logger.info("Start serving at %s", ", ".join(map(str, self.get_addresses())))

@@ -165,6 +165,10 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 server_exit_stack.callback(request_executor.shutdown, wait=True, cancel_futures=False)
             ####################################
 
+            # Thread pool shutdown log
+            server_exit_stack.callback(self.__logger.info, "Server loop break, waiting for thread pools to be closed...")
+            ##########################
+
             # Enable socket
             server_selector.register(socket, _selectors.EVENT_READ)
             self.__logger.info("Start serving at %s", ", ".join(map(str, self.get_addresses())))
