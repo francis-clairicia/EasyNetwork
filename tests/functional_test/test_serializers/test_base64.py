@@ -6,7 +6,7 @@ import random
 from abc import abstractmethod
 from typing import Any, final
 
-from easynetwork.serializers.exceptions import DeserializeError
+from easynetwork.exceptions import DeserializeError
 from easynetwork.serializers.wrapper.base64 import Base64EncodedSerializer
 
 import pytest

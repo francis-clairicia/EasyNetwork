@@ -5,9 +5,9 @@ from __future__ import annotations
 from socket import AF_INET, socket as Socket
 from typing import Any, Callable, Iterator
 
-from easynetwork.client.exceptions import ClientClosedError
 from easynetwork.client.tcp import TCPNetworkClient
-from easynetwork.protocol import StreamProtocol, StreamProtocolParseError
+from easynetwork.exceptions import ClientClosedError, StreamProtocolParseError
+from easynetwork.protocol import StreamProtocol
 from easynetwork.tools.socket import IPv4SocketAddress, IPv6SocketAddress
 
 import pytest

@@ -5,7 +5,7 @@ from __future__ import annotations
 import collections
 from typing import TYPE_CHECKING, Any, Iterable, final
 
-from easynetwork.serializers.exceptions import DeserializeError
+from easynetwork.exceptions import DeserializeError
 from easynetwork.serializers.struct import _ENDIANNESS_CHARACTERS, AbstractStructSerializer, NamedTupleStructSerializer
 
 import pytest

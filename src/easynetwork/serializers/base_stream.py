@@ -16,8 +16,8 @@ from abc import abstractmethod
 from io import BytesIO
 from typing import IO, Any, Generator, TypeVar, final
 
+from ..exceptions import DeserializeError, IncrementalDeserializeError
 from .abc import AbstractIncrementalPacketSerializer
-from .exceptions import DeserializeError, IncrementalDeserializeError
 
 _ST_contra = TypeVar("_ST_contra", contravariant=True)
 _DT_co = TypeVar("_DT_co", covariant=True)

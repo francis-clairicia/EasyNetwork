@@ -8,13 +8,11 @@ from __future__ import annotations
 
 __all__ = [
     "AbstractNetworkClient",
-    "ClientClosedError",
     "TCPNetworkClient",
     "UDPNetworkClient",
     "UDPNetworkEndpoint",
 ]
 
 from .abc import *
-from .exceptions import *
 from .tcp import *
 from .udp import *

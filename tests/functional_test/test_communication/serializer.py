@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Generator
 
+from easynetwork.exceptions import DeserializeError, IncrementalDeserializeError
 from easynetwork.serializers.abc import AbstractIncrementalPacketSerializer
-from easynetwork.serializers.exceptions import DeserializeError, IncrementalDeserializeError
 
 
 class StringSerializer(AbstractIncrementalPacketSerializer[str, str]):

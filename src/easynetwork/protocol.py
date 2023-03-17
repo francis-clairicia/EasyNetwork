@@ -7,39 +7,21 @@
 from __future__ import annotations
 
 __all__ = [
-    "BaseProtocolParseError",
     "DatagramProtocol",
-    "DatagramProtocolParseError",
     "StreamProtocol",
-    "StreamProtocolParseError",
 ]
 
-from typing import Any, Generator, Generic, Literal, TypeAlias, TypeVar, overload
+from typing import Any, Generator, Generic, TypeVar, overload
 
 from .converter import AbstractPacketConverter, PacketConversionError
+from .exceptions import DatagramProtocolParseError, DeserializeError, IncrementalDeserializeError, StreamProtocolParseError
 from .serializers.abc import AbstractIncrementalPacketSerializer, AbstractPacketSerializer
-from .serializers.exceptions import DeserializeError, IncrementalDeserializeError
 
 _SentDTOPacketT = TypeVar("_SentDTOPacketT")
 _ReceivedDTOPacketT = TypeVar("_ReceivedDTOPacketT")
 
 _SentPacketT = TypeVar("_SentPacketT")
 _ReceivedPacketT = TypeVar("_ReceivedPacketT")
-
-
-ParseErrorType: TypeAlias = Literal["deserialization", "conversion"]
-
-
-class BaseProtocolParseError(Exception):
-    def __init__(self, error_type: ParseErrorType, message: str, error_info: Any = None) -> None:
-        super().__init__(f"Error while parsing data: {message}")
-        self.error_type: ParseErrorType = error_type
-        self.error_info: Any = error_info
-        self.message: str = message
-
-
-class DatagramProtocolParseError(BaseProtocolParseError):
-    pass
 
 
 class DatagramProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
@@ -87,16 +69,6 @@ class DatagramProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
             except PacketConversionError as exc:
                 raise DatagramProtocolParseError("conversion", str(exc), error_info=exc.error_info) from exc
         return packet
-
-
-class StreamProtocolParseError(BaseProtocolParseError):
-    def __init__(self, remaining_data: bytes, error_type: ParseErrorType, message: str, error_info: Any = None) -> None:
-        super().__init__(
-            error_type=error_type,
-            message=message,
-            error_info=error_info,
-        )
-        self.remaining_data: bytes = remaining_data
 
 
 class StreamProtocol(Generic[_SentPacketT, _ReceivedPacketT]):

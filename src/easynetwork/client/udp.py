@@ -13,11 +13,11 @@ from operator import itemgetter as _itemgetter
 from threading import Lock as _Lock
 from typing import TYPE_CHECKING, Any, Generic, Iterator, TypeVar, final, overload
 
-from ..protocol import DatagramProtocol, DatagramProtocolParseError
+from ..exceptions import ClientClosedError, DatagramProtocolParseError
+from ..protocol import DatagramProtocol
 from ..tools._utils import check_real_socket_state as _check_real_socket_state, restore_timeout_at_end as _restore_timeout_at_end
 from ..tools.socket import MAX_DATAGRAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
 from .abc import AbstractNetworkClient
-from .exceptions import ClientClosedError
 
 if TYPE_CHECKING:
     from types import TracebackType

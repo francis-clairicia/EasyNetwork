@@ -25,7 +25,7 @@ class MyServerSerializer(AutoSeparatedPacketSerializer[str, str]):
         try:
             return data.decode("utf-8")
         except UnicodeError as exc:
-            from easynetwork.serializers.exceptions import DeserializeError
+            from easynetwork.exceptions import DeserializeError
 
             raise DeserializeError(str(exc)) from exc
 

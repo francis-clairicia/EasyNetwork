@@ -5,13 +5,13 @@ from __future__ import annotations
 import random
 from typing import IO, TYPE_CHECKING, Any, Generator, final
 
+from easynetwork.exceptions import DeserializeError, IncrementalDeserializeError
 from easynetwork.serializers.abc import AbstractIncrementalPacketSerializer
 from easynetwork.serializers.base_stream import (
     AutoSeparatedPacketSerializer,
     FileBasedPacketSerializer,
     FixedSizePacketSerializer,
 )
-from easynetwork.serializers.exceptions import DeserializeError, IncrementalDeserializeError
 
 import pytest
 

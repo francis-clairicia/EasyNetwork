@@ -5,8 +5,8 @@ from __future__ import annotations
 from socket import AF_INET6
 from typing import TYPE_CHECKING, Any
 
-from easynetwork.client.exceptions import ClientClosedError
 from easynetwork.client.tcp import TCPNetworkClient
+from easynetwork.exceptions import ClientClosedError
 from easynetwork.tools.socket import MAX_STREAM_BUFSIZE, IPv4SocketAddress, IPv6SocketAddress
 
 import pytest
@@ -799,7 +799,7 @@ class TestTCPNetworkClient(BaseTestClient):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        from easynetwork.protocol import StreamProtocolParseError
+        from easynetwork.exceptions import StreamProtocolParseError
 
         mock_tcp_socket.recv.side_effect = [b"packet\n"]
         expected_error = StreamProtocolParseError(b"", "deserialization", "Sorry")
@@ -967,7 +967,7 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_stream_data_consumer: MagicMock,
     ) -> None:
         # Arrange
-        from easynetwork.protocol import StreamProtocolParseError
+        from easynetwork.exceptions import StreamProtocolParseError
 
         mock_stream_data_consumer.__next__.side_effect = StreamProtocolParseError(b"", "deserialization", "Sorry")
 

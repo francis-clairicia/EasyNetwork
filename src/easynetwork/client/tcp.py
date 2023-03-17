@@ -14,7 +14,8 @@ from threading import Lock as _Lock
 from time import monotonic as _time_monotonic
 from typing import Any, Callable, Generic, Iterator, TypeVar, final, overload
 
-from ..protocol import StreamProtocol, StreamProtocolParseError
+from ..exceptions import ClientClosedError, StreamProtocolParseError
+from ..protocol import StreamProtocol
 from ..tools._utils import (
     check_real_socket_state as _check_real_socket_state,
     error_from_errno as _error_from_errno,
@@ -23,7 +24,6 @@ from ..tools._utils import (
 from ..tools.socket import MAX_STREAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
 from ..tools.stream import StreamDataConsumer
 from .abc import AbstractNetworkClient
-from .exceptions import ClientClosedError
 
 _ReceivedPacketT = TypeVar("_ReceivedPacketT")
 _SentPacketT = TypeVar("_SentPacketT")

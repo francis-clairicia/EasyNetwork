@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from easynetwork.serializers.exceptions import DeserializeError
+from easynetwork.exceptions import DeserializeError
 from easynetwork.serializers.wrapper.encryptor import EncryptorSerializer
 
 import pytest

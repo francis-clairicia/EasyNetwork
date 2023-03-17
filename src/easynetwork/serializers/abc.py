@@ -50,7 +50,7 @@ class AbstractIncrementalPacketSerializer(AbstractPacketSerializer[_ST_contra, _
         return b"".join(list(self.incremental_serialize(packet)))
 
     def deserialize(self, data: bytes) -> _DT_co:
-        from .exceptions import DeserializeError
+        from ..exceptions import DeserializeError
 
         consumer: Generator[None, bytes, tuple[_DT_co, bytes]] = self.incremental_deserialize()
         try:

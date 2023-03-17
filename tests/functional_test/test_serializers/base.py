@@ -5,8 +5,8 @@ from __future__ import annotations
 from abc import ABCMeta
 from typing import Any, Callable, final
 
+from easynetwork.exceptions import DeserializeError, IncrementalDeserializeError
 from easynetwork.serializers.abc import AbstractIncrementalPacketSerializer, AbstractPacketSerializer
-from easynetwork.serializers.exceptions import DeserializeError, IncrementalDeserializeError
 
 import pytest
 

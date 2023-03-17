@@ -20,7 +20,8 @@ from abc import abstractmethod
 from concurrent.futures import ThreadPoolExecutor as _ThreadPoolExecutor
 from typing import Any, Callable, Generic, TypeVar, final
 
-from ..protocol import DatagramProtocol, DatagramProtocolParseError, ParseErrorType
+from ..exceptions import DatagramProtocolParseError
+from ..protocol import DatagramProtocol
 from ..tools._utils import check_real_socket_state as _check_real_socket_state
 from ..tools.socket import MAX_DATAGRAM_BUFSIZE, SocketAddress, new_socket_address
 from .abc import AbstractNetworkServer
@@ -270,7 +271,13 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     def process_request(self, request: _RequestT, client_address: SocketAddress) -> None:
         raise NotImplementedError
 
-    def bad_request(self, client_address: SocketAddress, error_type: ParseErrorType, message: str, error_info: Any) -> None:
+    def bad_request(
+        self,
+        client_address: SocketAddress,
+        error_type: DatagramProtocolParseError.ParseErrorType,
+        message: str,
+        error_info: Any,
+    ) -> None:
         pass
 
     def handle_error(self, client_address: SocketAddress, exc_info: Callable[[], BaseException | None]) -> None:

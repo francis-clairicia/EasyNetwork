@@ -5,8 +5,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Generator
 
 from easynetwork.converter import PacketConversionError
-from easynetwork.protocol import DatagramProtocol, DatagramProtocolParseError, StreamProtocol, StreamProtocolParseError
-from easynetwork.serializers.exceptions import DeserializeError, IncrementalDeserializeError
+from easynetwork.exceptions import (
+    DatagramProtocolParseError,
+    DeserializeError,
+    IncrementalDeserializeError,
+    StreamProtocolParseError,
+)
+from easynetwork.protocol import DatagramProtocol, StreamProtocol
 
 import pytest
 

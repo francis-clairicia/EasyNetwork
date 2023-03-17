@@ -17,11 +17,9 @@ __all__ = [
     "CBORDecoderConfig",
     "CBOREncoderConfig",
     "CBORSerializer",
-    "DeserializeError",
     "EncryptorSerializer",
     "FileBasedPacketSerializer",
     "FixedSizePacketSerializer",
-    "IncrementalDeserializeError",
     "JSONDecoderConfig",
     "JSONEncoderConfig",
     "JSONSerializer",
@@ -37,7 +35,6 @@ __all__ = [
 from .abc import *
 from .base_stream import *
 from .cbor import *
-from .exceptions import *
 from .json import *
 from .pickle import *
 from .struct import *

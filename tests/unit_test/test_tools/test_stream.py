@@ -318,7 +318,7 @@ class TestStreamDataConsumer:
         mock_stream_protocol: MagicMock,
     ) -> None:
         # Arrange
-        from easynetwork.protocol import StreamProtocolParseError
+        from easynetwork.exceptions import StreamProtocolParseError
 
         def side_effect() -> Generator[None, bytes, tuple[Any, bytes]]:
             data = yield

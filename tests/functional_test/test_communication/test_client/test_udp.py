@@ -5,9 +5,9 @@ from __future__ import annotations
 from socket import AF_INET, socket as Socket
 from typing import Any, Callable, Iterator
 
-from easynetwork.client.exceptions import ClientClosedError
 from easynetwork.client.udp import UDPNetworkClient, UDPNetworkEndpoint
-from easynetwork.protocol import DatagramProtocol, DatagramProtocolParseError
+from easynetwork.exceptions import ClientClosedError, DatagramProtocolParseError
+from easynetwork.protocol import DatagramProtocol
 from easynetwork.tools.socket import IPv4SocketAddress, IPv6SocketAddress, new_socket_address
 
 import pytest

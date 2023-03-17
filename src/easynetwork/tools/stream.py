@@ -15,7 +15,8 @@ from collections import deque
 from threading import Lock
 from typing import Any, Generator, Generic, Iterator, TypeVar, final
 
-from ..protocol import StreamProtocol, StreamProtocolParseError
+from ..exceptions import StreamProtocolParseError
+from ..protocol import StreamProtocol
 
 _SentPacketT = TypeVar("_SentPacketT")
 _ReceivedPacketT = TypeVar("_ReceivedPacketT")

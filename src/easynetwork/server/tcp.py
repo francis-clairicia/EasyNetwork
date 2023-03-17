@@ -22,7 +22,8 @@ from concurrent.futures import Future as _Future, ThreadPoolExecutor as _ThreadP
 from typing import TYPE_CHECKING, Any, Callable, Generic, Iterator, TypeVar, final
 from weakref import WeakSet as _WeakSet
 
-from ..protocol import ParseErrorType, StreamProtocol, StreamProtocolParseError
+from ..exceptions import StreamProtocolParseError
+from ..protocol import StreamProtocol
 from ..tools._utils import check_real_socket_state as _check_real_socket_state
 from ..tools.socket import MAX_STREAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
 from ..tools.stream import StreamDataConsumer, StreamDataProducer
@@ -326,7 +327,13 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     def process_request(self, request: _RequestT, client: ConnectedClient[_ResponseT]) -> None:
         raise NotImplementedError
 
-    def bad_request(self, client: ConnectedClient[_ResponseT], error_type: ParseErrorType, message: str, error_info: Any) -> None:
+    def bad_request(
+        self,
+        client: ConnectedClient[_ResponseT],
+        error_type: StreamProtocolParseError.ParseErrorType,
+        message: str,
+        error_info: Any,
+    ) -> None:
         pass  # pragma: no cover
 
     def handle_error(self, client: ConnectedClient[Any], exc_info: Callable[[], BaseException | None]) -> None:
