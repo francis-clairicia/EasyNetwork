@@ -3,28 +3,23 @@
 from __future__ import annotations
 
 import time
-from functools import partial
 from socket import IPPROTO_TCP, TCP_NODELAY, socket as Socket
 from threading import Thread
-from typing import TYPE_CHECKING, Any, Callable, Iterator
+from typing import Any, Callable, Iterator
 from weakref import WeakSet
 
 from easynetwork.protocol import StreamProtocol
 from easynetwork.server.tcp import AbstractTCPNetworkServer, ConnectedClient
 from easynetwork.tools.socket import SocketAddress
 
-from ....tools import TimeTest
-
-if TYPE_CHECKING:
-    from easynetwork.client.tcp import TCPNetworkClient
-
 import pytest
+
+from ....tools import TimeTest
 
 
 class MyTCPServer(AbstractTCPNetworkServer[str, str]):
     connected_clients: WeakSet[ConnectedClient[str]]
 
-    verification_time: float = 0
     process_time: float = 0
 
     def serve_forever(self) -> None:
@@ -40,21 +35,10 @@ class MyTCPServer(AbstractTCPNetworkServer[str, str]):
     def service_quit(self) -> None:
         self.connected_clients.clear()
 
-    def verify_new_client(self, client: TCPNetworkClient[str, str], address: SocketAddress) -> bool:
-        try:
-            password: str = client.recv_packet(timeout=3)
-        except (TimeoutError, ConnectionError):  # StreamProtocolParseError must not be caught (used for crash test)
-            return False
-        if self.verification_time > 0:
-            time.sleep(self.verification_time)
-        if password != "chocolate":
-            return False
-        client.send_packet("milk")
-        return True
-
     def on_connection(self, client: ConnectedClient[str]) -> None:
         super().on_connection(client)
         self.connected_clients.add(client)
+        client.send_packet("milk")
 
     def on_disconnection(self, client: ConnectedClient[str]) -> None:
         self.connected_clients.discard(client)
@@ -138,8 +122,8 @@ class TestTCPNetworkServer(BaseTestServer):
             sock = tcp_socket_factory()
             sock.settimeout(None)
             sock.connect(server_address)
-            sock.sendall(b"chocolate\n")
-            assert sock.recv(5) == b"milk\n"
+            with sock.makefile("rb") as io:
+                assert io.readline() == b"milk\n"
             return sock
 
         return factory
@@ -194,43 +178,6 @@ class TestTCPNetworkServer(BaseTestServer):
 
         while len(server.connected_clients) > 0:
             time.sleep(0.1)
-
-    @pytest.mark.usefixtures("run_server")
-    def test____serve_forever____verify_client_rejection(
-        self,
-        server_address: SocketAddress,
-        tcp_socket_factory: Callable[[], Socket],
-        caplog: pytest.LogCaptureFixture,
-    ) -> None:
-        caplog.set_level("WARNING")
-        client: Socket = tcp_socket_factory()
-        client.settimeout(None)
-        client.connect(server_address)
-        address, port = client.getsockname()[:2]
-        client.sendall(b"strawberry\n")
-        assert client.recv(5) == b""  # Server has closed connection
-        log_messages = [rec.message for rec in caplog.records]
-        assert f"A client (address = {address}:{port}) was not accepted by verification" in log_messages
-
-    @pytest.mark.usefixtures("run_server")
-    def test____serve_forever____verify_client_crash(
-        self,
-        server: MyTCPServer,
-        server_address: SocketAddress,
-        tcp_socket_factory: Callable[[], Socket],
-        caplog: pytest.LogCaptureFixture,
-    ) -> None:
-        caplog.set_level("ERROR")
-        client: Socket = tcp_socket_factory()
-        client.settimeout(None)
-        client.connect(server_address)
-        address, port = client.getsockname()[:2]
-        client.sendall("\u00E9\n".encode("latin-1"))  # StringSerializer does not accept unicode
-        assert client.recv(5) == b""  # Server has closed connection
-        log_messages = [rec.message for rec in caplog.records]
-        assert f"Error occured when verifying client {address}:{port}" in log_messages
-        time.sleep(0.3)
-        assert server.running()
 
     @pytest.mark.parametrize("server_disable_nagle_algorithm", [False, True], indirect=True)
     @pytest.mark.usefixtures("run_server")
@@ -428,32 +375,10 @@ class TestTCPNetworkServerConcurrency(BaseTestServer):
             sock = tcp_socket_factory()
             sock.settimeout(None)
             sock.connect(server_address)
-            sock.sendall(b"chocolate\n")
             assert sock.recv(5) == b"milk\n"
             return sock
 
         return client_factory
-
-    @pytest.mark.usefixtures("run_server")
-    def test____serve_forever____long_verification_time_does_not_stuck_main_loop(
-        self,
-        server: MyTCPServer,
-        client_factory: Callable[[], Socket],
-        schedule_call_in_thread: Callable[[float, Callable[[], Any]], None],
-    ) -> None:
-        client_1 = client_factory()
-
-        def handle(client: Socket) -> None:
-            client.sendall(b"request\n")
-            client.settimeout(0.5)
-            assert client.recv(1024) == b"REQUEST\n"
-
-        server.verification_time = 3
-
-        schedule_call_in_thread(1, partial(handle, client_1))
-
-        with TimeTest(3, approx=1e-1):
-            client_factory()
 
     @pytest.mark.parametrize("server_thread_pool_size", [pytest.param(2, id="thread_pool_size==2")], indirect=True)
     @pytest.mark.usefixtures("run_server")
@@ -473,7 +398,7 @@ class TestTCPNetworkServerConcurrency(BaseTestServer):
             assert client_1.recv(1024) == b"HELLO\n"
             assert client_2.recv(1024) == b"WORLD\n"
 
-    @pytest.mark.parametrize("server_thread_pool_size", [pytest.param(3, id="thread_pool_size==2")], indirect=True)
+    @pytest.mark.parametrize("server_thread_pool_size", [pytest.param(3, id="thread_pool_size==3")], indirect=True)
     @pytest.mark.usefixtures("run_server")
     def test____serve_forever____do_not_put_same_client_for_two_or_more_requests_in_pool(
         self,

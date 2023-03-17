@@ -12,7 +12,6 @@ __all__ = [
 ]
 
 import contextlib as _contextlib
-import functools as _functools
 import logging as _logging
 import selectors as _selectors
 import socket as _socket
@@ -23,7 +22,6 @@ from concurrent.futures import Future as _Future, ThreadPoolExecutor as _ThreadP
 from typing import TYPE_CHECKING, Any, Callable, Generic, Iterator, TypeVar, final
 from weakref import WeakSet as _WeakSet
 
-from ..client.tcp import TCPNetworkClient
 from ..protocol import ParseErrorType, StreamProtocol, StreamProtocolParseError
 from ..tools._utils import check_real_socket_state as _check_real_socket_state
 from ..tools.socket import MAX_STREAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
@@ -103,7 +101,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         disable_nagle_algorithm: bool = False,
         selector_factory: Callable[[], _selectors.BaseSelector] | None = None,
         poll_interval: float = 0.1,
-        thread_pool_size: int | None = 0,
+        thread_pool_size: int = 0,
         logger: _logging.Logger | None = None,
     ) -> None:
         super().__init__()
@@ -123,7 +121,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         try:
             listener_socket.setblocking(False)
             self.__listener_lock = _threading.RLock()
-            self.__thread_pool_size: int | None = int(thread_pool_size) if thread_pool_size is not None else None
+            self.__thread_pool_size: int = int(thread_pool_size)
             self.__protocol: StreamProtocol[_ResponseT, _RequestT] = protocol
             self.__looping: bool = False
             self.__is_shutdown: _threading.Event = _threading.Event()
@@ -215,25 +213,14 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
 
             # Setup client requests' thread pool
             request_executor: _ThreadPoolExecutor | None = None
-            if self.__thread_pool_size is None or self.__thread_pool_size != 0:
+            if self.__thread_pool_size != 0:
                 request_executor = _ThreadPoolExecutor(
-                    max_workers=self.__thread_pool_size,
+                    max_workers=self.__thread_pool_size if self.__thread_pool_size != -1 else None,
                     thread_name_prefix=f"{self.__class__.__name__}[request_executor]",
                 )
                 server_exit_stack.callback(request_executor.shutdown, wait=True, cancel_futures=False)
+                server_exit_stack.callback(self.__logger.info, "Server loop break, waiting for thread pool to be closed...")
             ####################################
-
-            # Setup client verification's thread pool
-            verify_client_executor: _ThreadPoolExecutor = _ThreadPoolExecutor(
-                max_workers=1,  # Do not need more than that
-                thread_name_prefix=f"{self.__class__.__name__}[verify_client]",
-            )
-            server_exit_stack.callback(verify_client_executor.shutdown, wait=True, cancel_futures=True)
-            #########################################
-
-            # Thread pool shutdown log
-            server_exit_stack.callback(self.__logger.info, "Server loop break, waiting for thread pools to be closed...")
-            ##########################
 
             # Enable listener
             server_selector.add_listener_socket(listener_socket)
@@ -246,7 +233,6 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             nb_clients = server_selector.nb_clients
             get_clients_with_pending_requests = server_selector.get_clients_with_pending_requests
             accept_new_client = self._accept_new_client
-            service_actions = self.service_actions
             #################################
 
             # Pull globals to local namespace
@@ -273,7 +259,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                     break  # type: ignore[unreachable]
 
                 for listener_socket in ready["listeners"]:
-                    accept_new_client(listener_socket, verify_client_executor)
+                    accept_new_client(listener_socket)
 
                 for client, event in ready["clients"]:
                     if event & EVENT_WRITE:
@@ -284,16 +270,17 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 for client in get_clients_with_pending_requests():
                     client.process_pending_request(request_executor)
 
-                service_actions()
+                self.service_actions()
 
     def service_actions(self) -> None:
         pass
 
-    def _accept_new_client(
-        self,
-        listener_socket: _socket.socket,
-        verify_client_executor: _ThreadPoolExecutor,
-    ) -> None:
+    def _accept_new_client(self, listener_socket: _socket.socket) -> None:
+        if (server_selector := self.__server_selector) is None:
+            raise RuntimeError("Closed server")
+
+        logger: _logging.Logger = self.__logger
+
         with self.__listener_lock:
             try:
                 client_socket, address = listener_socket.accept()
@@ -301,54 +288,19 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 return
         address = new_socket_address(address, client_socket.family)
 
-        self.__logger.info("Accepted new connection (address = %s)", address)
+        logger.info("Accepted new connection (address = %s)", address)
 
-        future = verify_client_executor.submit(self._verify_client_task, client_socket, address)
-        try:
-            future.add_done_callback(_functools.partial(self._add_client_callback, socket=client_socket, address=address))
-        finally:
-            del future
-
-    def _add_client_callback(
-        self,
-        future: _Future[bool],
-        *,
-        socket: _socket.socket,
-        address: SocketAddress,
-    ) -> None:
-        from concurrent.futures import CancelledError
-
-        logger: _logging.Logger = self.__logger
-
-        try:
-            accepted = future.result()
-            server_selector: _ServerSocketSelector[_RequestT, _ResponseT] | None = self.__server_selector
-            assert server_selector is not None
-        except CancelledError:  # shutdown requested
-            socket.close()
-            return
-        except BaseException:
-            logger.exception("Error occured when verifying client %s", address)
-            socket.close()
-            return
-        finally:
-            del future
-        if not accepted:
-            logger.warning("A client (address = %s) was not accepted by verification", address)
-            socket.close()
-            return
-
-        socket.setblocking(False)
+        client_socket.setblocking(False)
 
         if self.__disable_nagle_algorithm:
             try:
-                socket.setsockopt(_socket.IPPROTO_TCP, _socket.TCP_NODELAY, True)
+                client_socket.setsockopt(_socket.IPPROTO_TCP, _socket.TCP_NODELAY, True)
             except Exception:
                 if logger.isEnabledFor(_logging.DEBUG):
                     logger.warning("[%s] Failed to disable Nagle algorithm", address)
 
         client = _ClientPayload(
-            socket=socket,
+            socket=client_socket,
             address=address,
             server=self,
             selector=server_selector,
@@ -356,15 +308,13 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         )
         server_selector.register_client(client)
         server_selector.add_client_for_reading(client)
-        self.on_connection(client._api)
 
-    def _verify_client_task(self, client_socket: _socket.socket, address: SocketAddress) -> bool:
-        with TCPNetworkClient(client_socket, protocol=self.__protocol, give=False) as client:
-            accepted = self.verify_new_client(client, address)
-            return bool(accepted)
-
-    def verify_new_client(self, client: TCPNetworkClient[_ResponseT, _RequestT], address: SocketAddress) -> bool:
-        return True  # pragma: no cover
+        try:
+            self.on_connection(client._api)
+        except BaseException:
+            logger.exception("Error occured when verifying client %s", address)
+            client._api.close()
+            return
 
     def on_connection(self, client: ConnectedClient[_ResponseT]) -> None:
         pass  # pragma: no cover
@@ -715,13 +665,14 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
     def _execute_request(self, request: _RequestT) -> None:
         try:
             self._server.process_request(request, self._api)
-        except Exception:
+        except BaseException:
             self._request_error_handling_and_close(close_client_before=False)
 
     def _request_task_done(self, future: _Future[None]) -> None:
         try:
             with self._lock:
                 assert future is self._request_future
+                assert future.done()
                 self._request_future = None
         finally:
             del future
@@ -839,11 +790,10 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
             self.__client_ref = lambda: None
 
             with client._lock:
-
                 if (socket := client._socket) is None:
                     return
 
-                with _contextlib.suppress(Exception), _contextlib.ExitStack() as stack:
+                with _contextlib.suppress(BaseException), _contextlib.ExitStack() as stack:
                     stack.callback(client._logger.info, "%s disconnected", self.address)
                     stack.callback(client._server.on_disconnection, self)
                     stack.callback(setattr, client, "_socket", None)

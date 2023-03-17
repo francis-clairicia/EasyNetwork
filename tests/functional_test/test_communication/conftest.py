@@ -60,7 +60,6 @@ def udp_socket_factory(socket_factory: Callable[[int], Socket]) -> Callable[[], 
 @pytest.fixture
 def schedule_call_in_thread(request: pytest.FixtureRequest) -> Iterator[Callable[[float, Callable[[], Any]], None]]:
     with ThreadPoolExecutor(thread_name_prefix=f"pytest-easynetwork_{request.node.name}") as executor:
-
         monotonic = time.monotonic
 
         def task(time_to_sleep: float, callback: Callable[[], Any], submit_timestamp: float) -> None:

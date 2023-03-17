@@ -54,7 +54,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         reuse_port: bool = False,
         selector_factory: Callable[[], _selectors.BaseSelector] | None = None,
         poll_interval: float = 0.1,
-        thread_pool_size: int | None = 0,
+        thread_pool_size: int = 0,
         logger: _logging.Logger | None = None,
     ) -> None:
         super().__init__()
@@ -68,7 +68,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         socket = _create_udp_server((host, port), family, reuse_port)
         try:
             socket.setblocking(False)
-            self.__thread_pool_size: int | None = int(thread_pool_size) if thread_pool_size is not None else None
+            self.__thread_pool_size: int = int(thread_pool_size)
             self.__sendto_lock: _threading.RLock = _threading.RLock()
             self.__looping: bool = False
             self.__is_shutdown: _threading.Event = _threading.Event()
@@ -157,17 +157,14 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
 
             # Setup client requests' thread pool
             request_executor: _ThreadPoolExecutor | None = None
-            if self.__thread_pool_size is None or self.__thread_pool_size != 0:
+            if self.__thread_pool_size != 0:
                 request_executor = _ThreadPoolExecutor(
-                    max_workers=self.__thread_pool_size,
+                    max_workers=self.__thread_pool_size if self.__thread_pool_size != -1 else None,
                     thread_name_prefix=f"{self.__class__.__name__}[request_executor]",
                 )
                 server_exit_stack.callback(request_executor.shutdown, wait=True, cancel_futures=False)
+                server_exit_stack.callback(self.__logger.info, "Server loop break, waiting for thread pool to be closed...")
             ####################################
-
-            # Thread pool shutdown log
-            server_exit_stack.callback(self.__logger.info, "Server loop break, waiting for thread pools to be closed...")
-            ##########################
 
             # Enable socket
             server_selector.register(socket, _selectors.EVENT_READ)
@@ -234,7 +231,6 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         logger.debug("Received a datagram from %s", client_address)
 
         if not self.accept_request_from(client_address):
-            logger.warning("A client (address = %s) was not accepted by verification", client_address)
             return
 
         try:
@@ -264,7 +260,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     def _execute_request(self, request: _RequestT, client_address: SocketAddress) -> None:
         try:
             self.process_request(request, client_address)
-        except Exception:
+        except BaseException:
             self.handle_error(client_address, _get_exception)
 
     def accept_request_from(self, client_address: SocketAddress) -> bool:

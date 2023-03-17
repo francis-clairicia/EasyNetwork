@@ -8,7 +8,7 @@ from typing import IO, TYPE_CHECKING, Any, Generator, final
 from easynetwork.serializers.abc import AbstractIncrementalPacketSerializer
 from easynetwork.serializers.base_stream import (
     AutoSeparatedPacketSerializer,
-    FileBasedIncrementalPacketSerializer,
+    FileBasedPacketSerializer,
     FixedSizePacketSerializer,
 )
 from easynetwork.serializers.exceptions import DeserializeError, IncrementalDeserializeError
@@ -547,7 +547,7 @@ class TestFixedSizePacketSerializer:
         assert exception.error_info is mocker.sentinel.error_info
 
 
-class _FileBasedIncrementalPacketSerializerForTest(FileBasedIncrementalPacketSerializer[Any, Any]):
+class _FileBasedPacketSerializerForTest(FileBasedPacketSerializer[Any, Any]):
     def dump_to_file(self, packet: Any, file: IO[bytes]) -> None:
         raise NotImplementedError
 
@@ -555,16 +555,16 @@ class _FileBasedIncrementalPacketSerializerForTest(FileBasedIncrementalPacketSer
         raise NotImplementedError
 
 
-class TestFileBasedIncrementalPacketSerializer:
+class TestFileBasedPacketSerializer:
     @pytest.fixture
     @staticmethod
     def mock_dump_to_file_func(mocker: MockerFixture) -> MagicMock:
-        return mocker.patch.object(_FileBasedIncrementalPacketSerializerForTest, "dump_to_file")
+        return mocker.patch.object(_FileBasedPacketSerializerForTest, "dump_to_file")
 
     @pytest.fixture
     @staticmethod
     def mock_load_from_file_func(mocker: MockerFixture) -> MagicMock:
-        return mocker.patch.object(_FileBasedIncrementalPacketSerializerForTest, "load_from_file")
+        return mocker.patch.object(_FileBasedPacketSerializerForTest, "load_from_file")
 
     def test____serialize____dump_to_file(
         self,
@@ -575,7 +575,7 @@ class TestFileBasedIncrementalPacketSerializer:
         def side_effect(_: Any, file: IO[bytes]) -> None:
             file.write(b"success")
 
-        serializer = _FileBasedIncrementalPacketSerializerForTest(expected_load_error=())
+        serializer = _FileBasedPacketSerializerForTest(expected_load_error=())
         mock_dump_to_file_func.side_effect = side_effect
 
         # Act
@@ -594,7 +594,7 @@ class TestFileBasedIncrementalPacketSerializer:
         def side_effect(_: Any, file: IO[bytes]) -> None:
             file.write(b"success")
 
-        serializer = _FileBasedIncrementalPacketSerializerForTest(expected_load_error=())
+        serializer = _FileBasedPacketSerializerForTest(expected_load_error=())
         mock_dump_to_file_func.side_effect = side_effect
 
         # Act
@@ -613,7 +613,7 @@ class TestFileBasedIncrementalPacketSerializer:
         def side_effect(_: Any, file: IO[bytes]) -> None:
             pass
 
-        serializer = _FileBasedIncrementalPacketSerializerForTest(expected_load_error=())
+        serializer = _FileBasedPacketSerializerForTest(expected_load_error=())
         mock_dump_to_file_func.side_effect = side_effect
 
         # Act
@@ -633,7 +633,7 @@ class TestFileBasedIncrementalPacketSerializer:
             assert file.read() == b"data"
             return mocker.sentinel.packet
 
-        serializer = _FileBasedIncrementalPacketSerializerForTest(expected_load_error=())
+        serializer = _FileBasedPacketSerializerForTest(expected_load_error=())
         mock_load_from_file_func.side_effect = side_effect
 
         # Act
@@ -649,7 +649,7 @@ class TestFileBasedIncrementalPacketSerializer:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer = _FileBasedIncrementalPacketSerializerForTest(expected_load_error=())
+        serializer = _FileBasedPacketSerializerForTest(expected_load_error=())
         mock_load_from_file_func.side_effect = EOFError()
 
         # Act
@@ -676,9 +676,9 @@ class TestFileBasedIncrementalPacketSerializer:
             pass
 
         if give_as_tuple:
-            serializer = _FileBasedIncrementalPacketSerializerForTest(expected_load_error=(MyFileAPIBaseException,))
+            serializer = _FileBasedPacketSerializerForTest(expected_load_error=(MyFileAPIBaseException,))
         else:
-            serializer = _FileBasedIncrementalPacketSerializerForTest(expected_load_error=MyFileAPIBaseException)
+            serializer = _FileBasedPacketSerializerForTest(expected_load_error=MyFileAPIBaseException)
         mock_load_from_file_func.side_effect = MyFileAPIValueError()
 
         # Act
@@ -700,7 +700,7 @@ class TestFileBasedIncrementalPacketSerializer:
             assert file.read(2) == b"da"
             return mocker.sentinel.packet
 
-        serializer = _FileBasedIncrementalPacketSerializerForTest(expected_load_error=())
+        serializer = _FileBasedPacketSerializerForTest(expected_load_error=())
         mock_load_from_file_func.side_effect = side_effect
 
         # Act
@@ -720,7 +720,7 @@ class TestFileBasedIncrementalPacketSerializer:
             assert file.read() == b"data"
             return mocker.sentinel.packet
 
-        serializer = _FileBasedIncrementalPacketSerializerForTest(expected_load_error=())
+        serializer = _FileBasedPacketSerializerForTest(expected_load_error=())
         mock_load_from_file_func.side_effect = side_effect
 
         # Act
@@ -745,7 +745,7 @@ class TestFileBasedIncrementalPacketSerializer:
             assert file.read(2) == b"da"
             return mocker.sentinel.packet
 
-        serializer = _FileBasedIncrementalPacketSerializerForTest(expected_load_error=())
+        serializer = _FileBasedPacketSerializerForTest(expected_load_error=())
         mock_load_from_file_func.side_effect = side_effect
 
         # Act
@@ -773,7 +773,7 @@ class TestFileBasedIncrementalPacketSerializer:
             assert data == b"data"
             return mocker.sentinel.packet
 
-        serializer = _FileBasedIncrementalPacketSerializerForTest(expected_load_error=())
+        serializer = _FileBasedPacketSerializerForTest(expected_load_error=())
         mock_load_from_file_func.side_effect = side_effect
 
         # Act
@@ -815,9 +815,9 @@ class TestFileBasedIncrementalPacketSerializer:
             raise MyFileAPIValueError
 
         if give_as_tuple:
-            serializer = _FileBasedIncrementalPacketSerializerForTest(expected_load_error=(MyFileAPIBaseException,))
+            serializer = _FileBasedPacketSerializerForTest(expected_load_error=(MyFileAPIBaseException,))
         else:
-            serializer = _FileBasedIncrementalPacketSerializerForTest(expected_load_error=MyFileAPIBaseException)
+            serializer = _FileBasedPacketSerializerForTest(expected_load_error=MyFileAPIBaseException)
         mock_load_from_file_func.side_effect = side_effect
 
         # Act

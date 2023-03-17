@@ -16,7 +16,7 @@ from dataclasses import asdict as dataclass_asdict, dataclass
 from functools import partial
 from typing import IO, TYPE_CHECKING, Any, Callable, TypeVar, final
 
-from .base_stream import FileBasedIncrementalPacketSerializer
+from .base_stream import FileBasedPacketSerializer
 
 if TYPE_CHECKING:
     import datetime
@@ -43,7 +43,7 @@ class CBORDecoderConfig:
     str_errors: str = "strict"
 
 
-class CBORSerializer(FileBasedIncrementalPacketSerializer[_ST_contra, _DT_co]):
+class CBORSerializer(FileBasedPacketSerializer[_ST_contra, _DT_co]):
     __slots__ = ("__encoder_cls", "__decoder_cls")
 
     def __init__(

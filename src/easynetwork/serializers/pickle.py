@@ -19,7 +19,7 @@ from functools import partial
 from io import BytesIO
 from typing import IO, Callable, TypeVar, final
 
-from .base_stream import FileBasedIncrementalPacketSerializer
+from .base_stream import FileBasedPacketSerializer
 
 _ST_contra = TypeVar("_ST_contra", contravariant=True)
 _DT_co = TypeVar("_DT_co", covariant=True)
@@ -38,7 +38,7 @@ class UnpicklerConfig:
     errors: str = "strict"
 
 
-class PickleSerializer(FileBasedIncrementalPacketSerializer[_ST_contra, _DT_co]):
+class PickleSerializer(FileBasedPacketSerializer[_ST_contra, _DT_co]):
     __slots__ = ("__optimize", "__pickler_cls", "__unpickler_cls")
 
     def __init__(

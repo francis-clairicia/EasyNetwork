@@ -8,7 +8,7 @@ from __future__ import annotations
 
 __all__ = [
     "AutoSeparatedPacketSerializer",
-    "FileBasedIncrementalPacketSerializer",
+    "FileBasedPacketSerializer",
     "FixedSizePacketSerializer",
 ]
 
@@ -140,7 +140,7 @@ class FixedSizePacketSerializer(AbstractIncrementalPacketSerializer[_ST_contra, 
         return self.__size
 
 
-class FileBasedIncrementalPacketSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
+class FileBasedPacketSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
     __slots__ = ("__expected_error",)
 
     def __init__(self, expected_load_error: type[Exception] | tuple[type[Exception], ...], **kwargs: Any) -> None:
