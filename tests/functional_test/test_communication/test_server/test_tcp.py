@@ -74,32 +74,13 @@ class TestTCPNetworkServer(BaseTestServer):
 
     @pytest.fixture
     @staticmethod
-    def server_incremental_write(request: Any) -> bool:
-        return getattr(request, "param", False)
-
-    @pytest.fixture
-    @staticmethod
-    def server_disable_nagle_algorithm(request: Any) -> bool:
-        return getattr(request, "param", False)
-
-    @pytest.fixture
-    @staticmethod
     def server(
         server_factory: type[MyTCPServer],
         socket_family: int,
         localhost: str,
         stream_protocol: StreamProtocol[str, str],
-        server_incremental_write: bool,
-        server_disable_nagle_algorithm: bool,
     ) -> Iterator[MyTCPServer]:
-        with server_factory(
-            localhost,
-            0,
-            stream_protocol,
-            family=socket_family,
-            incremental_write=server_incremental_write,
-            disable_nagle_algorithm=server_disable_nagle_algorithm,
-        ) as server:
+        with server_factory(localhost, 0, stream_protocol, family=socket_family) as server:
             yield server
 
     @pytest.fixture
@@ -171,12 +152,10 @@ class TestTCPNetworkServer(BaseTestServer):
         while len(server.connected_clients) > 0:
             time.sleep(0.1)
 
-    @pytest.mark.parametrize("server_disable_nagle_algorithm", [False, True], indirect=True)
     @pytest.mark.usefixtures("run_server")
     def test____serve_forever____disable_nagle_algorithm(
         self,
         server: MyTCPServer,
-        server_disable_nagle_algorithm: bool,
         client_factory: Callable[[], Socket],
     ) -> None:
         _ = client_factory()
@@ -188,12 +167,9 @@ class TestTCPNetworkServer(BaseTestServer):
 
         tcp_nodelay_state: int = connected_client.socket.getsockopt(IPPROTO_TCP, TCP_NODELAY)
 
-        if server_disable_nagle_algorithm:
-            # Do not test with '== 1', on macOS it will return 4
-            # (c.f. https://stackoverflow.com/a/31835137)
-            assert tcp_nodelay_state != 0
-        else:
-            assert tcp_nodelay_state == 0
+        # Do not test with '== 1', on macOS it will return 4
+        # (c.f. https://stackoverflow.com/a/31835137)
+        assert tcp_nodelay_state != 0
 
     @pytest.mark.usefixtures("run_server")
     def test____serve_forever____close_during_loop____stop_immediately_without_clients(
@@ -308,14 +284,6 @@ class TestTCPNetworkServer(BaseTestServer):
         client = client_factory()
         client.sendall(b"hello\n")
         assert client.recv(1024) == b"Sorry man!\n"
-
-    @pytest.mark.parametrize("server_incremental_write", [True], indirect=True)
-    @pytest.mark.usefixtures("run_server")
-    def test____client____incremental_write(self, client_factory: Callable[[], Socket]) -> None:
-        client = client_factory()
-        client.sendall(b"hello world!\n")
-        with client.makefile("rb") as fp:  # Trick in order not to wait all chunks by myself
-            assert fp.readline() == b"HELLO WORLD!\n"
 
 
 @pytest.mark.slow
