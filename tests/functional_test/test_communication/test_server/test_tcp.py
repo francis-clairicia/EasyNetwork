@@ -112,7 +112,6 @@ class TestTCPNetworkServer(BaseTestServer):
     @staticmethod
     def server_address(server: MyTCPServer) -> SocketAddress:
         address = server.get_address()
-        assert address is not None
         return address
 
     @pytest.fixture
@@ -134,7 +133,6 @@ class TestTCPNetworkServer(BaseTestServer):
         assert server.is_closed()
         server.server_close()
         assert server.is_closed()
-        assert server.get_address() is None
 
     def test____serve_forever____default(self, server: MyTCPServer) -> None:
         assert not server.running()
@@ -365,7 +363,6 @@ class TestTCPNetworkServerConcurrency(BaseTestServer):
     @staticmethod
     def server_address(server: MyTCPServer) -> SocketAddress:
         address = server.get_address()
-        assert address is not None
         return address
 
     @pytest.fixture

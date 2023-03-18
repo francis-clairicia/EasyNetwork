@@ -198,6 +198,49 @@ class TestStreamDataProducer:
         # Assert
         ## There is no exceptions ? Nice !
 
+    def test____clear____remove_queued_packets(
+        self,
+        producer: StreamDataProducer[Any],
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        producer.queue(mocker.sentinel.packet)
+        assert producer.pending_packets()
+
+        # Act
+        producer.clear()
+
+        # Assert
+        assert not producer.pending_packets()
+        with pytest.raises(StopIteration):
+            next(producer)
+
+    def test____clear____close_current_generator(
+        self,
+        producer: StreamDataProducer[Any],
+        mock_stream_protocol: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        def side_effect(_: Any) -> Generator[bytes, None, None]:
+            with pytest.raises(GeneratorExit) as exc_info:  # Exception raised in generator when calling generator.close()
+                yield b"chunk"
+            raise exc_info.value  # re-raise exception
+
+        mock_generate_chunks_func: MagicMock = mock_stream_protocol.generate_chunks
+        mock_generate_chunks_func.side_effect = side_effect
+        producer.queue(mocker.sentinel.packet)
+        assert next(producer) == b"chunk"
+        assert producer.pending_packets()
+
+        # Act
+        producer.clear()
+
+        # Assert
+        assert not producer.pending_packets()
+        with pytest.raises(StopIteration):
+            next(producer)
+
 
 class TestStreamDataConsumer:
     @pytest.fixture
@@ -363,3 +406,40 @@ class TestStreamDataConsumer:
         # Assert
         mock_build_packet_from_chunks_func.assert_called_once_with()
         assert consumer.get_buffer() == b"Hello"
+
+    def test____clear____flush_pending_buffer(self, consumer: StreamDataConsumer[Any]) -> None:
+        # Arrange
+        consumer.feed(b"Hello")
+        assert consumer.get_buffer() == b"Hello"
+
+        # Act
+        consumer.clear()
+
+        # Assert
+        assert consumer.get_buffer() == b""
+
+    def test____clear____close_current_generator(
+        self,
+        consumer: StreamDataConsumer[Any],
+        mock_stream_protocol: MagicMock,
+    ) -> None:
+        # Arrange
+        def side_effect() -> Generator[None, bytes, tuple[Any, bytes]]:
+            assert (yield) == b"Hello"
+            with pytest.raises(GeneratorExit) as exc_info:
+                yield
+            raise exc_info.value
+
+        mock_build_packet_from_chunks_func: MagicMock = mock_stream_protocol.build_packet_from_chunks
+        mock_build_packet_from_chunks_func.side_effect = side_effect
+        consumer.feed(b"Hello")
+        with pytest.raises(StopIteration):
+            next(consumer)
+        consumer.feed(b"World")
+        assert consumer.get_buffer() == b"World"
+
+        # Act
+        consumer.clear()
+
+        # Assert
+        assert consumer.get_buffer() == b""

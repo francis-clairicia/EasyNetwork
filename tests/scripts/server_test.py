@@ -51,6 +51,16 @@ class MyUDPServer(AbstractUDPNetworkServer[str, str]):
 def main() -> None:
     parser = argparse.ArgumentParser()
 
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        dest="log_level",
+        action="store_const",
+        const="DEBUG",
+        default="INFO",
+        help="Increase verbose level",
+    )
+
     ipproto_group = parser.add_mutually_exclusive_group()
     ipproto_group.add_argument(
         "-t",
@@ -74,7 +84,7 @@ def main() -> None:
 
     server_factory: Callable[[], AbstractNetworkServer[str, str]] = args.server_factory
 
-    logging.basicConfig(level=logging.DEBUG, format="[ %(levelname)s ] [ %(name)s ] %(message)s")
+    logging.basicConfig(level=getattr(logging, args.log_level), format="[ %(levelname)s ] [ %(name)s ] %(message)s")
 
     with server_factory() as server:
         try:

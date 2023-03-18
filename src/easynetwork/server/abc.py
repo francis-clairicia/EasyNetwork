@@ -58,5 +58,5 @@ class AbstractNetworkServer(Generic[_RequestT, _ResponseT], metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    def get_address(self) -> SocketAddress | None:
+    def get_address(self) -> SocketAddress:
         raise NotImplementedError

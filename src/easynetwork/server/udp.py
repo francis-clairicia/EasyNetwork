@@ -33,9 +33,11 @@ _ResponseT = TypeVar("_ResponseT")
 class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Generic[_RequestT, _ResponseT]):
     __slots__ = (
         "__socket",
+        "__addr",
         "__sendto_lock",
         "__looping",
         "__is_shutdown",
+        "__is_up",
         "__protocol",
         "__selector_factory",
         "__server_selector",
@@ -69,11 +71,14 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         socket = _create_udp_server((host, port), family, reuse_port)
         try:
             socket.setblocking(False)
+            self.__addr: SocketAddress = new_socket_address(socket.getsockname(), socket.family)
             self.__thread_pool_size: int = int(thread_pool_size)
             self.__sendto_lock: _threading.RLock = _threading.RLock()
             self.__looping: bool = False
             self.__is_shutdown: _threading.Event = _threading.Event()
             self.__is_shutdown.set()
+            self.__is_up: _threading.Event = _threading.Event()
+            self.__is_up.clear()
             self.__protocol: DatagramProtocol[_ResponseT, _RequestT] = protocol
             self.__unsent_datagrams: _collections.deque[tuple[bytes, SocketAddress]] = _collections.deque()
             self.__poll_interval: float = float(poll_interval)
@@ -107,6 +112,10 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     def running(self) -> bool:
         return not self.__is_shutdown.is_set()
 
+    @final
+    def wait_for_server_to_be_up(self, timeout: float | None = None) -> bool:
+        return self.__is_up.wait(timeout=timeout)
+
     def server_close(self) -> None:
         if (socket := self.__socket) is None:
             return
@@ -132,12 +141,6 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             # Wake up server
             self.__is_shutdown.clear()
             server_exit_stack.callback(self.__is_shutdown.set)
-
-            def _reset_loop_state(self: AbstractUDPNetworkServer[Any, Any]) -> None:
-                self.__looping = False
-
-            self.__looping = True
-            server_exit_stack.callback(_reset_loop_state, self)
             ################
 
             # Setup selector
@@ -169,14 +172,13 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
 
             # Enable socket
             server_selector.register(socket, _selectors.EVENT_READ)
-            self.__logger.info("Start serving at %s", self.get_address())
+            self.__logger.info("Start serving at %s", self.__addr)
             #################
 
             # Pull methods to local namespace
             select = server_selector.select
             flush_unsent_datagrams = self._flush_unsent_datagrams
             handle_received_datagram = self._handle_received_datagram
-            service_actions = self.service_actions
             #################################
 
             # Pull globals to local namespace
@@ -184,6 +186,16 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             EVENT_READ: int = _selectors.EVENT_READ
             EVENT_WRITE: int = _selectors.EVENT_WRITE
             #################################
+
+            # Server is up
+            def _reset_loop_state(self: AbstractUDPNetworkServer[Any, Any]) -> None:
+                self.__looping = False
+
+            self.__looping = True
+            server_exit_stack.callback(_reset_loop_state, self)
+            self.__is_up.set()
+            server_exit_stack.callback(self.__is_up.clear)
+            ##############
 
             # Main loop
             while self.__looping:
@@ -207,7 +219,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 if socket not in server_selector.get_map():  # Error occured during process
                     break
 
-                service_actions()
+                self.service_actions()
 
     def service_actions(self) -> None:
         pass
@@ -363,10 +375,8 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         return self.__protocol
 
     @final
-    def get_address(self) -> SocketAddress | None:
-        if (socket := self.__socket) is None:
-            return None
-        return new_socket_address(socket.getsockname(), socket.family)
+    def get_address(self) -> SocketAddress:
+        return self.__addr
 
     @property
     @final

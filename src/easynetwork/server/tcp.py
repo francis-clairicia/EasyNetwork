@@ -73,6 +73,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     __slots__ = (
         "__listener_socket",
         "__listener_lock",
+        "__listener_addr",
         "__protocol",
         "__looping",
         "__is_shutdown",
@@ -122,6 +123,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         try:
             listener_socket.setblocking(False)
             self.__listener_lock = _threading.RLock()
+            self.__listener_addr: SocketAddress = new_socket_address(listener_socket.getsockname(), listener_socket.family)
             self.__thread_pool_size: int = int(thread_pool_size)
             self.__protocol: StreamProtocol[_ResponseT, _RequestT] = protocol
             self.__looping: bool = False
@@ -225,7 +227,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
 
             # Enable listener
             server_selector.add_listener_socket(listener_socket)
-            self.__logger.info("Start serving at %s", self.get_address())
+            self.__logger.info("Start serving at %s", self.__listener_addr)
             #################
 
             # Pull methods to local namespace
@@ -297,8 +299,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             try:
                 client_socket.setsockopt(_socket.IPPROTO_TCP, _socket.TCP_NODELAY, True)
             except Exception:
-                if logger.isEnabledFor(_logging.DEBUG):
-                    logger.warning("[%s] Failed to disable Nagle algorithm", address)
+                pass
 
         client = _ClientPayload(
             socket=client_socket,
@@ -355,10 +356,8 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         return self.__protocol
 
     @final
-    def get_address(self) -> SocketAddress | None:
-        if (listener := self.__listener_socket) is None:
-            return None
-        return new_socket_address(listener.getsockname(), listener.family)
+    def get_address(self) -> SocketAddress:
+        return self.__listener_addr
 
     @property
     @final
@@ -724,14 +723,8 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
         logger.debug("%d byte(s) sent to %s and %d byte(s) queued", total_nb_bytes_sent, self._api.address, len(unsent_data))
 
     def _erase_all_data_and_packets_to_send(self) -> None:
-        from collections import deque
-
         self._unsent_data.clear()
-        while self._producer.pending_packets():
-            try:
-                deque(self._producer, maxlen=None)  # Consume iterator at C level
-            except Exception:
-                pass
+        self._producer.clear()
 
     def _send_all_unsent_data_and_packets_before_close(self) -> None:
         socket: _socket.socket | None = self._socket
@@ -802,10 +795,13 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
 
                 with _contextlib.suppress(BaseException), _contextlib.ExitStack() as stack:
                     stack.callback(client._logger.info, "%s disconnected", self.address)
+                    stack.callback(client._lock.acquire)  # Re-acquire lock after calling server.on_disconnection()
                     stack.callback(client._server.on_disconnection, self)
+                    stack.callback(client._lock.release)  # Release lock before calling server.on_disconnection()
                     stack.callback(setattr, client, "_socket", None)
                     stack.callback(socket.close)
                     stack.callback(socket.shutdown, _socket.SHUT_WR)
+                    stack.callback(client._consumer.clear)
                     stack.callback(client._selector.unregister_client, client)
                     stack.callback(client._send_all_unsent_data_and_packets_before_close)
 
