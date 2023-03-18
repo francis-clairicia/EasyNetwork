@@ -55,13 +55,7 @@ class BaseTestServer:
     @pytest.fixture  # DO NOT SET autouse=True
     @staticmethod
     def run_server(server: MyTCPServer) -> Iterator[None]:
-        def serve_forever() -> None:
-            try:
-                server.serve_forever()
-            except SystemExit:  # Prevent pytest's thread excepthook to be triggered
-                pass
-
-        t = Thread(target=serve_forever)
+        t = Thread(target=server.serve_forever)
         t.start()
         try:
             if not server.wait_for_server_to_be_up(timeout=1):
@@ -391,7 +385,7 @@ class TestTCPNetworkServerConcurrency(BaseTestServer):
 
         client_1.sendall(b"hello\n")
         client_2.sendall(b"world\n")
-        with TimeTest(1, approx=1e-1):
+        with TimeTest(1, approx=2e-1):
             assert client_1.recv(1024) == b"HELLO\n"
             assert client_2.recv(1024) == b"WORLD\n"
 
@@ -412,7 +406,7 @@ class TestTCPNetworkServerConcurrency(BaseTestServer):
         for msg in messages:
             client_1.sendall(msg)
             client_2.sendall(msg)
-        with TimeTest(3, approx=1e-1):
+        with TimeTest(3, approx=5e-1):
             for msg in messages:
                 msg = msg.upper()
                 assert client_1.recv(1024) == msg

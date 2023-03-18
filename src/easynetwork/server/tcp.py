@@ -396,8 +396,6 @@ class _ServerSocketSelector(Generic[_RequestT, _ResponseT]):
         poll_interval: float,
     ) -> None:
         poll_interval = float(poll_interval)
-        if poll_interval < 0:
-            raise ValueError("'poll_interval': Negative value")
         self.__listener_selector: _selectors.BaseSelector = factory()
         self.__client_selector: _selectors.BaseSelector = factory()
         self.__clients_set: _WeakSet[_ClientPayload[_RequestT, _ResponseT]] = _WeakSet()
