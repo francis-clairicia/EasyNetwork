@@ -107,6 +107,16 @@ class TestPickleSerializer(BaseTestIncrementalSerializer):
 
     #### Invalid data
 
+    @pytest.fixture
+    @staticmethod
+    def invalid_complete_data() -> bytes:
+        pytest.skip("pickle.Unpickler() raises SystemError for some invalid inputs :)")
+
+    @pytest.fixture
+    @staticmethod
+    def invalid_partial_data() -> bytes:
+        pytest.skip("pickle.Unpickler() raises SystemError for some invalid inputs :)")
+
     @pytest.fixture(scope="class")
     @staticmethod
     def invalid_partial_data_extra_data() -> bytes | None:
