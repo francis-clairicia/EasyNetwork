@@ -4,10 +4,7 @@ extend-exclude =
     .pytest_cache,
     .venv,
     .vscode,
-    devtools,
-    demo_resources,
     dist,
-    requirements,
     site-packages
 doctest = true
 max-line-length = 130
@@ -26,12 +23,8 @@ per-file-ignores =
     # F401: 'module' imported but unused
     # F403: 'from module import *' used; unable to detect undefined names
     # F405: 'name' may be undefined, or defined from star imports: 'module'
+    # DALL001: There is no __all__ defined
     src/easynetwork/__init__.py:F401,F403,F405
     src/easynetwork/*/__init__.py:F401,F403,F405
-
-
-[flake8:local-plugins]
-extension =
-    DAL = flake8_extensions.dunder_all:DunderAll
-paths =
-    ./devtools/linting
+    tests/*.py:DALL001
+    .github/*.py:DALL001

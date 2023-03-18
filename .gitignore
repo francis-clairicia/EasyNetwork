@@ -10,6 +10,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# pdm
+.pdm.toml
+
 # C extensions
 *.so
 

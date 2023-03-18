@@ -1,29 +1,22 @@
 name: 'Setup tox'
 description: 'Install tox and restore cache'
-outputs:
-  cache-hit:
-    description: 'A boolean value to indicate an exact match was found.'
-    value: ${{ steps.cache.outputs.cache-hit }}
+inputs:
+  python-version:
+    description: "Version range or exact version of Python or PyPy to use, using SemVer's version range syntax."
+    required: false
+    default: '3.x'
 
 runs:
   using: 'composite'
   steps:
-    - name: Compile requirements
-      run: python -m devtools --no-venv repo --no-sync
-      shell: bash
-    - name: Install dependencies
-      run: pip install tox -c requirements-dev.txt
-      shell: bash
-    - name: Get python info
-      id: python
-      run: echo "checksum=$(python -VV | (sha256sum || shasum -a 256) | awk '{ print $1 }')" >> $GITHUB_OUTPUT
-      shell: bash
-    - name: Restore tox environment
-      id: cache
-      uses: actions/cache@v3
+    - uses: pdm-project/setup-pdm@v3
       with:
-        path: .tox
-        key: tox|${{ runner.os }}|${{ github.workflow }}|${{ github.job }}|${{ steps.python.outputs.checksum }}|${{ hashFiles( 'tox.ini' , 'requirements*.txt') }}
+        python-version: ${{ inputs.python-version }}
+        cache: true
+        cache-dependency-path: './pdm.lock'
+    - name: Install dependencies
+      run: pdm sync --no-self --dev --group=tox
+      shell: bash
     - name: Disable tox parallel spinner by default
       run: echo "TOX_PARALLEL_NO_SPINNER=1" >> $GITHUB_ENV
       shell: bash

@@ -13,7 +13,7 @@ on:
       - 'tests/**.pyi?'
       - 'tox.ini'
       - 'pyproject.toml'
-      - 'requirements/*.in'
+      - 'pdm.lock'
       - '.github/actions/setup-tox/**'
       - '.github/workflows/lint.yml'
   push:
@@ -27,7 +27,7 @@ on:
       - 'tests/**.pyi?'
       - 'tox.ini'
       - 'pyproject.toml'
-      - 'requirements/*.in'
+      - 'pdm.lock'
       - '.github/actions/setup-tox/**'
       - '.github/workflows/lint.yml'
 
@@ -46,13 +46,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
-        with:
-          submodules: true
-      - uses: actions/setup-python@v4
-        id: setup-python
-        with:
-          python-version: '3.10'
       - name: Setup tox
         uses: ./.github/actions/setup-tox
+        with:
+          python-version: '3.10'
       - name: Launch checks
         run: tox run-parallel -f mypy
