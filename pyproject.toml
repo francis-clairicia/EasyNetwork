@@ -118,10 +118,6 @@ markers = [
   "platform_win32: marks tests as runnable on win32 (Windows)",
   "platform_darwin: marks tests as runnable on darwin (macOS)",
   "platform_linux: marks tests as runnable on linux",
-  # Platform to skip when runnin tests
-  "skip_platform_win32: marks tests as not runnable on win32 (Windows)",
-  "skip_platform_darwin: marks tests as not runnable on darwin (macOS)",
-  "skip_platform_linux: marks tests as not runnable on linux",
 ]
 
 [tool.coverage.run]
