@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import random
 from abc import ABCMeta
 from typing import Any, Callable, final
 
@@ -25,7 +26,7 @@ class BaseTestSerializer(metaclass=ABCMeta):
     @pytest.fixture(scope="class")
     @staticmethod
     def invalid_complete_data() -> bytes:
-        return os.urandom(32)
+        return random.randbytes(32)
 
     def test____fixture____consistency(
         self,
