@@ -137,9 +137,9 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_ST_contr
 class BZ2CompressorSerializer(AbstractCompressorSerializer[_ST_contra, _DT_co]):
     __slots__ = ("__compresslevel",)
 
-    def __init__(self, serializer: AbstractPacketSerializer[_ST_contra, _DT_co], *, compresslevel: int = 9) -> None:
+    def __init__(self, serializer: AbstractPacketSerializer[_ST_contra, _DT_co], *, compress_level: int = 9) -> None:
         super().__init__(serializer=serializer, expected_decompress_error=OSError)
-        self.__compresslevel: int = compresslevel
+        self.__compresslevel: int = compress_level
 
     @final
     def new_compressor_stream(self) -> bz2.BZ2Compressor:
@@ -157,10 +157,10 @@ class ZlibCompressorSerializer(AbstractCompressorSerializer[_ST_contra, _DT_co])
         self,
         serializer: AbstractPacketSerializer[_ST_contra, _DT_co],
         *,
-        compresslevel: int = zlib.Z_BEST_COMPRESSION,
+        compress_level: int = zlib.Z_BEST_COMPRESSION,
     ) -> None:
         super().__init__(serializer=serializer, expected_decompress_error=zlib.error)
-        self.__compresslevel: int = compresslevel
+        self.__compresslevel: int = compress_level
 
     @final
     def new_compressor_stream(self) -> zlib._Compress:

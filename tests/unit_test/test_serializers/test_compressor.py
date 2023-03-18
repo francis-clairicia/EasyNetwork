@@ -386,7 +386,7 @@ class TestBZ2CompressorSerializer(BaseTestCompressorSerializerImplementation):
         # Arrange
         serializer: BZ2CompressorSerializer[Any, Any]
         if with_compress_level:
-            serializer = BZ2CompressorSerializer(mock_serializer, compresslevel=mocker.sentinel.compresslevel)
+            serializer = BZ2CompressorSerializer(mock_serializer, compress_level=mocker.sentinel.compresslevel)
         else:
             serializer = BZ2CompressorSerializer(mock_serializer)
         mock_bz2_compressor_cls.return_value = mocker.sentinel.stream
@@ -452,7 +452,7 @@ class TestZlibCompressorSerializer(BaseTestCompressorSerializerImplementation):
         # Arrange
         serializer: ZlibCompressorSerializer[Any, Any]
         if with_compress_level:
-            serializer = ZlibCompressorSerializer(mock_serializer, compresslevel=mocker.sentinel.compresslevel)
+            serializer = ZlibCompressorSerializer(mock_serializer, compress_level=mocker.sentinel.compresslevel)
         else:
             serializer = ZlibCompressorSerializer(mock_serializer)
         mock_zlib_compressor_cls.return_value = mocker.sentinel.stream
