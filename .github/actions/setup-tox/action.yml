@@ -15,7 +15,7 @@ runs:
         cache: true
         cache-dependency-path: './pdm.lock'
     - name: Install dependencies
-      run: pdm sync --no-self --dev --group=tox
+      run: pdm sync --global --project=. --no-self --dev --group=tox
       shell: bash
     - name: Disable tox parallel spinner by default
       run: echo "TOX_PARALLEL_NO_SPINNER=1" >> $GITHUB_ENV
