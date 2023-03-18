@@ -233,7 +233,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             nb_listeners = server_selector.nb_listeners
             nb_clients = server_selector.nb_clients
             get_clients_with_pending_requests = server_selector.get_clients_with_pending_requests
-            accept_new_client = self._accept_new_client
+            accept_new_client = self.__accept_new_client
             #################################
 
             # Pull globals to local namespace
@@ -271,12 +271,15 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 for client in get_clients_with_pending_requests():
                     client.process_pending_request(request_executor)
 
-                self.service_actions()
+                try:
+                    self.service_actions()
+                except Exception:
+                    self.__logger.exception("Error occured in self.service_actions()")
 
     def service_actions(self) -> None:
         pass
 
-    def _accept_new_client(self, listener_socket: _socket.socket) -> None:
+    def __accept_new_client(self, listener_socket: _socket.socket) -> None:
         server_selector = self.__server_selector
         assert server_selector is not None, "Closed server"
 
@@ -555,8 +558,8 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
 
     def fileno(self) -> int:  # Needed for selector
         with self._lock:
-            if (socket := self._socket) is None:
-                return -1
+            socket = self._socket
+            assert socket is not None, "Closed socket"
             return socket.fileno()
 
     def ready_for_reading(self) -> None:

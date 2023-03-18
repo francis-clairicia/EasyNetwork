@@ -156,7 +156,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
 
             # Flush unsent datagrams before shutdown
             server_exit_stack.callback(self.__unsent_datagrams.clear)
-            server_exit_stack.callback(self._flush_unsent_datagrams)
+            server_exit_stack.callback(self.__flush_unsent_datagrams)
             ###############
 
             # Setup client requests' thread pool
@@ -177,8 +177,8 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
 
             # Pull methods to local namespace
             select = server_selector.select
-            flush_unsent_datagrams = self._flush_unsent_datagrams
-            handle_received_datagram = self._handle_received_datagram
+            flush_unsent_datagrams = self.__flush_unsent_datagrams
+            handle_received_datagram = self.__handle_received_datagram
             #################################
 
             # Pull globals to local namespace
@@ -219,12 +219,15 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 if socket not in server_selector.get_map():  # Error occured during process
                     break
 
-                self.service_actions()
+                try:
+                    self.service_actions()
+                except Exception:
+                    self.__logger.exception("Error occured in self.service_actions()")
 
     def service_actions(self) -> None:
         pass
 
-    def _handle_received_datagram(self, request_executor: _ThreadPoolExecutor | None) -> None:
+    def __handle_received_datagram(self, request_executor: _ThreadPoolExecutor | None) -> None:
         selector = self.__server_selector
         socket: _socket.socket | None = self.__socket
         assert selector is not None and socket is not None, "Closed server"
@@ -261,14 +264,14 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
 
         logger.debug("Processing request sent by %s", client_address)
         if request_executor is None:
-            self._execute_request(request, client_address)
+            self.__execute_request(request, client_address)
         else:
             try:
-                request_executor.submit(self._execute_request, request, client_address)
+                request_executor.submit(self.__execute_request, request, client_address)
             except RuntimeError:  # shutdown() has been called()
                 pass
 
-    def _execute_request(self, request: _RequestT, client_address: SocketAddress) -> None:
+    def __execute_request(self, request: _RequestT, client_address: SocketAddress) -> None:
         try:
             self.process_request(request, client_address)
         except BaseException:
@@ -338,7 +341,7 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             else:
                 logger.debug("Datagram successfully sent to %s.", client_address)
 
-    def _flush_unsent_datagrams(self) -> None:
+    def __flush_unsent_datagrams(self) -> None:
         selector = self.__server_selector
         assert selector is not None, "Closed server"
 
