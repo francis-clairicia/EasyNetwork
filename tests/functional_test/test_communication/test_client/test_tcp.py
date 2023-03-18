@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import time
+from concurrent.futures import Future
 from socket import AF_INET, socket as Socket
 from typing import Any, Callable, Iterator
 
@@ -144,25 +144,24 @@ class TestTCPNetworkClient:
         self,
         client: TCPNetworkClient[str, str],
         server: Socket,
-        schedule_call_in_thread: Callable[[float, Callable[[], Any]], None],
+        schedule_call_in_thread_with_future: Callable[[float, Callable[[], Any]], Future[Any]],
     ) -> None:
         # Case 1: Default timeout behaviour
         server.sendall(b"ABC")
-        schedule_call_in_thread(0.1, lambda: server.sendall(b"DEF\n"))
+        schedule_call_in_thread_with_future(0.1, lambda: server.sendall(b"DEF\n"))
         with pytest.raises(TimeoutError):
             client.recv_packet(timeout=0)
         assert client.recv_packet(timeout=None) == "ABCDEF"
 
         # Case 2: Several recv() within timeout
-        schedule_call_in_thread(0.1, lambda: server.sendall(b"A"))
-        schedule_call_in_thread(0.2, lambda: server.sendall(b"B"))
-        schedule_call_in_thread(0.3, lambda: server.sendall(b"C"))
-        schedule_call_in_thread(0.4, lambda: server.sendall(b"D"))
-        schedule_call_in_thread(0.5, lambda: server.sendall(b"E"))
-        with pytest.raises(TimeoutError), TimeTest(0.6, approx=1e-1):
-            client.recv_packet(timeout=0.6)
-        time.sleep(0.3)
-        server.sendall(b"F\n")
+        def schedule_send(chunks: list[bytes]) -> None:
+            f = schedule_call_in_thread_with_future(0.1, lambda: server.sendall(chunks.pop(0)))
+            if chunks:
+                f.add_done_callback(lambda _: schedule_send(chunks))
+
+        schedule_send([b"A", b"B", b"C", b"D", b"E", b"F\n"])
+        with pytest.raises(TimeoutError), TimeTest(0.4, approx=1e-1):
+            client.recv_packet(timeout=0.4)
         assert client.recv_packet(timeout=None) == "ABCDEF"
 
     def test____recv_packet____eof(self, client: TCPNetworkClient[str, str], server: Socket) -> None:
