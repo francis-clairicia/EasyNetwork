@@ -19,7 +19,7 @@ import sys as _sys
 import threading as _threading
 from abc import ABCMeta, abstractmethod
 from concurrent.futures import Future as _Future, ThreadPoolExecutor as _ThreadPoolExecutor
-from typing import TYPE_CHECKING, Any, Callable, Generic, Iterator, TypeVar, final
+from typing import TYPE_CHECKING, Any, Callable, Generic, TypeVar, final
 from weakref import WeakSet as _WeakSet
 
 from ..exceptions import StreamProtocolParseError
@@ -81,8 +81,6 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         "__server_selector",
         "__selector_factory",
         "__selector_poll_interval",
-        "__disable_nagle_algorithm",
-        "__incremental_write",
         "__thread_pool_size",
         "__logger",
     )
@@ -99,8 +97,6 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         backlog: int | None = None,
         reuse_port: bool = False,
         dualstack_ipv6: bool = False,
-        incremental_write: bool = False,
-        disable_nagle_algorithm: bool = False,
         selector_factory: Callable[[], _selectors.BaseSelector] | None = None,
         poll_interval: float = 0.1,
         thread_pool_size: int = 0,
@@ -136,8 +132,6 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             self.__selector_factory: Callable[[], _selectors.BaseSelector] = selector_factory
             self.__server_selector: _ServerSocketSelector[_RequestT, _ResponseT] | None = None
             self.__selector_poll_interval: float = float(poll_interval)
-            self.__incremental_write: bool = bool(incremental_write)
-            self.__disable_nagle_algorithm: bool = bool(disable_nagle_algorithm)
             self.__logger: _logging.Logger = logger or _logging.getLogger(__name__)
         except BaseException:
             try:
@@ -296,16 +290,14 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
 
         client_socket.setblocking(False)
 
-        if self.__disable_nagle_algorithm:
-            with _contextlib.suppress(Exception):
-                client_socket.setsockopt(_socket.IPPROTO_TCP, _socket.TCP_NODELAY, True)
+        with _contextlib.suppress(Exception):
+            client_socket.setsockopt(_socket.IPPROTO_TCP, _socket.TCP_NODELAY, True)
 
         client = _ClientPayload(
             socket=client_socket,
             address=address,
             server=self,
             selector=server_selector,
-            incremental_write=self.__incremental_write,
         )
         server_selector.register_client(client)
         server_selector.add_client_for_reading(client)
@@ -529,7 +521,6 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
         "_server",
         "_selector",
         "_logger",
-        "_incremental_write",
         "__weakref__",
     )
 
@@ -539,7 +530,6 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
         address: SocketAddress,
         server: AbstractTCPNetworkServer[_RequestT, _ResponseT],
         selector: _ServerSocketSelector[_RequestT, _ResponseT],
-        incremental_write: bool,
     ) -> None:
         import weakref
 
@@ -554,7 +544,6 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
         self._logger: _logging.Logger = server.logger
         self._selector: _ServerSocketSelector[_RequestT, _ResponseT] = weakref.proxy(selector)
         self._api: _ClientPayload._ConnectedClientAPI[_ResponseT] = self._ConnectedClientAPI(self, address)
-        self._incremental_write: bool = incremental_write
 
     def fileno(self) -> int:  # Needed for selector
         with self._lock:
@@ -683,39 +672,28 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
         assert socket is not None
 
         logger: _logging.Logger = self._logger
-        unsent_data: bytearray = self._unsent_data
-        socket_send = socket.send
-        total_nb_bytes_sent: int = 0
 
-        chunk_iterator: Iterator[bytes]
-        if self._incremental_write:
-            chunk_iterator = self._producer
-        else:
-            chunk_iterator = iter([b"".join(list(self._producer))])
+        # The list call should be roughly
+        # equivalent to the PySequence_Fast that ''.join() would do.
+        data: bytes = b"".join(list(self._producer))
 
-        for chunk in chunk_iterator:
-            try:
-                nb_bytes_sent = socket_send(chunk)
-                _check_real_socket_state(socket)
-            except (TimeoutError, BlockingIOError, InterruptedError):
-                unsent_data.extend(chunk)
-                self._selector.add_client_for_writing(self)
-                break
-            except ConnectionError:
-                self._erase_all_data_and_packets_to_send()
-                self._api.close()
-                return
-            except OSError:
-                self._erase_all_data_and_packets_to_send()
-                self._request_error_handling_and_close(close_client_before=True)
-                return
-
-            total_nb_bytes_sent += nb_bytes_sent
-            if nb_bytes_sent < len(chunk):
-                unsent_data.extend(chunk[nb_bytes_sent:])
-                self._selector.add_client_for_writing(self)
-                break
-        logger.debug("%d byte(s) sent to %s and %d byte(s) queued", total_nb_bytes_sent, self._api.address, len(unsent_data))
+        try:
+            nb_bytes_sent = socket.send(data)
+            _check_real_socket_state(socket)
+        except (TimeoutError, BlockingIOError, InterruptedError):
+            nb_bytes_sent = 0
+        except ConnectionError:
+            self._erase_all_data_and_packets_to_send()
+            self._api.close()
+            return
+        except OSError:
+            self._erase_all_data_and_packets_to_send()
+            self._request_error_handling_and_close(close_client_before=True)
+            return
+        if nb_bytes_sent < len(data):
+            self._unsent_data.extend(data[nb_bytes_sent:])
+            self._selector.add_client_for_writing(self)
+        logger.debug("%d byte(s) sent to %s and %d byte(s) queued", nb_bytes_sent, self._api.address, len(self._unsent_data))
 
     def _erase_all_data_and_packets_to_send(self) -> None:
         self._unsent_data.clear()
