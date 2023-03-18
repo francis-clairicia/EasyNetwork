@@ -225,11 +225,9 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         pass
 
     def _handle_received_datagram(self, request_executor: _ThreadPoolExecutor | None) -> None:
-        if (selector := self.__server_selector) is None:
-            raise RuntimeError("Closed server")
+        selector = self.__server_selector
         socket: _socket.socket | None = self.__socket
-        if socket is None:
-            return
+        assert selector is not None and socket is not None, "Closed server"
         logger: _logging.Logger = self.__logger
         try:
             datagram, client_address = socket.recvfrom(MAX_DATAGRAM_BUFSIZE)
@@ -307,8 +305,8 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             del exception
 
     def send_packet_to(self, packet: _ResponseT, client_address: SocketAddress) -> None:
-        if (selector := self.__server_selector) is None:
-            raise RuntimeError("Closed server")
+        selector = self.__server_selector
+        assert selector is not None, "Closed server"
         try:
             response: bytes = self.__protocol.make_datagram(packet)
         except Exception:
@@ -341,8 +339,8 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                 logger.debug("Datagram successfully sent to %s.", client_address)
 
     def _flush_unsent_datagrams(self) -> None:
-        if (selector := self.__server_selector) is None:
-            raise RuntimeError("Closed server")
+        selector = self.__server_selector
+        assert selector is not None, "Closed server"
 
         with self.__sendto_lock:
             socket = self.__socket

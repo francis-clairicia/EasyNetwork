@@ -173,10 +173,8 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             if (listener_socket := self.__listener_socket) is None:
                 return
             if (server_selector := self.__server_selector) is not None:
-                try:
+                with _contextlib.suppress(KeyError):
                     server_selector.remove_listener_socket(listener_socket)
-                except KeyError:
-                    pass
             self.__listener_socket = None
             listener_socket.close()
 
@@ -279,8 +277,8 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         pass
 
     def _accept_new_client(self, listener_socket: _socket.socket) -> None:
-        if (server_selector := self.__server_selector) is None:
-            raise RuntimeError("Closed server")
+        server_selector = self.__server_selector
+        assert server_selector is not None, "Closed server"
 
         logger: _logging.Logger = self.__logger
 
@@ -296,10 +294,8 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         client_socket.setblocking(False)
 
         if self.__disable_nagle_algorithm:
-            try:
+            with _contextlib.suppress(Exception):
                 client_socket.setsockopt(_socket.IPPROTO_TCP, _socket.TCP_NODELAY, True)
-            except Exception:
-                pass
 
         client = _ClientPayload(
             socket=client_socket,
@@ -451,24 +447,22 @@ class _ServerSocketSelector(Generic[_RequestT, _ResponseT]):
         with self.__clients_lock:
             client_selector = self.__client_selector
             self.__clients_set.discard(client)
-            try:
+            with _contextlib.suppress(KeyError):
                 client_selector.unregister(client)
-            except KeyError:
-                pass
 
     def add_client_for_reading(self, client: _ClientPayload[_RequestT, _ResponseT]) -> None:
-        return self.__add_client(client, self.EVENT_READ)
+        return self.__add_event_mask_for_client(client, self.EVENT_READ)
 
     def remove_client_for_reading(self, client: _ClientPayload[_RequestT, _ResponseT]) -> None:
-        return self.__remove_client(client, self.EVENT_READ)
+        return self.__remove_event_mask_for_client(client, self.EVENT_READ)
 
     def add_client_for_writing(self, client: _ClientPayload[_RequestT, _ResponseT]) -> None:
-        return self.__add_client(client, self.EVENT_WRITE)
+        return self.__add_event_mask_for_client(client, self.EVENT_WRITE)
 
     def remove_client_for_writing(self, client: _ClientPayload[_RequestT, _ResponseT]) -> None:
-        return self.__remove_client(client, self.EVENT_WRITE)
+        return self.__remove_event_mask_for_client(client, self.EVENT_WRITE)
 
-    def __add_client(self, client: _ClientPayload[_RequestT, _ResponseT], event_mask: int) -> None:
+    def __add_event_mask_for_client(self, client: _ClientPayload[_RequestT, _ResponseT], event_mask: int) -> None:
         with self.__clients_lock:
             if client not in self.__clients_set:
                 raise KeyError(client)
@@ -480,7 +474,7 @@ class _ServerSocketSelector(Generic[_RequestT, _ResponseT]):
                 return
             client_selector.modify(client, events | event_mask)
 
-    def __remove_client(self, client: _ClientPayload[_RequestT, _ResponseT], event_mask: int) -> None:
+    def __remove_event_mask_for_client(self, client: _ClientPayload[_RequestT, _ResponseT], event_mask: int) -> None:
         with self.__clients_lock:
             if client not in self.__clients_set:
                 raise KeyError(client)
