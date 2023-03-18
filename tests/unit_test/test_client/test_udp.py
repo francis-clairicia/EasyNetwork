@@ -24,6 +24,12 @@ def setup_dummy_lock(module_mocker: MockerFixture, dummy_lock_cls: Any) -> None:
     module_mocker.patch(f"{UDPNetworkEndpoint.__module__}._Lock", new=dummy_lock_cls)
 
 
+def _get_all_socket_families() -> list[str]:
+    import socket
+
+    return [v for v in dir(socket) if v.startswith("AF_")]
+
+
 class TestUDPNetworkEndpoint(BaseTestClient):
     @pytest.fixture(scope="class", params=["AF_INET", "AF_INET6"])
     @staticmethod
@@ -229,7 +235,9 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         mock_udp_socket.settimeout.assert_not_called()
         mock_socket_proxy_cls.assert_called_once_with(mock_udp_socket, lock=mocker.ANY)
 
-    @pytest.mark.parametrize("socket_family", ["AF_BLUETOOTH"], indirect=True)
+    @pytest.mark.parametrize(
+        "socket_family", list(set(_get_all_socket_families()).difference(["AF_INET", "AF_INET6"])), indirect=True
+    )
     def test____dunder_init____create_datagram_endpoint____invalid_socket_family(
         self,
         socket_family: int,
@@ -303,7 +311,9 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         mock_socket_proxy_cls.assert_called_once_with(mock_udp_socket, lock=mocker.ANY)
         assert endpoint.socket is mocker.sentinel.proxy
 
-    @pytest.mark.parametrize("socket_family", ["AF_BLUETOOTH"], indirect=True)
+    @pytest.mark.parametrize(
+        "socket_family", list(set(_get_all_socket_families()).difference(["AF_INET", "AF_INET6"])), indirect=True
+    )
     def test____dunder_init____use_given_socket____invalid_socket_family(
         self,
         mock_udp_socket: MagicMock,
