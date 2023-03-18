@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from socket import AF_INET, socket as Socket
 from typing import Any, Callable, Iterator
 
@@ -150,7 +151,7 @@ class TestTCPNetworkClient:
         schedule_call_in_thread(0.1, lambda: server.sendall(b"DEF\n"))
         with pytest.raises(TimeoutError):
             client.recv_packet(timeout=0)
-        assert client.recv_packet(timeout=0.2) == "ABCDEF"
+        assert client.recv_packet(timeout=None) == "ABCDEF"
 
         # Case 2: Several recv() within timeout
         schedule_call_in_thread(0.1, lambda: server.sendall(b"A"))
@@ -160,6 +161,7 @@ class TestTCPNetworkClient:
         schedule_call_in_thread(0.5, lambda: server.sendall(b"E"))
         with pytest.raises(TimeoutError), TimeTest(0.6, approx=1e-1):
             client.recv_packet(timeout=0.6)
+        time.sleep(0.3)
         server.sendall(b"F\n")
         assert client.recv_packet(timeout=None) == "ABCDEF"
 

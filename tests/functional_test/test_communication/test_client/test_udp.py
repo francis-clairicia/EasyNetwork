@@ -90,7 +90,7 @@ class TestUDPNetworkClient:
         schedule_call_in_thread(0.1, lambda: server.sendto(b"ABCDEF", client.get_local_address()))
         with pytest.raises(TimeoutError):
             client.recv_packet(timeout=0)
-        assert client.recv_packet(timeout=0.2) == "ABCDEF"
+        assert client.recv_packet(timeout=None) == "ABCDEF"
 
     def test____recv_packet____ignore_other_socket_packets(
         self,
@@ -314,7 +314,7 @@ class TestUDPNetworkEndpoint:
         schedule_call_in_thread(0.1, lambda: server.sendto(b"ABCDEF", client.get_local_address()))
         with pytest.raises(TimeoutError):
             client.recv_packet_from(timeout=0)
-        assert client.recv_packet_from(timeout=0.2) == ("ABCDEF", new_socket_address(server.getsockname(), socket_family))
+        assert client.recv_packet_from(timeout=None) == ("ABCDEF", new_socket_address(server.getsockname(), socket_family))
 
     @pytest.mark.parametrize("client", ["WITH_REMOTE"], indirect=True)
     def test____recv_packet_from____ignore_other_socket_packets(

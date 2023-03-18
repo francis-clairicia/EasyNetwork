@@ -189,7 +189,9 @@ class TestTCPNetworkServer(BaseTestServer):
         tcp_nodelay_state: int = connected_client.socket.getsockopt(IPPROTO_TCP, TCP_NODELAY)
 
         if server_disable_nagle_algorithm:
-            assert tcp_nodelay_state == 1
+            # Do not test with '== 1', on macOS it will return 4
+            # (c.f. https://stackoverflow.com/a/31835137)
+            assert tcp_nodelay_state != 0
         else:
             assert tcp_nodelay_state == 0
 
