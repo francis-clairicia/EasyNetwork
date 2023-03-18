@@ -35,10 +35,6 @@ cbor = [
 encryption = [
   "cryptography>=39,<40",
 ]
-full = [
-  "cbor2>=5.4,<6",
-  "cryptography>=39,<40",
-]
 
 ############################ pdm configuration ############################
 
