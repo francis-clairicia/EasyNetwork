@@ -6,28 +6,34 @@
 
 from __future__ import annotations
 
-__all__ = ["AbstractStructSerializer", "NamedTupleSerializer"]
+__all__ = ["AbstractStructSerializer", "NamedTupleStructSerializer"]
 
+import struct as _struct
 from abc import abstractmethod
-from struct import Struct, error as StructError
-from typing import Any, Iterable, Mapping, NamedTuple, TypeVar, final
+from typing import TYPE_CHECKING, Any, Generic, Iterable, NamedTuple, TypeVar, final
 
-from .exceptions import DeserializeError
-from .stream.abc import FixedSizePacketSerializer
+from ..exceptions import DeserializeError
+from .base_stream import FixedSizePacketSerializer
+
+if TYPE_CHECKING:
+    from _typeshed import SupportsKeysAndGetItem
 
 _ST_contra = TypeVar("_ST_contra", contravariant=True)
 _DT_co = TypeVar("_DT_co", covariant=True)
+
+
+_ENDIANNESS_CHARACTERS: frozenset[str] = frozenset({"@", "=", "<", ">", "!"})
 
 
 class AbstractStructSerializer(FixedSizePacketSerializer[_ST_contra, _DT_co]):
     __slots__ = ("__s",)
 
     def __init__(self, format: str) -> None:
-        if format[0] not in {"@", "=", "<", ">", "!"}:
+        if format and format[0] not in _ENDIANNESS_CHARACTERS:
             format = f"!{format}"  # network byte order
-        struct = Struct(format)
+        struct = _struct.Struct(format)
         super().__init__(struct.size)
-        self.__s: Struct = struct
+        self.__s: _struct.Struct = struct
 
     @abstractmethod
     def iter_values(self, packet: _ST_contra) -> Iterable[Any]:
@@ -35,8 +41,7 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_ST_contra, _DT_co]):
 
     @final
     def serialize(self, packet: _ST_contra) -> bytes:
-        struct = self.__s
-        return struct.pack(*self.iter_values(packet))
+        return self.__s.pack(*self.iter_values(packet))
 
     @abstractmethod
     def from_tuple(self, t: tuple[Any, ...]) -> _DT_co:
@@ -44,12 +49,9 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_ST_contra, _DT_co]):
 
     @final
     def deserialize(self, data: bytes) -> _DT_co:
-        struct = self.__s
-        if len(data) != struct.size:
-            raise DeserializeError("Invalid data size")
         try:
-            packet_tuple: tuple[Any, ...] = struct.unpack(data)
-        except StructError as exc:
+            packet_tuple: tuple[Any, ...] = self.__s.unpack(data)
+        except _struct.error as exc:
             raise DeserializeError(f"Invalid value: {exc}") from exc
         try:
             return self.from_tuple(packet_tuple)
@@ -58,49 +60,66 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_ST_contra, _DT_co]):
 
     @property
     @final
-    def struct(self) -> Struct:
+    def struct(self) -> _struct.Struct:
         return self.__s
 
 
 _NT = TypeVar("_NT", bound=NamedTuple)
 
 
-class NamedTupleSerializer(AbstractStructSerializer[_NT, _NT]):
-    __slots__ = ("__namedtuple_cls",)
+class NamedTupleStructSerializer(AbstractStructSerializer[_NT, _NT], Generic[_NT]):
+    __slots__ = ("__namedtuple_cls", "__string_fields", "__encoding", "__str_errors", "__strip_trailing_nul")
 
-    def __init__(self, namedtuple_cls: type[_NT], fields_format: Mapping[str, str], format_endianness: str = "") -> None:
-        if not NamedTupleSerializer.is_namedtuple_class(namedtuple_cls):
-            raise TypeError("Expected namedtuple class")
+    def __init__(
+        self,
+        namedtuple_cls: type[_NT],
+        field_formats: SupportsKeysAndGetItem[str, str],
+        format_endianness: str = "",
+        encoding: str | None = "utf-8",
+        errors: str = "strict",
+        strip_string_trailing_nul_bytes: bool = True,
+    ) -> None:
+        string_fields: set[str] = set()
 
-        if format_endianness == "":
-            format_endianness = "!"
-        elif format_endianness not in {"@", "=", "<", ">", "!"}:
-            raise ValueError("Invalid endianness value")
-
-        super().__init__(f"{format_endianness}{''.join(map(fields_format.__getitem__, namedtuple_cls._fields))}")
+        for field in field_formats.keys():
+            field_fmt = field_formats[field]
+            if any(c in _ENDIANNESS_CHARACTERS for c in field_fmt):
+                raise ValueError(f"{field!r}: Invalid field format")
+            if field_fmt and field_fmt[-1] == "s":
+                if len(field_fmt) > 1 and not field_fmt[:-1].isdigit():
+                    raise ValueError(f"{field!r}: Invalid field format")
+                string_fields.add(field)
+            elif len(field_fmt) != 1 or not field_fmt.isalpha():
+                raise ValueError(f"{field!r}: Invalid field format")
+        super().__init__(f"{format_endianness}{''.join(map(field_formats.__getitem__, namedtuple_cls._fields))}")
         self.__namedtuple_cls: type[_NT] = namedtuple_cls
-
-    @staticmethod
-    def is_namedtuple_class(o: type[Any]) -> bool:
-        return (
-            issubclass(o, tuple)
-            and o is not tuple
-            and all(
-                callable(getattr(o, callable_attr, None))
-                for callable_attr in (
-                    "_make",
-                    "_asdict",
-                    "_replace",
-                )
-            )
-            and isinstance(getattr(o, "_fields", None), tuple)
-        )
+        self.__string_fields: frozenset[str] = frozenset(string_fields)
+        self.__encoding: str | None = encoding
+        self.__str_errors: str = errors
+        self.__strip_trailing_nul = bool(strip_string_trailing_nul_bytes)
 
     @final
     def iter_values(self, packet: _NT) -> _NT:
         assert isinstance(packet, self.__namedtuple_cls)
+        if (encoding := self.__encoding) is not None:
+            string_fields: dict[str, str] = {field: getattr(packet, field) for field in self.__string_fields}
+            if string_fields:
+                str_errors: str = self.__str_errors
+                packet = packet._replace(**{field: value.encode(encoding, str_errors) for field, value in string_fields.items()})
         return packet
 
     @final
     def from_tuple(self, t: tuple[Any, ...]) -> _NT:
-        return self.__namedtuple_cls._make(t)
+        p = self.__namedtuple_cls._make(t)
+        string_fields: dict[str, bytes] = {field: getattr(p, field) for field in self.__string_fields}
+        if string_fields:
+            to_replace: dict[str, Any] | None = None
+            if self.__strip_trailing_nul:
+                string_fields = {field: value.rstrip(b"\0") for field, value in string_fields.items()}
+                to_replace = string_fields
+            if (encoding := self.__encoding) is not None:
+                str_errors: str = self.__str_errors
+                to_replace = {field: value.decode(encoding, str_errors) for field, value in string_fields.items()}
+            if to_replace is not None:
+                p = p._replace(**to_replace)
+        return p

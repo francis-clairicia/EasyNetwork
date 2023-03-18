@@ -13,18 +13,19 @@ __all__ = [
 ]
 
 from dataclasses import asdict as dataclass_asdict, dataclass
-from typing import IO, TYPE_CHECKING, Any, Callable, Literal, TypeVar, final
+from functools import partial
+from typing import IO, TYPE_CHECKING, Any, Callable, TypeVar, final
 
-from .stream.abc import FileBasedIncrementalPacketSerializer
+from .base_stream import FileBasedPacketSerializer
 
 if TYPE_CHECKING:
     import datetime
 
-_ST_contra = TypeVar("_ST_contra", contravariant=True, bound=list[Any] | dict[str, Any])
-_DT_co = TypeVar("_DT_co", covariant=True, bound=list[Any] | dict[str, Any])
+_ST_contra = TypeVar("_ST_contra", contravariant=True)
+_DT_co = TypeVar("_DT_co", covariant=True)
 
 
-@dataclass(kw_only=True, frozen=True)
+@dataclass(kw_only=True)
 class CBOREncoderConfig:
     datetime_as_timestamp: bool = False
     timezone: datetime.tzinfo | None = None
@@ -35,48 +36,47 @@ class CBOREncoderConfig:
     string_referencing: bool = False
 
 
-@dataclass(kw_only=True, frozen=True)
+@dataclass(kw_only=True)
 class CBORDecoderConfig:
     object_hook: Callable[..., Any] | None = None
     tag_hook: Callable[..., Any] | None = None
-    str_errors: Literal["strict", "error", "replace"] = "strict"
+    str_errors: str = "strict"
 
 
-class CBORSerializer(FileBasedIncrementalPacketSerializer[_ST_contra, _DT_co]):
-    __slots__ = ("__e", "__d")
+class CBORSerializer(FileBasedPacketSerializer[_ST_contra, _DT_co]):
+    __slots__ = ("__encoder_cls", "__decoder_cls")
 
-    def __init__(self, *, encoder: CBOREncoderConfig | None = None, decoder: CBORDecoderConfig | None = None) -> None:
+    def __init__(
+        self,
+        encoder_config: CBOREncoderConfig | None = None,
+        decoder_config: CBORDecoderConfig | None = None,
+    ) -> None:
         try:
             import cbor2
-        except ModuleNotFoundError as exc:
+        except ModuleNotFoundError as exc:  # pragma: no cover
             raise ModuleNotFoundError("cbor dependencies are missing. Consider adding 'cbor' extra") from exc
 
-        super().__init__(
-            unrelated_deserialize_error=cbor2.CBORDecodeError,
-        )
-        self.__e: dict[str, Any]
-        self.__d: dict[str, Any]
+        super().__init__(expected_load_error=(cbor2.CBORDecodeError, UnicodeError))
+        self.__encoder_cls: Callable[[IO[bytes]], cbor2.CBOREncoder]  # type: ignore[no-any-unimported]
+        self.__decoder_cls: Callable[[IO[bytes]], cbor2.CBORDecoder]  # type: ignore[no-any-unimported]
 
-        if encoder is None:
-            encoder = CBOREncoderConfig()
-        elif not isinstance(encoder, CBOREncoderConfig):
-            raise TypeError(f"Invalid encoder: expected {CBOREncoderConfig.__name__}, got {type(encoder).__name__}")
-        self.__e = dataclass_asdict(encoder)
+        if encoder_config is None:
+            encoder_config = CBOREncoderConfig()
+        elif not isinstance(encoder_config, CBOREncoderConfig):
+            raise TypeError(f"Invalid encoder config: expected {CBOREncoderConfig.__name__}, got {type(encoder_config).__name__}")
 
-        if decoder is None:
-            decoder = CBORDecoderConfig()
-        elif not isinstance(decoder, CBORDecoderConfig):
-            raise TypeError(f"Invalid decoder: expected {CBORDecoderConfig.__name__}, got {type(decoder).__name__}")
-        self.__d = dataclass_asdict(decoder)
+        if decoder_config is None:
+            decoder_config = CBORDecoderConfig()
+        elif not isinstance(decoder_config, CBORDecoderConfig):
+            raise TypeError(f"Invalid decoder config: expected {CBORDecoderConfig.__name__}, got {type(decoder_config).__name__}")
 
-    @final
-    def _serialize_to_file(self, packet: _ST_contra, file: IO[bytes]) -> None:
-        from cbor2 import CBOREncoder
-
-        CBOREncoder(file, **self.__e).encode(packet)
+        self.__encoder_cls = partial(cbor2.CBOREncoder, **dataclass_asdict(encoder_config))
+        self.__decoder_cls = partial(cbor2.CBORDecoder, **dataclass_asdict(decoder_config))
 
     @final
-    def _deserialize_from_file(self, file: IO[bytes]) -> _DT_co:
-        from cbor2 import CBORDecoder
+    def dump_to_file(self, packet: _ST_contra, file: IO[bytes]) -> None:
+        self.__encoder_cls(file).encode(packet)
 
-        return CBORDecoder(file, **self.__d).decode()
+    @final
+    def load_from_file(self, file: IO[bytes]) -> _DT_co:
+        return self.__decoder_cls(file).decode()

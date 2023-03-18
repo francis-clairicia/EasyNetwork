@@ -15,6 +15,9 @@ from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from ..tools.socket import SocketAddress
 
+if TYPE_CHECKING:
+    from types import TracebackType
+
 _RequestT = TypeVar("_RequestT")
 _ResponseT = TypeVar("_ResponseT")
 
@@ -25,16 +28,14 @@ class AbstractNetworkServer(Generic[_RequestT, _ResponseT], metaclass=ABCMeta):
     if TYPE_CHECKING:
         __Self = TypeVar("__Self", bound="AbstractNetworkServer[Any, Any]")
 
-    def __del__(self) -> None:
-        if not self.is_closed():
-            self.server_close()
-
     def __enter__(self: __Self) -> __Self:
         return self
 
-    def __exit__(self, *args: Any) -> None:
-        self.shutdown()
+    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None) -> None:
         self.server_close()
+
+    def __getstate__(self) -> Any:  # pragma: no cover
+        raise TypeError(f"cannot pickle {self.__class__.__name__!r} object")
 
     @abstractmethod
     def is_closed(self) -> bool:
@@ -56,7 +57,6 @@ class AbstractNetworkServer(Generic[_RequestT, _ResponseT], metaclass=ABCMeta):
     def shutdown(self) -> None:
         raise NotImplementedError
 
-    @property
     @abstractmethod
-    def address(self) -> SocketAddress:
+    def get_address(self) -> SocketAddress:
         raise NotImplementedError

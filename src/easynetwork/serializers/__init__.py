@@ -14,24 +14,28 @@ __all__ = [
     "AutoSeparatedPacketSerializer",
     "BZ2CompressorSerializer",
     "Base64EncodedSerializer",
-    "DeserializeError",
-    "FileBasedIncrementalPacketSerializer",
+    "CBORDecoderConfig",
+    "CBOREncoderConfig",
+    "CBORSerializer",
+    "EncryptorSerializer",
+    "FileBasedPacketSerializer",
     "FixedSizePacketSerializer",
-    "IncrementalDeserializeError",
     "JSONDecoderConfig",
     "JSONEncoderConfig",
     "JSONSerializer",
-    "NamedTupleSerializer",
+    "NamedTupleStructSerializer",
     "PickleSerializer",
+    "PicklerConfig",
+    "UnpicklerConfig",
     "ZlibCompressorSerializer",
 ]
 
 
 ############ Package initialization ############
 from .abc import *
-from .exceptions import *
+from .base_stream import *
+from .cbor import *
 from .json import *
 from .pickle import *
-from .stream import *
 from .struct import *
 from .wrapper import *

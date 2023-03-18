@@ -9,18 +9,15 @@ from __future__ import annotations
 __all__ = ["AbstractPacketConverter", "PacketConversionError"]
 
 from abc import ABCMeta, abstractmethod
-from typing import Generic, TypeVar
+from typing import Callable, Generic, TypeVar, final
+
+from .exceptions import PacketConversionError
 
 _SentDTOPacketT = TypeVar("_SentDTOPacketT")
 _ReceivedDTOPacketT = TypeVar("_ReceivedDTOPacketT")
 
 _SentPacketT = TypeVar("_SentPacketT")
 _ReceivedPacketT = TypeVar("_ReceivedPacketT")
-
-
-class PacketConversionError(Exception):
-    def __init__(self, message: str) -> None:
-        super().__init__(message)
 
 
 class AbstractPacketConverter(Generic[_SentPacketT, _SentDTOPacketT, _ReceivedPacketT, _ReceivedDTOPacketT], metaclass=ABCMeta):
@@ -33,3 +30,24 @@ class AbstractPacketConverter(Generic[_SentPacketT, _SentDTOPacketT, _ReceivedPa
     @abstractmethod
     def convert_to_dto_packet(self, obj: _SentPacketT) -> _SentDTOPacketT:
         raise NotImplementedError
+
+
+class PacketConverterComposite(AbstractPacketConverter[_SentPacketT, _SentDTOPacketT, _ReceivedPacketT, _ReceivedDTOPacketT]):
+    __slots__ = ("__create_from_dto", "__convert_to_dto")
+
+    def __init__(
+        self,
+        create_from_dto: Callable[[_ReceivedDTOPacketT], _ReceivedPacketT],
+        convert_to_dto: Callable[[_SentPacketT], _SentDTOPacketT],
+    ) -> None:
+        super().__init__()
+        self.__create_from_dto: Callable[[_ReceivedDTOPacketT], _ReceivedPacketT] = create_from_dto
+        self.__convert_to_dto: Callable[[_SentPacketT], _SentDTOPacketT] = convert_to_dto
+
+    @final
+    def create_from_dto_packet(self, packet: _ReceivedDTOPacketT) -> _ReceivedPacketT:
+        return self.__create_from_dto(packet)
+
+    @final
+    def convert_to_dto_packet(self, obj: _SentPacketT) -> _SentDTOPacketT:
+        return self.__convert_to_dto(obj)

@@ -9,12 +9,13 @@ from __future__ import annotations
 __all__ = ["AbstractNetworkClient"]
 
 from abc import ABCMeta, abstractmethod
-from socket import socket as Socket
-from typing import TYPE_CHECKING, Any, Generic, Iterator, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Generic, Iterator, TypeVar
 
 from ..tools.socket import SocketAddress
 
-_T = TypeVar("_T")
+if TYPE_CHECKING:
+    from types import TracebackType
+
 _ReceivedPacketT = TypeVar("_ReceivedPacketT")
 _SentPacketT = TypeVar("_SentPacketT")
 
@@ -25,15 +26,14 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
     if TYPE_CHECKING:
         __Self = TypeVar("__Self", bound="AbstractNetworkClient[Any, Any]")
 
-    def __del__(self) -> None:
-        if not self.is_closed():
-            self.close()
-
     def __enter__(self: __Self) -> __Self:
         return self
 
-    def __exit__(self, *args: Any) -> None:
+    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None) -> None:
         self.close()
+
+    def __getstate__(self) -> Any:  # pragma: no cover
+        raise TypeError(f"cannot pickle {self.__class__.__name__!r} object")
 
     @abstractmethod
     def is_closed(self) -> bool:
@@ -56,47 +56,18 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
         raise NotImplementedError
 
     @abstractmethod
-    def send_packets(self, *packets: _SentPacketT) -> None:
+    def recv_packet(self, timeout: float | None = ...) -> _ReceivedPacketT:
         raise NotImplementedError
 
-    @abstractmethod
-    def recv_packet(self) -> _ReceivedPacketT:
-        raise NotImplementedError
-
-    @overload
-    @abstractmethod
-    def recv_packet_no_block(self, *, timeout: float = ...) -> _ReceivedPacketT:
-        ...
-
-    @overload
-    @abstractmethod
-    def recv_packet_no_block(self, *, default: _T, timeout: float = ...) -> _ReceivedPacketT | _T:
-        ...
-
-    @abstractmethod
-    def recv_packet_no_block(self, *, default: _T = ..., timeout: float = ...) -> _ReceivedPacketT | _T:
-        raise NotImplementedError
-
-    def iter_received_packets(self, *, timeout: float = 0) -> Iterator[_ReceivedPacketT]:
-        timeout = float(timeout)
-        _not_received: Any = object()
+    def iter_received_packets(self, timeout: float | None = 0) -> Iterator[_ReceivedPacketT]:
+        recv_packet = self.recv_packet
         while True:
-            packet = self.recv_packet_no_block(timeout=timeout, default=_not_received)
-            if packet is _not_received:
-                break
+            try:
+                packet = recv_packet(timeout)
+            except OSError:
+                return
             yield packet
-
-    def recv_all_packets(self, *, timeout: float = 0) -> list[_ReceivedPacketT]:
-        return list(self.iter_received_packets(timeout=timeout))
 
     @abstractmethod
     def fileno(self) -> int:
-        raise NotImplementedError
-
-    @abstractmethod
-    def dup(self) -> Socket:
-        raise NotImplementedError
-
-    @abstractmethod
-    def detach(self) -> Socket:
         raise NotImplementedError

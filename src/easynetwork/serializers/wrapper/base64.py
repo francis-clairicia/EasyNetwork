@@ -15,9 +15,9 @@ import binascii
 from hmac import compare_digest, digest as hmac_digest
 from typing import TypeVar, final
 
+from ...exceptions import DeserializeError
 from ..abc import AbstractPacketSerializer
-from ..exceptions import DeserializeError
-from ..stream.abc import AutoSeparatedPacketSerializer
+from ..base_stream import AutoSeparatedPacketSerializer
 
 _ST_contra = TypeVar("_ST_contra", contravariant=True)
 _DT_co = TypeVar("_DT_co", covariant=True)
@@ -31,23 +31,23 @@ class Base64EncodedSerializer(AutoSeparatedPacketSerializer[_ST_contra, _DT_co])
         serializer: AbstractPacketSerializer[_ST_contra, _DT_co],
         signing_key: str | bytes | None = None,
     ) -> None:
-        assert isinstance(serializer, AbstractPacketSerializer)
         super().__init__(separator=b"\r\n", keepends=False)
+        assert isinstance(serializer, AbstractPacketSerializer)
         self.__serializer: AbstractPacketSerializer[_ST_contra, _DT_co] = serializer
         if signing_key is not None:
             try:
                 signing_key = base64.urlsafe_b64decode(signing_key)
             except binascii.Error as exc:
-                raise ValueError("signing key must be 16 url-safe base64-encoded bytes.") from exc
-            if len(signing_key) != 16:
-                raise ValueError("signing key must be 16 url-safe base64-encoded bytes.")
+                raise ValueError("signing key must be 32 url-safe base64-encoded bytes.") from exc
+            if len(signing_key) != 32:
+                raise ValueError("signing key must be 32 url-safe base64-encoded bytes.")
         self.__signing_key: bytes | None = signing_key
 
     @classmethod
     def generate_key(cls) -> bytes:
         from os import urandom
 
-        return base64.urlsafe_b64encode(urandom(16))
+        return base64.urlsafe_b64encode(urandom(32))
 
     @final
     def serialize(self, packet: _ST_contra) -> bytes:
@@ -64,6 +64,6 @@ class Base64EncodedSerializer(AutoSeparatedPacketSerializer[_ST_contra, _DT_co])
             raise DeserializeError("Invalid token") from None
         if key := self.__signing_key:
             data, signature = data[:-32], data[-32:]
-            if len(signature) != 32 or not compare_digest(hmac_digest(key, data, "sha256"), signature):
+            if not compare_digest(hmac_digest(key, data, "sha256"), signature):
                 raise DeserializeError("Invalid token")
         return self.__serializer.deserialize(data)

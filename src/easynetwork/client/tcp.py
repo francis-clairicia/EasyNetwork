@@ -8,37 +8,39 @@ from __future__ import annotations
 
 __all__ = ["TCPNetworkClient"]
 
-from contextlib import contextmanager
-from socket import socket as Socket
-from threading import RLock
-from typing import Any, Generic, Iterator, TypeVar, final, overload
+import errno as _errno
+import socket as _socket
+from threading import Lock as _Lock
+from time import monotonic as _time_monotonic
+from typing import Any, Callable, Generic, Iterator, TypeVar, final, overload
 
+from ..exceptions import ClientClosedError, StreamProtocolParseError
 from ..protocol import StreamProtocol
-from ..tools.socket import SHUT_WR, SocketAddress, create_connection, guess_best_recv_size, new_socket_address
-from ..tools.stream import StreamDataConsumer, StreamDataProducer
+from ..tools._utils import (
+    check_real_socket_state as _check_real_socket_state,
+    error_from_errno as _error_from_errno,
+    restore_timeout_at_end as _restore_timeout_at_end,
+)
+from ..tools.socket import MAX_STREAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
+from ..tools.stream import StreamDataConsumer
 from .abc import AbstractNetworkClient
 
-_T = TypeVar("_T")
 _ReceivedPacketT = TypeVar("_ReceivedPacketT")
 _SentPacketT = TypeVar("_SentPacketT")
-
-
-_NO_DEFAULT: Any = object()
 
 
 class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Generic[_SentPacketT, _ReceivedPacketT]):
     __slots__ = (
         "__socket",
+        "__socket_proxy",
         "__owner",
-        "__closed",
         "__lock",
-        "__recv_size",
         "__producer",
         "__consumer",
+        "__addr",
         "__peer",
         "__eof_reached",
-        "__default_send_flags",
-        "__default_recv_flags",
+        "__max_recv_bufsize",
     )
 
     @overload
@@ -50,322 +52,201 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         *,
         timeout: float | None = ...,
         source_address: tuple[str, int] | None = ...,
-        send_flags: int = ...,
-        recv_flags: int = ...,
+        max_recv_size: int | None = ...,
     ) -> None:
         ...
 
     @overload
     def __init__(
         self,
-        socket: Socket,
+        socket: _socket.socket,
         /,
         protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
         *,
-        give: bool = ...,
-        send_flags: int = ...,
-        recv_flags: int = ...,
+        give: bool,
+        max_recv_size: int | None = ...,
     ) -> None:
         ...
 
     def __init__(
         self,
-        __arg: Socket | tuple[str, int],
+        __arg: _socket.socket | tuple[str, int],
         /,
         protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
         *,
-        send_flags: int = 0,
-        recv_flags: int = 0,
+        max_recv_size: int | None = None,
         **kwargs: Any,
     ) -> None:
-        self.__producer: StreamDataProducer[_SentPacketT] = StreamDataProducer(protocol)
-        self.__consumer: StreamDataConsumer[_ReceivedPacketT] = StreamDataConsumer(protocol, on_error="ignore")
-
-        send_flags = int(send_flags)
-        recv_flags = int(recv_flags)
-        socket: Socket
-
+        self.__socket: _socket.socket | None = None  # If any exception occurs, the client will already be in a closed state
         super().__init__()
+        self.__lock = _Lock()
 
+        socket: _socket.socket
         self.__owner: bool
-        if isinstance(__arg, Socket):
-            give: bool = kwargs.pop("give", False)
-            if kwargs:
+        if isinstance(__arg, _socket.socket):
+            try:
+                give: bool = kwargs.pop("give")
+            except KeyError:
+                raise TypeError("Missing keyword argument 'give'") from None
+            if kwargs:  # pragma: no cover
                 raise TypeError("Invalid arguments")
             socket = __arg
             self.__owner = bool(give)
         elif isinstance(__arg, tuple):
             address: tuple[str, int] = __arg
-            socket = create_connection(address, **kwargs)
+            socket = _socket.create_connection(address, **kwargs)
             self.__owner = True
-        else:
+        else:  # pragma: no cover
             raise TypeError("Invalid arguments")
 
-        from socket import SOCK_STREAM
+        try:
+            if socket.type != _socket.SOCK_STREAM:
+                raise ValueError("Invalid socket type")
 
-        if socket.type != SOCK_STREAM:
-            raise ValueError("Invalid socket type")
+            if max_recv_size is None:
+                max_recv_size = MAX_STREAM_BUFSIZE
+            if not isinstance(max_recv_size, int) or max_recv_size <= 0:
+                raise ValueError("max_size must be a strict positive integer")
 
-        socket.settimeout(None)
+            self.__addr: SocketAddress = new_socket_address(socket.getsockname(), socket.family)
+            self.__peer: SocketAddress = new_socket_address(socket.getpeername(), socket.family)
+            self.__producer: Callable[[_SentPacketT], Iterator[bytes]] = protocol.generate_chunks
+            self.__consumer: StreamDataConsumer[_ReceivedPacketT] = StreamDataConsumer(protocol)
+            self.__socket_proxy = SocketProxy(socket, lock=self.__lock)
+            self.__eof_reached: bool = False
+            self.__max_recv_bufsize: int = max_recv_size
+        except BaseException:
+            if self.__owner:
+                socket.close()
+            raise
 
-        self.__peer: SocketAddress = new_socket_address(socket.getpeername(), socket.family)
-        self.__closed: bool = False
-        self.__socket: Socket = socket
-        self.__lock: RLock = RLock()
-        self.__eof_reached: bool = False
-        self.__recv_size: int = guess_best_recv_size(socket)
-        self.__default_send_flags: int = send_flags
-        self.__default_recv_flags: int = recv_flags
+        self.__socket = socket  # There was no errors
+
+    def __del__(self) -> None:  # pragma: no cover
+        try:
+            socket: _socket.socket | None = self.__socket
+            owner: bool = self.__owner
+        except AttributeError:
+            return
+        if owner and socket is not None:
+            socket.close()
+
+    def __repr__(self) -> str:
+        socket = self.__socket
+        if socket is None:
+            return f"<{type(self).__name__} closed>"
+        return f"<{type(self).__name__} socket={socket!r}>"
 
     @final
     def is_closed(self) -> bool:
-        return self.__closed
+        with self.__lock:
+            return self.__socket is None
 
     def close(self) -> None:
         with self.__lock:
-            if self.__closed:
+            if (socket := self.__socket) is None:
                 return
-            self.__eof_reached = True
-            self.__closed = True
-            socket: Socket = self.__socket
-            del self.__socket
+            self.__socket = None
             if not self.__owner:
                 return
-            try:
-                socket.shutdown(SHUT_WR)
-            except OSError:
-                pass
-            finally:
-                socket.close()
+            socket.close()
+
+    def shutdown(self, how: int) -> None:
+        with self.__lock:
+            if (socket := self.__socket) is None:
+                raise ClientClosedError("Closed client")
+            socket.shutdown(how)
 
     def send_packet(self, packet: _SentPacketT) -> None:
         with self.__lock:
-            self._check_not_closed()
-            self.__producer.queue(packet)
-            self.__write_on_socket()
+            if (socket := self.__socket) is None:
+                raise ClientClosedError("Closed client")
+            if self.__eof_reached:
+                raise _error_from_errno(_errno.ECONNABORTED)
 
-    def send_packets(self, *packets: _SentPacketT) -> None:
-        if not packets:
-            return
+            # The list call should be roughly
+            # equivalent to the PySequence_Fast that ''.join() would do.
+            data: bytes = b"".join(list(self.__producer(packet)))
+
+            with _restore_timeout_at_end(socket):
+                socket.settimeout(None)
+                socket.sendall(data)
+                _check_real_socket_state(socket)
+
+    def recv_packet(self, timeout: float | None = None) -> _ReceivedPacketT:
         with self.__lock:
-            self._check_not_closed()
-            self.__producer.queue(*packets)
-            self.__write_on_socket()
-
-    def __write_on_socket(self) -> None:
-        flags = self.__default_send_flags
-        socket: Socket = self.__socket
-        if self.__eof_reached:
-            raise ConnectionAbortedError("Closed connection")
-        with _use_timeout(socket, None):
-            socket.sendall(b"".join(list(self.__producer)), flags)
-
-    def recv_packet(self) -> _ReceivedPacketT:
-        with self.__lock:
-            self._check_not_closed()
             consumer = self.__consumer
-            read_socket = self.__read_socket
-            while True:
-                try:
-                    return next(consumer)
-                except StopIteration:
-                    pass
-                while not read_socket(timeout=10):
-                    continue
-
-    @overload
-    def recv_packet_no_block(self, *, timeout: float = ...) -> _ReceivedPacketT:
-        ...
-
-    @overload
-    def recv_packet_no_block(self, *, default: _T, timeout: float = ...) -> _ReceivedPacketT | _T:
-        ...
-
-    def recv_packet_no_block(self, *, default: Any = _NO_DEFAULT, timeout: float = 0) -> Any:
-        timeout = float(timeout)
-        with self.__lock:
-            self._check_not_closed()
-            consumer = self.__consumer
+            next_packet = self.__next_packet
             try:
-                return next(consumer)
+                return next_packet(consumer)  # If there is enough data from last call to create a packet, return immediately
             except StopIteration:
                 pass
-            while self.__read_socket(timeout=timeout):
-                try:
-                    return next(consumer)
-                except StopIteration:
-                    pass
-            if default is not _NO_DEFAULT:
-                return default
-            raise TimeoutError("recv_packet() timed out")
+            if (socket := self.__socket) is None:
+                raise ClientClosedError("Closed client")
+            if self.__eof_reached:  # Do not need to call socket.recv()
+                raise _error_from_errno(_errno.ECONNABORTED)
+            bufsize: int = self.__max_recv_bufsize
+            monotonic = _time_monotonic  # pull function to local namespace
 
-    def iter_received_packets(self, *, timeout: float = 0) -> Iterator[_ReceivedPacketT]:
-        timeout = float(timeout)
-        consumer = self.__consumer
-        read_socket = self.__read_socket
-        check_not_closed = self._check_not_closed
-        lock = self.__lock
-        null: Any = object()
-        while True:
-            with lock:
-                check_not_closed()
-                while (packet := next(consumer, null)) is null:
-                    if not read_socket(timeout=timeout):
-                        return
-                    continue
-            yield packet  # yield out of lock scope
+            with _restore_timeout_at_end(socket):
+                socket.settimeout(timeout)
+                while True:
+                    try:
+                        _start = monotonic()
+                        chunk: bytes = socket.recv(bufsize)
+                        _end = monotonic()
+                    except (TimeoutError, BlockingIOError) as exc:
+                        if timeout is None:  # pragma: no cover
+                            raise RuntimeError("socket.recv() timed out with timeout=None ?") from exc
+                        break
+                    if not chunk:
+                        self.__eof_reached = True
+                        raise _error_from_errno(_errno.ECONNABORTED)
+                    consumer.feed(chunk)
+                    try:
+                        return next_packet(consumer)
+                    except StopIteration:
+                        if timeout is not None:
+                            if timeout > 0:
+                                timeout -= _end - _start
+                                if timeout < 0:  # pragma: no cover
+                                    timeout = 0
+                                socket.settimeout(timeout)
+                            elif len(chunk) < bufsize:
+                                break
+                        continue
+                    finally:
+                        del chunk
+                # Loop break
+                raise TimeoutError("recv_packet() timed out")
 
-    def recv_all_packets(self, *, timeout: float = 0) -> list[_ReceivedPacketT]:
-        with self.__lock:
-            return list(self.iter_received_packets(timeout=timeout))
-
-    def __read_socket(self, *, timeout: float | None) -> bool:
-        flags = self.__default_recv_flags
-        socket: Socket = self.__socket
-        if self.__eof_reached:
-            raise EOFError("Closed connection")
-        with _use_timeout(socket, timeout):
-            try:
-                chunk: bytes = socket.recv(self.__recv_size, flags)
-            except (TimeoutError, BlockingIOError, InterruptedError):
-                return False
-            if not chunk:
-                self.__eof_reached = True
-                raise EOFError("Closed connection")
-            self.__consumer.feed(chunk)
-            return True
+    @staticmethod
+    def __next_packet(consumer: StreamDataConsumer[_ReceivedPacketT]) -> _ReceivedPacketT:
+        try:
+            return next(consumer)
+        except (StopIteration, StreamProtocolParseError):
+            raise
+        except Exception as exc:  # pragma: no cover
+            raise RuntimeError(str(exc)) from exc
 
     def get_local_address(self) -> SocketAddress:
-        with self.__lock:
-            self._check_not_closed()
-            return new_socket_address(self.__socket.getsockname(), self.__socket.family)
+        return self.__addr
 
     def get_remote_address(self) -> SocketAddress:
-        with self.__lock:
-            self._check_not_closed()
-            return self.__peer
-
-    def get_timeout(self) -> float | None:
-        with self.__lock:
-            self._check_not_closed()
-            return self.__socket.gettimeout()
-
-    def is_connected(self) -> bool:
-        with self.__lock:
-            if self.__closed or self.__eof_reached:
-                return False
-            try:
-                self.__socket.getpeername()
-            except OSError:
-                return False
-            return True
+        return self.__peer
 
     def fileno(self) -> int:
         with self.__lock:
-            if self.__closed:
+            if (socket := self.__socket) is None:
                 return -1
-            return self.__socket.fileno()
-
-    def dup(self) -> Socket:
-        with self.__lock:
-            self._check_not_closed()
-            socket: Socket = self.__socket
-            return socket.dup()
-
-    def detach(self) -> Socket:
-        with self.__lock:
-            self._check_not_closed()
-            socket: Socket = self.__socket
-            fd: int = socket.detach()
-            if fd < 0:
-                raise OSError("Closed socket")
-            socket = Socket(socket.family, socket.type, socket.proto, fileno=fd)
-            try:
-                self.__owner = False
-                self.close()
-            except BaseException:
-                socket.close()
-                raise
-            return socket
-
-    @overload
-    def getsockopt(self, __level: int, __optname: int, /) -> int:
-        ...
-
-    @overload
-    def getsockopt(self, __level: int, __optname: int, __buflen: int, /) -> bytes:
-        ...
-
-    def getsockopt(self, *args: int) -> int | bytes:
-        with self.__lock:
-            self._check_not_closed()
-            return self.__socket.getsockopt(*args)
-
-    @overload
-    def setsockopt(self, __level: int, __optname: int, __value: int | bytes, /) -> None:
-        ...
-
-    @overload
-    def setsockopt(self, __level: int, __optname: int, __value: None, __optlen: int, /) -> None:
-        ...
-
-    def setsockopt(self, *args: Any) -> None:
-        with self.__lock:
-            self._check_not_closed()
-            return self.__socket.setsockopt(*args)
-
-    def reconnect(self, timeout: float | None = None) -> None:
-        with self.__lock:
-            self._check_not_closed()
-            socket: Socket = self.__socket
-            if not self.__eof_reached:
-                try:
-                    socket.getpeername()
-                except OSError:
-                    pass
-                else:
-                    return
-            address: tuple[Any, ...] = self.__peer.for_connection()
-            former_timeout = socket.gettimeout()
-            socket.settimeout(timeout)
-            try:
-                socket.connect(address)
-                self.__eof_reached = False
-            finally:
-                socket.settimeout(former_timeout)
-
-    def try_reconnect(self, timeout: float | None = None) -> bool:
-        try:
-            self.reconnect(timeout=timeout)
-        except OSError:
-            return False
-        return True
-
-    @final
-    def _get_buffer(self) -> bytes:
-        return self.__consumer.get_unconsumed_data()
-
-    @final
-    def _check_not_closed(self) -> None:
-        if self.__closed:
-            raise RuntimeError("Closed client")
+            return socket.fileno()
 
     @property
     @final
-    def default_send_flags(self) -> int:
-        return self.__default_send_flags
+    def socket(self) -> SocketProxy:
+        return self.__socket_proxy
 
     @property
     @final
-    def default_recv_flags(self) -> int:
-        return self.__default_recv_flags
-
-
-@contextmanager
-def _use_timeout(socket: Socket, timeout: float | None) -> Iterator[None]:
-    old_timeout: float | None = socket.gettimeout()
-    socket.settimeout(timeout)
-    try:
-        yield
-    finally:
-        socket.settimeout(old_timeout)
+    def max_recv_bufsize(self) -> int:
+        return self.__max_recv_bufsize

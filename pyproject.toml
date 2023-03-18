@@ -100,10 +100,60 @@ module = [
 ]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disable_error_code = ["override"]
+
 [tool.pytest.ini_options]
+addopts = "--strict-markers"
 minversion = "7.1.2"
 testpaths = ["tests"]
+norecursedirs = ["scripts"]
 markers = [
-    "slow: marks tests as slow",
-    "functional: marks tests as functional tests",
+  "slow: marks tests as slow",
+  "functional: marks tests as functional tests",
+  "unit: marks tests as unit tests",
+  "serializer: marks serializers tests",
+  # Platform-specific tests
+  "platform_win32: marks tests as runnable on win32 (Windows)",
+  "platform_darwin: marks tests as runnable on darwin (macOS)",
+  "platform_linux: marks tests as runnable on linux",
+]
+
+[tool.coverage.run]
+branch = true
+source_pkgs = [
+  "easynetwork",
+]
+relative_files = true
+
+[tool.coverage.paths]
+source = [
+    "src/",
+    "*/.tox/*/lib/python*/site-packages",
+]
+
+[tool.coverage.report]
+show_missing = true
+precision = 2
+exclude_lines = [
+  # Have to re-enable the standard pragma
+  "pragma: no cover",
+
+  # Don't complain about missing debug-only code:
+  "def __repr__",
+
+  # Don't complain if tests don't hit defensive assertion code:
+  "raise AssertionError",
+  "raise NotImplementedError",
+
+  # Don't complain if non-runnable code isn't run:
+  "if __name__ == .__main__.:",
+
+  # Don't complain about type hinting code:
+  "if (typing\\.)?TYPE_CHECKING:",
+  "@(typing\\.)?overload",
+
+  # Don't complain about abstract methods, they aren't run:
+  "@(abc\\.)?abstractmethod",
 ]

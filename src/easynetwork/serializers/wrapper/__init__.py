@@ -10,8 +10,10 @@ __all__ = [
     "AbstractCompressorSerializer",
     "BZ2CompressorSerializer",
     "Base64EncodedSerializer",
+    "EncryptorSerializer",
     "ZlibCompressorSerializer",
 ]
 
 from .base64 import *
 from .compressor import *
+from .encryptor import *

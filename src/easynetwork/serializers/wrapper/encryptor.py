@@ -12,9 +12,9 @@ __all__ = [
 
 from typing import TypeVar, final
 
+from ...exceptions import DeserializeError
 from ..abc import AbstractPacketSerializer
-from ..exceptions import DeserializeError
-from ..stream.abc import AutoSeparatedPacketSerializer
+from ..base_stream import AutoSeparatedPacketSerializer
 
 _ST_contra = TypeVar("_ST_contra", contravariant=True)
 _DT_co = TypeVar("_DT_co", covariant=True)
@@ -32,11 +32,11 @@ class EncryptorSerializer(AutoSeparatedPacketSerializer[_ST_contra, _DT_co]):
     ) -> None:
         try:
             import cryptography.fernet
-        except ModuleNotFoundError as exc:
+        except ModuleNotFoundError as exc:  # pragma: no cover
             raise ModuleNotFoundError("encryption dependencies are missing. Consider adding 'encryption' extra") from exc
 
-        assert isinstance(serializer, AbstractPacketSerializer)
         super().__init__(separator=b"\r\n", keepends=False)
+        assert isinstance(serializer, AbstractPacketSerializer)
         self.__serializer: AbstractPacketSerializer[_ST_contra, _DT_co] = serializer
         self.__fernet = cryptography.fernet.Fernet(key)
         self.__token_ttl = token_ttl
@@ -44,11 +44,11 @@ class EncryptorSerializer(AutoSeparatedPacketSerializer[_ST_contra, _DT_co]):
     @classmethod
     def generate_key(cls) -> bytes:
         try:
-            from cryptography.fernet import Fernet
-        except ModuleNotFoundError as exc:
+            import cryptography.fernet
+        except ModuleNotFoundError as exc:  # pragma: no cover
             raise ModuleNotFoundError("encryption dependencies are missing. Consider adding 'encryption' extra") from exc
 
-        return Fernet.generate_key()
+        return cryptography.fernet.Fernet.generate_key()
 
     @final
     def serialize(self, packet: _ST_contra) -> bytes:
