@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from abc import ABCMeta
 from typing import Any, Callable, final
 
@@ -19,10 +20,12 @@ class BaseTestSerializer(metaclass=ABCMeta):
     def oneshot_extra_data() -> bytes:
         return b"remaining_data"
 
+    #### Invalid data
+
     @pytest.fixture(scope="class")
     @staticmethod
-    def incremental_extra_data() -> bytes:
-        return b"remaining_data"
+    def invalid_complete_data() -> bytes:
+        return os.urandom(32)
 
     def test____fixture____consistency(
         self,
@@ -108,6 +111,21 @@ class BaseTestSerializer(metaclass=ABCMeta):
 
 
 class BaseTestIncrementalSerializer(BaseTestSerializer):
+    @pytest.fixture(scope="class")
+    @staticmethod
+    def incremental_extra_data() -> bytes:
+        return b"remaining_data"
+
+    @pytest.fixture(scope="class")
+    @staticmethod
+    def invalid_partial_data() -> bytes:
+        return os.urandom(32)
+
+    @pytest.fixture(scope="class")
+    @staticmethod
+    def invalid_partial_data_extra_data() -> bytes | None:
+        return b"remaining_data"
+
     def test____incremental_serialize____concatenated_chunks(
         self,
         serializer_for_serialization: AbstractIncrementalPacketSerializer[Any, Any],
@@ -210,20 +228,27 @@ class BaseTestIncrementalSerializer(BaseTestSerializer):
         self,
         serializer_for_deserialization: AbstractIncrementalPacketSerializer[Any, Any],
         invalid_partial_data: bytes,
-        incremental_extra_data: bytes,
+        invalid_partial_data_extra_data: bytes | None,
     ) -> None:
         # Arrange
-        assert len(incremental_extra_data) > 0
+        if invalid_partial_data_extra_data is not None:
+            assert len(invalid_partial_data_extra_data) > 0
         consumer = serializer_for_deserialization.incremental_deserialize()
         next(consumer)
 
         # Act
         with pytest.raises(IncrementalDeserializeError) as exc_info:
-            consumer.send(invalid_partial_data)
+            if invalid_partial_data_extra_data:
+                consumer.send(invalid_partial_data + invalid_partial_data_extra_data)
+            else:
+                consumer.send(invalid_partial_data)
         exception = exc_info.value
 
         # Assert
-        assert exception.remaining_data == incremental_extra_data
+        if invalid_partial_data_extra_data is not None:
+            assert exception.remaining_data == invalid_partial_data_extra_data
+        else:
+            assert len(exception.remaining_data) > 0
 
 
 @final

@@ -56,7 +56,7 @@ class CBORSerializer(FileBasedPacketSerializer[_ST_contra, _DT_co]):
         except ModuleNotFoundError as exc:  # pragma: no cover
             raise ModuleNotFoundError("cbor dependencies are missing. Consider adding 'cbor' extra") from exc
 
-        super().__init__(expected_load_error=cbor2.CBORDecodeError)
+        super().__init__(expected_load_error=(cbor2.CBORDecodeError, UnicodeError))
         self.__encoder_cls: Callable[[IO[bytes]], cbor2.CBOREncoder]  # type: ignore[no-any-unimported]
         self.__decoder_cls: Callable[[IO[bytes]], cbor2.CBORDecoder]  # type: ignore[no-any-unimported]
 

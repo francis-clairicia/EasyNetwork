@@ -94,10 +94,10 @@ class TestEncryptorSerializer(BaseTestIncrementalSerializer):
             pytest.skip("empty bytes")
         return complete_data[:-1]  # Remove one byte at last will break the padding
 
-    @pytest.fixture(scope="class", params=[])
+    @pytest.fixture
     @staticmethod
-    def invalid_partial_data(invalid_complete_data: bytes) -> bytes:
-        return invalid_complete_data + b"\r\n"
+    def invalid_partial_data() -> bytes:
+        pytest.skip("Cannot be tested")
 
     #### Other
 

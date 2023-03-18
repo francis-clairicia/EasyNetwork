@@ -71,12 +71,12 @@ class TestJSONSerializer(BaseTestIncrementalSerializer):
 
     #### Invalid data
 
-    @pytest.fixture(scope="class", params=[])
+    @pytest.fixture(scope="class")
     @staticmethod
     def invalid_complete_data() -> bytes:
-        raise NotImplementedError
+        return b"invalid"
 
-    @pytest.fixture(scope="class", params=[])
+    @pytest.fixture(scope="class")
     @staticmethod
     def invalid_partial_data() -> bytes:
-        raise NotImplementedError
+        return b"[ invalid ]"

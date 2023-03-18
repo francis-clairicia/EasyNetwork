@@ -70,12 +70,12 @@ class TestCBORSerializer(BaseTestIncrementalSerializer):
 
     #### Invalid data
 
-    @pytest.fixture(scope="class", params=[])
+    @pytest.fixture(scope="class")
     @staticmethod
-    def invalid_complete_data() -> bytes:
-        raise NotImplementedError
+    def invalid_complete_data(complete_data: bytes) -> bytes:
+        return complete_data[:-1]  # Missing data error
 
-    @pytest.fixture(scope="class", params=[])
+    @pytest.fixture
     @staticmethod
     def invalid_partial_data() -> bytes:
-        raise NotImplementedError
+        pytest.skip("Cannot be tested")

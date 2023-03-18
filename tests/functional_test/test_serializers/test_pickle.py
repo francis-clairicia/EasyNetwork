@@ -107,12 +107,7 @@ class TestPickleSerializer(BaseTestIncrementalSerializer):
 
     #### Invalid data
 
-    @pytest.fixture(scope="class", params=[])
+    @pytest.fixture(scope="class")
     @staticmethod
-    def invalid_complete_data() -> bytes:
-        raise NotImplementedError
-
-    @pytest.fixture(scope="class", params=[])
-    @staticmethod
-    def invalid_partial_data() -> bytes:
-        raise NotImplementedError
+    def invalid_partial_data_extra_data() -> bytes | None:
+        return None

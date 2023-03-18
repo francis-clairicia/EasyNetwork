@@ -331,6 +331,31 @@ class TestStreamProtocol:
         assert exception.error_info is mocker.sentinel.error_info
         assert isinstance(exception.__cause__, DeserializeError)
 
+    def test____build_packet_from_chunks____wrong_deserialize_error(
+        self,
+        protocol: StreamProtocol[Any, Any],
+        mock_incremental_serializer: MagicMock,
+        mock_converter: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        def build_packet_from_chunks_side_effect_deserialize_error() -> Generator[None, bytes, tuple[Any, bytes]]:
+            yield
+            raise DeserializeError("Deserialization error", error_info=self.sentinel.error_info)
+
+        mock_incremental_deserialize_func: MagicMock = mock_incremental_serializer.incremental_deserialize
+        mock_incremental_deserialize_func.side_effect = build_packet_from_chunks_side_effect_deserialize_error
+        mock_convert_func: MagicMock = mock_converter.create_from_dto_packet
+
+        # Act
+        gen = protocol.build_packet_from_chunks()
+        next(gen)
+        with pytest.raises(RuntimeError, match=r"^DeserializeError raised instead of IncrementalDeserializeError$"):
+            gen.send(mocker.sentinel.chunk)
+
+        # Assert
+        mock_convert_func.assert_not_called()
+
     def test____build_packet_from_chunks____conversion_error(
         self,
         protocol_with_converter: StreamProtocol[Any, Any],
