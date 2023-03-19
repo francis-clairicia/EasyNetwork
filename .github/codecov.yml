@@ -1,4 +1,7 @@
-comment: false
+comment:
+  require_changes: true
+  layout: "flags"  # Only show coverage by flags
+  after_n_builds: 3  # nb_tested_python_version(==1) * nb_tested_platforms(==3)
 coverage:
   status:
     project:
