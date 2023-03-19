@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from concurrent.futures import Future
-from socket import AF_INET, SHUT_WR, socket as Socket
+from socket import AF_INET, IPPROTO_TCP, SHUT_WR, TCP_NODELAY, socket as Socket
 from typing import Any, Callable, Iterator
 
 from easynetwork.client.tcp import TCPNetworkClient
@@ -50,7 +50,9 @@ class TestTCPNetworkClient:
     @pytest.fixture
     @staticmethod
     def server(socket_pair: tuple[Socket, Socket]) -> Socket:
-        return socket_pair[0]
+        server = socket_pair[0]
+        server.setsockopt(IPPROTO_TCP, TCP_NODELAY, 1)
+        return server
 
     @pytest.fixture
     @staticmethod
@@ -59,6 +61,7 @@ class TestTCPNetworkClient:
         stream_protocol: StreamProtocol[str, str],
     ) -> Iterator[TCPNetworkClient[str, str]]:
         with TCPNetworkClient(socket_pair[1], stream_protocol, give=False) as client:
+            client.socket.setsockopt(IPPROTO_TCP, TCP_NODELAY, 1)
             yield client
 
     def test____close____double_close(self, client: TCPNetworkClient[str, str]) -> None:
