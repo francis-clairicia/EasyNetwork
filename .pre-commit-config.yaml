@@ -65,6 +65,7 @@ repos:
       - id: mixed-line-ending
         args: [--fix=lf]
       - id: trailing-whitespace
+        exclude: \.bumpversion\.cfg  # Will always be triggered...
       - id: end-of-file-fixer
       - id: check-json
       - id: check-toml
