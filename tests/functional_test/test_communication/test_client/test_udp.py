@@ -121,7 +121,7 @@ class TestUDPNetworkClient:
             server.sendto(p, client.get_local_address())
 
         # NOTE: Comparison using set because equality check does not verify order
-        assert set(client.iter_received_packets()) == {"A", "B", "C", "D", "E", "F"}
+        assert set(client.iter_received_packets(timeout=1)) == {"A", "B", "C", "D", "E", "F"}
 
     def test____fileno____consistency(self, client: UDPNetworkClient[str, str]) -> None:
         assert client.fileno() == client.socket.fileno()
