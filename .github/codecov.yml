@@ -1,0 +1,14 @@
+comment:
+  require_changes: false  # Always show messages if codecov is triggered
+  layout: "flags"  # Only show coverage by flags
+  after_n_builds: 3  # nb_tested_python_version(==1) * nb_tested_platforms(==3)
+coverage:
+  status:
+    project:
+      default:
+        informational: true
+    patch:
+      default:
+        informational: true
+github_checks:
+  annotations: false  # Codecov may pollute the "files" diff view
