@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from concurrent.futures import Future
-from socket import AF_INET, socket as Socket
+from socket import AF_INET, SHUT_WR, socket as Socket
 from typing import Any, Callable, Iterator
 
 from easynetwork.client.tcp import TCPNetworkClient
@@ -186,7 +186,7 @@ class TestTCPNetworkClient:
         server: Socket,
     ) -> None:
         server.sendall(b"A\nB\nC\nD\nE\nF\n")
-        assert list(client.iter_received_packets()) == ["A", "B", "C", "D", "E", "F"]
+        assert list(client.iter_received_packets(timeout=1)) == ["A", "B", "C", "D", "E", "F"]
 
     def test____iter_received_packets____yields_available_packets_until_eof(
         self,
@@ -194,6 +194,7 @@ class TestTCPNetworkClient:
         server: Socket,
     ) -> None:
         server.sendall(b"A\nB\nC\nD\nE\nF")
+        server.shutdown(SHUT_WR)
         server.close()
         assert list(client.iter_received_packets(timeout=None)) == ["A", "B", "C", "D", "E"]
 
