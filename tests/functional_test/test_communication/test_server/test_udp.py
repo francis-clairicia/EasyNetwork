@@ -176,8 +176,8 @@ class TestUDPNetworkServer(BaseTestServer):
             default_error_handler(client_address, exc_info)
             server.send_packet_to(str(exc_info()), client_address)
 
-        server.process_request = process_request  # type: ignore[assignment]
-        server.handle_error = handle_error  # type: ignore[assignment]
+        server.process_request = process_request  # type: ignore[method-assign]
+        server.handle_error = handle_error  # type: ignore[method-assign]
 
         client = client_factory()
         client.send(b"hello")
