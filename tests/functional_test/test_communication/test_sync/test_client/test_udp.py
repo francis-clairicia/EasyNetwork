@@ -348,7 +348,7 @@ class TestUDPNetworkEndpoint:
             server.sendto(p, client.get_local_address())
 
         # NOTE: Comparison using set because equality check does not verify order
-        assert set(client.iter_received_packets_from()) == {
+        assert set(client.iter_received_packets_from(timeout=1)) == {
             ("A", server_address),
             ("B", server_address),
             ("C", server_address),

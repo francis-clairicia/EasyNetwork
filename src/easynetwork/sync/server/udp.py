@@ -11,7 +11,6 @@ __all__ = ["AbstractUDPNetworkServer"]
 import collections as _collections
 import contextlib as _contextlib
 import logging as _logging
-import os as _os
 import selectors as _selectors
 import socket as _socket
 import sys as _sys
@@ -388,12 +387,6 @@ class AbstractUDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
 def _create_udp_server(address: tuple[str, int], family: int, reuse_port: bool) -> _socket.socket:
     socket = _socket.socket(family, _socket.SOCK_DGRAM)
     try:
-        if _os.name not in ("nt", "cygwin") and hasattr(_socket, "SO_REUSEADDR"):
-            try:
-                socket.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
-            except OSError:
-                pass
-
         if reuse_port:
             if not hasattr(_socket, "SO_REUSEPORT"):
                 raise ValueError("SO_REUSEPORT not supported on this platform")
