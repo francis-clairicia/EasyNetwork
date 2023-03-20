@@ -15,6 +15,7 @@ import socket as _socket
 from typing import TYPE_CHECKING, final
 
 from easynetwork.asyncio.backend import AbstractStreamSocketAdapter
+from easynetwork.tools._utils import error_from_errno as _error_from_errno
 from easynetwork.tools.socket import SocketProxy
 
 if TYPE_CHECKING:
@@ -37,6 +38,10 @@ class TransportStreamSocket(AbstractStreamSocketAdapter):
 
         socket: _socket.socket | None = writer.get_extra_info("socket")
         assert isinstance(socket, _socket.socket), "Writer transport must be a socket transport"
+        if writer.get_extra_info("peername") is None:
+            import errno
+
+            raise _error_from_errno(errno.ENOTCONN)
 
         self.__proxy: SocketProxy = SocketProxy(socket)
 
@@ -47,14 +52,12 @@ class TransportStreamSocket(AbstractStreamSocketAdapter):
             return
         writer.close()
 
-    def close(self) -> None:
-        return self.__writer.close()
+    async def close(self) -> None:
+        self.__writer.close()
+        await self.__writer.wait_closed()
 
     def is_closing(self) -> bool:
         return self.__writer.is_closing()
-
-    async def wait_closed(self) -> None:
-        return await self.__writer.wait_closed()
 
     async def recv(self, bufsize: int, /) -> bytes:
         if bufsize <= 0:

@@ -12,7 +12,7 @@ __all__ = ["AsyncIOBackend"]  # type: list[str]
 __version__ = "1.0.0"
 
 import socket as _socket
-from typing import TYPE_CHECKING, final
+from typing import TYPE_CHECKING, Any, Callable, Coroutine, final
 
 from easynetwork.asyncio.backend import AbstractAsyncBackend
 
@@ -23,6 +23,35 @@ if TYPE_CHECKING:
 @final
 class AsyncIOBackend(AbstractAsyncBackend):
     __slots__ = ()
+
+    def __init__(self) -> None:
+        super().__init__()
+
+        import asyncio
+
+        asyncio.get_running_loop()  # Ensure there is a running loop. Raise RuntimeError otherwise.
+
+    def get_extra_info(self, key: str, default: Any = None) -> Any:
+        match key:
+            case "loop":
+                import asyncio
+
+                try:
+                    return asyncio.get_running_loop()
+                except RuntimeError:
+                    return default
+            case _:
+                return default
+
+    def schedule_task(self, __async_fn: Callable[..., Coroutine[Any, Any, Any]], /, *args: Any, name: str | None = None) -> None:
+        import asyncio
+
+        asyncio.create_task(__async_fn(*args), name=name)
+
+    async def yield_task(self) -> None:
+        import asyncio
+
+        return await asyncio.sleep(0)
 
     async def create_tcp_connection(
         self,

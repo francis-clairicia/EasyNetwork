@@ -13,7 +13,7 @@ __all__ = []  # type: list[str]
 import functools
 from abc import ABCMeta, abstractmethod
 from types import MappingProxyType
-from typing import TYPE_CHECKING, TypeVar, final
+from typing import TYPE_CHECKING, Any, Callable, Coroutine, TypeVar, final
 
 from ..tools.socket import SocketProxy
 
@@ -40,19 +40,14 @@ class AbstractBaseAsyncSocketAdapter(metaclass=ABCMeta):
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        self.close()
-        await self.wait_closed()
+        await self.close()
 
     @abstractmethod
     def is_closing(self) -> bool:
         raise NotImplementedError
 
     @abstractmethod
-    def close(self) -> None:
-        raise NotImplementedError
-
-    @abstractmethod
-    async def wait_closed(self) -> None:
+    async def close(self) -> None:
         raise NotImplementedError
 
     @abstractmethod
@@ -91,6 +86,17 @@ class AbstractDatagramSocketAdapter(AbstractBaseAsyncSocketAdapter):
 class AbstractAsyncBackend(metaclass=ABCMeta):
     __slots__ = ("__weakref__",)
 
+    def get_extra_info(self, key: str, default: Any = None) -> Any:
+        return default
+
+    @abstractmethod
+    def schedule_task(self, __async_fn: Callable[..., Coroutine[Any, Any, Any]], /, *args: Any, name: str | None = ...) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def yield_task(self) -> None:
+        raise NotImplementedError
+
     @abstractmethod
     async def create_tcp_connection(
         self,
@@ -123,7 +129,9 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
 
 @final
 class AsyncBackendFactory:
+    __GROUP_NAME: str = "easynetwork.asyncio.backends"
     __BACKEND: str | None = None
+    __RUNTIME_REGISTERED_BACKENDS: dict[str, type[AbstractAsyncBackend]] = {}
 
     @staticmethod
     def get_default_backend(guess_current_async_library: bool = True) -> str:
@@ -153,11 +161,31 @@ class AsyncBackendFactory:
         AsyncBackendFactory.__BACKEND = backend
 
     @staticmethod
-    def new(backend: str | None = None) -> AbstractAsyncBackend:
-        if backend is None:
-            backend = AsyncBackendFactory.get_default_backend(guess_current_async_library=True)
-        backend_cls: type[AbstractAsyncBackend] = AsyncBackendFactory.__get_available_backends()[backend]
-        return backend_cls()
+    def new(__backend: str | None = None, /, **kwargs: Any) -> AbstractAsyncBackend:
+        if __backend is None:
+            __backend = AsyncBackendFactory.get_default_backend(guess_current_async_library=True)
+        backend_cls: type[AbstractAsyncBackend] = AsyncBackendFactory.__get_available_backends()[__backend]
+        return backend_cls(**kwargs)
+
+    @staticmethod
+    def register_backend(name: str, cls: str | type[AbstractAsyncBackend], *, exist_ok: bool = False) -> None:
+        if not isinstance(name, str):
+            raise TypeError("'name' must be a str")
+        if not name:
+            raise ValueError("Please give a non-empty string name")
+        if isinstance(cls, str):
+            from importlib.metadata import EntryPoint
+
+            cls = EntryPoint(name=name, value=cls, group=AsyncBackendFactory.__GROUP_NAME).load()
+
+        import inspect
+
+        if not inspect.isclass(cls) or not issubclass(cls, AbstractAsyncBackend):
+            raise TypeError("Invalid backend")
+        if not exist_ok and name in AsyncBackendFactory.__get_available_backends():
+            raise KeyError(f"{name!r} already exists")
+
+        AsyncBackendFactory.__RUNTIME_REGISTERED_BACKENDS[name] = cls
 
     @staticmethod
     def get_available_backends() -> frozenset[str]:
@@ -167,9 +195,10 @@ class AsyncBackendFactory:
     @functools.cache
     def __get_available_backends() -> MappingProxyType[str, type[AbstractAsyncBackend]]:
         import inspect
+        from collections import ChainMap
         from importlib.metadata import entry_points
 
-        backends = {e.name.strip(): e.load() for e in entry_points(group="easynetwork.asyncio.backends")}
+        backends = {e.name.strip(): e.load() for e in entry_points(group=AsyncBackendFactory.__GROUP_NAME)}
 
         invalid_backends = set(
             name
@@ -177,8 +206,8 @@ class AsyncBackendFactory:
             if not name or not inspect.isclass(value) or not issubclass(value, AbstractAsyncBackend)
         )
         if invalid_backends:
-            raise ValueError(f"Invalid backends: {', '.join(map(repr, sorted(invalid_backends)))}")
+            raise TypeError(f"Invalid backend entry-points: {', '.join(map(repr, sorted(invalid_backends)))}")
 
         assert "asyncio" in backends
 
-        return MappingProxyType(backends)
+        return MappingProxyType(ChainMap(AsyncBackendFactory.__RUNTIME_REGISTERED_BACKENDS, backends))

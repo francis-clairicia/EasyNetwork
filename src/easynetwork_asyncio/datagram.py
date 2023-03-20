@@ -69,14 +69,12 @@ class TransportDatagramSocket(AbstractDatagramSocketAdapter):
             return
         transport.close()
 
-    def close(self) -> None:
-        return self.__transport.close()
+    async def close(self) -> None:
+        self.__transport.close()
+        await self.__protocol._get_close_waiter()
 
     def is_closing(self) -> bool:
         return self.__transport.is_closing()
-
-    async def wait_closed(self) -> None:
-        return await self.__protocol._get_close_waiter()
 
     async def recvfrom(self) -> tuple[bytes, _RetAddress]:
         if self.__transport.is_closing() or self.__protocol._is_connection_lost():
