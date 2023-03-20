@@ -278,8 +278,8 @@ class TestTCPNetworkServer(BaseTestServer):
             default_error_handler(client, exc_info)
             client.send_packet(str(exc_info()))
 
-        server.process_request = process_request  # type: ignore[assignment]
-        server.handle_error = handle_error  # type: ignore[assignment]
+        server.process_request = process_request  # type: ignore[method-assign]
+        server.handle_error = handle_error  # type: ignore[method-assign]
 
         client = client_factory()
         client.sendall(b"hello\n")
