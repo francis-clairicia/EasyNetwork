@@ -9,12 +9,12 @@ from typing import Any, Callable, Iterator
 from weakref import WeakSet
 
 from easynetwork.protocol import StreamProtocol
-from easynetwork.server.tcp import AbstractTCPNetworkServer, ConnectedClient
+from easynetwork.sync.server.tcp import AbstractTCPNetworkServer, ConnectedClient
 from easynetwork.tools.socket import SocketAddress
 
 import pytest
 
-from ....tools import TimeTest
+from .....tools import TimeTest
 
 
 class MyTCPServer(AbstractTCPNetworkServer[str, str]):

@@ -6,9 +6,9 @@ from typing import Callable
 
 from easynetwork.protocol import DatagramProtocol, StreamProtocol
 from easynetwork.serializers.base_stream import AutoSeparatedPacketSerializer
-from easynetwork.server.abc import AbstractNetworkServer
-from easynetwork.server.tcp import AbstractTCPNetworkServer, ConnectedClient
-from easynetwork.server.udp import AbstractUDPNetworkServer
+from easynetwork.sync.server.abc import AbstractNetworkServer
+from easynetwork.sync.server.tcp import AbstractTCPNetworkServer, ConnectedClient
+from easynetwork.sync.server.udp import AbstractUDPNetworkServer
 from easynetwork.tools.socket import SocketAddress
 
 PORT = 9000

@@ -13,7 +13,7 @@ __all__ = [
 from abc import ABCMeta, abstractmethod
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
-from ..tools.socket import SocketAddress
+from ...tools.socket import SocketAddress
 
 if TYPE_CHECKING:
     from types import TracebackType

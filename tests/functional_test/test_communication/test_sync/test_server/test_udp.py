@@ -8,12 +8,12 @@ from threading import Thread
 from typing import Any, Callable, Iterator
 
 from easynetwork.protocol import DatagramProtocol
-from easynetwork.server.udp import AbstractUDPNetworkServer
+from easynetwork.sync.server.udp import AbstractUDPNetworkServer
 from easynetwork.tools.socket import SocketAddress
 
 import pytest
 
-from ....tools import TimeTest
+from .....tools import TimeTest
 
 
 class MyUDPServer(AbstractUDPNetworkServer[str, str]):
