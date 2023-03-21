@@ -8,15 +8,18 @@
 from __future__ import annotations
 
 __all__ = [
-    "TransportDatagramSocket",
-    "TransportDatagramSocketProtocol",
+    "DatagramEndpoint",
+    "DatagramEndpointProtocol",
+    "DatagramSocketAdapter",
+    "create_datagram_endpoint",
 ]
 
 import asyncio
 import collections
+import contextlib
 import errno as _errno
 import socket as _socket
-from typing import TYPE_CHECKING, final
+from typing import TYPE_CHECKING, Any, final
 
 from easynetwork.async_def.backend import AbstractDatagramSocketAdapter
 from easynetwork.tools._utils import error_from_errno as _error_from_errno
@@ -30,37 +33,51 @@ if TYPE_CHECKING:
     from . import AsyncIOBackend
 
 
+async def create_datagram_endpoint(
+    *,
+    local_address: tuple[str, int] | None = None,
+    remote_address: tuple[str, int] | None = None,
+    reuse_port: bool = False,
+    socket: _socket.socket | None = None,
+) -> DatagramEndpoint:
+    loop = asyncio.get_running_loop()
+    recv_queue: asyncio.Queue[tuple[bytes | None, _socket._RetAddress | None]] = asyncio.Queue()
+    exception_queue: asyncio.Queue[Exception] = asyncio.Queue()
+
+    transport, protocol = await loop.create_datagram_endpoint(
+        lambda: DatagramEndpointProtocol(loop=loop, recv_queue=recv_queue, exception_queue=exception_queue),
+        local_addr=local_address,
+        remote_addr=remote_address,
+        reuse_port=reuse_port,
+        sock=socket,
+    )
+
+    return DatagramEndpoint(transport, protocol, recv_queue=recv_queue, exception_queue=exception_queue)
+
+
 @final
-class TransportDatagramSocket(AbstractDatagramSocketAdapter):
+class DatagramEndpoint:
     __slots__ = (
-        "__backend",
         "__recv_queue",
         "__exception_queue",
         "__transport",
         "__protocol",
-        "__proxy",
+        "__weakref__",
     )
 
     def __init__(
         self,
-        backend: AsyncIOBackend,
         transport: asyncio.DatagramTransport,
-        protocol: TransportDatagramSocketProtocol,
+        protocol: DatagramEndpointProtocol,
         *,
         recv_queue: asyncio.Queue[tuple[bytes | None, _RetAddress | None]],
         exception_queue: asyncio.Queue[Exception],
     ) -> None:
         super().__init__()
-        self.__backend: AsyncIOBackend = backend
         self.__recv_queue: asyncio.Queue[tuple[bytes | None, _RetAddress | None]] = recv_queue
         self.__exception_queue: asyncio.Queue[Exception] = exception_queue
         self.__transport: asyncio.DatagramTransport = transport
-        self.__protocol: TransportDatagramSocketProtocol = protocol
-
-        socket: _socket.socket | None = transport.get_extra_info("socket")
-        assert isinstance(socket, _socket.socket), "transport must be a socket transport"
-
-        self.__proxy: SocketProxy = SocketProxy(socket)
+        self.__protocol: DatagramEndpointProtocol = protocol
 
     def __del__(self) -> None:  # pragma: no cover
         try:
@@ -69,37 +86,35 @@ class TransportDatagramSocket(AbstractDatagramSocketAdapter):
             return
         transport.close()
 
-    async def close(self) -> None:
+    def close(self) -> None:
         self.__transport.close()
+
+    async def wait_closed(self) -> None:
         await self.__protocol._get_close_waiter()
 
     def is_closing(self) -> bool:
         return self.__transport.is_closing()
 
     async def recvfrom(self) -> tuple[bytes, _RetAddress]:
-        if self.__transport.is_closing() or self.__protocol._is_connection_lost():
+        if self.__transport.is_closing():
             raise _error_from_errno(_errno.ECONNABORTED)
         self.__check_exceptions()
         data, address = await self.__recv_queue.get()
         if data is None or address is None:
             self.__check_exceptions()  # Woken up because an error occurred ?
-            assert self.__protocol._is_connection_lost()
+            assert self.__transport.is_closing()
             raise _error_from_errno(_errno.ECONNABORTED)  # Connection lost otherwise
         return data, address
 
-    async def sendto(self, data: ReadableBuffer, address: _Address | None = None, /) -> None:
-        if self.__transport.is_closing() or self.__protocol._is_connection_lost():
-            raise _error_from_errno(_errno.ECONNREFUSED)
+    async def sendto(self, data: bytes | bytearray | memoryview, address: _Address | None = None, /) -> None:
+        if self.__transport.is_closing():
+            raise _error_from_errno(_errno.ECONNABORTED)
         self.__check_exceptions()
-        with memoryview(data) as buffer:
-            self.__transport.sendto(buffer, address)
+        self.__transport.sendto(data, address)
         await self.__protocol._drain_helper()
 
-    def proxy(self) -> SocketProxy:
-        return self.__proxy
-
-    def get_backend(self) -> AsyncIOBackend:
-        return self.__backend
+    def get_extra_info(self, name: str, default: Any = None) -> Any:
+        return self.__transport.get_extra_info(name, default)
 
     def __check_exceptions(self) -> None:
         try:
@@ -113,7 +128,18 @@ class TransportDatagramSocket(AbstractDatagramSocketAdapter):
                 del exc
 
 
-class TransportDatagramSocketProtocol(asyncio.DatagramProtocol):
+class DatagramEndpointProtocol(asyncio.DatagramProtocol):
+    __slots__ = (
+        "__loop",
+        "__recv_queue",
+        "__exception_queue",
+        "__transport",
+        "__closed",
+        "__drain_waiters",
+        "__write_paused",
+        "__connection_lost",
+    )
+
     def __init__(
         self,
         *,
@@ -157,19 +183,17 @@ class TransportDatagramSocketProtocol(asyncio.DatagramProtocol):
             else:
                 self.__closed.set_exception(exc)
 
-        if self.__write_paused:
-            for waiter in self.__drain_waiters:
-                if not waiter.done():
-                    if exc is None:
-                        waiter.set_result(None)
-                    else:
-                        waiter.set_exception(exc)
-
-        self.__recv_queue.put_nowait((None, None))  # Wake up socket
-        if exc is not None:
-            self.__exception_queue.put_nowait(exc)
+        for waiter in self.__drain_waiters:
+            if not waiter.done():
+                if exc is None:
+                    waiter.set_result(None)
+                else:
+                    waiter.set_exception(exc)
 
         if self.__transport is not None:
+            self.__recv_queue.put_nowait((None, None))  # Wake up socket
+            if exc is not None:
+                self.__exception_queue.put_nowait(exc)
             self.__transport.close()
             self.__transport = None
 
@@ -187,20 +211,12 @@ class TransportDatagramSocketProtocol(asyncio.DatagramProtocol):
     def pause_writing(self) -> None:
         assert not self.__write_paused
         self.__write_paused = True
-        if self.__loop.get_debug():
-            from asyncio.log import logger
-
-            logger.debug("%r pauses writing", self)
 
         super().pause_writing()
 
     def resume_writing(self) -> None:
         assert self.__write_paused
         self.__write_paused = False
-        if self.__loop.get_debug():
-            from asyncio.log import logger
-
-            logger.debug("%r resumes writing", self)
 
         for waiter in self.__drain_waiters:
             if not waiter.done():
@@ -208,21 +224,71 @@ class TransportDatagramSocketProtocol(asyncio.DatagramProtocol):
 
         super().resume_writing()
 
-    def _is_connection_lost(self) -> bool:
-        return self.__connection_lost
-
     async def _drain_helper(self) -> None:
         if self.__connection_lost:
             raise _error_from_errno(_errno.ECONNABORTED)
         if not self.__write_paused:
             return
-        waiter = self.__loop.create_future()
-        self.__drain_waiters.append(waiter)
-        try:
-            await waiter
-        finally:
-            self.__drain_waiters.remove(waiter)
-            del waiter
+        with contextlib.ExitStack() as stack:
+            waiter = self.__loop.create_future()
+            self.__drain_waiters.append(waiter)
+            stack.callback(self.__drain_waiters.remove, waiter)
+            try:
+                await waiter
+            finally:
+                del waiter
 
     def _get_close_waiter(self) -> asyncio.Future[None]:
         return self.__closed
+
+    def _get_loop(self) -> asyncio.AbstractEventLoop:
+        return self.__loop
+
+    def _writing_paused(self) -> bool:
+        return self.__write_paused
+
+
+@final
+class DatagramSocketAdapter(AbstractDatagramSocketAdapter):
+    __slots__ = (
+        "__backend",
+        "__endpoint",
+        "__proxy",
+    )
+
+    def __init__(self, backend: AsyncIOBackend, endpoint: DatagramEndpoint) -> None:
+        super().__init__()
+        self.__backend: AsyncIOBackend = backend
+        self.__endpoint: DatagramEndpoint = endpoint
+
+        socket: _socket.socket | None = endpoint.get_extra_info("socket")
+        assert isinstance(socket, _socket.socket), "transport must be a socket transport"
+
+        self.__proxy: SocketProxy = SocketProxy(socket)
+
+    def __del__(self) -> None:  # pragma: no cover
+        try:
+            endpoint = self.__endpoint
+        except AttributeError:
+            return
+        endpoint.close()
+
+    async def close(self) -> None:
+        self.__endpoint.close()
+        return await self.__endpoint.wait_closed()
+
+    def is_closing(self) -> bool:
+        return self.__endpoint.is_closing()
+
+    async def recvfrom(self) -> tuple[bytes, _RetAddress]:
+        return await self.__endpoint.recvfrom()
+
+    async def sendto(self, data: ReadableBuffer, address: _Address | None = None, /) -> None:
+        with memoryview(data) as buffer:
+            await self.__endpoint.sendto(buffer, address)
+
+    def proxy(self) -> SocketProxy:
+        return self.__proxy
+
+    def get_backend(self) -> AsyncIOBackend:
+        return self.__backend

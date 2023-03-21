@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 __all__ = [
-    "TransportStreamSocket",
+    "StreamSocketAdapter",
 ]
 
 import socket as _socket
@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 
 
 @final
-class TransportStreamSocket(AbstractStreamSocketAdapter):
+class StreamSocketAdapter(AbstractStreamSocketAdapter):
     __slots__ = ("__backend", "__reader", "__writer", "__proxy")
 
     def __init__(self, backend: AsyncIOBackend, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
@@ -60,14 +60,16 @@ class TransportStreamSocket(AbstractStreamSocketAdapter):
         return self.__writer.is_closing()
 
     async def recv(self, bufsize: int, /) -> bytes:
-        if bufsize <= 0:
-            raise ValueError("'bufsize' must be a strict positive integer")
+        if bufsize < 0:
+            raise ValueError("'bufsize' must be a positive or null integer")
+        if bufsize == 0:
+            return b""
         return await self.__reader.read(bufsize)
 
     async def sendall(self, data: ReadableBuffer, /) -> None:
         with memoryview(data) as buffer:
             self.__writer.write(buffer)
-        await self.__writer.drain()
+            await self.__writer.drain()
 
     def proxy(self) -> SocketProxy:
         return self.__proxy

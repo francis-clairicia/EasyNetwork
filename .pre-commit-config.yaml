@@ -43,7 +43,7 @@ repos:
         types_or: [python, pyi]
         additional_dependencies: [
           'flake8-pyi>=22.11.0',
-          'flake8-dunder-all @ git+https://github.com/francis-clairicia/flake8-dunder-all.git@main'
+          'flake8-dunder-all @ git+https://github.com/francis-clairicia/flake8-dunder-all.git@v0.1.0'
         ]
   - repo: https://github.com/aio-libs/sort-all
     rev: 'v1.2.0'

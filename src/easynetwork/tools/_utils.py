@@ -11,14 +11,17 @@ __all__ = [
 import contextlib
 import os
 import socket as _socket
-from typing import Iterable, Iterator
+from typing import TYPE_CHECKING, Iterable, Iterator
+
+if TYPE_CHECKING:
+    from .socket import SocketProxy as _SocketProxy
 
 
 def error_from_errno(errno: int) -> OSError:
     return OSError(errno, os.strerror(errno))
 
 
-def check_real_socket_state(socket: _socket.socket) -> None:
+def check_real_socket_state(socket: _socket.socket | _SocketProxy) -> None:
     """Verify socket saved error and raise OSError if there is one
 
     There is some functions such as socket.send() which do not immediately fail and save the errno

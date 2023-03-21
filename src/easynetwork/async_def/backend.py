@@ -8,14 +8,19 @@ Asynchronous client/server module
 
 from __future__ import annotations
 
-__all__ = []  # type: list[str]
+__all__ = [
+    "AbstractAsyncBackend",
+    "AbstractBaseAsyncSocketAdapter",
+    "AbstractDatagramSocketAdapter",
+    "AbstractStreamSocketAdapter",
+    "AsyncBackendFactory",
+    "CUSTOM_BACKEND_NAME",
+]
 
 import functools
 from abc import ABCMeta, abstractmethod
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Callable, Coroutine, TypeVar, final
-
-from ..tools.socket import SocketProxy
+from typing import TYPE_CHECKING, Any, Literal, TypeVar, final
 
 if TYPE_CHECKING:
     import socket as _socket
@@ -23,6 +28,8 @@ if TYPE_CHECKING:
     from types import TracebackType
 
     from _typeshed import ReadableBuffer
+
+    from ..tools.socket import SocketProxy
 
 
 class AbstractBaseAsyncSocketAdapter(metaclass=ABCMeta):
@@ -90,11 +97,7 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         return default
 
     @abstractmethod
-    def schedule_task(self, __async_fn: Callable[..., Coroutine[Any, Any, Any]], /, *args: Any, name: str | None = ...) -> None:
-        raise NotImplementedError
-
-    @abstractmethod
-    async def yield_task(self) -> None:
+    async def sleep(self, delay_in_seconds: float, /) -> None:
         raise NotImplementedError
 
     @abstractmethod
@@ -103,9 +106,8 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         host: str,
         port: int,
         *,
-        family: int = ...,
-        proto: int = ...,
         source_address: tuple[str, int] | None = ...,
+        happy_eyeballs_delay: float | None = ...,
     ) -> AbstractStreamSocketAdapter:
         raise NotImplementedError
 
@@ -116,6 +118,7 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
     @abstractmethod
     async def create_udp_endpoint(
         self,
+        *,
         local_address: tuple[str, int] | None = ...,
         remote_address: tuple[str, int] | None = ...,
         reuse_port: bool = ...,
@@ -127,11 +130,14 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         raise NotImplementedError
 
 
+CUSTOM_BACKEND_NAME: Literal["__custom__"] = "__custom__"
+
+
 @final
 class AsyncBackendFactory:
-    __GROUP_NAME: str = "easynetwork.asyncio.backends"
+    __GROUP_NAME: str = "easynetwork.async.backends"
     __BACKEND: str | None = None
-    __RUNTIME_REGISTERED_BACKENDS: dict[str, type[AbstractAsyncBackend]] = {}
+    __CUSTOM_BACKEND: dict[str, type[AbstractAsyncBackend]] = {}
 
     @staticmethod
     def get_default_backend(guess_current_async_library: bool = True) -> str:
@@ -155,37 +161,26 @@ class AsyncBackendFactory:
         return backend
 
     @staticmethod
-    def set_default_backend(backend: str | None) -> None:
-        if backend is not None and backend not in AsyncBackendFactory.__get_available_backends():
-            raise KeyError(f"Unknown backend {backend!r}")
+    def set_default_backend(backend: str | type[AbstractAsyncBackend] | None) -> None:
+        if isinstance(backend, type):
+            if not issubclass(backend, AbstractAsyncBackend):
+                raise TypeError(f"Invalid backend class: {backend!r}")
+            AsyncBackendFactory.__CUSTOM_BACKEND[CUSTOM_BACKEND_NAME] = backend
+            backend = CUSTOM_BACKEND_NAME
+        else:
+            if backend is None:
+                AsyncBackendFactory.__CUSTOM_BACKEND.pop(CUSTOM_BACKEND_NAME, None)
+            elif backend not in AsyncBackendFactory.__get_available_backends():
+                raise KeyError(f"Unknown backend {backend!r}")
         AsyncBackendFactory.__BACKEND = backend
 
     @staticmethod
     def new(__backend: str | None = None, /, **kwargs: Any) -> AbstractAsyncBackend:
+        backend_cls: type[AbstractAsyncBackend]
         if __backend is None:
             __backend = AsyncBackendFactory.get_default_backend(guess_current_async_library=True)
-        backend_cls: type[AbstractAsyncBackend] = AsyncBackendFactory.__get_available_backends()[__backend]
+        backend_cls = AsyncBackendFactory.__get_available_backends()[__backend]
         return backend_cls(**kwargs)
-
-    @staticmethod
-    def register_backend(name: str, cls: str | type[AbstractAsyncBackend], *, exist_ok: bool = False) -> None:
-        if not isinstance(name, str):
-            raise TypeError("'name' must be a str")
-        if not name:
-            raise ValueError("Please give a non-empty string name")
-        if isinstance(cls, str):
-            from importlib.metadata import EntryPoint
-
-            cls = EntryPoint(name=name, value=cls, group=AsyncBackendFactory.__GROUP_NAME).load()
-
-        import inspect
-
-        if not inspect.isclass(cls) or not issubclass(cls, AbstractAsyncBackend):
-            raise TypeError("Invalid backend")
-        if not exist_ok and name in AsyncBackendFactory.__get_available_backends():
-            raise KeyError(f"{name!r} already exists")
-
-        AsyncBackendFactory.__RUNTIME_REGISTERED_BACKENDS[name] = cls
 
     @staticmethod
     def get_available_backends() -> frozenset[str]:
@@ -194,20 +189,32 @@ class AsyncBackendFactory:
     @staticmethod
     @functools.cache
     def __get_available_backends() -> MappingProxyType[str, type[AbstractAsyncBackend]]:
-        import inspect
-        from collections import ChainMap
+        from collections import ChainMap, Counter
         from importlib.metadata import entry_points
 
-        backends = {e.name.strip(): e.load() for e in entry_points(group=AsyncBackendFactory.__GROUP_NAME)}
+        backends: dict[str, type[AbstractAsyncBackend]] = {}
+        invalid_backends: set[str] = set()
+        duplicate_counter: Counter[str] = Counter()
 
-        invalid_backends = set(
-            name
-            for name, value in backends.items()
-            if not name or not inspect.isclass(value) or not issubclass(value, AbstractAsyncBackend)
-        )
+        for entry_point in entry_points(group=AsyncBackendFactory.__GROUP_NAME):
+            entry_point_name = entry_point.name.strip()
+            if not entry_point_name or entry_point_name == CUSTOM_BACKEND_NAME:
+                invalid_backends.add(entry_point_name)
+                continue
+            duplicate_counter[entry_point_name] += 1
+            if duplicate_counter[entry_point_name] > 1:
+                continue
+            entry_point_cls: Any = entry_point.load()
+            if not isinstance(entry_point_cls, type) or not issubclass(entry_point_cls, AbstractAsyncBackend):
+                invalid_backends.add(entry_point_name)
+                continue
+            backends[entry_point_name] = entry_point_cls
+
         if invalid_backends:
             raise TypeError(f"Invalid backend entry-points: {', '.join(map(repr, sorted(invalid_backends)))}")
+        if duplicates := set(name for name in duplicate_counter if duplicate_counter[name] > 1):
+            raise TypeError(f"Conflicting backend name caught: {', '.join(map(repr, sorted(duplicates)))}")
 
-        assert "asyncio" in backends
+        assert "asyncio" in backends, "SystemError: Missing 'asyncio' entry point."
 
-        return MappingProxyType(ChainMap(AsyncBackendFactory.__RUNTIME_REGISTERED_BACKENDS, backends))
+        return MappingProxyType(ChainMap(AsyncBackendFactory.__CUSTOM_BACKEND, backends))

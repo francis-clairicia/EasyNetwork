@@ -13,8 +13,8 @@ async def hello_world() -> None:
 
 async def main() -> None:
     backend = AsyncBackendFactory.new()
-    backend.schedule_task(hello_world)
-    await backend.yield_task()
+    asyncio.create_task(hello_world())
+    await backend.sleep(0)
     return
 
 

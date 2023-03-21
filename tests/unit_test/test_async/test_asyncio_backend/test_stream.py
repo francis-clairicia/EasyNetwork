@@ -1,0 +1,203 @@
+# -*- coding: Utf-8 -*-
+
+from __future__ import annotations
+
+import asyncio
+from typing import TYPE_CHECKING, Any
+
+import pytest
+
+from easynetwork_asyncio import AsyncIOBackend
+from easynetwork_asyncio.stream import StreamSocketAdapter
+
+if TYPE_CHECKING:
+    from unittest.mock import MagicMock
+
+    from pytest_mock import MockerFixture
+
+
+@pytest.mark.asyncio
+class TestStreamSocket:
+    @pytest.fixture(scope="class")
+    @staticmethod
+    def backend() -> AsyncIOBackend:
+        return AsyncIOBackend()
+
+    @pytest.fixture
+    @staticmethod
+    def mock_asyncio_reader(mocker: MockerFixture) -> MagicMock:
+        mock = mocker.MagicMock(spec=asyncio.StreamReader)
+        mock.read = mocker.AsyncMock()
+        return mock
+
+    @pytest.fixture
+    @staticmethod
+    def mock_tcp_socket(mock_tcp_socket: MagicMock) -> MagicMock:
+        mock_tcp_socket.getsockname.return_value = ("127.0.0.1", 11111)
+        mock_tcp_socket.getpeername.return_value = ("127.0.0.1", 12345)
+        return mock_tcp_socket
+
+    @pytest.fixture
+    @staticmethod
+    def asyncio_writer_extra_info() -> dict[str, Any]:
+        return {}
+
+    @pytest.fixture
+    @staticmethod
+    def mock_asyncio_writer(
+        asyncio_writer_extra_info: dict[str, Any],
+        mock_tcp_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> MagicMock:
+        asyncio_writer_extra_info.update(
+            {
+                "socket": mock_tcp_socket,
+                "sockname": mock_tcp_socket.getsockname.return_value,
+                "peername": mock_tcp_socket.getpeername.return_value,
+            }
+        )
+        mock = mocker.MagicMock(spec=asyncio.StreamWriter)
+        mock.get_extra_info.side_effect = asyncio_writer_extra_info.get
+        mock.wait_closed = mocker.AsyncMock()
+        mock.drain = mocker.AsyncMock()
+        return mock
+
+    @pytest.fixture
+    @staticmethod
+    def socket(backend: AsyncIOBackend, mock_asyncio_reader: MagicMock, mock_asyncio_writer: MagicMock) -> StreamSocketAdapter:
+        return StreamSocketAdapter(backend, mock_asyncio_reader, mock_asyncio_writer)
+
+    async def test____dunder_init____transport_not_connected(
+        self,
+        backend: AsyncIOBackend,
+        asyncio_writer_extra_info: dict[str, Any],
+        mock_asyncio_reader: MagicMock,
+        mock_asyncio_writer: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        from errno import ENOTCONN
+
+        ### asyncio.Transport implementations explicitly set peername to None if the socket is not connected
+        asyncio_writer_extra_info["peername"] = None
+
+        # Act & Assert
+        with pytest.raises(OSError) as exc_info:
+            StreamSocketAdapter(backend, mock_asyncio_reader, mock_asyncio_writer)
+
+        assert exc_info.value.errno == ENOTCONN
+        mock_asyncio_writer.get_extra_info.assert_called_with("peername")
+
+    async def test____close____close_transport_and_wait(
+        self,
+        socket: StreamSocketAdapter,
+        mock_asyncio_writer: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act
+        await socket.close()
+
+        # Assert
+        mock_asyncio_writer.close.assert_called_once_with()
+        mock_asyncio_writer.wait_closed.assert_awaited_once_with()
+
+    async def test____is_closing____return_writer_state(
+        self,
+        socket: StreamSocketAdapter,
+        mock_asyncio_writer: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_asyncio_writer.is_closing.return_value = mocker.sentinel.is_closing
+
+        # Act
+        state = socket.is_closing()
+
+        # Assert
+        mock_asyncio_writer.is_closing.assert_called_once_with()
+        assert state is mocker.sentinel.is_closing
+
+    async def test____recv____read_from_reader(
+        self,
+        socket: StreamSocketAdapter,
+        mock_asyncio_reader: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_asyncio_reader.read.return_value = b"data"
+
+        # Act
+        data: bytes = await socket.recv(1024)
+
+        # Assert
+        mock_asyncio_reader.read.assert_awaited_once_with(1024)
+        assert data == b"data"
+
+    async def test____recv____null_bufsize_directly_return(
+        self,
+        socket: StreamSocketAdapter,
+        mock_asyncio_reader: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act
+        data: bytes = await socket.recv(0)
+
+        # Assert
+        mock_asyncio_reader.read.assert_not_awaited()
+        assert data == b""
+
+    async def test____recv____negative_bufsize_error(
+        self,
+        socket: StreamSocketAdapter,
+        mock_asyncio_reader: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act
+        with pytest.raises(ValueError):
+            await socket.recv(-1)
+
+        # Assert
+        mock_asyncio_reader.read.assert_not_awaited()
+
+    async def test____sendall____write_and_drain(
+        self,
+        socket: StreamSocketAdapter,
+        mock_asyncio_writer: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+
+        # Act
+        await socket.sendall(b"data to send")
+
+        # Assert
+        mock_asyncio_writer.write.assert_called_once_with(mocker.ANY)  # cannot test args because it will be a closed memoryview()
+        mock_asyncio_writer.drain.assert_awaited_once_with()
+
+    async def test____proxy____wraps_transport_socket(
+        self,
+        socket: StreamSocketAdapter,
+        mock_tcp_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_tcp_socket.fileno.return_value = mocker.sentinel.fileno
+
+        # Act
+        fileno = socket.proxy().fileno()
+
+        # Assert
+        mock_tcp_socket.fileno.assert_called_once_with()
+        assert fileno is mocker.sentinel.fileno
+
+    async def test____get_backend____returns_given_backend_object(
+        self,
+        backend: AsyncIOBackend,
+        socket: StreamSocketAdapter,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        assert socket.get_backend() is backend
