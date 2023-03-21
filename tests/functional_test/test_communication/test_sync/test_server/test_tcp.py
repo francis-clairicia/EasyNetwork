@@ -9,7 +9,7 @@ from typing import Any, Callable, Iterator
 from weakref import WeakSet
 
 from easynetwork.protocol import StreamProtocol
-from easynetwork.sync.server.tcp import AbstractTCPNetworkServer, ConnectedClient
+from easynetwork.sync_def.server.tcp import AbstractTCPNetworkServer, ConnectedClient
 from easynetwork.tools.socket import SocketAddress
 
 import pytest

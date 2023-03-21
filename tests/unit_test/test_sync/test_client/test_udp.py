@@ -6,7 +6,7 @@ from socket import AF_INET6, SOCK_DGRAM
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.exceptions import ClientClosedError
-from easynetwork.sync.client.udp import UDPNetworkClient, UDPNetworkEndpoint
+from easynetwork.sync_def.client.udp import UDPNetworkClient, UDPNetworkEndpoint
 from easynetwork.tools.socket import MAX_DATAGRAM_BUFSIZE, IPv4SocketAddress, IPv6SocketAddress
 
 import pytest

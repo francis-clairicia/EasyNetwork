@@ -14,7 +14,7 @@ __all__ = [
 import socket as _socket
 from typing import TYPE_CHECKING, final
 
-from easynetwork.asyncio.backend import AbstractStreamSocketAdapter
+from easynetwork.async_def.backend import AbstractStreamSocketAdapter
 from easynetwork.tools._utils import error_from_errno as _error_from_errno
 from easynetwork.tools.socket import SocketProxy
 

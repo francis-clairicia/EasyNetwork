@@ -6,7 +6,7 @@ from socket import AF_INET6
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.exceptions import ClientClosedError
-from easynetwork.sync.client.tcp import TCPNetworkClient
+from easynetwork.sync_def.client.tcp import TCPNetworkClient
 from easynetwork.tools.socket import MAX_STREAM_BUFSIZE, IPv4SocketAddress, IPv6SocketAddress
 
 import pytest

@@ -7,7 +7,7 @@ from typing import Any, Callable, Iterator
 
 from easynetwork.exceptions import ClientClosedError, DatagramProtocolParseError
 from easynetwork.protocol import DatagramProtocol
-from easynetwork.sync.client.udp import UDPNetworkClient, UDPNetworkEndpoint
+from easynetwork.sync_def.client.udp import UDPNetworkClient, UDPNetworkEndpoint
 from easynetwork.tools.socket import IPv4SocketAddress, IPv6SocketAddress, new_socket_address
 
 import pytest
