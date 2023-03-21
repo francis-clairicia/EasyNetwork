@@ -20,7 +20,7 @@ __all__ = [
 import functools
 from abc import ABCMeta, abstractmethod
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Literal, TypeVar, final
+from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeVar, final
 
 if TYPE_CHECKING:
     import socket as _socket
@@ -30,6 +30,29 @@ if TYPE_CHECKING:
     from _typeshed import ReadableBuffer
 
     from ..tools.socket import SocketProxy
+
+
+class ILock(Protocol):
+    async def __aenter__(self) -> Any:
+        ...
+
+    async def __aexit__(
+        self,
+        __exc_type: type[BaseException] | None,
+        __exc_val: BaseException | None,
+        __exc_tb: TracebackType | None,
+        /,
+    ) -> None:
+        ...
+
+    async def acquire(self) -> Any:
+        ...
+
+    def release(self) -> None:
+        ...
+
+    def locked(self) -> bool:
+        ...
 
 
 class AbstractBaseAsyncSocketAdapter(metaclass=ABCMeta):
@@ -127,6 +150,10 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
 
     @abstractmethod
     async def wrap_udp_socket(self, socket: _socket.socket) -> AbstractDatagramSocketAdapter:
+        raise NotImplementedError
+
+    @abstractmethod
+    def create_lock(self) -> ILock:
         raise NotImplementedError
 
 

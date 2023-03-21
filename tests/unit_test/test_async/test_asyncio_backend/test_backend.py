@@ -199,6 +199,21 @@ class TestAsyncIOBackend:
         mock_DatagramSocketAdapter.assert_called_once_with(backend, mocker.sentinel.endpoint)
         assert socket is mocker.sentinel.socket
 
+    async def test____create_lock____use_asyncio_Lock_class(
+        self,
+        backend: AsyncIOBackend,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_Lock = mocker.patch("asyncio.Lock", return_value=mocker.sentinel.lock)
+
+        # Act
+        lock = backend.create_lock()
+
+        # Assert
+        mock_Lock.assert_called_once_with()
+        assert lock is mocker.sentinel.lock
+
 
 class TestAsyncIOBackendWithoutLoop:
     def test____get_extra_info____no_running_loop(self, mocker: MockerFixture) -> None:

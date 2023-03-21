@@ -14,7 +14,7 @@ __version__ = "1.0.0"
 import socket as _socket
 from typing import TYPE_CHECKING, Any, final
 
-from easynetwork.async_api.backend import AbstractAsyncBackend
+from easynetwork.async_api.backend import AbstractAsyncBackend, ILock
 
 if TYPE_CHECKING:
     from easynetwork.async_api.backend import AbstractDatagramSocketAdapter, AbstractStreamSocketAdapter
@@ -109,3 +109,8 @@ class AsyncIOBackend(AbstractAsyncBackend):
 
         endpoint = await create_datagram_endpoint(socket=socket)
         return DatagramSocketAdapter(self, endpoint)
+
+    def create_lock(self) -> ILock:
+        import asyncio
+
+        return asyncio.Lock()
