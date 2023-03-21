@@ -45,9 +45,9 @@ class AbstractIncrementalPacketSerializer(AbstractPacketSerializer[_ST_contra, _
         raise NotImplementedError
 
     def serialize(self, packet: _ST_contra) -> bytes:
-        # The list call should be roughly
-        # equivalent to the PySequence_Fast that ''.join() would do.
-        return b"".join(list(self.incremental_serialize(packet)))
+        from ..tools._utils import concatenate_chunks
+
+        return concatenate_chunks(self.incremental_serialize(packet))
 
     def deserialize(self, data: bytes) -> _DT_co:
         from ..exceptions import DeserializeError

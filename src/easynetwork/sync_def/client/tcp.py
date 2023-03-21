@@ -18,6 +18,7 @@ from ...exceptions import ClientClosedError, StreamProtocolParseError
 from ...protocol import StreamProtocol
 from ...tools._utils import (
     check_real_socket_state as _check_real_socket_state,
+    concatenate_chunks as _concatenate_chunks,
     error_from_errno as _error_from_errno,
     restore_timeout_at_end as _restore_timeout_at_end,
 )
@@ -164,9 +165,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             if self.__eof_reached:
                 raise _error_from_errno(_errno.ECONNABORTED)
 
-            # The list call should be roughly
-            # equivalent to the PySequence_Fast that ''.join() would do.
-            data: bytes = b"".join(list(self.__producer(packet)))
+            data: bytes = _concatenate_chunks(self.__producer(packet))
 
             with _restore_timeout_at_end(socket):
                 socket.settimeout(None)

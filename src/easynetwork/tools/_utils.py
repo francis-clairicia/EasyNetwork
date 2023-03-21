@@ -11,7 +11,7 @@ __all__ = [
 import contextlib
 import os
 import socket as _socket
-from typing import Iterator
+from typing import Iterable, Iterator
 
 
 def error_from_errno(errno: int) -> OSError:
@@ -40,3 +40,9 @@ def restore_timeout_at_end(socket: _socket.socket) -> Iterator[float | None]:
         yield old_timeout
     finally:
         socket.settimeout(old_timeout)
+
+
+def concatenate_chunks(chunks_iterable: Iterable[bytes]) -> bytes:
+    # The list call should be roughly
+    # equivalent to the PySequence_Fast that ''.join() would do.
+    return b"".join(list(chunks_iterable))
