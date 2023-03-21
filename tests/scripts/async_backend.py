@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 
-from easynetwork.async_def.backend import AsyncBackendFactory
+from easynetwork.async_api.backend import AsyncBackendFactory
 
 
 async def hello_world() -> None:

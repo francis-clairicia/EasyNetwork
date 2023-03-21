@@ -14,10 +14,10 @@ __version__ = "1.0.0"
 import socket as _socket
 from typing import TYPE_CHECKING, Any, final
 
-from easynetwork.async_def.backend import AbstractAsyncBackend
+from easynetwork.async_api.backend import AbstractAsyncBackend
 
 if TYPE_CHECKING:
-    from easynetwork.async_def.backend import AbstractDatagramSocketAdapter, AbstractStreamSocketAdapter
+    from easynetwork.async_api.backend import AbstractDatagramSocketAdapter, AbstractStreamSocketAdapter
 
 
 @final

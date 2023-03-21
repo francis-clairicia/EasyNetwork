@@ -8,7 +8,7 @@ from typing import Any, Callable, Iterator
 
 from easynetwork.exceptions import ClientClosedError, StreamProtocolParseError
 from easynetwork.protocol import StreamProtocol
-from easynetwork.sync_def.client.tcp import TCPNetworkClient
+from easynetwork.sync_api.client.tcp import TCPNetworkClient
 from easynetwork.tools.socket import IPv4SocketAddress, IPv6SocketAddress
 
 import pytest

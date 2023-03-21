@@ -21,7 +21,7 @@ import errno as _errno
 import socket as _socket
 from typing import TYPE_CHECKING, Any, final
 
-from easynetwork.async_def.backend import AbstractDatagramSocketAdapter
+from easynetwork.async_api.backend import AbstractDatagramSocketAdapter
 from easynetwork.tools._utils import error_from_errno as _error_from_errno
 from easynetwork.tools.socket import SocketProxy
 
