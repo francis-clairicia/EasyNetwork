@@ -52,11 +52,12 @@ format = [
 ]
 mypy = [
     "mypy==1.1.1",
+    "types-cryptography>=3.3.23.2",
 ]
 flake8 = [
     "flake8>=6.0",
     "flake8-pyi>=22.11.0",
-    "flake8-dunder-all @ git+https://github.com/francis-clairicia/flake8-dunder-all.git@main",
+    "flake8-dunder-all @ git+https://github.com/francis-clairicia/flake8-dunder-all.git@v0.1.0",
 ]
 test = [
     "pytest~=7.2",
@@ -120,7 +121,6 @@ enable_error_code = ["truthy-bool", "ignore-without-code"]
 [[tool.mypy.overrides]]
 module = [
     "cbor2",
-    "cryptography.*",
 ]
 ignore_missing_imports = true
 
