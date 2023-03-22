@@ -11,21 +11,22 @@ __all__ = ["AsyncIOBackend"]  # type: list[str]
 
 __version__ = "1.0.0"
 
-import socket as _socket
 from typing import TYPE_CHECKING, Any, final
 
-from easynetwork.async_api.backend import AbstractAsyncBackend, ILock
+from easynetwork.async_api.backend import AbstractAsyncBackend
 
 if TYPE_CHECKING:
-    from easynetwork.async_api.backend import AbstractDatagramSocketAdapter, AbstractStreamSocketAdapter
+    import socket as _socket
+
+    from easynetwork.async_api.backend import AbstractDatagramSocketAdapter, AbstractStreamSocketAdapter, ILock
 
 
 @final
 class AsyncIOBackend(AbstractAsyncBackend):
     __slots__ = ()
 
-    def get_extra_info(self, key: str, default: Any = None) -> Any:
-        match key:
+    def get_extra_info(self, name: str, default: Any = None) -> Any:
+        match name:
             case "loop":
                 import asyncio
 

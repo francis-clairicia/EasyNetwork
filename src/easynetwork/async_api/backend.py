@@ -14,13 +14,12 @@ __all__ = [
     "AbstractDatagramSocketAdapter",
     "AbstractStreamSocketAdapter",
     "AsyncBackendFactory",
-    "CUSTOM_BACKEND_NAME",
 ]
 
 import functools
 from abc import ABCMeta, abstractmethod
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeVar, final
+from typing import TYPE_CHECKING, Any, Final, Protocol, TypeVar, final
 
 if TYPE_CHECKING:
     import socket as _socket
@@ -116,7 +115,7 @@ class AbstractDatagramSocketAdapter(AbstractBaseAsyncSocketAdapter):
 class AbstractAsyncBackend(metaclass=ABCMeta):
     __slots__ = ("__weakref__",)
 
-    def get_extra_info(self, key: str, default: Any = None) -> Any:
+    def get_extra_info(self, name: str, default: Any = None) -> Any:
         return default
 
     @abstractmethod
@@ -157,34 +156,29 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         raise NotImplementedError
 
 
-CUSTOM_BACKEND_NAME: Literal["__custom__"] = "__custom__"
-
-
 @final
 class AsyncBackendFactory:
-    __GROUP_NAME: str = "easynetwork.async.backends"
-    __BACKEND: str | None = None
-    __CUSTOM_BACKEND: dict[str, type[AbstractAsyncBackend]] = {}
+    __GROUP_NAME: Final[str] = "easynetwork.async.backends"
+    __BACKEND: type[AbstractAsyncBackend] | None = None
 
     @staticmethod
-    def get_default_backend(guess_current_async_library: bool = True) -> str:
-        backend = AsyncBackendFactory.__BACKEND
+    def get_default_backend(guess_current_async_library: bool = True) -> type[AbstractAsyncBackend]:
+        backend: type[AbstractAsyncBackend] | None = AsyncBackendFactory.__BACKEND
         if backend is None:
+            _async_library: str
             try:
                 if not guess_current_async_library:
                     raise ModuleNotFoundError
 
                 import sniffio
             except ModuleNotFoundError:
-                backend = "asyncio"
+                _async_library = "asyncio"
             else:
-                try:
-                    backend = sniffio.current_async_library()
-                except sniffio.AsyncLibraryNotFoundError:  # not running or unknown, fallback to 'asyncio'
-                    backend = "asyncio"
-                else:
-                    if backend not in AsyncBackendFactory.__get_available_backends():
-                        raise KeyError(f"Running library {backend!r} misses the backend implementation")
+                _async_library = sniffio.current_async_library()  # must raise if not recognized
+            backend = AsyncBackendFactory.__get_backend_cls(
+                _async_library,
+                "Running library {name!r} misses the backend implementation",
+            )
         return backend
 
     @staticmethod
@@ -192,21 +186,17 @@ class AsyncBackendFactory:
         if isinstance(backend, type):
             if not issubclass(backend, AbstractAsyncBackend):
                 raise TypeError(f"Invalid backend class: {backend!r}")
-            AsyncBackendFactory.__CUSTOM_BACKEND[CUSTOM_BACKEND_NAME] = backend
-            backend = CUSTOM_BACKEND_NAME
-        else:
-            if backend is None:
-                AsyncBackendFactory.__CUSTOM_BACKEND.pop(CUSTOM_BACKEND_NAME, None)
-            elif backend not in AsyncBackendFactory.__get_available_backends():
-                raise KeyError(f"Unknown backend {backend!r}")
+        elif backend is not None:
+            backend = AsyncBackendFactory.__get_backend_cls(backend)
         AsyncBackendFactory.__BACKEND = backend
 
     @staticmethod
     def new(__backend: str | None = None, /, **kwargs: Any) -> AbstractAsyncBackend:
         backend_cls: type[AbstractAsyncBackend]
         if __backend is None:
-            __backend = AsyncBackendFactory.get_default_backend(guess_current_async_library=True)
-        backend_cls = AsyncBackendFactory.__get_available_backends()[__backend]
+            backend_cls = AsyncBackendFactory.get_default_backend(guess_current_async_library=True)
+        else:
+            backend_cls = AsyncBackendFactory.__get_backend_cls(__backend)
         return backend_cls(**kwargs)
 
     @staticmethod
@@ -214,9 +204,20 @@ class AsyncBackendFactory:
         return frozenset(AsyncBackendFactory.__get_available_backends())
 
     @staticmethod
+    def invalidate_backends_cache() -> None:
+        AsyncBackendFactory.__get_available_backends.cache_clear()
+
+    @staticmethod
+    def __get_backend_cls(name: str, error_msg_format: str = "Unknown backend {name!r}") -> type[AbstractAsyncBackend]:
+        try:
+            return AsyncBackendFactory.__get_available_backends()[name]
+        except KeyError:
+            raise KeyError(error_msg_format.format(name=name)) from None
+
+    @staticmethod
     @functools.cache
     def __get_available_backends() -> MappingProxyType[str, type[AbstractAsyncBackend]]:
-        from collections import ChainMap, Counter
+        from collections import Counter
         from importlib.metadata import entry_points
 
         backends: dict[str, type[AbstractAsyncBackend]] = {}
@@ -225,7 +226,7 @@ class AsyncBackendFactory:
 
         for entry_point in entry_points(group=AsyncBackendFactory.__GROUP_NAME):
             entry_point_name = entry_point.name.strip()
-            if not entry_point_name or entry_point_name == CUSTOM_BACKEND_NAME:
+            if not entry_point_name:
                 invalid_backends.add(entry_point_name)
                 continue
             duplicate_counter[entry_point_name] += 1
@@ -244,4 +245,4 @@ class AsyncBackendFactory:
 
         assert "asyncio" in backends, "SystemError: Missing 'asyncio' entry point."
 
-        return MappingProxyType(ChainMap(AsyncBackendFactory.__CUSTOM_BACKEND, backends))
+        return MappingProxyType(backends)

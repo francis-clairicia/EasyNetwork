@@ -191,7 +191,7 @@ class DatagramEndpointProtocol(asyncio.DatagramProtocol):
                     waiter.set_exception(exc)
 
         if self.__transport is not None:
-            self.__recv_queue.put_nowait((None, None))  # Wake up socket
+            self.__recv_queue.put_nowait((None, None))  # Wake up endpoint
             if exc is not None:
                 self.__exception_queue.put_nowait(exc)
             self.__transport.close()
@@ -206,7 +206,7 @@ class DatagramEndpointProtocol(asyncio.DatagramProtocol):
     def error_received(self, exc: Exception) -> None:
         if self.__transport is not None:
             self.__exception_queue.put_nowait(exc)
-            self.__recv_queue.put_nowait((None, None))  # Wake up socket
+            self.__recv_queue.put_nowait((None, None))  # Wake up endpoint
 
     def pause_writing(self) -> None:
         assert not self.__write_paused
