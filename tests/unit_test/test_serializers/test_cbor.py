@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 
 
 @final
+@pytest.mark.feature_cbor
 class TestCBORSerializer(BaseSerializerConfigInstanceCheck):
     @pytest.fixture(scope="class")
     @staticmethod

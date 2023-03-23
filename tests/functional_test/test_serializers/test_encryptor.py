@@ -14,6 +14,7 @@ from .test_base64 import SAMPLES, generate_key_from_string
 
 
 @final
+@pytest.mark.feature_encryption
 class TestEncryptorSerializer(BaseTestIncrementalSerializer):
     #### Serializers
 

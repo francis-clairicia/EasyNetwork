@@ -9,7 +9,8 @@ from typing import Any, Callable, Iterator
 from weakref import WeakSet
 
 from easynetwork.protocol import StreamProtocol
-from easynetwork.sync_api.server.tcp import AbstractTCPNetworkServer, ConnectedClient
+from easynetwork.sync_api.server.handler import AbstractStreamClient, AbstractStreamRequestHandler
+from easynetwork.sync_api.server.tcp import TCPNetworkServer
 from easynetwork.tools.socket import SocketAddress
 
 import pytest
@@ -17,38 +18,40 @@ import pytest
 from .....tools import TimeTest
 
 
-class MyTCPServer(AbstractTCPNetworkServer[str, str]):
-    connected_clients: WeakSet[ConnectedClient[str]]
+class MyTCPRequestHandler(AbstractStreamRequestHandler[str, str]):
+    def __init__(self) -> None:
+        super().__init__()
+        self.connected_clients: WeakSet[AbstractStreamClient[str]]
+        self.process_time: float = 0
+        self.server: MyTCPServer
 
-    process_time: float = 0
-
-    def serve_forever(self) -> None:
-        self.service_init()
-        try:
-            return super().serve_forever()
-        finally:
-            self.service_quit()
-
-    def service_init(self) -> None:
+    def service_init(self, server: Any) -> None:
+        super().service_init(server)
         self.connected_clients = WeakSet()
+        self.server = server
 
     def service_quit(self) -> None:
         self.connected_clients.clear()
+        super().service_quit()
 
-    def on_connection(self, client: ConnectedClient[str]) -> None:
+    def on_connection(self, client: AbstractStreamClient[str]) -> None:
         super().on_connection(client)
         self.connected_clients.add(client)
         client.send_packet("milk")
 
-    def on_disconnection(self, client: ConnectedClient[str]) -> None:
+    def on_disconnection(self, client: AbstractStreamClient[str]) -> None:
         self.connected_clients.discard(client)
         super().on_disconnection(client)
 
-    def process_request(self, request: str, client: ConnectedClient[str]) -> None:
+    def handle(self, request: str, client: AbstractStreamClient[str]) -> None:
         if self.process_time > 0:
             time.sleep(self.process_time)
-        self.logger.info("%s sent %r", client.address, request)
+        self.server.logger.info("%s sent %r", client.address, request)
         client.send_packet(request.upper())
+
+
+class MyTCPServer(TCPNetworkServer[str, str]):
+    __slots__ = ()
 
 
 class BaseTestServer:
@@ -69,18 +72,18 @@ class BaseTestServer:
 class TestTCPNetworkServer(BaseTestServer):
     @pytest.fixture
     @staticmethod
-    def server_factory(request: Any) -> type[MyTCPServer]:
-        return getattr(request, "param", MyTCPServer)
+    def request_handler() -> MyTCPRequestHandler:
+        return MyTCPRequestHandler()
 
     @pytest.fixture
     @staticmethod
     def server(
-        server_factory: type[MyTCPServer],
+        request_handler: MyTCPRequestHandler,
         socket_family: int,
         localhost: str,
         stream_protocol: StreamProtocol[str, str],
     ) -> Iterator[MyTCPServer]:
-        with server_factory(localhost, 0, stream_protocol, family=socket_family) as server:
+        with MyTCPServer(localhost, 0, stream_protocol, handler=request_handler, family=socket_family) as server:
             yield server
 
     @pytest.fixture
@@ -134,36 +137,36 @@ class TestTCPNetworkServer(BaseTestServer):
     @pytest.mark.usefixtures("run_server")
     def test____serve_forever____client_connection_and_disconnection(
         self,
-        server: MyTCPServer,
+        request_handler: MyTCPRequestHandler,
         client_factory: Callable[[], Socket],
     ) -> None:
         client: Socket = client_factory()
 
-        while len(server.connected_clients) == 0:
+        while len(request_handler.connected_clients) == 0:
             time.sleep(0.1)
 
-        assert client.getsockname() in [c.address for c in server.connected_clients]
+        assert client.getsockname() in [c.address for c in request_handler.connected_clients]
 
         client.sendall(b"hello, world.\n")
         assert client.recv(1024) == b"HELLO, WORLD.\n"
 
         client.close()
 
-        while len(server.connected_clients) > 0:
+        while len(request_handler.connected_clients) > 0:
             time.sleep(0.1)
 
     @pytest.mark.usefixtures("run_server")
     def test____serve_forever____disable_nagle_algorithm(
         self,
-        server: MyTCPServer,
+        request_handler: MyTCPRequestHandler,
         client_factory: Callable[[], Socket],
     ) -> None:
         _ = client_factory()
 
-        while len(server.connected_clients) == 0:
+        while len(request_handler.connected_clients) == 0:
             time.sleep(0.1)
 
-        connected_client: ConnectedClient[str] = list(server.connected_clients)[0]
+        connected_client: AbstractStreamClient[str] = list(request_handler.connected_clients)[0]
 
         tcp_nodelay_state: int = connected_client.socket.getsockopt(IPPROTO_TCP, TCP_NODELAY)
 
@@ -240,18 +243,18 @@ class TestTCPNetworkServer(BaseTestServer):
     @pytest.mark.usefixtures("run_server")
     def test____client____bad_request(
         self,
-        server: MyTCPServer,
+        request_handler: MyTCPRequestHandler,
         client_factory: Callable[[], Socket],
     ) -> None:
         bad_request_args: tuple[Any, ...] | None = None
 
-        def bad_request(client: ConnectedClient[str], *args: Any) -> None:
+        def bad_request(client: AbstractStreamClient[str], *args: Any) -> None:
             nonlocal bad_request_args
 
             bad_request_args = args
             client.send_packet("wrong encoding man.")
 
-        server.bad_request = bad_request  # type: ignore[assignment]
+        request_handler.bad_request = bad_request  # type: ignore[assignment]
 
         client = client_factory()
         client.sendall("\u00E9\n".encode("latin-1"))  # StringSerializer does not accept unicode
@@ -265,21 +268,19 @@ class TestTCPNetworkServer(BaseTestServer):
     @pytest.mark.usefixtures("run_server")
     def test____client____unexpected_error_during_process(
         self,
-        server: MyTCPServer,
+        request_handler: MyTCPRequestHandler,
         client_factory: Callable[[], Socket],
     ) -> None:
-        def process_request(request: str, client: ConnectedClient[str]) -> None:
+        def process_request(request: str, client: AbstractStreamClient[str]) -> None:
             raise Exception("Sorry man!")
 
-        default_error_handler = server.handle_error
-
-        def handle_error(client: ConnectedClient[str], exc_info: Callable[[], BaseException | None]) -> None:
+        def handle_error(client: AbstractStreamClient[str], exc_info: Callable[[], BaseException | None]) -> bool:
             assert not client.is_closed()
-            default_error_handler(client, exc_info)
             client.send_packet(str(exc_info()))
+            return False
 
-        server.process_request = process_request  # type: ignore[method-assign]
-        server.handle_error = handle_error  # type: ignore[method-assign]
+        request_handler.handle = process_request  # type: ignore[method-assign]
+        request_handler.handle_error = handle_error  # type: ignore[method-assign]
 
         client = client_factory()
         client.sendall(b"hello\n")
@@ -297,8 +298,8 @@ class TestTCPNetworkServerConcurrency(BaseTestServer):
 
     @pytest.fixture
     @staticmethod
-    def server_factory(request: Any) -> type[MyTCPServer]:
-        return getattr(request, "param", MyTCPServer)
+    def request_handler() -> MyTCPRequestHandler:
+        return MyTCPRequestHandler()
 
     @pytest.fixture
     @staticmethod
@@ -308,16 +309,17 @@ class TestTCPNetworkServerConcurrency(BaseTestServer):
     @pytest.fixture
     @staticmethod
     def server(
-        server_factory: type[MyTCPServer],
+        request_handler: type[MyTCPServer],
         socket_family: int,
         localhost: str,
         stream_protocol: StreamProtocol[str, str],
         server_thread_pool_size: int,
     ) -> Iterator[MyTCPServer]:
-        with server_factory(
+        with MyTCPServer(
             localhost,
             0,
             stream_protocol,
+            handler=request_handler,
             family=socket_family,
             thread_pool_size=server_thread_pool_size,
         ) as server:
@@ -345,13 +347,13 @@ class TestTCPNetworkServerConcurrency(BaseTestServer):
     @pytest.mark.usefixtures("run_server")
     def test____serve_forever____concurrent_requests(
         self,
-        server: MyTCPServer,
+        request_handler: MyTCPRequestHandler,
         client_factory: Callable[[], Socket],
     ) -> None:
         client_1 = client_factory()
         client_2 = client_factory()
 
-        server.process_time = 1
+        request_handler.process_time = 1
 
         client_1.sendall(b"hello\n")
         client_2.sendall(b"world\n")
@@ -363,7 +365,7 @@ class TestTCPNetworkServerConcurrency(BaseTestServer):
     @pytest.mark.usefixtures("run_server")
     def test____serve_forever____do_not_put_same_client_for_two_or_more_requests_in_pool(
         self,
-        server: MyTCPServer,
+        request_handler: MyTCPRequestHandler,
         client_factory: Callable[[], Socket],
     ) -> None:
         client_1 = client_factory()
@@ -371,7 +373,7 @@ class TestTCPNetworkServerConcurrency(BaseTestServer):
 
         messages = [b"hello\n", b"world\n", b"smash\n"]
 
-        server.process_time = 1
+        request_handler.process_time = 1
 
         for msg in messages:
             client_1.sendall(msg)

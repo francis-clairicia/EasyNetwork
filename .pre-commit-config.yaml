@@ -10,7 +10,7 @@ repos:
     hooks:
       - id: mypy
         name: mypy (project)
-        entry: tox run-parallel -q -e mypy-lite,mypy-full
+        entry: tox run -q -e mypy-full
         language: system
         files: ^(src/)
         types_or: [python, pyi]

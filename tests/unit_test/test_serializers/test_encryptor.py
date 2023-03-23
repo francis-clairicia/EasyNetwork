@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
 
+@pytest.mark.feature_encryption
 class TestEncryptorSerializer:
     @pytest.fixture
     @staticmethod

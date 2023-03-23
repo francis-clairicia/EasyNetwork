@@ -15,6 +15,7 @@ from .samples.json import SAMPLES
 
 
 @final
+@pytest.mark.feature_cbor
 class TestCBORSerializer(BaseTestIncrementalSerializer):
     #### Serializers
 

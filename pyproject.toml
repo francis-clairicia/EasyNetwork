@@ -58,6 +58,7 @@ format = [
 ]
 mypy = [
     "mypy==1.1.1",
+    "types-cryptography>=3.3.23.2",
 ]
 flake8 = [
     "flake8>=6.0",
@@ -127,8 +128,6 @@ enable_error_code = ["truthy-bool", "ignore-without-code"]
 [[tool.mypy.overrides]]
 module = [
     "cbor2",
-    "cryptography.*",
-    "sniffio",
 ]
 ignore_missing_imports = true
 
