@@ -11,7 +11,7 @@ __all__ = ["AsyncIOBackend"]  # type: list[str]
 
 __version__ = "1.0.0"
 
-from typing import TYPE_CHECKING, Any, final
+from typing import TYPE_CHECKING, final
 
 from easynetwork.async_api.backend import AbstractAsyncBackend
 
@@ -24,18 +24,6 @@ if TYPE_CHECKING:
 @final
 class AsyncIOBackend(AbstractAsyncBackend):
     __slots__ = ()
-
-    def get_extra_info(self, name: str, default: Any = None) -> Any:
-        match name:
-            case "loop":
-                import asyncio
-
-                try:
-                    return asyncio.get_running_loop()
-                except RuntimeError:
-                    return default
-            case _:
-                return default
 
     async def coro_yield(self) -> None:
         import asyncio

@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -21,26 +20,6 @@ class TestAsyncIOBackend:
     @staticmethod
     def backend() -> AsyncIOBackend:
         return AsyncIOBackend()
-
-    async def test____get_extra_info____running_loop(
-        self, backend: AsyncIOBackend, event_loop: asyncio.AbstractEventLoop
-    ) -> None:
-        # Arrange
-
-        # Act
-        loop: Any = backend.get_extra_info("loop")
-
-        # Assert
-        assert loop is event_loop
-
-    async def test____get_extra_info____unknown_key(self, backend: AsyncIOBackend, mocker: MockerFixture) -> None:
-        # Arrange
-
-        # Act
-        loop: Any = backend.get_extra_info("unknown_key", default=mocker.sentinel.default)
-
-        # Assert
-        assert loop is mocker.sentinel.default
 
     async def test____coro_yield____use_asyncio_sleep(self, backend: AsyncIOBackend, mocker: MockerFixture) -> None:
         # Arrange
@@ -213,15 +192,3 @@ class TestAsyncIOBackend:
         # Assert
         mock_Lock.assert_called_once_with()
         assert lock is mocker.sentinel.lock
-
-
-class TestAsyncIOBackendWithoutLoop:
-    def test____get_extra_info____no_running_loop(self, mocker: MockerFixture) -> None:
-        # Arrange
-        backend = AsyncIOBackend()
-
-        # Act
-        loop: Any = backend.get_extra_info("loop", default=mocker.sentinel.default)
-
-        # Assert
-        assert loop is mocker.sentinel.default

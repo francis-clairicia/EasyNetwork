@@ -115,9 +115,6 @@ class AbstractDatagramSocketAdapter(AbstractBaseAsyncSocketAdapter):
 class AbstractAsyncBackend(metaclass=ABCMeta):
     __slots__ = ("__weakref__",)
 
-    def get_extra_info(self, name: str, default: Any = None) -> Any:
-        return default
-
     @abstractmethod
     async def coro_yield(self) -> None:
         raise NotImplementedError
