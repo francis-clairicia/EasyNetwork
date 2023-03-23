@@ -6,10 +6,7 @@
 
 from __future__ import annotations
 
-__all__ = [
-    "AbstractTCPNetworkServer",
-    "ConnectedClient",
-]
+__all__ = ["TCPNetworkServer"]
 
 import contextlib as _contextlib
 import logging as _logging
@@ -17,9 +14,8 @@ import selectors as _selectors
 import socket as _socket
 import sys as _sys
 import threading as _threading
-from abc import ABCMeta, abstractmethod
 from concurrent.futures import Future as _Future, ThreadPoolExecutor as _ThreadPoolExecutor
-from typing import TYPE_CHECKING, Any, Callable, Generic, TypeVar, final
+from typing import TYPE_CHECKING, Any, Callable, Generic, TypeAlias, TypeVar, final
 from weakref import WeakSet as _WeakSet
 
 from ..exceptions import StreamProtocolParseError
@@ -28,6 +24,7 @@ from ..tools._utils import check_real_socket_state as _check_real_socket_state
 from ..tools.socket import MAX_STREAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
 from ..tools.stream import StreamDataConsumer, StreamDataProducer
 from .abc import AbstractNetworkServer
+from .handler import AbstractStreamClient, AbstractStreamRequestHandler
 
 if TYPE_CHECKING:
     from typing import type_check_only
@@ -35,46 +32,18 @@ if TYPE_CHECKING:
 _RequestT = TypeVar("_RequestT")
 _ResponseT = TypeVar("_ResponseT")
 
-
-class ConnectedClient(Generic[_ResponseT], metaclass=ABCMeta):
-    __slots__ = ("__addr", "__weakref__")
-
-    def __init__(self, address: SocketAddress) -> None:
-        super().__init__()
-        self.__addr: SocketAddress = address
-
-    def __repr__(self) -> str:
-        return f"<connected client with address {self.__addr} at {id(self):#x}{' closed' if self.is_closed() else ''}>"
-
-    @abstractmethod
-    def is_closed(self) -> bool:
-        raise NotImplementedError
-
-    @abstractmethod
-    def close(self) -> None:
-        raise NotImplementedError
-
-    @abstractmethod
-    def send_packet(self, packet: _ResponseT) -> None:
-        raise NotImplementedError
-
-    @property
-    @abstractmethod
-    def socket(self) -> SocketProxy:
-        raise NotImplementedError
-
-    @property
-    @final
-    def address(self) -> SocketAddress:
-        return self.__addr
+_RequestHandlerLike: TypeAlias = (
+    AbstractStreamRequestHandler[_RequestT, _ResponseT] | Callable[[_RequestT, AbstractStreamClient[_ResponseT], Any], Any]
+)
 
 
-class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Generic[_RequestT, _ResponseT]):
+class TCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Generic[_RequestT, _ResponseT]):
     __slots__ = (
         "__listener_socket",
         "__listener_lock",
         "__listener_addr",
         "__protocol",
+        "__request_handler",
         "__looping",
         "__is_shutdown",
         "__is_up",
@@ -93,6 +62,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         port: int,
         protocol: StreamProtocol[_ResponseT, _RequestT],
         *,
+        handler: _RequestHandlerLike[_RequestT, _ResponseT] | None = None,
         family: int = _socket.AF_INET,
         backlog: int | None = None,
         reuse_port: bool = False,
@@ -108,6 +78,9 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
         if family not in (_socket.AF_INET, _socket.AF_INET6):
             raise ValueError("Only AF_INET and AF_INET6 families are supported")
 
+        if handler is not None and not isinstance(handler, AbstractStreamRequestHandler):
+            handler = _InlineFunctionHandler(handler, self)
+
         self.__listener_socket: _socket.socket | None = None
         listener_socket: _socket.socket = _socket.create_server(
             (host, port),
@@ -122,6 +95,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             self.__listener_addr: SocketAddress = new_socket_address(listener_socket.getsockname(), listener_socket.family)
             self.__thread_pool_size: int = int(thread_pool_size)
             self.__protocol: StreamProtocol[_ResponseT, _RequestT] = protocol
+            self.__request_handler: AbstractStreamRequestHandler[_RequestT, _ResponseT] | None = handler
             self.__looping: bool = False
             self.__is_shutdown: _threading.Event = _threading.Event()
             self.__is_shutdown.set()
@@ -192,13 +166,19 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             server_exit_stack.callback(self.__is_shutdown.set)
             ################
 
+            # Initialize request handler
+            if self.__request_handler is not None:
+                self.__request_handler.service_init(self)
+                server_exit_stack.callback(self.__request_handler.service_quit)
+            ############################
+
             # Setup selector
             server_selector: _ServerSocketSelector[_RequestT, _ResponseT] = _ServerSocketSelector(
                 factory=self.__selector_factory,
                 poll_interval=self.__selector_poll_interval,
             )
 
-            def _reset_selector(self: AbstractTCPNetworkServer[Any, Any]) -> None:
+            def _reset_selector(self: TCPNetworkServer[Any, Any]) -> None:
                 self.__server_selector = None
 
             self.__server_selector = server_selector
@@ -236,7 +216,7 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             #################################
 
             # Server is up
-            def _reset_loop_state(self: AbstractTCPNetworkServer[Any, Any]) -> None:
+            def _reset_loop_state(self: TCPNetworkServer[Any, Any]) -> None:
                 self.__looping = False
 
             self.__looping = True
@@ -271,7 +251,8 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
                     self.__logger.exception("Error occured in self.service_actions()")
 
     def service_actions(self) -> None:
-        pass
+        if (handler := self.__request_handler) is not None:
+            handler.service_actions()
 
     def __accept_new_client(self, listener_socket: _socket.socket) -> None:
         server_selector = self.__server_selector
@@ -309,26 +290,33 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
             client._api.close()
             return
 
-    def on_connection(self, client: ConnectedClient[_ResponseT]) -> None:
-        pass  # pragma: no cover
+    def on_connection(self, client: AbstractStreamClient[_ResponseT]) -> None:
+        if (handler := self.__request_handler) is not None:
+            handler.on_connection(client)
 
-    def on_disconnection(self, client: ConnectedClient[_ResponseT]) -> None:
-        pass  # pragma: no cover
+    def on_disconnection(self, client: AbstractStreamClient[_ResponseT]) -> None:
+        if (handler := self.__request_handler) is not None:
+            handler.on_disconnection(client)
 
-    @abstractmethod
-    def process_request(self, request: _RequestT, client: ConnectedClient[_ResponseT]) -> None:
-        raise NotImplementedError
+    def process_request(self, request: _RequestT, client: AbstractStreamClient[_ResponseT]) -> None:
+        if (handler := self.__request_handler) is not None:
+            handler.handle(request, client)
 
     def bad_request(
         self,
-        client: ConnectedClient[_ResponseT],
+        client: AbstractStreamClient[_ResponseT],
         error_type: StreamProtocolParseError.ParseErrorType,
         message: str,
         error_info: Any,
     ) -> None:
-        pass  # pragma: no cover
+        if (handler := self.__request_handler) is not None:
+            handler.bad_request(client, error_type, message, error_info)
 
-    def handle_error(self, client: ConnectedClient[Any], exc_info: Callable[[], BaseException | None]) -> None:
+    def handle_error(self, client: AbstractStreamClient[Any], exc_info: Callable[[], BaseException | None]) -> None:
+        if (handler := self.__request_handler) is not None:
+            if handler.handle_error(client, exc_info):
+                return
+
         exception = exc_info()
         if exception is None:
             return
@@ -354,6 +342,29 @@ class AbstractTCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Gen
     @final
     def logger(self) -> _logging.Logger:
         return self.__logger
+
+
+@final
+class _InlineFunctionHandler(AbstractStreamRequestHandler[_RequestT, _ResponseT]):
+    __slots__ = ("__cb", "__server_ref")
+
+    def __init__(
+        self,
+        request_callback: Callable[[_RequestT, AbstractStreamClient[_ResponseT], Any], Any],
+        server: TCPNetworkServer[_RequestT, _ResponseT],
+    ) -> None:
+        super().__init__()
+
+        import weakref
+
+        self.__cb: Callable[[_RequestT, AbstractStreamClient[_ResponseT], Any], Any] = request_callback
+        self.__server_ref: weakref.ref[TCPNetworkServer[_RequestT, _ResponseT]] = weakref.ref(server)
+
+    def handle(self, request: _RequestT, client: AbstractStreamClient[_ResponseT]) -> None:
+        request_callback = self.__cb
+        server = self.__server_ref()
+        if server is not None:
+            request_callback(request, client, server)
 
 
 if TYPE_CHECKING:
@@ -528,7 +539,7 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
         self,
         socket: _socket.socket,
         address: SocketAddress,
-        server: AbstractTCPNetworkServer[_RequestT, _ResponseT],
+        server: TCPNetworkServer[_RequestT, _ResponseT],
         selector: _ServerSocketSelector[_RequestT, _ResponseT],
     ) -> None:
         import weakref
@@ -540,7 +551,7 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
         self._lock = _threading.RLock()
         self._request_future: _Future[None] | None = None
         self._unsent_data: bytearray = bytearray()
-        self._server: AbstractTCPNetworkServer[_RequestT, _ResponseT] = weakref.proxy(server)
+        self._server: TCPNetworkServer[_RequestT, _ResponseT] = weakref.proxy(server)
         self._logger: _logging.Logger = server.logger
         self._selector: _ServerSocketSelector[_RequestT, _ResponseT] = weakref.proxy(selector)
         self._api: _ClientPayload._ConnectedClientAPI[_ResponseT] = self._ConnectedClientAPI(self, address)
@@ -736,7 +747,7 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
                 self._api.close()
 
     @final
-    class _ConnectedClientAPI(ConnectedClient[_ResponseT]):
+    class _ConnectedClientAPI(AbstractStreamClient[_ResponseT]):
         __slots__ = ("__client_ref", "__socket_proxy", "__h")
 
         def __init__(self, client: _ClientPayload[_RequestT, _ResponseT], address: SocketAddress) -> None:
