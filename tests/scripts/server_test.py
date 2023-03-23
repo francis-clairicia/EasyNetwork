@@ -7,8 +7,9 @@ from typing import Callable
 from easynetwork.protocol import DatagramProtocol, StreamProtocol
 from easynetwork.serializers.base_stream import AutoSeparatedPacketSerializer
 from easynetwork.server.abc import AbstractNetworkServer
-from easynetwork.server.tcp import AbstractTCPNetworkServer, ConnectedClient
-from easynetwork.server.udp import AbstractUDPNetworkServer
+from easynetwork.server.handler import AbstractStreamClient
+from easynetwork.server.tcp import TCPNetworkServer
+from easynetwork.server.udp import UDPNetworkServer
 from easynetwork.tools.socket import SocketAddress
 
 PORT = 9000
@@ -30,17 +31,17 @@ class MyServerSerializer(AutoSeparatedPacketSerializer[str, str]):
             raise DeserializeError(str(exc)) from exc
 
 
-class MyTCPServer(AbstractTCPNetworkServer[str, str]):
+class MyTCPServer(TCPNetworkServer[str, str]):
     max_recv_size = 1024
 
     def __init__(self) -> None:
         super().__init__(host="", port=PORT, protocol=StreamProtocol(MyServerSerializer()))
 
-    def process_request(self, request: str, client: ConnectedClient[str]) -> None:
+    def process_request(self, request: str, client: AbstractStreamClient[str]) -> None:
         client.send_packet(request.upper())
 
 
-class MyUDPServer(AbstractUDPNetworkServer[str, str]):
+class MyUDPServer(UDPNetworkServer[str, str]):
     def __init__(self) -> None:
         super().__init__(host="", port=PORT, protocol=DatagramProtocol(MyServerSerializer()))
 

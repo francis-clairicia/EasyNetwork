@@ -8,7 +8,8 @@ from threading import Thread
 from typing import Any, Callable, Iterator
 
 from easynetwork.protocol import DatagramProtocol
-from easynetwork.server.udp import AbstractUDPNetworkServer
+from easynetwork.server.handler import AbstractDatagramClient, AbstractDatagramRequestHandler
+from easynetwork.server.udp import UDPNetworkServer
 from easynetwork.tools.socket import SocketAddress
 
 import pytest
@@ -16,14 +17,25 @@ import pytest
 from ....tools import TimeTest
 
 
-class MyUDPServer(AbstractUDPNetworkServer[str, str]):
-    process_time: float = 0
+class MyUDPRequestHandler(AbstractDatagramRequestHandler[str, str]):
+    def __init__(self) -> None:
+        super().__init__()
+        self.process_time: float = 0
+        self.server: MyUDPServer
 
-    def process_request(self, request: str, client_address: SocketAddress) -> None:
+    def service_init(self, server: Any) -> None:
+        super().service_init(server)
+        self.server = server
+
+    def handle(self, request: str, client: AbstractDatagramClient[str]) -> None:
         if self.process_time > 0:
             time.sleep(self.process_time)
-        self.logger.info("%s sent %r", client_address, request)
-        self.send_packet_to(request.upper(), client_address)
+        self.server.logger.info("%s sent %r", client.address, request)
+        client.send_packet(request.upper())
+
+
+class MyUDPServer(UDPNetworkServer[str, str]):
+    __slots__ = ()
 
 
 class BaseTestServer:
@@ -44,21 +56,22 @@ class BaseTestServer:
 class TestUDPNetworkServer(BaseTestServer):
     @pytest.fixture
     @staticmethod
-    def server_factory(request: Any) -> type[MyUDPServer]:
-        return getattr(request, "param", MyUDPServer)
+    def request_handler() -> MyUDPRequestHandler:
+        return MyUDPRequestHandler()
 
     @pytest.fixture
     @staticmethod
     def server(
-        server_factory: type[MyUDPServer],
+        request_handler: type[MyUDPServer],
         socket_family: int,
         localhost: str,
         datagram_protocol: DatagramProtocol[str, str],
     ) -> Iterator[MyUDPServer]:
-        with server_factory(
+        with MyUDPServer(
             localhost,
             0,
             datagram_protocol,
+            handler=request_handler,
             family=socket_family,
         ) as server:
             yield server
@@ -139,18 +152,18 @@ class TestUDPNetworkServer(BaseTestServer):
     @pytest.mark.usefixtures("run_server")
     def test____client____bad_request(
         self,
-        server: MyUDPServer,
+        request_handler: MyUDPRequestHandler,
         client_factory: Callable[[], Socket],
     ) -> None:
         bad_request_args: tuple[Any, ...] | None = None
 
-        def bad_request(client_address: SocketAddress, *args: Any) -> None:
+        def bad_request(client: AbstractDatagramClient[str], *args: Any) -> None:
             nonlocal bad_request_args
 
             bad_request_args = args
-            server.send_packet_to("wrong encoding man.", client_address)
+            client.send_packet("wrong encoding man.")
 
-        server.bad_request = bad_request  # type: ignore[assignment]
+        request_handler.bad_request = bad_request  # type: ignore[assignment]
 
         client = client_factory()
         client.send("\u00E9\n".encode("latin-1"))  # StringSerializer does not accept unicode
@@ -164,20 +177,18 @@ class TestUDPNetworkServer(BaseTestServer):
     @pytest.mark.usefixtures("run_server")
     def test____client____unexpected_error_during_process(
         self,
-        server: MyUDPServer,
+        request_handler: MyUDPRequestHandler,
         client_factory: Callable[[], Socket],
     ) -> None:
-        def process_request(request: str, client_address: SocketAddress) -> None:
+        def process_request(request: str, client: AbstractDatagramClient[str]) -> None:
             raise Exception("Sorry man!")
 
-        default_error_handler = server.handle_error
+        def handle_error(client: AbstractDatagramClient[str], exc_info: Callable[[], BaseException | None]) -> bool:
+            client.send_packet(str(exc_info()))
+            return False
 
-        def handle_error(client_address: SocketAddress, exc_info: Callable[[], BaseException | None]) -> None:
-            default_error_handler(client_address, exc_info)
-            server.send_packet_to(str(exc_info()), client_address)
-
-        server.process_request = process_request  # type: ignore[method-assign]
-        server.handle_error = handle_error  # type: ignore[method-assign]
+        request_handler.handle = process_request  # type: ignore[method-assign]
+        request_handler.handle_error = handle_error  # type: ignore[method-assign]
 
         client = client_factory()
         client.send(b"hello")
@@ -199,22 +210,23 @@ class TestUDPNetworkServerConcurrency(BaseTestServer):
 
     @pytest.fixture
     @staticmethod
-    def server_factory(request: Any) -> type[MyUDPServer]:
-        return getattr(request, "param", MyUDPServer)
+    def request_handler() -> MyUDPRequestHandler:
+        return MyUDPRequestHandler()
 
     @pytest.fixture
     @staticmethod
     def server(
-        server_factory: type[MyUDPServer],
+        request_handler: MyUDPRequestHandler,
         socket_family: int,
         localhost: str,
         datagram_protocol: DatagramProtocol[str, str],
         server_thread_pool_size: int,
     ) -> Iterator[MyUDPServer]:
-        with server_factory(
+        with MyUDPServer(
             localhost,
             0,
             datagram_protocol,
+            handler=request_handler,
             family=socket_family,
             thread_pool_size=server_thread_pool_size,
         ) as server:
@@ -246,13 +258,13 @@ class TestUDPNetworkServerConcurrency(BaseTestServer):
     @pytest.mark.usefixtures("run_server")
     def test____serve_forever____concurrent_requests(
         self,
-        server: MyUDPServer,
+        request_handler: MyUDPRequestHandler,
         client_factory: Callable[[], Socket],
     ) -> None:
         client_1 = client_factory()
         client_2 = client_factory()
 
-        server.process_time = 1
+        request_handler.process_time = 1
 
         client_1.send(b"hello")
         client_2.send(b"world")
