@@ -42,15 +42,15 @@ class TestAsyncIOBackend:
         # Assert
         assert loop is mocker.sentinel.default
 
-    async def test____sleep____use_asyncio_sleep(self, backend: AsyncIOBackend, mocker: MockerFixture) -> None:
+    async def test____coro_yield____use_asyncio_sleep(self, backend: AsyncIOBackend, mocker: MockerFixture) -> None:
         # Arrange
         mock_sleep: AsyncMock = mocker.patch("asyncio.sleep", new_callable=mocker.async_stub)
 
         # Act
-        await backend.sleep(123456789)
+        await backend.coro_yield()
 
         # Assert
-        mock_sleep.assert_awaited_once_with(123456789)
+        mock_sleep.assert_awaited_once_with(0)
 
     async def test____create_tcp_connection____use_asyncio_open_connection(
         self,

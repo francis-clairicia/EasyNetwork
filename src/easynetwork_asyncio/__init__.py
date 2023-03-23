@@ -37,10 +37,10 @@ class AsyncIOBackend(AbstractAsyncBackend):
             case _:
                 return default
 
-    async def sleep(self, delay_in_seconds: float, /) -> None:
+    async def coro_yield(self) -> None:
         import asyncio
 
-        return await asyncio.sleep(delay_in_seconds)
+        return await asyncio.sleep(0)
 
     async def create_tcp_connection(
         self,

@@ -119,7 +119,7 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         return default
 
     @abstractmethod
-    async def sleep(self, delay_in_seconds: float, /) -> None:
+    async def coro_yield(self) -> None:
         raise NotImplementedError
 
     @abstractmethod
@@ -202,6 +202,10 @@ class AsyncBackendFactory:
     @staticmethod
     def get_available_backends() -> frozenset[str]:
         return frozenset(AsyncBackendFactory.__get_available_backends())
+
+    @staticmethod
+    def get_backend_cls(name: str) -> type[AbstractAsyncBackend]:
+        return AsyncBackendFactory.__get_backend_cls(name)
 
     @staticmethod
     def invalidate_backends_cache() -> None:

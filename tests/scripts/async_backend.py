@@ -14,7 +14,7 @@ async def hello_world() -> None:
 async def main() -> None:
     backend = AsyncBackendFactory.new()
     asyncio.create_task(hello_world())
-    await backend.sleep(0)
+    await backend.coro_yield()
     return
 
 
