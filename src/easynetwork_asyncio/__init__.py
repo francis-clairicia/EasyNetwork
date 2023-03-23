@@ -11,7 +11,8 @@ __all__ = ["AsyncIOBackend"]  # type: list[str]
 
 __version__ = "1.0.0"
 
-from typing import TYPE_CHECKING, final
+import concurrent.futures
+from typing import TYPE_CHECKING, TypeVar, final
 
 from easynetwork.async_api.backend import AbstractAsyncBackend
 
@@ -19,6 +20,8 @@ if TYPE_CHECKING:
     import socket as _socket
 
     from easynetwork.async_api.backend import AbstractDatagramSocketAdapter, AbstractStreamSocketAdapter, ILock
+
+_T = TypeVar("_T")
 
 
 @final
@@ -59,11 +62,11 @@ class AsyncIOBackend(AbstractAsyncBackend):
             happy_eyeballs_delay=happy_eyeballs_delay,
             limit=MAX_STREAM_BUFSIZE,
         )
-
         return StreamSocketAdapter(self, reader, writer)
 
     async def wrap_tcp_socket(self, socket: _socket.socket) -> AbstractStreamSocketAdapter:
         assert socket is not None, "Expected 'socket' to be a socket.socket instance"
+        socket.setblocking(False)
 
         import asyncio
 
@@ -72,7 +75,6 @@ class AsyncIOBackend(AbstractAsyncBackend):
         from .stream import StreamSocketAdapter
 
         reader, writer = await asyncio.open_connection(sock=socket, limit=MAX_STREAM_BUFSIZE)
-
         return StreamSocketAdapter(self, reader, writer)
 
     async def create_udp_endpoint(
@@ -93,6 +95,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
 
     async def wrap_udp_socket(self, socket: _socket.socket) -> AbstractDatagramSocketAdapter:
         assert socket is not None, "Expected 'socket' to be a socket.socket instance"
+        socket.setblocking(False)
 
         from .datagram import DatagramSocketAdapter, create_datagram_endpoint
 
@@ -103,3 +106,8 @@ class AsyncIOBackend(AbstractAsyncBackend):
         import asyncio
 
         return asyncio.Lock()
+
+    async def wait_future(self, future: concurrent.futures.Future[_T]) -> _T:
+        import asyncio
+
+        return await asyncio.wrap_future(future)

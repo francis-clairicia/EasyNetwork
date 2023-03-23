@@ -16,36 +16,6 @@ import pytest
 from .....tools import TimeTest
 
 
-# Origin: https://gist.github.com/4325783, by Geert Jansen.  Public domain.
-# Cannot use socket.socketpair() vendored with Python on unix since it is required to use AF_UNIX family :)
-@pytest.fixture
-def socket_pair(localhost: str, tcp_socket_factory: Callable[[], Socket]) -> Iterator[tuple[Socket, Socket]]:
-    # We create a connected TCP socket. Note the trick with
-    # setblocking(False) that prevents us from having to create a thread.
-    lsock = tcp_socket_factory()
-    try:
-        lsock.bind((localhost, 0))
-        lsock.listen()
-        # On IPv6, ignore flow_info and scope_id
-        addr, port = lsock.getsockname()[:2]
-        csock = tcp_socket_factory()
-        try:
-            csock.setblocking(False)
-            try:
-                csock.connect((addr, port))
-            except (BlockingIOError, InterruptedError):
-                pass
-            csock.setblocking(True)
-            ssock, _ = lsock.accept()
-        except:  # noqa
-            csock.close()
-            raise
-    finally:
-        lsock.close()
-    with ssock:  # csock will be closed later by tcp_socket_factory() teardown
-        yield ssock, csock
-
-
 class TestTCPNetworkClient:
     @pytest.fixture
     @staticmethod

@@ -22,13 +22,17 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Final, Protocol, TypeVar, final
 
 if TYPE_CHECKING:
+    import concurrent.futures
     import socket as _socket
     from socket import _Address, _RetAddress
     from types import TracebackType
 
     from _typeshed import ReadableBuffer
 
-    from ..tools.socket import SocketProxy
+    from ..tools.socket import SocketAddress, SocketProxy
+
+
+_T = TypeVar("_T")
 
 
 class ILock(Protocol):
@@ -41,7 +45,7 @@ class ILock(Protocol):
         __exc_val: BaseException | None,
         __exc_tb: TracebackType | None,
         /,
-    ) -> None:
+    ) -> bool | None:
         ...
 
     async def acquire(self) -> Any:
@@ -80,6 +84,14 @@ class AbstractBaseAsyncSocketAdapter(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
+    def getsockname(self) -> SocketAddress:
+        raise NotImplementedError
+
+    @abstractmethod
+    def getpeername(self) -> SocketAddress | None:
+        raise NotImplementedError
+
+    @abstractmethod
     def proxy(self) -> SocketProxy:
         raise NotImplementedError
 
@@ -90,6 +102,10 @@ class AbstractBaseAsyncSocketAdapter(metaclass=ABCMeta):
 
 class AbstractStreamSocketAdapter(AbstractBaseAsyncSocketAdapter):
     __slots__ = ()
+
+    @abstractmethod
+    def getpeername(self) -> SocketAddress:
+        raise NotImplementedError
 
     @abstractmethod
     async def recv(self, __bufsize: int, /) -> bytes:
@@ -151,6 +167,11 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
     @abstractmethod
     def create_lock(self) -> ILock:
         raise NotImplementedError
+
+    async def wait_future(self, future: concurrent.futures.Future[_T]) -> _T:
+        while not future.done():
+            await self.coro_yield()
+        return future.result()
 
 
 @final
@@ -218,6 +239,7 @@ class AsyncBackendFactory:
     @staticmethod
     @functools.cache
     def __get_available_backends() -> MappingProxyType[str, type[AbstractAsyncBackend]]:
+        import inspect
         from collections import Counter
         from importlib.metadata import entry_points
 
@@ -234,7 +256,11 @@ class AsyncBackendFactory:
             if duplicate_counter[entry_point_name] > 1:
                 continue
             entry_point_cls: Any = entry_point.load()
-            if not isinstance(entry_point_cls, type) or not issubclass(entry_point_cls, AbstractAsyncBackend):
+            if (
+                not isinstance(entry_point_cls, type)
+                or not issubclass(entry_point_cls, AbstractAsyncBackend)
+                or inspect.isabstract(entry_point_cls)
+            ):
                 invalid_backends.add(entry_point_name)
                 continue
             backends[entry_point_name] = entry_point_cls

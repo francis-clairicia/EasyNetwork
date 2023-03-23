@@ -33,11 +33,15 @@ async def test____create_datagram_endpoint____return_DatagramEndpoint_instance(m
     mock_DatagramEndpoint = mocker.patch("easynetwork_asyncio.datagram.DatagramEndpoint", return_value=mocker.sentinel.endpoint)
     mock_loop_create_datagram_endpoint: AsyncMock = cast(
         "AsyncMock",
-        mocker.patch.object(asyncio.get_running_loop(), "create_datagram_endpoint", new_callable=mocker.async_stub),
-    )
-    mock_loop_create_datagram_endpoint.return_value = (
-        mocker.sentinel.transport,
-        mocker.sentinel.protocol,
+        mocker.patch.object(
+            asyncio.get_running_loop(),
+            "create_datagram_endpoint",
+            new_callable=mocker.AsyncMock,
+            return_value=(
+                mocker.sentinel.transport,
+                mocker.sentinel.protocol,
+            ),
+        ),
     )
 
     # Act

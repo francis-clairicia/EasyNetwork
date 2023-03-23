@@ -160,16 +160,11 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
 
     def send_packet(self, packet: _SentPacketT) -> None:
         with self.__lock:
-            if (socket := self.__socket) is None:
-                raise ClientClosedError("Closed client")
-            if self.__eof_reached:
-                raise _error_from_errno(_errno.ECONNABORTED)
-
-            data: bytes = _concatenate_chunks(self.__producer(packet))
+            socket = self.__ensure_connected()
 
             with _restore_timeout_at_end(socket):
                 socket.settimeout(None)
-                socket.sendall(data)
+                socket.sendall(_concatenate_chunks(self.__producer(packet)))
                 _check_real_socket_state(socket)
 
     def recv_packet(self, timeout: float | None = None) -> _ReceivedPacketT:
@@ -180,10 +175,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 return next_packet(consumer)  # If there is enough data from last call to create a packet, return immediately
             except StopIteration:
                 pass
-            if (socket := self.__socket) is None:
-                raise ClientClosedError("Closed client")
-            if self.__eof_reached:  # Do not need to call socket.recv()
-                raise _error_from_errno(_errno.ECONNABORTED)
+            socket = self.__ensure_connected()
             bufsize: int = self.__max_recv_bufsize
             monotonic = _time_monotonic  # pull function to local namespace
 
@@ -227,6 +219,13 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             raise
         except Exception as exc:  # pragma: no cover
             raise RuntimeError(str(exc)) from exc
+
+    def __ensure_connected(self) -> _socket.socket:
+        if (socket := self.__socket) is None:
+            raise ClientClosedError("Closed client")
+        if self.__eof_reached:
+            raise _error_from_errno(_errno.ECONNABORTED)
+        return socket
 
     def get_local_address(self) -> SocketAddress:
         return self.__addr

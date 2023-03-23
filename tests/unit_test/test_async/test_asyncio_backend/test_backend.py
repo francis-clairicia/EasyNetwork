@@ -42,8 +42,11 @@ class TestAsyncIOBackend:
         mock_StreamSocketAdapter: MagicMock = mocker.patch(
             "easynetwork_asyncio.stream.StreamSocketAdapter", return_value=mocker.sentinel.socket
         )
-        mock_open_connection: AsyncMock = mocker.patch("asyncio.open_connection", new_callable=mocker.async_stub)
-        mock_open_connection.return_value = (mocker.sentinel.reader, mocker.sentinel.writer)
+        mock_open_connection: AsyncMock = mocker.patch(
+            "asyncio.open_connection",
+            new_callable=mocker.AsyncMock,
+            return_value=(mocker.sentinel.reader, mocker.sentinel.writer),
+        )
 
         # Act
         socket = await backend.create_tcp_connection(
@@ -80,8 +83,11 @@ class TestAsyncIOBackend:
     ) -> None:
         # Arrange
         mocker.patch("easynetwork_asyncio.stream.StreamSocketAdapter")
-        mock_open_connection: AsyncMock = mocker.patch("asyncio.open_connection", new_callable=mocker.async_stub)
-        mock_open_connection.return_value = (mocker.sentinel.reader, mocker.sentinel.writer)
+        mock_open_connection: AsyncMock = mocker.patch(
+            "asyncio.open_connection",
+            new_callable=mocker.AsyncMock,
+            return_value=(mocker.sentinel.reader, mocker.sentinel.writer),
+        )
 
         # Act
         await backend.create_tcp_connection(
@@ -102,6 +108,7 @@ class TestAsyncIOBackend:
     async def test____wrap_tcp_socket____use_asyncio_open_connection(
         self,
         backend: AsyncIOBackend,
+        mock_tcp_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -110,19 +117,23 @@ class TestAsyncIOBackend:
         mock_StreamSocketAdapter: MagicMock = mocker.patch(
             "easynetwork_asyncio.stream.StreamSocketAdapter", return_value=mocker.sentinel.socket
         )
-        mock_open_connection: AsyncMock = mocker.patch("asyncio.open_connection", new_callable=mocker.async_stub)
-        mock_open_connection.return_value = (mocker.sentinel.reader, mocker.sentinel.writer)
+        mock_open_connection: AsyncMock = mocker.patch(
+            "asyncio.open_connection",
+            new_callable=mocker.AsyncMock,
+            return_value=(mocker.sentinel.reader, mocker.sentinel.writer),
+        )
 
         # Act
-        socket = await backend.wrap_tcp_socket(mocker.sentinel.stdlib_socket)
+        socket = await backend.wrap_tcp_socket(mock_tcp_socket)
 
         # Assert
         mock_open_connection.assert_awaited_once_with(
-            sock=mocker.sentinel.stdlib_socket,
+            sock=mock_tcp_socket,
             limit=MAX_STREAM_BUFSIZE,
         )
         mock_StreamSocketAdapter.assert_called_once_with(backend, mocker.sentinel.reader, mocker.sentinel.writer)
         assert socket is mocker.sentinel.socket
+        mock_tcp_socket.setblocking.assert_called_once_with(False)
 
     async def test____create_udp_endpoint____use_loop_create_datagram_endpoint(
         self,
@@ -135,9 +146,9 @@ class TestAsyncIOBackend:
         )
         mock_create_datagram_endpoint: AsyncMock = mocker.patch(
             "easynetwork_asyncio.datagram.create_datagram_endpoint",
-            new_callable=mocker.async_stub,
+            new_callable=mocker.AsyncMock,
+            return_value=mocker.sentinel.endpoint,
         )
-        mock_create_datagram_endpoint.return_value = mocker.sentinel.endpoint
 
         # Act
         socket = await backend.create_udp_endpoint(
@@ -158,6 +169,7 @@ class TestAsyncIOBackend:
     async def test____wrap_udp_socket____use_loop_create_datagram_endpoint(
         self,
         backend: AsyncIOBackend,
+        mock_udp_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -166,17 +178,18 @@ class TestAsyncIOBackend:
         )
         mock_create_datagram_endpoint: AsyncMock = mocker.patch(
             "easynetwork_asyncio.datagram.create_datagram_endpoint",
-            new_callable=mocker.async_stub,
+            new_callable=mocker.AsyncMock,
+            return_value=mocker.sentinel.endpoint,
         )
-        mock_create_datagram_endpoint.return_value = mocker.sentinel.endpoint
 
         # Act
-        socket = await backend.wrap_udp_socket(mocker.sentinel.stdlib_socket)
+        socket = await backend.wrap_udp_socket(mock_udp_socket)
 
         # Assert
-        mock_create_datagram_endpoint.assert_awaited_once_with(socket=mocker.sentinel.stdlib_socket)
+        mock_create_datagram_endpoint.assert_awaited_once_with(socket=mock_udp_socket)
         mock_DatagramSocketAdapter.assert_called_once_with(backend, mocker.sentinel.endpoint)
         assert socket is mocker.sentinel.socket
+        mock_udp_socket.setblocking.assert_called_once_with(False)
 
     async def test____create_lock____use_asyncio_Lock_class(
         self,
@@ -192,3 +205,22 @@ class TestAsyncIOBackend:
         # Assert
         mock_Lock.assert_called_once_with()
         assert lock is mocker.sentinel.lock
+
+    async def test____wait_future____use_asyncio_wrap_future(
+        self,
+        backend: AsyncIOBackend,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_wrap_future: AsyncMock = mocker.patch(
+            "asyncio.wrap_future",
+            new_callable=mocker.AsyncMock,
+            return_value=mocker.sentinel.result,
+        )
+
+        # Act
+        result = await backend.wait_future(mocker.sentinel.future)
+
+        # Assert
+        mock_wrap_future.assert_awaited_once_with(mocker.sentinel.future)
+        assert result is mocker.sentinel.result

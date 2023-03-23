@@ -12,11 +12,11 @@ __all__ = [
 ]
 
 import socket as _socket
-from typing import TYPE_CHECKING, final
+from typing import TYPE_CHECKING, Any, final
 
 from easynetwork.async_api.backend import AbstractStreamSocketAdapter
 from easynetwork.tools._utils import error_from_errno as _error_from_errno
-from easynetwork.tools.socket import SocketProxy
+from easynetwork.tools.socket import SocketAddress, SocketProxy, new_socket_address
 
 if TYPE_CHECKING:
     import asyncio
@@ -28,7 +28,12 @@ if TYPE_CHECKING:
 
 @final
 class StreamSocketAdapter(AbstractStreamSocketAdapter):
-    __slots__ = ("__backend", "__reader", "__writer", "__proxy")
+    __slots__ = (
+        "__backend",
+        "__reader",
+        "__writer",
+        "__proxy",
+    )
 
     def __init__(self, backend: AsyncIOBackend, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         super().__init__()
@@ -59,6 +64,16 @@ class StreamSocketAdapter(AbstractStreamSocketAdapter):
     def is_closing(self) -> bool:
         return self.__writer.is_closing()
 
+    def getsockname(self) -> SocketAddress:
+        sockname: tuple[Any, ...] = self.__writer.get_extra_info("sockname")
+        socket: _socket.socket = self.__writer.get_extra_info("socket")
+        return new_socket_address(sockname, socket.family)
+
+    def getpeername(self) -> SocketAddress:
+        peername: tuple[Any, ...] = self.__writer.get_extra_info("peername")
+        socket: _socket.socket = self.__writer.get_extra_info("socket")
+        return new_socket_address(peername, socket.family)
+
     async def recv(self, bufsize: int, /) -> bytes:
         if bufsize < 0:
             raise ValueError("'bufsize' must be a positive or null integer")
@@ -67,8 +82,8 @@ class StreamSocketAdapter(AbstractStreamSocketAdapter):
         return await self.__reader.read(bufsize)
 
     async def sendall(self, data: ReadableBuffer, /) -> None:
-        with memoryview(data) as buffer:
-            self.__writer.write(buffer)
+        with memoryview(data).toreadonly() as data_view:
+            self.__writer.write(data_view)
             await self.__writer.drain()
 
     def proxy(self) -> SocketProxy:

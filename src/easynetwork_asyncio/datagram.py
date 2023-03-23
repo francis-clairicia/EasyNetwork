@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Any, final
 
 from easynetwork.async_api.backend import AbstractDatagramSocketAdapter
 from easynetwork.tools._utils import error_from_errno as _error_from_errno
-from easynetwork.tools.socket import SocketProxy
+from easynetwork.tools.socket import SocketAddress, SocketProxy, new_socket_address
 
 if TYPE_CHECKING:
     from socket import _Address, _RetAddress
@@ -280,12 +280,24 @@ class DatagramSocketAdapter(AbstractDatagramSocketAdapter):
     def is_closing(self) -> bool:
         return self.__endpoint.is_closing()
 
+    def getsockname(self) -> SocketAddress:
+        sockname: tuple[Any, ...] = self.__endpoint.get_extra_info("sockname")
+        socket: _socket.socket = self.__endpoint.get_extra_info("socket")
+        return new_socket_address(sockname, socket.family)
+
+    def getpeername(self) -> SocketAddress | None:
+        peername: tuple[Any, ...] | None = self.__endpoint.get_extra_info("peername")
+        if peername is None:
+            return None
+        socket: _socket.socket = self.__endpoint.get_extra_info("socket")
+        return new_socket_address(peername, socket.family)
+
     async def recvfrom(self) -> tuple[bytes, _RetAddress]:
         return await self.__endpoint.recvfrom()
 
     async def sendto(self, data: ReadableBuffer, address: _Address | None = None, /) -> None:
-        with memoryview(data) as buffer:
-            await self.__endpoint.sendto(buffer, address)
+        with memoryview(data).toreadonly() as data_view:
+            await self.__endpoint.sendto(data_view, address)
 
     def proxy(self) -> SocketProxy:
         return self.__proxy
