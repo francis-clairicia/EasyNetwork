@@ -46,8 +46,6 @@ class AsyncioBackend(AbstractAsyncBackend):
 
         if happy_eyeballs_delay is None:
             happy_eyeballs_delay = 0.25  # Recommended value (c.f. https://tools.ietf.org/html/rfc6555)
-        elif happy_eyeballs_delay == float("+inf"):
-            happy_eyeballs_delay = None
 
         import asyncio
 

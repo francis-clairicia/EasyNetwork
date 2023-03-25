@@ -71,7 +71,7 @@ class TestAsyncIOBackend:
         ["given_value", "expected_value"],
         [
             pytest.param(None, 0.25, id="use_rfc_value_if_None"),
-            pytest.param(float("inf"), None, id="give_None_if_infinite"),
+            pytest.param(float("inf"), float("inf"), id="handle_infinite"),
         ],
     )
     async def test____create_tcp_connection____happy_eyeballs_delay(
