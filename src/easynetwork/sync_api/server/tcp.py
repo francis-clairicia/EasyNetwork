@@ -20,7 +20,7 @@ from weakref import WeakSet as _WeakSet
 
 from ...exceptions import StreamProtocolParseError
 from ...protocol import StreamProtocol
-from ...tools._utils import check_real_socket_state as _check_real_socket_state
+from ...tools._utils import check_real_socket_state as _check_real_socket_state, concatenate_chunks as _concatenate_chunks
 from ...tools.socket import MAX_STREAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
 from ...tools.stream import StreamDataConsumer, StreamDataProducer
 from .abc import AbstractNetworkServer
@@ -684,15 +684,14 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
 
         logger: _logging.Logger = self._logger
 
-        # The list call should be roughly
-        # equivalent to the PySequence_Fast that ''.join() would do.
-        data: bytes = b"".join(list(self._producer))
-
+        data: bytes = _concatenate_chunks(self._producer)
         try:
             nb_bytes_sent = socket.send(data)
             _check_real_socket_state(socket)
         except (TimeoutError, BlockingIOError, InterruptedError):
             nb_bytes_sent = 0
+            self._unsent_data.extend(data)
+            self._selector.add_client_for_writing(self)
         except ConnectionError:
             self._erase_all_data_and_packets_to_send()
             self._api.close()
@@ -701,9 +700,12 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
             self._erase_all_data_and_packets_to_send()
             self._request_error_handling_and_close(close_client_before=True)
             return
-        if nb_bytes_sent < len(data):
-            self._unsent_data.extend(data[nb_bytes_sent:])
-            self._selector.add_client_for_writing(self)
+        else:
+            if nb_bytes_sent < len(data):
+                self._unsent_data.extend(data[nb_bytes_sent:])
+                self._selector.add_client_for_writing(self)
+        finally:
+            del data
         logger.debug("%d byte(s) sent to %s and %d byte(s) queued", nb_bytes_sent, self._api.address, len(self._unsent_data))
 
     def _erase_all_data_and_packets_to_send(self) -> None:
