@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from easynetwork_asyncio import AsyncIOBackend
+from easynetwork_asyncio import AsyncioBackend
 from easynetwork_asyncio.stream import StreamSocketAdapter
 
 if TYPE_CHECKING:
@@ -20,15 +20,13 @@ if TYPE_CHECKING:
 class TestStreamSocket:
     @pytest.fixture(scope="class")
     @staticmethod
-    def backend() -> AsyncIOBackend:
-        return AsyncIOBackend()
+    def backend() -> AsyncioBackend:
+        return AsyncioBackend()
 
     @pytest.fixture
     @staticmethod
     def mock_asyncio_reader(mocker: MockerFixture) -> MagicMock:
-        mock = mocker.MagicMock(spec=asyncio.StreamReader)
-        mock.read = mocker.AsyncMock()
-        return mock
+        return mocker.MagicMock(spec=asyncio.StreamReader)
 
     @pytest.fixture
     @staticmethod
@@ -58,22 +56,19 @@ class TestStreamSocket:
         )
         mock = mocker.MagicMock(spec=asyncio.StreamWriter)
         mock.get_extra_info.side_effect = asyncio_writer_extra_info.get
-        mock.wait_closed = mocker.AsyncMock()
-        mock.drain = mocker.AsyncMock()
         return mock
 
     @pytest.fixture
     @staticmethod
-    def socket(backend: AsyncIOBackend, mock_asyncio_reader: MagicMock, mock_asyncio_writer: MagicMock) -> StreamSocketAdapter:
+    def socket(backend: AsyncioBackend, mock_asyncio_reader: MagicMock, mock_asyncio_writer: MagicMock) -> StreamSocketAdapter:
         return StreamSocketAdapter(backend, mock_asyncio_reader, mock_asyncio_writer)
 
     async def test____dunder_init____transport_not_connected(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncioBackend,
         asyncio_writer_extra_info: dict[str, Any],
         mock_asyncio_reader: MagicMock,
         mock_asyncio_writer: MagicMock,
-        mocker: MockerFixture,
     ) -> None:
         # Arrange
         from errno import ENOTCONN
@@ -97,6 +92,21 @@ class TestStreamSocket:
 
         # Act
         await socket.close()
+
+        # Assert
+        mock_asyncio_writer.close.assert_called_once_with()
+        mock_asyncio_writer.wait_closed.assert_awaited_once_with()
+
+    async def test____context____close_transport_and_wait_at_end(
+        self,
+        socket: StreamSocketAdapter,
+        mock_asyncio_writer: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act
+        async with socket:
+            mock_asyncio_writer.close.assert_not_called()
 
         # Assert
         mock_asyncio_writer.close.assert_called_once_with()
@@ -176,6 +186,32 @@ class TestStreamSocket:
         mock_asyncio_writer.write.assert_called_once_with(mocker.ANY)  # cannot test args because it will be a closed memoryview()
         mock_asyncio_writer.drain.assert_awaited_once_with()
 
+    async def test____getsockname____return_sockname_extra_info(
+        self,
+        socket: StreamSocketAdapter,
+        asyncio_writer_extra_info: dict[str, Any],
+    ) -> None:
+        # Arrange
+
+        # Act
+        laddr = socket.getsockname()
+
+        # Assert
+        assert laddr == asyncio_writer_extra_info["sockname"]
+
+    async def test____getpeername____return_peername_extra_info(
+        self,
+        socket: StreamSocketAdapter,
+        asyncio_writer_extra_info: dict[str, Any],
+    ) -> None:
+        # Arrange
+
+        # Act
+        raddr = socket.getpeername()
+
+        # Assert
+        assert raddr == asyncio_writer_extra_info["peername"]
+
     async def test____proxy____wraps_transport_socket(
         self,
         socket: StreamSocketAdapter,
@@ -194,7 +230,7 @@ class TestStreamSocket:
 
     async def test____get_backend____returns_given_backend_object(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncioBackend,
         socket: StreamSocketAdapter,
     ) -> None:
         # Arrange

@@ -23,14 +23,12 @@ from typing import TYPE_CHECKING, Any, final
 
 from easynetwork.async_api.backend import AbstractDatagramSocketAdapter
 from easynetwork.tools._utils import error_from_errno as _error_from_errno
-from easynetwork.tools.socket import SocketAddress, SocketProxy, new_socket_address
+from easynetwork.tools.socket import SocketProxy
 
 if TYPE_CHECKING:
-    from socket import _Address, _RetAddress
-
     from _typeshed import ReadableBuffer
 
-    from . import AsyncIOBackend
+    from . import AsyncioBackend
 
 
 async def create_datagram_endpoint(
@@ -41,7 +39,7 @@ async def create_datagram_endpoint(
     socket: _socket.socket | None = None,
 ) -> DatagramEndpoint:
     loop = asyncio.get_running_loop()
-    recv_queue: asyncio.Queue[tuple[bytes | None, _socket._RetAddress | None]] = asyncio.Queue()
+    recv_queue: asyncio.Queue[tuple[bytes | None, tuple[Any, ...] | None]] = asyncio.Queue()
     exception_queue: asyncio.Queue[Exception] = asyncio.Queue()
 
     transport, protocol = await loop.create_datagram_endpoint(
@@ -70,11 +68,11 @@ class DatagramEndpoint:
         transport: asyncio.DatagramTransport,
         protocol: DatagramEndpointProtocol,
         *,
-        recv_queue: asyncio.Queue[tuple[bytes | None, _RetAddress | None]],
+        recv_queue: asyncio.Queue[tuple[bytes | None, tuple[Any, ...] | None]],
         exception_queue: asyncio.Queue[Exception],
     ) -> None:
         super().__init__()
-        self.__recv_queue: asyncio.Queue[tuple[bytes | None, _RetAddress | None]] = recv_queue
+        self.__recv_queue: asyncio.Queue[tuple[bytes | None, tuple[Any, ...] | None]] = recv_queue
         self.__exception_queue: asyncio.Queue[Exception] = exception_queue
         self.__transport: asyncio.DatagramTransport = transport
         self.__protocol: DatagramEndpointProtocol = protocol
@@ -95,7 +93,7 @@ class DatagramEndpoint:
     def is_closing(self) -> bool:
         return self.__transport.is_closing()
 
-    async def recvfrom(self) -> tuple[bytes, _RetAddress]:
+    async def recvfrom(self) -> tuple[bytes, tuple[Any, ...]]:
         if self.__transport.is_closing():
             raise _error_from_errno(_errno.ECONNABORTED)
         self.__check_exceptions()
@@ -106,7 +104,7 @@ class DatagramEndpoint:
             raise _error_from_errno(_errno.ECONNABORTED)  # Connection lost otherwise
         return data, address
 
-    async def sendto(self, data: bytes | bytearray | memoryview, address: _Address | None = None, /) -> None:
+    async def sendto(self, data: bytes | bytearray | memoryview, address: tuple[Any, ...] | None = None, /) -> None:
         if self.__transport.is_closing():
             raise _error_from_errno(_errno.ECONNABORTED)
         self.__check_exceptions()
@@ -144,14 +142,14 @@ class DatagramEndpointProtocol(asyncio.DatagramProtocol):
         self,
         *,
         loop: asyncio.AbstractEventLoop | None = None,
-        recv_queue: asyncio.Queue[tuple[bytes | None, _RetAddress | None]],
+        recv_queue: asyncio.Queue[tuple[bytes | None, tuple[Any, ...] | None]],
         exception_queue: asyncio.Queue[Exception],
     ) -> None:
         super().__init__()
         if loop is None:
             loop = asyncio.get_running_loop()
         self.__loop: asyncio.AbstractEventLoop = loop
-        self.__recv_queue: asyncio.Queue[tuple[bytes | None, _RetAddress | None]] = recv_queue
+        self.__recv_queue: asyncio.Queue[tuple[bytes | None, tuple[Any, ...] | None]] = recv_queue
         self.__exception_queue: asyncio.Queue[Exception] = exception_queue
         self.__transport: asyncio.BaseTransport | None = None
         self.__closed: asyncio.Future[None] = loop.create_future()
@@ -199,7 +197,7 @@ class DatagramEndpointProtocol(asyncio.DatagramProtocol):
 
         super().connection_lost(exc)
 
-    def datagram_received(self, data: bytes, addr: _RetAddress) -> None:
+    def datagram_received(self, data: bytes, addr: tuple[Any, ...]) -> None:
         if self.__transport is not None:
             self.__recv_queue.put_nowait((data, addr))
 
@@ -256,9 +254,9 @@ class DatagramSocketAdapter(AbstractDatagramSocketAdapter):
         "__proxy",
     )
 
-    def __init__(self, backend: AsyncIOBackend, endpoint: DatagramEndpoint) -> None:
+    def __init__(self, backend: AsyncioBackend, endpoint: DatagramEndpoint) -> None:
         super().__init__()
-        self.__backend: AsyncIOBackend = backend
+        self.__backend: AsyncioBackend = backend
         self.__endpoint: DatagramEndpoint = endpoint
 
         socket: _socket.socket | None = endpoint.get_extra_info("socket")
@@ -280,27 +278,21 @@ class DatagramSocketAdapter(AbstractDatagramSocketAdapter):
     def is_closing(self) -> bool:
         return self.__endpoint.is_closing()
 
-    def getsockname(self) -> SocketAddress:
-        sockname: tuple[Any, ...] = self.__endpoint.get_extra_info("sockname")
-        socket: _socket.socket = self.__endpoint.get_extra_info("socket")
-        return new_socket_address(sockname, socket.family)
+    def getsockname(self) -> tuple[Any, ...]:
+        return self.__endpoint.get_extra_info("sockname")
 
-    def getpeername(self) -> SocketAddress | None:
-        peername: tuple[Any, ...] | None = self.__endpoint.get_extra_info("peername")
-        if peername is None:
-            return None
-        socket: _socket.socket = self.__endpoint.get_extra_info("socket")
-        return new_socket_address(peername, socket.family)
+    def getpeername(self) -> tuple[Any, ...] | None:
+        return self.__endpoint.get_extra_info("peername")
 
-    async def recvfrom(self) -> tuple[bytes, _RetAddress]:
+    async def recvfrom(self) -> tuple[bytes, tuple[Any, ...]]:
         return await self.__endpoint.recvfrom()
 
-    async def sendto(self, data: ReadableBuffer, address: _Address | None = None, /) -> None:
+    async def sendto(self, data: ReadableBuffer, address: tuple[Any, ...] | None = None, /) -> None:
         with memoryview(data).toreadonly() as data_view:
             await self.__endpoint.sendto(data_view, address)
 
     def proxy(self) -> SocketProxy:
         return self.__proxy
 
-    def get_backend(self) -> AsyncIOBackend:
+    def get_backend(self) -> AsyncioBackend:
         return self.__backend

@@ -24,3 +24,26 @@ class DummyLock:
 
     def release(self) -> None:
         pass
+
+
+class AsyncDummyLock:
+    """
+    Helper class used to mock asyncio.Lock classes
+    """
+
+    def __init__(self) -> None:
+        pass
+
+    async def __aenter__(self) -> None:
+        await self.acquire()
+
+    async def __aexit__(
+        self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None
+    ) -> None:
+        self.release()
+
+    async def acquire(self) -> bool:
+        return True
+
+    def release(self) -> None:
+        pass

@@ -27,15 +27,6 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
 
 
 @pytest.fixture(scope="package", autouse=True)
-def dummy_lock_cls(package_mocker: MockerFixture) -> Any:
-    from ._utils import DummyLock
-
-    package_mocker.patch("threading.Lock", new=DummyLock)
-    package_mocker.patch("threading.RLock", new=DummyLock)
-    return DummyLock
-
-
-@pytest.fixture(scope="package", autouse=True)
 def original_socket_cls() -> type[Socket]:
     return Socket
 

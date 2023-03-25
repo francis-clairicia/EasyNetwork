@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-__all__ = ["AsyncIOBackend"]  # type: list[str]
+__all__ = ["AsyncioBackend"]  # type: list[str]
 
 __version__ = "1.0.0"
 
@@ -25,7 +25,7 @@ _T = TypeVar("_T")
 
 
 @final
-class AsyncIOBackend(AbstractAsyncBackend):
+class AsyncioBackend(AbstractAsyncBackend):
     __slots__ = ()
 
     async def coro_yield(self) -> None:

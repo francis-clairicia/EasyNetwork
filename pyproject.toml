@@ -40,7 +40,7 @@ sniffio = [
 ]
 
 [project.entry-points."easynetwork.async.backends"]
-asyncio = "easynetwork_asyncio:AsyncIOBackend"
+asyncio = "easynetwork_asyncio:AsyncioBackend"
 
 ############################ pdm configuration ############################
 

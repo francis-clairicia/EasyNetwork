@@ -24,12 +24,11 @@ from typing import TYPE_CHECKING, Any, Final, Protocol, TypeVar, final
 if TYPE_CHECKING:
     import concurrent.futures
     import socket as _socket
-    from socket import _Address, _RetAddress
     from types import TracebackType
 
     from _typeshed import ReadableBuffer
 
-    from ..tools.socket import SocketAddress, SocketProxy
+    from ..tools.socket import SocketProxy
 
 
 _T = TypeVar("_T")
@@ -37,7 +36,7 @@ _T = TypeVar("_T")
 
 class ILock(Protocol):
     async def __aenter__(self) -> Any:
-        ...
+        ...  # pragma: no cover
 
     async def __aexit__(
         self,
@@ -46,16 +45,16 @@ class ILock(Protocol):
         __exc_tb: TracebackType | None,
         /,
     ) -> bool | None:
-        ...
+        ...  # pragma: no cover
 
     async def acquire(self) -> Any:
-        ...
+        ...  # pragma: no cover
 
     def release(self) -> None:
-        ...
+        ...  # pragma: no cover
 
     def locked(self) -> bool:
-        ...
+        ...  # pragma: no cover
 
 
 class AbstractBaseAsyncSocketAdapter(metaclass=ABCMeta):
@@ -84,11 +83,11 @@ class AbstractBaseAsyncSocketAdapter(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    def getsockname(self) -> SocketAddress:
+    def getsockname(self) -> tuple[Any, ...]:
         raise NotImplementedError
 
     @abstractmethod
-    def getpeername(self) -> SocketAddress | None:
+    def getpeername(self) -> tuple[Any, ...] | None:
         raise NotImplementedError
 
     @abstractmethod
@@ -104,7 +103,7 @@ class AbstractStreamSocketAdapter(AbstractBaseAsyncSocketAdapter):
     __slots__ = ()
 
     @abstractmethod
-    def getpeername(self) -> SocketAddress:
+    def getpeername(self) -> tuple[Any, ...]:
         raise NotImplementedError
 
     @abstractmethod
@@ -120,11 +119,11 @@ class AbstractDatagramSocketAdapter(AbstractBaseAsyncSocketAdapter):
     __slots__ = ()
 
     @abstractmethod
-    async def recvfrom(self) -> tuple[bytes, _RetAddress]:
+    async def recvfrom(self) -> tuple[bytes, tuple[Any, ...]]:
         raise NotImplementedError
 
     @abstractmethod
-    async def sendto(self, __data: ReadableBuffer, __address: _Address | None = ..., /) -> None:
+    async def sendto(self, __data: ReadableBuffer, __address: tuple[Any, ...] | None = ..., /) -> None:
         raise NotImplementedError
 
 
@@ -176,7 +175,7 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
 
 @final
 class AsyncBackendFactory:
-    __GROUP_NAME: Final[str] = "easynetwork.async.backends"
+    GROUP_NAME: Final[str] = "easynetwork.async.backends"
     __BACKEND: type[AbstractAsyncBackend] | None = None
 
     @staticmethod
@@ -202,7 +201,9 @@ class AsyncBackendFactory:
     @staticmethod
     def set_default_backend(backend: str | type[AbstractAsyncBackend] | None) -> None:
         if isinstance(backend, type):
-            if not issubclass(backend, AbstractAsyncBackend):
+            import inspect
+
+            if not issubclass(backend, AbstractAsyncBackend) or inspect.isabstract(backend):
                 raise TypeError(f"Invalid backend class: {backend!r}")
         elif backend is not None:
             backend = AsyncBackendFactory.__get_backend_cls(backend)
@@ -218,12 +219,8 @@ class AsyncBackendFactory:
         return backend_cls(**kwargs)
 
     @staticmethod
-    def get_available_backends() -> frozenset[str]:
-        return frozenset(AsyncBackendFactory.__get_available_backends())
-
-    @staticmethod
-    def get_backend_cls(name: str) -> type[AbstractAsyncBackend]:
-        return AsyncBackendFactory.__get_backend_cls(name)
+    def get_available_backends() -> MappingProxyType[str, type[AbstractAsyncBackend]]:
+        return AsyncBackendFactory.__get_available_backends()
 
     @staticmethod
     def invalidate_backends_cache() -> None:
@@ -247,7 +244,7 @@ class AsyncBackendFactory:
         invalid_backends: set[str] = set()
         duplicate_counter: Counter[str] = Counter()
 
-        for entry_point in entry_points(group=AsyncBackendFactory.__GROUP_NAME):
+        for entry_point in entry_points(group=AsyncBackendFactory.GROUP_NAME):
             entry_point_name = entry_point.name.strip()
             if not entry_point_name:
                 invalid_backends.add(entry_point_name)
@@ -266,7 +263,7 @@ class AsyncBackendFactory:
             backends[entry_point_name] = entry_point_cls
 
         if invalid_backends:
-            raise TypeError(f"Invalid backend entry-points: {', '.join(map(repr, sorted(invalid_backends)))}")
+            raise TypeError(f"Invalid backend entry points: {', '.join(map(repr, sorted(invalid_backends)))}")
         if duplicates := set(name for name in duplicate_counter if duplicate_counter[name] > 1):
             raise TypeError(f"Conflicting backend name caught: {', '.join(map(repr, sorted(duplicates)))}")
 

@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from easynetwork_asyncio import AsyncIOBackend
+from easynetwork_asyncio import AsyncioBackend
 
 if TYPE_CHECKING:
     from unittest.mock import AsyncMock, MagicMock
@@ -18,10 +18,10 @@ if TYPE_CHECKING:
 class TestAsyncIOBackend:
     @pytest.fixture(scope="class")
     @staticmethod
-    def backend() -> AsyncIOBackend:
-        return AsyncIOBackend()
+    def backend() -> AsyncioBackend:
+        return AsyncioBackend()
 
-    async def test____coro_yield____use_asyncio_sleep(self, backend: AsyncIOBackend, mocker: MockerFixture) -> None:
+    async def test____coro_yield____use_asyncio_sleep(self, backend: AsyncioBackend, mocker: MockerFixture) -> None:
         # Arrange
         mock_sleep: AsyncMock = mocker.patch("asyncio.sleep", new_callable=mocker.async_stub)
 
@@ -33,7 +33,7 @@ class TestAsyncIOBackend:
 
     async def test____create_tcp_connection____use_asyncio_open_connection(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncioBackend,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -78,7 +78,7 @@ class TestAsyncIOBackend:
         self,
         given_value: float | None,
         expected_value: float | None,
-        backend: AsyncIOBackend,
+        backend: AsyncioBackend,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -107,7 +107,7 @@ class TestAsyncIOBackend:
 
     async def test____wrap_tcp_socket____use_asyncio_open_connection(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncioBackend,
         mock_tcp_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
@@ -137,7 +137,7 @@ class TestAsyncIOBackend:
 
     async def test____create_udp_endpoint____use_loop_create_datagram_endpoint(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncioBackend,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -168,7 +168,7 @@ class TestAsyncIOBackend:
 
     async def test____wrap_udp_socket____use_loop_create_datagram_endpoint(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncioBackend,
         mock_udp_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
@@ -193,7 +193,7 @@ class TestAsyncIOBackend:
 
     async def test____create_lock____use_asyncio_Lock_class(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncioBackend,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -208,7 +208,7 @@ class TestAsyncIOBackend:
 
     async def test____wait_future____use_asyncio_wrap_future(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncioBackend,
         mocker: MockerFixture,
     ) -> None:
         # Arrange

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from easynetwork_asyncio import AsyncIOBackend
+from easynetwork_asyncio import AsyncioBackend
 from easynetwork_asyncio.datagram import (
     DatagramEndpoint,
     DatagramEndpointProtocol,
@@ -75,7 +75,6 @@ class TestDatagramEndpoint:
     @staticmethod
     def mock_asyncio_protocol(mocker: MockerFixture) -> MagicMock:
         mock = mocker.MagicMock(spec=DatagramEndpointProtocol)
-        mock._drain_helper = mocker.AsyncMock()
         # Currently, _get_close_waiter() is a synchronous function returning a Future, but it will be awaited so this works
         mock._get_close_waiter = mocker.AsyncMock()
         return mock
@@ -89,9 +88,7 @@ class TestDatagramEndpoint:
 
     @staticmethod
     def _mock_queue_factory(mocker: MockerFixture) -> MagicMock:
-        mock = mocker.MagicMock(spec=asyncio.Queue)
-        mock.get = mocker.AsyncMock()
-        return mock
+        return mocker.MagicMock(spec=asyncio.Queue)
 
     @pytest.fixture
     @classmethod
@@ -343,9 +340,7 @@ class TestDatagramEndpointProtocol:
 
     @staticmethod
     def _mock_queue_factory(mocker: MockerFixture) -> MagicMock:
-        mock = mocker.MagicMock(spec=asyncio.Queue)
-        mock.get = mocker.AsyncMock()
-        return mock
+        return mocker.MagicMock(spec=asyncio.Queue)
 
     @pytest.fixture
     @classmethod
@@ -600,8 +595,8 @@ class TestDatagramEndpointProtocol:
 class TestDatagramSocketAdapter:
     @pytest.fixture(scope="class")
     @staticmethod
-    def backend() -> AsyncIOBackend:
-        return AsyncIOBackend()
+    def backend() -> AsyncioBackend:
+        return AsyncioBackend()
 
     @pytest.fixture
     @staticmethod
@@ -631,14 +626,11 @@ class TestDatagramSocketAdapter:
         mock = mocker.MagicMock(spec=DatagramEndpoint)
         mock.is_closing.return_value = False
         mock.get_extra_info.side_effect = endpoint_extra_info.get
-        mock.wait_closed = mocker.AsyncMock()
-        mock.recvfrom = mocker.AsyncMock()
-        mock.sendto = mocker.AsyncMock()
         return mock
 
     @pytest.fixture
     @staticmethod
-    def socket(backend: AsyncIOBackend, mock_endpoint: MagicMock) -> DatagramSocketAdapter:
+    def socket(backend: AsyncioBackend, mock_endpoint: MagicMock) -> DatagramSocketAdapter:
         return DatagramSocketAdapter(backend, mock_endpoint)
 
     async def test____close____close_transport_and_wait(
@@ -650,6 +642,21 @@ class TestDatagramSocketAdapter:
 
         # Act
         await socket.close()
+
+        # Assert
+        mock_endpoint.close.assert_called_once_with()
+        mock_endpoint.wait_closed.assert_awaited_once_with()
+
+    async def test____context____close_transport_and_wait_at_end(
+        self,
+        socket: DatagramSocketAdapter,
+        mock_endpoint: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act
+        async with socket:
+            mock_endpoint.close.assert_not_called()
 
         # Assert
         mock_endpoint.close.assert_called_once_with()
@@ -704,6 +711,35 @@ class TestDatagramSocketAdapter:
         ## cannot test full sendto() args because it will have a closed memoryview()
         mock_endpoint.sendto.assert_awaited_once_with(mocker.ANY, address)
 
+    async def test____getsockname____return_sockname_extra_info(
+        self,
+        socket: DatagramSocketAdapter,
+        endpoint_extra_info: dict[str, Any],
+    ) -> None:
+        # Arrange
+
+        # Act
+        laddr = socket.getsockname()
+
+        # Assert
+        assert laddr == endpoint_extra_info["sockname"]
+
+    @pytest.mark.parametrize("peername", [("127.0.0.1", 9999), None])
+    async def test____getpeername____return_peername_extra_info(
+        self,
+        peername: tuple[Any, ...] | None,
+        socket: DatagramSocketAdapter,
+        endpoint_extra_info: dict[str, Any],
+    ) -> None:
+        # Arrange
+        endpoint_extra_info["peername"] = peername
+
+        # Act
+        raddr = socket.getpeername()
+
+        # Assert
+        assert raddr == peername
+
     async def test____proxy____wraps_transport_socket(
         self,
         socket: DatagramSocketAdapter,
@@ -722,7 +758,7 @@ class TestDatagramSocketAdapter:
 
     async def test____get_backend____returns_given_backend_object(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncioBackend,
         socket: DatagramSocketAdapter,
     ) -> None:
         # Arrange

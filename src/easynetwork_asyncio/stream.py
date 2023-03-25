@@ -16,14 +16,14 @@ from typing import TYPE_CHECKING, Any, final
 
 from easynetwork.async_api.backend import AbstractStreamSocketAdapter
 from easynetwork.tools._utils import error_from_errno as _error_from_errno
-from easynetwork.tools.socket import SocketAddress, SocketProxy, new_socket_address
+from easynetwork.tools.socket import SocketProxy
 
 if TYPE_CHECKING:
     import asyncio
 
     from _typeshed import ReadableBuffer
 
-    from . import AsyncIOBackend
+    from . import AsyncioBackend
 
 
 @final
@@ -35,9 +35,9 @@ class StreamSocketAdapter(AbstractStreamSocketAdapter):
         "__proxy",
     )
 
-    def __init__(self, backend: AsyncIOBackend, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+    def __init__(self, backend: AsyncioBackend, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         super().__init__()
-        self.__backend: AsyncIOBackend = backend
+        self.__backend: AsyncioBackend = backend
         self.__reader: asyncio.StreamReader = reader
         self.__writer: asyncio.StreamWriter = writer
 
@@ -64,15 +64,11 @@ class StreamSocketAdapter(AbstractStreamSocketAdapter):
     def is_closing(self) -> bool:
         return self.__writer.is_closing()
 
-    def getsockname(self) -> SocketAddress:
-        sockname: tuple[Any, ...] = self.__writer.get_extra_info("sockname")
-        socket: _socket.socket = self.__writer.get_extra_info("socket")
-        return new_socket_address(sockname, socket.family)
+    def getsockname(self) -> tuple[Any, ...]:
+        return self.__writer.get_extra_info("sockname")
 
-    def getpeername(self) -> SocketAddress:
-        peername: tuple[Any, ...] = self.__writer.get_extra_info("peername")
-        socket: _socket.socket = self.__writer.get_extra_info("socket")
-        return new_socket_address(peername, socket.family)
+    def getpeername(self) -> tuple[Any, ...]:
+        return self.__writer.get_extra_info("peername")
 
     async def recv(self, bufsize: int, /) -> bytes:
         if bufsize < 0:
@@ -89,5 +85,5 @@ class StreamSocketAdapter(AbstractStreamSocketAdapter):
     def proxy(self) -> SocketProxy:
         return self.__proxy
 
-    def get_backend(self) -> AsyncIOBackend:
+    def get_backend(self) -> AsyncioBackend:
         return self.__backend
