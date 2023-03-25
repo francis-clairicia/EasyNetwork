@@ -5,7 +5,12 @@ from __future__ import annotations
 from socket import socket as Socket
 from typing import final
 
-from easynetwork.async_api.backend import AbstractAsyncBackend, AbstractDatagramSocketAdapter, AbstractStreamSocketAdapter, ILock
+from easynetwork.async_api.backend.abc import (
+    AbstractAsyncBackend,
+    AbstractDatagramSocketAdapter,
+    AbstractStreamSocketAdapter,
+    ILock,
+)
 
 
 class BaseFakeBackend(AbstractAsyncBackend):

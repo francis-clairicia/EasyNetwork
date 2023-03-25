@@ -6,13 +6,13 @@ import asyncio
 from socket import socket as Socket
 from typing import TYPE_CHECKING, Any, Iterator, final
 
-from easynetwork.async_api.backend import (
+from easynetwork.async_api.backend.abc import (
     AbstractAsyncBackend,
     AbstractDatagramSocketAdapter,
     AbstractStreamSocketAdapter,
-    AsyncBackendFactory,
     ILock,
 )
+from easynetwork.async_api.backend.factory import AsyncBackendFactory
 
 import pytest
 
@@ -179,7 +179,7 @@ class TestAsyncBackendFactory:
     ) -> None:
         # Arrange
         mock_importlib_metadata_entry_points.return_value = [
-            self.build_entry_point("asyncio", "easynetwork.async_api.backend:AbstractAsyncBackend"),
+            self.build_entry_point("asyncio", "easynetwork.async_api.backend.abc:AbstractAsyncBackend"),
         ]
 
         # Act & Assert

@@ -20,7 +20,8 @@ from ...tools._utils import (
 )
 from ...tools.socket import MAX_STREAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
 from ...tools.stream import StreamDataConsumer
-from ..backend import AbstractAsyncBackend, AbstractStreamSocketAdapter, AsyncBackendFactory, ILock
+from ..backend.abc import AbstractAsyncBackend, AbstractStreamSocketAdapter, ILock
+from ..backend.factory import AsyncBackendFactory
 from .abc import AbstractAsyncNetworkClient
 
 if TYPE_CHECKING:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Iterator
 
-from easynetwork.async_api.backend import AsyncBackendFactory
+from easynetwork.async_api.backend.factory import AsyncBackendFactory
 
 import pytest
 

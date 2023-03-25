@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, Callable
 
-from easynetwork.async_api.backend import AbstractAsyncBackend, AbstractDatagramSocketAdapter, AbstractStreamSocketAdapter
+from easynetwork.async_api.backend.abc import AbstractAsyncBackend, AbstractDatagramSocketAdapter, AbstractStreamSocketAdapter
 
 import pytest
 

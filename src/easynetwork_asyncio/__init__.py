@@ -14,12 +14,12 @@ __version__ = "1.0.0"
 import concurrent.futures
 from typing import TYPE_CHECKING, TypeVar, final
 
-from easynetwork.async_api.backend import AbstractAsyncBackend
+from easynetwork.async_api.backend.abc import AbstractAsyncBackend
 
 if TYPE_CHECKING:
     import socket as _socket
 
-    from easynetwork.async_api.backend import AbstractDatagramSocketAdapter, AbstractStreamSocketAdapter, ILock
+    from easynetwork.async_api.backend.abc import AbstractDatagramSocketAdapter, AbstractStreamSocketAdapter, ILock
 
 _T = TypeVar("_T")
 
