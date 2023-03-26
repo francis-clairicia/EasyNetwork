@@ -651,7 +651,7 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_tcp_socket.getsockopt.assert_not_called()
 
     @pytest.mark.usefixtures("setup_consumer_mock")
-    def test____recv_packet_blocking_or_not____receive_bytes_from_socket(
+    def test____recv_packet____blocking_or_not____receive_bytes_from_socket(
         self,
         client: TCPNetworkClient[Any, Any],
         recv_timeout: int | None,

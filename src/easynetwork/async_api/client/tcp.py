@@ -8,6 +8,7 @@ from __future__ import annotations
 
 __all__ = ["AsyncTCPNetworkClient"]
 
+import concurrent.futures
 import errno as _errno
 from typing import TYPE_CHECKING, Any, Callable, Generic, Iterator, Mapping, TypeVar, final
 
@@ -34,6 +35,7 @@ _SentPacketT = TypeVar("_SentPacketT")
 class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPacketT], Generic[_SentPacketT, _ReceivedPacketT]):
     __slots__ = (
         "__socket",
+        "__backend",
         "__socket_proxy",
         "__receive_lock",
         "__send_lock",
@@ -42,7 +44,8 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         "__addr",
         "__peer",
         "__eof_reached",
-        "__closing",
+        "__closed",
+        "__close_waiter",
     )
 
     if TYPE_CHECKING:
@@ -57,6 +60,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         backend = socket.get_backend()
 
         self.__socket: AbstractStreamSocketAdapter = socket
+        self.__backend: AbstractAsyncBackend = backend
         self.__socket_proxy = socket.proxy()
 
         self.__receive_lock: ILock = backend.create_lock()
@@ -67,11 +71,12 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         self.__producer: Callable[[_SentPacketT], Iterator[bytes]] = protocol.generate_chunks
         self.__consumer: StreamDataConsumer[_ReceivedPacketT] = StreamDataConsumer(protocol)
         self.__eof_reached: bool = False
-        self.__closing: bool = False
+        self.__closed: bool = False
+        self.__close_waiter: concurrent.futures.Future[None] = concurrent.futures.Future()
 
     def __repr__(self) -> str:
         socket = self.__socket
-        if socket is None or self.__closing:
+        if self.__closed:
             return f"<{type(self).__name__} closed>"
         return f"<{type(self).__name__} socket={socket!r}>"
 
@@ -123,13 +128,26 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
 
     @final
     def is_closing(self) -> bool:
-        return self.__closing or self.__socket.is_closing()
+        return self.__closed or self.__socket.is_closing() or self.__close_waiter.running()
 
     async def close(self) -> None:
-        if not self.__closing:
+        close_waiter: concurrent.futures.Future[None] = self.__close_waiter
+        if close_waiter.done():
+            return close_waiter.result()
+        if close_waiter.running():
+            return await self.__backend.wait_future(close_waiter)
+        try:
+            close_waiter.set_running_or_notify_cancel()
             async with self.__receive_lock, self.__send_lock:
-                self.__closing = True
-        await self.__socket.close()
+                self.__closed = True
+            await self.__socket.close()
+        except BaseException as exc:
+            close_waiter.set_exception(exc)
+            raise
+        else:
+            close_waiter.set_result(None)
+        finally:
+            del close_waiter
 
     async def send_packet(self, packet: _SentPacketT) -> None:
         async with self.__send_lock:
@@ -147,7 +165,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
                 pass
             socket = self.__ensure_connected()
             bufsize: int = MAX_STREAM_BUFSIZE
-            backend = socket.get_backend()
+            backend = self.__backend
             while True:
                 chunk: bytes = await socket.recv(bufsize)
                 if not chunk:
@@ -178,12 +196,12 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         return self.__peer
 
     def fileno(self) -> int:
-        if self.__closing or self.__socket.is_closing():
+        if self.__closed or self.__socket.is_closing():
             return -1
         return self.__socket_proxy.fileno()
 
     def __ensure_connected(self) -> AbstractStreamSocketAdapter:
-        if self.__closing:
+        if self.__closed:
             raise ClientClosedError("Client is closing, or is already closed")
         socket = self.__socket
         if socket.is_closing() or self.__eof_reached:

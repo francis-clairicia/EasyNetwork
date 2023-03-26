@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from typing import TYPE_CHECKING, Callable
 
 from easynetwork.async_api.backend.abc import AbstractAsyncBackend, AbstractDatagramSocketAdapter, AbstractStreamSocketAdapter
@@ -20,11 +19,6 @@ def mock_backend(mocker: MockerFixture) -> MagicMock:
     from .._utils import AsyncDummyLock
 
     mock_backend = mocker.NonCallableMagicMock(spec=AbstractAsyncBackend)
-
-    # Caveat: AsyncMock cannot have async side_effect (it will just return the coroutine)
-    # however, backend.coro_yield() MUST wait using asyncio.sleep()
-    # A workaround is to have a MagicMock returning the coroutine instead
-    mock_backend.coro_yield = mocker.MagicMock(side_effect=lambda: asyncio.sleep(0))
 
     mock_backend.create_lock = AsyncDummyLock
 
