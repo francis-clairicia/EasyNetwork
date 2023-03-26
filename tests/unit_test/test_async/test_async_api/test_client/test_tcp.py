@@ -21,7 +21,7 @@ from .base import BaseTestClient
 
 
 @pytest.mark.asyncio
-class TestTCPNetworkClient(BaseTestClient):
+class TestAsyncTCPNetworkClient(BaseTestClient):
     @pytest.fixture
     @staticmethod
     def mock_stream_data_producer() -> MagicMock:
