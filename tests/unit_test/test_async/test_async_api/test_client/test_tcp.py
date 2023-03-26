@@ -323,6 +323,27 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_stream_socket_adapter.close.assert_awaited_once_with()
         assert mock_close_future.done() and mock_close_future.exception() is error
 
+    async def test____close____await_socket_close____hide_connection_error(
+        self,
+        client: AsyncTCPNetworkClient[Any, Any],
+        mock_stream_socket_adapter: MagicMock,
+        mock_close_future: Future[None],
+    ) -> None:
+        # Arrange
+        error = ConnectionAbortedError()
+        mock_stream_socket_adapter.close.side_effect = error
+        assert not client.is_closing()
+        assert not mock_close_future.done()
+        assert not mock_close_future.running()
+
+        # Act
+        await client.close()
+
+        # Assert
+        assert client.is_closing()
+        mock_stream_socket_adapter.close.assert_awaited_once_with()
+        assert mock_close_future.done() and mock_close_future.exception() is None
+
     async def test____close____action_in_progress(
         self,
         client: AsyncTCPNetworkClient[Any, Any],

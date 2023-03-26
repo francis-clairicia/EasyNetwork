@@ -26,6 +26,8 @@ from easynetwork.tools._utils import error_from_errno as _error_from_errno
 from easynetwork.tools.socket import SocketProxy
 
 if TYPE_CHECKING:
+    import asyncio.trsock
+
     from _typeshed import ReadableBuffer
 
     from . import AsyncioBackend
@@ -259,17 +261,10 @@ class DatagramSocketAdapter(AbstractDatagramSocketAdapter):
         self.__backend: AsyncioBackend = backend
         self.__endpoint: DatagramEndpoint = endpoint
 
-        socket: _socket.socket | None = endpoint.get_extra_info("socket")
-        assert isinstance(socket, _socket.socket), "transport must be a socket transport"
+        socket: asyncio.trsock.TransportSocket | None = endpoint.get_extra_info("socket")
+        assert socket is not None, "transport must be a socket transport"
 
         self.__proxy: SocketProxy = SocketProxy(socket)
-
-    def __del__(self) -> None:  # pragma: no cover
-        try:
-            endpoint = self.__endpoint
-        except AttributeError:
-            return
-        endpoint.close()
 
     async def close(self) -> None:
         self.__endpoint.close()

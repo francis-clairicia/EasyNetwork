@@ -129,7 +129,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
 
     @final
     def is_closing(self) -> bool:
-        return self.__closed or self.__socket.is_closing() or self.__close_waiter.running()
+        return self.__closed or self.__close_waiter.running()
 
     async def close(self) -> None:
         await _run_task_once(self.__close, self.__close_waiter, self.__backend)
@@ -137,7 +137,12 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
     async def __close(self) -> None:
         async with self.__receive_lock, self.__send_lock:
             self.__closed = True
-        await self.__socket.close()
+        try:
+            await self.__socket.close()
+        except ConnectionError:
+            # It is normal if there was connection errors during operation. But do not propage this exception,
+            # as we will never reuse this socket
+            pass
 
     async def send_packet(self, packet: _SentPacketT) -> None:
         async with self.__send_lock:

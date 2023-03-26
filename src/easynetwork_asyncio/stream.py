@@ -11,7 +11,6 @@ __all__ = [
     "StreamSocketAdapter",
 ]
 
-import socket as _socket
 from typing import TYPE_CHECKING, Any, final
 
 from easynetwork.async_api.backend.abc import AbstractStreamSocketAdapter
@@ -20,6 +19,7 @@ from easynetwork.tools.socket import SocketProxy
 
 if TYPE_CHECKING:
     import asyncio
+    import asyncio.trsock
 
     from _typeshed import ReadableBuffer
 
@@ -41,21 +41,14 @@ class StreamSocketAdapter(AbstractStreamSocketAdapter):
         self.__reader: asyncio.StreamReader = reader
         self.__writer: asyncio.StreamWriter = writer
 
-        socket: _socket.socket | None = writer.get_extra_info("socket")
-        assert isinstance(socket, _socket.socket), "Writer transport must be a socket transport"
+        socket: asyncio.trsock.TransportSocket | None = writer.get_extra_info("socket")
+        assert socket is not None, "Writer transport must be a socket transport"
         if writer.get_extra_info("peername") is None:
             import errno
 
             raise _error_from_errno(errno.ENOTCONN)
 
         self.__proxy: SocketProxy = SocketProxy(socket)
-
-    def __del__(self) -> None:  # pragma: no cover
-        try:
-            writer = self.__writer
-        except AttributeError:
-            return
-        writer.close()
 
     async def close(self) -> None:
         self.__writer.close()

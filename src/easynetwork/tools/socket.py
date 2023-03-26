@@ -10,6 +10,7 @@ __all__ = [
     "AF_INET",
     "AF_INET6",
     "AddressFamily",
+    "ISocket",
     "MAX_DATAGRAM_BUFSIZE",
     "MAX_STREAM_BUFSIZE",
     "SocketProxy",
@@ -19,7 +20,7 @@ __all__ = [
 import contextlib
 import socket as _socket
 from enum import IntEnum, unique
-from typing import TYPE_CHECKING, Any, ContextManager, Final, Literal, NamedTuple, TypeAlias, final, overload
+from typing import TYPE_CHECKING, Any, ContextManager, Final, Literal, NamedTuple, Protocol, TypeAlias, final, overload
 
 if TYPE_CHECKING:
     import threading as _threading
@@ -100,6 +101,51 @@ MAX_STREAM_BUFSIZE: Final[int] = 256 * 1024  # 256KiB
 MAX_DATAGRAM_BUFSIZE: Final[int] = 64 * 1024  # 64KiB
 
 
+class ISocket(Protocol):
+    def fileno(self) -> int:  # pragma: no cover
+        ...
+
+    def dup(self) -> _socket.socket:  # pragma: no cover
+        ...
+
+    def get_inheritable(self) -> bool:  # pragma: no cover
+        ...
+
+    @overload
+    def getsockopt(self, __level: int, __optname: int, /) -> int:
+        ...
+
+    @overload
+    def getsockopt(self, __level: int, __optname: int, __buflen: int, /) -> bytes:
+        ...
+
+    @overload
+    def setsockopt(self, __level: int, __optname: int, __value: int | ReadableBuffer, /) -> None:
+        ...
+
+    @overload
+    def setsockopt(self, __level: int, __optname: int, __value: None, __optlen: int, /) -> None:
+        ...
+
+    def getpeername(self) -> _socket._RetAddress:  # pragma: no cover
+        ...
+
+    def getsockname(self) -> _socket._RetAddress:  # pragma: no cover
+        ...
+
+    @property  # pragma: no cover
+    def family(self) -> int:
+        ...
+
+    @property  # pragma: no cover
+    def type(self) -> int:
+        ...
+
+    @property  # pragma: no cover
+    def proto(self) -> int:
+        ...
+
+
 @final
 class SocketProxy:
     __slots__ = ("__socket", "__lock_ctx", "__weakref__")
@@ -107,8 +153,8 @@ class SocketProxy:
     def __init_subclass__(cls) -> None:  # pragma: no cover
         raise TypeError("SocketProxy cannot be subclassed")
 
-    def __init__(self, socket: _socket.socket, *, lock: _threading.Lock | _threading.RLock | None = None) -> None:
-        self.__socket: _socket.socket = socket
+    def __init__(self, socket: ISocket, *, lock: _threading.Lock | _threading.RLock | None = None) -> None:
+        self.__socket: ISocket = socket
         self.__lock_ctx: ContextManager[bool] = lock if lock is not None else contextlib.nullcontext(True)
 
     def __repr__(self) -> str:
@@ -186,7 +232,7 @@ class SocketProxy:
 
     @property
     def type(self) -> _socket.SocketKind:
-        return self.__socket.type
+        return _socket.SocketKind(self.__socket.type)
 
     @property
     def proto(self) -> int:

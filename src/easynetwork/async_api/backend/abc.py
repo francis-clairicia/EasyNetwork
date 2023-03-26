@@ -33,8 +33,8 @@ _T = TypeVar("_T")
 
 
 class ILock(Protocol):
-    async def __aenter__(self) -> Any:
-        ...  # pragma: no cover
+    async def __aenter__(self) -> Any:  # pragma: no cover
+        ...
 
     async def __aexit__(
         self,
@@ -42,17 +42,17 @@ class ILock(Protocol):
         __exc_val: BaseException | None,
         __exc_tb: TracebackType | None,
         /,
-    ) -> bool | None:
-        ...  # pragma: no cover
+    ) -> bool | None:  # pragma: no cover
+        ...
 
-    async def acquire(self) -> Any:
-        ...  # pragma: no cover
+    async def acquire(self) -> Any:  # pragma: no cover
+        ...
 
-    def release(self) -> None:
-        ...  # pragma: no cover
+    def release(self) -> None:  # pragma: no cover
+        ...
 
-    def locked(self) -> bool:
-        ...  # pragma: no cover
+    def locked(self) -> bool:  # pragma: no cover
+        ...
 
 
 class AbstractBaseAsyncSocketAdapter(metaclass=ABCMeta):
