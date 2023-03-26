@@ -161,7 +161,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
 
         # Act
         client: AsyncTCPNetworkClient[Any, Any] = await AsyncTCPNetworkClient.connect(
-            *remote_address,
+            remote_address,
             protocol=mock_stream_protocol,
             source_address=mocker.sentinel.source_address,
             happy_eyeballs_delay=mocker.sentinel.happy_eyeballs_delay,
@@ -190,7 +190,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
 
         # Act
         await AsyncTCPNetworkClient.connect(
-            *remote_address,
+            remote_address,
             protocol=mock_stream_protocol,
             backend="custom_backend",
             backend_kwargs={"arg1": 1, "arg2": "2"},
@@ -210,7 +210,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
 
         # Act
         await AsyncTCPNetworkClient.connect(
-            *remote_address,
+            remote_address,
             protocol=mock_stream_protocol,
             backend=mock_backend,
         )

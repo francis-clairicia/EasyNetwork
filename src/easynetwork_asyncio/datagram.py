@@ -79,13 +79,6 @@ class DatagramEndpoint:
         self.__transport: asyncio.DatagramTransport = transport
         self.__protocol: DatagramEndpointProtocol = protocol
 
-    def __del__(self) -> None:  # pragma: no cover
-        try:
-            transport = self.__transport
-        except AttributeError:
-            return
-        transport.close()
-
     def close(self) -> None:
         self.__transport.close()
 

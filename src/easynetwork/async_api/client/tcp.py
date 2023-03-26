@@ -76,17 +76,16 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         self.__close_waiter: concurrent.futures.Future[None] = concurrent.futures.Future()
 
     def __repr__(self) -> str:
-        socket = self.__socket
-        if self.__closed:
+        try:
+            socket = self.__socket
+        except AttributeError:
             return f"<{type(self).__name__} closed>"
         return f"<{type(self).__name__} socket={socket!r}>"
 
     @classmethod
     async def connect(
         cls: type[__Self],
-        host: str,
-        port: int,
-        /,
+        address: tuple[str, int],
         protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
         *,
         source_address: tuple[str, int] | None = None,
@@ -99,6 +98,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
                 backend_kwargs = {}
             backend = AsyncBackendFactory.new(backend, **backend_kwargs)
 
+        host, port = address
         socket_adapter = await backend.create_tcp_connection(
             host,
             port,
@@ -112,7 +112,6 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
     async def from_socket(
         cls: type[__Self],
         socket: _socket.socket,
-        /,
         protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
         *,
         backend: str | AbstractAsyncBackend | None = None,

@@ -230,8 +230,6 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         recv_packet_from = self.recv_packet_from
 
         while True:
-            if self.__socket is None:
-                return
             try:
                 packet_tuple = recv_packet_from(timeout=timeout)
             except OSError:

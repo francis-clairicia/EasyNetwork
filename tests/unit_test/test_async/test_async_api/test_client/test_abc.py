@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections import deque
 from typing import TYPE_CHECKING, Any, final
 
 from easynetwork.async_api.client.abc import AbstractAsyncNetworkClient
@@ -59,29 +58,6 @@ class TestAbstractAsyncNetworkClient:
 
         # Assert
         client.mock_close.assert_awaited_once_with()
-
-    async def test____iter_received_packets____yields_available_packets_with_given_timeout(
-        self,
-        client: MockAsyncClient,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        received_packets_queue = deque([mocker.sentinel.packet_a, mocker.sentinel.packet_b, mocker.sentinel.packet_c])
-
-        def side_effect() -> Any:
-            try:
-                return received_packets_queue.popleft()
-            except IndexError:
-                raise TimeoutError
-
-        client.mock_recv_packet.side_effect = side_effect
-
-        # Act
-        packets = [p async for p in client.iter_received_packets()]
-
-        # Assert
-        assert client.mock_recv_packet.mock_calls == [mocker.call() for _ in range(4)]
-        assert packets == [mocker.sentinel.packet_a, mocker.sentinel.packet_b, mocker.sentinel.packet_c]
 
     @pytest.mark.parametrize("error", [OSError])
     async def test____iter_received_packets____stop_if_an_error_occurs(

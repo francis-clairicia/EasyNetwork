@@ -9,9 +9,10 @@ from __future__ import annotations
 __all__ = [
     "AbstractAsyncNetworkClient",
     "AsyncTCPNetworkClient",
-    # "AsyncUDPNetworkClient",
-    # "AsyncUDPNetworkEndpoint",
+    "AsyncUDPNetworkClient",
+    "AsyncUDPNetworkEndpoint",
 ]
 
 from .abc import *
 from .tcp import *
+from .udp import *
