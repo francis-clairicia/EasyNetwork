@@ -21,6 +21,7 @@ from ...tools._utils import (
 )
 from ...tools.socket import MAX_STREAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
 from ...tools.stream import StreamDataConsumer
+from ..backend._utils import run_task_once as _run_task_once
 from ..backend.abc import AbstractAsyncBackend, AbstractStreamSocketAdapter, ILock
 from ..backend.factory import AsyncBackendFactory
 from .abc import AbstractAsyncNetworkClient
@@ -131,23 +132,12 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         return self.__closed or self.__socket.is_closing() or self.__close_waiter.running()
 
     async def close(self) -> None:
-        close_waiter: concurrent.futures.Future[None] = self.__close_waiter
-        if close_waiter.done():
-            return close_waiter.result()
-        if close_waiter.running():
-            return await self.__backend.wait_future(close_waiter)
-        try:
-            close_waiter.set_running_or_notify_cancel()
-            async with self.__receive_lock, self.__send_lock:
-                self.__closed = True
-            await self.__socket.close()
-        except BaseException as exc:
-            close_waiter.set_exception(exc)
-            raise
-        else:
-            close_waiter.set_result(None)
-        finally:
-            del close_waiter
+        await _run_task_once(self.__close, self.__close_waiter, self.__backend)
+
+    async def __close(self) -> None:
+        async with self.__receive_lock, self.__send_lock:
+            self.__closed = True
+        await self.__socket.close()
 
     async def send_packet(self, packet: _SentPacketT) -> None:
         async with self.__send_lock:
