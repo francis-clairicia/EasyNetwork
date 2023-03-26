@@ -307,7 +307,7 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         packet, _ = await self.__endpoint.recv_packet_from()
         return packet
 
-    async def iter_received_packets_from(self) -> AsyncIterator[_ReceivedPacketT]:
+    async def iter_received_packets(self) -> AsyncIterator[_ReceivedPacketT]:
         async for packet, _ in self.__endpoint.iter_received_packets_from():
             yield packet
 

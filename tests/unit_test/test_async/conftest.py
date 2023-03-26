@@ -42,7 +42,7 @@ def mock_stream_socket_adapter(mock_stream_socket_adapter_factory: Callable[[], 
 
 
 @pytest.fixture
-def mock_datagram_socket_adapter_factory(mocker: MockerFixture) -> Callable[[], MagicMock]:
+def mock_datagram_socket_adapter_factory(mocker: MockerFixture, mock_backend: MagicMock) -> Callable[[], MagicMock]:
     def factory() -> MagicMock:
         mock = mocker.NonCallableMagicMock(spec=AbstractDatagramSocketAdapter)
         mock.is_closing.return_value = False
