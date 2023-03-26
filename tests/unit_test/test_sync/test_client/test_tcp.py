@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from socket import AF_INET6
+from socket import AF_INET6, IPPROTO_TCP, TCP_NODELAY
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.exceptions import ClientClosedError
@@ -204,6 +204,7 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_socket_proxy_cls.assert_called_once_with(mock_tcp_socket, lock=mocker.ANY)
         mock_tcp_socket.getsockname.assert_called_once_with()
         mock_tcp_socket.getpeername.assert_called_once_with()
+        mock_tcp_socket.setsockopt.assert_called_once_with(IPPROTO_TCP, TCP_NODELAY, True)
         assert client.socket is mocker.sentinel.proxy
 
     @pytest.mark.parametrize("give_ownership", [False, True], ids=lambda p: f"give=={p}")
@@ -229,6 +230,7 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_socket_proxy_cls.assert_called_once_with(mock_tcp_socket, lock=mocker.ANY)
         mock_tcp_socket.getsockname.assert_called_once_with()
         mock_tcp_socket.getpeername.assert_called_once_with()
+        mock_tcp_socket.setsockopt.assert_called_once_with(IPPROTO_TCP, TCP_NODELAY, True)
         assert client.socket is mocker.sentinel.proxy
 
     @pytest.mark.parametrize("give_ownership", [False, True], ids=lambda p: f"give=={p}")

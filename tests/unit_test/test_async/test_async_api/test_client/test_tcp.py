@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from concurrent.futures import Future
-from socket import AF_INET6
+from socket import AF_INET6, IPPROTO_TCP, TCP_NODELAY
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.async_api.client.tcp import AsyncTCPNetworkClient
@@ -178,6 +178,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_stream_socket_adapter.proxy.assert_called_once_with()
         mock_stream_socket_adapter.getsockname.assert_called_once_with()
         mock_stream_socket_adapter.getpeername.assert_called_once_with()
+        mock_tcp_socket.setsockopt.assert_called_once_with(IPPROTO_TCP, TCP_NODELAY, True)
         assert client.socket is mock_tcp_socket
 
     async def test____connect____backend____from_string(
@@ -241,6 +242,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_stream_socket_adapter.proxy.assert_called_once_with()
         mock_stream_socket_adapter.getsockname.assert_called_once_with()
         mock_stream_socket_adapter.getpeername.assert_called_once_with()
+        mock_tcp_socket.setsockopt.assert_called_once_with(IPPROTO_TCP, TCP_NODELAY, True)
         assert client.socket is mock_tcp_socket
 
     async def test____from_socket____backend____from_string(

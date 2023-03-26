@@ -109,6 +109,11 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             if not isinstance(max_recv_size, int) or max_recv_size <= 0:
                 raise ValueError("max_size must be a strict positive integer")
 
+            try:
+                socket.setsockopt(_socket.IPPROTO_TCP, _socket.TCP_NODELAY, True)
+            except Exception:  # pragma: no cover
+                pass
+
             self.__addr: SocketAddress = new_socket_address(socket.getsockname(), socket.family)
             self.__peer: SocketAddress = new_socket_address(socket.getpeername(), socket.family)
             self.__producer: Callable[[_SentPacketT], Iterator[bytes]] = protocol.generate_chunks

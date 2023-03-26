@@ -10,6 +10,7 @@ __all__ = ["AsyncTCPNetworkClient"]
 
 import concurrent.futures
 import errno as _errno
+import socket as _socket
 from typing import TYPE_CHECKING, Any, Callable, Generic, Iterator, Mapping, TypeVar, final
 
 from ...exceptions import ClientClosedError, StreamProtocolParseError
@@ -25,9 +26,6 @@ from ..backend._utils import run_task_once as _run_task_once
 from ..backend.abc import AbstractAsyncBackend, AbstractStreamSocketAdapter, ILock
 from ..backend.factory import AsyncBackendFactory
 from .abc import AbstractAsyncNetworkClient
-
-if TYPE_CHECKING:
-    import socket as _socket
 
 _ReceivedPacketT = TypeVar("_ReceivedPacketT")
 _SentPacketT = TypeVar("_SentPacketT")
@@ -74,6 +72,11 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         self.__eof_reached: bool = False
         self.__closed: bool = False
         self.__close_waiter: concurrent.futures.Future[None] = concurrent.futures.Future()
+
+        try:
+            self.__socket_proxy.setsockopt(_socket.IPPROTO_TCP, _socket.TCP_NODELAY, True)
+        except Exception:  # pragma: no cover
+            pass
 
     def __repr__(self) -> str:
         try:
