@@ -17,7 +17,7 @@ from ...protocol import DatagramProtocol
 from ...tools._utils import check_real_socket_state as _check_real_socket_state, error_from_errno as _error_from_errno
 from ...tools.socket import SocketAddress, SocketProxy, new_socket_address
 from ..backend._utils import run_task_once as _run_task_once
-from ..backend.abc import AbstractAsyncBackend, AbstractDatagramSocketAdapter, ILock
+from ..backend.abc import AbstractAsyncBackend, AbstractAsyncDatagramSocketAdapter, ILock
 from ..backend.factory import AsyncBackendFactory
 from .abc import AbstractAsyncNetworkClient
 
@@ -49,13 +49,13 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
 
     def __init__(
         self,
-        socket: AbstractDatagramSocketAdapter,
+        socket: AbstractAsyncDatagramSocketAdapter,
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
     ) -> None:
         super().__init__()
         backend = socket.get_backend()
 
-        self.__socket: AbstractDatagramSocketAdapter = socket
+        self.__socket: AbstractAsyncDatagramSocketAdapter = socket
         self.__backend: AbstractAsyncBackend = backend
         self.__socket_proxy = socket.proxy()
 
@@ -214,7 +214,7 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             return -1
         return self.__socket_proxy.fileno()
 
-    def __ensure_opened(self) -> AbstractDatagramSocketAdapter:
+    def __ensure_opened(self) -> AbstractAsyncDatagramSocketAdapter:
         if self.__closed:
             raise ClientClosedError("Client is closing, or is already closed")
         socket = self.__socket
@@ -236,7 +236,7 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
 
     def __init__(
         self,
-        socket: AbstractDatagramSocketAdapter,
+        socket: AbstractAsyncDatagramSocketAdapter,
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
     ) -> None:
         super().__init__()

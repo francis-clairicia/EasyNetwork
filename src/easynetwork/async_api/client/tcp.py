@@ -23,7 +23,7 @@ from ...tools._utils import (
 from ...tools.socket import MAX_STREAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
 from ...tools.stream import StreamDataConsumer
 from ..backend._utils import run_task_once as _run_task_once
-from ..backend.abc import AbstractAsyncBackend, AbstractStreamSocketAdapter, ILock
+from ..backend.abc import AbstractAsyncBackend, AbstractAsyncStreamSocketAdapter, ILock
 from ..backend.factory import AsyncBackendFactory
 from .abc import AbstractAsyncNetworkClient
 
@@ -52,13 +52,13 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
 
     def __init__(
         self,
-        socket: AbstractStreamSocketAdapter,
+        socket: AbstractAsyncStreamSocketAdapter,
         protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
     ) -> None:
         super().__init__()
         backend = socket.get_backend()
 
-        self.__socket: AbstractStreamSocketAdapter = socket
+        self.__socket: AbstractAsyncStreamSocketAdapter = socket
         self.__backend: AbstractAsyncBackend = backend
         self.__socket_proxy = socket.proxy()
 
@@ -203,7 +203,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
             return -1
         return self.__socket_proxy.fileno()
 
-    def __ensure_connected(self) -> AbstractStreamSocketAdapter:
+    def __ensure_connected(self) -> AbstractAsyncStreamSocketAdapter:
         if self.__closed:
             raise ClientClosedError("Client is closing, or is already closed")
         socket = self.__socket

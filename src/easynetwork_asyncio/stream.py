@@ -13,7 +13,7 @@ __all__ = [
 
 from typing import TYPE_CHECKING, Any, final
 
-from easynetwork.async_api.backend.abc import AbstractStreamSocketAdapter
+from easynetwork.async_api.backend.abc import AbstractAsyncStreamSocketAdapter
 from easynetwork.tools._utils import error_from_errno as _error_from_errno
 from easynetwork.tools.socket import SocketProxy
 
@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 
 
 @final
-class StreamSocketAdapter(AbstractStreamSocketAdapter):
+class StreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
     __slots__ = (
         "__backend",
         "__reader",

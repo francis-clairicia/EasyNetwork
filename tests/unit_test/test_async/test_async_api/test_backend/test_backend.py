@@ -8,8 +8,8 @@ from typing import TYPE_CHECKING, Any, Iterator, final
 
 from easynetwork.async_api.backend.abc import (
     AbstractAsyncBackend,
-    AbstractDatagramSocketAdapter,
-    AbstractStreamSocketAdapter,
+    AbstractAsyncDatagramSocketAdapter,
+    AbstractAsyncStreamSocketAdapter,
     ILock,
 )
 from easynetwork.async_api.backend.factory import AsyncBackendFactory
@@ -34,16 +34,16 @@ class MockBackend(AbstractAsyncBackend):
     async def coro_yield(self) -> None:
         await self.mock_coro_yield()
 
-    async def create_tcp_connection(self, *args: Any, **kwargs: Any) -> AbstractStreamSocketAdapter:
+    async def create_tcp_connection(self, *args: Any, **kwargs: Any) -> AbstractAsyncStreamSocketAdapter:
         raise NotImplementedError
 
-    async def wrap_tcp_socket(self, socket: Socket) -> AbstractStreamSocketAdapter:
+    async def wrap_tcp_socket(self, socket: Socket) -> AbstractAsyncStreamSocketAdapter:
         raise NotImplementedError
 
-    async def create_udp_endpoint(self, **kwargs: Any) -> AbstractDatagramSocketAdapter:
+    async def create_udp_endpoint(self, **kwargs: Any) -> AbstractAsyncDatagramSocketAdapter:
         raise NotImplementedError
 
-    async def wrap_udp_socket(self, socket: Socket) -> AbstractDatagramSocketAdapter:
+    async def wrap_udp_socket(self, socket: Socket) -> AbstractAsyncDatagramSocketAdapter:
         raise NotImplementedError
 
     def create_lock(self) -> ILock:

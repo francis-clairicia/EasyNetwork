@@ -19,7 +19,7 @@ from easynetwork.async_api.backend.abc import AbstractAsyncBackend
 if TYPE_CHECKING:
     import socket as _socket
 
-    from easynetwork.async_api.backend.abc import AbstractDatagramSocketAdapter, AbstractStreamSocketAdapter, ILock
+    from easynetwork.async_api.backend.abc import AbstractAsyncDatagramSocketAdapter, AbstractAsyncStreamSocketAdapter, ILock
 
 _T = TypeVar("_T")
 
@@ -41,7 +41,7 @@ class AsyncioBackend(AbstractAsyncBackend):
         family: int = 0,
         source_address: tuple[str, int] | None = None,
         happy_eyeballs_delay: float | None = None,
-    ) -> AbstractStreamSocketAdapter:
+    ) -> AbstractAsyncStreamSocketAdapter:
         assert host is not None, "Expected 'host' to be a str"
         assert port is not None, "Expected 'port' to be an int"
 
@@ -64,7 +64,7 @@ class AsyncioBackend(AbstractAsyncBackend):
         )
         return StreamSocketAdapter(self, reader, writer)
 
-    async def wrap_tcp_socket(self, socket: _socket.socket) -> AbstractStreamSocketAdapter:
+    async def wrap_tcp_socket(self, socket: _socket.socket) -> AbstractAsyncStreamSocketAdapter:
         assert socket is not None, "Expected 'socket' to be a socket.socket instance"
         socket.setblocking(False)
 
@@ -84,7 +84,7 @@ class AsyncioBackend(AbstractAsyncBackend):
         local_address: tuple[str, int] | None = None,
         remote_address: tuple[str, int] | None = None,
         reuse_port: bool = False,
-    ) -> AbstractDatagramSocketAdapter:
+    ) -> AbstractAsyncDatagramSocketAdapter:
         from .datagram import DatagramSocketAdapter, create_datagram_endpoint
 
         endpoint = await create_datagram_endpoint(
@@ -95,7 +95,7 @@ class AsyncioBackend(AbstractAsyncBackend):
         )
         return DatagramSocketAdapter(self, endpoint)
 
-    async def wrap_udp_socket(self, socket: _socket.socket) -> AbstractDatagramSocketAdapter:
+    async def wrap_udp_socket(self, socket: _socket.socket) -> AbstractAsyncDatagramSocketAdapter:
         assert socket is not None, "Expected 'socket' to be a socket.socket instance"
         socket.setblocking(False)
 

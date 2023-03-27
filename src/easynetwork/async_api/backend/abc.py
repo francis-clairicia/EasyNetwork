@@ -10,9 +10,9 @@ from __future__ import annotations
 
 __all__ = [
     "AbstractAsyncBackend",
-    "AbstractBaseAsyncSocketAdapter",
-    "AbstractDatagramSocketAdapter",
-    "AbstractStreamSocketAdapter",
+    "AbstractAsyncDatagramSocketAdapter",
+    "AbstractAsyncSocketAdapter",
+    "AbstractAsyncStreamSocketAdapter",
     "ILock",
 ]
 
@@ -55,11 +55,11 @@ class ILock(Protocol):
         ...
 
 
-class AbstractBaseAsyncSocketAdapter(metaclass=ABCMeta):
+class AbstractAsyncSocketAdapter(metaclass=ABCMeta):
     __slots__ = ("__weakref__",)
 
     if TYPE_CHECKING:
-        __Self = TypeVar("__Self", bound="AbstractBaseAsyncSocketAdapter")
+        __Self = TypeVar("__Self", bound="AbstractAsyncSocketAdapter")
 
     async def __aenter__(self: __Self) -> __Self:
         return self
@@ -101,7 +101,7 @@ class AbstractBaseAsyncSocketAdapter(metaclass=ABCMeta):
         raise NotImplementedError
 
 
-class AbstractStreamSocketAdapter(AbstractBaseAsyncSocketAdapter):
+class AbstractAsyncStreamSocketAdapter(AbstractAsyncSocketAdapter):
     __slots__ = ()
 
     @abstractmethod
@@ -117,7 +117,7 @@ class AbstractStreamSocketAdapter(AbstractBaseAsyncSocketAdapter):
         raise NotImplementedError
 
 
-class AbstractDatagramSocketAdapter(AbstractBaseAsyncSocketAdapter):
+class AbstractAsyncDatagramSocketAdapter(AbstractAsyncSocketAdapter):
     __slots__ = ()
 
     @abstractmethod
@@ -145,11 +145,11 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         family: int = ...,
         source_address: tuple[str, int] | None = ...,
         happy_eyeballs_delay: float | None = ...,
-    ) -> AbstractStreamSocketAdapter:
+    ) -> AbstractAsyncStreamSocketAdapter:
         raise NotImplementedError
 
     @abstractmethod
-    async def wrap_tcp_socket(self, socket: _socket.socket) -> AbstractStreamSocketAdapter:
+    async def wrap_tcp_socket(self, socket: _socket.socket) -> AbstractAsyncStreamSocketAdapter:
         raise NotImplementedError
 
     @abstractmethod
@@ -160,11 +160,11 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         local_address: tuple[str, int] | None = ...,
         remote_address: tuple[str, int] | None = ...,
         reuse_port: bool = ...,
-    ) -> AbstractDatagramSocketAdapter:
+    ) -> AbstractAsyncDatagramSocketAdapter:
         raise NotImplementedError
 
     @abstractmethod
-    async def wrap_udp_socket(self, socket: _socket.socket) -> AbstractDatagramSocketAdapter:
+    async def wrap_udp_socket(self, socket: _socket.socket) -> AbstractAsyncDatagramSocketAdapter:
         raise NotImplementedError
 
     @abstractmethod

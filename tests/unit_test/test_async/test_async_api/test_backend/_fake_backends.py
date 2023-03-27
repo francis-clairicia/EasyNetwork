@@ -7,8 +7,8 @@ from typing import Any, final
 
 from easynetwork.async_api.backend.abc import (
     AbstractAsyncBackend,
-    AbstractDatagramSocketAdapter,
-    AbstractStreamSocketAdapter,
+    AbstractAsyncDatagramSocketAdapter,
+    AbstractAsyncStreamSocketAdapter,
     ILock,
 )
 
@@ -17,16 +17,16 @@ class BaseFakeBackend(AbstractAsyncBackend):
     async def coro_yield(self) -> None:
         raise NotImplementedError
 
-    async def create_tcp_connection(self, *args: Any, **kwargs: Any) -> AbstractStreamSocketAdapter:
+    async def create_tcp_connection(self, *args: Any, **kwargs: Any) -> AbstractAsyncStreamSocketAdapter:
         raise NotImplementedError
 
-    async def wrap_tcp_socket(self, socket: Socket) -> AbstractStreamSocketAdapter:
+    async def wrap_tcp_socket(self, socket: Socket) -> AbstractAsyncStreamSocketAdapter:
         raise NotImplementedError
 
-    async def create_udp_endpoint(self, *args: Any, **kwargs: Any) -> AbstractDatagramSocketAdapter:
+    async def create_udp_endpoint(self, *args: Any, **kwargs: Any) -> AbstractAsyncDatagramSocketAdapter:
         raise NotImplementedError
 
-    async def wrap_udp_socket(self, socket: Socket) -> AbstractDatagramSocketAdapter:
+    async def wrap_udp_socket(self, socket: Socket) -> AbstractAsyncDatagramSocketAdapter:
         raise NotImplementedError
 
     def create_lock(self) -> ILock:

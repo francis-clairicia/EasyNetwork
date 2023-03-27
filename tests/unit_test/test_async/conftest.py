@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Callable
 
-from easynetwork.async_api.backend.abc import AbstractAsyncBackend, AbstractDatagramSocketAdapter, AbstractStreamSocketAdapter
+from easynetwork.async_api.backend.abc import (
+    AbstractAsyncBackend,
+    AbstractAsyncDatagramSocketAdapter,
+    AbstractAsyncStreamSocketAdapter,
+)
 
 import pytest
 
@@ -28,7 +32,7 @@ def mock_backend(mocker: MockerFixture) -> MagicMock:
 @pytest.fixture
 def mock_stream_socket_adapter_factory(mocker: MockerFixture, mock_backend: MagicMock) -> Callable[[], MagicMock]:
     def factory() -> MagicMock:
-        mock = mocker.NonCallableMagicMock(spec=AbstractStreamSocketAdapter)
+        mock = mocker.NonCallableMagicMock(spec=AbstractAsyncStreamSocketAdapter)
         mock.is_closing.return_value = False
         mock.get_backend.return_value = mock_backend
         return mock
@@ -44,7 +48,7 @@ def mock_stream_socket_adapter(mock_stream_socket_adapter_factory: Callable[[], 
 @pytest.fixture
 def mock_datagram_socket_adapter_factory(mocker: MockerFixture, mock_backend: MagicMock) -> Callable[[], MagicMock]:
     def factory() -> MagicMock:
-        mock = mocker.NonCallableMagicMock(spec=AbstractDatagramSocketAdapter)
+        mock = mocker.NonCallableMagicMock(spec=AbstractAsyncDatagramSocketAdapter)
         mock.is_closing.return_value = False
         mock.get_backend.return_value = mock_backend
         return mock
