@@ -26,6 +26,7 @@ async def run_task_once(
     if task_future.done():
         return task_future.result()
     if task_future.running():
+        del coroutine_cb
         return await backend.wait_future(task_future)
     try:
         task_future.set_running_or_notify_cancel()
@@ -37,4 +38,4 @@ async def run_task_once(
         task_future.set_result(result)
         return result
     finally:
-        del task_future
+        del task_future, coroutine_cb
