@@ -152,7 +152,7 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         try:
             await self.__socket.close()
         except ConnectionError:
-            # It is normal if there was connection errors during operation. But do not propage this exception,
+            # It is normal if there was connection errors during operations. But do not propagate this exception,
             # as we will never reuse this socket
             pass
 
