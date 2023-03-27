@@ -145,6 +145,7 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
     async def test____create____with_remote_address(
         self,
         remote_address: tuple[str, int] | None,
+        socket_family: int,
         mock_udp_socket: MagicMock,
         mock_datagram_socket_adapter: MagicMock,
         mock_datagram_protocol: MagicMock,
@@ -157,6 +158,7 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         # Act
         client: AsyncUDPNetworkEndpoint[Any, Any] = await AsyncUDPNetworkEndpoint.create(
             mock_datagram_protocol,
+            family=socket_family,
             remote_address=remote_address,
             local_address=mocker.sentinel.source_address,
         )
@@ -164,6 +166,7 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         # Assert
         mock_new_backend.assert_called_once_with(None)
         mock_backend.create_udp_endpoint.assert_awaited_once_with(
+            family=socket_family,
             remote_address=remote_address,
             local_address=mocker.sentinel.source_address,
         )
@@ -177,6 +180,7 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         remote_address: tuple[str, int] | None,
         mock_datagram_protocol: MagicMock,
         mock_backend: MagicMock,
+        mocker: MockerFixture,
     ) -> None:
         # Arrange
 
@@ -191,6 +195,7 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         mock_backend.create_udp_endpoint.assert_awaited_once_with(
             remote_address=remote_address,
             local_address=("", 0),
+            family=mocker.ANY,  # Not tested here
         )
 
     async def test____create____backend____from_string(
@@ -849,6 +854,13 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
 
 @pytest.mark.asyncio
 class TestAsyncUDPNetworkClient:
+    @pytest.fixture(scope="class", params=["AF_INET", "AF_INET6"])
+    @staticmethod
+    def socket_family(request: Any) -> Any:
+        import socket
+
+        return getattr(socket, request.param)
+
     @pytest.fixture
     @staticmethod
     def remote_address() -> tuple[str, int]:
@@ -891,6 +903,7 @@ class TestAsyncUDPNetworkClient:
     async def test____create____with_remote_address(
         self,
         remote_address: tuple[str, int],
+        socket_family: int,
         mock_udp_socket: MagicMock,
         mock_datagram_socket_adapter: MagicMock,
         mock_datagram_protocol: MagicMock,
@@ -906,6 +919,7 @@ class TestAsyncUDPNetworkClient:
         client: AsyncUDPNetworkClient[Any, Any] = await AsyncUDPNetworkClient.create(
             remote_address,
             mock_datagram_protocol,
+            family=socket_family,
             local_address=mocker.sentinel.source_address,
         )
 
@@ -913,6 +927,7 @@ class TestAsyncUDPNetworkClient:
         mock_new_backend.assert_called_once_with(None)
         mock_udp_endpoint_cls.assert_called_once_with(mock_datagram_socket_adapter, mock_datagram_protocol)
         mock_backend.create_udp_endpoint.assert_awaited_once_with(
+            family=socket_family,
             remote_address=remote_address,
             local_address=mocker.sentinel.source_address,
         )
@@ -924,6 +939,7 @@ class TestAsyncUDPNetworkClient:
         remote_address: tuple[str, int],
         mock_datagram_protocol: MagicMock,
         mock_backend: MagicMock,
+        mocker: MockerFixture,
     ) -> None:
         # Arrange
 
@@ -938,6 +954,7 @@ class TestAsyncUDPNetworkClient:
         mock_backend.create_udp_endpoint.assert_awaited_once_with(
             remote_address=remote_address,
             local_address=("", 0),
+            family=mocker.ANY,  # Not tested here
         )
 
     async def test____create____backend____from_string(

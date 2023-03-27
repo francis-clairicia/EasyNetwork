@@ -35,6 +35,7 @@ if TYPE_CHECKING:
 
 async def create_datagram_endpoint(
     *,
+    family: int = 0,
     local_address: tuple[str, int] | None = None,
     remote_address: tuple[str, int] | None = None,
     reuse_port: bool = False,
@@ -46,6 +47,7 @@ async def create_datagram_endpoint(
 
     transport, protocol = await loop.create_datagram_endpoint(
         lambda: DatagramEndpointProtocol(loop=loop, recv_queue=recv_queue, exception_queue=exception_queue),
+        family=family,
         local_addr=local_address,
         remote_addr=remote_address,
         reuse_port=reuse_port,

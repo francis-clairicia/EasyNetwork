@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from socket import socket as Socket
-from typing import final
+from typing import Any, final
 
 from easynetwork.async_api.backend.abc import (
     AbstractAsyncBackend,
@@ -17,26 +17,13 @@ class BaseFakeBackend(AbstractAsyncBackend):
     async def coro_yield(self) -> None:
         raise NotImplementedError
 
-    async def create_tcp_connection(
-        self,
-        host: str,
-        port: int,
-        *,
-        source_address: tuple[str, int] | None = ...,
-        happy_eyeballs_delay: float | None = ...,
-    ) -> AbstractStreamSocketAdapter:
+    async def create_tcp_connection(self, *args: Any, **kwargs: Any) -> AbstractStreamSocketAdapter:
         raise NotImplementedError
 
     async def wrap_tcp_socket(self, socket: Socket) -> AbstractStreamSocketAdapter:
         raise NotImplementedError
 
-    async def create_udp_endpoint(
-        self,
-        *,
-        local_address: tuple[str, int] | None = ...,
-        remote_address: tuple[str, int] | None = ...,
-        reuse_port: bool = ...,
-    ) -> AbstractDatagramSocketAdapter:
+    async def create_udp_endpoint(self, *args: Any, **kwargs: Any) -> AbstractDatagramSocketAdapter:
         raise NotImplementedError
 
     async def wrap_udp_socket(self, socket: Socket) -> AbstractDatagramSocketAdapter:

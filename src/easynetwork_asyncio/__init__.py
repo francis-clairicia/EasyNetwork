@@ -38,6 +38,7 @@ class AsyncioBackend(AbstractAsyncBackend):
         host: str,
         port: int,
         *,
+        family: int = 0,
         source_address: tuple[str, int] | None = None,
         happy_eyeballs_delay: float | None = None,
     ) -> AbstractStreamSocketAdapter:
@@ -56,6 +57,7 @@ class AsyncioBackend(AbstractAsyncBackend):
         reader, writer = await asyncio.open_connection(
             host,
             port,
+            family=family,
             local_address=source_address,
             happy_eyeballs_delay=happy_eyeballs_delay,
             limit=MAX_STREAM_BUFSIZE,
@@ -78,6 +80,7 @@ class AsyncioBackend(AbstractAsyncBackend):
     async def create_udp_endpoint(
         self,
         *,
+        family: int = 0,
         local_address: tuple[str, int] | None = None,
         remote_address: tuple[str, int] | None = None,
         reuse_port: bool = False,
@@ -85,6 +88,7 @@ class AsyncioBackend(AbstractAsyncBackend):
         from .datagram import DatagramSocketAdapter, create_datagram_endpoint
 
         endpoint = await create_datagram_endpoint(
+            family=family,
             local_address=local_address,
             remote_address=remote_address,
             reuse_port=reuse_port,

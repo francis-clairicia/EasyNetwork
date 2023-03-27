@@ -147,6 +147,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
     async def test____connect____connect_to_remote(
         self,
         remote_address: tuple[str, int],
+        socket_family: int,
         mock_tcp_socket: MagicMock,
         mock_backend: MagicMock,
         mock_stream_socket_adapter: MagicMock,
@@ -160,6 +161,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         # Act
         client: AsyncTCPNetworkClient[Any, Any] = await AsyncTCPNetworkClient.connect(
             remote_address,
+            family=socket_family,
             protocol=mock_stream_protocol,
             source_address=mocker.sentinel.source_address,
             happy_eyeballs_delay=mocker.sentinel.happy_eyeballs_delay,
@@ -170,6 +172,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_stream_data_consumer_cls.assert_called_once_with(mock_stream_protocol)
         mock_backend.create_tcp_connection.assert_awaited_once_with(
             *remote_address,
+            family=socket_family,
             source_address=mocker.sentinel.source_address,
             happy_eyeballs_delay=mocker.sentinel.happy_eyeballs_delay,
         )

@@ -99,6 +99,7 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         cls: type[__Self],
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
         *,
+        family: int = 0,
         local_address: tuple[str, int] | None = None,
         remote_address: tuple[str, int] | None = None,
         backend: str | AbstractAsyncBackend | None = None,
@@ -113,6 +114,7 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             local_address = ("", 0)
 
         socket_adapter = await backend.create_udp_endpoint(
+            family=family,
             local_address=local_address,
             remote_address=remote_address,
         )
@@ -254,6 +256,7 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         remote_address: tuple[str, int],
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
         *,
+        family: int = 0,
         local_address: tuple[str, int] | None = None,
         backend: str | AbstractAsyncBackend | None = None,
         backend_kwargs: Mapping[str, Any] | None = None,
@@ -268,6 +271,7 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
 
         remote_host, remote_port = remote_address
         socket_adapter = await backend.create_udp_endpoint(
+            family=family,
             local_address=local_address,
             remote_address=(remote_host, remote_port),
         )

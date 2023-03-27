@@ -138,6 +138,7 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         host: str,
         port: int,
         *,
+        family: int = ...,
         source_address: tuple[str, int] | None = ...,
         happy_eyeballs_delay: float | None = ...,
     ) -> AbstractStreamSocketAdapter:
@@ -151,6 +152,7 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
     async def create_udp_endpoint(
         self,
         *,
+        family: int = ...,
         local_address: tuple[str, int] | None = ...,
         remote_address: tuple[str, int] | None = ...,
         reuse_port: bool = ...,

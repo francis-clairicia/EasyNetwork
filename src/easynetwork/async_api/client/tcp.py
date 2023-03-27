@@ -91,6 +91,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         address: tuple[str, int],
         protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
         *,
+        family: int = 0,
         source_address: tuple[str, int] | None = None,
         happy_eyeballs_delay: float | None = None,
         backend: str | AbstractAsyncBackend | None = None,
@@ -105,6 +106,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         socket_adapter = await backend.create_tcp_connection(
             host,
             port,
+            family=family,
             happy_eyeballs_delay=happy_eyeballs_delay,
             source_address=source_address,
         )
