@@ -122,6 +122,11 @@ class DatagramEndpoint:
             finally:
                 del exc
 
+    @property
+    @final
+    def transport(self) -> asyncio.DatagramTransport:
+        return self.__transport
+
 
 class DatagramEndpointProtocol(asyncio.DatagramProtocol):
     __slots__ = (
@@ -264,6 +269,9 @@ class DatagramSocketAdapter(AbstractDatagramSocketAdapter):
     async def close(self) -> None:
         self.__endpoint.close()
         return await self.__endpoint.wait_closed()
+
+    async def abort(self) -> None:
+        self.__endpoint.transport.abort()
 
     def is_closing(self) -> bool:
         return self.__endpoint.is_closing()

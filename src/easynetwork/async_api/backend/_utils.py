@@ -8,7 +8,7 @@ from __future__ import annotations
 
 __all__ = ["run_task_once"]
 
-from typing import TYPE_CHECKING, Any, Callable, Coroutine, TypeVar
+from typing import TYPE_CHECKING, Awaitable, Callable, TypeVar
 
 if TYPE_CHECKING:
     import concurrent.futures
@@ -19,7 +19,7 @@ _T = TypeVar("_T")
 
 
 async def run_task_once(
-    coroutine_cb: Callable[[], Coroutine[Any, Any, _T]],
+    coroutine_cb: Callable[[], Awaitable[_T]],
     task_future: concurrent.futures.Future[_T],
     backend: AbstractAsyncBackend,
 ) -> _T:

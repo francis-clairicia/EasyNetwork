@@ -117,6 +117,16 @@ class TestDatagramEndpoint:
             exception_queue=mock_asyncio_exception_queue,
         )
 
+    async def test____transport____property(
+        self,
+        socket: DatagramEndpoint,
+        mock_asyncio_transport: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        assert socket.transport is mock_asyncio_transport
+
     async def test____close____close_transport(
         self,
         socket: DatagramEndpoint,
@@ -129,6 +139,7 @@ class TestDatagramEndpoint:
 
         # Assert
         mock_asyncio_transport.close.assert_called_once_with()
+        mock_asyncio_transport.abort.assert_not_called()
 
     async def test____wait_closed___wait_for_protocol_to_close_connection(
         self,
@@ -648,6 +659,22 @@ class TestDatagramSocketAdapter:
         # Assert
         mock_endpoint.close.assert_called_once_with()
         mock_endpoint.wait_closed.assert_awaited_once_with()
+        mock_endpoint.transport.abort.assert_not_called()
+
+    async def test____abort____abort_transport_and_exit(
+        self,
+        socket: DatagramSocketAdapter,
+        mock_endpoint: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act
+        await socket.abort()
+
+        # Assert
+        mock_endpoint.transport.abort.assert_called_once_with()
+        mock_endpoint.close.assert_not_called()
+        mock_endpoint.wait_closed.assert_not_awaited()
 
     async def test____context____close_transport_and_wait_at_end(
         self,

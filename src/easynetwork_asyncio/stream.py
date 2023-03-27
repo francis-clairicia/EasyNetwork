@@ -54,6 +54,9 @@ class StreamSocketAdapter(AbstractStreamSocketAdapter):
         self.__writer.close()
         await self.__writer.wait_closed()
 
+    async def abort(self) -> None:
+        self.__writer.transport.abort()
+
     def is_closing(self) -> bool:
         return self.__writer.is_closing()
 

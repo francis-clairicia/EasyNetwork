@@ -443,6 +443,21 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         mock_backend.wait_future.assert_not_awaited()
         mock_datagram_socket_adapter.close.assert_not_awaited()
 
+    async def test____abort____brute_force_shutdown(
+        self,
+        client: AsyncUDPNetworkClient[Any, Any],
+        mock_datagram_socket_adapter: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act
+        await client.abort()
+
+        # Assert
+        mock_datagram_socket_adapter.abort.assert_awaited_once_with()
+        mock_datagram_socket_adapter.close.assert_not_awaited()
+        assert client.is_closing()
+
     @pytest.mark.parametrize("client_closed", [False, True], ids=lambda p: f"client_closed=={p}")
     async def test____get_local_address____return_saved_address(
         self,
@@ -1120,6 +1135,20 @@ class TestAsyncUDPNetworkClient:
 
         # Assert
         mock_udp_endpoint.close.assert_awaited_once_with()
+
+    async def test___abort____default(
+        self,
+        client: AsyncUDPNetworkClient[Any, Any],
+        mock_udp_endpoint: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_udp_endpoint.abort.return_value = None
+
+        # Act
+        await client.abort()
+
+        # Assert
+        mock_udp_endpoint.abort.assert_awaited_once_with()
 
     async def test____get_local_address____default(
         self,

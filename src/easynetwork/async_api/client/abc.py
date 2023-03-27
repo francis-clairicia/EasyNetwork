@@ -49,6 +49,10 @@ class AbstractAsyncNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metacl
         raise NotImplementedError
 
     @abstractmethod
+    async def abort(self) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
     def get_local_address(self) -> SocketAddress:
         raise NotImplementedError
 

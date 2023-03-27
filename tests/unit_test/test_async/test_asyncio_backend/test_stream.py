@@ -96,6 +96,22 @@ class TestStreamSocket:
         # Assert
         mock_asyncio_writer.close.assert_called_once_with()
         mock_asyncio_writer.wait_closed.assert_awaited_once_with()
+        mock_asyncio_writer.transport.abort.assert_not_called()
+
+    async def test____abort____abort_transport_and_exit(
+        self,
+        socket: StreamSocketAdapter,
+        mock_asyncio_writer: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act
+        await socket.abort()
+
+        # Assert
+        mock_asyncio_writer.transport.abort.assert_called_once_with()
+        mock_asyncio_writer.close.assert_not_called()
+        mock_asyncio_writer.wait_closed.assert_not_awaited()
 
     async def test____context____close_transport_and_wait_at_end(
         self,

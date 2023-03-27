@@ -149,7 +149,7 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         await _run_task_once(self.__close, self.__close_waiter, self.__backend)
 
     async def __close(self) -> None:
-        async with self.__receive_lock, self.__send_lock:
+        async with self.__send_lock:
             self.__closed = True
         try:
             await self.__socket.close()
@@ -157,6 +157,10 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             # It is normal if there was connection errors during operations. But do not propagate this exception,
             # as we will never reuse this socket
             pass
+
+    async def abort(self) -> None:
+        self.__closed = True
+        await self.__socket.abort()
 
     async def send_packet_to(
         self,
@@ -303,6 +307,9 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
 
     async def close(self) -> None:
         return await self.__endpoint.close()
+
+    async def abort(self) -> None:
+        return await self.__endpoint.abort()
 
     async def send_packet(self, packet: _SentPacketT) -> None:
         return await self.__endpoint.send_packet_to(packet, None)

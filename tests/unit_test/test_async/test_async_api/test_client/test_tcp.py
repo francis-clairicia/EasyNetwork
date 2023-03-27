@@ -382,6 +382,21 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_backend.wait_future.assert_not_awaited()
         mock_stream_socket_adapter.close.assert_not_awaited()
 
+    async def test____abort____brute_force_shutdown(
+        self,
+        client: AsyncTCPNetworkClient[Any, Any],
+        mock_stream_socket_adapter: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act
+        await client.abort()
+
+        # Assert
+        mock_stream_socket_adapter.abort.assert_awaited_once_with()
+        mock_stream_socket_adapter.close.assert_not_awaited()
+        assert client.is_closing()
+
     @pytest.mark.parametrize("client_closed", [False, True], ids=lambda p: f"client_closed=={p}")
     async def test____get_local_address____return_saved_address(
         self,

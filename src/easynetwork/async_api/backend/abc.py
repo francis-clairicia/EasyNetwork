@@ -81,6 +81,10 @@ class AbstractBaseAsyncSocketAdapter(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
+    async def abort(self) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
     def getsockname(self) -> tuple[Any, ...]:
         raise NotImplementedError
 
