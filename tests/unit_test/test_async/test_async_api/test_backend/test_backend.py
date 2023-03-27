@@ -98,7 +98,7 @@ class TestAsyncBackendFactory:
 
         from easynetwork_asyncio import AsyncioBackend
 
-        assert AsyncBackendFactory.get_available_backends() == {"asyncio": AsyncioBackend}
+        assert AsyncBackendFactory.get_all_backends() == {"asyncio": AsyncioBackend}
 
     @pytest.fixture(autouse=True)
     @staticmethod
@@ -133,34 +133,26 @@ class TestAsyncBackendFactory:
 
         return EntryPoint(name, value, AsyncBackendFactory.GROUP_NAME)
 
-    def test____get_available_backends____default(self) -> None:
+    def test____get_all_backends____default(self) -> None:
         # Arrange
 
         # Act
-        backends = AsyncBackendFactory.get_available_backends()
+        backends = AsyncBackendFactory.get_all_backends()
 
         # Assert
         assert backends == self.BACKENDS
 
-    def test____get_available_backends____empty_entry_point_name(self, mock_importlib_metadata_entry_points: MagicMock) -> None:
-        # Arrange
-        mock_importlib_metadata_entry_points.return_value = [self.build_entry_point("")]
-
-        # Act & Assert
-        with pytest.raises(TypeError, match=r"^Invalid backend entry points: ''$"):
-            AsyncBackendFactory.get_available_backends()
-
-    def test____get_available_backends____entry_point_is_module(self, mock_importlib_metadata_entry_points: MagicMock) -> None:
+    def test____get_all_backends____entry_point_is_module(self, mock_importlib_metadata_entry_points: MagicMock) -> None:
         # Arrange
         mock_importlib_metadata_entry_points.return_value = [
             self.build_entry_point("asyncio", __name__),
         ]
 
         # Act & Assert
-        with pytest.raises(TypeError, match=r"^Invalid backend entry points: 'asyncio'$"):
-            AsyncBackendFactory.get_available_backends()
+        with pytest.raises(TypeError, match=r"^Invalid backend entry point \(name='asyncio'\): .+$"):
+            AsyncBackendFactory.get_all_backends()
 
-    def test____get_available_backends____entry_point_is_not_async_backend_class(
+    def test____get_all_backends____entry_point_is_not_async_backend_class(
         self,
         mock_importlib_metadata_entry_points: MagicMock,
     ) -> None:
@@ -170,10 +162,10 @@ class TestAsyncBackendFactory:
         ]
 
         # Act & Assert
-        with pytest.raises(TypeError, match=r"^Invalid backend entry points: 'asyncio'$"):
-            AsyncBackendFactory.get_available_backends()
+        with pytest.raises(TypeError, match=r"^Invalid backend entry point \(name='asyncio'\): .+$"):
+            AsyncBackendFactory.get_all_backends()
 
-    def test____get_available_backends____entry_point_is_abstract(
+    def test____get_all_backends____entry_point_is_abstract(
         self,
         mock_importlib_metadata_entry_points: MagicMock,
     ) -> None:
@@ -183,10 +175,10 @@ class TestAsyncBackendFactory:
         ]
 
         # Act & Assert
-        with pytest.raises(TypeError, match=r"^Invalid backend entry points: 'asyncio'$"):
-            AsyncBackendFactory.get_available_backends()
+        with pytest.raises(TypeError, match=r"^Invalid backend entry point \(name='asyncio'\): .+$"):
+            AsyncBackendFactory.get_all_backends()
 
-    def test____get_available_backends____entry_point_module_not_found(
+    def test____get_all_backends____entry_point_module_not_found(
         self,
         mock_importlib_metadata_entry_points: MagicMock,
     ) -> None:
@@ -197,9 +189,9 @@ class TestAsyncBackendFactory:
 
         # Act & Assert
         with pytest.raises(ModuleNotFoundError, match=r"^No module named 'unknown_module'$"):
-            AsyncBackendFactory.get_available_backends()
+            AsyncBackendFactory.get_all_backends()
 
-    def test____get_available_backends____duplicate(
+    def test____get_all_backends____duplicate(
         self,
         mock_importlib_metadata_entry_points: MagicMock,
     ) -> None:
@@ -212,7 +204,7 @@ class TestAsyncBackendFactory:
 
         # Act & Assert
         with pytest.raises(TypeError, match=r"^Conflicting backend name caught: 'asyncio'$"):
-            AsyncBackendFactory.get_available_backends()
+            AsyncBackendFactory.get_all_backends()
 
     @pytest.mark.parametrize("backend_name", list(BACKENDS))
     def test____set_default_backend____from_string(self, backend_name: str) -> None:

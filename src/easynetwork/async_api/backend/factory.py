@@ -12,9 +12,12 @@ __all__ = ["AsyncBackendFactory"]
 
 import functools
 from types import MappingProxyType
-from typing import Any, Final, final
+from typing import TYPE_CHECKING, Any, Final, final
 
 from .abc import AbstractAsyncBackend
+
+if TYPE_CHECKING:
+    from importlib.metadata import EntryPoint
 
 
 @final
@@ -63,53 +66,55 @@ class AsyncBackendFactory:
         return backend_cls(**kwargs)
 
     @staticmethod
-    def get_available_backends() -> MappingProxyType[str, type[AbstractAsyncBackend]]:
-        return AsyncBackendFactory.__get_available_backends()
+    def get_all_backends() -> MappingProxyType[str, type[AbstractAsyncBackend]]:
+        backends = {name: AsyncBackendFactory.__load_backend_cls(name) for name in AsyncBackendFactory.__get_available_backends()}
+        return MappingProxyType(backends)
+
+    @staticmethod
+    def get_available_backends() -> frozenset[str]:
+        return frozenset(AsyncBackendFactory.__get_available_backends())
 
     @staticmethod
     def invalidate_backends_cache() -> None:
+        AsyncBackendFactory.__load_backend_cls.cache_clear()
         AsyncBackendFactory.__get_available_backends.cache_clear()
 
     @staticmethod
     def __get_backend_cls(name: str, error_msg_format: str = "Unknown backend {name!r}") -> type[AbstractAsyncBackend]:
         try:
-            return AsyncBackendFactory.__get_available_backends()[name]
+            return AsyncBackendFactory.__load_backend_cls(name)
         except KeyError:
             raise KeyError(error_msg_format.format(name=name)) from None
 
     @staticmethod
     @functools.cache
-    def __get_available_backends() -> MappingProxyType[str, type[AbstractAsyncBackend]]:
+    def __load_backend_cls(name: str) -> type[AbstractAsyncBackend]:
         import inspect
+
+        entry_point: EntryPoint = AsyncBackendFactory.__get_available_backends()[name]
+
+        entry_point_cls: Any = entry_point.load()
+        if (
+            not isinstance(entry_point_cls, type)
+            or not issubclass(entry_point_cls, AbstractAsyncBackend)
+            or inspect.isabstract(entry_point_cls)
+        ):
+            raise TypeError(f"Invalid backend entry point (name={name!r}): {entry_point_cls!r}")
+        return entry_point_cls
+
+    @staticmethod
+    @functools.cache
+    def __get_available_backends() -> MappingProxyType[str, EntryPoint]:
         from collections import Counter
-        from importlib.metadata import entry_points
+        from importlib.metadata import entry_points as get_all_entry_points
 
-        backends: dict[str, type[AbstractAsyncBackend]] = {}
-        invalid_backends: set[str] = set()
-        duplicate_counter: Counter[str] = Counter()
+        entry_points = get_all_entry_points(group=AsyncBackendFactory.GROUP_NAME)
+        duplicate_counter: Counter[str] = Counter([ep.name for ep in entry_points])
 
-        for entry_point in entry_points(group=AsyncBackendFactory.GROUP_NAME):
-            entry_point_name = entry_point.name.strip()
-            if not entry_point_name:
-                invalid_backends.add(entry_point_name)
-                continue
-            duplicate_counter[entry_point_name] += 1
-            if duplicate_counter[entry_point_name] > 1:
-                continue
-            entry_point_cls: Any = entry_point.load()
-            if (
-                not isinstance(entry_point_cls, type)
-                or not issubclass(entry_point_cls, AbstractAsyncBackend)
-                or inspect.isabstract(entry_point_cls)
-            ):
-                invalid_backends.add(entry_point_name)
-                continue
-            backends[entry_point_name] = entry_point_cls
-
-        if invalid_backends:
-            raise TypeError(f"Invalid backend entry points: {', '.join(map(repr, sorted(invalid_backends)))}")
         if duplicates := set(name for name in duplicate_counter if duplicate_counter[name] > 1):
             raise TypeError(f"Conflicting backend name caught: {', '.join(map(repr, sorted(duplicates)))}")
+
+        backends: dict[str, EntryPoint] = {ep.name: ep for ep in entry_points}
 
         assert "asyncio" in backends, "SystemError: Missing 'asyncio' entry point."
 

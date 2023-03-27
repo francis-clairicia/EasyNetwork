@@ -18,9 +18,12 @@ class TestAsyncBackendFactory:
         AsyncBackendFactory.set_default_backend(None)
 
     def test____get_available_backends____imports_asyncio_backend(self) -> None:
+        assert AsyncBackendFactory.get_available_backends() == frozenset({"asyncio"})
+
+    def test____get_all_backends____imports_asyncio_backend(self) -> None:
         from easynetwork_asyncio import AsyncioBackend
 
-        assert AsyncBackendFactory.get_available_backends() == {"asyncio": AsyncioBackend}
+        assert AsyncBackendFactory.get_all_backends() == {"asyncio": AsyncioBackend}
 
     def test____get_default_backend____returns_asyncio_backend(self) -> None:
         from easynetwork_asyncio import AsyncioBackend
