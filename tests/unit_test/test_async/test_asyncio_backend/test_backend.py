@@ -95,7 +95,9 @@ class TestAsyncIOBackend:
         await backend.create_tcp_connection(
             "remote_address",
             5000,
+            family=1234,
             happy_eyeballs_delay=given_value,
+            source_address=("local_address", 12345),
         )
 
         # Assert

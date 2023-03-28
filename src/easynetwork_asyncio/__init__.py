@@ -38,9 +38,9 @@ class AsyncioBackend(AbstractAsyncBackend):
         host: str,
         port: int,
         *,
-        family: int = 0,
-        source_address: tuple[str, int] | None = None,
-        happy_eyeballs_delay: float | None = None,
+        family: int,
+        source_address: tuple[str, int] | None,
+        happy_eyeballs_delay: float | None,
     ) -> AbstractAsyncStreamSocketAdapter:
         assert host is not None, "Expected 'host' to be a str"
         assert port is not None, "Expected 'port' to be an int"
@@ -80,10 +80,10 @@ class AsyncioBackend(AbstractAsyncBackend):
     async def create_udp_endpoint(
         self,
         *,
-        family: int = 0,
-        local_address: tuple[str, int] | None = None,
-        remote_address: tuple[str, int] | None = None,
-        reuse_port: bool = False,
+        family: int,
+        local_address: tuple[str, int] | None,
+        remote_address: tuple[str, int] | None,
+        reuse_port: bool,
     ) -> AbstractAsyncDatagramSocketAdapter:
         from .datagram import DatagramSocketAdapter, create_datagram_endpoint
 

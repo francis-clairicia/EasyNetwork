@@ -117,6 +117,7 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             family=family,
             local_address=local_address,
             remote_address=remote_address,
+            reuse_port=False,
         )
 
         return cls(socket_adapter, protocol)
@@ -278,6 +279,7 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
             family=family,
             local_address=local_address,
             remote_address=(remote_host, remote_port),
+            reuse_port=False,
         )
         return cls(socket_adapter, protocol)
 

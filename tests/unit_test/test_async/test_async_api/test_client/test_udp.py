@@ -169,6 +169,7 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
             family=socket_family,
             remote_address=remote_address,
             local_address=mocker.sentinel.source_address,
+            reuse_port=False,
         )
         mock_datagram_socket_adapter.proxy.assert_called_once_with()
         mock_datagram_socket_adapter.getsockname.assert_called_once_with()
@@ -196,6 +197,7 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
             remote_address=remote_address,
             local_address=("", 0),
             family=mocker.ANY,  # Not tested here
+            reuse_port=mocker.ANY,  # Not tested here
         )
 
     async def test____create____backend____from_string(
@@ -945,6 +947,7 @@ class TestAsyncUDPNetworkClient:
             family=socket_family,
             remote_address=remote_address,
             local_address=mocker.sentinel.source_address,
+            reuse_port=False,
         )
         mock_udp_endpoint.get_remote_address.assert_called_once_with()
         assert client.socket is mock_udp_socket
@@ -970,6 +973,7 @@ class TestAsyncUDPNetworkClient:
             remote_address=remote_address,
             local_address=("", 0),
             family=mocker.ANY,  # Not tested here
+            reuse_port=mocker.ANY,  # Not tested here
         )
 
     async def test____create____backend____from_string(
