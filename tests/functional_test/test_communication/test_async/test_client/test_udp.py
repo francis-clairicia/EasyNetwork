@@ -62,7 +62,7 @@ class TestAsyncUDPNetworkClient:
 
     async def test____send_packet____default(self, client: AsyncUDPNetworkClient[str, str], server: Socket) -> None:
         await client.send_packet("ABCDEF")
-        assert server.recvfrom(1024) == (b"ABCDEF", client.get_local_address())
+        assert await asyncio.to_thread(server.recvfrom, 1024) == (b"ABCDEF", client.get_local_address())
 
     @pytest.mark.platform_linux  # Windows and macOS do not raise error
     async def test____send_packet____connection_refused(self, client: AsyncUDPNetworkClient[str, str], server: Socket) -> None:
@@ -77,7 +77,7 @@ class TestAsyncUDPNetworkClient:
         server: Socket,
     ) -> None:
         await client.send_packet("ABC")
-        assert server.recvfrom(1024) == (b"ABC", client.get_local_address())
+        assert await asyncio.to_thread(server.recvfrom, 1024) == (b"ABC", client.get_local_address())
         server.close()
         with pytest.raises(ConnectionRefusedError):
             await client.send_packet("DEF")
@@ -200,7 +200,7 @@ class TestUDPNetworkEndpoint:
         other_client_3 = udp_socket_factory()
         for other_client in [other_client_1, other_client_2, other_client_3]:
             await client.send_packet_to("ABCDEF", other_client.getsockname())
-            assert other_client.recvfrom(1024) == (b"ABCDEF", client.get_local_address())
+            assert await asyncio.to_thread(other_client.recvfrom, 1024) == (b"ABCDEF", client.get_local_address())
 
     @pytest.mark.parametrize("client", ["WITHOUT_REMOTE"], indirect=True)
     async def test____send_packet_to____None_is_invalid(self, client: AsyncUDPNetworkEndpoint[str, str]) -> None:
@@ -214,7 +214,7 @@ class TestUDPNetworkEndpoint:
         server: Socket,
     ) -> None:
         await client.send_packet_to("ABCDEF", None)
-        assert server.recvfrom(1024) == (b"ABCDEF", client.get_local_address())
+        assert await asyncio.to_thread(server.recvfrom, 1024) == (b"ABCDEF", client.get_local_address())
 
     @pytest.mark.parametrize("client", ["WITH_REMOTE"], indirect=True)
     async def test____send_packet_to____send_to_connected_address____explicit(
@@ -223,7 +223,7 @@ class TestUDPNetworkEndpoint:
         server: Socket,
     ) -> None:
         await client.send_packet_to("ABCDEF", server.getsockname())
-        assert server.recvfrom(1024) == (b"ABCDEF", client.get_local_address())
+        assert await asyncio.to_thread(server.recvfrom, 1024) == (b"ABCDEF", client.get_local_address())
 
     async def test____send_packet_to____invalid_address(
         self,
@@ -265,7 +265,7 @@ class TestUDPNetworkEndpoint:
     ) -> None:
         address = server.getsockname()
         await client.send_packet_to("ABC", address)
-        assert server.recvfrom(1024) == (b"ABC", client.get_local_address())
+        assert await asyncio.to_thread(server.recvfrom, 1024) == (b"ABC", client.get_local_address())
         server.close()
         with pytest.raises(ConnectionRefusedError):
             await client.send_packet_to("DEF", address)

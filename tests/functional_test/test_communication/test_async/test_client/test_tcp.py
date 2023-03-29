@@ -42,10 +42,9 @@ class TestAsyncTCPNetworkClient:
 
     async def test____send_packet____default(self, client: AsyncTCPNetworkClient[str, str], server: Socket) -> None:
         await client.send_packet("ABCDEF")
-        assert server.recv(1024) == b"ABCDEF\n"
+        assert await asyncio.to_thread(server.recv, 1024) == b"ABCDEF\n"
 
-    # TODO: Commented to test in CI if it will work
-    # @pytest.mark.platform_linux  # Windows and macOs raise ConnectionAbortedError but in the 2nd send() call
+    @pytest.mark.platform_linux  # Windows and macOs raise ConnectionAbortedError but in the 2nd send() call
     async def test____send_packet____connection_error____fresh_connection_closed_by_server(
         self,
         client: AsyncTCPNetworkClient[str, str],
@@ -55,15 +54,14 @@ class TestAsyncTCPNetworkClient:
         with pytest.raises(ConnectionError):
             await client.send_packet("ABCDEF")
 
-    # TODO: Commented to test in CI if it will work
-    # @pytest.mark.platform_linux  # Windows and macOs raise ConnectionAbortedError but in the 2nd send() call
+    @pytest.mark.platform_linux  # Windows and macOs raise ConnectionAbortedError but in the 2nd send() call
     async def test____send_packet____connection_error____after_previous_successful_try(
         self,
         client: AsyncTCPNetworkClient[str, str],
         server: Socket,
     ) -> None:
         await client.send_packet("ABCDEF")
-        assert server.recv(1024) == b"ABCDEF\n"
+        assert await asyncio.to_thread(server.recv, 1024) == b"ABCDEF\n"
         server.close()
         with pytest.raises(ConnectionError):
             await client.send_packet("ABCDEF")
@@ -74,7 +72,7 @@ class TestAsyncTCPNetworkClient:
         server: Socket,
     ) -> None:
         await client.send_packet("ABC")
-        assert server.recv(1) == b"A"
+        assert await asyncio.to_thread(server.recv, 1) == b"A"
         server.close()
         with pytest.raises(ConnectionError):
             await client.send_packet("DEF")
