@@ -104,7 +104,7 @@ class TestDatagramEndpoint:
 
     @pytest.fixture
     @staticmethod
-    def socket(
+    def endpoint(
         mock_asyncio_transport: MagicMock,
         mock_asyncio_protocol: MagicMock,
         mock_asyncio_recv_queue: MagicMock,
@@ -119,23 +119,23 @@ class TestDatagramEndpoint:
 
     async def test____transport____property(
         self,
-        socket: DatagramEndpoint,
+        endpoint: DatagramEndpoint,
         mock_asyncio_transport: MagicMock,
     ) -> None:
         # Arrange
 
         # Act & Assert
-        assert socket.transport is mock_asyncio_transport
+        assert endpoint.transport is mock_asyncio_transport
 
     async def test____close____close_transport(
         self,
-        socket: DatagramEndpoint,
+        endpoint: DatagramEndpoint,
         mock_asyncio_transport: MagicMock,
     ) -> None:
         # Arrange
 
         # Act
-        socket.close()
+        endpoint.close()
 
         # Assert
         mock_asyncio_transport.close.assert_called_once_with()
@@ -143,20 +143,20 @@ class TestDatagramEndpoint:
 
     async def test____wait_closed___wait_for_protocol_to_close_connection(
         self,
-        socket: DatagramEndpoint,
+        endpoint: DatagramEndpoint,
         mock_asyncio_protocol: MagicMock,
     ) -> None:
         # Arrange
 
         # Act
-        await socket.wait_closed()
+        await endpoint.wait_closed()
 
         # Assert
         mock_asyncio_protocol._get_close_waiter.assert_awaited_once_with()
 
     async def test____is_closing____return_transport_state(
         self,
-        socket: DatagramEndpoint,
+        endpoint: DatagramEndpoint,
         mock_asyncio_transport: MagicMock,
         mocker: MockerFixture,
     ) -> None:
@@ -164,7 +164,7 @@ class TestDatagramEndpoint:
         mock_asyncio_transport.is_closing.return_value = mocker.sentinel.is_closing
 
         # Act
-        state = socket.is_closing()
+        state = endpoint.is_closing()
 
         # Assert
         mock_asyncio_transport.is_closing.assert_called_once_with()
@@ -172,7 +172,7 @@ class TestDatagramEndpoint:
 
     async def test____recvfrom____await_recv_queue(
         self,
-        socket: DatagramEndpoint,
+        endpoint: DatagramEndpoint,
         mock_asyncio_recv_queue: MagicMock,
         mock_asyncio_exception_queue: MagicMock,
     ) -> None:
@@ -181,7 +181,7 @@ class TestDatagramEndpoint:
         mock_asyncio_exception_queue.get_nowait.side_effect = asyncio.QueueEmpty
 
         # Act
-        data, address = await socket.recvfrom()
+        data, address = await endpoint.recvfrom()
 
         # Assert
         mock_asyncio_recv_queue.get.assert_awaited_once_with()
@@ -190,7 +190,7 @@ class TestDatagramEndpoint:
 
     async def test____recvfrom____connection_lost____transport_already_closed(
         self,
-        socket: DatagramEndpoint,
+        endpoint: DatagramEndpoint,
         mock_asyncio_transport: MagicMock,
         mock_asyncio_recv_queue: MagicMock,
         mock_asyncio_exception_queue: MagicMock,
@@ -202,7 +202,7 @@ class TestDatagramEndpoint:
 
         # Act
         with pytest.raises(OSError) as exc_info:
-            await socket.recvfrom()
+            await endpoint.recvfrom()
 
         # Assert
         assert exc_info.value.errno == ECONNABORTED
@@ -211,7 +211,7 @@ class TestDatagramEndpoint:
 
     async def test____recvfrom____connection_lost____transport_closed_by_protocol_while_waiting(
         self,
-        socket: DatagramEndpoint,
+        endpoint: DatagramEndpoint,
         mock_asyncio_transport: MagicMock,
         mock_asyncio_recv_queue: MagicMock,
         mock_asyncio_exception_queue: MagicMock,
@@ -225,7 +225,7 @@ class TestDatagramEndpoint:
 
         # Act
         with pytest.raises(OSError) as exc_info:
-            await socket.recvfrom()
+            await endpoint.recvfrom()
 
         # Assert
         assert exc_info.value.errno == ECONNABORTED
@@ -234,7 +234,7 @@ class TestDatagramEndpoint:
 
     async def test____recvfrom____raise_exception____protocol_already_sent_exception_in_queue(
         self,
-        socket: DatagramEndpoint,
+        endpoint: DatagramEndpoint,
         mock_asyncio_recv_queue: MagicMock,
         mock_asyncio_exception_queue: MagicMock,
     ) -> None:
@@ -243,7 +243,7 @@ class TestDatagramEndpoint:
 
         # Act
         with pytest.raises(CustomException):
-            await socket.recvfrom()
+            await endpoint.recvfrom()
 
         # Assert
         mock_asyncio_exception_queue.get_nowait.assert_called_once_with()
@@ -251,7 +251,7 @@ class TestDatagramEndpoint:
 
     async def test____recvfrom____raise_exception____transport_closed_by_protocol_with_exception_while_waiting(
         self,
-        socket: DatagramEndpoint,
+        endpoint: DatagramEndpoint,
         mock_asyncio_transport: MagicMock,
         mock_asyncio_recv_queue: MagicMock,
         mock_asyncio_exception_queue: MagicMock,
@@ -275,7 +275,7 @@ class TestDatagramEndpoint:
 
         # Act
         with pytest.raises(CustomException):
-            await socket.recvfrom()
+            await endpoint.recvfrom()
 
         # Assert
         assert len(mock_asyncio_exception_queue.get_nowait.mock_calls) == 2
@@ -284,7 +284,7 @@ class TestDatagramEndpoint:
     @pytest.mark.parametrize("address", [("127.0.0.1", 12345), None], ids=repr)
     async def test____sendto____send_and_await_drain(
         self,
-        socket: DatagramEndpoint,
+        endpoint: DatagramEndpoint,
         address: tuple[str, int] | None,
         mock_asyncio_transport: MagicMock,
         mock_asyncio_protocol: MagicMock,
@@ -294,7 +294,7 @@ class TestDatagramEndpoint:
         mock_asyncio_exception_queue.get_nowait.side_effect = asyncio.QueueEmpty
 
         # Act
-        await socket.sendto(b"some data", address)
+        await endpoint.sendto(b"some data", address)
 
         # Assert
         mock_asyncio_exception_queue.get_nowait.assert_called_once_with()
@@ -304,7 +304,7 @@ class TestDatagramEndpoint:
     @pytest.mark.parametrize("address", [("127.0.0.1", 12345), None], ids=repr)
     async def test____sendto____transport_already_closed(
         self,
-        socket: DatagramEndpoint,
+        endpoint: DatagramEndpoint,
         address: tuple[str, int] | None,
         mock_asyncio_transport: MagicMock,
         mock_asyncio_protocol: MagicMock,
@@ -318,7 +318,7 @@ class TestDatagramEndpoint:
 
         # Act
         with pytest.raises(OSError) as exc_info:
-            await socket.sendto(b"some data", address)
+            await endpoint.sendto(b"some data", address)
 
         # Assert
         assert exc_info.value.errno == ECONNABORTED
@@ -328,7 +328,7 @@ class TestDatagramEndpoint:
 
     async def test____get_extra_info____get_transport_extra_info(
         self,
-        socket: DatagramEndpoint,
+        endpoint: DatagramEndpoint,
         mock_asyncio_transport: MagicMock,
         mocker: MockerFixture,
     ) -> None:
@@ -336,11 +336,27 @@ class TestDatagramEndpoint:
         mock_asyncio_transport.get_extra_info.return_value = mocker.sentinel.extra_info
 
         # Act
-        value = socket.get_extra_info(mocker.sentinel.name, mocker.sentinel.default)
+        value = endpoint.get_extra_info(mocker.sentinel.name, mocker.sentinel.default)
 
         # Assert
         mock_asyncio_transport.get_extra_info.assert_called_once_with(mocker.sentinel.name, mocker.sentinel.default)
         assert value is mocker.sentinel.extra_info
+
+    async def test____get_loop____get_protocol_bound_loop(
+        self,
+        endpoint: DatagramEndpoint,
+        mock_asyncio_protocol: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_asyncio_protocol._get_loop.return_value = mocker.sentinel.event_loop
+
+        # Act
+        loop = endpoint.get_loop()
+
+        # Assert
+        mock_asyncio_protocol._get_loop.assert_called_once_with()
+        assert loop is mocker.sentinel.event_loop
 
 
 class TestDatagramEndpointProtocol:

@@ -11,9 +11,9 @@ __all__ = [
     "StreamSocketAdapter",
 ]
 
-from typing import TYPE_CHECKING, Any, final
+from typing import TYPE_CHECKING, Any, Sequence, final
 
-from easynetwork.async_api.backend.abc import AbstractAsyncStreamSocketAdapter
+from easynetwork.async_api.backend.abc import AbstractAsyncServerAdapter, AbstractAsyncStreamSocketAdapter
 from easynetwork.tools._utils import error_from_errno as _error_from_errno
 from easynetwork.tools.socket import SocketProxy
 
@@ -83,3 +83,36 @@ class StreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
 
     def get_backend(self) -> AsyncioBackend:
         return self.__backend
+
+
+@final
+class Server(AbstractAsyncServerAdapter):
+    __slots__ = (
+        "__backend",
+        "__asyncio_server",
+    )
+
+    def __init__(self, backend: AsyncioBackend, asyncio_server: asyncio.Server) -> None:
+        super().__init__()
+        assert asyncio_server.is_serving()
+        self.__backend: AsyncioBackend = backend
+        self.__asyncio_server: asyncio.Server = asyncio_server
+
+    async def close(self) -> None:
+        self.__asyncio_server.close()
+        return await self.__asyncio_server.wait_closed()
+
+    def is_serving(self) -> bool:
+        return self.__asyncio_server.is_serving()
+
+    def stop_serving(self) -> None:
+        self.__asyncio_server.close()
+
+    async def serve_forever(self) -> None:
+        return await self.__asyncio_server.serve_forever()
+
+    def get_backend(self) -> AsyncioBackend:
+        return self.__backend
+
+    def sockets(self) -> Sequence[SocketProxy]:
+        return tuple(map(SocketProxy, self.__asyncio_server.sockets))

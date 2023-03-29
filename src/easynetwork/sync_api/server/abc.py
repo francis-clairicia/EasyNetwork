@@ -11,22 +11,19 @@ __all__ = [
 ]
 
 from abc import ABCMeta, abstractmethod
-from typing import TYPE_CHECKING, Any, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from ...tools.socket import SocketAddress
 
 if TYPE_CHECKING:
     from types import TracebackType
 
-_RequestT = TypeVar("_RequestT")
-_ResponseT = TypeVar("_ResponseT")
 
-
-class AbstractNetworkServer(Generic[_RequestT, _ResponseT], metaclass=ABCMeta):
+class AbstractNetworkServer(metaclass=ABCMeta):
     __slots__ = ("__weakref__",)
 
     if TYPE_CHECKING:
-        __Self = TypeVar("__Self", bound="AbstractNetworkServer[Any, Any]")
+        __Self = TypeVar("__Self", bound="AbstractNetworkServer")
 
     def __enter__(self: __Self) -> __Self:
         return self

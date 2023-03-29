@@ -83,7 +83,7 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    server_factory: Callable[[], AbstractNetworkServer[str, str]] = args.server_factory
+    server_factory: Callable[[], AbstractNetworkServer] = args.server_factory
 
     logging.basicConfig(level=getattr(logging, args.log_level), format="[ %(levelname)s ] [ %(name)s ] %(message)s")
 

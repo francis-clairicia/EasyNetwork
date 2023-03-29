@@ -33,7 +33,7 @@ _RequestHandlerLike: TypeAlias = (
 )
 
 
-class UDPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Generic[_RequestT, _ResponseT]):
+class UDPNetworkServer(AbstractNetworkServer, Generic[_RequestT, _ResponseT]):
     __slots__ = (
         "__socket",
         "__addr",

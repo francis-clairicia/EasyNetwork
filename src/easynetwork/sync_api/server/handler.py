@@ -50,7 +50,7 @@ class AbstractStreamClient(_ClientMixin[_ResponseT]):
         super().__init__(address)
 
     def __repr__(self) -> str:
-        return f"<connected client with address {self.address} at {id(self):#x}{' closed' if self.is_closed() else ''}>"
+        return f"<client with address {self.address} at {id(self):#x} {'closed' if self.is_closed() else 'connected'}>"
 
     @abstractmethod
     def is_closed(self) -> bool:

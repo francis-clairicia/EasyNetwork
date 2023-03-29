@@ -37,7 +37,7 @@ _RequestHandlerLike: TypeAlias = (
 )
 
 
-class TCPNetworkServer(AbstractNetworkServer[_RequestT, _ResponseT], Generic[_RequestT, _ResponseT]):
+class TCPNetworkServer(AbstractNetworkServer, Generic[_RequestT, _ResponseT]):
     __slots__ = (
         "__listener_socket",
         "__listener_lock",
