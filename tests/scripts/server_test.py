@@ -4,12 +4,12 @@ import argparse
 import logging
 from typing import Callable
 
+from easynetwork.api_sync.server.abc import AbstractNetworkServer
+from easynetwork.api_sync.server.handler import AbstractStreamClient
+from easynetwork.api_sync.server.tcp import TCPNetworkServer
+from easynetwork.api_sync.server.udp import UDPNetworkServer
 from easynetwork.protocol import DatagramProtocol, StreamProtocol
 from easynetwork.serializers.base_stream import AutoSeparatedPacketSerializer
-from easynetwork.sync_api.server.abc import AbstractNetworkServer
-from easynetwork.sync_api.server.handler import AbstractStreamClient
-from easynetwork.sync_api.server.tcp import TCPNetworkServer
-from easynetwork.sync_api.server.udp import UDPNetworkServer
 from easynetwork.tools.socket import SocketAddress
 
 PORT = 9000

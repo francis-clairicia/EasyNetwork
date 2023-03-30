@@ -6,7 +6,7 @@ import asyncio
 from socket import AF_INET, socket as Socket
 from typing import AsyncIterator, Callable
 
-from easynetwork.async_api.client.udp import AsyncUDPNetworkClient, AsyncUDPNetworkEndpoint
+from easynetwork.api_async.client.udp import AsyncUDPNetworkClient, AsyncUDPNetworkEndpoint
 from easynetwork.exceptions import ClientClosedError, DatagramProtocolParseError
 from easynetwork.protocol import DatagramProtocol
 from easynetwork.tools.socket import IPv4SocketAddress, IPv6SocketAddress, new_socket_address

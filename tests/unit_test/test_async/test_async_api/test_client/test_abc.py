@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, final
 
-from easynetwork.async_api.client.abc import AbstractAsyncNetworkClient
+from easynetwork.api_async.client.abc import AbstractAsyncNetworkClient
 from easynetwork.tools.socket import SocketAddress
 
 import pytest

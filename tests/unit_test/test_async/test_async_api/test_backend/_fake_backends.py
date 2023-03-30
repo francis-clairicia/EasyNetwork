@@ -5,7 +5,7 @@ from __future__ import annotations
 from socket import socket as Socket
 from typing import Any, final
 
-from easynetwork.async_api.backend.abc import (
+from easynetwork.api_async.backend.abc import (
     AbstractAsyncBackend,
     AbstractAsyncDatagramServerAdapter,
     AbstractAsyncDatagramSocketAdapter,

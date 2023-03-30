@@ -7,9 +7,9 @@ from socket import socket as Socket
 from threading import Thread
 from typing import Any, Callable, Iterator
 
+from easynetwork.api_sync.server.handler import AbstractDatagramClient, AbstractDatagramRequestHandler
+from easynetwork.api_sync.server.udp import UDPNetworkServer
 from easynetwork.protocol import DatagramProtocol
-from easynetwork.sync_api.server.handler import AbstractDatagramClient, AbstractDatagramRequestHandler
-from easynetwork.sync_api.server.udp import UDPNetworkServer
 from easynetwork.tools.socket import SocketAddress
 
 import pytest

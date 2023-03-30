@@ -8,9 +8,9 @@ from threading import Thread
 from typing import Any, Callable, Iterator
 from weakref import WeakSet
 
+from easynetwork.api_sync.server.handler import AbstractStreamClient, AbstractStreamRequestHandler
+from easynetwork.api_sync.server.tcp import TCPNetworkServer
 from easynetwork.protocol import StreamProtocol
-from easynetwork.sync_api.server.handler import AbstractStreamClient, AbstractStreamRequestHandler
-from easynetwork.sync_api.server.tcp import TCPNetworkServer
 from easynetwork.tools.socket import SocketAddress
 
 import pytest

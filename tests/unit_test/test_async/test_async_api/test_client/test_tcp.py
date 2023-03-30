@@ -6,7 +6,7 @@ from concurrent.futures import Future
 from socket import AF_INET6, IPPROTO_TCP, TCP_NODELAY
 from typing import TYPE_CHECKING, Any
 
-from easynetwork.async_api.client.tcp import AsyncTCPNetworkClient
+from easynetwork.api_async.client.tcp import AsyncTCPNetworkClient
 from easynetwork.exceptions import ClientClosedError
 from easynetwork.tools.socket import MAX_STREAM_BUFSIZE, IPv4SocketAddress, IPv6SocketAddress
 
@@ -59,7 +59,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
     @pytest.fixture(autouse=True)
     @staticmethod
     def mock_new_backend(mocker: MockerFixture, mock_backend: MagicMock) -> MagicMock:
-        from easynetwork.async_api.backend.factory import AsyncBackendFactory
+        from easynetwork.api_async.backend.factory import AsyncBackendFactory
 
         return mocker.patch.object(AsyncBackendFactory, "new", return_value=mock_backend)
 

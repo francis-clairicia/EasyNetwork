@@ -2,7 +2,7 @@
 # Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
 #
 #
-"""asyncio engine for easynetwork.async_api
+"""asyncio engine for easynetwork.api_async
 """
 
 from __future__ import annotations
@@ -14,12 +14,12 @@ __version__ = "1.0.0"
 import concurrent.futures
 from typing import TYPE_CHECKING, Any, Callable, Coroutine, Sequence, TypeVar, final
 
-from easynetwork.async_api.backend.abc import AbstractAsyncBackend
+from easynetwork.api_async.backend.abc import AbstractAsyncBackend
 
 if TYPE_CHECKING:
     import socket as _socket
 
-    from easynetwork.async_api.backend.abc import (
+    from easynetwork.api_async.backend.abc import (
         AbstractAsyncDatagramServerAdapter,
         AbstractAsyncDatagramSocketAdapter,
         AbstractAsyncServerAdapter,

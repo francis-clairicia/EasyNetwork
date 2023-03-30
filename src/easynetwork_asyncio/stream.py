@@ -13,7 +13,7 @@ __all__ = [
 
 from typing import TYPE_CHECKING, Any, Sequence, final
 
-from easynetwork.async_api.backend.abc import AbstractAsyncServerAdapter, AbstractAsyncStreamSocketAdapter
+from easynetwork.api_async.backend.abc import AbstractAsyncServerAdapter, AbstractAsyncStreamSocketAdapter
 from easynetwork.tools._utils import error_from_errno as _error_from_errno
 from easynetwork.tools.socket import SocketProxy
 

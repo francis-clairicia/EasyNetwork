@@ -5,8 +5,8 @@ from __future__ import annotations
 from socket import AF_INET6, IPPROTO_TCP, TCP_NODELAY
 from typing import TYPE_CHECKING, Any
 
+from easynetwork.api_sync.client.tcp import TCPNetworkClient
 from easynetwork.exceptions import ClientClosedError
-from easynetwork.sync_api.client.tcp import TCPNetworkClient
 from easynetwork.tools.socket import MAX_STREAM_BUFSIZE, IPv4SocketAddress, IPv6SocketAddress
 
 import pytest

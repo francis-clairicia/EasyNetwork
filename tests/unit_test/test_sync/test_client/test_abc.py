@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import deque
 from typing import TYPE_CHECKING, Any, final
 
-from easynetwork.sync_api.client.abc import AbstractNetworkClient
+from easynetwork.api_sync.client.abc import AbstractNetworkClient
 from easynetwork.tools.socket import SocketAddress
 
 import pytest

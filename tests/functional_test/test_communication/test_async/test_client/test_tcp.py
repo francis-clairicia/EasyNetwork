@@ -6,7 +6,7 @@ import asyncio
 from socket import AF_INET, IPPROTO_TCP, SHUT_WR, TCP_NODELAY, socket as Socket
 from typing import AsyncIterator
 
-from easynetwork.async_api.client.tcp import AsyncTCPNetworkClient
+from easynetwork.api_async.client.tcp import AsyncTCPNetworkClient
 from easynetwork.exceptions import ClientClosedError, StreamProtocolParseError
 from easynetwork.protocol import StreamProtocol
 from easynetwork.tools.socket import IPv4SocketAddress, IPv6SocketAddress
