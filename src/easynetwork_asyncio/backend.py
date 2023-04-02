@@ -123,8 +123,11 @@ class AsyncioBackend(AbstractAsyncBackend):
             backlog=backlog,
             reuse_address=reuse_address,
             reuse_port=reuse_port,
+            start_serving=False,
         )
-        return Server(self, asyncio_server)
+        server = Server(self, asyncio_server)
+        assert not server.is_serving()
+        return server
 
     async def create_udp_endpoint(
         self,
@@ -169,7 +172,9 @@ class AsyncioBackend(AbstractAsyncBackend):
         from .datagram.server import DatagramServer
 
         endpoint = await create_datagram_endpoint(local_addr=(host, port), family=family, reuse_port=reuse_port)
-        return DatagramServer(self, endpoint, datagram_received_cb, error_received_cb)
+        server = DatagramServer(self, endpoint, datagram_received_cb, error_received_cb)
+        assert not server.is_serving()
+        return server
 
     def create_lock(self) -> ILock:
         import asyncio

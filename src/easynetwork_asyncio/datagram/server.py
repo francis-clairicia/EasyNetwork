@@ -29,9 +29,11 @@ class DatagramServer(AbstractAsyncDatagramServerAdapter):
     __slots__ = (
         "__backend",
         "__endpoint",
+        "__datagram_received_cb",
+        "__error_received_cb",
         "__loop",
-        "__serving_forever_fut",
         "__serving_task",
+        "__closed",
     )
 
     def __init__(
@@ -45,43 +47,32 @@ class DatagramServer(AbstractAsyncDatagramServerAdapter):
         self.__backend: AsyncioBackend = backend
         self.__endpoint: DatagramEndpoint = endpoint
         self.__loop: asyncio.AbstractEventLoop = endpoint.get_loop()
-        self.__serving_forever_fut: asyncio.Future[None] | None = None
-        self.__serving_task: asyncio.Task[None] | None = self.__loop.create_task(
-            DatagramServer.__server_mainloop(
-                endpoint=endpoint,
-                datagram_received_cb=datagram_received_cb,
-                error_received_cb=error_received_cb,
-            )
-        )
+        self.__datagram_received_cb: Callable[[bytes, tuple[Any, ...]], Coroutine[Any, Any, Any]] = datagram_received_cb
+        self.__error_received_cb: Callable[[Exception], Coroutine[Any, Any, Any]] = error_received_cb
+        self.__serving_task: asyncio.Task[None] | None = None
+        self.__closed: bool = False
 
-    @staticmethod
-    async def __server_mainloop(
-        endpoint: DatagramEndpoint,
-        datagram_received_cb: Callable[[bytes, tuple[Any, ...]], Coroutine[Any, Any, Any]],
-        error_received_cb: Callable[[Exception], Coroutine[Any, Any, Any]],
-    ) -> None:
+    async def __server_mainloop(self) -> None:
         async with asyncio.TaskGroup() as tg:
             while True:
                 try:
-                    datagram, address = await endpoint.recvfrom()
+                    datagram, address = await self.__endpoint.recvfrom()
                 except Exception as exc:
-                    tg.create_task(error_received_cb(exc))
-                    if endpoint.is_closing():
+                    tg.create_task(self.__error_received_cb(exc))
+                    if self.__endpoint.is_closing():
                         break
                 else:
-                    tg.create_task(datagram_received_cb(datagram, address))
+                    tg.create_task(self.__datagram_received_cb(datagram, address))
 
     async def close(self) -> None:
+        self.__closed = True
+
         serving_task = self.__serving_task
         if serving_task is not None:
             self.__serving_task = None
             if not serving_task.done():
                 serving_task.cancel()
             self.__endpoint.close()
-
-        if self.__serving_forever_fut is not None and not self.__serving_forever_fut.done():
-            self.__serving_forever_fut.cancel()
-            self.__serving_forever_fut = None
 
         await self.__endpoint.wait_closed()
 
@@ -90,26 +81,26 @@ class DatagramServer(AbstractAsyncDatagramServerAdapter):
         return serving_task is not None and not serving_task.done()
 
     async def serve_forever(self) -> None:
-        if self.__serving_forever_fut is not None:
+        if self.__serving_task is not None:
             raise RuntimeError(f"server {self!r} is already being awaited on serve_forever()")
-        if not self.is_serving():
-            raise RuntimeError(f"server {self!r} is closed")
 
-        self.__serving_forever_fut = self.__loop.create_future()
+        self.__serving_task = self.__loop.create_task(self.__server_mainloop())
         try:
-            await self.__serving_forever_fut
+            await self.__serving_task
         except asyncio.CancelledError:
             try:
                 await self.close()
             finally:
                 raise
         finally:
-            self.__serving_forever_fut = None
+            self.__serving_task = None
 
     async def sendto(self, data: ReadableBuffer, address: tuple[Any, ...], /) -> None:
         assert address is not None
-        if not self.is_serving():
+        if self.__closed:
             raise RuntimeError(f"server {self!r} is closed")
+        if not self.is_serving():
+            raise RuntimeError(f"server {self!r} is not started")
         with memoryview(data).toreadonly() as data_view:
             await self.__endpoint.sendto(data_view, address)
 
@@ -118,6 +109,6 @@ class DatagramServer(AbstractAsyncDatagramServerAdapter):
 
     def socket(self) -> SocketProxy | None:
         socket: asyncio.trsock.TransportSocket | None
-        if not self.is_serving() or (socket := self.__endpoint.get_extra_info("socket")) is None:
+        if self.__closed or self.__endpoint.is_closing() or (socket := self.__endpoint.get_extra_info("socket")) is None:
             return None
         return SocketProxy(socket)

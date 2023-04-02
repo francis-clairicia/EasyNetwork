@@ -30,7 +30,6 @@ class Server(AbstractAsyncServerAdapter):
 
     def __init__(self, backend: AsyncioBackend, asyncio_server: asyncio.Server) -> None:
         super().__init__()
-        assert asyncio_server.is_serving()
         self.__backend: AsyncioBackend = backend
         self.__asyncio_server: asyncio.Server = asyncio_server
 
