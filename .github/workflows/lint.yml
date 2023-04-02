@@ -41,13 +41,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-20.04, windows-2022, macos-12]
+        os: [ubuntu-22.04, windows-2022, macos-12]
 
     steps:
       - uses: actions/checkout@v3
       - name: Setup tox
         uses: ./.github/actions/setup-tox
         with:
-          python-version: '3.10'
+          python-version: '3.11'
       - name: Launch checks
         run: tox run-parallel -f mypy

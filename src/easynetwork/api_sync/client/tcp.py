@@ -99,7 +99,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 kwargs["source_address"] = kwargs.pop("local_address")
             except KeyError:
                 pass
-            socket = _socket.create_connection(address, **kwargs)
+            socket = _socket.create_connection(address, **kwargs, all_errors=True)
             self.__owner = True
         else:  # pragma: no cover
             raise TypeError("Invalid arguments")

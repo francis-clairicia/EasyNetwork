@@ -9,7 +9,7 @@ authors = [
     {name = "FrankySnow9", email = "clairicia.rcj.francis@gmail.com"}
 ]
 dependencies = []
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 readme = "README.md"
 license-files = { paths = ["LICENSE"] }
 classifiers = [
@@ -20,7 +20,7 @@ classifiers = [
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
     "Typing :: Typed"
 ]
 dynamic = ["version"]
@@ -69,7 +69,6 @@ test = [
     "pytest~=7.2",
     "pytest-mock~=3.10.0",
     "pytest-cov<5,>=4.0",
-    "coverage[toml]",
     "pytest-asyncio>=0.21.0",
 ]
 
@@ -101,11 +100,11 @@ add_imports = ["from __future__ import annotations"]
 
 [tool.black]
 line-length = 130
-target-version = ["py310"]
+target-version = ["py311"]
 
 [tool.mypy]
 mypy_path = "$MYPY_CONFIG_FILE_DIR/src"
-python_version = "3.10"
+python_version = "3.11"
 show_error_codes = true
 warn_unused_configs = true
 disallow_any_generics = true
