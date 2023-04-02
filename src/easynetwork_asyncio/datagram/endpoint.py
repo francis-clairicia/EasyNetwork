@@ -10,7 +10,6 @@ from __future__ import annotations
 __all__ = [
     "DatagramEndpoint",
     "DatagramEndpointProtocol",
-    "DatagramSocketAdapter",
     "create_datagram_endpoint",
 ]
 
@@ -19,18 +18,12 @@ import collections
 import contextlib
 import errno as _errno
 import socket as _socket
-from typing import TYPE_CHECKING, Any, Callable, Coroutine, final
+from typing import TYPE_CHECKING, Any, final
 
-from easynetwork.api_async.backend.abc import AbstractAsyncDatagramServerAdapter, AbstractAsyncDatagramSocketAdapter
 from easynetwork.tools._utils import error_from_errno as _error_from_errno
-from easynetwork.tools.socket import SocketProxy
 
 if TYPE_CHECKING:
     import asyncio.trsock
-
-    from _typeshed import ReadableBuffer
-
-    from . import AsyncioBackend
 
 
 async def create_datagram_endpoint(
@@ -249,158 +242,3 @@ class DatagramEndpointProtocol(asyncio.DatagramProtocol):
 
     def _writing_paused(self) -> bool:
         return self.__write_paused
-
-
-@final
-class DatagramSocketAdapter(AbstractAsyncDatagramSocketAdapter):
-    __slots__ = (
-        "__backend",
-        "__endpoint",
-        "__proxy",
-    )
-
-    def __init__(self, backend: AsyncioBackend, endpoint: DatagramEndpoint) -> None:
-        super().__init__()
-        self.__backend: AsyncioBackend = backend
-        self.__endpoint: DatagramEndpoint = endpoint
-
-        socket: asyncio.trsock.TransportSocket | None = endpoint.get_extra_info("socket")
-        assert socket is not None, "transport must be a socket transport"
-
-        self.__proxy: SocketProxy = SocketProxy(socket)
-
-    async def close(self) -> None:
-        self.__endpoint.close()
-        return await self.__endpoint.wait_closed()
-
-    async def abort(self) -> None:
-        self.__endpoint.transport.abort()
-
-    def is_closing(self) -> bool:
-        return self.__endpoint.is_closing()
-
-    def getsockname(self) -> tuple[Any, ...]:
-        return self.__endpoint.get_extra_info("sockname")
-
-    def getpeername(self) -> tuple[Any, ...] | None:
-        return self.__endpoint.get_extra_info("peername")
-
-    async def recvfrom(self) -> tuple[bytes, tuple[Any, ...]]:
-        return await self.__endpoint.recvfrom()
-
-    async def sendto(self, data: ReadableBuffer, address: tuple[Any, ...] | None = None, /) -> None:
-        with memoryview(data).toreadonly() as data_view:
-            await self.__endpoint.sendto(data_view, address)
-
-    def proxy(self) -> SocketProxy:
-        return self.__proxy
-
-    def get_backend(self) -> AsyncioBackend:
-        return self.__backend
-
-
-@final
-class DatagramServer(AbstractAsyncDatagramServerAdapter):
-    __slots__ = (
-        "__backend",
-        "__endpoint",
-        "__loop",
-        "__serving_forever_fut",
-        "__serving_task",
-    )
-
-    def __init__(
-        self,
-        backend: AsyncioBackend,
-        endpoint: DatagramEndpoint,
-        datagram_received_cb: Callable[[bytes, tuple[Any, ...]], Coroutine[Any, Any, Any]],
-        error_received_cb: Callable[[Exception], Coroutine[Any, Any, Any]],
-    ) -> None:
-        super().__init__()
-        self.__backend: AsyncioBackend = backend
-        self.__endpoint: DatagramEndpoint = endpoint
-        self.__loop: asyncio.AbstractEventLoop = endpoint.get_loop()
-        self.__serving_forever_fut: asyncio.Future[None] | None = None
-        self.__serving_task: asyncio.Task[None] | None = self.__loop.create_task(
-            DatagramServer.__server_mainloop(
-                endpoint=endpoint,
-                datagram_received_cb=datagram_received_cb,
-                error_received_cb=error_received_cb,
-            )
-        )
-
-    @staticmethod
-    async def __server_mainloop(
-        endpoint: DatagramEndpoint,
-        datagram_received_cb: Callable[[bytes, tuple[Any, ...]], Coroutine[Any, Any, Any]],
-        error_received_cb: Callable[[Exception], Coroutine[Any, Any, Any]],
-    ) -> None:
-        loop: asyncio.AbstractEventLoop = endpoint.get_loop()
-        while True:
-            try:
-                datagram, address = await endpoint.recvfrom()
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                loop.create_task(error_received_cb(exc))
-                if endpoint.is_closing():
-                    break
-            else:
-                loop.create_task(datagram_received_cb(datagram, address))
-
-    async def close(self) -> None:
-        serving_task = self.__serving_task
-        if serving_task is not None:
-            self.__serving_task = None
-            if not serving_task.done():
-                serving_task.cancel()
-            self.__endpoint.close()
-
-        if self.__serving_forever_fut is not None and not self.__serving_forever_fut.done():
-            self.__serving_forever_fut.cancel()
-            self.__serving_forever_fut = None
-
-        try:
-            await self.__endpoint.wait_closed()
-        except asyncio.CancelledError:
-            try:
-                self.__endpoint.transport.abort()
-            finally:
-                raise
-
-    def is_serving(self) -> bool:
-        serving_task = self.__serving_task
-        return serving_task is not None and not serving_task.done()
-
-    async def serve_forever(self) -> None:
-        if self.__serving_forever_fut is not None:
-            raise RuntimeError(f"server {self!r} is already being awaited on serve_forever()")
-        if not self.is_serving():
-            raise RuntimeError(f"server {self!r} is closed")
-
-        self.__serving_forever_fut = self.__loop.create_future()
-        try:
-            await self.__serving_forever_fut
-        except asyncio.CancelledError:
-            try:
-                await self.close()
-            finally:
-                raise
-        finally:
-            self.__serving_forever_fut = None
-
-    async def sendto(self, data: ReadableBuffer, address: tuple[Any, ...], /) -> None:
-        assert address is not None
-        if not self.is_serving():
-            raise RuntimeError(f"server {self!r} is closed")
-        with memoryview(data).toreadonly() as data_view:
-            await self.__endpoint.sendto(data_view, address)
-
-    def get_backend(self) -> AsyncioBackend:
-        return self.__backend
-
-    def socket(self) -> SocketProxy | None:
-        socket: asyncio.trsock.TransportSocket | None
-        if not self.is_serving() or (socket := self.__endpoint.get_extra_info("socket")) is None:
-            return None
-        return SocketProxy(socket)

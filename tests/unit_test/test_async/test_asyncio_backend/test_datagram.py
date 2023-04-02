@@ -8,12 +8,8 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 from easynetwork_asyncio import AsyncioBackend
-from easynetwork_asyncio.datagram import (
-    DatagramEndpoint,
-    DatagramEndpointProtocol,
-    DatagramSocketAdapter,
-    create_datagram_endpoint,
-)
+from easynetwork_asyncio.datagram.endpoint import DatagramEndpoint, DatagramEndpointProtocol, create_datagram_endpoint
+from easynetwork_asyncio.datagram.socket import DatagramSocketAdapter
 
 if TYPE_CHECKING:
     from unittest.mock import AsyncMock, MagicMock
@@ -30,7 +26,10 @@ async def test____create_datagram_endpoint____return_DatagramEndpoint_instance(m
     # Arrange
     from typing import cast
 
-    mock_DatagramEndpoint = mocker.patch("easynetwork_asyncio.datagram.DatagramEndpoint", return_value=mocker.sentinel.endpoint)
+    mock_DatagramEndpoint = mocker.patch(
+        f"{create_datagram_endpoint.__module__}.DatagramEndpoint",
+        return_value=mocker.sentinel.endpoint,
+    )
     mock_loop_create_datagram_endpoint: AsyncMock = cast(
         "AsyncMock",
         mocker.patch.object(

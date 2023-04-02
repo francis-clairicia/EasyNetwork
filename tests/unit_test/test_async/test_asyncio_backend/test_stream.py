@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 from easynetwork_asyncio import AsyncioBackend
-from easynetwork_asyncio.stream import StreamSocketAdapter
+from easynetwork_asyncio.stream.socket import StreamSocketAdapter
 
 if TYPE_CHECKING:
     from unittest.mock import MagicMock

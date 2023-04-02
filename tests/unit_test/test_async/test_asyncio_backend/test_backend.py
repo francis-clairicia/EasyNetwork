@@ -40,7 +40,7 @@ class TestAsyncIOBackend:
         from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
 
         mock_StreamSocketAdapter: MagicMock = mocker.patch(
-            "easynetwork_asyncio.stream.StreamSocketAdapter", return_value=mocker.sentinel.socket
+            "easynetwork_asyncio.stream.socket.StreamSocketAdapter", return_value=mocker.sentinel.socket
         )
         mock_open_connection: AsyncMock = mocker.patch(
             "asyncio.open_connection",
@@ -84,7 +84,7 @@ class TestAsyncIOBackend:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mocker.patch("easynetwork_asyncio.stream.StreamSocketAdapter")
+        mocker.patch("easynetwork_asyncio.stream.socket.StreamSocketAdapter")
         mock_open_connection: AsyncMock = mocker.patch(
             "asyncio.open_connection",
             new_callable=mocker.AsyncMock,
@@ -120,7 +120,7 @@ class TestAsyncIOBackend:
         from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
 
         mock_StreamSocketAdapter: MagicMock = mocker.patch(
-            "easynetwork_asyncio.stream.StreamSocketAdapter", return_value=mocker.sentinel.socket
+            "easynetwork_asyncio.stream.socket.StreamSocketAdapter", return_value=mocker.sentinel.socket
         )
         mock_open_connection: AsyncMock = mocker.patch(
             "asyncio.open_connection",
@@ -147,10 +147,10 @@ class TestAsyncIOBackend:
     ) -> None:
         # Arrange
         mock_DatagramSocketAdapter: MagicMock = mocker.patch(
-            "easynetwork_asyncio.datagram.DatagramSocketAdapter", return_value=mocker.sentinel.socket
+            "easynetwork_asyncio.datagram.socket.DatagramSocketAdapter", return_value=mocker.sentinel.socket
         )
         mock_create_datagram_endpoint: AsyncMock = mocker.patch(
-            "easynetwork_asyncio.datagram.create_datagram_endpoint",
+            "easynetwork_asyncio.datagram.endpoint.create_datagram_endpoint",
             new_callable=mocker.AsyncMock,
             return_value=mocker.sentinel.endpoint,
         )
@@ -181,10 +181,10 @@ class TestAsyncIOBackend:
     ) -> None:
         # Arrange
         mock_DatagramSocketAdapter: MagicMock = mocker.patch(
-            "easynetwork_asyncio.datagram.DatagramSocketAdapter", return_value=mocker.sentinel.socket
+            "easynetwork_asyncio.datagram.socket.DatagramSocketAdapter", return_value=mocker.sentinel.socket
         )
         mock_create_datagram_endpoint: AsyncMock = mocker.patch(
-            "easynetwork_asyncio.datagram.create_datagram_endpoint",
+            "easynetwork_asyncio.datagram.endpoint.create_datagram_endpoint",
             new_callable=mocker.AsyncMock,
             return_value=mocker.sentinel.endpoint,
         )
