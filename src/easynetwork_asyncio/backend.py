@@ -100,9 +100,10 @@ class AsyncioBackend(AbstractAsyncBackend):
         from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
 
         from .stream.server import Server
-        from .stream.socket import StreamSocketAdapter
 
         async def asyncio_client_connected_cb(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+            from .stream.socket import StreamSocketAdapter
+
             socket = StreamSocketAdapter(self, reader, writer)
             try:
                 async with socket:

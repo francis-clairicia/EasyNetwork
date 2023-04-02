@@ -98,7 +98,7 @@ class TestAsyncUDPNetworkClient:
     ) -> None:
         other_client = udp_socket_factory()
         other_client.sendto(b"ABCDEF", client.get_local_address())
-        with pytest.raises(asyncio.TimeoutError):
+        with pytest.raises(TimeoutError):
             await asyncio.wait_for(client.recv_packet(), timeout=0.1)
 
     async def test____recv_packet____closed_client(self, client: AsyncUDPNetworkClient[str, str]) -> None:
@@ -320,7 +320,7 @@ class TestUDPNetworkEndpoint:
     ) -> None:
         other_client = udp_socket_factory()
         other_client.sendto(b"ABCDEF", client.get_local_address())
-        with pytest.raises(asyncio.TimeoutError):
+        with pytest.raises(TimeoutError):
             await asyncio.wait_for(client.recv_packet_from(), timeout=0.1)
 
     async def test____recv_packet_from____closed_client(self, client: AsyncUDPNetworkEndpoint[str, str]) -> None:

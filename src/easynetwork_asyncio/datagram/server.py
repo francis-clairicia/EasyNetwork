@@ -15,14 +15,13 @@ from typing import TYPE_CHECKING, Any, Callable, Coroutine, final
 from easynetwork.api_async.backend.abc import AbstractAsyncDatagramServerAdapter
 from easynetwork.tools.socket import SocketProxy
 
-from .endpoint import DatagramEndpoint
-
 if TYPE_CHECKING:
     import asyncio.trsock
 
     from _typeshed import ReadableBuffer
 
     from ..backend import AsyncioBackend
+    from .endpoint import DatagramEndpoint
 
 
 @final
@@ -61,18 +60,16 @@ class DatagramServer(AbstractAsyncDatagramServerAdapter):
         datagram_received_cb: Callable[[bytes, tuple[Any, ...]], Coroutine[Any, Any, Any]],
         error_received_cb: Callable[[Exception], Coroutine[Any, Any, Any]],
     ) -> None:
-        loop: asyncio.AbstractEventLoop = endpoint.get_loop()
-        while True:
-            try:
-                datagram, address = await endpoint.recvfrom()
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                loop.create_task(error_received_cb(exc))
-                if endpoint.is_closing():
-                    break
-            else:
-                loop.create_task(datagram_received_cb(datagram, address))
+        async with asyncio.TaskGroup() as tg:
+            while True:
+                try:
+                    datagram, address = await endpoint.recvfrom()
+                except Exception as exc:
+                    tg.create_task(error_received_cb(exc))
+                    if endpoint.is_closing():
+                        break
+                else:
+                    tg.create_task(datagram_received_cb(datagram, address))
 
     async def close(self) -> None:
         serving_task = self.__serving_task
@@ -86,13 +83,7 @@ class DatagramServer(AbstractAsyncDatagramServerAdapter):
             self.__serving_forever_fut.cancel()
             self.__serving_forever_fut = None
 
-        try:
-            await self.__endpoint.wait_closed()
-        except asyncio.CancelledError:
-            try:
-                self.__endpoint.transport.abort()
-            finally:
-                raise
+        await self.__endpoint.wait_closed()
 
     def is_serving(self) -> bool:
         serving_task = self.__serving_task

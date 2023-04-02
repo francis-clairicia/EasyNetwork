@@ -14,14 +14,13 @@ from typing import TYPE_CHECKING, Any, final
 from easynetwork.api_async.backend.abc import AbstractAsyncDatagramSocketAdapter
 from easynetwork.tools.socket import SocketProxy
 
-from .endpoint import DatagramEndpoint
-
 if TYPE_CHECKING:
     import asyncio.trsock
 
     from _typeshed import ReadableBuffer
 
     from ..backend import AsyncioBackend
+    from .endpoint import DatagramEndpoint
 
 
 @final
