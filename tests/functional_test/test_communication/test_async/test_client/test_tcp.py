@@ -182,3 +182,37 @@ class TestAsyncTCPNetworkClient:
         else:
             assert isinstance(address, IPv6SocketAddress)
         assert address == client.socket.getpeername()
+
+
+@pytest.mark.asyncio
+class TestAsyncTCPNetworkClientConnection:
+    @pytest_asyncio.fixture(autouse=True)
+    @staticmethod
+    async def server(localhost: str, socket_family: int) -> AsyncIterator[asyncio.Server]:
+        async def client_connected_cb(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+            data: bytes = await reader.readline()
+            writer.write(data)
+            await writer.drain()
+            writer.close()
+            await writer.wait_closed()
+
+        async with await asyncio.start_server(client_connected_cb, host=localhost, port=0, family=socket_family) as server:
+            yield server
+
+    @pytest.fixture
+    @staticmethod
+    def remote_address(server: asyncio.Server) -> tuple[str, int]:
+        return server.sockets[0].getsockname()[:2]
+
+    async def test____connect____connect_to_server(
+        self,
+        localhost: str,
+        remote_address: tuple[str, int],
+        stream_protocol: StreamProtocol[str, str],
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        async with await AsyncTCPNetworkClient.connect(remote_address, stream_protocol, local_address=(localhost, 0)) as client:
+            await client.send_packet("Test")
+            assert await client.recv_packet() == "Test"

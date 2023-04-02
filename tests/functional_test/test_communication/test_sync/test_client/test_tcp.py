@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import socketserver
 from concurrent.futures import Future
 from socket import AF_INET, IPPROTO_TCP, SHUT_WR, TCP_NODELAY, socket as Socket
 from typing import Any, Callable, Iterator
@@ -193,3 +194,47 @@ class TestTCPNetworkClient:
         else:
             assert isinstance(address, IPv6SocketAddress)
         assert address == client.socket.getpeername()
+
+
+class TestTCPNetworkClientConnection:
+    class Server(socketserver.TCPServer):
+        class RequestHandler(socketserver.StreamRequestHandler):
+            def handle(self) -> None:
+                data: bytes = self.rfile.readline()
+                self.wfile.write(data)
+
+        allow_reuse_address = True
+
+        def __init__(self, server_address: tuple[str, int], socket_family: int) -> None:
+            self.address_family = socket_family
+            super().__init__(server_address, self.RequestHandler)
+
+    @pytest.fixture(autouse=True)
+    @classmethod
+    def server(cls, localhost: str, socket_family: int) -> Iterator[socketserver.TCPServer]:
+        from threading import Thread
+
+        with cls.Server((localhost, 0), socket_family) as server:
+            server_thread = Thread(target=server.serve_forever)
+            server_thread.start()
+            yield server
+            server.shutdown()
+            server_thread.join()
+
+    @pytest.fixture
+    @staticmethod
+    def remote_address(server: socketserver.TCPServer) -> tuple[str, int]:
+        return server.server_address[:2]  # type: ignore[return-value]
+
+    def test____dunder_init____connect_to_server(
+        self,
+        localhost: str,
+        remote_address: tuple[str, int],
+        stream_protocol: StreamProtocol[str, str],
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        with TCPNetworkClient(remote_address, stream_protocol, local_address=(localhost, 0)) as client:
+            client.send_packet("Test")
+            assert client.recv_packet() == "Test"
