@@ -54,7 +54,7 @@ class TestAsyncIOBackend:
             5000,
             family=1234,
             happy_eyeballs_delay=42,
-            source_address=("local_address", 12345),
+            local_address=("local_address", 12345),
         )
 
         # Assert
@@ -63,7 +63,7 @@ class TestAsyncIOBackend:
             5000,
             family=1234,
             happy_eyeballs_delay=42,
-            local_address=("local_address", 12345),
+            local_addr=("local_address", 12345),
             limit=MAX_STREAM_BUFSIZE,
         )
         mock_StreamSocketAdapter.assert_called_once_with(backend, mocker.sentinel.reader, mocker.sentinel.writer)
@@ -97,7 +97,7 @@ class TestAsyncIOBackend:
             5000,
             family=1234,
             happy_eyeballs_delay=given_value,
-            source_address=("local_address", 12345),
+            local_address=("local_address", 12345),
         )
 
         # Assert
@@ -106,7 +106,7 @@ class TestAsyncIOBackend:
             5000,
             happy_eyeballs_delay=expected_value,
             family=mocker.ANY,  # Not tested here
-            local_address=mocker.ANY,  # Not tested here
+            local_addr=mocker.ANY,  # Not tested here
             limit=mocker.ANY,  # Not tested here
         )
 
@@ -166,8 +166,8 @@ class TestAsyncIOBackend:
         # Assert
         mock_create_datagram_endpoint.assert_awaited_once_with(
             family=1234,
-            local_address=("local_address", 12345),
-            remote_address=("remote_address", 5000),
+            local_addr=("local_address", 12345),
+            remote_addr=("remote_address", 5000),
             reuse_port=True,
         )
         mock_DatagramSocketAdapter.assert_called_once_with(backend, mocker.sentinel.endpoint)

@@ -204,7 +204,7 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         port: int,
         *,
         family: int,
-        source_address: tuple[str, int] | None,
+        local_address: tuple[str, int] | None,
         happy_eyeballs_delay: float | None,
     ) -> AbstractAsyncStreamSocketAdapter:
         raise NotImplementedError

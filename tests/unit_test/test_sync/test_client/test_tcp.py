@@ -191,7 +191,7 @@ class TestTCPNetworkClient(BaseTestClient):
             remote_address,
             protocol=mock_stream_protocol,
             timeout=mocker.sentinel.timeout,
-            source_address=mocker.sentinel.source_address,
+            local_address=mocker.sentinel.local_address,
         )
 
         # Assert
@@ -199,7 +199,7 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_socket_create_connection.assert_called_once_with(
             remote_address,
             timeout=mocker.sentinel.timeout,
-            source_address=mocker.sentinel.source_address,
+            source_address=mocker.sentinel.local_address,
         )
         mock_socket_proxy_cls.assert_called_once_with(mock_tcp_socket, lock=mocker.ANY)
         mock_tcp_socket.getsockname.assert_called_once_with()

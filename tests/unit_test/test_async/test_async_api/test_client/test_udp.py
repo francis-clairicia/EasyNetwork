@@ -160,7 +160,7 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
             mock_datagram_protocol,
             family=socket_family,
             remote_address=remote_address,
-            local_address=mocker.sentinel.source_address,
+            local_address=mocker.sentinel.local_address,
         )
 
         # Assert
@@ -168,7 +168,7 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         mock_backend.create_udp_endpoint.assert_awaited_once_with(
             family=socket_family,
             remote_address=remote_address,
-            local_address=mocker.sentinel.source_address,
+            local_address=mocker.sentinel.local_address,
             reuse_port=False,
         )
         mock_datagram_socket_adapter.proxy.assert_called_once_with()
@@ -937,7 +937,7 @@ class TestAsyncUDPNetworkClient:
             remote_address,
             mock_datagram_protocol,
             family=socket_family,
-            local_address=mocker.sentinel.source_address,
+            local_address=mocker.sentinel.local_address,
         )
 
         # Assert
@@ -946,7 +946,7 @@ class TestAsyncUDPNetworkClient:
         mock_backend.create_udp_endpoint.assert_awaited_once_with(
             family=socket_family,
             remote_address=remote_address,
-            local_address=mocker.sentinel.source_address,
+            local_address=mocker.sentinel.local_address,
             reuse_port=False,
         )
         mock_udp_endpoint.get_remote_address.assert_called_once_with()

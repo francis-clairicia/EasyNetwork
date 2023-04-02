@@ -45,7 +45,7 @@ class AsyncioBackend(AbstractAsyncBackend):
         port: int,
         *,
         family: int,
-        source_address: tuple[str, int] | None,
+        local_address: tuple[str, int] | None,
         happy_eyeballs_delay: float | None,
     ) -> AbstractAsyncStreamSocketAdapter:
         assert host is not None, "Expected 'host' to be a str"
@@ -64,7 +64,7 @@ class AsyncioBackend(AbstractAsyncBackend):
             host,
             port,
             family=family,
-            local_address=source_address,
+            local_addr=local_address,
             happy_eyeballs_delay=happy_eyeballs_delay,
             limit=MAX_STREAM_BUFSIZE,
         )
@@ -138,8 +138,8 @@ class AsyncioBackend(AbstractAsyncBackend):
 
         endpoint = await create_datagram_endpoint(
             family=family,
-            local_address=local_address,
-            remote_address=remote_address,
+            local_addr=local_address,
+            remote_addr=remote_address,
             reuse_port=reuse_port,
         )
         return DatagramSocketAdapter(self, endpoint)
@@ -165,7 +165,7 @@ class AsyncioBackend(AbstractAsyncBackend):
     ) -> AbstractAsyncDatagramServerAdapter:
         from .datagram import DatagramServer, create_datagram_endpoint
 
-        endpoint = await create_datagram_endpoint(local_address=(host, port), family=family, reuse_port=reuse_port)
+        endpoint = await create_datagram_endpoint(local_addr=(host, port), family=family, reuse_port=reuse_port)
         return DatagramServer(self, endpoint, datagram_received_cb, error_received_cb)
 
     def create_lock(self) -> ILock:

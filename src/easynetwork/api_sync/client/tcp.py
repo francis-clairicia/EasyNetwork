@@ -52,7 +52,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
         *,
         timeout: float | None = ...,
-        source_address: tuple[str, int] | None = ...,
+        local_address: tuple[str, int] | None = ...,
         max_recv_size: int | None = ...,
     ) -> None:
         ...
@@ -95,6 +95,10 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             self.__owner = bool(give)
         elif isinstance(__arg, tuple):
             address: tuple[str, int] = __arg
+            try:
+                kwargs["source_address"] = kwargs.pop("local_address")
+            except KeyError:
+                pass
             socket = _socket.create_connection(address, **kwargs)
             self.__owner = True
         else:  # pragma: no cover

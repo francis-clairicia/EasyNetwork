@@ -14,9 +14,15 @@ class BaseTestClient:
     def set_local_address_to_socket_mock(
         mock_socket: MagicMock,
         socket_family: int,
-        address: tuple[str, int],
+        address: tuple[str, int] | None,
     ) -> None:
         additional_address_components: tuple[Any, ...] = (0, 0) if socket_family == AF_INET6 else ()
+
+        if address is None:
+            if socket_family == AF_INET6:
+                address = ("::", 0)
+            else:
+                address = ("0.0.0.0", 0)
 
         mock_socket.getsockname.return_value = address + additional_address_components
 

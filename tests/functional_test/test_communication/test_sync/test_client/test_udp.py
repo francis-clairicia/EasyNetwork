@@ -40,7 +40,7 @@ class TestUDPNetworkClient:
         datagram_protocol: DatagramProtocol[str, str],
     ) -> Iterator[UDPNetworkClient[str, str]]:
         address: tuple[str, int] = server.getsockname()[:2]
-        with UDPNetworkClient(address, datagram_protocol, family=socket_family, source_address=(localhost, 0)) as client:
+        with UDPNetworkClient(address, datagram_protocol, family=socket_family, local_address=(localhost, 0)) as client:
             yield client
 
     def test____close____double_close(self, client: UDPNetworkClient[str, str]) -> None:
@@ -174,7 +174,7 @@ class TestUDPNetworkEndpoint:
             datagram_protocol,
             remote_address=address,
             family=socket_family,
-            source_address=(localhost, 0),
+            local_address=(localhost, 0),
         ) as client:
             yield client
 

@@ -163,7 +163,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             remote_address,
             family=socket_family,
             protocol=mock_stream_protocol,
-            source_address=mocker.sentinel.source_address,
+            local_address=mocker.sentinel.local_address,
             happy_eyeballs_delay=mocker.sentinel.happy_eyeballs_delay,
         )
 
@@ -173,7 +173,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_backend.create_tcp_connection.assert_awaited_once_with(
             *remote_address,
             family=socket_family,
-            source_address=mocker.sentinel.source_address,
+            local_address=mocker.sentinel.local_address,
             happy_eyeballs_delay=mocker.sentinel.happy_eyeballs_delay,
         )
         mock_stream_socket_adapter.proxy.assert_called_once_with()

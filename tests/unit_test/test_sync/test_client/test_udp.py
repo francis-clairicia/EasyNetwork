@@ -70,11 +70,13 @@ class TestUDPNetworkEndpoint(BaseTestClient):
     @classmethod
     def local_address(
         cls,
+        request: Any,
         mock_udp_socket: MagicMock,
         socket_family: int,
         global_local_address: tuple[str, int],
     ) -> tuple[str, int]:
-        cls.set_local_address_to_socket_mock(mock_udp_socket, socket_family, global_local_address)
+        address: tuple[str, int] | None = getattr(request, "param", global_local_address)
+        cls.set_local_address_to_socket_mock(mock_udp_socket, socket_family, address)
         return global_local_address
 
     @pytest.fixture(autouse=True, params=[False, True], ids=lambda p: f"remote_address=={p}")
@@ -197,11 +199,13 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         mock_socket_proxy_cls.assert_called_once_with(mock_udp_socket, lock=mocker.ANY)
         assert endpoint.socket is mocker.sentinel.proxy
 
-    @pytest.mark.parametrize("source_address", [None, ("local_address", 12345)], ids=lambda p: f"source_address=={p}")
+    @pytest.mark.parametrize(
+        "local_address", [None, ("local_address", 12345)], ids=lambda p: f"local_address=={p}", indirect=True
+    )
     def test____dunder_init____create_datagram_endpoint____with_parameters(
         self,
         socket_family: int,
-        source_address: tuple[str, int] | None,
+        local_address: tuple[str, int] | None,
         remote_address: tuple[str, int] | None,
         mock_udp_socket: MagicMock,
         mock_datagram_protocol: MagicMock,
@@ -215,16 +219,16 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         _ = UDPNetworkEndpoint(
             protocol=mock_datagram_protocol,
             family=socket_family,
-            source_address=source_address,
+            local_address=local_address,
             remote_address=remote_address,
         )
 
         # Assert
         mock_socket_cls.assert_called_once_with(socket_family, SOCK_DGRAM)
-        if source_address is None:
+        if local_address is None:
             mock_udp_socket.bind.assert_called_once_with(("", 0))
         else:
-            mock_udp_socket.bind.assert_called_once_with(source_address)
+            mock_udp_socket.bind.assert_called_once_with(local_address)
         if remote_address is None:
             mock_udp_socket.connect.assert_not_called()
             mock_udp_socket.getpeername.assert_not_called()
@@ -268,7 +272,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
             _ = UDPNetworkEndpoint(
                 protocol=mock_datagram_protocol,
                 family=socket_family,
-                source_address=local_address,
+                local_address=local_address,
                 remote_address=remote_address,
             )
         assert exc_info.value is mock_method.side_effect
@@ -944,7 +948,7 @@ class TestUDPNetworkClient:
             remote_address,
             mock_datagram_protocol,
             family=mocker.sentinel.family,
-            source_address=mocker.sentinel.source_address,
+            local_address=mocker.sentinel.local_address,
         )
 
         # Assert
@@ -952,7 +956,7 @@ class TestUDPNetworkClient:
             protocol=mock_datagram_protocol,
             remote_address=remote_address,
             family=mocker.sentinel.family,
-            source_address=mocker.sentinel.source_address,
+            local_address=mocker.sentinel.local_address,
         )
         mock_udp_endpoint.get_remote_address.assert_called_once_with()
         assert client.socket is mock_udp_socket

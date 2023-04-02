@@ -49,7 +49,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         *,
         family: int = ...,
         remote_address: tuple[str, int] | None = ...,
-        source_address: tuple[str, int] | None = ...,
+        local_address: tuple[str, int] | None = ...,
     ) -> None:
         ...
 
@@ -99,18 +99,18 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             external_socket = False
             family = kwargs.pop("family", _socket.AF_INET)
             remote_address: tuple[str, int] | None = kwargs.pop("remote_address", None)
-            source_address: tuple[str, int] | None = kwargs.pop("source_address", None)
+            local_address: tuple[str, int] | None = kwargs.pop("local_address", None)
             if kwargs:  # pragma: no cover
                 raise TypeError("Invalid arguments")
             if family not in (_socket.AF_INET, _socket.AF_INET6):
                 raise ValueError("Only AF_INET and AF_INET6 families are supported")
             socket = _socket.socket(family, _socket.SOCK_DGRAM)
             try:
-                if source_address is None:
+                if local_address is None:
                     socket.bind(("", 0))
                 else:
-                    source_host, source_port = source_address
-                    socket.bind((source_host, source_port))
+                    local_host, local_port = local_address
+                    socket.bind((local_host, local_port))
                 if remote_address is not None:
                     remote_host, remote_port = remote_address
                     socket.connect((remote_host, remote_port))
@@ -265,7 +265,7 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
         *,
         family: int = ...,
-        source_address: tuple[str, int] | None = ...,
+        local_address: tuple[str, int] | None = ...,
     ) -> None:
         ...
 

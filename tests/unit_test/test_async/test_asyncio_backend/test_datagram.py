@@ -47,8 +47,8 @@ async def test____create_datagram_endpoint____return_DatagramEndpoint_instance(m
     # Act
     endpoint = await create_datagram_endpoint(
         family=mocker.sentinel.socket_family,
-        local_address=mocker.sentinel.local_address,
-        remote_address=mocker.sentinel.remote_address,
+        local_addr=mocker.sentinel.local_address,
+        remote_addr=mocker.sentinel.remote_address,
         reuse_port=mocker.sentinel.reuse_port,
         socket=mocker.sentinel.stdlib_socket,
     )
