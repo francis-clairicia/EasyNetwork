@@ -10,17 +10,17 @@ from __future__ import annotations
 
 __all__ = [
     "AbstractAsyncBackend",
-    "AbstractAsyncBaseServerAdapter",
     "AbstractAsyncBaseSocketAdapter",
-    "AbstractAsyncDatagramServerAdapter",
     "AbstractAsyncDatagramSocketAdapter",
-    "AbstractAsyncServerAdapter",
+    "AbstractAsyncListenerSocketAdapter",
     "AbstractAsyncStreamSocketAdapter",
+    "AbstractTaskGroup",
     "ILock",
+    "ITask",
 ]
 
 from abc import ABCMeta, abstractmethod
-from typing import TYPE_CHECKING, Any, Callable, Coroutine, Protocol, Sequence, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, Coroutine, Protocol, Self, Sequence, TypeVar
 
 if TYPE_CHECKING:
     import concurrent.futures
@@ -55,6 +55,45 @@ class ILock(Protocol):
         ...
 
     def locked(self) -> bool:  # pragma: no cover
+        ...
+
+
+class ITask(Protocol):
+    def get_name(self) -> str:  # pragma: no cover
+        ...
+
+    def get_coro(self) -> Coroutine[Any, Any, Any]:  # pragma: no cover
+        ...
+
+    def done(self) -> bool:  # pragma: no cover
+        ...
+
+    def cancel(self) -> None:  # pragma: no cover
+        ...
+
+
+class AbstractTaskGroup(metaclass=ABCMeta):
+    __slots__ = ("__weakref__",)
+
+    @abstractmethod
+    async def __aenter__(self) -> Self:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> bool | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def start(self, func: Callable[..., Coroutine[Any, Any, Any]], *args: Any, name: str | None = ...) -> ITask:
+        ...
+
+    @abstractmethod
+    def start_soon(self, func: Callable[..., Coroutine[Any, Any, Any]], *args: Any, name: str | None = ...) -> None:
         ...
 
 
@@ -132,61 +171,15 @@ class AbstractAsyncDatagramSocketAdapter(AbstractAsyncBaseSocketAdapter):
         raise NotImplementedError
 
 
-class AbstractAsyncBaseServerAdapter(metaclass=ABCMeta):
-    __slots__ = ("__weakref__",)
-
-    if TYPE_CHECKING:
-        __Self = TypeVar("__Self", bound="AbstractAsyncBaseServerAdapter")
-
-    async def __aenter__(self: __Self) -> __Self:
-        return self
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: TracebackType | None,
-    ) -> None:
-        await self.close()
-
-    @abstractmethod
-    async def close(self) -> None:
-        raise NotImplementedError
-
-    @abstractmethod
-    def is_serving(self) -> bool:
-        raise NotImplementedError
-
-    @abstractmethod
-    async def serve_forever(self) -> None:
-        raise NotImplementedError
-
-    @abstractmethod
-    def get_backend(self) -> AbstractAsyncBackend:
-        raise NotImplementedError
-
-
-class AbstractAsyncServerAdapter(AbstractAsyncBaseServerAdapter):
+class AbstractAsyncListenerSocketAdapter(AbstractAsyncBaseSocketAdapter):
     __slots__ = ()
 
     @abstractmethod
-    def stop_serving(self) -> None:
+    def getpeername(self) -> None:
         raise NotImplementedError
 
     @abstractmethod
-    def sockets(self) -> Sequence[SocketProxy]:
-        raise NotImplementedError
-
-
-class AbstractAsyncDatagramServerAdapter(AbstractAsyncBaseServerAdapter):
-    __slots__ = ()
-
-    @abstractmethod
-    async def sendto(self, __data: ReadableBuffer, __address: tuple[Any, ...], /) -> None:
-        raise NotImplementedError
-
-    @abstractmethod
-    def socket(self) -> SocketProxy | None:
+    async def accept(self) -> tuple[AbstractAsyncStreamSocketAdapter, tuple[Any, ...]]:
         raise NotImplementedError
 
 
@@ -195,6 +188,10 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
 
     @abstractmethod
     async def coro_yield(self) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def create_task_group(self) -> AbstractTaskGroup:
         raise NotImplementedError
 
     @abstractmethod
@@ -214,17 +211,15 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    async def create_tcp_server(
+    async def create_tcp_listeners(
         self,
-        client_connected_cb: Callable[[AbstractAsyncStreamSocketAdapter], Coroutine[Any, Any, Any]],
         host: str | Sequence[str],
         port: int,
         *,
         family: int,
-        backlog: int | None,
-        reuse_address: bool,
+        backlog: int,
         reuse_port: bool,
-    ) -> AbstractAsyncServerAdapter:
+    ) -> Sequence[AbstractAsyncListenerSocketAdapter]:
         raise NotImplementedError
 
     @abstractmethod
@@ -240,19 +235,6 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
 
     @abstractmethod
     async def wrap_udp_socket(self, socket: _socket.socket) -> AbstractAsyncDatagramSocketAdapter:
-        raise NotImplementedError
-
-    @abstractmethod
-    async def create_udp_server(
-        self,
-        datagram_received_cb: Callable[[bytes, tuple[Any, ...]], Coroutine[Any, Any, Any]],
-        error_received_cb: Callable[[Exception], Coroutine[Any, Any, Any]],
-        host: str,
-        port: int,
-        *,
-        family: int,
-        reuse_port: bool,
-    ) -> AbstractAsyncDatagramServerAdapter:
         raise NotImplementedError
 
     @abstractmethod
