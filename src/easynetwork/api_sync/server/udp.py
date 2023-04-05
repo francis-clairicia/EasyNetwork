@@ -466,9 +466,9 @@ def _create_udp_server(address: tuple[str, int], family: int, reuse_port: bool) 
     socket = _socket.socket(family, _socket.SOCK_DGRAM)
     try:
         if reuse_port:
-            if not hasattr(_socket, "SO_REUSEPORT"):
-                raise ValueError("SO_REUSEPORT not supported on this platform")
-            socket.setsockopt(_socket.SOL_SOCKET, getattr(_socket, "SO_REUSEPORT"), 1)
+            from ...tools._utils import set_reuseport
+
+            set_reuseport(socket)
 
         if _socket.has_ipv6 and family == _socket.AF_INET6:
             try:

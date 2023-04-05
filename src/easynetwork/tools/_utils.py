@@ -7,6 +7,7 @@ __all__ = [
     "error_from_errno",
     "ipaddr_info",
     "restore_timeout_at_end",
+    "set_reuseport",
 ]
 
 import contextlib
@@ -119,3 +120,13 @@ def ipaddr_info(
 
     # "host" is not an IP address.
     return None
+
+
+def set_reuseport(sock: _socket.socket) -> None:
+    if not hasattr(_socket, "SO_REUSEPORT"):
+        raise ValueError("reuse_port not supported by socket module")
+    else:
+        try:
+            sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEPORT, True)
+        except OSError:
+            raise ValueError("reuse_port not supported by socket module, " "SO_REUSEPORT defined but not implemented.")

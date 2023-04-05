@@ -39,7 +39,7 @@ class AsyncioBackend(AbstractAsyncBackend):
         return await asyncio.sleep(0)
 
     def create_task_group(self) -> AbstractTaskGroup:
-        from .utils.tasks import TaskGroup
+        from .tools.tasks import TaskGroup
 
         return TaskGroup()
 
@@ -74,7 +74,7 @@ class AsyncioBackend(AbstractAsyncBackend):
         )
         return StreamSocketAdapter(self, reader, writer)
 
-    async def wrap_tcp_socket(self, socket: _socket.socket) -> AbstractAsyncStreamSocketAdapter:
+    async def wrap_connected_tcp_socket(self, socket: _socket.socket) -> AbstractAsyncStreamSocketAdapter:
         assert socket is not None, "Expected 'socket' to be a socket.socket instance"
         socket.setblocking(False)
 
@@ -104,6 +104,8 @@ class AsyncioBackend(AbstractAsyncBackend):
         import socket as _socket
         import sys
         from itertools import chain
+
+        from easynetwork.tools._utils import set_reuseport
 
         loop = asyncio.get_running_loop()
 
@@ -136,7 +138,7 @@ class AsyncioBackend(AbstractAsyncBackend):
                 if reuse_address:
                     sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, True)
                 if reuse_port:
-                    _set_reuseport(sock)
+                    set_reuseport(sock)
                 # Disable IPv4/IPv6 dual stack support (enabled by
                 # default on Linux) which makes a single socket
                 # listen on both address families.
@@ -155,7 +157,7 @@ class AsyncioBackend(AbstractAsyncBackend):
                 for sock in sockets:
                     sock.close()
 
-        from .stream.socket import ListenerSocketAdapter
+        from .stream.listener import ListenerSocketAdapter
 
         return [ListenerSocketAdapter(self, sock, loop=loop) for sock in sockets]
 
@@ -217,15 +219,3 @@ class AsyncioBackend(AbstractAsyncBackend):
         import asyncio
 
         return await asyncio.wrap_future(future)
-
-
-def _set_reuseport(sock: _socket.socket) -> None:
-    import socket
-
-    if not hasattr(socket, "SO_REUSEPORT"):
-        raise ValueError("reuse_port not supported by socket module")
-    else:
-        try:
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-        except OSError:
-            raise ValueError("reuse_port not supported by socket module, " "SO_REUSEPORT defined but not implemented.")

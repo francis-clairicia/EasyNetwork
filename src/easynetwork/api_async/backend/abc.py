@@ -131,10 +131,6 @@ class AbstractAsyncBaseSocketAdapter(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    def getpeername(self) -> tuple[Any, ...] | None:
-        raise NotImplementedError
-
-    @abstractmethod
     def proxy(self) -> SocketProxy:
         raise NotImplementedError
 
@@ -163,6 +159,10 @@ class AbstractAsyncDatagramSocketAdapter(AbstractAsyncBaseSocketAdapter):
     __slots__ = ()
 
     @abstractmethod
+    def getpeername(self) -> tuple[Any, ...] | None:
+        raise NotImplementedError
+
+    @abstractmethod
     async def recvfrom(self) -> tuple[bytes, tuple[Any, ...]]:
         raise NotImplementedError
 
@@ -173,10 +173,6 @@ class AbstractAsyncDatagramSocketAdapter(AbstractAsyncBaseSocketAdapter):
 
 class AbstractAsyncListenerSocketAdapter(AbstractAsyncBaseSocketAdapter):
     __slots__ = ()
-
-    @abstractmethod
-    def getpeername(self) -> None:
-        raise NotImplementedError
 
     @abstractmethod
     async def accept(self) -> tuple[AbstractAsyncStreamSocketAdapter, tuple[Any, ...]]:
@@ -207,7 +203,7 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    async def wrap_tcp_socket(self, socket: _socket.socket) -> AbstractAsyncStreamSocketAdapter:
+    async def wrap_connected_tcp_socket(self, socket: _socket.socket) -> AbstractAsyncStreamSocketAdapter:
         raise NotImplementedError
 
     @abstractmethod

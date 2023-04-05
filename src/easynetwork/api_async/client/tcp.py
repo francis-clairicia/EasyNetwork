@@ -127,7 +127,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
                 backend_kwargs = {}
             backend = AsyncBackendFactory.new(backend, **backend_kwargs)
 
-        socket_adapter = await backend.wrap_tcp_socket(socket)
+        socket_adapter = await backend.wrap_connected_tcp_socket(socket)
 
         return cls(socket_adapter, protocol)
 

@@ -24,6 +24,17 @@ class Task:
     def __init__(self, task: asyncio.Task[Any]) -> None:
         self.__t: asyncio.Task[Any] = task
 
+    def __hash__(self) -> int:
+        return hash(self.__t)
+
+    def __eq__(self, other: object, /) -> bool:
+        if not isinstance(other, Task):
+            return NotImplemented
+        return self.__t == other.__t
+
+    def __ne__(self, other: object, /) -> bool:
+        return not (self == other)
+
     def get_name(self) -> str:
         return self.__t.get_name()
 

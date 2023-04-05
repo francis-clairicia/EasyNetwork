@@ -42,7 +42,7 @@ class MockBackend(AbstractAsyncBackend):
     async def create_tcp_connection(self, *args: Any, **kwargs: Any) -> AbstractAsyncStreamSocketAdapter:
         raise NotImplementedError
 
-    async def wrap_tcp_socket(self, socket: Socket) -> AbstractAsyncStreamSocketAdapter:
+    async def wrap_connected_tcp_socket(self, socket: Socket) -> AbstractAsyncStreamSocketAdapter:
         raise NotImplementedError
 
     async def create_tcp_listeners(self, *args: Any, **kwargs: Any) -> Sequence[AbstractAsyncListenerSocketAdapter]:

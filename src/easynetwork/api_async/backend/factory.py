@@ -23,37 +23,42 @@ if TYPE_CHECKING:
 @final
 class AsyncBackendFactory:
     GROUP_NAME: Final[str] = "easynetwork.async.backends"
-    __BACKEND: type[AbstractAsyncBackend] | None = None
+    __BACKEND: str | type[AbstractAsyncBackend] | None = None
 
     @staticmethod
     def get_default_backend(guess_current_async_library: bool = True) -> type[AbstractAsyncBackend]:
-        backend: type[AbstractAsyncBackend] | None = AsyncBackendFactory.__BACKEND
+        backend: str | type[AbstractAsyncBackend] | None = AsyncBackendFactory.__BACKEND
+        if isinstance(backend, type):
+            return backend
         if backend is None:
-            _async_library: str
             try:
                 if not guess_current_async_library:
                     raise ModuleNotFoundError
 
                 import sniffio
             except ModuleNotFoundError:
-                _async_library = "asyncio"
+                backend = "asyncio"
             else:
-                _async_library = sniffio.current_async_library()  # must raise if not recognized
-            backend = AsyncBackendFactory.__get_backend_cls(
-                _async_library,
-                "Running library {name!r} misses the backend implementation",
-            )
-        return backend
+                backend = sniffio.current_async_library()  # must raise if not recognized
+        return AsyncBackendFactory.__get_backend_cls(
+            backend,
+            "Running library {name!r} misses the backend implementation",
+        )
 
     @staticmethod
     def set_default_backend(backend: str | type[AbstractAsyncBackend] | None) -> None:
-        if isinstance(backend, type):
-            import inspect
+        import inspect
 
-            if not issubclass(backend, AbstractAsyncBackend) or inspect.isabstract(backend):
+        match backend:
+            case type() if not issubclass(backend, AbstractAsyncBackend) or inspect.isabstract(backend):
                 raise TypeError(f"Invalid backend class: {backend!r}")
-        elif backend is not None:
-            backend = AsyncBackendFactory.__get_backend_cls(backend)
+            case type() | None:
+                pass
+            case str():
+                AsyncBackendFactory.__get_backend_cls(backend)
+            case _:  # pragma: no cover
+                raise TypeError(f"Invalid argument: {backend!r}")
+
         AsyncBackendFactory.__BACKEND = backend
 
     @staticmethod

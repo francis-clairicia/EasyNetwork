@@ -110,7 +110,7 @@ class TestAsyncIOBackend:
             limit=mocker.ANY,  # Not tested here
         )
 
-    async def test____wrap_tcp_socket____use_asyncio_open_connection(
+    async def test____wrap_connected_tcp_socket____use_asyncio_open_connection(
         self,
         backend: AsyncioBackend,
         mock_tcp_socket: MagicMock,
@@ -129,7 +129,7 @@ class TestAsyncIOBackend:
         )
 
         # Act
-        socket = await backend.wrap_tcp_socket(mock_tcp_socket)
+        socket = await backend.wrap_connected_tcp_socket(mock_tcp_socket)
 
         # Assert
         mock_open_connection.assert_awaited_once_with(
