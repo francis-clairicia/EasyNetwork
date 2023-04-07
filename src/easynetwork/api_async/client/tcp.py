@@ -11,7 +11,7 @@ __all__ = ["AsyncTCPNetworkClient"]
 import concurrent.futures
 import errno as _errno
 import socket as _socket
-from typing import TYPE_CHECKING, Any, Callable, Generic, Iterator, Mapping, TypeVar, final
+from typing import Any, Callable, Generic, Iterator, Mapping, Self, TypeVar, final
 
 from ...exceptions import ClientClosedError, StreamProtocolParseError
 from ...protocol import StreamProtocol
@@ -46,9 +46,6 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         "__closed",
         "__close_waiter",
     )
-
-    if TYPE_CHECKING:
-        __Self = TypeVar("__Self", bound="AsyncTCPNetworkClient[Any, Any]")
 
     def __init__(
         self,
@@ -87,7 +84,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
 
     @classmethod
     async def connect(
-        cls: type[__Self],
+        cls,
         address: tuple[str, int],
         protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
         *,
@@ -96,7 +93,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         happy_eyeballs_delay: float | None = None,
         backend: str | AbstractAsyncBackend | None = None,
         backend_kwargs: Mapping[str, Any] | None = None,
-    ) -> __Self:
+    ) -> Self:
         backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
 
         host, port = address
@@ -112,13 +109,13 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
 
     @classmethod
     async def from_socket(
-        cls: type[__Self],
+        cls,
         socket: _socket.socket,
         protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
         *,
         backend: str | AbstractAsyncBackend | None = None,
         backend_kwargs: Mapping[str, Any] | None = None,
-    ) -> __Self:
+    ) -> Self:
         backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
 
         socket_adapter = await backend.wrap_connected_tcp_socket(socket)

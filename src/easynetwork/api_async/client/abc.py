@@ -9,7 +9,7 @@ from __future__ import annotations
 __all__ = ["AbstractAsyncNetworkClient"]
 
 from abc import ABCMeta, abstractmethod
-from typing import TYPE_CHECKING, Any, AsyncIterator, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, AsyncIterator, Generic, Self, TypeVar
 
 from ...tools.socket import SocketAddress
 
@@ -23,10 +23,7 @@ _SentPacketT = TypeVar("_SentPacketT")
 class AbstractAsyncNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=ABCMeta):
     __slots__ = ("__weakref__",)
 
-    if TYPE_CHECKING:
-        __Self = TypeVar("__Self", bound="AbstractAsyncNetworkClient[Any, Any]")
-
-    async def __aenter__(self: __Self) -> __Self:
+    async def __aenter__(self) -> Self:
         return self
 
     async def __aexit__(

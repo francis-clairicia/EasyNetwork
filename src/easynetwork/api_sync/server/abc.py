@@ -11,7 +11,7 @@ __all__ = [
 ]
 
 from abc import ABCMeta, abstractmethod
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, Self
 
 from ...tools.socket import SocketAddress
 
@@ -22,10 +22,7 @@ if TYPE_CHECKING:
 class AbstractNetworkServer(metaclass=ABCMeta):
     __slots__ = ("__weakref__",)
 
-    if TYPE_CHECKING:
-        __Self = TypeVar("__Self", bound="AbstractNetworkServer")
-
-    def __enter__(self: __Self) -> __Self:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None) -> None:

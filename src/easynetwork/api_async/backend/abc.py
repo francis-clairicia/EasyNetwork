@@ -104,10 +104,7 @@ class AbstractTaskGroup(metaclass=ABCMeta):
 class AbstractAsyncBaseSocketAdapter(metaclass=ABCMeta):
     __slots__ = ("__weakref__",)
 
-    if TYPE_CHECKING:
-        __Self = TypeVar("__Self", bound="AbstractAsyncBaseSocketAdapter")
-
-    async def __aenter__(self: __Self) -> __Self:
+    async def __aenter__(self) -> Self:
         return self
 
     async def __aexit__(

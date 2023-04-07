@@ -11,7 +11,7 @@ __all__ = ["UDPNetworkClient", "UDPNetworkEndpoint"]
 import socket as _socket
 from operator import itemgetter as _itemgetter
 from threading import Lock as _Lock
-from typing import TYPE_CHECKING, Any, Generic, Iterator, TypeVar, final, overload
+from typing import TYPE_CHECKING, Any, Generic, Iterator, Self, TypeVar, final, overload
 
 from ...exceptions import ClientClosedError, DatagramProtocolParseError
 from ...protocol import DatagramProtocol
@@ -37,9 +37,6 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         "__lock",
         "__weakref__",
     )
-
-    if TYPE_CHECKING:
-        __Self = TypeVar("__Self", bound="UDPNetworkEndpoint[Any, Any]")
 
     @overload
     def __init__(
@@ -158,7 +155,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             return f"<{type(self).__name__} closed>"
         return f"<{type(self).__name__} socket={socket!r}>"
 
-    def __enter__(self: __Self) -> __Self:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None) -> None:

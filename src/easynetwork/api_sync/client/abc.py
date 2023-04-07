@@ -9,7 +9,7 @@ from __future__ import annotations
 __all__ = ["AbstractNetworkClient"]
 
 from abc import ABCMeta, abstractmethod
-from typing import TYPE_CHECKING, Any, Generic, Iterator, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, Iterator, Self, TypeVar
 
 from ...tools.socket import SocketAddress
 
@@ -23,10 +23,7 @@ _SentPacketT = TypeVar("_SentPacketT")
 class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=ABCMeta):
     __slots__ = ("__weakref__",)
 
-    if TYPE_CHECKING:
-        __Self = TypeVar("__Self", bound="AbstractNetworkClient[Any, Any]")
-
-    def __enter__(self: __Self) -> __Self:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None) -> None:

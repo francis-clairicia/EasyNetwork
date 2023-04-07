@@ -10,7 +10,7 @@ __all__ = ["AsyncUDPNetworkClient", "AsyncUDPNetworkEndpoint"]
 
 import concurrent.futures
 import errno as _errno
-from typing import TYPE_CHECKING, Any, AsyncIterator, Generic, Mapping, TypeVar, final
+from typing import TYPE_CHECKING, Any, AsyncIterator, Generic, Mapping, Self, TypeVar, final
 
 from ...exceptions import ClientClosedError, DatagramProtocolParseError
 from ...protocol import DatagramProtocol
@@ -43,9 +43,6 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         "__close_waiter",
         "__weakref__",
     )
-
-    if TYPE_CHECKING:
-        __Self = TypeVar("__Self", bound="AsyncUDPNetworkEndpoint[Any, Any]")
 
     def __init__(
         self,
@@ -80,7 +77,7 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             return f"<{type(self).__name__} closed>"
         return f"<{type(self).__name__} socket={socket!r}>"
 
-    async def __aenter__(self: __Self) -> __Self:
+    async def __aenter__(self) -> Self:
         return self
 
     async def __aexit__(
@@ -96,7 +93,7 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
 
     @classmethod
     async def create(
-        cls: type[__Self],
+        cls,
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
         *,
         family: int = 0,
@@ -104,7 +101,7 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         remote_address: tuple[str, int] | None = None,
         backend: str | AbstractAsyncBackend | None = None,
         backend_kwargs: Mapping[str, Any] | None = None,
-    ) -> __Self:
+    ) -> Self:
         backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
 
         if local_address is None:
@@ -121,13 +118,13 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
 
     @classmethod
     async def from_socket(
-        cls: type[__Self],
+        cls,
         socket: _socket.socket,
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
         *,
         backend: str | AbstractAsyncBackend | None = None,
         backend_kwargs: Mapping[str, Any] | None = None,
-    ) -> __Self:
+    ) -> Self:
         backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
 
         if socket.getsockname()[1] == 0:
@@ -226,9 +223,6 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
 class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPacketT], Generic[_SentPacketT, _ReceivedPacketT]):
     __slots__ = ("__endpoint", "__peer")
 
-    if TYPE_CHECKING:
-        __Self = TypeVar("__Self", bound="AsyncUDPNetworkClient[Any, Any]")
-
     def __init__(
         self,
         socket: AbstractAsyncDatagramSocketAdapter,
@@ -251,7 +245,7 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
 
     @classmethod
     async def create(
-        cls: type[__Self],
+        cls,
         remote_address: tuple[str, int],
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
         *,
@@ -259,7 +253,7 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         local_address: tuple[str, int] | None = None,
         backend: str | AbstractAsyncBackend | None = None,
         backend_kwargs: Mapping[str, Any] | None = None,
-    ) -> __Self:
+    ) -> Self:
         backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
 
         if local_address is None:
@@ -276,13 +270,13 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
 
     @classmethod
     async def from_socket(
-        cls: type[__Self],
+        cls,
         socket: _socket.socket,
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
         *,
         backend: str | AbstractAsyncBackend | None = None,
         backend_kwargs: Mapping[str, Any] | None = None,
-    ) -> __Self:
+    ) -> Self:
         backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
 
         if socket.getsockname()[1] == 0:
