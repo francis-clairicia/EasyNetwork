@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from socket import socket as Socket
-from typing import Any, Sequence, final
+from typing import Any, Callable, Sequence, final
 
 from easynetwork.api_async.backend.abc import (
     AbstractAsyncBackend,
@@ -16,6 +16,9 @@ from easynetwork.api_async.backend.abc import (
 
 
 class BaseFakeBackend(AbstractAsyncBackend):
+    async def sleep(self, delay: float) -> None:
+        raise NotImplementedError
+
     async def coro_yield(self) -> None:
         raise NotImplementedError
 
@@ -38,6 +41,9 @@ class BaseFakeBackend(AbstractAsyncBackend):
         raise NotImplementedError
 
     def create_lock(self) -> ILock:
+        raise NotImplementedError
+
+    async def run_in_thread(self, __func: Callable[..., Any], /, *args: Any, **kwargs: Any) -> Any:
         raise NotImplementedError
 
 

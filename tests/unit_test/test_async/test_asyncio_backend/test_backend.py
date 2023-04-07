@@ -31,6 +31,16 @@ class TestAsyncIOBackend:
         # Assert
         mock_sleep.assert_awaited_once_with(0)
 
+    async def test____sleep____use_asyncio_sleep(self, backend: AsyncioBackend, mocker: MockerFixture) -> None:
+        # Arrange
+        mock_sleep: AsyncMock = mocker.patch("asyncio.sleep", new_callable=mocker.async_stub)
+
+        # Act
+        await backend.sleep(mocker.sentinel.delay)
+
+        # Assert
+        mock_sleep.assert_awaited_once_with(mocker.sentinel.delay)
+
     async def test____create_tcp_connection____use_asyncio_open_connection(
         self,
         backend: AsyncioBackend,
@@ -212,6 +222,39 @@ class TestAsyncIOBackend:
         # Assert
         mock_Lock.assert_called_once_with()
         assert lock is mocker.sentinel.lock
+
+    async def test____run_in_thread____use_asyncio_to_thread(
+        self,
+        backend: AsyncioBackend,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        func_stub = mocker.stub()
+        mock_to_thread: AsyncMock = mocker.patch(
+            "asyncio.to_thread",
+            new_callable=mocker.AsyncMock,
+            return_value=mocker.sentinel.return_value,
+        )
+
+        # Act
+        ret_val = await backend.run_in_thread(
+            func_stub,
+            mocker.sentinel.arg1,
+            mocker.sentinel.arg2,
+            kw1=mocker.sentinel.kwargs1,
+            kw2=mocker.sentinel.kwargs2,
+        )
+
+        # Assert
+        mock_to_thread.assert_awaited_once_with(
+            func_stub,
+            mocker.sentinel.arg1,
+            mocker.sentinel.arg2,
+            kw1=mocker.sentinel.kwargs1,
+            kw2=mocker.sentinel.kwargs2,
+        )
+        func_stub.assert_not_called()
+        assert ret_val is mocker.sentinel.return_value
 
     async def test____wait_future____use_asyncio_wrap_future(
         self,

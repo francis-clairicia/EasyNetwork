@@ -12,7 +12,7 @@ __all__ = ["AsyncBackendFactory"]
 
 import functools
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Final, final
+from typing import TYPE_CHECKING, Any, Final, Mapping, final
 
 from .abc import AbstractAsyncBackend
 
@@ -69,6 +69,14 @@ class AsyncBackendFactory:
         else:
             backend_cls = AsyncBackendFactory.__get_backend_cls(__backend)
         return backend_cls(**kwargs)
+
+    @staticmethod
+    def ensure(backend: str | AbstractAsyncBackend | None, kwargs: Mapping[str, Any] | None = None) -> AbstractAsyncBackend:
+        if not isinstance(backend, AbstractAsyncBackend):
+            if kwargs is None:
+                kwargs = {}
+            backend = AsyncBackendFactory.new(backend, **kwargs)
+        return backend
 
     @staticmethod
     def get_all_backends() -> MappingProxyType[str, type[AbstractAsyncBackend]]:

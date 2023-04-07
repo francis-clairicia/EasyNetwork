@@ -97,10 +97,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         backend: str | AbstractAsyncBackend | None = None,
         backend_kwargs: Mapping[str, Any] | None = None,
     ) -> __Self:
-        if not isinstance(backend, AbstractAsyncBackend):
-            if backend_kwargs is None:
-                backend_kwargs = {}
-            backend = AsyncBackendFactory.new(backend, **backend_kwargs)
+        backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
 
         host, port = address
         socket_adapter = await backend.create_tcp_connection(
@@ -122,10 +119,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         backend: str | AbstractAsyncBackend | None = None,
         backend_kwargs: Mapping[str, Any] | None = None,
     ) -> __Self:
-        if not isinstance(backend, AbstractAsyncBackend):
-            if backend_kwargs is None:
-                backend_kwargs = {}
-            backend = AsyncBackendFactory.new(backend, **backend_kwargs)
+        backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
 
         socket_adapter = await backend.wrap_connected_tcp_socket(socket)
 

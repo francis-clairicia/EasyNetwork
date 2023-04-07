@@ -10,7 +10,7 @@ from __future__ import annotations
 __all__ = ["AsyncioBackend"]  # type: list[str]
 
 import concurrent.futures
-from typing import TYPE_CHECKING, Any, Sequence, TypeVar, final
+from typing import TYPE_CHECKING, Any, Callable, ParamSpec, Sequence, TypeVar, final
 
 from easynetwork.api_async.backend.abc import AbstractAsyncBackend
 
@@ -26,6 +26,7 @@ if TYPE_CHECKING:
         ILock,
     )
 
+_P = ParamSpec("_P")
 _T = TypeVar("_T")
 
 
@@ -34,9 +35,12 @@ class AsyncioBackend(AbstractAsyncBackend):
     __slots__ = ()
 
     async def coro_yield(self) -> None:
+        return await self.sleep(0)
+
+    async def sleep(self, delay: float) -> None:
         import asyncio
 
-        return await asyncio.sleep(0)
+        return await asyncio.sleep(delay)
 
     def create_task_group(self) -> AbstractTaskGroup:
         from .tools.tasks import TaskGroup
@@ -101,16 +105,14 @@ class AsyncioBackend(AbstractAsyncBackend):
 
         import asyncio
         import os
-        import socket as _socket
         import sys
         from itertools import chain
 
-        from easynetwork.tools._utils import set_reuseport
+        from easynetwork.tools._utils import open_listener_sockets_from_getaddrinfo_result
 
         loop = asyncio.get_running_loop()
 
         reuse_address = os.name == "posix" and sys.platform != "cygwin"
-        sockets: list[_socket.socket] = []
         hosts: Sequence[str | None]
         if host == "":
             hosts = [None]
@@ -121,41 +123,16 @@ class AsyncioBackend(AbstractAsyncBackend):
 
         infos: set[tuple[int, int, int, str, tuple[Any, ...]]] = set(
             chain.from_iterable(
-                asyncio.gather(*[self._create_tcp_listener_getaddrinfo(host, port, family, loop) for host in hosts])
+                await asyncio.gather(*[self._create_tcp_listener_getaddrinfo(host, port, family, loop) for host in hosts])
             )
         )
 
-        completed = False
-        try:
-            for res in infos:
-                af, socktype, proto, canonname, sa = res
-                try:
-                    sock = _socket.socket(af, socktype, proto)
-                except OSError:
-                    # Assume it's a bad family/type/protocol combination.
-                    continue
-                sockets.append(sock)
-                if reuse_address:
-                    sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, True)
-                if reuse_port:
-                    set_reuseport(sock)
-                # Disable IPv4/IPv6 dual stack support (enabled by
-                # default on Linux) which makes a single socket
-                # listen on both address families.
-                if _socket.has_ipv6 and af == _socket.AF_INET6 and hasattr(_socket, "IPPROTO_IPV6"):
-                    sock.setsockopt(_socket.IPPROTO_IPV6, _socket.IPV6_V6ONLY, True)
-                try:
-                    sock.bind(sa)
-                except OSError as err:
-                    raise OSError(
-                        err.errno, "error while attempting " "to bind on address %r: %s" % (sa, err.strerror.lower())
-                    ) from None
-                sock.listen(backlog)
-            completed = True
-        finally:
-            if not completed:
-                for sock in sockets:
-                    sock.close()
+        sockets: list[_socket.socket] = open_listener_sockets_from_getaddrinfo_result(
+            infos,
+            backlog=backlog,
+            reuse_address=reuse_address,
+            reuse_port=reuse_port,
+        )
 
         from .stream.listener import ListenerSocketAdapter
 
@@ -214,6 +191,11 @@ class AsyncioBackend(AbstractAsyncBackend):
         import asyncio
 
         return asyncio.Lock()
+
+    async def run_in_thread(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+        import asyncio
+
+        return await asyncio.to_thread(__func, *args, **kwargs)
 
     async def wait_future(self, future: concurrent.futures.Future[_T]) -> _T:
         import asyncio

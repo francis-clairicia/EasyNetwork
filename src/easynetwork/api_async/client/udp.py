@@ -105,10 +105,7 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         backend: str | AbstractAsyncBackend | None = None,
         backend_kwargs: Mapping[str, Any] | None = None,
     ) -> __Self:
-        if not isinstance(backend, AbstractAsyncBackend):
-            if backend_kwargs is None:
-                backend_kwargs = {}
-            backend = AsyncBackendFactory.new(backend, **backend_kwargs)
+        backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
 
         if local_address is None:
             local_address = ("", 0)
@@ -131,10 +128,7 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         backend: str | AbstractAsyncBackend | None = None,
         backend_kwargs: Mapping[str, Any] | None = None,
     ) -> __Self:
-        if not isinstance(backend, AbstractAsyncBackend):
-            if backend_kwargs is None:
-                backend_kwargs = {}
-            backend = AsyncBackendFactory.new(backend, **backend_kwargs)
+        backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
 
         if socket.getsockname()[1] == 0:
             socket.bind(("", 0))
@@ -266,10 +260,7 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         backend: str | AbstractAsyncBackend | None = None,
         backend_kwargs: Mapping[str, Any] | None = None,
     ) -> __Self:
-        if not isinstance(backend, AbstractAsyncBackend):
-            if backend_kwargs is None:
-                backend_kwargs = {}
-            backend = AsyncBackendFactory.new(backend, **backend_kwargs)
+        backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
 
         if local_address is None:
             local_address = ("", 0)
@@ -292,10 +283,7 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         backend: str | AbstractAsyncBackend | None = None,
         backend_kwargs: Mapping[str, Any] | None = None,
     ) -> __Self:
-        if not isinstance(backend, AbstractAsyncBackend):
-            if backend_kwargs is None:
-                backend_kwargs = {}
-            backend = AsyncBackendFactory.new(backend, **backend_kwargs)
+        backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
 
         if socket.getsockname()[1] == 0:
             socket.bind(("", 0))

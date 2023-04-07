@@ -14,13 +14,13 @@ __all__ = [
     "AbstractAsyncDatagramSocketAdapter",
     "AbstractAsyncListenerSocketAdapter",
     "AbstractAsyncStreamSocketAdapter",
+    "AbstractTask",
     "AbstractTaskGroup",
     "ILock",
-    "ITask",
 ]
 
 from abc import ABCMeta, abstractmethod
-from typing import TYPE_CHECKING, Any, Callable, Coroutine, Protocol, Self, Sequence, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, Coroutine, Generic, ParamSpec, Protocol, Self, Sequence, TypeVar
 
 if TYPE_CHECKING:
     import concurrent.futures
@@ -32,7 +32,9 @@ if TYPE_CHECKING:
     from ...tools.socket import SocketProxy
 
 
+_P = ParamSpec("_P")
 _T = TypeVar("_T")
+_T_co = TypeVar("_T_co", covariant=True)
 
 
 class ILock(Protocol):
@@ -58,18 +60,24 @@ class ILock(Protocol):
         ...
 
 
-class ITask(Protocol):
-    def get_name(self) -> str:  # pragma: no cover
-        ...
+class AbstractTask(Generic[_T_co], metaclass=ABCMeta):
+    __slots__ = ("__weakref__",)
 
-    def get_coro(self) -> Coroutine[Any, Any, Any]:  # pragma: no cover
-        ...
+    @abstractmethod
+    def done(self) -> bool:
+        raise NotImplementedError
 
-    def done(self) -> bool:  # pragma: no cover
-        ...
+    @abstractmethod
+    def cancel(self) -> None:
+        raise NotImplementedError
 
-    def cancel(self) -> None:  # pragma: no cover
-        ...
+    @abstractmethod
+    def cancelled(self) -> bool:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def join(self) -> _T_co:
+        raise NotImplementedError
 
 
 class AbstractTaskGroup(metaclass=ABCMeta):
@@ -89,12 +97,8 @@ class AbstractTaskGroup(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    async def start(self, func: Callable[..., Coroutine[Any, Any, Any]], *args: Any, name: str | None = ...) -> ITask:
-        ...
-
-    @abstractmethod
-    def start_soon(self, func: Callable[..., Coroutine[Any, Any, Any]], *args: Any, name: str | None = ...) -> None:
-        ...
+    def start(self, func: Callable[..., Coroutine[Any, Any, _T]], *args: Any) -> AbstractTask[_T]:
+        raise NotImplementedError
 
 
 class AbstractAsyncBaseSocketAdapter(metaclass=ABCMeta):
@@ -187,6 +191,10 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
+    async def sleep(self, delay: float) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
     def create_task_group(self) -> AbstractTaskGroup:
         raise NotImplementedError
 
@@ -235,6 +243,10 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
 
     @abstractmethod
     def create_lock(self) -> ILock:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def run_in_thread(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
         raise NotImplementedError
 
     async def wait_future(self, future: concurrent.futures.Future[_T]) -> _T:

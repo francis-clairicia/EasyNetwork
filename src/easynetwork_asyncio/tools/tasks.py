@@ -10,19 +10,24 @@ from __future__ import annotations
 __all__ = ["Task", "TaskGroup"]
 
 import asyncio
-from typing import TYPE_CHECKING, Any, Callable, Coroutine, Self, final
+from typing import TYPE_CHECKING, Any, Callable, Coroutine, Self, TypeVar, final
 
-from easynetwork.api_async.backend.abc import AbstractTaskGroup, ITask
+from easynetwork.api_async.backend.abc import AbstractTask, AbstractTaskGroup
 
 if TYPE_CHECKING:
     from types import TracebackType
 
 
-class Task:
-    __slots__ = ("__t", "__weakref__")
+_T = TypeVar("_T")
+_T_co = TypeVar("_T_co", covariant=True)
 
-    def __init__(self, task: asyncio.Task[Any]) -> None:
-        self.__t: asyncio.Task[Any] = task
+
+@final
+class Task(AbstractTask[_T_co]):
+    __slots__ = ("__t",)
+
+    def __init__(self, task: asyncio.Task[_T_co]) -> None:
+        self.__t: asyncio.Task[_T_co] = task
 
     def __hash__(self) -> int:
         return hash(self.__t)
@@ -35,17 +40,17 @@ class Task:
     def __ne__(self, other: object, /) -> bool:
         return not (self == other)
 
-    def get_name(self) -> str:
-        return self.__t.get_name()
-
-    def get_coro(self) -> Coroutine[Any, Any, Any]:
-        return self.__t.get_coro()  # type: ignore[return-value]
-
     def done(self) -> bool:
         return self.__t.done()
 
     def cancel(self) -> None:
         self.__t.cancel()
+
+    def cancelled(self) -> bool:
+        return self.__t.cancelled()
+
+    async def join(self) -> _T_co:
+        return await self.__t
 
 
 @final
@@ -70,10 +75,5 @@ class TaskGroup(AbstractTaskGroup):
         asyncio_tg: asyncio.TaskGroup = self.__asyncio_tg
         return await type(asyncio_tg).__aexit__(asyncio_tg, exc_type, exc_val, exc_tb)
 
-    async def start(self, func: Callable[..., Coroutine[Any, Any, Any]], *args: Any, name: str | None = None) -> ITask:
-        task = self.__asyncio_tg.create_task(func(*args), name=name)
-        await asyncio.sleep(0)
-        return Task(task)
-
-    def start_soon(self, func: Callable[..., Coroutine[Any, Any, Any]], *args: Any, name: str | None = None) -> None:
-        self.__asyncio_tg.create_task(func(*args), name=name)
+    def start(self, func: Callable[..., Coroutine[Any, Any, _T]], *args: Any) -> AbstractTask[_T]:
+        return Task(self.__asyncio_tg.create_task(func(*args)))

@@ -4,21 +4,14 @@ from __future__ import annotations
 
 import asyncio
 from socket import socket as Socket
-from typing import TYPE_CHECKING, Any, Iterator, Sequence, final
+from typing import TYPE_CHECKING, Any, Iterator, final
 
-from easynetwork.api_async.backend.abc import (
-    AbstractAsyncBackend,
-    AbstractAsyncDatagramSocketAdapter,
-    AbstractAsyncListenerSocketAdapter,
-    AbstractAsyncStreamSocketAdapter,
-    AbstractTaskGroup,
-    ILock,
-)
+from easynetwork.api_async.backend.abc import AbstractAsyncBackend
 from easynetwork.api_async.backend.factory import AsyncBackendFactory
 
 import pytest
 
-from ._fake_backends import FakeAsyncioBackend, FakeCurioBackend, FakeTrioBackend
+from ._fake_backends import BaseFakeBackend, FakeAsyncioBackend, FakeCurioBackend, FakeTrioBackend
 
 if TYPE_CHECKING:
     from importlib.metadata import EntryPoint
@@ -28,34 +21,13 @@ if TYPE_CHECKING:
 
 
 @final
-class MockBackend(AbstractAsyncBackend):
+class MockBackend(BaseFakeBackend):
     def __init__(self, mocker: MockerFixture) -> None:
         super().__init__()
         self.mock_coro_yield: MagicMock = mocker.MagicMock(side_effect=lambda: asyncio.sleep(0))
 
     async def coro_yield(self) -> None:
         await self.mock_coro_yield()
-
-    def create_task_group(self) -> AbstractTaskGroup:
-        raise NotImplementedError
-
-    async def create_tcp_connection(self, *args: Any, **kwargs: Any) -> AbstractAsyncStreamSocketAdapter:
-        raise NotImplementedError
-
-    async def wrap_connected_tcp_socket(self, socket: Socket) -> AbstractAsyncStreamSocketAdapter:
-        raise NotImplementedError
-
-    async def create_tcp_listeners(self, *args: Any, **kwargs: Any) -> Sequence[AbstractAsyncListenerSocketAdapter]:
-        raise NotImplementedError
-
-    async def create_udp_endpoint(self, *args: Any, **kwargs: Any) -> AbstractAsyncDatagramSocketAdapter:
-        raise NotImplementedError
-
-    async def wrap_udp_socket(self, socket: Socket) -> AbstractAsyncDatagramSocketAdapter:
-        raise NotImplementedError
-
-    def create_lock(self) -> ILock:
-        raise NotImplementedError
 
 
 @pytest.mark.asyncio
@@ -327,6 +299,37 @@ class TestAsyncBackendFactory:
 
         # Act
         backend = AsyncBackendFactory.new(mocker=mocker)
+
+        # Assert
+        assert isinstance(backend, MockBackend)
+
+    def test____ensure____return_given_backend_object(self, mocker: MockerFixture) -> None:
+        # Arrange
+        expected_backend = MockBackend(mocker)
+
+        # Act
+        backend = AsyncBackendFactory.ensure(expected_backend)
+
+        # Assert
+        assert backend is expected_backend
+
+    @pytest.mark.parametrize("backend_name", list(BACKENDS))
+    @pytest.mark.parametrize("backend_kwargs", [None, {}], ids=repr)
+    def test____ensure____instanciate_backend_from_name(self, backend_name: str, backend_kwargs: dict[str, Any] | None) -> None:
+        # Arrange
+
+        # Act
+        backend = AsyncBackendFactory.ensure(backend_name, backend_kwargs)
+
+        # Assert
+        assert isinstance(backend, self.BACKENDS[backend_name])
+
+    def test____ensure____instanciate_default_backend(self, mocker: MockerFixture) -> None:
+        # Arrange
+        AsyncBackendFactory.set_default_backend(MockBackend)
+
+        # Act
+        backend = AsyncBackendFactory.ensure(None, {"mocker": mocker})
 
         # Assert
         assert isinstance(backend, MockBackend)

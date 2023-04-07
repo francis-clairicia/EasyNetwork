@@ -130,3 +130,46 @@ def set_reuseport(sock: _socket.socket) -> None:
             sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEPORT, True)
         except OSError:
             raise ValueError("reuse_port not supported by socket module, " "SO_REUSEPORT defined but not implemented.")
+
+
+def open_listener_sockets_from_getaddrinfo_result(
+    infos: Iterable[tuple[int, int, int, str, tuple[Any, ...]]],
+    *,
+    backlog: int,
+    reuse_address: bool,
+    reuse_port: bool,
+) -> list[_socket.socket]:
+    sockets: list[_socket.socket] = []
+    with contextlib.ExitStack() as socket_exit_stack:
+        errors: list[OSError] = []
+        for res in infos:
+            af, socktype, proto, canonname, sa = res
+            try:
+                sock = socket_exit_stack.enter_context(_socket.socket(af, socktype, proto))
+            except OSError:
+                # Assume it's a bad family/type/protocol combination.
+                continue
+            sockets.append(sock)
+            if reuse_address:
+                sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, True)
+            if reuse_port:
+                set_reuseport(sock)
+            # Disable IPv4/IPv6 dual stack support (enabled by
+            # default on Linux) which makes a single socket
+            # listen on both address families.
+            if _socket.has_ipv6 and af == _socket.AF_INET6 and hasattr(_socket, "IPPROTO_IPV6"):
+                sock.setsockopt(_socket.IPPROTO_IPV6, _socket.IPV6_V6ONLY, True)
+            try:
+                sock.bind(sa)
+            except OSError as exc:
+                errors.append(OSError(exc.errno, "error while attempting to bind on address %r: %s" % (sa, exc.strerror.lower())))
+                continue
+            sock.listen(backlog)
+
+        if errors:
+            try:
+                raise ExceptionGroup("Error when trying to create TCP listeners", errors)
+            finally:
+                errors = []
+
+    return sockets
