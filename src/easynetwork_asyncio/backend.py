@@ -76,7 +76,7 @@ class AsyncioBackend(AbstractAsyncBackend):
             happy_eyeballs_delay=happy_eyeballs_delay,
             limit=MAX_STREAM_BUFSIZE,
         )
-        return StreamSocketAdapter(self, reader, writer)
+        return StreamSocketAdapter(reader, writer)
 
     async def wrap_connected_tcp_socket(self, socket: _socket.socket) -> AbstractAsyncStreamSocketAdapter:
         assert socket is not None, "Expected 'socket' to be a socket.socket instance"
@@ -89,7 +89,7 @@ class AsyncioBackend(AbstractAsyncBackend):
         from .stream.socket import StreamSocketAdapter
 
         reader, writer = await asyncio.open_connection(sock=socket, limit=MAX_STREAM_BUFSIZE)
-        return StreamSocketAdapter(self, reader, writer)
+        return StreamSocketAdapter(reader, writer)
 
     async def create_tcp_listeners(
         self,
@@ -136,7 +136,7 @@ class AsyncioBackend(AbstractAsyncBackend):
 
         from .stream.listener import ListenerSocketAdapter
 
-        return [ListenerSocketAdapter(self, sock, loop=loop) for sock in sockets]
+        return [ListenerSocketAdapter(sock, loop=loop) for sock in sockets]
 
     @staticmethod
     async def _create_tcp_listener_getaddrinfo(
@@ -175,7 +175,7 @@ class AsyncioBackend(AbstractAsyncBackend):
             remote_addr=remote_address,
             reuse_port=reuse_port,
         )
-        return DatagramSocketAdapter(self, endpoint)
+        return DatagramSocketAdapter(endpoint)
 
     async def wrap_udp_socket(self, socket: _socket.socket) -> AbstractAsyncDatagramSocketAdapter:
         assert socket is not None, "Expected 'socket' to be a socket.socket instance"
@@ -185,7 +185,7 @@ class AsyncioBackend(AbstractAsyncBackend):
         from .datagram.socket import DatagramSocketAdapter
 
         endpoint = await create_datagram_endpoint(socket=socket)
-        return DatagramSocketAdapter(self, endpoint)
+        return DatagramSocketAdapter(endpoint)
 
     def create_lock(self) -> ILock:
         import asyncio

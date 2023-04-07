@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from easynetwork_asyncio import AsyncioBackend
 from easynetwork_asyncio.stream.socket import StreamSocketAdapter
 
 if TYPE_CHECKING:
@@ -18,11 +17,6 @@ if TYPE_CHECKING:
 
 @pytest.mark.asyncio
 class TestStreamSocket:
-    @pytest.fixture(scope="class")
-    @staticmethod
-    def backend() -> AsyncioBackend:
-        return AsyncioBackend()
-
     @pytest.fixture
     @staticmethod
     def mock_asyncio_reader(mocker: MockerFixture) -> MagicMock:
@@ -60,12 +54,11 @@ class TestStreamSocket:
 
     @pytest.fixture
     @staticmethod
-    def socket(backend: AsyncioBackend, mock_asyncio_reader: MagicMock, mock_asyncio_writer: MagicMock) -> StreamSocketAdapter:
-        return StreamSocketAdapter(backend, mock_asyncio_reader, mock_asyncio_writer)
+    def socket(mock_asyncio_reader: MagicMock, mock_asyncio_writer: MagicMock) -> StreamSocketAdapter:
+        return StreamSocketAdapter(mock_asyncio_reader, mock_asyncio_writer)
 
     async def test____dunder_init____transport_not_connected(
         self,
-        backend: AsyncioBackend,
         asyncio_writer_extra_info: dict[str, Any],
         mock_asyncio_reader: MagicMock,
         mock_asyncio_writer: MagicMock,
@@ -78,7 +71,7 @@ class TestStreamSocket:
 
         # Act & Assert
         with pytest.raises(OSError) as exc_info:
-            StreamSocketAdapter(backend, mock_asyncio_reader, mock_asyncio_writer)
+            StreamSocketAdapter(mock_asyncio_reader, mock_asyncio_writer)
 
         assert exc_info.value.errno == ENOTCONN
         mock_asyncio_writer.get_extra_info.assert_called_with("peername")
@@ -243,13 +236,3 @@ class TestStreamSocket:
         # Assert
         mock_tcp_socket.fileno.assert_called_once_with()
         assert fileno is mocker.sentinel.fileno
-
-    async def test____get_backend____returns_given_backend_object(
-        self,
-        backend: AsyncioBackend,
-        socket: StreamSocketAdapter,
-    ) -> None:
-        # Arrange
-
-        # Act & Assert
-        assert socket.get_backend() is backend

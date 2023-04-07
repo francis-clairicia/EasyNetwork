@@ -76,7 +76,7 @@ class TestAsyncIOBackend:
             local_addr=("local_address", 12345),
             limit=MAX_STREAM_BUFSIZE,
         )
-        mock_StreamSocketAdapter.assert_called_once_with(backend, mocker.sentinel.reader, mocker.sentinel.writer)
+        mock_StreamSocketAdapter.assert_called_once_with(mocker.sentinel.reader, mocker.sentinel.writer)
         assert socket is mocker.sentinel.socket
 
     @pytest.mark.parametrize(
@@ -146,7 +146,7 @@ class TestAsyncIOBackend:
             sock=mock_tcp_socket,
             limit=MAX_STREAM_BUFSIZE,
         )
-        mock_StreamSocketAdapter.assert_called_once_with(backend, mocker.sentinel.reader, mocker.sentinel.writer)
+        mock_StreamSocketAdapter.assert_called_once_with(mocker.sentinel.reader, mocker.sentinel.writer)
         assert socket is mocker.sentinel.socket
         mock_tcp_socket.setblocking.assert_called_once_with(False)
 
@@ -180,7 +180,7 @@ class TestAsyncIOBackend:
             remote_addr=("remote_address", 5000),
             reuse_port=True,
         )
-        mock_DatagramSocketAdapter.assert_called_once_with(backend, mocker.sentinel.endpoint)
+        mock_DatagramSocketAdapter.assert_called_once_with(mocker.sentinel.endpoint)
         assert socket is mocker.sentinel.socket
 
     async def test____wrap_udp_socket____use_loop_create_datagram_endpoint(
@@ -204,7 +204,7 @@ class TestAsyncIOBackend:
 
         # Assert
         mock_create_datagram_endpoint.assert_awaited_once_with(socket=mock_udp_socket)
-        mock_DatagramSocketAdapter.assert_called_once_with(backend, mocker.sentinel.endpoint)
+        mock_DatagramSocketAdapter.assert_called_once_with(mocker.sentinel.endpoint)
         assert socket is mocker.sentinel.socket
         mock_udp_socket.setblocking.assert_called_once_with(False)
 

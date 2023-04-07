@@ -21,21 +21,17 @@ if TYPE_CHECKING:
 
     from _typeshed import ReadableBuffer
 
-    from ..backend import AsyncioBackend
-
 
 @final
 class StreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
     __slots__ = (
-        "__backend",
         "__reader",
         "__writer",
         "__proxy",
     )
 
-    def __init__(self, backend: AsyncioBackend, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+    def __init__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         super().__init__()
-        self.__backend: AsyncioBackend = backend
         self.__reader: asyncio.StreamReader = reader
         self.__writer: asyncio.StreamWriter = writer
 
@@ -78,6 +74,3 @@ class StreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
 
     def proxy(self) -> SocketProxy:
         return self.__proxy
-
-    def get_backend(self) -> AsyncioBackend:
-        return self.__backend

@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from easynetwork_asyncio import AsyncioBackend
 from easynetwork_asyncio.datagram.endpoint import DatagramEndpoint, DatagramEndpointProtocol, create_datagram_endpoint
 from easynetwork_asyncio.datagram.socket import DatagramSocketAdapter
 
@@ -621,11 +620,6 @@ class TestDatagramEndpointProtocol:
 
 @pytest.mark.asyncio
 class TestDatagramSocketAdapter:
-    @pytest.fixture(scope="class")
-    @staticmethod
-    def backend() -> AsyncioBackend:
-        return AsyncioBackend()
-
     @pytest.fixture
     @staticmethod
     def mock_udp_socket(mock_udp_socket: MagicMock) -> MagicMock:
@@ -658,8 +652,8 @@ class TestDatagramSocketAdapter:
 
     @pytest.fixture
     @staticmethod
-    def socket(backend: AsyncioBackend, mock_endpoint: MagicMock) -> DatagramSocketAdapter:
-        return DatagramSocketAdapter(backend, mock_endpoint)
+    def socket(mock_endpoint: MagicMock) -> DatagramSocketAdapter:
+        return DatagramSocketAdapter(mock_endpoint)
 
     async def test____close____close_transport_and_wait(
         self,
@@ -799,13 +793,3 @@ class TestDatagramSocketAdapter:
         # Assert
         mock_udp_socket.fileno.assert_called_once_with()
         assert fileno is mocker.sentinel.fileno
-
-    async def test____get_backend____returns_given_backend_object(
-        self,
-        backend: AsyncioBackend,
-        socket: DatagramSocketAdapter,
-    ) -> None:
-        # Arrange
-
-        # Act & Assert
-        assert socket.get_backend() is backend

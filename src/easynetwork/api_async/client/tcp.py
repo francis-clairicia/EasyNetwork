@@ -49,12 +49,11 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
 
     def __init__(
         self,
+        backend: AbstractAsyncBackend,
         socket: AbstractAsyncStreamSocketAdapter,
         protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
     ) -> None:
         super().__init__()
-        backend = socket.get_backend()
-
         self.__socket: AbstractAsyncStreamSocketAdapter = socket
         self.__backend: AbstractAsyncBackend = backend
         self.__socket_proxy = socket.proxy()
@@ -105,7 +104,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
             local_address=local_address,
         )
 
-        return cls(socket_adapter, protocol)
+        return cls(backend, socket_adapter, protocol)
 
     @classmethod
     async def from_socket(
@@ -120,7 +119,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
 
         socket_adapter = await backend.wrap_connected_tcp_socket(socket)
 
-        return cls(socket_adapter, protocol)
+        return cls(backend, socket_adapter, protocol)
 
     @final
     def is_closing(self) -> bool:

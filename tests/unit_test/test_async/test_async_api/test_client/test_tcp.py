@@ -139,10 +139,11 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
     @pytest.fixture
     @staticmethod
     def client(
+        mock_backend: MagicMock,
         mock_stream_socket_adapter: MagicMock,
         mock_stream_protocol: MagicMock,
     ) -> AsyncTCPNetworkClient[Any, Any]:
-        return AsyncTCPNetworkClient(mock_stream_socket_adapter, mock_stream_protocol)
+        return AsyncTCPNetworkClient(mock_backend, mock_stream_socket_adapter, mock_stream_protocol)
 
     async def test____connect____connect_to_remote(
         self,

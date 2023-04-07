@@ -135,10 +135,6 @@ class AbstractAsyncBaseSocketAdapter(metaclass=ABCMeta):
     def proxy(self) -> SocketProxy:
         raise NotImplementedError
 
-    @abstractmethod
-    def get_backend(self) -> AbstractAsyncBackend:
-        raise NotImplementedError
-
 
 class AbstractAsyncStreamSocketAdapter(AbstractAsyncBaseSocketAdapter):
     __slots__ = ()

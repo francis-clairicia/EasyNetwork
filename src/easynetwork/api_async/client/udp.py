@@ -46,11 +46,11 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
 
     def __init__(
         self,
+        backend: AbstractAsyncBackend,
         socket: AbstractAsyncDatagramSocketAdapter,
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
     ) -> None:
         super().__init__()
-        backend = socket.get_backend()
 
         self.__socket: AbstractAsyncDatagramSocketAdapter = socket
         self.__backend: AbstractAsyncBackend = backend
@@ -114,7 +114,7 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             reuse_port=False,
         )
 
-        return cls(socket_adapter, protocol)
+        return cls(backend, socket_adapter, protocol)
 
     @classmethod
     async def from_socket(
@@ -131,7 +131,7 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             socket.bind(("", 0))
         socket_adapter = await backend.wrap_udp_socket(socket)
 
-        return cls(socket_adapter, protocol)
+        return cls(backend, socket_adapter, protocol)
 
     @final
     def is_closing(self) -> bool:
@@ -225,12 +225,13 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
 
     def __init__(
         self,
+        backend: AbstractAsyncBackend,
         socket: AbstractAsyncDatagramSocketAdapter,
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
     ) -> None:
         super().__init__()
 
-        endpoint: AsyncUDPNetworkEndpoint[_SentPacketT, _ReceivedPacketT] = AsyncUDPNetworkEndpoint(socket, protocol)
+        endpoint: AsyncUDPNetworkEndpoint[_SentPacketT, _ReceivedPacketT] = AsyncUDPNetworkEndpoint(backend, socket, protocol)
         self.__endpoint: AsyncUDPNetworkEndpoint[_SentPacketT, _ReceivedPacketT] = endpoint
         remote_address = endpoint.get_remote_address()
         if remote_address is None:
@@ -266,7 +267,7 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
             remote_address=(remote_host, remote_port),
             reuse_port=False,
         )
-        return cls(socket_adapter, protocol)
+        return cls(backend, socket_adapter, protocol)
 
     @classmethod
     async def from_socket(
@@ -283,7 +284,7 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
             socket.bind(("", 0))
         socket_adapter = await backend.wrap_udp_socket(socket)
 
-        return cls(socket_adapter, protocol)
+        return cls(backend, socket_adapter, protocol)
 
     @final
     def is_closing(self) -> bool:

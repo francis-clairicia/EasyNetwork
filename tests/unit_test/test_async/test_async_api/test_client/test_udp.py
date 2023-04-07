@@ -20,12 +20,6 @@ if TYPE_CHECKING:
 from .base import BaseTestClient
 
 
-def _get_all_socket_families() -> list[str]:
-    import socket
-
-    return [v for v in dir(socket) if v.startswith("AF_")]
-
-
 @pytest.fixture(autouse=True)
 def mock_new_backend(mocker: MockerFixture, mock_backend: MagicMock) -> MagicMock:
     from easynetwork.api_async.backend.factory import AsyncBackendFactory
@@ -127,8 +121,12 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
 
     @pytest.fixture
     @staticmethod
-    def client(mock_datagram_socket_adapter: MagicMock, mock_datagram_protocol: MagicMock) -> AsyncUDPNetworkEndpoint[Any, Any]:
-        return AsyncUDPNetworkEndpoint(mock_datagram_socket_adapter, mock_datagram_protocol)
+    def client(
+        mock_backend: MagicMock,
+        mock_datagram_socket_adapter: MagicMock,
+        mock_datagram_protocol: MagicMock,
+    ) -> AsyncUDPNetworkEndpoint[Any, Any]:
+        return AsyncUDPNetworkEndpoint(mock_backend, mock_datagram_socket_adapter, mock_datagram_protocol)
 
     @pytest.fixture
     @staticmethod
@@ -319,6 +317,7 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
 
     async def test____dunder_init____error_no_local_address(
         self,
+        mock_backend: MagicMock,
         mock_datagram_socket_adapter: MagicMock,
         mock_datagram_protocol: MagicMock,
     ) -> None:
@@ -328,6 +327,7 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         # Act & Assert
         with pytest.raises(OSError, match=r"^.+ is not bound to a local address$"):
             _ = AsyncUDPNetworkEndpoint(
+                mock_backend,
                 mock_datagram_socket_adapter,
                 mock_datagram_protocol,
             )
@@ -899,8 +899,12 @@ class TestAsyncUDPNetworkClient:
 
     @pytest.fixture
     @staticmethod
-    def client(mock_datagram_socket_adapter: MagicMock, mock_datagram_protocol: MagicMock) -> AsyncUDPNetworkClient[Any, Any]:
-        return AsyncUDPNetworkClient(mock_datagram_socket_adapter, mock_datagram_protocol)
+    def client(
+        mock_backend: MagicMock,
+        mock_datagram_socket_adapter: MagicMock,
+        mock_datagram_protocol: MagicMock,
+    ) -> AsyncUDPNetworkClient[Any, Any]:
+        return AsyncUDPNetworkClient(mock_backend, mock_datagram_socket_adapter, mock_datagram_protocol)
 
     @pytest.fixture(autouse=True)
     @staticmethod
@@ -942,7 +946,7 @@ class TestAsyncUDPNetworkClient:
 
         # Assert
         mock_new_backend.assert_called_once_with(None)
-        mock_udp_endpoint_cls.assert_called_once_with(mock_datagram_socket_adapter, mock_datagram_protocol)
+        mock_udp_endpoint_cls.assert_called_once_with(mock_backend, mock_datagram_socket_adapter, mock_datagram_protocol)
         mock_backend.create_udp_endpoint.assert_awaited_once_with(
             family=socket_family,
             remote_address=remote_address,
@@ -1034,7 +1038,7 @@ class TestAsyncUDPNetworkClient:
 
         # Assert
         mock_new_backend.assert_called_once_with(None)
-        mock_udp_endpoint_cls.assert_called_once_with(mock_datagram_socket_adapter, mock_datagram_protocol)
+        mock_udp_endpoint_cls.assert_called_once_with(mock_backend, mock_datagram_socket_adapter, mock_datagram_protocol)
         mock_backend.wrap_udp_socket.assert_awaited_once_with(mock_udp_socket)
         mock_udp_endpoint.get_remote_address.assert_called_once_with()
         assert client.socket is mock_udp_socket
@@ -1096,6 +1100,7 @@ class TestAsyncUDPNetworkClient:
 
     async def test____dunder_init____error_no_remote_address(
         self,
+        mock_backend: MagicMock,
         mock_datagram_socket_adapter: MagicMock,
         mock_datagram_protocol: MagicMock,
         mock_udp_endpoint: MagicMock,
@@ -1106,6 +1111,7 @@ class TestAsyncUDPNetworkClient:
         # Act & Assert
         with pytest.raises(OSError, match=r"^No remote address configured$"):
             _ = AsyncUDPNetworkClient(
+                mock_backend,
                 mock_datagram_socket_adapter,
                 mock_datagram_protocol,
             )

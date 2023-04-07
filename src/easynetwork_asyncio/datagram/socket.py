@@ -19,21 +19,18 @@ if TYPE_CHECKING:
 
     from _typeshed import ReadableBuffer
 
-    from ..backend import AsyncioBackend
     from .endpoint import DatagramEndpoint
 
 
 @final
 class DatagramSocketAdapter(AbstractAsyncDatagramSocketAdapter):
     __slots__ = (
-        "__backend",
         "__endpoint",
         "__proxy",
     )
 
-    def __init__(self, backend: AsyncioBackend, endpoint: DatagramEndpoint) -> None:
+    def __init__(self, endpoint: DatagramEndpoint) -> None:
         super().__init__()
-        self.__backend: AsyncioBackend = backend
         self.__endpoint: DatagramEndpoint = endpoint
 
         socket: asyncio.trsock.TransportSocket | None = endpoint.get_extra_info("socket")
@@ -66,6 +63,3 @@ class DatagramSocketAdapter(AbstractAsyncDatagramSocketAdapter):
 
     def proxy(self) -> SocketProxy:
         return self.__proxy
-
-    def get_backend(self) -> AsyncioBackend:
-        return self.__backend

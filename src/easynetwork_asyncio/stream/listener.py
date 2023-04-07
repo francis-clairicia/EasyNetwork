@@ -20,13 +20,10 @@ if TYPE_CHECKING:
     import asyncio
     import socket as _socket
 
-    from ..backend import AsyncioBackend
-
 
 @final
 class ListenerSocketAdapter(AbstractAsyncListenerSocketAdapter):
     __slots__ = (
-        "__backend",
         "__socket",
         "__loop",
         "__proxy",
@@ -34,14 +31,13 @@ class ListenerSocketAdapter(AbstractAsyncListenerSocketAdapter):
         "__closed",
     )
 
-    def __init__(self, backend: AsyncioBackend, socket: _socket.socket, *, loop: asyncio.AbstractEventLoop | None = None) -> None:
+    def __init__(self, socket: _socket.socket, *, loop: asyncio.AbstractEventLoop | None = None) -> None:
         super().__init__()
         if loop is None:
             import asyncio
 
             loop = asyncio.get_running_loop()
 
-        self.__backend: AsyncioBackend = backend
         self.__socket: _socket.socket = socket
         self.__loop: asyncio.AbstractEventLoop = loop
         self.__proxy: SocketProxy = SocketProxy(socket)
@@ -93,13 +89,10 @@ class ListenerSocketAdapter(AbstractAsyncListenerSocketAdapter):
         client_protocol = StreamReaderProtocol(client_reader, loop=self.__loop)
         client_transport, client_protocol = await self.__loop.connect_accepted_socket(lambda: client_protocol, client_socket)
         client_writer = StreamWriter(client_transport, client_protocol, client_reader, self.__loop)
-        return StreamSocketAdapter(self.__backend, client_reader, client_writer)
+        return StreamSocketAdapter(client_reader, client_writer)
 
     def getsockname(self) -> tuple[Any, ...]:
         return self.__socket.getsockname()
 
     def proxy(self) -> SocketProxy:
         return self.__proxy
-
-    def get_backend(self) -> AsyncioBackend:
-        return self.__backend
