@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import asyncio
 from socket import socket as Socket
-from typing import TYPE_CHECKING, Any, Iterator, final
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Any, Iterator, Literal, assert_never, final
 
 from easynetwork.api_async.backend.abc import AbstractAsyncBackend
 from easynetwork.api_async.backend.factory import AsyncBackendFactory
@@ -63,11 +64,15 @@ class TestAbstractAsyncBackend:
 
 
 class TestAsyncBackendFactory:
-    BACKENDS: dict[str, type[AbstractAsyncBackend]] = {
-        "asyncio": FakeAsyncioBackend,
-        "trio": FakeTrioBackend,
-        "curio": FakeCurioBackend,
-    }
+    BACKENDS: MappingProxyType[str, type[AbstractAsyncBackend]] = MappingProxyType(
+        {
+            "asyncio": FakeAsyncioBackend,
+            "trio": FakeTrioBackend,
+            "curio": FakeCurioBackend,
+        }
+    )
+
+    BACKEND_CLS_TO_NAME: MappingProxyType[type[AbstractAsyncBackend], str] = MappingProxyType({v: k for k, v in BACKENDS.items()})
 
     @pytest.fixture(scope="class", autouse=True)
     @staticmethod
@@ -86,6 +91,7 @@ class TestAsyncBackendFactory:
         AsyncBackendFactory.invalidate_backends_cache()
         yield
         AsyncBackendFactory.set_default_backend(None)
+        AsyncBackendFactory.remove_all_extensions()
 
     @pytest.fixture(autouse=True)
     @classmethod
@@ -186,15 +192,43 @@ class TestAsyncBackendFactory:
         with pytest.raises(TypeError, match=r"^Conflicting backend name caught: 'asyncio'$"):
             AsyncBackendFactory.get_all_backends()
 
-    @pytest.mark.parametrize("backend_name", list(BACKENDS))
-    def test____set_default_backend____from_string(self, backend_name: str) -> None:
+    def test____get_available_backends____default(
+        self,
+        mock_importlib_metadata_entry_points: MagicMock,
+    ) -> None:
         # Arrange
+        mock_importlib_metadata_entry_points.return_value = [
+            self.build_entry_point("asyncio"),
+            self.build_entry_point("trio"),
+            self.build_entry_point("curio"),
+            self.build_entry_point("mock", f"{__name__}:MockBackend"),
+        ]
+
+        # Act
+        available_backends = AsyncBackendFactory.get_available_backends()
+
+        # Assert
+        assert isinstance(available_backends, frozenset)
+        assert available_backends == frozenset({"asyncio", "trio", "curio", "mock"})
+
+    @pytest.mark.parametrize("backend_name", list(BACKENDS))
+    @pytest.mark.parametrize("extended", [False, True], ids=lambda extended: f"extended=={extended}")
+    def test____set_default_backend____from_string(self, backend_name: str, extended: bool) -> None:
+        # Arrange
+        expected_cls = self.BACKENDS[backend_name]
+        if extended:
+
+            class ExtendedBackend(self.BACKENDS[backend_name]):  # type: ignore[name-defined,misc]
+                pass
+
+            AsyncBackendFactory.extend(backend_name, ExtendedBackend)
+            expected_cls = ExtendedBackend
 
         # Act
         AsyncBackendFactory.set_default_backend(backend_name)
 
         # Assert
-        assert AsyncBackendFactory.get_default_backend(guess_current_async_library=False) is self.BACKENDS[backend_name]
+        assert AsyncBackendFactory.get_default_backend(guess_current_async_library=False) is expected_cls
 
     def test____set_default_backend____from_string____unknown_backend(self) -> None:
         # Arrange
@@ -204,8 +238,19 @@ class TestAsyncBackendFactory:
             AsyncBackendFactory.set_default_backend("unknown")
 
     @pytest.mark.parametrize("backend_cls", [*BACKENDS.values(), MockBackend])
-    def test____set_default_backend____from_class(self, backend_cls: type[AbstractAsyncBackend]) -> None:
+    @pytest.mark.parametrize("extended", [False, True], ids=lambda extended: f"extended=={extended}")
+    def test____set_default_backend____from_class(self, backend_cls: type[AbstractAsyncBackend], extended: bool) -> None:
         # Arrange
+        if extended:
+            try:
+                _backend_name = self.BACKEND_CLS_TO_NAME[backend_cls]
+            except KeyError:
+                pytest.skip("Not an entry-point")
+
+            class ExtendedBackend(backend_cls):  # type: ignore[valid-type,misc]
+                pass
+
+            AsyncBackendFactory.extend(_backend_name, ExtendedBackend)
 
         # Act
         AsyncBackendFactory.set_default_backend(backend_cls)
@@ -231,6 +276,68 @@ class TestAsyncBackendFactory:
         with pytest.raises(TypeError, match=r"^Invalid backend class: %r$" % AbstractAsyncBackend):
             AsyncBackendFactory.set_default_backend(AbstractAsyncBackend)
 
+    @pytest.mark.parametrize("backend_name", list(BACKENDS))
+    def test____extend____replace_by_a_subclass(self, backend_name: str) -> None:
+        # Arrange
+        class ExtendedBackend(self.BACKENDS[backend_name]):  # type: ignore[name-defined,misc]
+            pass
+
+        # Act
+        AsyncBackendFactory.extend(backend_name, ExtendedBackend)
+
+        # Assert
+        assert AsyncBackendFactory.get_all_backends(extended=True)[backend_name] is ExtendedBackend
+        assert AsyncBackendFactory.get_all_backends(extended=False)[backend_name] is self.BACKENDS[backend_name]
+
+    @pytest.mark.parametrize("backend_name", list(BACKENDS))
+    @pytest.mark.parametrize("method", ["using_None", "using_base_cls"])
+    def test____extend____remove_extension(self, backend_name: str, method: Literal["using_None", "using_base_cls"]) -> None:
+        # Arrange
+        class ExtendedBackend(self.BACKENDS[backend_name]):  # type: ignore[name-defined,misc]
+            pass
+
+        AsyncBackendFactory.extend(backend_name, ExtendedBackend)
+        assert AsyncBackendFactory.get_all_backends(extended=True)[backend_name] is ExtendedBackend
+
+        # Act
+        match method:
+            case "using_None":
+                AsyncBackendFactory.extend(backend_name, None)
+            case "using_base_cls":
+                AsyncBackendFactory.extend(backend_name, self.BACKENDS[backend_name])
+            case _:
+                assert_never(method)
+
+        # Assert
+        assert AsyncBackendFactory.get_all_backends(extended=True)[backend_name] is self.BACKENDS[backend_name]
+        assert AsyncBackendFactory.get_all_backends(extended=False)[backend_name] is self.BACKENDS[backend_name]
+
+    @pytest.mark.parametrize("backend_name", list(BACKENDS))
+    def test____extend____error_invalid_class(self, backend_name: str) -> None:
+        # Arrange
+        default_backend_cls = self.BACKENDS[backend_name]
+
+        # Act & Assert
+        with pytest.raises(
+            TypeError, match=r"^Invalid backend class \(not a subclass of %r\): %r$" % (default_backend_cls, MockBackend)
+        ):
+            AsyncBackendFactory.extend(backend_name, MockBackend)
+
+    @pytest.mark.parametrize("backend_name", list(BACKENDS))
+    def test____extend____several_replacement(self, backend_name: str) -> None:
+        # Arrange
+        class ExtendedBackendV1(self.BACKENDS[backend_name]):  # type: ignore[name-defined,misc]
+            pass
+
+        class ExtendedBackendV2(self.BACKENDS[backend_name]):  # type: ignore[name-defined,misc]
+            pass
+
+        # Act & Assert
+        AsyncBackendFactory.extend(backend_name, ExtendedBackendV1)
+        assert AsyncBackendFactory.get_all_backends(extended=True)[backend_name] is ExtendedBackendV1
+        AsyncBackendFactory.extend(backend_name, ExtendedBackendV2)
+        assert AsyncBackendFactory.get_all_backends(extended=True)[backend_name] is ExtendedBackendV2
+
     def test____get_default_backend____without_sniffio____returns_asyncio_backend(self) -> None:
         # Arrange
         AsyncBackendFactory.set_default_backend(None)
@@ -243,12 +350,23 @@ class TestAsyncBackendFactory:
 
     @pytest.mark.feature_sniffio
     @pytest.mark.parametrize("running_backend_name", list(BACKENDS))
+    @pytest.mark.parametrize("extended", [False, True], ids=lambda extended: f"extended=={extended}")
     def test____get_default_backend____with_sniffio____returns_running_backend(
         self,
         running_backend_name: str,
+        extended: bool,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
+        expected_cls = self.BACKENDS[running_backend_name]
+        if extended:
+
+            class ExtendedBackend(self.BACKENDS[running_backend_name]):  # type: ignore[name-defined,misc]
+                pass
+
+            AsyncBackendFactory.extend(running_backend_name, ExtendedBackend)
+            expected_cls = ExtendedBackend
+
         mock_current_async_library: MagicMock = mocker.patch(
             "sniffio.current_async_library",
             autospec=True,
@@ -261,7 +379,7 @@ class TestAsyncBackendFactory:
 
         # Assert
         mock_current_async_library.assert_called_once_with()
-        assert backend_cls is self.BACKENDS[running_backend_name]
+        assert backend_cls is expected_cls
 
     @pytest.mark.feature_sniffio
     def test____get_default_backend____with_sniffio____running_library_does_not_have_backend_implementation(
@@ -284,14 +402,23 @@ class TestAsyncBackendFactory:
         mock_current_async_library.assert_called_once_with()
 
     @pytest.mark.parametrize("backend_name", list(BACKENDS))
-    def test____new____instanciate_backend(self, backend_name: str) -> None:
+    @pytest.mark.parametrize("extended", [False, True], ids=lambda extended: f"extended=={extended}")
+    def test____new____instanciate_backend(self, backend_name: str, extended: bool) -> None:
         # Arrange
+        expected_cls = self.BACKENDS[backend_name]
+        if extended:
+
+            class ExtendedBackend(self.BACKENDS[backend_name]):  # type: ignore[name-defined,misc]
+                pass
+
+            AsyncBackendFactory.extend(backend_name, ExtendedBackend)
+            expected_cls = ExtendedBackend
 
         # Act
         backend = AsyncBackendFactory.new(backend_name)
 
         # Assert
-        assert isinstance(backend, self.BACKENDS[backend_name])
+        assert isinstance(backend, expected_cls)
 
     def test____new____instanciate_default_backend(self, mocker: MockerFixture) -> None:
         # Arrange
