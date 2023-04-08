@@ -130,7 +130,7 @@ def set_reuseport(sock: _socket.socket) -> None:
         try:
             sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEPORT, True)
         except OSError:
-            raise ValueError("reuse_port not supported by socket module, " "SO_REUSEPORT defined but not implemented.")
+            raise ValueError("reuse_port not supported by socket module, SO_REUSEPORT defined but not implemented.")
 
 
 def open_listener_sockets_from_getaddrinfo_result(
@@ -172,5 +172,8 @@ def open_listener_sockets_from_getaddrinfo_result(
                 raise ExceptionGroup("Error when trying to create TCP listeners", errors)
             finally:
                 errors = []
+
+        # There was no errors, so do not close sockets
+        socket_exit_stack.pop_all()
 
     return sockets
