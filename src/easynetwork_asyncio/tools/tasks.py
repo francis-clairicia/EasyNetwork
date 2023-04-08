@@ -10,7 +10,7 @@ from __future__ import annotations
 __all__ = ["Task", "TaskGroup"]
 
 import asyncio
-from typing import TYPE_CHECKING, Any, Callable, Coroutine, Self, TypeVar, final
+from typing import TYPE_CHECKING, Any, Callable, Coroutine, ParamSpec, Self, TypeVar, final
 
 from easynetwork.api_async.backend.abc import AbstractTask, AbstractTaskGroup
 
@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from types import TracebackType
 
 
+_P = ParamSpec("_P")
 _T_co = TypeVar("_T_co", covariant=True)
 
 
@@ -74,5 +75,11 @@ class TaskGroup(AbstractTaskGroup):
         asyncio_tg: asyncio.TaskGroup = self.__asyncio_tg
         return await type(asyncio_tg).__aexit__(asyncio_tg, exc_type, exc_val, exc_tb)
 
-    def start(self, func: Callable[..., Coroutine[Any, Any, _T_co]], *args: Any) -> AbstractTask[_T_co]:
-        return Task(self.__asyncio_tg.create_task(func(*args)))
+    def start_soon(
+        self,
+        __coro_func: Callable[_P, Coroutine[Any, Any, _T_co]],
+        /,
+        *args: _P.args,
+        **kwargs: _P.kwargs,
+    ) -> AbstractTask[_T_co]:
+        return Task(self.__asyncio_tg.create_task(__coro_func(*args, **kwargs)))

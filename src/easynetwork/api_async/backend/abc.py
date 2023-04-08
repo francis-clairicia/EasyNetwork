@@ -96,7 +96,13 @@ class AbstractTaskGroup(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    def start(self, func: Callable[..., Coroutine[Any, Any, _T_co]], *args: Any) -> AbstractTask[_T_co]:
+    def start_soon(
+        self,
+        __coro_func: Callable[_P, Coroutine[Any, Any, _T_co]],
+        /,
+        *args: _P.args,
+        **kwargs: _P.kwargs,
+    ) -> AbstractTask[_T_co]:
         raise NotImplementedError
 
 
