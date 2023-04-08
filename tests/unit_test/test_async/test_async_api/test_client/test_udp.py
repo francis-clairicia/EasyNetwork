@@ -185,7 +185,7 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         # Assert
         mock_backend.create_udp_endpoint.assert_awaited_once_with(
             remote_address=remote_address,
-            local_address=("", 0),
+            local_address=(None, 0),
             family=mocker.ANY,  # Not tested here
             reuse_port=mocker.ANY,  # Not tested here
         )
@@ -941,7 +941,7 @@ class TestAsyncUDPNetworkClient:
         # Assert
         mock_backend.create_udp_endpoint.assert_awaited_once_with(
             remote_address=remote_address,
-            local_address=("", 0),
+            local_address=(None, 0),
             family=mocker.ANY,  # Not tested here
             reuse_port=mocker.ANY,  # Not tested here
         )

@@ -93,20 +93,20 @@ class AsyncioBackend(AbstractAsyncBackend):
 
     async def create_tcp_listeners(
         self,
-        host: str | Sequence[str],
+        host: str | Sequence[str] | None,
         port: int,
         *,
         family: int,
         backlog: int,
         reuse_port: bool,
     ) -> Sequence[AbstractAsyncListenerSocketAdapter]:
-        assert host is not None, "Expected 'host' to be a str or a sequence of str"
         assert port is not None, "Expected 'port' to be an int"
 
         import asyncio
         import os
         import sys
         from itertools import chain
+        from socket import AI_PASSIVE, SOCK_STREAM
 
         from easynetwork.tools._utils import open_listener_sockets_from_getaddrinfo_result
 
@@ -114,7 +114,7 @@ class AsyncioBackend(AbstractAsyncBackend):
 
         reuse_address = os.name == "posix" and sys.platform != "cygwin"
         hosts: Sequence[str | None]
-        if host == "":
+        if host == "" or host is None:
             hosts = [None]
         elif isinstance(host, str):
             hosts = [host]
@@ -123,7 +123,9 @@ class AsyncioBackend(AbstractAsyncBackend):
 
         infos: set[tuple[int, int, int, str, tuple[Any, ...]]] = set(
             chain.from_iterable(
-                await asyncio.gather(*[self._create_tcp_listener_getaddrinfo(host, port, family, loop) for host in hosts])
+                await asyncio.gather(
+                    *[self._ensure_resolved(host, port, family, SOCK_STREAM, loop, flags=AI_PASSIVE) for host in hosts]
+                )
             )
         )
 
@@ -139,35 +141,55 @@ class AsyncioBackend(AbstractAsyncBackend):
         return [ListenerSocketAdapter(sock, loop=loop) for sock in sockets]
 
     @staticmethod
-    async def _create_tcp_listener_getaddrinfo(
+    async def _ensure_resolved(
         host: str | None,
         port: int,
         family: int,
+        type: int,
         loop: asyncio.AbstractEventLoop,
+        proto: int = 0,
+        flags: int = 0,
     ) -> Sequence[tuple[int, int, int, str, tuple[Any, ...]]]:
-        from socket import SOCK_STREAM
-
         from easynetwork.tools._utils import ipaddr_info
 
-        resolved_info = ipaddr_info(host, port, family=family, type=SOCK_STREAM, proto=0)
+        resolved_info = ipaddr_info(host, port, family=family, type=type, proto=proto)
         if resolved_info is not None:
             return [resolved_info]
 
-        info = await loop.getaddrinfo(host, port, family=family, type=SOCK_STREAM, proto=0)
+        info = await loop.getaddrinfo(host, port, family=family, type=type, proto=proto, flags=flags)
         if not info:
             raise OSError(f"getaddrinfo({host!r}) returned empty list")
         return info
+
+    @staticmethod
+    def _ensure_host(address: tuple[str | None, int], family: int) -> tuple[str, int]:
+        host, port = address
+        if not host:
+            import socket as _socket
+
+            match family:
+                case _socket.AF_INET | _socket.AF_UNSPEC:
+                    host = "0.0.0.0"
+                case _socket.AF_INET6:
+                    host = "::"
+                case _:
+                    raise OSError("Only AF_INET and AF_INET6 families are supported")
+        address = (host, port)
+        return address
 
     async def create_udp_endpoint(
         self,
         *,
         family: int,
-        local_address: tuple[str, int] | None,
+        local_address: tuple[str | None, int] | None,
         remote_address: tuple[str, int] | None,
         reuse_port: bool,
     ) -> AbstractAsyncDatagramSocketAdapter:
         from .datagram.endpoint import create_datagram_endpoint
         from .datagram.socket import DatagramSocketAdapter
+
+        if local_address is not None:
+            local_address = self._ensure_host(local_address, family)
 
         endpoint = await create_datagram_endpoint(
             family=family,

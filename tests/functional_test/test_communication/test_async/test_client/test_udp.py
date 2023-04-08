@@ -53,6 +53,24 @@ class TestAsyncUDPNetworkClient:
         ) as client:
             yield client
 
+    @pytest.mark.parametrize("ipaddr_any", ["", None], ids=repr)
+    async def test____create____local_address____bind_to_all_interfaces(
+        self,
+        server: Socket,
+        ipaddr_any: str,
+        socket_family: int,
+        datagram_protocol: DatagramProtocol[str, str],
+    ) -> None:
+        address: tuple[str, int] = server.getsockname()[:2]
+
+        async with await AsyncUDPNetworkClient.create(
+            address,
+            datagram_protocol,
+            family=socket_family,
+            local_address=(ipaddr_any, 0),
+        ) as client:
+            assert client.get_local_address().port > 0
+
     async def test____close____double_close(self, client: AsyncUDPNetworkClient[str, str]) -> None:
         assert not client.is_closing()
         await client.close()
@@ -151,7 +169,7 @@ class TestAsyncUDPNetworkClient:
 
 
 @pytest.mark.asyncio
-class TestUDPNetworkEndpoint:
+class TestAsyncUDPNetworkEndpoint:
     @pytest.fixture
     @staticmethod
     def server(udp_socket_factory: Callable[[], Socket]) -> Socket:
@@ -181,6 +199,20 @@ class TestUDPNetworkEndpoint:
             local_address=(localhost, 0),
         ) as client:
             yield client
+
+    @pytest.mark.parametrize("ipaddr_any", ["", None], ids=repr)
+    async def test____create____local_address____bind_to_all_interfaces(
+        self,
+        ipaddr_any: str,
+        socket_family: int,
+        datagram_protocol: DatagramProtocol[str, str],
+    ) -> None:
+        async with await AsyncUDPNetworkEndpoint.create(
+            datagram_protocol,
+            family=socket_family,
+            local_address=(ipaddr_any, 0),
+        ) as client:
+            assert client.get_local_address().port > 0
 
     async def test____close____double_close(self, client: AsyncUDPNetworkEndpoint[str, str]) -> None:
         assert not client.is_closing()

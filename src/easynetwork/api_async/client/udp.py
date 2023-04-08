@@ -96,7 +96,7 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
         *,
         family: int = 0,
-        local_address: tuple[str, int] | None = None,
+        local_address: tuple[str | None, int] | None = None,
         remote_address: tuple[str, int] | None = None,
         backend: str | AbstractAsyncBackend | None = None,
         backend_kwargs: Mapping[str, Any] | None = None,
@@ -104,7 +104,7 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
 
         if local_address is None:
-            local_address = ("", 0)
+            local_address = (None, 0)
 
         socket_adapter = await backend.create_udp_endpoint(
             family=family,
@@ -253,14 +253,14 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
         *,
         family: int = 0,
-        local_address: tuple[str, int] | None = None,
+        local_address: tuple[str | None, int] | None = None,
         backend: str | AbstractAsyncBackend | None = None,
         backend_kwargs: Mapping[str, Any] | None = None,
     ) -> Self:
         backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
 
         if local_address is None:
-            local_address = ("", 0)
+            local_address = (None, 0)
 
         remote_host, remote_port = remote_address
         socket_adapter = await backend.create_udp_endpoint(

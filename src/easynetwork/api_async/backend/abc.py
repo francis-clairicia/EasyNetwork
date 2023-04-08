@@ -215,7 +215,7 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
     @abstractmethod
     async def create_tcp_listeners(
         self,
-        host: str | Sequence[str],
+        host: str | Sequence[str] | None,
         port: int,
         *,
         family: int,
@@ -229,7 +229,7 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         self,
         *,
         family: int,
-        local_address: tuple[str, int] | None,
+        local_address: tuple[str | None, int] | None,
         remote_address: tuple[str, int] | None,
         reuse_port: bool,
     ) -> AbstractAsyncDatagramSocketAdapter:
