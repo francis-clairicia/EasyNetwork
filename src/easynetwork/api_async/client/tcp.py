@@ -55,13 +55,13 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         super().__init__()
         self.__socket: AbstractAsyncStreamSocketAdapter = socket
         self.__backend: AbstractAsyncBackend = backend
-        self.__socket_proxy = socket.proxy()
+        self.__socket_proxy = SocketProxy(socket.socket())
 
         self.__receive_lock: ILock = backend.create_lock()
         self.__send_lock: ILock = backend.create_lock()
 
-        self.__addr: SocketAddress = new_socket_address(socket.getsockname(), self.__socket_proxy.family)
-        self.__peer: SocketAddress = new_socket_address(socket.getpeername(), self.__socket_proxy.family)
+        self.__addr: SocketAddress = new_socket_address(socket.get_local_address(), self.__socket_proxy.family)
+        self.__peer: SocketAddress = new_socket_address(socket.get_remote_address(), self.__socket_proxy.family)
         self.__producer: Callable[[_SentPacketT], Iterator[bytes]] = protocol.generate_chunks
         self.__consumer: StreamDataConsumer[_ReceivedPacketT] = StreamDataConsumer(protocol)
         self.__eof_reached: bool = False

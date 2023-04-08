@@ -14,10 +14,10 @@ from typing import TYPE_CHECKING, Any, final
 
 from easynetwork.api_async.backend.abc import AbstractAsyncListenerSocketAdapter, AbstractAsyncStreamSocketAdapter
 from easynetwork.tools._utils import error_from_errno as _error_from_errno
-from easynetwork.tools.socket import SocketProxy
 
 if TYPE_CHECKING:
     import asyncio
+    import asyncio.trsock
     import socket as _socket
 
 
@@ -25,8 +25,8 @@ if TYPE_CHECKING:
 class ListenerSocketAdapter(AbstractAsyncListenerSocketAdapter):
     __slots__ = (
         "__socket",
+        "__trsock",
         "__loop",
-        "__proxy",
         "__tasks",
         "__closed",
     )
@@ -38,9 +38,11 @@ class ListenerSocketAdapter(AbstractAsyncListenerSocketAdapter):
 
             loop = asyncio.get_running_loop()
 
+        from asyncio.trsock import TransportSocket
+
         self.__socket: _socket.socket = socket
+        self.__trsock: TransportSocket = TransportSocket(socket)
         self.__loop: asyncio.AbstractEventLoop = loop
-        self.__proxy: SocketProxy = SocketProxy(socket)
         self.__tasks: collections.deque[asyncio.Task[Any]] = collections.deque()
         self.__closed: bool = False
 
@@ -91,8 +93,8 @@ class ListenerSocketAdapter(AbstractAsyncListenerSocketAdapter):
         client_writer = StreamWriter(client_transport, client_protocol, client_reader, self.__loop)
         return StreamSocketAdapter(client_reader, client_writer)
 
-    def getsockname(self) -> tuple[Any, ...]:
+    def get_local_address(self) -> tuple[Any, ...]:
         return self.__socket.getsockname()
 
-    def proxy(self) -> SocketProxy:
-        return self.__proxy
+    def socket(self) -> asyncio.trsock.TransportSocket:
+        return self.__trsock

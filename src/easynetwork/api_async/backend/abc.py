@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 
     from _typeshed import ReadableBuffer
 
-    from ...tools.socket import SocketProxy
+    from ...tools.socket import ISocket
 
 
 _P = ParamSpec("_P")
@@ -133,11 +133,11 @@ class AbstractAsyncBaseSocketAdapter(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    def getsockname(self) -> tuple[Any, ...]:
+    def get_local_address(self) -> tuple[Any, ...]:
         raise NotImplementedError
 
     @abstractmethod
-    def proxy(self) -> SocketProxy:
+    def socket(self) -> ISocket:
         raise NotImplementedError
 
 
@@ -145,7 +145,7 @@ class AbstractAsyncStreamSocketAdapter(AbstractAsyncBaseSocketAdapter):
     __slots__ = ()
 
     @abstractmethod
-    def getpeername(self) -> tuple[Any, ...]:
+    def get_remote_address(self) -> tuple[Any, ...]:
         raise NotImplementedError
 
     @abstractmethod
@@ -161,7 +161,7 @@ class AbstractAsyncDatagramSocketAdapter(AbstractAsyncBaseSocketAdapter):
     __slots__ = ()
 
     @abstractmethod
-    def getpeername(self) -> tuple[Any, ...] | None:
+    def get_remote_address(self) -> tuple[Any, ...] | None:
         raise NotImplementedError
 
     @abstractmethod

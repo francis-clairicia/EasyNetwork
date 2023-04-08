@@ -13,7 +13,6 @@ from typing import TYPE_CHECKING, Any, final
 
 from easynetwork.api_async.backend.abc import AbstractAsyncStreamSocketAdapter
 from easynetwork.tools._utils import error_from_errno as _error_from_errno
-from easynetwork.tools.socket import SocketProxy
 
 if TYPE_CHECKING:
     import asyncio
@@ -27,7 +26,6 @@ class StreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
     __slots__ = (
         "__reader",
         "__writer",
-        "__proxy",
     )
 
     def __init__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
@@ -42,8 +40,6 @@ class StreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
 
             raise _error_from_errno(errno.ENOTCONN)
 
-        self.__proxy: SocketProxy = SocketProxy(socket)
-
     async def close(self) -> None:
         self.__writer.close()
         await self.__writer.wait_closed()
@@ -54,10 +50,10 @@ class StreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
     def is_closing(self) -> bool:
         return self.__writer.is_closing()
 
-    def getsockname(self) -> tuple[Any, ...]:
+    def get_local_address(self) -> tuple[Any, ...]:
         return self.__writer.get_extra_info("sockname")
 
-    def getpeername(self) -> tuple[Any, ...]:
+    def get_remote_address(self) -> tuple[Any, ...]:
         return self.__writer.get_extra_info("peername")
 
     async def recv(self, bufsize: int, /) -> bytes:
@@ -72,5 +68,6 @@ class StreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
             self.__writer.write(data_view)
             await self.__writer.drain()
 
-    def proxy(self) -> SocketProxy:
-        return self.__proxy
+    def socket(self) -> asyncio.trsock.TransportSocket:
+        socket: asyncio.trsock.TransportSocket = self.__writer.get_extra_info("socket")
+        return socket

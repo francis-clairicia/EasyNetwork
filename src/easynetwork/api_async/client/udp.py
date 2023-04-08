@@ -53,14 +53,16 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
 
         self.__socket: AbstractAsyncDatagramSocketAdapter = socket
         self.__backend: AbstractAsyncBackend = backend
-        self.__socket_proxy = socket.proxy()
+        self.__socket_proxy = SocketProxy(socket.socket())
 
         self.__receive_lock: ILock = backend.create_lock()
         self.__send_lock: ILock = backend.create_lock()
 
-        self.__addr: SocketAddress = new_socket_address(socket.getsockname(), self.__socket_proxy.family)
+        self.__addr: SocketAddress = new_socket_address(socket.get_local_address(), self.__socket_proxy.family)
         self.__peer: SocketAddress | None = (
-            new_socket_address(peername, self.__socket_proxy.family) if (peername := socket.getpeername()) is not None else None
+            new_socket_address(peername, self.__socket_proxy.family)
+            if (peername := socket.get_remote_address()) is not None
+            else None
         )
         self.__protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT] = protocol
         self.__closed: bool = False

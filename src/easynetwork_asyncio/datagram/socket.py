@@ -12,7 +12,6 @@ __all__ = ["DatagramSocketAdapter"]
 from typing import TYPE_CHECKING, Any, final
 
 from easynetwork.api_async.backend.abc import AbstractAsyncDatagramSocketAdapter
-from easynetwork.tools.socket import SocketProxy
 
 if TYPE_CHECKING:
     import asyncio.trsock
@@ -24,10 +23,7 @@ if TYPE_CHECKING:
 
 @final
 class DatagramSocketAdapter(AbstractAsyncDatagramSocketAdapter):
-    __slots__ = (
-        "__endpoint",
-        "__proxy",
-    )
+    __slots__ = ("__endpoint",)
 
     def __init__(self, endpoint: DatagramEndpoint) -> None:
         super().__init__()
@@ -35,8 +31,6 @@ class DatagramSocketAdapter(AbstractAsyncDatagramSocketAdapter):
 
         socket: asyncio.trsock.TransportSocket | None = endpoint.get_extra_info("socket")
         assert socket is not None, "transport must be a socket transport"
-
-        self.__proxy: SocketProxy = SocketProxy(socket)
 
     async def close(self) -> None:
         self.__endpoint.close()
@@ -48,10 +42,10 @@ class DatagramSocketAdapter(AbstractAsyncDatagramSocketAdapter):
     def is_closing(self) -> bool:
         return self.__endpoint.is_closing()
 
-    def getsockname(self) -> tuple[Any, ...]:
+    def get_local_address(self) -> tuple[Any, ...]:
         return self.__endpoint.get_extra_info("sockname")
 
-    def getpeername(self) -> tuple[Any, ...] | None:
+    def get_remote_address(self) -> tuple[Any, ...] | None:
         return self.__endpoint.get_extra_info("peername")
 
     async def recvfrom(self) -> tuple[bytes, tuple[Any, ...]]:
@@ -61,5 +55,6 @@ class DatagramSocketAdapter(AbstractAsyncDatagramSocketAdapter):
         with memoryview(data).toreadonly() as data_view:
             await self.__endpoint.sendto(data_view, address)
 
-    def proxy(self) -> SocketProxy:
-        return self.__proxy
+    def socket(self) -> asyncio.trsock.TransportSocket:
+        socket: asyncio.trsock.TransportSocket = self.__endpoint.get_extra_info("socket")
+        return socket

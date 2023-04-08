@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from easynetwork.api_async.client.tcp import AsyncTCPNetworkClient
 from easynetwork.exceptions import ClientClosedError
-from easynetwork.tools.socket import MAX_STREAM_BUFSIZE, IPv4SocketAddress, IPv6SocketAddress
+from easynetwork.tools.socket import MAX_STREAM_BUFSIZE, IPv4SocketAddress, IPv6SocketAddress, SocketProxy
 
 import pytest
 
@@ -63,7 +63,12 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         socket_family: int,
         global_local_address: tuple[str, int],
     ) -> tuple[str, int]:
-        cls.set_local_address_to_socket_mock(mock_stream_socket_adapter, socket_family, global_local_address)
+        cls.set_local_address_to_socket_mock(
+            mock_stream_socket_adapter,
+            socket_family,
+            global_local_address,
+            "get_local_address",
+        )
         return global_local_address
 
     @pytest.fixture(autouse=True)
@@ -74,7 +79,12 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         socket_family: int,
         global_remote_address: tuple[str, int],
     ) -> tuple[str, int]:
-        cls.set_remote_address_to_socket_mock(mock_stream_socket_adapter, socket_family, global_remote_address)
+        cls.set_remote_address_to_socket_mock(
+            mock_stream_socket_adapter,
+            socket_family,
+            global_remote_address,
+            "get_remote_address",
+        )
         return global_remote_address
 
     @pytest.fixture(autouse=True)
@@ -95,7 +105,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_backend.create_tcp_connection.return_value = mock_stream_socket_adapter
         mock_backend.wrap_connected_tcp_socket.return_value = mock_stream_socket_adapter
 
-        mock_stream_socket_adapter.proxy.return_value = mock_tcp_socket
+        mock_stream_socket_adapter.socket.return_value = mock_tcp_socket
 
     @pytest.fixture  # DO NOT set autouse=True
     @staticmethod
@@ -169,11 +179,11 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             local_address=mocker.sentinel.local_address,
             happy_eyeballs_delay=mocker.sentinel.happy_eyeballs_delay,
         )
-        mock_stream_socket_adapter.proxy.assert_called_once_with()
-        mock_stream_socket_adapter.getsockname.assert_called_once_with()
-        mock_stream_socket_adapter.getpeername.assert_called_once_with()
+        mock_stream_socket_adapter.socket.assert_called_once_with()
+        mock_stream_socket_adapter.get_local_address.assert_called_once_with()
+        mock_stream_socket_adapter.get_remote_address.assert_called_once_with()
         mock_tcp_socket.setsockopt.assert_called_once_with(IPPROTO_TCP, TCP_NODELAY, True)
-        assert client.socket is mock_tcp_socket
+        assert isinstance(client.socket, SocketProxy)
 
     async def test____connect____backend____from_string(
         self,
@@ -233,11 +243,11 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_new_backend.assert_called_once_with(None)
         mock_stream_data_consumer_cls.assert_called_once_with(mock_stream_protocol)
         mock_backend.wrap_connected_tcp_socket.assert_awaited_once_with(mock_tcp_socket)
-        mock_stream_socket_adapter.proxy.assert_called_once_with()
-        mock_stream_socket_adapter.getsockname.assert_called_once_with()
-        mock_stream_socket_adapter.getpeername.assert_called_once_with()
+        mock_stream_socket_adapter.socket.assert_called_once_with()
+        mock_stream_socket_adapter.get_local_address.assert_called_once_with()
+        mock_stream_socket_adapter.get_remote_address.assert_called_once_with()
         mock_tcp_socket.setsockopt.assert_called_once_with(IPPROTO_TCP, TCP_NODELAY, True)
-        assert client.socket is mock_tcp_socket
+        assert isinstance(client.socket, SocketProxy)
 
     async def test____from_socket____backend____from_string(
         self,
@@ -368,7 +378,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_stream_socket_adapter: MagicMock,
     ) -> None:
         # Arrange
-        mock_stream_socket_adapter.getsockname.reset_mock()
+        mock_stream_socket_adapter.get_local_address.reset_mock()
         if client_closed:
             await client.close()
             assert client.is_closing()
@@ -381,7 +391,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             assert isinstance(address, IPv6SocketAddress)
         else:
             assert isinstance(address, IPv4SocketAddress)
-        mock_stream_socket_adapter.getsockname.assert_not_called()
+        mock_stream_socket_adapter.get_local_address.assert_not_called()
         assert address.host == local_address[0]
         assert address.port == local_address[1]
 
@@ -396,7 +406,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
     ) -> None:
         # Arrange
         ## NOTE: The client should have the remote address saved. Therefore this test check if there is no new call.
-        mock_stream_socket_adapter.getpeername.assert_called_once()
+        mock_stream_socket_adapter.get_remote_address.assert_called_once()
         if client_closed:
             await client.close()
             assert client.is_closing()
@@ -409,7 +419,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             assert isinstance(address, IPv6SocketAddress)
         else:
             assert isinstance(address, IPv4SocketAddress)
-        mock_stream_socket_adapter.getpeername.assert_called_once()
+        mock_stream_socket_adapter.get_remote_address.assert_called_once()
         assert address.host == remote_address[0]
         assert address.port == remote_address[1]
 

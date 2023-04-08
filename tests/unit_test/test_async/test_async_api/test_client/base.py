@@ -16,13 +16,15 @@ class BaseTestClient:
         mock_socket: MagicMock,
         socket_family: int,
         address: tuple[str, int],
+        method_name: str = "getsockname",
     ) -> None:
-        mock_socket.getsockname.return_value = new_socket_address(address, socket_family)
+        getattr(mock_socket, method_name).return_value = new_socket_address(address, socket_family)
 
     @staticmethod
     def set_remote_address_to_socket_mock(
         mock_socket: MagicMock,
         socket_family: int,
         address: tuple[str, int],
+        method_name: str = "getpeername",
     ) -> None:
-        mock_socket.getpeername.return_value = new_socket_address(address, socket_family)
+        getattr(mock_socket, method_name).return_value = new_socket_address(address, socket_family)

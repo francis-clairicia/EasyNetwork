@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from easynetwork.api_async.client.udp import AsyncUDPNetworkClient, AsyncUDPNetworkEndpoint
 from easynetwork.exceptions import ClientClosedError
-from easynetwork.tools.socket import IPv4SocketAddress, IPv6SocketAddress
+from easynetwork.tools.socket import IPv4SocketAddress, IPv6SocketAddress, SocketProxy
 
 import pytest
 
@@ -55,7 +55,12 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         global_local_address: tuple[str, int],
     ) -> tuple[str, int]:
         cls.set_local_address_to_socket_mock(mock_udp_socket, socket_family, global_local_address)
-        cls.set_local_address_to_socket_mock(mock_datagram_socket_adapter, socket_family, global_local_address)
+        cls.set_local_address_to_socket_mock(
+            mock_datagram_socket_adapter,
+            socket_family,
+            global_local_address,
+            "get_local_address",
+        )
         return global_local_address
 
     @pytest.fixture(autouse=True, params=[False, True], ids=lambda p: f"remote_address=={p}")
@@ -69,10 +74,15 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
     ) -> tuple[str, int] | None:
         match request.param:
             case True:
-                cls.set_remote_address_to_socket_mock(mock_datagram_socket_adapter, socket_family, global_remote_address)
+                cls.set_remote_address_to_socket_mock(
+                    mock_datagram_socket_adapter,
+                    socket_family,
+                    global_remote_address,
+                    "get_remote_address",
+                )
                 return global_remote_address
             case False:
-                mock_datagram_socket_adapter.getpeername.return_value = None
+                mock_datagram_socket_adapter.get_remote_address.return_value = None
                 return None
             case invalid:
                 pytest.fail(f"Invalid fixture param: Got {invalid!r}")
@@ -95,7 +105,7 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         mock_backend.create_udp_endpoint.return_value = mock_datagram_socket_adapter
         mock_backend.wrap_udp_socket.return_value = mock_datagram_socket_adapter
 
-        mock_datagram_socket_adapter.proxy.return_value = mock_udp_socket
+        mock_datagram_socket_adapter.socket.return_value = mock_udp_socket
 
     @pytest.fixture  # DO NOT set autouse=True
     @staticmethod
@@ -161,10 +171,10 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
             local_address=mocker.sentinel.local_address,
             reuse_port=False,
         )
-        mock_datagram_socket_adapter.proxy.assert_called_once_with()
-        mock_datagram_socket_adapter.getsockname.assert_called_once_with()
-        mock_datagram_socket_adapter.getpeername.assert_called_once_with()
-        assert client.socket is mock_udp_socket
+        mock_datagram_socket_adapter.socket.assert_called_once_with()
+        mock_datagram_socket_adapter.get_local_address.assert_called_once_with()
+        mock_datagram_socket_adapter.get_remote_address.assert_called_once_with()
+        assert isinstance(client.socket, SocketProxy)
 
     async def test____create____force_local_address(
         self,
@@ -247,10 +257,10 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         # Assert
         mock_new_backend.assert_called_once_with(None)
         mock_backend.wrap_udp_socket.assert_awaited_once_with(mock_udp_socket)
-        mock_datagram_socket_adapter.proxy.assert_called_once_with()
-        mock_datagram_socket_adapter.getsockname.assert_called_once_with()
-        mock_datagram_socket_adapter.getpeername.assert_called_once_with()
-        assert client.socket is mock_udp_socket
+        mock_datagram_socket_adapter.socket.assert_called_once_with()
+        mock_datagram_socket_adapter.get_local_address.assert_called_once_with()
+        mock_datagram_socket_adapter.get_remote_address.assert_called_once_with()
+        assert isinstance(client.socket, SocketProxy)
 
     async def test____from_socket____force_local_address(
         self,
@@ -314,7 +324,7 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         mock_datagram_protocol: MagicMock,
     ) -> None:
         # Arrange
-        mock_datagram_socket_adapter.getsockname.return_value = ("0.0.0.0", 0)
+        mock_datagram_socket_adapter.get_local_address.return_value = ("0.0.0.0", 0)
 
         # Act & Assert
         with pytest.raises(OSError, match=r"^.+ is not bound to a local address$"):
@@ -430,7 +440,7 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         mock_datagram_socket_adapter: MagicMock,
     ) -> None:
         # Arrange
-        mock_datagram_socket_adapter.getsockname.reset_mock()
+        mock_datagram_socket_adapter.get_local_address.reset_mock()
         if client_closed:
             await client.close()
             assert client.is_closing()
@@ -443,7 +453,7 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
             assert isinstance(address, IPv6SocketAddress)
         else:
             assert isinstance(address, IPv4SocketAddress)
-        mock_datagram_socket_adapter.getsockname.assert_not_called()
+        mock_datagram_socket_adapter.get_local_address.assert_not_called()
         assert address.host == local_address[0]
         assert address.port == local_address[1]
 
@@ -458,7 +468,7 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
     ) -> None:
         # Arrange
         ## NOTE: The client should have the remote address saved. Therefore this test check if there is no new call.
-        mock_datagram_socket_adapter.getpeername.assert_called_once()
+        mock_datagram_socket_adapter.get_remote_address.assert_called_once()
         if client_closed:
             await client.close()
             assert client.is_closing()
@@ -476,7 +486,7 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
                 assert isinstance(address, IPv4SocketAddress)
             assert address.host == remote_address[0]
             assert address.port == remote_address[1]
-        mock_datagram_socket_adapter.getpeername.assert_called_once()
+        mock_datagram_socket_adapter.get_remote_address.assert_called_once()
 
     async def test____fileno____default(
         self,
@@ -885,7 +895,7 @@ class TestAsyncUDPNetworkClient:
         mock_backend.create_udp_endpoint.return_value = mock_datagram_socket_adapter
         mock_backend.wrap_udp_socket.return_value = mock_datagram_socket_adapter
 
-        mock_datagram_socket_adapter.proxy.return_value = mock_udp_socket
+        mock_datagram_socket_adapter.socket.return_value = mock_udp_socket
 
     async def test____create____with_remote_address(
         self,

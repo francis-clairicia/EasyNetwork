@@ -203,7 +203,7 @@ class TestStreamSocket:
         # Arrange
 
         # Act
-        laddr = socket.getsockname()
+        laddr = socket.get_local_address()
 
         # Assert
         assert laddr == asyncio_writer_extra_info["sockname"]
@@ -216,23 +216,20 @@ class TestStreamSocket:
         # Arrange
 
         # Act
-        raddr = socket.getpeername()
+        raddr = socket.get_remote_address()
 
         # Assert
         assert raddr == asyncio_writer_extra_info["peername"]
 
-    async def test____proxy____wraps_transport_socket(
+    async def test____socket____returns_transport_socket(
         self,
         socket: StreamSocketAdapter,
         mock_tcp_socket: MagicMock,
-        mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_tcp_socket.fileno.return_value = mocker.sentinel.fileno
 
         # Act
-        fileno = socket.proxy().fileno()
+        transport_socket = socket.socket()
 
         # Assert
-        mock_tcp_socket.fileno.assert_called_once_with()
-        assert fileno is mocker.sentinel.fileno
+        assert transport_socket is mock_tcp_socket
