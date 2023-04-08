@@ -6,12 +6,10 @@
 
 from __future__ import annotations
 
-__all__ = ["AbstractPacketConverter", "PacketConversionError"]
+__all__ = ["AbstractPacketConverter"]
 
 from abc import ABCMeta, abstractmethod
 from typing import Callable, Generic, TypeVar, final
-
-from .exceptions import PacketConversionError
 
 _SentDTOPacketT = TypeVar("_SentDTOPacketT")
 _ReceivedDTOPacketT = TypeVar("_ReceivedDTOPacketT")

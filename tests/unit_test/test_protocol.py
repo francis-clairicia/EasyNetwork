@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Generator
 
-from easynetwork.converter import PacketConversionError
 from easynetwork.exceptions import (
     DatagramProtocolParseError,
     DeserializeError,
     IncrementalDeserializeError,
+    PacketConversionError,
     StreamProtocolParseError,
 )
 from easynetwork.protocol import DatagramProtocol, StreamProtocol
