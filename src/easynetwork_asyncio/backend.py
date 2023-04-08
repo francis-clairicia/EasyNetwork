@@ -43,7 +43,7 @@ class AsyncioBackend(AbstractAsyncBackend):
         return await asyncio.sleep(delay)
 
     def create_task_group(self) -> AbstractTaskGroup:
-        from .tools.tasks import TaskGroup
+        from .tasks import TaskGroup
 
         return TaskGroup()
 
