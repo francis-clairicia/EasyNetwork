@@ -262,8 +262,9 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
             # meaningful for the runner implementation
             del coroutine_cb
             return await self.wait_future(task_future)
+        running = task_future.set_running_or_notify_cancel()
+        assert running, "Unexpected future cancellation"
         try:
-            task_future.set_running_or_notify_cancel()
             result: _T_co = await coroutine_cb()
         except BaseException as exc:
             task_future.set_exception(exc)
