@@ -20,7 +20,7 @@ __all__ = [
 ]
 
 from abc import ABCMeta, abstractmethod
-from typing import TYPE_CHECKING, Any, Callable, Coroutine, Generic, ParamSpec, Protocol, Self, Sequence, TypeVar
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Coroutine, Generic, ParamSpec, Protocol, Self, Sequence, TypeVar
 
 if TYPE_CHECKING:
     import concurrent.futures
@@ -33,7 +33,6 @@ if TYPE_CHECKING:
 
 
 _P = ParamSpec("_P")
-_T = TypeVar("_T")
 _T_co = TypeVar("_T_co", covariant=True)
 
 
@@ -97,7 +96,7 @@ class AbstractTaskGroup(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    def start(self, func: Callable[..., Coroutine[Any, Any, _T]], *args: Any) -> AbstractTask[_T]:
+    def start(self, func: Callable[..., Coroutine[Any, Any, _T_co]], *args: Any) -> AbstractTask[_T_co]:
         raise NotImplementedError
 
 
@@ -239,10 +238,32 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    async def run_in_thread(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+    async def run_in_thread(self, __func: Callable[_P, _T_co], /, *args: _P.args, **kwargs: _P.kwargs) -> _T_co:
         raise NotImplementedError
 
-    async def wait_future(self, future: concurrent.futures.Future[_T]) -> _T:
+    async def wait_future(self, future: concurrent.futures.Future[_T_co]) -> _T_co:
         while not future.done():
             await self.coro_yield()
         return future.result()
+
+    async def run_task_once(
+        self,
+        coroutine_cb: Callable[[], Awaitable[_T_co]],
+        task_future: concurrent.futures.Future[_T_co],
+    ) -> _T_co:
+        if task_future.done():
+            return task_future.result()
+        if task_future.running():
+            del coroutine_cb
+            return await self.wait_future(task_future)
+        try:
+            task_future.set_running_or_notify_cancel()
+            result: _T_co = await coroutine_cb()
+        except BaseException as exc:
+            task_future.set_exception(exc)
+            raise
+        else:
+            task_future.set_result(result)
+            return result
+        finally:
+            del task_future, coroutine_cb

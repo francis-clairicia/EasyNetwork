@@ -16,7 +16,6 @@ from ...exceptions import ClientClosedError, DatagramProtocolParseError
 from ...protocol import DatagramProtocol
 from ...tools._utils import check_real_socket_state as _check_real_socket_state, error_from_errno as _error_from_errno
 from ...tools.socket import SocketAddress, SocketProxy, new_socket_address
-from ..backend._utils import run_task_once as _run_task_once
 from ..backend.abc import AbstractAsyncBackend, AbstractAsyncDatagramSocketAdapter, ILock
 from ..backend.factory import AsyncBackendFactory
 from .abc import AbstractAsyncNetworkClient
@@ -138,7 +137,7 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         return self.__closed or self.__close_waiter.running()
 
     async def close(self) -> None:
-        await _run_task_once(self.__close, self.__close_waiter, self.__backend)
+        await self.__backend.run_task_once(self.__close, self.__close_waiter)
 
     async def __close(self) -> None:
         async with self.__send_lock:

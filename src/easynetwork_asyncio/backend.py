@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     )
 
 _P = ParamSpec("_P")
-_T = TypeVar("_T")
+_T_co = TypeVar("_T_co", covariant=True)
 
 
 @final
@@ -192,12 +192,12 @@ class AsyncioBackend(AbstractAsyncBackend):
 
         return asyncio.Lock()
 
-    async def run_in_thread(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+    async def run_in_thread(self, __func: Callable[_P, _T_co], /, *args: _P.args, **kwargs: _P.kwargs) -> _T_co:
         import asyncio
 
         return await asyncio.to_thread(__func, *args, **kwargs)
 
-    async def wait_future(self, future: concurrent.futures.Future[_T]) -> _T:
+    async def wait_future(self, future: concurrent.futures.Future[_T_co]) -> _T_co:
         import asyncio
 
         return await asyncio.wrap_future(future)

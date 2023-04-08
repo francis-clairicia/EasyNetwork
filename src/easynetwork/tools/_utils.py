@@ -6,6 +6,7 @@ __all__ = [
     "check_real_socket_state",
     "error_from_errno",
     "ipaddr_info",
+    "open_listener_sockets_from_getaddrinfo_result",
     "restore_timeout_at_end",
     "set_reuseport",
 ]
