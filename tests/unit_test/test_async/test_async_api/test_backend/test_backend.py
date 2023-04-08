@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import Future
 from socket import socket as Socket
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Iterator, Literal, assert_never, final
@@ -44,8 +45,6 @@ class TestAbstractAsyncBackend:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        from concurrent.futures import Future
-
         future: Future[Any] = Future()
         future.set_running_or_notify_cancel()
         task = asyncio.create_task(backend.wait_future(future))
@@ -60,6 +59,82 @@ class TestAbstractAsyncBackend:
 
         # Assert
         backend.mock_coro_yield.assert_called_once_with()
+        assert result is mocker.sentinel.result
+
+    async def test____run_task_once____run_coroutine____result(
+        self,
+        backend: MockBackend,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        future: Future[Any] = Future()
+        coroutine_func = mocker.AsyncMock(spec=lambda: None, return_value=mocker.sentinel.result)
+
+        # Act
+        result = await backend.run_task_once(coroutine_func, future)
+
+        # Assert
+        backend.mock_coro_yield.assert_not_called()
+        coroutine_func.assert_awaited_once_with()
+        assert result is mocker.sentinel.result
+        assert future.done() and future.result() is result
+
+    async def test____run_task_once____run_coroutine____error(
+        self,
+        backend: MockBackend,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        future: Future[Any] = Future()
+        coroutine_func = mocker.AsyncMock(spec=lambda: None, side_effect=BaseException)
+
+        # Act
+        with pytest.raises(BaseException) as exc_info:
+            await backend.run_task_once(coroutine_func, future)
+
+        # Assert
+        backend.mock_coro_yield.assert_not_called()
+        coroutine_func.assert_awaited_once_with()
+        assert future.done() and future.exception() is exc_info.value
+
+    async def test____run_task_once____task_is_running(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        backend: MockBackend,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        future: Future[Any] = Future()
+        coroutine_func = mocker.AsyncMock(spec=lambda: None)
+
+        assert future.set_running_or_notify_cancel()
+        assert future.running()
+        event_loop.call_soon(future.set_result, mocker.sentinel.result)
+
+        # Act
+        result = await backend.run_task_once(coroutine_func, future)
+
+        # Assert
+        backend.mock_coro_yield.assert_called_once_with()
+        coroutine_func.assert_not_awaited()
+        assert result is mocker.sentinel.result
+
+    async def test____run_task_once____task_done(
+        self,
+        backend: MockBackend,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        future: Future[Any] = Future()
+        future.set_result(mocker.sentinel.result)
+        coroutine_func = mocker.AsyncMock(spec=lambda: None)
+
+        # Act
+        result = await backend.run_task_once(coroutine_func, future)
+
+        # Assert
+        backend.mock_coro_yield.assert_not_called()
+        coroutine_func.assert_not_awaited()
         assert result is mocker.sentinel.result
 
 

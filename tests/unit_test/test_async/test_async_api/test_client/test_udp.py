@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from concurrent.futures import Future
 from socket import AF_INET6
 from typing import TYPE_CHECKING, Any, cast
 
@@ -35,13 +34,6 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         import socket
 
         return getattr(socket, request.param)
-
-    @pytest.fixture(autouse=True)
-    @staticmethod
-    def mock_close_future(mocker: MockerFixture) -> Future[None]:
-        fut: Future[None] = Future()
-        mocker.patch("concurrent.futures.Future", return_value=fut)
-        return fut
 
     @pytest.fixture(scope="class")
     @staticmethod
@@ -351,12 +343,9 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         self,
         client: AsyncUDPNetworkClient[Any, Any],
         mock_datagram_socket_adapter: MagicMock,
-        mock_close_future: Future[None],
     ) -> None:
         # Arrange
         assert not client.is_closing()
-        assert not mock_close_future.done()
-        assert not mock_close_future.running()
 
         # Act
         await client.close()
@@ -364,20 +353,16 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         # Assert
         assert client.is_closing()
         mock_datagram_socket_adapter.close.assert_awaited_once_with()
-        assert mock_close_future.done() and mock_close_future.result() is None
 
     async def test____close____await_socket_close____error_occurred(
         self,
         client: AsyncUDPNetworkClient[Any, Any],
         mock_datagram_socket_adapter: MagicMock,
-        mock_close_future: Future[None],
     ) -> None:
         # Arrange
         error = OSError("Bad file descriptor")
         mock_datagram_socket_adapter.close.side_effect = error
         assert not client.is_closing()
-        assert not mock_close_future.done()
-        assert not mock_close_future.running()
 
         # Act
         with pytest.raises(OSError) as exc_info:
@@ -387,20 +372,16 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         assert client.is_closing()
         assert exc_info.value is error
         mock_datagram_socket_adapter.close.assert_awaited_once_with()
-        assert mock_close_future.done() and mock_close_future.exception() is error
 
     async def test____close____await_socket_close____hide_connection_error(
         self,
         client: AsyncUDPNetworkClient[Any, Any],
         mock_datagram_socket_adapter: MagicMock,
-        mock_close_future: Future[None],
     ) -> None:
         # Arrange
         error = ConnectionAbortedError()
         mock_datagram_socket_adapter.close.side_effect = error
         assert not client.is_closing()
-        assert not mock_close_future.done()
-        assert not mock_close_future.running()
 
         # Act
         await client.close()
@@ -408,42 +389,21 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         # Assert
         assert client.is_closing()
         mock_datagram_socket_adapter.close.assert_awaited_once_with()
-        assert mock_close_future.done() and mock_close_future.exception() is None
-
-    async def test____close____action_in_progress(
-        self,
-        client: AsyncUDPNetworkClient[Any, Any],
-        mock_datagram_socket_adapter: MagicMock,
-        mock_backend: MagicMock,
-        mock_close_future: Future[None],
-    ) -> None:
-        # Arrange
-        mock_close_future.set_running_or_notify_cancel()
-        mock_backend.wait_future.return_value = None
-
-        # Act
-        await client.close()
-
-        # Assert
-        mock_backend.wait_future.assert_awaited_once_with(mock_close_future)
-        mock_datagram_socket_adapter.close.assert_not_awaited()
 
     async def test____close____already_closed(
         self,
         client: AsyncUDPNetworkClient[Any, Any],
         mock_datagram_socket_adapter: MagicMock,
-        mock_backend: MagicMock,
-        mock_close_future: Future[None],
     ) -> None:
         # Arrange
-        mock_close_future.set_result(None)
+        await client.close()
+        assert client.is_closing()
 
         # Act
         await client.close()
 
         # Assert
-        mock_backend.wait_future.assert_not_awaited()
-        mock_datagram_socket_adapter.close.assert_not_awaited()
+        mock_datagram_socket_adapter.close.assert_awaited_once_with()
 
     async def test____abort____brute_force_shutdown(
         self,

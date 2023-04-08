@@ -257,9 +257,9 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         coroutine_cb: Callable[[], Awaitable[_T_co]],
         task_future: concurrent.futures.Future[_T_co],
     ) -> _T_co:
-        if task_future.done():
-            return task_future.result()
-        if task_future.running():
+        if task_future.done() or task_future.running():
+            # Use wait_future() because concurrent.futures.CancelledError can be translated to an other exception
+            # meaningful for the runner implementation
             del coroutine_cb
             return await self.wait_future(task_future)
         try:
