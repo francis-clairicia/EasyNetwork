@@ -169,7 +169,7 @@ class AbstractAsyncDatagramSocketAdapter(AbstractAsyncBaseSocketAdapter):
         raise NotImplementedError
 
     @abstractmethod
-    async def sendto(self, __data: ReadableBuffer, __address: tuple[Any, ...] | None = ..., /) -> None:
+    async def sendto(self, __data: ReadableBuffer, __address: tuple[Any, ...] | None, /) -> None:
         raise NotImplementedError
 
 

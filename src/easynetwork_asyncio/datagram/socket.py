@@ -51,7 +51,7 @@ class DatagramSocketAdapter(AbstractAsyncDatagramSocketAdapter):
     async def recvfrom(self) -> tuple[bytes, tuple[Any, ...]]:
         return await self.__endpoint.recvfrom()
 
-    async def sendto(self, data: ReadableBuffer, address: tuple[Any, ...] | None = None, /) -> None:
+    async def sendto(self, data: ReadableBuffer, address: tuple[Any, ...] | None, /) -> None:
         with memoryview(data).toreadonly() as data_view:
             await self.__endpoint.sendto(data_view, address)
 
