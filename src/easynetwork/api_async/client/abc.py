@@ -16,6 +16,8 @@ from ...tools.socket import SocketAddress
 if TYPE_CHECKING:
     from types import TracebackType
 
+    from ..backend.abc import AbstractAsyncBackend
+
 _ReceivedPacketT = TypeVar("_ReceivedPacketT")
 _SentPacketT = TypeVar("_SentPacketT")
 
@@ -76,4 +78,8 @@ class AbstractAsyncNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metacl
 
     @abstractmethod
     def fileno(self) -> int:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_backend(self) -> AbstractAsyncBackend:
         raise NotImplementedError

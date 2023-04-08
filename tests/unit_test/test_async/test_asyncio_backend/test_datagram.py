@@ -5,10 +5,10 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, Any
 
-import pytest
-
 from easynetwork_asyncio.datagram.endpoint import DatagramEndpoint, DatagramEndpointProtocol, create_datagram_endpoint
 from easynetwork_asyncio.datagram.socket import DatagramSocketAdapter
+
+import pytest
 
 if TYPE_CHECKING:
     from unittest.mock import AsyncMock, MagicMock

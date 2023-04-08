@@ -205,6 +205,9 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             return -1
         return self.__socket_proxy.fileno()
 
+    def get_backend(self) -> AbstractAsyncBackend:
+        return self.__backend
+
     def __ensure_opened(self) -> AbstractAsyncDatagramSocketAdapter:
         if self.__closed:
             raise ClientClosedError("Client is closing, or is already closed")
@@ -314,6 +317,9 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
 
     def fileno(self) -> int:
         return self.__endpoint.fileno()
+
+    def get_backend(self) -> AbstractAsyncBackend:
+        return self.__endpoint.get_backend()
 
     @property
     @final

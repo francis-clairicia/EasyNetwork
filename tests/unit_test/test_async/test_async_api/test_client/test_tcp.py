@@ -725,3 +725,9 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
 
         # Assert
         mock_stream_socket_adapter.recv.assert_not_called()
+
+    async def test____get_backend____default(self, client: AsyncTCPNetworkClient[Any, Any], mock_backend: MagicMock) -> None:
+        # Arrange
+
+        # Act & Assert
+        assert client.get_backend() is mock_backend

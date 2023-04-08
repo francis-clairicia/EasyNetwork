@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import pytest
-
 from easynetwork_asyncio import AsyncioBackend
+
+import pytest
 
 if TYPE_CHECKING:
     from unittest.mock import AsyncMock, MagicMock

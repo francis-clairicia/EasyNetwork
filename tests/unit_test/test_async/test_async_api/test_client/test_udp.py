@@ -828,6 +828,12 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         with pytest.raises(StopAsyncIteration):
             _ = await anext(iterator)
 
+    async def test____get_backend____default(self, client: AsyncUDPNetworkEndpoint[Any, Any], mock_backend: MagicMock) -> None:
+        # Arrange
+
+        # Act & Assert
+        assert client.get_backend() is mock_backend
+
 
 @pytest.mark.asyncio
 class TestAsyncUDPNetworkClient:
@@ -1217,3 +1223,19 @@ class TestAsyncUDPNetworkClient:
         # Assert
         mock_udp_endpoint.fileno.assert_called_once_with()
         assert fd is mocker.sentinel.fd
+
+    async def test____get_backend____default(
+        self,
+        client: AsyncUDPNetworkClient[Any, Any],
+        mock_udp_endpoint: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_udp_endpoint.get_backend.return_value = mocker.sentinel.backend
+
+        # Act
+        backend = client.get_backend()
+
+        # Assert
+        mock_udp_endpoint.get_backend.assert_called_once_with()
+        assert backend is mocker.sentinel.backend

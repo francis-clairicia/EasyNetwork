@@ -95,7 +95,7 @@ profile = "black"
 line_length = 130
 combine_as_imports = true
 sections = ["FUTURE", "STDLIB", "EASYNETWORK", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"]
-known_easynetwork = ["easynetwork"]
+known_easynetwork = ["easynetwork", "easynetwork_asyncio"]
 add_imports = ["from __future__ import annotations"]
 
 [tool.black]

@@ -192,6 +192,9 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
             return -1
         return self.__socket_proxy.fileno()
 
+    def get_backend(self) -> AbstractAsyncBackend:
+        return self.__backend
+
     def __ensure_connected(self) -> AbstractAsyncStreamSocketAdapter:
         if self.__closed:
             raise ClientClosedError("Client is closing, or is already closed")

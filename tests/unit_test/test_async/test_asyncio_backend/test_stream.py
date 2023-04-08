@@ -5,9 +5,9 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, Any
 
-import pytest
-
 from easynetwork_asyncio.stream.socket import StreamSocketAdapter
+
+import pytest
 
 if TYPE_CHECKING:
     from unittest.mock import MagicMock

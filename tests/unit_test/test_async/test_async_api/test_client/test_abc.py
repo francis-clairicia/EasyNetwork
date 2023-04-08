@@ -10,6 +10,8 @@ from easynetwork.tools.socket import SocketAddress
 import pytest
 
 if TYPE_CHECKING:
+    from easynetwork.api_async.backend.abc import AbstractAsyncBackend
+
     from pytest_mock import MockerFixture
 
 
@@ -42,6 +44,9 @@ class MockAsyncClient(AbstractAsyncNetworkClient[Any, Any]):
         return await self.mock_recv_packet()
 
     def fileno(self) -> int:
+        raise NotImplementedError
+
+    def get_backend(self) -> AbstractAsyncBackend:
         raise NotImplementedError
 
 
