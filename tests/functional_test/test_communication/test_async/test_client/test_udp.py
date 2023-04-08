@@ -41,7 +41,6 @@ class TestAsyncUDPNetworkClient:
     async def client(
         server: Socket,
         socket_family: int,
-        localhost: str,
         datagram_protocol: DatagramProtocol[str, str],
     ) -> AsyncIterator[AsyncUDPNetworkClient[str, str]]:
         address: tuple[str, int] = server.getsockname()[:2]
@@ -49,7 +48,6 @@ class TestAsyncUDPNetworkClient:
             address,
             datagram_protocol,
             family=socket_family,
-            local_address=(localhost, 0),
         ) as client:
             yield client
 

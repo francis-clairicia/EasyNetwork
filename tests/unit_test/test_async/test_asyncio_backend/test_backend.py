@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from easynetwork_asyncio import AsyncioBackend
 
@@ -20,6 +20,16 @@ class TestAsyncIOBackend:
     @staticmethod
     def backend() -> AsyncioBackend:
         return AsyncioBackend()
+
+    @pytest.fixture(params=[("local_address", 12345), None], ids=lambda addr: f"local_address=={addr}")
+    @staticmethod
+    def local_address(request: Any) -> tuple[str, int] | None:
+        return request.param
+
+    @pytest.fixture(params=[("remote_address", 5000)], ids=lambda addr: f"remote_address=={addr}")
+    @staticmethod
+    def remote_address(request: Any) -> tuple[str, int] | None:
+        return request.param
 
     async def test____coro_yield____use_asyncio_sleep(self, backend: AsyncioBackend, mocker: MockerFixture) -> None:
         # Arrange
@@ -43,6 +53,8 @@ class TestAsyncIOBackend:
 
     async def test____create_tcp_connection____use_asyncio_open_connection(
         self,
+        local_address: tuple[str, int] | None,
+        remote_address: tuple[str, int],
         backend: AsyncioBackend,
         mocker: MockerFixture,
     ) -> None:
@@ -60,20 +72,18 @@ class TestAsyncIOBackend:
 
         # Act
         socket = await backend.create_tcp_connection(
-            "remote_address",
-            5000,
+            *remote_address,
             family=1234,
             happy_eyeballs_delay=42,
-            local_address=("local_address", 12345),
+            local_address=local_address,
         )
 
         # Assert
         mock_open_connection.assert_awaited_once_with(
-            "remote_address",
-            5000,
+            *remote_address,
             family=1234,
             happy_eyeballs_delay=42,
-            local_addr=("local_address", 12345),
+            local_addr=local_address,
             limit=MAX_STREAM_BUFSIZE,
         )
         mock_StreamSocketAdapter.assert_called_once_with(mocker.sentinel.reader, mocker.sentinel.writer)
@@ -90,6 +100,8 @@ class TestAsyncIOBackend:
         self,
         given_value: float | None,
         expected_value: float | None,
+        local_address: tuple[str, int] | None,
+        remote_address: tuple[str, int],
         backend: AsyncioBackend,
         mocker: MockerFixture,
     ) -> None:
@@ -103,17 +115,16 @@ class TestAsyncIOBackend:
 
         # Act
         await backend.create_tcp_connection(
-            "remote_address",
-            5000,
+            *remote_address,
             family=1234,
             happy_eyeballs_delay=given_value,
-            local_address=("local_address", 12345),
+            local_address=local_address,
         )
 
         # Assert
         mock_open_connection.assert_awaited_once_with(
-            "remote_address",
-            5000,
+            mocker.ANY,  # host: Not tested here
+            mocker.ANY,  # port: Not tested here
             happy_eyeballs_delay=expected_value,
             family=mocker.ANY,  # Not tested here
             local_addr=mocker.ANY,  # Not tested here
@@ -150,8 +161,11 @@ class TestAsyncIOBackend:
         assert socket is mocker.sentinel.socket
         mock_tcp_socket.setblocking.assert_called_once_with(False)
 
+    @pytest.mark.parametrize("remote_address", [("remote_address", 5000), None], indirect=True)
     async def test____create_udp_endpoint____use_loop_create_datagram_endpoint(
         self,
+        local_address: tuple[str, int] | None,
+        remote_address: tuple[str, int] | None,
         backend: AsyncioBackend,
         mocker: MockerFixture,
     ) -> None:
@@ -168,16 +182,16 @@ class TestAsyncIOBackend:
         # Act
         socket = await backend.create_udp_endpoint(
             family=1234,
-            local_address=("local_address", 12345),
-            remote_address=("remote_address", 5000),
+            local_address=local_address,
+            remote_address=remote_address,
             reuse_port=True,
         )
 
         # Assert
         mock_create_datagram_endpoint.assert_awaited_once_with(
             family=1234,
-            local_addr=("local_address", 12345),
-            remote_addr=("remote_address", 5000),
+            local_addr=local_address,
+            remote_addr=remote_address,
             reuse_port=True,
         )
         mock_DatagramSocketAdapter.assert_called_once_with(mocker.sentinel.endpoint)

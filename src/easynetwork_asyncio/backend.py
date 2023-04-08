@@ -172,7 +172,7 @@ class AsyncioBackend(AbstractAsyncBackend):
                     host = "0.0.0.0"
                 case _socket.AF_INET6:
                     host = "::"
-                case _:
+                case _:  # pragma: no cover
                     raise OSError("Only AF_INET and AF_INET6 families are supported")
         address = (host, port)
         return address
