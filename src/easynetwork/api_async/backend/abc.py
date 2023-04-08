@@ -247,6 +247,16 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
     async def run_in_thread(self, __func: Callable[_P, _T_co], /, *args: _P.args, **kwargs: _P.kwargs) -> _T_co:
         raise NotImplementedError
 
+    @abstractmethod
+    def run_coroutine_from_thread(
+        self,
+        __coro_func: Callable[_P, Coroutine[Any, Any, _T_co]],
+        /,
+        *args: _P.args,
+        **kwargs: _P.kwargs,
+    ) -> _T_co:
+        raise NotImplementedError
+
     async def wait_future(self, future: concurrent.futures.Future[_T_co]) -> _T_co:
         while not future.done():
             await self.coro_yield()

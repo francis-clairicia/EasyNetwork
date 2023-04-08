@@ -10,7 +10,7 @@ from __future__ import annotations
 __all__ = ["AsyncioBackend"]  # type: list[str]
 
 import concurrent.futures
-from typing import TYPE_CHECKING, Any, Callable, ParamSpec, Sequence, TypeVar, final
+from typing import TYPE_CHECKING, Any, Callable, Coroutine, ParamSpec, Sequence, TypeVar, final
 
 from easynetwork.api_async.backend.abc import AbstractAsyncBackend
 
@@ -32,7 +32,16 @@ _T_co = TypeVar("_T_co", covariant=True)
 
 @final
 class AsyncioBackend(AbstractAsyncBackend):
-    __slots__ = ()
+    __slots__ = ("__bound_loop", "__thread_id")
+
+    def __init__(self) -> None:
+        super().__init__()
+
+        import asyncio
+        import threading
+
+        self.__bound_loop: asyncio.AbstractEventLoop = asyncio.get_running_loop()
+        self.__thread_id: int = threading.get_ident()
 
     async def coro_yield(self) -> None:
         return await self.sleep(0)
@@ -218,6 +227,22 @@ class AsyncioBackend(AbstractAsyncBackend):
         import asyncio
 
         return await asyncio.to_thread(__func, *args, **kwargs)
+
+    def run_coroutine_from_thread(
+        self,
+        __coro_func: Callable[_P, Coroutine[Any, Any, _T_co]],
+        /,
+        *args: _P.args,
+        **kwargs: _P.kwargs,
+    ) -> _T_co:
+        import asyncio
+        import threading
+
+        if threading.get_ident() == self.__thread_id:
+            raise RuntimeError("run_coroutine_from_thread() must be called in a different OS thread")
+
+        future = asyncio.run_coroutine_threadsafe(__coro_func(*args, **kwargs), self.__bound_loop)
+        return future.result()
 
     async def wait_future(self, future: concurrent.futures.Future[_T_co]) -> _T_co:
         import asyncio
