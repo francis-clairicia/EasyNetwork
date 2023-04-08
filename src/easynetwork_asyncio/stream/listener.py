@@ -9,7 +9,6 @@ from __future__ import annotations
 
 __all__ = ["ListenerSocketAdapter"]
 
-import collections
 from typing import TYPE_CHECKING, Any, final
 
 from easynetwork.api_async.backend.abc import AbstractAsyncListenerSocketAdapter, AbstractAsyncStreamSocketAdapter
@@ -27,7 +26,7 @@ class ListenerSocketAdapter(AbstractAsyncListenerSocketAdapter):
         "__socket",
         "__trsock",
         "__loop",
-        "__tasks",
+        "__accept_task",
         "__closed",
     )
 
@@ -43,7 +42,7 @@ class ListenerSocketAdapter(AbstractAsyncListenerSocketAdapter):
         self.__socket: _socket.socket = socket
         self.__trsock: TransportSocket = TransportSocket(socket)
         self.__loop: asyncio.AbstractEventLoop = loop
-        self.__tasks: collections.deque[asyncio.Task[Any]] = collections.deque()
+        self.__accept_task: asyncio.Task[tuple[_socket.socket, _socket._RetAddress]] | None = None
         self.__closed: bool = False
 
     def is_closing(self) -> bool:
@@ -54,9 +53,9 @@ class ListenerSocketAdapter(AbstractAsyncListenerSocketAdapter):
             return
 
         self.__closed = True
-        for accept_task in self.__tasks:
-            if not accept_task.done():
-                accept_task.cancel()
+        if self.__accept_task is not None and not self.__accept_task.done():
+            self.__accept_task.cancel()
+            self.__accept_task = None
 
         self.__socket.close()
 
@@ -69,29 +68,33 @@ class ListenerSocketAdapter(AbstractAsyncListenerSocketAdapter):
 
             raise _error_from_errno(errno.EBADFD)
 
-        task = self.__loop.create_task(self.__loop.sock_accept(self.__socket))
-        self.__tasks.append(task)
+        if self.__accept_task is not None:
+            import errno
+
+            raise _error_from_errno(errno.EBUSY)
+
+        self.__accept_task = self.__loop.create_task(self.__loop.sock_accept(self.__socket))
         try:
-            client_socket, client_address = await task
+            client_socket, client_address = await self.__accept_task
         finally:
-            self.__tasks.remove(task)
-            del task
+            self.__accept_task = None
 
         client_socket_adapter = await self._make_socket_adapter(client_socket)
         return client_socket_adapter, client_address
 
-    async def _make_socket_adapter(self, client_socket: _socket.socket) -> AbstractAsyncStreamSocketAdapter:
+    async def _make_socket_adapter(self, socket: _socket.socket) -> AbstractAsyncStreamSocketAdapter:
         from asyncio.streams import StreamReader, StreamReaderProtocol, StreamWriter
 
         from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
 
         from .socket import StreamSocketAdapter
 
-        client_reader = StreamReader(MAX_STREAM_BUFSIZE, self.__loop)
-        client_protocol = StreamReaderProtocol(client_reader, loop=self.__loop)
-        client_transport, client_protocol = await self.__loop.connect_accepted_socket(lambda: client_protocol, client_socket)
-        client_writer = StreamWriter(client_transport, client_protocol, client_reader, self.__loop)
-        return StreamSocketAdapter(client_reader, client_writer)
+        loop = self.__loop
+        reader = StreamReader(MAX_STREAM_BUFSIZE, loop)
+        protocol = StreamReaderProtocol(reader, loop=loop)
+        transport, protocol = await loop.connect_accepted_socket(lambda: protocol, socket)
+        writer = StreamWriter(transport, protocol, reader, loop)
+        return StreamSocketAdapter(reader, writer)
 
     def get_local_address(self) -> tuple[Any, ...]:
         return self.__socket.getsockname()
