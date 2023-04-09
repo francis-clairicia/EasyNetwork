@@ -16,6 +16,7 @@ __all__ = [
     "AbstractAsyncStreamSocketAdapter",
     "AbstractTask",
     "AbstractTaskGroup",
+    "IEvent",
     "ILock",
 ]
 
@@ -56,6 +57,20 @@ class ILock(Protocol):
         ...
 
     def locked(self) -> bool:  # pragma: no cover
+        ...
+
+
+class IEvent(Protocol):
+    async def wait(self) -> Any:  # pragma: no cover
+        ...
+
+    def set(self) -> None:  # pragma: no cover
+        ...
+
+    def clear(self) -> None:  # pragma: no cover
+        ...
+
+    def is_set(self) -> bool:  # pragma: no cover
         ...
 
 
@@ -241,6 +256,10 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
 
     @abstractmethod
     def create_lock(self) -> ILock:
+        raise NotImplementedError
+
+    @abstractmethod
+    def create_event(self) -> IEvent:
         raise NotImplementedError
 
     @abstractmethod

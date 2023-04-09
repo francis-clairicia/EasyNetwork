@@ -23,6 +23,7 @@ if TYPE_CHECKING:
         AbstractAsyncListenerSocketAdapter,
         AbstractAsyncStreamSocketAdapter,
         AbstractTaskGroup,
+        IEvent,
         ILock,
     )
 
@@ -222,6 +223,11 @@ class AsyncioBackend(AbstractAsyncBackend):
         import asyncio
 
         return asyncio.Lock()
+
+    def create_event(self) -> IEvent:
+        import asyncio
+
+        return asyncio.Event()
 
     async def run_in_thread(self, __func: Callable[_P, _T_co], /, *args: _P.args, **kwargs: _P.kwargs) -> _T_co:
         import asyncio

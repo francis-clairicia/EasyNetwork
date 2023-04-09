@@ -239,6 +239,21 @@ class TestAsyncIOBackend:
         mock_Lock.assert_called_once_with()
         assert lock is mocker.sentinel.lock
 
+    async def test____create_event____use_asyncio_Event_class(
+        self,
+        backend: AsyncioBackend,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_Event = mocker.patch("asyncio.Event", return_value=mocker.sentinel.event)
+
+        # Act
+        event = backend.create_event()
+
+        # Assert
+        mock_Event.assert_called_once_with()
+        assert event is mocker.sentinel.event
+
     async def test____run_in_thread____use_asyncio_to_thread(
         self,
         backend: AsyncioBackend,

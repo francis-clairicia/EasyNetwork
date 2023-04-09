@@ -11,6 +11,7 @@ from easynetwork.api_async.backend.abc import (
     AbstractAsyncListenerSocketAdapter,
     AbstractAsyncStreamSocketAdapter,
     AbstractTaskGroup,
+    IEvent,
     ILock,
 )
 
@@ -41,6 +42,9 @@ class BaseFakeBackend(AbstractAsyncBackend):
         raise NotImplementedError
 
     def create_lock(self) -> ILock:
+        raise NotImplementedError
+
+    def create_event(self) -> IEvent:
         raise NotImplementedError
 
     async def run_in_thread(self, __func: Callable[..., Any], /, *args: Any, **kwargs: Any) -> Any:
