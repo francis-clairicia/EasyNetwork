@@ -258,10 +258,10 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         raise NotImplementedError
 
     def run_sync_threadsafe(self, __func: Callable[_P, _T_co], /, *args: _P.args, **kwargs: _P.kwargs) -> _T_co:
-        async def _wrap_in_coroutine(__func: Callable[..., _T_co], /, *args: Any, **kwargs: Any) -> _T_co:
+        async def _func_as_coroutine() -> _T_co:
             return __func(*args, **kwargs)
 
-        return self.run_coroutine_from_thread(_wrap_in_coroutine, __func, *args, **kwargs)
+        return self.run_coroutine_from_thread(_func_as_coroutine)
 
     async def wait_future(self, future: concurrent.futures.Future[_T_co]) -> _T_co:
         while not future.done():
