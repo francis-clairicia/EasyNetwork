@@ -39,6 +39,7 @@ class ListenerSocketAdapter(AbstractAsyncListenerSocketAdapter):
 
         from asyncio.trsock import TransportSocket
 
+        socket.setblocking(False)
         self.__socket: _socket.socket = socket
         self.__trsock: TransportSocket = TransportSocket(socket)
         self.__loop: asyncio.AbstractEventLoop = loop

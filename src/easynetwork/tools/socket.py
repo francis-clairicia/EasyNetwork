@@ -7,6 +7,8 @@
 from __future__ import annotations
 
 __all__ = [
+    "ACCEPT_CAPACITY_ERRNOS",
+    "ACCEPT_CAPACITY_ERROR_SLEEP_TIME",
     "AF_INET",
     "AF_INET6",
     "AddressFamily",
@@ -18,6 +20,7 @@ __all__ = [
 ]
 
 import contextlib
+import errno as _errno
 import socket as _socket
 from enum import IntEnum, unique
 from typing import TYPE_CHECKING, Any, ContextManager, Final, Literal, NamedTuple, Protocol, TypeAlias, final, overload
@@ -61,7 +64,7 @@ class IPv6SocketAddress(NamedTuple):
     scope_id: int = 0
 
     def __str__(self) -> str:  # pragma: no cover
-        return f"{self.host}:{self.port}"
+        return f"{self.host!r}:{self.port}"
 
     def for_connection(self) -> tuple[str, int]:
         return self.host, self.port
@@ -99,6 +102,20 @@ def new_socket_address(addr: tuple[Any, ...], family: int) -> SocketAddress:
 
 MAX_STREAM_BUFSIZE: Final[int] = 256 * 1024  # 256KiB
 MAX_DATAGRAM_BUFSIZE: Final[int] = 64 * 1024  # 64KiB
+
+# Errors that accept(2) can return, and which indicate that the system is
+# overloaded
+ACCEPT_CAPACITY_ERRNOS = frozenset(
+    {
+        _errno.EMFILE,
+        _errno.ENFILE,
+        _errno.ENOMEM,
+        _errno.ENOBUFS,
+    }
+)
+
+# How long to sleep when we get one of those errors
+ACCEPT_CAPACITY_ERROR_SLEEP_TIME = 0.100
 
 
 class ISocket(Protocol):

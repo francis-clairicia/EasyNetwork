@@ -2,15 +2,15 @@
 # Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
 #
 #
-"""Network servers' request handler base classes module"""
+"""Asynchronous network servers' request handler base classes module"""
 
 from __future__ import annotations
 
 __all__ = [
-    "BaseRequestHandler",
-    "ClientInterface",
-    "DatagramRequestHandler",
-    "StreamRequestHandler",
+    "AsyncBaseRequestHandler",
+    "AsyncClientInterface",
+    "AsyncDatagramRequestHandler",
+    "AsyncStreamRequestHandler",
 ]
 
 from abc import ABCMeta, abstractmethod
@@ -25,7 +25,7 @@ _RequestT = TypeVar("_RequestT")
 _ResponseT = TypeVar("_ResponseT")
 
 
-class ClientInterface(Generic[_ResponseT], metaclass=ABCMeta):
+class AsyncClientInterface(Generic[_ResponseT], metaclass=ABCMeta):
     __slots__ = ("__addr", "__weakref__")
 
     def __init__(self, address: SocketAddress) -> None:
@@ -36,15 +36,15 @@ class ClientInterface(Generic[_ResponseT], metaclass=ABCMeta):
         return f"<client with address {self.address} at {id(self):#x}>"
 
     @abstractmethod
-    def send_packet(self, packet: _ResponseT) -> None:
+    async def send_packet(self, packet: _ResponseT) -> None:
         raise NotImplementedError
 
     @abstractmethod
-    def is_closed(self) -> bool:
+    def is_closing(self) -> bool:
         raise NotImplementedError
 
     @abstractmethod
-    def close(self) -> None:
+    async def close(self) -> None:
         raise NotImplementedError
 
     @property
@@ -58,44 +58,44 @@ class ClientInterface(Generic[_ResponseT], metaclass=ABCMeta):
         raise NotImplementedError
 
 
-class BaseRequestHandler(Generic[_RequestT, _ResponseT], metaclass=ABCMeta):
+class AsyncBaseRequestHandler(Generic[_RequestT, _ResponseT], metaclass=ABCMeta):
     __slots__ = ("__weakref__",)
 
-    def service_init(self) -> None:
+    async def service_init(self) -> None:
         pass
 
-    def service_quit(self) -> None:
+    async def service_quit(self) -> None:
         pass
 
     @abstractmethod
-    def handle(self, request: _RequestT, client: ClientInterface[_ResponseT]) -> None:
+    async def handle(self, request: _RequestT, client: AsyncClientInterface[_ResponseT]) -> None:
         raise NotImplementedError
 
-    def bad_request(
+    async def bad_request(
         self,
-        client: ClientInterface[_ResponseT],
+        client: AsyncClientInterface[_ResponseT],
         error_type: BaseProtocolParseError.ParseErrorType,
         message: str,
         error_info: Any,
     ) -> None:
         pass
 
-    def handle_error(self, client: ClientInterface[_ResponseT], exc: Exception) -> bool:
+    async def handle_error(self, client: AsyncClientInterface[_ResponseT], exc: Exception) -> bool:
         return False
 
 
-class StreamRequestHandler(BaseRequestHandler[_RequestT, _ResponseT]):
+class AsyncStreamRequestHandler(AsyncBaseRequestHandler[_RequestT, _ResponseT]):
     __slots__ = ()
 
-    def on_connection(self, client: ClientInterface[_ResponseT]) -> None:
+    async def on_connection(self, client: AsyncClientInterface[_ResponseT]) -> None:
         pass
 
-    def on_disconnection(self, client: ClientInterface[_ResponseT]) -> None:
+    async def on_disconnection(self, client: AsyncClientInterface[_ResponseT]) -> None:
         pass
 
 
-class DatagramRequestHandler(BaseRequestHandler[_RequestT, _ResponseT]):
+class AsyncDatagramRequestHandler(AsyncBaseRequestHandler[_RequestT, _ResponseT]):
     __slots__ = ()
 
-    def accept_request_from(self, client_address: SocketAddress) -> bool:
+    async def accept_request_from(self, client_address: SocketAddress) -> bool:
         return True
