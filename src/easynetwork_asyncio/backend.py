@@ -47,6 +47,12 @@ class AsyncioBackend(AbstractAsyncBackend):
     async def coro_yield(self) -> None:
         return await self.sleep(0)
 
+    def current_time(self) -> float:
+        import asyncio
+
+        loop = asyncio.get_running_loop()
+        return loop.time()
+
     async def sleep(self, delay: float) -> None:
         import asyncio
 

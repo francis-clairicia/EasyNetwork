@@ -27,9 +27,17 @@ class MockBackend(BaseFakeBackend):
     def __init__(self, mocker: MockerFixture) -> None:
         super().__init__()
         self.mock_coro_yield: MagicMock = mocker.MagicMock(side_effect=lambda: asyncio.sleep(0))
+        self.mock_current_time: MagicMock = mocker.MagicMock(return_value=123456789)
+        self.mock_sleep = mocker.AsyncMock(return_value=None)
 
     async def coro_yield(self) -> None:
         await self.mock_coro_yield()
+
+    def current_time(self) -> float:
+        return self.mock_current_time()
+
+    async def sleep(self, delay: float) -> None:
+        return await self.mock_sleep(delay)
 
 
 @pytest.mark.asyncio
@@ -38,6 +46,31 @@ class TestAbstractAsyncBackend:
     @staticmethod
     def backend(mocker: MockerFixture) -> MockBackend:
         return MockBackend(mocker)
+
+    async def test____sleep_forever____sleep_inf(self, backend: MockBackend) -> None:
+        # Arrange
+
+        # Act
+        await backend.sleep_forever()
+
+        # Assert
+        backend.mock_sleep.assert_awaited_once_with(float("+inf"))
+
+    async def test____sleep_until____sleep_deadline_offset(
+        self,
+        backend: MockBackend,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        deadline: float = 234567891.05
+        expected_sleep_time: float = deadline - backend.mock_current_time.return_value
+
+        # Act
+        await backend.sleep_until(deadline)
+
+        # Assert
+        backend.mock_current_time.assert_called_once_with()
+        backend.mock_sleep.assert_awaited_once_with(pytest.approx(expected_sleep_time))
 
     async def test____wait_future____wait_until_done(
         self,

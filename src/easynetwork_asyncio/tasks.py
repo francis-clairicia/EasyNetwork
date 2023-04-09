@@ -37,9 +37,6 @@ class Task(AbstractTask[_T_co]):
             return NotImplemented
         return self.__t == other.__t
 
-    def __ne__(self, other: object, /) -> bool:
-        return not (self == other)
-
     def done(self) -> bool:
         return self.__t.done()
 

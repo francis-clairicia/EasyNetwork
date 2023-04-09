@@ -204,8 +204,20 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
+    def current_time(self) -> float:
+        raise NotImplementedError
+
+    @abstractmethod
     async def sleep(self, delay: float) -> None:
         raise NotImplementedError
+
+    async def sleep_forever(self) -> None:
+        from math import inf
+
+        return await self.sleep(inf)
+
+    async def sleep_until(self, deadline: float) -> None:
+        return await self.sleep(deadline - self.current_time())
 
     @abstractmethod
     def create_task_group(self) -> AbstractTaskGroup:

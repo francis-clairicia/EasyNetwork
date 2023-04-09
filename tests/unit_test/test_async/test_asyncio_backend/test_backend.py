@@ -43,6 +43,22 @@ class TestAsyncIOBackend:
         # Assert
         mock_sleep.assert_awaited_once_with(0)
 
+    async def test____current_time____use_event_loop_time(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        backend: AsyncioBackend,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_loop_time: MagicMock = mocker.patch.object(event_loop, "time", side_effect=event_loop.time)
+
+        # Act
+        current_time = backend.current_time()
+
+        # Assert
+        mock_loop_time.assert_called_once_with()
+        assert current_time > 0
+
     async def test____sleep____use_asyncio_sleep(self, backend: AsyncioBackend, mocker: MockerFixture) -> None:
         # Arrange
         mock_sleep: AsyncMock = mocker.patch("asyncio.sleep", new_callable=mocker.async_stub)

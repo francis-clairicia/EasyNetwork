@@ -20,6 +20,9 @@ class BaseFakeBackend(AbstractAsyncBackend):
     async def sleep(self, delay: float) -> None:
         raise NotImplementedError
 
+    def current_time(self) -> float:
+        raise NotImplementedError
+
     async def coro_yield(self) -> None:
         raise NotImplementedError
 
