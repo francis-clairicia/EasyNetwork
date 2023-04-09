@@ -7,7 +7,7 @@ from socket import socket as Socket
 from threading import Thread
 from typing import Any, Callable, Iterator
 
-from easynetwork.api_sync.server.handler import AbstractDatagramClient, AbstractDatagramRequestHandler
+from easynetwork.api_sync.server.handler import ClientInterface, DatagramRequestHandler
 from easynetwork.api_sync.server.udp import UDPNetworkServer
 from easynetwork.protocol import DatagramProtocol
 from easynetwork.tools.socket import SocketAddress
@@ -17,13 +17,13 @@ import pytest
 from .....tools import TimeTest
 
 
-class MyUDPRequestHandler(AbstractDatagramRequestHandler[str, str]):
+class MyUDPRequestHandler(DatagramRequestHandler[str, str]):
     def __init__(self) -> None:
         super().__init__()
         self.process_time: float = 0
         self.server: MyUDPServer
 
-    def handle(self, request: str, client: AbstractDatagramClient[str]) -> None:
+    def handle(self, request: str, client: ClientInterface[str]) -> None:
         if self.process_time > 0:
             time.sleep(self.process_time)
         self.server.logger.info("%s sent %r", client.address, request)
@@ -154,7 +154,7 @@ class TestUDPNetworkServer(BaseTestServer):
     ) -> None:
         bad_request_args: tuple[Any, ...] | None = None
 
-        def bad_request(client: AbstractDatagramClient[str], *args: Any) -> None:
+        def bad_request(client: ClientInterface[str], *args: Any) -> None:
             nonlocal bad_request_args
 
             bad_request_args = args
@@ -177,11 +177,11 @@ class TestUDPNetworkServer(BaseTestServer):
         request_handler: MyUDPRequestHandler,
         client_factory: Callable[[], Socket],
     ) -> None:
-        def process_request(request: str, client: AbstractDatagramClient[str]) -> None:
+        def process_request(request: str, client: ClientInterface[str]) -> None:
             raise Exception("Sorry man!")
 
-        def handle_error(client: AbstractDatagramClient[str], exc_info: Callable[[], BaseException | None]) -> bool:
-            client.send_packet(str(exc_info()))
+        def handle_error(client: ClientInterface[str], exc: Exception) -> bool:
+            client.send_packet(str(exc))
             return False
 
         request_handler.handle = process_request  # type: ignore[method-assign]

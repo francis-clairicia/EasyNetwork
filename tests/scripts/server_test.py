@@ -5,12 +5,11 @@ import logging
 from typing import Callable
 
 from easynetwork.api_sync.server.abc import AbstractNetworkServer
-from easynetwork.api_sync.server.handler import AbstractStreamClient
+from easynetwork.api_sync.server.handler import BaseRequestHandler, ClientInterface
 from easynetwork.api_sync.server.tcp import TCPNetworkServer
 from easynetwork.api_sync.server.udp import UDPNetworkServer
 from easynetwork.protocol import DatagramProtocol, StreamProtocol
 from easynetwork.serializers.base_stream import AutoSeparatedPacketSerializer
-from easynetwork.tools.socket import SocketAddress
 
 PORT = 9000
 
@@ -31,22 +30,21 @@ class MyServerSerializer(AutoSeparatedPacketSerializer[str, str]):
             raise DeserializeError(str(exc)) from exc
 
 
+class MyRequestHandler(BaseRequestHandler[str, str]):
+    def handle(self, request: str, client: ClientInterface[str]) -> None:
+        client.send_packet(request.upper())
+
+
 class MyTCPServer(TCPNetworkServer[str, str]):
     max_recv_size = 1024
 
     def __init__(self) -> None:
-        super().__init__(host="", port=PORT, protocol=StreamProtocol(MyServerSerializer()))
-
-    def process_request(self, request: str, client: AbstractStreamClient[str]) -> None:
-        client.send_packet(request.upper())
+        super().__init__(host="", port=PORT, handler=MyRequestHandler(), protocol=StreamProtocol(MyServerSerializer()))
 
 
 class MyUDPServer(UDPNetworkServer[str, str]):
     def __init__(self) -> None:
-        super().__init__(host="", port=PORT, protocol=DatagramProtocol(MyServerSerializer()))
-
-    def process_request(self, request: str, client_address: SocketAddress) -> None:
-        self.send_packet_to(request.upper(), client_address)
+        super().__init__(host="", port=PORT, handler=MyRequestHandler(), protocol=DatagramProtocol(MyServerSerializer()))
 
 
 def main() -> None:

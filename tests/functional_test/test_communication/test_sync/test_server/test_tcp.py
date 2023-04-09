@@ -8,7 +8,7 @@ from threading import Thread
 from typing import Any, Callable, Iterator
 from weakref import WeakSet
 
-from easynetwork.api_sync.server.handler import AbstractStreamClient, AbstractStreamRequestHandler
+from easynetwork.api_sync.server.handler import ClientInterface, StreamRequestHandler
 from easynetwork.api_sync.server.tcp import TCPNetworkServer
 from easynetwork.protocol import StreamProtocol
 from easynetwork.tools.socket import SocketAddress
@@ -18,10 +18,10 @@ import pytest
 from .....tools import TimeTest
 
 
-class MyTCPRequestHandler(AbstractStreamRequestHandler[str, str]):
+class MyTCPRequestHandler(StreamRequestHandler[str, str]):
     def __init__(self) -> None:
         super().__init__()
-        self.connected_clients: WeakSet[AbstractStreamClient[str]]
+        self.connected_clients: WeakSet[ClientInterface[str]]
         self.process_time: float = 0
         self.server: MyTCPServer
 
@@ -33,16 +33,16 @@ class MyTCPRequestHandler(AbstractStreamRequestHandler[str, str]):
         self.connected_clients.clear()
         super().service_quit()
 
-    def on_connection(self, client: AbstractStreamClient[str]) -> None:
+    def on_connection(self, client: ClientInterface[str]) -> None:
         super().on_connection(client)
         self.connected_clients.add(client)
         client.send_packet("milk")
 
-    def on_disconnection(self, client: AbstractStreamClient[str]) -> None:
+    def on_disconnection(self, client: ClientInterface[str]) -> None:
         self.connected_clients.discard(client)
         super().on_disconnection(client)
 
-    def handle(self, request: str, client: AbstractStreamClient[str]) -> None:
+    def handle(self, request: str, client: ClientInterface[str]) -> None:
         if self.process_time > 0:
             time.sleep(self.process_time)
         self.server.logger.info("%s sent %r", client.address, request)
@@ -166,7 +166,7 @@ class TestTCPNetworkServer(BaseTestServer):
         while len(request_handler.connected_clients) == 0:
             time.sleep(0.1)
 
-        connected_client: AbstractStreamClient[str] = list(request_handler.connected_clients)[0]
+        connected_client: ClientInterface[str] = list(request_handler.connected_clients)[0]
 
         tcp_nodelay_state: int = connected_client.socket.getsockopt(IPPROTO_TCP, TCP_NODELAY)
 
@@ -248,7 +248,7 @@ class TestTCPNetworkServer(BaseTestServer):
     ) -> None:
         bad_request_args: tuple[Any, ...] | None = None
 
-        def bad_request(client: AbstractStreamClient[str], *args: Any) -> None:
+        def bad_request(client: ClientInterface[str], *args: Any) -> None:
             nonlocal bad_request_args
 
             bad_request_args = args
@@ -271,12 +271,12 @@ class TestTCPNetworkServer(BaseTestServer):
         request_handler: MyTCPRequestHandler,
         client_factory: Callable[[], Socket],
     ) -> None:
-        def process_request(request: str, client: AbstractStreamClient[str]) -> None:
+        def process_request(request: str, client: ClientInterface[str]) -> None:
             raise Exception("Sorry man!")
 
-        def handle_error(client: AbstractStreamClient[str], exc_info: Callable[[], BaseException | None]) -> bool:
+        def handle_error(client: ClientInterface[str], exc: Exception) -> bool:
             assert not client.is_closed()
-            client.send_packet(str(exc_info()))
+            client.send_packet(str(exc))
             return False
 
         request_handler.handle = process_request  # type: ignore[method-assign]

@@ -7,14 +7,14 @@
 from __future__ import annotations
 
 __all__ = [
-    "AbstractDatagramClient",
-    "AbstractDatagramRequestHandler",
-    "AbstractStreamClient",
-    "AbstractStreamRequestHandler",
+    "BaseRequestHandler",
+    "ClientInterface",
+    "DatagramRequestHandler",
+    "StreamRequestHandler",
 ]
 
 from abc import ABCMeta, abstractmethod
-from typing import TYPE_CHECKING, Any, Callable, Generic, TypeVar, final
+from typing import TYPE_CHECKING, Any, Generic, TypeVar, final
 
 from ...tools.socket import SocketAddress, SocketProxy
 
@@ -25,7 +25,7 @@ _RequestT = TypeVar("_RequestT")
 _ResponseT = TypeVar("_ResponseT")
 
 
-class _ClientMixin(Generic[_ResponseT], metaclass=ABCMeta):
+class ClientInterface(Generic[_ResponseT], metaclass=ABCMeta):
     __slots__ = ("__addr", "__weakref__")
 
     def __init__(self, address: SocketAddress) -> None:
@@ -39,19 +39,6 @@ class _ClientMixin(Generic[_ResponseT], metaclass=ABCMeta):
     def send_packet(self, packet: _ResponseT) -> None:
         raise NotImplementedError
 
-    @property
-    @final
-    def address(self) -> SocketAddress:
-        return self.__addr
-
-
-class AbstractStreamClient(_ClientMixin[_ResponseT]):
-    def __init__(self, address: SocketAddress) -> None:
-        super().__init__(address)
-
-    def __repr__(self) -> str:
-        return f"<client with address {self.address} at {id(self):#x} {'closed' if self.is_closed() else 'connected'}>"
-
     @abstractmethod
     def is_closed(self) -> bool:
         raise NotImplementedError
@@ -61,17 +48,17 @@ class AbstractStreamClient(_ClientMixin[_ResponseT]):
         raise NotImplementedError
 
     @property
+    @final
+    def address(self) -> SocketAddress:
+        return self.__addr
+
+    @property
     @abstractmethod
     def socket(self) -> SocketProxy:
         raise NotImplementedError
 
 
-class AbstractDatagramClient(_ClientMixin[_ResponseT]):
-    def __init__(self, address: SocketAddress) -> None:
-        super().__init__(address)
-
-
-class _RequestHandlerServiceMixin(Generic[_RequestT, _ResponseT], metaclass=ABCMeta):
+class BaseRequestHandler(Generic[_RequestT, _ResponseT], metaclass=ABCMeta):
     __slots__ = ("__weakref__",)
 
     def service_init(self) -> None:
@@ -80,54 +67,35 @@ class _RequestHandlerServiceMixin(Generic[_RequestT, _ResponseT], metaclass=ABCM
     def service_quit(self) -> None:
         pass
 
-    def service_actions(self) -> None:
-        pass
-
-
-class AbstractStreamRequestHandler(_RequestHandlerServiceMixin[_RequestT, _ResponseT]):
-    __slots__ = ()
-
     @abstractmethod
-    def handle(self, request: _RequestT, client: AbstractStreamClient[_ResponseT]) -> None:
+    def handle(self, request: _RequestT, client: ClientInterface[_ResponseT]) -> None:
         raise NotImplementedError
-
-    def on_connection(self, client: AbstractStreamClient[_ResponseT]) -> None:
-        pass
-
-    def on_disconnection(self, client: AbstractStreamClient[_ResponseT]) -> None:
-        pass
 
     def bad_request(
         self,
-        client: AbstractStreamClient[_ResponseT],
+        client: ClientInterface[_ResponseT],
         error_type: BaseProtocolParseError.ParseErrorType,
         message: str,
         error_info: Any,
     ) -> None:
         pass
 
-    def handle_error(self, client: AbstractStreamClient[_ResponseT], exc_info: Callable[[], BaseException | None]) -> bool:
+    def handle_error(self, client: ClientInterface[_ResponseT], exc: Exception) -> bool:
         return False
 
 
-class AbstractDatagramRequestHandler(_RequestHandlerServiceMixin[_RequestT, _ResponseT]):
+class StreamRequestHandler(BaseRequestHandler[_RequestT, _ResponseT]):
+    __slots__ = ()
+
+    def on_connection(self, client: ClientInterface[_ResponseT]) -> None:
+        pass
+
+    def on_disconnection(self, client: ClientInterface[_ResponseT]) -> None:
+        pass
+
+
+class DatagramRequestHandler(BaseRequestHandler[_RequestT, _ResponseT]):
     __slots__ = ()
 
     def accept_request_from(self, client_address: SocketAddress) -> bool:
         return True
-
-    @abstractmethod
-    def handle(self, request: _RequestT, client: AbstractDatagramClient[_ResponseT]) -> None:
-        raise NotImplementedError
-
-    def bad_request(
-        self,
-        client: AbstractDatagramClient[_ResponseT],
-        error_type: BaseProtocolParseError.ParseErrorType,
-        message: str,
-        error_info: Any,
-    ) -> None:
-        pass
-
-    def handle_error(self, client: AbstractDatagramClient[_ResponseT], exc_info: Callable[[], BaseException | None]) -> bool:
-        return False

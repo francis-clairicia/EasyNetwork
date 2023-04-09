@@ -7,11 +7,11 @@
 from __future__ import annotations
 
 __all__ = [
-    "AbstractDatagramClient",
-    "AbstractDatagramRequestHandler",
     "AbstractNetworkServer",
-    "AbstractStreamClient",
-    "AbstractStreamRequestHandler",
+    "BaseRequestHandler",
+    "ClientInterface",
+    "DatagramRequestHandler",
+    "StreamRequestHandler",
     "TCPNetworkServer",
     "UDPNetworkServer",
 ]

@@ -12,10 +12,9 @@ import contextlib as _contextlib
 import logging as _logging
 import selectors as _selectors
 import socket as _socket
-import sys as _sys
 import threading as _threading
 from concurrent.futures import Future as _Future, ThreadPoolExecutor as _ThreadPoolExecutor
-from typing import TYPE_CHECKING, Any, Callable, Generic, TypeAlias, TypeVar, final
+from typing import TYPE_CHECKING, Any, Callable, Generic, TypeVar, final
 from weakref import WeakSet as _WeakSet
 
 from ...exceptions import StreamProtocolParseError
@@ -24,17 +23,13 @@ from ...tools._utils import check_real_socket_state as _check_real_socket_state,
 from ...tools.socket import MAX_STREAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
 from ...tools.stream import StreamDataConsumer, StreamDataProducer
 from .abc import AbstractNetworkServer
-from .handler import AbstractStreamClient, AbstractStreamRequestHandler
+from .handler import BaseRequestHandler, ClientInterface, StreamRequestHandler
 
 if TYPE_CHECKING:
     from typing import type_check_only
 
 _RequestT = TypeVar("_RequestT")
 _ResponseT = TypeVar("_ResponseT")
-
-_RequestHandlerLike: TypeAlias = (
-    AbstractStreamRequestHandler[_RequestT, _ResponseT] | Callable[[_RequestT, AbstractStreamClient[_ResponseT], Any], Any]
-)
 
 
 class TCPNetworkServer(AbstractNetworkServer, Generic[_RequestT, _ResponseT]):
@@ -62,7 +57,7 @@ class TCPNetworkServer(AbstractNetworkServer, Generic[_RequestT, _ResponseT]):
         port: int,
         protocol: StreamProtocol[_ResponseT, _RequestT],
         *,
-        handler: _RequestHandlerLike[_RequestT, _ResponseT] | None = None,
+        handler: BaseRequestHandler[_RequestT, _ResponseT] | None = None,
         family: int = _socket.AF_INET,
         backlog: int | None = None,
         reuse_port: bool = False,
@@ -78,9 +73,6 @@ class TCPNetworkServer(AbstractNetworkServer, Generic[_RequestT, _ResponseT]):
         if family not in (_socket.AF_INET, _socket.AF_INET6):
             raise ValueError("Only AF_INET and AF_INET6 families are supported")
 
-        if handler is not None and not isinstance(handler, AbstractStreamRequestHandler):
-            handler = _InlineFunctionHandler(handler, self)
-
         self.__listener_socket: _socket.socket | None = None
         listener_socket: _socket.socket = _socket.create_server(
             (host, port),
@@ -95,7 +87,7 @@ class TCPNetworkServer(AbstractNetworkServer, Generic[_RequestT, _ResponseT]):
             self.__listener_addr: SocketAddress = new_socket_address(listener_socket.getsockname(), listener_socket.family)
             self.__thread_pool_size: int = int(thread_pool_size)
             self.__protocol: StreamProtocol[_ResponseT, _RequestT] = protocol
-            self.__request_handler: AbstractStreamRequestHandler[_RequestT, _ResponseT] | None = handler
+            self.__request_handler: BaseRequestHandler[_RequestT, _ResponseT] | None = handler
             self.__looping: bool = False
             self.__is_shutdown: _threading.Event = _threading.Event()
             self.__is_shutdown.set()
@@ -245,15 +237,6 @@ class TCPNetworkServer(AbstractNetworkServer, Generic[_RequestT, _ResponseT]):
                 for client in get_clients_with_pending_requests():
                     client.process_pending_request(request_executor)
 
-                try:
-                    self.service_actions()
-                except Exception:
-                    self.__logger.exception("Error occured in self.service_actions()")
-
-    def service_actions(self) -> None:
-        if (handler := self.__request_handler) is not None:
-            handler.service_actions()
-
     def __accept_new_client(self, listener_socket: _socket.socket) -> None:
         server_selector = self.__server_selector
         assert server_selector is not None, "Closed server"
@@ -290,21 +273,21 @@ class TCPNetworkServer(AbstractNetworkServer, Generic[_RequestT, _ResponseT]):
             client._api.close()
             return
 
-    def on_connection(self, client: AbstractStreamClient[_ResponseT]) -> None:
-        if (handler := self.__request_handler) is not None:
+    def on_connection(self, client: ClientInterface[_ResponseT]) -> None:
+        if (handler := self.__request_handler) is not None and isinstance(handler, StreamRequestHandler):
             handler.on_connection(client)
 
-    def on_disconnection(self, client: AbstractStreamClient[_ResponseT]) -> None:
-        if (handler := self.__request_handler) is not None:
+    def on_disconnection(self, client: ClientInterface[_ResponseT]) -> None:
+        if (handler := self.__request_handler) is not None and isinstance(handler, StreamRequestHandler):
             handler.on_disconnection(client)
 
-    def process_request(self, request: _RequestT, client: AbstractStreamClient[_ResponseT]) -> None:
+    def process_request(self, request: _RequestT, client: ClientInterface[_ResponseT]) -> None:
         if (handler := self.__request_handler) is not None:
             handler.handle(request, client)
 
     def bad_request(
         self,
-        client: AbstractStreamClient[_ResponseT],
+        client: ClientInterface[_ResponseT],
         error_type: StreamProtocolParseError.ParseErrorType,
         message: str,
         error_info: Any,
@@ -312,23 +295,19 @@ class TCPNetworkServer(AbstractNetworkServer, Generic[_RequestT, _ResponseT]):
         if (handler := self.__request_handler) is not None:
             handler.bad_request(client, error_type, message, error_info)
 
-    def handle_error(self, client: AbstractStreamClient[Any], exc_info: Callable[[], BaseException | None]) -> None:
-        if (handler := self.__request_handler) is not None:
-            if handler.handle_error(client, exc_info):
-                return
-
-        exception = exc_info()
-        if exception is None:
-            return
-
+    def handle_error(self, client: ClientInterface[Any], exc: Exception) -> None:
         try:
+            if (handler := self.__request_handler) is not None:
+                if handler.handle_error(client, exc):
+                    return
+
             logger: _logging.Logger = self.__logger
 
             logger.error("-" * 40)
-            logger.error("Exception occurred during processing of request from %s", client.address, exc_info=exception)
+            logger.error("Exception occurred during processing of request from %s", client.address, exc_info=exc)
             logger.error("-" * 40)
         finally:
-            del exception
+            del exc
 
     @final
     def protocol(self) -> StreamProtocol[_ResponseT, _RequestT]:
@@ -342,29 +321,6 @@ class TCPNetworkServer(AbstractNetworkServer, Generic[_RequestT, _ResponseT]):
     @final
     def logger(self) -> _logging.Logger:
         return self.__logger
-
-
-@final
-class _InlineFunctionHandler(AbstractStreamRequestHandler[_RequestT, _ResponseT]):
-    __slots__ = ("__cb", "__server_ref")
-
-    def __init__(
-        self,
-        request_callback: Callable[[_RequestT, AbstractStreamClient[_ResponseT], Any], Any],
-        server: TCPNetworkServer[_RequestT, _ResponseT],
-    ) -> None:
-        super().__init__()
-
-        import weakref
-
-        self.__cb: Callable[[_RequestT, AbstractStreamClient[_ResponseT], Any], Any] = request_callback
-        self.__server_ref: weakref.ref[TCPNetworkServer[_RequestT, _ResponseT]] = weakref.ref(server)
-
-    def handle(self, request: _RequestT, client: AbstractStreamClient[_ResponseT]) -> None:
-        request_callback = self.__cb
-        server = self.__server_ref()
-        if server is not None:
-            request_callback(request, client, server)
 
 
 if TYPE_CHECKING:
@@ -580,9 +536,9 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
                 self._erase_all_data_and_packets_to_send()
                 self._api.close()
                 return
-            except OSError:
+            except OSError as exc:
                 self._erase_all_data_and_packets_to_send()
-                self._request_error_handling_and_close(close_client_before=True)
+                self._request_error_handling_and_close(exc, close_client_before=True)
                 return
             logger.debug("Received %d bytes from %s", len(data), self._api.address)
             self._consumer.feed(data)
@@ -606,9 +562,9 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
                     self._erase_all_data_and_packets_to_send()
                     self._api.close()
                     return
-                except OSError:
+                except OSError as exc:
                     self._erase_all_data_and_packets_to_send()
-                    self._request_error_handling_and_close(close_client_before=True)
+                    self._request_error_handling_and_close(exc, close_client_before=True)
                     return
                 del unsent_data[:nb_bytes_sent]
                 if unsent_data:
@@ -649,8 +605,8 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
                     except RuntimeError:  # shutdown() asked
                         return
                     self._request_future = request_future
-            except Exception:
-                self._request_error_handling_and_close(close_client_before=False)
+            except Exception as exc:
+                self._request_error_handling_and_close(exc, close_client_before=False)
                 return
 
         # Blocking operation out of lock scope (deadlock possible if not)
@@ -666,8 +622,8 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
     def _execute_request(self, request: _RequestT) -> None:
         try:
             self._server.process_request(request, self._api)
-        except BaseException:
-            self._request_error_handling_and_close(close_client_before=False)
+        except Exception as exc:
+            self._request_error_handling_and_close(exc, close_client_before=False)
 
     def _request_task_done(self, future: _Future[None]) -> None:
         try:
@@ -696,9 +652,9 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
             self._erase_all_data_and_packets_to_send()
             self._api.close()
             return
-        except OSError:
+        except OSError as exc:
             self._erase_all_data_and_packets_to_send()
-            self._request_error_handling_and_close(close_client_before=True)
+            self._request_error_handling_and_close(exc, close_client_before=True)
             return
         else:
             if nb_bytes_sent < len(data):
@@ -731,25 +687,23 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
             except OSError:
                 return
 
-    def _request_error_handling_and_close(self, *, close_client_before: bool) -> None:
-        if close_client_before:
-            exc: BaseException | None = _get_exception()
-            exc_cb: Callable[[], BaseException | None] = lambda: exc
-            try:
+    def _request_error_handling_and_close(self, exc: Exception, *, close_client_before: bool) -> None:
+        try:
+            if close_client_before:
                 try:
                     self._api.close()
                 finally:
-                    self._server.handle_error(self._api, exc_cb)
-            finally:
-                del exc_cb, exc
-        else:
-            try:
-                self._server.handle_error(self._api, _get_exception)
-            finally:
-                self._api.close()
+                    self._server.handle_error(self._api, exc)
+            else:
+                try:
+                    self._server.handle_error(self._api, exc)
+                finally:
+                    self._api.close()
+        finally:
+            del exc
 
     @final
-    class _ConnectedClientAPI(AbstractStreamClient[_ResponseT]):
+    class _ConnectedClientAPI(ClientInterface[_ResponseT]):
         __slots__ = ("__client_ref", "__socket_proxy", "__h")
 
         def __init__(self, client: _ClientPayload[_RequestT, _ResponseT], address: SocketAddress) -> None:
@@ -808,7 +762,3 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
         @property
         def socket(self) -> SocketProxy:
             return self.__socket_proxy
-
-
-def _get_exception() -> BaseException | None:
-    return _sys.exc_info()[1]

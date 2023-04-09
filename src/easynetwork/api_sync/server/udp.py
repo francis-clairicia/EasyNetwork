@@ -13,29 +13,25 @@ import contextlib as _contextlib
 import logging as _logging
 import selectors as _selectors
 import socket as _socket
-import sys as _sys
 import threading as _threading
 from concurrent.futures import ThreadPoolExecutor as _ThreadPoolExecutor
-from typing import Any, Callable, Generic, TypeAlias, TypeVar, final
+from typing import Any, Callable, Generic, TypeVar, final
 
 from ...exceptions import DatagramProtocolParseError
 from ...protocol import DatagramProtocol
 from ...tools._utils import check_real_socket_state as _check_real_socket_state
-from ...tools.socket import MAX_DATAGRAM_BUFSIZE, SocketAddress, new_socket_address
+from ...tools.socket import MAX_DATAGRAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
 from .abc import AbstractNetworkServer
-from .handler import AbstractDatagramClient, AbstractDatagramRequestHandler
+from .handler import BaseRequestHandler, ClientInterface, DatagramRequestHandler
 
 _RequestT = TypeVar("_RequestT")
 _ResponseT = TypeVar("_ResponseT")
-
-_RequestHandlerLike: TypeAlias = (
-    AbstractDatagramRequestHandler[_RequestT, _ResponseT] | Callable[[_RequestT, AbstractDatagramClient[_ResponseT], Any], Any]
-)
 
 
 class UDPNetworkServer(AbstractNetworkServer, Generic[_RequestT, _ResponseT]):
     __slots__ = (
         "__socket",
+        "__socket_proxy",
         "__addr",
         "__sendto_lock",
         "__looping",
@@ -57,7 +53,7 @@ class UDPNetworkServer(AbstractNetworkServer, Generic[_RequestT, _ResponseT]):
         port: int,
         protocol: DatagramProtocol[_ResponseT, _RequestT],
         *,
-        handler: _RequestHandlerLike[_RequestT, _ResponseT] | None = None,
+        handler: BaseRequestHandler[_RequestT, _ResponseT] | None = None,
         family: int = _socket.AF_INET,
         reuse_port: bool = False,
         selector_factory: Callable[[], _selectors.BaseSelector] | None = None,
@@ -72,9 +68,6 @@ class UDPNetworkServer(AbstractNetworkServer, Generic[_RequestT, _ResponseT]):
         if family not in (_socket.AF_INET, _socket.AF_INET6):
             raise ValueError("Only AF_INET and AF_INET6 families are supported")
 
-        if handler is not None and not isinstance(handler, AbstractDatagramRequestHandler):
-            handler = _InlineFunctionHandler(handler, self)
-
         self.__socket: _socket.socket | None = None
         socket = _create_udp_server((host, port), family, reuse_port)
         try:
@@ -88,7 +81,7 @@ class UDPNetworkServer(AbstractNetworkServer, Generic[_RequestT, _ResponseT]):
             self.__is_up: _threading.Event = _threading.Event()
             self.__is_up.clear()
             self.__protocol: DatagramProtocol[_ResponseT, _RequestT] = protocol
-            self.__request_handler: AbstractDatagramRequestHandler[_RequestT, _ResponseT] | None = handler
+            self.__request_handler: BaseRequestHandler[_RequestT, _ResponseT] | None = handler
             self.__unsent_datagrams: _collections.deque[tuple[bytes, SocketAddress]] = _collections.deque()
             self.__poll_interval: float = float(poll_interval)
             if selector_factory is None:
@@ -103,6 +96,7 @@ class UDPNetworkServer(AbstractNetworkServer, Generic[_RequestT, _ResponseT]):
                 raise
 
         self.__socket = socket
+        self.__socket_proxy: SocketProxy = SocketProxy(socket)
 
     def __del__(self) -> None:  # pragma: no cover
         try:
@@ -234,15 +228,6 @@ class UDPNetworkServer(AbstractNetworkServer, Generic[_RequestT, _ResponseT]):
                 if socket not in server_selector.get_map():  # Error occured during process
                     break
 
-                try:
-                    self.service_actions()
-                except Exception:
-                    self.__logger.exception("Error occured in self.service_actions()")
-
-    def service_actions(self) -> None:
-        if (handler := self.__request_handler) is not None:
-            handler.service_actions()
-
     def __handle_received_datagram(self, request_executor: _ThreadPoolExecutor | None) -> None:
         selector = self.__server_selector
         socket: _socket.socket | None = self.__socket
@@ -269,11 +254,11 @@ class UDPNetworkServer(AbstractNetworkServer, Generic[_RequestT, _ResponseT]):
             logger.debug("Malformed request sent by %s", client_address)
             try:
                 self.bad_request(client_address, exc.error_type, exc.message, exc.error_info)
-            except Exception:
-                self.handle_error(client_address, _get_exception)
+            except Exception as exc:
+                self.handle_error(client_address, exc)
             return
-        except Exception:
-            self.handle_error(client_address, _get_exception)
+        except Exception as exc:
+            self.handle_error(client_address, exc)
             return
         else:
             del datagram
@@ -290,11 +275,11 @@ class UDPNetworkServer(AbstractNetworkServer, Generic[_RequestT, _ResponseT]):
     def __execute_request(self, request: _RequestT, client_address: SocketAddress) -> None:
         try:
             self.process_request(request, client_address)
-        except BaseException:
-            self.handle_error(client_address, _get_exception)
+        except Exception as exc:
+            self.handle_error(client_address, exc)
 
     def accept_request_from(self, client_address: SocketAddress) -> bool:
-        if (handler := self.__request_handler) is not None:
+        if (handler := self.__request_handler) is not None and isinstance(handler, DatagramRequestHandler):
             return handler.accept_request_from(client_address)
         return True
 
@@ -314,32 +299,28 @@ class UDPNetworkServer(AbstractNetworkServer, Generic[_RequestT, _ResponseT]):
             client = _ClientAPI(client_address, self)
             handler.bad_request(client, error_type, message, error_info)
 
-    def handle_error(self, client_address: SocketAddress, exc_info: Callable[[], BaseException | None]) -> None:
-        if (handler := self.__request_handler) is not None:
-            client = _ClientAPI(client_address, self)
-            if handler.handle_error(client, exc_info):
-                return
-
-        exception = exc_info()
-        if exception is None:
-            return
-
+    def handle_error(self, client_address: SocketAddress, exc: Exception) -> None:
         try:
+            if (handler := self.__request_handler) is not None:
+                client = _ClientAPI(client_address, self)
+                if handler.handle_error(client, exc):
+                    return
+
             logger: _logging.Logger = self.__logger
 
             logger.error("-" * 40)
-            logger.error("Exception occurred during processing of request from %s", client_address, exc_info=exception)
+            logger.error("Exception occurred during processing of request from %s", client_address, exc_info=exc)
             logger.error("-" * 40)
         finally:
-            del exception
+            del exc
 
     def send_packet_to(self, packet: _ResponseT, client_address: SocketAddress) -> None:
         selector = self.__server_selector
         assert selector is not None, "Closed server"
         try:
             response: bytes = self.__protocol.make_datagram(packet)
-        except Exception:
-            self.handle_error(client_address, _get_exception)
+        except Exception as exc:
+            self.handle_error(client_address, exc)
             return
         with self.__sendto_lock:
             socket = self.__socket
@@ -410,40 +391,23 @@ class UDPNetworkServer(AbstractNetworkServer, Generic[_RequestT, _ResponseT]):
     def logger(self) -> _logging.Logger:
         return self.__logger
 
-
-@final
-class _InlineFunctionHandler(AbstractDatagramRequestHandler[_RequestT, _ResponseT]):
-    __slots__ = ("__cb", "__server_ref")
-
-    def __init__(
-        self,
-        request_callback: Callable[[_RequestT, AbstractDatagramClient[_ResponseT], Any], Any],
-        server: UDPNetworkServer[_RequestT, _ResponseT],
-    ) -> None:
-        super().__init__()
-
-        import weakref
-
-        self.__cb: Callable[[_RequestT, AbstractDatagramClient[_ResponseT], Any], Any] = request_callback
-        self.__server_ref: weakref.ref[UDPNetworkServer[_RequestT, _ResponseT]] = weakref.ref(server)
-
-    def handle(self, request: _RequestT, client: AbstractDatagramClient[_ResponseT]) -> None:
-        request_callback = self.__cb
-        server = self.__server_ref()
-        if server is not None:
-            request_callback(request, client, server)
+    @property
+    @final
+    def socket(self) -> SocketProxy:
+        return self.__socket_proxy
 
 
 @final
-class _ClientAPI(AbstractDatagramClient[_ResponseT]):
-    __slots__ = ("__server_ref", "__h")
+class _ClientAPI(ClientInterface[_ResponseT]):
+    __slots__ = ("__server_ref", "__socket_proxy", "__h")
 
     def __init__(self, address: SocketAddress, server: UDPNetworkServer[Any, _ResponseT]) -> None:
         super().__init__(address)
 
         import weakref
 
-        self.__server_ref: weakref.ref[UDPNetworkServer[Any, _ResponseT]] = weakref.ref(server)
+        self.__server_ref: Callable[[], UDPNetworkServer[Any, _ResponseT] | None] = weakref.ref(server)
+        self.__socket_proxy: SocketProxy = server.socket
         self.__h: int | None = None
 
     def __hash__(self) -> int:
@@ -456,10 +420,20 @@ class _ClientAPI(AbstractDatagramClient[_ResponseT]):
             return NotImplemented
         return self.address == other.address
 
+    def is_closed(self) -> bool:
+        return self.__server_ref() is None
+
+    def close(self) -> None:
+        self.__server_ref = lambda: None
+
     def send_packet(self, packet: _ResponseT) -> None:
         server = self.__server_ref()
         if server is not None:
             server.send_packet_to(packet, self.address)
+
+    @property
+    def socket(self) -> SocketProxy:
+        return self.__socket_proxy
 
 
 def _create_udp_server(address: tuple[str, int], family: int, reuse_port: bool) -> _socket.socket:
@@ -482,10 +456,6 @@ def _create_udp_server(address: tuple[str, int], family: int, reuse_port: bool) 
         raise
 
     return socket
-
-
-def _get_exception() -> BaseException | None:
-    return _sys.exc_info()[1]
 
 
 def _add_event_mask(selector: _selectors.BaseSelector, socket: _socket.socket, event_mask: int) -> None:
