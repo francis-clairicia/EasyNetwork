@@ -10,13 +10,13 @@ from __future__ import annotations
 __all__ = ["AsyncioBackend"]  # type: list[str]
 
 import concurrent.futures
+import socket as _socket
 from typing import TYPE_CHECKING, Any, Callable, Coroutine, ParamSpec, Sequence, TypeVar, final
 
 from easynetwork.api_async.backend.abc import AbstractAsyncBackend
 
 if TYPE_CHECKING:
     import asyncio
-    import socket as _socket
 
     from easynetwork.api_async.backend.abc import (
         AbstractAsyncDatagramSocketAdapter,
@@ -166,12 +166,6 @@ class AsyncioBackend(AbstractAsyncBackend):
         proto: int = 0,
         flags: int = 0,
     ) -> Sequence[tuple[int, int, int, str, tuple[Any, ...]]]:
-        from easynetwork.tools._utils import ipaddr_info
-
-        resolved_info = ipaddr_info(host, port, family=family, type=type, proto=proto)
-        if resolved_info is not None:
-            return [resolved_info]
-
         info = await loop.getaddrinfo(host, port, family=family, type=type, proto=proto, flags=flags)
         if not info:
             raise OSError(f"getaddrinfo({host!r}) returned empty list")
@@ -181,8 +175,6 @@ class AsyncioBackend(AbstractAsyncBackend):
     def _ensure_host(address: tuple[str | None, int], family: int) -> tuple[str, int]:
         host, port = address
         if not host:
-            import socket as _socket
-
             match family:
                 case _socket.AF_INET | _socket.AF_UNSPEC:
                     host = "0.0.0.0"
