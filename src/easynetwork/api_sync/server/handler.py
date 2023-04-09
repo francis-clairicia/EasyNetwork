@@ -74,7 +74,7 @@ class AbstractDatagramClient(_ClientMixin[_ResponseT]):
 class _RequestHandlerServiceMixin(Generic[_RequestT, _ResponseT], metaclass=ABCMeta):
     __slots__ = ("__weakref__",)
 
-    def service_init(self, server: Any) -> None:
+    def service_init(self) -> None:
         pass
 
     def service_quit(self) -> None:

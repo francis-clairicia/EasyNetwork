@@ -168,7 +168,7 @@ class TCPNetworkServer(AbstractNetworkServer, Generic[_RequestT, _ResponseT]):
 
             # Initialize request handler
             if self.__request_handler is not None:
-                self.__request_handler.service_init(self)
+                self.__request_handler.service_init()
                 server_exit_stack.callback(self.__request_handler.service_quit)
             ############################
 

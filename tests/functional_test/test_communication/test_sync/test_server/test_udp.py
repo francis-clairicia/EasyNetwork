@@ -23,10 +23,6 @@ class MyUDPRequestHandler(AbstractDatagramRequestHandler[str, str]):
         self.process_time: float = 0
         self.server: MyUDPServer
 
-    def service_init(self, server: Any) -> None:
-        super().service_init(server)
-        self.server = server
-
     def handle(self, request: str, client: AbstractDatagramClient[str]) -> None:
         if self.process_time > 0:
             time.sleep(self.process_time)
@@ -62,7 +58,7 @@ class TestUDPNetworkServer(BaseTestServer):
     @pytest.fixture
     @staticmethod
     def server(
-        request_handler: type[MyUDPServer],
+        request_handler: MyUDPRequestHandler,
         socket_family: int,
         localhost: str,
         datagram_protocol: DatagramProtocol[str, str],
@@ -74,6 +70,7 @@ class TestUDPNetworkServer(BaseTestServer):
             handler=request_handler,
             family=socket_family,
         ) as server:
+            request_handler.server = server
             yield server
 
     @pytest.fixture
@@ -230,6 +227,7 @@ class TestUDPNetworkServerConcurrency(BaseTestServer):
             family=socket_family,
             thread_pool_size=server_thread_pool_size,
         ) as server:
+            request_handler.server = server
             yield server
 
     @pytest.fixture

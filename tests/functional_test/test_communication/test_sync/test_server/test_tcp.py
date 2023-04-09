@@ -25,10 +25,9 @@ class MyTCPRequestHandler(AbstractStreamRequestHandler[str, str]):
         self.process_time: float = 0
         self.server: MyTCPServer
 
-    def service_init(self, server: Any) -> None:
-        super().service_init(server)
+    def service_init(self) -> None:
+        super().service_init()
         self.connected_clients = WeakSet()
-        self.server = server
 
     def service_quit(self) -> None:
         self.connected_clients.clear()
@@ -84,6 +83,7 @@ class TestTCPNetworkServer(BaseTestServer):
         stream_protocol: StreamProtocol[str, str],
     ) -> Iterator[MyTCPServer]:
         with MyTCPServer(localhost, 0, stream_protocol, handler=request_handler, family=socket_family) as server:
+            request_handler.server = server
             yield server
 
     @pytest.fixture
@@ -309,7 +309,7 @@ class TestTCPNetworkServerConcurrency(BaseTestServer):
     @pytest.fixture
     @staticmethod
     def server(
-        request_handler: type[MyTCPServer],
+        request_handler: MyTCPRequestHandler,
         socket_family: int,
         localhost: str,
         stream_protocol: StreamProtocol[str, str],
@@ -323,6 +323,7 @@ class TestTCPNetworkServerConcurrency(BaseTestServer):
             family=socket_family,
             thread_pool_size=server_thread_pool_size,
         ) as server:
+            request_handler.server = server
             yield server
 
     @pytest.fixture
