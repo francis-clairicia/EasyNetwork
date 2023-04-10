@@ -8,8 +8,9 @@ from typing import Awaitable, Callable
 from easynetwork.api_async.server.abc import AbstractAsyncNetworkServer
 from easynetwork.api_async.server.handler import AsyncBaseRequestHandler, AsyncClientInterface
 from easynetwork.api_async.server.tcp import AsyncTCPNetworkServer
+from easynetwork.api_async.server.udp import AsyncUDPNetworkServer
 from easynetwork.api_sync.server.handler import BaseRequestHandler, ClientInterface
-from easynetwork.protocol import StreamProtocol
+from easynetwork.protocol import DatagramProtocol, StreamProtocol
 from easynetwork.serializers.base_stream import AutoSeparatedPacketSerializer
 
 PORT = 9000
@@ -46,6 +47,11 @@ async def create_tcp_server() -> AsyncTCPNetworkServer[str, str]:
     return await AsyncTCPNetworkServer.listen(None, PORT, StreamProtocol(MyServerSerializer()), MyRequestHandler())
 
 
+async def create_udp_server() -> AsyncUDPNetworkServer[str, str]:
+    # return await AsyncUDPNetworkServer.create(None, PORT, DatagramProtocol(MyServerSerializer()), MyAsyncRequestHandler())
+    return await AsyncUDPNetworkServer.create(None, PORT, DatagramProtocol(MyServerSerializer()), MyRequestHandler())
+
+
 async def main() -> None:
     parser = argparse.ArgumentParser()
 
@@ -68,14 +74,14 @@ async def main() -> None:
         const=create_tcp_server,
         help="launch TCP server (the default)",
     )
-    # ipproto_group.add_argument(
-    #     "-u",
-    #     "--udp",
-    #     dest="server_factory",
-    #     action="store_const",
-    #     const=MyUDPServer,
-    #     help="launch UDP server",
-    # )
+    ipproto_group.add_argument(
+        "-u",
+        "--udp",
+        dest="server_factory",
+        action="store_const",
+        const=create_udp_server,
+        help="launch UDP server",
+    )
     parser.set_defaults(server_factory=create_tcp_server)
 
     args = parser.parse_args()

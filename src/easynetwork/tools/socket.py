@@ -64,7 +64,7 @@ class IPv6SocketAddress(NamedTuple):
     scope_id: int = 0
 
     def __str__(self) -> str:  # pragma: no cover
-        return f"{self.host!r}:{self.port}"
+        return f"{self.host}:{self.port}"
 
     def for_connection(self) -> tuple[str, int]:
         return self.host, self.port
