@@ -113,12 +113,14 @@ class AsyncStreamRequestHandlerBridge(
             await self.backend.run_in_thread(self.sync_request_handler.on_connection, sync_client)
 
     async def on_disconnection(self, client: AsyncClientInterface[_ResponseT]) -> None:
-        # Do not remove the client from the dictionary, because other operations such as handle_error() will need it.
-        # Since it is a WeakKeyDictionary, the client will be removed on garbage collection
-        sync_client = self.__clients[client]
-        if isinstance(self.sync_request_handler, StreamRequestHandler):
-            await self.backend.run_in_thread(self.sync_request_handler.on_disconnection, sync_client)
-        return await super().on_disconnection(client)
+        try:
+            # Do not remove the client from the dictionary, because other operations such as handle_error() will need it.
+            # Since it is a WeakKeyDictionary, the client will be removed on garbage collection
+            sync_client = self.__clients[client]
+            if isinstance(self.sync_request_handler, StreamRequestHandler):
+                await self.backend.run_in_thread(self.sync_request_handler.on_disconnection, sync_client)
+        finally:
+            await super().on_disconnection(client)
 
 
 @final
@@ -134,7 +136,7 @@ class AsyncDatagramRequestHandlerBridge(
     async def accept_request_from(self, client_address: SocketAddress) -> bool:
         if isinstance(self.sync_request_handler, DatagramRequestHandler):
             return await self.backend.run_in_thread(self.sync_request_handler.accept_request_from, client_address)
-        return True
+        return await super().accept_request_from(client_address)
 
 
 @final
