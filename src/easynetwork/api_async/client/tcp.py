@@ -44,6 +44,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         "__eof_reached",
         "__closed",
         "__close_waiter",
+        "__max_recv_size",
     )
 
     def __init__(
@@ -51,8 +52,14 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         backend: AbstractAsyncBackend,
         socket: AbstractAsyncStreamSocketAdapter,
         protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
+        max_recv_size: int | None,
     ) -> None:
         super().__init__()
+        if max_recv_size is None:
+            max_recv_size = MAX_STREAM_BUFSIZE
+        if not isinstance(max_recv_size, int) or max_recv_size <= 0:
+            raise ValueError("'max_recv_size' must be a strictly positive integer")
+
         self.__socket: AbstractAsyncStreamSocketAdapter = socket
         self.__backend: AbstractAsyncBackend = backend
         self.__socket_proxy = SocketProxy(socket.socket())
@@ -67,6 +74,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         self.__eof_reached: bool = False
         self.__closed: bool = False
         self.__close_waiter: concurrent.futures.Future[None] = concurrent.futures.Future()
+        self.__max_recv_size: int = max_recv_size
 
         try:
             self.__socket_proxy.setsockopt(_socket.IPPROTO_TCP, _socket.TCP_NODELAY, True)
@@ -89,6 +97,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         family: int = 0,
         local_address: tuple[str, int] | None = None,
         happy_eyeballs_delay: float | None = None,
+        max_recv_size: int | None = None,
         backend: str | AbstractAsyncBackend | None = None,
         backend_kwargs: Mapping[str, Any] | None = None,
     ) -> Self:
@@ -103,7 +112,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
             local_address=local_address,
         )
 
-        return cls(backend, socket_adapter, protocol)
+        return cls(backend, socket_adapter, protocol, max_recv_size)
 
     @classmethod
     async def from_socket(
@@ -111,6 +120,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         socket: _socket.socket,
         protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
         *,
+        max_recv_size: int | None = None,
         backend: str | AbstractAsyncBackend | None = None,
         backend_kwargs: Mapping[str, Any] | None = None,
     ) -> Self:
@@ -118,7 +128,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
 
         socket_adapter = await backend.wrap_connected_tcp_socket(socket)
 
-        return cls(backend, socket_adapter, protocol)
+        return cls(backend, socket_adapter, protocol, max_recv_size)
 
     @final
     def is_closing(self) -> bool:
@@ -156,7 +166,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
             except StopIteration:
                 pass
             socket = self.__ensure_connected()
-            bufsize: int = MAX_STREAM_BUFSIZE
+            bufsize: int = self.__max_recv_size
             backend = self.__backend
             while True:
                 chunk: bytes = await socket.recv(bufsize)
@@ -207,3 +217,8 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
     @final
     def socket(self) -> SocketProxy:
         return self.__socket_proxy
+
+    @property
+    @final
+    def max_recv_size(self) -> int:
+        return self.__max_recv_size

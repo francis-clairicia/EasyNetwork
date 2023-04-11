@@ -41,7 +41,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         "__addr",
         "__peer",
         "__eof_reached",
-        "__max_recv_bufsize",
+        "__max_recv_size",
     )
 
     @overload
@@ -111,7 +111,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             if max_recv_size is None:
                 max_recv_size = MAX_STREAM_BUFSIZE
             if not isinstance(max_recv_size, int) or max_recv_size <= 0:
-                raise ValueError("max_size must be a strict positive integer")
+                raise ValueError("'max_recv_size' must be a strictly positive integer")
 
             try:
                 socket.setsockopt(_socket.IPPROTO_TCP, _socket.TCP_NODELAY, True)
@@ -124,7 +124,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             self.__consumer: StreamDataConsumer[_ReceivedPacketT] = StreamDataConsumer(protocol)
             self.__socket_proxy = SocketProxy(socket, lock=self.__lock)
             self.__eof_reached: bool = False
-            self.__max_recv_bufsize: int = max_recv_size
+            self.__max_recv_size: int = max_recv_size
         except BaseException:
             if self.__owner:
                 socket.close()
@@ -185,7 +185,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             except StopIteration:
                 pass
             socket = self.__ensure_connected()
-            bufsize: int = self.__max_recv_bufsize
+            bufsize: int = self.__max_recv_size
             monotonic = _time_monotonic  # pull function to local namespace
 
             with _restore_timeout_at_end(socket):
@@ -255,5 +255,5 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
 
     @property
     @final
-    def max_recv_bufsize(self) -> int:
-        return self.__max_recv_bufsize
+    def max_recv_size(self) -> int:
+        return self.__max_recv_size

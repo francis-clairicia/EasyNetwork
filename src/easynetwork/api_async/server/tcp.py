@@ -54,6 +54,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         "__request_handler",
         "__is_up",
         "__is_shutdown",
+        "__max_recv_size",
     )
 
     def __init__(
@@ -62,11 +63,16 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         listeners: Sequence[AbstractAsyncListenerSocketAdapter],
         protocol: StreamProtocol[_ResponseT, _RequestT],
         request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT] | BaseRequestHandler[_RequestT, _ResponseT],
+        max_recv_size: int | None,
     ) -> None:
         super().__init__()
 
         if not listeners:
             raise OSError("empty listeners list")
+        if max_recv_size is None:
+            max_recv_size = MAX_STREAM_BUFSIZE
+        if not isinstance(max_recv_size, int) or max_recv_size <= 0:
+            raise ValueError("'max_recv_size' must be a strictly positive integer")
 
         assert isinstance(protocol, StreamProtocol)
         if isinstance(request_handler, BaseRequestHandler):
@@ -84,6 +90,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         self.__is_up = self.__backend.create_event()
         self.__is_shutdown = self.__backend.create_event()
         self.__is_shutdown.set()
+        self.__max_recv_size: int = max_recv_size
 
     @classmethod
     async def listen(
@@ -96,6 +103,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         family: int = 0,
         backlog: int | None = None,
         reuse_port: bool = False,
+        max_recv_size: int | None = None,
         backend: str | AbstractAsyncBackend | None = None,
         backend_kwargs: Mapping[str, Any] | None = None,
     ) -> Self:
@@ -112,7 +120,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             reuse_port=reuse_port,
         )
 
-        return cls(backend, listeners, protocol, request_handler)
+        return cls(backend, listeners, protocol, request_handler, max_recv_size)
 
     def is_serving(self) -> bool:
         return self.__listeners is not None and self.__is_up.is_set()
@@ -227,10 +235,12 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 await request_handler.on_connection(client)
             client_exit_stack.push_async_callback(client.close)
 
+            recv_bufsize: int = self.__max_recv_size
+
             while True:
                 data: bytes
                 try:
-                    data = await socket.recv(MAX_STREAM_BUFSIZE)
+                    data = await socket.recv(recv_bufsize)
                     if not data:  # Closed connection (EOF)
                         raise ConnectionAbortedError
                 except ConnectionError:
@@ -361,10 +371,10 @@ class _ConnectedClientAPI(AsyncClientInterface[_ResponseT]):
             data: bytes = _concatenate_chunks(self.__producer)
             try:
                 await socket.sendall(data)
+                _check_real_socket_state(self.__proxy)
                 nb_bytes_sent: int = len(data)
             finally:
                 del data
-            _check_real_socket_state(self.__proxy)
             logger.debug("%d byte(s) sent to %s", nb_bytes_sent, self.address)
 
     def __check_closed(self) -> AbstractAsyncStreamSocketAdapter:

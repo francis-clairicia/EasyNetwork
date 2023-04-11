@@ -145,7 +145,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_stream_socket_adapter: MagicMock,
         mock_stream_protocol: MagicMock,
     ) -> AsyncTCPNetworkClient[Any, Any]:
-        return AsyncTCPNetworkClient(mock_backend, mock_stream_socket_adapter, mock_stream_protocol)
+        return AsyncTCPNetworkClient(mock_backend, mock_stream_socket_adapter, mock_stream_protocol, None)
 
     async def test____connect____connect_to_remote(
         self,
@@ -286,6 +286,64 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
 
         # Assert
         mock_new_backend.assert_not_called()
+
+    @pytest.mark.parametrize("max_recv_size", [None, 1, 2**64], ids=lambda p: f"max_recv_size=={p}")
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    async def test____dunder_init____max_recv_size____valid_value(
+        self,
+        request: pytest.FixtureRequest,
+        max_recv_size: int | None,
+        use_socket: bool,
+        mock_stream_protocol: MagicMock,
+    ) -> None:
+        # Arrange
+        expected_size: int = max_recv_size if max_recv_size is not None else MAX_STREAM_BUFSIZE
+
+        # Act
+        client: AsyncTCPNetworkClient[Any, Any]
+        if use_socket:
+            client = await AsyncTCPNetworkClient.from_socket(
+                request.getfixturevalue("mock_tcp_socket"),
+                mock_stream_protocol,
+                max_recv_size=max_recv_size,
+            )
+        else:
+            client = await AsyncTCPNetworkClient.connect(
+                request.getfixturevalue("remote_address"),
+                family=request.getfixturevalue("socket_family"),
+                protocol=mock_stream_protocol,
+                max_recv_size=max_recv_size,
+            )
+
+        # Assert
+        assert client.max_recv_size == expected_size
+
+    @pytest.mark.parametrize("max_recv_size", [0, -1, 10.4], ids=lambda p: f"max_recv_size=={p}")
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    async def test____dunder_init____max_recv_size____invalid_value(
+        self,
+        request: pytest.FixtureRequest,
+        max_recv_size: Any,
+        use_socket: bool,
+        mock_stream_protocol: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        with pytest.raises(ValueError, match=r"^'max_recv_size' must be a strictly positive integer$"):
+            if use_socket:
+                _ = await AsyncTCPNetworkClient.from_socket(
+                    request.getfixturevalue("mock_tcp_socket"),
+                    mock_stream_protocol,
+                    max_recv_size=max_recv_size,
+                )
+            else:
+                _ = await AsyncTCPNetworkClient.connect(
+                    request.getfixturevalue("remote_address"),
+                    family=request.getfixturevalue("socket_family"),
+                    protocol=mock_stream_protocol,
+                    max_recv_size=max_recv_size,
+                )
 
     async def test____close____await_socket_close(
         self,

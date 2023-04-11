@@ -342,7 +342,7 @@ class TestTCPNetworkClient(BaseTestClient):
             )
 
         # Assert
-        assert client.max_recv_bufsize == expected_size
+        assert client.max_recv_size == expected_size
 
     @pytest.mark.parametrize("max_recv_size", [0, -1, 10.4], ids=lambda p: f"max_recv_size=={p}")
     @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
@@ -359,7 +359,7 @@ class TestTCPNetworkClient(BaseTestClient):
         # Arrange
 
         # Act
-        with pytest.raises(ValueError, match=r"^max_size must be a strict positive integer$"):
+        with pytest.raises(ValueError, match=r"^'max_recv_size' must be a strictly positive integer$"):
             if use_socket:
                 _ = TCPNetworkClient(
                     mock_tcp_socket,
@@ -400,7 +400,7 @@ class TestTCPNetworkClient(BaseTestClient):
         )
 
         # Assert
-        assert client.max_recv_bufsize == expected_size
+        assert client.max_recv_size == expected_size
 
     @pytest.mark.parametrize("max_recv_size", [0, -1, 10.4], ids=lambda p: f"max_recv_size=={p}")
     def test____dunder_init____without_ownership____max_size____invalid_value(
@@ -414,7 +414,7 @@ class TestTCPNetworkClient(BaseTestClient):
         # Arrange
 
         # Act
-        with pytest.raises(ValueError, match=r"^max_size must be a strict positive integer$"):
+        with pytest.raises(ValueError, match=r"^'max_recv_size' must be a strictly positive integer$"):
             _ = TCPNetworkClient(
                 mock_tcp_socket,
                 protocol=mock_stream_protocol,
