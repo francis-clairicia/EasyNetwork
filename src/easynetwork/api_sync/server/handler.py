@@ -14,7 +14,7 @@ __all__ = [
 ]
 
 from abc import ABCMeta, abstractmethod
-from typing import TYPE_CHECKING, Any, Generic, TypeVar, final
+from typing import TYPE_CHECKING, Generic, TypeVar, final
 
 if TYPE_CHECKING:
     from ...exceptions import BaseProtocolParseError
@@ -67,17 +67,14 @@ class BaseRequestHandler(Generic[_RequestT, _ResponseT], metaclass=ABCMeta):
     def service_quit(self) -> None:
         pass
 
+    def service_actions(self) -> None:
+        pass
+
     @abstractmethod
     def handle(self, request: _RequestT, client: ClientInterface[_ResponseT]) -> None:
         raise NotImplementedError
 
-    def bad_request(
-        self,
-        client: ClientInterface[_ResponseT],
-        error_type: BaseProtocolParseError.ParseErrorType,
-        message: str,
-        error_info: Any,
-    ) -> None:
+    def bad_request(self, client: ClientInterface[_ResponseT], exc: BaseProtocolParseError) -> None:
         pass
 
     def handle_error(self, client: ClientInterface[_ResponseT], exc: Exception) -> bool:

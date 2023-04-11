@@ -12,7 +12,7 @@ __all__ = [
 ]
 
 from abc import abstractmethod
-from typing import TYPE_CHECKING, Any, TypeVar, final
+from typing import TYPE_CHECKING, TypeVar, final
 
 from ...api_sync.server.handler import BaseRequestHandler, ClientInterface, DatagramRequestHandler, StreamRequestHandler
 from .handler import AsyncBaseRequestHandler, AsyncClientInterface, AsyncDatagramRequestHandler, AsyncStreamRequestHandler
@@ -53,29 +53,27 @@ class _BaseAsyncWrapperForRequestHandler(AsyncBaseRequestHandler[_RequestT, _Res
         finally:
             await super().service_quit()
 
+    async def service_actions(self) -> None:
+        await super().service_actions()
+        await self.backend.run_in_thread(self.sync_request_handler.service_actions)
+
     async def handle(self, request: _RequestT, client: AsyncClientInterface[_ResponseT]) -> None:
         sync_client = self._build_client_wrapper(client)
         return await self.backend.run_in_thread(self.sync_request_handler.handle, request, sync_client)
 
-    async def bad_request(
-        self,
-        client: AsyncClientInterface[_ResponseT],
-        error_type: BaseProtocolParseError.ParseErrorType,
-        message: str,
-        error_info: Any,
-    ) -> None:
+    async def bad_request(self, client: AsyncClientInterface[_ResponseT], exc: BaseProtocolParseError) -> None:
         sync_client = self._build_client_wrapper(client)
-        return await self.backend.run_in_thread(
-            self.sync_request_handler.bad_request,
-            sync_client,
-            error_type,
-            message,
-            error_info,
-        )
+        try:
+            return await self.backend.run_in_thread(self.sync_request_handler.bad_request, sync_client, exc)
+        finally:
+            del exc
 
     async def handle_error(self, client: AsyncClientInterface[_ResponseT], exc: Exception) -> bool:
         sync_client = self._build_client_wrapper(client)
-        return await self.backend.run_in_thread(self.sync_request_handler.handle_error, sync_client, exc)
+        try:
+            return await self.backend.run_in_thread(self.sync_request_handler.handle_error, sync_client, exc)
+        finally:
+            del exc
 
     @property
     def backend(self) -> AbstractAsyncBackend:

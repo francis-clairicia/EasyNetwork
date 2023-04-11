@@ -9,6 +9,7 @@ from typing import Any, Callable, Iterator
 
 from easynetwork.api_sync.server.handler import ClientInterface, DatagramRequestHandler
 from easynetwork.api_sync.server.udp import UDPNetworkServer
+from easynetwork.exceptions import DatagramProtocolParseError
 from easynetwork.protocol import DatagramProtocol
 from easynetwork.tools.socket import SocketAddress
 
@@ -152,12 +153,10 @@ class TestUDPNetworkServer(BaseTestServer):
         request_handler: MyUDPRequestHandler,
         client_factory: Callable[[], Socket],
     ) -> None:
-        bad_request_args: tuple[Any, ...] | None = None
+        bad_request_exception: list[DatagramProtocolParseError] = []
 
-        def bad_request(client: ClientInterface[str], *args: Any) -> None:
-            nonlocal bad_request_args
-
-            bad_request_args = args
+        def bad_request(client: ClientInterface[str], exc: DatagramProtocolParseError) -> None:
+            bad_request_exception.append(exc)
             client.send_packet("wrong encoding man.")
 
         request_handler.bad_request = bad_request  # type: ignore[assignment]
@@ -165,11 +164,8 @@ class TestUDPNetworkServer(BaseTestServer):
         client = client_factory()
         client.send("\u00E9\n".encode("latin-1"))  # StringSerializer does not accept unicode
         assert client.recv(1024) == b"wrong encoding man."
-        assert bad_request_args == (
-            "deserialization",
-            "'ascii' codec can't decode byte 0xe9 in position 0: ordinal not in range(128)",
-            None,
-        )
+        assert isinstance(bad_request_exception[0], DatagramProtocolParseError)
+        assert bad_request_exception[0].error_type == "deserialization"
 
     @pytest.mark.usefixtures("run_server")
     def test____client____unexpected_error_during_process(

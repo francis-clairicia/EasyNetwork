@@ -10,6 +10,7 @@ from weakref import WeakSet
 
 from easynetwork.api_sync.server.handler import ClientInterface, StreamRequestHandler
 from easynetwork.api_sync.server.tcp import TCPNetworkServer
+from easynetwork.exceptions import StreamProtocolParseError
 from easynetwork.protocol import StreamProtocol
 from easynetwork.tools.socket import SocketAddress
 
@@ -246,12 +247,10 @@ class TestTCPNetworkServer(BaseTestServer):
         request_handler: MyTCPRequestHandler,
         client_factory: Callable[[], Socket],
     ) -> None:
-        bad_request_args: tuple[Any, ...] | None = None
+        bad_request_exception: list[StreamProtocolParseError] = []
 
-        def bad_request(client: ClientInterface[str], *args: Any) -> None:
-            nonlocal bad_request_args
-
-            bad_request_args = args
+        def bad_request(client: ClientInterface[str], exc: StreamProtocolParseError) -> None:
+            bad_request_exception.append(exc)
             client.send_packet("wrong encoding man.")
 
         request_handler.bad_request = bad_request  # type: ignore[assignment]
@@ -259,11 +258,8 @@ class TestTCPNetworkServer(BaseTestServer):
         client = client_factory()
         client.sendall("\u00E9\n".encode("latin-1"))  # StringSerializer does not accept unicode
         assert client.recv(1024) == b"wrong encoding man.\n"
-        assert bad_request_args == (
-            "deserialization",
-            "'ascii' codec can't decode byte 0xe9 in position 0: ordinal not in range(128)",
-            None,
-        )
+        assert isinstance(bad_request_exception[0], StreamProtocolParseError)
+        assert bad_request_exception[0].error_type == "deserialization"
 
     @pytest.mark.usefixtures("run_server")
     def test____client____unexpected_error_during_process(

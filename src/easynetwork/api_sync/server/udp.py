@@ -228,6 +228,15 @@ class UDPNetworkServer(AbstractNetworkServer, Generic[_RequestT, _ResponseT]):
                 if socket not in server_selector.get_map():  # Error occured during process
                     break
 
+                try:
+                    self.service_actions()
+                except Exception:
+                    self.__logger.exception("Error occured in self.service_actions()")
+
+    def service_actions(self) -> None:
+        if (handler := self.__request_handler) is not None:
+            handler.service_actions()
+
     def __handle_received_datagram(self, request_executor: _ThreadPoolExecutor | None) -> None:
         selector = self.__server_selector
         socket: _socket.socket | None = self.__socket
@@ -253,7 +262,7 @@ class UDPNetworkServer(AbstractNetworkServer, Generic[_RequestT, _ResponseT]):
         except DatagramProtocolParseError as exc:
             logger.debug("Malformed request sent by %s", client_address)
             try:
-                self.bad_request(client_address, exc.error_type, exc.message, exc.error_info)
+                self.bad_request(client_address, exc.with_traceback(None))
             except Exception as exc:
                 self.handle_error(client_address, exc)
             return
@@ -288,16 +297,10 @@ class UDPNetworkServer(AbstractNetworkServer, Generic[_RequestT, _ResponseT]):
             client = _ClientAPI(client_address, self)
             handler.handle(request, client)
 
-    def bad_request(
-        self,
-        client_address: SocketAddress,
-        error_type: DatagramProtocolParseError.ParseErrorType,
-        message: str,
-        error_info: Any,
-    ) -> None:
+    def bad_request(self, client_address: SocketAddress, exc: DatagramProtocolParseError) -> None:
         if (handler := self.__request_handler) is not None:
             client = _ClientAPI(client_address, self)
-            handler.bad_request(client, error_type, message, error_info)
+            handler.bad_request(client, exc)
 
     def handle_error(self, client_address: SocketAddress, exc: Exception) -> None:
         try:

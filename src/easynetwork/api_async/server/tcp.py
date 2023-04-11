@@ -165,10 +165,22 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             # Server is up
             self.__is_up.set()
             server_exit_stack.callback(self.__is_up.clear)
+            task_group.start_soon(self.__service_actions_task)
             ##############
 
             # Main loop
             await self.__backend.sleep_forever()
+
+    async def __service_actions_task(self) -> None:
+        request_handler = self.__request_handler
+        backend = self.__backend
+        while True:
+            try:
+                await request_handler.service_actions()
+            except Exception:
+                logger.exception("Error occured in request_handler.service_actions()")
+            finally:
+                await backend.coro_yield()
 
     async def __listener_task(self, listener: AbstractAsyncListenerSocketAdapter, task_group: AbstractTaskGroup) -> None:
         backend: AbstractAsyncBackend = self.__backend
@@ -238,7 +250,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                             break
                         except StreamProtocolParseError as exc:
                             logger.debug("Malformed request sent by %s", address)
-                            await request_handler.bad_request(client, exc.error_type, exc.message, exc.error_info)
+                            await request_handler.bad_request(client, exc.with_traceback(None))
                         else:
                             logger.debug("Processing request sent by %s", address)
                             await request_handler.handle(request, client)

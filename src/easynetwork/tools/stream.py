@@ -86,10 +86,10 @@ class StreamDataProducer(Generic[_SentPacketT]):
 
     def clear(self) -> None:
         with self.__lock:
+            self.__q.clear()
             generator, self.__g = self.__g, None
             if generator is not None:
                 generator.close()
-            self.__q.clear()
 
 
 @final
@@ -164,7 +164,7 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
 
     def clear(self) -> None:
         with self.__lock:
+            self.__b = b""
             consumer, self.__c = self.__c, None
             if consumer is not None:
                 consumer.close()
-            self.__b = b""

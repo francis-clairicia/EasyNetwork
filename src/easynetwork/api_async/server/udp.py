@@ -143,6 +143,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             # Server is up
             self.__is_up.set()
             server_exit_stack.callback(self.__is_up.clear)
+            task_group.start_soon(self.__service_actions_task)
             ##############
 
             # Main loop
@@ -157,6 +158,17 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 logger.debug("Received a datagram from %s", client_address)
                 task_group.start_soon(self.__datagram_received_task, datagram, client_address)
 
+    async def __service_actions_task(self) -> None:
+        request_handler = self.__request_handler
+        backend = self.__backend
+        while True:
+            try:
+                await request_handler.service_actions()
+            except Exception:
+                logger.exception("Error occured in request_handler.service_actions()")
+            finally:
+                await backend.coro_yield()
+
     async def __datagram_received_task(self, datagram: bytes, client_address: SocketAddress) -> None:
         request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT] = self.__request_handler
         if isinstance(request_handler, AsyncDatagramRequestHandler):
@@ -169,7 +181,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         except DatagramProtocolParseError as exc:
             logger.debug("Malformed request sent by %s", client_address)
             try:
-                await request_handler.bad_request(client, exc.error_type, exc.message, exc.error_info)
+                await request_handler.bad_request(client, exc.with_traceback(None))
             except Exception as exc:
                 await self.__handle_error(client_address, exc)
             return

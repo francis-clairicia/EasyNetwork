@@ -237,6 +237,15 @@ class TCPNetworkServer(AbstractNetworkServer, Generic[_RequestT, _ResponseT]):
                 for client in get_clients_with_pending_requests():
                     client.process_pending_request(request_executor)
 
+                try:
+                    self.service_actions()
+                except Exception:
+                    self.__logger.exception("Error occured in self.service_actions()")
+
+    def service_actions(self) -> None:
+        if (handler := self.__request_handler) is not None:
+            handler.service_actions()
+
     def __accept_new_client(self, listener_socket: _socket.socket) -> None:
         server_selector = self.__server_selector
         assert server_selector is not None, "Closed server"
@@ -285,15 +294,9 @@ class TCPNetworkServer(AbstractNetworkServer, Generic[_RequestT, _ResponseT]):
         if (handler := self.__request_handler) is not None:
             handler.handle(request, client)
 
-    def bad_request(
-        self,
-        client: ClientInterface[_ResponseT],
-        error_type: StreamProtocolParseError.ParseErrorType,
-        message: str,
-        error_info: Any,
-    ) -> None:
+    def bad_request(self, client: ClientInterface[_ResponseT], exc: StreamProtocolParseError) -> None:
         if (handler := self.__request_handler) is not None:
-            handler.bad_request(client, error_type, message, error_info)
+            handler.bad_request(client, exc)
 
     def handle_error(self, client: ClientInterface[Any], exc: Exception) -> None:
         try:
@@ -593,7 +596,7 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
                     return
                 except StreamProtocolParseError as exc:
                     logger.debug("Malformed request sent by %s", self._api.address)
-                    self._server.bad_request(self._api, exc.error_type, exc.message, exc.error_info)
+                    self._server.bad_request(self._api, exc.with_traceback(None))
                     return
                 logger.debug("Processing request sent by %s", self._api.address)
                 request_future: _Future[None] | None
