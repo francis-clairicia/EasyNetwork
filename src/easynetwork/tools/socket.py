@@ -222,7 +222,7 @@ class SocketProxy:
     def __getstate__(self) -> Any:  # pragma: no cover
         raise TypeError(f"cannot pickle {self.__class__.__name__!r} object")
 
-    def __execute(self, __func: Callable[_P, _R], *args: _P.args, **kwargs: _P.kwargs) -> _R:
+    def __execute(self, __func: Callable[_P, _R], /, *args: _P.args, **kwargs: _P.kwargs) -> _R:
         with self.__lock_ctx:
             if (runner := self.__runner) is not None:
                 if args or kwargs:
