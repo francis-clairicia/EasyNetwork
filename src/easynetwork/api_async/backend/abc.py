@@ -34,6 +34,7 @@ if TYPE_CHECKING:
 
 
 _P = ParamSpec("_P")
+_T = TypeVar("_T")
 _T_co = TypeVar("_T_co", covariant=True)
 
 
@@ -113,11 +114,11 @@ class AbstractTaskGroup(metaclass=ABCMeta):
     @abstractmethod
     def start_soon(
         self,
-        __coro_func: Callable[_P, Coroutine[Any, Any, _T_co]],
+        __coro_func: Callable[_P, Coroutine[Any, Any, _T]],
         /,
         *args: _P.args,
         **kwargs: _P.kwargs,
-    ) -> AbstractTask[_T_co]:
+    ) -> AbstractTask[_T]:
         raise NotImplementedError
 
 
@@ -275,21 +276,21 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    async def run_in_thread(self, __func: Callable[_P, _T_co], /, *args: _P.args, **kwargs: _P.kwargs) -> _T_co:
+    async def run_in_thread(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
         raise NotImplementedError
 
     @abstractmethod
     def run_coroutine_from_thread(
         self,
-        __coro_func: Callable[_P, Coroutine[Any, Any, _T_co]],
+        __coro_func: Callable[_P, Coroutine[Any, Any, _T]],
         /,
         *args: _P.args,
         **kwargs: _P.kwargs,
-    ) -> _T_co:
+    ) -> _T:
         raise NotImplementedError
 
-    def run_sync_threadsafe(self, __func: Callable[_P, _T_co], /, *args: _P.args, **kwargs: _P.kwargs) -> _T_co:
-        async def _func_as_coroutine() -> _T_co:
+    def run_sync_threadsafe(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+        async def _func_as_coroutine() -> _T:
             return __func(*args, **kwargs)
 
         return self.run_coroutine_from_thread(_func_as_coroutine)
@@ -301,9 +302,9 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
 
     async def run_task_once(
         self,
-        coroutine_cb: Callable[[], Awaitable[_T_co]],
-        task_future: concurrent.futures.Future[_T_co],
-    ) -> _T_co:
+        coroutine_cb: Callable[[], Awaitable[_T]],
+        task_future: concurrent.futures.Future[_T],
+    ) -> _T:
         if task_future.done() or task_future.running():
             # Use wait_future() because concurrent.futures.CancelledError can be translated to an other exception
             # meaningful for the runner implementation
@@ -312,7 +313,7 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         running = task_future.set_running_or_notify_cancel()
         assert running, "Unexpected future cancellation"
         try:
-            result: _T_co = await coroutine_cb()
+            result: _T = await coroutine_cb()
         except BaseException as exc:
             task_future.set_exception(exc)
             raise

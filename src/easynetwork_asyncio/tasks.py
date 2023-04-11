@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 
 
 _P = ParamSpec("_P")
+_T = TypeVar("_T")
 _T_co = TypeVar("_T_co", covariant=True)
 
 
@@ -74,9 +75,9 @@ class TaskGroup(AbstractTaskGroup):
 
     def start_soon(
         self,
-        __coro_func: Callable[_P, Coroutine[Any, Any, _T_co]],
+        __coro_func: Callable[_P, Coroutine[Any, Any, _T]],
         /,
         *args: _P.args,
         **kwargs: _P.kwargs,
-    ) -> AbstractTask[_T_co]:
+    ) -> AbstractTask[_T]:
         return Task(self.__asyncio_tg.create_task(__coro_func(*args, **kwargs)))
