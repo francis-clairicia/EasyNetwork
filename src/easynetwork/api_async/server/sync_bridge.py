@@ -15,11 +15,11 @@ from abc import abstractmethod
 from typing import TYPE_CHECKING, TypeVar, final
 
 from ...api_sync.server.handler import BaseRequestHandler, ClientInterface, DatagramRequestHandler, StreamRequestHandler
+from ...tools.socket import SocketAddress, SocketProxy
 from .handler import AsyncBaseRequestHandler, AsyncClientInterface, AsyncDatagramRequestHandler, AsyncStreamRequestHandler
 
 if TYPE_CHECKING:
     from ...exceptions import BaseProtocolParseError
-    from ...tools.socket import SocketAddress, SocketProxy
     from ..backend.abc import AbstractAsyncBackend
 
 
@@ -139,7 +139,7 @@ class AsyncDatagramRequestHandlerBridge(
 
 @final
 class _BlockingClientInterfaceWrapper(ClientInterface[_ResponseT]):
-    __slots__ = ("__backend", "__async_client", "__h")
+    __slots__ = ("__backend", "__async_client", "__socket_proxy", "__h")
 
     def __init__(self, backend: AbstractAsyncBackend, async_client: AsyncClientInterface[_ResponseT]) -> None:
         super().__init__(async_client.address)
@@ -148,6 +148,7 @@ class _BlockingClientInterfaceWrapper(ClientInterface[_ResponseT]):
 
         self.__backend: AbstractAsyncBackend = backend
         self.__async_client: AsyncClientInterface[_ResponseT] = proxy(async_client)
+        self.__socket_proxy: SocketProxy = SocketProxy(async_client.socket, runner=backend.run_sync_threadsafe)
         self.__h: int = hash(async_client)
 
     def __hash__(self) -> int:
@@ -169,4 +170,4 @@ class _BlockingClientInterfaceWrapper(ClientInterface[_ResponseT]):
 
     @property
     def socket(self) -> SocketProxy:
-        return self.__async_client.socket
+        return self.__socket_proxy

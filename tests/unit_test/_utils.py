@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import functools
 from types import TracebackType
+from typing import Any
 
 
 class DummyLock:
@@ -47,3 +49,15 @@ class AsyncDummyLock:
 
     def release(self) -> None:
         pass
+
+
+class partial_eq(functools.partial[Any]):
+    """Helper to check equality with two functools.partial() object
+
+    (c.f. https://github.com/python/cpython/issues/47814)
+    """
+
+    def __eq__(self, other: object, /) -> bool:
+        if not isinstance(other, functools.partial):
+            return NotImplemented
+        return self.func == other.func and self.args == other.args and self.keywords == other.keywords

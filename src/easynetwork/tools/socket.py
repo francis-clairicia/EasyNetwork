@@ -21,14 +21,32 @@ __all__ = [
 
 import contextlib
 import errno as _errno
+import functools
 import socket as _socket
 from enum import IntEnum, unique
-from typing import TYPE_CHECKING, Any, ContextManager, Final, Literal, NamedTuple, Protocol, TypeAlias, final, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    ContextManager,
+    Final,
+    Literal,
+    NamedTuple,
+    ParamSpec,
+    Protocol,
+    TypeAlias,
+    TypeVar,
+    final,
+    overload,
+)
 
 if TYPE_CHECKING:
     import threading as _threading
 
     from _typeshed import ReadableBuffer
+
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
 
 
 @unique
@@ -165,14 +183,21 @@ class ISocket(Protocol):
 
 @final
 class SocketProxy:
-    __slots__ = ("__socket", "__lock_ctx", "__weakref__")
+    __slots__ = ("__socket", "__lock_ctx", "__runner", "__weakref__")
 
     def __init_subclass__(cls) -> None:  # pragma: no cover
         raise TypeError("SocketProxy cannot be subclassed")
 
-    def __init__(self, socket: ISocket, *, lock: _threading.Lock | _threading.RLock | None = None) -> None:
+    def __init__(
+        self,
+        socket: ISocket,
+        *,
+        lock: _threading.Lock | _threading.RLock | None = None,
+        runner: Callable[[Callable[[], Any]], Any] | None = None,
+    ) -> None:
         self.__socket: ISocket = socket
         self.__lock_ctx: ContextManager[bool] = lock if lock is not None else contextlib.nullcontext(True)
+        self.__runner: Callable[[Callable[[], Any]], Any] | None = runner
 
     def __repr__(self) -> str:
         fd: int = self.fileno()
@@ -197,17 +222,22 @@ class SocketProxy:
     def __getstate__(self) -> Any:  # pragma: no cover
         raise TypeError(f"cannot pickle {self.__class__.__name__!r} object")
 
-    def fileno(self) -> int:
+    def __execute(self, __func: Callable[_P, _R], *args: _P.args, **kwargs: _P.kwargs) -> _R:
         with self.__lock_ctx:
-            return self.__socket.fileno()
+            if (runner := self.__runner) is not None:
+                if args or kwargs:
+                    __func = functools.partial(__func, *args, **kwargs)
+                return runner(__func)
+            return __func(*args, **kwargs)
+
+    def fileno(self) -> int:
+        return self.__execute(self.__socket.fileno)
 
     def dup(self) -> _socket.socket:
-        with self.__lock_ctx:
-            return self.__socket.dup()
+        return self.__execute(self.__socket.dup)
 
     def get_inheritable(self) -> bool:
-        with self.__lock_ctx:
-            return self.__socket.get_inheritable()
+        return self.__execute(self.__socket.get_inheritable)
 
     @overload
     def getsockopt(self, __level: int, __optname: int, /) -> int:
@@ -218,8 +248,7 @@ class SocketProxy:
         ...
 
     def getsockopt(self, *args: Any) -> int | bytes:
-        with self.__lock_ctx:
-            return self.__socket.getsockopt(*args)
+        return self.__execute(self.__socket.getsockopt, *args)
 
     @overload
     def setsockopt(self, __level: int, __optname: int, __value: int | ReadableBuffer, /) -> None:
@@ -230,18 +259,15 @@ class SocketProxy:
         ...
 
     def setsockopt(self, *args: Any) -> None:
-        with self.__lock_ctx:
-            return self.__socket.setsockopt(*args)
+        return self.__execute(self.__socket.setsockopt, *args)
 
     def getpeername(self) -> SocketAddress:
-        with self.__lock_ctx:
-            socket = self.__socket
-            return new_socket_address(socket.getpeername(), socket.family)
+        socket = self.__socket
+        return new_socket_address(self.__execute(socket.getpeername), socket.family)
 
     def getsockname(self) -> SocketAddress:
-        with self.__lock_ctx:
-            socket = self.__socket
-            return new_socket_address(socket.getsockname(), socket.family)
+        socket = self.__socket
+        return new_socket_address(self.__execute(socket.getsockname), socket.family)
 
     @property
     def family(self) -> AddressFamily:
