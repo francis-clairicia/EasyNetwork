@@ -66,7 +66,7 @@ flake8 = [
     "flake8-dunder-all @ git+https://github.com/francis-clairicia/flake8-dunder-all.git@v0.1.0",
 ]
 test = [
-    "pytest~=7.2",
+    "pytest~=7.3",
     "pytest-mock~=3.10.0",
     "pytest-cov<5,>=4.0",
     "pytest-asyncio>=0.21.0",
