@@ -62,15 +62,15 @@ class _BaseAsyncWrapperForRequestHandler(AsyncBaseRequestHandler[_RequestT, _Res
         return await self.backend.run_in_thread(self.sync_request_handler.handle, request, sync_client)
 
     async def bad_request(self, client: AsyncClientInterface[_ResponseT], exc: BaseProtocolParseError) -> None:
-        sync_client = self._build_client_wrapper(client)
         try:
+            sync_client = self._build_client_wrapper(client)
             return await self.backend.run_in_thread(self.sync_request_handler.bad_request, sync_client, exc)
         finally:
             del exc
 
     async def handle_error(self, client: AsyncClientInterface[_ResponseT], exc: Exception) -> bool:
-        sync_client = self._build_client_wrapper(client)
         try:
+            sync_client = self._build_client_wrapper(client)
             return await self.backend.run_in_thread(self.sync_request_handler.handle_error, sync_client, exc)
         finally:
             del exc

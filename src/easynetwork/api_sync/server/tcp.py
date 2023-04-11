@@ -541,7 +541,7 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
                 return
             except OSError as exc:
                 self._erase_all_data_and_packets_to_send()
-                self._request_error_handling_and_close(exc, close_client_before=True)
+                self._request_error_handling(exc, close_client_before=True)
                 return
             logger.debug("Received %d bytes from %s", len(data), self._api.address)
             self._consumer.feed(data)
@@ -567,7 +567,7 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
                     return
                 except OSError as exc:
                     self._erase_all_data_and_packets_to_send()
-                    self._request_error_handling_and_close(exc, close_client_before=True)
+                    self._request_error_handling(exc, close_client_before=True)
                     return
                 del unsent_data[:nb_bytes_sent]
                 if unsent_data:
@@ -609,7 +609,7 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
                         return
                     self._request_future = request_future
             except Exception as exc:
-                self._request_error_handling_and_close(exc, close_client_before=False)
+                self._request_error_handling(exc, close_client_before=False)
                 return
 
         # Blocking operation out of lock scope (deadlock possible if not)
@@ -626,7 +626,7 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
         try:
             self._server.process_request(request, self._api)
         except Exception as exc:
-            self._request_error_handling_and_close(exc, close_client_before=False)
+            self._request_error_handling(exc, close_client_before=False)
 
     def _request_task_done(self, future: _Future[None]) -> None:
         try:
@@ -657,7 +657,7 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
             return
         except OSError as exc:
             self._erase_all_data_and_packets_to_send()
-            self._request_error_handling_and_close(exc, close_client_before=True)
+            self._request_error_handling(exc, close_client_before=True)
             return
         else:
             if nb_bytes_sent < len(data):
@@ -690,7 +690,7 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
             except OSError:
                 return
 
-    def _request_error_handling_and_close(self, exc: Exception, *, close_client_before: bool) -> None:
+    def _request_error_handling(self, exc: Exception, *, close_client_before: bool) -> None:
         try:
             if close_client_before:
                 try:
@@ -700,8 +700,11 @@ class _ClientPayload(Generic[_RequestT, _ResponseT]):
             else:
                 try:
                     self._server.handle_error(self._api, exc)
-                finally:
-                    self._api.close()
+                except Exception:
+                    try:
+                        self._api.close()
+                    finally:
+                        raise
         finally:
             del exc
 

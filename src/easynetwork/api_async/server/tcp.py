@@ -246,7 +246,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 except ConnectionError:
                     return
                 except OSError as exc:
-                    await self.__request_error_handling_and_close(client, exc, close_client_before=True)
+                    await self.__request_error_handling(client, exc, close_client_before=True)
                     return
                 logger.debug("Received %d bytes from %s", len(data), address)
                 consumer.feed(data)
@@ -269,15 +269,14 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                     except ConnectionError:
                         return
                     except OSError as exc:
-                        await self.__request_error_handling_and_close(client, exc, close_client_before=True)
+                        await self.__request_error_handling(client, exc, close_client_before=True)
                         return
                     except Exception as exc:
-                        await self.__request_error_handling_and_close(client, exc, close_client_before=False)
-                        return
+                        await self.__request_error_handling(client, exc, close_client_before=False)
                     finally:
                         await backend.coro_yield()
 
-    async def __request_error_handling_and_close(
+    async def __request_error_handling(
         self,
         client: AsyncClientInterface[Any],
         exc: Exception,
@@ -293,8 +292,11 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             else:
                 try:
                     await self.__handle_error(client, exc)
-                finally:
-                    await client.close()
+                except Exception:
+                    try:
+                        await client.close()
+                    finally:
+                        raise
         finally:
             del exc
 
