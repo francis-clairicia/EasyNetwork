@@ -33,7 +33,7 @@ cbor = [
   "cbor2>=5.4,<6",
 ]
 encryption = [
-  "cryptography>=39,<40",
+  "cryptography>=39,<41",
 ]
 sniffio = [
     "sniffio>=1.3.0",
