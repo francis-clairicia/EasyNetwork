@@ -21,7 +21,7 @@ __all__ = [
 ]
 
 from abc import ABCMeta, abstractmethod
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Coroutine, Generic, ParamSpec, Protocol, Self, Sequence, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, Coroutine, Generic, ParamSpec, Protocol, Self, Sequence, TypeVar
 
 if TYPE_CHECKING:
     import concurrent.futures
@@ -299,26 +299,3 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         while not future.done():
             await self.coro_yield()
         return future.result()
-
-    async def run_task_once(
-        self,
-        coroutine_cb: Callable[[], Awaitable[_T]],
-        task_future: concurrent.futures.Future[_T],
-    ) -> _T:
-        if task_future.done() or task_future.running():
-            # Use wait_future() because concurrent.futures.CancelledError can be translated to an other exception
-            # meaningful for the runner implementation
-            del coroutine_cb
-            return await self.wait_future(task_future)
-        running = task_future.set_running_or_notify_cancel()
-        assert running, "Unexpected future cancellation"
-        try:
-            result: _T = await coroutine_cb()
-        except BaseException as exc:
-            task_future.set_exception(exc)
-            raise
-        else:
-            task_future.set_result(result)
-            return result
-        finally:
-            del task_future, coroutine_cb

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 __all__ = ["AsyncTCPNetworkClient"]
 
-import concurrent.futures
 import errno as _errno
 import socket as _socket
 from typing import Any, Callable, Generic, Iterator, Mapping, Self, TypeVar, final
@@ -42,8 +41,6 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         "__addr",
         "__peer",
         "__eof_reached",
-        "__closed",
-        "__close_waiter",
         "__max_recv_size",
     )
 
@@ -60,7 +57,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         if not isinstance(max_recv_size, int) or max_recv_size <= 0:
             raise ValueError("'max_recv_size' must be a strictly positive integer")
 
-        self.__socket: AbstractAsyncStreamSocketAdapter = socket
+        self.__socket: AbstractAsyncStreamSocketAdapter | None = socket
         self.__backend: AbstractAsyncBackend = backend
         self.__socket_proxy = SocketProxy(socket.socket())
 
@@ -72,8 +69,6 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         self.__producer: Callable[[_SentPacketT], Iterator[bytes]] = protocol.generate_chunks
         self.__consumer: StreamDataConsumer[_ReceivedPacketT] = StreamDataConsumer(protocol)
         self.__eof_reached: bool = False
-        self.__closed: bool = False
-        self.__close_waiter: concurrent.futures.Future[None] = concurrent.futures.Future()
         self.__max_recv_size: int = max_recv_size
 
         try:
@@ -132,24 +127,26 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
 
     @final
     def is_closing(self) -> bool:
-        return self.__closed or self.__close_waiter.running()
+        socket = self.__socket
+        return socket is None or socket.is_closing()
 
     async def close(self) -> None:
-        await self.__backend.run_task_once(self.__close, self.__close_waiter)
-
-    async def __close(self) -> None:
         async with self.__send_lock:
-            self.__closed = True
-        try:
-            await self.__socket.close()
-        except ConnectionError:
-            # It is normal if there was connection errors during operations. But do not propagate this exception,
-            # as we will never reuse this socket
-            pass
+            socket = self.__socket
+            if socket is None:
+                return
+            self.__socket = None
+            try:
+                await socket.close()
+            except ConnectionError:
+                # It is normal if there was connection errors during operations. But do not propagate this exception,
+                # as we will never reuse this socket
+                pass
 
     async def abort(self) -> None:
-        self.__closed = True
-        await self.__socket.abort()
+        socket, self.__socket = self.__socket, None
+        if socket is not None:
+            await socket.abort()
 
     async def send_packet(self, packet: _SentPacketT) -> None:
         async with self.__send_lock:
@@ -198,7 +195,8 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         return self.__peer
 
     def fileno(self) -> int:
-        if self.__closed or self.__socket.is_closing():
+        socket = self.__socket
+        if socket is None or socket.is_closing():
             return -1
         return self.__socket_proxy.fileno()
 
@@ -206,9 +204,9 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         return self.__backend
 
     def __ensure_connected(self) -> AbstractAsyncStreamSocketAdapter:
-        if self.__closed:
-            raise ClientClosedError("Client is closing, or is already closed")
         socket = self.__socket
+        if socket is None:
+            raise ClientClosedError("Client is closing, or is already closed")
         if socket.is_closing() or self.__eof_reached:
             raise _error_from_errno(_errno.ECONNABORTED)
         return socket

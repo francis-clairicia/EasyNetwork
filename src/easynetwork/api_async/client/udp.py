@@ -8,7 +8,6 @@ from __future__ import annotations
 
 __all__ = ["AsyncUDPNetworkClient", "AsyncUDPNetworkEndpoint"]
 
-import concurrent.futures
 import errno as _errno
 from typing import TYPE_CHECKING, Any, AsyncIterator, Generic, Mapping, Self, TypeVar, final
 
@@ -38,8 +37,6 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         "__protocol",
         "__addr",
         "__peer",
-        "__closed",
-        "__close_waiter",
         "__weakref__",
     )
 
@@ -51,7 +48,7 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
     ) -> None:
         super().__init__()
 
-        self.__socket: AbstractAsyncDatagramSocketAdapter = socket
+        self.__socket: AbstractAsyncDatagramSocketAdapter | None = socket
         self.__backend: AbstractAsyncBackend = backend
         self.__socket_proxy = SocketProxy(socket.socket())
 
@@ -65,8 +62,6 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             else None
         )
         self.__protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT] = protocol
-        self.__closed: bool = False
-        self.__close_waiter: concurrent.futures.Future[None] = concurrent.futures.Future()
 
         if self.__addr.port == 0:
             raise OSError(f"{socket} is not bound to a local address")
@@ -136,24 +131,26 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
 
     @final
     def is_closing(self) -> bool:
-        return self.__closed or self.__close_waiter.running()
+        socket = self.__socket
+        return socket is None or socket.is_closing()
 
     async def close(self) -> None:
-        await self.__backend.run_task_once(self.__close, self.__close_waiter)
-
-    async def __close(self) -> None:
         async with self.__send_lock:
-            self.__closed = True
-        try:
-            await self.__socket.close()
-        except ConnectionError:
-            # It is normal if there was connection errors during operations. But do not propagate this exception,
-            # as we will never reuse this socket
-            pass
+            socket = self.__socket
+            if socket is None:
+                return
+            self.__socket = None
+            try:
+                await socket.close()
+            except ConnectionError:
+                # It is normal if there was connection errors during operations. But do not propagate this exception,
+                # as we will never reuse this socket
+                pass
 
     async def abort(self) -> None:
-        self.__closed = True
-        await self.__socket.abort()
+        socket, self.__socket = self.__socket, None
+        if socket is not None:
+            await socket.abort()
 
     async def send_packet_to(
         self,
@@ -203,7 +200,8 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         return self.__peer
 
     def fileno(self) -> int:
-        if self.__closed or self.__socket.is_closing():
+        socket = self.__socket
+        if socket is None or socket.is_closing():
             return -1
         return self.__socket_proxy.fileno()
 
@@ -211,9 +209,9 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         return self.__backend
 
     def __ensure_opened(self) -> AbstractAsyncDatagramSocketAdapter:
-        if self.__closed:
-            raise ClientClosedError("Client is closing, or is already closed")
         socket = self.__socket
+        if socket is None:
+            raise ClientClosedError("Client is closing, or is already closed")
         if socket.is_closing():
             raise _error_from_errno(_errno.ECONNABORTED)
         return socket
