@@ -103,7 +103,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         del mock_tcp_socket.recv
 
         mock_backend.create_tcp_connection.return_value = mock_stream_socket_adapter
-        mock_backend.wrap_connected_tcp_socket.return_value = mock_stream_socket_adapter
+        mock_backend.wrap_tcp_client_socket.return_value = mock_stream_socket_adapter
 
         mock_stream_socket_adapter.socket.return_value = mock_tcp_socket
 
@@ -242,7 +242,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         # Assert
         mock_new_backend.assert_called_once_with(None)
         mock_stream_data_consumer_cls.assert_called_once_with(mock_stream_protocol)
-        mock_backend.wrap_connected_tcp_socket.assert_awaited_once_with(mock_tcp_socket)
+        mock_backend.wrap_tcp_client_socket.assert_awaited_once_with(mock_tcp_socket)
         mock_stream_socket_adapter.socket.assert_called_once_with()
         mock_stream_socket_adapter.get_local_address.assert_called_once_with()
         mock_stream_socket_adapter.get_remote_address.assert_called_once_with()

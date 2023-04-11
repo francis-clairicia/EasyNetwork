@@ -95,7 +95,7 @@ class AsyncioBackend(AbstractAsyncBackend):
         )
         return StreamSocketAdapter(reader, writer)
 
-    async def wrap_connected_tcp_socket(self, socket: _socket.socket) -> AbstractAsyncStreamSocketAdapter:
+    async def wrap_tcp_client_socket(self, socket: _socket.socket) -> AbstractAsyncStreamSocketAdapter:
         assert socket is not None, "Expected 'socket' to be a socket.socket instance"
         socket.setblocking(False)
 

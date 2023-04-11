@@ -121,7 +121,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
     ) -> Self:
         backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
 
-        socket_adapter = await backend.wrap_connected_tcp_socket(socket)
+        socket_adapter = await backend.wrap_tcp_client_socket(socket)
 
         return cls(backend, socket_adapter, protocol, max_recv_size)
 
