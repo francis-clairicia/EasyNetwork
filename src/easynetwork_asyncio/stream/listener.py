@@ -67,7 +67,7 @@ class ListenerSocketAdapter(AbstractAsyncListenerSocketAdapter):
         if self.__closed:
             import errno
 
-            raise _error_from_errno(errno.EBADFD)
+            raise _error_from_errno(errno.EBADF)
 
         if self.__accept_task is not None:
             import errno
