@@ -195,7 +195,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         async with listener:
             while True:
                 try:
-                    client_socket, client_address = await listener.accept()
+                    client_socket = await listener.accept()
                 except OSError as exc:
                     import errno
                     import os
@@ -212,19 +212,20 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                     else:
                         raise
                 else:
-                    task_group.start_soon(self.__client_task, client_socket, client_address)
+                    task_group.start_soon(self.__client_task, client_socket)
 
-    async def __client_task(self, socket: AbstractAsyncStreamSocketAdapter, address: tuple[Any, ...]) -> None:
+    async def __client_task(self, socket: AbstractAsyncStreamSocketAdapter) -> None:
         async with _contextlib.AsyncExitStack() as client_exit_stack:
             await client_exit_stack.enter_async_context(socket)
             client_exit_stack.push_async_callback(socket.abort)
 
             request_handler = self.__request_handler
             backend = self.__backend
-            address = new_socket_address(address, socket.socket().family)
+            address: SocketAddress = new_socket_address(socket.get_remote_address(), socket.socket().family)
             producer = StreamDataProducer(self.__protocol)
             consumer = StreamDataConsumer(self.__protocol)
             client = _ConnectedClientAPI(backend, socket, address, producer, request_handler)
+            assert client.address == address
 
             client_exit_stack.callback(consumer.clear)
             client_exit_stack.callback(producer.clear)

@@ -63,7 +63,7 @@ class ListenerSocketAdapter(AbstractAsyncListenerSocketAdapter):
     async def abort(self) -> None:
         return await self.close()
 
-    async def accept(self) -> tuple[AbstractAsyncStreamSocketAdapter, tuple[Any, ...]]:
+    async def accept(self) -> AbstractAsyncStreamSocketAdapter:
         if self.__closed:
             import errno
 
@@ -81,7 +81,8 @@ class ListenerSocketAdapter(AbstractAsyncListenerSocketAdapter):
             self.__accept_task = None
 
         client_socket_adapter = await self._make_socket_adapter(client_socket)
-        return client_socket_adapter, client_address
+        assert client_socket_adapter.get_remote_address() == client_address
+        return client_socket_adapter
 
     async def _make_socket_adapter(self, socket: _socket.socket) -> AbstractAsyncStreamSocketAdapter:
         from asyncio.streams import StreamReader, StreamReaderProtocol, StreamWriter

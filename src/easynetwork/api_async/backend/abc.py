@@ -193,7 +193,7 @@ class AbstractAsyncListenerSocketAdapter(AbstractAsyncBaseSocketAdapter):
     __slots__ = ()
 
     @abstractmethod
-    async def accept(self) -> tuple[AbstractAsyncStreamSocketAdapter, tuple[Any, ...]]:
+    async def accept(self) -> AbstractAsyncStreamSocketAdapter:
         raise NotImplementedError
 
 
