@@ -107,7 +107,7 @@ class TestAsyncioBackend:
 
         assert await backend.run_in_thread(thread) == 42
 
-    async def test____run_sync_threadsafe____run_in_event_loop(
+    async def test____run_sync_from_thread____run_in_event_loop(
         self,
         event_loop: asyncio.AbstractEventLoop,
         backend: AbstractAsyncBackend,
@@ -119,6 +119,6 @@ class TestAsyncioBackend:
         def thread() -> int:
             with pytest.raises(RuntimeError):
                 asyncio.get_running_loop()
-            return backend.run_sync_threadsafe(not_threadsafe_func, 42)
+            return backend.run_sync_from_thread(not_threadsafe_func, 42)
 
         assert await backend.run_in_thread(thread) == 42

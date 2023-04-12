@@ -148,7 +148,7 @@ class _BlockingClientInterfaceWrapper(ClientInterface[_ResponseT]):
 
         self.__backend: AbstractAsyncBackend = backend
         self.__async_client: AsyncClientInterface[_ResponseT] = proxy(async_client)
-        self.__socket_proxy: SocketProxy = SocketProxy(async_client.socket, runner=backend.run_sync_threadsafe)
+        self.__socket_proxy: SocketProxy = SocketProxy(async_client.socket, runner=backend.run_sync_from_thread)
         self.__h: int = hash(async_client)
 
     def __hash__(self) -> int:
@@ -160,7 +160,7 @@ class _BlockingClientInterfaceWrapper(ClientInterface[_ResponseT]):
         return self.__async_client == other.__async_client
 
     def is_closed(self) -> bool:
-        return self.__backend.run_sync_threadsafe(self.__async_client.is_closing)
+        return self.__backend.run_sync_from_thread(self.__async_client.is_closing)
 
     def close(self) -> None:
         return self.__backend.run_coroutine_from_thread(self.__async_client.close)

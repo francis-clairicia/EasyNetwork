@@ -289,7 +289,7 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
     ) -> _T:
         raise NotImplementedError
 
-    def run_sync_threadsafe(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+    def run_sync_from_thread(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
         async def _func_as_coroutine() -> _T:
             return __func(*args, **kwargs)
 

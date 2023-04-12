@@ -365,7 +365,7 @@ class TestAsyncIOBackend:
         func_stub.assert_not_called()
         mock_run_coroutine_threadsafe.assert_not_called()
 
-    async def test____run_sync_threadsafe____use_asyncio_run_coroutine_threadsafe(
+    async def test____run_sync_from_thread____use_asyncio_run_coroutine_threadsafe(
         self,
         event_loop: asyncio.AbstractEventLoop,
         backend: AsyncioBackend,
@@ -384,7 +384,7 @@ class TestAsyncIOBackend:
 
         def test_thread() -> None:
             nonlocal ret_val
-            ret_val = backend.run_sync_threadsafe(
+            ret_val = backend.run_sync_from_thread(
                 func_stub,
                 mocker.sentinel.arg1,
                 mocker.sentinel.arg2,
