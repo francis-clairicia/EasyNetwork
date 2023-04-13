@@ -16,12 +16,13 @@ __all__ = [
     "AbstractAsyncStreamSocketAdapter",
     "AbstractTask",
     "AbstractTaskGroup",
+    "AbstractThreadsPortal",
     "IEvent",
     "ILock",
 ]
 
 from abc import ABCMeta, abstractmethod
-from typing import TYPE_CHECKING, Any, Callable, Coroutine, Generic, ParamSpec, Protocol, Self, Sequence, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, Coroutine, Generic, ParamSpec, Protocol, Self, Sequence, TypeVar, final
 
 if TYPE_CHECKING:
     import concurrent.futures
@@ -120,6 +121,30 @@ class AbstractTaskGroup(metaclass=ABCMeta):
         **kwargs: _P.kwargs,
     ) -> AbstractTask[_T]:
         raise NotImplementedError
+
+
+class AbstractThreadsPortal(metaclass=ABCMeta):
+    __slots__ = ("__tid", "__weakref__")
+
+    def __init__(self) -> None:
+        import threading
+
+        self.__tid: int = threading.get_ident()
+
+    @abstractmethod
+    def run_coroutine(self, __coro_func: Callable[_P, Coroutine[Any, Any, _T]], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+        raise NotImplementedError
+
+    def run_sync(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+        async def _func_as_coroutine() -> _T:
+            return __func(*args, **kwargs)
+
+        return self.run_coroutine(_func_as_coroutine)
+
+    @property
+    @final
+    def parent_thread_id(self) -> int:
+        return self.__tid
 
 
 class AbstractAsyncBaseSocketAdapter(metaclass=ABCMeta):
@@ -280,20 +305,8 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    def run_coroutine_from_thread(
-        self,
-        __coro_func: Callable[_P, Coroutine[Any, Any, _T]],
-        /,
-        *args: _P.args,
-        **kwargs: _P.kwargs,
-    ) -> _T:
+    def create_threads_portal(self) -> AbstractThreadsPortal:
         raise NotImplementedError
-
-    def run_sync_from_thread(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
-        async def _func_as_coroutine() -> _T:
-            return __func(*args, **kwargs)
-
-        return self.run_coroutine_from_thread(_func_as_coroutine)
 
     async def wait_future(self, future: concurrent.futures.Future[_T_co]) -> _T_co:
         while not future.done():

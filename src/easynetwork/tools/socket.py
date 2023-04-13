@@ -224,10 +224,10 @@ class SocketProxy:
 
     def __execute(self, __func: Callable[_P, _R], /, *args: _P.args, **kwargs: _P.kwargs) -> _R:
         with self.__lock_ctx:
-            if (runner := self.__runner) is not None:
+            if (run := self.__runner) is not None:
                 if args or kwargs:
                     __func = functools.partial(__func, *args, **kwargs)
-                return runner(__func)
+                return run(__func)
             return __func(*args, **kwargs)
 
     def fileno(self) -> int:

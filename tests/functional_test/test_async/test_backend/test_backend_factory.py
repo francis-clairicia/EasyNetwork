@@ -30,8 +30,7 @@ class TestAsyncBackendFactory:
 
         assert AsyncBackendFactory.get_default_backend(guess_current_async_library=False) is AsyncioBackend
 
-    @pytest.mark.asyncio
-    async def test____new____returns_asyncio_backend_instance(self) -> None:
+    def test____new____returns_asyncio_backend_instance(self) -> None:
         from easynetwork_asyncio import AsyncioBackend
 
         backend = AsyncBackendFactory.new("asyncio")

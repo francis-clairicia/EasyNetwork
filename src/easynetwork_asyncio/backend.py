@@ -9,20 +9,21 @@ from __future__ import annotations
 
 __all__ = ["AsyncioBackend"]  # type: list[str]
 
-import concurrent.futures
 import socket as _socket
-from typing import TYPE_CHECKING, Any, Callable, Coroutine, ParamSpec, Sequence, TypeVar, final
+from typing import TYPE_CHECKING, Any, Callable, ParamSpec, Sequence, TypeVar, final
 
 from easynetwork.api_async.backend.abc import AbstractAsyncBackend
 
 if TYPE_CHECKING:
     import asyncio
+    import concurrent.futures
 
     from easynetwork.api_async.backend.abc import (
         AbstractAsyncDatagramSocketAdapter,
         AbstractAsyncListenerSocketAdapter,
         AbstractAsyncStreamSocketAdapter,
         AbstractTaskGroup,
+        AbstractThreadsPortal,
         IEvent,
         ILock,
     )
@@ -34,16 +35,7 @@ _T_co = TypeVar("_T_co", covariant=True)
 
 @final
 class AsyncioBackend(AbstractAsyncBackend):
-    __slots__ = ("__bound_loop", "__thread_id")
-
-    def __init__(self) -> None:
-        super().__init__()
-
-        import asyncio
-        import threading
-
-        self.__bound_loop: asyncio.AbstractEventLoop = asyncio.get_running_loop()
-        self.__thread_id: int = threading.get_ident()
+    __slots__ = ()
 
     async def coro_yield(self) -> None:
         return await self.sleep(0)
@@ -123,7 +115,6 @@ class AsyncioBackend(AbstractAsyncBackend):
         import os
         import sys
         from itertools import chain
-        from socket import AI_PASSIVE, SOCK_STREAM
 
         from easynetwork.tools._utils import open_listener_sockets_from_getaddrinfo_result
 
@@ -141,7 +132,10 @@ class AsyncioBackend(AbstractAsyncBackend):
         infos: set[tuple[int, int, int, str, tuple[Any, ...]]] = set(
             chain.from_iterable(
                 await asyncio.gather(
-                    *[self._ensure_resolved(host, port, family, SOCK_STREAM, loop, flags=AI_PASSIVE) for host in hosts]
+                    *[
+                        self._ensure_resolved(host, port, family, _socket.SOCK_STREAM, loop, flags=_socket.AI_PASSIVE)
+                        for host in hosts
+                    ]
                 )
             )
         )
@@ -233,21 +227,10 @@ class AsyncioBackend(AbstractAsyncBackend):
 
         return await asyncio.to_thread(__func, *args, **kwargs)
 
-    def run_coroutine_from_thread(
-        self,
-        __coro_func: Callable[_P, Coroutine[Any, Any, _T]],
-        /,
-        *args: _P.args,
-        **kwargs: _P.kwargs,
-    ) -> _T:
-        import asyncio
-        import threading
+    def create_threads_portal(self) -> AbstractThreadsPortal:
+        from .threads import AsyncioThreadsPortal
 
-        if threading.get_ident() == self.__thread_id:
-            raise RuntimeError("run_coroutine_from_thread() must be called in a different OS thread")
-
-        future = asyncio.run_coroutine_threadsafe(__coro_func(*args, **kwargs), self.__bound_loop)
-        return future.result()
+        return AsyncioThreadsPortal()
 
     async def wait_future(self, future: concurrent.futures.Future[_T_co]) -> _T_co:
         import asyncio

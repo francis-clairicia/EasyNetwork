@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from socket import socket as Socket
-from typing import Any, Callable, Coroutine, Sequence, final
+from typing import Any, Callable, Sequence, final
 
 from easynetwork.api_async.backend.abc import (
     AbstractAsyncBackend,
@@ -11,6 +11,7 @@ from easynetwork.api_async.backend.abc import (
     AbstractAsyncListenerSocketAdapter,
     AbstractAsyncStreamSocketAdapter,
     AbstractTaskGroup,
+    AbstractThreadsPortal,
     IEvent,
     ILock,
 )
@@ -53,7 +54,7 @@ class BaseFakeBackend(AbstractAsyncBackend):
     async def run_in_thread(self, __func: Callable[..., Any], /, *args: Any, **kwargs: Any) -> Any:
         raise NotImplementedError
 
-    def run_coroutine_from_thread(self, __func: Callable[..., Coroutine[Any, Any, Any]], /, *args: Any, **kwargs: Any) -> Any:
+    def create_threads_portal(self) -> AbstractThreadsPortal:
         raise NotImplementedError
 
 

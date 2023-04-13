@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Any
 from easynetwork_asyncio import AsyncioBackend
 
 import pytest
-import pytest_asyncio
 
 if TYPE_CHECKING:
     from unittest.mock import AsyncMock, MagicMock
@@ -18,9 +17,9 @@ if TYPE_CHECKING:
 
 @pytest.mark.asyncio
 class TestAsyncIOBackend:
-    @pytest_asyncio.fixture
+    @pytest.fixture
     @staticmethod
-    async def backend() -> AsyncioBackend:
+    def backend() -> AsyncioBackend:
         return AsyncioBackend()
 
     @pytest.fixture(params=[("local_address", 12345), None], ids=lambda addr: f"local_address=={addr}")
@@ -303,106 +302,20 @@ class TestAsyncIOBackend:
         func_stub.assert_not_called()
         assert ret_val is mocker.sentinel.return_value
 
-    async def test____run_coroutine_from_thread____use_asyncio_run_coroutine_threadsafe(
+    async def test____create_threads_portal____returns_asyncio_portal(
         self,
         event_loop: asyncio.AbstractEventLoop,
         backend: AsyncioBackend,
-        mocker: MockerFixture,
     ) -> None:
         # Arrange
-        coro_func_stub: AsyncMock = mocker.async_stub()
-        coro_func_stub.return_value = mocker.sentinel.return_value
-        mock_run_coroutine_threadsafe: MagicMock = mocker.patch(
-            "asyncio.run_coroutine_threadsafe",
-            side_effect=asyncio.run_coroutine_threadsafe,
-        )
+        from easynetwork_asyncio.threads import AsyncioThreadsPortal
 
         # Act
-        ret_val: Any = None
-
-        def test_thread() -> None:
-            nonlocal ret_val
-            ret_val = backend.run_coroutine_from_thread(
-                coro_func_stub,
-                mocker.sentinel.arg1,
-                mocker.sentinel.arg2,
-                kw1=mocker.sentinel.kwargs1,
-                kw2=mocker.sentinel.kwargs2,
-            )
-
-        await asyncio.to_thread(test_thread)
+        threads_portal = backend.create_threads_portal()
 
         # Assert
-        coro_func_stub.assert_awaited_once_with(
-            mocker.sentinel.arg1,
-            mocker.sentinel.arg2,
-            kw1=mocker.sentinel.kwargs1,
-            kw2=mocker.sentinel.kwargs2,
-        )
-        mock_run_coroutine_threadsafe.assert_called_once_with(mocker.ANY, event_loop)
-        assert ret_val is mocker.sentinel.return_value
-
-    async def test____run_coroutine_from_thread____error_if_called_from_event_loop_thread(
-        self,
-        backend: AsyncioBackend,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        func_stub: AsyncMock = mocker.async_stub()
-        mock_run_coroutine_threadsafe: MagicMock = mocker.patch("asyncio.run_coroutine_threadsafe")
-
-        # Act
-        with pytest.raises(RuntimeError):
-            backend.run_coroutine_from_thread(
-                func_stub,
-                mocker.sentinel.arg1,
-                mocker.sentinel.arg2,
-                kw1=mocker.sentinel.kwargs1,
-                kw2=mocker.sentinel.kwargs2,
-            )
-
-        # Assert
-        func_stub.assert_not_called()
-        mock_run_coroutine_threadsafe.assert_not_called()
-
-    async def test____run_sync_from_thread____use_asyncio_run_coroutine_threadsafe(
-        self,
-        event_loop: asyncio.AbstractEventLoop,
-        backend: AsyncioBackend,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        func_stub: MagicMock = mocker.stub()
-        func_stub.return_value = mocker.sentinel.return_value
-        mock_run_coroutine_threadsafe: MagicMock = mocker.patch(
-            "asyncio.run_coroutine_threadsafe",
-            side_effect=asyncio.run_coroutine_threadsafe,
-        )
-
-        # Act
-        ret_val: Any = None
-
-        def test_thread() -> None:
-            nonlocal ret_val
-            ret_val = backend.run_sync_from_thread(
-                func_stub,
-                mocker.sentinel.arg1,
-                mocker.sentinel.arg2,
-                kw1=mocker.sentinel.kwargs1,
-                kw2=mocker.sentinel.kwargs2,
-            )
-
-        await asyncio.to_thread(test_thread)
-
-        # Assert
-        func_stub.assert_called_once_with(
-            mocker.sentinel.arg1,
-            mocker.sentinel.arg2,
-            kw1=mocker.sentinel.kwargs1,
-            kw2=mocker.sentinel.kwargs2,
-        )
-        mock_run_coroutine_threadsafe.assert_called_once_with(mocker.ANY, event_loop)
-        assert ret_val is mocker.sentinel.return_value
+        assert isinstance(threads_portal, AsyncioThreadsPortal)
+        assert threads_portal.loop is event_loop
 
     async def test____wait_future____use_asyncio_wrap_future(
         self,

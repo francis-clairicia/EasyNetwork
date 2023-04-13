@@ -9,14 +9,13 @@ from easynetwork.api_async.backend.abc import AbstractAsyncBackend
 from easynetwork.api_async.backend.factory import AsyncBackendFactory
 
 import pytest
-import pytest_asyncio
 
 
 @pytest.mark.asyncio
 class TestAsyncioBackend:
-    @pytest_asyncio.fixture
+    @pytest.fixture
     @staticmethod
-    async def backend() -> AbstractAsyncBackend:
+    def backend() -> AbstractAsyncBackend:
         return AsyncBackendFactory.new("asyncio")
 
     async def test____sleep_forever____sleep_until_cancellation(
@@ -91,11 +90,13 @@ class TestAsyncioBackend:
 
         assert await backend.wait_future(future) == 42
 
-    async def test____run_coroutine_from_thread____wait_for_coroutine(
+    async def test____create_threads_portal____run_coroutine_from_thread(
         self,
         event_loop: asyncio.AbstractEventLoop,
         backend: AbstractAsyncBackend,
     ) -> None:
+        threads_portal = backend.create_threads_portal()
+
         async def coroutine(value: int) -> int:
             assert asyncio.get_running_loop() is event_loop
             return await asyncio.sleep(0.5, value)
@@ -103,15 +104,17 @@ class TestAsyncioBackend:
         def thread() -> int:
             with pytest.raises(RuntimeError):
                 asyncio.get_running_loop()
-            return backend.run_coroutine_from_thread(coroutine, 42)
+            return threads_portal.run_coroutine(coroutine, 42)
 
         assert await backend.run_in_thread(thread) == 42
 
-    async def test____run_sync_from_thread____run_in_event_loop(
+    async def test____create_threads_portal____run_sync_from_thread_in_event_loop(
         self,
         event_loop: asyncio.AbstractEventLoop,
         backend: AbstractAsyncBackend,
     ) -> None:
+        threads_portal = backend.create_threads_portal()
+
         def not_threadsafe_func(value: int) -> int:
             assert asyncio.get_running_loop() is event_loop
             return value
@@ -119,6 +122,6 @@ class TestAsyncioBackend:
         def thread() -> int:
             with pytest.raises(RuntimeError):
                 asyncio.get_running_loop()
-            return backend.run_sync_from_thread(not_threadsafe_func, 42)
+            return threads_portal.run_sync(not_threadsafe_func, 42)
 
         assert await backend.run_in_thread(thread) == 42
