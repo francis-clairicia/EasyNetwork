@@ -234,7 +234,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
             if isinstance(request_handler, AsyncStreamRequestHandler):
                 await request_handler.on_connection(client)
-            client_exit_stack.push_async_callback(client.aclose)
+            await client_exit_stack.enter_async_context(_contextlib.aclosing(client))
 
             recv_bufsize: int = self.__max_recv_size
 
@@ -291,13 +291,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 finally:
                     await self.__handle_error(client, exc)
             else:
-                try:
-                    await self.__handle_error(client, exc)
-                except Exception:
-                    try:
-                        await client.aclose()
-                    finally:
-                        raise
+                await self.__handle_error(client, exc)
         finally:
             del exc
 

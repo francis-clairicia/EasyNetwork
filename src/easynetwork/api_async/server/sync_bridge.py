@@ -158,10 +158,8 @@ class _BlockingClientInterfaceWrapper(ClientInterface[_ResponseT]):
     def __init__(self, threads_portal: AbstractThreadsPortal, async_client: AsyncClientInterface[_ResponseT]) -> None:
         super().__init__(async_client.address)
 
-        from weakref import proxy
-
         self.__threads_portal: AbstractThreadsPortal = threads_portal
-        self.__async_client: AsyncClientInterface[_ResponseT] = proxy(async_client)
+        self.__async_client: AsyncClientInterface[_ResponseT] = async_client
         self.__socket_proxy: SocketProxy = SocketProxy(async_client.socket, runner=threads_portal.run_sync)
         self.__h: int = hash(async_client)
 

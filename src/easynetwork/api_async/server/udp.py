@@ -175,27 +175,27 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             if not await request_handler.accept_request_from(client_address):
                 return
 
-        client = _ClientAPI(client_address, self)
-        try:
-            request: _RequestT = self.__protocol.build_packet_from_datagram(datagram)
-        except DatagramProtocolParseError as exc:
-            logger.debug("Malformed request sent by %s", client_address)
+        async with _contextlib.aclosing(_ClientAPI(client_address, self)) as client:
             try:
-                await request_handler.bad_request(client, exc.with_traceback(None))
+                request: _RequestT = self.__protocol.build_packet_from_datagram(datagram)
+            except DatagramProtocolParseError as exc:
+                logger.debug("Malformed request sent by %s", client_address)
+                try:
+                    await request_handler.bad_request(client, exc.with_traceback(None))
+                except Exception as exc:
+                    await self.__handle_error(client_address, exc)
+                return
             except Exception as exc:
                 await self.__handle_error(client_address, exc)
-            return
-        except Exception as exc:
-            await self.__handle_error(client_address, exc)
-            return
-        else:
-            del datagram
+                return
+            else:
+                del datagram
 
-        logger.debug("Processing request sent by %s", client_address)
-        try:
-            await request_handler.handle(request, client)
-        except Exception as exc:
-            await self.__handle_error(client_address, exc)
+            logger.debug("Processing request sent by %s", client_address)
+            try:
+                await request_handler.handle(request, client)
+            except Exception as exc:
+                await self.__handle_error(client_address, exc)
 
     async def send_packet_to(self, packet: _ResponseT, client_address: SocketAddress) -> None:
         try:
@@ -272,7 +272,7 @@ class _ClientAPI(AsyncClientInterface[_ResponseT]):
     async def send_packet(self, packet: _ResponseT) -> None:
         server = self.__server_ref()
         if server is None:
-            raise ClientClosedError
+            raise ClientClosedError("Closed client")
         await server.send_packet_to(packet, self.address)
 
     @property
