@@ -157,6 +157,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 client_address = new_socket_address(client_address, socket_family)
                 logger.debug("Received a datagram from %s", client_address)
                 task_group.start_soon(self.__datagram_received_task, datagram, client_address)
+                del datagram, client_address
 
     async def __service_actions_task(self) -> None:
         request_handler = self.__request_handler
@@ -198,23 +199,20 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 await self.__handle_error(client_address, exc)
 
     async def send_packet_to(self, packet: _ResponseT, client_address: SocketAddress) -> None:
-        try:
-            response: bytes = self.__protocol.make_datagram(packet)
-        except Exception as exc:
-            await self.__handle_error(client_address, exc)
-            return
         async with self.__sendto_lock:
             socket = self.__socket
             assert socket is not None, "Closed server"
+            datagram: bytes = self.__protocol.make_datagram(packet)
 
-            logger.debug("A response will be sent to %s", client_address)
+            logger.debug("A datagram will be sent to %s", client_address)
             try:
-                await socket.sendto(response, client_address)
+                await socket.sendto(datagram, client_address)
                 _check_real_socket_state(self.__socket_proxy)
             except OSError:
                 logger.exception("Failed to send datagram to %s", client_address)
             else:
                 logger.debug("Datagram successfully sent to %s.", client_address)
+                del datagram
 
     async def __handle_error(self, client_address: SocketAddress, exc: Exception) -> None:
         try:
