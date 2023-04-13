@@ -139,13 +139,14 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             socket = self.__socket
             if socket is None:
                 return
-            self.__socket = None
             try:
                 await socket.aclose()
             except ConnectionError:
                 # It is normal if there was connection errors during operations. But do not propagate this exception,
                 # as we will never reuse this socket
                 pass
+            finally:
+                await self.abort()
 
     async def abort(self) -> None:
         socket, self.__socket = self.__socket, None
