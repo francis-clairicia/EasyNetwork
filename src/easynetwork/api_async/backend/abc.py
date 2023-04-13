@@ -159,14 +159,14 @@ class AbstractAsyncBaseSocketAdapter(metaclass=ABCMeta):
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        await self.close()
+        await self.aclose()
 
     @abstractmethod
     def is_closing(self) -> bool:
         raise NotImplementedError
 
     @abstractmethod
-    async def close(self) -> None:
+    async def aclose(self) -> None:
         raise NotImplementedError
 
     @abstractmethod

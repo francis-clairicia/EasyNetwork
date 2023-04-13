@@ -33,11 +33,11 @@ class TestAsyncTCPNetworkClient:
         async with await AsyncTCPNetworkClient.from_socket(socket_pair[1], stream_protocol) as client:
             yield client
 
-    async def test____close____double_close(self, client: AsyncTCPNetworkClient[str, str]) -> None:
+    async def test____aclose____double_close(self, client: AsyncTCPNetworkClient[str, str]) -> None:
         assert not client.is_closing()
-        await client.close()
+        await client.aclose()
         assert client.is_closing()
-        await client.close()
+        await client.aclose()
         assert client.is_closing()
 
     async def test____send_packet____default(self, client: AsyncTCPNetworkClient[str, str], server: Socket) -> None:
@@ -78,7 +78,7 @@ class TestAsyncTCPNetworkClient:
             await client.send_packet("DEF")
 
     async def test____send_packet____closed_client(self, client: AsyncTCPNetworkClient[str, str]) -> None:
-        await client.close()
+        await client.aclose()
         with pytest.raises(ClientClosedError):
             await client.send_packet("ABCDEF")
 
@@ -130,7 +130,7 @@ class TestAsyncTCPNetworkClient:
             await client.recv_packet()
 
     async def test____recv_packet____client_close_error(self, client: AsyncTCPNetworkClient[str, str]) -> None:
-        await client.close()
+        await client.aclose()
         with pytest.raises(ClientClosedError):
             await client.recv_packet()
 
@@ -160,7 +160,7 @@ class TestAsyncTCPNetworkClient:
         assert client.fileno() == client.socket.fileno()
 
     async def test____fileno____closed_client(self, client: AsyncTCPNetworkClient[str, str]) -> None:
-        await client.close()
+        await client.aclose()
         assert client.fileno() == -1
 
     async def test____get_local_address____consistency(self, socket_family: int, client: AsyncTCPNetworkClient[str, str]) -> None:

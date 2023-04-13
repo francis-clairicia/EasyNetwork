@@ -40,7 +40,7 @@ class StreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
 
             raise _error_from_errno(errno.ENOTCONN)
 
-    async def close(self) -> None:
+    async def aclose(self) -> None:
         self.__writer.close()
         await self.__writer.wait_closed()
 

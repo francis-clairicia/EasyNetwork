@@ -130,14 +130,14 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         socket = self.__socket
         return socket is None or socket.is_closing()
 
-    async def close(self) -> None:
+    async def aclose(self) -> None:
         async with self.__send_lock:
             socket = self.__socket
             if socket is None:
                 return
             self.__socket = None
             try:
-                await socket.close()
+                await socket.aclose()
             except ConnectionError:
                 # It is normal if there was connection errors during operations. But do not propagate this exception,
                 # as we will never reuse this socket

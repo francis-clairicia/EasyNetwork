@@ -49,7 +49,7 @@ class ListenerSocketAdapter(AbstractAsyncListenerSocketAdapter):
     def is_closing(self) -> bool:
         return self.__closed
 
-    async def close(self) -> None:
+    async def aclose(self) -> None:
         if self.__closed:
             return
 
@@ -61,7 +61,7 @@ class ListenerSocketAdapter(AbstractAsyncListenerSocketAdapter):
         self.__socket.close()
 
     async def abort(self) -> None:
-        return await self.close()
+        return await self.aclose()
 
     async def accept(self) -> AbstractAsyncStreamSocketAdapter:
         if self.__closed:

@@ -108,7 +108,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             if socket is None:
                 return
             self.__socket = None
-            await socket.close()
+            await socket.aclose()
 
     async def serve_forever(self) -> None:
         if (socket := self.__socket) is None:
@@ -266,7 +266,7 @@ class _ClientAPI(AsyncClientInterface[_ResponseT]):
     def is_closing(self) -> bool:
         return self.__server_ref() is None
 
-    async def close(self) -> None:
+    async def aclose(self) -> None:
         self.__server_ref = lambda: None
 
     async def send_packet(self, packet: _ResponseT) -> None:

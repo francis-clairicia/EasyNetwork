@@ -44,7 +44,7 @@ class AsyncClientInterface(Generic[_ResponseT], metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    async def close(self) -> None:
+    async def aclose(self) -> None:
         raise NotImplementedError
 
     @property

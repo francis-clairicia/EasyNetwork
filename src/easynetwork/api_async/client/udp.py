@@ -82,7 +82,7 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        await self.close()
+        await self.aclose()
 
     def __getstate__(self) -> Any:  # pragma: no cover
         raise TypeError(f"cannot pickle {self.__class__.__name__!r} object")
@@ -134,14 +134,14 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         socket = self.__socket
         return socket is None or socket.is_closing()
 
-    async def close(self) -> None:
+    async def aclose(self) -> None:
         async with self.__send_lock:
             socket = self.__socket
             if socket is None:
                 return
             self.__socket = None
             try:
-                await socket.close()
+                await socket.aclose()
             except ConnectionError:
                 # It is normal if there was connection errors during operations. But do not propagate this exception,
                 # as we will never reuse this socket
@@ -292,8 +292,8 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
     def is_closing(self) -> bool:
         return self.__endpoint.is_closing()
 
-    async def close(self) -> None:
-        return await self.__endpoint.close()
+    async def aclose(self) -> None:
+        return await self.__endpoint.aclose()
 
     async def abort(self) -> None:
         return await self.__endpoint.abort()

@@ -234,7 +234,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
             if isinstance(request_handler, AsyncStreamRequestHandler):
                 await request_handler.on_connection(client)
-            client_exit_stack.push_async_callback(client.close)
+            client_exit_stack.push_async_callback(client.aclose)
 
             recv_bufsize: int = self.__max_recv_size
 
@@ -287,7 +287,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         try:
             if close_client_before:
                 try:
-                    await client.close()
+                    await client.aclose()
                 finally:
                     await self.__handle_error(client, exc)
             else:
@@ -295,7 +295,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                     await self.__handle_error(client, exc)
                 except Exception:
                     try:
-                        await client.close()
+                        await client.aclose()
                     finally:
                         raise
         finally:
@@ -349,7 +349,7 @@ class _ConnectedClientAPI(AsyncClientInterface[_ResponseT]):
         socket = self.__socket
         return socket is None or socket.is_closing()
 
-    async def close(self) -> None:
+    async def aclose(self) -> None:
         async with self.__send_lock:
             socket = self.__socket
             if socket is None:
@@ -363,7 +363,7 @@ class _ConnectedClientAPI(AsyncClientInterface[_ResponseT]):
                         stack.push_async_callback(self.__send_lock.acquire)  # Re-acquire lock after calling on_disconnection()
                         stack.push_async_callback(request_handler.on_disconnection, self)
                         stack.callback(self.__send_lock.release)  # Release lock before calling on_disconnection()
-                    stack.push_async_callback(socket.close)
+                    stack.push_async_callback(socket.aclose)
 
     async def send_packet(self, packet: _ResponseT) -> None:
         self.__check_closed()

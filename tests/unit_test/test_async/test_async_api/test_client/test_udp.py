@@ -340,7 +340,7 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_close = cast("AsyncMock", mocker.patch.object(AsyncUDPNetworkEndpoint, "close"))
+        mock_close = cast("AsyncMock", mocker.patch.object(AsyncUDPNetworkEndpoint, "aclose"))
 
         # Act
         async with client:
@@ -349,7 +349,7 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         # Assert
         mock_close.assert_awaited_once_with()
 
-    async def test____close____await_socket_close(
+    async def test____aclose____await_socket_close(
         self,
         client: AsyncUDPNetworkClient[Any, Any],
         mock_datagram_socket_adapter: MagicMock,
@@ -358,62 +358,62 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         assert not client.is_closing()
 
         # Act
-        await client.close()
+        await client.aclose()
 
         # Assert
         assert client.is_closing()
-        mock_datagram_socket_adapter.close.assert_awaited_once_with()
+        mock_datagram_socket_adapter.aclose.assert_awaited_once_with()
 
-    async def test____close____await_socket_close____error_occurred(
+    async def test____aclose____await_socket_close____error_occurred(
         self,
         client: AsyncUDPNetworkClient[Any, Any],
         mock_datagram_socket_adapter: MagicMock,
     ) -> None:
         # Arrange
         error = OSError("Bad file descriptor")
-        mock_datagram_socket_adapter.close.side_effect = error
+        mock_datagram_socket_adapter.aclose.side_effect = error
         assert not client.is_closing()
 
         # Act
         with pytest.raises(OSError) as exc_info:
-            await client.close()
+            await client.aclose()
 
         # Assert
         assert client.is_closing()
         assert exc_info.value is error
-        mock_datagram_socket_adapter.close.assert_awaited_once_with()
+        mock_datagram_socket_adapter.aclose.assert_awaited_once_with()
 
-    async def test____close____await_socket_close____hide_connection_error(
+    async def test____aclose____await_socket_close____hide_connection_error(
         self,
         client: AsyncUDPNetworkClient[Any, Any],
         mock_datagram_socket_adapter: MagicMock,
     ) -> None:
         # Arrange
         error = ConnectionAbortedError()
-        mock_datagram_socket_adapter.close.side_effect = error
+        mock_datagram_socket_adapter.aclose.side_effect = error
         assert not client.is_closing()
 
         # Act
-        await client.close()
+        await client.aclose()
 
         # Assert
         assert client.is_closing()
-        mock_datagram_socket_adapter.close.assert_awaited_once_with()
+        mock_datagram_socket_adapter.aclose.assert_awaited_once_with()
 
-    async def test____close____already_closed(
+    async def test____aclose____already_closed(
         self,
         client: AsyncUDPNetworkClient[Any, Any],
         mock_datagram_socket_adapter: MagicMock,
     ) -> None:
         # Arrange
-        await client.close()
+        await client.aclose()
         assert client.is_closing()
 
         # Act
-        await client.close()
+        await client.aclose()
 
         # Assert
-        mock_datagram_socket_adapter.close.assert_awaited_once_with()
+        mock_datagram_socket_adapter.aclose.assert_awaited_once_with()
 
     async def test____abort____brute_force_shutdown(
         self,
@@ -427,7 +427,7 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
 
         # Assert
         mock_datagram_socket_adapter.abort.assert_awaited_once_with()
-        mock_datagram_socket_adapter.close.assert_not_awaited()
+        mock_datagram_socket_adapter.aclose.assert_not_awaited()
         assert client.is_closing()
 
     @pytest.mark.parametrize("client_closed", [False, True], ids=lambda p: f"client_closed=={p}")
@@ -442,7 +442,7 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         # Arrange
         mock_datagram_socket_adapter.get_local_address.reset_mock()
         if client_closed:
-            await client.close()
+            await client.aclose()
             assert client.is_closing()
 
         # Act
@@ -470,7 +470,7 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         ## NOTE: The client should have the remote address saved. Therefore this test check if there is no new call.
         mock_datagram_socket_adapter.get_remote_address.assert_called_once()
         if client_closed:
-            await client.close()
+            await client.aclose()
             assert client.is_closing()
 
         # Act
@@ -510,7 +510,7 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         mock_udp_socket: MagicMock,
     ) -> None:
         # Arrange
-        await client.close()
+        await client.aclose()
         assert client.is_closing()
 
         # Act
@@ -646,7 +646,7 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        await client.close()
+        await client.aclose()
         assert client.is_closing()
 
         # Act
@@ -734,7 +734,7 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         mock_datagram_protocol: MagicMock,
     ) -> None:
         # Arrange
-        await client.close()
+        await client.aclose()
         assert client.is_closing()
 
         # Act
@@ -833,7 +833,7 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         iterator = client.iter_received_packets_from()
         packet_1 = await anext(iterator)
         assert packet_1[0] is mocker.sentinel.packet_1
-        await client.close()
+        await client.aclose()
         assert client.is_closing()
         with pytest.raises(StopAsyncIteration):
             _ = await anext(iterator)
@@ -1108,19 +1108,19 @@ class TestAsyncUDPNetworkClient:
         mock_udp_endpoint.is_closing.assert_called_once_with()
         assert status is mocker.sentinel.status
 
-    async def test____close____default(
+    async def test____aclose____default(
         self,
         client: AsyncUDPNetworkClient[Any, Any],
         mock_udp_endpoint: MagicMock,
     ) -> None:
         # Arrange
-        mock_udp_endpoint.close.return_value = None
+        mock_udp_endpoint.aclose.return_value = None
 
         # Act
-        await client.close()
+        await client.aclose()
 
         # Assert
-        mock_udp_endpoint.close.assert_awaited_once_with()
+        mock_udp_endpoint.aclose.assert_awaited_once_with()
 
     async def test___abort____default(
         self,

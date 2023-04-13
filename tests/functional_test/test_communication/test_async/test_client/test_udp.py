@@ -69,11 +69,11 @@ class TestAsyncUDPNetworkClient:
         ) as client:
             assert client.get_local_address().port > 0
 
-    async def test____close____double_close(self, client: AsyncUDPNetworkClient[str, str]) -> None:
+    async def test____aclose____double_close(self, client: AsyncUDPNetworkClient[str, str]) -> None:
         assert not client.is_closing()
-        await client.close()
+        await client.aclose()
         assert client.is_closing()
-        await client.close()
+        await client.aclose()
         assert client.is_closing()
 
     async def test____send_packet____default(self, client: AsyncUDPNetworkClient[str, str], server: Socket) -> None:
@@ -99,7 +99,7 @@ class TestAsyncUDPNetworkClient:
             await client.send_packet("DEF")
 
     async def test____send_packet____closed_client(self, client: AsyncUDPNetworkClient[str, str]) -> None:
-        await client.close()
+        await client.aclose()
         with pytest.raises(ClientClosedError):
             await client.send_packet("ABCDEF")
 
@@ -118,7 +118,7 @@ class TestAsyncUDPNetworkClient:
             await asyncio.wait_for(client.recv_packet(), timeout=0.1)
 
     async def test____recv_packet____closed_client(self, client: AsyncUDPNetworkClient[str, str]) -> None:
-        await client.close()
+        await client.aclose()
         with pytest.raises(ClientClosedError):
             await client.recv_packet()
 
@@ -135,7 +135,7 @@ class TestAsyncUDPNetworkClient:
         for p in [b"A", b"B", b"C", b"D", b"E", b"F"]:
             server.sendto(p, client.get_local_address())
 
-        asyncio.create_task(delay(client.close, 0.5))
+        asyncio.create_task(delay(client.aclose, 0.5))
 
         # NOTE: Comparison using set because equality check does not verify order
         assert {p async for p in client.iter_received_packets()} == {"A", "B", "C", "D", "E", "F"}
@@ -144,7 +144,7 @@ class TestAsyncUDPNetworkClient:
         assert client.fileno() == client.socket.fileno()
 
     async def test____fileno____closed_client(self, client: AsyncUDPNetworkClient[str, str]) -> None:
-        await client.close()
+        await client.aclose()
         assert client.fileno() == -1
 
     async def test____get_local_address____consistency(self, socket_family: int, client: AsyncUDPNetworkClient[str, str]) -> None:
@@ -212,11 +212,11 @@ class TestAsyncUDPNetworkEndpoint:
         ) as client:
             assert client.get_local_address().port > 0
 
-    async def test____close____double_close(self, client: AsyncUDPNetworkEndpoint[str, str]) -> None:
+    async def test____aclose____double_close(self, client: AsyncUDPNetworkEndpoint[str, str]) -> None:
         assert not client.is_closing()
-        await client.close()
+        await client.aclose()
         assert client.is_closing()
-        await client.close()
+        await client.aclose()
         assert client.is_closing()
 
     @pytest.mark.parametrize("client", ["WITHOUT_REMOTE"], indirect=True)
@@ -302,7 +302,7 @@ class TestAsyncUDPNetworkEndpoint:
 
     async def test____send_packet_to____closed_client(self, client: AsyncUDPNetworkEndpoint[str, str], server: Socket) -> None:
         address = server.getsockname()
-        await client.close()
+        await client.aclose()
         with pytest.raises(ClientClosedError):
             await client.send_packet_to("ABCDEF", address)
 
@@ -354,7 +354,7 @@ class TestAsyncUDPNetworkEndpoint:
             await asyncio.wait_for(client.recv_packet_from(), timeout=0.1)
 
     async def test____recv_packet_from____closed_client(self, client: AsyncUDPNetworkEndpoint[str, str]) -> None:
-        await client.close()
+        await client.aclose()
         with pytest.raises(ClientClosedError):
             await client.recv_packet_from()
 
@@ -373,7 +373,7 @@ class TestAsyncUDPNetworkEndpoint:
         for p in [b"A", b"B", b"C", b"D", b"E", b"F"]:
             server.sendto(p, client.get_local_address())
 
-        asyncio.create_task(delay(client.close, 0.5))
+        asyncio.create_task(delay(client.aclose, 0.5))
 
         # NOTE: Comparison using set because equality check does not verify order
         assert {(p, addr) async for p, addr in client.iter_received_packets_from()} == {
@@ -389,7 +389,7 @@ class TestAsyncUDPNetworkEndpoint:
         assert client.fileno() == client.socket.fileno()
 
     async def test____fileno____closed_client(self, client: AsyncUDPNetworkEndpoint[str, str]) -> None:
-        await client.close()
+        await client.aclose()
         assert client.fileno() == -1
 
     async def test____get_local_address____consistency(

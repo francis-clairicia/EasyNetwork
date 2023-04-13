@@ -177,7 +177,7 @@ class _BlockingClientInterfaceWrapper(ClientInterface[_ResponseT]):
         return self.__threads_portal.run_sync(self.__async_client.is_closing)
 
     def close(self) -> None:
-        return self.__threads_portal.run_coroutine(self.__async_client.close)
+        return self.__threads_portal.run_coroutine(self.__async_client.aclose)
 
     def send_packet(self, packet: _ResponseT) -> None:
         return self.__threads_portal.run_coroutine(self.__async_client.send_packet, packet)

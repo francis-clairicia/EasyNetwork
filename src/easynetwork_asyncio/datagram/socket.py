@@ -32,7 +32,7 @@ class DatagramSocketAdapter(AbstractAsyncDatagramSocketAdapter):
         socket: asyncio.trsock.TransportSocket | None = endpoint.get_extra_info("socket")
         assert socket is not None, "transport must be a socket transport"
 
-    async def close(self) -> None:
+    async def aclose(self) -> None:
         self.__endpoint.close()
         return await self.__endpoint.wait_closed()
 

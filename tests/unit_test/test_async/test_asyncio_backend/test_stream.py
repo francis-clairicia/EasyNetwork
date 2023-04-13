@@ -76,7 +76,7 @@ class TestStreamSocket:
         assert exc_info.value.errno == ENOTCONN
         mock_asyncio_writer.get_extra_info.assert_called_with("peername")
 
-    async def test____close____close_transport_and_wait(
+    async def test____aclose____close_transport_and_wait(
         self,
         socket: StreamSocketAdapter,
         mock_asyncio_writer: MagicMock,
@@ -84,7 +84,7 @@ class TestStreamSocket:
         # Arrange
 
         # Act
-        await socket.close()
+        await socket.aclose()
 
         # Assert
         mock_asyncio_writer.close.assert_called_once_with()

@@ -34,7 +34,7 @@ class AbstractAsyncNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metacl
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        await self.close()
+        await self.aclose()
 
     def __getstate__(self) -> Any:  # pragma: no cover
         raise TypeError(f"cannot pickle {self.__class__.__name__!r} object")
@@ -44,7 +44,7 @@ class AbstractAsyncNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metacl
         raise NotImplementedError
 
     @abstractmethod
-    async def close(self) -> None:
+    async def aclose(self) -> None:
         raise NotImplementedError
 
     @abstractmethod

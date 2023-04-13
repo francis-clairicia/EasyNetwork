@@ -345,7 +345,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
                     max_recv_size=max_recv_size,
                 )
 
-    async def test____close____await_socket_close(
+    async def test____aclose____await_socket_close(
         self,
         client: AsyncTCPNetworkClient[Any, Any],
         mock_stream_socket_adapter: MagicMock,
@@ -354,62 +354,62 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         assert not client.is_closing()
 
         # Act
-        await client.close()
+        await client.aclose()
 
         # Assert
         assert client.is_closing()
-        mock_stream_socket_adapter.close.assert_awaited_once_with()
+        mock_stream_socket_adapter.aclose.assert_awaited_once_with()
 
-    async def test____close____await_socket_close____error_occurred(
+    async def test____aclose____await_socket_close____error_occurred(
         self,
         client: AsyncTCPNetworkClient[Any, Any],
         mock_stream_socket_adapter: MagicMock,
     ) -> None:
         # Arrange
         error = OSError("Bad file descriptor")
-        mock_stream_socket_adapter.close.side_effect = error
+        mock_stream_socket_adapter.aclose.side_effect = error
         assert not client.is_closing()
 
         # Act
         with pytest.raises(OSError) as exc_info:
-            await client.close()
+            await client.aclose()
 
         # Assert
         assert client.is_closing()
         assert exc_info.value is error
-        mock_stream_socket_adapter.close.assert_awaited_once_with()
+        mock_stream_socket_adapter.aclose.assert_awaited_once_with()
 
-    async def test____close____await_socket_close____hide_connection_error(
+    async def test____aclose____await_socket_close____hide_connection_error(
         self,
         client: AsyncTCPNetworkClient[Any, Any],
         mock_stream_socket_adapter: MagicMock,
     ) -> None:
         # Arrange
         error = ConnectionAbortedError()
-        mock_stream_socket_adapter.close.side_effect = error
+        mock_stream_socket_adapter.aclose.side_effect = error
         assert not client.is_closing()
 
         # Act
-        await client.close()
+        await client.aclose()
 
         # Assert
         assert client.is_closing()
-        mock_stream_socket_adapter.close.assert_awaited_once_with()
+        mock_stream_socket_adapter.aclose.assert_awaited_once_with()
 
-    async def test____close____already_closed(
+    async def test____aclose____already_closed(
         self,
         client: AsyncTCPNetworkClient[Any, Any],
         mock_stream_socket_adapter: MagicMock,
     ) -> None:
         # Arrange
-        await client.close()
+        await client.aclose()
         assert client.is_closing()
 
         # Act
-        await client.close()
+        await client.aclose()
 
         # Assert
-        mock_stream_socket_adapter.close.assert_awaited_once_with()
+        mock_stream_socket_adapter.aclose.assert_awaited_once_with()
 
     async def test____abort____brute_force_shutdown(
         self,
@@ -423,7 +423,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
 
         # Assert
         mock_stream_socket_adapter.abort.assert_awaited_once_with()
-        mock_stream_socket_adapter.close.assert_not_awaited()
+        mock_stream_socket_adapter.aclose.assert_not_awaited()
         assert client.is_closing()
 
     @pytest.mark.parametrize("client_closed", [False, True], ids=lambda p: f"client_closed=={p}")
@@ -438,7 +438,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         # Arrange
         mock_stream_socket_adapter.get_local_address.reset_mock()
         if client_closed:
-            await client.close()
+            await client.aclose()
             assert client.is_closing()
 
         # Act
@@ -466,7 +466,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         ## NOTE: The client should have the remote address saved. Therefore this test check if there is no new call.
         mock_stream_socket_adapter.get_remote_address.assert_called_once()
         if client_closed:
-            await client.close()
+            await client.aclose()
             assert client.is_closing()
 
         # Act
@@ -503,7 +503,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_tcp_socket: MagicMock,
     ) -> None:
         # Arrange
-        await client.close()
+        await client.aclose()
         assert client.is_closing()
 
         # Act
@@ -568,7 +568,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        await client.close()
+        await client.aclose()
         assert client.is_closing()
 
         # Act
@@ -719,7 +719,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_stream_data_consumer: MagicMock,
     ) -> None:
         # Arrange
-        await client.close()
+        await client.aclose()
         assert client.is_closing()
 
         # Act

@@ -25,7 +25,7 @@ class MockAsyncClient(AbstractAsyncNetworkClient[Any, Any]):
     def is_closing(self) -> bool:
         return False
 
-    async def close(self) -> None:
+    async def aclose(self) -> None:
         return await self.mock_close()
 
     async def abort(self) -> None:
