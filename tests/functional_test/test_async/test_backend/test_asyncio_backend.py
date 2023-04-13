@@ -119,6 +119,8 @@ class TestAsyncioBackend:
             assert asyncio.get_running_loop() is event_loop
             return value
 
+        assert threads_portal.run_sync(not_threadsafe_func, 42) == 42
+
         def thread() -> int:
             with pytest.raises(RuntimeError):
                 asyncio.get_running_loop()

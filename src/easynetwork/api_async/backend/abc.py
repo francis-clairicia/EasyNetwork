@@ -136,6 +136,11 @@ class AbstractThreadsPortal(metaclass=ABCMeta):
         raise NotImplementedError
 
     def run_sync(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+        import threading
+
+        if threading.get_ident() == self.__tid:
+            return __func(*args, **kwargs)
+
         async def _func_as_coroutine() -> _T:
             return __func(*args, **kwargs)
 
