@@ -137,6 +137,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         async with _contextlib.AsyncExitStack() as exit_stack:
             for listener in listeners:
                 exit_stack.push_async_callback(listener.abort)
+                exit_stack.push_async_callback(listener.aclose)
 
     async def serve_forever(self) -> None:
         if (listeners := self.__listeners) is None:
@@ -216,8 +217,8 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
     async def __client_task(self, socket: AbstractAsyncStreamSocketAdapter) -> None:
         async with _contextlib.AsyncExitStack() as client_exit_stack:
-            await client_exit_stack.enter_async_context(socket)
             client_exit_stack.push_async_callback(socket.abort)
+            await client_exit_stack.enter_async_context(socket)
 
             request_handler = self.__request_handler
             backend = self.__backend

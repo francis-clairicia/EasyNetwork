@@ -108,7 +108,10 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             if socket is None:
                 return
             self.__socket = None
-            await socket.aclose()
+            try:
+                await socket.aclose()
+            finally:
+                await socket.abort()
 
     async def serve_forever(self) -> None:
         if (socket := self.__socket) is None:
