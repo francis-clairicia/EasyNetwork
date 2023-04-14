@@ -32,7 +32,11 @@ class TestAsyncIOBackend:
     def remote_address(request: Any) -> tuple[str, int] | None:
         return request.param
 
-    async def test____coro_yield____use_asyncio_sleep(self, backend: AsyncioBackend, mocker: MockerFixture) -> None:
+    async def test____coro_yield____use_asyncio_sleep(
+        self,
+        backend: AsyncioBackend,
+        mocker: MockerFixture,
+    ) -> None:
         # Arrange
         mock_sleep: AsyncMock = mocker.patch("asyncio.sleep", new_callable=mocker.async_stub)
 
@@ -58,7 +62,11 @@ class TestAsyncIOBackend:
         mock_loop_time.assert_called_once_with()
         assert current_time > 0
 
-    async def test____sleep____use_asyncio_sleep(self, backend: AsyncioBackend, mocker: MockerFixture) -> None:
+    async def test____sleep____use_asyncio_sleep(
+        self,
+        backend: AsyncioBackend,
+        mocker: MockerFixture,
+    ) -> None:
         # Arrange
         mock_sleep: AsyncMock = mocker.patch("asyncio.sleep", new_callable=mocker.async_stub)
 

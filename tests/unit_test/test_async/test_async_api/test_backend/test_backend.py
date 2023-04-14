@@ -47,15 +47,6 @@ class TestAbstractAsyncBackend:
     def backend(mocker: MockerFixture) -> MockBackend:
         return MockBackend(mocker)
 
-    async def test____sleep_forever____sleep_inf(self, backend: MockBackend) -> None:
-        # Arrange
-
-        # Act
-        await backend.sleep_forever()
-
-        # Assert
-        backend.mock_sleep.assert_awaited_once_with(float("+inf"))
-
     async def test____sleep_until____sleep_deadline_offset(
         self,
         backend: MockBackend,

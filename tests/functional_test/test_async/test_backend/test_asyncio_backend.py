@@ -18,6 +18,18 @@ class TestAsyncioBackend:
     def backend() -> AbstractAsyncBackend:
         return AsyncBackendFactory.new("asyncio")
 
+    async def test____coro_cancel____self_kill(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        backend: AbstractAsyncBackend,
+    ) -> None:
+        task = event_loop.create_task(backend.coro_cancel())
+
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        assert task.cancelled()
+
     async def test____sleep_forever____sleep_until_cancellation(
         self,
         event_loop: asyncio.AbstractEventLoop,
@@ -109,6 +121,9 @@ class TestAsyncioBackend:
         async def coroutine(value: int) -> int:
             assert asyncio.get_running_loop() is event_loop
             return await asyncio.sleep(0.5, value)
+
+        with pytest.raises(RuntimeError):
+            threads_portal.run_coroutine(coroutine, 42)
 
         def thread() -> int:
             with pytest.raises(RuntimeError):

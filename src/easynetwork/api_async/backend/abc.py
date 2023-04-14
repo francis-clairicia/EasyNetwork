@@ -22,7 +22,7 @@ __all__ = [
 ]
 
 from abc import ABCMeta, abstractmethod
-from typing import TYPE_CHECKING, Any, Callable, Coroutine, Generic, ParamSpec, Protocol, Self, Sequence, TypeVar, final
+from typing import TYPE_CHECKING, Any, Callable, Coroutine, Generic, NoReturn, ParamSpec, Protocol, Self, Sequence, TypeVar, final
 
 if TYPE_CHECKING:
     import concurrent.futures
@@ -235,6 +235,10 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
+    async def coro_cancel(self) -> NoReturn:
+        raise NotImplementedError
+
+    @abstractmethod
     def current_time(self) -> float:
         raise NotImplementedError
 
@@ -242,10 +246,9 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
     async def sleep(self, delay: float) -> None:
         raise NotImplementedError
 
-    async def sleep_forever(self) -> None:
-        from math import inf
-
-        return await self.sleep(inf)
+    @abstractmethod
+    async def sleep_forever(self) -> NoReturn:
+        raise NotImplementedError
 
     async def sleep_until(self, deadline: float) -> None:
         return await self.sleep(deadline - self.current_time())

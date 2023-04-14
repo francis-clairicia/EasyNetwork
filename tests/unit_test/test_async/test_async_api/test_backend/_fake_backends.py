@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from socket import socket as Socket
-from typing import Any, Callable, Sequence, final
+from typing import Any, Callable, NoReturn, Sequence, final
 
 from easynetwork.api_async.backend.abc import (
     AbstractAsyncBackend,
@@ -21,10 +21,16 @@ class BaseFakeBackend(AbstractAsyncBackend):
     async def sleep(self, delay: float) -> None:
         raise NotImplementedError
 
+    async def sleep_forever(self) -> NoReturn:
+        raise NotImplementedError
+
     def current_time(self) -> float:
         raise NotImplementedError
 
     async def coro_yield(self) -> None:
+        raise NotImplementedError
+
+    async def coro_cancel(self) -> NoReturn:
         raise NotImplementedError
 
     def create_task_group(self) -> AbstractTaskGroup:

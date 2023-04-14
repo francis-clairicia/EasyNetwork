@@ -10,7 +10,7 @@ from __future__ import annotations
 __all__ = ["AsyncioBackend"]  # type: list[str]
 
 import socket as _socket
-from typing import TYPE_CHECKING, Any, Callable, ParamSpec, Sequence, TypeVar, final
+from typing import TYPE_CHECKING, Any, Callable, NoReturn, ParamSpec, Sequence, TypeVar, final
 
 from easynetwork.api_async.backend.abc import AbstractAsyncBackend
 
@@ -40,6 +40,11 @@ class AsyncioBackend(AbstractAsyncBackend):
     async def coro_yield(self) -> None:
         return await self.sleep(0)
 
+    async def coro_cancel(self) -> NoReturn:
+        import asyncio
+
+        raise asyncio.CancelledError()
+
     def current_time(self) -> float:
         import asyncio
 
@@ -50,6 +55,13 @@ class AsyncioBackend(AbstractAsyncBackend):
         import asyncio
 
         return await asyncio.sleep(delay)
+
+    async def sleep_forever(self) -> NoReturn:
+        import asyncio
+
+        loop = asyncio.get_running_loop()
+        await loop.create_future()
+        raise AssertionError("await an unused future cannot end in any other way than by cancellation")
 
     def create_task_group(self) -> AbstractTaskGroup:
         from .tasks import TaskGroup
