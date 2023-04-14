@@ -99,6 +99,8 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         return self.__socket is not None and self.__is_up.is_set()
 
     async def wait_for_server_to_be_up(self) -> Literal[True]:
+        if self.__socket is None:
+            raise RuntimeError("Closed server")
         await self.__is_up.wait()
         return True
 
@@ -192,7 +194,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             except Exception as exc:
                 await self.__handle_error(client_address, exc)
                 return
-            else:
+            finally:
                 del datagram
 
             logger.debug("Processing request sent by %s", client_address)
@@ -215,6 +217,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 logger.exception("Failed to send datagram to %s", client_address)
             else:
                 logger.debug("Datagram successfully sent to %s.", client_address)
+            finally:
                 del datagram
 
     async def __handle_error(self, client_address: SocketAddress, exc: Exception) -> None:

@@ -33,8 +33,13 @@ class DatagramSocketAdapter(AbstractAsyncDatagramSocketAdapter):
         assert socket is not None, "transport must be a socket transport"
 
     async def aclose(self) -> None:
-        self.__endpoint.close()
-        return await self.__endpoint.wait_closed()
+        try:
+            self.__endpoint.close()
+            return await self.__endpoint.wait_closed()
+        except ConnectionError:
+            # It is normal if there was connection errors during operations. But do not propagate this exception,
+            # as we will never reuse this socket
+            pass
 
     async def abort(self) -> None:
         self.__endpoint.transport.abort()

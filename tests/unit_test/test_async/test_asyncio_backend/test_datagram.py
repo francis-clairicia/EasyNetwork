@@ -670,6 +670,24 @@ class TestDatagramSocketAdapter:
         mock_endpoint.wait_closed.assert_awaited_once_with()
         mock_endpoint.transport.abort.assert_not_called()
 
+    @pytest.mark.parametrize("exception_cls", ConnectionError.__subclasses__())
+    async def test____aclose____ignore_connection_error(
+        self,
+        exception_cls: type[ConnectionError],
+        socket: DatagramSocketAdapter,
+        mock_endpoint: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_endpoint.wait_closed.side_effect = exception_cls
+
+        # Act
+        await socket.aclose()
+
+        # Assert
+        mock_endpoint.close.assert_called_once_with()
+        mock_endpoint.wait_closed.assert_awaited_once_with()
+        mock_endpoint.transport.abort.assert_not_called()
+
     async def test____abort____abort_transport_and_exit(
         self,
         socket: DatagramSocketAdapter,

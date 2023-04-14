@@ -76,12 +76,44 @@ class TestStreamSocket:
         assert exc_info.value.errno == ENOTCONN
         mock_asyncio_writer.get_extra_info.assert_called_with("peername")
 
+    async def test____dunder_init____explicit_remote_address(
+        self,
+        mock_asyncio_reader: MagicMock,
+        mock_asyncio_writer: MagicMock,
+    ) -> None:
+        # Arrange
+        remote_address = ("explicit_address", 4444)
+
+        # Act
+        socket = StreamSocketAdapter(mock_asyncio_reader, mock_asyncio_writer, remote_address=remote_address)
+
+        # Assert
+        assert socket.get_remote_address() == remote_address
+
     async def test____aclose____close_transport_and_wait(
         self,
         socket: StreamSocketAdapter,
         mock_asyncio_writer: MagicMock,
     ) -> None:
         # Arrange
+
+        # Act
+        await socket.aclose()
+
+        # Assert
+        mock_asyncio_writer.close.assert_called_once_with()
+        mock_asyncio_writer.wait_closed.assert_awaited_once_with()
+        mock_asyncio_writer.transport.abort.assert_not_called()
+
+    @pytest.mark.parametrize("exception_cls", ConnectionError.__subclasses__())
+    async def test____aclose____ignore_connection_error(
+        self,
+        exception_cls: type[ConnectionError],
+        socket: StreamSocketAdapter,
+        mock_asyncio_writer: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_asyncio_writer.wait_closed.side_effect = exception_cls
 
         # Act
         await socket.aclose()

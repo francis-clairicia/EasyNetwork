@@ -80,11 +80,11 @@ class ListenerSocketAdapter(AbstractAsyncListenerSocketAdapter):
         finally:
             self.__accept_task = None
 
-        client_socket_adapter = await self._make_socket_adapter(client_socket)
+        client_socket_adapter = await self._make_socket_adapter(client_socket, client_address)
         assert client_socket_adapter.get_remote_address() == client_address
         return client_socket_adapter
 
-    async def _make_socket_adapter(self, socket: _socket.socket) -> AbstractAsyncStreamSocketAdapter:
+    async def _make_socket_adapter(self, socket: _socket.socket, address: tuple[Any, ...]) -> AbstractAsyncStreamSocketAdapter:
         from asyncio.streams import StreamReader, StreamReaderProtocol, StreamWriter
 
         from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
@@ -96,7 +96,7 @@ class ListenerSocketAdapter(AbstractAsyncListenerSocketAdapter):
         protocol = StreamReaderProtocol(reader, loop=loop)
         transport, protocol = await loop.connect_accepted_socket(lambda: protocol, socket)
         writer = StreamWriter(transport, protocol, reader, loop)
-        return StreamSocketAdapter(reader, writer)
+        return StreamSocketAdapter(reader, writer, remote_address=address)
 
     def get_local_address(self) -> tuple[Any, ...]:
         return self.__socket.getsockname()

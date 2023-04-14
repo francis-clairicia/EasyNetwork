@@ -10,7 +10,7 @@ __all__ = ["AsyncTCPNetworkServer"]
 
 import contextlib as _contextlib
 import logging as _logging
-from typing import TYPE_CHECKING, Any, Generic, Literal, Mapping, Self, Sequence, TypeVar, final
+from typing import TYPE_CHECKING, Any, AsyncGenerator, Generic, Literal, Mapping, Self, Sequence, TypeVar, final
 
 from ...api_sync.server.handler import BaseRequestHandler
 from ...exceptions import ClientClosedError, StreamProtocolParseError
@@ -126,6 +126,8 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         return self.__listeners is not None and self.__is_up.is_set()
 
     async def wait_for_server_to_be_up(self) -> Literal[True]:
+        if self.__listeners is None:
+            raise RuntimeError("Closed server")
         await self.__is_up.wait()
         return True
 
@@ -254,20 +256,14 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 consumer.feed(data)
                 del data
 
-                while True:
+                async with _contextlib.aclosing(self.__iter_received_packets(consumer, client)) as request_generator:
                     try:
-                        try:
-                            request: _RequestT = next(consumer)
-                        except StopIteration:  # Not enough data
-                            break
-                        except StreamProtocolParseError as exc:
-                            logger.debug("Malformed request sent by %s", address)
-                            await request_handler.bad_request(client, exc.with_traceback(None))
-                        else:
+                        async for request in request_generator:
                             logger.debug("Processing request sent by %s", address)
                             await request_handler.handle(request, client)
-                        if client.is_closing():
-                            raise ClientClosedError
+                            await backend.coro_yield()
+                            if client.is_closing():
+                                raise ClientClosedError
                     except ConnectionError:
                         return
                     except OSError as exc:
@@ -275,12 +271,25 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                         return
                     except Exception as exc:
                         await self.__request_error_handling(client, exc, close_client_before=False)
-                    finally:
-                        await backend.coro_yield()
+
+    async def __iter_received_packets(
+        self,
+        consumer: StreamDataConsumer[_RequestT],
+        client: AsyncClientInterface[_ResponseT],
+    ) -> AsyncGenerator[_RequestT, None]:
+        while True:
+            try:
+                for request in consumer:
+                    yield request
+                return
+            except StreamProtocolParseError as exc:
+                logger.debug("Malformed request sent by %s", client.address)
+                await self.__request_handler.bad_request(client, exc.with_traceback(None))
+                await self.__backend.coro_yield()
 
     async def __request_error_handling(
         self,
-        client: AsyncClientInterface[Any],
+        client: AsyncClientInterface[_ResponseT],
         exc: Exception,
         *,
         close_client_before: bool,
@@ -296,7 +305,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         finally:
             del exc
 
-    async def __handle_error(self, client: AsyncClientInterface[Any], exc: Exception) -> None:
+    async def __handle_error(self, client: AsyncClientInterface[_ResponseT], exc: Exception) -> None:
         try:
             if await self.__request_handler.handle_error(client, exc):
                 return

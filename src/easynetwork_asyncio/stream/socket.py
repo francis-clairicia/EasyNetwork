@@ -26,23 +26,38 @@ class StreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
     __slots__ = (
         "__reader",
         "__writer",
+        "__remote_addr",
     )
 
-    def __init__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+    def __init__(
+        self,
+        reader: asyncio.StreamReader,
+        writer: asyncio.StreamWriter,
+        *,
+        remote_address: tuple[Any, ...] | None = None,
+    ) -> None:
         super().__init__()
         self.__reader: asyncio.StreamReader = reader
         self.__writer: asyncio.StreamWriter = writer
 
         socket: asyncio.trsock.TransportSocket | None = writer.get_extra_info("socket")
         assert socket is not None, "Writer transport must be a socket transport"
-        if writer.get_extra_info("peername") is None:
+        if remote_address is None:
+            remote_address = writer.get_extra_info("peername")
+        if remote_address is None:
             import errno
 
             raise _error_from_errno(errno.ENOTCONN)
+        self.__remote_addr: tuple[Any, ...] = tuple(remote_address)
 
     async def aclose(self) -> None:
-        self.__writer.close()
-        await self.__writer.wait_closed()
+        try:
+            self.__writer.close()
+            await self.__writer.wait_closed()
+        except ConnectionError:
+            # It is normal if there was connection errors during operations. But do not propagate this exception,
+            # as we will never reuse this socket
+            pass
 
     async def abort(self) -> None:
         self.__writer.transport.abort()
@@ -54,7 +69,7 @@ class StreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
         return self.__writer.get_extra_info("sockname")
 
     def get_remote_address(self) -> tuple[Any, ...]:
-        return self.__writer.get_extra_info("peername")
+        return self.__remote_addr
 
     async def recv(self, bufsize: int, /) -> bytes:
         if bufsize < 0:
