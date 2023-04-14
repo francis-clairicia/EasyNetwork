@@ -41,8 +41,8 @@ class Task(AbstractTask[_T_co]):
     def done(self) -> bool:
         return self.__t.done()
 
-    def cancel(self) -> None:
-        self.__t.cancel()
+    def cancel(self) -> bool:
+        return self.__t.cancel()
 
     def cancelled(self) -> bool:
         return self.__t.cancelled()

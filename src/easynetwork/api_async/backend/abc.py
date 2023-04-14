@@ -84,7 +84,7 @@ class AbstractTask(Generic[_T_co], metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    def cancel(self) -> None:
+    def cancel(self) -> bool:
         raise NotImplementedError
 
     @abstractmethod

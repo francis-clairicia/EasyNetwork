@@ -82,15 +82,17 @@ class TestTask:
         self,
         task: Task[Any],
         mock_asyncio_task: AsyncMock,
+        mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_asyncio_task.cancel.return_value = None
+        mock_asyncio_task.cancel.return_value = mocker.sentinel.task_cancelled
 
         # Act
-        task.cancel()
+        task_cancelled = task.cancel()
 
         # Assert
         mock_asyncio_task.cancel.assert_called_once_with()
+        assert task_cancelled is mocker.sentinel.task_cancelled
 
     @pytest.mark.asyncio
     async def test____join____await_task(

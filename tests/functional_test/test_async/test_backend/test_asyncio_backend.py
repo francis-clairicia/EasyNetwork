@@ -55,6 +55,12 @@ class TestAsyncioBackend:
         assert await task_42.join() == 42
         assert await task_54.join() == 54
 
+        # Task already done cannot be cancelled
+        assert not task_42.cancel()
+        assert not task_54.cancel()
+        assert await task_42.join() == 42
+        assert await task_54.join() == 54
+
     async def test____create_task_group____task_cancellation(
         self,
         backend: AbstractAsyncBackend,
@@ -70,7 +76,7 @@ class TestAsyncioBackend:
             assert not task_42.done()
             assert not task_54.done()
 
-            task_42.cancel()
+            assert task_42.cancel()
 
         assert task_42.done()
         assert task_54.done()
@@ -79,6 +85,9 @@ class TestAsyncioBackend:
         with pytest.raises(asyncio.CancelledError):
             await task_42.join()
         assert await task_54.join() == 54
+
+        # Tasks cannot be cancelled twice
+        assert not task_42.cancel()
 
     async def test____wait_future____wait_until_done(
         self,
