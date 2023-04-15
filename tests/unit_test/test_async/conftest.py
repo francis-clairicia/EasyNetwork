@@ -20,11 +20,14 @@ if TYPE_CHECKING:
 
 @pytest.fixture
 def mock_backend(mocker: MockerFixture) -> MagicMock:
+    from easynetwork_asyncio.tasks import TaskGroup
+
     from .._utils import AsyncDummyLock
 
     mock_backend = mocker.NonCallableMagicMock(spec=AbstractAsyncBackend)
 
     mock_backend.create_lock = AsyncDummyLock
+    mock_backend.create_task_group = TaskGroup
 
     return mock_backend
 

@@ -21,7 +21,7 @@ _FAMILY_TO_LOCALHOST: dict[int, str] = {
 _SUPPORTED_FAMILIES = tuple(_FAMILY_TO_LOCALHOST)
 
 
-@pytest.fixture(params=_SUPPORTED_FAMILIES)
+@pytest.fixture(params=_SUPPORTED_FAMILIES, ids=lambda f: str(getattr(f, "name", f)))
 def socket_family(request: Any) -> int:
     return request.param
 

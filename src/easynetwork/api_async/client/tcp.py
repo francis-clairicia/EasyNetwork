@@ -10,7 +10,7 @@ __all__ = ["AsyncTCPNetworkClient"]
 
 import errno as _errno
 import socket as _socket
-from typing import Any, Callable, Generic, Iterator, Mapping, Self, TypeVar, final
+from typing import Any, Callable, Generic, Iterator, Mapping, TypedDict, TypeVar, final, overload
 
 from ...exceptions import ClientClosedError, StreamProtocolParseError
 from ...protocol import StreamProtocol
@@ -23,17 +23,25 @@ from ...tools.socket import MAX_STREAM_BUFSIZE, SocketAddress, SocketProxy, new_
 from ...tools.stream import StreamDataConsumer
 from ..backend.abc import AbstractAsyncBackend, AbstractAsyncStreamSocketAdapter, ILock
 from ..backend.factory import AsyncBackendFactory
+from ..backend.tasks import SingleTaskRunner
 from .abc import AbstractAsyncNetworkClient
 
 _ReceivedPacketT = TypeVar("_ReceivedPacketT")
 _SentPacketT = TypeVar("_SentPacketT")
 
 
+class _ClientInfo(TypedDict):
+    proxy: SocketProxy
+    local_address: SocketAddress
+    remote_address: SocketAddress
+
+
 class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPacketT], Generic[_SentPacketT, _ReceivedPacketT]):
     __slots__ = (
         "__socket",
         "__backend",
-        "__socket_proxy",
+        "__socket_connector",
+        "__info",
         "__receive_lock",
         "__send_lock",
         "__producer",
@@ -44,93 +52,116 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         "__max_recv_size",
     )
 
+    @overload
     def __init__(
         self,
-        backend: AbstractAsyncBackend,
-        socket: AbstractAsyncStreamSocketAdapter,
+        address: tuple[str, int],
+        /,
         protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
-        max_recv_size: int | None,
+        *,
+        family: int = ...,
+        local_address: tuple[str, int] | None = ...,
+        happy_eyeballs_delay: float | None = ...,
+        max_recv_size: int | None = ...,
+        backend: str | AbstractAsyncBackend | None = ...,
+        backend_kwargs: Mapping[str, Any] | None = ...,
+    ) -> None:
+        ...
+
+    @overload
+    def __init__(
+        self,
+        socket: _socket.socket,
+        /,
+        protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
+        *,
+        max_recv_size: int | None = ...,
+        backend: str | AbstractAsyncBackend | None = ...,
+        backend_kwargs: Mapping[str, Any] | None = ...,
+    ) -> None:
+        ...
+
+    def __init__(
+        self,
+        __arg: tuple[str, int] | _socket.socket,
+        /,
+        protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
+        *,
+        max_recv_size: int | None = None,
+        backend: str | AbstractAsyncBackend | None = None,
+        backend_kwargs: Mapping[str, Any] | None = None,
+        **kwargs: Any,
     ) -> None:
         super().__init__()
+        backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
         if max_recv_size is None:
             max_recv_size = MAX_STREAM_BUFSIZE
         if not isinstance(max_recv_size, int) or max_recv_size <= 0:
             raise ValueError("'max_recv_size' must be a strictly positive integer")
 
-        self.__socket: AbstractAsyncStreamSocketAdapter | None = socket
+        self.__socket: AbstractAsyncStreamSocketAdapter | None = None
         self.__backend: AbstractAsyncBackend = backend
-        self.__socket_proxy = SocketProxy(socket.socket())
+        self.__info: _ClientInfo | None = None
+
+        self.__socket_connector: SingleTaskRunner[AbstractAsyncStreamSocketAdapter] | None = None
+        match __arg:
+            case _socket.socket() as socket:
+                self.__socket_connector = SingleTaskRunner(backend, backend.wrap_tcp_client_socket, socket, **kwargs)
+            case (host, port):
+                self.__socket_connector = SingleTaskRunner(backend, backend.create_tcp_connection, host, port, **kwargs)
+            case _:  # pragma: no cover
+                raise TypeError("Invalid arguments")
 
         self.__receive_lock: ILock = backend.create_lock()
         self.__send_lock: ILock = backend.create_lock()
-
-        self.__addr: SocketAddress = new_socket_address(socket.get_local_address(), self.__socket_proxy.family)
-        self.__peer: SocketAddress = new_socket_address(socket.get_remote_address(), self.__socket_proxy.family)
         self.__producer: Callable[[_SentPacketT], Iterator[bytes]] = protocol.generate_chunks
         self.__consumer: StreamDataConsumer[_ReceivedPacketT] = StreamDataConsumer(protocol)
         self.__eof_reached: bool = False
         self.__max_recv_size: int = max_recv_size
 
-        try:
-            self.__socket_proxy.setsockopt(_socket.IPPROTO_TCP, _socket.TCP_NODELAY, True)
-        except Exception:  # pragma: no cover
-            pass
-
     def __repr__(self) -> str:
         try:
             socket = self.__socket
         except AttributeError:
-            return f"<{type(self).__name__} closed>"
+            return f"<{type(self).__name__} (partially initialized)>"
         return f"<{type(self).__name__} socket={socket!r}>"
 
-    @classmethod
-    async def connect(
-        cls,
-        address: tuple[str, int],
-        protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
-        *,
-        family: int = 0,
-        local_address: tuple[str, int] | None = None,
-        happy_eyeballs_delay: float | None = None,
-        max_recv_size: int | None = None,
-        backend: str | AbstractAsyncBackend | None = None,
-        backend_kwargs: Mapping[str, Any] | None = None,
-    ) -> Self:
-        backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
+    async def wait_connected(self) -> None:
+        if self.__socket is not None:
+            return
+        if self.__socket_connector is None:
+            raise ClientClosedError("Client is closing, or is already closed")
+        self.__socket = await self.__socket_connector.run()
+        self.__socket_connector = None
+        if self.__info is not None:  # pragma: no cover
+            return
+        socket_proxy = SocketProxy(self.__socket.socket())
+        local_address: SocketAddress = new_socket_address(self.__socket.get_local_address(), socket_proxy.family)
+        remote_address: SocketAddress = new_socket_address(self.__socket.get_remote_address(), socket_proxy.family)
+        self.__info = {
+            "proxy": socket_proxy,
+            "local_address": local_address,
+            "remote_address": remote_address,
+        }
+        try:
+            socket_proxy.setsockopt(_socket.IPPROTO_TCP, _socket.TCP_NODELAY, True)
+        except Exception:  # pragma: no cover
+            pass
 
-        host, port = address
-        socket_adapter = await backend.create_tcp_connection(
-            host,
-            port,
-            family=family,
-            happy_eyeballs_delay=happy_eyeballs_delay,
-            local_address=local_address,
-        )
-
-        return cls(backend, socket_adapter, protocol, max_recv_size)
-
-    @classmethod
-    async def from_socket(
-        cls,
-        socket: _socket.socket,
-        protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
-        *,
-        max_recv_size: int | None = None,
-        backend: str | AbstractAsyncBackend | None = None,
-        backend_kwargs: Mapping[str, Any] | None = None,
-    ) -> Self:
-        backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
-
-        socket_adapter = await backend.wrap_tcp_client_socket(socket)
-
-        return cls(backend, socket_adapter, protocol, max_recv_size)
+    def is_connected(self) -> bool:
+        return self.__socket is not None
 
     @final
     def is_closing(self) -> bool:
+        if self.__socket_connector is not None:
+            return False
         socket = self.__socket
         return socket is None or socket.is_closing()
 
     async def aclose(self) -> None:
+        if self.__socket_connector is not None:
+            self.__socket_connector.cancel()
+            self.__socket_connector = None
         async with self.__send_lock:
             socket = self.__socket
             if socket is None:
@@ -145,15 +176,18 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
                 await self.abort()
 
     async def abort(self) -> None:
+        if self.__socket_connector is not None:
+            self.__socket_connector.cancel()
+            self.__socket_connector = None
         socket, self.__socket = self.__socket, None
         if socket is not None:
             await socket.abort()
 
     async def send_packet(self, packet: _SentPacketT) -> None:
         async with self.__send_lock:
-            socket = self.__ensure_connected()
+            socket = await self.__ensure_connected()
             await socket.sendall(_concatenate_chunks(self.__producer(packet)))
-            _check_real_socket_state(self.__socket_proxy)
+            _check_real_socket_state(self.socket)
 
     async def recv_packet(self) -> _ReceivedPacketT:
         async with self.__receive_lock:
@@ -163,7 +197,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
                 return next_packet(consumer)  # If there is enough data from last call to create a packet, return immediately
             except StopIteration:
                 pass
-            socket = self.__ensure_connected()
+            socket = await self.__ensure_connected()
             bufsize: int = self.__max_recv_size
             backend = self.__backend
             while True:
@@ -190,32 +224,37 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
             raise RuntimeError(str(exc)) from exc
 
     def get_local_address(self) -> SocketAddress:
-        return self.__addr
+        if self.__info is None:
+            raise _error_from_errno(_errno.ENOTCONN)
+        return self.__info["local_address"]
 
     def get_remote_address(self) -> SocketAddress:
-        return self.__peer
+        if self.__info is None:
+            raise _error_from_errno(_errno.ENOTCONN)
+        return self.__info["remote_address"]
 
     def fileno(self) -> int:
         socket = self.__socket
         if socket is None or socket.is_closing():
             return -1
-        return self.__socket_proxy.fileno()
+        return socket.socket().fileno()
 
     def get_backend(self) -> AbstractAsyncBackend:
         return self.__backend
 
-    def __ensure_connected(self) -> AbstractAsyncStreamSocketAdapter:
-        socket = self.__socket
-        if socket is None:
-            raise ClientClosedError("Client is closing, or is already closed")
-        if socket.is_closing() or self.__eof_reached:
+    async def __ensure_connected(self) -> AbstractAsyncStreamSocketAdapter:
+        await self.wait_connected()
+        assert self.__socket is not None
+        if self.__socket.is_closing() or self.__eof_reached:
             raise _error_from_errno(_errno.ECONNABORTED)
-        return socket
+        return self.__socket
 
     @property
     @final
     def socket(self) -> SocketProxy:
-        return self.__socket_proxy
+        if self.__info is None:
+            raise _error_from_errno(_errno.ENOTCONN)
+        return self.__info["proxy"]
 
     @property
     @final

@@ -263,9 +263,9 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         host: str,
         port: int,
         *,
-        family: int,
-        local_address: tuple[str, int] | None,
-        happy_eyeballs_delay: float | None,
+        family: int = ...,
+        local_address: tuple[str, int] | None = ...,
+        happy_eyeballs_delay: float | None = ...,
     ) -> AbstractAsyncStreamSocketAdapter:
         raise NotImplementedError
 
@@ -279,9 +279,9 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         host: str | Sequence[str] | None,
         port: int,
         *,
-        family: int,
-        backlog: int,
-        reuse_port: bool,
+        family: int = ...,
+        backlog: int = ...,
+        reuse_port: bool = ...,
     ) -> Sequence[AbstractAsyncListenerSocketAdapter]:
         raise NotImplementedError
 
@@ -289,10 +289,10 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
     async def create_udp_endpoint(
         self,
         *,
-        family: int,
-        local_address: tuple[str | None, int] | None,
-        remote_address: tuple[str, int] | None,
-        reuse_port: bool,
+        family: int = ...,
+        local_address: tuple[str | None, int] | None = ...,
+        remote_address: tuple[str, int] | None = ...,
+        reuse_port: bool = ...,
     ) -> AbstractAsyncDatagramSocketAdapter:
         raise NotImplementedError
 

@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from socket import AF_INET, IPPROTO_TCP, SHUT_WR, TCP_NODELAY, socket as Socket
 from typing import AsyncIterator
 
 from easynetwork.api_async.client.tcp import AsyncTCPNetworkClient
 from easynetwork.exceptions import ClientClosedError, StreamProtocolParseError
 from easynetwork.protocol import StreamProtocol
-from easynetwork.tools.socket import IPv4SocketAddress, IPv6SocketAddress
+from easynetwork.tools.socket import IPv4SocketAddress, IPv6SocketAddress, SocketProxy
 
 import pytest
 import pytest_asyncio
@@ -30,10 +31,11 @@ class TestAsyncTCPNetworkClient:
         socket_pair: tuple[Socket, Socket],
         stream_protocol: StreamProtocol[str, str],
     ) -> AsyncIterator[AsyncTCPNetworkClient[str, str]]:
-        async with await AsyncTCPNetworkClient.from_socket(socket_pair[1], stream_protocol) as client:
+        async with AsyncTCPNetworkClient(socket_pair[1], stream_protocol) as client:
+            assert client.is_connected()
             yield client
 
-    async def test____aclose____double_close(self, client: AsyncTCPNetworkClient[str, str]) -> None:
+    async def test____aclose____idempotent(self, client: AsyncTCPNetworkClient[str, str]) -> None:
         assert not client.is_closing()
         await client.aclose()
         assert client.is_closing()
@@ -44,7 +46,7 @@ class TestAsyncTCPNetworkClient:
         await client.send_packet("ABCDEF")
         assert await asyncio.to_thread(server.recv, 1024) == b"ABCDEF\n"
 
-    @pytest.mark.platform_linux  # Windows and macOs raise ConnectionAbortedError but in the 2nd send() call
+    @pytest.mark.platform_linux  # Windows and MacOS raise ConnectionAbortedError but in the 2nd send() call
     async def test____send_packet____connection_error____fresh_connection_closed_by_server(
         self,
         client: AsyncTCPNetworkClient[str, str],
@@ -54,7 +56,7 @@ class TestAsyncTCPNetworkClient:
         with pytest.raises(ConnectionError):
             await client.send_packet("ABCDEF")
 
-    @pytest.mark.platform_linux  # Windows and macOs raise ConnectionAbortedError but in the 2nd send() call
+    @pytest.mark.platform_linux  # Windows and MacOS raise ConnectionAbortedError but in the 2nd send() call
     async def test____send_packet____connection_error____after_previous_successful_try(
         self,
         client: AsyncTCPNetworkClient[str, str],
@@ -190,11 +192,13 @@ class TestAsyncTCPNetworkClientConnection:
     @staticmethod
     async def server(localhost: str, socket_family: int) -> AsyncIterator[asyncio.Server]:
         async def client_connected_cb(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-            data: bytes = await reader.readline()
-            writer.write(data)
-            await writer.drain()
-            writer.close()
-            await writer.wait_closed()
+            try:
+                data: bytes = await reader.readline()
+                writer.write(data)
+                await writer.drain()
+            finally:
+                writer.close()
+                await writer.wait_closed()
 
         async with await asyncio.start_server(client_connected_cb, host=localhost, port=0, family=socket_family) as server:
             yield server
@@ -204,15 +208,141 @@ class TestAsyncTCPNetworkClientConnection:
     def remote_address(server: asyncio.Server) -> tuple[str, int]:
         return server.sockets[0].getsockname()[:2]
 
-    async def test____connect____connect_to_server(
+    async def test____dunder_init____connect_to_server(
+        self,
+        remote_address: tuple[str, int],
+        stream_protocol: StreamProtocol[str, str],
+    ) -> None:
+        async with AsyncTCPNetworkClient(remote_address, stream_protocol) as client:
+            assert client.is_connected()
+            await client.send_packet("Test")
+            assert await client.recv_packet() == "Test"
+
+    async def test____dunder_init____with_local_address(
         self,
         localhost: str,
         remote_address: tuple[str, int],
         stream_protocol: StreamProtocol[str, str],
     ) -> None:
-        # Arrange
-
-        # Act & Assert
-        async with await AsyncTCPNetworkClient.connect(remote_address, stream_protocol, local_address=(localhost, 0)) as client:
+        async with AsyncTCPNetworkClient(remote_address, stream_protocol, local_address=(localhost, 0)) as client:
             await client.send_packet("Test")
             assert await client.recv_packet() == "Test"
+
+    async def test____wait_connected____idempotent(
+        self,
+        remote_address: tuple[str, int],
+        stream_protocol: StreamProtocol[str, str],
+    ) -> None:
+        async with AsyncTCPNetworkClient(remote_address, stream_protocol) as client:
+            await client.wait_connected()
+            assert client.is_connected()
+            await client.wait_connected()
+            assert client.is_connected()
+
+    async def test____wait_connected____simultaneous(
+        self,
+        remote_address: tuple[str, int],
+        stream_protocol: StreamProtocol[str, str],
+    ) -> None:
+        async with AsyncTCPNetworkClient(remote_address, stream_protocol) as client:
+            async with asyncio.TaskGroup() as task_group:
+                task_group.create_task(client.wait_connected())
+                task_group.create_task(client.wait_connected())
+                await asyncio.sleep(0)
+            assert client.is_connected()
+
+    async def test____wait_connected____is_closing____connection_not_performed_yet(
+        self,
+        remote_address: tuple[str, int],
+        stream_protocol: StreamProtocol[str, str],
+    ) -> None:
+        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol)) as client:
+            assert not client.is_connected()
+            assert not client.is_closing()
+            await client.wait_connected()
+            assert client.is_connected()
+            assert not client.is_closing()
+
+    async def test____wait_connected____close_before_trying_to_connect(
+        self,
+        remote_address: tuple[str, int],
+        stream_protocol: StreamProtocol[str, str],
+    ) -> None:
+        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol)) as client:
+            await client.aclose()
+            with pytest.raises(ClientClosedError):
+                await client.wait_connected()
+
+    async def test____wait_connected____abort_before_trying_to_connect(
+        self,
+        remote_address: tuple[str, int],
+        stream_protocol: StreamProtocol[str, str],
+    ) -> None:
+        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol)) as client:
+            await client.abort()
+            with pytest.raises(ClientClosedError):
+                await client.wait_connected()
+
+    async def test____socket_property____connection_not_performed_yet(
+        self,
+        remote_address: tuple[str, int],
+        stream_protocol: StreamProtocol[str, str],
+    ) -> None:
+        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol)) as client:
+            with pytest.raises(OSError):
+                _ = client.socket
+
+            await client.wait_connected()
+
+            assert isinstance(client.socket, SocketProxy)
+
+    async def test____get_local_address____connection_not_performed_yet(
+        self,
+        remote_address: tuple[str, int],
+        stream_protocol: StreamProtocol[str, str],
+    ) -> None:
+        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol)) as client:
+            with pytest.raises(OSError):
+                _ = client.get_local_address()
+
+            await client.wait_connected()
+
+            assert client.get_local_address()
+
+    async def test____get_remote_address____connection_not_performed_yet(
+        self,
+        remote_address: tuple[str, int],
+        stream_protocol: StreamProtocol[str, str],
+    ) -> None:
+        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol)) as client:
+            with pytest.raises(OSError):
+                _ = client.get_remote_address()
+
+            await client.wait_connected()
+
+            assert client.get_remote_address()[:2] == remote_address
+
+    async def test____fileno____connection_not_performed_yet(
+        self,
+        remote_address: tuple[str, int],
+        stream_protocol: StreamProtocol[str, str],
+    ) -> None:
+        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol)) as client:
+            assert client.fileno() == -1
+
+            await client.wait_connected()
+
+            assert client.fileno() > -1
+
+    async def test____send_packet____recv_packet____implicit_connection(
+        self,
+        remote_address: tuple[str, int],
+        stream_protocol: StreamProtocol[str, str],
+    ) -> None:
+        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol)) as client:
+            assert not client.is_connected()
+
+            await client.send_packet("Connected")
+            assert await client.recv_packet() == "Connected"
+
+            assert client.is_connected()

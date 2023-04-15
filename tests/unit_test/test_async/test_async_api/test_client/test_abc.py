@@ -19,8 +19,15 @@ if TYPE_CHECKING:
 class MockAsyncClient(AbstractAsyncNetworkClient[Any, Any]):
     def __init__(self, mocker: MockerFixture) -> None:
         super().__init__()
+        self.mock_wait_connected = mocker.AsyncMock(return_value=None)
         self.mock_close = mocker.AsyncMock(return_value=None)
         self.mock_recv_packet = mocker.AsyncMock()
+
+    def is_connected(self) -> bool:
+        return True
+
+    async def wait_connected(self) -> None:
+        return await self.mock_wait_connected()
 
     def is_closing(self) -> bool:
         return False
@@ -62,9 +69,11 @@ class TestAbstractAsyncNetworkClient:
 
         # Act
         async with client:
+            client.mock_wait_connected.assert_awaited_once_with()
             client.mock_close.assert_not_awaited()
 
         # Assert
+        client.mock_wait_connected.assert_awaited_once_with()
         client.mock_close.assert_awaited_once_with()
 
     @pytest.mark.parametrize("error", [OSError])

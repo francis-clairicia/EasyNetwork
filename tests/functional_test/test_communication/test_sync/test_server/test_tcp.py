@@ -106,7 +106,7 @@ class TestTCPNetworkServer(BaseTestServer):
 
         return factory
 
-    def test____server_close____double_close(self, server: MyTCPServer) -> None:
+    def test____server_close____idempotent(self, server: MyTCPServer) -> None:
         assert not server.is_closed()
         server.server_close()
         assert server.is_closed()
@@ -171,7 +171,7 @@ class TestTCPNetworkServer(BaseTestServer):
 
         tcp_nodelay_state: int = connected_client.socket.getsockopt(IPPROTO_TCP, TCP_NODELAY)
 
-        # Do not test with '== 1', on macOS it will return 4
+        # Do not test with '== 1', on MacOS it will return 4
         # (c.f. https://stackoverflow.com/a/31835137)
         assert tcp_nodelay_state != 0
 

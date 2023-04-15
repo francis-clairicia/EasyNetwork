@@ -96,7 +96,7 @@ class TestUDPNetworkServer(BaseTestServer):
 
         return factory
 
-    def test____server_close____double_close(self, server: MyUDPServer) -> None:
+    def test____server_close____idempotent(self, server: MyUDPServer) -> None:
         assert not server.is_closed()
         server.server_close()
         assert server.is_closed()

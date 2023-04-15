@@ -9,7 +9,8 @@ from __future__ import annotations
 __all__ = ["AsyncUDPNetworkClient", "AsyncUDPNetworkEndpoint"]
 
 import errno as _errno
-from typing import TYPE_CHECKING, Any, AsyncIterator, Generic, Mapping, Self, TypeVar, final
+import socket as _socket
+from typing import TYPE_CHECKING, Any, AsyncIterator, Generic, Mapping, Self, TypedDict, TypeVar, final, overload
 
 from ...exceptions import ClientClosedError, DatagramProtocolParseError
 from ...protocol import DatagramProtocol
@@ -17,63 +18,98 @@ from ...tools._utils import check_real_socket_state as _check_real_socket_state,
 from ...tools.socket import SocketAddress, SocketProxy, new_socket_address
 from ..backend.abc import AbstractAsyncBackend, AbstractAsyncDatagramSocketAdapter, ILock
 from ..backend.factory import AsyncBackendFactory
+from ..backend.tasks import SingleTaskRunner
 from .abc import AbstractAsyncNetworkClient
 
 if TYPE_CHECKING:
-    import socket as _socket
     from types import TracebackType
 
 _ReceivedPacketT = TypeVar("_ReceivedPacketT")
 _SentPacketT = TypeVar("_SentPacketT")
 
 
+class _EndpointInfo(TypedDict):
+    proxy: SocketProxy
+    local_address: SocketAddress
+    remote_address: SocketAddress | None
+
+
 class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
     __slots__ = (
         "__socket",
         "__backend",
-        "__socket_proxy",
+        "__socket_builder",
+        "__info",
         "__receive_lock",
         "__send_lock",
         "__protocol",
-        "__addr",
-        "__peer",
         "__weakref__",
     )
 
+    @overload
     def __init__(
         self,
-        backend: AbstractAsyncBackend,
-        socket: AbstractAsyncDatagramSocketAdapter,
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
+        *,
+        family: int = ...,
+        local_address: tuple[str | None, int] | None = ...,
+        remote_address: tuple[str, int] | None = ...,
+        reuse_port: bool = ...,
+        backend: str | AbstractAsyncBackend | None = ...,
+        backend_kwargs: Mapping[str, Any] | None = ...,
+    ) -> None:
+        ...
+
+    @overload
+    def __init__(
+        self,
+        protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
+        *,
+        socket: _socket.socket,
+        backend: str | AbstractAsyncBackend | None = ...,
+        backend_kwargs: Mapping[str, Any] | None = ...,
+    ) -> None:
+        ...
+
+    def __init__(
+        self,
+        protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
+        *,
+        backend: str | AbstractAsyncBackend | None = None,
+        backend_kwargs: Mapping[str, Any] | None = None,
+        **kwargs: Any,
     ) -> None:
         super().__init__()
+        backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
 
-        self.__socket: AbstractAsyncDatagramSocketAdapter | None = socket
+        self.__socket: AbstractAsyncDatagramSocketAdapter | None = None
         self.__backend: AbstractAsyncBackend = backend
-        self.__socket_proxy = SocketProxy(socket.socket())
+        self.__info: _EndpointInfo | None = None
+
+        self.__socket_builder: SingleTaskRunner[AbstractAsyncDatagramSocketAdapter] | None = None
+        match kwargs:
+            case {"socket": _socket.socket() as socket, **kwargs}:
+                if socket.getsockname()[1] == 0:
+                    socket.bind(("", 0))
+                self.__socket_builder = SingleTaskRunner(backend, backend.wrap_udp_socket, socket, **kwargs)
+            case _:
+                if kwargs.get("local_address") is None:
+                    kwargs["local_address"] = (None, 0)
+                self.__socket_builder = SingleTaskRunner(backend, backend.create_udp_endpoint, **kwargs)
 
         self.__receive_lock: ILock = backend.create_lock()
         self.__send_lock: ILock = backend.create_lock()
-
-        self.__addr: SocketAddress = new_socket_address(socket.get_local_address(), self.__socket_proxy.family)
-        self.__peer: SocketAddress | None = (
-            new_socket_address(peername, self.__socket_proxy.family)
-            if (peername := socket.get_remote_address()) is not None
-            else None
-        )
         self.__protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT] = protocol
-
-        if self.__addr.port == 0:
-            raise OSError(f"{socket} is not bound to a local address")
 
     def __repr__(self) -> str:
         try:
             socket = self.__socket
         except AttributeError:
-            return f"<{type(self).__name__} closed>"
+            return f"<{type(self).__name__} (partially initialized)>"
         return f"<{type(self).__name__} socket={socket!r}>"
 
     async def __aenter__(self) -> Self:
+        await self.wait_bound()
         return self
 
     async def __aexit__(
@@ -87,54 +123,43 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
     def __getstate__(self) -> Any:  # pragma: no cover
         raise TypeError(f"cannot pickle {self.__class__.__name__!r} object")
 
-    @classmethod
-    async def create(
-        cls,
-        protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
-        *,
-        family: int = 0,
-        local_address: tuple[str | None, int] | None = None,
-        remote_address: tuple[str, int] | None = None,
-        backend: str | AbstractAsyncBackend | None = None,
-        backend_kwargs: Mapping[str, Any] | None = None,
-    ) -> Self:
-        backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
+    def is_bound(self) -> bool:
+        return self.__socket is not None
 
-        if local_address is None:
-            local_address = (None, 0)
-
-        socket_adapter = await backend.create_udp_endpoint(
-            family=family,
-            local_address=local_address,
-            remote_address=remote_address,
-            reuse_port=False,
-        )
-
-        return cls(backend, socket_adapter, protocol)
-
-    @classmethod
-    async def from_socket(
-        cls,
-        socket: _socket.socket,
-        protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
-        *,
-        backend: str | AbstractAsyncBackend | None = None,
-        backend_kwargs: Mapping[str, Any] | None = None,
-    ) -> Self:
-        backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
-
-        if socket.getsockname()[1] == 0:
-            socket.bind(("", 0))
-        socket_adapter = await backend.wrap_udp_socket(socket)
-
-        return cls(backend, socket_adapter, protocol)
+    async def wait_bound(self) -> None:
+        if self.__socket is not None:
+            return
+        if self.__socket_builder is None:
+            raise ClientClosedError("Client is closing, or is already closed")
+        self.__socket = await self.__socket_builder.run()
+        self.__socket_builder = None
+        if self.__info is not None:  # pragma: no cover
+            return
+        socket_proxy = SocketProxy(self.__socket.socket())
+        local_address: SocketAddress = new_socket_address(self.__socket.get_local_address(), socket_proxy.family)
+        assert local_address.port > 0, f"{self.__socket} is not bound to a local address"
+        remote_address: SocketAddress | None
+        if (peername := self.__socket.get_remote_address()) is not None:
+            remote_address = new_socket_address(peername, socket_proxy.family)
+        else:
+            remote_address = None
+        self.__info = {
+            "proxy": socket_proxy,
+            "local_address": local_address,
+            "remote_address": remote_address,
+        }
 
     @final
     def is_closing(self) -> bool:
+        if self.__socket_builder is not None:
+            return False
         socket = self.__socket
         return socket is None or socket.is_closing()
 
     async def aclose(self) -> None:
+        if self.__socket_builder is not None:
+            self.__socket_builder.cancel()
+            self.__socket_builder = None
         async with self.__send_lock:
             socket = self.__socket
             if socket is None:
@@ -149,6 +174,9 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
                 await self.abort()
 
     async def abort(self) -> None:
+        if self.__socket_builder is not None:
+            self.__socket_builder.cancel()
+            self.__socket_builder = None
         socket, self.__socket = self.__socket, None
         if socket is not None:
             await socket.abort()
@@ -159,24 +187,25 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         address: tuple[str, int] | tuple[str, int, int, int] | None,
     ) -> None:
         async with self.__send_lock:
-            socket = self.__ensure_opened()
-            if (remote_addr := self.__peer) is not None:
+            socket = await self.__ensure_opened()
+            assert self.__info is not None
+            if (remote_addr := self.__info["remote_address"]) is not None:
                 if address is not None:
-                    if new_socket_address(address, self.__socket_proxy.family) != remote_addr:
+                    if new_socket_address(address, self.socket.family) != remote_addr:
                         raise ValueError(f"Invalid address: must be None or {remote_addr}")
                     address = None
             elif address is None:
                 raise ValueError("Invalid address: must not be None")
             data: bytes = self.__protocol.make_datagram(packet)
             await socket.sendto(data, address)
-            _check_real_socket_state(self.__socket_proxy)
+            _check_real_socket_state(self.socket)
 
     async def recv_packet_from(self) -> tuple[_ReceivedPacketT, SocketAddress]:
         async with self.__receive_lock:
-            socket = self.__ensure_opened()
+            socket = await self.__ensure_opened()
             data, sender = await socket.recvfrom()
             try:
-                return self.__protocol.build_packet_from_datagram(data), new_socket_address(sender, self.__socket_proxy.family)
+                return self.__protocol.build_packet_from_datagram(data), new_socket_address(sender, self.socket.family)
             except DatagramProtocolParseError:
                 raise
             except Exception as exc:  # pragma: no cover
@@ -195,51 +224,92 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             yield packet_tuple
 
     def get_local_address(self) -> SocketAddress:
-        return self.__addr
+        if self.__info is None:
+            raise _error_from_errno(_errno.ENOTCONN)
+        return self.__info["local_address"]
 
     def get_remote_address(self) -> SocketAddress | None:
-        return self.__peer
+        if self.__info is None:
+            raise _error_from_errno(_errno.ENOTCONN)
+        return self.__info["remote_address"]
 
     def fileno(self) -> int:
         socket = self.__socket
         if socket is None or socket.is_closing():
             return -1
-        return self.__socket_proxy.fileno()
+        return socket.socket().fileno()
 
     def get_backend(self) -> AbstractAsyncBackend:
         return self.__backend
 
-    def __ensure_opened(self) -> AbstractAsyncDatagramSocketAdapter:
-        socket = self.__socket
-        if socket is None:
-            raise ClientClosedError("Client is closing, or is already closed")
-        if socket.is_closing():
+    async def __ensure_opened(self) -> AbstractAsyncDatagramSocketAdapter:
+        await self.wait_bound()
+        assert self.__socket is not None
+        if self.__socket.is_closing():
             raise _error_from_errno(_errno.ECONNABORTED)
-        return socket
+        return self.__socket
 
     @property
     @final
     def socket(self) -> SocketProxy:
-        return self.__socket_proxy
+        if self.__info is None:
+            raise _error_from_errno(_errno.ENOTCONN)
+        return self.__info["proxy"]
 
 
 class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPacketT], Generic[_SentPacketT, _ReceivedPacketT]):
-    __slots__ = ("__endpoint", "__peer")
+    __slots__ = ("__endpoint",)
+
+    @overload
+    def __init__(
+        self,
+        address: tuple[str, int],
+        /,
+        protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
+        *,
+        family: int = ...,
+        local_address: tuple[str, int] | None = ...,
+        reuse_port: bool = ...,
+        backend: str | AbstractAsyncBackend | None = ...,
+        backend_kwargs: Mapping[str, Any] | None = ...,
+    ) -> None:
+        ...
+
+    @overload
+    def __init__(
+        self,
+        socket: _socket.socket,
+        /,
+        protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
+        *,
+        backend: str | AbstractAsyncBackend | None = ...,
+        backend_kwargs: Mapping[str, Any] | None = ...,
+    ) -> None:
+        ...
 
     def __init__(
         self,
-        backend: AbstractAsyncBackend,
-        socket: AbstractAsyncDatagramSocketAdapter,
+        __arg: tuple[str, int] | _socket.socket,
+        /,
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
+        **kwargs: Any,
     ) -> None:
         super().__init__()
 
-        endpoint: AsyncUDPNetworkEndpoint[_SentPacketT, _ReceivedPacketT] = AsyncUDPNetworkEndpoint(backend, socket, protocol)
+        endpoint: AsyncUDPNetworkEndpoint[_SentPacketT, _ReceivedPacketT]
+        match __arg:
+            case _socket.socket() as socket:
+                try:
+                    socket.getpeername()
+                except OSError as exc:
+                    raise OSError("No remote address configured") from exc
+                endpoint = AsyncUDPNetworkEndpoint(protocol=protocol, socket=socket, **kwargs)
+            case (host, port):
+                endpoint = AsyncUDPNetworkEndpoint(protocol=protocol, remote_address=(host, port), **kwargs)
+            case _:  # pragma: no cover
+                raise TypeError("Invalid arguments")
+
         self.__endpoint: AsyncUDPNetworkEndpoint[_SentPacketT, _ReceivedPacketT] = endpoint
-        remote_address = endpoint.get_remote_address()
-        if remote_address is None:
-            raise OSError("No remote address configured")
-        self.__peer: SocketAddress = remote_address
 
     def __repr__(self) -> str:
         try:
@@ -247,47 +317,12 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         except AttributeError:
             return f"<{type(self).__name__} (partially initialized)>"
 
-    @classmethod
-    async def create(
-        cls,
-        remote_address: tuple[str, int],
-        protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
-        *,
-        family: int = 0,
-        local_address: tuple[str | None, int] | None = None,
-        backend: str | AbstractAsyncBackend | None = None,
-        backend_kwargs: Mapping[str, Any] | None = None,
-    ) -> Self:
-        backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
+    def is_connected(self) -> bool:
+        return self.__endpoint.is_bound() and self.__endpoint.get_remote_address() is not None
 
-        if local_address is None:
-            local_address = (None, 0)
-
-        remote_host, remote_port = remote_address
-        socket_adapter = await backend.create_udp_endpoint(
-            family=family,
-            local_address=local_address,
-            remote_address=(remote_host, remote_port),
-            reuse_port=False,
-        )
-        return cls(backend, socket_adapter, protocol)
-
-    @classmethod
-    async def from_socket(
-        cls,
-        socket: _socket.socket,
-        protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
-        *,
-        backend: str | AbstractAsyncBackend | None = None,
-        backend_kwargs: Mapping[str, Any] | None = None,
-    ) -> Self:
-        backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
-
-        if socket.getsockname()[1] == 0:
-            socket.bind(("", 0))
-        socket_adapter = await backend.wrap_udp_socket(socket)
-
-        return cls(backend, socket_adapter, protocol)
+    async def wait_connected(self) -> None:
+        await self.__endpoint.wait_bound()
+        assert self.__endpoint.get_remote_address() is not None, "No remote address configured"
 
     @final
     def is_closing(self) -> bool:
@@ -314,7 +349,9 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         return self.__endpoint.get_local_address()
 
     def get_remote_address(self) -> SocketAddress:
-        return self.__peer
+        remote_address: SocketAddress | None = self.__endpoint.get_remote_address()
+        assert remote_address is not None, "No remote address configured"
+        return remote_address
 
     def fileno(self) -> int:
         return self.__endpoint.fileno()

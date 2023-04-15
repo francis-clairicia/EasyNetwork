@@ -43,7 +43,7 @@ class TestUDPNetworkClient:
         with UDPNetworkClient(address, datagram_protocol, family=socket_family, local_address=(localhost, 0)) as client:
             yield client
 
-    def test____close____double_close(self, client: UDPNetworkClient[str, str]) -> None:
+    def test____close____idempotent(self, client: UDPNetworkClient[str, str]) -> None:
         assert not client.is_closed()
         client.close()
         assert client.is_closed()
@@ -54,13 +54,13 @@ class TestUDPNetworkClient:
         client.send_packet("ABCDEF")
         assert server.recvfrom(1024) == (b"ABCDEF", client.get_local_address())
 
-    @pytest.mark.platform_linux  # Windows and macOS do not raise error
+    @pytest.mark.platform_linux  # Windows and MacOS do not raise error
     def test____send_packet____connection_refused(self, client: UDPNetworkClient[str, str], server: Socket) -> None:
         server.close()
         with pytest.raises(ConnectionRefusedError):
             client.send_packet("ABCDEF")
 
-    @pytest.mark.platform_linux  # Windows and macOS do not raise error
+    @pytest.mark.platform_linux  # Windows and MacOS do not raise error
     def test____send_packet____connection_refused____after_previous_successful_try(
         self,
         client: UDPNetworkClient[str, str],
@@ -178,7 +178,7 @@ class TestUDPNetworkEndpoint:
         ) as client:
             yield client
 
-    def test____close____double_close(self, client: UDPNetworkEndpoint[str, str]) -> None:
+    def test____close____idempotent(self, client: UDPNetworkEndpoint[str, str]) -> None:
         assert not client.is_closed()
         client.close()
         assert client.is_closed()
@@ -240,7 +240,7 @@ class TestUDPNetworkEndpoint:
             with pytest.raises(ValueError):
                 client.send_packet_to("ABCDEF", other_client_address)
 
-    @pytest.mark.platform_linux  # Windows and macOS do not raise error
+    @pytest.mark.platform_linux  # Windows and MacOS do not raise error
     @pytest.mark.parametrize("client", ["WITH_REMOTE"], indirect=True)
     def test____send_packet_to____connection_refused(self, client: UDPNetworkEndpoint[str, str], server: Socket) -> None:
         address = server.getsockname()
@@ -248,7 +248,7 @@ class TestUDPNetworkEndpoint:
         with pytest.raises(ConnectionRefusedError):
             client.send_packet_to("ABCDEF", address)
 
-    @pytest.mark.platform_linux  # Windows and macOS do not raise error
+    @pytest.mark.platform_linux  # Windows and MacOS do not raise error
     @pytest.mark.parametrize("client", ["WITH_REMOTE"], indirect=True)
     def test____send_packet____connection_refused____after_previous_successful_try(
         self,

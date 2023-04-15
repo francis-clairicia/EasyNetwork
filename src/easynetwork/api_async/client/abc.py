@@ -26,6 +26,7 @@ class AbstractAsyncNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metacl
     __slots__ = ("__weakref__",)
 
     async def __aenter__(self) -> Self:
+        await self.wait_connected()
         return self
 
     async def __aexit__(
@@ -38,6 +39,14 @@ class AbstractAsyncNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metacl
 
     def __getstate__(self) -> Any:  # pragma: no cover
         raise TypeError(f"cannot pickle {self.__class__.__name__!r} object")
+
+    @abstractmethod
+    def is_connected(self) -> bool:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def wait_connected(self) -> None:
+        raise NotImplementedError
 
     @abstractmethod
     def is_closing(self) -> bool:

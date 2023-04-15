@@ -35,7 +35,7 @@ class TestTCPNetworkClient:
             client.socket.setsockopt(IPPROTO_TCP, TCP_NODELAY, 1)
             yield client
 
-    def test____close____double_close(self, client: TCPNetworkClient[str, str]) -> None:
+    def test____close____idempotent(self, client: TCPNetworkClient[str, str]) -> None:
         assert not client.is_closed()
         client.close()
         assert client.is_closed()
@@ -46,7 +46,7 @@ class TestTCPNetworkClient:
         client.send_packet("ABCDEF")
         assert server.recv(1024) == b"ABCDEF\n"
 
-    @pytest.mark.platform_linux  # Windows and macOs raise ConnectionAbortedError but in the 2nd send() call
+    @pytest.mark.platform_linux  # Windows and MacOS raise ConnectionAbortedError but in the 2nd send() call
     def test____send_packet____connection_error____fresh_connection_closed_by_server(
         self,
         client: TCPNetworkClient[str, str],
@@ -56,7 +56,7 @@ class TestTCPNetworkClient:
         with pytest.raises(ConnectionError):
             client.send_packet("ABCDEF")
 
-    @pytest.mark.platform_linux  # Windows and macOs raise ConnectionAbortedError but in the 2nd send() call
+    @pytest.mark.platform_linux  # Windows and MacOS raise ConnectionAbortedError but in the 2nd send() call
     def test____send_packet____connection_error____after_previous_successful_try(
         self,
         client: TCPNetworkClient[str, str],

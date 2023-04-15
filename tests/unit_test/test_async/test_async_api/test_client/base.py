@@ -28,3 +28,13 @@ class BaseTestClient:
         method_name: str = "getpeername",
     ) -> None:
         getattr(mock_socket, method_name).return_value = new_socket_address(address, socket_family)
+
+    @staticmethod
+    def configure_socket_mock_to_raise_ENOTCONN(mock_socket: MagicMock) -> OSError:
+        import errno
+        import os
+
+        ## Exception raised by socket.getpeername() if socket.connect() was not called before
+        enotconn_exception = OSError(errno.ENOTCONN, os.strerror(errno.ENOTCONN))
+        mock_socket.getpeername.side_effect = enotconn_exception
+        return enotconn_exception
