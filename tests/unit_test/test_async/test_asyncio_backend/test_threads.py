@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, Any
 
-from easynetwork_asyncio.threads import AsyncioThreadsPortal
+from easynetwork_asyncio.threads import ThreadsPortal
 
 import pytest
 import pytest_asyncio
@@ -20,13 +20,13 @@ if TYPE_CHECKING:
 class TestAsyncioThreadsPortal:
     @pytest_asyncio.fixture
     @staticmethod
-    async def threads_portal() -> AsyncioThreadsPortal:
-        return AsyncioThreadsPortal()
+    async def threads_portal() -> ThreadsPortal:
+        return ThreadsPortal()
 
     async def test____run_coroutine____use_asyncio_run_coroutine_threadsafe(
         self,
         event_loop: asyncio.AbstractEventLoop,
-        threads_portal: AsyncioThreadsPortal,
+        threads_portal: ThreadsPortal,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -64,7 +64,7 @@ class TestAsyncioThreadsPortal:
 
     async def test____run_coroutine_from_thread____error_if_called_from_event_loop_thread(
         self,
-        threads_portal: AsyncioThreadsPortal,
+        threads_portal: ThreadsPortal,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -88,7 +88,7 @@ class TestAsyncioThreadsPortal:
     async def test____run_sync____use_asyncio_run_coroutine_threadsafe(
         self,
         event_loop: asyncio.AbstractEventLoop,
-        threads_portal: AsyncioThreadsPortal,
+        threads_portal: ThreadsPortal,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -126,7 +126,7 @@ class TestAsyncioThreadsPortal:
 
     async def test____run_sync____error_if_called_from_event_loop_thread(
         self,
-        threads_portal: AsyncioThreadsPortal,
+        threads_portal: ThreadsPortal,
         mocker: MockerFixture,
     ) -> None:
         # Arrange

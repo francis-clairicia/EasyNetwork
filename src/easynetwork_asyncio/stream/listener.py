@@ -27,7 +27,6 @@ class ListenerSocketAdapter(AbstractAsyncListenerSocketAdapter):
         "__trsock",
         "__loop",
         "__accept_task",
-        "__closed",
     )
 
     def __init__(self, socket: _socket.socket, *, loop: asyncio.AbstractEventLoop | None = None) -> None:
@@ -40,31 +39,31 @@ class ListenerSocketAdapter(AbstractAsyncListenerSocketAdapter):
         from asyncio.trsock import TransportSocket
 
         socket.setblocking(False)
-        self.__socket: _socket.socket = socket
+        self.__socket: _socket.socket | None = socket
         self.__trsock: TransportSocket = TransportSocket(socket)
         self.__loop: asyncio.AbstractEventLoop = loop
         self.__accept_task: asyncio.Task[tuple[_socket.socket, _socket._RetAddress]] | None = None
-        self.__closed: bool = False
 
     def is_closing(self) -> bool:
-        return self.__closed
+        return self.__socket is None
 
     async def aclose(self) -> None:
-        if self.__closed:
+        socket = self.__socket
+        if socket is None:
             return
 
-        self.__closed = True
+        self.__socket = None
         if self.__accept_task is not None and not self.__accept_task.done():
             self.__accept_task.cancel()
             self.__accept_task = None
 
-        self.__socket.close()
+        socket.close()
 
     async def abort(self) -> None:
         return await self.aclose()
 
     async def accept(self) -> AbstractAsyncStreamSocketAdapter:
-        if self.__closed:
+        if self.__socket is None:
             import errno
 
             raise _error_from_errno(errno.EBADF)
@@ -99,7 +98,7 @@ class ListenerSocketAdapter(AbstractAsyncListenerSocketAdapter):
         return StreamSocketAdapter(reader, writer, remote_address=address)
 
     def get_local_address(self) -> tuple[Any, ...]:
-        return self.__socket.getsockname()
+        return self.__trsock.getsockname()
 
     def socket(self) -> asyncio.trsock.TransportSocket:
         return self.__trsock

@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-__all__ = ["AsyncioThreadsPortal"]
+__all__ = ["ThreadsPortal"]
 
 import asyncio
 import threading
@@ -20,7 +20,7 @@ _T = TypeVar("_T")
 
 
 @final
-class AsyncioThreadsPortal(AbstractThreadsPortal):
+class ThreadsPortal(AbstractThreadsPortal):
     __slots__ = ("__loop",)
 
     def __init__(self) -> None:

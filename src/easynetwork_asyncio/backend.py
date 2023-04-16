@@ -240,9 +240,9 @@ class AsyncioBackend(AbstractAsyncBackend):
         return await asyncio.to_thread(__func, *args, **kwargs)
 
     def create_threads_portal(self) -> AbstractThreadsPortal:
-        from .threads import AsyncioThreadsPortal
+        from .threads import ThreadsPortal
 
-        return AsyncioThreadsPortal()
+        return ThreadsPortal()
 
     async def wait_future(self, future: concurrent.futures.Future[_T_co]) -> _T_co:
         import asyncio

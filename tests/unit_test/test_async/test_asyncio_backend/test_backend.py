@@ -316,13 +316,13 @@ class TestAsyncIOBackend:
         backend: AsyncioBackend,
     ) -> None:
         # Arrange
-        from easynetwork_asyncio.threads import AsyncioThreadsPortal
+        from easynetwork_asyncio.threads import ThreadsPortal
 
         # Act
         threads_portal = backend.create_threads_portal()
 
         # Assert
-        assert isinstance(threads_portal, AsyncioThreadsPortal)
+        assert isinstance(threads_portal, ThreadsPortal)
         assert threads_portal.loop is event_loop
 
     async def test____wait_future____use_asyncio_wrap_future(
