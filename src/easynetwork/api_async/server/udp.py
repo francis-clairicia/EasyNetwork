@@ -189,10 +189,10 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 try:
                     await request_handler.bad_request(client, exc.with_traceback(None))
                 except Exception as exc:
-                    await self.__handle_error(client_address, exc)
+                    await self.__handle_error(client, exc)
                 return
             except Exception as exc:
-                await self.__handle_error(client_address, exc)
+                await self.__handle_error(client, exc)
                 return
             finally:
                 del datagram
@@ -201,7 +201,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             try:
                 await request_handler.handle(request, client)
             except Exception as exc:
-                await self.__handle_error(client_address, exc)
+                await self.__handle_error(client, exc)
 
     async def send_packet_to(self, packet: _ResponseT, client_address: SocketAddress) -> None:
         async with self.__sendto_lock:
@@ -220,15 +220,15 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             finally:
                 del datagram
 
-    async def __handle_error(self, client_address: SocketAddress, exc: Exception) -> None:
+    async def __handle_error(self, client: _ClientAPI[_ResponseT], exc: Exception) -> None:
         try:
             request_handler = self.__request_handler
-            client = _ClientAPI(client_address, self)
+            assert isinstance(client, _ClientAPI)
             if await request_handler.handle_error(client, exc):
                 return
 
             logger.error("-" * 40)
-            logger.error("Exception occurred during processing of request from %s", client_address, exc_info=exc)
+            logger.error("Exception occurred during processing of request from %s", client.address, exc_info=exc)
             logger.error("-" * 40)
         finally:
             del exc
