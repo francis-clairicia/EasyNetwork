@@ -145,7 +145,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         }
         try:
             socket_proxy.setsockopt(_socket.IPPROTO_TCP, _socket.TCP_NODELAY, True)
-        except Exception:  # pragma: no cover
+        except (OSError, AttributeError):  # pragma: no cover
             pass
 
     def is_connected(self) -> bool:
