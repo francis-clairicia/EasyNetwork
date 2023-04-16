@@ -190,8 +190,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 await request_handler.service_actions()
             except Exception:
                 logger.exception("Error occured in request_handler.service_actions()")
-            finally:
-                await backend.coro_yield()
+            await backend.coro_yield()
 
     async def __listener_task(self, listener: AbstractAsyncListenerSocketAdapter, task_group: AbstractTaskGroup) -> None:
         backend: AbstractAsyncBackend = self.__backend

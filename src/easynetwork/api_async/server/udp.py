@@ -179,8 +179,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 await request_handler.service_actions()
             except Exception:
                 logger.exception("Error occured in request_handler.service_actions()")
-            finally:
-                await backend.coro_yield()
+            await backend.coro_yield()
 
     async def __accept_request_from(self, client_address: SocketAddress) -> bool:
         request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT] = self.__request_handler
