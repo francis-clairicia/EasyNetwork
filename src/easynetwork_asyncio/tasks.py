@@ -25,13 +25,16 @@ _T_co = TypeVar("_T_co", covariant=True)
 
 @final
 class Task(AbstractTask[_T_co]):
-    __slots__ = ("__t",)
+    __slots__ = ("__t", "__h")
 
     def __init__(self, task: asyncio.Task[_T_co]) -> None:
         self.__t: asyncio.Task[_T_co] = task
+        self.__h: int | None = None
 
     def __hash__(self) -> int:
-        return hash(self.__t)
+        if (h := self.__h) is None:
+            self.__h = h = hash((Task, self.__t, 0xFF))
+        return h
 
     def __eq__(self, other: object, /) -> bool:
         if not isinstance(other, Task):

@@ -99,6 +99,7 @@ class AsyncStreamRequestHandlerBridge(
 
     def _build_client_wrapper(self, client: AsyncClientInterface[_ResponseT]) -> ClientInterface[_ResponseT]:
         assert self.__clients is not None, "service_init() was not called"
+        assert client in self.__clients, f"on_connection() was not called for {client}"
         return self.__clients[client]
 
     async def service_init(self) -> None:
@@ -116,16 +117,19 @@ class AsyncStreamRequestHandlerBridge(
     async def on_connection(self, client: AsyncClientInterface[_ResponseT]) -> None:
         assert self.__clients is not None, "service_init() was not called"
         assert isinstance(client, AsyncClientInterface)
-        assert client not in self.__clients
         await super().on_connection(client)
-        sync_client = _BlockingClientInterfaceWrapper(self.backend.create_threads_portal(), client)
-        self.__clients[client] = sync_client
+        try:
+            sync_client = self.__clients[client]
+        except KeyError:
+            sync_client = _BlockingClientInterfaceWrapper(self.backend.create_threads_portal(), client)
+            self.__clients[client] = sync_client
         if isinstance(self.sync_request_handler, StreamRequestHandler):
             await self.backend.run_in_thread(self.sync_request_handler.on_connection, sync_client)
 
     async def on_disconnection(self, client: AsyncClientInterface[_ResponseT]) -> None:
         assert self.__clients is not None, "service_init() was not called"
         try:
+            assert client in self.__clients, f"on_disconnection() called before on_connection() for {client}"
             # Do not remove the client from the dictionary, because other operations such as handle_error() will need it.
             # Since it is a WeakKeyDictionary, the client will be removed on garbage collection
             sync_client = self.__clients[client]
@@ -161,10 +165,12 @@ class _BlockingClientInterfaceWrapper(ClientInterface[_ResponseT]):
         self.__threads_portal: AbstractThreadsPortal = threads_portal
         self.__async_client: AsyncClientInterface[_ResponseT] = async_client
         self.__socket_proxy: SocketProxy = SocketProxy(async_client.socket, runner=threads_portal.run_sync)
-        self.__h: int = hash(async_client)
+        self.__h: int | None = None
 
     def __hash__(self) -> int:
-        return self.__h
+        if (h := self.__h) is None:
+            self.__h = h = hash((_BlockingClientInterfaceWrapper, self.__async_client, 0xFF))
+        return h
 
     def __eq__(self, other: object, /) -> bool:
         if not isinstance(other, _BlockingClientInterfaceWrapper):

@@ -44,6 +44,7 @@ class TestTask:
         assert task1 == task2
         assert not (task1 != task2)
         assert task1 != 2
+        assert hash(task1) == hash(task1)  # Tests cache
         assert hash(task1) == hash(task2)
 
     def test____done____asyncio_task_done(
