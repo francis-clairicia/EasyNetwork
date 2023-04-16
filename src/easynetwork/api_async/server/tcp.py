@@ -241,36 +241,33 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
             recv_bufsize: int = self.__max_recv_size
 
-            while True:
-                data: bytes
-                try:
-                    data = await socket.recv(recv_bufsize)
+            try:
+                while True:
+                    data: bytes = await socket.recv(recv_bufsize)
                     if not data:  # Closed connection (EOF)
                         raise ConnectionAbortedError
-                except ConnectionError:
-                    return
-                except OSError as exc:
-                    await self.__request_error_handling(client, exc, close_client_before=True)
-                    return
-                logger.debug("Received %d bytes from %s", len(data), address)
-                consumer.feed(data)
-                del data
+                    logger.debug("Received %d bytes from %s", len(data), address)
+                    consumer.feed(data)
+                    del data
 
-                async with _contextlib.aclosing(self.__iter_received_packets(consumer, client)) as request_generator:
-                    try:
+                    async with _contextlib.aclosing(self.__iter_received_packets(consumer, client)) as request_generator:
                         async for request in request_generator:
                             logger.debug("Processing request sent by %s", address)
                             await request_handler.handle(request, client)
                             await backend.coro_yield()
                             if client.is_closing():
                                 raise ClientClosedError
-                    except ConnectionError:
-                        return
-                    except OSError as exc:
-                        await self.__request_error_handling(client, exc, close_client_before=True)
-                        return
-                    except Exception as exc:
-                        await self.__request_error_handling(client, exc, close_client_before=False)
+            except ConnectionError:
+                return
+            except OSError as exc:
+                try:
+                    await client.aclose()
+                finally:
+                    await self.__handle_error(client, exc)
+                return
+            except Exception as exc:
+                await self.__handle_error(client, exc)
+                return
 
     async def __iter_received_packets(
         self,
@@ -286,24 +283,6 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 logger.debug("Malformed request sent by %s", client.address)
                 await self.__request_handler.bad_request(client, exc.with_traceback(None))
                 await self.__backend.coro_yield()
-
-    async def __request_error_handling(
-        self,
-        client: AsyncClientInterface[_ResponseT],
-        exc: Exception,
-        *,
-        close_client_before: bool,
-    ) -> None:
-        try:
-            if close_client_before:
-                try:
-                    await client.aclose()
-                finally:
-                    await self.__handle_error(client, exc)
-            else:
-                await self.__handle_error(client, exc)
-        finally:
-            del exc
 
     async def __handle_error(self, client: AsyncClientInterface[_ResponseT], exc: Exception) -> None:
         try:

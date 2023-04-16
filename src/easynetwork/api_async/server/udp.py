@@ -145,6 +145,10 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             logger.info("Start serving at %s", self.__address)
             #################
 
+            # Pull methods to local namespace
+            accept_request_from = self.__accept_request_from
+            #################################
+
             # Server is up
             self.__is_up.set()
             server_exit_stack.callback(self.__is_up.clear)
@@ -161,7 +165,10 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                     return
                 client_address = new_socket_address(client_address, socket_family)
                 logger.debug("Received a datagram from %s", client_address)
-                task_group.start_soon(self.__datagram_received_task, datagram, client_address)
+                if await accept_request_from(client_address):
+                    task_group.start_soon(self.__datagram_received_task, datagram, client_address)
+                else:
+                    logger.warning("A datagram from %s was refused", client_address)
                 del datagram, client_address
 
     async def __service_actions_task(self) -> None:
@@ -175,31 +182,33 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             finally:
                 await backend.coro_yield()
 
-    async def __datagram_received_task(self, datagram: bytes, client_address: SocketAddress) -> None:
+    async def __accept_request_from(self, client_address: SocketAddress) -> bool:
         request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT] = self.__request_handler
         if isinstance(request_handler, AsyncDatagramRequestHandler):
-            if not await request_handler.accept_request_from(client_address):
-                return
+            return await request_handler.accept_request_from(client_address)
+        return True
+
+    async def __datagram_received_task(self, datagram: bytes, client_address: SocketAddress) -> None:
+        request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT] = self.__request_handler
 
         async with _contextlib.aclosing(_ClientAPI(client_address, self)) as client:
             try:
-                request: _RequestT = self.__protocol.build_packet_from_datagram(datagram)
-            except DatagramProtocolParseError as exc:
-                logger.debug("Malformed request sent by %s", client_address)
                 try:
+                    request: _RequestT = self.__protocol.build_packet_from_datagram(datagram)
+                except DatagramProtocolParseError as exc:
+                    logger.debug("Malformed request sent by %s", client_address)
                     await request_handler.bad_request(client, exc.with_traceback(None))
-                except Exception as exc:
-                    await self.__handle_error(client, exc)
-                return
-            except Exception as exc:
-                await self.__handle_error(client, exc)
-                return
-            finally:
-                del datagram
+                    return
+                finally:
+                    del datagram
 
-            logger.debug("Processing request sent by %s", client_address)
-            try:
+                logger.debug("Processing request sent by %s", client_address)
                 await request_handler.handle(request, client)
+            except OSError as exc:
+                try:
+                    await client.aclose()
+                finally:
+                    await self.__handle_error(client, exc)
             except Exception as exc:
                 await self.__handle_error(client, exc)
 
@@ -213,9 +222,6 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             try:
                 await socket.sendto(datagram, client_address)
                 _check_real_socket_state(self.__socket_proxy)
-            except OSError:
-                logger.exception("Failed to send datagram to %s", client_address)
-            else:
                 logger.debug("Datagram successfully sent to %s.", client_address)
             finally:
                 del datagram
