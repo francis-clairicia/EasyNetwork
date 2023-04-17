@@ -50,7 +50,6 @@ class TestAbstractAsyncBackend:
     async def test____sleep_until____sleep_deadline_offset(
         self,
         backend: MockBackend,
-        mocker: MockerFixture,
     ) -> None:
         # Arrange
         deadline: float = 234567891.05
@@ -62,6 +61,20 @@ class TestAbstractAsyncBackend:
         # Assert
         backend.mock_current_time.assert_called_once_with()
         backend.mock_sleep.assert_awaited_once_with(pytest.approx(expected_sleep_time))
+
+    async def test____sleep_until____deadline_lower_than_current_time(
+        self,
+        backend: MockBackend,
+    ) -> None:
+        # Arrange
+        deadline: float = backend.mock_current_time.return_value - 220
+
+        # Act
+        await backend.sleep_until(deadline)
+
+        # Assert
+        backend.mock_current_time.assert_called_once_with()
+        backend.mock_sleep.assert_awaited_once_with(0)
 
     async def test____wait_future____wait_until_done(
         self,
