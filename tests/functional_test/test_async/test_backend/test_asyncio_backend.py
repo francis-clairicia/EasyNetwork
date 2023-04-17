@@ -101,6 +101,27 @@ class TestAsyncioBackend:
         # Tasks cannot be cancelled twice
         assert not task_42.cancel()
 
+    async def test____create_task_group____task_join_cancel_shielding(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        backend: AbstractAsyncBackend,
+    ) -> None:
+        async def coroutine(value: int) -> int:
+            return await asyncio.sleep(0.5, value)
+
+        async with backend.create_task_group() as task_group:
+            inner_task = task_group.start_soon(coroutine, 42)
+
+            outer_task = event_loop.create_task(inner_task.join())
+            event_loop.call_later(0.2, outer_task.cancel)
+
+            with pytest.raises(asyncio.CancelledError):
+                await outer_task
+
+            assert outer_task.cancelled()
+            assert not inner_task.cancelled()
+            assert await inner_task.join() == 42
+
     async def test____wait_future____wait_until_done(
         self,
         event_loop: asyncio.AbstractEventLoop,
