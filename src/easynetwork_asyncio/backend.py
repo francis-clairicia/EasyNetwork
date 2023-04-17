@@ -43,7 +43,15 @@ class AsyncioBackend(AbstractAsyncBackend):
     async def coro_cancel(self) -> NoReturn:
         import asyncio
 
-        raise asyncio.CancelledError()
+        # Why a 'while True' ?
+        # Since 3.11 a task can be un-cancelled, and this is problematic, so just to be sure this task will be cancelled
+        # We will retry again and again until the coroutine is stopped
+        while True:
+            current_task: asyncio.Task[Any] | None = asyncio.current_task()
+            assert current_task is not None
+
+            current_task.cancel()
+            await asyncio.sleep(0)
 
     def current_time(self) -> float:
         import asyncio
