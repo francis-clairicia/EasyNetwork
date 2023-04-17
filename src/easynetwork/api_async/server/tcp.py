@@ -162,7 +162,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
     async def serve_forever(self) -> None:
         if (listeners := self.__listeners) is None:
             raise RuntimeError("Closed server")
-        if self.__mainloop_task is not None:
+        if not self.__is_shutdown.is_set():
             raise RuntimeError("Server is already running")
 
         async with _contextlib.AsyncExitStack() as server_exit_stack:
