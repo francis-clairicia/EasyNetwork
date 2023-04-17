@@ -10,6 +10,7 @@ __all__ = ["AsyncTCPNetworkServer"]
 
 import contextlib as _contextlib
 import logging as _logging
+from collections import deque
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Generic, Literal, Mapping, Self, Sequence, TypeVar, final
 
 from ...api_sync.server.handler import BaseRequestHandler
@@ -34,6 +35,7 @@ if TYPE_CHECKING:
         AbstractAsyncBackend,
         AbstractAsyncListenerSocketAdapter,
         AbstractAsyncStreamSocketAdapter,
+        AbstractTask,
         AbstractTaskGroup,
     )
 
@@ -55,6 +57,8 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         "__is_up",
         "__is_shutdown",
         "__max_recv_size",
+        "__listener_tasks",
+        "__mainloop_task",
     )
 
     def __init__(
@@ -91,6 +95,8 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         self.__is_shutdown = self.__backend.create_event()
         self.__is_shutdown.set()
         self.__max_recv_size: int = max_recv_size
+        self.__listener_tasks: deque[AbstractTask[None]] = deque()
+        self.__mainloop_task: AbstractTask[None] | None = None
 
     @classmethod
     async def listen(
@@ -126,12 +132,16 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         return self.__listeners is not None and self.__is_up.is_set()
 
     async def wait_for_server_to_be_up(self) -> Literal[True]:
-        if self.__listeners is None:
-            raise RuntimeError("Closed server")
-        await self.__is_up.wait()
+        if not self.__is_up.is_set():
+            if self.__listeners is None:
+                raise RuntimeError("Closed server")
+            await self.__is_up.wait()
         return True
 
-    async def server_close(self) -> None:
+    async def stop_listening(self) -> None:
+        for listener_task in self.__listener_tasks:
+            if not listener_task.done():
+                listener_task.cancel()
         listeners: Sequence[AbstractAsyncListenerSocketAdapter] | None = self.__listeners
         if listeners is None:
             return
@@ -141,10 +151,18 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 exit_stack.push_async_callback(listener.abort)
                 exit_stack.push_async_callback(listener.aclose)
 
+    async def server_close(self) -> None:
+        await self.stop_listening()
+
+        if self.__mainloop_task is not None and not self.__mainloop_task.done():
+            self.__mainloop_task.cancel()
+
+        await self.__is_shutdown.wait()
+
     async def serve_forever(self) -> None:
         if (listeners := self.__listeners) is None:
             raise RuntimeError("Closed server")
-        if not self.__is_shutdown.is_set():
+        if self.__mainloop_task is not None:
             raise RuntimeError("Server is already running")
 
         async with _contextlib.AsyncExitStack() as server_exit_stack:
@@ -163,13 +181,14 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             ############################
 
             # Setup task group
+            server_exit_stack.callback(self.__listener_tasks.clear)
             task_group = await server_exit_stack.enter_async_context(self.__backend.create_task_group())
             server_exit_stack.callback(logger.info, "Server loop break, waiting for remaining tasks...")
             ##################
 
             # Enable listener
             for listener in listeners:
-                task_group.start_soon(self.__listener_task, listener, task_group)
+                self.__listener_tasks.append(task_group.start_soon(self.__listener_task, listener, task_group))
             logger.info("Start serving at %s", ", ".join(map(str, self.__listener_addresses)))
             #################
 
@@ -180,7 +199,11 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             ##############
 
             # Main loop
-            await self.__backend.sleep_forever()
+            self.__mainloop_task = task_group.start_soon(self.__backend.sleep_forever)
+            try:
+                await self.__mainloop_task.join()
+            finally:
+                self.__mainloop_task = None
 
     async def __service_actions_task(self) -> None:
         request_handler = self.__request_handler
@@ -194,27 +217,26 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
     async def __listener_task(self, listener: AbstractAsyncListenerSocketAdapter, task_group: AbstractTaskGroup) -> None:
         backend: AbstractAsyncBackend = self.__backend
-        async with listener:
-            while True:
-                try:
-                    client_socket = await listener.accept()
-                except OSError as exc:
-                    import errno
-                    import os
+        while True:
+            try:
+                client_socket = await listener.accept()
+            except OSError as exc:
+                import errno
+                import os
 
-                    if exc.errno in ACCEPT_CAPACITY_ERRNOS:
-                        logger.error(
-                            "accept returned %s (%s); retrying in %s seconds",
-                            errno.errorcode[exc.errno],
-                            os.strerror(exc.errno),
-                            ACCEPT_CAPACITY_ERROR_SLEEP_TIME,
-                            exc_info=True,
-                        )
-                        await backend.sleep(ACCEPT_CAPACITY_ERROR_SLEEP_TIME)
-                    else:
-                        raise
+                if exc.errno in ACCEPT_CAPACITY_ERRNOS:
+                    logger.error(
+                        "accept returned %s (%s); retrying in %s seconds",
+                        errno.errorcode[exc.errno],
+                        os.strerror(exc.errno),
+                        ACCEPT_CAPACITY_ERROR_SLEEP_TIME,
+                        exc_info=True,
+                    )
+                    await backend.sleep(ACCEPT_CAPACITY_ERROR_SLEEP_TIME)
                 else:
-                    task_group.start_soon(self.__client_task, client_socket)
+                    raise
+            else:
+                task_group.start_soon(self.__client_task, client_socket)
 
     async def __client_task(self, socket: AbstractAsyncStreamSocketAdapter) -> None:
         async with _contextlib.AsyncExitStack() as client_exit_stack:

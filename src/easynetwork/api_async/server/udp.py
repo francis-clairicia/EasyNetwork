@@ -22,7 +22,7 @@ from .abc import AbstractAsyncNetworkServer
 from .handler import AsyncBaseRequestHandler, AsyncClientInterface, AsyncDatagramRequestHandler
 
 if TYPE_CHECKING:
-    from ..backend.abc import AbstractAsyncBackend, AbstractAsyncDatagramSocketAdapter, AbstractTaskGroup
+    from ..backend.abc import AbstractAsyncBackend, AbstractAsyncDatagramSocketAdapter, AbstractTask, AbstractTaskGroup
 
 
 logger = _logging.getLogger(__name__)
@@ -43,6 +43,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         "__is_up",
         "__is_shutdown",
         "__sendto_lock",
+        "__mainloop_task",
     )
 
     def __init__(
@@ -70,6 +71,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         self.__is_shutdown = self.__backend.create_event()
         self.__is_shutdown.set()
         self.__sendto_lock = backend.create_lock()
+        self.__mainloop_task: AbstractTask[None] | None = None
 
     @classmethod
     async def create(
@@ -99,21 +101,23 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         return self.__socket is not None and self.__is_up.is_set()
 
     async def wait_for_server_to_be_up(self) -> Literal[True]:
-        if self.__socket is None:
-            raise RuntimeError("Closed server")
-        await self.__is_up.wait()
+        if not self.__is_up.is_set():
+            if self.__socket is None:
+                raise RuntimeError("Closed server")
+            await self.__is_up.wait()
         return True
 
     async def server_close(self) -> None:
         async with self.__sendto_lock:
-            socket = self.__socket
-            if socket is None:
-                return
-            self.__socket = None
+            if self.__mainloop_task is not None and not self.__mainloop_task.done():
+                self.__mainloop_task.cancel()
+                self.__mainloop_task = None
             try:
-                await socket.aclose()
+                await self.__is_shutdown.wait()
             finally:
-                await socket.abort()
+                socket, self.__socket = self.__socket, None
+                if socket is not None:
+                    await socket.aclose()
 
     async def serve_forever(self) -> None:
         if (socket := self.__socket) is None:
@@ -145,10 +149,6 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             logger.info("Start serving at %s", self.__address)
             #################
 
-            # Pull methods to local namespace
-            accept_request_from = self.__accept_request_from
-            #################################
-
             # Server is up
             self.__is_up.set()
             server_exit_stack.callback(self.__is_up.clear)
@@ -156,20 +156,28 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             ##############
 
             # Main loop
-            socket_family: int = self.__socket_proxy.family
-            while True:
-                try:
-                    datagram, client_address = await socket.recvfrom()
-                except OSError:
-                    logger.exception("socket.recvfrom(): Error occured")
-                    return
-                client_address = new_socket_address(client_address, socket_family)
-                logger.debug("Received a datagram from %s", client_address)
-                if await accept_request_from(client_address):
-                    task_group.start_soon(self.__datagram_received_task, datagram, client_address)
-                else:
-                    logger.warning("A datagram from %s was refused", client_address)
-                del datagram, client_address
+            self.__mainloop_task = task_group.start_soon(self.__receive_datagrams_task, socket, task_group)
+            try:
+                await self.__mainloop_task.join()
+            finally:
+                self.__mainloop_task = None
+
+    async def __receive_datagrams_task(self, socket: AbstractAsyncDatagramSocketAdapter, task_group: AbstractTaskGroup) -> None:
+        socket_family: int = self.__socket_proxy.family
+        accept_request_from = self.__accept_request_from
+        while True:
+            try:
+                datagram, client_address = await socket.recvfrom()
+            except OSError:
+                logger.exception("socket.recvfrom(): Error occured")
+                return
+            client_address = new_socket_address(client_address, socket_family)
+            logger.debug("Received a datagram from %s", client_address)
+            if await accept_request_from(client_address):
+                task_group.start_soon(self.__datagram_received_task, datagram, client_address)
+            else:
+                logger.warning("A datagram from %s was refused", client_address)
+            del datagram, client_address
 
     async def __service_actions_task(self) -> None:
         request_handler = self.__request_handler
