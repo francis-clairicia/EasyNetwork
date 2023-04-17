@@ -234,6 +234,10 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
+    def get_cancelled_exc_class(self) -> type[BaseException]:
+        raise NotImplementedError
+
+    @abstractmethod
     def current_time(self) -> float:
         raise NotImplementedError
 

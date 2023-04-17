@@ -46,6 +46,15 @@ class TestAsyncIOBackend:
         # Assert
         mock_sleep.assert_awaited_once_with(0)
 
+    async def test____get_cancelled_exc_class____returns_asyncio_CancelledError(
+        self,
+        backend: AsyncioBackend,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        assert backend.get_cancelled_exc_class() is asyncio.CancelledError
+
     async def test____current_time____use_event_loop_time(
         self,
         event_loop: asyncio.AbstractEventLoop,

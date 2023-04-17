@@ -53,6 +53,11 @@ class AsyncioBackend(AbstractAsyncBackend):
             current_task.cancel()
             await asyncio.sleep(0)
 
+    def get_cancelled_exc_class(self) -> type[BaseException]:
+        import asyncio
+
+        return asyncio.CancelledError
+
     def current_time(self) -> float:
         import asyncio
 

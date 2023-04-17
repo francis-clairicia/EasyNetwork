@@ -33,6 +33,9 @@ class BaseFakeBackend(AbstractAsyncBackend):
     async def coro_cancel(self) -> NoReturn:
         raise NotImplementedError
 
+    def get_cancelled_exc_class(self) -> type[BaseException]:
+        raise NotImplementedError
+
     def create_task_group(self) -> AbstractTaskGroup:
         raise NotImplementedError
 
