@@ -22,7 +22,7 @@ from .abc import AbstractAsyncNetworkServer
 from .handler import AsyncBaseRequestHandler, AsyncClientInterface, AsyncDatagramRequestHandler
 
 if TYPE_CHECKING:
-    from ..backend.abc import AbstractAsyncBackend, AbstractAsyncDatagramSocketAdapter, AbstractTask, AbstractTaskGroup
+    from ..backend.abc import AbstractAsyncBackend, AbstractAsyncDatagramSocketAdapter, AbstractTask, AbstractTaskGroup, ILock
 
 
 logger = _logging.getLogger(__name__)
@@ -70,7 +70,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         self.__is_up = self.__backend.create_event()
         self.__is_shutdown = self.__backend.create_event()
         self.__is_shutdown.set()
-        self.__sendto_lock = backend.create_lock()
+        self.__sendto_lock: ILock = backend.create_lock()
         self.__mainloop_task: AbstractTask[None] | None = None
 
     @classmethod
@@ -174,7 +174,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             client_address = new_socket_address(client_address, socket_family)
             logger.debug("Received a datagram from %s", client_address)
             if await accept_request_from(client_address):
-                task_group.start_soon(self.__datagram_received_task, datagram, client_address)
+                task_group.start_soon(self.__datagram_received_task, socket, datagram, client_address)
             else:
                 logger.warning("A datagram from %s was refused", client_address)
             del datagram, client_address
@@ -195,10 +195,15 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             return await request_handler.accept_request_from(client_address)
         return True
 
-    async def __datagram_received_task(self, datagram: bytes, client_address: SocketAddress) -> None:
+    async def __datagram_received_task(
+        self,
+        socket: AbstractAsyncDatagramSocketAdapter,
+        datagram: bytes,
+        client_address: SocketAddress,
+    ) -> None:
         request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT] = self.__request_handler
 
-        async with _contextlib.aclosing(_ClientAPI(client_address, self)) as client:
+        async with _contextlib.aclosing(_ClientAPI(client_address, socket, self.__protocol, self.__sendto_lock)) as client:
             try:
                 try:
                     request: _RequestT = self.__protocol.build_packet_from_datagram(datagram)
@@ -218,20 +223,6 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                     await self.__handle_error(client, exc)
             except Exception as exc:
                 await self.__handle_error(client, exc)
-
-    async def send_packet_to(self, packet: _ResponseT, client_address: SocketAddress) -> None:
-        async with self.__sendto_lock:
-            socket = self.__socket
-            assert socket is not None, "Closed server"
-            datagram: bytes = self.__protocol.make_datagram(packet)
-
-            logger.debug("A datagram will be sent to %s", client_address)
-            try:
-                await socket.sendto(datagram, client_address)
-                _check_real_socket_state(self.__socket_proxy)
-                logger.debug("Datagram successfully sent to %s.", client_address)
-            finally:
-                del datagram
 
     async def __handle_error(self, client: _ClientAPI[_ResponseT], exc: Exception) -> None:
         try:
@@ -259,16 +250,24 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
 @final
 class _ClientAPI(AsyncClientInterface[_ResponseT]):
-    __slots__ = ("__server_ref", "__socket_proxy", "__h")
+    __slots__ = ("__socket_ref", "__socket_proxy", "__protocol", "__lock", "__h")
 
-    def __init__(self, address: SocketAddress, server: AsyncUDPNetworkServer[Any, _ResponseT]) -> None:
+    def __init__(
+        self,
+        address: SocketAddress,
+        socket: AbstractAsyncDatagramSocketAdapter,
+        protocol: DatagramProtocol[_ResponseT, Any],
+        lock: ILock,
+    ) -> None:
         super().__init__(address)
 
         import weakref
 
-        self.__server_ref: Callable[[], AsyncUDPNetworkServer[Any, _ResponseT] | None] = weakref.ref(server)
-        self.__socket_proxy: SocketProxy = server.socket
+        self.__socket_ref: Callable[[], AbstractAsyncDatagramSocketAdapter | None] = weakref.ref(socket)
+        self.__socket_proxy: SocketProxy = SocketProxy(socket.socket())
         self.__h: int | None = None
+        self.__protocol: DatagramProtocol[_ResponseT, Any] = protocol
+        self.__lock: ILock = lock
 
     def __hash__(self) -> int:
         if (h := self.__h) is None:
@@ -281,16 +280,24 @@ class _ClientAPI(AsyncClientInterface[_ResponseT]):
         return self.address == other.address
 
     def is_closing(self) -> bool:
-        return self.__server_ref() is None
+        return self.__socket_ref() is None
 
     async def aclose(self) -> None:
-        self.__server_ref = lambda: None
+        self.__socket_ref = lambda: None
 
     async def send_packet(self, packet: _ResponseT) -> None:
-        server = self.__server_ref()
-        if server is None:
-            raise ClientClosedError("Closed client")
-        await server.send_packet_to(packet, self.address)
+        async with self.__lock:
+            socket = self.__socket_ref()
+            if socket is None:
+                raise ClientClosedError("Closed client")
+            datagram: bytes = self.__protocol.make_datagram(packet)
+            logger.debug("A datagram will be sent to %s", self.address)
+            try:
+                await socket.sendto(datagram, self.address)
+                _check_real_socket_state(self.__socket_proxy)
+                logger.debug("Datagram successfully sent to %s.", self.address)
+            finally:
+                del datagram
 
     @property
     def socket(self) -> SocketProxy:
