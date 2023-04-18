@@ -93,23 +93,29 @@ class AsyncioBackend(AbstractAsyncBackend):
         assert host is not None, "Expected 'host' to be a str"
         assert port is not None, "Expected 'port' to be an int"
 
-        if happy_eyeballs_delay is None:
-            happy_eyeballs_delay = 0.25  # Recommended value (c.f. https://tools.ietf.org/html/rfc6555)
-
         import asyncio
 
         from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
 
         from .stream.socket import StreamSocketAdapter
 
-        reader, writer = await asyncio.open_connection(
-            host,
-            port,
-            family=family,
-            local_addr=local_address,
-            happy_eyeballs_delay=happy_eyeballs_delay,
-            limit=MAX_STREAM_BUFSIZE,
-        )
+        if happy_eyeballs_delay is None:
+            reader, writer = await asyncio.open_connection(
+                host,
+                port,
+                family=family,
+                local_addr=local_address,
+                limit=MAX_STREAM_BUFSIZE,
+            )
+        else:
+            reader, writer = await asyncio.open_connection(
+                host,
+                port,
+                family=family,
+                local_addr=local_address,
+                happy_eyeballs_delay=happy_eyeballs_delay,
+                limit=MAX_STREAM_BUFSIZE,
+            )
         return StreamSocketAdapter(reader, writer)
 
     async def wrap_tcp_client_socket(self, socket: _socket.socket) -> AbstractAsyncStreamSocketAdapter:

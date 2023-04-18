@@ -123,17 +123,8 @@ class TestAsyncIOBackend:
         mock_StreamSocketAdapter.assert_called_once_with(mocker.sentinel.reader, mocker.sentinel.writer)
         assert socket is mocker.sentinel.socket
 
-    @pytest.mark.parametrize(
-        ["given_value", "expected_value"],
-        [
-            pytest.param(None, 0.25, id="use_rfc_value_if_None"),
-            pytest.param(float("inf"), float("inf"), id="handle_infinite"),
-        ],
-    )
-    async def test____create_tcp_connection____happy_eyeballs_delay(
+    async def test____create_tcp_connection____no_happy_eyeballs_delay(
         self,
-        given_value: float | None,
-        expected_value: float | None,
         local_address: tuple[str, int] | None,
         remote_address: tuple[str, int],
         backend: AsyncioBackend,
@@ -151,7 +142,7 @@ class TestAsyncIOBackend:
         await backend.create_tcp_connection(
             *remote_address,
             family=1234,
-            happy_eyeballs_delay=given_value,
+            happy_eyeballs_delay=None,
             local_address=local_address,
         )
 
@@ -159,7 +150,6 @@ class TestAsyncIOBackend:
         mock_open_connection.assert_awaited_once_with(
             mocker.ANY,  # host: Not tested here
             mocker.ANY,  # port: Not tested here
-            happy_eyeballs_delay=expected_value,
             family=mocker.ANY,  # Not tested here
             local_addr=mocker.ANY,  # Not tested here
             limit=mocker.ANY,  # Not tested here
