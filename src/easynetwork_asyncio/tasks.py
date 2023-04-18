@@ -54,7 +54,7 @@ class Task(AbstractTask[_T_co]):
         # If the caller cancels the join() task, it should not stop the inner task
         # e.g. when awaiting from an another task than the one which creates the TaskGroup,
         #      you want to stop joining the sub-task, not accidentally cancel it.
-        # It is primarily to avoid error prone code where tasks was not explicitly cancelled using task.cancel()
+        # It is primarily to avoid error prone code where tasks were not explicitly cancelled using task.cancel()
         return await asyncio.shield(self.__t)
 
 
