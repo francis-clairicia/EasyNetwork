@@ -65,4 +65,4 @@ class SingleTaskRunner(Generic[_T_co]):
             self.__task = task_group.start_soon(coro_func, *args, **kwargs)
             del coro_func, args, kwargs
 
-            return await self.__task.join()
+        return await self.__task.join()
