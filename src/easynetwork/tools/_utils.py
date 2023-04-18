@@ -60,7 +60,7 @@ def set_reuseport(sock: _socket.socket) -> None:
         try:
             sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEPORT, True)
         except OSError:
-            raise ValueError("reuse_port not supported by socket module, SO_REUSEPORT defined but not implemented.")
+            raise ValueError("reuse_port not supported by socket module, SO_REUSEPORT defined but not implemented.") from None
 
 
 def open_listener_sockets_from_getaddrinfo_result(
@@ -76,7 +76,7 @@ def open_listener_sockets_from_getaddrinfo_result(
         for res in infos:
             af, socktype, proto, canonname, sa = res
             try:
-                sock = socket_exit_stack.enter_context(_socket.socket(af, socktype, proto))
+                sock = socket_exit_stack.enter_context(contextlib.closing(_socket.socket(af, socktype, proto)))
             except OSError:
                 # Assume it's a bad family/type/protocol combination.
                 continue
