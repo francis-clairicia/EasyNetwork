@@ -38,11 +38,19 @@ class ListenerSocketAdapter(AbstractAsyncListenerSocketAdapter):
 
         from asyncio.trsock import TransportSocket
 
-        socket.setblocking(False)
         self.__socket: _socket.socket | None = socket
         self.__trsock: TransportSocket = TransportSocket(socket)
         self.__loop: asyncio.AbstractEventLoop = loop
         self.__accept_task: asyncio.Task[tuple[_socket.socket, _socket._RetAddress]] | None = None
+        socket.setblocking(False)
+
+    def __del__(self) -> None:  # pragma: no cover
+        try:
+            socket: _socket.socket | None = self.__socket
+        except AttributeError:
+            return
+        if socket is not None:
+            socket.close()
 
     def is_closing(self) -> bool:
         return self.__socket is None
