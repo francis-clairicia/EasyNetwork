@@ -46,7 +46,7 @@ class TestAsyncTCPNetworkClient:
         await client.send_packet("ABCDEF")
         assert await asyncio.to_thread(server.recv, 1024) == b"ABCDEF\n"
 
-    @pytest.mark.skip_uvloop  # Error not triggered
+    @pytest.mark.skipif_uvloop  # Error not triggered
     @pytest.mark.platform_linux  # Windows and MacOS raise ConnectionAbortedError but in the 2nd send() call
     async def test____send_packet____connection_error____fresh_connection_closed_by_server(
         self,
@@ -57,7 +57,7 @@ class TestAsyncTCPNetworkClient:
         with pytest.raises(ConnectionError):
             await client.send_packet("ABCDEF")
 
-    @pytest.mark.skip_uvloop  # Error not triggered
+    @pytest.mark.skipif_uvloop  # Error not triggered
     @pytest.mark.platform_linux  # Windows and MacOS raise ConnectionAbortedError but in the 2nd send() call
     async def test____send_packet____connection_error____after_previous_successful_try(
         self,
@@ -70,7 +70,7 @@ class TestAsyncTCPNetworkClient:
         with pytest.raises(ConnectionError):
             await client.send_packet("ABCDEF")
 
-    @pytest.mark.skip_uvloop  # Error not triggered
+    @pytest.mark.skipif_uvloop  # Error not triggered
     async def test____send_packet____connection_error____partial_read_then_close(
         self,
         client: AsyncTCPNetworkClient[str, str],

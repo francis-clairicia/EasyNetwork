@@ -38,7 +38,7 @@ def pytest_configure(config: pytest.Config) -> None:
         case _:
             assert_never(event_loop)
 
-    config.addinivalue_line("markers", "skip_uvloop: Skip asyncio test if uvloop is used")
+    config.addinivalue_line("markers", "skipif_uvloop: Skip asyncio test if uvloop is used")
 
 
 def pytest_report_header(config: pytest.Config) -> str:
@@ -49,5 +49,5 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
     event_loop: EventLoop = item.config.getoption(ASYNCIO_EVENT_LOOP_OPTION)
 
     match event_loop:
-        case EventLoop.UVLOOP if item.get_closest_marker("skip_uvloop") is not None:
+        case EventLoop.UVLOOP if item.get_closest_marker("skipif_uvloop") is not None:
             pytest.skip("Skipped because uvloop runner is used")
