@@ -56,13 +56,13 @@ class SingleTaskRunner(Generic[_T_co]):
         if self.__task is not None:
             return await self.__task.join()
 
-        if self.__coro_func is None:  # Early cancel
-            await self.__backend.coro_cancel()
-
         async with self.__backend.create_task_group() as task_group:
-            coro_func, args, kwargs = self.__coro_func
-            self.__coro_func = None
-            self.__task = task_group.start_soon(coro_func, *args, **kwargs)
-            del coro_func, args, kwargs
+            if self.__coro_func is None:
+                self.__task = task_group.start_soon(self.__backend.coro_cancel)
+            else:
+                coro_func, args, kwargs = self.__coro_func
+                self.__coro_func = None
+                self.__task = task_group.start_soon(coro_func, *args, **kwargs)
+                del coro_func, args, kwargs
 
         return await self.__task.join()
