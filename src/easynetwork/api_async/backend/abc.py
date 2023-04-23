@@ -109,7 +109,7 @@ class AbstractTaskGroup(metaclass=ABCMeta):
         exc_type: type[BaseException] | None,
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
-    ) -> bool | None:
+    ) -> None:
         raise NotImplementedError
 
     @abstractmethod
