@@ -14,6 +14,7 @@ __all__ = [
     "AbstractAsyncDatagramSocketAdapter",
     "AbstractAsyncListenerSocketAdapter",
     "AbstractAsyncStreamSocketAdapter",
+    "AbstractAsyncThreadPoolExecutor",
     "AbstractTask",
     "AbstractTaskGroup",
     "AbstractThreadsPortal",
@@ -92,7 +93,7 @@ class AbstractTask(Generic[_T_co], metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    async def join(self) -> _T_co:
+    async def join(self, *, shield: bool = ...) -> _T_co:
         raise NotImplementedError
 
 
@@ -120,6 +121,40 @@ class AbstractTaskGroup(metaclass=ABCMeta):
         *args: _P.args,
         **kwargs: _P.kwargs,
     ) -> AbstractTask[_T]:
+        raise NotImplementedError
+
+
+class AbstractAsyncThreadPoolExecutor(metaclass=ABCMeta):
+    __slots__ = ("__weakref__",)
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        await self.shutdown()
+
+    @abstractmethod
+    def submit(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> AbstractTask[_T]:
+        raise NotImplementedError
+
+    async def execute(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+        task = self.submit(__func, *args, **kwargs)
+        try:
+            return await task.join()
+        finally:
+            del task
+
+    @abstractmethod
+    async def shutdown(self) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_max_number_of_workers(self) -> int:
         raise NotImplementedError
 
 
@@ -311,11 +346,23 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
     async def run_in_thread(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
         raise NotImplementedError
 
+    def create_thread_pool_executor(self, max_workers: int | None = None) -> AbstractAsyncThreadPoolExecutor:
+        from .threads import AsyncThreadPoolExecutor
+
+        return AsyncThreadPoolExecutor(self, max_workers)
+
     @abstractmethod
     def create_threads_portal(self) -> AbstractThreadsPortal:
         raise NotImplementedError
 
-    async def wait_future(self, future: concurrent.futures.Future[_T_co]) -> _T_co:
+    async def wait_future(self, future: concurrent.futures.Future[_T_co], *, shield: bool = False) -> _T_co:
         while not future.done():
-            await self.coro_yield()
+            try:
+                await self.coro_yield()
+            except self.get_cancelled_exc_class():
+                if not shield:
+                    future.cancel()
+                raise
+        if future.cancelled():
+            await self.coro_cancel()
         return future.result()

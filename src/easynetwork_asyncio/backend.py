@@ -263,7 +263,10 @@ class AsyncioBackend(AbstractAsyncBackend):
 
         return ThreadsPortal()
 
-    async def wait_future(self, future: concurrent.futures.Future[_T_co]) -> _T_co:
+    async def wait_future(self, future: concurrent.futures.Future[_T_co], *, shield: bool = False) -> _T_co:
         import asyncio
 
-        return await asyncio.wrap_future(future)
+        outer_future = asyncio.wrap_future(future)
+        if shield:
+            return await asyncio.shield(outer_future)
+        return await outer_future

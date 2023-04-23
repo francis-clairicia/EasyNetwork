@@ -112,7 +112,7 @@ class TestAsyncioBackend:
         async with backend.create_task_group() as task_group:
             inner_task = task_group.start_soon(coroutine, 42)
 
-            outer_task = event_loop.create_task(inner_task.join())
+            outer_task = event_loop.create_task(inner_task.join(shield=True))
             event_loop.call_later(0.2, outer_task.cancel)
 
             with pytest.raises(asyncio.CancelledError):
@@ -131,6 +131,65 @@ class TestAsyncioBackend:
         event_loop.call_later(0.5, future.set_result, 42)
 
         assert await backend.wait_future(future) == 42
+
+    @pytest.mark.parametrize("shield", [False, True], ids=lambda boolean: f"shield=={boolean}")
+    async def test____wait_future____cancel_future_if_task_is_cancelled(
+        self,
+        shield: bool,
+        event_loop: asyncio.AbstractEventLoop,
+        backend: AbstractAsyncBackend,
+    ) -> None:
+        future: Future[int] = Future()
+        task = event_loop.create_task(backend.wait_future(future, shield=shield))
+        await asyncio.sleep(0)
+
+        task.cancel()
+        await asyncio.wait([task])
+
+        if shield:
+            assert not future.cancelled()
+        else:
+            assert future.cancelled()
+
+    @pytest.mark.parametrize("shield", [False, True], ids=lambda boolean: f"shield=={boolean}")
+    async def test____wait_future____cancel_task_if_future_is_cancelled(
+        self,
+        shield: bool,
+        event_loop: asyncio.AbstractEventLoop,
+        backend: AbstractAsyncBackend,
+    ) -> None:
+        future: Future[int] = Future()
+        task = event_loop.create_task(backend.wait_future(future, shield=shield))
+        await asyncio.sleep(0)
+
+        future.cancel()
+        await asyncio.wait([task])
+
+        assert task.cancelled()
+
+    async def test____create_thread_pool_executor____run_sync(
+        self,
+        backend: AbstractAsyncBackend,
+    ) -> None:
+        def thread_fn(value: int) -> int:
+            return value
+
+        async with backend.create_thread_pool_executor() as executor:
+            task = executor.submit(thread_fn, value=54)
+            assert await task.join() == 54
+            assert task.done()
+            assert not task.cancel()
+            assert not task.cancelled()
+
+            assert await executor.execute(thread_fn, 42) == 42
+
+    async def test____create_thread_pool_executor____shutdown_idempotent(
+        self,
+        backend: AbstractAsyncBackend,
+    ) -> None:
+        async with backend.create_thread_pool_executor() as executor:
+            await executor.shutdown()
+            await executor.shutdown()
 
     async def test____create_threads_portal____run_coroutine_from_thread(
         self,
