@@ -59,7 +59,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         if isinstance(request_handler, BaseRequestHandler):
             from .sync_bridge import AsyncDatagramRequestHandlerBridge
 
-            request_handler = AsyncDatagramRequestHandlerBridge(backend, request_handler)
+            request_handler = AsyncDatagramRequestHandlerBridge(request_handler)
 
         self.__backend: AbstractAsyncBackend = backend
         self.__socket: AbstractAsyncDatagramSocketAdapter | None = socket
@@ -136,7 +136,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             ################
 
             # Initialize request handler
-            await self.__request_handler.service_init()
+            await self.__request_handler.service_init(self.__backend)
             server_exit_stack.push_async_callback(self.__request_handler.service_quit)
             ############################
 

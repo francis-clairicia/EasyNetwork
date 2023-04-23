@@ -82,7 +82,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         if isinstance(request_handler, BaseRequestHandler):
             from .sync_bridge import AsyncStreamRequestHandlerBridge
 
-            request_handler = AsyncStreamRequestHandlerBridge(backend, request_handler)
+            request_handler = AsyncStreamRequestHandlerBridge(request_handler)
 
         self.__backend: AbstractAsyncBackend = backend
         self.__listeners: tuple[AbstractAsyncListenerSocketAdapter, ...] | None = tuple(listeners)
@@ -176,7 +176,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             ################
 
             # Initialize request handler
-            await self.__request_handler.service_init()
+            await self.__request_handler.service_init(self.__backend)
             server_exit_stack.push_async_callback(self.__request_handler.service_quit)
             ############################
 

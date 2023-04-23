@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Generic, TypeVar, final
 if TYPE_CHECKING:
     from ...exceptions import BaseProtocolParseError
     from ...tools.socket import SocketAddress, SocketProxy
+    from ..backend.abc import AbstractAsyncBackend
 
 
 _RequestT = TypeVar("_RequestT")
@@ -61,7 +62,7 @@ class AsyncClientInterface(Generic[_ResponseT], metaclass=ABCMeta):
 class AsyncBaseRequestHandler(Generic[_RequestT, _ResponseT], metaclass=ABCMeta):
     __slots__ = ("__weakref__",)
 
-    async def service_init(self) -> None:
+    async def service_init(self, backend: AbstractAsyncBackend) -> None:
         pass
 
     async def service_quit(self) -> None:

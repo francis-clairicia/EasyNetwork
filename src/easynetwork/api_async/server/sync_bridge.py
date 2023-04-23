@@ -34,24 +34,26 @@ class _BaseAsyncWrapperForRequestHandler(AsyncBaseRequestHandler[_RequestT, _Res
         "__sync_request_handler",
     )
 
-    def __init__(self, backend: AbstractAsyncBackend, sync_request_handler: BaseRequestHandler[_RequestT, _ResponseT]) -> None:
+    def __init__(self, sync_request_handler: BaseRequestHandler[_RequestT, _ResponseT]) -> None:
         super().__init__()
 
-        self.__backend: AbstractAsyncBackend = backend
+        self.__backend: AbstractAsyncBackend | None = None
         self.__sync_request_handler: BaseRequestHandler[_RequestT, _ResponseT] = sync_request_handler
 
     @abstractmethod
     def _build_client_wrapper(self, client: AsyncClientInterface[_ResponseT]) -> ClientInterface[_ResponseT]:
         raise NotImplementedError
 
-    async def service_init(self) -> None:
-        await super().service_init()
-        await self.backend.run_in_thread(self.sync_request_handler.service_init)
+    async def service_init(self, backend: AbstractAsyncBackend) -> None:
+        await super().service_init(backend)
+        self.__backend = backend
+        await backend.run_in_thread(self.sync_request_handler.service_init)
 
     async def service_quit(self) -> None:
         try:
             await self.backend.run_in_thread(self.sync_request_handler.service_quit)
         finally:
+            self.__backend = None
             await super().service_quit()
 
     async def service_actions(self) -> None:
@@ -78,7 +80,9 @@ class _BaseAsyncWrapperForRequestHandler(AsyncBaseRequestHandler[_RequestT, _Res
 
     @property
     def backend(self) -> AbstractAsyncBackend:
-        return self.__backend
+        backend = self.__backend
+        assert backend is not None, "service_init() was not called"
+        return backend
 
     @property
     def sync_request_handler(self) -> BaseRequestHandler[_RequestT, _ResponseT]:
@@ -92,8 +96,8 @@ class AsyncStreamRequestHandlerBridge(
 ):
     __slots__ = ("__clients",)
 
-    def __init__(self, backend: AbstractAsyncBackend, sync_request_handler: BaseRequestHandler[_RequestT, _ResponseT]) -> None:
-        super().__init__(backend, sync_request_handler)
+    def __init__(self, sync_request_handler: BaseRequestHandler[_RequestT, _ResponseT]) -> None:
+        super().__init__(sync_request_handler)
 
         self.__clients: WeakKeyDictionary[AsyncClientInterface[_ResponseT], ClientInterface[_ResponseT]] | None = None
 
@@ -102,8 +106,8 @@ class AsyncStreamRequestHandlerBridge(
         assert client in self.__clients, f"on_connection() was not called for {client}"
         return self.__clients[client]
 
-    async def service_init(self) -> None:
-        await super().service_init()
+    async def service_init(self, backend: AbstractAsyncBackend) -> None:
+        await super().service_init(backend)
         self.__clients = WeakKeyDictionary()
 
     async def service_quit(self) -> None:
