@@ -12,7 +12,6 @@ import contextlib as _contextlib
 import logging as _logging
 from typing import TYPE_CHECKING, Any, Callable, Generic, Literal, Mapping, Self, TypeVar, final
 
-from ...api_sync.server.handler import BaseRequestHandler
 from ...exceptions import ClientClosedError, DatagramProtocolParseError
 from ...protocol import DatagramProtocol
 from ...tools._utils import check_real_socket_state as _check_real_socket_state
@@ -51,15 +50,11 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         backend: AbstractAsyncBackend,
         socket: AbstractAsyncDatagramSocketAdapter,
         protocol: DatagramProtocol[_ResponseT, _RequestT],
-        request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT] | BaseRequestHandler[_RequestT, _ResponseT],
+        request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT],
     ) -> None:
         super().__init__()
 
         assert isinstance(protocol, DatagramProtocol)
-        if isinstance(request_handler, BaseRequestHandler):
-            from .sync_bridge import AsyncDatagramRequestHandlerBridge
-
-            request_handler = AsyncDatagramRequestHandlerBridge(request_handler)
 
         self.__backend: AbstractAsyncBackend = backend
         self.__socket: AbstractAsyncDatagramSocketAdapter | None = socket
@@ -79,7 +74,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         host: str | None,
         port: int,
         protocol: DatagramProtocol[_ResponseT, _RequestT],
-        request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT] | BaseRequestHandler[_RequestT, _ResponseT],
+        request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT],
         *,
         family: int = 0,
         reuse_port: bool = False,

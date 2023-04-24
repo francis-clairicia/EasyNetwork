@@ -13,7 +13,6 @@ import logging as _logging
 from collections import deque
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Generic, Literal, Mapping, Self, Sequence, TypeVar, final
 
-from ...api_sync.server.handler import BaseRequestHandler
 from ...exceptions import ClientClosedError, StreamProtocolParseError
 from ...protocol import StreamProtocol
 from ...tools._utils import check_real_socket_state as _check_real_socket_state, concatenate_chunks as _concatenate_chunks
@@ -66,7 +65,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         backend: AbstractAsyncBackend,
         listeners: Sequence[AbstractAsyncListenerSocketAdapter],
         protocol: StreamProtocol[_ResponseT, _RequestT],
-        request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT] | BaseRequestHandler[_RequestT, _ResponseT],
+        request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT],
         max_recv_size: int | None,
     ) -> None:
         super().__init__()
@@ -79,10 +78,6 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             raise ValueError("'max_recv_size' must be a strictly positive integer")
 
         assert isinstance(protocol, StreamProtocol)
-        if isinstance(request_handler, BaseRequestHandler):
-            from .sync_bridge import AsyncStreamRequestHandlerBridge
-
-            request_handler = AsyncStreamRequestHandlerBridge(request_handler)
 
         self.__backend: AbstractAsyncBackend = backend
         self.__listeners: tuple[AbstractAsyncListenerSocketAdapter, ...] | None = tuple(listeners)
@@ -104,7 +99,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         host: str | None | Sequence[str],
         port: int,
         protocol: StreamProtocol[_ResponseT, _RequestT],
-        request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT] | BaseRequestHandler[_RequestT, _ResponseT],
+        request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT],
         *,
         family: int = 0,
         backlog: int | None = None,
