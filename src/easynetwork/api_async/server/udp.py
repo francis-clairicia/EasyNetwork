@@ -10,7 +10,7 @@ __all__ = ["AsyncUDPNetworkServer"]
 
 import contextlib as _contextlib
 import logging as _logging
-from typing import TYPE_CHECKING, Any, Callable, Generic, Literal, Mapping, Self, TypeVar, final
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Generic, Literal, Mapping, Self, TypeVar, final
 
 from ...exceptions import ClientClosedError, DatagramProtocolParseError
 from ...protocol import DatagramProtocol
@@ -119,7 +119,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                     await socket.aclose()
 
     async def serve_forever(self) -> None:
-        if (socket := self.__socket) is None:
+        if self.__socket is None:
             raise RuntimeError("Closed server")
         if not self.__is_shutdown.is_set():
             raise RuntimeError("Server is already running")
@@ -156,15 +156,19 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             ##############
 
             # Main loop
-            self.__mainloop_task = task_group.start_soon(self.__receive_datagrams_task, socket, task_group)
+            self.__mainloop_task = task_group.start_soon(self.__receive_datagrams_task, task_group)
             try:
                 await self.__mainloop_task.join()
             finally:
                 self.__mainloop_task = None
 
-    async def __receive_datagrams_task(self, socket: AbstractAsyncDatagramSocketAdapter, task_group: AbstractTaskGroup) -> None:
+    async def __receive_datagrams_task(self, task_group: AbstractTaskGroup) -> None:
+        socket = self.__socket
+        assert socket is not None
         socket_family: int = self.__socket_proxy.family
-        accept_request_from = self.__accept_request_from
+        accept_request_from: Callable[[SocketAddress], Awaitable[bool]] | None = None
+        if isinstance(self.__request_handler, AsyncDatagramRequestHandler):
+            accept_request_from = self.__request_handler.accept_request_from
         while True:
             try:
                 datagram, client_address = await socket.recvfrom()
@@ -173,10 +177,10 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 return
             client_address = new_socket_address(client_address, socket_family)
             logger.debug("Received a datagram from %s", client_address)
-            if await accept_request_from(client_address):
+            if accept_request_from is None or await accept_request_from(client_address):
                 task_group.start_soon(self.__datagram_received_task, socket, datagram, client_address)
             else:
-                logger.warning("A datagram from %s was refused", client_address)
+                logger.warning("A datagram from %s has been refused", client_address)
             del datagram, client_address
 
     async def __service_actions_task(self) -> None:
@@ -188,12 +192,6 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             except Exception:
                 logger.exception("Error occured in request_handler.service_actions()")
             await backend.sleep(self.__service_actions_interval)
-
-    async def __accept_request_from(self, client_address: SocketAddress) -> bool:
-        request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT] = self.__request_handler
-        if isinstance(request_handler, AsyncDatagramRequestHandler):
-            return await request_handler.accept_request_from(client_address)
-        return True
 
     async def __datagram_received_task(
         self,

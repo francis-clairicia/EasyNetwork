@@ -242,6 +242,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                     raise
             else:
                 task_group.start_soon(self.__client_task, client_socket)
+                del client_socket
 
     async def __client_task(self, socket: AbstractAsyncStreamSocketAdapter) -> None:
         async with _contextlib.AsyncExitStack() as client_exit_stack:
@@ -280,6 +281,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                         async for request in request_generator:
                             logger.debug("Processing request sent by %s", address)
                             await request_handler.handle(request, client)
+                            del request
                             await backend.coro_yield()
                             if client.is_closing():
                                 raise ClientClosedError
