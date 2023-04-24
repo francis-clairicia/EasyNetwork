@@ -58,6 +58,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         "__max_recv_size",
         "__listener_tasks",
         "__mainloop_task",
+        "__service_actions_interval",
     )
 
     def __init__(
@@ -66,7 +67,8 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         listeners: Sequence[AbstractAsyncListenerSocketAdapter],
         protocol: StreamProtocol[_ResponseT, _RequestT],
         request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT],
-        max_recv_size: int | None,
+        max_recv_size: int | None = None,
+        service_actions_interval: float = 0.1,
     ) -> None:
         super().__init__()
 
@@ -79,6 +81,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
         assert isinstance(protocol, StreamProtocol)
 
+        self.__service_actions_interval: float = max(service_actions_interval, 0)
         self.__backend: AbstractAsyncBackend = backend
         self.__listeners: tuple[AbstractAsyncListenerSocketAdapter, ...] | None = tuple(listeners)
         self.__listener_addresses: tuple[SocketAddress, ...] = tuple(
@@ -107,6 +110,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         max_recv_size: int | None = None,
         backend: str | AbstractAsyncBackend | None = None,
         backend_kwargs: Mapping[str, Any] | None = None,
+        service_actions_interval: float = 0.1,
     ) -> Self:
         backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
 
@@ -121,7 +125,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             reuse_port=reuse_port,
         )
 
-        return cls(backend, listeners, protocol, request_handler, max_recv_size)
+        return cls(backend, listeners, protocol, request_handler, max_recv_size, service_actions_interval)
 
     def is_serving(self) -> bool:
         return self.__listeners is not None and self.__is_up.is_set()
@@ -161,8 +165,9 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             raise RuntimeError("Server is already running")
 
         async with _contextlib.AsyncExitStack() as server_exit_stack:
-            # Final log
+            # Final teardown
             server_exit_stack.callback(logger.info, "Server stopped")
+            server_exit_stack.push_async_callback(self.server_close)
             ###########
 
             # Wake up server
@@ -197,6 +202,11 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             self.__mainloop_task = task_group.start_soon(self.__backend.sleep_forever)
             try:
                 await self.__mainloop_task.join()
+            except self.__backend.get_cancelled_exc_class():
+                try:
+                    await self.stop_listening()
+                finally:
+                    raise
             finally:
                 self.__mainloop_task = None
 
@@ -208,7 +218,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 await request_handler.service_actions()
             except Exception:
                 logger.exception("Error occured in request_handler.service_actions()")
-            await backend.coro_yield()
+            await backend.sleep(self.__service_actions_interval)
 
     async def __listener_task(self, listener: AbstractAsyncListenerSocketAdapter, task_group: AbstractTaskGroup) -> None:
         backend: AbstractAsyncBackend = self.__backend

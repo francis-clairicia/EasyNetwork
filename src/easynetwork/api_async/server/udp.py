@@ -43,6 +43,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         "__is_shutdown",
         "__sendto_lock",
         "__mainloop_task",
+        "__service_actions_interval",
     )
 
     def __init__(
@@ -51,11 +52,13 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         socket: AbstractAsyncDatagramSocketAdapter,
         protocol: DatagramProtocol[_ResponseT, _RequestT],
         request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT],
+        service_actions_interval: float = 0.1,
     ) -> None:
         super().__init__()
 
         assert isinstance(protocol, DatagramProtocol)
 
+        self.__service_actions_interval: float = max(service_actions_interval, 0)
         self.__backend: AbstractAsyncBackend = backend
         self.__socket: AbstractAsyncDatagramSocketAdapter | None = socket
         self.__socket_proxy: SocketProxy = SocketProxy(socket.socket())
@@ -80,6 +83,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         reuse_port: bool = False,
         backend: str | AbstractAsyncBackend | None = None,
         backend_kwargs: Mapping[str, Any] | None = None,
+        service_actions_interval: float = 0.1,
     ) -> Self:
         backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
 
@@ -90,7 +94,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             reuse_port=reuse_port,
         )
 
-        return cls(backend, socket, protocol, request_handler)
+        return cls(backend, socket, protocol, request_handler, service_actions_interval)
 
     def is_serving(self) -> bool:
         return self.__socket is not None and self.__is_up.is_set()
@@ -121,8 +125,9 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             raise RuntimeError("Server is already running")
 
         async with _contextlib.AsyncExitStack() as server_exit_stack:
-            # Final log
+            # Final teardown
             server_exit_stack.callback(logger.info, "Server stopped")
+            server_exit_stack.push_async_callback(self.server_close)
             ###########
 
             # Wake up server
@@ -182,7 +187,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 await request_handler.service_actions()
             except Exception:
                 logger.exception("Error occured in request_handler.service_actions()")
-            await backend.coro_yield()
+            await backend.sleep(self.__service_actions_interval)
 
     async def __accept_request_from(self, client_address: SocketAddress) -> bool:
         request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT] = self.__request_handler

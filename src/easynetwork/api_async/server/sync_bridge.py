@@ -7,8 +7,8 @@
 from __future__ import annotations
 
 __all__ = [
-    "AsyncDatagramRequestHandlerBridge",
-    "AsyncStreamRequestHandlerBridge",
+    "DatagramRequestHandlerAsyncBridge",
+    "StreamRequestHandlerAsyncBridge",
 ]
 
 import contextlib
@@ -34,7 +34,7 @@ class _BaseAsyncWrapperForRequestHandler(AsyncBaseRequestHandler[_RequestT, _Res
         "__backend",
         "__sync_request_handler",
         "__thread_pool_size",
-        "__thread_pool",
+        "__request_thread_pool",
     )
 
     def __init__(
@@ -47,7 +47,7 @@ class _BaseAsyncWrapperForRequestHandler(AsyncBaseRequestHandler[_RequestT, _Res
         self.__backend: AbstractAsyncBackend | None = None
         self.__sync_request_handler: BaseRequestHandler[_RequestT, _ResponseT] = sync_request_handler
         self.__thread_pool_size: int | None = thread_pool_size
-        self.__thread_pool: AbstractAsyncThreadPoolExecutor | None = None
+        self.__request_thread_pool: AbstractAsyncThreadPoolExecutor | None = None
 
     @abstractmethod
     def _build_client_wrapper(self, client: AsyncClientInterface[_ResponseT]) -> ClientInterface[_ResponseT]:
@@ -57,62 +57,63 @@ class _BaseAsyncWrapperForRequestHandler(AsyncBaseRequestHandler[_RequestT, _Res
         await super().service_init(backend)
         self.__backend = backend
         await backend.run_in_thread(self.sync_request_handler.service_init)
-        self.__thread_pool = backend.create_thread_pool_executor(max_workers=self.__thread_pool_size)
+        self.__request_thread_pool = backend.create_thread_pool_executor(max_workers=self.__thread_pool_size)
 
     async def service_quit(self) -> None:
         try:
             async with contextlib.AsyncExitStack() as stack:
-                thread_pool = self.__thread_pool
+                thread_pool = self.__request_thread_pool
                 backend = self.__backend
                 if backend is not None:
                     stack.push_async_callback(backend.run_in_thread, self.sync_request_handler.service_quit)  # type: ignore[arg-type]
                 if thread_pool is not None:
                     stack.push_async_callback(thread_pool.shutdown)
         finally:
-            self.__thread_pool = None
+            self.__request_thread_pool = None
             self.__backend = None
             await super().service_quit()
 
     async def service_actions(self) -> None:
         await super().service_actions()
-        await self.thread_pool.execute(self.sync_request_handler.service_actions)
+        await self.backend.run_in_thread(self.sync_request_handler.service_actions)
 
     async def handle(self, request: _RequestT, client: AsyncClientInterface[_ResponseT]) -> None:
         sync_client = self._build_client_wrapper(client)
-        return await self.thread_pool.execute(self.sync_request_handler.handle, request, sync_client)
+        return await self.request_thread_pool.execute(self.sync_request_handler.handle, request, sync_client)
 
     async def bad_request(self, client: AsyncClientInterface[_ResponseT], exc: BaseProtocolParseError) -> None:
         try:
             sync_client = self._build_client_wrapper(client)
-            return await self.thread_pool.execute(self.sync_request_handler.bad_request, sync_client, exc)
+            return await self.request_thread_pool.execute(self.sync_request_handler.bad_request, sync_client, exc)
         finally:
             del exc
 
     async def handle_error(self, client: AsyncClientInterface[_ResponseT], exc: Exception) -> bool:
         try:
             sync_client = self._build_client_wrapper(client)
-            return await self.thread_pool.execute(self.sync_request_handler.handle_error, sync_client, exc)
+            return await self.backend.run_in_thread(self.sync_request_handler.handle_error, sync_client, exc)
         finally:
             del exc
 
-    def _get_threads_portal(self) -> AbstractThreadsPortal:
+    @property
+    def backend(self) -> AbstractAsyncBackend:
         backend = self.__backend
         assert backend is not None, "service_init() was not called"
-        return backend.create_threads_portal()
+        return backend
 
     @property
     def sync_request_handler(self) -> BaseRequestHandler[_RequestT, _ResponseT]:
         return self.__sync_request_handler
 
     @property
-    def thread_pool(self) -> AbstractAsyncThreadPoolExecutor:
-        thread_pool = self.__thread_pool
+    def request_thread_pool(self) -> AbstractAsyncThreadPoolExecutor:
+        thread_pool = self.__request_thread_pool
         assert thread_pool is not None, "service_init() was not called"
         return thread_pool
 
 
 @final
-class AsyncStreamRequestHandlerBridge(
+class StreamRequestHandlerAsyncBridge(
     _BaseAsyncWrapperForRequestHandler[_RequestT, _ResponseT],
     AsyncStreamRequestHandler[_RequestT, _ResponseT],
 ):
@@ -151,10 +152,10 @@ class AsyncStreamRequestHandlerBridge(
         try:
             sync_client = self.__clients[client]
         except KeyError:
-            sync_client = _BlockingClientInterfaceWrapper(self._get_threads_portal(), client)
+            sync_client = _BlockingClientInterfaceWrapper(self.backend.create_threads_portal(), client)
             self.__clients[client] = sync_client
         if isinstance(self.sync_request_handler, StreamRequestHandler):
-            await self.thread_pool.execute(self.sync_request_handler.on_connection, sync_client)
+            await self.backend.run_in_thread(self.sync_request_handler.on_connection, sync_client)
 
     async def on_disconnection(self, client: AsyncClientInterface[_ResponseT]) -> None:
         assert self.__clients is not None, "service_init() was not called"
@@ -164,24 +165,24 @@ class AsyncStreamRequestHandlerBridge(
             # Since it is a WeakKeyDictionary, the client will be removed on garbage collection
             sync_client = self.__clients[client]
             if isinstance(self.sync_request_handler, StreamRequestHandler):
-                await self.thread_pool.execute(self.sync_request_handler.on_disconnection, sync_client)
+                await self.backend.run_in_thread(self.sync_request_handler.on_disconnection, sync_client)
         finally:
             await super().on_disconnection(client)
 
 
 @final
-class AsyncDatagramRequestHandlerBridge(
+class DatagramRequestHandlerAsyncBridge(
     _BaseAsyncWrapperForRequestHandler[_RequestT, _ResponseT],
     AsyncDatagramRequestHandler[_RequestT, _ResponseT],
 ):
     __slots__ = ()
 
     def _build_client_wrapper(self, client: AsyncClientInterface[_ResponseT]) -> ClientInterface[_ResponseT]:
-        return _BlockingClientInterfaceWrapper(self._get_threads_portal(), client)
+        return _BlockingClientInterfaceWrapper(self.backend.create_threads_portal(), client)
 
     async def accept_request_from(self, client_address: SocketAddress) -> bool:
         if isinstance(self.sync_request_handler, DatagramRequestHandler):
-            return await self.thread_pool.execute(self.sync_request_handler.accept_request_from, client_address)
+            return await self.backend.run_in_thread(self.sync_request_handler.accept_request_from, client_address)
         return await super().accept_request_from(client_address)
 
 
