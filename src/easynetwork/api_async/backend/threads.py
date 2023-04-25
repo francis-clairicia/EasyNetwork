@@ -8,11 +8,10 @@ Asynchronous client/server module
 
 from __future__ import annotations
 
-__all__ = ["AsyncThreadPoolExecutor"]
+__all__ = ["AsyncThreadPoolExecutor", "AsyncThreadPoolTask"]
 
 import concurrent.futures
 import contextvars
-import functools
 import threading
 from typing import Callable, ParamSpec, TypeVar, final
 
@@ -24,7 +23,7 @@ _T_co = TypeVar("_T_co", covariant=True)
 
 
 @final
-class ThreadPoolTask(AbstractTask[_T_co]):
+class AsyncThreadPoolTask(AbstractTask[_T_co]):
     __slots__ = ("__backend", "__future")
 
     def __init__(self, backend: AbstractAsyncBackend, future: concurrent.futures.Future[_T_co]) -> None:
@@ -59,8 +58,7 @@ class AsyncThreadPoolExecutor(AbstractAsyncThreadPoolExecutor):
 
     def submit(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> AbstractTask[_T]:
         ctx = contextvars.copy_context()
-        func_call = functools.partial(ctx.run, __func, *args, **kwargs)
-        return ThreadPoolTask(self.__backend, self.__executor.submit(func_call))  # type: ignore[arg-type]
+        return AsyncThreadPoolTask(self.__backend, self.__executor.submit(ctx.run, __func, *args, **kwargs))  # type: ignore[arg-type]
 
     async def shutdown(self) -> None:
         if self.__shutdown_future is not None:
