@@ -222,6 +222,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
     async def __listener_task(self, listener: AbstractAsyncListenerSocketAdapter, task_group: AbstractTaskGroup) -> None:
         backend: AbstractAsyncBackend = self.__backend
+        client_task = self.__client_task
         while True:
             try:
                 client_socket = await listener.accept()
@@ -241,7 +242,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 else:
                     raise
             else:
-                task_group.start_soon(self.__client_task, client_socket)
+                task_group.start_soon(client_task, client_socket)
                 del client_socket
 
     async def __client_task(self, socket: AbstractAsyncStreamSocketAdapter) -> None:

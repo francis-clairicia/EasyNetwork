@@ -169,6 +169,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         accept_request_from: Callable[[SocketAddress], Awaitable[bool]] | None = None
         if isinstance(self.__request_handler, AsyncDatagramRequestHandler):
             accept_request_from = self.__request_handler.accept_request_from
+        datagram_received_task = self.__datagram_received_task
         while True:
             try:
                 datagram, client_address = await socket.recvfrom()
@@ -178,7 +179,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             client_address = new_socket_address(client_address, socket_family)
             logger.debug("Received a datagram from %s", client_address)
             if accept_request_from is None or await accept_request_from(client_address):
-                task_group.start_soon(self.__datagram_received_task, socket, datagram, client_address)
+                task_group.start_soon(datagram_received_task, socket, datagram, client_address)
             else:
                 logger.warning("A datagram from %s has been refused", client_address)
             del datagram, client_address
