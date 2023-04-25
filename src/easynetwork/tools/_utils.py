@@ -107,7 +107,7 @@ def open_listener_sockets_from_getaddrinfo_result(
             finally:
                 errors = []
 
-        # There was no errors, so do not close sockets
+        # There were no errors, therefore do not close the sockets
         socket_exit_stack.pop_all()
 
     return sockets
