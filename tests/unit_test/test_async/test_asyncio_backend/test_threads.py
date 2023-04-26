@@ -62,7 +62,7 @@ class TestAsyncioThreadsPortal:
         mock_run_coroutine_threadsafe.assert_called_once_with(mocker.ANY, event_loop)
         assert ret_val is mocker.sentinel.return_value
 
-    async def test____run_coroutine_from_thread____error_if_called_from_event_loop_thread(
+    async def test____run_coroutine____error_if_called_from_event_loop_thread(
         self,
         threads_portal: ThreadsPortal,
         mocker: MockerFixture,
@@ -85,7 +85,7 @@ class TestAsyncioThreadsPortal:
         func_stub.assert_not_called()
         mock_run_coroutine_threadsafe.assert_not_called()
 
-    async def test____run_sync____use_asyncio_run_coroutine_threadsafe(
+    async def test____run_sync____use_asyncio_event_loop_call_soon_threadsafe(
         self,
         event_loop: asyncio.AbstractEventLoop,
         threads_portal: ThreadsPortal,
@@ -94,9 +94,10 @@ class TestAsyncioThreadsPortal:
         # Arrange
         func_stub: MagicMock = mocker.stub()
         func_stub.return_value = mocker.sentinel.return_value
-        mock_run_coroutine_threadsafe: MagicMock = mocker.patch(
-            "asyncio.run_coroutine_threadsafe",
-            side_effect=asyncio.run_coroutine_threadsafe,
+        mock_loop_call_soon_threadsafe: MagicMock = mocker.patch.object(
+            event_loop,
+            "call_soon_threadsafe",
+            side_effect=event_loop.call_soon_threadsafe,
         )
 
         # Act
@@ -111,6 +112,7 @@ class TestAsyncioThreadsPortal:
                 kw1=mocker.sentinel.kwargs1,
                 kw2=mocker.sentinel.kwargs2,
             )
+            mock_loop_call_soon_threadsafe.assert_called_once()
 
         await asyncio.to_thread(test_thread)
 
@@ -121,19 +123,20 @@ class TestAsyncioThreadsPortal:
             kw1=mocker.sentinel.kwargs1,
             kw2=mocker.sentinel.kwargs2,
         )
-        mock_run_coroutine_threadsafe.assert_called_once_with(mocker.ANY, event_loop)
         assert ret_val is mocker.sentinel.return_value
 
     async def test____run_sync____error_if_called_from_event_loop_thread(
         self,
+        event_loop: asyncio.AbstractEventLoop,
         threads_portal: ThreadsPortal,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
         func_stub: MagicMock = mocker.stub()
-        mock_run_coroutine_threadsafe: MagicMock = mocker.patch(
-            "asyncio.run_coroutine_threadsafe",
-            side_effect=asyncio.run_coroutine_threadsafe,
+        mock_loop_call_soon_threadsafe: MagicMock = mocker.patch.object(
+            event_loop,
+            "call_soon_threadsafe",
+            side_effect=event_loop.call_soon_threadsafe,
         )
 
         # Act
@@ -148,4 +151,4 @@ class TestAsyncioThreadsPortal:
 
         # Assert
         func_stub.assert_not_called()
-        mock_run_coroutine_threadsafe.assert_not_called()
+        mock_loop_call_soon_threadsafe.assert_not_called()

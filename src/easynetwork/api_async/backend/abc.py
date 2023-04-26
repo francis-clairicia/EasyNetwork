@@ -170,11 +170,9 @@ class AbstractThreadsPortal(metaclass=ABCMeta):
     def run_coroutine(self, __coro_func: Callable[_P, Coroutine[Any, Any, _T]], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
         raise NotImplementedError
 
+    @abstractmethod
     def run_sync(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
-        async def _func_as_coroutine() -> _T:
-            return __func(*args, **kwargs)
-
-        return self.run_coroutine(_func_as_coroutine)
+        raise NotImplementedError
 
     @property
     @final

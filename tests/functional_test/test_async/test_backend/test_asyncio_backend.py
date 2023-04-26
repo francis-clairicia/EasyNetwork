@@ -212,6 +212,24 @@ class TestAsyncioBackend:
 
         assert await backend.run_in_thread(thread) == 42
 
+    async def test____create_threads_portal____run_coroutine_from_thread____exception_raised(
+        self,
+        backend: AbstractAsyncBackend,
+    ) -> None:
+        threads_portal = backend.create_threads_portal()
+        expected_exception = OSError("Why not?")
+
+        async def coroutine(value: int) -> int:
+            raise expected_exception
+
+        def thread() -> int:
+            return threads_portal.run_coroutine(coroutine, 42)
+
+        with pytest.raises(OSError) as exc_info:
+            await backend.run_in_thread(thread)
+
+        assert exc_info.value is expected_exception
+
     async def test____create_threads_portal____run_sync_from_thread_in_event_loop(
         self,
         event_loop: asyncio.AbstractEventLoop,
@@ -232,3 +250,21 @@ class TestAsyncioBackend:
             return threads_portal.run_sync(not_threadsafe_func, 42)
 
         assert await backend.run_in_thread(thread) == 42
+
+    async def test____create_threads_portal____run_sync_from_thread_in_event_loop____exception_raised(
+        self,
+        backend: AbstractAsyncBackend,
+    ) -> None:
+        threads_portal = backend.create_threads_portal()
+        expected_exception = OSError("Why not?")
+
+        def not_threadsafe_func(value: int) -> int:
+            raise expected_exception
+
+        def thread() -> int:
+            return threads_portal.run_sync(not_threadsafe_func, 42)
+
+        with pytest.raises(OSError) as exc_info:
+            await backend.run_in_thread(thread)
+
+        assert exc_info.value is expected_exception
