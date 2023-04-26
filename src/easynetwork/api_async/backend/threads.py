@@ -62,7 +62,7 @@ class AsyncThreadPoolExecutor(AbstractAsyncThreadPoolExecutor):
 
     async def shutdown(self) -> None:
         if self.__shutdown_future is not None:
-            return await self.__backend.wait_future(self.__shutdown_future)
+            return await self.__backend.ignore_cancellation(self.__backend.wait_future(self.__shutdown_future))
         shutdown_future: concurrent.futures.Future[None] = concurrent.futures.Future()
         shutdown_future.set_running_or_notify_cancel()
         assert shutdown_future.running()
@@ -70,7 +70,7 @@ class AsyncThreadPoolExecutor(AbstractAsyncThreadPoolExecutor):
         thread.start()
         try:
             self.__shutdown_future = shutdown_future
-            await self.__backend.wait_future(self.__shutdown_future)
+            await self.__backend.ignore_cancellation(self.__backend.wait_future(self.__shutdown_future))
         finally:
             thread.join()
 

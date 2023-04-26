@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from socket import socket as Socket
-from typing import Any, Callable, NoReturn, Sequence, final
+from typing import Any, Callable, Coroutine, NoReturn, Sequence, final
 
 from easynetwork.api_async.backend.abc import (
     AbstractAsyncBackend,
@@ -31,6 +31,9 @@ class BaseFakeBackend(AbstractAsyncBackend):
         raise NotImplementedError
 
     async def coro_cancel(self) -> NoReturn:
+        raise NotImplementedError
+
+    async def ignore_cancellation(self, coroutine: Coroutine[Any, Any, Any]) -> Any:
         raise NotImplementedError
 
     def get_cancelled_exc_class(self) -> type[BaseException]:

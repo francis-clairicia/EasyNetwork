@@ -10,12 +10,12 @@ from __future__ import annotations
 __all__ = ["AsyncioBackend"]  # type: list[str]
 
 import socket as _socket
-from typing import TYPE_CHECKING, Any, Callable, NoReturn, ParamSpec, Sequence, TypeVar, final
+from typing import TYPE_CHECKING, Any, Callable, Coroutine, NoReturn, ParamSpec, Sequence, TypeVar, final
 
 from easynetwork.api_async.backend.abc import AbstractAsyncBackend
 
 if TYPE_CHECKING:
-    import asyncio
+    import asyncio as _asyncio
     import concurrent.futures
 
     from easynetwork.api_async.backend.abc import (
@@ -37,6 +37,15 @@ _T_co = TypeVar("_T_co", covariant=True)
 class AsyncioBackend(AbstractAsyncBackend):
     __slots__ = ()
 
+    @staticmethod
+    def _current_asyncio_task() -> _asyncio.Task[Any]:
+        from asyncio import current_task
+
+        t: _asyncio.Task[Any] | None = current_task()
+        if t is None:  # pragma: no cover
+            raise RuntimeError("This function should be called within a task.")
+        return t
+
     async def coro_yield(self) -> None:
         return await self.sleep(0)
 
@@ -47,8 +56,7 @@ class AsyncioBackend(AbstractAsyncBackend):
         # Since 3.11 a task can be un-cancelled, and this is problematic, so just to be sure this task will be cancelled,
         # we will retry again and again until the coroutine is stopped
         while True:
-            current_task: asyncio.Task[Any] | None = asyncio.current_task()
-            assert current_task is not None
+            current_task: asyncio.Task[Any] = self._current_asyncio_task()
 
             current_task.cancel()
             await asyncio.sleep(0)
@@ -57,6 +65,25 @@ class AsyncioBackend(AbstractAsyncBackend):
         import asyncio
 
         return asyncio.CancelledError
+
+    async def ignore_cancellation(self, coroutine: Coroutine[Any, Any, _T_co]) -> _T_co:
+        import asyncio
+
+        current_task: asyncio.Task[Any] = self._current_asyncio_task()
+
+        task: asyncio.Task[_T_co] = asyncio.create_task(coroutine)
+
+        # This task must be unregistered in order not to be cancelled by runner at event loop shutdown
+        asyncio._unregister_task(task)
+
+        while True:
+            try:
+                return await asyncio.shield(task)
+            except asyncio.CancelledError:
+                if task.done():
+                    raise
+                while current_task.uncancel() != 0:  # It must really NOT be cancelled
+                    continue
 
     def current_time(self) -> float:
         import asyncio
@@ -188,7 +215,7 @@ class AsyncioBackend(AbstractAsyncBackend):
         port: int,
         family: int,
         type: int,
-        loop: asyncio.AbstractEventLoop,
+        loop: _asyncio.AbstractEventLoop,
         proto: int = 0,
         flags: int = 0,
     ) -> Sequence[tuple[int, int, int, str, tuple[Any, ...]]]:

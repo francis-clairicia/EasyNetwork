@@ -6,7 +6,7 @@ import asyncio
 from concurrent.futures import Future
 from socket import socket as Socket
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Iterator, Literal, NoReturn, assert_never, final
+from typing import TYPE_CHECKING, Any, Coroutine, Iterator, Literal, NoReturn, assert_never, final
 
 from easynetwork.api_async.backend.abc import AbstractAsyncBackend
 from easynetwork.api_async.backend.factory import AsyncBackendFactory
@@ -46,6 +46,9 @@ class MockBackend(BaseFakeBackend):
 
     async def sleep(self, delay: float) -> None:
         return await self.mock_sleep(delay)
+
+    async def ignore_cancellation(self, coroutine: Coroutine[Any, Any, Any]) -> Any:
+        return await coroutine
 
 
 @pytest.mark.asyncio

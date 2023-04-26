@@ -30,6 +30,31 @@ class TestAsyncioBackend:
 
         assert task.cancelled()
 
+    async def test____ignore_cancellation____always_continue_on_cancellation(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        backend: AbstractAsyncBackend,
+    ) -> None:
+        task: asyncio.Task[int] = event_loop.create_task(backend.ignore_cancellation(asyncio.sleep(0.5, 42)))
+
+        for i in range(5):
+            for _ in range(3):
+                event_loop.call_later(0.1 * i, task.cancel)
+
+        assert await task == 42
+        assert not task.cancelled()
+
+    async def test____ignore_cancellation____coroutine_cancelled_itself(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        backend: AbstractAsyncBackend,
+    ) -> None:
+        task = event_loop.create_task(backend.ignore_cancellation(backend.coro_cancel()))
+
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert task.cancelled()
+
     async def test____sleep_forever____sleep_until_cancellation(
         self,
         event_loop: asyncio.AbstractEventLoop,

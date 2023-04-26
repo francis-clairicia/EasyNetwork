@@ -271,6 +271,10 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
+    async def ignore_cancellation(self, coroutine: Coroutine[Any, Any, _T_co]) -> _T_co:
+        raise NotImplementedError
+
+    @abstractmethod
     def current_time(self) -> float:
         raise NotImplementedError
 
