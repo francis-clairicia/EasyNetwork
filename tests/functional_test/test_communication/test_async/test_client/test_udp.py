@@ -277,17 +277,6 @@ class TestAsyncUDPNetworkClientConnection:
             with pytest.raises(ClientClosedError):
                 await client.wait_connected()
 
-    async def test____wait_connected____abort_before_trying_to_connect(
-        self,
-        remote_address: tuple[str, int],
-        datagram_protocol: DatagramProtocol[str, str],
-        socket_family: int,
-    ) -> None:
-        async with contextlib.aclosing(AsyncUDPNetworkClient(remote_address, datagram_protocol, family=socket_family)) as client:
-            await client.abort()
-            with pytest.raises(ClientClosedError):
-                await client.wait_connected()
-
     async def test____socket_property____connection_not_performed_yet(
         self,
         remote_address: tuple[str, int],

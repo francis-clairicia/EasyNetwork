@@ -387,6 +387,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         assert client_connected.is_closing()
         assert exc_info.value is error
         mock_stream_socket_adapter.aclose.assert_awaited_once_with()
+        mock_stream_socket_adapter.abort.assert_not_awaited()
 
     async def test____aclose____await_socket_close____hide_connection_error(
         self,
@@ -404,6 +405,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         # Assert
         assert client_connected.is_closing()
         mock_stream_socket_adapter.aclose.assert_awaited_once_with()
+        mock_stream_socket_adapter.abort.assert_not_awaited()
 
     async def test____aclose____already_closed(
         self,
@@ -419,53 +421,24 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
 
         # Assert
         mock_stream_socket_adapter.aclose.assert_awaited_once_with()
-
-    async def test____abort____brute_force_shutdown(
-        self,
-        client_connected: AsyncTCPNetworkClient[Any, Any],
-        mock_stream_socket_adapter: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act
-        await client_connected.abort()
-
-        # Assert
-        mock_stream_socket_adapter.abort.assert_awaited_once_with()
-        mock_stream_socket_adapter.aclose.assert_not_awaited()
-        assert client_connected.is_closing()
-
-    async def test____abort____connection_not_performed_yet(
-        self,
-        client_not_connected: AsyncTCPNetworkClient[Any, Any],
-        mock_stream_socket_adapter: MagicMock,
-    ) -> None:
-        # Arrange
-        assert not client_not_connected.is_closing()
-
-        # Act
-        await client_not_connected.abort()
-
-        # Assert
-        assert client_not_connected.is_closing()
-        mock_stream_socket_adapter.aclose.assert_not_awaited()
         mock_stream_socket_adapter.abort.assert_not_awaited()
 
-    async def test____abort____already_closed(
+    async def test____aclose____cancelled(
         self,
         client_connected: AsyncTCPNetworkClient[Any, Any],
         mock_stream_socket_adapter: MagicMock,
+        fake_cancellation_cls: type[BaseException],
     ) -> None:
         # Arrange
-        await client_connected.aclose()
-        assert client_connected.is_closing()
+        mock_stream_socket_adapter.aclose.side_effect = fake_cancellation_cls
 
         # Act
-        await client_connected.abort()
+        with pytest.raises(fake_cancellation_cls):
+            await client_connected.aclose()
 
         # Assert
-        mock_stream_socket_adapter.abort.assert_awaited_once_with()
         mock_stream_socket_adapter.aclose.assert_awaited_once_with()
+        mock_stream_socket_adapter.abort.assert_awaited_once_with()
 
     @pytest.mark.parametrize("client_closed", [False, True], ids=lambda p: f"client_closed=={p}")
     async def test____get_local_address____return_saved_address(

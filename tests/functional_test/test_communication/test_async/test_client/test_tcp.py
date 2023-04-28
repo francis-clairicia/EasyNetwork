@@ -276,16 +276,6 @@ class TestAsyncTCPNetworkClientConnection:
             with pytest.raises(ClientClosedError):
                 await client.wait_connected()
 
-    async def test____wait_connected____abort_before_trying_to_connect(
-        self,
-        remote_address: tuple[str, int],
-        stream_protocol: StreamProtocol[str, str],
-    ) -> None:
-        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol)) as client:
-            await client.abort()
-            with pytest.raises(ClientClosedError):
-                await client.wait_connected()
-
     async def test____socket_property____connection_not_performed_yet(
         self,
         remote_address: tuple[str, int],

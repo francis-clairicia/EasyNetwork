@@ -35,9 +35,6 @@ class MockAsyncClient(AbstractAsyncNetworkClient[Any, Any]):
     async def aclose(self) -> None:
         return await self.mock_close()
 
-    async def abort(self) -> None:
-        raise NotImplementedError
-
     def get_local_address(self) -> SocketAddress:
         raise NotImplementedError
 

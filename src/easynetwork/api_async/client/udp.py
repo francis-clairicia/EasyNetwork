@@ -160,26 +160,27 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         if self.__socket_builder is not None:
             self.__socket_builder.cancel()
             self.__socket_builder = None
-        async with self.__send_lock:
+        try:
+            async with self.__send_lock:
+                socket = self.__socket
+                if socket is None:
+                    return
+                try:
+                    await socket.aclose()
+                except ConnectionError:
+                    # It is normal if there was connection errors during operations. But do not propagate this exception,
+                    # as we will never reuse this socket
+                    pass
+        except self.__backend.get_cancelled_exc_class():
             socket = self.__socket
-            if socket is None:
-                return
+            if socket is None:  # pragma: no cover
+                raise
             try:
-                await socket.aclose()
-            except ConnectionError:
-                # It is normal if there was connection errors during operations. But do not propagate this exception,
-                # as we will never reuse this socket
-                pass
+                await socket.abort()
             finally:
-                await self.abort()
-
-    async def abort(self) -> None:
-        if self.__socket_builder is not None:
-            self.__socket_builder.cancel()
-            self.__socket_builder = None
-        socket, self.__socket = self.__socket, None
-        if socket is not None:
-            await socket.abort()
+                raise
+        finally:
+            self.__socket = None
 
     async def send_packet_to(
         self,
@@ -330,9 +331,6 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
 
     async def aclose(self) -> None:
         return await self.__endpoint.aclose()
-
-    async def abort(self) -> None:
-        return await self.__endpoint.abort()
 
     async def send_packet(self, packet: _SentPacketT) -> None:
         return await self.__endpoint.send_packet_to(packet, None)

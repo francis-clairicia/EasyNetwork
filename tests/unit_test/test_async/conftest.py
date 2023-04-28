@@ -18,14 +18,24 @@ if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
 
+class FakeCancellation(BaseException):
+    pass
+
+
+@pytest.fixture(scope="session")
+def fake_cancellation_cls() -> type[BaseException]:
+    return FakeCancellation
+
+
 @pytest.fixture
-def mock_backend(mocker: MockerFixture) -> MagicMock:
+def mock_backend(fake_cancellation_cls: type[BaseException], mocker: MockerFixture) -> MagicMock:
     from easynetwork_asyncio.tasks import TaskGroup
 
     from .._utils import AsyncDummyLock
 
     mock_backend = mocker.NonCallableMagicMock(spec=AbstractAsyncBackend)
 
+    mock_backend.get_cancelled_exc_class.return_value = fake_cancellation_cls
     mock_backend.create_lock = AsyncDummyLock
     mock_backend.create_task_group = TaskGroup
 

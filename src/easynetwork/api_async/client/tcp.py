@@ -162,26 +162,27 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         if self.__socket_connector is not None:
             self.__socket_connector.cancel()
             self.__socket_connector = None
-        async with self.__send_lock:
+        try:
+            async with self.__send_lock:
+                socket = self.__socket
+                if socket is None:
+                    return
+                try:
+                    await socket.aclose()
+                except ConnectionError:
+                    # It is normal if there was connection errors during operations. But do not propagate this exception,
+                    # as we will never reuse this socket
+                    pass
+        except self.__backend.get_cancelled_exc_class():
             socket = self.__socket
-            if socket is None:
-                return
+            if socket is None:  # pragma: no cover
+                raise
             try:
-                await socket.aclose()
-            except ConnectionError:
-                # It is normal if there was connection errors during operations. But do not propagate this exception,
-                # as we will never reuse this socket
-                pass
+                await socket.abort()
             finally:
-                await self.abort()
-
-    async def abort(self) -> None:
-        if self.__socket_connector is not None:
-            self.__socket_connector.cancel()
-            self.__socket_connector = None
-        socket, self.__socket = self.__socket, None
-        if socket is not None:
-            await socket.abort()
+                raise
+        finally:
+            self.__socket = None
 
     async def send_packet(self, packet: _SentPacketT) -> None:
         async with self.__send_lock:
