@@ -2,18 +2,7 @@
 
 from __future__ import annotations
 
-from socket import (
-    AF_INET,
-    AF_INET6,
-    IPPROTO_IPV6,
-    IPPROTO_TCP,
-    IPV6_V6ONLY,
-    SO_ERROR,
-    SO_REUSEADDR,
-    SO_REUSEPORT,
-    SOCK_STREAM,
-    SOL_SOCKET,
-)
+from socket import AF_INET, AF_INET6, IPPROTO_IPV6, IPPROTO_TCP, IPV6_V6ONLY, SO_ERROR, SO_REUSEADDR, SOCK_STREAM, SOL_SOCKET
 from typing import TYPE_CHECKING, Any, Callable, Sequence, cast
 
 from easynetwork.tools._utils import (
@@ -186,8 +175,11 @@ def test____open_listener_sockets_from_getaddrinfo_result____create_listener_soc
     mock_socket_cls: MagicMock,
     mocker: MockerFixture,
     addrinfo_list: Sequence[tuple[int, int, int, str, tuple[Any, ...]]],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Arrange
+    SO_REUSEPORT: int = 123456
+    monkeypatch.setattr("socket.SO_REUSEPORT", SO_REUSEPORT, raising=False)
     backlog: int = 123456
 
     # Act
