@@ -355,7 +355,7 @@ dependencies = [
 [metadata]
 lock_version = "4.2"
 groups = ["default", "cbor", "dev", "encryption", "flake8", "format", "mypy", "sniffio", "test", "tox", "uvloop"]
-content_hash = "sha256:885820ceea953698e8908e469ed48b4c126a6ccd2a89fdf25850c9a9459e57f9"
+content_hash = "sha256:2cca9d4455b5ad5ddbdca2f7991537700c04b673da3741915865260beba1e870"
 
 [metadata.files]
 "black 23.3.0" = [

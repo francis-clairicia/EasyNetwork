@@ -39,7 +39,7 @@ sniffio = [
     "sniffio>=1.3.0",
 ]
 uvloop = [
-    "uvloop~=0.17.0",
+    "uvloop~=0.17.0; sys_platform!='win32'",
 ]
 
 [project.entry-points."easynetwork.async.backends"]
