@@ -52,7 +52,9 @@ class AsyncioBackend(AbstractAsyncBackend):
             continue
 
     async def coro_yield(self) -> None:
-        return await self.sleep(0)
+        import asyncio
+
+        await asyncio.sleep(0)
 
     async def coro_cancel(self) -> NoReturn:
         import asyncio
