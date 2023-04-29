@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import enum
-from typing import assert_never
+from typing import Any, assert_never
 
 import pytest
 
@@ -32,7 +32,7 @@ def pytest_configure(config: pytest.Config) -> None:
         case EventLoop.ASYNCIO:
             pass
         case EventLoop.UVLOOP:
-            import uvloop
+            uvloop: Any = pytest.importorskip("uvloop")
 
             uvloop.install()
         case _:

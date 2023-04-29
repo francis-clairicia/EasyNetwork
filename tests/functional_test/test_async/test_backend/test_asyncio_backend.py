@@ -157,34 +157,45 @@ class TestAsyncioBackend:
 
         assert await backend.wait_future(future) == 42
 
-    @pytest.mark.parametrize("shield", [False, True], ids=lambda boolean: f"shield=={boolean}")
+    @pytest.mark.parametrize("future_running", [None, "before", "after"], ids=lambda state: f"future_running=={state}")
     async def test____wait_future____cancel_future_if_task_is_cancelled(
         self,
-        shield: bool,
+        future_running: str | None,
         event_loop: asyncio.AbstractEventLoop,
         backend: AbstractAsyncBackend,
     ) -> None:
         future: Future[int] = Future()
-        task = event_loop.create_task(backend.wait_future(future, shield=shield))
-        await asyncio.sleep(0)
+        if future_running == "before":
+            future.set_running_or_notify_cancel()
+            assert future.running()
+            event_loop.call_later(0.5, future.set_result, 42)
+
+        task = event_loop.create_task(backend.wait_future(future))
+        await asyncio.sleep(0.1)
+
+        if future_running == "after":
+            future.set_running_or_notify_cancel()
+            assert future.running()
+            event_loop.call_later(0.5, future.set_result, 42)
 
         task.cancel()
         await asyncio.wait([task])
 
-        if shield:
+        if future_running is not None:
             assert not future.cancelled()
+            assert not task.cancelled()
+            assert task.result() == 42
         else:
             assert future.cancelled()
+            assert task.cancelled()
 
-    @pytest.mark.parametrize("shield", [False, True], ids=lambda boolean: f"shield=={boolean}")
     async def test____wait_future____cancel_task_if_future_is_cancelled(
         self,
-        shield: bool,
         event_loop: asyncio.AbstractEventLoop,
         backend: AbstractAsyncBackend,
     ) -> None:
         future: Future[int] = Future()
-        task = event_loop.create_task(backend.wait_future(future, shield=shield))
+        task = event_loop.create_task(backend.wait_future(future))
         await asyncio.sleep(0)
 
         future.cancel()
@@ -200,12 +211,6 @@ class TestAsyncioBackend:
             return value
 
         async with backend.create_thread_pool_executor() as executor:
-            task = executor.submit(thread_fn, value=54)
-            assert await task.join() == 54
-            assert task.done()
-            assert not task.cancel()
-            assert not task.cancelled()
-
             assert await executor.execute(thread_fn, 42) == 42
 
     async def test____create_thread_pool_executor____shutdown_idempotent(

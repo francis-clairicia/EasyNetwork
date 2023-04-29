@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from concurrent.futures import Future
+import concurrent.futures
 from socket import socket as Socket
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Coroutine, Iterator, Literal, NoReturn, assert_never, final
@@ -50,6 +50,9 @@ class MockBackend(BaseFakeBackend):
     async def ignore_cancellation(self, coroutine: Coroutine[Any, Any, Any]) -> Any:
         return await coroutine
 
+    async def wait_future(self, future: concurrent.futures.Future[Any]) -> Any:
+        return await asyncio.wrap_future(future)
+
 
 @pytest.mark.asyncio
 class TestAbstractAsyncBackend:
@@ -86,67 +89,6 @@ class TestAbstractAsyncBackend:
         # Assert
         backend.mock_current_time.assert_called_once_with()
         backend.mock_sleep.assert_awaited_once_with(0)
-
-    async def test____wait_future____wait_until_done(
-        self,
-        backend: MockBackend,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        future: Future[Any] = Future()
-        task = asyncio.create_task(backend.wait_future(future))
-        backend.mock_coro_yield.assert_not_called()
-
-        # Act
-        await asyncio.sleep(0)
-        future.set_result(mocker.sentinel.result)
-        await asyncio.sleep(0)
-        assert task.done()
-        result = task.result()
-
-        # Assert
-        backend.mock_coro_yield.assert_called_once_with()
-        assert result is mocker.sentinel.result
-
-    @pytest.mark.parametrize("shield", [False, True], ids=lambda boolean: f"shield=={boolean}")
-    async def test____wait_future____cancel_future_if_task_is_cancelled(
-        self,
-        shield: bool,
-        backend: MockBackend,
-    ) -> None:
-        # Arrange
-        future: Future[Any] = Future()
-        task = asyncio.create_task(backend.wait_future(future, shield=shield))
-        await asyncio.sleep(0)
-
-        # Act
-        task.cancel()
-        await asyncio.wait([task])
-
-        # Assert
-        if shield:
-            assert not future.cancelled()
-        else:
-            assert future.cancelled()
-
-    @pytest.mark.parametrize("shield", [False, True], ids=lambda boolean: f"shield=={boolean}")
-    async def test____wait_future____cancel_task_if_future_is_cancelled(
-        self,
-        shield: bool,
-        backend: MockBackend,
-    ) -> None:
-        # Arrange
-        future: Future[Any] = Future()
-        task = asyncio.create_task(backend.wait_future(future, shield=shield))
-        await asyncio.sleep(0)
-
-        # Act
-        future.cancel()
-        await asyncio.wait([task])
-
-        # Assert
-        assert task.cancelled()
-        backend.mock_coro_cancel.assert_awaited_once_with()
 
     @pytest.mark.parametrize("max_workers", [None, 1, 99])
     async def test___create_thread_pool_executor____returns_AsyncThreadPoolExecutor_instance(

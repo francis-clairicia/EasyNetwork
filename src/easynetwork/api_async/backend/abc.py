@@ -139,15 +139,8 @@ class AbstractAsyncThreadPoolExecutor(metaclass=ABCMeta):
         await self.shutdown()
 
     @abstractmethod
-    def submit(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> AbstractTask[_T]:
-        raise NotImplementedError
-
     async def execute(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
-        task = self.submit(__func, *args, **kwargs)
-        try:
-            return await task.join()
-        finally:
-            del task
+        raise NotImplementedError
 
     @abstractmethod
     async def shutdown(self) -> None:
@@ -357,14 +350,6 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
     def create_threads_portal(self) -> AbstractThreadsPortal:
         raise NotImplementedError
 
-    async def wait_future(self, future: concurrent.futures.Future[_T_co], *, shield: bool = False) -> _T_co:
-        while not future.done():
-            try:
-                await self.coro_yield()
-            except self.get_cancelled_exc_class():
-                if not shield:
-                    future.cancel()
-                raise
-        if future.cancelled():
-            await self.coro_cancel()
-        return future.result()
+    @abstractmethod
+    async def wait_future(self, future: concurrent.futures.Future[_T_co]) -> _T_co:
+        raise NotImplementedError

@@ -46,6 +46,11 @@ class AsyncioBackend(AbstractAsyncBackend):
             raise RuntimeError("This function should be called within a task.")
         return t
 
+    @staticmethod
+    def _really_uncancel_task(task: _asyncio.Task[Any]) -> None:
+        while task.uncancel() != 0:  # It must really NOT be cancelled
+            continue
+
     async def coro_yield(self) -> None:
         return await self.sleep(0)
 
@@ -69,21 +74,26 @@ class AsyncioBackend(AbstractAsyncBackend):
     async def ignore_cancellation(self, coroutine: Coroutine[Any, Any, _T_co]) -> _T_co:
         import asyncio
 
-        current_task: asyncio.Task[Any] = self._current_asyncio_task()
-
         task: asyncio.Task[_T_co] = asyncio.create_task(coroutine)
 
         # This task must be unregistered in order not to be cancelled by runner at event loop shutdown
         asyncio._unregister_task(task)
 
+        return await self._cancel_shielded_wait_asyncio_future(task)
+
+    @classmethod
+    async def _cancel_shielded_wait_asyncio_future(cls, future: _asyncio.Future[_T_co]) -> _T_co:
+        import asyncio
+
+        current_task: _asyncio.Task[Any] = cls._current_asyncio_task()
+
         while True:
             try:
-                return await asyncio.shield(task)
+                return await asyncio.shield(future)
             except asyncio.CancelledError:
-                if task.done():
+                if future.done():
                     raise
-                while current_task.uncancel() != 0:  # It must really NOT be cancelled
-                    continue
+                cls._really_uncancel_task(current_task)
 
     def current_time(self) -> float:
         import asyncio
@@ -290,10 +300,15 @@ class AsyncioBackend(AbstractAsyncBackend):
 
         return ThreadsPortal()
 
-    async def wait_future(self, future: concurrent.futures.Future[_T_co], *, shield: bool = False) -> _T_co:
+    async def wait_future(self, future: concurrent.futures.Future[_T_co]) -> _T_co:
         import asyncio
 
-        outer_future = asyncio.wrap_future(future)
-        if shield:
-            return await asyncio.shield(outer_future)
-        return await outer_future
+        if not future.running():  # There is a chance to cancel the future
+            try:
+                return await asyncio.wrap_future(future)
+            except asyncio.CancelledError:
+                if future.done():  # asyncio.CancelledError raised by either future.cancelled() or future.exception()
+                    raise
+                self._really_uncancel_task(self._current_asyncio_task())
+
+        return await self._cancel_shielded_wait_asyncio_future(asyncio.wrap_future(future))

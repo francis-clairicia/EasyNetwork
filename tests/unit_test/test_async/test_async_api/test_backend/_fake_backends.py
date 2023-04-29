@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import concurrent.futures
 from socket import socket as Socket
 from typing import Any, Callable, Coroutine, NoReturn, Sequence, final
 
@@ -67,6 +68,9 @@ class BaseFakeBackend(AbstractAsyncBackend):
         raise NotImplementedError
 
     def create_threads_portal(self) -> AbstractThreadsPortal:
+        raise NotImplementedError
+
+    async def wait_future(self, future: concurrent.futures.Future[Any]) -> Any:
         raise NotImplementedError
 
 

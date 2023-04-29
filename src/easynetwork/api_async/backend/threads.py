@@ -8,41 +8,17 @@ Asynchronous client/server module
 
 from __future__ import annotations
 
-__all__ = ["AsyncThreadPoolExecutor", "AsyncThreadPoolTask"]
+__all__ = ["AsyncThreadPoolExecutor"]
 
 import concurrent.futures
 import contextvars
 import threading
 from typing import Callable, ParamSpec, TypeVar, final
 
-from .abc import AbstractAsyncBackend, AbstractAsyncThreadPoolExecutor, AbstractTask
+from .abc import AbstractAsyncBackend, AbstractAsyncThreadPoolExecutor
 
 _P = ParamSpec("_P")
 _T = TypeVar("_T")
-_T_co = TypeVar("_T_co", covariant=True)
-
-
-@final
-class AsyncThreadPoolTask(AbstractTask[_T_co]):
-    __slots__ = ("__backend", "__future")
-
-    def __init__(self, backend: AbstractAsyncBackend, future: concurrent.futures.Future[_T_co]) -> None:
-        super().__init__()
-
-        self.__backend: AbstractAsyncBackend = backend
-        self.__future: concurrent.futures.Future[_T_co] = future
-
-    def done(self) -> bool:
-        return self.__future.done()
-
-    def cancel(self) -> bool:
-        return self.__future.cancel()
-
-    def cancelled(self) -> bool:
-        return self.__future.cancelled()
-
-    async def join(self, *, shield: bool = False) -> _T_co:
-        return await self.__backend.wait_future(self.__future, shield=shield)
 
 
 @final
@@ -56,13 +32,14 @@ class AsyncThreadPoolExecutor(AbstractAsyncThreadPoolExecutor):
         self.__executor = concurrent.futures.ThreadPoolExecutor(max_workers)
         self.__shutdown_future: concurrent.futures.Future[None] | None = None
 
-    def submit(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> AbstractTask[_T]:
+    async def execute(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
         ctx = contextvars.copy_context()
-        return AsyncThreadPoolTask(self.__backend, self.__executor.submit(ctx.run, __func, *args, **kwargs))  # type: ignore[arg-type]
+        future: concurrent.futures.Future[_T] = self.__executor.submit(ctx.run, __func, *args, **kwargs)  # type: ignore[arg-type]
+        return await self.__backend.wait_future(future)
 
     async def shutdown(self) -> None:
         if self.__shutdown_future is not None:
-            return await self.__backend.ignore_cancellation(self.__backend.wait_future(self.__shutdown_future))
+            return await self.__backend.wait_future(self.__shutdown_future)
         shutdown_future: concurrent.futures.Future[None] = concurrent.futures.Future()
         shutdown_future.set_running_or_notify_cancel()
         assert shutdown_future.running()
@@ -70,8 +47,9 @@ class AsyncThreadPoolExecutor(AbstractAsyncThreadPoolExecutor):
         thread.start()
         try:
             self.__shutdown_future = shutdown_future
-            await self.__backend.ignore_cancellation(self.__backend.wait_future(self.__shutdown_future))
+            await self.__backend.wait_future(self.__shutdown_future)
         finally:
+            del shutdown_future
             thread.join()
 
     @staticmethod

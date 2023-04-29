@@ -588,22 +588,3 @@ class TestAsyncIOBackend:
         # Assert
         assert isinstance(threads_portal, ThreadsPortal)
         assert threads_portal.loop is event_loop
-
-    async def test____wait_future____use_asyncio_wrap_future(
-        self,
-        backend: AsyncioBackend,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        mock_wrap_future: AsyncMock = mocker.patch(
-            "asyncio.wrap_future",
-            new_callable=mocker.AsyncMock,
-            return_value=mocker.sentinel.result,
-        )
-
-        # Act
-        result = await backend.wait_future(mocker.sentinel.future)
-
-        # Assert
-        mock_wrap_future.assert_awaited_once_with(mocker.sentinel.future)
-        assert result is mocker.sentinel.result

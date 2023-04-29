@@ -130,7 +130,6 @@ enable_error_code = ["truthy-bool", "ignore-without-code"]
 [[tool.mypy.overrides]]
 module = [
     "cbor2",
-    "uvloop",
 ]
 ignore_missing_imports = true
 
