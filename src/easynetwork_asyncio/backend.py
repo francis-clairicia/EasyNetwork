@@ -293,7 +293,7 @@ class AsyncioBackend(AbstractAsyncBackend):
     async def run_in_thread(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
         import asyncio
 
-        return await asyncio.to_thread(__func, *args, **kwargs)
+        return await self.ignore_cancellation(asyncio.to_thread(__func, *args, **kwargs))
 
     def create_threads_portal(self) -> AbstractThreadsPortal:
         from .threads import ThreadsPortal

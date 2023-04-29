@@ -203,6 +203,20 @@ class TestAsyncioBackend:
 
         assert task.cancelled()
 
+    async def test____run_in_thread____cannot_be_cancelled(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        backend: AbstractAsyncBackend,
+    ) -> None:
+        import time
+
+        task = event_loop.create_task(backend.run_in_thread(time.sleep, 0.5))
+        event_loop.call_later(0.2, task.cancel)
+
+        await task
+
+        assert not task.cancelled()
+
     async def test____create_thread_pool_executor____run_sync(
         self,
         backend: AbstractAsyncBackend,
