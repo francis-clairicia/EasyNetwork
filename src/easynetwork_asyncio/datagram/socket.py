@@ -7,14 +7,16 @@
 
 from __future__ import annotations
 
-__all__ = ["DatagramSocketAdapter"]
+__all__ = ["RawDatagramSocketAdapter", "TransportBasedDatagramSocketAdapter"]
 
+import asyncio
 from typing import TYPE_CHECKING, Any, final
 
 from easynetwork.api_async.backend.abc import AbstractAsyncDatagramSocketAdapter
 
 if TYPE_CHECKING:
     import asyncio.trsock
+    import socket as _socket
 
     from _typeshed import ReadableBuffer
 
@@ -22,7 +24,7 @@ if TYPE_CHECKING:
 
 
 @final
-class DatagramSocketAdapter(AbstractAsyncDatagramSocketAdapter):
+class TransportBasedDatagramSocketAdapter(AbstractAsyncDatagramSocketAdapter):
     __slots__ = ("__endpoint",)
 
     def __init__(self, endpoint: DatagramEndpoint) -> None:
@@ -43,6 +45,7 @@ class DatagramSocketAdapter(AbstractAsyncDatagramSocketAdapter):
 
     async def abort(self) -> None:
         self.__endpoint.transport.abort()
+        await asyncio.sleep(0)
 
     def is_closing(self) -> bool:
         return self.__endpoint.is_closing()
@@ -63,3 +66,51 @@ class DatagramSocketAdapter(AbstractAsyncDatagramSocketAdapter):
     def socket(self) -> asyncio.trsock.TransportSocket:
         socket: asyncio.trsock.TransportSocket = self.__endpoint.get_extra_info("socket")
         return socket
+
+
+@final
+class RawDatagramSocketAdapter(AbstractAsyncDatagramSocketAdapter):
+    __slots__ = ("__socket",)
+
+    def __init__(
+        self,
+        socket: _socket.socket,
+        loop: asyncio.AbstractEventLoop,
+    ) -> None:
+        super().__init__()
+
+        from ..socket import AsyncSocket
+
+        self.__socket: AsyncSocket = AsyncSocket(socket, loop)
+
+    async def aclose(self) -> None:
+        return await self.__socket.aclose()
+
+    async def abort(self) -> None:
+        return await self.__socket.abort()
+
+    def is_closing(self) -> bool:
+        return self.__socket.is_closing()
+
+    def get_local_address(self) -> tuple[Any, ...]:
+        return self.__socket.socket.getsockname()
+
+    def get_remote_address(self) -> tuple[Any, ...] | None:
+        try:
+            return self.__socket.socket.getpeername()
+        except OSError:
+            return None
+
+    async def recvfrom(self) -> tuple[bytes, tuple[Any, ...]]:
+        from easynetwork.tools.socket import MAX_DATAGRAM_BUFSIZE
+
+        return await self.__socket.recvfrom(MAX_DATAGRAM_BUFSIZE)
+
+    async def sendto(self, data: ReadableBuffer, address: tuple[Any, ...] | None, /) -> None:
+        if address is None:
+            await self.__socket.sendall(data)
+        else:
+            await self.__socket.sendto(data, address)
+
+    def socket(self) -> asyncio.trsock.TransportSocket:
+        return self.__socket.socket

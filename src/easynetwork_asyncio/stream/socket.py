@@ -7,22 +7,23 @@
 
 from __future__ import annotations
 
-__all__ = ["StreamSocketAdapter"]
+__all__ = ["RawStreamSocketAdapter", "TransportBasedStreamSocketAdapter"]
 
+import asyncio
 from typing import TYPE_CHECKING, Any, final
 
 from easynetwork.api_async.backend.abc import AbstractAsyncStreamSocketAdapter
 from easynetwork.tools._utils import error_from_errno as _error_from_errno
 
 if TYPE_CHECKING:
-    import asyncio
     import asyncio.trsock
+    import socket as _socket
 
     from _typeshed import ReadableBuffer
 
 
 @final
-class StreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
+class TransportBasedStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
     __slots__ = (
         "__reader",
         "__writer",
@@ -61,6 +62,7 @@ class StreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
 
     async def abort(self) -> None:
         self.__writer.transport.abort()
+        await asyncio.sleep(0)
 
     def is_closing(self) -> bool:
         return self.__writer.is_closing()
@@ -86,3 +88,56 @@ class StreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
     def socket(self) -> asyncio.trsock.TransportSocket:
         socket: asyncio.trsock.TransportSocket = self.__writer.get_extra_info("socket")
         return socket
+
+
+@final
+class RawStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
+    __slots__ = (
+        "__socket",
+        "__remote_addr",
+    )
+
+    def __init__(
+        self,
+        socket: _socket.socket,
+        loop: asyncio.AbstractEventLoop,
+        *,
+        remote_address: tuple[Any, ...] | None = None,
+    ) -> None:
+        super().__init__()
+
+        from ..socket import AsyncSocket
+
+        self.__socket: AsyncSocket = AsyncSocket(socket, loop)
+
+        if remote_address is None:
+            remote_address = socket.getpeername()
+        if remote_address is None:
+            import errno
+
+            raise _error_from_errno(errno.ENOTCONN)
+        self.__remote_addr: tuple[Any, ...] = tuple(remote_address)
+
+    async def aclose(self) -> None:
+        return await self.__socket.aclose()
+
+    async def abort(self) -> None:
+        return await self.__socket.abort()
+
+    def is_closing(self) -> bool:
+        return self.__socket.is_closing()
+
+    def get_local_address(self) -> tuple[Any, ...]:
+        return self.__socket.socket.getsockname()
+
+    def get_remote_address(self) -> tuple[Any, ...]:
+        return self.__remote_addr
+
+    async def recv(self, bufsize: int, /) -> bytes:
+        return await self.__socket.recv(bufsize)
+
+    async def sendall(self, data: ReadableBuffer, /) -> None:
+        await self.__socket.sendall(data)
+
+    def socket(self) -> asyncio.trsock.TransportSocket:
+        return self.__socket.socket

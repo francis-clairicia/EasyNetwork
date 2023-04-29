@@ -35,7 +35,10 @@ _T_co = TypeVar("_T_co", covariant=True)
 
 @final
 class AsyncioBackend(AbstractAsyncBackend):
-    __slots__ = ()
+    __slots__ = ("__use_asyncio_transport",)
+
+    def __init__(self, *, transport: bool = False) -> None:
+        self.__use_asyncio_transport: bool = bool(transport)
 
     @staticmethod
     def _current_asyncio_task() -> _asyncio.Task[Any]:
@@ -136,7 +139,7 @@ class AsyncioBackend(AbstractAsyncBackend):
 
         from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
 
-        from .stream.socket import StreamSocketAdapter
+        from .stream.socket import TransportBasedStreamSocketAdapter
 
         if happy_eyeballs_delay is None:
             reader, writer = await asyncio.open_connection(
@@ -155,7 +158,7 @@ class AsyncioBackend(AbstractAsyncBackend):
                 happy_eyeballs_delay=happy_eyeballs_delay,
                 limit=MAX_STREAM_BUFSIZE,
             )
-        return StreamSocketAdapter(reader, writer)
+        return TransportBasedStreamSocketAdapter(reader, writer)
 
     async def wrap_tcp_client_socket(self, socket: _socket.socket) -> AbstractAsyncStreamSocketAdapter:
         assert socket is not None, "Expected 'socket' to be a socket.socket instance"
@@ -165,10 +168,10 @@ class AsyncioBackend(AbstractAsyncBackend):
 
         from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
 
-        from .stream.socket import StreamSocketAdapter
+        from .stream.socket import TransportBasedStreamSocketAdapter
 
         reader, writer = await asyncio.open_connection(sock=socket, limit=MAX_STREAM_BUFSIZE)
-        return StreamSocketAdapter(reader, writer)
+        return TransportBasedStreamSocketAdapter(reader, writer)
 
     async def create_tcp_listeners(
         self,
@@ -219,7 +222,7 @@ class AsyncioBackend(AbstractAsyncBackend):
 
         from .stream.listener import ListenerSocketAdapter
 
-        return [ListenerSocketAdapter(sock, loop=loop) for sock in sockets]
+        return [ListenerSocketAdapter(sock, loop) for sock in sockets]
 
     @staticmethod
     async def _ensure_resolved(
@@ -259,7 +262,7 @@ class AsyncioBackend(AbstractAsyncBackend):
         reuse_port: bool = False,
     ) -> AbstractAsyncDatagramSocketAdapter:
         from .datagram.endpoint import create_datagram_endpoint
-        from .datagram.socket import DatagramSocketAdapter
+        from .datagram.socket import TransportBasedDatagramSocketAdapter
 
         if local_address is not None:
             local_address = self._ensure_host(local_address, family)
@@ -270,17 +273,17 @@ class AsyncioBackend(AbstractAsyncBackend):
             remote_addr=remote_address,
             reuse_port=reuse_port,
         )
-        return DatagramSocketAdapter(endpoint)
+        return TransportBasedDatagramSocketAdapter(endpoint)
 
     async def wrap_udp_socket(self, socket: _socket.socket) -> AbstractAsyncDatagramSocketAdapter:
         assert socket is not None, "Expected 'socket' to be a socket.socket instance"
         socket.setblocking(False)
 
         from .datagram.endpoint import create_datagram_endpoint
-        from .datagram.socket import DatagramSocketAdapter
+        from .datagram.socket import TransportBasedDatagramSocketAdapter
 
         endpoint = await create_datagram_endpoint(socket=socket)
-        return DatagramSocketAdapter(endpoint)
+        return TransportBasedDatagramSocketAdapter(endpoint)
 
     def create_lock(self) -> ILock:
         import asyncio

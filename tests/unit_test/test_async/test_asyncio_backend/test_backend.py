@@ -96,7 +96,7 @@ class TestAsyncIOBackend:
         from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
 
         mock_StreamSocketAdapter: MagicMock = mocker.patch(
-            "easynetwork_asyncio.stream.socket.StreamSocketAdapter", return_value=mocker.sentinel.socket
+            "easynetwork_asyncio.stream.socket.TransportBasedStreamSocketAdapter", return_value=mocker.sentinel.socket
         )
         mock_open_connection: AsyncMock = mocker.patch(
             "asyncio.open_connection",
@@ -131,7 +131,7 @@ class TestAsyncIOBackend:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mocker.patch("easynetwork_asyncio.stream.socket.StreamSocketAdapter")
+        mocker.patch("easynetwork_asyncio.stream.socket.TransportBasedStreamSocketAdapter")
         mock_open_connection: AsyncMock = mocker.patch(
             "asyncio.open_connection",
             new_callable=mocker.AsyncMock,
@@ -165,7 +165,7 @@ class TestAsyncIOBackend:
         from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
 
         mock_StreamSocketAdapter: MagicMock = mocker.patch(
-            "easynetwork_asyncio.stream.socket.StreamSocketAdapter", return_value=mocker.sentinel.socket
+            "easynetwork_asyncio.stream.socket.TransportBasedStreamSocketAdapter", return_value=mocker.sentinel.socket
         )
         mock_open_connection: AsyncMock = mocker.patch(
             "asyncio.open_connection",
@@ -246,7 +246,7 @@ class TestAsyncIOBackend:
             reuse_address=mocker.ANY,  # Determined according to OS
             reuse_port=mocker.sentinel.reuse_port,
         )
-        mock_ListenerSocketAdapter.assert_called_once_with(mock_tcp_socket, loop=event_loop)
+        mock_ListenerSocketAdapter.assert_called_once_with(mock_tcp_socket, event_loop)
         assert listener_sockets == [mocker.sentinel.listener_socket]
 
     @pytest.mark.parametrize("remote_host", [None, ""])
@@ -320,7 +320,7 @@ class TestAsyncIOBackend:
             reuse_address=mocker.ANY,  # Determined according to OS
             reuse_port=mocker.sentinel.reuse_port,
         )
-        assert mock_ListenerSocketAdapter.mock_calls == [mocker.call(mock_tcp_socket, loop=event_loop) for _ in range(2)]
+        assert mock_ListenerSocketAdapter.mock_calls == [mocker.call(mock_tcp_socket, event_loop) for _ in range(2)]
         assert listener_sockets == [mocker.sentinel.listener_socket, mocker.sentinel.listener_socket]
 
     async def test____create_tcp_listeners____bind_on_several_hosts(
@@ -396,7 +396,7 @@ class TestAsyncIOBackend:
             reuse_address=mocker.ANY,  # Determined according to OS
             reuse_port=mocker.sentinel.reuse_port,
         )
-        assert mock_ListenerSocketAdapter.mock_calls == [mocker.call(mock_tcp_socket, loop=event_loop) for _ in range(2)]
+        assert mock_ListenerSocketAdapter.mock_calls == [mocker.call(mock_tcp_socket, event_loop) for _ in range(2)]
         assert listener_sockets == [mocker.sentinel.listener_socket, mocker.sentinel.listener_socket]
 
     async def test____create_tcp_listeners____error_getaddrinfo_returns_empty_list(
@@ -460,7 +460,7 @@ class TestAsyncIOBackend:
     ) -> None:
         # Arrange
         mock_DatagramSocketAdapter: MagicMock = mocker.patch(
-            "easynetwork_asyncio.datagram.socket.DatagramSocketAdapter", return_value=mocker.sentinel.socket
+            "easynetwork_asyncio.datagram.socket.TransportBasedDatagramSocketAdapter", return_value=mocker.sentinel.socket
         )
         mock_create_datagram_endpoint: AsyncMock = mocker.patch(
             "easynetwork_asyncio.datagram.endpoint.create_datagram_endpoint",
@@ -494,7 +494,7 @@ class TestAsyncIOBackend:
     ) -> None:
         # Arrange
         mock_DatagramSocketAdapter: MagicMock = mocker.patch(
-            "easynetwork_asyncio.datagram.socket.DatagramSocketAdapter", return_value=mocker.sentinel.socket
+            "easynetwork_asyncio.datagram.socket.TransportBasedDatagramSocketAdapter", return_value=mocker.sentinel.socket
         )
         mock_create_datagram_endpoint: AsyncMock = mocker.patch(
             "easynetwork_asyncio.datagram.endpoint.create_datagram_endpoint",
