@@ -22,7 +22,7 @@ class TestEncryptorSerializer:
     def mock_fernet(mocker: MockerFixture) -> MagicMock:
         from cryptography.fernet import Fernet
 
-        return mocker.MagicMock(spec=Fernet)
+        return mocker.NonCallableMagicMock(spec=Fernet)
 
     @pytest.fixture(autouse=True)
     @staticmethod

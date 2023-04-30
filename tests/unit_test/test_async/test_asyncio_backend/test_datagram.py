@@ -74,7 +74,7 @@ class TestDatagramEndpoint:
     @pytest.fixture
     @staticmethod
     def mock_asyncio_protocol(mocker: MockerFixture) -> MagicMock:
-        mock = mocker.MagicMock(spec=DatagramEndpointProtocol)
+        mock = mocker.NonCallableMagicMock(spec=DatagramEndpointProtocol)
         # Currently, _get_close_waiter() is a synchronous function returning a Future, but it will be awaited so this works
         mock._get_close_waiter = mocker.AsyncMock()
         return mock
@@ -82,13 +82,13 @@ class TestDatagramEndpoint:
     @pytest.fixture
     @staticmethod
     def mock_asyncio_transport(mocker: MockerFixture) -> MagicMock:
-        mock = mocker.MagicMock(spec=asyncio.DatagramTransport)
+        mock = mocker.NonCallableMagicMock(spec=asyncio.DatagramTransport)
         mock.is_closing.return_value = False
         return mock
 
     @staticmethod
     def _mock_queue_factory(mocker: MockerFixture) -> MagicMock:
-        return mocker.MagicMock(spec=asyncio.Queue)
+        return mocker.NonCallableMagicMock(spec=asyncio.Queue)
 
     @pytest.fixture
     @classmethod
@@ -361,13 +361,13 @@ class TestDatagramEndpointProtocol:
     @pytest.fixture
     @staticmethod
     def mock_asyncio_transport(mocker: MockerFixture) -> MagicMock:
-        mock = mocker.MagicMock(spec=asyncio.DatagramTransport)
+        mock = mocker.NonCallableMagicMock(spec=asyncio.DatagramTransport)
         mock.is_closing.return_value = False
         return mock
 
     @staticmethod
     def _mock_queue_factory(mocker: MockerFixture) -> MagicMock:
-        return mocker.MagicMock(spec=asyncio.Queue)
+        return mocker.NonCallableMagicMock(spec=asyncio.Queue)
 
     @pytest.fixture
     @classmethod
@@ -645,7 +645,7 @@ class TestDatagramSocketAdapter:
                 "peername": None,
             }
         )
-        mock = mocker.MagicMock(spec=DatagramEndpoint)
+        mock = mocker.NonCallableMagicMock(spec=DatagramEndpoint)
         mock.is_closing.return_value = False
         mock.get_extra_info.side_effect = endpoint_extra_info.get
         return mock

@@ -17,11 +17,11 @@ if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
 
-class BaseTestStreamSocket:
+class BaseTestTransportStreamSocket:
     @pytest.fixture
     @staticmethod
     def mock_asyncio_reader(mocker: MockerFixture) -> MagicMock:
-        return mocker.MagicMock(spec=asyncio.StreamReader)
+        return mocker.NonCallableMagicMock(spec=asyncio.StreamReader)
 
     @pytest.fixture
     @staticmethod
@@ -49,13 +49,13 @@ class BaseTestStreamSocket:
                 "peername": mock_tcp_socket.getpeername.return_value,
             }
         )
-        mock = mocker.MagicMock(spec=asyncio.StreamWriter)
+        mock = mocker.NonCallableMagicMock(spec=asyncio.StreamWriter)
         mock.get_extra_info.side_effect = asyncio_writer_extra_info.get
         return mock
 
 
 @pytest.mark.asyncio
-class TestStreamSocket(BaseTestStreamSocket):
+class TestTransportBasedStreamSocket(BaseTestTransportStreamSocket):
     @pytest.fixture
     @staticmethod
     def socket(mock_asyncio_reader: MagicMock, mock_asyncio_writer: MagicMock) -> TransportBasedStreamSocketAdapter:
@@ -93,6 +93,7 @@ class TestStreamSocket(BaseTestStreamSocket):
 
         # Assert
         assert socket.get_remote_address() == remote_address
+        mock_asyncio_writer.get_extra_info.assert_called_once_with("socket")
 
     async def test____aclose____close_transport_and_wait(
         self,
@@ -272,7 +273,7 @@ class TestStreamSocket(BaseTestStreamSocket):
 
 
 @pytest.mark.asyncio
-class TestListenerSocketAdapter(BaseTestStreamSocket):
+class TestListenerSocketAdapter(BaseTestTransportStreamSocket):
     @pytest.fixture
     @staticmethod
     def mock_async_socket(
@@ -308,12 +309,12 @@ class TestListenerSocketAdapter(BaseTestStreamSocket):
     @pytest.fixture
     @staticmethod
     def mock_asyncio_reader_protocol(mocker: MockerFixture) -> MagicMock:
-        return mocker.MagicMock(spec=asyncio.streams.StreamReaderProtocol)
+        return mocker.NonCallableMagicMock(spec=asyncio.streams.StreamReaderProtocol)
 
     @pytest.fixture
     @staticmethod
     def mock_asyncio_transport(mocker: MockerFixture) -> MagicMock:
-        return mocker.MagicMock(spec=asyncio.Transport)
+        return mocker.NonCallableMagicMock(spec=asyncio.Transport)
 
     @pytest.fixture
     @staticmethod
