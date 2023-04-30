@@ -70,7 +70,6 @@ class TestAsyncTCPNetworkClient:
         with pytest.raises(ConnectionError):
             await client.send_packet("ABCDEF")
 
-    @pytest.mark.skipif_uvloop  # Error not triggered
     async def test____send_packet____connection_error____partial_read_then_close(
         self,
         client: AsyncTCPNetworkClient[str, str],
