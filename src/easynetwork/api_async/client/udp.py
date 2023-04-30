@@ -231,12 +231,12 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
 
     def get_local_address(self) -> SocketAddress:
         if self.__info is None:
-            raise _error_from_errno(_errno.ENOTCONN)
+            raise _error_from_errno(_errno.ENOTSOCK)
         return self.__info["local_address"]
 
     def get_remote_address(self) -> SocketAddress | None:
         if self.__info is None:
-            raise _error_from_errno(_errno.ENOTCONN)
+            raise _error_from_errno(_errno.ENOTSOCK)
         return self.__info["remote_address"]
 
     def fileno(self) -> int:
@@ -259,7 +259,7 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
     @final
     def socket(self) -> SocketProxy:
         if self.__info is None:
-            raise _error_from_errno(_errno.ENOTCONN)
+            raise _error_from_errno(_errno.ENOTSOCK)
         return self.__info["proxy"]
 
 
