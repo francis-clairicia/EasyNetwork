@@ -14,7 +14,11 @@ from typing import TYPE_CHECKING, Any, AsyncIterator, Generic, Mapping, Self, Ty
 
 from ...exceptions import ClientClosedError, DatagramProtocolParseError
 from ...protocol import DatagramProtocol
-from ...tools._utils import check_real_socket_state as _check_real_socket_state, error_from_errno as _error_from_errno
+from ...tools._utils import (
+    check_real_socket_state as _check_real_socket_state,
+    check_socket_family as _check_socket_family,
+    error_from_errno as _error_from_errno,
+)
 from ...tools.socket import SocketAddress, SocketProxy, new_socket_address
 from ..backend.abc import AbstractAsyncBackend, AbstractAsyncDatagramSocketAdapter, ILock
 from ..backend.factory import AsyncBackendFactory
@@ -136,6 +140,7 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         if self.__info is not None:  # pragma: no cover
             return
         socket_proxy = SocketProxy(self.__socket.socket())
+        _check_socket_family(socket_proxy.family)
         local_address: SocketAddress = new_socket_address(self.__socket.get_local_address(), socket_proxy.family)
         assert local_address.port > 0, f"{self.__socket} is not bound to a local address"
         remote_address: SocketAddress | None

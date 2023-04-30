@@ -18,6 +18,7 @@ from ...exceptions import ClientClosedError, StreamProtocolParseError
 from ...protocol import StreamProtocol
 from ...tools._utils import (
     check_real_socket_state as _check_real_socket_state,
+    check_socket_family as _check_socket_family,
     concatenate_chunks as _concatenate_chunks,
     error_from_errno as _error_from_errno,
     restore_timeout_at_end as _restore_timeout_at_end,
@@ -107,6 +108,8 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         try:
             if socket.type != _socket.SOCK_STREAM:
                 raise ValueError("Invalid socket type")
+
+            _check_socket_family(socket.family)
 
             if max_recv_size is None:
                 max_recv_size = MAX_STREAM_BUFSIZE

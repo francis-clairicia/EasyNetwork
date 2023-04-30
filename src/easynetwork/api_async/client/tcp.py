@@ -16,6 +16,7 @@ from ...exceptions import ClientClosedError, StreamProtocolParseError
 from ...protocol import StreamProtocol
 from ...tools._utils import (
     check_real_socket_state as _check_real_socket_state,
+    check_socket_family as _check_socket_family,
     concatenate_chunks as _concatenate_chunks,
     error_from_errno as _error_from_errno,
 )
@@ -136,6 +137,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         if self.__info is not None:  # pragma: no cover
             return
         socket_proxy = SocketProxy(self.__socket.socket())
+        _check_socket_family(socket_proxy.family)
         local_address: SocketAddress = new_socket_address(self.__socket.get_local_address(), socket_proxy.family)
         remote_address: SocketAddress = new_socket_address(self.__socket.get_remote_address(), socket_proxy.family)
         self.__info = {

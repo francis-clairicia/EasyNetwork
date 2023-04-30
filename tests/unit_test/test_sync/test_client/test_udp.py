@@ -16,18 +16,13 @@ if TYPE_CHECKING:
 
     from pytest_mock import MockerFixture
 
+from ...base import UNSUPPORTED_FAMILIES
 from .base import BaseTestClient
 
 
 @pytest.fixture(scope="module", autouse=True)
 def setup_dummy_lock(module_mocker: MockerFixture, dummy_lock_cls: Any) -> None:
     module_mocker.patch(f"{UDPNetworkEndpoint.__module__}._Lock", new=dummy_lock_cls)
-
-
-def _get_all_socket_families() -> list[str]:
-    import socket
-
-    return [v for v in dir(socket) if v.startswith("AF_")]
 
 
 class TestUDPNetworkEndpoint(BaseTestClient):
@@ -238,9 +233,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         mock_udp_socket.settimeout.assert_not_called()
         mock_socket_proxy_cls.assert_called_once_with(mock_udp_socket, lock=mocker.ANY)
 
-    @pytest.mark.parametrize(
-        "socket_family", list(set(_get_all_socket_families()).difference(["AF_INET", "AF_INET6"])), indirect=True
-    )
+    @pytest.mark.parametrize("socket_family", list(UNSUPPORTED_FAMILIES), indirect=True)
     def test____dunder_init____create_datagram_endpoint____invalid_socket_family(
         self,
         socket_family: int,
@@ -249,7 +242,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         # Arrange
 
         # Act & Assert
-        with pytest.raises(ValueError, match=r"^Only AF_INET and AF_INET6 families are supported$"):
+        with pytest.raises(ValueError, match=r"^Only these families are supported: .+$"):
             _ = UDPNetworkEndpoint(protocol=mock_datagram_protocol, family=socket_family)
 
     @pytest.mark.parametrize("error_on", ["bind", "connect"])
@@ -314,9 +307,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         mock_socket_proxy_cls.assert_called_once_with(mock_udp_socket, lock=mocker.ANY)
         assert endpoint.socket is mocker.sentinel.proxy
 
-    @pytest.mark.parametrize(
-        "socket_family", list(set(_get_all_socket_families()).difference(["AF_INET", "AF_INET6"])), indirect=True
-    )
+    @pytest.mark.parametrize("socket_family", list(UNSUPPORTED_FAMILIES), indirect=True)
     def test____dunder_init____use_given_socket____invalid_socket_family(
         self,
         mock_udp_socket: MagicMock,
@@ -325,7 +316,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         # Arrange
 
         # Act & Assert
-        with pytest.raises(ValueError, match=r"^Only AF_INET and AF_INET6 families are supported$"):
+        with pytest.raises(ValueError, match=r"^Only these families are supported: .+$"):
             _ = UDPNetworkEndpoint(
                 protocol=mock_datagram_protocol,
                 socket=mock_udp_socket,

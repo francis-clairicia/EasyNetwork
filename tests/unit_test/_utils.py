@@ -61,3 +61,14 @@ class partial_eq(functools.partial[Any]):
         if not isinstance(other, functools.partial):
             return NotImplemented
         return self.func == other.func and self.args == other.args and self.keywords == other.keywords
+
+
+def get_all_socket_families() -> frozenset[str]:
+    return _get_all_socket_families()
+
+
+@functools.cache
+def _get_all_socket_families() -> frozenset[str]:
+    import socket
+
+    return frozenset(v for v in dir(socket) if v.startswith("AF_"))

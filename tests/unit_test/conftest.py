@@ -30,9 +30,9 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
 def mock_socket_factory(mocker: MockerFixture) -> Callable[[], MagicMock]:
     def factory() -> MagicMock:
         mock_socket = mocker.NonCallableMagicMock(spec=Socket)
-        mock_socket.family = -1
+        mock_socket.family = AF_INET
         mock_socket.type = -1
-        mock_socket.proto = -1
+        mock_socket.proto = 0
         return mock_socket
 
     return factory
@@ -47,7 +47,6 @@ def original_socket_cls() -> type[Socket]:
 def mock_tcp_socket_factory(mock_socket_factory: Callable[[], MagicMock]) -> Callable[[], MagicMock]:
     def factory() -> MagicMock:
         mock_socket = mock_socket_factory()
-        mock_socket.family = AF_INET
         mock_socket.type = SOCK_STREAM
         mock_socket.proto = IPPROTO_TCP
         return mock_socket
@@ -64,7 +63,6 @@ def mock_tcp_socket(mock_tcp_socket_factory: Callable[[], MagicMock]) -> MagicMo
 def mock_udp_socket_factory(mock_socket_factory: Callable[[], MagicMock]) -> Callable[[], MagicMock]:
     def factory() -> MagicMock:
         mock_socket = mock_socket_factory()
-        mock_socket.family = AF_INET
         mock_socket.type = SOCK_DGRAM
         mock_socket.proto = IPPROTO_UDP
         return mock_socket

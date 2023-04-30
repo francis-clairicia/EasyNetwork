@@ -15,7 +15,11 @@ from typing import TYPE_CHECKING, Any, Generic, Iterator, Self, TypeVar, final, 
 
 from ...exceptions import ClientClosedError, DatagramProtocolParseError
 from ...protocol import DatagramProtocol
-from ...tools._utils import check_real_socket_state as _check_real_socket_state, restore_timeout_at_end as _restore_timeout_at_end
+from ...tools._utils import (
+    check_real_socket_state as _check_real_socket_state,
+    check_socket_family as _check_socket_family,
+    restore_timeout_at_end as _restore_timeout_at_end,
+)
 from ...tools.socket import MAX_DATAGRAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
 from .abc import AbstractNetworkClient
 
@@ -89,8 +93,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
                 raise TypeError("Missing keyword argument 'give'") from None
             if kwargs:  # pragma: no cover
                 raise TypeError("Invalid arguments")
-            if socket.family not in (_socket.AF_INET, _socket.AF_INET6):
-                raise ValueError("Only AF_INET and AF_INET6 families are supported")
+            _check_socket_family(socket.family)
             self.__owner = bool(give)
         else:
             external_socket = False
@@ -99,8 +102,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             local_address: tuple[str, int] | None = kwargs.pop("local_address", None)
             if kwargs:  # pragma: no cover
                 raise TypeError("Invalid arguments")
-            if family not in (_socket.AF_INET, _socket.AF_INET6):
-                raise ValueError("Only AF_INET and AF_INET6 families are supported")
+            _check_socket_family(family)
             socket = _socket.socket(family, _socket.SOCK_DGRAM)
             try:
                 if local_address is None:

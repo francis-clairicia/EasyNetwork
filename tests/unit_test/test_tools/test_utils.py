@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Callable, Sequence, cast
 
 from easynetwork.tools._utils import (
     check_real_socket_state,
+    check_socket_family,
     concatenate_chunks,
     error_from_errno,
     open_listener_sockets_from_getaddrinfo_result,
@@ -15,6 +16,8 @@ from easynetwork.tools._utils import (
 )
 
 import pytest
+
+from ..base import SUPPORTED_FAMILIES, UNSUPPORTED_FAMILIES
 
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
@@ -25,6 +28,13 @@ if TYPE_CHECKING:
 @pytest.fixture
 def mock_socket_cls(mock_tcp_socket_factory: Callable[[], MagicMock], mocker: MockerFixture) -> MagicMock:
     return mocker.patch("socket.socket", side_effect=lambda f, t, p: mock_tcp_socket_factory())
+
+
+@pytest.fixture(params=list(SUPPORTED_FAMILIES))
+def socket_family(request: Any) -> Any:
+    import socket
+
+    return getattr(socket, request.param)
 
 
 @pytest.fixture
@@ -78,6 +88,27 @@ def test____check_real_socket_state____socket_with_error(mock_tcp_socket: MagicM
     assert exc_info.value is exception
     mock_tcp_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_ERROR)
     mock_error_from_errno.assert_called_once_with(errno)
+
+
+def test____check_socket_family____valid_family(socket_family: int) -> None:
+    # Arrange
+
+    # Act
+    check_socket_family(socket_family)
+
+    # Assert
+    ## There is no exception
+
+
+@pytest.mark.parametrize("socket_family", list(UNSUPPORTED_FAMILIES), indirect=True)
+def test____check_socket_family____invalid_family(socket_family: int) -> None:
+    # Arrange
+
+    # Act & Assert
+    with pytest.raises(ValueError, match=r"^Only these families are supported: .+$"):
+        check_socket_family(socket_family)
+
+    # Assert
 
 
 def test____restore_timeout_at_end____settimeout_to_default_at_scope_end(

@@ -23,6 +23,15 @@ def error_from_errno(errno: int) -> OSError:
     return OSError(errno, os.strerror(errno))
 
 
+def check_socket_family(family: int) -> None:
+    from .socket import AddressFamily
+
+    supported_families: dict[str, int] = dict(AddressFamily.__members__)
+
+    if family not in list(supported_families.values()):
+        raise ValueError(f"Only these families are supported: {', '.join(supported_families)}")
+
+
 def check_real_socket_state(socket: _socket.socket | _SocketProxy) -> None:
     """Verify socket saved error and raise OSError if there is one
 

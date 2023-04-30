@@ -5,8 +5,15 @@ from __future__ import annotations
 from socket import AF_INET6
 from typing import TYPE_CHECKING, Any
 
+from easynetwork.tools.socket import AddressFamily
+
+from ._utils import get_all_socket_families
+
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
+
+SUPPORTED_FAMILIES: frozenset[str] = frozenset(AddressFamily.__members__)
+UNSUPPORTED_FAMILIES: frozenset[str] = get_all_socket_families().difference(SUPPORTED_FAMILIES)
 
 
 class BaseTestSocket:

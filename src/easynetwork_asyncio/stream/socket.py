@@ -112,10 +112,7 @@ class RawStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
 
         if remote_address is None:
             remote_address = socket.getpeername()
-        if remote_address is None:
-            import errno
-
-            raise _error_from_errno(errno.ENOTCONN)
+        assert remote_address is not None
         self.__remote_addr: tuple[Any, ...] = tuple(remote_address)
 
     async def aclose(self) -> None:

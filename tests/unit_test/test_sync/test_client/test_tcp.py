@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 
     from pytest_mock import MockerFixture
 
+from ...base import UNSUPPORTED_FAMILIES
 from .base import BaseTestClient
 
 
@@ -233,6 +234,22 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_tcp_socket.getpeername.assert_called_once_with()
         mock_tcp_socket.setsockopt.assert_called_once_with(IPPROTO_TCP, TCP_NODELAY, True)
         assert client.socket is mocker.sentinel.proxy
+
+    @pytest.mark.parametrize("socket_family", list(UNSUPPORTED_FAMILIES), indirect=True)
+    def test____dunder_init____use_given_socket____invalid_socket_family(
+        self,
+        mock_tcp_socket: MagicMock,
+        mock_datagram_protocol: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        with pytest.raises(ValueError, match=r"^Only these families are supported: .+$"):
+            _ = TCPNetworkClient(
+                mock_tcp_socket,
+                protocol=mock_datagram_protocol,
+                give=False,
+            )
 
     @pytest.mark.parametrize("give_ownership", [False, True], ids=lambda p: f"give=={p}")
     def test____dunder_init____invalid_socket_type_error(
