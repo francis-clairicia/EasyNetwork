@@ -56,11 +56,10 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         global_local_address: tuple[str, int],
     ) -> tuple[str, int]:
         cls.set_local_address_to_socket_mock(mock_udp_socket, socket_family, global_local_address)
-        cls.set_local_address_to_socket_mock(
+        cls.set_local_address_to_async_socket_adapter_mock(
             mock_datagram_socket_adapter,
             socket_family,
             global_local_address,
-            "get_local_address",
         )
         return global_local_address
 
@@ -75,11 +74,10 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
     ) -> tuple[str, int] | None:
         match request.param:
             case True:
-                cls.set_remote_address_to_socket_mock(
+                cls.set_remote_address_to_async_socket_adapter_mock(
                     mock_datagram_socket_adapter,
                     socket_family,
                     global_remote_address,
-                    "get_remote_address",
                 )
                 return global_remote_address
             case False:
