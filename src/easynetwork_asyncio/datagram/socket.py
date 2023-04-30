@@ -79,9 +79,13 @@ class RawDatagramSocketAdapter(AbstractAsyncDatagramSocketAdapter):
     ) -> None:
         super().__init__()
 
+        from socket import SOCK_DGRAM
+
         from ..socket import AsyncSocket
 
         self.__socket: AsyncSocket = AsyncSocket(socket, loop)
+
+        assert socket.type == SOCK_DGRAM, "A 'SOCK_DGRAM' socket is expected"
 
     async def aclose(self) -> None:
         return await self.__socket.aclose()

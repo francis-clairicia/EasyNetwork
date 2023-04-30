@@ -106,9 +106,13 @@ class RawStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
     ) -> None:
         super().__init__()
 
+        from socket import SOCK_STREAM
+
         from ..socket import AsyncSocket
 
         self.__socket: AsyncSocket = AsyncSocket(socket, loop)
+
+        assert socket.type == SOCK_STREAM, "A 'SOCK_STREAM' socket is expected"
 
         if remote_address is None:
             remote_address = socket.getpeername()

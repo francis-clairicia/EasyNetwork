@@ -7,7 +7,7 @@ import asyncio.trsock
 from typing import TYPE_CHECKING, Any, Callable
 
 from easynetwork_asyncio.stream.listener import ListenerSocketAdapter
-from easynetwork_asyncio.stream.socket import TransportBasedStreamSocketAdapter
+from easynetwork_asyncio.stream.socket import RawStreamSocketAdapter, TransportBasedStreamSocketAdapter
 
 import pytest
 
@@ -15,6 +15,8 @@ if TYPE_CHECKING:
     from unittest.mock import AsyncMock, MagicMock
 
     from pytest_mock import MockerFixture
+
+from ...base import BaseTestSocket
 
 
 class BaseTestTransportStreamSocket:
@@ -54,7 +56,7 @@ class BaseTestTransportStreamSocket:
         return mock
 
 
-class BaseTestRawStreamSocket:
+class BaseTestRawStreamSocket(BaseTestSocket):
     @pytest.fixture(autouse=True)
     @staticmethod
     def mock_async_socket_cls(mock_async_socket: MagicMock, mocker: MockerFixture) -> MagicMock:
@@ -282,12 +284,23 @@ class TestTransportBasedStreamSocket(BaseTestTransportStreamSocket):
 @pytest.mark.asyncio
 class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestRawStreamSocket):
     @pytest.fixture
+    @classmethod
+    def mock_tcp_listener_socket(
+        cls,
+        mock_tcp_socket_factory: Callable[[], MagicMock],
+    ) -> MagicMock:
+        mock_socket = mock_tcp_socket_factory()
+        cls.set_local_address_to_socket_mock(mock_socket, mock_socket.family, ("127.0.0.1", 11111))
+        return mock_socket
+
+    @pytest.fixture
     @staticmethod
     def mock_async_socket(
         mock_async_socket: MagicMock,
         mock_tcp_socket: MagicMock,
+        mock_tcp_listener_socket: MagicMock,
     ) -> MagicMock:
-        mock_async_socket.socket.getsockname.return_value = ("127.0.0.1", 11111)
+        mock_async_socket.socket = mock_tcp_listener_socket
         mock_async_socket.accept.return_value = (mock_tcp_socket, ("127.0.0.1", 12345))
         return mock_async_socket
 
@@ -342,26 +355,26 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestRawStream
     @staticmethod
     def listener(
         event_loop: asyncio.AbstractEventLoop,
-        mock_tcp_socket_factory: Callable[[], MagicMock],
+        mock_tcp_listener_socket: MagicMock,
     ) -> ListenerSocketAdapter:
-        return ListenerSocketAdapter(mock_tcp_socket_factory(), event_loop)
+        return ListenerSocketAdapter(mock_tcp_listener_socket, event_loop)
 
     async def test____dunder_init____default(
         self,
         listener: ListenerSocketAdapter,
-        mock_async_socket: MagicMock,
+        mock_tcp_listener_socket: MagicMock,
     ) -> None:
         # Arrange
 
         # Act
 
         # Assert
-        assert listener.socket() is mock_async_socket.socket
+        assert listener.socket() is mock_tcp_listener_socket
 
     async def test____get_local_address____returns_socket_address(
         self,
         listener: ListenerSocketAdapter,
-        mock_async_socket: MagicMock,
+        mock_tcp_listener_socket: MagicMock,
     ) -> None:
         # Arrange
 
@@ -369,7 +382,7 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestRawStream
         local_address = listener.get_local_address()
 
         # Assert
-        mock_async_socket.socket.getsockname.assert_called_once_with()
+        mock_tcp_listener_socket.getsockname.assert_called_once_with()
         assert local_address == ("127.0.0.1", 11111)
 
     async def test____is_closing____default(
@@ -458,3 +471,168 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestRawStream
             mock_asyncio_writer,
             remote_address=("127.0.0.1", 12345),
         )
+
+
+@pytest.mark.asyncio
+class TestRawStreamSocketAdapter(BaseTestRawStreamSocket):
+    @pytest.fixture
+    @classmethod
+    def mock_tcp_socket(cls, mock_tcp_socket: MagicMock) -> MagicMock:
+        cls.set_local_address_to_socket_mock(mock_tcp_socket, mock_tcp_socket.family, ("127.0.0.1", 11111))
+        cls.set_remote_address_to_socket_mock(mock_tcp_socket, mock_tcp_socket.family, ("127.0.0.1", 12345))
+        return mock_tcp_socket
+
+    @pytest.fixture
+    @staticmethod
+    def mock_async_socket(
+        mock_async_socket: MagicMock,
+        mock_tcp_socket: MagicMock,
+    ) -> MagicMock:
+        mock_async_socket.socket = mock_tcp_socket
+        return mock_async_socket
+
+    @pytest.fixture
+    @staticmethod
+    def socket(event_loop: asyncio.AbstractEventLoop, mock_tcp_socket: MagicMock) -> RawStreamSocketAdapter:
+        return RawStreamSocketAdapter(mock_tcp_socket, event_loop)
+
+    async def test____dunder_init____default(
+        self,
+        socket: RawStreamSocketAdapter,
+        mock_tcp_socket: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act
+
+        # Assert
+        assert socket.socket() is mock_tcp_socket
+
+    async def test____dunder_init____explicit_remote_address(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        mock_tcp_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        remote_address = ("explicit_address", 4444)
+
+        # Act
+        socket = RawStreamSocketAdapter(mock_tcp_socket, event_loop, remote_address=remote_address)
+
+        # Assert
+        assert socket.get_remote_address() == remote_address
+        mock_tcp_socket.getpeername.assert_not_called()
+
+    async def test____get_local_address____returns_socket_address(
+        self,
+        socket: RawStreamSocketAdapter,
+        mock_tcp_socket: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act
+        local_address = socket.get_local_address()
+
+        # Assert
+        mock_tcp_socket.getsockname.assert_called_once_with()
+        assert local_address == ("127.0.0.1", 11111)
+
+    async def test____get_remote_address____returns_peer_address(
+        self,
+        socket: RawStreamSocketAdapter,
+        mock_tcp_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_tcp_socket.getpeername.assert_called_once_with()
+
+        # Act
+        remote_address = socket.get_remote_address()
+
+        # Assert
+        mock_tcp_socket.getpeername.assert_called_once_with()
+        assert remote_address == ("127.0.0.1", 12345)
+
+    async def test____is_closing____default(
+        self,
+        socket: RawStreamSocketAdapter,
+        mock_async_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_async_socket.is_closing.return_value = mocker.sentinel.is_closing
+
+        # Act
+        state = socket.is_closing()
+
+        # Assert
+        assert state is mocker.sentinel.is_closing
+        mock_async_socket.is_closing.assert_called_once_with()
+
+    async def test____aclose____close_socket(
+        self,
+        socket: RawStreamSocketAdapter,
+        mock_async_socket: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act
+        await socket.aclose()
+
+        # Assert
+        mock_async_socket.aclose.assert_awaited_once_with()
+
+    async def test____abort____close_socket(
+        self,
+        socket: RawStreamSocketAdapter,
+        mock_async_socket: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act
+        await socket.abort()
+
+        # Assert
+        mock_async_socket.abort.assert_awaited_once_with()
+
+    async def test____context____close_socket(
+        self,
+        socket: RawStreamSocketAdapter,
+        mock_async_socket: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act
+        async with socket:
+            mock_async_socket.aclose.assert_not_awaited()
+
+        # Assert
+        mock_async_socket.aclose.assert_awaited_once_with()
+
+    async def test_____recv____returns_data_from_async_socket(
+        self,
+        socket: RawStreamSocketAdapter,
+        mock_async_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_async_socket.recv.return_value = b"data"
+
+        # Act
+        data: bytes = await socket.recv(123456789)
+
+        # Assert
+        assert data == b"data"
+        mock_async_socket.recv.assert_awaited_once_with(123456789)
+
+    async def test_____sendall____sends_data_to_async_socket(
+        self,
+        socket: RawStreamSocketAdapter,
+        mock_async_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_async_socket.sendall.return_value = None
+
+        # Act
+        await socket.sendall(b"data")
+
+        # Assert
+        mock_async_socket.sendall.assert_awaited_once_with(b"data")
