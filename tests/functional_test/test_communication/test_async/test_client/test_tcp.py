@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from socket import AF_INET, IPPROTO_TCP, SHUT_WR, TCP_NODELAY, socket as Socket
-from typing import AsyncIterator
+from typing import Any, AsyncIterator
 
 from easynetwork.api_async.client.tcp import AsyncTCPNetworkClient
 from easynetwork.exceptions import ClientClosedError, StreamProtocolParseError
@@ -30,8 +30,13 @@ class TestAsyncTCPNetworkClient:
     async def client(
         socket_pair: tuple[Socket, Socket],
         stream_protocol: StreamProtocol[str, str],
+        use_asyncio_transport: bool,
     ) -> AsyncIterator[AsyncTCPNetworkClient[str, str]]:
-        async with AsyncTCPNetworkClient(socket_pair[1], stream_protocol) as client:
+        async with AsyncTCPNetworkClient(
+            socket_pair[1],
+            stream_protocol,
+            backend_kwargs={"transport": use_asyncio_transport},
+        ) as client:
             assert client.is_connected()
             yield client
 
@@ -210,12 +215,18 @@ class TestAsyncTCPNetworkClientConnection:
     def remote_address(server: asyncio.Server) -> tuple[str, int]:
         return server.sockets[0].getsockname()[:2]
 
+    @pytest.fixture
+    @staticmethod
+    def backend_kwargs(use_asyncio_transport: bool) -> dict[str, Any]:
+        return {"transport": use_asyncio_transport}
+
     async def test____dunder_init____connect_to_server(
         self,
         remote_address: tuple[str, int],
         stream_protocol: StreamProtocol[str, str],
+        backend_kwargs: dict[str, Any],
     ) -> None:
-        async with AsyncTCPNetworkClient(remote_address, stream_protocol) as client:
+        async with AsyncTCPNetworkClient(remote_address, stream_protocol, backend_kwargs=backend_kwargs) as client:
             assert client.is_connected()
             await client.send_packet("Test")
             assert await client.recv_packet() == "Test"
@@ -225,8 +236,14 @@ class TestAsyncTCPNetworkClientConnection:
         localhost: str,
         remote_address: tuple[str, int],
         stream_protocol: StreamProtocol[str, str],
+        backend_kwargs: dict[str, Any],
     ) -> None:
-        async with AsyncTCPNetworkClient(remote_address, stream_protocol, local_address=(localhost, 0)) as client:
+        async with AsyncTCPNetworkClient(
+            remote_address,
+            stream_protocol,
+            local_address=(localhost, 0),
+            backend_kwargs=backend_kwargs,
+        ) as client:
             await client.send_packet("Test")
             assert await client.recv_packet() == "Test"
 
@@ -234,8 +251,9 @@ class TestAsyncTCPNetworkClientConnection:
         self,
         remote_address: tuple[str, int],
         stream_protocol: StreamProtocol[str, str],
+        backend_kwargs: dict[str, Any],
     ) -> None:
-        async with AsyncTCPNetworkClient(remote_address, stream_protocol) as client:
+        async with AsyncTCPNetworkClient(remote_address, stream_protocol, backend_kwargs=backend_kwargs) as client:
             await client.wait_connected()
             assert client.is_connected()
             await client.wait_connected()
@@ -245,8 +263,9 @@ class TestAsyncTCPNetworkClientConnection:
         self,
         remote_address: tuple[str, int],
         stream_protocol: StreamProtocol[str, str],
+        backend_kwargs: dict[str, Any],
     ) -> None:
-        async with AsyncTCPNetworkClient(remote_address, stream_protocol) as client:
+        async with AsyncTCPNetworkClient(remote_address, stream_protocol, backend_kwargs=backend_kwargs) as client:
             async with asyncio.TaskGroup() as task_group:
                 task_group.create_task(client.wait_connected())
                 task_group.create_task(client.wait_connected())
@@ -257,8 +276,15 @@ class TestAsyncTCPNetworkClientConnection:
         self,
         remote_address: tuple[str, int],
         stream_protocol: StreamProtocol[str, str],
+        backend_kwargs: dict[str, Any],
     ) -> None:
-        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol)) as client:
+        async with contextlib.aclosing(
+            AsyncTCPNetworkClient(
+                remote_address,
+                stream_protocol,
+                backend_kwargs=backend_kwargs,
+            )
+        ) as client:
             assert not client.is_connected()
             assert not client.is_closing()
             await client.wait_connected()
@@ -269,8 +295,15 @@ class TestAsyncTCPNetworkClientConnection:
         self,
         remote_address: tuple[str, int],
         stream_protocol: StreamProtocol[str, str],
+        backend_kwargs: dict[str, Any],
     ) -> None:
-        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol)) as client:
+        async with contextlib.aclosing(
+            AsyncTCPNetworkClient(
+                remote_address,
+                stream_protocol,
+                backend_kwargs=backend_kwargs,
+            )
+        ) as client:
             await client.aclose()
             with pytest.raises(ClientClosedError):
                 await client.wait_connected()
@@ -279,8 +312,15 @@ class TestAsyncTCPNetworkClientConnection:
         self,
         remote_address: tuple[str, int],
         stream_protocol: StreamProtocol[str, str],
+        backend_kwargs: dict[str, Any],
     ) -> None:
-        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol)) as client:
+        async with contextlib.aclosing(
+            AsyncTCPNetworkClient(
+                remote_address,
+                stream_protocol,
+                backend_kwargs=backend_kwargs,
+            )
+        ) as client:
             with pytest.raises(OSError):
                 _ = client.socket
 
@@ -292,8 +332,15 @@ class TestAsyncTCPNetworkClientConnection:
         self,
         remote_address: tuple[str, int],
         stream_protocol: StreamProtocol[str, str],
+        backend_kwargs: dict[str, Any],
     ) -> None:
-        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol)) as client:
+        async with contextlib.aclosing(
+            AsyncTCPNetworkClient(
+                remote_address,
+                stream_protocol,
+                backend_kwargs=backend_kwargs,
+            )
+        ) as client:
             with pytest.raises(OSError):
                 _ = client.get_local_address()
 
@@ -305,8 +352,15 @@ class TestAsyncTCPNetworkClientConnection:
         self,
         remote_address: tuple[str, int],
         stream_protocol: StreamProtocol[str, str],
+        backend_kwargs: dict[str, Any],
     ) -> None:
-        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol)) as client:
+        async with contextlib.aclosing(
+            AsyncTCPNetworkClient(
+                remote_address,
+                stream_protocol,
+                backend_kwargs=backend_kwargs,
+            )
+        ) as client:
             with pytest.raises(OSError):
                 _ = client.get_remote_address()
 
@@ -318,8 +372,15 @@ class TestAsyncTCPNetworkClientConnection:
         self,
         remote_address: tuple[str, int],
         stream_protocol: StreamProtocol[str, str],
+        backend_kwargs: dict[str, Any],
     ) -> None:
-        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol)) as client:
+        async with contextlib.aclosing(
+            AsyncTCPNetworkClient(
+                remote_address,
+                stream_protocol,
+                backend_kwargs=backend_kwargs,
+            )
+        ) as client:
             assert client.fileno() == -1
 
             await client.wait_connected()
@@ -330,8 +391,15 @@ class TestAsyncTCPNetworkClientConnection:
         self,
         remote_address: tuple[str, int],
         stream_protocol: StreamProtocol[str, str],
+        backend_kwargs: dict[str, Any],
     ) -> None:
-        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol)) as client:
+        async with contextlib.aclosing(
+            AsyncTCPNetworkClient(
+                remote_address,
+                stream_protocol,
+                backend_kwargs=backend_kwargs,
+            )
+        ) as client:
             assert not client.is_connected()
 
             await client.send_packet("Connected")

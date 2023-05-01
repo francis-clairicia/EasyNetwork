@@ -39,15 +39,36 @@ def pytest_configure(config: pytest.Config) -> None:
             assert_never(event_loop)
 
     config.addinivalue_line("markers", "skipif_uvloop: Skip asyncio test if uvloop is used")
+    config.addinivalue_line("markers", "xfail_uvloop: Expected asyncio test to fail if uvloop is used")
 
 
 def pytest_report_header(config: pytest.Config) -> str:
     return f"asyncio event-loop: {config.getoption(ASYNCIO_EVENT_LOOP_OPTION)}"
 
 
-def pytest_runtest_setup(item: pytest.Item) -> None:
-    event_loop: EventLoop = item.config.getoption(ASYNCIO_EVENT_LOOP_OPTION)
+def _skip_test_if_uvloop_is_used(config: pytest.Config, item: pytest.Item) -> None:
+    if item.get_closest_marker("skipif_uvloop") is not None:
+        item.add_marker(
+            pytest.mark.skipif(
+                config.getoption(ASYNCIO_EVENT_LOOP_OPTION) == EventLoop.UVLOOP,
+                reason="Skipped because uvloop runner is used",
+            )
+        )
 
-    match event_loop:
-        case EventLoop.UVLOOP if item.get_closest_marker("skipif_uvloop") is not None:
-            pytest.skip("Skipped because uvloop runner is used")
+
+def _xfail_test_if_uvloop_is_used(config: pytest.Config, item: pytest.Item) -> None:
+    if item.get_closest_marker("xfail_uvloop") is not None:
+        item.add_marker(
+            pytest.mark.xfail(
+                config.getoption(ASYNCIO_EVENT_LOOP_OPTION) == EventLoop.UVLOOP,
+                reason="uvloop runner does not implement the needed function",
+                strict=True,
+                raises=NotImplementedError,
+            )
+        )
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    for item in items:
+        _skip_test_if_uvloop_is_used(config, item)
+        _xfail_test_if_uvloop_is_used(config, item)

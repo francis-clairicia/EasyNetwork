@@ -22,14 +22,15 @@ if TYPE_CHECKING:
 
 @final
 class ListenerSocketAdapter(AbstractAsyncListenerSocketAdapter):
-    __slots__ = ("__socket",)
+    __slots__ = ("__socket", "__use_asyncio_transport")
 
-    def __init__(self, socket: _socket.socket, loop: asyncio.AbstractEventLoop) -> None:
+    def __init__(self, socket: _socket.socket, loop: asyncio.AbstractEventLoop, *, use_asyncio_transport: bool = False) -> None:
         super().__init__()
 
         from ..socket import AsyncSocket
 
         self.__socket: AsyncSocket = AsyncSocket(socket, loop)
+        self.__use_asyncio_transport: bool = bool(use_asyncio_transport)
 
     def is_closing(self) -> bool:
         return self.__socket.is_closing()
@@ -47,6 +48,11 @@ class ListenerSocketAdapter(AbstractAsyncListenerSocketAdapter):
         return client_socket_adapter
 
     async def _make_socket_adapter(self, socket: _socket.socket, address: tuple[Any, ...]) -> AbstractAsyncStreamSocketAdapter:
+        if not self.__use_asyncio_transport:
+            from .socket import RawStreamSocketAdapter
+
+            return RawStreamSocketAdapter(socket, self.__socket.loop, remote_address=address)
+
         from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
 
         from .socket import TransportBasedStreamSocketAdapter

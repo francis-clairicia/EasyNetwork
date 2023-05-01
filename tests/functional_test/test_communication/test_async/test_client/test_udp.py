@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from socket import AF_INET, socket as Socket
-from typing import AsyncIterator, Callable
+from typing import Any, AsyncIterator, Callable
 
 from easynetwork.api_async.client.udp import AsyncUDPNetworkClient, AsyncUDPNetworkEndpoint
 from easynetwork.exceptions import ClientClosedError, DatagramProtocolParseError
@@ -16,6 +16,7 @@ import pytest
 import pytest_asyncio
 
 from .._utils import delay
+from ..conftest import use_asyncio_transport_xfail_uvloop
 
 
 @pytest.fixture
@@ -58,12 +59,17 @@ class TestAsyncUDPNetworkClient:
         use_external_socket: Socket | None,
         socket_family: int,
         datagram_protocol: DatagramProtocol[str, str],
+        use_asyncio_transport: bool,
     ) -> AsyncIterator[AsyncUDPNetworkClient[str, str]]:
         if use_external_socket is not None:
             use_external_socket.connect(remote_address)
-            client = AsyncUDPNetworkClient(use_external_socket, datagram_protocol)
+            client = AsyncUDPNetworkClient(
+                use_external_socket, datagram_protocol, backend_kwargs={"transport": use_asyncio_transport}
+            )
         else:
-            client = AsyncUDPNetworkClient(remote_address, datagram_protocol, family=socket_family)
+            client = AsyncUDPNetworkClient(
+                remote_address, datagram_protocol, family=socket_family, backend_kwargs={"transport": use_asyncio_transport}
+            )
         async with client:
             assert client.is_connected()
             yield client
@@ -104,12 +110,14 @@ class TestAsyncUDPNetworkClient:
         await client.send_packet("ABCDEF")
         assert await asyncio.to_thread(server.recvfrom, 1024) == (b"ABCDEF", client.get_local_address())
 
+    # @use_asyncio_transport_xfail_uvloop
     @pytest.mark.platform_linux  # Windows and MacOS do not raise error
     async def test____send_packet____connection_refused(self, client: AsyncUDPNetworkClient[str, str], server: Socket) -> None:
         server.close()
         with pytest.raises(ConnectionRefusedError):
             await client.send_packet("ABCDEF")
 
+    # @use_asyncio_transport_xfail_uvloop
     @pytest.mark.platform_linux  # Windows and MacOS do not raise error
     async def test____send_packet____connection_refused____after_previous_successful_try(
         self,
@@ -127,10 +135,12 @@ class TestAsyncUDPNetworkClient:
         with pytest.raises(ClientClosedError):
             await client.send_packet("ABCDEF")
 
+    @use_asyncio_transport_xfail_uvloop
     async def test____recv_packet____default(self, client: AsyncUDPNetworkClient[str, str], server: Socket) -> None:
         server.sendto(b"ABCDEF", client.get_local_address())
         assert await client.recv_packet() == "ABCDEF"
 
+    @use_asyncio_transport_xfail_uvloop
     async def test____recv_packet____ignore_other_socket_packets(
         self,
         client: AsyncUDPNetworkClient[str, str],
@@ -146,11 +156,13 @@ class TestAsyncUDPNetworkClient:
         with pytest.raises(ClientClosedError):
             await client.recv_packet()
 
+    @use_asyncio_transport_xfail_uvloop
     async def test____recv_packet____invalid_data(self, client: AsyncUDPNetworkClient[str, str], server: Socket) -> None:
         server.sendto("\u00E9".encode("latin-1"), client.get_local_address())
         with pytest.raises(DatagramProtocolParseError):
             await client.recv_packet()
 
+    @use_asyncio_transport_xfail_uvloop
     async def test____iter_received_packets____yields_available_packets_until_close(
         self,
         client: AsyncUDPNetworkClient[str, str],
@@ -159,10 +171,12 @@ class TestAsyncUDPNetworkClient:
         for p in [b"A", b"B", b"C", b"D", b"E", b"F"]:
             server.sendto(p, client.get_local_address())
 
-        asyncio.create_task(delay(client.aclose, 0.5))
-
-        # NOTE: Comparison using set because equality check does not verify order
-        assert {p async for p in client.iter_received_packets()} == {"A", "B", "C", "D", "E", "F"}
+        close_task = asyncio.create_task(delay(client.aclose, 0.5))
+        try:
+            # NOTE: Comparison using set because equality check does not verify order
+            assert {p async for p in client.iter_received_packets()} == {"A", "B", "C", "D", "E", "F"}
+        finally:
+            close_task.cancel()
 
     async def test____fileno____consistency(self, client: AsyncUDPNetworkClient[str, str]) -> None:
         assert client.fileno() == client.socket.fileno()
@@ -228,13 +242,24 @@ class TestAsyncUDPNetworkClientConnection:
     def remote_address(server: asyncio.DatagramTransport) -> tuple[str, int]:
         return server.get_extra_info("sockname")[:2]
 
+    @pytest.fixture
+    @staticmethod
+    def backend_kwargs(use_asyncio_transport: bool) -> dict[str, Any]:
+        return {"transport": use_asyncio_transport}
+
     async def test____wait_connected____idempotent(
         self,
         remote_address: tuple[str, int],
         datagram_protocol: DatagramProtocol[str, str],
         socket_family: int,
+        backend_kwargs: dict[str, Any],
     ) -> None:
-        async with AsyncUDPNetworkClient(remote_address, datagram_protocol, family=socket_family) as client:
+        async with AsyncUDPNetworkClient(
+            remote_address,
+            datagram_protocol,
+            family=socket_family,
+            backend_kwargs=backend_kwargs,
+        ) as client:
             await client.wait_connected()
             assert client.is_connected()
             await client.wait_connected()
@@ -245,8 +270,14 @@ class TestAsyncUDPNetworkClientConnection:
         remote_address: tuple[str, int],
         datagram_protocol: DatagramProtocol[str, str],
         socket_family: int,
+        backend_kwargs: dict[str, Any],
     ) -> None:
-        async with AsyncUDPNetworkClient(remote_address, datagram_protocol, family=socket_family) as client:
+        async with AsyncUDPNetworkClient(
+            remote_address,
+            datagram_protocol,
+            family=socket_family,
+            backend_kwargs=backend_kwargs,
+        ) as client:
             async with asyncio.TaskGroup() as task_group:
                 task_group.create_task(client.wait_connected())
                 task_group.create_task(client.wait_connected())
@@ -258,8 +289,16 @@ class TestAsyncUDPNetworkClientConnection:
         remote_address: tuple[str, int],
         datagram_protocol: DatagramProtocol[str, str],
         socket_family: int,
+        backend_kwargs: dict[str, Any],
     ) -> None:
-        async with contextlib.aclosing(AsyncUDPNetworkClient(remote_address, datagram_protocol, family=socket_family)) as client:
+        async with contextlib.aclosing(
+            AsyncUDPNetworkClient(
+                remote_address,
+                datagram_protocol,
+                family=socket_family,
+                backend_kwargs=backend_kwargs,
+            )
+        ) as client:
             assert not client.is_connected()
             assert not client.is_closing()
             await client.wait_connected()
@@ -271,8 +310,16 @@ class TestAsyncUDPNetworkClientConnection:
         remote_address: tuple[str, int],
         datagram_protocol: DatagramProtocol[str, str],
         socket_family: int,
+        backend_kwargs: dict[str, Any],
     ) -> None:
-        async with contextlib.aclosing(AsyncUDPNetworkClient(remote_address, datagram_protocol, family=socket_family)) as client:
+        async with contextlib.aclosing(
+            AsyncUDPNetworkClient(
+                remote_address,
+                datagram_protocol,
+                family=socket_family,
+                backend_kwargs=backend_kwargs,
+            )
+        ) as client:
             await client.aclose()
             with pytest.raises(ClientClosedError):
                 await client.wait_connected()
@@ -282,8 +329,16 @@ class TestAsyncUDPNetworkClientConnection:
         remote_address: tuple[str, int],
         datagram_protocol: DatagramProtocol[str, str],
         socket_family: int,
+        backend_kwargs: dict[str, Any],
     ) -> None:
-        async with contextlib.aclosing(AsyncUDPNetworkClient(remote_address, datagram_protocol, family=socket_family)) as client:
+        async with contextlib.aclosing(
+            AsyncUDPNetworkClient(
+                remote_address,
+                datagram_protocol,
+                family=socket_family,
+                backend_kwargs=backend_kwargs,
+            )
+        ) as client:
             with pytest.raises(OSError):
                 _ = client.socket
 
@@ -296,8 +351,16 @@ class TestAsyncUDPNetworkClientConnection:
         remote_address: tuple[str, int],
         datagram_protocol: DatagramProtocol[str, str],
         socket_family: int,
+        backend_kwargs: dict[str, Any],
     ) -> None:
-        async with contextlib.aclosing(AsyncUDPNetworkClient(remote_address, datagram_protocol, family=socket_family)) as client:
+        async with contextlib.aclosing(
+            AsyncUDPNetworkClient(
+                remote_address,
+                datagram_protocol,
+                family=socket_family,
+                backend_kwargs=backend_kwargs,
+            )
+        ) as client:
             with pytest.raises(OSError):
                 _ = client.get_local_address()
 
@@ -310,8 +373,16 @@ class TestAsyncUDPNetworkClientConnection:
         remote_address: tuple[str, int],
         datagram_protocol: DatagramProtocol[str, str],
         socket_family: int,
+        backend_kwargs: dict[str, Any],
     ) -> None:
-        async with contextlib.aclosing(AsyncUDPNetworkClient(remote_address, datagram_protocol, family=socket_family)) as client:
+        async with contextlib.aclosing(
+            AsyncUDPNetworkClient(
+                remote_address,
+                datagram_protocol,
+                family=socket_family,
+                backend_kwargs=backend_kwargs,
+            )
+        ) as client:
             with pytest.raises(OSError):
                 _ = client.get_remote_address()
 
@@ -324,21 +395,38 @@ class TestAsyncUDPNetworkClientConnection:
         remote_address: tuple[str, int],
         datagram_protocol: DatagramProtocol[str, str],
         socket_family: int,
+        backend_kwargs: dict[str, Any],
     ) -> None:
-        async with contextlib.aclosing(AsyncUDPNetworkClient(remote_address, datagram_protocol, family=socket_family)) as client:
+        async with contextlib.aclosing(
+            AsyncUDPNetworkClient(
+                remote_address,
+                datagram_protocol,
+                family=socket_family,
+                backend_kwargs=backend_kwargs,
+            )
+        ) as client:
             assert client.fileno() == -1
 
             await client.wait_connected()
 
             assert client.fileno() > -1
 
+    @use_asyncio_transport_xfail_uvloop
     async def test____send_packet____recv_packet____implicit_connection(
         self,
         remote_address: tuple[str, int],
         datagram_protocol: DatagramProtocol[str, str],
         socket_family: int,
+        backend_kwargs: dict[str, Any],
     ) -> None:
-        async with contextlib.aclosing(AsyncUDPNetworkClient(remote_address, datagram_protocol, family=socket_family)) as client:
+        async with contextlib.aclosing(
+            AsyncUDPNetworkClient(
+                remote_address,
+                datagram_protocol,
+                family=socket_family,
+                backend_kwargs=backend_kwargs,
+            )
+        ) as client:
             assert not client.is_connected()
 
             await client.send_packet("Connected")
@@ -361,6 +449,7 @@ class TestAsyncUDPNetworkEndpoint:
         socket_family: int,
         localhost: str,
         datagram_protocol: DatagramProtocol[str, str],
+        use_asyncio_transport: bool,
     ) -> AsyncIterator[AsyncUDPNetworkEndpoint[str, str]]:
         address: tuple[str, int] | None
         match getattr(request, "param"):
@@ -376,6 +465,7 @@ class TestAsyncUDPNetworkEndpoint:
             remote_address=address,
             family=socket_family,
             local_address=(localhost, 0),
+            backend_kwargs={"transport": use_asyncio_transport},
         ) as client:
             assert client.is_bound()
             yield client
@@ -410,6 +500,7 @@ class TestAsyncUDPNetworkEndpoint:
         await client.aclose()
         assert client.is_closing()
 
+    @use_asyncio_transport_xfail_uvloop
     @pytest.mark.parametrize("client", ["WITHOUT_REMOTE"], indirect=True)
     async def test____send_packet_to____send_to_anyone(
         self,
@@ -446,6 +537,16 @@ class TestAsyncUDPNetworkEndpoint:
         await client.send_packet_to("ABCDEF", server.getsockname())
         assert await asyncio.to_thread(server.recvfrom, 1024) == (b"ABCDEF", client.get_local_address())
 
+    @pytest.mark.parametrize(
+        ["client", "use_asyncio_transport"],
+        [
+            pytest.param("WITH_REMOTE", False),
+            pytest.param("WITH_REMOTE", True),
+            pytest.param("WITHOUT_REMOTE", False, marks=pytest.mark.xfail_uvloop),
+            pytest.param("WITHOUT_REMOTE", True),
+        ],
+        indirect=True,
+    )
     async def test____send_packet_to____invalid_address(
         self,
         client: AsyncUDPNetworkEndpoint[str, str],
@@ -497,6 +598,7 @@ class TestAsyncUDPNetworkEndpoint:
         with pytest.raises(ClientClosedError):
             await client.send_packet_to("ABCDEF", address)
 
+    @use_asyncio_transport_xfail_uvloop
     @pytest.mark.parametrize("client", ["WITHOUT_REMOTE"], indirect=True)
     async def test____recv_packet_from____receive_from_anyone(
         self,
@@ -517,6 +619,7 @@ class TestAsyncUDPNetworkEndpoint:
                 assert isinstance(sender, IPv6SocketAddress)
             assert sender == new_socket_address(other_client.getsockname(), socket_family)
 
+    @use_asyncio_transport_xfail_uvloop
     @pytest.mark.parametrize("client", ["WITH_REMOTE"], indirect=True)
     async def test____recv_packet_from____receive_from_remote(
         self,
@@ -533,6 +636,7 @@ class TestAsyncUDPNetworkEndpoint:
             assert isinstance(sender, IPv6SocketAddress)
         assert sender == new_socket_address(server.getsockname(), socket_family)
 
+    @use_asyncio_transport_xfail_uvloop
     @pytest.mark.parametrize("client", ["WITH_REMOTE"], indirect=True)
     async def test____recv_packet_from____ignore_other_socket_packets(
         self,
@@ -549,11 +653,13 @@ class TestAsyncUDPNetworkEndpoint:
         with pytest.raises(ClientClosedError):
             await client.recv_packet_from()
 
+    @use_asyncio_transport_xfail_uvloop
     async def test____recv_packet_from____invalid_data(self, client: AsyncUDPNetworkEndpoint[str, str], server: Socket) -> None:
         server.sendto("\u00E9".encode("latin-1"), client.get_local_address())
         with pytest.raises(DatagramProtocolParseError):
             await client.recv_packet_from()
 
+    @use_asyncio_transport_xfail_uvloop
     async def test____iter_received_packets_from____yields_available_packets(
         self,
         client: AsyncUDPNetworkEndpoint[str, str],
@@ -564,17 +670,19 @@ class TestAsyncUDPNetworkEndpoint:
         for p in [b"A", b"B", b"C", b"D", b"E", b"F"]:
             server.sendto(p, client.get_local_address())
 
-        asyncio.create_task(delay(client.aclose, 0.5))
-
-        # NOTE: Comparison using set because equality check does not verify order
-        assert {(p, addr) async for p, addr in client.iter_received_packets_from()} == {
-            ("A", server_address),
-            ("B", server_address),
-            ("C", server_address),
-            ("D", server_address),
-            ("E", server_address),
-            ("F", server_address),
-        }
+        close_task = asyncio.create_task(delay(client.aclose, 0.5))
+        try:
+            # NOTE: Comparison using set because equality check does not verify order
+            assert {(p, addr) async for p, addr in client.iter_received_packets_from()} == {
+                ("A", server_address),
+                ("B", server_address),
+                ("C", server_address),
+                ("D", server_address),
+                ("E", server_address),
+                ("F", server_address),
+            }
+        finally:
+            close_task.cancel()
 
     async def test____fileno____consistency(self, client: AsyncUDPNetworkEndpoint[str, str]) -> None:
         assert client.fileno() == client.socket.fileno()

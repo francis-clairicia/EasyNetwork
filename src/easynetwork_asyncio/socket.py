@@ -129,7 +129,7 @@ class AsyncSocket:
 
     @contextlib.contextmanager
     def __conflict_detection(self, task_id: _SocketTaskId) -> Iterator[_socket.socket]:
-        if (socket := self.__socket) is None or self.__closing:
+        if (socket := self.__socket if not self.__closing else None) is None:
             raise _error_from_errno(_errno.ENOTSOCK)
 
         if task_id in self.__waiters:
@@ -143,14 +143,20 @@ class AsyncSocket:
             self.__tasks.add(task)
             task.add_done_callback(self.__tasks.discard)
             stack.callback(self.__tasks.discard, task)
-            del task
 
             waiter: asyncio.Future[None] = self.__loop.create_future()
             self.__waiters[task_id] = asyncio.shield(waiter)
             stack.callback(self.__waiters.pop, task_id)
             stack.callback(waiter.set_result, None)
 
-            yield socket
+            try:
+                yield socket
+            except asyncio.CancelledError:
+                if self.__socket is not None or task.uncancel() != 0:
+                    raise
+                raise _error_from_errno(_errno.EBADF) from None
+            finally:
+                del task
 
     @property
     def loop(self) -> asyncio.AbstractEventLoop:

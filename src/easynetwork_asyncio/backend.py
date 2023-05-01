@@ -137,6 +137,19 @@ class AsyncioBackend(AbstractAsyncBackend):
 
         import asyncio
 
+        if not self.__use_asyncio_transport:
+            from ._utils import create_connection
+            from .stream.socket import RawStreamSocketAdapter
+
+            loop = asyncio.get_running_loop()
+
+            if happy_eyeballs_delay is not None:
+                transport = self.__use_asyncio_transport
+                raise ValueError(f"'happy_eyeballs_delay' option not supported with {transport=}")
+
+            socket = await create_connection(host, port, loop, family=family, local_address=local_address)
+            return RawStreamSocketAdapter(socket, loop)
+
         from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
 
         from .stream.socket import TransportBasedStreamSocketAdapter
@@ -166,6 +179,11 @@ class AsyncioBackend(AbstractAsyncBackend):
 
         import asyncio
 
+        if not self.__use_asyncio_transport:
+            from .stream.socket import RawStreamSocketAdapter
+
+            return RawStreamSocketAdapter(socket, asyncio.get_running_loop())
+
         from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
 
         from .stream.socket import TransportBasedStreamSocketAdapter
@@ -191,6 +209,8 @@ class AsyncioBackend(AbstractAsyncBackend):
 
         from easynetwork.tools._utils import open_listener_sockets_from_getaddrinfo_result
 
+        from ._utils import _ensure_resolved
+
         loop = asyncio.get_running_loop()
 
         reuse_address = os.name == "posix" and sys.platform != "cygwin"
@@ -205,10 +225,7 @@ class AsyncioBackend(AbstractAsyncBackend):
         infos: set[tuple[int, int, int, str, tuple[Any, ...]]] = set(
             chain.from_iterable(
                 await asyncio.gather(
-                    *[
-                        self._ensure_resolved(host, port, family, _socket.SOCK_STREAM, loop, flags=_socket.AI_PASSIVE)
-                        for host in hosts
-                    ]
+                    *[_ensure_resolved(host, port, family, _socket.SOCK_STREAM, loop, flags=_socket.AI_PASSIVE) for host in hosts]
                 )
             )
         )
@@ -222,36 +239,7 @@ class AsyncioBackend(AbstractAsyncBackend):
 
         from .stream.listener import ListenerSocketAdapter
 
-        return [ListenerSocketAdapter(sock, loop) for sock in sockets]
-
-    @staticmethod
-    async def _ensure_resolved(
-        host: str | None,
-        port: int,
-        family: int,
-        type: int,
-        loop: _asyncio.AbstractEventLoop,
-        proto: int = 0,
-        flags: int = 0,
-    ) -> Sequence[tuple[int, int, int, str, tuple[Any, ...]]]:
-        info = await loop.getaddrinfo(host, port, family=family, type=type, proto=proto, flags=flags)
-        if not info:
-            raise OSError(f"getaddrinfo({host!r}) returned empty list")
-        return info
-
-    @staticmethod
-    def _ensure_host(address: tuple[str | None, int], family: int) -> tuple[str, int]:
-        host, port = address
-        if not host:
-            match family:
-                case _socket.AF_INET | _socket.AF_UNSPEC:
-                    host = "0.0.0.0"
-                case _socket.AF_INET6:
-                    host = "::"
-                case _:  # pragma: no cover
-                    raise OSError("Only AF_INET and AF_INET6 families are supported")
-        address = (host, port)
-        return address
+        return [ListenerSocketAdapter(sock, loop, use_asyncio_transport=self.__use_asyncio_transport) for sock in sockets]
 
     async def create_udp_endpoint(
         self,
@@ -261,23 +249,30 @@ class AsyncioBackend(AbstractAsyncBackend):
         remote_address: tuple[str, int] | None = None,
         reuse_port: bool = False,
     ) -> AbstractAsyncDatagramSocketAdapter:
-        from .datagram.endpoint import create_datagram_endpoint
-        from .datagram.socket import TransportBasedDatagramSocketAdapter
+        import asyncio
 
-        if local_address is not None:
-            local_address = self._ensure_host(local_address, family)
+        from ._utils import create_datagram_socket
 
-        endpoint = await create_datagram_endpoint(
+        socket = await create_datagram_socket(
+            loop=asyncio.get_running_loop(),
             family=family,
-            local_addr=local_address,
-            remote_addr=remote_address,
+            local_address=local_address,
+            remote_address=remote_address,
             reuse_port=reuse_port,
         )
-        return TransportBasedDatagramSocketAdapter(endpoint)
+
+        return await self.wrap_udp_socket(socket)
 
     async def wrap_udp_socket(self, socket: _socket.socket) -> AbstractAsyncDatagramSocketAdapter:
         assert socket is not None, "Expected 'socket' to be a socket.socket instance"
         socket.setblocking(False)
+
+        import asyncio
+
+        if not self.__use_asyncio_transport:
+            from .datagram.socket import RawDatagramSocketAdapter
+
+            return RawDatagramSocketAdapter(socket, asyncio.get_running_loop())
 
         from .datagram.endpoint import create_datagram_endpoint
         from .datagram.socket import TransportBasedDatagramSocketAdapter

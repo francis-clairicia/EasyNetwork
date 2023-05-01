@@ -126,6 +126,24 @@ class MixinTestAsyncSocketBusy(BaseTestAsyncSocket):
 
         # Act
         await socket.abort()
+        with pytest.raises(OSError):
+            await busy_method_task
+
+        # Assert
+        mock_socket_method.assert_not_called()
+
+    async def test____method____external_cancellation_during_attempt(
+        self,
+        socket_method: Callable[[], Coroutine[Any, Any, Any]],
+        event_loop: asyncio.AbstractEventLoop,
+        mock_socket_method: MagicMock,
+    ) -> None:
+        # Arrange
+        with self._set_sock_method_in_blocking_state(mock_socket_method):
+            busy_method_task: asyncio.Task[Any] = await self._busy_socket_task(socket_method(), event_loop, mock_socket_method)
+
+        # Act
+        busy_method_task.cancel()
         await asyncio.wait([busy_method_task])
 
         # Assert

@@ -83,7 +83,8 @@ def open_listener_sockets_from_getaddrinfo_result(
     with contextlib.ExitStack() as socket_exit_stack:
         errors: list[OSError] = []
         for res in infos:
-            af, socktype, proto, canonname, sa = res
+            af, socktype, proto, _, sa = res
+            assert socktype == _socket.SOCK_STREAM, "Expected a SOCK_STREAM socket type"
             try:
                 sock = socket_exit_stack.enter_context(contextlib.closing(_socket.socket(af, socktype, proto)))
             except OSError:
