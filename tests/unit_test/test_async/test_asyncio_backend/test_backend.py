@@ -777,6 +777,26 @@ class TestAsyncIOBackend:
         mock_to_thread.assert_not_awaited()
         func_stub.assert_not_called()
 
+    @pytest.mark.parametrize("max_workers", [None, 1, 99])
+    async def test___create_thread_pool_executor____returns_AsyncThreadPoolExecutor_instance(
+        self,
+        max_workers: int | None,
+        backend: AsyncioBackend,
+    ) -> None:
+        # Arrange
+        from easynetwork_asyncio.threads import AsyncThreadPoolExecutor
+
+        # Act
+        async with backend.create_thread_pool_executor(max_workers) as executor:
+            pass
+
+        # Assert
+        assert isinstance(executor, AsyncThreadPoolExecutor)
+        if max_workers is None:
+            assert executor.get_max_number_of_workers() > 0
+        else:
+            assert executor.get_max_number_of_workers() == max_workers
+
     async def test____create_threads_portal____returns_asyncio_portal(
         self,
         event_loop: asyncio.AbstractEventLoop,

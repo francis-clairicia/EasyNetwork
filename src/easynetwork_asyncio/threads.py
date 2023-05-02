@@ -7,17 +7,70 @@
 
 from __future__ import annotations
 
-__all__ = ["ThreadsPortal"]
+__all__ = ["AsyncThreadPoolExecutor", "ThreadsPortal"]
 
 import asyncio
 import concurrent.futures
+import contextvars
 import threading
-from typing import Any, Callable, Coroutine, ParamSpec, TypeVar, final
+from typing import TYPE_CHECKING, Any, Callable, Coroutine, ParamSpec, TypeVar, final
 
-from easynetwork.api_async.backend.abc import AbstractThreadsPortal
+from easynetwork.api_async.backend.abc import AbstractAsyncThreadPoolExecutor, AbstractThreadsPortal
+
+if TYPE_CHECKING:
+    from easynetwork_asyncio.backend import AsyncioBackend
 
 _P = ParamSpec("_P")
 _T = TypeVar("_T")
+
+
+@final
+class AsyncThreadPoolExecutor(AbstractAsyncThreadPoolExecutor):
+    __slots__ = ("__backend", "__executor", "__shutdown_future")
+
+    def __init__(self, backend: AsyncioBackend, max_workers: int | None = None) -> None:
+        super().__init__()
+
+        self.__backend: AsyncioBackend = backend
+        self.__executor = concurrent.futures.ThreadPoolExecutor(max_workers)
+        self.__shutdown_future: concurrent.futures.Future[None] | None = None
+
+    async def execute(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+        ctx = contextvars.copy_context()
+        future: concurrent.futures.Future[_T] = self.__executor.submit(ctx.run, __func, *args, **kwargs)  # type: ignore[arg-type]
+        return await self.__backend.wait_future(future)
+
+    async def shutdown(self) -> None:
+        if self.__shutdown_future is not None:
+            return await self.__backend.wait_future(self.__shutdown_future)
+        shutdown_future: concurrent.futures.Future[None] = concurrent.futures.Future()
+        shutdown_future.set_running_or_notify_cancel()
+        assert shutdown_future.running()
+        thread = threading.Thread(target=self.__do_shutdown, args=(self.__executor, shutdown_future))
+        thread.start()
+        try:
+            self.__shutdown_future = shutdown_future
+            await self.__backend.wait_future(self.__shutdown_future)
+        finally:
+            del shutdown_future
+            thread.join()
+
+    @staticmethod
+    def __do_shutdown(
+        executor: concurrent.futures.ThreadPoolExecutor,
+        future: concurrent.futures.Future[None],
+    ) -> None:
+        try:
+            executor.shutdown(wait=True)
+        except BaseException as exc:  # pragma: no cover
+            future.set_exception(exc)
+        else:
+            future.set_result(None)
+        finally:
+            del future
+
+    def get_max_number_of_workers(self) -> int:
+        return self.__executor._max_workers
 
 
 @final

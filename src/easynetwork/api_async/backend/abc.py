@@ -26,7 +26,6 @@ from abc import ABCMeta, abstractmethod
 from typing import TYPE_CHECKING, Any, Callable, Coroutine, Generic, NoReturn, ParamSpec, Protocol, Self, Sequence, TypeVar, final
 
 if TYPE_CHECKING:
-    import concurrent.futures
     import socket as _socket
     from types import TracebackType
 
@@ -341,15 +340,10 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
     async def run_in_thread(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
         raise NotImplementedError
 
-    def create_thread_pool_executor(self, max_workers: int | None = None) -> AbstractAsyncThreadPoolExecutor:
-        from .threads import AsyncThreadPoolExecutor
-
-        return AsyncThreadPoolExecutor(self, max_workers)
-
     @abstractmethod
-    def create_threads_portal(self) -> AbstractThreadsPortal:
+    def create_thread_pool_executor(self, max_workers: int | None = ...) -> AbstractAsyncThreadPoolExecutor:
         raise NotImplementedError
 
     @abstractmethod
-    async def wait_future(self, future: concurrent.futures.Future[_T_co]) -> _T_co:
+    def create_threads_portal(self) -> AbstractThreadsPortal:
         raise NotImplementedError

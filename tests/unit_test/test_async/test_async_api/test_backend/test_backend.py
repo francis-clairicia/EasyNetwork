@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import concurrent.futures
 from socket import socket as Socket
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Coroutine, Iterator, Literal, NoReturn, assert_never, final
@@ -50,9 +49,6 @@ class MockBackend(BaseFakeBackend):
     async def ignore_cancellation(self, coroutine: Coroutine[Any, Any, Any]) -> Any:
         return await coroutine
 
-    async def wait_future(self, future: concurrent.futures.Future[Any]) -> Any:
-        return await asyncio.wrap_future(future)
-
 
 @pytest.mark.asyncio
 class TestAbstractAsyncBackend:
@@ -89,26 +85,6 @@ class TestAbstractAsyncBackend:
         # Assert
         backend.mock_current_time.assert_called_once_with()
         backend.mock_sleep.assert_awaited_once_with(0)
-
-    @pytest.mark.parametrize("max_workers", [None, 1, 99])
-    async def test___create_thread_pool_executor____returns_AsyncThreadPoolExecutor_instance(
-        self,
-        max_workers: int | None,
-        backend: MockBackend,
-    ) -> None:
-        # Arrange
-        from easynetwork.api_async.backend.threads import AsyncThreadPoolExecutor
-
-        # Act
-        async with backend.create_thread_pool_executor(max_workers) as executor:
-            pass
-
-        # Assert
-        assert isinstance(executor, AsyncThreadPoolExecutor)
-        if max_workers is None:
-            assert executor.get_max_number_of_workers() > 0
-        else:
-            assert executor.get_max_number_of_workers() == max_workers
 
 
 class TestAsyncBackendFactory:

@@ -5,8 +5,8 @@ from __future__ import annotations
 import asyncio
 from concurrent.futures import Future
 
-from easynetwork.api_async.backend.abc import AbstractAsyncBackend
 from easynetwork.api_async.backend.factory import AsyncBackendFactory
+from easynetwork_asyncio.backend import AsyncioBackend
 
 import pytest
 
@@ -15,13 +15,15 @@ import pytest
 class TestAsyncioBackend:
     @pytest.fixture
     @staticmethod
-    def backend() -> AbstractAsyncBackend:
-        return AsyncBackendFactory.new("asyncio")
+    def backend() -> AsyncioBackend:
+        backend = AsyncBackendFactory.new("asyncio")
+        assert isinstance(backend, AsyncioBackend)
+        return backend
 
     async def test____coro_cancel____self_kill(
         self,
         event_loop: asyncio.AbstractEventLoop,
-        backend: AbstractAsyncBackend,
+        backend: AsyncioBackend,
     ) -> None:
         task = event_loop.create_task(backend.coro_cancel())
 
@@ -33,7 +35,7 @@ class TestAsyncioBackend:
     async def test____ignore_cancellation____always_continue_on_cancellation(
         self,
         event_loop: asyncio.AbstractEventLoop,
-        backend: AbstractAsyncBackend,
+        backend: AsyncioBackend,
     ) -> None:
         task: asyncio.Task[int] = event_loop.create_task(backend.ignore_cancellation(asyncio.sleep(0.5, 42)))
 
@@ -47,7 +49,7 @@ class TestAsyncioBackend:
     async def test____ignore_cancellation____coroutine_cancelled_itself(
         self,
         event_loop: asyncio.AbstractEventLoop,
-        backend: AbstractAsyncBackend,
+        backend: AsyncioBackend,
     ) -> None:
         task = event_loop.create_task(backend.ignore_cancellation(backend.coro_cancel()))
 
@@ -58,7 +60,7 @@ class TestAsyncioBackend:
     async def test____sleep_forever____sleep_until_cancellation(
         self,
         event_loop: asyncio.AbstractEventLoop,
-        backend: AbstractAsyncBackend,
+        backend: AsyncioBackend,
     ) -> None:
         sleep_task = event_loop.create_task(backend.sleep_forever())
 
@@ -69,7 +71,7 @@ class TestAsyncioBackend:
 
     async def test____create_task_group____task_pool(
         self,
-        backend: AbstractAsyncBackend,
+        backend: AsyncioBackend,
     ) -> None:
         async def coroutine(value: int) -> int:
             return await asyncio.sleep(0.5, value)
@@ -100,7 +102,7 @@ class TestAsyncioBackend:
 
     async def test____create_task_group____task_cancellation(
         self,
-        backend: AbstractAsyncBackend,
+        backend: AsyncioBackend,
     ) -> None:
         async def coroutine(value: int) -> int:
             return await asyncio.sleep(0.5, value)
@@ -129,7 +131,7 @@ class TestAsyncioBackend:
     async def test____create_task_group____task_join_cancel_shielding(
         self,
         event_loop: asyncio.AbstractEventLoop,
-        backend: AbstractAsyncBackend,
+        backend: AsyncioBackend,
     ) -> None:
         async def coroutine(value: int) -> int:
             return await asyncio.sleep(0.5, value)
@@ -150,7 +152,7 @@ class TestAsyncioBackend:
     async def test____wait_future____wait_until_done(
         self,
         event_loop: asyncio.AbstractEventLoop,
-        backend: AbstractAsyncBackend,
+        backend: AsyncioBackend,
     ) -> None:
         future: Future[int] = Future()
         event_loop.call_later(0.5, future.set_result, 42)
@@ -162,7 +164,7 @@ class TestAsyncioBackend:
         self,
         future_running: str | None,
         event_loop: asyncio.AbstractEventLoop,
-        backend: AbstractAsyncBackend,
+        backend: AsyncioBackend,
     ) -> None:
         future: Future[int] = Future()
         if future_running == "before":
@@ -192,7 +194,7 @@ class TestAsyncioBackend:
     async def test____wait_future____cancel_task_if_future_is_cancelled(
         self,
         event_loop: asyncio.AbstractEventLoop,
-        backend: AbstractAsyncBackend,
+        backend: AsyncioBackend,
     ) -> None:
         future: Future[int] = Future()
         task = event_loop.create_task(backend.wait_future(future))
@@ -206,7 +208,7 @@ class TestAsyncioBackend:
     async def test____run_in_thread____cannot_be_cancelled(
         self,
         event_loop: asyncio.AbstractEventLoop,
-        backend: AbstractAsyncBackend,
+        backend: AsyncioBackend,
     ) -> None:
         import time
 
@@ -219,7 +221,7 @@ class TestAsyncioBackend:
 
     async def test____create_thread_pool_executor____run_sync(
         self,
-        backend: AbstractAsyncBackend,
+        backend: AsyncioBackend,
     ) -> None:
         def thread_fn(value: int) -> int:
             return value
@@ -229,7 +231,7 @@ class TestAsyncioBackend:
 
     async def test____create_thread_pool_executor____shutdown_idempotent(
         self,
-        backend: AbstractAsyncBackend,
+        backend: AsyncioBackend,
     ) -> None:
         async with backend.create_thread_pool_executor() as executor:
             await executor.shutdown()
@@ -238,7 +240,7 @@ class TestAsyncioBackend:
     async def test____create_threads_portal____run_coroutine_from_thread(
         self,
         event_loop: asyncio.AbstractEventLoop,
-        backend: AbstractAsyncBackend,
+        backend: AsyncioBackend,
     ) -> None:
         threads_portal = backend.create_threads_portal()
 
@@ -258,7 +260,7 @@ class TestAsyncioBackend:
 
     async def test____create_threads_portal____run_coroutine_from_thread____exception_raised(
         self,
-        backend: AbstractAsyncBackend,
+        backend: AsyncioBackend,
     ) -> None:
         threads_portal = backend.create_threads_portal()
         expected_exception = OSError("Why not?")
@@ -277,7 +279,7 @@ class TestAsyncioBackend:
     async def test____create_threads_portal____run_sync_from_thread_in_event_loop(
         self,
         event_loop: asyncio.AbstractEventLoop,
-        backend: AbstractAsyncBackend,
+        backend: AsyncioBackend,
     ) -> None:
         threads_portal = backend.create_threads_portal()
 
@@ -297,7 +299,7 @@ class TestAsyncioBackend:
 
     async def test____create_threads_portal____run_sync_from_thread_in_event_loop____exception_raised(
         self,
-        backend: AbstractAsyncBackend,
+        backend: AsyncioBackend,
     ) -> None:
         threads_portal = backend.create_threads_portal()
         expected_exception = OSError("Why not?")

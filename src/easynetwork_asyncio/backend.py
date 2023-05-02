@@ -22,6 +22,7 @@ if TYPE_CHECKING:
         AbstractAsyncDatagramSocketAdapter,
         AbstractAsyncListenerSocketAdapter,
         AbstractAsyncStreamSocketAdapter,
+        AbstractAsyncThreadPoolExecutor,
         AbstractTaskGroup,
         AbstractThreadsPortal,
         IEvent,
@@ -294,6 +295,11 @@ class AsyncioBackend(AbstractAsyncBackend):
         import asyncio
 
         return await self.ignore_cancellation(asyncio.to_thread(__func, *args, **kwargs))
+
+    def create_thread_pool_executor(self, max_workers: int | None = None) -> AbstractAsyncThreadPoolExecutor:
+        from .threads import AsyncThreadPoolExecutor
+
+        return AsyncThreadPoolExecutor(self, max_workers)
 
     def create_threads_portal(self) -> AbstractThreadsPortal:
         from .threads import ThreadsPortal

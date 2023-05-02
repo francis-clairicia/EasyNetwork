@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import concurrent.futures
 from socket import socket as Socket
 from typing import Any, Callable, Coroutine, NoReturn, Sequence, final
 
@@ -11,6 +10,7 @@ from easynetwork.api_async.backend.abc import (
     AbstractAsyncDatagramSocketAdapter,
     AbstractAsyncListenerSocketAdapter,
     AbstractAsyncStreamSocketAdapter,
+    AbstractAsyncThreadPoolExecutor,
     AbstractTaskGroup,
     AbstractThreadsPortal,
     IEvent,
@@ -67,10 +67,10 @@ class BaseFakeBackend(AbstractAsyncBackend):
     async def run_in_thread(self, __func: Callable[..., Any], /, *args: Any, **kwargs: Any) -> Any:
         raise NotImplementedError
 
-    def create_threads_portal(self) -> AbstractThreadsPortal:
+    def create_thread_pool_executor(self, *args: Any, **kwargs: Any) -> AbstractAsyncThreadPoolExecutor:
         raise NotImplementedError
 
-    async def wait_future(self, future: concurrent.futures.Future[Any]) -> Any:
+    def create_threads_portal(self) -> AbstractThreadsPortal:
         raise NotImplementedError
 
 
