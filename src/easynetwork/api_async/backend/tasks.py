@@ -54,7 +54,7 @@ class SingleTaskRunner(Generic[_T_co]):
 
     async def run(self) -> _T_co:
         if self.__task is not None:
-            return await self.__task.join(shield=True)
+            return await self.__task.join()
 
         async with self.__backend.create_task_group() as task_group:
             if self.__coro_func is None:

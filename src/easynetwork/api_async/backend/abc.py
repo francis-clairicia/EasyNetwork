@@ -92,7 +92,7 @@ class AbstractTask(Generic[_T_co], metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    async def join(self, *, shield: bool = ...) -> _T_co:
+    async def join(self) -> _T_co:
         raise NotImplementedError
 
 

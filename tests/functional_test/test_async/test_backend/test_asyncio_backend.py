@@ -134,7 +134,7 @@ class TestAsyncioBackend:
         async with backend.create_task_group() as task_group:
             inner_task = task_group.start_soon(coroutine, 42)
 
-            outer_task = event_loop.create_task(inner_task.join(shield=True))
+            outer_task = event_loop.create_task(inner_task.join())
             event_loop.call_later(0.2, outer_task.cancel)
 
             with pytest.raises(asyncio.CancelledError):
