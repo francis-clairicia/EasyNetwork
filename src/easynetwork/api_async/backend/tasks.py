@@ -58,7 +58,8 @@ class SingleTaskRunner(Generic[_T_co]):
 
         async with self.__backend.create_task_group() as task_group:
             if self.__coro_func is None:
-                self.__task = task_group.start_soon(self.__backend.coro_cancel)
+                self.__task = task_group.start_soon(self.__backend.sleep_forever)
+                self.__task.cancel()
             else:
                 coro_func, args, kwargs = self.__coro_func
                 self.__coro_func = None

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from socket import socket as Socket
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Coroutine, Iterator, Literal, NoReturn, assert_never, final
+from typing import TYPE_CHECKING, Any, Coroutine, Iterator, Literal, assert_never, final
 
 from easynetwork.api_async.backend.abc import AbstractAsyncBackend
 from easynetwork.api_async.backend.factory import AsyncBackendFactory
@@ -16,7 +16,7 @@ from ._fake_backends import BaseFakeBackend, FakeAsyncioBackend, FakeCurioBacken
 
 if TYPE_CHECKING:
     from importlib.metadata import EntryPoint
-    from unittest.mock import AsyncMock, MagicMock
+    from unittest.mock import MagicMock
 
     from pytest_mock import MockerFixture
 
@@ -26,16 +26,11 @@ class MockBackend(BaseFakeBackend):
     def __init__(self, mocker: MockerFixture) -> None:
         super().__init__()
         self.mock_coro_yield: MagicMock = mocker.MagicMock(side_effect=lambda: asyncio.sleep(0))
-        self.mock_coro_cancel: AsyncMock = mocker.AsyncMock(side_effect=asyncio.CancelledError)
         self.mock_current_time: MagicMock = mocker.MagicMock(return_value=123456789)
         self.mock_sleep = mocker.AsyncMock(return_value=None)
 
     async def coro_yield(self) -> None:
         await self.mock_coro_yield()
-
-    async def coro_cancel(self) -> NoReturn:
-        await self.mock_coro_cancel()
-        raise asyncio.CancelledError()
 
     def get_cancelled_exc_class(self) -> type[BaseException]:
         return asyncio.CancelledError

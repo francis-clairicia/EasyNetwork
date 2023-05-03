@@ -20,18 +20,6 @@ class TestAsyncioBackend:
         assert isinstance(backend, AsyncioBackend)
         return backend
 
-    async def test____coro_cancel____self_kill(
-        self,
-        event_loop: asyncio.AbstractEventLoop,
-        backend: AsyncioBackend,
-    ) -> None:
-        task = event_loop.create_task(backend.coro_cancel())
-
-        with pytest.raises(asyncio.CancelledError):
-            await task
-
-        assert task.cancelled()
-
     async def test____ignore_cancellation____always_continue_on_cancellation(
         self,
         event_loop: asyncio.AbstractEventLoop,
@@ -51,7 +39,14 @@ class TestAsyncioBackend:
         event_loop: asyncio.AbstractEventLoop,
         backend: AsyncioBackend,
     ) -> None:
-        task = event_loop.create_task(backend.ignore_cancellation(backend.coro_cancel()))
+        async def self_cancellation() -> None:
+            task = asyncio.current_task()
+            assert task is not None
+            task.cancel()
+            await asyncio.sleep(0)
+            raise AssertionError
+
+        task = event_loop.create_task(backend.ignore_cancellation(self_cancellation()))
 
         with pytest.raises(asyncio.CancelledError):
             await task

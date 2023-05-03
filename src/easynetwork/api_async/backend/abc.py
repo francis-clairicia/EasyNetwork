@@ -255,10 +255,6 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    async def coro_cancel(self) -> NoReturn:
-        raise NotImplementedError
-
-    @abstractmethod
     def get_cancelled_exc_class(self) -> type[BaseException]:
         raise NotImplementedError
 

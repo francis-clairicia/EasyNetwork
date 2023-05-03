@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, Callable
 
 from easynetwork.api_async.backend.abc import (
@@ -37,6 +38,7 @@ def mock_backend(fake_cancellation_cls: type[BaseException], mocker: MockerFixtu
 
     mock_backend.get_cancelled_exc_class.return_value = fake_cancellation_cls
     mock_backend.create_lock = AsyncDummyLock
+    mock_backend.create_event = asyncio.Event
     mock_backend.create_task_group = TaskGroup
 
     return mock_backend
