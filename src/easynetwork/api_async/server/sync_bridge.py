@@ -78,13 +78,15 @@ class _BaseAsyncWrapperForRequestHandler(AsyncBaseRequestHandler[_RequestT, _Res
         await self.backend.run_in_thread(self.sync_request_handler.service_actions)
 
     async def handle(self, request: _RequestT, client: AsyncClientInterface[_ResponseT]) -> None:
+        assert self.__request_thread_pool is not None, "service_init() was not called"
         sync_client = self._build_client_wrapper(client)
-        return await self.request_thread_pool.execute(self.sync_request_handler.handle, request, sync_client)
+        return await self.__request_thread_pool.execute(self.sync_request_handler.handle, request, sync_client)
 
     async def bad_request(self, client: AsyncClientInterface[_ResponseT], exc: BaseProtocolParseError) -> None:
         try:
+            assert self.__request_thread_pool is not None, "service_init() was not called"
             sync_client = self._build_client_wrapper(client)
-            return await self.request_thread_pool.execute(self.sync_request_handler.bad_request, sync_client, exc)
+            return await self.__request_thread_pool.execute(self.sync_request_handler.bad_request, sync_client, exc)
         finally:
             del exc
 
@@ -104,12 +106,6 @@ class _BaseAsyncWrapperForRequestHandler(AsyncBaseRequestHandler[_RequestT, _Res
     @property
     def sync_request_handler(self) -> BaseRequestHandler[_RequestT, _ResponseT]:
         return self.__sync_request_handler
-
-    @property
-    def request_thread_pool(self) -> AbstractAsyncThreadPoolExecutor:
-        thread_pool = self.__request_thread_pool
-        assert thread_pool is not None, "service_init() was not called"
-        return thread_pool
 
 
 @final
