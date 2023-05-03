@@ -222,7 +222,7 @@ class TestAsyncioBackend:
             return value
 
         async with backend.create_thread_pool_executor() as executor:
-            assert await executor.execute(thread_fn, 42) == 42
+            assert await executor.run(thread_fn, 42) == 42
 
     async def test____create_thread_pool_executor____shutdown_idempotent(
         self,

@@ -35,7 +35,7 @@ class AsyncThreadPoolExecutor(AbstractAsyncThreadPoolExecutor):
         self.__executor = concurrent.futures.ThreadPoolExecutor(max_workers)
         self.__shutdown_future: concurrent.futures.Future[None] | None = None
 
-    async def execute(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+    async def run(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
         ctx = contextvars.copy_context()
         future: concurrent.futures.Future[_T] = self.__executor.submit(ctx.run, __func, *args, **kwargs)  # type: ignore[arg-type]
         return await self.__backend.wait_future(future)

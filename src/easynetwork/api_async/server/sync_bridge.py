@@ -80,13 +80,13 @@ class _BaseAsyncWrapperForRequestHandler(AsyncBaseRequestHandler[_RequestT, _Res
     async def handle(self, request: _RequestT, client: AsyncClientInterface[_ResponseT]) -> None:
         assert self.__request_thread_pool is not None, "service_init() was not called"
         sync_client = self._build_client_wrapper(client)
-        return await self.__request_thread_pool.execute(self.sync_request_handler.handle, request, sync_client)
+        return await self.__request_thread_pool.run(self.sync_request_handler.handle, request, sync_client)
 
     async def bad_request(self, client: AsyncClientInterface[_ResponseT], exc: BaseProtocolParseError) -> None:
         try:
             assert self.__request_thread_pool is not None, "service_init() was not called"
             sync_client = self._build_client_wrapper(client)
-            return await self.__request_thread_pool.execute(self.sync_request_handler.bad_request, sync_client, exc)
+            return await self.__request_thread_pool.run(self.sync_request_handler.bad_request, sync_client, exc)
         finally:
             del exc
 

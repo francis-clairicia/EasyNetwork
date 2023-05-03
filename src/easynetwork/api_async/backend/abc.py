@@ -138,7 +138,7 @@ class AbstractAsyncThreadPoolExecutor(metaclass=ABCMeta):
         await self.shutdown()
 
     @abstractmethod
-    async def execute(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+    async def run(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
         raise NotImplementedError
 
     @abstractmethod
