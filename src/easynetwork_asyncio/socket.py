@@ -135,13 +135,13 @@ class AsyncSocket:
         if task_id in self.__waiters:
             raise _error_from_errno(_errno.EBUSY)
 
-        task = asyncio.current_task(self.__loop)
+        task = asyncio.current_task()
         if task is None:  # pragma: no cover
             raise RuntimeError("This function should be called within a task.")
+        assert task.get_loop() is self.__loop, "coroutine will not be executed with the bound event loop"
 
         with contextlib.ExitStack() as stack:
             self.__tasks.add(task)
-            task.add_done_callback(self.__tasks.discard)
             stack.callback(self.__tasks.discard, task)
 
             waiter: asyncio.Future[None] = self.__loop.create_future()
