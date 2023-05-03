@@ -53,7 +53,7 @@ class _BaseAsyncWrapperForRequestHandler(AsyncBaseRequestHandler[_RequestT, _Res
     def _build_client_wrapper(self, client: AsyncClientInterface[_ResponseT]) -> ClientInterface[_ResponseT]:
         raise NotImplementedError
 
-    async def service_init(self, backend: AbstractAsyncBackend) -> None:
+    async def service_init(self, backend: AbstractAsyncBackend, /) -> None:
         await super().service_init(backend)
         self.__backend = backend
         await backend.run_in_thread(self.sync_request_handler.service_init)
