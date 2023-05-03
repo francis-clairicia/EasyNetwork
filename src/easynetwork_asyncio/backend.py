@@ -153,7 +153,7 @@ class AsyncioBackend(AbstractAsyncBackend):
 
         from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
 
-        from .stream.socket import TransportBasedStreamSocketAdapter
+        from .stream.socket import AsyncioTransportStreamSocketAdapter
 
         if happy_eyeballs_delay is None:
             reader, writer = await asyncio.open_connection(
@@ -172,7 +172,7 @@ class AsyncioBackend(AbstractAsyncBackend):
                 happy_eyeballs_delay=happy_eyeballs_delay,
                 limit=MAX_STREAM_BUFSIZE,
             )
-        return TransportBasedStreamSocketAdapter(reader, writer)
+        return AsyncioTransportStreamSocketAdapter(reader, writer)
 
     async def wrap_tcp_client_socket(self, socket: _socket.socket) -> AbstractAsyncStreamSocketAdapter:
         assert socket is not None, "Expected 'socket' to be a socket.socket instance"
@@ -187,10 +187,10 @@ class AsyncioBackend(AbstractAsyncBackend):
 
         from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
 
-        from .stream.socket import TransportBasedStreamSocketAdapter
+        from .stream.socket import AsyncioTransportStreamSocketAdapter
 
         reader, writer = await asyncio.open_connection(sock=socket, limit=MAX_STREAM_BUFSIZE)
-        return TransportBasedStreamSocketAdapter(reader, writer)
+        return AsyncioTransportStreamSocketAdapter(reader, writer)
 
     async def create_tcp_listeners(
         self,
@@ -276,10 +276,10 @@ class AsyncioBackend(AbstractAsyncBackend):
             return RawDatagramSocketAdapter(socket, asyncio.get_running_loop())
 
         from .datagram.endpoint import create_datagram_endpoint
-        from .datagram.socket import TransportBasedDatagramSocketAdapter
+        from .datagram.socket import AsyncioTransportDatagramSocketAdapter
 
         endpoint = await create_datagram_endpoint(socket=socket)
-        return TransportBasedDatagramSocketAdapter(endpoint)
+        return AsyncioTransportDatagramSocketAdapter(endpoint)
 
     def create_lock(self) -> ILock:
         import asyncio

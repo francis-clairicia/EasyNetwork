@@ -6,7 +6,7 @@ import asyncio
 from typing import TYPE_CHECKING, Any, Callable
 
 from easynetwork_asyncio.datagram.endpoint import DatagramEndpoint, DatagramEndpointProtocol, create_datagram_endpoint
-from easynetwork_asyncio.datagram.socket import RawDatagramSocketAdapter, TransportBasedDatagramSocketAdapter
+from easynetwork_asyncio.datagram.socket import AsyncioTransportDatagramSocketAdapter, RawDatagramSocketAdapter
 
 import pytest
 
@@ -653,12 +653,12 @@ class TestDatagramSocketAdapter:
 
     @pytest.fixture
     @staticmethod
-    def socket(mock_endpoint: MagicMock) -> TransportBasedDatagramSocketAdapter:
-        return TransportBasedDatagramSocketAdapter(mock_endpoint)
+    def socket(mock_endpoint: MagicMock) -> AsyncioTransportDatagramSocketAdapter:
+        return AsyncioTransportDatagramSocketAdapter(mock_endpoint)
 
     async def test____aclose____close_transport_and_wait(
         self,
-        socket: TransportBasedDatagramSocketAdapter,
+        socket: AsyncioTransportDatagramSocketAdapter,
         mock_endpoint: MagicMock,
     ) -> None:
         # Arrange
@@ -675,7 +675,7 @@ class TestDatagramSocketAdapter:
     async def test____aclose____ignore_connection_error(
         self,
         exception_cls: type[ConnectionError],
-        socket: TransportBasedDatagramSocketAdapter,
+        socket: AsyncioTransportDatagramSocketAdapter,
         mock_endpoint: MagicMock,
     ) -> None:
         # Arrange
@@ -691,7 +691,7 @@ class TestDatagramSocketAdapter:
 
     async def test____abort____abort_transport_and_exit(
         self,
-        socket: TransportBasedDatagramSocketAdapter,
+        socket: AsyncioTransportDatagramSocketAdapter,
         mock_endpoint: MagicMock,
     ) -> None:
         # Arrange
@@ -706,7 +706,7 @@ class TestDatagramSocketAdapter:
 
     async def test____context____close_transport_and_wait_at_end(
         self,
-        socket: TransportBasedDatagramSocketAdapter,
+        socket: AsyncioTransportDatagramSocketAdapter,
         mock_endpoint: MagicMock,
     ) -> None:
         # Arrange
@@ -721,7 +721,7 @@ class TestDatagramSocketAdapter:
 
     async def test____is_closing____return_endpoint_state(
         self,
-        socket: TransportBasedDatagramSocketAdapter,
+        socket: AsyncioTransportDatagramSocketAdapter,
         mock_endpoint: MagicMock,
         mocker: MockerFixture,
     ) -> None:
@@ -737,7 +737,7 @@ class TestDatagramSocketAdapter:
 
     async def test____recvfrom____read_from_reader(
         self,
-        socket: TransportBasedDatagramSocketAdapter,
+        socket: AsyncioTransportDatagramSocketAdapter,
         mock_endpoint: MagicMock,
     ) -> None:
         # Arrange
@@ -755,7 +755,7 @@ class TestDatagramSocketAdapter:
     async def test____sendall____write_and_drain(
         self,
         address: tuple[str, int] | None,
-        socket: TransportBasedDatagramSocketAdapter,
+        socket: AsyncioTransportDatagramSocketAdapter,
         mock_endpoint: MagicMock,
         mocker: MockerFixture,
     ) -> None:
@@ -770,7 +770,7 @@ class TestDatagramSocketAdapter:
 
     async def test____getsockname____return_sockname_extra_info(
         self,
-        socket: TransportBasedDatagramSocketAdapter,
+        socket: AsyncioTransportDatagramSocketAdapter,
         endpoint_extra_info: dict[str, Any],
     ) -> None:
         # Arrange
@@ -785,7 +785,7 @@ class TestDatagramSocketAdapter:
     async def test____getpeername____return_peername_extra_info(
         self,
         peername: tuple[Any, ...] | None,
-        socket: TransportBasedDatagramSocketAdapter,
+        socket: AsyncioTransportDatagramSocketAdapter,
         endpoint_extra_info: dict[str, Any],
     ) -> None:
         # Arrange
@@ -799,7 +799,7 @@ class TestDatagramSocketAdapter:
 
     async def test____socket____returns_transport_socket(
         self,
-        socket: TransportBasedDatagramSocketAdapter,
+        socket: AsyncioTransportDatagramSocketAdapter,
         mock_udp_socket: MagicMock,
     ) -> None:
         # Arrange

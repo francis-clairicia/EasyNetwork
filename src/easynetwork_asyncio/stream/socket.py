@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-__all__ = ["RawStreamSocketAdapter", "TransportBasedStreamSocketAdapter"]
+__all__ = ["AsyncioTransportStreamSocketAdapter", "RawStreamSocketAdapter"]
 
 import asyncio
 from typing import TYPE_CHECKING, Any, final
@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
 
 @final
-class TransportBasedStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
+class AsyncioTransportStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
     __slots__ = (
         "__reader",
         "__writer",

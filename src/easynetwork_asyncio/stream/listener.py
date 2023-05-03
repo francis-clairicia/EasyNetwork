@@ -55,14 +55,14 @@ class ListenerSocketAdapter(AbstractAsyncListenerSocketAdapter):
 
         from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
 
-        from .socket import TransportBasedStreamSocketAdapter
+        from .socket import AsyncioTransportStreamSocketAdapter
 
         loop = self.__socket.loop
         reader = asyncio.streams.StreamReader(MAX_STREAM_BUFSIZE, loop)
         protocol = asyncio.streams.StreamReaderProtocol(reader, loop=loop)
         transport, protocol = await loop.connect_accepted_socket(lambda: protocol, socket)
         writer = asyncio.streams.StreamWriter(transport, protocol, reader, loop)
-        return TransportBasedStreamSocketAdapter(reader, writer, remote_address=address)
+        return AsyncioTransportStreamSocketAdapter(reader, writer, remote_address=address)
 
     def get_local_address(self) -> tuple[Any, ...]:
         return self.__socket.socket.getsockname()

@@ -8,7 +8,7 @@ import asyncio.trsock
 from typing import TYPE_CHECKING, Any, Callable
 
 from easynetwork_asyncio.stream.listener import ListenerSocketAdapter
-from easynetwork_asyncio.stream.socket import RawStreamSocketAdapter, TransportBasedStreamSocketAdapter
+from easynetwork_asyncio.stream.socket import AsyncioTransportStreamSocketAdapter, RawStreamSocketAdapter
 
 import pytest
 
@@ -68,8 +68,8 @@ class BaseTestRawStreamSocket(BaseTestSocket):
 class TestTransportBasedStreamSocket(BaseTestTransportStreamSocket):
     @pytest.fixture
     @staticmethod
-    def socket(mock_asyncio_reader: MagicMock, mock_asyncio_writer: MagicMock) -> TransportBasedStreamSocketAdapter:
-        return TransportBasedStreamSocketAdapter(mock_asyncio_reader, mock_asyncio_writer)
+    def socket(mock_asyncio_reader: MagicMock, mock_asyncio_writer: MagicMock) -> AsyncioTransportStreamSocketAdapter:
+        return AsyncioTransportStreamSocketAdapter(mock_asyncio_reader, mock_asyncio_writer)
 
     async def test____dunder_init____transport_not_connected(
         self,
@@ -85,7 +85,7 @@ class TestTransportBasedStreamSocket(BaseTestTransportStreamSocket):
 
         # Act & Assert
         with pytest.raises(OSError) as exc_info:
-            TransportBasedStreamSocketAdapter(mock_asyncio_reader, mock_asyncio_writer)
+            AsyncioTransportStreamSocketAdapter(mock_asyncio_reader, mock_asyncio_writer)
 
         assert exc_info.value.errno == ENOTCONN
         mock_asyncio_writer.get_extra_info.assert_called_with("peername")
@@ -99,7 +99,7 @@ class TestTransportBasedStreamSocket(BaseTestTransportStreamSocket):
         remote_address = ("explicit_address", 4444)
 
         # Act
-        socket = TransportBasedStreamSocketAdapter(mock_asyncio_reader, mock_asyncio_writer, remote_address=remote_address)
+        socket = AsyncioTransportStreamSocketAdapter(mock_asyncio_reader, mock_asyncio_writer, remote_address=remote_address)
 
         # Assert
         assert socket.get_remote_address() == remote_address
@@ -107,7 +107,7 @@ class TestTransportBasedStreamSocket(BaseTestTransportStreamSocket):
 
     async def test____aclose____close_transport_and_wait(
         self,
-        socket: TransportBasedStreamSocketAdapter,
+        socket: AsyncioTransportStreamSocketAdapter,
         mock_asyncio_writer: MagicMock,
     ) -> None:
         # Arrange
@@ -124,7 +124,7 @@ class TestTransportBasedStreamSocket(BaseTestTransportStreamSocket):
     async def test____aclose____ignore_connection_error(
         self,
         exception_cls: type[ConnectionError],
-        socket: TransportBasedStreamSocketAdapter,
+        socket: AsyncioTransportStreamSocketAdapter,
         mock_asyncio_writer: MagicMock,
     ) -> None:
         # Arrange
@@ -140,7 +140,7 @@ class TestTransportBasedStreamSocket(BaseTestTransportStreamSocket):
 
     async def test____abort____abort_transport_and_exit(
         self,
-        socket: TransportBasedStreamSocketAdapter,
+        socket: AsyncioTransportStreamSocketAdapter,
         mock_asyncio_writer: MagicMock,
     ) -> None:
         # Arrange
@@ -155,7 +155,7 @@ class TestTransportBasedStreamSocket(BaseTestTransportStreamSocket):
 
     async def test____context____close_transport_and_wait_at_end(
         self,
-        socket: TransportBasedStreamSocketAdapter,
+        socket: AsyncioTransportStreamSocketAdapter,
         mock_asyncio_writer: MagicMock,
     ) -> None:
         # Arrange
@@ -170,7 +170,7 @@ class TestTransportBasedStreamSocket(BaseTestTransportStreamSocket):
 
     async def test____is_closing____return_writer_state(
         self,
-        socket: TransportBasedStreamSocketAdapter,
+        socket: AsyncioTransportStreamSocketAdapter,
         mock_asyncio_writer: MagicMock,
         mocker: MockerFixture,
     ) -> None:
@@ -186,7 +186,7 @@ class TestTransportBasedStreamSocket(BaseTestTransportStreamSocket):
 
     async def test____recv____read_from_reader(
         self,
-        socket: TransportBasedStreamSocketAdapter,
+        socket: AsyncioTransportStreamSocketAdapter,
         mock_asyncio_reader: MagicMock,
     ) -> None:
         # Arrange
@@ -201,7 +201,7 @@ class TestTransportBasedStreamSocket(BaseTestTransportStreamSocket):
 
     async def test____recv____null_bufsize_directly_return(
         self,
-        socket: TransportBasedStreamSocketAdapter,
+        socket: AsyncioTransportStreamSocketAdapter,
         mock_asyncio_reader: MagicMock,
     ) -> None:
         # Arrange
@@ -215,7 +215,7 @@ class TestTransportBasedStreamSocket(BaseTestTransportStreamSocket):
 
     async def test____recv____negative_bufsize_error(
         self,
-        socket: TransportBasedStreamSocketAdapter,
+        socket: AsyncioTransportStreamSocketAdapter,
         mock_asyncio_reader: MagicMock,
     ) -> None:
         # Arrange
@@ -229,7 +229,7 @@ class TestTransportBasedStreamSocket(BaseTestTransportStreamSocket):
 
     async def test____sendall____write_and_drain(
         self,
-        socket: TransportBasedStreamSocketAdapter,
+        socket: AsyncioTransportStreamSocketAdapter,
         mock_asyncio_writer: MagicMock,
         mocker: MockerFixture,
     ) -> None:
@@ -244,7 +244,7 @@ class TestTransportBasedStreamSocket(BaseTestTransportStreamSocket):
 
     async def test____getsockname____return_sockname_extra_info(
         self,
-        socket: TransportBasedStreamSocketAdapter,
+        socket: AsyncioTransportStreamSocketAdapter,
         asyncio_writer_extra_info: dict[str, Any],
     ) -> None:
         # Arrange
@@ -257,7 +257,7 @@ class TestTransportBasedStreamSocket(BaseTestTransportStreamSocket):
 
     async def test____getpeername____return_peername_extra_info(
         self,
-        socket: TransportBasedStreamSocketAdapter,
+        socket: AsyncioTransportStreamSocketAdapter,
         asyncio_writer_extra_info: dict[str, Any],
     ) -> None:
         # Arrange
@@ -270,7 +270,7 @@ class TestTransportBasedStreamSocket(BaseTestTransportStreamSocket):
 
     async def test____socket____returns_transport_socket(
         self,
-        socket: TransportBasedStreamSocketAdapter,
+        socket: AsyncioTransportStreamSocketAdapter,
         mock_tcp_socket: MagicMock,
     ) -> None:
         # Arrange
@@ -314,7 +314,7 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestRawStream
     @staticmethod
     def mock_transport_stream_socket_adapter_cls(mock_stream_socket_adapter: MagicMock, mocker: MockerFixture) -> MagicMock:
         return mocker.patch(
-            "easynetwork_asyncio.stream.socket.TransportBasedStreamSocketAdapter",
+            "easynetwork_asyncio.stream.socket.AsyncioTransportStreamSocketAdapter",
             return_value=mock_stream_socket_adapter,
         )
 

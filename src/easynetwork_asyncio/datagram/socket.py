@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-__all__ = ["RawDatagramSocketAdapter", "TransportBasedDatagramSocketAdapter"]
+__all__ = ["AsyncioTransportDatagramSocketAdapter", "RawDatagramSocketAdapter"]
 
 import asyncio
 from typing import TYPE_CHECKING, Any, final
@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 
 
 @final
-class TransportBasedDatagramSocketAdapter(AbstractAsyncDatagramSocketAdapter):
+class AsyncioTransportDatagramSocketAdapter(AbstractAsyncDatagramSocketAdapter):
     __slots__ = ("__endpoint",)
 
     def __init__(self, endpoint: DatagramEndpoint) -> None:
