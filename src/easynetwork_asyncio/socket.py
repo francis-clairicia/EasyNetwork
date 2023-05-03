@@ -100,12 +100,12 @@ class AsyncSocket:
         socket, self.__socket = self.__socket, None
         self.__closing = True
 
-        for task in list(self.__tasks):
-            task.cancel()
-            del task
-
         if socket is not None:
-            socket.close()
+            with contextlib.ExitStack() as stack:
+                stack.callback(socket.close)
+                for task in list(self.__tasks):
+                    stack.callback(task.cancel)
+                    del task
 
     async def accept(self) -> tuple[_socket.socket, _socket._RetAddress]:
         with self.__conflict_detection("accept") as socket:
