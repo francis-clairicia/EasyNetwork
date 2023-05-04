@@ -10,13 +10,14 @@ __all__ = ["AsyncUDPNetworkServer"]
 
 import contextlib as _contextlib
 import logging as _logging
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Generic, Literal, Mapping, Self, TypeVar, final
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Generic, Literal, Mapping, TypeVar, final
 
 from ...exceptions import ClientClosedError, DatagramProtocolParseError
 from ...protocol import DatagramProtocol
 from ...tools._utils import check_real_socket_state as _check_real_socket_state
 from ...tools.socket import SocketAddress, SocketProxy, new_socket_address
 from ..backend.factory import AsyncBackendFactory
+from ..backend.tasks import SingleTaskRunner
 from .abc import AbstractAsyncNetworkServer
 from .handler import AsyncBaseRequestHandler, AsyncClientInterface, AsyncDatagramRequestHandler
 
@@ -32,8 +33,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
     __slots__ = (
         "__backend",
         "__socket",
-        "__socket_proxy",
-        "__address",
+        "__socket_factory",
         "__protocol",
         "__request_handler",
         "__is_up",
@@ -46,38 +46,6 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
     def __init__(
         self,
-        socket: AbstractAsyncDatagramSocketAdapter,
-        protocol: DatagramProtocol[_ResponseT, _RequestT],
-        request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT],
-        *,
-        backend: str | AbstractAsyncBackend | None = None,
-        backend_kwargs: Mapping[str, Any] | None = None,
-        service_actions_interval: float = 0.1,
-        logger: _logging.Logger | None = None,
-    ) -> None:
-        super().__init__()
-
-        backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
-
-        assert isinstance(protocol, DatagramProtocol)
-
-        self.__service_actions_interval: float = max(service_actions_interval, 0)
-        self.__backend: AbstractAsyncBackend = backend
-        self.__socket: AbstractAsyncDatagramSocketAdapter | None = socket
-        self.__socket_proxy: SocketProxy = SocketProxy(socket.socket())
-        self.__address: SocketAddress = new_socket_address(socket.get_local_address(), socket.socket().family)
-        self.__protocol: DatagramProtocol[_ResponseT, _RequestT] = protocol
-        self.__request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT] = request_handler
-        self.__is_up = self.__backend.create_event()
-        self.__is_shutdown = self.__backend.create_event()
-        self.__is_shutdown.set()
-        self.__sendto_lock: ILock = backend.create_lock()
-        self.__mainloop_task: AbstractTask[None] | None = None
-        self.__logger: _logging.Logger = logger or _logging.getLogger(__name__)
-
-    @classmethod
-    async def create(
-        cls,
         host: str | None,
         port: int,
         protocol: DatagramProtocol[_ResponseT, _RequestT],
@@ -89,63 +57,84 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         backend_kwargs: Mapping[str, Any] | None = None,
         service_actions_interval: float = 0.1,
         logger: _logging.Logger | None = None,
-    ) -> Self:
+    ) -> None:
+        super().__init__()
+
         backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
 
-        socket = await backend.create_udp_endpoint(
+        assert isinstance(protocol, DatagramProtocol)
+
+        self.__socket_factory: SingleTaskRunner[AbstractAsyncDatagramSocketAdapter] | None
+        self.__socket_factory = SingleTaskRunner(
+            backend,
+            backend.create_udp_endpoint,
             local_address=(host, port),
             remote_address=None,
             family=family,
             reuse_port=reuse_port,
         )
 
-        return cls(
-            socket,
-            protocol,
-            request_handler,
-            backend=backend,
-            service_actions_interval=service_actions_interval,
-            logger=logger,
-        )
+        self.__service_actions_interval: float = max(service_actions_interval, 0)
+        self.__backend: AbstractAsyncBackend = backend
+        self.__socket: AbstractAsyncDatagramSocketAdapter | None = None
+        self.__protocol: DatagramProtocol[_ResponseT, _RequestT] = protocol
+        self.__request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT] = request_handler
+        self.__is_up = self.__backend.create_event()
+        self.__is_shutdown = self.__backend.create_event()
+        self.__is_shutdown.set()
+        self.__sendto_lock: ILock = backend.create_lock()
+        self.__mainloop_task: AbstractTask[None] | None = None
+        self.__logger: _logging.Logger = logger or _logging.getLogger(__name__)
 
     def is_serving(self) -> bool:
         return self.__socket is not None and self.__is_up.is_set()
 
     async def wait_for_server_to_be_up(self) -> Literal[True]:
         if not self.__is_up.is_set():
-            if self.__socket is None:
+            if self.__socket is None and self.__socket_factory is None:
                 raise RuntimeError("Closed server")
             await self.__is_up.wait()
         return True
 
     async def server_close(self) -> None:
-        async with self.__sendto_lock:
-            if self.__mainloop_task is not None and not self.__mainloop_task.done():
-                self.__mainloop_task.cancel()
-                self.__mainloop_task = None
-            try:
-                await self.__is_shutdown.wait()
-            finally:
-                socket, self.__socket = self.__socket, None
-                if socket is not None:
-                    await socket.aclose()
+        if self.__socket_factory is not None:
+            self.__socket_factory.cancel()
+            self.__socket_factory = None
+        socket, self.__socket = self.__socket, None
+        if socket is None:
+            return
+        async with _contextlib.AsyncExitStack() as exit_stack:
+            exit_stack.push_async_callback(socket.abort)
+            exit_stack.push_async_callback(socket.aclose)
+
+    async def shutdown(self) -> None:
+        if self.__mainloop_task is not None and not self.__mainloop_task.done():
+            self.__mainloop_task.cancel()
+            self.__mainloop_task = None
+        await self.__is_shutdown.wait()
 
     async def serve_forever(self) -> None:
-        if self.__socket is None:
-            raise RuntimeError("Closed server")
         if not self.__is_shutdown.is_set():
             raise RuntimeError("Server is already running")
 
         async with _contextlib.AsyncExitStack() as server_exit_stack:
-            # Final teardown
-            server_exit_stack.callback(self.__logger.info, "Server stopped")
-            server_exit_stack.push_async_callback(self.server_close)
-            ###########
-
             # Wake up server
             self.__is_shutdown.clear()
             server_exit_stack.callback(self.__is_shutdown.set)
             ################
+
+            # Bind and activate
+            assert self.__socket is None
+            if self.__socket_factory is None:
+                raise RuntimeError("Closed server")
+            self.__socket = await self.__socket_factory.run()
+            self.__socket_factory = None
+            ###################
+
+            # Final teardown
+            server_exit_stack.callback(self.__logger.info, "Server stopped")
+            server_exit_stack.push_async_callback(self.server_close)
+            ###########
 
             # Initialize request handler
             await self.__request_handler.service_init(self.__backend)
@@ -158,7 +147,9 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             ##################
 
             # Enable socket
-            self.__logger.info("Start serving at %s", self.__address)
+            address: SocketAddress = new_socket_address(self.__socket.get_local_address(), self.__socket.socket().family)
+            self.__logger.info("Start serving at %s", address)
+            del address
             #################
 
             # Server is up
@@ -168,26 +159,24 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             ##############
 
             # Main loop
-            self.__mainloop_task = task_group.start_soon(self.__receive_datagrams_task, task_group)
+            self.__mainloop_task = task_group.start_soon(self.__receive_datagrams_task, self.__socket, task_group)
             try:
                 await self.__mainloop_task.join()
             finally:
                 self.__mainloop_task = None
 
-    async def __receive_datagrams_task(self, task_group: AbstractTaskGroup) -> None:
-        socket = self.__socket
-        assert socket is not None
-        socket_family: int = self.__socket_proxy.family
+    async def __receive_datagrams_task(
+        self,
+        socket: AbstractAsyncDatagramSocketAdapter,
+        task_group: AbstractTaskGroup,
+    ) -> None:
+        socket_family: int = socket.socket().family
         accept_request_from: Callable[[SocketAddress], Awaitable[bool]] | None = None
         if isinstance(self.__request_handler, AsyncDatagramRequestHandler):
             accept_request_from = self.__request_handler.accept_request_from
         datagram_received_task = self.__datagram_received_task
         while True:
-            try:
-                datagram, client_address = await socket.recvfrom()
-            except OSError:
-                self.__logger.exception("socket.recvfrom(): Error occured")
-                return
+            datagram, client_address = await socket.recvfrom()
             client_address = new_socket_address(client_address, socket_family)
             self.__logger.debug("Received a datagram from %s", client_address)
             if accept_request_from is None or await accept_request_from(client_address):
@@ -259,12 +248,11 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
     def get_backend(self) -> AbstractAsyncBackend:
         return self.__backend
 
-    def get_address(self) -> SocketAddress:
-        return self.__address
-
     @property
-    def socket(self) -> SocketProxy:
-        return self.__socket_proxy
+    def socket(self) -> SocketProxy | None:
+        if (socket := self.__socket) is None:
+            return None
+        return SocketProxy(socket.socket())
 
     @property
     def logger(self) -> _logging.Logger:

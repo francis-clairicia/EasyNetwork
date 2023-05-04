@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-from typing import Awaitable, Callable
+from typing import Callable
 
 from easynetwork.api_async.server.abc import AbstractAsyncNetworkServer
 from easynetwork.api_async.server.handler import AsyncBaseRequestHandler, AsyncClientInterface
@@ -43,16 +43,16 @@ class MyRequestHandler(BaseRequestHandler[str, str]):
         client.send_packet(request.upper())
 
 
-async def create_tcp_server() -> AsyncTCPNetworkServer[str, str]:
-    # return await AsyncTCPNetworkServer.listen(None, PORT, StreamProtocol(MyServerSerializer()), MyAsyncRequestHandler())
-    return await AsyncTCPNetworkServer.listen(
+def create_tcp_server() -> AsyncTCPNetworkServer[str, str]:
+    # return AsyncTCPNetworkServer(None, PORT, StreamProtocol(MyServerSerializer()), MyAsyncRequestHandler())
+    return AsyncTCPNetworkServer(
         None, PORT, StreamProtocol(MyServerSerializer()), StreamRequestHandlerAsyncBridge(MyRequestHandler())
     )
 
 
-async def create_udp_server() -> AsyncUDPNetworkServer[str, str]:
-    # return await AsyncUDPNetworkServer.create(None, PORT, DatagramProtocol(MyServerSerializer()), MyAsyncRequestHandler())
-    return await AsyncUDPNetworkServer.create(
+def create_udp_server() -> AsyncUDPNetworkServer[str, str]:
+    # return AsyncUDPNetworkServer(None, PORT, DatagramProtocol(MyServerSerializer()), MyAsyncRequestHandler())
+    return AsyncUDPNetworkServer(
         None, PORT, DatagramProtocol(MyServerSerializer()), DatagramRequestHandlerAsyncBridge(MyRequestHandler())
     )
 
@@ -91,11 +91,11 @@ async def main() -> None:
 
     args = parser.parse_args()
 
-    server_factory: Callable[[], Awaitable[AbstractAsyncNetworkServer]] = args.server_factory
+    server_factory: Callable[[], AbstractAsyncNetworkServer] = args.server_factory
 
     logging.basicConfig(level=getattr(logging, args.log_level), format="[ %(levelname)s ] [ %(name)s ] %(message)s")
 
-    async with await server_factory() as server:
+    async with server_factory() as server:
         await server.serve_forever()
 
 

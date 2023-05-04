@@ -11,7 +11,7 @@ __all__ = ["AsyncTCPNetworkServer"]
 import contextlib as _contextlib
 import logging as _logging
 from collections import deque
-from typing import TYPE_CHECKING, Any, AsyncGenerator, Generic, Literal, Mapping, Self, Sequence, TypeVar, final
+from typing import TYPE_CHECKING, Any, AsyncGenerator, Generic, Literal, Mapping, Sequence, TypeVar, final
 
 from ...exceptions import ClientClosedError, StreamProtocolParseError
 from ...protocol import StreamProtocol
@@ -26,6 +26,7 @@ from ...tools.socket import (
 )
 from ...tools.stream import StreamDataConsumer, StreamDataProducer
 from ..backend.factory import AsyncBackendFactory
+from ..backend.tasks import SingleTaskRunner
 from .abc import AbstractAsyncNetworkServer
 from .handler import AsyncBaseRequestHandler, AsyncClientInterface, AsyncStreamRequestHandler
 
@@ -47,7 +48,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
     __slots__ = (
         "__backend",
         "__listeners",
-        "__listener_addresses",
+        "__listeners_factory",
         "__protocol",
         "__request_handler",
         "__is_up",
@@ -61,22 +62,37 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
     def __init__(
         self,
-        listeners: Sequence[AbstractAsyncListenerSocketAdapter],
+        host: str | None | Sequence[str],
+        port: int,
         protocol: StreamProtocol[_ResponseT, _RequestT],
         request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT],
         *,
-        backend: str | AbstractAsyncBackend | None = None,
-        backend_kwargs: Mapping[str, Any] | None = None,
+        family: int = 0,
+        backlog: int | None = None,
+        reuse_port: bool = False,
         max_recv_size: int | None = None,
         service_actions_interval: float = 0.1,
+        backend: str | AbstractAsyncBackend | None = None,
+        backend_kwargs: Mapping[str, Any] | None = None,
         logger: _logging.Logger | None = None,
     ) -> None:
         super().__init__()
 
         backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
 
-        if not listeners:
-            raise ValueError("empty listeners list")
+        if backlog is None:
+            backlog = 100
+
+        self.__listeners_factory: SingleTaskRunner[Sequence[AbstractAsyncListenerSocketAdapter]] | None
+        self.__listeners_factory = SingleTaskRunner(
+            backend,
+            backend.create_tcp_listeners,
+            host,
+            port,
+            family=family,
+            backlog=backlog,
+            reuse_port=reuse_port,
+        )
         if max_recv_size is None:
             max_recv_size = MAX_STREAM_BUFSIZE
         if not isinstance(max_recv_size, int) or max_recv_size <= 0:
@@ -86,10 +102,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
         self.__service_actions_interval: float = max(service_actions_interval, 0)
         self.__backend: AbstractAsyncBackend = backend
-        self.__listeners: tuple[AbstractAsyncListenerSocketAdapter, ...] | None = tuple(listeners)
-        self.__listener_addresses: tuple[SocketAddress, ...] = tuple(
-            new_socket_address(listener.get_local_address(), listener.socket().family) for listener in listeners
-        )
+        self.__listeners: tuple[AbstractAsyncListenerSocketAdapter, ...] | None = None
         self.__protocol: StreamProtocol[_ResponseT, _RequestT] = protocol
         self.__request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT] = request_handler
         self.__is_up = self.__backend.create_event()
@@ -100,93 +113,65 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         self.__mainloop_task: AbstractTask[None] | None = None
         self.__logger: _logging.Logger = logger or _logging.getLogger(__name__)
 
-    @classmethod
-    async def listen(
-        cls,
-        host: str | None | Sequence[str],
-        port: int,
-        protocol: StreamProtocol[_ResponseT, _RequestT],
-        request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT],
-        *,
-        family: int = 0,
-        backlog: int | None = None,
-        reuse_port: bool = False,
-        max_recv_size: int | None = None,
-        backend: str | AbstractAsyncBackend | None = None,
-        backend_kwargs: Mapping[str, Any] | None = None,
-        service_actions_interval: float = 0.1,
-        logger: _logging.Logger | None = None,
-    ) -> Self:
-        backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
-
-        if backlog is None:
-            backlog = 100
-
-        listeners: Sequence[AbstractAsyncListenerSocketAdapter] = await backend.create_tcp_listeners(
-            host,
-            port,
-            family=family,
-            backlog=backlog,
-            reuse_port=reuse_port,
-        )
-
-        return cls(
-            listeners,
-            protocol,
-            request_handler,
-            backend=backend,
-            max_recv_size=max_recv_size,
-            service_actions_interval=service_actions_interval,
-            logger=logger,
-        )
-
     def is_serving(self) -> bool:
         return self.__listeners is not None and self.__is_up.is_set()
 
     async def wait_for_server_to_be_up(self) -> Literal[True]:
         if not self.__is_up.is_set():
-            if self.__listeners is None:
+            if self.__listeners is None and self.__listeners_factory is None:
                 raise RuntimeError("Closed server")
             await self.__is_up.wait()
         return True
 
-    async def stop_listening(self) -> None:
-        for listener_task in self.__listener_tasks:
-            if not listener_task.done():
-                listener_task.cancel()
+    def stop_listening(self) -> None:
+        with _contextlib.ExitStack() as exit_stack:
+            for listener_task in self.__listener_tasks:
+                exit_stack.callback(listener_task.cancel)
+
+    async def server_close(self) -> None:
+        if self.__listeners_factory is not None:
+            self.__listeners_factory.cancel()
+            self.__listeners_factory = None
         listeners: Sequence[AbstractAsyncListenerSocketAdapter] | None = self.__listeners
         if listeners is None:
             return
-        self.__listeners = None
+        self.stop_listening()
         async with _contextlib.AsyncExitStack() as exit_stack:
             for listener in listeners:
                 exit_stack.push_async_callback(listener.abort)
                 exit_stack.push_async_callback(listener.aclose)
 
-    async def server_close(self) -> None:
-        await self.stop_listening()
-
+    async def shutdown(self) -> None:
         if self.__mainloop_task is not None and not self.__mainloop_task.done():
             self.__mainloop_task.cancel()
-
+            self.__mainloop_task = None
         await self.__is_shutdown.wait()
 
     async def serve_forever(self) -> None:
-        if (listeners := self.__listeners) is None:
-            raise RuntimeError("Closed server")
         if not self.__is_shutdown.is_set():
             raise RuntimeError("Server is already running")
 
         async with _contextlib.AsyncExitStack() as server_exit_stack:
-            # Final teardown
-            server_exit_stack.callback(self.__logger.info, "Server stopped")
-            server_exit_stack.push_async_callback(self.server_close)
-            ###########
-
             # Wake up server
             self.__is_shutdown.clear()
             server_exit_stack.callback(self.__is_shutdown.set)
             ################
+
+            # Bind and activate
+            assert self.__listeners is None
+            if self.__listeners_factory is None:
+                raise RuntimeError("Closed server")
+            self.__listeners = tuple(await self.__listeners_factory.run())
+            self.__listeners_factory = None
+            if not self.__listeners:
+                self.__listeners = None
+                raise OSError("empty listeners list")
+            ###################
+
+            # Final teardown
+            server_exit_stack.callback(self.__logger.info, "Server stopped")
+            server_exit_stack.push_async_callback(self.server_close)
+            ###########
 
             # Initialize request handler
             await self.__request_handler.service_init(self.__backend)
@@ -200,9 +185,12 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             ##################
 
             # Enable listener
-            for listener in listeners:
+            addresses: list[SocketAddress] = []
+            for listener in self.__listeners:
                 self.__listener_tasks.append(task_group.start_soon(self.__listener_task, listener, task_group))
-            self.__logger.info("Start serving at %s", ", ".join(map(str, self.__listener_addresses)))
+                addresses.append(new_socket_address(listener.get_local_address(), listener.socket().family))
+            self.__logger.info("Start serving at %s", ", ".join(map(str, addresses)))
+            del addresses
             #################
 
             # Server is up
@@ -217,7 +205,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 await self.__mainloop_task.join()
             except self.__backend.get_cancelled_exc_class():
                 try:
-                    await self.stop_listening()
+                    self.stop_listening()
                 finally:
                     raise
             finally:
@@ -341,8 +329,11 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
     def get_backend(self) -> AbstractAsyncBackend:
         return self.__backend
 
-    def get_addresses(self) -> Sequence[SocketAddress]:
-        return self.__listener_addresses
+    @property
+    def sockets(self) -> Sequence[SocketProxy]:
+        if (listeners := self.__listeners) is None:
+            return ()
+        return tuple(SocketProxy(listener.socket()) for listener in listeners)
 
     @property
     def logger(self) -> _logging.Logger:
