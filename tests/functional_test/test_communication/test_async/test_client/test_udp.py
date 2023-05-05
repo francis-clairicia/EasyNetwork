@@ -110,14 +110,12 @@ class TestAsyncUDPNetworkClient:
         await client.send_packet("ABCDEF")
         assert await asyncio.to_thread(server.recvfrom, 1024) == (b"ABCDEF", client.get_local_address())
 
-    # @use_asyncio_transport_xfail_uvloop
     @pytest.mark.platform_linux  # Windows and MacOS do not raise error
     async def test____send_packet____connection_refused(self, client: AsyncUDPNetworkClient[str, str], server: Socket) -> None:
         server.close()
         with pytest.raises(ConnectionRefusedError):
             await client.send_packet("ABCDEF")
 
-    # @use_asyncio_transport_xfail_uvloop
     @pytest.mark.platform_linux  # Windows and MacOS do not raise error
     async def test____send_packet____connection_refused____after_previous_successful_try(
         self,

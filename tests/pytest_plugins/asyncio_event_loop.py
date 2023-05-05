@@ -72,3 +72,8 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     for item in items:
         _skip_test_if_uvloop_is_used(config, item)
         _xfail_test_if_uvloop_is_used(config, item)
+
+
+@pytest.fixture
+def event_loop_name(pytestconfig: pytest.Config) -> EventLoop:
+    return pytestconfig.getoption(ASYNCIO_EVENT_LOOP_OPTION)

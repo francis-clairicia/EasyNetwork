@@ -20,6 +20,7 @@ from easynetwork_asyncio.datagram.endpoint import DatagramEndpoint, create_datag
 import pytest
 import pytest_asyncio
 
+from .....pytest_plugins.asyncio_event_loop import EventLoop
 from .base import BaseTestAsyncServer
 
 
@@ -104,7 +105,10 @@ class MyAsyncUDPServer(AsyncUDPNetworkServer[str, str]):
 class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
     @pytest.fixture
     @staticmethod
-    def backend_kwargs(use_asyncio_transport: bool) -> dict[str, Any]:
+    def backend_kwargs(event_loop_name: EventLoop, use_asyncio_transport: bool) -> dict[str, Any]:
+        if not use_asyncio_transport:
+            if event_loop_name == EventLoop.UVLOOP:
+                pytest.xfail("uvloop runner does not implement the needed functions")
         return {"transport": use_asyncio_transport}
 
     @pytest.fixture
