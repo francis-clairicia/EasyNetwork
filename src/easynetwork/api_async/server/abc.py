@@ -47,5 +47,9 @@ class AbstractAsyncNetworkServer(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
+    async def shutdown(self) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
     def get_backend(self) -> AbstractAsyncBackend:
         raise NotImplementedError

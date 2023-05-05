@@ -1,4 +1,5 @@
 # -*- coding: Utf-8 -*-
+# mypy: disable_error_code=override
 
 from __future__ import annotations
 
@@ -81,7 +82,7 @@ class MixinTestAsyncSocketBusy(BaseTestAsyncSocket):
         mock_socket_method: MagicMock,
     ) -> None:
         # Arrange
-        from errno import EBUSY
+        from errno import EINPROGRESS
 
         with self._set_sock_method_in_blocking_state(mock_socket_method):
             await self._busy_socket_task(socket_method(), event_loop, mock_socket_method)
@@ -91,7 +92,7 @@ class MixinTestAsyncSocketBusy(BaseTestAsyncSocket):
             await socket_method()
 
         # Assert
-        assert exc_info.value.errno == EBUSY
+        assert exc_info.value.errno == EINPROGRESS
         mock_socket_method.assert_not_called()
 
     async def test____method____closed_socket____before_attempt(
@@ -116,6 +117,7 @@ class MixinTestAsyncSocketBusy(BaseTestAsyncSocket):
     async def test____method____closed_socket____during_attempt(
         self,
         socket: AsyncSocket,
+        abort_errno: int,
         socket_method: Callable[[], Coroutine[Any, Any, Any]],
         event_loop: asyncio.AbstractEventLoop,
         mock_socket_method: MagicMock,
@@ -126,10 +128,11 @@ class MixinTestAsyncSocketBusy(BaseTestAsyncSocket):
 
         # Act
         await socket.abort()
-        with pytest.raises(OSError):
+        with pytest.raises(OSError) as exc_info:
             await busy_method_task
 
         # Assert
+        assert exc_info.value.errno == abort_errno
         mock_socket_method.assert_not_called()
 
     async def test____method____external_cancellation_during_attempt(
@@ -336,6 +339,13 @@ class TestAsyncListenerSocket(MixinTestAsyncSocketBusy):
 
     @pytest.fixture
     @staticmethod
+    def abort_errno() -> int:
+        from errno import EINTR
+
+        return EINTR
+
+    @pytest.fixture
+    @staticmethod
     def socket_method(socket: AsyncSocket) -> Callable[[], Coroutine[Any, Any, Any]]:
         return lambda: socket.accept()
 
@@ -381,6 +391,13 @@ class TestAsyncStreamSocket(MixinTestAsyncSocketBusy, MixinTestAsyncSocketCloseM
     @staticmethod
     def sock_method_name(request: Any) -> str:
         return request.param
+
+    @pytest.fixture
+    @staticmethod
+    def abort_errno() -> int:
+        from errno import ECONNABORTED
+
+        return ECONNABORTED
 
     @pytest.fixture
     @staticmethod
@@ -486,6 +503,19 @@ class TestAsyncDatagramSocket(MixinTestAsyncSocketBusy, MixinTestAsyncSocketClos
     @staticmethod
     def sock_method_name(request: Any) -> str:
         return request.param
+
+    @pytest.fixture
+    @staticmethod
+    def abort_errno(sock_method_name: str) -> int:
+        from errno import ECONNABORTED, EINTR
+
+        match sock_method_name:
+            case "sendto":
+                return ECONNABORTED
+            case "recvfrom":
+                return EINTR
+            case _:
+                raise SystemError
 
     @pytest.fixture
     @staticmethod

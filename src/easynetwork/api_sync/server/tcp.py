@@ -240,7 +240,7 @@ class TCPNetworkServer(AbstractNetworkServer, Generic[_RequestT, _ResponseT]):
                 try:
                     self.service_actions()
                 except Exception:
-                    self.__logger.exception("Error occured in self.service_actions()")
+                    self.__logger.exception("Error occurred in self.service_actions()")
 
     def service_actions(self) -> None:
         if (handler := self.__request_handler) is not None:
@@ -278,7 +278,7 @@ class TCPNetworkServer(AbstractNetworkServer, Generic[_RequestT, _ResponseT]):
         try:
             self.on_connection(client._api)
         except BaseException:
-            logger.exception("Error occured when verifying client %s", address)
+            logger.exception("Error occurred when verifying client %s", address)
             client._api.close()
             return
 

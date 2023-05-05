@@ -2,7 +2,18 @@
 
 from __future__ import annotations
 
-from socket import AF_INET, AF_INET6, IPPROTO_IPV6, IPPROTO_TCP, IPV6_V6ONLY, SO_ERROR, SO_REUSEADDR, SOCK_STREAM, SOL_SOCKET
+from socket import (
+    AF_INET,
+    AF_INET6,
+    IPPROTO_IPV6,
+    IPPROTO_TCP,
+    IPV6_V6ONLY,
+    SO_ERROR,
+    SO_REUSEADDR,
+    SOCK_STREAM,
+    SOL_SOCKET,
+    TCP_NODELAY,
+)
 from typing import TYPE_CHECKING, Any, Callable, Sequence, cast
 
 from easynetwork.tools._utils import (
@@ -13,6 +24,7 @@ from easynetwork.tools._utils import (
     open_listener_sockets_from_getaddrinfo_result,
     restore_timeout_at_end,
     set_reuseport,
+    set_tcp_nodelay,
 )
 
 import pytest
@@ -196,6 +208,18 @@ def test____set_reuseport____not_supported____defined_but_not_implemented(
 
     # Assert
     mock_tcp_socket.setsockopt.assert_called_once_with(SOL_SOCKET, SO_REUSEPORT, True)
+
+
+def test____set_tcp_nodelay____setsockopt(
+    mock_tcp_socket: MagicMock,
+) -> None:
+    # Arrange
+
+    # Act
+    set_tcp_nodelay(mock_tcp_socket)
+
+    # Assert
+    mock_tcp_socket.setsockopt.assert_called_once_with(IPPROTO_TCP, TCP_NODELAY, True)
 
 
 @pytest.mark.parametrize("reuse_address", [False, True], ids=lambda boolean: f"reuse_address=={boolean}")

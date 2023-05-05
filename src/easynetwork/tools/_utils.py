@@ -72,6 +72,13 @@ def set_reuseport(sock: _socket.socket) -> None:
             raise ValueError("reuse_port not supported by socket module, SO_REUSEPORT defined but not implemented.") from None
 
 
+def set_tcp_nodelay(sock: _socket.socket | _SocketProxy) -> None:
+    try:
+        sock.setsockopt(_socket.IPPROTO_TCP, _socket.TCP_NODELAY, True)
+    except (OSError, AttributeError):  # pragma: no cover
+        pass
+
+
 def open_listener_sockets_from_getaddrinfo_result(
     infos: Iterable[tuple[int, int, int, str, tuple[Any, ...]]],
     *,

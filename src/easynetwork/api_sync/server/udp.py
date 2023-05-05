@@ -219,19 +219,19 @@ class UDPNetworkServer(AbstractNetworkServer, Generic[_RequestT, _ResponseT]):
                 if ready & EVENT_WRITE:
                     flush_unsent_datagrams()
 
-                if socket not in server_selector.get_map():  # Error occured during process
+                if socket not in server_selector.get_map():  # Error occurred during process
                     break
 
                 if ready & EVENT_READ:
                     handle_received_datagram(request_executor)
 
-                if socket not in server_selector.get_map():  # Error occured during process
+                if socket not in server_selector.get_map():  # Error occurred during process
                     break
 
                 try:
                     self.service_actions()
                 except Exception:
-                    self.__logger.exception("Error occured in self.service_actions()")
+                    self.__logger.exception("Error occurred in self.service_actions()")
 
     def service_actions(self) -> None:
         if (handler := self.__request_handler) is not None:
@@ -247,7 +247,7 @@ class UDPNetworkServer(AbstractNetworkServer, Generic[_RequestT, _ResponseT]):
         except (TimeoutError, BlockingIOError, InterruptedError):
             return
         except OSError:
-            logger.exception("socket.recvfrom(): Error occured")
+            logger.exception("socket.recvfrom(): Error occurred")
             _remove_event_mask(selector, socket, _selectors.EVENT_READ | _selectors.EVENT_WRITE)
             self.__looping = False  # The socket is not usable anymore, shutdown server loop
             return

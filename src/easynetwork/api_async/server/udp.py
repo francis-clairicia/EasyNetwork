@@ -38,6 +38,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         "__request_handler",
         "__is_up",
         "__is_shutdown",
+        "__shutdown_asked",
         "__sendto_lock",
         "__mainloop_task",
         "__service_actions_interval",
@@ -82,12 +83,13 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         self.__is_up = self.__backend.create_event()
         self.__is_shutdown = self.__backend.create_event()
         self.__is_shutdown.set()
+        self.__shutdown_asked: bool = False
         self.__sendto_lock: ILock = backend.create_lock()
         self.__mainloop_task: AbstractTask[None] | None = None
         self.__logger: _logging.Logger = logger or _logging.getLogger(__name__)
 
     def is_serving(self) -> bool:
-        return self.__socket is not None and self.__is_up.is_set()
+        return self.__socket is not None
 
     async def wait_for_server_to_be_up(self) -> Literal[True]:
         if not self.__is_up.is_set():
@@ -108,10 +110,14 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             exit_stack.push_async_callback(socket.aclose)
 
     async def shutdown(self) -> None:
-        if self.__mainloop_task is not None and not self.__mainloop_task.done():
+        if self.__mainloop_task is not None:
             self.__mainloop_task.cancel()
             self.__mainloop_task = None
-        await self.__is_shutdown.wait()
+        self.__shutdown_asked = True
+        try:
+            await self.__is_shutdown.wait()
+        finally:
+            self.__shutdown_asked = False
 
     async def serve_forever(self) -> None:
         if not self.__is_shutdown.is_set():
@@ -160,6 +166,9 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
             # Main loop
             self.__mainloop_task = task_group.start_soon(self.__receive_datagrams_task, self.__socket, task_group)
+            if self.__shutdown_asked:
+                await self.__backend.coro_yield()
+                self.__mainloop_task.cancel()
             try:
                 await self.__mainloop_task.join()
             finally:
@@ -192,7 +201,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             try:
                 await request_handler.service_actions()
             except Exception:
-                self.__logger.exception("Error occured in request_handler.service_actions()")
+                self.__logger.exception("Error occurred in request_handler.service_actions()")
             await backend.sleep(self.__service_actions_interval)
 
     async def __datagram_received_task(

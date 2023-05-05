@@ -19,6 +19,7 @@ from ...tools._utils import (
     check_socket_family as _check_socket_family,
     concatenate_chunks as _concatenate_chunks,
     error_from_errno as _error_from_errno,
+    set_tcp_nodelay as _set_tcp_nodelay,
 )
 from ...tools.socket import MAX_STREAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
 from ...tools.stream import StreamDataConsumer
@@ -145,10 +146,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
             "local_address": local_address,
             "remote_address": remote_address,
         }
-        try:
-            socket_proxy.setsockopt(_socket.IPPROTO_TCP, _socket.TCP_NODELAY, True)
-        except (OSError, AttributeError):  # pragma: no cover
-            pass
+        _set_tcp_nodelay(socket_proxy)
 
     def is_connected(self) -> bool:
         return self.__socket is not None
