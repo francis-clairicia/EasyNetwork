@@ -214,6 +214,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
         async with _contextlib.aclosing(
             _ClientAPI(
+                self.__backend,
                 client_address,
                 socket,
                 self.__protocol,
@@ -225,13 +226,13 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 try:
                     request: _RequestT = self.__protocol.build_packet_from_datagram(datagram)
                 except DatagramProtocolParseError as exc:
-                    self.__logger.debug("Malformed request sent by %s", client_address)
+                    self.__logger.debug("Malformed request sent by %s", client.address)
                     await request_handler.bad_request(client, exc.with_traceback(None))
                     return
                 finally:
                     del datagram
 
-                self.__logger.debug("Processing request sent by %s", client_address)
+                self.__logger.debug("Processing request sent by %s", client.address)
                 await request_handler.handle(request, client)
             except OSError as exc:
                 try:
@@ -271,6 +272,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 @final
 class _ClientAPI(AsyncClientInterface[_ResponseT]):
     __slots__ = (
+        "__backend",
         "__socket_ref",
         "__socket_proxy",
         "__protocol",
@@ -281,6 +283,7 @@ class _ClientAPI(AsyncClientInterface[_ResponseT]):
 
     def __init__(
         self,
+        backend: AbstractAsyncBackend,
         address: SocketAddress,
         socket: AbstractAsyncDatagramSocketAdapter,
         protocol: DatagramProtocol[_ResponseT, Any],
@@ -291,6 +294,7 @@ class _ClientAPI(AsyncClientInterface[_ResponseT]):
 
         import weakref
 
+        self.__backend: AbstractAsyncBackend = backend
         self.__socket_ref: Callable[[], AbstractAsyncDatagramSocketAdapter | None] = weakref.ref(socket)
         self.__socket_proxy: SocketProxy = SocketProxy(socket.socket())
         self.__h: int | None = None
@@ -313,6 +317,7 @@ class _ClientAPI(AsyncClientInterface[_ResponseT]):
 
     async def aclose(self) -> None:
         self.__socket_ref = lambda: None
+        await self.__backend.coro_yield()
 
     async def send_packet(self, packet: _ResponseT) -> None:
         async with self.__lock:
@@ -323,7 +328,7 @@ class _ClientAPI(AsyncClientInterface[_ResponseT]):
             self.__logger.debug("A datagram will be sent to %s", self.address)
             try:
                 await socket.sendto(datagram, self.address)
-                _check_real_socket_state(self.__socket_proxy)
+                _check_real_socket_state(self.socket)
                 self.__logger.debug("Datagram successfully sent to %s.", self.address)
             finally:
                 del datagram

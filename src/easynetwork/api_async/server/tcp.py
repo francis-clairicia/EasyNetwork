@@ -411,7 +411,7 @@ class _ConnectedClientAPI(AsyncClientInterface[_ResponseT]):
             data: bytes = _concatenate_chunks(self.__producer)
             try:
                 await socket.sendall(data)
-                _check_real_socket_state(self.__proxy)
+                _check_real_socket_state(self.socket)
                 nb_bytes_sent: int = len(data)
             finally:
                 del data
