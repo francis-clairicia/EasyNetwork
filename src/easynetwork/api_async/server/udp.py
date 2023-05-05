@@ -184,7 +184,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         if isinstance(self.__request_handler, AsyncDatagramRequestHandler):
             accept_request_from = self.__request_handler.accept_request_from
         datagram_received_task = self.__datagram_received_task
-        while True:
+        while not socket.is_closing():
             datagram, client_address = await socket.recvfrom()
             client_address = new_socket_address(client_address, socket_family)
             self.__logger.debug("Received a datagram from %s", client_address)

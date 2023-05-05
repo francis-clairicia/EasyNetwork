@@ -38,6 +38,7 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
     backend: AbstractAsyncBackend
     service_actions_count: int
     close_all_clients_on_service_actions: bool = False
+    close_all_clients_on_connection: bool = False
     stop_listening: Callable[[], None]
 
     async def service_init(self, backend: AbstractAsyncBackend) -> None:
@@ -71,6 +72,9 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
         assert client.address not in self.connected_clients
         self.connected_clients[client.address] = client
         await client.send_packet("milk")
+        if self.close_all_clients_on_connection:
+            await self.backend.sleep(0.1)
+            await client.aclose()
 
     async def on_disconnection(self, client: AsyncClientInterface[str]) -> None:
         del self.connected_clients[client.address]
@@ -410,3 +414,13 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
 
         with pytest.raises(ConnectionError):
             await client_factory()
+
+    async def test____serve_forever____close_client_on_connection_hook(
+        self,
+        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        request_handler: MyAsyncTCPRequestHandler,
+    ) -> None:
+        request_handler.close_all_clients_on_connection = True
+        reader, _ = await client_factory()
+
+        assert await reader.read() == b""

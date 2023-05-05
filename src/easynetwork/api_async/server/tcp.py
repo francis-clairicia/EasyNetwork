@@ -251,7 +251,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         backend: AbstractAsyncBackend = self.__backend
         client_task = self.__client_task
         async with listener:
-            while True:
+            while not listener.is_closing():
                 try:
                     client_socket = await listener.accept()
                 except OSError as exc:
@@ -299,7 +299,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             recv_bufsize: int = self.__max_recv_size
 
             try:
-                while True:
+                while not socket.is_closing():
                     data: bytes = await socket.recv(recv_bufsize)
                     if not data:  # Closed connection (EOF)
                         raise ConnectionAbortedError
