@@ -22,6 +22,7 @@ from ...tools._utils import (
     concatenate_chunks as _concatenate_chunks,
     error_from_errno as _error_from_errno,
     restore_timeout_at_end as _restore_timeout_at_end,
+    set_tcp_nodelay as _set_tcp_nodelay,
 )
 from ...tools.socket import MAX_STREAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
 from ...tools.stream import StreamDataConsumer
@@ -116,10 +117,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             if not isinstance(max_recv_size, int) or max_recv_size <= 0:
                 raise ValueError("'max_recv_size' must be a strictly positive integer")
 
-            try:
-                socket.setsockopt(_socket.IPPROTO_TCP, _socket.TCP_NODELAY, True)
-            except Exception:  # pragma: no cover
-                pass
+            _set_tcp_nodelay(socket)
 
             self.__addr: SocketAddress = new_socket_address(socket.getsockname(), socket.family)
             self.__peer: SocketAddress = new_socket_address(socket.getpeername(), socket.family)

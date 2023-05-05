@@ -141,7 +141,7 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
             except StopIteration as exc:
                 packet, chunk = exc.value
             except StreamProtocolParseError as exc:
-                self.__b, exc.remaining_data = exc.remaining_data, b""
+                self.__b, exc.remaining_data = bytes(exc.remaining_data), b""
                 raise
             else:
                 self.__c = consumer
@@ -160,7 +160,7 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
 
     def get_buffer(self) -> bytes:
         with self.__lock:
-            return self.__b[:]
+            return self.__b
 
     def clear(self) -> None:
         with self.__lock:
