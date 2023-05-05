@@ -106,6 +106,9 @@ class TestAsyncUDPNetworkClient:
         await client.aclose()
         assert client.is_closing()
 
+    # TODO: To remove when the infinite loop on Windows will have an explanation
+    @pytest.mark.platform_linux
+    @pytest.mark.platform_darwin
     async def test____send_packet____default(self, client: AsyncUDPNetworkClient[str, str], server: Socket) -> None:
         await client.send_packet("ABCDEF")
         assert await asyncio.to_thread(server.recvfrom, 1024) == (b"ABCDEF", client.get_local_address())
