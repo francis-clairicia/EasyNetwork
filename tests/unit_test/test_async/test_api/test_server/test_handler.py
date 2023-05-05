@@ -19,6 +19,8 @@ import pytest
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
 
+    from pytest_mock import MockerFixture
+
 
 class FakeClient(AsyncClientInterface[Any]):
     async def send_packet(self, packet: Any) -> None:
@@ -119,6 +121,16 @@ class TestAsyncStreamRequestHandler(BaseCommonTestsForRequestHandler):
     @staticmethod
     def request_handler() -> AsyncStreamRequestHandler[Any, Any]:
         return FakeStreamHandler()
+
+    async def test____set_stop_listening_callback____return_None(
+        self,
+        request_handler: AsyncStreamRequestHandler[Any, Any],
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        assert request_handler.set_stop_listening_callback(mocker.stub()) is None
 
     async def test____on_connection____return_None(
         self,

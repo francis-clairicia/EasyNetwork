@@ -188,6 +188,7 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
                 await s.wait_for_server_to_be_up()
 
             assert s.socket is not None
+            assert s.get_protocol() is datagram_protocol
 
             await s.shutdown()
 
@@ -200,7 +201,7 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         assert request_handler.backend is server.get_backend()
 
     @pytest.mark.usefixtures("run_server_and_wait")
-    async def test____serve_forever_____service_actions(self, request_handler: MyAsyncUDPRequestHandler) -> None:
+    async def test____serve_forever____service_actions(self, request_handler: MyAsyncUDPRequestHandler) -> None:
         await asyncio.sleep(0.2)
         assert request_handler.service_actions_count >= 1
 

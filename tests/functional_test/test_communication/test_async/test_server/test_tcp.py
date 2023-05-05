@@ -38,6 +38,7 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
     backend: AbstractAsyncBackend
     service_actions_count: int
     close_all_clients_on_service_actions: bool = False
+    stop_listening: Callable[[], None]
 
     async def service_init(self, backend: AbstractAsyncBackend) -> None:
         await super().service_init(backend)
@@ -55,7 +56,14 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
                 await client.aclose()
 
     async def service_quit(self) -> None:
-        del self.connected_clients, self.backend, self.service_actions_count, self.request_received, self.bad_request_received
+        del (
+            self.connected_clients,
+            self.backend,
+            self.service_actions_count,
+            self.request_received,
+            self.bad_request_received,
+            self.stop_listening,
+        )
         await super().service_quit()
 
     async def on_connection(self, client: AsyncClientInterface[str]) -> None:
@@ -68,6 +76,10 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
         del self.connected_clients[client.address]
         await super().on_disconnection(client)
 
+    def set_stop_listening_callback(self, stop_listening_callback: Callable[[], None]) -> None:
+        super().set_stop_listening_callback(stop_listening_callback)
+        self.stop_listening = stop_listening_callback
+
     async def handle(self, request: str, client: AsyncClientInterface[str]) -> None:
         match request:
             case "__error_with_logs__":
@@ -78,6 +90,9 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
                 await client.aclose()
             case "__os_error__":
                 raise OSError("Server issue.")
+            case "__stop_listening__":
+                self.stop_listening()
+                await client.send_packet("successfully stop listening")
             case _:
                 self.request_received[client.address].append(request)
                 await client.send_packet(request.upper())
@@ -189,6 +204,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
                 await s.wait_for_server_to_be_up()
 
             assert len(s.sockets) > 0
+            assert s.get_protocol() is stream_protocol
 
             await s.shutdown()
 
@@ -224,7 +240,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
                 await asyncio.sleep(0.1)
 
     @pytest.mark.usefixtures("run_server_and_wait")
-    async def test____serve_forever_____service_actions(self, request_handler: MyAsyncTCPRequestHandler) -> None:
+    async def test____serve_forever____service_actions(self, request_handler: MyAsyncTCPRequestHandler) -> None:
         await asyncio.sleep(0.2)
         assert request_handler.service_actions_count >= 1
 
@@ -376,3 +392,21 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         await asyncio.sleep(0.2)
 
         assert await reader.read() == b""
+
+    async def test____serve_forever____request_handler_ask_to_stop_accepting_new_connections(
+        self,
+        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        server: MyAsyncTCPServer,
+    ) -> None:
+        reader, writer = await client_factory()
+
+        writer.write(b"__stop_listening__\n")
+        await writer.drain()
+        await asyncio.sleep(0.1)
+
+        assert await reader.readline() == b"successfully stop listening\n"
+
+        assert not server.is_serving()
+
+        with pytest.raises(ConnectionError):
+            await client_factory()

@@ -14,7 +14,7 @@ __all__ = [
 ]
 
 from abc import ABCMeta, abstractmethod
-from typing import TYPE_CHECKING, Generic, TypeVar, final
+from typing import TYPE_CHECKING, Callable, Generic, TypeVar, final
 
 if TYPE_CHECKING:
     from ...exceptions import BaseProtocolParseError
@@ -37,7 +37,7 @@ class AsyncClientInterface(Generic[_ResponseT], metaclass=ABCMeta):
         return f"<client with address {self.address} at {id(self):#x}>"
 
     @abstractmethod
-    async def send_packet(self, packet: _ResponseT) -> None:
+    async def send_packet(self, packet: _ResponseT, /) -> None:
         raise NotImplementedError
 
     @abstractmethod
@@ -72,28 +72,31 @@ class AsyncBaseRequestHandler(Generic[_RequestT, _ResponseT], metaclass=ABCMeta)
         pass
 
     @abstractmethod
-    async def handle(self, request: _RequestT, client: AsyncClientInterface[_ResponseT]) -> None:
+    async def handle(self, request: _RequestT, client: AsyncClientInterface[_ResponseT], /) -> None:
         raise NotImplementedError
 
-    async def bad_request(self, client: AsyncClientInterface[_ResponseT], exc: BaseProtocolParseError) -> None:
+    async def bad_request(self, client: AsyncClientInterface[_ResponseT], exc: BaseProtocolParseError, /) -> None:
         pass
 
-    async def handle_error(self, client: AsyncClientInterface[_ResponseT], exc: Exception) -> bool:
+    async def handle_error(self, client: AsyncClientInterface[_ResponseT], exc: Exception, /) -> bool:
         return False
 
 
 class AsyncStreamRequestHandler(AsyncBaseRequestHandler[_RequestT, _ResponseT]):
     __slots__ = ()
 
-    async def on_connection(self, client: AsyncClientInterface[_ResponseT]) -> None:
+    async def on_connection(self, client: AsyncClientInterface[_ResponseT], /) -> None:
         pass
 
-    async def on_disconnection(self, client: AsyncClientInterface[_ResponseT]) -> None:
+    async def on_disconnection(self, client: AsyncClientInterface[_ResponseT], /) -> None:
+        pass
+
+    def set_stop_listening_callback(self, stop_listening_callback: Callable[[], None], /) -> None:
         pass
 
 
 class AsyncDatagramRequestHandler(AsyncBaseRequestHandler[_RequestT, _ResponseT]):
     __slots__ = ()
 
-    async def accept_request_from(self, client_address: SocketAddress) -> bool:
+    async def accept_request_from(self, client_address: SocketAddress, /) -> bool:
         return True

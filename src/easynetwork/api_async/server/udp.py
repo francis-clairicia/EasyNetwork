@@ -258,6 +258,9 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
     def get_backend(self) -> AbstractAsyncBackend:
         return self.__backend
 
+    def get_protocol(self) -> DatagramProtocol[_ResponseT, _RequestT]:
+        return self.__protocol
+
     @property
     def socket(self) -> SocketProxy | None:
         if (socket := self.__socket) is None:
@@ -319,7 +322,7 @@ class _ClientAPI(AsyncClientInterface[_ResponseT]):
         self.__socket_ref = lambda: None
         await self.__backend.coro_yield()
 
-    async def send_packet(self, packet: _ResponseT) -> None:
+    async def send_packet(self, packet: _ResponseT, /) -> None:
         async with self.__lock:
             socket = self.__socket_ref()
             if socket is None:
