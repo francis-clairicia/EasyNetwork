@@ -14,6 +14,8 @@ runs:
         python-version: ${{ inputs.python-version }}
         cache: true
         cache-dependency-path: './pdm.lock'
+    - name: Disable PDM update check
+      run: echo "PDM_CHECK_UPDATE=False" >> $GITHUB_ENV
     - name: Install dependencies
       run: pdm sync --global --project=. --no-self --dev --group=tox
       shell: bash
