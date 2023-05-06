@@ -102,6 +102,10 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         if self.__socket_factory is not None:
             self.__socket_factory.cancel()
             self.__socket_factory = None
+        if self.__mainloop_task is not None:
+            self.__mainloop_task.cancel()
+            self.__mainloop_task = None
+            await self.__backend.coro_yield()
         socket, self.__socket = self.__socket, None
         if socket is None:
             return

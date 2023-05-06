@@ -143,6 +143,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         if listeners is None:
             return
         self.stop_listening()
+        await self.__backend.coro_yield()
         async with _contextlib.AsyncExitStack() as exit_stack:
             for listener in listeners:
                 exit_stack.push_async_callback(listener.abort)
