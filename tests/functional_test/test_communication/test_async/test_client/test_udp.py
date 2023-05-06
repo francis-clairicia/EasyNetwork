@@ -19,10 +19,10 @@ import pytest_asyncio
 from .._utils import delay
 from ..conftest import use_asyncio_transport_xfail_uvloop
 
-import sys  # isort:skip
+# import sys  # isort:skip
 
 # TODO: To remove when the blocking test will be explained with the Window's ProactorEventLoop
-pytestmark = pytest.mark.skipif(sys.platform.startswith("win"), reason="Muted for now.")
+# pytestmark = pytest.mark.skipif(sys.platform.startswith("win"), reason="Muted for now.")
 
 
 @pytest.fixture
@@ -35,8 +35,8 @@ def udp_socket_factory(
 
     def bound_udp_socket_factory() -> Socket:
         sock = udp_socket_factory()
-        sock.bind((localhost_ip, unused_udp_port_factory()))
         sock.settimeout(3)
+        sock.bind((localhost_ip, unused_udp_port_factory()))
         return sock
 
     return bound_udp_socket_factory
@@ -139,7 +139,8 @@ class TestAsyncUDPNetworkClient:
 
     async def test____send_packet____default(self, client: AsyncUDPNetworkClient[str, str], server: DatagramEndpoint) -> None:
         await client.send_packet("ABCDEF")
-        assert await server.recvfrom() == (b"ABCDEF", client.get_local_address())
+        async with asyncio.timeout(3):
+            assert await server.recvfrom() == (b"ABCDEF", client.get_local_address())
 
     @pytest.mark.platform_linux  # Windows and MacOS do not raise error
     async def test____send_packet____connection_refused(
@@ -158,7 +159,8 @@ class TestAsyncUDPNetworkClient:
         server: DatagramEndpoint,
     ) -> None:
         await client.send_packet("ABC")
-        assert await server.recvfrom() == (b"ABC", client.get_local_address())
+        async with asyncio.timeout(3):
+            assert await server.recvfrom() == (b"ABC", client.get_local_address())
         await server.aclose()
         with pytest.raises(ConnectionRefusedError):
             await client.send_packet("DEF")
@@ -171,7 +173,8 @@ class TestAsyncUDPNetworkClient:
     @use_asyncio_transport_xfail_uvloop
     async def test____recv_packet____default(self, client: AsyncUDPNetworkClient[str, str], server: DatagramEndpoint) -> None:
         await server.sendto(b"ABCDEF", client.get_local_address())
-        assert await client.recv_packet() == "ABCDEF"
+        async with asyncio.timeout(3):
+            assert await client.recv_packet() == "ABCDEF"
 
     @use_asyncio_transport_xfail_uvloop
     async def test____recv_packet____ignore_other_socket_packets(
@@ -195,7 +198,8 @@ class TestAsyncUDPNetworkClient:
     ) -> None:
         await server.sendto("\u00E9".encode("latin-1"), client.get_local_address())
         with pytest.raises(DatagramProtocolParseError):
-            await client.recv_packet()
+            async with asyncio.timeout(3):
+                await client.recv_packet()
 
     @use_asyncio_transport_xfail_uvloop
     async def test____iter_received_packets____yields_available_packets_until_close(
@@ -472,8 +476,9 @@ class TestAsyncUDPNetworkClientConnection:
         ) as client:
             assert not client.is_connected()
 
-            await client.send_packet("Connected")
-            assert await client.recv_packet() == "Connected"
+            async with asyncio.timeout(3):
+                await client.send_packet("Connected")
+                assert await client.recv_packet() == "Connected"
 
             assert client.is_connected()
 

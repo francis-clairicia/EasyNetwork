@@ -178,10 +178,7 @@ class DatagramEndpointProtocol(asyncio.DatagramProtocol):
         self.__connection_lost = True
 
         if not self.__closed.done():
-            if exc is None:
-                self.__closed.set_result(None)
-            else:
-                self.__closed.set_exception(exc)
+            self.__closed.set_result(None)
 
         for waiter in self.__drain_waiters:
             if not waiter.done():

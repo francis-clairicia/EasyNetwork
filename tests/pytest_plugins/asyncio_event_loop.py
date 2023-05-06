@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import enum
-from typing import Any, assert_never
+from typing import Any, Iterator, assert_never
 
 import pytest
 
@@ -27,17 +28,6 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 
 def pytest_configure(config: pytest.Config) -> None:
-    event_loop: EventLoop = config.getoption(ASYNCIO_EVENT_LOOP_OPTION)
-    match event_loop:
-        case EventLoop.ASYNCIO:
-            pass
-        case EventLoop.UVLOOP:
-            uvloop: Any = pytest.importorskip("uvloop")
-
-            uvloop.install()
-        case _:
-            assert_never(event_loop)
-
     config.addinivalue_line("markers", "skipif_uvloop: Skip asyncio test if uvloop is used")
     config.addinivalue_line("markers", "xfail_uvloop: Expected asyncio test to fail if uvloop is used")
 
@@ -77,3 +67,20 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 @pytest.fixture
 def event_loop_name(pytestconfig: pytest.Config) -> EventLoop:
     return pytestconfig.getoption(ASYNCIO_EVENT_LOOP_OPTION)
+
+
+@pytest.fixture
+def event_loop(event_loop_name: EventLoop) -> Iterator[asyncio.AbstractEventLoop]:
+    loop: asyncio.AbstractEventLoop
+
+    match event_loop_name:
+        case EventLoop.ASYNCIO:
+            loop = asyncio.SelectorEventLoop()
+        case EventLoop.UVLOOP:
+            uvloop: Any = pytest.importorskip("uvloop")
+
+            loop = uvloop.new_event_loop()
+        case _:
+            assert_never(event_loop_name)
+    yield loop
+    loop.close()
