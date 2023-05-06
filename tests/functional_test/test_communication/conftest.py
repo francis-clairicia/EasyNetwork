@@ -27,7 +27,7 @@ def socket_family(request: Any) -> int:
 
 
 @pytest.fixture
-def localhost(socket_family: int) -> str:
+def localhost_ip(socket_family: int) -> str:
     return _FAMILY_TO_LOCALHOST[socket_family]
 
 
@@ -68,12 +68,12 @@ def datagram_protocol() -> DatagramProtocol[str, str]:
 # Origin: https://gist.github.com/4325783, by Geert Jansen.  Public domain.
 # Cannot use socket.socketpair() vendored with Python on unix since it is required to use AF_UNIX family :)
 @pytest.fixture
-def socket_pair(localhost: str, tcp_socket_factory: Callable[[], Socket]) -> Iterator[tuple[Socket, Socket]]:
+def socket_pair(localhost_ip: str, tcp_socket_factory: Callable[[], Socket]) -> Iterator[tuple[Socket, Socket]]:
     # We create a connected TCP socket. Note the trick with
     # setblocking(False) that prevents us from having to create a thread.
     lsock = tcp_socket_factory()
     try:
-        lsock.bind((localhost, 0))
+        lsock.bind((localhost_ip, 0))
         lsock.listen()
         # On IPv6, ignore flow_info and scope_id
         addr, port = lsock.getsockname()[:2]

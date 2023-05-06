@@ -127,7 +127,7 @@ class TestDatagramEndpoint:
         # Act & Assert
         assert endpoint.transport is mock_asyncio_transport
 
-    async def test____aclose____close_transport(
+    async def test____close____close_transport(
         self,
         endpoint: DatagramEndpoint,
         mock_asyncio_transport: MagicMock,
@@ -152,6 +152,22 @@ class TestDatagramEndpoint:
         await endpoint.wait_closed()
 
         # Assert
+        mock_asyncio_protocol._get_close_waiter.assert_awaited_once_with()
+
+    async def test____aclose____close_transport_and_wait(
+        self,
+        endpoint: DatagramEndpoint,
+        mock_asyncio_transport: MagicMock,
+        mock_asyncio_protocol: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act
+        await endpoint.aclose()
+
+        # Assert
+        mock_asyncio_transport.close.assert_called_once_with()
+        mock_asyncio_transport.abort.assert_not_called()
         mock_asyncio_protocol._get_close_waiter.assert_awaited_once_with()
 
     async def test____is_closing____return_transport_state(

@@ -14,12 +14,12 @@ import pytest
 
 
 @pytest.fixture
-def udp_socket_factory(request: pytest.FixtureRequest, localhost: str) -> Callable[[], Socket]:
+def udp_socket_factory(request: pytest.FixtureRequest, localhost_ip: str) -> Callable[[], Socket]:
     udp_socket_factory: Callable[[], Socket] = request.getfixturevalue("udp_socket_factory")
 
     def bound_udp_socket_factory() -> Socket:
         sock = udp_socket_factory()
-        sock.bind((localhost, 0))
+        sock.bind((localhost_ip, 0))
         return sock
 
     return bound_udp_socket_factory
@@ -36,11 +36,11 @@ class TestUDPNetworkClient:
     def client(
         server: Socket,
         socket_family: int,
-        localhost: str,
+        localhost_ip: str,
         datagram_protocol: DatagramProtocol[str, str],
     ) -> Iterator[UDPNetworkClient[str, str]]:
         address: tuple[str, int] = server.getsockname()[:2]
-        with UDPNetworkClient(address, datagram_protocol, family=socket_family, local_address=(localhost, 0)) as client:
+        with UDPNetworkClient(address, datagram_protocol, family=socket_family, local_address=(localhost_ip, 0)) as client:
             yield client
 
     def test____close____idempotent(self, client: UDPNetworkClient[str, str]) -> None:
@@ -158,7 +158,7 @@ class TestUDPNetworkEndpoint:
     def client(
         request: pytest.FixtureRequest,
         socket_family: int,
-        localhost: str,
+        localhost_ip: str,
         datagram_protocol: DatagramProtocol[str, str],
     ) -> Iterator[UDPNetworkEndpoint[str, str]]:
         address: tuple[str, int] | None
@@ -174,7 +174,7 @@ class TestUDPNetworkEndpoint:
             datagram_protocol,
             remote_address=address,
             family=socket_family,
-            local_address=(localhost, 0),
+            local_address=(localhost_ip, 0),
         ) as client:
             yield client
 

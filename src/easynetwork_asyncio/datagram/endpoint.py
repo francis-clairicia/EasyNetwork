@@ -80,6 +80,10 @@ class DatagramEndpoint:
     async def wait_closed(self) -> None:
         await self.__protocol._get_close_waiter()
 
+    async def aclose(self) -> None:
+        self.close()
+        await self.wait_closed()
+
     def is_closing(self) -> bool:
         return self.__transport.is_closing()
 

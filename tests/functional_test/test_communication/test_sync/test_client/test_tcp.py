@@ -211,10 +211,10 @@ class TestTCPNetworkClientConnection:
 
     @pytest.fixture(autouse=True)
     @classmethod
-    def server(cls, localhost: str, socket_family: int) -> Iterator[socketserver.TCPServer]:
+    def server(cls, localhost_ip: str, socket_family: int) -> Iterator[socketserver.TCPServer]:
         from threading import Thread
 
-        with cls.Server((localhost, 0), socket_family) as server:
+        with cls.Server((localhost_ip, 0), socket_family) as server:
             server_thread = Thread(target=server.serve_forever)
             server_thread.start()
             yield server
@@ -228,13 +228,13 @@ class TestTCPNetworkClientConnection:
 
     def test____dunder_init____connect_to_server(
         self,
-        localhost: str,
+        localhost_ip: str,
         remote_address: tuple[str, int],
         stream_protocol: StreamProtocol[str, str],
     ) -> None:
         # Arrange
 
         # Act & Assert
-        with TCPNetworkClient(remote_address, stream_protocol, local_address=(localhost, 0)) as client:
+        with TCPNetworkClient(remote_address, stream_protocol, local_address=(localhost_ip, 0)) as client:
             client.send_packet("Test")
             assert client.recv_packet() == "Test"

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from socket import AF_INET, IPPROTO_TCP, SHUT_WR, TCP_NODELAY, socket as Socket
-from typing import Any, AsyncIterator
+from typing import Any, AsyncIterator, Callable
 
 from easynetwork.api_async.client.tcp import AsyncTCPNetworkClient
 from easynetwork.exceptions import ClientClosedError, StreamProtocolParseError
@@ -197,7 +197,9 @@ class TestAsyncTCPNetworkClient:
 class TestAsyncTCPNetworkClientConnection:
     @pytest_asyncio.fixture(autouse=True)
     @staticmethod
-    async def server(localhost: str, socket_family: int) -> AsyncIterator[asyncio.Server]:
+    async def server(
+        localhost_ip: str, unused_tcp_port_factory: Callable[[], int], socket_family: int
+    ) -> AsyncIterator[asyncio.Server]:
         async def client_connected_cb(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
             try:
                 data: bytes = await reader.readline()
@@ -207,7 +209,13 @@ class TestAsyncTCPNetworkClientConnection:
                 writer.close()
                 await writer.wait_closed()
 
-        async with await asyncio.start_server(client_connected_cb, host=localhost, port=0, family=socket_family) as server:
+        async with await asyncio.start_server(
+            client_connected_cb,
+            host=localhost_ip,
+            port=unused_tcp_port_factory(),
+            family=socket_family,
+        ) as server:
+            await asyncio.sleep(0.01)
             yield server
 
     @pytest.fixture
@@ -233,7 +241,7 @@ class TestAsyncTCPNetworkClientConnection:
 
     async def test____dunder_init____with_local_address(
         self,
-        localhost: str,
+        localhost_ip: str,
         remote_address: tuple[str, int],
         stream_protocol: StreamProtocol[str, str],
         backend_kwargs: dict[str, Any],
@@ -241,7 +249,7 @@ class TestAsyncTCPNetworkClientConnection:
         async with AsyncTCPNetworkClient(
             remote_address,
             stream_protocol,
-            local_address=(localhost, 0),
+            local_address=(localhost_ip, 0),
             backend_kwargs=backend_kwargs,
         ) as client:
             await client.send_packet("Test")

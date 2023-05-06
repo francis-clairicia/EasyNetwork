@@ -143,14 +143,14 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     async def server(
         request_handler: MyAsyncTCPRequestHandler,
         socket_family: int,
-        localhost: str,
-        unused_tcp_port: int,
+        localhost_ip: str,
+        unused_tcp_port_factory: Callable[[], int],
         stream_protocol: StreamProtocol[str, str],
         backend_kwargs: dict[str, Any],
     ) -> AsyncIterator[MyAsyncTCPServer]:
         async with MyAsyncTCPServer(
-            localhost,
-            unused_tcp_port,
+            localhost_ip,
+            unused_tcp_port_factory(),
             stream_protocol,
             request_handler,
             family=socket_family,

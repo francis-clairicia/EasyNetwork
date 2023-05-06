@@ -121,14 +121,14 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
     async def server(
         request_handler: MyAsyncUDPRequestHandler,
         socket_family: int,
-        localhost: str,
-        unused_udp_port: int,
+        localhost_ip: str,
+        unused_udp_port_factory: Callable[[], int],
         datagram_protocol: DatagramProtocol[str, str],
         backend_kwargs: dict[str, Any],
     ) -> AsyncIterator[MyAsyncUDPServer]:
         async with MyAsyncUDPServer(
-            localhost,
-            unused_udp_port,
+            localhost_ip,
+            unused_udp_port_factory(),
             datagram_protocol,
             request_handler,
             family=socket_family,
