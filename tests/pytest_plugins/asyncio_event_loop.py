@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import enum
-from typing import Any, Callable, assert_never
+from typing import Any, assert_never
 
 import pytest
 
@@ -27,7 +27,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     )
 
 
-def _get_windows_selector_policy() -> Callable[[], asyncio.AbstractEventLoopPolicy] | None:
+def _get_windows_selector_policy() -> type[asyncio.AbstractEventLoopPolicy] | None:
     return getattr(asyncio, "WindowsSelectorEventLoopPolicy", None)
 
 

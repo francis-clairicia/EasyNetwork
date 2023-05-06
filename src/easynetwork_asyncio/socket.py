@@ -85,27 +85,29 @@ class AsyncSocket:
                 await asyncio.wait(futures_to_wait_for_completion, return_when=asyncio.ALL_COMPLETED)
             except asyncio.CancelledError:
                 try:
-                    self.__real_close()
+                    await self.__real_close()
                 finally:
                     raise
 
-        self.__real_close()
-        await asyncio.sleep(0)
+        await self.__real_close()
 
     async def abort(self) -> None:
-        self.__real_close()
-        await asyncio.sleep(0)
+        await self.__real_close()
 
-    def __real_close(self) -> None:
+    async def __real_close(self) -> None:
         socket, self.__socket = self.__socket, None
         self.__closing = True
 
         if socket is not None:
-            with contextlib.ExitStack() as stack:
-                stack.callback(socket.close)
-                for task in list(self.__tasks):
-                    stack.callback(task.cancel)
-                    del task
+            for task in list(self.__tasks):
+                task.cancel()
+                del task
+            try:
+                futures_to_wait_for_completion: set[asyncio.Future[None]] = set(self.__waiters.values())
+                if futures_to_wait_for_completion:
+                    await asyncio.wait(futures_to_wait_for_completion, return_when=asyncio.ALL_COMPLETED)
+            finally:
+                socket.close()
 
     async def accept(self) -> tuple[_socket.socket, _socket._RetAddress]:
         with self.__conflict_detection("accept") as socket:

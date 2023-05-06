@@ -133,6 +133,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         with _contextlib.ExitStack() as exit_stack:
             for listener_task in self.__listener_tasks:
                 exit_stack.callback(listener_task.cancel)
+            self.__listener_tasks.clear()
 
     async def server_close(self) -> None:
         if self.__listeners_factory is not None:
