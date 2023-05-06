@@ -86,7 +86,7 @@ class NamedTupleStructSerializer(AbstractStructSerializer[_NT, _NT], Generic[_NT
             if any(c in _ENDIANNESS_CHARACTERS for c in field_fmt):
                 raise ValueError(f"{field!r}: Invalid field format")
             if field_fmt and field_fmt[-1] == "s":
-                if len(field_fmt) > 1 and not field_fmt[:-1].isdigit():
+                if len(field_fmt) > 1 and not field_fmt[:-1].isdecimal():
                     raise ValueError(f"{field!r}: Invalid field format")
                 string_fields.add(field)
             elif len(field_fmt) != 1 or not field_fmt.isalpha():

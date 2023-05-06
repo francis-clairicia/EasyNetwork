@@ -90,7 +90,7 @@ class TestPickleSerializer(BaseSerializerConfigInstanceCheck):
     def mock_pickletools_optimize(mocker: MockerFixture) -> MagicMock:
         return mocker.patch("pickletools.optimize", autospec=True)
 
-    @pytest.mark.parametrize("method", ["serialize", "incremental_serialize", "deserialize", "incremental_deserialize"])
+    @pytest.mark.parametrize("method", ["serialize", "deserialize"])
     def test____base_class____implements_default_methods(self, method: str) -> None:
         # Arrange
         from easynetwork.serializers.base_stream import FileBasedPacketSerializer

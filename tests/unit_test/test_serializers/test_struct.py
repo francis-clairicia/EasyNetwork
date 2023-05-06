@@ -184,6 +184,8 @@ class TestNamedTupleStructSerializer(BaseTestStructBasedSerializer):
             pytest.param((), {}, "", id="no fields"),
             pytest.param(("string", "int"), {"string": "10s", "int": "Q"}, "10sQ", id="10sQ"),
             pytest.param(("int", "string"), {"string": "10s", "int": "Q"}, "Q10s", id="Q10s"),
+            pytest.param(("string", "int"), {"string": "s", "int": "Q"}, "sQ", id="sQ"),
+            pytest.param(("int", "string"), {"string": "s", "int": "Q"}, "Qs", id="Qs"),
         ],
     )
     @pytest.mark.parametrize("endianness", sorted(_ENDIANNESS_CHARACTERS.union([""])), ids=repr)
@@ -240,6 +242,63 @@ class TestNamedTupleStructSerializer(BaseTestStructBasedSerializer):
 
         # Act & Assert
         with pytest.raises(KeyError, match=r"^{!r}$".format(field)):
+            _ = NamedTupleStructSerializer(namedtuple_cls, field_formats)
+
+        mock_struct_cls.assert_not_called()
+
+    @pytest.mark.parametrize("format", ["4Q", "10c", "abc"], ids=repr)
+    @pytest.mark.parametrize("field", ["x", "y"], ids=repr)
+    def test____dunder_init____field_format_not_a_single_character_error(
+        self,
+        format: str,
+        field: str,
+        mock_struct_cls: MagicMock,
+    ) -> None:
+        # Arrange
+        namedtuple_cls = collections.namedtuple("namedtuple_cls", ["x", "y"])
+        field_formats: dict[str, str] = {"x": "Q", "y": "I"}
+        field_formats[field] = format
+
+        # Act & Assert
+        with pytest.raises(ValueError, match=r"^{!r}: Invalid field format$".format(field)):
+            _ = NamedTupleStructSerializer(namedtuple_cls, field_formats)
+
+        mock_struct_cls.assert_not_called()
+
+    @pytest.mark.parametrize("format", ["4", "#", "\\"], ids=repr)
+    @pytest.mark.parametrize("field", ["x", "y"], ids=repr)
+    def test____dunder_init____field_format_not_a_alphabet_character_error(
+        self,
+        format: str,
+        field: str,
+        mock_struct_cls: MagicMock,
+    ) -> None:
+        # Arrange
+        namedtuple_cls = collections.namedtuple("namedtuple_cls", ["x", "y"])
+        field_formats: dict[str, str] = {"x": "Q", "y": "I"}
+        field_formats[field] = format
+
+        # Act & Assert
+        with pytest.raises(ValueError, match=r"^{!r}: Invalid field format$".format(field)):
+            _ = NamedTupleStructSerializer(namedtuple_cls, field_formats)
+
+        mock_struct_cls.assert_not_called()
+
+    @pytest.mark.parametrize("format", ["²s", "b2s", "abcs"], ids=repr)
+    @pytest.mark.parametrize("field", ["x", "y"], ids=repr)
+    def test____dunder_init____string_field_format_with_non_number_sequence_error(
+        self,
+        format: str,
+        field: str,
+        mock_struct_cls: MagicMock,
+    ) -> None:
+        # Arrange
+        namedtuple_cls = collections.namedtuple("namedtuple_cls", ["x", "y"])
+        field_formats: dict[str, str] = {"x": "Q", "y": "I"}
+        field_formats[field] = format
+
+        # Act & Assert
+        with pytest.raises(ValueError, match=r"^{!r}: Invalid field format$".format(field)):
             _ = NamedTupleStructSerializer(namedtuple_cls, field_formats)
 
         mock_struct_cls.assert_not_called()

@@ -11,14 +11,14 @@ from easynetwork.serializers.pickle import PicklerConfig, PickleSerializer, Unpi
 
 import pytest
 
-from .base import BaseTestIncrementalSerializer
+from .base import BaseTestSerializer
 from .samples.pickle import SAMPLES
 
 ALL_PROTOCOLS: tuple[int, ...] = tuple(range(0, pickle.HIGHEST_PROTOCOL + 1))
 
 
 @final
-class TestPickleSerializer(BaseTestIncrementalSerializer):
+class TestPickleSerializer(BaseTestSerializer):
     @pytest.fixture(scope="class", params=ALL_PROTOCOLS, ids=lambda p: f"pickle_data_protocol=={p}")
     @staticmethod
     def pickle_data_protocol(request: Any) -> int:
@@ -74,13 +74,6 @@ class TestPickleSerializer(BaseTestIncrementalSerializer):
             data = pickletools.optimize(data)
         return data
 
-    #### Incremental Serialize
-
-    @pytest.fixture(scope="class")
-    @staticmethod
-    def expected_joined_data(expected_complete_data: bytes) -> bytes:
-        return expected_complete_data
-
     #### One-shot Deserialize
 
     @pytest.fixture(scope="class")
@@ -97,13 +90,6 @@ class TestPickleSerializer(BaseTestIncrementalSerializer):
         if pickler_optimize:
             data = pickletools.optimize(data)
         return data
-
-    #### Incremental Deserialize
-
-    @pytest.fixture(scope="class")
-    @staticmethod
-    def complete_data_for_incremental_deserialize(complete_data: bytes) -> bytes:
-        return complete_data
 
     #### Invalid data
 

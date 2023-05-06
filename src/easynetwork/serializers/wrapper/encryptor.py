@@ -29,13 +29,14 @@ class EncryptorSerializer(AutoSeparatedPacketSerializer[_ST_contra, _DT_co]):
         key: str | bytes,
         *,
         token_ttl: int | None = None,
+        separator: bytes = b"\r\n",
     ) -> None:
         try:
             import cryptography.fernet
         except ModuleNotFoundError as exc:  # pragma: no cover
             raise ModuleNotFoundError("encryption dependencies are missing. Consider adding 'encryption' extra") from exc
 
-        super().__init__(separator=b"\r\n", keepends=False)
+        super().__init__(separator=separator, keepends=False)
         assert isinstance(serializer, AbstractPacketSerializer)
         self.__serializer: AbstractPacketSerializer[_ST_contra, _DT_co] = serializer
         self.__fernet = cryptography.fernet.Fernet(key)
