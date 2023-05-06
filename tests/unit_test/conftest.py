@@ -26,13 +26,16 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
             item.add_marker(pytest.mark.unit)
 
 
-@pytest.fixture(scope="package", autouse=True)
-def dummy_lock_cls(package_mocker: MockerFixture) -> Any:
-    from ._utils import DummyLock
+@pytest.fixture
+def mock_socket_factory(mocker: MockerFixture) -> Callable[[], MagicMock]:
+    def factory() -> MagicMock:
+        mock_socket = mocker.NonCallableMagicMock(spec=Socket)
+        mock_socket.family = AF_INET
+        mock_socket.type = -1
+        mock_socket.proto = 0
+        return mock_socket
 
-    package_mocker.patch("threading.Lock", new=DummyLock)
-    package_mocker.patch("threading.RLock", new=DummyLock)
-    return DummyLock
+    return factory
 
 
 @pytest.fixture(scope="package", autouse=True)
@@ -41,10 +44,9 @@ def original_socket_cls() -> type[Socket]:
 
 
 @pytest.fixture
-def mock_tcp_socket_factory(mocker: MockerFixture) -> Callable[[], MagicMock]:
+def mock_tcp_socket_factory(mock_socket_factory: Callable[[], MagicMock]) -> Callable[[], MagicMock]:
     def factory() -> MagicMock:
-        mock_socket = mocker.NonCallableMagicMock(spec=Socket)
-        mock_socket.family = AF_INET
+        mock_socket = mock_socket_factory()
         mock_socket.type = SOCK_STREAM
         mock_socket.proto = IPPROTO_TCP
         return mock_socket
@@ -58,10 +60,9 @@ def mock_tcp_socket(mock_tcp_socket_factory: Callable[[], MagicMock]) -> MagicMo
 
 
 @pytest.fixture
-def mock_udp_socket_factory(mocker: MockerFixture) -> Callable[[], MagicMock]:
+def mock_udp_socket_factory(mock_socket_factory: Callable[[], MagicMock]) -> Callable[[], MagicMock]:
     def factory() -> MagicMock:
-        mock_socket = mocker.NonCallableMagicMock(spec=Socket)
-        mock_socket.family = AF_INET
+        mock_socket = mock_socket_factory()
         mock_socket.type = SOCK_DGRAM
         mock_socket.proto = IPPROTO_UDP
         return mock_socket

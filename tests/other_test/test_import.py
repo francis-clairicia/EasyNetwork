@@ -17,13 +17,19 @@ if TYPE_CHECKING:
 def _catch_all_easynetwork_packages_and_modules() -> list[ModuleInfo]:
     from pkgutil import walk_packages
 
-    easynetwork_spec = import_module("easynetwork").__spec__
+    result: list[ModuleInfo] = []
 
-    assert easynetwork_spec is not None
+    for module_name in ["easynetwork", "easynetwork_asyncio"]:
+        module = import_module(module_name)
+        module_spec = module.__spec__
 
-    easynetwork_paths = easynetwork_spec.submodule_search_locations or import_module("easynetwork").__path__
+        assert module_spec is not None
 
-    return list(walk_packages(easynetwork_paths, prefix=f"{easynetwork_spec.name}."))
+        module_paths = module_spec.submodule_search_locations or module.__path__
+
+        result.extend(walk_packages(module_paths, prefix=f"{module_spec.name}."))
+
+    return result
 
 
 ALL_EASYNETWORK_PACKAGES = [info.name for info in _catch_all_easynetwork_packages_and_modules() if info.ispkg]

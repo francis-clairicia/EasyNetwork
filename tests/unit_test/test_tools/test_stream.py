@@ -366,7 +366,7 @@ class TestStreamDataConsumer:
         def side_effect() -> Generator[None, bytes, tuple[Any, bytes]]:
             data = yield
             assert data == b"Hello"
-            raise StreamProtocolParseError(b"World", "deserialization", "Error occured")
+            raise StreamProtocolParseError(b"World", "deserialization", "Error occurred")
 
         mock_build_packet_from_chunks_func: MagicMock = mock_stream_protocol.build_packet_from_chunks
         mock_build_packet_from_chunks_func.side_effect = side_effect

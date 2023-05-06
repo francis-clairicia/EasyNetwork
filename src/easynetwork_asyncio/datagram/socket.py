@@ -1,0 +1,120 @@
+# -*- coding: Utf-8 -*-
+# Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
+#
+#
+"""asyncio engine for easynetwork.async
+"""
+
+from __future__ import annotations
+
+__all__ = ["AsyncioTransportDatagramSocketAdapter", "RawDatagramSocketAdapter"]
+
+import asyncio
+from typing import TYPE_CHECKING, Any, final
+
+from easynetwork.api_async.backend.abc import AbstractAsyncDatagramSocketAdapter
+
+if TYPE_CHECKING:
+    import asyncio.trsock
+    import socket as _socket
+
+    from _typeshed import ReadableBuffer
+
+    from .endpoint import DatagramEndpoint
+
+
+@final
+class AsyncioTransportDatagramSocketAdapter(AbstractAsyncDatagramSocketAdapter):
+    __slots__ = ("__endpoint",)
+
+    def __init__(self, endpoint: DatagramEndpoint) -> None:
+        super().__init__()
+        self.__endpoint: DatagramEndpoint = endpoint
+
+        socket: asyncio.trsock.TransportSocket | None = endpoint.get_extra_info("socket")
+        assert socket is not None, "transport must be a socket transport"
+
+    async def aclose(self) -> None:
+        try:
+            self.__endpoint.close()
+            return await self.__endpoint.wait_closed()
+        except ConnectionError:
+            # It is normal if there was connection errors during operations. But do not propagate this exception,
+            # as we will never reuse this socket
+            pass
+
+    async def abort(self) -> None:
+        self.__endpoint.transport.abort()
+        await asyncio.sleep(0)
+
+    def is_closing(self) -> bool:
+        return self.__endpoint.is_closing()
+
+    def get_local_address(self) -> tuple[Any, ...]:
+        return self.__endpoint.get_extra_info("sockname")
+
+    def get_remote_address(self) -> tuple[Any, ...] | None:
+        return self.__endpoint.get_extra_info("peername")
+
+    async def recvfrom(self) -> tuple[bytes, tuple[Any, ...]]:
+        return await self.__endpoint.recvfrom()
+
+    async def sendto(self, data: ReadableBuffer, address: tuple[Any, ...] | None, /) -> None:
+        with memoryview(data).toreadonly() as data_view:
+            await self.__endpoint.sendto(data_view, address)
+
+    def socket(self) -> asyncio.trsock.TransportSocket:
+        socket: asyncio.trsock.TransportSocket = self.__endpoint.get_extra_info("socket")
+        return socket
+
+
+@final
+class RawDatagramSocketAdapter(AbstractAsyncDatagramSocketAdapter):
+    __slots__ = ("__socket",)
+
+    def __init__(
+        self,
+        socket: _socket.socket,
+        loop: asyncio.AbstractEventLoop,
+    ) -> None:
+        super().__init__()
+
+        from socket import SOCK_DGRAM
+
+        from ..socket import AsyncSocket
+
+        self.__socket: AsyncSocket = AsyncSocket(socket, loop)
+
+        assert socket.type == SOCK_DGRAM, "A 'SOCK_DGRAM' socket is expected"
+
+    async def aclose(self) -> None:
+        return await self.__socket.aclose()
+
+    async def abort(self) -> None:
+        return await self.__socket.abort()
+
+    def is_closing(self) -> bool:
+        return self.__socket.is_closing()
+
+    def get_local_address(self) -> tuple[Any, ...]:
+        return self.__socket.socket.getsockname()
+
+    def get_remote_address(self) -> tuple[Any, ...] | None:
+        try:
+            return self.__socket.socket.getpeername()
+        except OSError:
+            return None
+
+    async def recvfrom(self) -> tuple[bytes, tuple[Any, ...]]:
+        from easynetwork.tools.socket import MAX_DATAGRAM_BUFSIZE
+
+        return await self.__socket.recvfrom(MAX_DATAGRAM_BUFSIZE)
+
+    async def sendto(self, data: ReadableBuffer, address: tuple[Any, ...] | None, /) -> None:
+        if address is None:
+            await self.__socket.sendall(data)
+        else:
+            await self.__socket.sendto(data, address)
+
+    def socket(self) -> asyncio.trsock.TransportSocket:
+        return self.__socket.socket

@@ -1,0 +1,90 @@
+# -*- coding: Utf-8 -*-
+# Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
+#
+#
+"""asyncio engine for easynetwork.api_async
+"""
+
+from __future__ import annotations
+
+__all__ = ["Task", "TaskGroup"]
+
+import asyncio
+from typing import TYPE_CHECKING, Any, Callable, Coroutine, ParamSpec, Self, TypeVar, final
+
+from easynetwork.api_async.backend.abc import AbstractTask, AbstractTaskGroup
+
+if TYPE_CHECKING:
+    from types import TracebackType
+
+
+_P = ParamSpec("_P")
+_T = TypeVar("_T")
+_T_co = TypeVar("_T_co", covariant=True)
+
+
+@final
+class Task(AbstractTask[_T_co]):
+    __slots__ = ("__t", "__h")
+
+    def __init__(self, task: asyncio.Task[_T_co]) -> None:
+        self.__t: asyncio.Task[_T_co] = task
+        self.__h: int | None = None
+
+    def __hash__(self) -> int:
+        if (h := self.__h) is None:
+            self.__h = h = hash((Task, self.__t, 0xFF))
+        return h
+
+    def __eq__(self, other: object, /) -> bool:
+        if not isinstance(other, Task):
+            return NotImplemented
+        return self.__t == other.__t
+
+    def done(self) -> bool:
+        return self.__t.done()
+
+    def cancel(self) -> bool:
+        return self.__t.cancel()
+
+    def cancelled(self) -> bool:
+        return self.__t.cancelled()
+
+    async def join(self) -> _T_co:
+        # If the caller cancels the join() task, it should not stop the inner task
+        # e.g. when awaiting from an another task than the one which creates the TaskGroup,
+        #      you want to stop joining the sub-task, not accidentally cancel it.
+        # It is primarily to avoid error prone code where tasks were not explicitly cancelled using task.cancel()
+        return await asyncio.shield(self.__t)
+
+
+@final
+class TaskGroup(AbstractTaskGroup):
+    __slots__ = ("__asyncio_tg",)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.__asyncio_tg: asyncio.TaskGroup = asyncio.TaskGroup()
+
+    async def __aenter__(self) -> Self:
+        asyncio_tg: asyncio.TaskGroup = self.__asyncio_tg
+        await type(asyncio_tg).__aenter__(asyncio_tg)
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        asyncio_tg: asyncio.TaskGroup = self.__asyncio_tg
+        return await type(asyncio_tg).__aexit__(asyncio_tg, exc_type, exc_val, exc_tb)
+
+    def start_soon(
+        self,
+        __coro_func: Callable[_P, Coroutine[Any, Any, _T]],
+        /,
+        *args: _P.args,
+        **kwargs: _P.kwargs,
+    ) -> AbstractTask[_T]:
+        return Task(self.__asyncio_tg.create_task(__coro_func(*args, **kwargs)))

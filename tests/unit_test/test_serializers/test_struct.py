@@ -31,7 +31,7 @@ class BaseTestStructBasedSerializer:
     def mock_struct(mocker: MockerFixture) -> MagicMock:
         from struct import Struct
 
-        mock = mocker.MagicMock(spec=Struct)
+        mock = mocker.NonCallableMagicMock(spec=Struct)
         mock.size = 123456789
         return mock
 

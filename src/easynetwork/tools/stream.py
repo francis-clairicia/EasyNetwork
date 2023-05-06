@@ -86,10 +86,10 @@ class StreamDataProducer(Generic[_SentPacketT]):
 
     def clear(self) -> None:
         with self.__lock:
+            self.__q.clear()
             generator, self.__g = self.__g, None
             if generator is not None:
                 generator.close()
-            self.__q.clear()
 
 
 @final
@@ -141,7 +141,7 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
             except StopIteration as exc:
                 packet, chunk = exc.value
             except StreamProtocolParseError as exc:
-                self.__b, exc.remaining_data = exc.remaining_data, b""
+                self.__b, exc.remaining_data = bytes(exc.remaining_data), b""
                 raise
             else:
                 self.__c = consumer
@@ -160,11 +160,11 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
 
     def get_buffer(self) -> bytes:
         with self.__lock:
-            return self.__b[:]
+            return self.__b
 
     def clear(self) -> None:
         with self.__lock:
+            self.__b = b""
             consumer, self.__c = self.__c, None
             if consumer is not None:
                 consumer.close()
-            self.__b = b""

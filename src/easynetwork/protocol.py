@@ -13,8 +13,14 @@ __all__ = [
 
 from typing import Any, Generator, Generic, TypeVar, overload
 
-from .converter import AbstractPacketConverter, PacketConversionError
-from .exceptions import DatagramProtocolParseError, DeserializeError, IncrementalDeserializeError, StreamProtocolParseError
+from .converter import AbstractPacketConverter
+from .exceptions import (
+    DatagramProtocolParseError,
+    DeserializeError,
+    IncrementalDeserializeError,
+    PacketConversionError,
+    StreamProtocolParseError,
+)
 from .serializers.abc import AbstractIncrementalPacketSerializer, AbstractPacketSerializer
 
 _SentDTOPacketT = TypeVar("_SentDTOPacketT")
