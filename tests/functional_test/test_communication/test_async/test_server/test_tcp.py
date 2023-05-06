@@ -186,7 +186,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
                 sock = await create_connection(*server_address, event_loop, family=socket_family)
                 sock.setblocking(False)
                 reader, writer = await asyncio.open_connection(sock=sock)
-                stack.push_async_callback(writer.wait_closed)
+                stack.push_async_callback(lambda: asyncio.wait_for(writer.wait_closed(), 3))
                 stack.callback(writer.close)
                 assert await reader.readline() == b"milk\n"
                 return reader, writer

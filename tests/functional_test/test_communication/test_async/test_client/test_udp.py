@@ -19,11 +19,6 @@ import pytest_asyncio
 from .._utils import delay
 from ..conftest import use_asyncio_transport_xfail_uvloop
 
-import sys  # isort:skip
-
-# TODO: To remove when the blocking test will be explained with the Window's ProactorEventLoop
-_skip_win = pytest.mark.skipif(sys.platform.startswith("win"), reason="Muted for now.")
-
 
 @pytest.fixture
 def udp_socket_factory(
@@ -55,8 +50,8 @@ async def datagram_endpoint_factory(
                 family=socket_family,
                 local_addr=(localhost_ip, unused_udp_port_factory()),
             )
-            stack.push_async_callback(endpoint.wait_closed)
-            stack.callback(endpoint.close)
+            stack.push_async_callback(lambda: asyncio.wait_for(endpoint.wait_closed(), 3))
+            stack.callback(endpoint.transport.abort)
             return endpoint
 
         yield factory
@@ -561,10 +556,10 @@ class TestAsyncUDPNetworkEndpoint:
         client: AsyncUDPNetworkEndpoint[str, str],
         datagram_endpoint_factory: Callable[[], Awaitable[DatagramEndpoint]],
     ) -> None:
-        async with asyncio.timeout(3), contextlib.AsyncExitStack() as stack:
-            other_client_1 = await stack.enter_async_context(contextlib.aclosing(await datagram_endpoint_factory()))
-            other_client_2 = await stack.enter_async_context(contextlib.aclosing(await datagram_endpoint_factory()))
-            other_client_3 = await stack.enter_async_context(contextlib.aclosing(await datagram_endpoint_factory()))
+        async with asyncio.timeout(3):
+            other_client_1 = await datagram_endpoint_factory()
+            other_client_2 = await datagram_endpoint_factory()
+            other_client_3 = await datagram_endpoint_factory()
             for other_client in [other_client_1, other_client_2, other_client_3]:
                 await client.send_packet_to("ABCDEF", other_client.get_extra_info("sockname"))
                 assert await other_client.recvfrom() == (b"ABCDEF", client.get_local_address())
@@ -608,8 +603,8 @@ class TestAsyncUDPNetworkEndpoint:
     async def test____send_packet_to____invalid_address(
         self, client: AsyncUDPNetworkEndpoint[str, str], datagram_endpoint_factory: Callable[[], Awaitable[DatagramEndpoint]]
     ) -> None:
-        async with asyncio.timeout(3), contextlib.AsyncExitStack() as stack:
-            other_client = await stack.enter_async_context(contextlib.aclosing(await datagram_endpoint_factory()))
+        async with asyncio.timeout(3):
+            other_client = await datagram_endpoint_factory()
             other_client_address = other_client.get_extra_info("sockname")
 
             if client.get_remote_address() is None:
@@ -666,10 +661,10 @@ class TestAsyncUDPNetworkEndpoint:
         socket_family: int,
         datagram_endpoint_factory: Callable[[], Awaitable[DatagramEndpoint]],
     ) -> None:
-        async with asyncio.timeout(3), contextlib.AsyncExitStack() as stack:
-            other_client_1 = await stack.enter_async_context(contextlib.aclosing(await datagram_endpoint_factory()))
-            other_client_2 = await stack.enter_async_context(contextlib.aclosing(await datagram_endpoint_factory()))
-            other_client_3 = await stack.enter_async_context(contextlib.aclosing(await datagram_endpoint_factory()))
+        async with asyncio.timeout(3):
+            other_client_1 = await datagram_endpoint_factory()
+            other_client_2 = await datagram_endpoint_factory()
+            other_client_3 = await datagram_endpoint_factory()
             for other_client in [other_client_1, other_client_2, other_client_3]:
                 await other_client.sendto(b"ABCDEF", client.get_local_address())
                 packet, sender = await client.recv_packet_from()
@@ -698,7 +693,6 @@ class TestAsyncUDPNetworkEndpoint:
                 assert isinstance(sender, IPv6SocketAddress)
             assert sender == new_socket_address(server.get_extra_info("sockname"), socket_family)
 
-    @_skip_win  # TODO: To remove
     @use_asyncio_transport_xfail_uvloop
     @pytest.mark.parametrize("client", ["WITH_REMOTE"], indirect=True)
     async def test____recv_packet_from____ignore_other_socket_packets(
