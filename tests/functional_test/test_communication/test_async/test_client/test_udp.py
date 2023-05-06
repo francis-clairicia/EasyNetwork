@@ -561,7 +561,7 @@ class TestAsyncUDPNetworkEndpoint:
         client: AsyncUDPNetworkEndpoint[str, str],
         datagram_endpoint_factory: Callable[[], Awaitable[DatagramEndpoint]],
     ) -> None:
-        async with contextlib.AsyncExitStack() as stack, asyncio.timeout(3):
+        async with asyncio.timeout(3), contextlib.AsyncExitStack() as stack:
             other_client_1 = await stack.enter_async_context(contextlib.aclosing(await datagram_endpoint_factory()))
             other_client_2 = await stack.enter_async_context(contextlib.aclosing(await datagram_endpoint_factory()))
             other_client_3 = await stack.enter_async_context(contextlib.aclosing(await datagram_endpoint_factory()))
@@ -608,7 +608,7 @@ class TestAsyncUDPNetworkEndpoint:
     async def test____send_packet_to____invalid_address(
         self, client: AsyncUDPNetworkEndpoint[str, str], datagram_endpoint_factory: Callable[[], Awaitable[DatagramEndpoint]]
     ) -> None:
-        async with contextlib.AsyncExitStack() as stack, asyncio.timeout(3):
+        async with asyncio.timeout(3), contextlib.AsyncExitStack() as stack:
             other_client = await stack.enter_async_context(contextlib.aclosing(await datagram_endpoint_factory()))
             other_client_address = other_client.get_extra_info("sockname")
 
@@ -658,7 +658,6 @@ class TestAsyncUDPNetworkEndpoint:
         with pytest.raises(ClientClosedError):
             await client.send_packet_to("ABCDEF", remote_address)
 
-    @_skip_win  # TODO: To remove
     @use_asyncio_transport_xfail_uvloop
     @pytest.mark.parametrize("client", ["WITHOUT_REMOTE"], indirect=True)
     async def test____recv_packet_from____receive_from_anyone(
@@ -667,7 +666,7 @@ class TestAsyncUDPNetworkEndpoint:
         socket_family: int,
         datagram_endpoint_factory: Callable[[], Awaitable[DatagramEndpoint]],
     ) -> None:
-        async with contextlib.AsyncExitStack() as stack, asyncio.timeout(3):
+        async with asyncio.timeout(3), contextlib.AsyncExitStack() as stack:
             other_client_1 = await stack.enter_async_context(contextlib.aclosing(await datagram_endpoint_factory()))
             other_client_2 = await stack.enter_async_context(contextlib.aclosing(await datagram_endpoint_factory()))
             other_client_3 = await stack.enter_async_context(contextlib.aclosing(await datagram_endpoint_factory()))
