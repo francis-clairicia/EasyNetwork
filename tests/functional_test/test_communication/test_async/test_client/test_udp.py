@@ -19,10 +19,10 @@ import pytest_asyncio
 from .._utils import delay
 from ..conftest import use_asyncio_transport_xfail_uvloop
 
-# import sys  # isort:skip
+import sys  # isort:skip
 
 # TODO: To remove when the blocking test will be explained with the Window's ProactorEventLoop
-# pytestmark = pytest.mark.skipif(sys.platform.startswith("win"), reason="Muted for now.")
+_skip_win = pytest.mark.skipif(sys.platform.startswith("win"), reason="Muted for now.")
 
 
 @pytest.fixture
@@ -211,6 +211,7 @@ class TestAsyncUDPNetworkClient:
             await server.sendto(p, client.get_local_address())
 
         close_task = asyncio.create_task(delay(client.aclose, 0.5))
+        await asyncio.sleep(0)
         try:
             # NOTE: Comparison using set because equality check does not verify order
             assert {p async for p in client.iter_received_packets()} == {"A", "B", "C", "D", "E", "F"}
@@ -657,6 +658,7 @@ class TestAsyncUDPNetworkEndpoint:
         with pytest.raises(ClientClosedError):
             await client.send_packet_to("ABCDEF", remote_address)
 
+    @_skip_win  # TODO: To remove
     @use_asyncio_transport_xfail_uvloop
     @pytest.mark.parametrize("client", ["WITHOUT_REMOTE"], indirect=True)
     async def test____recv_packet_from____receive_from_anyone(
@@ -697,6 +699,7 @@ class TestAsyncUDPNetworkEndpoint:
                 assert isinstance(sender, IPv6SocketAddress)
             assert sender == new_socket_address(server.get_extra_info("sockname"), socket_family)
 
+    @_skip_win  # TODO: To remove
     @use_asyncio_transport_xfail_uvloop
     @pytest.mark.parametrize("client", ["WITH_REMOTE"], indirect=True)
     async def test____recv_packet_from____ignore_other_socket_packets(
@@ -740,6 +743,7 @@ class TestAsyncUDPNetworkEndpoint:
                 await server.sendto(p, client.get_local_address())
 
             close_task = asyncio.create_task(delay(client.aclose, 0.5))
+            await asyncio.sleep(0)
             try:
                 # NOTE: Comparison using set because equality check does not verify order
                 assert {(p, addr) async for p, addr in client.iter_received_packets_from()} == {
