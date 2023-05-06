@@ -11,6 +11,7 @@ __all__ = [
 ]
 
 import contextlib
+import errno as _errno
 import os
 import socket as _socket
 from typing import TYPE_CHECKING, Any, Iterable, Iterator
@@ -60,6 +61,21 @@ def concatenate_chunks(chunks_iterable: Iterable[bytes]) -> bytes:
     # The list call should be roughly
     # equivalent to the PySequence_Fast that ''.join() would do.
     return b"".join(list(chunks_iterable))
+
+
+def ensure_datagram_socket_bound(sock: _socket.socket) -> None:
+    assert sock.family in (_socket.AF_INET, _socket.AF_INET6), "Invalid socket family."
+    if sock.type != _socket.SOCK_DGRAM:
+        raise ValueError("Invalid socket type. Expected SOCK_DGRAM socket.")
+    try:
+        is_bound: bool = sock.getsockname()[1] > 0
+    except OSError as exc:
+        if exc.errno != _errno.EINVAL:
+            raise
+        is_bound = False
+
+    if not is_bound:
+        sock.bind(("", 0))
 
 
 def set_reuseport(sock: _socket.socket) -> None:

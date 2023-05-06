@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from socket import (
     AF_INET,
     AF_INET6,
@@ -20,6 +21,7 @@ from easynetwork.tools._utils import (
     check_real_socket_state,
     check_socket_family,
     concatenate_chunks,
+    ensure_datagram_socket_bound,
     error_from_errno,
     open_listener_sockets_from_getaddrinfo_result,
     restore_timeout_at_end,
@@ -157,6 +159,75 @@ def test____concanetate_chunks____join_several_bytestrings() -> None:
 
     # Assert
     assert result == expected_result
+
+
+def test____ensure_datagram_socket_bound____socket_not_bound____null_port(
+    mock_udp_socket: MagicMock,
+) -> None:
+    # Arrange
+    mock_udp_socket.getsockname.return_value = ("0.0.0.0", 0)
+
+    # Act
+    ensure_datagram_socket_bound(mock_udp_socket)
+
+    # Assert
+    mock_udp_socket.bind.assert_called_once_with(("", 0))
+
+
+def test____ensure_datagram_socket_bound____socket_not_bound____EINVAL_error_when_calling_getsockname(
+    mock_udp_socket: MagicMock,
+) -> None:
+    # Arrange
+    from errno import EINVAL
+
+    mock_udp_socket.getsockname.side_effect = OSError(EINVAL, os.strerror(EINVAL))
+
+    # Act
+    ensure_datagram_socket_bound(mock_udp_socket)
+
+    # Assert
+    mock_udp_socket.bind.assert_called_once_with(("", 0))
+
+
+def test____ensure_datagram_socket_bound____already_bound(
+    mock_udp_socket: MagicMock,
+) -> None:
+    # Arrange
+    mock_udp_socket.getsockname.return_value = ("0.0.0.0", 5000)
+
+    # Act
+    ensure_datagram_socket_bound(mock_udp_socket)
+
+    # Assert
+    mock_udp_socket.bind.assert_not_called()
+
+
+def test____ensure_datagram_socket_bound____OSError(
+    mock_udp_socket: MagicMock,
+) -> None:
+    # Arrange
+    mock_udp_socket.getsockname.side_effect = OSError("Error")
+
+    # Act
+    with pytest.raises(OSError):
+        ensure_datagram_socket_bound(mock_udp_socket)
+
+    # Assert
+    mock_udp_socket.bind.assert_not_called()
+
+
+def test____ensure_datagram_socket_bound____invalid_socket_type(
+    mock_tcp_socket: MagicMock,
+) -> None:
+    # Arrange
+
+    # Act
+    with pytest.raises(ValueError, match=r"^Invalid socket type\. Expected SOCK_DGRAM socket\.$"):
+        ensure_datagram_socket_bound(mock_tcp_socket)
+
+    # Assert
+    mock_tcp_socket.getsockname.assert_not_called()
+    mock_tcp_socket.bind.assert_not_called()
 
 
 def test____set_reuseport____setsockopt(

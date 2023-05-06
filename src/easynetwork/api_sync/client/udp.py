@@ -18,6 +18,7 @@ from ...protocol import DatagramProtocol
 from ...tools._utils import (
     check_real_socket_state as _check_real_socket_state,
     check_socket_family as _check_socket_family,
+    ensure_datagram_socket_bound as _ensure_datagram_socket_bound,
     restore_timeout_at_end as _restore_timeout_at_end,
 )
 from ...tools.socket import MAX_DATAGRAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
@@ -125,8 +126,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
                 raise ValueError("Invalid socket type")
 
             if external_socket:
-                if socket.getsockname()[1] == 0:
-                    socket.bind(("", 0))
+                _ensure_datagram_socket_bound(socket)
                 try:
                     peername = new_socket_address(socket.getpeername(), socket.family)
                 except OSError:
