@@ -145,6 +145,8 @@ class AsyncSocket:
             raise RuntimeError("This function should be called within a task.")
         assert task.get_loop() is self.__loop, "coroutine will not be executed with the bound event loop"
 
+        cancelling: int = task.cancelling()
+
         with contextlib.ExitStack() as stack:
             self.__tasks.add(task)
             stack.callback(self.__tasks.discard, task)
@@ -153,11 +155,12 @@ class AsyncSocket:
             self.__waiters[task_id] = waiter
             stack.callback(self.__waiters.pop, task_id)
             stack.callback(waiter.set_result, None)
+            del waiter
 
             try:
                 yield socket
             except asyncio.CancelledError:
-                if self.__socket is not None or task.uncancel() != 0:
+                if self.__socket is not None or task.uncancel() > cancelling:
                     raise
                 raise _error_from_errno(abort_errno) from None
             finally:
