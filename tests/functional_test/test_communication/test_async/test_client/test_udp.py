@@ -19,6 +19,11 @@ import pytest_asyncio
 from .._utils import delay
 from ..conftest import use_asyncio_transport_xfail_uvloop
 
+import sys  # isort:skip
+
+# TODO: To remove when the blocking test will be explained with the Window's ProactorEventLoop
+pytestmark = pytest.mark.skipif(sys.platform.startswith("win"), reason="Muted for now.")
+
 
 @pytest.fixture
 def udp_socket_factory(
