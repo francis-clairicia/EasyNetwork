@@ -70,6 +70,9 @@ class BaseFakeBackend(AbstractAsyncBackend):
     def create_threads_portal(self) -> AbstractThreadsPortal:
         raise NotImplementedError
 
+    async def wait_future(self, *args: Any, **kwargs: Any) -> Any:
+        raise NotImplementedError
+
 
 @final
 class FakeAsyncioBackend(BaseFakeBackend):
