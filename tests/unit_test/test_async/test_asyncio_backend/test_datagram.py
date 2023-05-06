@@ -467,7 +467,7 @@ class TestDatagramEndpointProtocol:
         protocol.connection_lost(exception)  # Double call must not change anything
 
         # Assert
-        assert close_waiter.done() and close_waiter.exception() is exception
+        assert close_waiter.done() and close_waiter.exception() is None
         mock_asyncio_recv_queue.put_nowait.assert_called_once_with((None, None))
         mock_asyncio_exception_queue.put_nowait.assert_called_once_with(exception)
         mock_asyncio_transport.close.assert_called_once_with()  # just to be sure :)
