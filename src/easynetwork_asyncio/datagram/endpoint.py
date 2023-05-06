@@ -14,6 +14,7 @@ __all__ = [
 ]
 
 import asyncio
+import asyncio.base_events
 import collections
 import contextlib
 import errno as _errno
@@ -173,6 +174,15 @@ class DatagramEndpointProtocol(asyncio.DatagramProtocol):
         assert self.__transport is None, "Transport already set"
         self.__transport = transport
         self.__connection_lost = False
+
+        if isinstance(self.__loop, asyncio.base_events.BaseEventLoop) and hasattr(transport, "_address"):
+            # There is an asyncio issue where the private address attribute is not updated with the actual remote address
+            # if the transport is instanciated with an external socket ( await loop.create_datagram_endpoint(sock=my_socket)  )
+            # This is a monkeypatch to force update the internal address attribute
+            try:
+                setattr(transport, "_address", transport.get_extra_info("peername", None))
+            except Exception:  # pragma: no cover
+                pass
 
     def connection_lost(self, exc: Exception | None) -> None:
         self.__connection_lost = True
