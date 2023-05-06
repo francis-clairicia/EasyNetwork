@@ -75,6 +75,8 @@ class TestAsyncTCPNetworkClient:
         with pytest.raises(ConnectionError):
             await client.send_packet("ABCDEF")
 
+    @pytest.mark.skipif_uvloop  # Error not triggered
+    @pytest.mark.platform_linux  # Windows and MacOS raise ConnectionResetError but in the 2nd send() call sometimes (it is random)
     async def test____send_packet____connection_error____partial_read_then_close(
         self,
         client: AsyncTCPNetworkClient[str, str],
