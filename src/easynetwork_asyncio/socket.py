@@ -148,7 +148,7 @@ class AsyncSocket:
             stack.callback(self.__tasks.discard, task)
 
             waiter: asyncio.Future[None] = self.__loop.create_future()
-            self.__waiters[task_id] = asyncio.shield(waiter)
+            self.__waiters[task_id] = waiter
             stack.callback(self.__waiters.pop, task_id)
             stack.callback(waiter.set_result, None)
 
