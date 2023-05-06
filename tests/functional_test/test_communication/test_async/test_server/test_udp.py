@@ -6,7 +6,6 @@ import asyncio
 import collections
 import contextlib
 import logging
-from socket import socket as Socket
 from typing import Any, AsyncIterator, Awaitable, Callable
 
 from easynetwork.api_async.backend.abc import AbstractAsyncBackend
@@ -155,16 +154,17 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
     @staticmethod
     async def client_factory(
         server_address: tuple[str, int],
-        udp_socket_factory: Callable[[], Socket],
-        event_loop: asyncio.AbstractEventLoop,
+        socket_family: int,
+        localhost_ip: str,
     ) -> AsyncIterator[Callable[[], Awaitable[DatagramEndpoint]]]:
         async with contextlib.AsyncExitStack() as stack:
 
             async def factory() -> DatagramEndpoint:
-                sock = udp_socket_factory()
-                sock.setblocking(False)
-                await event_loop.sock_connect(sock, server_address)
-                endpoint = await create_datagram_endpoint(socket=sock)
+                endpoint = await create_datagram_endpoint(
+                    family=socket_family,
+                    local_addr=(localhost_ip, 0),
+                    remote_addr=server_address,
+                )
                 stack.push_async_callback(endpoint.wait_closed)
                 stack.callback(endpoint.close)
                 return endpoint

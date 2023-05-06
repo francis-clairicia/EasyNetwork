@@ -6,7 +6,7 @@ import asyncio
 import collections
 import contextlib
 import logging
-from socket import IPPROTO_TCP, TCP_NODELAY, socket as Socket
+from socket import IPPROTO_TCP, TCP_NODELAY
 from typing import Any, AsyncIterator, Awaitable, Callable
 from weakref import WeakValueDictionary
 
@@ -16,6 +16,7 @@ from easynetwork.api_async.server.tcp import AsyncTCPNetworkServer
 from easynetwork.exceptions import BaseProtocolParseError, ClientClosedError, StreamProtocolParseError
 from easynetwork.protocol import StreamProtocol
 from easynetwork.tools.socket import SocketAddress
+from easynetwork_asyncio._utils import create_connection
 
 import pytest
 import pytest_asyncio
@@ -176,15 +177,14 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     @staticmethod
     async def client_factory(
         server_address: tuple[str, int],
-        tcp_socket_factory: Callable[[], Socket],
+        socket_family: int,
         event_loop: asyncio.AbstractEventLoop,
     ) -> AsyncIterator[Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]]]:
         async with contextlib.AsyncExitStack() as stack:
 
             async def factory() -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
-                sock = tcp_socket_factory()
+                sock = await create_connection(*server_address, event_loop, family=socket_family)
                 sock.setblocking(False)
-                await event_loop.sock_connect(sock, server_address)
                 reader, writer = await asyncio.open_connection(sock=sock)
                 stack.push_async_callback(writer.wait_closed)
                 stack.callback(writer.close)
@@ -412,8 +412,12 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
 
         assert not server.is_serving()
 
-        with pytest.raises(ConnectionError):
+        with pytest.raises(ExceptionGroup) as exc_info:
             await client_factory()
+
+        errors, exc = exc_info.value.split(ConnectionError)
+        assert exc is None
+        assert errors is not None
 
     async def test____serve_forever____close_client_on_connection_hook(
         self,
