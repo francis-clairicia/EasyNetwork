@@ -57,7 +57,7 @@ jobs:
         with:
           python-version: ${{ matrix.python_version }}
       - name: Launch tests
-        run: tox run -f py$(echo ${{ matrix.python_version }} | tr -d .)
+        run: tox run -f py$(echo ${{ matrix.python_version }} | tr -d .) -- -vv
       - name: Generate coverage report
         if: hashFiles('.coverage.*') != ''  # Rudimentary `file.exists()`
         run: |
