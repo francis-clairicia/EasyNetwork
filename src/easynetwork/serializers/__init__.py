@@ -18,6 +18,7 @@ __all__ = [
     "CBOREncoderConfig",
     "CBORSerializer",
     "EncryptorSerializer",
+    "FileBasedIncrementalPacketSerializer",
     "FileBasedPacketSerializer",
     "FixedSizePacketSerializer",
     "JSONDecoderConfig",
