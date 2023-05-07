@@ -132,9 +132,9 @@ class TestTCPNetworkClient(BaseTestClient):
     def max_recv_size(request: Any) -> int | None:
         return getattr(request, "param", None)
 
-    @pytest.fixture(params=["REMOTE_ADDRESS", "SOCKET_WITH_EXPLICIT_GIVE"])
+    @pytest.fixture(params=["REMOTE_ADDRESS", "EXTERNAL_SOCKET"])
     @staticmethod
-    def client_with_socket_ownership(
+    def client(
         request: Any,
         max_recv_size: int | None,
         remote_address: tuple[str, int],
@@ -144,24 +144,10 @@ class TestTCPNetworkClient(BaseTestClient):
         match request.param:
             case "REMOTE_ADDRESS":
                 return TCPNetworkClient(remote_address, mock_stream_protocol, max_recv_size=max_recv_size)
-            case "SOCKET_WITH_EXPLICIT_GIVE":
-                return TCPNetworkClient(mock_tcp_socket, mock_stream_protocol, give=True, max_recv_size=max_recv_size)
+            case "EXTERNAL_SOCKET":
+                return TCPNetworkClient(mock_tcp_socket, mock_stream_protocol, max_recv_size=max_recv_size)
             case invalid:
                 pytest.fail(f"Invalid fixture param: Got {invalid!r}")
-
-    @pytest.fixture
-    @staticmethod
-    def client_without_socket_ownership(
-        max_recv_size: int | None,
-        mock_tcp_socket: MagicMock,
-        mock_stream_protocol: MagicMock,
-    ) -> TCPNetworkClient[Any, Any]:
-        return TCPNetworkClient(mock_tcp_socket, mock_stream_protocol, give=False, max_recv_size=max_recv_size)
-
-    @pytest.fixture
-    @staticmethod
-    def client(client_without_socket_ownership: TCPNetworkClient[Any, Any]) -> TCPNetworkClient[Any, Any]:
-        return client_without_socket_ownership
 
     @pytest.fixture(
         params=[
@@ -209,10 +195,8 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_tcp_socket.setsockopt.assert_called_once_with(IPPROTO_TCP, TCP_NODELAY, True)
         assert client.socket is mocker.sentinel.proxy
 
-    @pytest.mark.parametrize("give_ownership", [False, True], ids=lambda p: f"give=={p}")
     def test____dunder_init____use_given_socket(
         self,
-        give_ownership: bool,
         mock_tcp_socket: MagicMock,
         mock_socket_create_connection: MagicMock,
         mock_socket_proxy_cls: MagicMock,
@@ -224,7 +208,7 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_socket_proxy_cls.return_value = mocker.sentinel.proxy
 
         # Act
-        client: TCPNetworkClient[Any, Any] = TCPNetworkClient(mock_tcp_socket, protocol=mock_stream_protocol, give=give_ownership)
+        client: TCPNetworkClient[Any, Any] = TCPNetworkClient(mock_tcp_socket, protocol=mock_stream_protocol)
 
         # Assert
         mock_stream_data_consumer_cls.assert_called_once_with(mock_stream_protocol)
@@ -248,13 +232,10 @@ class TestTCPNetworkClient(BaseTestClient):
             _ = TCPNetworkClient(
                 mock_tcp_socket,
                 protocol=mock_datagram_protocol,
-                give=False,
             )
 
-    @pytest.mark.parametrize("give_ownership", [False, True], ids=lambda p: f"give=={p}")
     def test____dunder_init____invalid_socket_type_error(
         self,
-        give_ownership: bool,
         mock_udp_socket: MagicMock,
         mock_socket_create_connection: MagicMock,
         mock_socket_proxy_cls: MagicMock,
@@ -265,7 +246,7 @@ class TestTCPNetworkClient(BaseTestClient):
 
         # Act
         with pytest.raises(ValueError, match=r"^Invalid socket type$"):
-            _ = TCPNetworkClient(mock_udp_socket, protocol=mock_stream_protocol, give=give_ownership)
+            _ = TCPNetworkClient(mock_udp_socket, protocol=mock_stream_protocol)
 
         # Assert
         mock_stream_data_consumer_cls.assert_not_called()
@@ -273,16 +254,10 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_socket_proxy_cls.assert_not_called()
         mock_udp_socket.getsockname.assert_not_called()
         mock_udp_socket.getpeername.assert_not_called()
-        ## If ownership was given, the socket must be closed
-        if give_ownership:
-            mock_udp_socket.close.assert_called_once_with()
-        else:
-            mock_udp_socket.close.assert_not_called()
+        mock_udp_socket.close.assert_called_once_with()
 
-    @pytest.mark.parametrize("give_ownership", [False, True], ids=lambda p: f"give=={p}")
     def test____dunder_init____socket_given_is_not_connected_error(
         self,
-        give_ownership: bool,
         mock_tcp_socket: MagicMock,
         mock_socket_create_connection: MagicMock,
         mock_socket_proxy_cls: MagicMock,
@@ -294,7 +269,7 @@ class TestTCPNetworkClient(BaseTestClient):
 
         # Act
         with pytest.raises(OSError) as exc_info:
-            _ = TCPNetworkClient(mock_tcp_socket, protocol=mock_stream_protocol, give=give_ownership)
+            _ = TCPNetworkClient(mock_tcp_socket, protocol=mock_stream_protocol)
 
         # Assert
         assert exc_info.value is enotconn_exception
@@ -303,35 +278,11 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_socket_proxy_cls.assert_not_called()
         mock_tcp_socket.getsockname.assert_called_once_with()
         mock_tcp_socket.getpeername.assert_called_once_with()
-        ## If ownership was given, the socket must be closed
-        if give_ownership:
-            mock_tcp_socket.close.assert_called_once_with()
-        else:
-            mock_tcp_socket.close.assert_not_called()
-
-    def test____dunder_init____ownership_parameter_missing(
-        self,
-        mock_tcp_socket: MagicMock,
-        mock_socket_create_connection: MagicMock,
-        mock_socket_proxy_cls: MagicMock,
-        mock_stream_data_consumer_cls: MagicMock,
-        mock_stream_protocol: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act
-        with pytest.raises(TypeError, match=r"^Missing keyword argument 'give'$"):
-            _ = TCPNetworkClient(mock_tcp_socket, protocol=mock_stream_protocol)
-
-        # Assert
-        mock_stream_data_consumer_cls.assert_not_called()
-        mock_socket_create_connection.assert_not_called()
-        mock_socket_proxy_cls.assert_not_called()
-        mock_tcp_socket.close.assert_not_called()
+        mock_tcp_socket.close.assert_called_once_with()
 
     @pytest.mark.parametrize("max_recv_size", [None, 1, 2**64], ids=lambda p: f"max_recv_size=={p}")
     @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
-    def test____dunder_init____with_ownership____max_size____valid_value(
+    def test____dunder_init____max_size____valid_value(
         self,
         max_recv_size: int | None,
         use_socket: bool,
@@ -348,7 +299,6 @@ class TestTCPNetworkClient(BaseTestClient):
             client = TCPNetworkClient(
                 mock_tcp_socket,
                 protocol=mock_stream_protocol,
-                give=True,
                 max_recv_size=max_recv_size,
             )
         else:
@@ -363,7 +313,7 @@ class TestTCPNetworkClient(BaseTestClient):
 
     @pytest.mark.parametrize("max_recv_size", [0, -1, 10.4], ids=lambda p: f"max_recv_size=={p}")
     @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
-    def test____dunder_init____with_ownership____max_size____invalid_value(
+    def test____dunder_init____max_size____invalid_value(
         self,
         max_recv_size: Any,
         use_socket: bool,
@@ -381,7 +331,6 @@ class TestTCPNetworkClient(BaseTestClient):
                 _ = TCPNetworkClient(
                     mock_tcp_socket,
                     protocol=mock_stream_protocol,
-                    give=True,
                     max_recv_size=max_recv_size,
                 )
             else:
@@ -398,85 +347,21 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_tcp_socket.getpeername.assert_not_called()
         mock_tcp_socket.close.assert_called_once_with()
 
-    @pytest.mark.parametrize("max_recv_size", [None, 1, 2**64], ids=lambda p: f"max_recv_size=={p}")
-    def test____dunder_init____without_ownership____max_size____valid_value(
-        self,
-        max_recv_size: int | None,
-        mock_tcp_socket: MagicMock,
-        mock_stream_protocol: MagicMock,
-    ) -> None:
-        # Arrange
-        expected_size: int = max_recv_size if max_recv_size is not None else MAX_STREAM_BUFSIZE
-
-        # Act
-        client: TCPNetworkClient[Any, Any] = TCPNetworkClient(
-            mock_tcp_socket,
-            protocol=mock_stream_protocol,
-            give=False,
-            max_recv_size=max_recv_size,
-        )
-
-        # Assert
-        assert client.max_recv_size == expected_size
-
-    @pytest.mark.parametrize("max_recv_size", [0, -1, 10.4], ids=lambda p: f"max_recv_size=={p}")
-    def test____dunder_init____without_ownership____max_size____invalid_value(
-        self,
-        max_recv_size: Any,
-        mock_tcp_socket: MagicMock,
-        mock_stream_protocol: MagicMock,
-        mock_stream_data_consumer_cls: MagicMock,
-        mock_socket_proxy_cls: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act
-        with pytest.raises(ValueError, match=r"^'max_recv_size' must be a strictly positive integer$"):
-            _ = TCPNetworkClient(
-                mock_tcp_socket,
-                protocol=mock_stream_protocol,
-                give=False,
-                max_recv_size=max_recv_size,
-            )
-
-        # Assert
-        mock_stream_data_consumer_cls.assert_not_called()
-        mock_socket_proxy_cls.assert_not_called()
-        mock_tcp_socket.getsockname.assert_not_called()
-        mock_tcp_socket.getpeername.assert_not_called()
-        mock_tcp_socket.close.assert_not_called()
-
     def test____close____with_ownership(
         self,
-        client_with_socket_ownership: TCPNetworkClient[Any, Any],
+        client: TCPNetworkClient[Any, Any],
         mock_tcp_socket: MagicMock,
     ) -> None:
         # Arrange
-        assert not client_with_socket_ownership.is_closed()
+        assert not client.is_closed()
 
         # Act
-        client_with_socket_ownership.close()
+        client.close()
 
         # Assert
-        assert client_with_socket_ownership.is_closed()
+        assert client.is_closed()
         mock_tcp_socket.shutdown.assert_not_called()
         mock_tcp_socket.close.assert_called_once_with()
-
-    def test____close____without_ownership(
-        self,
-        client_without_socket_ownership: TCPNetworkClient[Any, Any],
-        mock_tcp_socket: MagicMock,
-    ) -> None:
-        # Arrange
-        assert not client_without_socket_ownership.is_closed()
-
-        # Act
-        client_without_socket_ownership.close()
-
-        # Assert
-        assert client_without_socket_ownership.is_closed()
-        mock_tcp_socket.shutdown.assert_not_called()
-        mock_tcp_socket.close.assert_not_called()
 
     @pytest.mark.parametrize("client_closed", [False, True], ids=lambda p: f"client_closed=={p}")
     def test____get_local_address____return_saved_address(

@@ -36,7 +36,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
     __slots__ = (
         "__socket",
         "__socket_proxy",
-        "__owner",
         "__lock",
         "__producer",
         "__consumer",
@@ -66,7 +65,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         /,
         protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
         *,
-        give: bool,
         max_recv_size: int | None = ...,
     ) -> None:
         ...
@@ -85,26 +83,17 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         self.__lock = _Lock()
 
         socket: _socket.socket
-        self.__owner: bool
-        if isinstance(__arg, _socket.socket):
-            try:
-                give: bool = kwargs.pop("give")
-            except KeyError:
-                raise TypeError("Missing keyword argument 'give'") from None
-            if kwargs:  # pragma: no cover
-                raise TypeError("Invalid arguments")
-            socket = __arg
-            self.__owner = bool(give)
-        elif isinstance(__arg, tuple):
-            address: tuple[str, int] = __arg
-            try:
-                kwargs["source_address"] = kwargs.pop("local_address")
-            except KeyError:
+        match __arg:
+            case _socket.socket() as socket if not kwargs:
                 pass
-            socket = _socket.create_connection(address, **kwargs, all_errors=True)
-            self.__owner = True
-        else:  # pragma: no cover
-            raise TypeError("Invalid arguments")
+            case (str(host), int(port)):
+                try:
+                    kwargs["source_address"] = kwargs.pop("local_address")
+                except KeyError:
+                    pass
+                socket = _socket.create_connection((host, port), **kwargs, all_errors=True)
+            case _:  # pragma: no cover
+                raise TypeError("Invalid arguments")
 
         try:
             if socket.type != _socket.SOCK_STREAM:
@@ -127,8 +116,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             self.__eof_reached: bool = False
             self.__max_recv_size: int = max_recv_size
         except BaseException:
-            if self.__owner:
-                socket.close()
+            socket.close()
             raise
 
         self.__socket = socket  # There was no errors
@@ -136,10 +124,9 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
     def __del__(self) -> None:  # pragma: no cover
         try:
             socket: _socket.socket | None = self.__socket
-            owner: bool = self.__owner
         except AttributeError:
             return
-        if owner and socket is not None:
+        if socket is not None:
             socket.close()
 
     def __repr__(self) -> str:
@@ -158,8 +145,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             if (socket := self.__socket) is None:
                 return
             self.__socket = None
-            if not self.__owner:
-                return
             socket.close()
 
     def shutdown(self, how: int) -> None:

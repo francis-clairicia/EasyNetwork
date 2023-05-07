@@ -45,19 +45,6 @@ class TestUDPNetworkEndpoint(BaseTestClient):
 
     @pytest.fixture(autouse=True)
     @staticmethod
-    def mock_socket_cls(mocker: MockerFixture, mock_udp_socket: MagicMock, original_socket_cls: type[Any]) -> MagicMock:
-        mock_socket_cls = mocker.patch("socket.socket", return_value=mock_udp_socket, autospec=True)
-
-        def patch_isinstance(obj: Any, type: Any) -> bool:
-            if type is mock_socket_cls:
-                type = original_socket_cls
-            return isinstance(obj, type)
-
-        mocker.patch(f"{UDPNetworkEndpoint.__module__}.isinstance", patch_isinstance)
-        return mock_socket_cls
-
-    @pytest.fixture(autouse=True)
-    @staticmethod
     def mock_socket_proxy_cls(mocker: MockerFixture, mock_udp_socket: MagicMock) -> MagicMock:
         return mocker.patch(f"{UDPNetworkClient.__module__}.SocketProxy", return_value=mock_udp_socket)
 
@@ -118,34 +105,28 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         mock_datagram_protocol.make_datagram.side_effect = make_datagram_side_effect
         mock_datagram_protocol.build_packet_from_datagram.side_effect = build_packet_from_datagram_side_effect
 
-    @pytest.fixture(params=["REMOTE_ADDRESS", "SOCKET_WITH_EXPLICIT_GIVE"])
+    @pytest.fixture(params=["REMOTE_ADDRESS", "EXTERNAL_SOCKET"])
     @staticmethod
-    def client_with_socket_ownership(
-        request: Any,
+    def use_external_socket(request: Any) -> str:
+        return request.param
+
+    @pytest.fixture()
+    @staticmethod
+    def client(
+        use_external_socket: str,
         remote_address: tuple[str, int] | None,
         mock_udp_socket: MagicMock,
         mock_datagram_protocol: MagicMock,
+        mocker: MockerFixture,
     ) -> UDPNetworkEndpoint[Any, Any]:
-        match request.param:
+        match use_external_socket:
             case "REMOTE_ADDRESS":
+                mocker.patch("socket.socket", return_value=mock_udp_socket)
                 return UDPNetworkEndpoint(protocol=mock_datagram_protocol, remote_address=remote_address)
-            case "SOCKET_WITH_EXPLICIT_GIVE":
-                return UDPNetworkEndpoint(socket=mock_udp_socket, protocol=mock_datagram_protocol, give=True)
+            case "EXTERNAL_SOCKET":
+                return UDPNetworkEndpoint(socket=mock_udp_socket, protocol=mock_datagram_protocol)
             case invalid:
                 pytest.fail(f"Invalid fixture param: Got {invalid!r}")
-
-    @pytest.fixture
-    @staticmethod
-    def client_without_socket_ownership(
-        mock_udp_socket: MagicMock,
-        mock_datagram_protocol: MagicMock,
-    ) -> UDPNetworkEndpoint[Any, Any]:
-        return UDPNetworkEndpoint(mock_datagram_protocol, socket=mock_udp_socket, give=False)
-
-    @pytest.fixture
-    @staticmethod
-    def client(client_without_socket_ownership: UDPNetworkEndpoint[Any, Any]) -> UDPNetworkEndpoint[Any, Any]:
-        return client_without_socket_ownership
 
     @pytest.fixture
     @staticmethod
@@ -175,11 +156,11 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         socket_family: int,
         mock_udp_socket: MagicMock,
         mock_datagram_protocol: MagicMock,
-        mock_socket_cls: MagicMock,
         mock_socket_proxy_cls: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
+        mock_socket_cls = mocker.patch("socket.socket", return_value=mock_udp_socket)
         mock_socket_proxy_cls.return_value = mocker.sentinel.proxy
 
         # Act
@@ -204,11 +185,11 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         remote_address: tuple[str, int] | None,
         mock_udp_socket: MagicMock,
         mock_datagram_protocol: MagicMock,
-        mock_socket_cls: MagicMock,
         mock_socket_proxy_cls: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
+        mock_socket_cls = mocker.patch("socket.socket", return_value=mock_udp_socket)
 
         # Act
         _ = UDPNetworkEndpoint(
@@ -255,8 +236,10 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         socket_family: int,
         mock_udp_socket: MagicMock,
         mock_datagram_protocol: MagicMock,
+        mocker: MockerFixture,
     ) -> None:
         # Arrange
+        mocker.patch("socket.socket", return_value=mock_udp_socket)
         mock_method: MagicMock = getattr(mock_udp_socket, error_on)
         mock_method.side_effect = OSError()
 
@@ -271,15 +254,12 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         assert exc_info.value is mock_method.side_effect
         mock_udp_socket.close.assert_called_once_with()
 
-    @pytest.mark.parametrize("give_ownership", [False, True], ids=lambda p: f"give=={p}")
     @pytest.mark.parametrize("bound", [False, True], ids=lambda p: f"bound=={p}")
     def test____dunder_init____use_given_socket____default(
         self,
-        give_ownership: bool,
         bound: bool,
         mock_udp_socket: MagicMock,
         mock_datagram_protocol: MagicMock,
-        mock_socket_cls: MagicMock,
         mock_socket_proxy_cls: MagicMock,
         mocker: MockerFixture,
     ) -> None:
@@ -292,11 +272,9 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         endpoint: UDPNetworkEndpoint[Any, Any] = UDPNetworkEndpoint(
             protocol=mock_datagram_protocol,
             socket=mock_udp_socket,
-            give=give_ownership,
         )
 
         # Assert
-        mock_socket_cls.assert_not_called()
         if bound:
             mock_udp_socket.bind.assert_not_called()
         else:
@@ -320,13 +298,10 @@ class TestUDPNetworkEndpoint(BaseTestClient):
             _ = UDPNetworkEndpoint(
                 protocol=mock_datagram_protocol,
                 socket=mock_udp_socket,
-                give=False,
             )
 
-    @pytest.mark.parametrize("give_ownership", [False, True], ids=lambda p: f"give=={p}")
     def test____dunder_init____use_given_socket____invalid_socket_type_error(
         self,
-        give_ownership: bool,
         mock_tcp_socket: MagicMock,
         mock_socket_proxy_cls: MagicMock,
         mock_datagram_protocol: MagicMock,
@@ -338,38 +313,13 @@ class TestUDPNetworkEndpoint(BaseTestClient):
             _ = UDPNetworkEndpoint(
                 protocol=mock_datagram_protocol,
                 socket=mock_tcp_socket,
-                give=give_ownership,
             )
 
         # Assert
         mock_socket_proxy_cls.assert_not_called()
         mock_tcp_socket.getsockname.assert_not_called()
         mock_tcp_socket.getpeername.assert_not_called()
-        ## If ownership was given, the socket must be closed
-        if give_ownership:
-            mock_tcp_socket.close.assert_called_once_with()
-        else:
-            mock_tcp_socket.close.assert_not_called()
-
-    def test____dunder_init____use_given_socket____ownership_parameter_missing(
-        self,
-        mock_udp_socket: MagicMock,
-        mock_socket_proxy_cls: MagicMock,
-        mock_datagram_protocol: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-
-        # Act
-        with pytest.raises(TypeError, match=r"^Missing keyword argument 'give'$"):
-            _ = UDPNetworkEndpoint(  # type: ignore[call-overload]
-                protocol=mock_datagram_protocol,
-                socket=mock_udp_socket,
-            )
-
-        # Assert
-        mock_socket_proxy_cls.assert_not_called()
-        mock_udp_socket.close.assert_not_called()
+        mock_tcp_socket.close.assert_called_once_with()
 
     def test____context____close_endpoint_at_end(
         self,
@@ -388,33 +338,18 @@ class TestUDPNetworkEndpoint(BaseTestClient):
 
     def test____close____with_ownership(
         self,
-        client_with_socket_ownership: UDPNetworkEndpoint[Any, Any],
+        client: UDPNetworkEndpoint[Any, Any],
         mock_udp_socket: MagicMock,
     ) -> None:
         # Arrange
-        assert not client_with_socket_ownership.is_closed()
+        assert not client.is_closed()
 
         # Act
-        client_with_socket_ownership.close()
+        client.close()
 
         # Assert
-        assert client_with_socket_ownership.is_closed()
+        assert client.is_closed()
         mock_udp_socket.close.assert_called_once_with()
-
-    def test____close____without_ownership(
-        self,
-        client_without_socket_ownership: UDPNetworkEndpoint[Any, Any],
-        mock_udp_socket: MagicMock,
-    ) -> None:
-        # Arrange
-        assert not client_without_socket_ownership.is_closed()
-
-        # Act
-        client_without_socket_ownership.close()
-
-        # Assert
-        assert client_without_socket_ownership.is_closed()
-        mock_udp_socket.close.assert_not_called()
 
     @pytest.mark.parametrize("client_closed", [False, True], ids=lambda p: f"client_closed=={p}")
     def test____get_local_address____return_saved_address(
@@ -446,6 +381,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
     @pytest.mark.parametrize("client_closed", [False, True], ids=lambda p: f"client_closed=={p}")
     def test____get_remote_address____return_saved_address(
         self,
+        use_external_socket: str,
         client: UDPNetworkEndpoint[Any, Any],
         client_closed: bool,
         remote_address: tuple[str, int] | None,
@@ -454,7 +390,11 @@ class TestUDPNetworkEndpoint(BaseTestClient):
     ) -> None:
         # Arrange
         ## NOTE: The client should have the remote address saved. Therefore this test check if there is no new call.
-        mock_udp_socket.getpeername.assert_called_once()
+        if use_external_socket == "REMOTE_ADDRESS" and remote_address is None:
+            mock_udp_socket.getpeername.assert_not_called()
+        else:
+            mock_udp_socket.getpeername.assert_called_once()
+        mock_udp_socket.getpeername.reset_mock()
         if client_closed:
             client.close()
             assert client.is_closed()
@@ -470,9 +410,9 @@ class TestUDPNetworkEndpoint(BaseTestClient):
                 assert isinstance(address, IPv6SocketAddress)
             else:
                 assert isinstance(address, IPv4SocketAddress)
-            mock_udp_socket.getpeername.assert_called_once()
             assert address.host == remote_address[0]
             assert address.port == remote_address[1]
+        mock_udp_socket.getpeername.assert_not_called()
 
     def test____fileno____default(
         self,
@@ -920,7 +860,6 @@ class TestUDPNetworkClient:
         return UDPNetworkClient(
             mock_udp_socket,
             mock_datagram_protocol,
-            give=False,
         )
 
     def test____dunder_init____with_remote_address(
@@ -966,14 +905,12 @@ class TestUDPNetworkClient:
         client: UDPNetworkClient[Any, Any] = UDPNetworkClient(
             mock_udp_socket,
             mock_datagram_protocol,
-            give=mocker.sentinel.give_ownership,
         )
 
         # Assert
         mock_udp_endpoint_cls.assert_called_once_with(
             protocol=mock_datagram_protocol,
             socket=mock_udp_socket,
-            give=mocker.sentinel.give_ownership,
         )
         mock_udp_endpoint.get_remote_address.assert_called_once_with()
         assert client.socket is mock_udp_socket
@@ -993,7 +930,6 @@ class TestUDPNetworkClient:
             _ = UDPNetworkClient(
                 mock_udp_socket,
                 mock_datagram_protocol,
-                give=mocker.sentinel.give_ownership,
             )
         mock_udp_endpoint.close.assert_called_once_with()
 
