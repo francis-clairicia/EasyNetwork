@@ -336,6 +336,11 @@ dependencies = [
 ]
 
 [[package]]
+name = "trove-classifiers"
+version = "2023.5.2"
+summary = "Canonical source for classifiers on PyPI (pypi.org)."
+
+[[package]]
 name = "types-cryptography"
 version = "3.3.23.2"
 summary = "Typing stubs for cryptography"
@@ -366,7 +371,7 @@ dependencies = [
 [metadata]
 lock_version = "4.2"
 groups = ["default", "cbor", "dev", "encryption", "flake8", "format", "msgpack", "mypy", "sniffio", "test", "tox", "uvloop"]
-content_hash = "sha256:45b5dbcd9d2dce507ae7d726336afb067e9cd8e9c1ddc82269495b6579f1c28c"
+content_hash = "sha256:cc894d1f9bc2846522d3c111ae35af4a5f3e714f71c2487edc2894d705cd58d8"
 
 [metadata.files]
 "black 23.3.0" = [
@@ -840,6 +845,10 @@ content_hash = "sha256:45b5dbcd9d2dce507ae7d726336afb067e9cd8e9c1ddc82269495b657
 "tox 4.4.12" = [
     {url = "https://files.pythonhosted.org/packages/1c/c8/2be49b376d18b1e32c591d88b1fee3a659d4691fa274705446e715ca4e21/tox-4.4.12-py3-none-any.whl", hash = "sha256:d4be558809d86fad13f4553976b0500352630a8fbfa39ea4b1ce3bd945ba680b"},
     {url = "https://files.pythonhosted.org/packages/47/0c/c99dcd47a06cc29c95315a6857de932dfc42edd8bcb53825545279eb4130/tox-4.4.12.tar.gz", hash = "sha256:740f5209d0dec19451b951ee5b1cce4a207acdc7357af84dbc8ec35bcf2c454e"},
+]
+"trove-classifiers 2023.5.2" = [
+    {url = "https://files.pythonhosted.org/packages/33/75/4e87c5021949ece4171eddebb11ef30d7e787a99c4d24c7dc383dd306a6c/trove-classifiers-2023.5.2.tar.gz", hash = "sha256:c46d6e40a9581599b16c712e0164fec3764872a4085c673c07559787caedb867"},
+    {url = "https://files.pythonhosted.org/packages/75/1b/5dc22279eee99da8c685606a699868853e11b6736b23e83d443636c67eda/trove_classifiers-2023.5.2-py3-none-any.whl", hash = "sha256:0f3eceb7d16186211bcd7edafc7b7934399f738ed985998e4e557e52fe136a71"},
 ]
 "types-cryptography 3.3.23.2" = [
     {url = "https://files.pythonhosted.org/packages/18/05/a57fe8bbed10fe4b739fac6e16c4e80c5199ce2f74ae67fa7d7f6e3750da/types-cryptography-3.3.23.2.tar.gz", hash = "sha256:09cc53f273dd4d8c29fa7ad11fefd9b734126d467960162397bc5e3e604dea75"},
