@@ -36,8 +36,9 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
     __slots__ = (
         "__socket",
         "__socket_proxy",
-        "__owner",
-        "__lock",
+        "__send_lock",
+        "__receive_lock",
+        "__socket_lock",
         "__producer",
         "__consumer",
         "__addr",
@@ -66,7 +67,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         /,
         protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
         *,
-        give: bool,
         max_recv_size: int | None = ...,
     ) -> None:
         ...
@@ -82,29 +82,22 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
     ) -> None:
         self.__socket: _socket.socket | None = None  # If any exception occurs, the client will already be in a closed state
         super().__init__()
-        self.__lock = _Lock()
+        self.__send_lock = _Lock()
+        self.__receive_lock = _Lock()
+        self.__socket_lock = _Lock()
 
         socket: _socket.socket
-        self.__owner: bool
-        if isinstance(__arg, _socket.socket):
-            try:
-                give: bool = kwargs.pop("give")
-            except KeyError:
-                raise TypeError("Missing keyword argument 'give'") from None
-            if kwargs:  # pragma: no cover
-                raise TypeError("Invalid arguments")
-            socket = __arg
-            self.__owner = bool(give)
-        elif isinstance(__arg, tuple):
-            address: tuple[str, int] = __arg
-            try:
-                kwargs["source_address"] = kwargs.pop("local_address")
-            except KeyError:
+        match __arg:
+            case _socket.socket() as socket if not kwargs:
                 pass
-            socket = _socket.create_connection(address, **kwargs, all_errors=True)
-            self.__owner = True
-        else:  # pragma: no cover
-            raise TypeError("Invalid arguments")
+            case (str(host), int(port)):
+                try:
+                    kwargs["source_address"] = kwargs.pop("local_address")
+                except KeyError:
+                    pass
+                socket = _socket.create_connection((host, port), **kwargs, all_errors=True)
+            case _:  # pragma: no cover
+                raise TypeError("Invalid arguments")
 
         try:
             if socket.type != _socket.SOCK_STREAM:
@@ -123,12 +116,11 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             self.__peer: SocketAddress = new_socket_address(socket.getpeername(), socket.family)
             self.__producer: Callable[[_SentPacketT], Iterator[bytes]] = protocol.generate_chunks
             self.__consumer: StreamDataConsumer[_ReceivedPacketT] = StreamDataConsumer(protocol)
-            self.__socket_proxy = SocketProxy(socket, lock=self.__lock)
+            self.__socket_proxy = SocketProxy(socket, lock=self.__socket_lock)
             self.__eof_reached: bool = False
             self.__max_recv_size: int = max_recv_size
         except BaseException:
-            if self.__owner:
-                socket.close()
+            socket.close()
             raise
 
         self.__socket = socket  # There was no errors
@@ -136,10 +128,9 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
     def __del__(self) -> None:  # pragma: no cover
         try:
             socket: _socket.socket | None = self.__socket
-            owner: bool = self.__owner
         except AttributeError:
             return
-        if owner and socket is not None:
+        if socket is not None:
             socket.close()
 
     def __repr__(self) -> str:
@@ -150,26 +141,18 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
 
     @final
     def is_closed(self) -> bool:
-        with self.__lock:
+        with self.__socket_lock:
             return self.__socket is None
 
     def close(self) -> None:
-        with self.__lock:
+        with self.__send_lock, self.__socket_lock:
             if (socket := self.__socket) is None:
                 return
             self.__socket = None
-            if not self.__owner:
-                return
             socket.close()
 
-    def shutdown(self, how: int) -> None:
-        with self.__lock:
-            if (socket := self.__socket) is None:
-                raise ClientClosedError("Closed client")
-            socket.shutdown(how)
-
     def send_packet(self, packet: _SentPacketT) -> None:
-        with self.__lock:
+        with self.__send_lock:
             socket = self.__ensure_connected()
 
             with _restore_timeout_at_end(socket):
@@ -178,7 +161,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 _check_real_socket_state(socket)
 
     def recv_packet(self, timeout: float | None = None) -> _ReceivedPacketT:
-        with self.__lock:
+        with self.__receive_lock:
             consumer = self.__consumer
             next_packet = self.__next_packet
             try:
@@ -244,7 +227,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         return self.__peer
 
     def fileno(self) -> int:
-        with self.__lock:
+        with self.__socket_lock:
             if (socket := self.__socket) is None:
                 return -1
             return socket.fileno()

@@ -37,9 +37,10 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         "__socket_proxy",
         "__addr",
         "__peer",
-        "__owner",
         "__protocol",
-        "__lock",
+        "__send_lock",
+        "__receive_lock",
+        "__socket_lock",
         "__weakref__",
     )
 
@@ -62,7 +63,6 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
         *,
         socket: _socket.socket,
-        give: bool,
     ) -> None:
         ...
 
@@ -74,7 +74,9 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
     ) -> None:
         self.__socket: _socket.socket | None = None  # If any exception occurs, the client will already be in a closed state
         super().__init__()
-        self.__lock = _Lock()
+        self.__send_lock = _Lock()
+        self.__receive_lock = _Lock()
+        self.__socket_lock = _Lock()
 
         assert isinstance(protocol, DatagramProtocol)
 
@@ -83,49 +85,21 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         socket: _socket.socket
         peername: SocketAddress | None = None
         external_socket: bool
-        if "socket" in kwargs:
-            external_socket = True
-            socket = kwargs.pop("socket")
-            if not isinstance(socket, _socket.socket):  # pragma: no cover
+        match kwargs:
+            case {"socket": _socket.socket() as socket, **remainder} if not remainder:
+                external_socket = True
+            case _ if "socket" not in kwargs:
+                external_socket = False
+                socket, peername = _create_udp_socket(**kwargs)
+            case _:  # pragma: no cover
                 raise TypeError("Invalid arguments")
-            try:
-                give: bool = kwargs.pop("give")
-            except KeyError:
-                raise TypeError("Missing keyword argument 'give'") from None
-            if kwargs:  # pragma: no cover
-                raise TypeError("Invalid arguments")
-            _check_socket_family(socket.family)
-            self.__owner = bool(give)
-        else:
-            external_socket = False
-            family = kwargs.pop("family", _socket.AF_INET)
-            remote_address: tuple[str, int] | None = kwargs.pop("remote_address", None)
-            local_address: tuple[str, int] | None = kwargs.pop("local_address", None)
-            if kwargs:  # pragma: no cover
-                raise TypeError("Invalid arguments")
-            _check_socket_family(family)
-            socket = _socket.socket(family, _socket.SOCK_DGRAM)
-            try:
-                if local_address is None:
-                    socket.bind(("", 0))
-                else:
-                    local_host, local_port = local_address
-                    socket.bind((local_host, local_port))
-                if remote_address is not None:
-                    remote_host, remote_port = remote_address
-                    socket.connect((remote_host, remote_port))
-                    peername = new_socket_address(socket.getpeername(), socket.family)
-            except BaseException:
-                socket.close()
-                raise
-
-            self.__owner = True
 
         try:
             if socket.type != _socket.SOCK_DGRAM:
                 raise ValueError("Invalid socket type")
 
             if external_socket:
+                _check_socket_family(socket.family)
                 _ensure_datagram_socket_bound(socket)
                 try:
                     peername = new_socket_address(socket.getpeername(), socket.family)
@@ -134,20 +108,18 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
 
             self.__addr: SocketAddress = new_socket_address(socket.getsockname(), socket.family)
             self.__peer: SocketAddress | None = peername
-            self.__socket_proxy = SocketProxy(socket, lock=self.__lock)
+            self.__socket_proxy = SocketProxy(socket, lock=self.__socket_lock)
         except BaseException:
-            if self.__owner:
-                socket.close()
+            socket.close()
             raise
         self.__socket = socket
 
     def __del__(self) -> None:  # pragma: no cover
         try:
             socket: _socket.socket | None = self.__socket
-            owner: bool = self.__owner
         except AttributeError:
             return
-        if owner and socket is not None:
+        if socket is not None:
             socket.close()
 
     def __repr__(self) -> str:
@@ -168,16 +140,14 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
 
     @final
     def is_closed(self) -> bool:
-        with self.__lock:
+        with self.__socket_lock:
             return self.__socket is None
 
     def close(self) -> None:
-        with self.__lock:
+        with self.__send_lock, self.__socket_lock:
             if (socket := self.__socket) is None:
                 return
             self.__socket = None
-            if not self.__owner:
-                return
             socket.close()
 
     def send_packet_to(
@@ -185,7 +155,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         packet: _SentPacketT,
         address: tuple[str, int] | tuple[str, int, int, int] | None,
     ) -> None:
-        with self.__lock:
+        with self.__send_lock:
             if (socket := self.__socket) is None:
                 raise ClientClosedError("Closed client")
             if (remote_addr := self.__peer) is not None:
@@ -205,7 +175,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
                 _check_real_socket_state(socket)
 
     def recv_packet_from(self, timeout: float | None = None) -> tuple[_ReceivedPacketT, SocketAddress]:
-        with self.__lock:
+        with self.__receive_lock:
             if (socket := self.__socket) is None:
                 raise ClientClosedError("Closed client")
             with _restore_timeout_at_end(socket):
@@ -242,7 +212,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         return self.__peer
 
     def fileno(self) -> int:
-        with self.__lock:
+        with self.__socket_lock:
             if (socket := self.__socket) is None:
                 return -1
             return socket.fileno()
@@ -274,8 +244,6 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         socket: _socket.socket,
         /,
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
-        *,
-        give: bool = ...,
     ) -> None:
         ...
 
@@ -289,14 +257,13 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         super().__init__()
 
         endpoint: UDPNetworkEndpoint[_SentPacketT, _ReceivedPacketT]
-        if isinstance(__arg, _socket.socket):
-            socket = __arg
-            endpoint = UDPNetworkEndpoint(protocol=protocol, socket=socket, **kwargs)
-        elif isinstance(__arg, tuple):
-            address = __arg
-            endpoint = UDPNetworkEndpoint(protocol=protocol, remote_address=address, **kwargs)
-        else:
-            raise TypeError("Invalid arguments")  # pragma: no cover
+        match __arg:
+            case _socket.socket() as socket:
+                endpoint = UDPNetworkEndpoint(protocol=protocol, socket=socket, **kwargs)
+            case tuple() as address:
+                endpoint = UDPNetworkEndpoint(protocol=protocol, remote_address=address, **kwargs)
+            case _:  # pragma: no cover
+                raise TypeError("Invalid arguments")
 
         try:
             self.__endpoint: UDPNetworkEndpoint[_SentPacketT, _ReceivedPacketT] = endpoint
@@ -352,3 +319,28 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
     @final
     def socket(self) -> SocketProxy:
         return self.__endpoint.socket
+
+
+def _create_udp_socket(
+    *,
+    family: int = _socket.AF_INET,
+    remote_address: tuple[str, int] | None = None,
+    local_address: tuple[str, int] | None = None,
+) -> tuple[_socket.socket, SocketAddress | None]:
+    _check_socket_family(family)
+    socket = _socket.socket(family, _socket.SOCK_DGRAM)
+    try:
+        peername: SocketAddress | None = None
+        if local_address is None:
+            socket.bind(("", 0))
+        else:
+            local_host, local_port = local_address
+            socket.bind((local_host, local_port))
+        if remote_address is not None:
+            remote_host, remote_port = remote_address
+            socket.connect((remote_host, remote_port))
+            peername = new_socket_address(socket.getpeername(), socket.family)
+    except BaseException:
+        socket.close()
+        raise
+    return socket, peername

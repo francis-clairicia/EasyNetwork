@@ -31,7 +31,7 @@ class TestTCPNetworkClient:
         socket_pair: tuple[Socket, Socket],
         stream_protocol: StreamProtocol[str, str],
     ) -> Iterator[TCPNetworkClient[str, str]]:
-        with TCPNetworkClient(socket_pair[1], stream_protocol, give=False) as client:
+        with TCPNetworkClient(socket_pair[1], stream_protocol) as client:
             client.socket.setsockopt(IPPROTO_TCP, TCP_NODELAY, 1)
             yield client
 
