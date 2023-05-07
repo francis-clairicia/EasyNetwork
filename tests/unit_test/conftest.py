@@ -6,7 +6,7 @@ import pathlib
 from socket import AF_INET, IPPROTO_TCP, IPPROTO_UDP, SOCK_DGRAM, SOCK_STREAM, socket as Socket
 from typing import TYPE_CHECKING, Any, Callable
 
-from easynetwork.converter import AbstractPacketConverter
+from easynetwork.converter import AbstractPacketConverterComposite
 from easynetwork.protocol import DatagramProtocol, StreamProtocol
 from easynetwork.serializers.abc import AbstractIncrementalPacketSerializer, AbstractPacketSerializer
 from easynetwork.tools.stream import StreamDataConsumer, StreamDataProducer
@@ -97,7 +97,7 @@ def mock_incremental_serializer(mock_incremental_serializer_factory: Callable[[]
 
 @pytest.fixture
 def mock_converter_factory(mocker: MockerFixture) -> Callable[[], Any]:
-    return lambda: mocker.NonCallableMagicMock(spec=AbstractPacketConverter)
+    return lambda: mocker.NonCallableMagicMock(spec=AbstractPacketConverterComposite)
 
 
 @pytest.fixture
