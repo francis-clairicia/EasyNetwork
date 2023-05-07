@@ -24,6 +24,9 @@ __all__ = [
     "JSONDecoderConfig",
     "JSONEncoderConfig",
     "JSONSerializer",
+    "MessagePackSerializer",
+    "MessagePackerConfig",
+    "MessageUnpackerConfig",
     "NamedTupleStructSerializer",
     "PickleSerializer",
     "PicklerConfig",
@@ -39,6 +42,7 @@ from .base_stream import *
 from .cbor import *
 from .json import *
 from .line import *
+from .msgpack import *
 from .pickle import *
 from .struct import *
 from .wrapper import *
