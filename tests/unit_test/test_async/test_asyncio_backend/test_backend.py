@@ -37,6 +37,13 @@ class TestAsyncIOBackend:
     def remote_address(request: Any) -> tuple[str, int] | None:
         return request.param
 
+    async def test____use_asyncio_transport____follows_option(
+        self,
+        backend: AsyncioBackend,
+        use_asyncio_transport: bool,
+    ) -> None:
+        assert backend.use_asyncio_transport() == use_asyncio_transport
+
     async def test____coro_yield____use_asyncio_sleep(
         self,
         backend: AsyncioBackend,
