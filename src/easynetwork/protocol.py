@@ -13,7 +13,7 @@ __all__ = [
 
 from typing import Any, Generator, Generic, TypeVar, overload
 
-from .converter import AbstractPacketConverter
+from .converter import AbstractPacketConverterComposite
 from .exceptions import (
     DatagramProtocolParseError,
     DeserializeError,
@@ -45,19 +45,19 @@ class DatagramProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
     def __init__(
         self,
         serializer: AbstractPacketSerializer[_SentDTOPacketT, _ReceivedDTOPacketT],
-        converter: AbstractPacketConverter[_SentPacketT, _SentDTOPacketT, _ReceivedPacketT, _ReceivedDTOPacketT],
+        converter: AbstractPacketConverterComposite[_SentPacketT, _SentDTOPacketT, _ReceivedPacketT, _ReceivedDTOPacketT],
     ) -> None:
         ...
 
     def __init__(
         self,
         serializer: AbstractPacketSerializer[Any, Any],
-        converter: AbstractPacketConverter[_SentPacketT, Any, _ReceivedPacketT, Any] | None = None,
+        converter: AbstractPacketConverterComposite[_SentPacketT, Any, _ReceivedPacketT, Any] | None = None,
     ) -> None:
         assert isinstance(serializer, AbstractPacketSerializer)
-        assert converter is None or isinstance(converter, AbstractPacketConverter)
+        assert converter is None or isinstance(converter, AbstractPacketConverterComposite)
         self.__serializer: AbstractPacketSerializer[Any, Any] = serializer
-        self.__converter: AbstractPacketConverter[_SentPacketT, Any, _ReceivedPacketT, Any] | None = converter
+        self.__converter: AbstractPacketConverterComposite[_SentPacketT, Any, _ReceivedPacketT, Any] | None = converter
 
     def make_datagram(self, packet: _SentPacketT) -> bytes:
         if (converter := self.__converter) is not None:
@@ -92,19 +92,19 @@ class StreamProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
     def __init__(
         self,
         serializer: AbstractIncrementalPacketSerializer[_SentDTOPacketT, _ReceivedDTOPacketT],
-        converter: AbstractPacketConverter[_SentPacketT, _SentDTOPacketT, _ReceivedPacketT, _ReceivedDTOPacketT],
+        converter: AbstractPacketConverterComposite[_SentPacketT, _SentDTOPacketT, _ReceivedPacketT, _ReceivedDTOPacketT],
     ) -> None:
         ...
 
     def __init__(
         self,
         serializer: AbstractIncrementalPacketSerializer[Any, Any],
-        converter: AbstractPacketConverter[_SentPacketT, Any, _ReceivedPacketT, Any] | None = None,
+        converter: AbstractPacketConverterComposite[_SentPacketT, Any, _ReceivedPacketT, Any] | None = None,
     ) -> None:
         assert isinstance(serializer, AbstractIncrementalPacketSerializer)
-        assert converter is None or isinstance(converter, AbstractPacketConverter)
+        assert converter is None or isinstance(converter, AbstractPacketConverterComposite)
         self.__serializer: AbstractIncrementalPacketSerializer[Any, Any] = serializer
-        self.__converter: AbstractPacketConverter[_SentPacketT, Any, _ReceivedPacketT, Any] | None = converter
+        self.__converter: AbstractPacketConverterComposite[_SentPacketT, Any, _ReceivedPacketT, Any] | None = converter
 
     def generate_chunks(self, packet: _SentPacketT) -> Generator[bytes, None, None]:
         if (converter := self.__converter) is not None:
