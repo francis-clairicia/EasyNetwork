@@ -21,9 +21,22 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.11",
+    "Topic :: Internet",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Networking",
     "Typing :: Typed"
 ]
 dynamic = ["version"]
+keywords = [
+    "networking",
+    "socket",
+    "server",
+    "client",
+    "communication",
+    "serialization",
+    "async",
+    "asynchronous",
+]
 
 [project.urls]
 Homepage = "https://github.com/francis-clairicia/EasyNetwork"
@@ -77,6 +90,7 @@ test = [
     "pytest-mock~=3.10.0",
     "pytest-cov<5,>=4.0",
     "pytest-asyncio>=0.21.0",
+    "trove-classifiers==2023.5.2",
 ]
 
 ############################ hatchling configuration ############################
