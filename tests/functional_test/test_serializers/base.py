@@ -231,8 +231,6 @@ class BaseTestIncrementalSerializer(BaseTestSerializer):
         invalid_partial_data_extra_data: bytes | None,
     ) -> None:
         # Arrange
-        if invalid_partial_data_extra_data is not None:
-            assert len(invalid_partial_data_extra_data) > 0
         consumer = serializer_for_deserialization.incremental_deserialize()
         next(consumer)
 

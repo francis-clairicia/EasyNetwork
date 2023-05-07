@@ -10,25 +10,9 @@ from easynetwork.api_async.server.handler import AsyncBaseRequestHandler, AsyncC
 from easynetwork.api_async.server.tcp import AsyncTCPNetworkServer
 from easynetwork.api_async.server.udp import AsyncUDPNetworkServer
 from easynetwork.protocol import DatagramProtocol, StreamProtocol
-from easynetwork.serializers.base_stream import AutoSeparatedPacketSerializer
+from easynetwork.serializers.line import StringLineSerializer
 
 PORT = 9000
-
-
-class MyServerSerializer(AutoSeparatedPacketSerializer[str, str]):
-    def __init__(self) -> None:
-        super().__init__(separator=b"\n", keepends=False)
-
-    def serialize(self, packet: str) -> bytes:
-        return packet.encode("utf-8")
-
-    def deserialize(self, data: bytes) -> str:
-        try:
-            return data.decode("utf-8")
-        except UnicodeError as exc:
-            from easynetwork.exceptions import DeserializeError
-
-            raise DeserializeError(str(exc)) from exc
 
 
 class MyAsyncRequestHandler(AsyncBaseRequestHandler[str, str]):
@@ -37,11 +21,11 @@ class MyAsyncRequestHandler(AsyncBaseRequestHandler[str, str]):
 
 
 def create_tcp_server() -> AsyncTCPNetworkServer[str, str]:
-    return AsyncTCPNetworkServer(None, PORT, StreamProtocol(MyServerSerializer()), MyAsyncRequestHandler())
+    return AsyncTCPNetworkServer(None, PORT, StreamProtocol(StringLineSerializer()), MyAsyncRequestHandler())
 
 
 def create_udp_server() -> AsyncUDPNetworkServer[str, str]:
-    return AsyncUDPNetworkServer(None, PORT, DatagramProtocol(MyServerSerializer()), MyAsyncRequestHandler())
+    return AsyncUDPNetworkServer(None, PORT, DatagramProtocol(StringLineSerializer()), MyAsyncRequestHandler())
 
 
 async def main() -> None:

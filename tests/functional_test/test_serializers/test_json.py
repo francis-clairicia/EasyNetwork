@@ -1,4 +1,5 @@
 # -*- coding: Utf-8 -*-
+# mypy: disable-error-code=override
 
 from __future__ import annotations
 
@@ -71,12 +72,19 @@ class TestJSONSerializer(BaseTestIncrementalSerializer):
 
     #### Invalid data
 
-    @pytest.fixture(scope="class")
+    @pytest.fixture(scope="class", params=[b"invalid", b"\0"])
     @staticmethod
-    def invalid_complete_data() -> bytes:
-        return b"invalid"
+    def invalid_complete_data(request: Any) -> bytes:
+        return getattr(request, "param")
 
-    @pytest.fixture(scope="class")
+    @pytest.fixture(scope="class", params=[b"[ invalid ]", b"\0"])
     @staticmethod
-    def invalid_partial_data() -> bytes:
-        return b"[ invalid ]"
+    def invalid_partial_data(request: Any) -> bytes:
+        return getattr(request, "param")
+
+    @pytest.fixture
+    @staticmethod
+    def invalid_partial_data_extra_data(invalid_partial_data: bytes) -> bytes:
+        if invalid_partial_data == b"\0":
+            return b""
+        return b"remaining_data"

@@ -18,6 +18,7 @@ __all__ = [
     "CBOREncoderConfig",
     "CBORSerializer",
     "EncryptorSerializer",
+    "FileBasedIncrementalPacketSerializer",
     "FileBasedPacketSerializer",
     "FixedSizePacketSerializer",
     "JSONDecoderConfig",
@@ -26,6 +27,7 @@ __all__ = [
     "NamedTupleStructSerializer",
     "PickleSerializer",
     "PicklerConfig",
+    "StringLineSerializer",
     "UnpicklerConfig",
     "ZlibCompressorSerializer",
 ]
@@ -36,6 +38,7 @@ from .abc import *
 from .base_stream import *
 from .cbor import *
 from .json import *
+from .line import *
 from .pickle import *
 from .struct import *
 from .wrapper import *
