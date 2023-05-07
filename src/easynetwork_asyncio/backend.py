@@ -38,7 +38,7 @@ _T_co = TypeVar("_T_co", covariant=True)
 class AsyncioBackend(AbstractAsyncBackend):
     __slots__ = ("__use_asyncio_transport",)
 
-    def __init__(self, *, transport: bool = False) -> None:
+    def __init__(self, *, transport: bool = True) -> None:
         self.__use_asyncio_transport: bool = bool(transport)
 
     @staticmethod
@@ -309,3 +309,6 @@ class AsyncioBackend(AbstractAsyncBackend):
                 self._really_uncancel_task(self._current_asyncio_task())
 
         return await self._cancel_shielded_wait_asyncio_future(asyncio.wrap_future(future))
+
+    def use_asyncio_transport(self) -> bool:
+        return self.__use_asyncio_transport

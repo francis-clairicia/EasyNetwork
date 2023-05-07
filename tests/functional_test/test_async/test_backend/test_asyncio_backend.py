@@ -20,6 +20,9 @@ class TestAsyncioBackend:
         assert isinstance(backend, AsyncioBackend)
         return backend
 
+    async def test____use_asyncio_transport____True_by_default(self, backend: AsyncioBackend) -> None:
+        assert backend.use_asyncio_transport()
+
     async def test____ignore_cancellation____always_continue_on_cancellation(
         self,
         event_loop: asyncio.AbstractEventLoop,
