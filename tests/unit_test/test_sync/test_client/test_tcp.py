@@ -450,44 +450,6 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_tcp_socket.fileno.assert_not_called()
         assert fd == -1
 
-    @pytest.mark.parametrize("shutdown_flag_name", ["SHUT_RD", "SHUT_WR", "SHUT_RDWR"])
-    def test____shutdown____default(
-        self,
-        client: TCPNetworkClient[Any, Any],
-        shutdown_flag_name: str,
-        mock_tcp_socket: MagicMock,
-    ) -> None:
-        # Arrange
-        import socket
-
-        shutdown_flag = int(getattr(socket, shutdown_flag_name))
-
-        # Act
-        client.shutdown(shutdown_flag)
-
-        # Assert
-        mock_tcp_socket.shutdown.assert_called_once_with(shutdown_flag)
-
-    @pytest.mark.parametrize("shutdown_flag_name", ["SHUT_RD", "SHUT_WR", "SHUT_RDWR"])
-    def test____shutdown____closed_client(
-        self,
-        client: TCPNetworkClient[Any, Any],
-        shutdown_flag_name: str,
-        mock_tcp_socket: MagicMock,
-    ) -> None:
-        # Arrange
-        import socket
-
-        shutdown_flag = int(getattr(socket, shutdown_flag_name))
-        client.close()
-
-        # Act
-        with pytest.raises(ClientClosedError):
-            client.shutdown(shutdown_flag)
-
-        # Assert
-        mock_tcp_socket.shutdown.assert_not_called()
-
     @pytest.mark.usefixtures("setup_producer_mock")
     def test____send_packet____send_bytes_to_socket(
         self,

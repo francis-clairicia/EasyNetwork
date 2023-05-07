@@ -36,7 +36,9 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
     __slots__ = (
         "__socket",
         "__socket_proxy",
-        "__lock",
+        "__send_lock",
+        "__receive_lock",
+        "__socket_lock",
         "__producer",
         "__consumer",
         "__addr",
@@ -80,7 +82,9 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
     ) -> None:
         self.__socket: _socket.socket | None = None  # If any exception occurs, the client will already be in a closed state
         super().__init__()
-        self.__lock = _Lock()
+        self.__send_lock = _Lock()
+        self.__receive_lock = _Lock()
+        self.__socket_lock = _Lock()
 
         socket: _socket.socket
         match __arg:
@@ -112,7 +116,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             self.__peer: SocketAddress = new_socket_address(socket.getpeername(), socket.family)
             self.__producer: Callable[[_SentPacketT], Iterator[bytes]] = protocol.generate_chunks
             self.__consumer: StreamDataConsumer[_ReceivedPacketT] = StreamDataConsumer(protocol)
-            self.__socket_proxy = SocketProxy(socket, lock=self.__lock)
+            self.__socket_proxy = SocketProxy(socket, lock=self.__socket_lock)
             self.__eof_reached: bool = False
             self.__max_recv_size: int = max_recv_size
         except BaseException:
@@ -137,24 +141,18 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
 
     @final
     def is_closed(self) -> bool:
-        with self.__lock:
+        with self.__socket_lock:
             return self.__socket is None
 
     def close(self) -> None:
-        with self.__lock:
+        with self.__send_lock, self.__socket_lock:
             if (socket := self.__socket) is None:
                 return
             self.__socket = None
             socket.close()
 
-    def shutdown(self, how: int) -> None:
-        with self.__lock:
-            if (socket := self.__socket) is None:
-                raise ClientClosedError("Closed client")
-            socket.shutdown(how)
-
     def send_packet(self, packet: _SentPacketT) -> None:
-        with self.__lock:
+        with self.__send_lock:
             socket = self.__ensure_connected()
 
             with _restore_timeout_at_end(socket):
@@ -163,7 +161,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 _check_real_socket_state(socket)
 
     def recv_packet(self, timeout: float | None = None) -> _ReceivedPacketT:
-        with self.__lock:
+        with self.__receive_lock:
             consumer = self.__consumer
             next_packet = self.__next_packet
             try:
@@ -229,7 +227,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         return self.__peer
 
     def fileno(self) -> int:
-        with self.__lock:
+        with self.__socket_lock:
             if (socket := self.__socket) is None:
                 return -1
             return socket.fileno()
