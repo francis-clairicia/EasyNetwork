@@ -21,8 +21,8 @@ from ...tools._utils import (
     check_socket_family as _check_socket_family,
     concatenate_chunks as _concatenate_chunks,
     error_from_errno as _error_from_errno,
-    restore_timeout_at_end as _restore_timeout_at_end,
     set_tcp_nodelay as _set_tcp_nodelay,
+    wait_socket_available_for_reading as _wait_socket_available_for_reading,
 )
 from ...tools.socket import MAX_STREAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
 from ...tools.stream import StreamDataConsumer
@@ -111,6 +111,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 raise ValueError("'max_recv_size' must be a strictly positive integer")
 
             _set_tcp_nodelay(socket)
+            socket.settimeout(None)  # Do not use global default timeout here
 
             self.__addr: SocketAddress = new_socket_address(socket.getsockname(), socket.family)
             self.__peer: SocketAddress = new_socket_address(socket.getpeername(), socket.family)
@@ -154,11 +155,8 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
     def send_packet(self, packet: _SentPacketT) -> None:
         with self.__send_lock:
             socket = self.__ensure_connected()
-
-            with _restore_timeout_at_end(socket):
-                socket.settimeout(None)
-                socket.sendall(_concatenate_chunks(self.__producer(packet)))
-                _check_real_socket_state(socket)
+            socket.sendall(_concatenate_chunks(self.__producer(packet)))
+            _check_real_socket_state(socket)
 
     def recv_packet(self, timeout: float | None = None) -> _ReceivedPacketT:
         with self.__receive_lock:
@@ -172,37 +170,36 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             bufsize: int = self.__max_recv_size
             monotonic = _time_monotonic  # pull function to local namespace
 
-            with _restore_timeout_at_end(socket):
-                socket.settimeout(timeout)
-                while True:
-                    try:
-                        _start = monotonic()
-                        chunk: bytes = socket.recv(bufsize)
-                        _end = monotonic()
-                    except (TimeoutError, BlockingIOError) as exc:
-                        if timeout is None:  # pragma: no cover
-                            raise RuntimeError("socket.recv() timed out with timeout=None ?") from exc
-                        break
-                    if not chunk:
-                        self.__eof_reached = True
-                        raise _error_from_errno(_errno.ECONNABORTED)
-                    consumer.feed(chunk)
-                    try:
-                        return next_packet(consumer)
-                    except StopIteration:
-                        if timeout is not None:
-                            if timeout > 0:
-                                timeout -= _end - _start
-                                if timeout < 0:  # pragma: no cover
-                                    timeout = 0
-                                socket.settimeout(timeout)
-                            elif len(chunk) < bufsize:
-                                break
-                        continue
-                    finally:
-                        del chunk
-                # Loop break
-                raise TimeoutError("recv_packet() timed out")
+            while True:
+                try:
+                    _start = monotonic()
+                    if timeout is not None and not _wait_socket_available_for_reading(socket, timeout):
+                        raise TimeoutError
+                    chunk: bytes = socket.recv(bufsize)
+                    _end = monotonic()
+                except (TimeoutError, BlockingIOError) as exc:
+                    if timeout is None:  # pragma: no cover
+                        raise RuntimeError("socket.recv() timed out with timeout=None ?") from exc
+                    break
+                if not chunk:
+                    self.__eof_reached = True
+                    raise _error_from_errno(_errno.ECONNABORTED)
+                consumer.feed(chunk)
+                try:
+                    return next_packet(consumer)
+                except StopIteration:
+                    if timeout is not None:
+                        if timeout > 0:
+                            timeout -= _end - _start
+                            if timeout < 0:  # pragma: no cover
+                                timeout = 0
+                        elif len(chunk) < bufsize:
+                            break
+                    continue
+                finally:
+                    del chunk
+            # Loop break
+            raise TimeoutError("recv_packet() timed out")
 
     @staticmethod
     def __next_packet(consumer: StreamDataConsumer[_ReceivedPacketT]) -> _ReceivedPacketT:

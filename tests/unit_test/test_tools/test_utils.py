@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from selectors import EVENT_READ, BaseSelector, SelectorKey
 from socket import (
     AF_INET,
     AF_INET6,
@@ -24,9 +25,9 @@ from easynetwork.tools._utils import (
     ensure_datagram_socket_bound,
     error_from_errno,
     open_listener_sockets_from_getaddrinfo_result,
-    restore_timeout_at_end,
     set_reuseport,
     set_tcp_nodelay,
+    wait_socket_available_for_reading,
 )
 
 import pytest
@@ -122,31 +123,41 @@ def test____check_socket_family____invalid_family(socket_family: int) -> None:
     with pytest.raises(ValueError, match=r"^Only these families are supported: .+$"):
         check_socket_family(socket_family)
 
-    # Assert
 
-
-def test____restore_timeout_at_end____settimeout_to_default_at_scope_end(
-    mock_tcp_socket: MagicMock,
+@pytest.mark.parametrize("timeout", [10.2, 0, None], ids=lambda value: f"timeout=={value}")
+@pytest.mark.parametrize("available", [True, False], ids=lambda value: f"available=={value}")
+@pytest.mark.parametrize("use_PollSelector", [True, False], ids=lambda value: f"use_PollSelector=={value}")
+def test____wait_socket_available_for_reading____returns_boolean_if_available_or_not(
+    mock_socket_factory: Callable[[], MagicMock],
+    timeout: float | None,
+    available: bool,
+    use_PollSelector: bool,
     mocker: MockerFixture,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Arrange
-    mock_tcp_socket.gettimeout.return_value = mocker.sentinel.default_timeout
-    exception = Exception()
+    mock_socket = mock_socket_factory()
+    mock_selector = mocker.NonCallableMagicMock(spec=BaseSelector)
+    mock_selector.__enter__.return_value = mock_selector
+    if use_PollSelector:
+        mock_selector_cls = mocker.patch("selectors.PollSelector", return_value=mock_selector, create=True)
+    else:
+        monkeypatch.delattr("selectors.PollSelector", raising=False)
+        mock_selector_cls = mocker.patch("selectors.SelectSelector", return_value=mock_selector)
+    mock_selector_select: MagicMock = mock_selector.select
+    if available:
+        mock_selector_select.return_value = [SelectorKey(mock_socket, 1, EVENT_READ, None)]
+    else:
+        mock_selector_select.return_value = []
 
     # Act
-    default_timeout: float | None = None
-    with pytest.raises(Exception) as exc_info:
-        with restore_timeout_at_end(mock_tcp_socket) as default_timeout:
-            raise exception
-
-    ## Ensure there is not a hidden exception
-    assert exc_info.value is exception
-    assert exception.__context__ is None and exception.__cause__ is None
+    status = wait_socket_available_for_reading(mock_socket, timeout)
 
     # Assert
-    assert default_timeout is mocker.sentinel.default_timeout
-    mock_tcp_socket.gettimeout.assert_called_once_with()
-    mock_tcp_socket.settimeout.assert_called_once_with(mocker.sentinel.default_timeout)
+    mock_selector_cls.assert_called_once_with()
+    mock_selector.register.assert_called_once_with(mock_socket, EVENT_READ)
+    mock_selector_select.assert_called_once_with(timeout)
+    assert status == available
 
 
 def test____concanetate_chunks____join_several_bytestrings() -> None:

@@ -6,15 +6,16 @@ __all__ = [
     "check_real_socket_state",
     "error_from_errno",
     "open_listener_sockets_from_getaddrinfo_result",
-    "restore_timeout_at_end",
     "set_reuseport",
+    "wait_socket_available_for_reading",
 ]
 
 import contextlib
 import errno as _errno
 import os
+import selectors as _selectors
 import socket as _socket
-from typing import TYPE_CHECKING, Any, Iterable, Iterator
+from typing import TYPE_CHECKING, Any, Iterable
 
 if TYPE_CHECKING:
     from .socket import SocketProxy as _SocketProxy
@@ -39,22 +40,22 @@ def check_real_socket_state(socket: _socket.socket | _SocketProxy) -> None:
     There is some functions such as socket.send() which do not immediately fail and save the errno
     in SO_ERROR socket option because the error spawn after the action was sent to the kernel (Something weird)
 
-    On Windows: (TODO) The returned value should be the error returned by WSAGetLastError(), but the socket methods always call
+    On Windows: The returned value should be the error returned by WSAGetLastError(), but the socket methods always call
     this function to raise an error, so getsockopt(SO_ERROR) will most likely always return zero :)
     """
     errno = socket.getsockopt(_socket.SOL_SOCKET, _socket.SO_ERROR)
-    if errno > 0:
+    if errno != 0:
         # The SO_ERROR is automatically reset to zero after getting the value
         raise error_from_errno(errno)
 
 
-@contextlib.contextmanager
-def restore_timeout_at_end(socket: _socket.socket) -> Iterator[float | None]:
-    old_timeout: float | None = socket.gettimeout()
-    try:
-        yield old_timeout
-    finally:
-        socket.settimeout(old_timeout)
+def wait_socket_available_for_reading(socket: _socket.socket, timeout: float | None) -> bool:
+    selector_cls: type[_selectors.BaseSelector] = getattr(_selectors, "PollSelector", _selectors.SelectSelector)
+
+    with selector_cls() as selector:
+        selector.register(socket, _selectors.EVENT_READ)
+        ready_list = selector.select(timeout)
+        return len(ready_list) > 0
 
 
 def concatenate_chunks(chunks_iterable: Iterable[bytes]) -> bytes:
