@@ -32,13 +32,13 @@ class TestStringLineSerializer:
 
     @pytest.fixture(params=["strict", "ignore", "replace"])
     @staticmethod
-    def on_string_error(request: pytest.FixtureRequest) -> str:
+    def unicode_errors(request: pytest.FixtureRequest) -> str:
         return getattr(request, "param")
 
     @pytest.fixture
     @staticmethod
-    def serializer(newline: Literal["LF", "CR", "CRLF"], encoding: str, on_string_error: str) -> StringLineSerializer:
-        return StringLineSerializer(newline, encoding=encoding, on_str_error=on_string_error)
+    def serializer(newline: Literal["LF", "CR", "CRLF"], encoding: str, unicode_errors: str) -> StringLineSerializer:
+        return StringLineSerializer(newline, encoding=encoding, unicode_errors=unicode_errors)
 
     @pytest.mark.parametrize("method", ["incremental_serialize", "incremental_deserialize"])
     def test____base_class____implements_default_methods(self, method: str) -> None:
@@ -57,27 +57,23 @@ class TestStringLineSerializer:
         # Assert
         assert serializer.separator == b"\n"
         assert serializer.encoding == "ascii"
-        assert serializer.on_string_error == "strict"
-        assert not serializer.keepends
+        assert serializer.unicode_errors == "strict"
 
-    @pytest.mark.parametrize("keepends", [False, True], ids=lambda boolean: f"keepends=={boolean}")
     def test____dunder_init____with_parameters(
         self,
-        keepends: bool,
         newline: Literal["LF", "CR", "CRLF"],
         encoding: str,
-        on_string_error: str,
+        unicode_errors: str,
     ) -> None:
         # Arrange
 
         # Act
-        serializer = StringLineSerializer(newline, keepends=keepends, encoding=encoding, on_str_error=on_string_error)
+        serializer = StringLineSerializer(newline, encoding=encoding, unicode_errors=unicode_errors)
 
         # Assert
         assert serializer.separator == _NEWLINES[newline]
         assert serializer.encoding == encoding
-        assert serializer.on_string_error == on_string_error
-        assert serializer.keepends == keepends
+        assert serializer.unicode_errors == unicode_errors
 
     def test____dunder_init____invalid_newline_value(
         self,
@@ -92,7 +88,7 @@ class TestStringLineSerializer:
         self,
         serializer: StringLineSerializer,
         encoding: str,
-        on_string_error: str,
+        unicode_errors: str,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -104,7 +100,7 @@ class TestStringLineSerializer:
 
         # Assert
         assert data is mocker.sentinel.result
-        mock_string.encode.assert_called_once_with(encoding, on_string_error)
+        mock_string.encode.assert_called_once_with(encoding, unicode_errors)
 
     def test____serialize____not_a_string_error(
         self,
@@ -120,7 +116,7 @@ class TestStringLineSerializer:
         self,
         serializer: StringLineSerializer,
         encoding: str,
-        on_string_error: str,
+        unicode_errors: str,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -132,13 +128,13 @@ class TestStringLineSerializer:
 
         # Assert
         assert line is mocker.sentinel.result
-        mock_bytes.decode.assert_called_once_with(encoding, on_string_error)
+        mock_bytes.decode.assert_called_once_with(encoding, unicode_errors)
 
     def test____deserialize____decode_string_error(
         self,
         serializer: StringLineSerializer,
         encoding: str,
-        on_string_error: str,
+        unicode_errors: str,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -150,4 +146,4 @@ class TestStringLineSerializer:
             serializer.deserialize(mock_bytes)
 
         # Assert
-        mock_bytes.decode.assert_called_once_with(encoding, on_string_error)
+        mock_bytes.decode.assert_called_once_with(encoding, unicode_errors)

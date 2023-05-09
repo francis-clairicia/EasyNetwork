@@ -19,7 +19,8 @@ from functools import partial
 from io import BytesIO
 from typing import IO, Callable, TypeVar, final
 
-from .base_stream import FileBasedPacketSerializer
+from ..exceptions import DeserializeError
+from .abc import AbstractPacketSerializer
 
 _ST_contra = TypeVar("_ST_contra", contravariant=True)
 _DT_co = TypeVar("_DT_co", covariant=True)
@@ -38,7 +39,7 @@ class UnpicklerConfig:
     errors: str = "strict"
 
 
-class PickleSerializer(FileBasedPacketSerializer[_ST_contra, _DT_co]):
+class PickleSerializer(AbstractPacketSerializer[_ST_contra, _DT_co]):
     __slots__ = ("__optimize", "__pickler_cls", "__unpickler_cls")
 
     def __init__(
@@ -50,12 +51,7 @@ class PickleSerializer(FileBasedPacketSerializer[_ST_contra, _DT_co]):
         unpickler_cls: type[_pickle.Unpickler] | None = None,
         optimize: bool = False,
     ) -> None:
-        super().__init__(
-            expected_load_error=(
-                _pickle.UnpicklingError,
-                ValueError,
-            ),  # pickle.Unpickler does not only raise UnpicklingError... :)
-        )
+        super().__init__()
         self.__optimize = bool(optimize)
         self.__pickler_cls: Callable[[IO[bytes]], _pickle.Pickler]
         self.__unpickler_cls: Callable[[IO[bytes]], _pickle.Unpickler]
@@ -76,14 +72,22 @@ class PickleSerializer(FileBasedPacketSerializer[_ST_contra, _DT_co]):
         self.__unpickler_cls = partial(unpickler_cls or _pickle.Unpickler, **dataclass_asdict(unpickler_config), buffers=None)
 
     @final
-    def dump_to_file(self, packet: _ST_contra, file: IO[bytes]) -> None:
-        if not self.__optimize:
-            self.__pickler_cls(file).dump(packet)
-            return
+    def serialize(self, packet: _ST_contra) -> bytes:
         with BytesIO() as buffer:
             self.__pickler_cls(buffer).dump(packet)
-            file.write(_pickletools.optimize(buffer.getvalue()))
+            pickle: bytes = buffer.getvalue()
+        if self.__optimize:
+            pickle = _pickletools.optimize(pickle)
+        return pickle
 
     @final
-    def load_from_file(self, file: IO[bytes]) -> _DT_co:
-        return self.__unpickler_cls(file).load()
+    def deserialize(self, data: bytes) -> _DT_co:
+        with BytesIO(data) as buffer:
+            del data
+            try:
+                packet: _DT_co = self.__unpickler_cls(buffer).load()
+            except Exception as exc:
+                raise DeserializeError(str(exc) or "Invalid token") from exc
+            if buffer.read():  # There is still data after deserialization
+                raise DeserializeError("Extra data caught")
+        return packet
