@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from concurrent.futures import Future
+from concurrent.futures import CancelledError as FutureCancelledError, Future
 
 from easynetwork.api_async.backend.factory import AsyncBackendFactory
 from easynetwork_asyncio.backend import AsyncioBackend
@@ -189,7 +189,7 @@ class TestAsyncioBackend:
             assert future.cancelled()
             assert task.cancelled()
 
-    async def test____wait_future____cancel_task_if_future_is_cancelled(
+    async def test____wait_future____future_is_cancelled(
         self,
         event_loop: asyncio.AbstractEventLoop,
         backend: AsyncioBackend,
@@ -201,7 +201,8 @@ class TestAsyncioBackend:
         future.cancel()
         await asyncio.wait([task])
 
-        assert task.cancelled()
+        assert not task.cancelled()
+        assert type(task.exception()) is FutureCancelledError
 
     async def test____run_in_thread____cannot_be_cancelled(
         self,

@@ -299,14 +299,17 @@ class AsyncioBackend(AbstractAsyncBackend):
 
         if not future.running():  # There is a chance to cancel the future
             try:
-                return await asyncio.wrap_future(future)
+                await asyncio.wait({asyncio.wrap_future(future)})
             except asyncio.CancelledError:
-                if future.done():  # asyncio.CancelledError raised by either future.cancelled() or future.exception()
+                if future.cancel():
                     raise
                 # future.cancel() failed, that means future.set_running_or_notify_cancel() has been called
                 # and sets future in RUNNING state.
                 # This future cannot be cancelled anymore, therefore it must be awaited.
                 self._really_uncancel_task(self._current_asyncio_task())
+            else:
+                assert future.done()
+                return future.result()
 
         return await self._cancel_shielded_wait_asyncio_future(asyncio.wrap_future(future))
 
