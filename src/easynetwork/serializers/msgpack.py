@@ -48,8 +48,8 @@ class MessageUnpackerConfig:
     timestamp: int = 0
     strict_map_key: bool = True
     unicode_errors: str = "strict"
-    object_hook: Callable[[dict[str, Any]], Any] | None = None
-    object_pairs_hook: Callable[[list[tuple[str, Any]]], Any] | None = None
+    object_hook: Callable[[dict[Any, Any]], Any] | None = None
+    object_pairs_hook: Callable[[list[tuple[Any, Any]]], Any] | None = None
     ext_hook: Callable[[int, bytes], Any] = field(default_factory=_get_default_ext_hook)
 
 
