@@ -9,7 +9,6 @@ from easynetwork.exceptions import DeserializeError, IncrementalDeserializeError
 from easynetwork.serializers.abc import AbstractIncrementalPacketSerializer
 from easynetwork.serializers.base_stream import (
     AutoSeparatedPacketSerializer,
-    FileBasedIncrementalPacketSerializer,
     FileBasedPacketSerializer,
     FixedSizePacketSerializer,
 )
@@ -165,16 +164,14 @@ class TestAutoSeparatedPacketSerializer:
         return mocker.patch.object(_AutoSeparatedPacketSerializerForTest, "deserialize")
 
     @pytest.mark.parametrize("separator", [b"\n", b".", b"\r\n", b"--"], ids=lambda p: f"separator=={p}")
-    @pytest.mark.parametrize("keepends", [False, True], ids=lambda p: f"keepends=={p}")
-    def test____properties____right_values(self, separator: bytes, keepends: bool) -> None:
+    def test____properties____right_values(self, separator: bytes) -> None:
         # Arrange
 
         # Act
-        serializer = _AutoSeparatedPacketSerializerForTest(separator=separator, keepends=keepends)
+        serializer = _AutoSeparatedPacketSerializerForTest(separator=separator)
 
         # Assert
         assert serializer.separator == separator
-        assert serializer.keepends == keepends
 
     def test____dunder_init____empty_separator_bytes(self) -> None:
         # Arrange
@@ -273,18 +270,16 @@ class TestAutoSeparatedPacketSerializer:
     )
     @pytest.mark.parametrize("several_trailing_separators", [False, True], ids=lambda b: f"several_trailing_separators=={b}")
     @pytest.mark.parametrize("several_leading_separators", [False, True], ids=lambda b: f"several_leading_separators=={b}")
-    @pytest.mark.parametrize("keepends", [False, True], ids=lambda b: f"keepends=={b}")
     def test____incremental_deserialize____one_shot_chunk(
         self,
         expected_remaining_data: bytes,
         several_trailing_separators: bool,
         several_leading_separators: bool,
-        keepends: bool,
         mock_deserialize_func: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer = _AutoSeparatedPacketSerializerForTest(separator=b"\r\n", keepends=keepends)
+        serializer = _AutoSeparatedPacketSerializerForTest(separator=b"\r\n")
         mock_deserialize_func.return_value = mocker.sentinel.packet
         data_to_test: bytes = b"data\r\n"
         if several_trailing_separators:
@@ -300,10 +295,7 @@ class TestAutoSeparatedPacketSerializer:
         packet, remaining_data = exc_info.value.value
 
         # Assert
-        if not keepends:
-            mock_deserialize_func.assert_called_once_with(b"data")
-        else:
-            mock_deserialize_func.assert_called_once_with(b"data\r\n")
+        mock_deserialize_func.assert_called_once_with(b"data")
         assert remaining_data == expected_remaining_data
         assert packet is mocker.sentinel.packet
 
@@ -673,33 +665,6 @@ class TestFileBasedPacketSerializer:
         # Assert
         mock_load_from_file_func.assert_called_once_with(mocker.ANY)
 
-
-class _FileBasedIncrementalPacketSerializerForTest(FileBasedIncrementalPacketSerializer[Any, Any]):
-    def dump_to_file(self, packet: Any, file: IO[bytes]) -> None:
-        raise NotImplementedError
-
-    def load_from_file(self, file: IO[bytes]) -> Any:
-        raise NotImplementedError
-
-
-class TestFileBasedIncrementalPacketSerializer:
-    @pytest.fixture
-    @staticmethod
-    def mock_dump_to_file_func(mocker: MockerFixture) -> MagicMock:
-        return mocker.patch.object(_FileBasedIncrementalPacketSerializerForTest, "dump_to_file")
-
-    @pytest.fixture
-    @staticmethod
-    def mock_load_from_file_func(mocker: MockerFixture) -> MagicMock:
-        return mocker.patch.object(_FileBasedIncrementalPacketSerializerForTest, "load_from_file")
-
-    @pytest.mark.parametrize("method", ["serialize", "deserialize"])
-    def test____base_class____implements_default_methods(self, method: str) -> None:
-        # Arrange
-
-        # Act & Assert
-        assert getattr(FileBasedIncrementalPacketSerializer, method) is getattr(FileBasedPacketSerializer, method)
-
     def test____incremental_serialize____dump_to_file(
         self,
         mock_dump_to_file_func: MagicMock,
@@ -709,7 +674,7 @@ class TestFileBasedIncrementalPacketSerializer:
         def side_effect(_: Any, file: IO[bytes]) -> None:
             file.write(b"success")
 
-        serializer = _FileBasedIncrementalPacketSerializerForTest(expected_load_error=())
+        serializer = _FileBasedPacketSerializerForTest(expected_load_error=())
         mock_dump_to_file_func.side_effect = side_effect
 
         # Act
@@ -728,7 +693,7 @@ class TestFileBasedIncrementalPacketSerializer:
         def side_effect(_: Any, file: IO[bytes]) -> None:
             pass
 
-        serializer = _FileBasedIncrementalPacketSerializerForTest(expected_load_error=())
+        serializer = _FileBasedPacketSerializerForTest(expected_load_error=())
         mock_dump_to_file_func.side_effect = side_effect
 
         # Act
@@ -748,7 +713,7 @@ class TestFileBasedIncrementalPacketSerializer:
             assert file.read() == b"data"
             return mocker.sentinel.packet
 
-        serializer = _FileBasedIncrementalPacketSerializerForTest(expected_load_error=())
+        serializer = _FileBasedPacketSerializerForTest(expected_load_error=())
         mock_load_from_file_func.side_effect = side_effect
 
         # Act
@@ -773,7 +738,7 @@ class TestFileBasedIncrementalPacketSerializer:
             assert file.read(2) == b"da"
             return mocker.sentinel.packet
 
-        serializer = _FileBasedIncrementalPacketSerializerForTest(expected_load_error=())
+        serializer = _FileBasedPacketSerializerForTest(expected_load_error=())
         mock_load_from_file_func.side_effect = side_effect
 
         # Act
@@ -801,7 +766,7 @@ class TestFileBasedIncrementalPacketSerializer:
             assert data == b"data"
             return mocker.sentinel.packet
 
-        serializer = _FileBasedIncrementalPacketSerializerForTest(expected_load_error=())
+        serializer = _FileBasedPacketSerializerForTest(expected_load_error=())
         mock_load_from_file_func.side_effect = side_effect
 
         # Act
@@ -843,9 +808,9 @@ class TestFileBasedIncrementalPacketSerializer:
             raise MyFileAPIValueError
 
         if give_as_tuple:
-            serializer = _FileBasedIncrementalPacketSerializerForTest(expected_load_error=(MyFileAPIBaseException,))
+            serializer = _FileBasedPacketSerializerForTest(expected_load_error=(MyFileAPIBaseException,))
         else:
-            serializer = _FileBasedIncrementalPacketSerializerForTest(expected_load_error=MyFileAPIBaseException)
+            serializer = _FileBasedPacketSerializerForTest(expected_load_error=MyFileAPIBaseException)
         mock_load_from_file_func.side_effect = side_effect
 
         # Act

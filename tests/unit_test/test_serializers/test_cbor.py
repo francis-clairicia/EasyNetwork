@@ -92,10 +92,10 @@ class TestCBORSerializer(BaseSerializerConfigInstanceCheck):
     @pytest.mark.parametrize("method", ["serialize", "incremental_serialize", "deserialize", "incremental_deserialize"])
     def test____base_class____implements_default_methods(self, method: str) -> None:
         # Arrange
-        from easynetwork.serializers.base_stream import FileBasedIncrementalPacketSerializer
+        from easynetwork.serializers.base_stream import FileBasedPacketSerializer
 
         # Act & Assert
-        assert getattr(CBORSerializer, method) is getattr(FileBasedIncrementalPacketSerializer, method)
+        assert getattr(CBORSerializer, method) is getattr(FileBasedPacketSerializer, method)
 
     def test____dump_to_file____with_config(
         self,

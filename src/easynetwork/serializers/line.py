@@ -15,15 +15,14 @@ from .base_stream import AutoSeparatedPacketSerializer
 
 
 class StringLineSerializer(AutoSeparatedPacketSerializer[str, str]):
-    __slots__ = ("__encoding", "__on_str_error")
+    __slots__ = ("__encoding", "__unicode_errors")
 
     def __init__(
         self,
         newline: Literal["LF", "CR", "CRLF"] = "LF",
         *,
-        keepends: bool = False,
         encoding: str = "ascii",
-        on_str_error: str = "strict",
+        unicode_errors: str = "strict",
     ) -> None:
         separator: bytes
         match newline:
@@ -35,20 +34,20 @@ class StringLineSerializer(AutoSeparatedPacketSerializer[str, str]):
                 separator = b"\r\n"
             case _:
                 assert_never(newline)
-        super().__init__(separator=separator, keepends=keepends)
+        super().__init__(separator=separator)
         self.__encoding: str = encoding
-        self.__on_str_error: str = on_str_error
+        self.__unicode_errors: str = unicode_errors
 
     @final
     def serialize(self, packet: str) -> bytes:
         if not isinstance(packet, str):
             raise TypeError(f"Expected a string, got {packet!r}")
-        return packet.encode(self.__encoding, self.__on_str_error)
+        return packet.encode(self.__encoding, self.__unicode_errors)
 
     @final
     def deserialize(self, data: bytes) -> str:
         try:
-            return data.decode(self.__encoding, self.__on_str_error)
+            return data.decode(self.__encoding, self.__unicode_errors)
         except UnicodeError as exc:
             raise DeserializeError(str(exc)) from exc
 
@@ -57,5 +56,5 @@ class StringLineSerializer(AutoSeparatedPacketSerializer[str, str]):
         return self.__encoding
 
     @property
-    def on_string_error(self) -> str:
-        return self.__on_str_error
+    def unicode_errors(self) -> str:
+        return self.__unicode_errors
