@@ -50,11 +50,6 @@ class AsyncioBackend(AbstractAsyncBackend):
             raise RuntimeError("This function should be called within a task.")
         return t
 
-    @staticmethod
-    def _really_uncancel_task(task: _asyncio.Task[Any]) -> None:
-        while task.uncancel() != 0:  # It must really NOT be cancelled
-            continue
-
     async def coro_yield(self) -> None:
         import asyncio
 
@@ -80,14 +75,17 @@ class AsyncioBackend(AbstractAsyncBackend):
         import asyncio
 
         current_task: _asyncio.Task[Any] = cls._current_asyncio_task()
+        cancelling: int = current_task.cancelling()
 
         while True:
             try:
-                return await asyncio.shield(future)
+                await asyncio.wait({future})
             except asyncio.CancelledError:
-                if future.done():
-                    raise
-                cls._really_uncancel_task(current_task)
+                while current_task.uncancel() > cancelling:
+                    continue
+                continue
+            assert future.done()
+            return future.result()
 
     def current_time(self) -> float:
         import asyncio
@@ -297,6 +295,9 @@ class AsyncioBackend(AbstractAsyncBackend):
     async def wait_future(self, future: concurrent.futures.Future[_T_co]) -> _T_co:
         import asyncio
 
+        current_task: _asyncio.Task[Any] = self._current_asyncio_task()
+        cancelling: int = current_task.cancelling()
+
         if not future.running():  # There is a chance to cancel the future
             try:
                 await asyncio.wait({asyncio.wrap_future(future)})
@@ -306,7 +307,8 @@ class AsyncioBackend(AbstractAsyncBackend):
                 # future.cancel() failed, that means future.set_running_or_notify_cancel() has been called
                 # and sets future in RUNNING state.
                 # This future cannot be cancelled anymore, therefore it must be awaited.
-                self._really_uncancel_task(self._current_asyncio_task())
+                while current_task.uncancel() > cancelling:
+                    continue
             else:
                 assert future.done()
                 return future.result()

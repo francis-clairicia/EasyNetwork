@@ -178,7 +178,8 @@ class TestAsyncioBackend:
             assert future.running()
             event_loop.call_later(0.5, future.set_result, 42)
 
-        task.cancel()
+        for _ in range(3):
+            task.cancel()
         await asyncio.wait([task])
 
         if future_running is not None:
