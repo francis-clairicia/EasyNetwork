@@ -9,6 +9,7 @@ from __future__ import annotations
 
 __all__ = ["AsyncioBackend"]  # type: list[str]
 
+import inspect
 import socket as _socket
 from typing import TYPE_CHECKING, Any, Callable, Coroutine, NoReturn, ParamSpec, Sequence, TypeVar, final
 
@@ -63,6 +64,7 @@ class AsyncioBackend(AbstractAsyncBackend):
     async def ignore_cancellation(self, coroutine: Coroutine[Any, Any, _T_co]) -> _T_co:
         import asyncio
 
+        assert inspect.iscoroutine(coroutine), "Expected a coroutine object"
         task: asyncio.Task[_T_co] = asyncio.create_task(coroutine)
 
         # This task must be unregistered in order not to be cancelled by runner at event loop shutdown
@@ -73,7 +75,7 @@ class AsyncioBackend(AbstractAsyncBackend):
     async def wait_for(self, coroutine: Coroutine[Any, Any, _T_co], timeout: float | None) -> _T_co:
         import asyncio
 
-        assert asyncio.iscoroutine(coroutine), "Expected a coroutine object"
+        assert inspect.iscoroutine(coroutine), "Expected a coroutine object"
 
         async with asyncio.timeout(timeout):
             return await coroutine
@@ -198,7 +200,6 @@ class AsyncioBackend(AbstractAsyncBackend):
 
         import asyncio
         import os
-        import sys
         from itertools import chain
 
         from easynetwork.tools._utils import open_listener_sockets_from_getaddrinfo_result
@@ -207,7 +208,7 @@ class AsyncioBackend(AbstractAsyncBackend):
 
         loop = asyncio.get_running_loop()
 
-        reuse_address = os.name == "posix" and sys.platform != "cygwin"
+        reuse_address = os.name not in ("nt", "cygwin") and hasattr(_socket, "SO_REUSEADDR")
         hosts: Sequence[str | None]
         if host == "" or host is None:
             hosts = [None]
