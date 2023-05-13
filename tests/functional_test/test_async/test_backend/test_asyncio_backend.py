@@ -55,6 +55,36 @@ class TestAsyncioBackend:
             await task
         assert task.cancelled()
 
+    async def test____wait_for____without_timeout(
+        self,
+        backend: AsyncioBackend,
+    ) -> None:
+        assert (await backend.wait_for(asyncio.sleep(0.5, 42), None)) == 42
+
+    async def test____wait_for____with_timeout____respected(
+        self,
+        backend: AsyncioBackend,
+    ) -> None:
+        assert (await backend.wait_for(asyncio.sleep(0.5, 42), 1)) == 42
+
+    async def test____wait_for____with_timeout____timeout_error(
+        self,
+        backend: AsyncioBackend,
+    ) -> None:
+        with pytest.raises(TimeoutError):
+            await backend.wait_for(asyncio.sleep(0.5, 42), 0.25)
+
+    async def test____wait_for____with_timeout____cancellation(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        backend: AsyncioBackend,
+    ) -> None:
+        task = event_loop.create_task(backend.wait_for(asyncio.sleep(0.5, 42), 0.25))
+        event_loop.call_later(0.10, task.cancel)
+
+        await asyncio.wait({task})
+        assert task.cancelled()
+
     async def test____sleep_forever____sleep_until_cancellation(
         self,
         event_loop: asyncio.AbstractEventLoop,

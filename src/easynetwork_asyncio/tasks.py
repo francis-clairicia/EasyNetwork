@@ -50,6 +50,11 @@ class Task(AbstractTask[_T_co]):
     def cancelled(self) -> bool:
         return self.__t.cancelled()
 
+    async def wait(self) -> None:
+        if self.__t.done():
+            return
+        await asyncio.wait({self.__t})
+
     async def join(self) -> _T_co:
         # If the caller cancels the join() task, it should not stop the inner task
         # e.g. when awaiting from an another task than the one which creates the TaskGroup,
@@ -78,7 +83,10 @@ class TaskGroup(AbstractTaskGroup):
         exc_tb: TracebackType | None,
     ) -> None:
         asyncio_tg: asyncio.TaskGroup = self.__asyncio_tg
-        return await type(asyncio_tg).__aexit__(asyncio_tg, exc_type, exc_val, exc_tb)
+        try:
+            return await type(asyncio_tg).__aexit__(asyncio_tg, exc_type, exc_val, exc_tb)
+        finally:
+            del exc_val, exc_tb, self
 
     def start_soon(
         self,

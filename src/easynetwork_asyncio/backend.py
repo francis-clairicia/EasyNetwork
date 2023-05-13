@@ -9,6 +9,7 @@ from __future__ import annotations
 
 __all__ = ["AsyncioBackend"]  # type: list[str]
 
+import inspect
 import socket as _socket
 from typing import TYPE_CHECKING, Any, Callable, Coroutine, NoReturn, ParamSpec, Sequence, TypeVar, final
 
@@ -63,12 +64,21 @@ class AsyncioBackend(AbstractAsyncBackend):
     async def ignore_cancellation(self, coroutine: Coroutine[Any, Any, _T_co]) -> _T_co:
         import asyncio
 
+        assert inspect.iscoroutine(coroutine), "Expected a coroutine object"
         task: asyncio.Task[_T_co] = asyncio.create_task(coroutine)
 
         # This task must be unregistered in order not to be cancelled by runner at event loop shutdown
         asyncio._unregister_task(task)
 
         return await self._cancel_shielded_wait_asyncio_future(task)
+
+    async def wait_for(self, coroutine: Coroutine[Any, Any, _T_co], timeout: float | None) -> _T_co:
+        import asyncio
+
+        assert inspect.iscoroutine(coroutine), "Expected a coroutine object"
+
+        async with asyncio.timeout(timeout):
+            return await coroutine
 
     @classmethod
     async def _cancel_shielded_wait_asyncio_future(cls, future: _asyncio.Future[_T_co]) -> _T_co:
@@ -78,14 +88,13 @@ class AsyncioBackend(AbstractAsyncBackend):
         cancelling: int = current_task.cancelling()
 
         while True:
+            if future.done():
+                return future.result()
             try:
                 await asyncio.wait({future})
             except asyncio.CancelledError:
                 while current_task.uncancel() > cancelling:
                     continue
-                continue
-            assert future.done()
-            return future.result()
 
     def current_time(self) -> float:
         import asyncio
@@ -191,7 +200,6 @@ class AsyncioBackend(AbstractAsyncBackend):
 
         import asyncio
         import os
-        import sys
         from itertools import chain
 
         from easynetwork.tools._utils import open_listener_sockets_from_getaddrinfo_result
@@ -200,7 +208,7 @@ class AsyncioBackend(AbstractAsyncBackend):
 
         loop = asyncio.get_running_loop()
 
-        reuse_address = os.name == "posix" and sys.platform != "cygwin"
+        reuse_address = os.name not in ("nt", "cygwin") and hasattr(_socket, "SO_REUSEADDR")
         hosts: Sequence[str | None]
         if host == "" or host is None:
             hosts = [None]
