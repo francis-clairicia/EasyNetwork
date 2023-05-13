@@ -165,27 +165,21 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         if self.__socket_builder is not None:
             self.__socket_builder.cancel()
             self.__socket_builder = None
-        try:
-            async with self.__send_lock:
-                socket = self.__socket
-                if socket is None:
-                    return
-                try:
-                    await socket.aclose()
-                except ConnectionError:
-                    # It is normal if there was connection errors during operations. But do not propagate this exception,
-                    # as we will never reuse this socket
-                    pass
-        except self.__backend.get_cancelled_exc_class():
-            socket = self.__socket
-            if socket is None:  # pragma: no cover
-                raise
+        async with self.__send_lock:
+            socket, self.__socket = self.__socket, None
+            if socket is None:
+                return
             try:
-                await socket.abort()
-            finally:
-                raise
-        finally:
-            self.__socket = None
+                await socket.aclose()
+            except ConnectionError:
+                # It is normal if there was connection errors during operations. But do not propagate this exception,
+                # as we will never reuse this socket
+                pass
+            except self.__backend.get_cancelled_exc_class():
+                try:
+                    await socket.abort()
+                finally:
+                    raise
 
     async def send_packet_to(
         self,
