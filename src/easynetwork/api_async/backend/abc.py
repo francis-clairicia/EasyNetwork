@@ -93,6 +93,10 @@ class AbstractTask(Generic[_T_co], metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
+    async def wait(self) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
     async def join(self) -> _T_co:
         raise NotImplementedError
 
@@ -261,6 +265,10 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
 
     @abstractmethod
     async def ignore_cancellation(self, coroutine: Coroutine[Any, Any, _T_co]) -> _T_co:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def wait_for(self, coroutine: Coroutine[Any, Any, _T_co], timeout: float | None) -> _T_co:
         raise NotImplementedError
 
     @abstractmethod

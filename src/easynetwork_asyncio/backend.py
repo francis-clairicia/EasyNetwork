@@ -70,6 +70,14 @@ class AsyncioBackend(AbstractAsyncBackend):
 
         return await self._cancel_shielded_wait_asyncio_future(task)
 
+    async def wait_for(self, coroutine: Coroutine[Any, Any, _T_co], timeout: float | None) -> _T_co:
+        import asyncio
+
+        assert asyncio.iscoroutine(coroutine), "Expected a coroutine object"
+
+        async with asyncio.timeout(timeout):
+            return await coroutine
+
     @classmethod
     async def _cancel_shielded_wait_asyncio_future(cls, future: _asyncio.Future[_T_co]) -> _T_co:
         import asyncio
@@ -78,14 +86,13 @@ class AsyncioBackend(AbstractAsyncBackend):
         cancelling: int = current_task.cancelling()
 
         while True:
+            if future.done():
+                return future.result()
             try:
                 await asyncio.wait({future})
             except asyncio.CancelledError:
                 while current_task.uncancel() > cancelling:
                     continue
-                continue
-            assert future.done()
-            return future.result()
 
     def current_time(self) -> float:
         import asyncio

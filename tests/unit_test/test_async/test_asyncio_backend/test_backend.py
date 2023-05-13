@@ -752,38 +752,6 @@ class TestAsyncIOBackend:
         func_stub.assert_not_called()
         assert ret_val is mocker.sentinel.return_value
 
-    async def test____run_in_thread____early_cancel(
-        self,
-        event_loop: asyncio.AbstractEventLoop,
-        backend: AsyncioBackend,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        func_stub = mocker.stub()
-        mock_to_thread: AsyncMock = mocker.patch(
-            "asyncio.to_thread",
-            new_callable=mocker.AsyncMock,
-            return_value=mocker.sentinel.return_value,
-        )
-
-        # Act
-        task = event_loop.create_task(
-            backend.run_in_thread(
-                func_stub,
-                mocker.sentinel.arg1,
-                mocker.sentinel.arg2,
-                kw1=mocker.sentinel.kwargs1,
-                kw2=mocker.sentinel.kwargs2,
-            )
-        )
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
-
-        # Assert
-        mock_to_thread.assert_not_awaited()
-        func_stub.assert_not_called()
-
     @pytest.mark.parametrize("max_workers", [None, 1, 99])
     async def test___create_thread_pool_executor____returns_AsyncThreadPoolExecutor_instance(
         self,

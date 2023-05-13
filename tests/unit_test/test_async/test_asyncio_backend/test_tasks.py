@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Any, Iterator
+from typing import TYPE_CHECKING, Any
 
 from easynetwork_asyncio.tasks import Task
 
@@ -19,15 +19,11 @@ class TestTask:
     @pytest.fixture
     @staticmethod
     def mock_asyncio_task(mocker: MockerFixture) -> AsyncMock:
-        class AwaitableMock(mocker.AsyncMock):  # type: ignore[misc, name-defined]
-            def __await__(self) -> Iterator[Any]:
-                self.await_count += 1
-                return (yield from self._helper().__await__())
-
-            async def _helper(self) -> Any:
-                return self.return_value
-
-        return AwaitableMock(spec=asyncio.Task)
+        mock = mocker.NonCallableMagicMock(spec=asyncio.Task)
+        mock.done.return_value = False
+        mock.cancelled.return_value = False
+        mock.cancel.return_value = True
+        return mock
 
     @pytest.fixture
     @staticmethod
@@ -96,6 +92,40 @@ class TestTask:
         assert task_cancelled is mocker.sentinel.task_cancelled
 
     @pytest.mark.asyncio
+    async def test____wait____await_task(
+        self,
+        task: Task[Any],
+        mock_asyncio_task: AsyncMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_asyncio_task.done.return_value = False
+        mock_asyncio_wait: AsyncMock = mocker.patch("asyncio.wait", autospec=True)
+
+        # Act
+        await task.wait()
+
+        # Assert
+        mock_asyncio_wait.assert_awaited_once_with({mock_asyncio_task})
+
+    @pytest.mark.asyncio
+    async def test____wait____task_already_done(
+        self,
+        task: Task[Any],
+        mock_asyncio_task: AsyncMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_asyncio_task.done.return_value = True
+        mock_asyncio_wait: AsyncMock = mocker.patch("asyncio.wait", autospec=True)
+
+        # Act
+        await task.wait()
+
+        # Assert
+        mock_asyncio_wait.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test____join____await_task(
         self,
         task: Task[Any],
@@ -103,11 +133,15 @@ class TestTask:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_asyncio_task.return_value = mocker.sentinel.task_result
+        mock_asyncio_shield: AsyncMock = mocker.patch(
+            "asyncio.shield",
+            new_callable=mocker.AsyncMock,
+            return_value=mocker.sentinel.task_result,
+        )
 
         # Act
         result = await task.join()
 
         # Assert
-        mock_asyncio_task.assert_awaited_once()
+        mock_asyncio_shield.assert_awaited_once_with(mock_asyncio_task)
         assert result is mocker.sentinel.task_result
