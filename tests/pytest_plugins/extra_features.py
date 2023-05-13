@@ -9,16 +9,18 @@ import pytest
 
 
 @functools.cache
-def _get_package_extra_features() -> tuple[str, ...]:
+def _get_package_extra_features() -> frozenset[str]:
     from importlib.metadata import metadata
 
-    return tuple(metadata("easynetwork").get_all("Provides-Extra", ()))
+    extra_to_exclude = {"uvloop"}
+
+    return frozenset(metadata("easynetwork").get_all("Provides-Extra", ())).difference(extra_to_exclude)
 
 
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "feature: mark test as extra feature test")
     for name in _get_package_extra_features():
-        config.addinivalue_line("markers", f"feature_{name}: run test dealing with {name!r} extra")
+        config.addinivalue_line("markers", f"feature_{name}: mark test dealing with {name!r} extra")
 
 
 def _get_markers_starting_with_prefix(item: pytest.Item, prefix: str, *, remove: bool) -> set[str]:
@@ -38,7 +40,7 @@ def _skip_if_platform_is_not_supported(item: pytest.Item) -> None:
 
 
 def _auto_add_feature_marker(item: pytest.Item) -> None:
-    required_features = _get_markers_starting_with_prefix(item, "feature_", remove=True)
+    required_features = _get_markers_starting_with_prefix(item, "feature_", remove=False)
 
     if required_features and item.get_closest_marker("feature") is None:
         item.add_marker(pytest.mark.feature)
