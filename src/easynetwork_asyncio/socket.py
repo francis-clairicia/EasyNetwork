@@ -98,16 +98,19 @@ class AsyncSocket:
         socket, self.__socket = self.__socket, None
         self.__closing = True
 
-        if socket is not None:
+        if socket is None:
+            await asyncio.sleep(0)
+            return
+        try:
             for task in list(self.__tasks):
                 task.cancel()
                 del task
-            try:
-                futures_to_wait_for_completion: set[asyncio.Future[None]] = set(self.__waiters.values())
-                if futures_to_wait_for_completion:
-                    await asyncio.wait(futures_to_wait_for_completion, return_when=asyncio.ALL_COMPLETED)
-            finally:
-                socket.close()
+            futures_to_wait_for_completion: set[asyncio.Future[None]] = set(self.__waiters.values())
+            if futures_to_wait_for_completion:
+                await asyncio.wait(futures_to_wait_for_completion, return_when=asyncio.ALL_COMPLETED)
+        finally:
+            socket.close()
+            await asyncio.sleep(0)
 
     async def accept(self) -> tuple[_socket.socket, _socket._RetAddress]:
         with self.__conflict_detection("accept") as socket:
@@ -126,7 +129,7 @@ class AsyncSocket:
             return await self.__loop.sock_recv(socket, bufsize)
 
     async def recvfrom(self, bufsize: int, /) -> tuple[bytes, _socket._RetAddress]:
-        with self.__conflict_detection("recv") as socket:
+        with self.__conflict_detection("recv", abort_errno=_errno.ECONNABORTED) as socket:
             return await self.__loop.sock_recvfrom(socket, bufsize)  # type: ignore[return-value]  # mypy most likely mismatch signature with loop.sock_recv()
 
     @contextlib.contextmanager

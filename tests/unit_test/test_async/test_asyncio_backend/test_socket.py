@@ -506,16 +506,10 @@ class TestAsyncDatagramSocket(MixinTestAsyncSocketBusy, MixinTestAsyncSocketClos
 
     @pytest.fixture
     @staticmethod
-    def abort_errno(sock_method_name: str) -> int:
-        from errno import ECONNABORTED, EINTR
+    def abort_errno() -> int:
+        from errno import ECONNABORTED
 
-        match sock_method_name:
-            case "sendto":
-                return ECONNABORTED
-            case "recvfrom":
-                return EINTR
-            case _:
-                raise SystemError
+        return ECONNABORTED
 
     @pytest.fixture
     @staticmethod
