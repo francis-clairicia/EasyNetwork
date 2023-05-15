@@ -103,7 +103,7 @@ class _JSONParser:
 
 
 class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
-    __slots__ = ("__encoder", "__decoder", "__encoding", "__str_errors")
+    __slots__ = ("__encoder", "__decoder", "__encoding", "__unicode_errors")
 
     def __init__(
         self,
@@ -111,7 +111,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
         decoder_config: JSONDecoderConfig | None = None,
         *,
         encoding: str = "utf-8",
-        str_errors: str = "strict",
+        unicode_errors: str = "strict",
     ) -> None:
         from json import JSONDecoder, JSONEncoder
 
@@ -133,16 +133,16 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
         self.__decoder = JSONDecoder(**dataclass_asdict(decoder_config))
 
         self.__encoding: str = encoding
-        self.__str_errors: str = str_errors
+        self.__unicode_errors: str = unicode_errors
 
     @final
     def serialize(self, packet: _ST_contra) -> bytes:
-        return self.__encoder.encode(packet).encode(self.__encoding, self.__str_errors)
+        return self.__encoder.encode(packet).encode(self.__encoding, self.__unicode_errors)
 
     @final
     def incremental_serialize(self, packet: _ST_contra) -> Generator[bytes, None, None]:
         encoding: str = self.__encoding
-        str_errors: str = self.__str_errors
+        str_errors: str = self.__unicode_errors
         for chunk in self.__encoder.iterencode(packet):
             yield chunk.encode(encoding, str_errors)
         yield b"\n"
@@ -152,7 +152,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
         from json import JSONDecodeError
 
         try:
-            document: str = data.decode(self.__encoding, self.__str_errors)
+            document: str = data.decode(self.__encoding, self.__unicode_errors)
         except UnicodeError as exc:
             raise DeserializeError(f"Unicode decode error: {exc}") from exc
         try:
@@ -173,7 +173,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
 
         packet: _DT_co
         try:
-            document: str = complete_document.decode(self.__encoding, self.__str_errors)
+            document: str = complete_document.decode(self.__encoding, self.__unicode_errors)
         except UnicodeError as exc:
             raise IncrementalDeserializeError(
                 f"Unicode decode error: {exc}",
@@ -187,7 +187,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
                 remaining_data=remaining_data,
             ) from exc
         try:
-            remaining_data = document[end:].encode(self.__encoding, self.__str_errors) + remaining_data
+            remaining_data = document[end:].encode(self.__encoding, self.__unicode_errors) + remaining_data
         except UnicodeError:  # pragma: no cover  # Should not happen but it must not pass
             pass
         return packet, remaining_data.lstrip(b" \t\n\r")  # Optimization: Skip leading spaces
