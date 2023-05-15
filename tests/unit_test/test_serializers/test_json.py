@@ -141,7 +141,7 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         # Arrange
         serializer: JSONSerializer[Any, Any] = JSONSerializer(
             encoding=mocker.sentinel.encoding,
-            str_errors=mocker.sentinel.str_errors,
+            unicode_errors=mocker.sentinel.str_errors,
         )
         mock_string = mock_encoder.encode.return_value = mocker.NonCallableMagicMock()
         mock_string.encode.return_value = mocker.sentinel.data
@@ -162,7 +162,7 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         # Arrange
         serializer: JSONSerializer[Any, Any] = JSONSerializer(
             encoding=mocker.sentinel.encoding,
-            str_errors=mocker.sentinel.str_errors,
+            unicode_errors=mocker.sentinel.str_errors,
         )
         chunk_a = mocker.NonCallableMagicMock(**{"encode.return_value": mocker.sentinel.chunk_a})
         chunk_b = mocker.NonCallableMagicMock(**{"encode.return_value": mocker.sentinel.chunk_b})
@@ -199,7 +199,7 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         # Arrange
         serializer: JSONSerializer[Any, Any] = JSONSerializer(
             encoding=mocker.sentinel.encoding,
-            str_errors=mocker.sentinel.str_errors,
+            unicode_errors=mocker.sentinel.str_errors,
         )
         mock_bytes = mocker.NonCallableMagicMock()
         mock_bytes.decode.return_value = mocker.sentinel.document
@@ -269,7 +269,7 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
 
         serializer: JSONSerializer[Any, Any] = JSONSerializer(
             encoding=mocker.sentinel.encoding,
-            str_errors=mocker.sentinel.str_errors,
+            unicode_errors=mocker.sentinel.str_errors,
         )
         mock_bytes = mocker.NonCallableMagicMock()
         mock_string_document = mock_bytes.decode.return_value = mocker.NonCallableMagicMock()
@@ -306,7 +306,7 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
 
         serializer: JSONSerializer[Any, Any] = JSONSerializer(
             encoding=mocker.sentinel.encoding,
-            str_errors=mocker.sentinel.str_errors,
+            unicode_errors=mocker.sentinel.str_errors,
         )
         mock_bytes = mocker.NonCallableMagicMock()
         mock_bytes.decode.side_effect = UnicodeDecodeError("some encoding", b"invalid data", 0, 2, "Bad encoding ?")
@@ -341,7 +341,7 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
 
         serializer: JSONSerializer[Any, Any] = JSONSerializer(
             encoding=mocker.sentinel.encoding,
-            str_errors=mocker.sentinel.str_errors,
+            unicode_errors=mocker.sentinel.str_errors,
         )
         mock_bytes = mocker.NonCallableMagicMock()
         mock_decoder.raw_decode.side_effect = JSONDecodeError("Invalid payload", "document", 0)
