@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from selectors import EVENT_READ, BaseSelector, SelectorKey
+import selectors
 from socket import (
     AF_INET,
     AF_INET6,
@@ -16,7 +16,7 @@ from socket import (
     SOL_SOCKET,
     TCP_NODELAY,
 )
-from typing import TYPE_CHECKING, Any, Callable, Sequence, cast
+from typing import TYPE_CHECKING, Any, Callable, Literal, Sequence, cast
 
 from easynetwork.tools._utils import (
     check_real_socket_state,
@@ -27,7 +27,7 @@ from easynetwork.tools._utils import (
     open_listener_sockets_from_getaddrinfo_result,
     set_reuseport,
     set_tcp_nodelay,
-    wait_socket_available_for_reading,
+    wait_socket_available,
 )
 
 import pytest
@@ -124,11 +124,14 @@ def test____check_socket_family____invalid_family(socket_family: int) -> None:
         check_socket_family(socket_family)
 
 
+@pytest.mark.parametrize(["event", "selector_event"], [("read", "EVENT_READ"), ("write", "EVENT_WRITE")])
 @pytest.mark.parametrize("timeout", [10.2, 0, None], ids=lambda value: f"timeout=={value}")
 @pytest.mark.parametrize("available", [True, False], ids=lambda value: f"available=={value}")
 @pytest.mark.parametrize("use_PollSelector", [True, False], ids=lambda value: f"use_PollSelector=={value}")
-def test____wait_socket_available_for_reading____returns_boolean_if_available_or_not(
+def test____wait_socket_available____returns_boolean_if_available_or_not(
     mock_socket_factory: Callable[[], MagicMock],
+    event: Literal["read", "write"],
+    selector_event: str,
     timeout: float | None,
     available: bool,
     use_PollSelector: bool,
@@ -136,8 +139,9 @@ def test____wait_socket_available_for_reading____returns_boolean_if_available_or
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Arrange
+    SELECTOR_EVENT: int = getattr(selectors, selector_event)
     mock_socket = mock_socket_factory()
-    mock_selector = mocker.NonCallableMagicMock(spec=BaseSelector)
+    mock_selector = mocker.NonCallableMagicMock(spec=selectors.BaseSelector)
     mock_selector.__enter__.return_value = mock_selector
     if use_PollSelector:
         mock_selector_cls = mocker.patch("selectors.PollSelector", return_value=mock_selector, create=True)
@@ -147,29 +151,33 @@ def test____wait_socket_available_for_reading____returns_boolean_if_available_or
     mock_selector_register: MagicMock = mock_selector.register
     mock_selector_select: MagicMock = mock_selector.select
     if available:
-        mock_selector_select.return_value = [SelectorKey(mock_socket, 1, EVENT_READ, None)]
+        mock_selector_select.return_value = [selectors.SelectorKey(mock_socket, 1, SELECTOR_EVENT, None)]
     else:
         mock_selector_select.return_value = []
 
     # Act
-    status = wait_socket_available_for_reading(mock_socket, timeout)
+    status = wait_socket_available(mock_socket, timeout, event)
 
     # Assert
     mock_selector_cls.assert_called_once_with()
-    mock_selector_register.assert_called_once_with(mock_socket, EVENT_READ)
+    mock_selector_register.assert_called_once_with(mock_socket, SELECTOR_EVENT)
     mock_selector_select.assert_called_once_with(timeout)
     assert status == available
 
 
+@pytest.mark.parametrize(["event", "selector_event"], [("read", "EVENT_READ"), ("write", "EVENT_WRITE")])
 @pytest.mark.parametrize("timeout", [10.2, 0, None], ids=lambda value: f"timeout=={value}")
-def test____wait_socket_available_for_reading____invalid_file_descriptor(
+def test____wait_socket_available____invalid_file_descriptor(
     mock_socket_factory: Callable[[], MagicMock],
+    event: Literal["read", "write"],
+    selector_event: str,
     timeout: float | None,
     mocker: MockerFixture,
 ) -> None:
     # Arrange
+    SELECTOR_EVENT: int = getattr(selectors, selector_event)
     mock_socket = mock_socket_factory()
-    mock_selector = mocker.NonCallableMagicMock(spec=BaseSelector)
+    mock_selector = mocker.NonCallableMagicMock(spec=selectors.BaseSelector)
     mock_selector.__enter__.return_value = mock_selector
     mock_selector_cls = mocker.patch("selectors.PollSelector", return_value=mock_selector, create=True)
     mock_selector_register: MagicMock = mock_selector.register
@@ -177,24 +185,28 @@ def test____wait_socket_available_for_reading____invalid_file_descriptor(
     mock_selector_register.side_effect = ValueError
 
     # Act
-    status = wait_socket_available_for_reading(mock_socket, timeout)
+    status = wait_socket_available(mock_socket, timeout, event)
 
     # Assert
     mock_selector_cls.assert_called_once_with()
-    mock_selector_register.assert_called_once_with(mock_socket, EVENT_READ)
+    mock_selector_register.assert_called_once_with(mock_socket, SELECTOR_EVENT)
     mock_selector_select.assert_not_called()
     assert status is True
 
 
+@pytest.mark.parametrize(["event", "selector_event"], [("read", "EVENT_READ"), ("write", "EVENT_WRITE")])
 @pytest.mark.parametrize("timeout", [10.2, 0, None], ids=lambda value: f"timeout=={value}")
-def test____wait_socket_available_for_reading____select_error(
+def test____wait_socket_available____select_error(
     mock_socket_factory: Callable[[], MagicMock],
+    event: Literal["read", "write"],
+    selector_event: str,
     timeout: float | None,
     mocker: MockerFixture,
 ) -> None:
     # Arrange
+    SELECTOR_EVENT: int = getattr(selectors, selector_event)
     mock_socket = mock_socket_factory()
-    mock_selector = mocker.NonCallableMagicMock(spec=BaseSelector)
+    mock_selector = mocker.NonCallableMagicMock(spec=selectors.BaseSelector)
     mock_selector.__enter__.return_value = mock_selector
     mock_selector_cls = mocker.patch("selectors.PollSelector", return_value=mock_selector, create=True)
     mock_selector_register: MagicMock = mock_selector.register
@@ -202,11 +214,11 @@ def test____wait_socket_available_for_reading____select_error(
     mock_selector_select.side_effect = OSError
 
     # Act
-    status = wait_socket_available_for_reading(mock_socket, timeout)
+    status = wait_socket_available(mock_socket, timeout, event)
 
     # Assert
     mock_selector_cls.assert_called_once_with()
-    mock_selector_register.assert_called_once_with(mock_socket, EVENT_READ)
+    mock_selector_register.assert_called_once_with(mock_socket, SELECTOR_EVENT)
     mock_selector_select.assert_called_once_with(timeout)
     assert status is True
 

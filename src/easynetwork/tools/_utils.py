@@ -7,7 +7,7 @@ __all__ = [
     "error_from_errno",
     "open_listener_sockets_from_getaddrinfo_result",
     "set_reuseport",
-    "wait_socket_available_for_reading",
+    "wait_socket_available",
 ]
 
 import contextlib
@@ -15,10 +15,14 @@ import errno as _errno
 import os
 import selectors as _selectors
 import socket as _socket
-from typing import TYPE_CHECKING, Any, Iterable
+import time
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Literal, ParamSpec, TypeVar, assert_never
 
 if TYPE_CHECKING:
     from .socket import SocketProxy as _SocketProxy
+
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
 
 
 def error_from_errno(errno: int) -> OSError:
@@ -49,17 +53,50 @@ def check_real_socket_state(socket: _socket.socket | _SocketProxy) -> None:
         raise error_from_errno(errno)
 
 
-def wait_socket_available_for_reading(socket: _socket.socket, timeout: float | None) -> bool:
+def wait_socket_available(socket: _socket.socket, timeout: float | None, event: Literal["read", "write"]) -> bool:
     selector_cls: type[_selectors.BaseSelector] = getattr(_selectors, "PollSelector", _selectors.SelectSelector)
 
     with selector_cls() as selector:
         try:
-            selector.register(socket, _selectors.EVENT_READ)
+            match event:
+                case "read":
+                    selector.register(socket, _selectors.EVENT_READ)
+                case "write":
+                    selector.register(socket, _selectors.EVENT_WRITE)
+                case _:  # pragma: no cover
+                    assert_never(event)
             ready_list = selector.select(timeout)
         except (OSError, ValueError):
             # There will be a OSError when using this socket afterward.
             return True
         return len(ready_list) > 0
+
+
+def retry_socket_method(
+    socket: _socket.socket,
+    timeout: float | None,
+    event: Literal["read", "write"],
+    socket_method: Callable[_P, _R],
+    /,
+    *args: _P.args,
+    **kwargs: _P.kwargs,
+) -> _R:
+    assert socket.gettimeout() == 0, "The socket must be non-blocking"
+    monotonic = time.monotonic  # pull function to local namespace
+    while True:
+        try:
+            return socket_method(*args, **kwargs)
+        except BlockingIOError:
+            pass
+        if timeout is not None and timeout <= 0:
+            break
+        _start = monotonic()
+        if not wait_socket_available(socket, timeout, event):
+            break
+        _end = monotonic()
+        if timeout is not None:
+            timeout -= _end - _start
+    raise error_from_errno(_errno.ETIMEDOUT)
 
 
 def concatenate_chunks(chunks_iterable: Iterable[bytes]) -> bytes:

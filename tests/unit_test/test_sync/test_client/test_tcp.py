@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from selectors import EVENT_READ
+from selectors import EVENT_READ, EVENT_WRITE
 from socket import AF_INET6, IPPROTO_TCP, TCP_NODELAY
 from typing import TYPE_CHECKING, Any
 
@@ -91,11 +91,13 @@ class TestTCPNetworkClient(BaseTestClient):
     def set_default_socket_mock_configuration(
         mock_tcp_socket: MagicMock,
         socket_family: int,
-        mocker: MockerFixture,
     ) -> None:
         mock_tcp_socket.family = socket_family
-        mock_tcp_socket.gettimeout.return_value = mocker.sentinel.default_timeout
+        mock_tcp_socket.gettimeout.return_value = 0
         mock_tcp_socket.getsockopt.return_value = 0  # Needed for tests dealing with send_packet()
+        mock_tcp_socket.send.side_effect = lambda data: len(data)
+        del mock_tcp_socket.sendall
+        del mock_tcp_socket.sendto
 
     @pytest.fixture  # DO NOT set autouse=True
     @staticmethod
@@ -197,7 +199,7 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_tcp_socket.getsockname.assert_called_once_with()
         mock_tcp_socket.getpeername.assert_called_once_with()
         mock_tcp_socket.setsockopt.assert_called_once_with(IPPROTO_TCP, TCP_NODELAY, True)
-        mock_tcp_socket.settimeout.assert_called_once_with(None)
+        mock_tcp_socket.settimeout.assert_called_once_with(0)
         mock_tcp_socket.setblocking.assert_not_called()
         assert client.socket is mocker.sentinel.proxy
 
@@ -223,7 +225,7 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_tcp_socket.getsockname.assert_called_once_with()
         mock_tcp_socket.getpeername.assert_called_once_with()
         mock_tcp_socket.setsockopt.assert_called_once_with(IPPROTO_TCP, TCP_NODELAY, True)
-        mock_tcp_socket.settimeout.assert_called_once_with(None)
+        mock_tcp_socket.settimeout.assert_called_once_with(0)
         mock_tcp_socket.setblocking.assert_not_called()
         assert client.socket is mocker.sentinel.proxy
 
@@ -478,8 +480,39 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_tcp_socket.setblocking.assert_not_called()
         mock_selector_select.assert_not_called()
         mock_stream_protocol.generate_chunks.assert_called_once_with(mocker.sentinel.packet)
-        mock_tcp_socket.sendall.assert_called_once_with(b"packet\n")
+        mock_tcp_socket.send.assert_called_once_with(b"packet\n")
         mock_tcp_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_ERROR)
+
+    @pytest.mark.usefixtures("setup_producer_mock")
+    def test____send_packet____blocking_operation(
+        self,
+        client: TCPNetworkClient[Any, Any],
+        mock_tcp_socket: MagicMock,
+        mock_stream_protocol: MagicMock,
+        mock_selector_register: MagicMock,
+        mock_selector_select: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        from socket import SO_ERROR, SOL_SOCKET
+
+        mock_tcp_socket.send.side_effect = [BlockingIOError, len(b"pack"), len(b"et\n")]
+
+        # Act
+        client.send_packet(mocker.sentinel.packet)
+
+        # Assert
+        mock_tcp_socket.settimeout.assert_not_called()
+        mock_tcp_socket.setblocking.assert_not_called()
+        mock_selector_register.assert_called_once_with(mock_tcp_socket, EVENT_WRITE)
+        mock_selector_select.assert_called_once_with(None)
+        mock_stream_protocol.generate_chunks.assert_called_once_with(mocker.sentinel.packet)
+        assert mock_tcp_socket.send.mock_calls == [
+            mocker.call(b"packet\n"),
+            mocker.call(b"packet\n"),
+            mocker.call(b"et\n"),
+        ]
+        assert mock_tcp_socket.getsockopt.mock_calls == [mocker.call(SOL_SOCKET, SO_ERROR) for _ in range(2)]
 
     @pytest.mark.usefixtures("setup_producer_mock")
     def test____send_packet____raise_error_saved_in_SO_ERROR_option(
@@ -506,7 +539,7 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_tcp_socket.setblocking.assert_not_called()
         mock_selector_select.assert_not_called()
         mock_stream_protocol.generate_chunks.assert_called_once_with(mocker.sentinel.packet)
-        mock_tcp_socket.sendall.assert_called_once_with(b"packet\n")
+        mock_tcp_socket.send.assert_called_once_with(b"packet\n")
         mock_tcp_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_ERROR)
 
     @pytest.mark.usefixtures("setup_producer_mock")
@@ -531,7 +564,7 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_tcp_socket.setblocking.assert_not_called()
         mock_selector_select.assert_not_called()
         mock_stream_protocol.generate_chunks.assert_not_called()
-        mock_tcp_socket.sendall.assert_not_called()
+        mock_tcp_socket.send.assert_not_called()
         mock_tcp_socket.getsockopt.assert_not_called()
 
     @pytest.mark.usefixtures("setup_consumer_mock")
@@ -555,12 +588,8 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_tcp_socket.settimeout.assert_not_called()
         mock_tcp_socket.setblocking.assert_not_called()
 
-        if recv_timeout is None:
-            mock_selector_register.assert_not_called()
-            mock_selector_select.assert_not_called()
-        else:
-            mock_selector_register.assert_called_once_with(mock_tcp_socket, EVENT_READ)
-            mock_selector_select.assert_called_once_with(recv_timeout)
+        mock_selector_register.assert_not_called()
+        mock_selector_select.assert_not_called()
 
         mock_tcp_socket.recv.assert_called_once_with(MAX_STREAM_BUFSIZE)
         mock_stream_data_consumer.feed.assert_called_once_with(b"packet\n")
@@ -740,18 +769,26 @@ class TestTCPNetworkClient(BaseTestClient):
         recv_timeout: int,
         mock_tcp_socket: MagicMock,
         mock_selector_select: MagicMock,
+        mock_selector_register: MagicMock,
         mock_stream_data_consumer: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_tcp_socket.recv.side_effect = AssertionError
-        self.selector_timeout_after_n_calls(mock_selector_select, mocker, nb_calls=0)
+        mock_tcp_socket.recv.side_effect = BlockingIOError
+        self.selector_timeout_after_n_calls(mock_selector_select, mocker, nb_calls=1)
 
         # Act & Assert
         with pytest.raises(TimeoutError, match=r"^recv_packet\(\) timed out$"):
             _ = client.recv_packet(timeout=recv_timeout)
 
-        mock_tcp_socket.recv.assert_not_called()
+        if recv_timeout == 0:
+            assert len(mock_tcp_socket.recv.mock_calls) == 1
+            mock_selector_register.assert_not_called()
+            mock_selector_select.assert_not_called()
+        else:
+            assert len(mock_tcp_socket.recv.mock_calls) == 2
+            mock_selector_register.assert_called_with(mock_tcp_socket, EVENT_READ)
+            mock_selector_select.assert_any_call(recv_timeout)
         mock_stream_data_consumer.feed.assert_not_called()
 
     @pytest.mark.parametrize(
@@ -774,14 +811,14 @@ class TestTCPNetworkClient(BaseTestClient):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_tcp_socket.recv.side_effect = [b"pac", b"ket", b"_1\np", b"ack", b"et_", b"2\n", AssertionError]
-        self.selector_timeout_after_n_calls(mock_selector_select, mocker, nb_calls=6)
+        mock_tcp_socket.recv.side_effect = [b"pac", b"ket", b"_1\np", b"ack", b"et_", b"2\n", BlockingIOError]
+        self.selector_timeout_after_n_calls(mock_selector_select, mocker, nb_calls=0)
 
         # Act
         packets = list(client.iter_received_packets(timeout=recv_timeout))
 
         # Assert
-        assert mock_tcp_socket.recv.mock_calls == [mocker.call(max_recv_size) for _ in range(6)]
+        assert mock_tcp_socket.recv.mock_calls == [mocker.call(max_recv_size) for _ in range(7)]
         assert mock_stream_data_consumer.feed.mock_calls == [
             mocker.call(b"pac"),
             mocker.call(b"ket"),
@@ -972,7 +1009,7 @@ class TestTCPNetworkClient(BaseTestClient):
         # Assert
         mock_stream_protocol.generate_chunks.assert_not_called()
         mock_tcp_socket.settimeout.assert_not_called()
-        mock_tcp_socket.sendall.assert_not_called()
+        mock_tcp_socket.send.assert_not_called()
 
     @pytest.mark.usefixtures("setup_consumer_mock")
     def test____special_case____recv_packet____blocking_or_not____eof_error____do_not_try_socket_recv_on_next_call(

@@ -21,8 +21,8 @@ from ...tools._utils import (
     check_socket_family as _check_socket_family,
     concatenate_chunks as _concatenate_chunks,
     error_from_errno as _error_from_errno,
+    retry_socket_method as _retry_socket_method,
     set_tcp_nodelay as _set_tcp_nodelay,
-    wait_socket_available_for_reading as _wait_socket_available_for_reading,
 )
 from ...tools.socket import MAX_STREAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
 from ...tools.stream import StreamDataConsumer
@@ -111,7 +111,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 raise ValueError("'max_recv_size' must be a strictly positive integer")
 
             _set_tcp_nodelay(socket)
-            socket.settimeout(None)  # Do not use global default timeout here
+            socket.settimeout(0)  # Do not use global default timeout here
 
             self.__addr: SocketAddress = new_socket_address(socket.getsockname(), socket.family)
             self.__peer: SocketAddress = new_socket_address(socket.getpeername(), socket.family)
@@ -155,8 +155,18 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
     def send_packet(self, packet: _SentPacketT) -> None:
         with self.__send_lock:
             socket = self.__ensure_connected()
-            socket.sendall(_concatenate_chunks(self.__producer(packet)))
-            _check_real_socket_state(socket)
+            data: bytes = _concatenate_chunks(self.__producer(packet))
+            buffer = memoryview(data)
+            try:
+                remaning: int = len(data)
+                while remaning > 0:
+                    nb_bytes_sent: int = _retry_socket_method(socket, None, "write", socket.send, buffer.toreadonly())
+                    assert nb_bytes_sent >= 0, "socket.send() returns a negative integer"
+                    _check_real_socket_state(socket)
+                    remaning -= nb_bytes_sent
+                    buffer = buffer[nb_bytes_sent:]
+            finally:
+                del buffer, data
 
     def recv_packet(self, timeout: float | None = None) -> _ReceivedPacketT:
         with self.__receive_lock:
@@ -173,11 +183,9 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             while True:
                 try:
                     _start = monotonic()
-                    if timeout is not None and not _wait_socket_available_for_reading(socket, timeout):
-                        raise TimeoutError
-                    chunk: bytes = socket.recv(bufsize)
+                    chunk: bytes = _retry_socket_method(socket, timeout, "read", socket.recv, bufsize)
                     _end = monotonic()
-                except (TimeoutError, BlockingIOError) as exc:
+                except TimeoutError as exc:
                     if timeout is None:  # pragma: no cover
                         raise RuntimeError("socket.recv() timed out with timeout=None ?") from exc
                     break
@@ -191,8 +199,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                     if timeout is not None:
                         if timeout > 0:
                             timeout -= _end - _start
-                            if timeout < 0:  # pragma: no cover
-                                timeout = 0
                         elif len(chunk) < bufsize:
                             break
                     continue
