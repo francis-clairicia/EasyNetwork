@@ -200,6 +200,7 @@ class AsyncioBackend(AbstractAsyncBackend):
 
         import asyncio
         import os
+        import sys
         from itertools import chain
 
         from easynetwork.tools._utils import open_listener_sockets_from_getaddrinfo_result
@@ -208,7 +209,7 @@ class AsyncioBackend(AbstractAsyncBackend):
 
         loop = asyncio.get_running_loop()
 
-        reuse_address = os.name not in ("nt", "cygwin") and hasattr(_socket, "SO_REUSEADDR")
+        reuse_address: bool = os.name not in ("nt", "cygwin") and sys.platform != "cygwin"
         hosts: Sequence[str | None]
         if host == "" or host is None:
             hosts = [None]

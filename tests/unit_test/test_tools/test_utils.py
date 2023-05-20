@@ -144,6 +144,7 @@ def test____wait_socket_available_for_reading____returns_boolean_if_available_or
     else:
         monkeypatch.delattr("selectors.PollSelector", raising=False)
         mock_selector_cls = mocker.patch("selectors.SelectSelector", return_value=mock_selector)
+    mock_selector_register: MagicMock = mock_selector.register
     mock_selector_select: MagicMock = mock_selector.select
     if available:
         mock_selector_select.return_value = [SelectorKey(mock_socket, 1, EVENT_READ, None)]
@@ -155,9 +156,59 @@ def test____wait_socket_available_for_reading____returns_boolean_if_available_or
 
     # Assert
     mock_selector_cls.assert_called_once_with()
-    mock_selector.register.assert_called_once_with(mock_socket, EVENT_READ)
+    mock_selector_register.assert_called_once_with(mock_socket, EVENT_READ)
     mock_selector_select.assert_called_once_with(timeout)
     assert status == available
+
+
+@pytest.mark.parametrize("timeout", [10.2, 0, None], ids=lambda value: f"timeout=={value}")
+def test____wait_socket_available_for_reading____invalid_file_descriptor(
+    mock_socket_factory: Callable[[], MagicMock],
+    timeout: float | None,
+    mocker: MockerFixture,
+) -> None:
+    # Arrange
+    mock_socket = mock_socket_factory()
+    mock_selector = mocker.NonCallableMagicMock(spec=BaseSelector)
+    mock_selector.__enter__.return_value = mock_selector
+    mock_selector_cls = mocker.patch("selectors.PollSelector", return_value=mock_selector, create=True)
+    mock_selector_register: MagicMock = mock_selector.register
+    mock_selector_select: MagicMock = mock_selector.select
+    mock_selector_register.side_effect = ValueError
+
+    # Act
+    status = wait_socket_available_for_reading(mock_socket, timeout)
+
+    # Assert
+    mock_selector_cls.assert_called_once_with()
+    mock_selector_register.assert_called_once_with(mock_socket, EVENT_READ)
+    mock_selector_select.assert_not_called()
+    assert status is True
+
+
+@pytest.mark.parametrize("timeout", [10.2, 0, None], ids=lambda value: f"timeout=={value}")
+def test____wait_socket_available_for_reading____select_error(
+    mock_socket_factory: Callable[[], MagicMock],
+    timeout: float | None,
+    mocker: MockerFixture,
+) -> None:
+    # Arrange
+    mock_socket = mock_socket_factory()
+    mock_selector = mocker.NonCallableMagicMock(spec=BaseSelector)
+    mock_selector.__enter__.return_value = mock_selector
+    mock_selector_cls = mocker.patch("selectors.PollSelector", return_value=mock_selector, create=True)
+    mock_selector_register: MagicMock = mock_selector.register
+    mock_selector_select: MagicMock = mock_selector.select
+    mock_selector_select.side_effect = OSError
+
+    # Act
+    status = wait_socket_available_for_reading(mock_socket, timeout)
+
+    # Assert
+    mock_selector_cls.assert_called_once_with()
+    mock_selector_register.assert_called_once_with(mock_socket, EVENT_READ)
+    mock_selector_select.assert_called_once_with(timeout)
+    assert status is True
 
 
 def test____concanetate_chunks____join_several_bytestrings() -> None:
@@ -305,9 +356,11 @@ def test____set_tcp_nodelay____setsockopt(
 
 
 @pytest.mark.parametrize("reuse_address", [False, True], ids=lambda boolean: f"reuse_address=={boolean}")
+@pytest.mark.parametrize("SO_REUSEADDR_available", [False, True], ids=lambda boolean: f"SO_REUSEADDR_available=={boolean}")
 @pytest.mark.parametrize("reuse_port", [False, True], ids=lambda boolean: f"reuse_port=={boolean}")
 def test____open_listener_sockets_from_getaddrinfo_result____create_listener_sockets(
     reuse_address: bool,
+    SO_REUSEADDR_available: bool,
     reuse_port: bool,
     mock_socket_cls: MagicMock,
     mocker: MockerFixture,
@@ -318,6 +371,8 @@ def test____open_listener_sockets_from_getaddrinfo_result____create_listener_soc
     SO_REUSEPORT: int = 123456
     monkeypatch.setattr("socket.SO_REUSEPORT", SO_REUSEPORT, raising=False)
     backlog: int = 123456
+    if not SO_REUSEADDR_available:
+        monkeypatch.delattr("socket.SO_REUSEADDR", raising=True)
 
     # Act
     sockets = cast(
@@ -334,7 +389,7 @@ def test____open_listener_sockets_from_getaddrinfo_result____create_listener_soc
     assert len(sockets) == len(addrinfo_list)
     assert mock_socket_cls.mock_calls == [mocker.call(f, t, p) for f, t, p, _, _ in addrinfo_list]
     for socket, (sock_family, _, _, _, sock_addr) in zip(sockets, addrinfo_list, strict=True):
-        if reuse_address:
+        if reuse_address and SO_REUSEADDR_available:
             socket.setsockopt.assert_any_call(SOL_SOCKET, SO_REUSEADDR, True)
         if reuse_port:
             socket.setsockopt.assert_any_call(SOL_SOCKET, SO_REUSEPORT, True)

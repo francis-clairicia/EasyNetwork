@@ -53,8 +53,12 @@ def wait_socket_available_for_reading(socket: _socket.socket, timeout: float | N
     selector_cls: type[_selectors.BaseSelector] = getattr(_selectors, "PollSelector", _selectors.SelectSelector)
 
     with selector_cls() as selector:
-        selector.register(socket, _selectors.EVENT_READ)
-        ready_list = selector.select(timeout)
+        try:
+            selector.register(socket, _selectors.EVENT_READ)
+            ready_list = selector.select(timeout)
+        except (OSError, ValueError):
+            # There will be a OSError when using this socket afterward.
+            return True
         return len(ready_list) > 0
 
 
@@ -104,6 +108,7 @@ def open_listener_sockets_from_getaddrinfo_result(
     reuse_port: bool,
 ) -> list[_socket.socket]:
     sockets: list[_socket.socket] = []
+    reuse_address = reuse_address and hasattr(_socket, "SO_REUSEADDR")
     with contextlib.ExitStack() as socket_exit_stack:
         errors: list[OSError] = []
         for res in infos:
@@ -116,7 +121,11 @@ def open_listener_sockets_from_getaddrinfo_result(
                 continue
             sockets.append(sock)
             if reuse_address:
-                sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, True)
+                try:
+                    sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, True)
+                except OSError:  # pragma: no cover
+                    # Will fail later on bind()
+                    pass
             if reuse_port:
                 set_reuseport(sock)
             # Disable IPv4/IPv6 dual stack support (enabled by
