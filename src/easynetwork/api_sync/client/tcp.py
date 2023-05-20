@@ -22,6 +22,7 @@ from ...tools._utils import (
     check_socket_no_ssl as _check_socket_no_ssl,
     concatenate_chunks as _concatenate_chunks,
     error_from_errno as _error_from_errno,
+    replace_kwargs as _replace_kwargs,
     retry_socket_method as _retry_socket_method,
     set_tcp_nodelay as _set_tcp_nodelay,
 )
@@ -55,7 +56,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         /,
         protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
         *,
-        timeout: float | None = ...,
+        connect_timeout: float | None = ...,
         local_address: tuple[str, int] | None = ...,
         max_recv_size: int | None = ...,
     ) -> None:
@@ -92,10 +93,8 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             case _socket.socket() as socket if not kwargs:
                 pass
             case (str(host), int(port)):
-                try:
-                    kwargs["source_address"] = kwargs.pop("local_address")
-                except KeyError:
-                    pass
+                _replace_kwargs(kwargs, {"local_address": "source_address", "connect_timeout": "timeout"})
+                kwargs.setdefault("timeout", None)
                 socket = _socket.create_connection((host, port), **kwargs, all_errors=True)
             case _:  # pragma: no cover
                 raise TypeError("Invalid arguments")

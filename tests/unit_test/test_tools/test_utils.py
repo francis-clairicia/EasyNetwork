@@ -26,6 +26,7 @@ from easynetwork.tools._utils import (
     ensure_datagram_socket_bound,
     error_from_errno,
     open_listener_sockets_from_getaddrinfo_result,
+    replace_kwargs,
     set_reuseport,
     set_tcp_nodelay,
     wait_socket_available,
@@ -59,6 +60,52 @@ def addrinfo_list() -> Sequence[tuple[int, int, int, str, tuple[Any, ...]]]:
         (AF_INET, SOCK_STREAM, IPPROTO_TCP, "", ("0.0.0.0", 65432)),
         (AF_INET6, SOCK_STREAM, IPPROTO_TCP, "", ("::", 65432, 0, 0)),
     )
+
+
+def test____replace_kwargs____rename_keys() -> None:
+    # Arrange
+    kwargs = {"arg1": 4, "arg2": 12, "not_modified": "Yes"}
+
+    # Act
+    replace_kwargs(kwargs, {"arg1": "arg12000", "arg2": "something"})
+
+    # Assert
+    assert kwargs == {"arg12000": 4, "something": 12, "not_modified": "Yes"}
+
+
+def test____replace_kwargs____ignore_missing_keys() -> None:
+    # Arrange
+    kwargs = {"arg1": 4, "not_modified": "Yes"}
+
+    # Act
+    replace_kwargs(kwargs, {"unknown": "something", "arg1": "arg12000"})
+
+    # Assert
+    assert kwargs == {"arg12000": 4, "not_modified": "Yes"}
+
+
+def test____replace_kwargs____error_target_already_present() -> None:
+    # Arrange
+    kwargs = {"arg1": 4, "arg12000": "Yes"}
+
+    # Act
+    with pytest.raises(TypeError, match=r"^Cannot set 'arg1' to 'arg12000': 'arg12000' in dictionary$"):
+        replace_kwargs(kwargs, {"arg1": "arg12000"})
+
+    # Assert
+    assert kwargs == {"arg1": 4, "arg12000": "Yes"}
+
+
+def test____replace_kwargs____error_empty_key_dict() -> None:
+    # Arrange
+    kwargs = {"arg1": 4, "arg12000": "Yes"}
+
+    # Act
+    with pytest.raises(ValueError, match=r"^Empty key dict$"):
+        replace_kwargs(kwargs, {})
+
+    # Assert
+    assert kwargs == {"arg1": 4, "arg12000": "Yes"}
 
 
 def test____error_from_errno____returns_OSError(mocker: MockerFixture) -> None:

@@ -183,7 +183,7 @@ class TestTCPNetworkClient(BaseTestClient):
         client: TCPNetworkClient[Any, Any] = TCPNetworkClient(
             remote_address,
             protocol=mock_stream_protocol,
-            timeout=mocker.sentinel.timeout,
+            connect_timeout=mocker.sentinel.timeout,
             local_address=mocker.sentinel.local_address,
         )
 

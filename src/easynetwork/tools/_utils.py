@@ -4,10 +4,16 @@ from __future__ import annotations
 
 __all__ = [
     "check_real_socket_state",
+    "check_socket_family",
     "check_socket_no_ssl",
+    "concatenate_chunks",
+    "ensure_datagram_socket_bound",
     "error_from_errno",
     "open_listener_sockets_from_getaddrinfo_result",
+    "replace_kwargs",
+    "retry_socket_method",
     "set_reuseport",
+    "set_tcp_nodelay",
     "wait_socket_available",
 ]
 
@@ -24,6 +30,18 @@ if TYPE_CHECKING:
 
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
+
+
+def replace_kwargs(kwargs: dict[str, Any], keys: dict[str, str]) -> None:
+    if not keys:
+        raise ValueError("Empty key dict")
+    for old_key, new_key in keys.items():
+        if new_key in kwargs:
+            raise TypeError(f"Cannot set {old_key!r} to {new_key!r}: {new_key!r} in dictionary")
+        try:
+            kwargs[new_key] = kwargs.pop(old_key)
+        except KeyError:
+            pass
 
 
 def error_from_errno(errno: int) -> OSError:
