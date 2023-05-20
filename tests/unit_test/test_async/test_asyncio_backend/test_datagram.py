@@ -768,12 +768,11 @@ class TestDatagramSocketAdapter:
         assert address == ("an_address", 12345)
 
     @pytest.mark.parametrize("address", [("127.0.0.1", 12345), None], ids=repr)
-    async def test____sendall____write_and_drain(
+    async def test____sendto____write_and_drain(
         self,
         address: tuple[str, int] | None,
         socket: AsyncioTransportDatagramSocketAdapter,
         mock_endpoint: MagicMock,
-        mocker: MockerFixture,
     ) -> None:
         # Arrange
 
@@ -781,8 +780,7 @@ class TestDatagramSocketAdapter:
         await socket.sendto(b"data to send", address)
 
         # Assert
-        ## cannot test full sendto() args because it will have a closed memoryview()
-        mock_endpoint.sendto.assert_awaited_once_with(mocker.ANY, address)
+        mock_endpoint.sendto.assert_awaited_once_with(b"data to send", address)
 
     async def test____getsockname____return_sockname_extra_info(
         self,

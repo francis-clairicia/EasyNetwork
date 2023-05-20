@@ -239,7 +239,7 @@ class TestTransportBasedStreamSocket(BaseTestTransportStreamSocket):
         await socket.sendall(b"data to send")
 
         # Assert
-        mock_asyncio_writer.write.assert_called_once_with(mocker.ANY)  # cannot test args because it will be a closed memoryview()
+        mock_asyncio_writer.write.assert_called_once_with(b"data to send")
         mock_asyncio_writer.drain.assert_awaited_once_with()
 
     async def test____getsockname____return_sockname_extra_info(
