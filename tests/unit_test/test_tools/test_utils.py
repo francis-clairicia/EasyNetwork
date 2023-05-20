@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any, Callable, Literal, Sequence, cast
 from easynetwork.tools._utils import (
     check_real_socket_state,
     check_socket_family,
+    check_socket_no_ssl,
     concatenate_chunks,
     ensure_datagram_socket_bound,
     error_from_errno,
@@ -122,6 +123,22 @@ def test____check_socket_family____invalid_family(socket_family: int) -> None:
     # Act & Assert
     with pytest.raises(ValueError, match=r"^Only these families are supported: .+$"):
         check_socket_family(socket_family)
+
+
+def test____check_socket_no_ssl____regular_socket(mock_socket_factory: Callable[[], MagicMock]) -> None:
+    # Arrange
+    mock_socket = mock_socket_factory()
+
+    # Act & Assert
+    check_socket_no_ssl(mock_socket)
+
+
+def test____check_socket_no_ssl____ssl_socket(mock_ssl_socket: MagicMock) -> None:
+    # Arrange
+
+    # Act & Assert
+    with pytest.raises(TypeError, match=r"^ssl\.SSLSocket instances are forbidden$"):
+        check_socket_no_ssl(mock_ssl_socket)
 
 
 @pytest.mark.parametrize(["event", "selector_event"], [("read", "EVENT_READ"), ("write", "EVENT_WRITE")])

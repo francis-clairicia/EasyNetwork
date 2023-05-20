@@ -4,6 +4,7 @@ from __future__ import annotations
 
 __all__ = [
     "check_real_socket_state",
+    "check_socket_no_ssl",
     "error_from_errno",
     "open_listener_sockets_from_getaddrinfo_result",
     "set_reuseport",
@@ -51,6 +52,16 @@ def check_real_socket_state(socket: _socket.socket | _SocketProxy) -> None:
     if errno != 0:
         # The SO_ERROR is automatically reset to zero after getting the value
         raise error_from_errno(errno)
+
+
+def check_socket_no_ssl(socket: _socket.socket) -> None:
+    try:
+        import ssl
+    except ImportError:  # pragma: no cover
+        return
+
+    if isinstance(socket, ssl.SSLSocket):
+        raise TypeError("ssl.SSLSocket instances are forbidden")
 
 
 def wait_socket_available(socket: _socket.socket, timeout: float | None, event: Literal["read", "write"]) -> bool:

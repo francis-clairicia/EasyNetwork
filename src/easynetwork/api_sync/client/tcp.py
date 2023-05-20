@@ -19,6 +19,7 @@ from ...protocol import StreamProtocol
 from ...tools._utils import (
     check_real_socket_state as _check_real_socket_state,
     check_socket_family as _check_socket_family,
+    check_socket_no_ssl as _check_socket_no_ssl,
     concatenate_chunks as _concatenate_chunks,
     error_from_errno as _error_from_errno,
     retry_socket_method as _retry_socket_method,
@@ -104,6 +105,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 raise ValueError("Invalid socket type")
 
             _check_socket_family(socket.family)
+            _check_socket_no_ssl(socket)
 
             if max_recv_size is None:
                 max_recv_size = MAX_STREAM_BUFSIZE

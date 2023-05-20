@@ -17,6 +17,7 @@ from ...protocol import StreamProtocol
 from ...tools._utils import (
     check_real_socket_state as _check_real_socket_state,
     check_socket_family as _check_socket_family,
+    check_socket_no_ssl as _check_socket_no_ssl,
     concatenate_chunks as _concatenate_chunks,
     error_from_errno as _error_from_errno,
     set_tcp_nodelay as _set_tcp_nodelay,
@@ -108,6 +109,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         self.__socket_connector: SingleTaskRunner[AbstractAsyncStreamSocketAdapter] | None = None
         match __arg:
             case _socket.socket() as socket:
+                _check_socket_no_ssl(socket)
                 self.__socket_connector = SingleTaskRunner(backend, backend.wrap_tcp_client_socket, socket, **kwargs)
             case (host, port):
                 self.__socket_connector = SingleTaskRunner(backend, backend.create_tcp_connection, host, port, **kwargs)

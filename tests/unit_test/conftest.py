@@ -76,6 +76,25 @@ def mock_udp_socket(mock_udp_socket_factory: Callable[[], MagicMock]) -> MagicMo
 
 
 @pytest.fixture
+def mock_ssl_socket_factory(mocker: MockerFixture) -> Callable[[], MagicMock]:
+    import ssl
+
+    def factory() -> MagicMock:
+        mock_socket = mocker.NonCallableMagicMock(spec=ssl.SSLSocket)
+        mock_socket.family = AF_INET
+        mock_socket.type = SOCK_STREAM
+        mock_socket.proto = IPPROTO_TCP
+        return mock_socket
+
+    return factory
+
+
+@pytest.fixture
+def mock_ssl_socket(mock_ssl_socket_factory: Callable[[], MagicMock]) -> MagicMock:
+    return mock_ssl_socket_factory()
+
+
+@pytest.fixture
 def mock_serializer_factory(mocker: MockerFixture) -> Callable[[], Any]:
     return lambda: mocker.NonCallableMagicMock(spec=AbstractPacketSerializer)
 

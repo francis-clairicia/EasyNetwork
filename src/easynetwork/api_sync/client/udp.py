@@ -18,6 +18,7 @@ from ...protocol import DatagramProtocol
 from ...tools._utils import (
     check_real_socket_state as _check_real_socket_state,
     check_socket_family as _check_socket_family,
+    check_socket_no_ssl as _check_socket_no_ssl,
     ensure_datagram_socket_bound as _ensure_datagram_socket_bound,
     retry_socket_method as _retry_socket_method,
 )
@@ -98,6 +99,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             if socket.type != _socket.SOCK_DGRAM:
                 raise ValueError("Invalid socket type")
 
+            _check_socket_no_ssl(socket)
             if external_socket:
                 _check_socket_family(socket.family)
                 _ensure_datagram_socket_bound(socket)
