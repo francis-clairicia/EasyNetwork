@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pathlib
 from socket import AF_INET, IPPROTO_TCP, IPPROTO_UDP, SOCK_DGRAM, SOCK_STREAM, socket as Socket
+from ssl import SSLContext, SSLSocket
 from typing import TYPE_CHECKING, Any, Callable
 
 from easynetwork.converter import AbstractPacketConverterComposite
@@ -77,13 +78,12 @@ def mock_udp_socket(mock_udp_socket_factory: Callable[[], MagicMock]) -> MagicMo
 
 @pytest.fixture
 def mock_ssl_socket_factory(mocker: MockerFixture) -> Callable[[], MagicMock]:
-    import ssl
-
     def factory() -> MagicMock:
-        mock_socket = mocker.NonCallableMagicMock(spec=ssl.SSLSocket)
+        mock_socket = mocker.NonCallableMagicMock(spec=SSLSocket)
         mock_socket.family = AF_INET
         mock_socket.type = SOCK_STREAM
         mock_socket.proto = IPPROTO_TCP
+        mock_socket.do_handshake.return_value = None
         return mock_socket
 
     return factory
@@ -92,6 +92,22 @@ def mock_ssl_socket_factory(mocker: MockerFixture) -> Callable[[], MagicMock]:
 @pytest.fixture
 def mock_ssl_socket(mock_ssl_socket_factory: Callable[[], MagicMock]) -> MagicMock:
     return mock_ssl_socket_factory()
+
+
+@pytest.fixture
+def mock_ssl_context_factory(mocker: MockerFixture) -> Callable[[], MagicMock]:
+    def factory() -> MagicMock:
+        mock_context = mocker.NonCallableMagicMock(spec=SSLContext)
+        mock_context.check_hostname = True
+        mock_context.options = 0
+        return mock_context
+
+    return factory
+
+
+@pytest.fixture
+def mock_ssl_context(mock_ssl_context_factory: Callable[[], MagicMock]) -> MagicMock:
+    return mock_ssl_context_factory()
 
 
 @pytest.fixture

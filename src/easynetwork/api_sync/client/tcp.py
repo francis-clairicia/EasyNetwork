@@ -160,6 +160,9 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             # Do not use global default timeout here
             socket.settimeout(0)
 
+            self.__addr: SocketAddress = new_socket_address(socket.getsockname(), socket.family)
+            self.__peer: SocketAddress = new_socket_address(socket.getpeername(), socket.family)
+
             if ssl:
                 if isinstance(ssl, bool):
                     from ssl import create_default_context
@@ -190,9 +193,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                     ssl_shutdown_timeout = SSL_SHUTDOWN_TIMEOUT
 
             _set_tcp_nodelay(socket)
-
-            self.__addr: SocketAddress = new_socket_address(socket.getsockname(), socket.family)
-            self.__peer: SocketAddress = new_socket_address(socket.getpeername(), socket.family)
             self.__producer: Callable[[_SentPacketT], Iterator[bytes]] = protocol.generate_chunks
             self.__consumer: StreamDataConsumer[_ReceivedPacketT] = StreamDataConsumer(protocol)
             self.__socket_proxy = SocketProxy(socket, lock=self.__socket_lock)
@@ -246,8 +246,8 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             data: bytes = _concatenate_chunks(self.__producer(packet))
             buffer = memoryview(data)
             try:
-                remaning: int = len(data)
-                while remaning > 0:
+                remaining: int = len(data)
+                while remaining > 0:
                     nb_bytes_sent: int
                     if _is_ssl_socket(socket):
                         with self.__convert_ssl_eof_error():
@@ -256,7 +256,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                         nb_bytes_sent = _retry_socket_method(socket, None, "write", socket.send, buffer.toreadonly())
                     assert nb_bytes_sent >= 0, "socket.send() returned a negative integer"
                     _check_real_socket_state(socket)
-                    remaning -= nb_bytes_sent
+                    remaining -= nb_bytes_sent
                     buffer = buffer[nb_bytes_sent:]
             finally:
                 del buffer, data
