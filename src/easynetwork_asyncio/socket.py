@@ -130,7 +130,7 @@ class AsyncSocket:
 
     async def recvfrom(self, bufsize: int, /) -> tuple[bytes, _socket._RetAddress]:
         with self.__conflict_detection("recv", abort_errno=_errno.ECONNABORTED) as socket:
-            return await self.__loop.sock_recvfrom(socket, bufsize)  # type: ignore[return-value]  # mypy most likely mismatch signature with loop.sock_recv()
+            return await self.__loop.sock_recvfrom(socket, bufsize)
 
     @contextlib.contextmanager
     def __conflict_detection(self, task_id: _SocketTaskId, *, abort_errno: int | None = None) -> Iterator[_socket.socket]:

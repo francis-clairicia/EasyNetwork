@@ -25,6 +25,7 @@ from easynetwork.tools._utils import (
     concatenate_chunks,
     ensure_datagram_socket_bound,
     error_from_errno,
+    is_ssl_socket,
     open_listener_sockets_from_getaddrinfo_result,
     replace_kwargs,
     set_reuseport,
@@ -170,6 +171,21 @@ def test____check_socket_family____invalid_family(socket_family: int) -> None:
     # Act & Assert
     with pytest.raises(ValueError, match=r"^Only these families are supported: .+$"):
         check_socket_family(socket_family)
+
+
+def test____is_ssl_socket____regular_socket(mock_socket_factory: Callable[[], MagicMock]) -> None:
+    # Arrange
+    mock_socket = mock_socket_factory()
+
+    # Act & Assert
+    assert not is_ssl_socket(mock_socket)
+
+
+def test____is_ssl_socket____ssl_socket(mock_ssl_socket: MagicMock) -> None:
+    # Arrange
+
+    # Act & Assert
+    assert is_ssl_socket(mock_ssl_socket)
 
 
 def test____check_socket_no_ssl____regular_socket(mock_socket_factory: Callable[[], MagicMock]) -> None:

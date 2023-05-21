@@ -9,11 +9,15 @@ __all__ = [
     "concatenate_chunks",
     "ensure_datagram_socket_bound",
     "error_from_errno",
+    "is_ssl_eof_error",
+    "is_ssl_socket",
     "open_listener_sockets_from_getaddrinfo_result",
     "replace_kwargs",
     "retry_socket_method",
+    "retry_ssl_socket_method",
     "set_reuseport",
     "set_tcp_nodelay",
+    "ssl_do_not_ignore_unexpected_eof",
     "wait_socket_available",
 ]
 
@@ -23,9 +27,11 @@ import os
 import selectors as _selectors
 import socket as _socket
 import time
-from typing import TYPE_CHECKING, Any, Callable, Iterable, Literal, ParamSpec, TypeVar, assert_never
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Literal, ParamSpec, TypeGuard, TypeVar, assert_never
 
 if TYPE_CHECKING:
+    from ssl import SSLContext as _SSLContext, SSLError as _SSLError, SSLSocket as _SSLSocket
+
     from .socket import SocketProxy as _SocketProxy
 
 _P = ParamSpec("_P")
@@ -72,13 +78,17 @@ def check_real_socket_state(socket: _socket.socket | _SocketProxy) -> None:
         raise error_from_errno(errno)
 
 
-def check_socket_no_ssl(socket: _socket.socket) -> None:
+def is_ssl_socket(socket: _socket.socket) -> TypeGuard[_SSLSocket]:
     try:
         import ssl
     except ImportError:  # pragma: no cover
-        return
+        return False
 
-    if isinstance(socket, ssl.SSLSocket):
+    return isinstance(socket, ssl.SSLSocket)
+
+
+def check_socket_no_ssl(socket: _socket.socket) -> None:
+    if is_ssl_socket(socket):
         raise TypeError("ssl.SSLSocket instances are forbidden")
 
 
@@ -110,6 +120,7 @@ def retry_socket_method(
     *args: _P.args,
     **kwargs: _P.kwargs,
 ) -> _R:
+    assert not is_ssl_socket(socket), "ssl.SSLSocket instances are forbidden"
     assert socket.gettimeout() == 0, "The socket must be non-blocking"
     monotonic = time.monotonic  # pull function to local namespace
     while True:
@@ -126,6 +137,65 @@ def retry_socket_method(
         if timeout is not None:
             timeout -= _end - _start
     raise error_from_errno(_errno.ETIMEDOUT)
+
+
+def retry_ssl_socket_method(
+    socket: _SSLSocket,
+    timeout: float | None,
+    socket_method: Callable[_P, _R],
+    /,
+    *args: _P.args,
+    **kwargs: _P.kwargs,
+) -> _R:
+    assert is_ssl_socket(socket), "Expected an ssl.SSLSocket instance"
+    assert socket.gettimeout() == 0, "The socket must be non-blocking"
+
+    import ssl
+
+    monotonic = time.monotonic  # pull function to local namespace
+    event: Literal["read", "write"]
+    while True:
+        try:
+            return socket_method(*args, **kwargs)
+        except (ssl.SSLWantReadError, ssl.SSLSyscallError):
+            event = "read"
+        except ssl.SSLWantWriteError:
+            event = "write"
+        if timeout is not None and timeout <= 0:
+            break
+        _start = monotonic()
+        if not wait_socket_available(socket, timeout, event):
+            break
+        _end = monotonic()
+        if timeout is not None:
+            timeout -= _end - _start
+    raise error_from_errno(_errno.ETIMEDOUT)
+
+
+def is_ssl_eof_error(exc: BaseException) -> TypeGuard[_SSLError]:
+    try:
+        import ssl
+    except ImportError:  # pragma: no cover
+        return False
+
+    match exc:
+        case ssl.SSLEOFError():
+            return True
+        case ssl.SSLError() if hasattr(exc, "strerror") and "UNEXPECTED_EOF_WHILE_READING" in exc.strerror:
+            # From Trio project:
+            # There appears to be a bug on Python 3.10, where SSLErrors
+            # aren't properly translated into SSLEOFErrors.
+            # This stringly-typed error check is borrowed from the AnyIO
+            # project.
+            return True
+    return False
+
+
+def ssl_do_not_ignore_unexpected_eof(ssl_context: _SSLContext) -> None:
+    import ssl
+
+    if hasattr(ssl, "OP_IGNORE_UNEXPECTED_EOF"):
+        ssl_context.options &= ~getattr(ssl, "OP_IGNORE_UNEXPECTED_EOF")
 
 
 def concatenate_chunks(chunks_iterable: Iterable[bytes]) -> bytes:

@@ -24,14 +24,13 @@ from ..conftest import use_asyncio_transport_xfail_uvloop
 def udp_socket_factory(
     request: pytest.FixtureRequest,
     localhost_ip: str,
-    unused_udp_port_factory: Callable[[], int],
 ) -> Callable[[], Socket]:
     udp_socket_factory: Callable[[], Socket] = request.getfixturevalue("udp_socket_factory")
 
     def bound_udp_socket_factory() -> Socket:
         sock = udp_socket_factory()
         sock.settimeout(3)
-        sock.bind((localhost_ip, unused_udp_port_factory()))
+        sock.bind((localhost_ip, 0))
         return sock
 
     return bound_udp_socket_factory
@@ -41,14 +40,13 @@ def udp_socket_factory(
 async def datagram_endpoint_factory(
     socket_family: int,
     localhost_ip: str,
-    unused_udp_port_factory: Callable[[], int],
 ) -> AsyncIterator[Callable[[], Awaitable[DatagramEndpoint]]]:
     async with contextlib.AsyncExitStack() as stack:
 
         async def factory() -> DatagramEndpoint:
             endpoint = await create_datagram_endpoint(
                 family=socket_family,
-                local_addr=(localhost_ip, unused_udp_port_factory()),
+                local_addr=(localhost_ip, 0),
             )
             stack.push_async_callback(lambda: asyncio.wait_for(endpoint.wait_closed(), 3))
             stack.callback(endpoint.transport.abort)
@@ -265,12 +263,11 @@ class TestAsyncUDPNetworkClientConnection:
         cls,
         event_loop: asyncio.AbstractEventLoop,
         localhost_ip: str,
-        unused_udp_port_factory: Callable[[], int],
         socket_family: int,
     ) -> AsyncIterator[asyncio.DatagramTransport]:
         transport, protocol = await event_loop.create_datagram_endpoint(
             lambda: cls.EchoProtocol(event_loop.create_future()),
-            local_addr=(localhost_ip, unused_udp_port_factory()),
+            local_addr=(localhost_ip, 0),
             family=socket_family,
         )
         try:

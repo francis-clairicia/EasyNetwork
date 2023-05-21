@@ -145,13 +145,12 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         request_handler: MyAsyncTCPRequestHandler,
         socket_family: int,
         localhost_ip: str,
-        unused_tcp_port_factory: Callable[[], int],
         stream_protocol: StreamProtocol[str, str],
         backend_kwargs: dict[str, Any],
     ) -> AsyncIterator[MyAsyncTCPServer]:
         async with MyAsyncTCPServer(
             localhost_ip,
-            unused_tcp_port_factory(),
+            0,
             stream_protocol,
             request_handler,
             family=socket_family,
@@ -197,12 +196,11 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     async def test____dunder_init____bind_on_all_available_interfaces(
         self,
         host: str | None,
-        unused_tcp_port: int,
         request_handler: MyAsyncTCPRequestHandler,
         stream_protocol: StreamProtocol[str, str],
         backend_kwargs: dict[str, Any],
     ) -> None:
-        async with MyAsyncTCPServer(host, unused_tcp_port, stream_protocol, request_handler, backend_kwargs=backend_kwargs) as s:
+        async with MyAsyncTCPServer(host, 0, stream_protocol, request_handler, backend_kwargs=backend_kwargs) as s:
             _ = asyncio.create_task(s.serve_forever())
             async with asyncio.timeout(1):
                 await s.wait_for_server_to_be_up()

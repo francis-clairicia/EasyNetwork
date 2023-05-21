@@ -121,13 +121,12 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         request_handler: MyAsyncUDPRequestHandler,
         socket_family: int,
         localhost_ip: str,
-        unused_udp_port_factory: Callable[[], int],
         datagram_protocol: DatagramProtocol[str, str],
         backend_kwargs: dict[str, Any],
     ) -> AsyncIterator[MyAsyncUDPServer]:
         async with MyAsyncUDPServer(
             localhost_ip,
-            unused_udp_port_factory(),
+            0,
             datagram_protocol,
             request_handler,
             family=socket_family,
@@ -175,14 +174,11 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
     async def test____dunder_init____bind_on_all_available_interfaces(
         self,
         host: str | None,
-        unused_udp_port: int,
         request_handler: MyAsyncUDPRequestHandler,
         datagram_protocol: DatagramProtocol[str, str],
         backend_kwargs: dict[str, Any],
     ) -> None:
-        async with MyAsyncUDPServer(
-            host, unused_udp_port, datagram_protocol, request_handler, backend_kwargs=backend_kwargs
-        ) as s:
+        async with MyAsyncUDPServer(host, 0, datagram_protocol, request_handler, backend_kwargs=backend_kwargs) as s:
             _ = asyncio.create_task(s.serve_forever())
             async with asyncio.timeout(1):
                 await s.wait_for_server_to_be_up()

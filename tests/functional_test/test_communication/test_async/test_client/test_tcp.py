@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from socket import AF_INET, IPPROTO_TCP, SHUT_WR, TCP_NODELAY, socket as Socket
-from typing import Any, AsyncIterator, Callable
+from typing import Any, AsyncIterator
 
 from easynetwork.api_async.client.tcp import AsyncTCPNetworkClient
 from easynetwork.exceptions import ClientClosedError, StreamProtocolParseError
@@ -199,9 +199,7 @@ class TestAsyncTCPNetworkClient:
 class TestAsyncTCPNetworkClientConnection:
     @pytest_asyncio.fixture(autouse=True)
     @staticmethod
-    async def server(
-        localhost_ip: str, unused_tcp_port_factory: Callable[[], int], socket_family: int
-    ) -> AsyncIterator[asyncio.Server]:
+    async def server(localhost_ip: str, socket_family: int) -> AsyncIterator[asyncio.Server]:
         async def client_connected_cb(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
             try:
                 data: bytes = await reader.readline()
@@ -214,7 +212,7 @@ class TestAsyncTCPNetworkClientConnection:
         async with await asyncio.start_server(
             client_connected_cb,
             host=localhost_ip,
-            port=unused_tcp_port_factory(),
+            port=0,
             family=socket_family,
         ) as server:
             await asyncio.sleep(0.01)

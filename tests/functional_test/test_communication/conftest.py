@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ssl
 from contextlib import ExitStack
 from functools import partial
 from socket import AF_INET, AF_INET6, SOCK_DGRAM, SOCK_STREAM, has_ipv6 as HAS_IPV6, socket as Socket
@@ -10,6 +11,7 @@ from typing import Any, Callable, Iterator
 from easynetwork.protocol import DatagramProtocol, StreamProtocol
 
 import pytest
+import trustme
 
 from .serializer import StringSerializer
 
@@ -93,3 +95,40 @@ def socket_pair(localhost_ip: str, tcp_socket_factory: Callable[[], Socket]) -> 
         lsock.close()
     with ssock:  # csock will be closed later by tcp_socket_factory() teardown
         yield ssock, csock
+
+
+@pytest.fixture(scope="session")
+def ssl_certificate_authority() -> trustme.CA:
+    return trustme.CA()
+
+
+@pytest.fixture(scope="session")
+def server_certificate(ssl_certificate_authority: trustme.CA) -> trustme.LeafCert:
+    return ssl_certificate_authority.issue_cert("*.example.com")
+
+
+@pytest.fixture(scope="session")
+def client_certificate(ssl_certificate_authority: trustme.CA) -> trustme.LeafCert:
+    return ssl_certificate_authority.issue_cert("client@example.com")
+
+
+@pytest.fixture
+def server_ssl_context(ssl_certificate_authority: trustme.CA, server_certificate: trustme.LeafCert) -> ssl.SSLContext:
+    server_ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+
+    server_certificate.configure_cert(server_ssl_context)
+    ssl_certificate_authority.configure_trust(server_ssl_context)
+
+    server_ssl_context.verify_mode = ssl.CERT_REQUIRED
+
+    return server_ssl_context
+
+
+@pytest.fixture
+def client_ssl_context(ssl_certificate_authority: trustme.CA, client_certificate: trustme.LeafCert) -> ssl.SSLContext:
+    client_ssl_context = ssl.create_default_context()
+
+    client_certificate.configure_cert(client_ssl_context)
+    ssl_certificate_authority.configure_trust(client_ssl_context)
+
+    return client_ssl_context
