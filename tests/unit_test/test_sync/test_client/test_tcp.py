@@ -642,7 +642,7 @@ class TestTCPNetworkClient(BaseTestClient):
             )
 
         # Assert
-        assert mock_ssl_context.check_hostname
+        assert mock_ssl_context.check_hostname is True
         mock_ssl_context.wrap_socket.assert_called_once_with(
             mock_tcp_socket,
             server_side=False,
@@ -762,7 +762,7 @@ class TestTCPNetworkClient(BaseTestClient):
             suppress_ragged_eofs=False,
             server_hostname=None,
         )
-        assert not mock_ssl_context.check_hostname
+        assert mock_ssl_context.check_hostname is False
 
     @pytest.mark.parametrize("use_ssl", ["USE_SSL"], indirect=True)
     @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
