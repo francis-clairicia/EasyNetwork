@@ -120,9 +120,9 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
 
         socket: _socket.socket
         match __arg:
+            case _socket.socket() if server_hostname is None and ssl:
+                raise ValueError("You must set server_hostname when using ssl without a host")
             case _socket.socket() as socket if not kwargs:
-                if server_hostname is None and ssl:
-                    raise ValueError("You must set server_hostname when using ssl without a host")
                 pass
             case (str(host), int(port)):
                 if server_hostname is None and ssl:
