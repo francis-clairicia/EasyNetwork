@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any, Callable, Coroutine, Generic, NoReturn, P
 if TYPE_CHECKING:
     import concurrent.futures
     import socket as _socket
+    import ssl as _ssl
     from types import TracebackType
 
     from _typeshed import ReadableBuffer
@@ -301,9 +302,33 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
     ) -> AbstractAsyncStreamSocketAdapter:
         raise NotImplementedError
 
+    async def create_ssl_over_tcp_connection(
+        self,
+        host: str,
+        port: int,
+        ssl_context: _ssl.SSLContext,
+        server_hostname: str | None,
+        ssl_handshake_timeout: float,
+        ssl_shutdown_timeout: float,
+        *,
+        local_address: tuple[str, int] | None = ...,
+        happy_eyeballs_delay: float | None = ...,
+    ) -> AbstractAsyncStreamSocketAdapter:
+        raise NotImplementedError("SSL/TLS is not supported by this backend")
+
     @abstractmethod
     async def wrap_tcp_client_socket(self, socket: _socket.socket) -> AbstractAsyncStreamSocketAdapter:
         raise NotImplementedError
+
+    async def wrap_ssl_over_tcp_client_socket(
+        self,
+        socket: _socket.socket,
+        ssl_context: _ssl.SSLContext,
+        server_hostname: str,
+        ssl_handshake_timeout: float,
+        ssl_shutdown_timeout: float,
+    ) -> AbstractAsyncStreamSocketAdapter:
+        raise NotImplementedError("SSL/TLS is not supported by this backend")
 
     @abstractmethod
     async def create_tcp_listeners(
