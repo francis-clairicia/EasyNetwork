@@ -16,7 +16,7 @@ import errno as _errno
 from typing import TYPE_CHECKING, Any, Iterator, Literal, Self, TypeAlias
 from weakref import WeakSet
 
-from easynetwork.tools._utils import error_from_errno as _error_from_errno
+from easynetwork.tools._utils import check_socket_no_ssl as _check_socket_no_ssl, error_from_errno as _error_from_errno
 
 if TYPE_CHECKING:
     import socket as _socket
@@ -42,6 +42,7 @@ class AsyncSocket:
     def __init__(self, socket: _socket.socket, loop: asyncio.AbstractEventLoop) -> None:
         super().__init__()
 
+        _check_socket_no_ssl(socket)
         socket.setblocking(False)
 
         self.__socket: _socket.socket | None = socket
