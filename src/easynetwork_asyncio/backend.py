@@ -124,7 +124,6 @@ class AsyncioBackend(AbstractAsyncBackend):
         host: str,
         port: int,
         *,
-        family: int = 0,
         local_address: tuple[str, int] | None = None,
         happy_eyeballs_delay: float | None = None,
     ) -> AbstractAsyncStreamSocketAdapter:
@@ -143,7 +142,7 @@ class AsyncioBackend(AbstractAsyncBackend):
                 transport = self.__use_asyncio_transport
                 raise ValueError(f"'happy_eyeballs_delay' option not supported with {transport=}")
 
-            socket = await create_connection(host, port, loop, family=family, local_address=local_address)
+            socket = await create_connection(host, port, loop, local_address=local_address)
             return RawStreamSocketAdapter(socket, loop)
 
         from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
@@ -154,7 +153,6 @@ class AsyncioBackend(AbstractAsyncBackend):
             reader, writer = await asyncio.open_connection(
                 host,
                 port,
-                family=family,
                 local_addr=local_address,
                 limit=MAX_STREAM_BUFSIZE,
             )
@@ -162,7 +160,6 @@ class AsyncioBackend(AbstractAsyncBackend):
             reader, writer = await asyncio.open_connection(
                 host,
                 port,
-                family=family,
                 local_addr=local_address,
                 happy_eyeballs_delay=happy_eyeballs_delay,
                 limit=MAX_STREAM_BUFSIZE,

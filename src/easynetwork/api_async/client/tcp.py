@@ -62,7 +62,6 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         /,
         protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
         *,
-        family: int = ...,
         local_address: tuple[str, int] | None = ...,
         happy_eyeballs_delay: float | None = ...,
         max_recv_size: int | None = ...,

@@ -296,7 +296,6 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         host: str,
         port: int,
         *,
-        family: int = ...,
         local_address: tuple[str, int] | None = ...,
         happy_eyeballs_delay: float | None = ...,
     ) -> AbstractAsyncStreamSocketAdapter:

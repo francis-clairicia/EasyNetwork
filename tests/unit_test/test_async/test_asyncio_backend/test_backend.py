@@ -124,7 +124,6 @@ class TestAsyncIOBackend:
         # Act
         socket = await backend.create_tcp_connection(
             *remote_address,
-            family=1234,
             happy_eyeballs_delay=42,
             local_address=local_address,
         )
@@ -132,7 +131,6 @@ class TestAsyncIOBackend:
         # Assert
         mock_open_connection.assert_awaited_once_with(
             *remote_address,
-            family=1234,
             happy_eyeballs_delay=42,
             local_addr=local_address,
             limit=MAX_STREAM_BUFSIZE,
@@ -161,7 +159,6 @@ class TestAsyncIOBackend:
         # Act
         await backend.create_tcp_connection(
             *remote_address,
-            family=1234,
             happy_eyeballs_delay=None,
             local_address=local_address,
         )
@@ -170,7 +167,6 @@ class TestAsyncIOBackend:
         mock_open_connection.assert_awaited_once_with(
             mocker.ANY,  # host: Not tested here
             mocker.ANY,  # port: Not tested here
-            family=mocker.ANY,  # Not tested here
             local_addr=mocker.ANY,  # Not tested here
             limit=mocker.ANY,  # Not tested here
         )
@@ -203,7 +199,6 @@ class TestAsyncIOBackend:
         # Act
         socket = await backend.create_tcp_connection(
             *remote_address,
-            family=1234,
             local_address=local_address,
         )
 
@@ -212,7 +207,6 @@ class TestAsyncIOBackend:
         mock_own_create_connection.assert_awaited_once_with(
             *remote_address,
             event_loop,
-            family=1234,
             local_address=local_address,
         )
         mock_RawStreamSocketAdapter.assert_called_once_with(mock_tcp_socket, event_loop)
@@ -245,7 +239,6 @@ class TestAsyncIOBackend:
         with pytest.raises(ValueError, match=r"^'happy_eyeballs_delay' option not supported with transport=False$"):
             await backend.create_tcp_connection(
                 *remote_address,
-                family=1234,
                 happy_eyeballs_delay=42,
                 local_address=local_address,
             )

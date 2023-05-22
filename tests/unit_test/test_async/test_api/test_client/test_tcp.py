@@ -168,7 +168,6 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
     async def test____dunder_init____connect_to_remote(
         self,
         remote_address: tuple[str, int],
-        socket_family: int,
         mock_tcp_socket: MagicMock,
         mock_backend: MagicMock,
         mock_stream_socket_adapter: MagicMock,
@@ -182,7 +181,6 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         # Act
         client: AsyncTCPNetworkClient[Any, Any] = AsyncTCPNetworkClient(
             remote_address,
-            family=socket_family,
             protocol=mock_stream_protocol,
             local_address=mocker.sentinel.local_address,
             happy_eyeballs_delay=mocker.sentinel.happy_eyeballs_delay,
@@ -194,7 +192,6 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_stream_data_consumer_cls.assert_called_once_with(mock_stream_protocol)
         mock_backend.create_tcp_connection.assert_awaited_once_with(
             *remote_address,
-            family=socket_family,
             local_address=mocker.sentinel.local_address,
             happy_eyeballs_delay=mocker.sentinel.happy_eyeballs_delay,
         )
@@ -290,7 +287,6 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         else:
             client = AsyncTCPNetworkClient(
                 request.getfixturevalue("remote_address"),
-                family=request.getfixturevalue("socket_family"),
                 protocol=mock_stream_protocol,
                 max_recv_size=max_recv_size,
             )
@@ -320,7 +316,6 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             else:
                 _ = AsyncTCPNetworkClient(
                     request.getfixturevalue("remote_address"),
-                    family=request.getfixturevalue("socket_family"),
                     protocol=mock_stream_protocol,
                     max_recv_size=max_recv_size,
                 )
