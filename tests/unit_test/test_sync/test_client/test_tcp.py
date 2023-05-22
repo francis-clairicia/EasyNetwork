@@ -614,6 +614,45 @@ class TestTCPNetworkClient(BaseTestClient):
 
     @pytest.mark.parametrize("use_ssl", ["USE_SSL"], indirect=True)
     @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    def test____dunder_init____ssl____server_hostname____do_not_disable_hostname_check_for_external_context(
+        self,
+        use_socket: bool,
+        remote_address: tuple[str, int],
+        mock_ssl_context: MagicMock,
+        mock_tcp_socket: MagicMock,
+        mock_stream_protocol: MagicMock,
+    ) -> None:
+        # Arrange
+        assert mock_ssl_context.check_hostname
+
+        # Act
+        if use_socket:
+            _ = TCPNetworkClient(
+                mock_tcp_socket,
+                protocol=mock_stream_protocol,
+                ssl=mock_ssl_context,
+                server_hostname="",
+            )
+        else:
+            _ = TCPNetworkClient(
+                remote_address,
+                protocol=mock_stream_protocol,
+                ssl=mock_ssl_context,
+                server_hostname="",
+            )
+
+        # Assert
+        assert mock_ssl_context.check_hostname
+        mock_ssl_context.wrap_socket.assert_called_once_with(
+            mock_tcp_socket,
+            server_side=False,
+            do_handshake_on_connect=False,
+            suppress_ragged_eofs=False,
+            server_hostname=None,
+        )
+
+    @pytest.mark.parametrize("use_ssl", ["USE_SSL"], indirect=True)
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
     def test____dunder_init____ssl____server_hostname____no_host_to_use(
         self,
         use_socket: bool,
