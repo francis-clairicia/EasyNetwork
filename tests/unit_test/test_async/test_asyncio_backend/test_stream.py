@@ -7,8 +7,8 @@ import asyncio
 import asyncio.trsock
 from typing import TYPE_CHECKING, Any, Callable
 
-from easynetwork.api_async.backend.abc import AbstractDeferredSocket
-from easynetwork_asyncio.stream.listener import DeferredSocket, ListenerSocketAdapter
+from easynetwork.api_async.backend.abc import AbstractAcceptedSocket
+from easynetwork_asyncio.stream.listener import AcceptedSocket, ListenerSocketAdapter
 from easynetwork_asyncio.stream.socket import AsyncioTransportStreamSocketAdapter, RawStreamSocketAdapter
 
 import pytest
@@ -292,7 +292,7 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestRawStream
 
     @pytest.fixture
     @staticmethod
-    def deferred_socket_factory(mocker: MockerFixture) -> MagicMock:
+    def accepted_socket_factory(mocker: MockerFixture) -> MagicMock:
         return mocker.MagicMock(spec=lambda socket, loop: None)
 
     @pytest.fixture
@@ -300,9 +300,9 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestRawStream
     def listener(
         event_loop: asyncio.AbstractEventLoop,
         mock_tcp_listener_socket: MagicMock,
-        deferred_socket_factory: Callable[..., Any],
+        accepted_socket_factory: Callable[..., Any],
     ) -> ListenerSocketAdapter:
-        return ListenerSocketAdapter(mock_tcp_listener_socket, event_loop, deferred_socket_factory)
+        return ListenerSocketAdapter(mock_tcp_listener_socket, event_loop, accepted_socket_factory)
 
     async def test____dunder_init____default(
         self,
@@ -372,33 +372,32 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestRawStream
         # Assert
         mock_async_socket.abort.assert_awaited_once_with()
 
-    async def test____accept____create_deferred_socket(
+    async def test____accept____create_accepted_socket(
         self,
         event_loop: asyncio.AbstractEventLoop,
         listener: ListenerSocketAdapter,
-        deferred_socket_factory: MagicMock,
+        accepted_socket_factory: MagicMock,
         mock_async_socket: MagicMock,
         mock_socket_factory: Callable[[], MagicMock],
+        mock_tcp_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
         mock_accepted_socket = mock_socket_factory()
-        mock_async_socket.accept.return_value = (mock_accepted_socket, ("remote_address", 12345))
-
-        mock_deferred_socket = mocker.NonCallableMagicMock(spec=AbstractDeferredSocket)
-        deferred_socket_factory.return_value = mock_deferred_socket
+        mock_accepted_socket = mocker.NonCallableMagicMock(spec=AbstractAcceptedSocket)
+        accepted_socket_factory.return_value = mock_accepted_socket
 
         # Act
-        deferred_socket = await listener.accept()
+        accepted_socket = await listener.accept()
 
         # Assert
         mock_async_socket.accept.assert_awaited_once_with()
-        deferred_socket_factory.assert_called_once_with(mock_accepted_socket, event_loop)
-        assert deferred_socket is mock_deferred_socket
+        accepted_socket_factory.assert_called_once_with(mock_tcp_socket, event_loop)
+        assert accepted_socket is mock_accepted_socket
 
 
 @pytest.mark.asyncio
-class TestDeferredSocket(BaseTestTransportStreamSocket, BaseTestRawStreamSocket):
+class TestAcceptedSocket(BaseTestTransportStreamSocket, BaseTestRawStreamSocket):
     @pytest.fixture(params=[False, True], ids=lambda boolean: f"use_asyncio_transport=={boolean}")
     @staticmethod
     def use_asyncio_transport(request: Any) -> bool:
@@ -468,16 +467,16 @@ class TestDeferredSocket(BaseTestTransportStreamSocket, BaseTestRawStreamSocket)
 
     @pytest.fixture
     @staticmethod
-    def deferred_socket(
+    def accepted_socket(
         event_loop: asyncio.AbstractEventLoop,
         mock_tcp_socket: MagicMock,
         use_asyncio_transport: bool,
-    ) -> DeferredSocket:
-        return DeferredSocket(mock_tcp_socket, event_loop, use_asyncio_transport=use_asyncio_transport)
+    ) -> AcceptedSocket:
+        return AcceptedSocket(mock_tcp_socket, event_loop, use_asyncio_transport=use_asyncio_transport)
 
     async def test____connect____creates_new_stream_socket(
         self,
-        deferred_socket: DeferredSocket,
+        accepted_socket: AcceptedSocket,
         use_asyncio_transport: bool,
         event_loop: asyncio.AbstractEventLoop,
         mock_event_loop_connect_accepted_socket: AsyncMock,
@@ -498,7 +497,7 @@ class TestDeferredSocket(BaseTestTransportStreamSocket, BaseTestRawStreamSocket)
         from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
 
         # Act
-        socket = await deferred_socket.connect()
+        socket = await accepted_socket.connect()
 
         # Assert
         assert socket is mock_stream_socket_adapter

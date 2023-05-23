@@ -307,10 +307,10 @@ class AsyncioBackend(AbstractAsyncBackend):
             reuse_port=reuse_port,
         )
 
-        from .stream.listener import DeferredSocket, ListenerSocketAdapter
+        from .stream.listener import AcceptedSocket, ListenerSocketAdapter
 
         return [
-            ListenerSocketAdapter(sock, loop, partial(DeferredSocket, use_asyncio_transport=self.__use_asyncio_transport))
+            ListenerSocketAdapter(sock, loop, partial(AcceptedSocket, use_asyncio_transport=self.__use_asyncio_transport))
             for sock in sockets
         ]
 

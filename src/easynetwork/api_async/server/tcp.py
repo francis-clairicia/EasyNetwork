@@ -37,10 +37,10 @@ from .handler import AsyncBaseRequestHandler, AsyncClientInterface, AsyncStreamR
 
 if TYPE_CHECKING:
     from ..backend.abc import (
+        AbstractAcceptedSocket,
         AbstractAsyncBackend,
         AbstractAsyncListenerSocketAdapter,
         AbstractAsyncStreamSocketAdapter,
-        AbstractDeferredSocket,
         AbstractTask,
         AbstractTaskGroup,
     )
@@ -257,7 +257,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         async with listener:
             while not listener.is_closing():
                 try:
-                    client_socket = await listener.accept()
+                    client_socket: AbstractAcceptedSocket = await listener.accept()
                 except OSError as exc:
                     import errno
                     import os
@@ -277,15 +277,15 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                     task_group.start_soon(client_task, client_socket)
                     del client_socket
 
-    async def __client_task(self, deferred_socket: AbstractDeferredSocket) -> None:
+    async def __client_task(self, accepted_socket: AbstractAcceptedSocket) -> None:
         async with _contextlib.AsyncExitStack() as client_exit_stack:
             client_exit_stack.enter_context(self.__suppress_and_log_remaining_exception())
             client_exit_stack.enter_context(self.__suppress_ignorable_socket_errors())
 
             try:
-                socket: AbstractAsyncStreamSocketAdapter = await deferred_socket.connect()
+                socket: AbstractAsyncStreamSocketAdapter = await accepted_socket.connect()
             finally:
-                del deferred_socket
+                del accepted_socket
 
             client_exit_stack.push_async_callback(socket.abort)
             await client_exit_stack.enter_async_context(socket)

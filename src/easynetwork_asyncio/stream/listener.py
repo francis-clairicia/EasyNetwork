@@ -15,9 +15,9 @@ from abc import abstractmethod
 from typing import TYPE_CHECKING, Any, Callable, final
 
 from easynetwork.api_async.backend.abc import (
+    AbstractAcceptedSocket,
     AbstractAsyncListenerSocketAdapter,
     AbstractAsyncStreamSocketAdapter,
-    AbstractDeferredSocket,
 )
 
 if TYPE_CHECKING:
@@ -27,20 +27,20 @@ if TYPE_CHECKING:
 
 @final
 class ListenerSocketAdapter(AbstractAsyncListenerSocketAdapter):
-    __slots__ = ("__socket", "__deferred_socket_factory")
+    __slots__ = ("__socket", "__accepted_socket_factory")
 
     def __init__(
         self,
         socket: _socket.socket,
         loop: asyncio.AbstractEventLoop,
-        deferred_socket_factory: Callable[[_socket.socket, asyncio.AbstractEventLoop], AbstractDeferredSocket],
+        accepted_socket_factory: Callable[[_socket.socket, asyncio.AbstractEventLoop], AbstractAcceptedSocket],
     ) -> None:
         super().__init__()
 
         from ..socket import AsyncSocket
 
         self.__socket: AsyncSocket = AsyncSocket(socket, loop)
-        self.__deferred_socket_factory = deferred_socket_factory
+        self.__accepted_socket_factory = accepted_socket_factory
 
     def is_closing(self) -> bool:
         return self.__socket.is_closing()
@@ -51,9 +51,9 @@ class ListenerSocketAdapter(AbstractAsyncListenerSocketAdapter):
     async def abort(self) -> None:
         return await self.__socket.abort()
 
-    async def accept(self) -> AbstractDeferredSocket:
+    async def accept(self) -> AbstractAcceptedSocket:
         client_socket, _ = await self.__socket.accept()
-        return self.__deferred_socket_factory(client_socket, self.__socket.loop)
+        return self.__accepted_socket_factory(client_socket, self.__socket.loop)
 
     def get_local_address(self) -> tuple[Any, ...]:
         return self.__socket.socket.getsockname()
@@ -62,7 +62,7 @@ class ListenerSocketAdapter(AbstractAsyncListenerSocketAdapter):
         return self.__socket.socket
 
 
-class _BaseDeferredSocket(AbstractDeferredSocket):
+class _BaseAcceptedSocket(AbstractAcceptedSocket):
     __slots__ = (
         "__socket",
         "__loop",
@@ -98,7 +98,7 @@ class _BaseDeferredSocket(AbstractDeferredSocket):
 
 
 @final
-class DeferredSocket(_BaseDeferredSocket):
+class AcceptedSocket(_BaseAcceptedSocket):
     __slots__ = ("__use_asyncio_transport",)
 
     def __init__(self, socket: _socket.socket, loop: asyncio.AbstractEventLoop, *, use_asyncio_transport: bool = False) -> None:

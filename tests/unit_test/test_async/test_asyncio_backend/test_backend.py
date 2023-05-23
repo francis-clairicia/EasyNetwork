@@ -566,7 +566,7 @@ class TestAsyncIOBackend:
         # Arrange
         from socket import AI_PASSIVE, SOCK_STREAM
 
-        from easynetwork_asyncio.stream.listener import DeferredSocket
+        from easynetwork_asyncio.stream.listener import AcceptedSocket
 
         remote_host, remote_port = "remote_address", 5000
         addrinfo_list = [
@@ -622,7 +622,7 @@ class TestAsyncIOBackend:
         mock_ListenerSocketAdapter.assert_called_once_with(
             mock_tcp_socket,
             event_loop,
-            partial_eq(DeferredSocket, use_asyncio_transport=use_asyncio_transport),
+            partial_eq(AcceptedSocket, use_asyncio_transport=use_asyncio_transport),
         )
         assert listener_sockets == [mocker.sentinel.listener_socket]
 
@@ -639,7 +639,7 @@ class TestAsyncIOBackend:
         # Arrange
         from socket import AF_INET, AF_INET6, AF_UNSPEC, AI_PASSIVE, IPPROTO_TCP, SOCK_STREAM
 
-        from easynetwork_asyncio.stream.listener import DeferredSocket
+        from easynetwork_asyncio.stream.listener import AcceptedSocket
 
         remote_port = 5000
         addrinfo_list = [
@@ -704,7 +704,7 @@ class TestAsyncIOBackend:
             mocker.call(
                 mock_tcp_socket,
                 event_loop,
-                partial_eq(DeferredSocket, use_asyncio_transport=use_asyncio_transport),
+                partial_eq(AcceptedSocket, use_asyncio_transport=use_asyncio_transport),
             )
             for _ in range(2)
         ]
@@ -721,7 +721,7 @@ class TestAsyncIOBackend:
         # Arrange
         from socket import AF_INET, AF_INET6, AF_UNSPEC, AI_PASSIVE, IPPROTO_TCP, SOCK_STREAM
 
-        from easynetwork_asyncio.stream.listener import DeferredSocket
+        from easynetwork_asyncio.stream.listener import AcceptedSocket
 
         remote_hosts = ["0.0.0.0", "::"]
         remote_port = 5000
@@ -790,7 +790,7 @@ class TestAsyncIOBackend:
             mocker.call(
                 mock_tcp_socket,
                 event_loop,
-                partial_eq(DeferredSocket, use_asyncio_transport=use_asyncio_transport),
+                partial_eq(AcceptedSocket, use_asyncio_transport=use_asyncio_transport),
             )
             for _ in range(2)
         ]

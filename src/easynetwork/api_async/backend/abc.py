@@ -9,13 +9,13 @@ Asynchronous client/server module
 from __future__ import annotations
 
 __all__ = [
+    "AbstractAcceptedSocket",
     "AbstractAsyncBackend",
     "AbstractAsyncBaseSocketAdapter",
     "AbstractAsyncDatagramSocketAdapter",
     "AbstractAsyncListenerSocketAdapter",
     "AbstractAsyncStreamSocketAdapter",
     "AbstractAsyncThreadPoolExecutor",
-    "AbstractDeferredSocket",
     "AbstractTask",
     "AbstractTaskGroup",
     "AbstractThreadsPortal",
@@ -250,11 +250,11 @@ class AbstractAsyncListenerSocketAdapter(AbstractAsyncBaseSocketAdapter):
     __slots__ = ()
 
     @abstractmethod
-    async def accept(self) -> AbstractDeferredSocket:
+    async def accept(self) -> AbstractAcceptedSocket:
         raise NotImplementedError
 
 
-class AbstractDeferredSocket(metaclass=ABCMeta):
+class AbstractAcceptedSocket(metaclass=ABCMeta):
     __slots__ = ()
 
     @abstractmethod
