@@ -6,6 +6,7 @@ import asyncio
 import collections
 import contextlib
 import logging
+import ssl
 from socket import IPPROTO_TCP, TCP_NODELAY
 from typing import Any, AsyncIterator, Awaitable, Callable
 from weakref import WeakValueDictionary
@@ -129,9 +130,24 @@ class MyAsyncTCPServer(AsyncTCPNetworkServer[str, str]):
 
 @pytest.mark.asyncio
 class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
+    @pytest.fixture(params=["NO_SSL", "USE_SSL"])
+    @staticmethod
+    def use_ssl(request: Any, event_loop_name: str) -> bool:
+        match request.param:
+            case "NO_SSL":
+                return False
+            case "USE_SSL":
+                if event_loop_name == "uvloop":
+                    pytest.xfail("Not supported yet")
+                return True
+            case _:
+                raise SystemError
+
     @pytest.fixture
     @staticmethod
-    def backend_kwargs(use_asyncio_transport: bool) -> dict[str, Any]:
+    def backend_kwargs(use_asyncio_transport: bool, use_ssl: bool) -> dict[str, Any]:
+        if use_ssl and not use_asyncio_transport:
+            pytest.skip("SSL/TLS not supported with transport=False")
         return {"transport": use_asyncio_transport}
 
     @pytest.fixture
@@ -146,6 +162,8 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         socket_family: int,
         localhost_ip: str,
         stream_protocol: StreamProtocol[str, str],
+        use_ssl: bool,
+        server_ssl_context: ssl.SSLContext,
         backend_kwargs: dict[str, Any],
     ) -> AsyncIterator[MyAsyncTCPServer]:
         async with MyAsyncTCPServer(
@@ -154,6 +172,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
             stream_protocol,
             request_handler,
             family=socket_family,
+            ssl=server_ssl_context if use_ssl else None,
             backend_kwargs=backend_kwargs,
         ) as server:
             assert not server.sockets
@@ -178,13 +197,19 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         server_address: tuple[str, int],
         socket_family: int,
         event_loop: asyncio.AbstractEventLoop,
+        use_ssl: bool,
+        client_ssl_context: ssl.SSLContext,
     ) -> AsyncIterator[Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]]]:
         async with contextlib.AsyncExitStack() as stack:
 
             async def factory() -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
                 sock = await create_connection(*server_address, event_loop, family=socket_family)
                 sock.setblocking(False)
-                reader, writer = await asyncio.open_connection(sock=sock)
+                reader, writer = await asyncio.open_connection(
+                    sock=sock,
+                    ssl=client_ssl_context if use_ssl else None,
+                    server_hostname="test.example.com" if use_ssl else None,
+                )
                 stack.push_async_callback(lambda: asyncio.wait_for(writer.wait_closed(), 3))
                 stack.callback(writer.close)
                 assert await reader.readline() == b"milk\n"

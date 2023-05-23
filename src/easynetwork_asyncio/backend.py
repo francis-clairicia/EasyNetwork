@@ -9,6 +9,7 @@ from __future__ import annotations
 
 __all__ = ["AsyncioBackend"]  # type: list[str]
 
+import functools
 import inspect
 import socket as _socket
 from typing import TYPE_CHECKING, Any, Callable, Coroutine, NoReturn, ParamSpec, Sequence, TypeVar, final
@@ -21,6 +22,7 @@ if TYPE_CHECKING:
     import ssl as _ssl
 
     from easynetwork.api_async.backend.abc import (
+        AbstractAcceptedSocket,
         AbstractAsyncDatagramSocketAdapter,
         AbstractAsyncListenerSocketAdapter,
         AbstractAsyncStreamSocketAdapter,
@@ -171,10 +173,10 @@ class AsyncioBackend(AbstractAsyncBackend):
         host: str,
         port: int,
         ssl_context: _ssl.SSLContext,
+        *,
         server_hostname: str | None,
         ssl_handshake_timeout: float,
         ssl_shutdown_timeout: float,
-        *,
         local_address: tuple[str, int] | None = None,
         happy_eyeballs_delay: float | None = None,
     ) -> AbstractAsyncStreamSocketAdapter:
@@ -234,6 +236,7 @@ class AsyncioBackend(AbstractAsyncBackend):
         self,
         socket: _socket.socket,
         ssl_context: _ssl.SSLContext,
+        *,
         server_hostname: str,
         ssl_handshake_timeout: float,
         ssl_shutdown_timeout: float,
@@ -264,17 +267,67 @@ class AsyncioBackend(AbstractAsyncBackend):
         self,
         host: str | Sequence[str] | None,
         port: int,
+        backlog: int,
         *,
         family: int = 0,
-        backlog: int = 100,
         reuse_port: bool = False,
+    ) -> Sequence[AbstractAsyncListenerSocketAdapter]:
+        from .stream.listener import AcceptedSocket
+
+        return await self._create_tcp_listeners(
+            host,
+            port,
+            backlog,
+            functools.partial(AcceptedSocket, use_asyncio_transport=self.__use_asyncio_transport),
+            family=family,
+            reuse_port=reuse_port,
+        )
+
+    async def create_ssl_over_tcp_listeners(
+        self,
+        host: str | Sequence[str] | None,
+        port: int,
+        backlog: int,
+        ssl_context: _ssl.SSLContext,
+        ssl_handshake_timeout: float,
+        ssl_shutdown_timeout: float,
+        *,
+        family: int = 0,
+        reuse_port: bool = False,
+    ) -> Sequence[AbstractAsyncListenerSocketAdapter]:
+        self._check_ssl_support()
+
+        from .stream.listener import AcceptedSSLSocket
+
+        return await self._create_tcp_listeners(
+            host,
+            port,
+            backlog,
+            functools.partial(
+                AcceptedSSLSocket,
+                ssl_context=ssl_context,
+                ssl_handshake_timeout=float(ssl_handshake_timeout),
+                ssl_shutdown_timeout=float(ssl_shutdown_timeout),
+            ),
+            family=family,
+            reuse_port=reuse_port,
+        )
+
+    async def _create_tcp_listeners(
+        self,
+        host: str | Sequence[str] | None,
+        port: int,
+        backlog: int,
+        accepted_socket_factory: Callable[[_socket.socket, _asyncio.AbstractEventLoop], AbstractAcceptedSocket],
+        *,
+        family: int,
+        reuse_port: bool,
     ) -> Sequence[AbstractAsyncListenerSocketAdapter]:
         assert port is not None, "Expected 'port' to be an int"
 
         import asyncio
         import os
         import sys
-        from functools import partial
         from itertools import chain
 
         from easynetwork.tools._utils import open_listener_sockets_from_getaddrinfo_result
@@ -307,12 +360,9 @@ class AsyncioBackend(AbstractAsyncBackend):
             reuse_port=reuse_port,
         )
 
-        from .stream.listener import AcceptedSocket, ListenerSocketAdapter
+        from .stream.listener import ListenerSocketAdapter
 
-        return [
-            ListenerSocketAdapter(sock, loop, partial(AcceptedSocket, use_asyncio_transport=self.__use_asyncio_transport))
-            for sock in sockets
-        ]
+        return [ListenerSocketAdapter(sock, loop, accepted_socket_factory) for sock in sockets]
 
     async def create_udp_endpoint(
         self,

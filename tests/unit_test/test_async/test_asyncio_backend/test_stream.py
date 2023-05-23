@@ -8,7 +8,7 @@ import asyncio.trsock
 from typing import TYPE_CHECKING, Any, Callable
 
 from easynetwork.api_async.backend.abc import AbstractAcceptedSocket
-from easynetwork_asyncio.stream.listener import AcceptedSocket, ListenerSocketAdapter
+from easynetwork_asyncio.stream.listener import AcceptedSocket, AcceptedSSLSocket, ListenerSocketAdapter
 from easynetwork_asyncio.stream.socket import AsyncioTransportStreamSocketAdapter, RawStreamSocketAdapter
 
 import pytest
@@ -103,6 +103,22 @@ class TestTransportBasedStreamSocket(BaseTestTransportStreamSocket):
 
         # Assert
         mock_asyncio_writer.close.assert_called_once_with()
+        mock_asyncio_writer.wait_closed.assert_awaited_once_with()
+        mock_asyncio_writer.transport.abort.assert_not_called()
+
+    async def test____aclose____wait_only_if_already_closing(
+        self,
+        socket: AsyncioTransportStreamSocketAdapter,
+        mock_asyncio_writer: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_asyncio_writer.is_closing.return_value = True
+
+        # Act
+        await socket.aclose()
+
+        # Assert
+        mock_asyncio_writer.close.assert_not_called()
         mock_asyncio_writer.wait_closed.assert_awaited_once_with()
         mock_asyncio_writer.transport.abort.assert_not_called()
 
@@ -529,6 +545,139 @@ class TestAcceptedSocket(BaseTestTransportStreamSocket, BaseTestRawStreamSocket)
             mock_asyncio_writer_cls.assert_not_called()
             mock_event_loop_connect_accepted_socket.assert_not_called()
             mock_transport_stream_socket_adapter_cls.assert_not_called()
+
+
+@pytest.mark.asyncio
+class TestAcceptedSSLSocket(BaseTestTransportStreamSocket):
+    @pytest.fixture(scope="class")
+    @staticmethod
+    def ssl_handshake_timeout() -> float:
+        return 123456.789
+
+    @pytest.fixture(scope="class")
+    @staticmethod
+    def ssl_shutdown_timeout() -> float:
+        return 9876543.21
+
+    @pytest.fixture
+    @staticmethod
+    def mock_transport_stream_socket_adapter_cls(mock_stream_socket_adapter: MagicMock, mocker: MockerFixture) -> MagicMock:
+        return mocker.patch(
+            "easynetwork_asyncio.stream.socket.AsyncioTransportStreamSocketAdapter",
+            return_value=mock_stream_socket_adapter,
+        )
+
+    @pytest.fixture
+    @staticmethod
+    def mock_stream_socket_adapter(mock_stream_socket_adapter: MagicMock) -> MagicMock:
+        mock_stream_socket_adapter.get_remote_address.return_value = ("127.0.0.1", 12345)
+        return mock_stream_socket_adapter
+
+    @pytest.fixture
+    @staticmethod
+    def mock_asyncio_reader_cls(mock_asyncio_reader: MagicMock, mocker: MockerFixture) -> MagicMock:
+        return mocker.patch("asyncio.streams.StreamReader", return_value=mock_asyncio_reader)
+
+    @pytest.fixture
+    @staticmethod
+    def mock_asyncio_writer_cls(mock_asyncio_writer: MagicMock, mocker: MockerFixture) -> MagicMock:
+        return mocker.patch("asyncio.streams.StreamWriter", return_value=mock_asyncio_writer)
+
+    @pytest.fixture
+    @staticmethod
+    def mock_asyncio_reader_protocol(mocker: MockerFixture) -> MagicMock:
+        return mocker.NonCallableMagicMock(spec=asyncio.streams.StreamReaderProtocol)
+
+    @pytest.fixture
+    @staticmethod
+    def mock_asyncio_transport(mocker: MockerFixture) -> MagicMock:
+        return mocker.NonCallableMagicMock(spec=asyncio.Transport)
+
+    @pytest.fixture
+    @staticmethod
+    def mock_asyncio_reader_protocol_cls(mock_asyncio_reader_protocol: MagicMock, mocker: MockerFixture) -> MagicMock:
+        return mocker.patch("asyncio.streams.StreamReaderProtocol", return_value=mock_asyncio_reader_protocol)
+
+    @pytest.fixture
+    @staticmethod
+    def mock_event_loop_connect_accepted_socket(
+        event_loop: asyncio.AbstractEventLoop,
+        mocker: MockerFixture,
+        mock_asyncio_reader_protocol: MagicMock,
+        mock_asyncio_transport: MagicMock,
+    ) -> AsyncMock:
+        return mocker.patch.object(
+            event_loop,
+            "connect_accepted_socket",
+            new_callable=mocker.AsyncMock,
+            return_value=(mock_asyncio_transport, mock_asyncio_reader_protocol),
+        )
+
+    @pytest.fixture
+    @staticmethod
+    def accepted_socket(
+        event_loop: asyncio.AbstractEventLoop,
+        mock_tcp_socket: MagicMock,
+        mock_ssl_context: MagicMock,
+        ssl_handshake_timeout: float,
+        ssl_shutdown_timeout: float,
+    ) -> AcceptedSSLSocket:
+        return AcceptedSSLSocket(
+            mock_tcp_socket,
+            event_loop,
+            mock_ssl_context,
+            ssl_handshake_timeout=ssl_handshake_timeout,
+            ssl_shutdown_timeout=ssl_shutdown_timeout,
+        )
+
+    async def test____connect____creates_new_stream_socket(
+        self,
+        accepted_socket: AcceptedSSLSocket,
+        mock_ssl_context: MagicMock,
+        ssl_handshake_timeout: float,
+        ssl_shutdown_timeout: float,
+        event_loop: asyncio.AbstractEventLoop,
+        mock_event_loop_connect_accepted_socket: AsyncMock,
+        mock_transport_stream_socket_adapter_cls: MagicMock,
+        mock_asyncio_reader_protocol: MagicMock,
+        mock_asyncio_reader_protocol_cls: MagicMock,
+        mock_asyncio_transport: MagicMock,
+        mock_asyncio_reader_cls: MagicMock,
+        mock_asyncio_reader: MagicMock,
+        mock_asyncio_writer_cls: MagicMock,
+        mock_asyncio_writer: MagicMock,
+        mock_tcp_socket: MagicMock,
+        mock_stream_socket_adapter: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
+
+        # Act
+        socket = await accepted_socket.connect()
+
+        # Assert
+        assert socket is mock_stream_socket_adapter
+
+        mock_asyncio_reader_cls.assert_called_once_with(MAX_STREAM_BUFSIZE, event_loop)
+        mock_asyncio_reader_protocol_cls.assert_called_once_with(mock_asyncio_reader, loop=event_loop)
+        mock_event_loop_connect_accepted_socket.assert_awaited_once_with(
+            mocker.ANY,  # protocol_factory
+            mock_tcp_socket,
+            ssl=mock_ssl_context,
+            ssl_handshake_timeout=ssl_handshake_timeout,
+            ssl_shutdown_timeout=ssl_shutdown_timeout,
+        )
+        mock_asyncio_writer_cls.assert_called_once_with(
+            mock_asyncio_transport,
+            mock_asyncio_reader_protocol,
+            mock_asyncio_reader,
+            event_loop,
+        )
+        mock_transport_stream_socket_adapter_cls.assert_called_once_with(
+            mock_asyncio_reader,
+            mock_asyncio_writer,
+        )
 
 
 @pytest.mark.asyncio

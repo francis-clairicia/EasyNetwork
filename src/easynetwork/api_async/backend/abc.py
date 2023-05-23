@@ -316,10 +316,10 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         host: str,
         port: int,
         ssl_context: _ssl.SSLContext,
+        *,
         server_hostname: str | None,
         ssl_handshake_timeout: float,
         ssl_shutdown_timeout: float,
-        *,
         local_address: tuple[str, int] | None = ...,
         happy_eyeballs_delay: float | None = ...,
     ) -> AbstractAsyncStreamSocketAdapter:
@@ -333,6 +333,7 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         self,
         socket: _socket.socket,
         ssl_context: _ssl.SSLContext,
+        *,
         server_hostname: str,
         ssl_handshake_timeout: float,
         ssl_shutdown_timeout: float,
@@ -344,12 +345,26 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         self,
         host: str | Sequence[str] | None,
         port: int,
+        backlog: int,
         *,
         family: int = ...,
-        backlog: int = ...,
         reuse_port: bool = ...,
     ) -> Sequence[AbstractAsyncListenerSocketAdapter]:
         raise NotImplementedError
+
+    async def create_ssl_over_tcp_listeners(
+        self,
+        host: str | Sequence[str] | None,
+        port: int,
+        backlog: int,
+        ssl_context: _ssl.SSLContext,
+        *,
+        ssl_handshake_timeout: float,
+        ssl_shutdown_timeout: float,
+        family: int = ...,
+        reuse_port: bool = ...,
+    ) -> Sequence[AbstractAsyncListenerSocketAdapter]:
+        raise NotImplementedError("SSL/TLS is not supported by this backend")
 
     @abstractmethod
     async def create_udp_endpoint(

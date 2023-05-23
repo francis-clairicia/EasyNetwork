@@ -25,6 +25,8 @@ from ...tools.socket import (
     ACCEPT_CAPACITY_ERRNOS,
     ACCEPT_CAPACITY_ERROR_SLEEP_TIME,
     MAX_STREAM_BUFSIZE,
+    SSL_HANDSHAKE_TIMEOUT,
+    SSL_SHUTDOWN_TIMEOUT,
     SocketAddress,
     SocketProxy,
     new_socket_address,
@@ -36,6 +38,8 @@ from .abc import AbstractAsyncNetworkServer
 from .handler import AsyncBaseRequestHandler, AsyncClientInterface, AsyncStreamRequestHandler
 
 if TYPE_CHECKING:
+    from ssl import SSLContext as _SSLContext
+
     from ..backend.abc import (
         AbstractAcceptedSocket,
         AbstractAsyncBackend,
@@ -74,6 +78,9 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         protocol: StreamProtocol[_ResponseT, _RequestT],
         request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT],
         *,
+        ssl: _SSLContext | None = None,
+        ssl_handshake_timeout: float | None = None,
+        ssl_shutdown_timeout: float | None = None,
         family: int = 0,
         backlog: int | None = None,
         reuse_port: bool = False,
@@ -90,16 +97,39 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         if backlog is None:
             backlog = 100
 
+        if ssl_handshake_timeout is not None and not ssl:
+            raise ValueError("ssl_handshake_timeout is only meaningful with ssl")
+
+        if ssl_shutdown_timeout is not None and not ssl:
+            raise ValueError("ssl_shutdown_timeout is only meaningful with ssl")
+
+        def _value_or_default(value: float | None, default: float) -> float:
+            return value if value is not None else default
+
         self.__listeners_factory: SingleTaskRunner[Sequence[AbstractAsyncListenerSocketAdapter]] | None
-        self.__listeners_factory = SingleTaskRunner(
-            backend,
-            backend.create_tcp_listeners,
-            host,
-            port,
-            family=family,
-            backlog=backlog,
-            reuse_port=reuse_port,
-        )
+        if ssl:
+            self.__listeners_factory = SingleTaskRunner(
+                backend,
+                backend.create_ssl_over_tcp_listeners,
+                host,
+                port,
+                backlog=backlog,
+                ssl_context=ssl,
+                ssl_handshake_timeout=_value_or_default(ssl_handshake_timeout, SSL_HANDSHAKE_TIMEOUT),
+                ssl_shutdown_timeout=_value_or_default(ssl_shutdown_timeout, SSL_SHUTDOWN_TIMEOUT),
+                family=family,
+                reuse_port=reuse_port,
+            )
+        else:
+            self.__listeners_factory = SingleTaskRunner(
+                backend,
+                backend.create_tcp_listeners,
+                host,
+                port,
+                backlog=backlog,
+                family=family,
+                reuse_port=reuse_port,
+            )
         if max_recv_size is None:
             max_recv_size = MAX_STREAM_BUFSIZE
         if not isinstance(max_recv_size, int) or max_recv_size <= 0:

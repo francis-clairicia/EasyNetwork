@@ -50,7 +50,8 @@ class AsyncioTransportStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
 
     async def aclose(self) -> None:
         try:
-            self.__writer.close()
+            if not self.__writer.is_closing():
+                self.__writer.close()
             await self.__writer.wait_closed()
         except ConnectionError:
             # It is normal if there was connection errors during operations. But do not propagate this exception,

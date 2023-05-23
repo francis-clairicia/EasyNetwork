@@ -23,6 +23,7 @@ from easynetwork.api_async.backend.abc import (
 if TYPE_CHECKING:
     import asyncio.trsock
     import socket as _socket
+    import ssl as _ssl
 
 
 @final
@@ -120,5 +121,45 @@ class AcceptedSocket(_BaseAcceptedSocket):
         reader = asyncio.streams.StreamReader(MAX_STREAM_BUFSIZE, loop)
         protocol = asyncio.streams.StreamReaderProtocol(reader, loop=loop)
         transport, protocol = await loop.connect_accepted_socket(lambda: protocol, socket)
+        writer = asyncio.streams.StreamWriter(transport, protocol, reader, loop)
+        return AsyncioTransportStreamSocketAdapter(reader, writer)
+
+
+@final
+class AcceptedSSLSocket(_BaseAcceptedSocket):
+    __slots__ = ("__ssl_context", "__ssl_handshake_timeout", "__ssl_shutdown_timeout")
+
+    def __init__(
+        self,
+        socket: _socket.socket,
+        loop: asyncio.AbstractEventLoop,
+        ssl_context: _ssl.SSLContext,
+        *,
+        ssl_handshake_timeout: float,
+        ssl_shutdown_timeout: float,
+    ) -> None:
+        super().__init__(socket, loop)
+
+        assert ssl_context is not None
+
+        self.__ssl_context: _ssl.SSLContext = ssl_context
+        self.__ssl_handshake_timeout: float = float(ssl_handshake_timeout)
+        self.__ssl_shutdown_timeout: float = float(ssl_shutdown_timeout)
+
+    async def _make_socket_adapter(self, socket: _socket.socket) -> AbstractAsyncStreamSocketAdapter:
+        from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
+
+        from .socket import AsyncioTransportStreamSocketAdapter
+
+        loop = self.loop
+        reader = asyncio.streams.StreamReader(MAX_STREAM_BUFSIZE, loop)
+        protocol = asyncio.streams.StreamReaderProtocol(reader, loop=loop)
+        transport, protocol = await loop.connect_accepted_socket(
+            lambda: protocol,
+            socket,
+            ssl=self.__ssl_context,
+            ssl_handshake_timeout=self.__ssl_handshake_timeout,
+            ssl_shutdown_timeout=self.__ssl_shutdown_timeout,
+        )
         writer = asyncio.streams.StreamWriter(transport, protocol, reader, loop)
         return AsyncioTransportStreamSocketAdapter(reader, writer)
