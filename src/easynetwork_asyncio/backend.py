@@ -274,6 +274,7 @@ class AsyncioBackend(AbstractAsyncBackend):
         import asyncio
         import os
         import sys
+        from functools import partial
         from itertools import chain
 
         from easynetwork.tools._utils import open_listener_sockets_from_getaddrinfo_result
@@ -306,9 +307,12 @@ class AsyncioBackend(AbstractAsyncBackend):
             reuse_port=reuse_port,
         )
 
-        from .stream.listener import ListenerSocketAdapter
+        from .stream.listener import DeferredSocket, ListenerSocketAdapter
 
-        return [ListenerSocketAdapter(sock, loop, use_asyncio_transport=self.__use_asyncio_transport) for sock in sockets]
+        return [
+            ListenerSocketAdapter(sock, loop, partial(DeferredSocket, use_asyncio_transport=self.__use_asyncio_transport))
+            for sock in sockets
+        ]
 
     async def create_udp_endpoint(
         self,

@@ -10,6 +10,8 @@ from easynetwork_asyncio import AsyncioBackend
 
 import pytest
 
+from ..._utils import partial_eq
+
 if TYPE_CHECKING:
     from unittest.mock import AsyncMock, MagicMock
 
@@ -564,6 +566,8 @@ class TestAsyncIOBackend:
         # Arrange
         from socket import AI_PASSIVE, SOCK_STREAM
 
+        from easynetwork_asyncio.stream.listener import DeferredSocket
+
         remote_host, remote_port = "remote_address", 5000
         addrinfo_list = [
             (
@@ -618,7 +622,7 @@ class TestAsyncIOBackend:
         mock_ListenerSocketAdapter.assert_called_once_with(
             mock_tcp_socket,
             event_loop,
-            use_asyncio_transport=use_asyncio_transport,
+            partial_eq(DeferredSocket, use_asyncio_transport=use_asyncio_transport),
         )
         assert listener_sockets == [mocker.sentinel.listener_socket]
 
@@ -634,6 +638,8 @@ class TestAsyncIOBackend:
     ) -> None:
         # Arrange
         from socket import AF_INET, AF_INET6, AF_UNSPEC, AI_PASSIVE, IPPROTO_TCP, SOCK_STREAM
+
+        from easynetwork_asyncio.stream.listener import DeferredSocket
 
         remote_port = 5000
         addrinfo_list = [
@@ -698,7 +704,7 @@ class TestAsyncIOBackend:
             mocker.call(
                 mock_tcp_socket,
                 event_loop,
-                use_asyncio_transport=use_asyncio_transport,
+                partial_eq(DeferredSocket, use_asyncio_transport=use_asyncio_transport),
             )
             for _ in range(2)
         ]
@@ -714,6 +720,8 @@ class TestAsyncIOBackend:
     ) -> None:
         # Arrange
         from socket import AF_INET, AF_INET6, AF_UNSPEC, AI_PASSIVE, IPPROTO_TCP, SOCK_STREAM
+
+        from easynetwork_asyncio.stream.listener import DeferredSocket
 
         remote_hosts = ["0.0.0.0", "::"]
         remote_port = 5000
@@ -782,7 +790,7 @@ class TestAsyncIOBackend:
             mocker.call(
                 mock_tcp_socket,
                 event_loop,
-                use_asyncio_transport=use_asyncio_transport,
+                partial_eq(DeferredSocket, use_asyncio_transport=use_asyncio_transport),
             )
             for _ in range(2)
         ]

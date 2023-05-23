@@ -7,7 +7,8 @@ import asyncio
 import asyncio.trsock
 from typing import TYPE_CHECKING, Any, Callable
 
-from easynetwork_asyncio.stream.listener import ListenerSocketAdapter
+from easynetwork.api_async.backend.abc import AbstractDeferredSocket
+from easynetwork_asyncio.stream.listener import DeferredSocket, ListenerSocketAdapter
 from easynetwork_asyncio.stream.socket import AsyncioTransportStreamSocketAdapter, RawStreamSocketAdapter
 
 import pytest
@@ -89,21 +90,6 @@ class TestTransportBasedStreamSocket(BaseTestTransportStreamSocket):
 
         assert exc_info.value.errno == ENOTCONN
         mock_asyncio_writer.get_extra_info.assert_called_with("peername")
-
-    async def test____dunder_init____explicit_remote_address(
-        self,
-        mock_asyncio_reader: MagicMock,
-        mock_asyncio_writer: MagicMock,
-    ) -> None:
-        # Arrange
-        remote_address = ("explicit_address", 4444)
-
-        # Act
-        socket = AsyncioTransportStreamSocketAdapter(mock_asyncio_reader, mock_asyncio_writer, remote_address=remote_address)
-
-        # Assert
-        assert socket.get_remote_address() == remote_address
-        mock_asyncio_writer.get_extra_info.assert_called_once_with("socket")
 
     async def test____aclose____close_transport_and_wait(
         self,
@@ -231,7 +217,6 @@ class TestTransportBasedStreamSocket(BaseTestTransportStreamSocket):
         self,
         socket: AsyncioTransportStreamSocketAdapter,
         mock_asyncio_writer: MagicMock,
-        mocker: MockerFixture,
     ) -> None:
         # Arrange
 
@@ -284,11 +269,6 @@ class TestTransportBasedStreamSocket(BaseTestTransportStreamSocket):
 
 @pytest.mark.asyncio
 class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestRawStreamSocket):
-    @pytest.fixture(params=[False, True], ids=lambda boolean: f"use_asyncio_transport=={boolean}")
-    @staticmethod
-    def use_asyncio_transport(request: Any) -> bool:
-        return request.param
-
     @pytest.fixture
     @classmethod
     def mock_tcp_listener_socket(
@@ -312,74 +292,17 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestRawStream
 
     @pytest.fixture
     @staticmethod
-    def mock_transport_stream_socket_adapter_cls(mock_stream_socket_adapter: MagicMock, mocker: MockerFixture) -> MagicMock:
-        return mocker.patch(
-            "easynetwork_asyncio.stream.socket.AsyncioTransportStreamSocketAdapter",
-            return_value=mock_stream_socket_adapter,
-        )
-
-    @pytest.fixture
-    @staticmethod
-    def mock_raw_stream_socket_adapter_cls(mock_stream_socket_adapter: MagicMock, mocker: MockerFixture) -> MagicMock:
-        return mocker.patch(
-            "easynetwork_asyncio.stream.socket.RawStreamSocketAdapter",
-            return_value=mock_stream_socket_adapter,
-        )
-
-    @pytest.fixture
-    @staticmethod
-    def mock_stream_socket_adapter(mock_stream_socket_adapter: MagicMock) -> MagicMock:
-        mock_stream_socket_adapter.get_remote_address.return_value = ("127.0.0.1", 12345)
-        return mock_stream_socket_adapter
-
-    @pytest.fixture
-    @staticmethod
-    def mock_asyncio_reader_cls(mock_asyncio_reader: MagicMock, mocker: MockerFixture) -> MagicMock:
-        return mocker.patch("asyncio.streams.StreamReader", return_value=mock_asyncio_reader)
-
-    @pytest.fixture
-    @staticmethod
-    def mock_asyncio_writer_cls(mock_asyncio_writer: MagicMock, mocker: MockerFixture) -> MagicMock:
-        return mocker.patch("asyncio.streams.StreamWriter", return_value=mock_asyncio_writer)
-
-    @pytest.fixture
-    @staticmethod
-    def mock_asyncio_reader_protocol(mocker: MockerFixture) -> MagicMock:
-        return mocker.NonCallableMagicMock(spec=asyncio.streams.StreamReaderProtocol)
-
-    @pytest.fixture
-    @staticmethod
-    def mock_asyncio_transport(mocker: MockerFixture) -> MagicMock:
-        return mocker.NonCallableMagicMock(spec=asyncio.Transport)
-
-    @pytest.fixture
-    @staticmethod
-    def mock_asyncio_reader_protocol_cls(mock_asyncio_reader_protocol: MagicMock, mocker: MockerFixture) -> MagicMock:
-        return mocker.patch("asyncio.streams.StreamReaderProtocol", return_value=mock_asyncio_reader_protocol)
-
-    @pytest.fixture
-    @staticmethod
-    def mock_event_loop_connect_accepted_socket(
-        event_loop: asyncio.AbstractEventLoop,
-        mocker: MockerFixture,
-        mock_asyncio_reader_protocol: MagicMock,
-        mock_asyncio_transport: MagicMock,
-    ) -> AsyncMock:
-        return mocker.patch.object(
-            event_loop,
-            "connect_accepted_socket",
-            new_callable=mocker.AsyncMock,
-            return_value=(mock_asyncio_transport, mock_asyncio_reader_protocol),
-        )
+    def deferred_socket_factory(mocker: MockerFixture) -> MagicMock:
+        return mocker.MagicMock(spec=lambda socket, loop: None)
 
     @pytest.fixture
     @staticmethod
     def listener(
         event_loop: asyncio.AbstractEventLoop,
         mock_tcp_listener_socket: MagicMock,
-        use_asyncio_transport: bool,
+        deferred_socket_factory: Callable[..., Any],
     ) -> ListenerSocketAdapter:
-        return ListenerSocketAdapter(mock_tcp_listener_socket, event_loop, use_asyncio_transport=use_asyncio_transport)
+        return ListenerSocketAdapter(mock_tcp_listener_socket, event_loop, deferred_socket_factory)
 
     async def test____dunder_init____default(
         self,
@@ -449,9 +372,112 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestRawStream
         # Assert
         mock_async_socket.abort.assert_awaited_once_with()
 
-    async def test____accept____creates_new_stream_socket(
+    async def test____accept____create_deferred_socket(
         self,
+        event_loop: asyncio.AbstractEventLoop,
         listener: ListenerSocketAdapter,
+        deferred_socket_factory: MagicMock,
+        mock_async_socket: MagicMock,
+        mock_socket_factory: Callable[[], MagicMock],
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_accepted_socket = mock_socket_factory()
+        mock_async_socket.accept.return_value = (mock_accepted_socket, ("remote_address", 12345))
+
+        mock_deferred_socket = mocker.NonCallableMagicMock(spec=AbstractDeferredSocket)
+        deferred_socket_factory.return_value = mock_deferred_socket
+
+        # Act
+        deferred_socket = await listener.accept()
+
+        # Assert
+        mock_async_socket.accept.assert_awaited_once_with()
+        deferred_socket_factory.assert_called_once_with(mock_accepted_socket, event_loop)
+        assert deferred_socket is mock_deferred_socket
+
+
+@pytest.mark.asyncio
+class TestDeferredSocket(BaseTestTransportStreamSocket, BaseTestRawStreamSocket):
+    @pytest.fixture(params=[False, True], ids=lambda boolean: f"use_asyncio_transport=={boolean}")
+    @staticmethod
+    def use_asyncio_transport(request: Any) -> bool:
+        return request.param
+
+    @pytest.fixture
+    @staticmethod
+    def mock_transport_stream_socket_adapter_cls(mock_stream_socket_adapter: MagicMock, mocker: MockerFixture) -> MagicMock:
+        return mocker.patch(
+            "easynetwork_asyncio.stream.socket.AsyncioTransportStreamSocketAdapter",
+            return_value=mock_stream_socket_adapter,
+        )
+
+    @pytest.fixture
+    @staticmethod
+    def mock_raw_stream_socket_adapter_cls(mock_stream_socket_adapter: MagicMock, mocker: MockerFixture) -> MagicMock:
+        return mocker.patch(
+            "easynetwork_asyncio.stream.socket.RawStreamSocketAdapter",
+            return_value=mock_stream_socket_adapter,
+        )
+
+    @pytest.fixture
+    @staticmethod
+    def mock_stream_socket_adapter(mock_stream_socket_adapter: MagicMock) -> MagicMock:
+        mock_stream_socket_adapter.get_remote_address.return_value = ("127.0.0.1", 12345)
+        return mock_stream_socket_adapter
+
+    @pytest.fixture
+    @staticmethod
+    def mock_asyncio_reader_cls(mock_asyncio_reader: MagicMock, mocker: MockerFixture) -> MagicMock:
+        return mocker.patch("asyncio.streams.StreamReader", return_value=mock_asyncio_reader)
+
+    @pytest.fixture
+    @staticmethod
+    def mock_asyncio_writer_cls(mock_asyncio_writer: MagicMock, mocker: MockerFixture) -> MagicMock:
+        return mocker.patch("asyncio.streams.StreamWriter", return_value=mock_asyncio_writer)
+
+    @pytest.fixture
+    @staticmethod
+    def mock_asyncio_reader_protocol(mocker: MockerFixture) -> MagicMock:
+        return mocker.NonCallableMagicMock(spec=asyncio.streams.StreamReaderProtocol)
+
+    @pytest.fixture
+    @staticmethod
+    def mock_asyncio_transport(mocker: MockerFixture) -> MagicMock:
+        return mocker.NonCallableMagicMock(spec=asyncio.Transport)
+
+    @pytest.fixture
+    @staticmethod
+    def mock_asyncio_reader_protocol_cls(mock_asyncio_reader_protocol: MagicMock, mocker: MockerFixture) -> MagicMock:
+        return mocker.patch("asyncio.streams.StreamReaderProtocol", return_value=mock_asyncio_reader_protocol)
+
+    @pytest.fixture
+    @staticmethod
+    def mock_event_loop_connect_accepted_socket(
+        event_loop: asyncio.AbstractEventLoop,
+        mocker: MockerFixture,
+        mock_asyncio_reader_protocol: MagicMock,
+        mock_asyncio_transport: MagicMock,
+    ) -> AsyncMock:
+        return mocker.patch.object(
+            event_loop,
+            "connect_accepted_socket",
+            new_callable=mocker.AsyncMock,
+            return_value=(mock_asyncio_transport, mock_asyncio_reader_protocol),
+        )
+
+    @pytest.fixture
+    @staticmethod
+    def deferred_socket(
+        event_loop: asyncio.AbstractEventLoop,
+        mock_tcp_socket: MagicMock,
+        use_asyncio_transport: bool,
+    ) -> DeferredSocket:
+        return DeferredSocket(mock_tcp_socket, event_loop, use_asyncio_transport=use_asyncio_transport)
+
+    async def test____connect____creates_new_stream_socket(
+        self,
+        deferred_socket: DeferredSocket,
         use_asyncio_transport: bool,
         event_loop: asyncio.AbstractEventLoop,
         mock_event_loop_connect_accepted_socket: AsyncMock,
@@ -464,7 +490,6 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestRawStream
         mock_asyncio_reader: MagicMock,
         mock_asyncio_writer_cls: MagicMock,
         mock_asyncio_writer: MagicMock,
-        mock_async_socket: MagicMock,
         mock_tcp_socket: MagicMock,
         mock_stream_socket_adapter: MagicMock,
         mocker: MockerFixture,
@@ -473,11 +498,10 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestRawStream
         from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
 
         # Act
-        socket = await listener.accept()
+        socket = await deferred_socket.connect()
 
         # Assert
         assert socket is mock_stream_socket_adapter
-        mock_async_socket.accept.assert_awaited_once_with()
         if use_asyncio_transport:
             mock_raw_stream_socket_adapter_cls.assert_not_called()
             mock_asyncio_reader_cls.assert_called_once_with(MAX_STREAM_BUFSIZE, event_loop)
@@ -495,13 +519,11 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestRawStream
             mock_transport_stream_socket_adapter_cls.assert_called_once_with(
                 mock_asyncio_reader,
                 mock_asyncio_writer,
-                remote_address=("127.0.0.1", 12345),
             )
         else:
             mock_raw_stream_socket_adapter_cls.assert_called_once_with(
                 mock_tcp_socket,
                 event_loop,
-                remote_address=("127.0.0.1", 12345),
             )
             mock_asyncio_reader_cls.assert_not_called()
             mock_asyncio_reader_protocol_cls.assert_not_called()
@@ -544,21 +566,6 @@ class TestRawStreamSocketAdapter(BaseTestRawStreamSocket):
 
         # Assert
         assert socket.socket() is mock_tcp_socket
-
-    async def test____dunder_init____explicit_remote_address(
-        self,
-        event_loop: asyncio.AbstractEventLoop,
-        mock_tcp_socket: MagicMock,
-    ) -> None:
-        # Arrange
-        remote_address = ("explicit_address", 4444)
-
-        # Act
-        socket = RawStreamSocketAdapter(mock_tcp_socket, event_loop, remote_address=remote_address)
-
-        # Assert
-        assert socket.get_remote_address() == remote_address
-        mock_tcp_socket.getpeername.assert_not_called()
 
     async def test____get_local_address____returns_socket_address(
         self,

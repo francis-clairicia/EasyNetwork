@@ -15,6 +15,7 @@ __all__ = [
     "AbstractAsyncListenerSocketAdapter",
     "AbstractAsyncStreamSocketAdapter",
     "AbstractAsyncThreadPoolExecutor",
+    "AbstractDeferredSocket",
     "AbstractTask",
     "AbstractTaskGroup",
     "AbstractThreadsPortal",
@@ -249,7 +250,15 @@ class AbstractAsyncListenerSocketAdapter(AbstractAsyncBaseSocketAdapter):
     __slots__ = ()
 
     @abstractmethod
-    async def accept(self) -> AbstractAsyncStreamSocketAdapter:
+    async def accept(self) -> AbstractDeferredSocket:
+        raise NotImplementedError
+
+
+class AbstractDeferredSocket(metaclass=ABCMeta):
+    __slots__ = ()
+
+    @abstractmethod
+    async def connect(self) -> AbstractAsyncStreamSocketAdapter:
         raise NotImplementedError
 
 

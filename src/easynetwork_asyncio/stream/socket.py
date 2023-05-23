@@ -34,8 +34,6 @@ class AsyncioTransportStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
         self,
         reader: asyncio.StreamReader,
         writer: asyncio.StreamWriter,
-        *,
-        remote_address: tuple[Any, ...] | None = None,
     ) -> None:
         super().__init__()
         self.__reader: asyncio.StreamReader = reader
@@ -43,8 +41,7 @@ class AsyncioTransportStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
 
         socket: asyncio.trsock.TransportSocket | None = writer.get_extra_info("socket")
         assert socket is not None, "Writer transport must be a socket transport"
-        if remote_address is None:
-            remote_address = writer.get_extra_info("peername")
+        remote_address = writer.get_extra_info("peername")
         if remote_address is None:
             import errno
 
@@ -100,8 +97,6 @@ class RawStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
         self,
         socket: _socket.socket,
         loop: asyncio.AbstractEventLoop,
-        *,
-        remote_address: tuple[Any, ...] | None = None,
     ) -> None:
         super().__init__()
 
@@ -113,9 +108,7 @@ class RawStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
 
         assert socket.type == SOCK_STREAM, "A 'SOCK_STREAM' socket is expected"
 
-        if remote_address is None:
-            remote_address = socket.getpeername()
-        assert remote_address is not None
+        remote_address = socket.getpeername()
         self.__remote_addr: tuple[Any, ...] = tuple(remote_address)
 
     async def aclose(self) -> None:

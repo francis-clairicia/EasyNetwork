@@ -9,9 +9,10 @@ from __future__ import annotations
 __all__ = ["AsyncTCPNetworkServer"]
 
 import contextlib as _contextlib
+import errno as _errno
 import logging as _logging
 from collections import deque
-from typing import TYPE_CHECKING, Any, AsyncGenerator, Callable, Generic, Literal, Mapping, Sequence, TypeVar, final
+from typing import TYPE_CHECKING, Any, AsyncGenerator, Callable, Generic, Iterator, Literal, Mapping, Sequence, TypeVar, final
 
 from ...exceptions import ClientClosedError, StreamProtocolParseError
 from ...protocol import StreamProtocol
@@ -39,6 +40,7 @@ if TYPE_CHECKING:
         AbstractAsyncBackend,
         AbstractAsyncListenerSocketAdapter,
         AbstractAsyncStreamSocketAdapter,
+        AbstractDeferredSocket,
         AbstractTask,
         AbstractTaskGroup,
     )
@@ -275,8 +277,16 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                     task_group.start_soon(client_task, client_socket)
                     del client_socket
 
-    async def __client_task(self, socket: AbstractAsyncStreamSocketAdapter) -> None:
+    async def __client_task(self, deferred_socket: AbstractDeferredSocket) -> None:
         async with _contextlib.AsyncExitStack() as client_exit_stack:
+            client_exit_stack.enter_context(self.__suppress_and_log_remaining_exception())
+            client_exit_stack.enter_context(self.__suppress_ignorable_socket_errors())
+
+            try:
+                socket: AbstractAsyncStreamSocketAdapter = await deferred_socket.connect()
+            finally:
+                del deferred_socket
+
             client_exit_stack.push_async_callback(socket.abort)
             await client_exit_stack.enter_async_context(socket)
 
@@ -355,6 +365,25 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             self.__logger.error("-" * 40)
         finally:
             del exc
+
+    @_contextlib.contextmanager
+    def __suppress_ignorable_socket_errors(self) -> Iterator[None]:
+        try:
+            yield
+        except ConnectionError:
+            return
+        except OSError as exc:
+            if exc.errno not in {_errno.ENOTCONN, _errno.ENOTSOCK}:
+                self.__logger.exception("Error in client task")
+            return
+
+    @_contextlib.contextmanager
+    def __suppress_and_log_remaining_exception(self) -> Iterator[None]:
+        try:
+            yield
+        except Exception:
+            self.__logger.exception("Error in client task")
+            return
 
     def get_backend(self) -> AbstractAsyncBackend:
         return self.__backend
