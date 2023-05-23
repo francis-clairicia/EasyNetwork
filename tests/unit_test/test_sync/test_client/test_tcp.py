@@ -2,13 +2,21 @@
 
 from __future__ import annotations
 
-from selectors import EVENT_READ
+import contextlib
+from selectors import EVENT_READ, EVENT_WRITE
 from socket import AF_INET6, IPPROTO_TCP, TCP_NODELAY
+from ssl import SSLEOFError, SSLError, SSLErrorNumber, SSLWantReadError, SSLWantWriteError, SSLZeroReturnError
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.api_sync.client.tcp import TCPNetworkClient
 from easynetwork.exceptions import ClientClosedError
-from easynetwork.tools.socket import MAX_STREAM_BUFSIZE, IPv4SocketAddress, IPv6SocketAddress
+from easynetwork.tools.socket import (
+    MAX_STREAM_BUFSIZE,
+    SSL_HANDSHAKE_TIMEOUT,
+    SSL_SHUTDOWN_TIMEOUT,
+    IPv4SocketAddress,
+    IPv6SocketAddress,
+)
 
 import pytest
 
@@ -24,6 +32,11 @@ from .base import BaseTestClient
 @pytest.fixture(scope="module", autouse=True)
 def setup_dummy_lock(module_mocker: MockerFixture, dummy_lock_cls: Any) -> None:
     module_mocker.patch(f"{TCPNetworkClient.__module__}._Lock", new=dummy_lock_cls)
+
+
+@pytest.fixture(autouse=True)
+def remove_ssl_OP_IGNORE_UNEXPECTED_EOF(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delattr("ssl.OP_IGNORE_UNEXPECTED_EOF", raising=False)
 
 
 class TestTCPNetworkClient(BaseTestClient):
@@ -49,15 +62,73 @@ class TestTCPNetworkClient(BaseTestClient):
     def global_remote_address() -> tuple[str, int]:
         return ("remote_address", 5000)
 
-    @pytest.fixture(autouse=True)
+    @pytest.fixture(params=["NO_SSL", "USE_SSL"])
     @staticmethod
-    def mock_socket_create_connection(mocker: MockerFixture, mock_tcp_socket: MagicMock) -> MagicMock:
-        return mocker.patch("socket.create_connection", return_value=mock_tcp_socket)
+    def use_ssl(request: Any) -> bool:
+        match request.param:
+            case "NO_SSL":
+                return False
+            case "USE_SSL":
+                return True
+            case _:
+                raise SystemError
+
+    @pytest.fixture
+    @staticmethod
+    def mock_tcp_socket(mock_tcp_socket: MagicMock, socket_family: int) -> MagicMock:
+        mock_tcp_socket.family = socket_family
+        return mock_tcp_socket
+
+    @pytest.fixture
+    @staticmethod
+    def mock_ssl_socket(mock_ssl_socket: MagicMock, mock_tcp_socket: MagicMock, socket_family: int) -> MagicMock:
+        mock_ssl_socket.family = socket_family
+        mock_ssl_socket.unwrap.return_value = mock_tcp_socket
+        return mock_ssl_socket
+
+    @pytest.fixture
+    @staticmethod
+    def mock_used_socket(mock_tcp_socket: MagicMock, mock_ssl_socket: MagicMock, use_ssl: bool) -> MagicMock:
+        mock_used_socket = mock_ssl_socket if use_ssl else mock_tcp_socket
+
+        mock_used_socket.gettimeout.return_value = 0
+        mock_used_socket.getsockopt.return_value = 0  # Needed for tests dealing with send_packet()
+        mock_used_socket.send.side_effect = lambda data: len(data)
+        del mock_used_socket.sendall
+        del mock_used_socket.sendto
+
+        return mock_used_socket
+
+    @pytest.fixture
+    @staticmethod
+    def mock_ssl_context(mock_ssl_context: MagicMock, mock_ssl_socket: MagicMock) -> MagicMock:
+        mock_ssl_context.wrap_socket.return_value = mock_ssl_socket
+        return mock_ssl_context
 
     @pytest.fixture(autouse=True)
     @staticmethod
-    def mock_socket_proxy_cls(mocker: MockerFixture, mock_tcp_socket: MagicMock) -> MagicMock:
-        return mocker.patch(f"{TCPNetworkClient.__module__}.SocketProxy", return_value=mock_tcp_socket)
+    def mock_ssl_create_default_context(mock_ssl_context: MagicMock, mocker: MockerFixture) -> MagicMock:
+        return mocker.patch("ssl.create_default_context", autospec=True, return_value=mock_ssl_context)
+
+    @pytest.fixture
+    @staticmethod
+    def server_hostname(use_ssl: bool, mocker: MockerFixture) -> Any | None:
+        return mocker.sentinel.server_hostname if use_ssl else None
+
+    @pytest.fixture
+    @staticmethod
+    def ssl_context(use_ssl: bool, mock_ssl_context: MagicMock) -> MagicMock | None:
+        return mock_ssl_context if use_ssl else None
+
+    @pytest.fixture(autouse=True)
+    @staticmethod
+    def mock_socket_create_connection(mocker: MockerFixture, mock_tcp_socket: MagicMock) -> MagicMock:
+        return mocker.patch("socket.create_connection", autospec=True, return_value=mock_tcp_socket)
+
+    @pytest.fixture(autouse=True)
+    @staticmethod
+    def mock_socket_proxy_cls(mocker: MockerFixture, mock_used_socket: MagicMock) -> MagicMock:
+        return mocker.patch(f"{TCPNetworkClient.__module__}.SocketProxy", return_value=mock_used_socket)
 
     @pytest.fixture(autouse=True)
     @staticmethod
@@ -85,17 +156,6 @@ class TestTCPNetworkClient(BaseTestClient):
     ) -> tuple[str, int]:
         cls.set_remote_address_to_socket_mock(mock_tcp_socket, socket_family, global_remote_address)
         return global_remote_address
-
-    @pytest.fixture(autouse=True)
-    @staticmethod
-    def set_default_socket_mock_configuration(
-        mock_tcp_socket: MagicMock,
-        socket_family: int,
-        mocker: MockerFixture,
-    ) -> None:
-        mock_tcp_socket.family = socket_family
-        mock_tcp_socket.gettimeout.return_value = mocker.sentinel.default_timeout
-        mock_tcp_socket.getsockopt.return_value = 0  # Needed for tests dealing with send_packet()
 
     @pytest.fixture  # DO NOT set autouse=True
     @staticmethod
@@ -133,25 +193,51 @@ class TestTCPNetworkClient(BaseTestClient):
     def max_recv_size(request: Any) -> int | None:
         return getattr(request, "param", None)
 
+    @pytest.fixture
+    @staticmethod
+    def ssl_shutdown_timeout(request: Any) -> float | None:
+        return getattr(request, "param", None)
+
     @pytest.fixture(params=["REMOTE_ADDRESS", "EXTERNAL_SOCKET"])
     @staticmethod
     def client(
         request: Any,
         max_recv_size: int | None,
+        ssl_shutdown_timeout: float | None,
         remote_address: tuple[str, int],
         mock_tcp_socket: MagicMock,
         mock_stream_protocol: MagicMock,
+        ssl_context: MagicMock | None,
+        server_hostname: Any | None,
+        mock_selector_register: MagicMock,
+        mock_selector_select: MagicMock,
     ) -> TCPNetworkClient[Any, Any]:
         try:
             match request.param:
                 case "REMOTE_ADDRESS":
-                    return TCPNetworkClient(remote_address, mock_stream_protocol, max_recv_size=max_recv_size)
+                    return TCPNetworkClient(
+                        remote_address,
+                        mock_stream_protocol,
+                        ssl=ssl_context,
+                        server_hostname=server_hostname,
+                        max_recv_size=max_recv_size,
+                        ssl_shutdown_timeout=ssl_shutdown_timeout,
+                    )
                 case "EXTERNAL_SOCKET":
-                    return TCPNetworkClient(mock_tcp_socket, mock_stream_protocol, max_recv_size=max_recv_size)
+                    return TCPNetworkClient(
+                        mock_tcp_socket,
+                        mock_stream_protocol,
+                        ssl=ssl_context,
+                        server_hostname=server_hostname,
+                        max_recv_size=max_recv_size,
+                        ssl_shutdown_timeout=ssl_shutdown_timeout,
+                    )
                 case invalid:
                     pytest.fail(f"Invalid fixture param: Got {invalid!r}")
         finally:
             mock_tcp_socket.settimeout.reset_mock()
+            mock_selector_register.reset_mock()
+            mock_selector_select.reset_mock()
 
     @pytest.fixture(
         params=[
@@ -172,16 +258,27 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_socket_proxy_cls: MagicMock,
         mock_stream_data_consumer_cls: MagicMock,
         mock_stream_protocol: MagicMock,
+        ssl_context: MagicMock | None,
+        server_hostname: Any | None,
+        mock_ssl_context: MagicMock,
+        mock_ssl_create_default_context: MagicMock,
+        mock_ssl_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
         mock_socket_proxy_cls.return_value = mocker.sentinel.proxy
+        if ssl_context:
+            used_socket, not_used_socket = mock_ssl_socket, mock_tcp_socket
+        else:
+            used_socket, not_used_socket = mock_tcp_socket, mock_ssl_socket
 
         # Act
         client: TCPNetworkClient[Any, Any] = TCPNetworkClient(
             remote_address,
+            ssl=ssl_context,
+            server_hostname=server_hostname,
             protocol=mock_stream_protocol,
-            timeout=mocker.sentinel.timeout,
+            connect_timeout=mocker.sentinel.timeout,
             local_address=mocker.sentinel.local_address,
         )
 
@@ -193,12 +290,34 @@ class TestTCPNetworkClient(BaseTestClient):
             source_address=mocker.sentinel.local_address,
             all_errors=True,
         )
-        mock_socket_proxy_cls.assert_called_once_with(mock_tcp_socket, lock=mocker.ANY)
+        mock_ssl_create_default_context.assert_not_called()
+        if ssl_context:
+            mock_ssl_context.wrap_socket.assert_called_once_with(
+                mock_tcp_socket,
+                server_side=False,
+                do_handshake_on_connect=False,
+                suppress_ragged_eofs=False,
+                server_hostname=server_hostname,
+            )
+            mock_ssl_socket.do_handshake.assert_called_once_with(block=False)
+        else:
+            mock_ssl_context.wrap_socket.assert_not_called()
+            mock_ssl_socket.do_handshake.assert_not_called()
+        mock_socket_proxy_cls.assert_called_once_with(used_socket, lock=mocker.ANY)
+
         mock_tcp_socket.getsockname.assert_called_once_with()
         mock_tcp_socket.getpeername.assert_called_once_with()
-        mock_tcp_socket.setsockopt.assert_called_once_with(IPPROTO_TCP, TCP_NODELAY, True)
-        mock_tcp_socket.settimeout.assert_called_once_with(None)
-        mock_tcp_socket.setblocking.assert_not_called()
+        mock_ssl_socket.getsockname.assert_not_called()
+        mock_ssl_socket.getpeername.assert_not_called()
+
+        used_socket.setsockopt.assert_called_once_with(IPPROTO_TCP, TCP_NODELAY, True)
+        used_socket.setblocking.assert_not_called()
+        not_used_socket.setsockopt.assert_not_called()
+        not_used_socket.setblocking.assert_not_called()
+
+        mock_tcp_socket.settimeout.assert_called_once_with(0)
+        mock_ssl_socket.settimeout.assert_not_called()
+
         assert client.socket is mocker.sentinel.proxy
 
     def test____dunder_init____use_given_socket(
@@ -208,23 +327,59 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_socket_proxy_cls: MagicMock,
         mock_stream_data_consumer_cls: MagicMock,
         mock_stream_protocol: MagicMock,
+        ssl_context: MagicMock | None,
+        server_hostname: Any | None,
+        mock_ssl_context: MagicMock,
+        mock_ssl_socket: MagicMock,
+        mock_ssl_create_default_context: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
         mock_socket_proxy_cls.return_value = mocker.sentinel.proxy
+        if ssl_context:
+            used_socket, not_used_socket = mock_ssl_socket, mock_tcp_socket
+        else:
+            used_socket, not_used_socket = mock_tcp_socket, mock_ssl_socket
 
         # Act
-        client: TCPNetworkClient[Any, Any] = TCPNetworkClient(mock_tcp_socket, protocol=mock_stream_protocol)
+        client: TCPNetworkClient[Any, Any] = TCPNetworkClient(
+            mock_tcp_socket,
+            protocol=mock_stream_protocol,
+            ssl=ssl_context,
+            server_hostname=server_hostname,
+        )
 
         # Assert
         mock_stream_data_consumer_cls.assert_called_once_with(mock_stream_protocol)
         mock_socket_create_connection.assert_not_called()
-        mock_socket_proxy_cls.assert_called_once_with(mock_tcp_socket, lock=mocker.ANY)
+        mock_ssl_create_default_context.assert_not_called()
+        if ssl_context:
+            mock_ssl_context.wrap_socket.assert_called_once_with(
+                mock_tcp_socket,
+                server_side=False,
+                do_handshake_on_connect=False,
+                suppress_ragged_eofs=False,
+                server_hostname=server_hostname,
+            )
+            mock_ssl_socket.do_handshake.assert_called_once_with(block=False)
+        else:
+            mock_ssl_context.wrap_socket.assert_not_called()
+            mock_ssl_socket.do_handshake.assert_not_called()
+        mock_socket_proxy_cls.assert_called_once_with(used_socket, lock=mocker.ANY)
+
         mock_tcp_socket.getsockname.assert_called_once_with()
         mock_tcp_socket.getpeername.assert_called_once_with()
-        mock_tcp_socket.setsockopt.assert_called_once_with(IPPROTO_TCP, TCP_NODELAY, True)
-        mock_tcp_socket.settimeout.assert_called_once_with(None)
-        mock_tcp_socket.setblocking.assert_not_called()
+        mock_ssl_socket.getsockname.assert_not_called()
+        mock_ssl_socket.getpeername.assert_not_called()
+
+        used_socket.setsockopt.assert_called_once_with(IPPROTO_TCP, TCP_NODELAY, True)
+        used_socket.setblocking.assert_not_called()
+        not_used_socket.setsockopt.assert_not_called()
+        not_used_socket.setblocking.assert_not_called()
+
+        mock_tcp_socket.settimeout.assert_called_once_with(0)
+        mock_ssl_socket.settimeout.assert_not_called()
+
         assert client.socket is mocker.sentinel.proxy
 
     @pytest.mark.parametrize("socket_family", list(UNSUPPORTED_FAMILIES), indirect=True)
@@ -232,6 +387,8 @@ class TestTCPNetworkClient(BaseTestClient):
         self,
         mock_tcp_socket: MagicMock,
         mock_datagram_protocol: MagicMock,
+        ssl_context: MagicMock | None,
+        server_hostname: Any | None,
     ) -> None:
         # Arrange
 
@@ -240,6 +397,8 @@ class TestTCPNetworkClient(BaseTestClient):
             _ = TCPNetworkClient(
                 mock_tcp_socket,
                 protocol=mock_datagram_protocol,
+                ssl=ssl_context,
+                server_hostname=server_hostname,
             )
 
     def test____dunder_init____invalid_socket_type_error(
@@ -249,17 +408,28 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_socket_proxy_cls: MagicMock,
         mock_stream_data_consumer_cls: MagicMock,
         mock_stream_protocol: MagicMock,
+        mock_ssl_create_default_context: MagicMock,
+        ssl_context: MagicMock | None,
+        server_hostname: Any | None,
     ) -> None:
         # Arrange
 
         # Act
         with pytest.raises(ValueError, match=r"^Invalid socket type$"):
-            _ = TCPNetworkClient(mock_udp_socket, protocol=mock_stream_protocol)
+            _ = TCPNetworkClient(
+                mock_udp_socket,
+                protocol=mock_stream_protocol,
+                ssl=ssl_context,
+                server_hostname=server_hostname,
+            )
 
         # Assert
         mock_stream_data_consumer_cls.assert_not_called()
         mock_socket_create_connection.assert_not_called()
+        mock_ssl_create_default_context.assert_not_called()
         mock_socket_proxy_cls.assert_not_called()
+        if ssl_context:
+            ssl_context.wrap_socket.assert_not_called()
         mock_udp_socket.getsockname.assert_not_called()
         mock_udp_socket.getpeername.assert_not_called()
         mock_udp_socket.close.assert_called_once_with()
@@ -271,18 +441,29 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_socket_proxy_cls: MagicMock,
         mock_stream_data_consumer_cls: MagicMock,
         mock_stream_protocol: MagicMock,
+        mock_ssl_create_default_context: MagicMock,
+        ssl_context: MagicMock | None,
+        server_hostname: Any | None,
     ) -> None:
         # Arrange
         enotconn_exception = self.configure_socket_mock_to_raise_ENOTCONN(mock_tcp_socket)
 
         # Act
         with pytest.raises(OSError) as exc_info:
-            _ = TCPNetworkClient(mock_tcp_socket, protocol=mock_stream_protocol)
+            _ = TCPNetworkClient(
+                mock_tcp_socket,
+                protocol=mock_stream_protocol,
+                ssl=ssl_context,
+                server_hostname=server_hostname,
+            )
 
         # Assert
         assert exc_info.value is enotconn_exception
         mock_stream_data_consumer_cls.assert_not_called()
         mock_socket_create_connection.assert_not_called()
+        mock_ssl_create_default_context.assert_not_called()
+        if ssl_context:
+            ssl_context.wrap_socket.assert_not_called()
         mock_socket_proxy_cls.assert_not_called()
         mock_tcp_socket.getsockname.assert_called_once_with()
         mock_tcp_socket.getpeername.assert_called_once_with()
@@ -297,6 +478,8 @@ class TestTCPNetworkClient(BaseTestClient):
         remote_address: tuple[str, int],
         mock_tcp_socket: MagicMock,
         mock_stream_protocol: MagicMock,
+        ssl_context: MagicMock | None,
+        server_hostname: Any | None,
     ) -> None:
         # Arrange
         expected_size: int = max_recv_size if max_recv_size is not None else MAX_STREAM_BUFSIZE
@@ -308,12 +491,16 @@ class TestTCPNetworkClient(BaseTestClient):
                 mock_tcp_socket,
                 protocol=mock_stream_protocol,
                 max_recv_size=max_recv_size,
+                ssl=ssl_context,
+                server_hostname=server_hostname,
             )
         else:
             client = TCPNetworkClient(
                 remote_address,
                 protocol=mock_stream_protocol,
                 max_recv_size=max_recv_size,
+                ssl=ssl_context,
+                server_hostname=server_hostname,
             )
 
         # Assert
@@ -330,6 +517,9 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_stream_protocol: MagicMock,
         mock_stream_data_consumer_cls: MagicMock,
         mock_socket_proxy_cls: MagicMock,
+        mock_ssl_create_default_context: MagicMock,
+        ssl_context: MagicMock | None,
+        server_hostname: Any | None,
     ) -> None:
         # Arrange
 
@@ -340,25 +530,304 @@ class TestTCPNetworkClient(BaseTestClient):
                     mock_tcp_socket,
                     protocol=mock_stream_protocol,
                     max_recv_size=max_recv_size,
+                    ssl=ssl_context,
+                    server_hostname=server_hostname,
                 )
             else:
                 _ = TCPNetworkClient(
                     remote_address,
                     protocol=mock_stream_protocol,
                     max_recv_size=max_recv_size,
+                    ssl=ssl_context,
+                    server_hostname=server_hostname,
                 )
 
         # Assert
+        if ssl_context:
+            ssl_context.wrap_socket.assert_not_called()
+        mock_ssl_create_default_context.assert_not_called()
         mock_stream_data_consumer_cls.assert_not_called()
         mock_socket_proxy_cls.assert_not_called()
         mock_tcp_socket.getsockname.assert_not_called()
         mock_tcp_socket.getpeername.assert_not_called()
         mock_tcp_socket.close.assert_called_once_with()
 
+    @pytest.mark.parametrize("use_ssl", ["NO_SSL"], indirect=True)
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    @pytest.mark.parametrize("ssl_parameter", ["server_hostname", "ssl_handshake_timeout", "ssl_shutdown_timeout"])
+    def test____dunder_init____ssl____useless_parameter_if_no_context(
+        self,
+        ssl_parameter: str,
+        use_socket: bool,
+        remote_address: tuple[str, int],
+        mock_tcp_socket: MagicMock,
+        mock_stream_protocol: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        kwargs = {ssl_parameter: mocker.sentinel.value}
+
+        # Act & Assert
+        with pytest.raises(ValueError, match=r"^%s is only meaningful with ssl$" % ssl_parameter):
+            if use_socket:
+                _ = TCPNetworkClient(
+                    mock_tcp_socket,
+                    protocol=mock_stream_protocol,
+                    ssl=None,
+                    **kwargs,
+                )
+            else:
+                _ = TCPNetworkClient(
+                    remote_address,
+                    protocol=mock_stream_protocol,
+                    ssl=None,
+                    **kwargs,
+                )
+
+    @pytest.mark.parametrize("use_ssl", ["USE_SSL"], indirect=True)
+    def test____dunder_init____ssl____server_hostname____use_remote_host_by_default(
+        self,
+        remote_address: tuple[str, int],
+        mock_ssl_context: MagicMock,
+        mock_tcp_socket: MagicMock,
+        mock_stream_protocol: MagicMock,
+    ) -> None:
+        # Arrange
+        remote_host, _ = remote_address
+
+        # Act
+        _ = TCPNetworkClient(
+            remote_address,
+            protocol=mock_stream_protocol,
+            ssl=mock_ssl_context,
+            server_hostname=None,
+        )
+
+        # Assert
+        mock_ssl_context.wrap_socket.assert_called_once_with(
+            mock_tcp_socket,
+            server_side=False,
+            do_handshake_on_connect=False,
+            suppress_ragged_eofs=False,
+            server_hostname=remote_host,
+        )
+
+    @pytest.mark.parametrize("use_ssl", ["USE_SSL"], indirect=True)
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    def test____dunder_init____ssl____server_hostname____do_not_disable_hostname_check_for_external_context(
+        self,
+        use_socket: bool,
+        remote_address: tuple[str, int],
+        mock_ssl_context: MagicMock,
+        mock_tcp_socket: MagicMock,
+        mock_stream_protocol: MagicMock,
+    ) -> None:
+        # Arrange
+        assert mock_ssl_context.check_hostname
+
+        # Act
+        if use_socket:
+            _ = TCPNetworkClient(
+                mock_tcp_socket,
+                protocol=mock_stream_protocol,
+                ssl=mock_ssl_context,
+                server_hostname="",
+            )
+        else:
+            _ = TCPNetworkClient(
+                remote_address,
+                protocol=mock_stream_protocol,
+                ssl=mock_ssl_context,
+                server_hostname="",
+            )
+
+        # Assert
+        assert mock_ssl_context.check_hostname is True
+        mock_ssl_context.wrap_socket.assert_called_once_with(
+            mock_tcp_socket,
+            server_side=False,
+            do_handshake_on_connect=False,
+            suppress_ragged_eofs=False,
+            server_hostname=None,
+        )
+
+    @pytest.mark.parametrize("use_ssl", ["USE_SSL"], indirect=True)
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    def test____dunder_init____ssl____server_hostname____no_host_to_use(
+        self,
+        use_socket: bool,
+        remote_address: tuple[str, int],
+        mock_tcp_socket: MagicMock,
+        mock_stream_protocol: MagicMock,
+        mock_ssl_context: MagicMock,
+    ) -> None:
+        # Arrange
+        _, remote_port = remote_address
+        del remote_address
+
+        # Act & Assert
+        with pytest.raises(ValueError, match=r"^You must set server_hostname when using ssl without a host$"):
+            if use_socket:
+                _ = TCPNetworkClient(
+                    mock_tcp_socket,
+                    protocol=mock_stream_protocol,
+                    ssl=mock_ssl_context,
+                    server_hostname=None,
+                )
+            else:
+                _ = TCPNetworkClient(
+                    ("", remote_port),
+                    protocol=mock_stream_protocol,
+                    ssl=mock_ssl_context,
+                    server_hostname=None,
+                )
+
+    @pytest.mark.parametrize("use_ssl", ["USE_SSL"], indirect=True)
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    def test____dunder_init____ssl____create_default_context(
+        self,
+        use_socket: bool,
+        remote_address: tuple[str, int],
+        mock_ssl_context: MagicMock,
+        mock_tcp_socket: MagicMock,
+        mock_ssl_create_default_context: MagicMock,
+        mock_stream_protocol: MagicMock,
+        server_hostname: Any,
+    ) -> None:
+        # Arrange
+
+        # Act
+        if use_socket:
+            _ = TCPNetworkClient(
+                mock_tcp_socket,
+                protocol=mock_stream_protocol,
+                ssl=True,
+                server_hostname=server_hostname,
+            )
+        else:
+            _ = TCPNetworkClient(
+                remote_address,
+                protocol=mock_stream_protocol,
+                ssl=True,
+                server_hostname=server_hostname,
+            )
+
+        # Assert
+        mock_ssl_create_default_context.assert_called_once_with()
+        mock_ssl_context.wrap_socket.assert_called_once_with(
+            mock_tcp_socket,
+            server_side=False,
+            do_handshake_on_connect=False,
+            suppress_ragged_eofs=False,
+            server_hostname=server_hostname,
+        )
+
+    @pytest.mark.parametrize("use_ssl", ["USE_SSL"], indirect=True)
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    def test____dunder_init____ssl____create_default_context____disable_hostname_check(
+        self,
+        use_socket: bool,
+        remote_address: tuple[str, int],
+        mock_ssl_context: MagicMock,
+        mock_tcp_socket: MagicMock,
+        mock_ssl_create_default_context: MagicMock,
+        mock_stream_protocol: MagicMock,
+    ) -> None:
+        # Arrange
+        check_hostname_by_default: bool = mock_ssl_context.check_hostname
+        assert check_hostname_by_default
+
+        # Act
+        if use_socket:
+            _ = TCPNetworkClient(
+                mock_tcp_socket,
+                protocol=mock_stream_protocol,
+                ssl=True,
+                server_hostname="",
+            )
+        else:
+            _ = TCPNetworkClient(
+                remote_address,
+                protocol=mock_stream_protocol,
+                ssl=True,
+                server_hostname="",
+            )
+
+        # Assert
+        mock_ssl_create_default_context.assert_called_once_with()
+        mock_ssl_context.wrap_socket.assert_called_once_with(
+            mock_tcp_socket,
+            server_side=False,
+            do_handshake_on_connect=False,
+            suppress_ragged_eofs=False,
+            server_hostname=None,
+        )
+        assert mock_ssl_context.check_hostname is False
+
+    @pytest.mark.parametrize("use_ssl", ["USE_SSL"], indirect=True)
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    @pytest.mark.parametrize("ssl_handshake_timeout", [None, 0, 1234567.89], ids=lambda p: f"timeout=={p}")
+    @pytest.mark.parametrize(
+        ["would_block_exception", "would_block_event"],
+        [
+            pytest.param(SSLWantReadError, EVENT_READ, id="read"),
+            pytest.param(SSLWantWriteError, EVENT_WRITE, id="write"),
+        ],
+    )
+    def test____dunder_init____ssl____handshake_timeout(
+        self,
+        ssl_handshake_timeout: float | None,
+        use_socket: bool,
+        would_block_exception: Exception,
+        would_block_event: int,
+        remote_address: tuple[str, int],
+        mock_ssl_context: MagicMock,
+        mock_tcp_socket: MagicMock,
+        mock_ssl_socket: MagicMock,
+        mock_stream_protocol: MagicMock,
+        mock_selector_register: MagicMock,
+        mock_selector_select: MagicMock,
+        server_hostname: Any,
+    ) -> None:
+        # Arrange
+        expected_timeout: float = ssl_handshake_timeout if ssl_handshake_timeout is not None else SSL_HANDSHAKE_TIMEOUT
+        mock_ssl_socket.do_handshake.side_effect = [would_block_exception, None]
+
+        # Act
+        with pytest.raises(TimeoutError) if expected_timeout == 0 else contextlib.nullcontext():
+            if use_socket:
+                _ = TCPNetworkClient(
+                    mock_tcp_socket,
+                    protocol=mock_stream_protocol,
+                    ssl=mock_ssl_context,
+                    server_hostname=server_hostname,
+                    ssl_handshake_timeout=ssl_handshake_timeout,
+                )
+            else:
+                _ = TCPNetworkClient(
+                    remote_address,
+                    protocol=mock_stream_protocol,
+                    ssl=mock_ssl_context,
+                    server_hostname=server_hostname,
+                    ssl_handshake_timeout=ssl_handshake_timeout,
+                )
+
+        # Assert
+        if expected_timeout == 0:
+            assert len(mock_ssl_socket.do_handshake.mock_calls) == 1
+            mock_selector_register.assert_not_called()
+            mock_selector_select.assert_not_called()
+        else:
+            assert len(mock_ssl_socket.do_handshake.mock_calls) == 2
+            mock_selector_register.assert_called_once_with(mock_ssl_socket, would_block_event)
+            mock_selector_select.assert_called_once_with(expected_timeout)
+
     def test____close____default(
         self,
         client: TCPNetworkClient[Any, Any],
+        use_ssl: bool,
         mock_tcp_socket: MagicMock,
+        mock_ssl_socket: MagicMock,
     ) -> None:
         # Arrange
         assert not client.is_closed()
@@ -368,8 +837,116 @@ class TestTCPNetworkClient(BaseTestClient):
 
         # Assert
         assert client.is_closed()
+
         mock_tcp_socket.shutdown.assert_not_called()
+        mock_ssl_socket.shutdown.assert_not_called()
+
+        if use_ssl:
+            mock_ssl_socket.unwrap.assert_called_once_with()
+
         mock_tcp_socket.close.assert_called_once_with()
+        mock_ssl_socket.close.assert_not_called()
+
+    @pytest.mark.parametrize("use_ssl", ["USE_SSL"], indirect=True)
+    @pytest.mark.parametrize("exception", [SSLEOFError, SSLZeroReturnError, ConnectionError])
+    def test____close____ssl____connection_error_at_shutdown(
+        self,
+        client: TCPNetworkClient[Any, Any],
+        exception: Exception,
+        mock_tcp_socket: MagicMock,
+        mock_ssl_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        assert not client.is_closed()
+        mock_ssl_socket.unwrap.side_effect = exception
+
+        # Act
+        client.close()
+
+        # Assert
+        assert client.is_closed()
+
+        mock_tcp_socket.shutdown.assert_not_called()
+        mock_ssl_socket.shutdown.assert_not_called()
+
+        mock_ssl_socket.unwrap.assert_called_once_with()
+
+        mock_tcp_socket.close.assert_not_called()
+        mock_ssl_socket.close.assert_called_once_with()
+
+    @pytest.mark.parametrize("use_ssl", ["USE_SSL"], indirect=True)
+    def test____close____ssl____unrelated_ssl_error(
+        self,
+        client: TCPNetworkClient[Any, Any],
+        mock_tcp_socket: MagicMock,
+        mock_ssl_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        assert not client.is_closed()
+        mock_ssl_socket.unwrap.side_effect = SSLError(SSLErrorNumber.SSL_ERROR_INVALID_ERROR_CODE, "SOMETHING")
+
+        # Act
+        with pytest.raises(SSLError):
+            client.close()
+
+        # Assert
+        assert client.is_closed()
+
+        mock_tcp_socket.shutdown.assert_not_called()
+        mock_ssl_socket.shutdown.assert_not_called()
+
+        mock_ssl_socket.unwrap.assert_called_once_with()
+
+        mock_tcp_socket.close.assert_not_called()
+        mock_ssl_socket.close.assert_called_once_with()
+
+    @pytest.mark.parametrize("use_ssl", ["USE_SSL"], indirect=True)
+    @pytest.mark.parametrize("ssl_shutdown_timeout", [None, 0, 1234567.89], ids=lambda p: f"timeout=={p}", indirect=True)
+    @pytest.mark.parametrize(
+        ["would_block_exception", "would_block_event"],
+        [
+            pytest.param(SSLWantReadError, EVENT_READ, id="read"),
+            pytest.param(SSLWantWriteError, EVENT_WRITE, id="write"),
+        ],
+    )
+    def test____close____ssl____shutdown_timeout(
+        self,
+        ssl_shutdown_timeout: float | None,
+        client: TCPNetworkClient[Any, Any],
+        would_block_exception: Exception,
+        would_block_event: int,
+        mock_tcp_socket: MagicMock,
+        mock_ssl_socket: MagicMock,
+        mock_selector_register: MagicMock,
+        mock_selector_select: MagicMock,
+    ) -> None:
+        # Arrange
+        expected_timeout: float = ssl_shutdown_timeout if ssl_shutdown_timeout is not None else SSL_SHUTDOWN_TIMEOUT
+        mock_ssl_socket.unwrap.side_effect = [would_block_exception, mock_tcp_socket]
+
+        # Act
+        with pytest.raises(TimeoutError) if expected_timeout == 0 else contextlib.nullcontext():
+            client.close()
+
+        # Assert
+        assert client.is_closed()
+
+        mock_tcp_socket.shutdown.assert_not_called()
+        mock_ssl_socket.shutdown.assert_not_called()
+
+        if expected_timeout == 0:
+            assert mock_ssl_socket.unwrap.call_count == 1
+            mock_ssl_socket.unwrap.assert_called_once()
+            mock_selector_register.assert_not_called()
+            mock_selector_select.assert_not_called()
+            mock_tcp_socket.close.assert_not_called()
+            mock_ssl_socket.close.assert_called_once_with()
+        else:
+            assert mock_ssl_socket.unwrap.call_count == 2
+            mock_selector_register.assert_called_once_with(mock_ssl_socket, would_block_event)
+            mock_selector_select.assert_called_once_with(expected_timeout)
+            mock_ssl_socket.close.assert_not_called()
+            mock_tcp_socket.close.assert_called_once_with()
 
     @pytest.mark.parametrize("client_closed", [False, True], ids=lambda p: f"client_closed=={p}")
     def test____get_local_address____return_saved_address(
@@ -378,10 +955,10 @@ class TestTCPNetworkClient(BaseTestClient):
         client_closed: bool,
         socket_family: int,
         local_address: tuple[str, int],
-        mock_tcp_socket: MagicMock,
+        mock_used_socket: MagicMock,
     ) -> None:
         # Arrange
-        mock_tcp_socket.getsockname.reset_mock()
+        mock_used_socket.getsockname.reset_mock()
         if client_closed:
             client.close()
             assert client.is_closed()
@@ -394,7 +971,7 @@ class TestTCPNetworkClient(BaseTestClient):
             assert isinstance(address, IPv6SocketAddress)
         else:
             assert isinstance(address, IPv4SocketAddress)
-        mock_tcp_socket.getsockname.assert_not_called()
+        mock_used_socket.getsockname.assert_not_called()
         assert address.host == local_address[0]
         assert address.port == local_address[1]
 
@@ -406,6 +983,7 @@ class TestTCPNetworkClient(BaseTestClient):
         remote_address: tuple[str, int],
         socket_family: int,
         mock_tcp_socket: MagicMock,
+        mock_used_socket: MagicMock,
     ) -> None:
         # Arrange
         ## NOTE: The client should have the remote address saved. Therefore this test check if there is no new call.
@@ -423,29 +1001,31 @@ class TestTCPNetworkClient(BaseTestClient):
         else:
             assert isinstance(address, IPv4SocketAddress)
         mock_tcp_socket.getpeername.assert_called_once()
+        if mock_used_socket is not mock_tcp_socket:
+            mock_used_socket.getpeername.assert_not_called()
         assert address.host == remote_address[0]
         assert address.port == remote_address[1]
 
     def test____fileno____default(
         self,
         client: TCPNetworkClient[Any, Any],
-        mock_tcp_socket: MagicMock,
+        mock_used_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_tcp_socket.fileno.return_value = mocker.sentinel.fileno
+        mock_used_socket.fileno.return_value = mocker.sentinel.fileno
 
         # Act
         fd = client.fileno()
 
         # Assert
-        mock_tcp_socket.fileno.assert_called_once_with()
+        mock_used_socket.fileno.assert_called_once_with()
         assert fd is mocker.sentinel.fileno
 
     def test____fileno____closed_client(
         self,
         client: TCPNetworkClient[Any, Any],
-        mock_tcp_socket: MagicMock,
+        mock_used_socket: MagicMock,
     ) -> None:
         # Arrange
         client.close()
@@ -455,14 +1035,14 @@ class TestTCPNetworkClient(BaseTestClient):
         fd = client.fileno()
 
         # Assert
-        mock_tcp_socket.fileno.assert_not_called()
+        mock_used_socket.fileno.assert_not_called()
         assert fd == -1
 
     @pytest.mark.usefixtures("setup_producer_mock")
     def test____send_packet____send_bytes_to_socket(
         self,
         client: TCPNetworkClient[Any, Any],
-        mock_tcp_socket: MagicMock,
+        mock_used_socket: MagicMock,
         mock_stream_protocol: MagicMock,
         mock_selector_select: MagicMock,
         mocker: MockerFixture,
@@ -474,18 +1054,50 @@ class TestTCPNetworkClient(BaseTestClient):
         client.send_packet(mocker.sentinel.packet)
 
         # Assert
-        mock_tcp_socket.settimeout.assert_not_called()
-        mock_tcp_socket.setblocking.assert_not_called()
+        mock_used_socket.settimeout.assert_not_called()
+        mock_used_socket.setblocking.assert_not_called()
         mock_selector_select.assert_not_called()
         mock_stream_protocol.generate_chunks.assert_called_once_with(mocker.sentinel.packet)
-        mock_tcp_socket.sendall.assert_called_once_with(b"packet\n")
-        mock_tcp_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_ERROR)
+        mock_used_socket.send.assert_called_once_with(b"packet\n")
+        mock_used_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_ERROR)
+
+    @pytest.mark.usefixtures("setup_producer_mock")
+    def test____send_packet____blocking_operation(
+        self,
+        client: TCPNetworkClient[Any, Any],
+        use_ssl: bool,
+        mock_used_socket: MagicMock,
+        mock_stream_protocol: MagicMock,
+        mock_selector_register: MagicMock,
+        mock_selector_select: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        from socket import SO_ERROR, SOL_SOCKET
+
+        mock_used_socket.send.side_effect = [SSLWantWriteError if use_ssl else BlockingIOError, len(b"pack"), len(b"et\n")]
+
+        # Act
+        client.send_packet(mocker.sentinel.packet)
+
+        # Assert
+        mock_used_socket.settimeout.assert_not_called()
+        mock_used_socket.setblocking.assert_not_called()
+        mock_selector_register.assert_called_once_with(mock_used_socket, EVENT_WRITE)
+        mock_selector_select.assert_called_once_with(None)
+        mock_stream_protocol.generate_chunks.assert_called_once_with(mocker.sentinel.packet)
+        assert mock_used_socket.send.mock_calls == [
+            mocker.call(b"packet\n"),
+            mocker.call(b"packet\n"),
+            mocker.call(b"et\n"),
+        ]
+        assert mock_used_socket.getsockopt.mock_calls == [mocker.call(SOL_SOCKET, SO_ERROR) for _ in range(2)]
 
     @pytest.mark.usefixtures("setup_producer_mock")
     def test____send_packet____raise_error_saved_in_SO_ERROR_option(
         self,
         client: TCPNetworkClient[Any, Any],
-        mock_tcp_socket: MagicMock,
+        mock_used_socket: MagicMock,
         mock_stream_protocol: MagicMock,
         mock_selector_select: MagicMock,
         mocker: MockerFixture,
@@ -494,7 +1106,7 @@ class TestTCPNetworkClient(BaseTestClient):
         from errno import ECONNRESET
         from socket import SO_ERROR, SOL_SOCKET
 
-        mock_tcp_socket.getsockopt.return_value = ECONNRESET
+        mock_used_socket.getsockopt.return_value = ECONNRESET
 
         # Act
         with pytest.raises(OSError) as exc_info:
@@ -502,18 +1114,18 @@ class TestTCPNetworkClient(BaseTestClient):
 
         # Assert
         assert exc_info.value.errno == ECONNRESET
-        mock_tcp_socket.settimeout.assert_not_called()
-        mock_tcp_socket.setblocking.assert_not_called()
+        mock_used_socket.settimeout.assert_not_called()
+        mock_used_socket.setblocking.assert_not_called()
         mock_selector_select.assert_not_called()
         mock_stream_protocol.generate_chunks.assert_called_once_with(mocker.sentinel.packet)
-        mock_tcp_socket.sendall.assert_called_once_with(b"packet\n")
-        mock_tcp_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_ERROR)
+        mock_used_socket.send.assert_called_once_with(b"packet\n")
+        mock_used_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_ERROR)
 
     @pytest.mark.usefixtures("setup_producer_mock")
     def test____send_packet____closed_client_error(
         self,
         client: TCPNetworkClient[Any, Any],
-        mock_tcp_socket: MagicMock,
+        mock_used_socket: MagicMock,
         mock_stream_protocol: MagicMock,
         mock_selector_select: MagicMock,
         mocker: MockerFixture,
@@ -527,42 +1139,65 @@ class TestTCPNetworkClient(BaseTestClient):
             client.send_packet(mocker.sentinel.packet)
 
         # Assert
-        mock_tcp_socket.settimeout.assert_not_called()
-        mock_tcp_socket.setblocking.assert_not_called()
+        mock_used_socket.settimeout.assert_not_called()
+        mock_used_socket.setblocking.assert_not_called()
         mock_selector_select.assert_not_called()
         mock_stream_protocol.generate_chunks.assert_not_called()
-        mock_tcp_socket.sendall.assert_not_called()
-        mock_tcp_socket.getsockopt.assert_not_called()
+        mock_used_socket.send.assert_not_called()
+        mock_used_socket.getsockopt.assert_not_called()
+
+    @pytest.mark.usefixtures("setup_producer_mock")
+    @pytest.mark.parametrize("use_ssl", ["USE_SSL"], indirect=True)
+    @pytest.mark.parametrize("ssl_eof_error", [SSLEOFError, SSLZeroReturnError])
+    def test____send_packet____ssl____eof_error(
+        self,
+        client: TCPNetworkClient[Any, Any],
+        ssl_eof_error: Exception,
+        mock_used_socket: MagicMock,
+        mock_stream_protocol: MagicMock,
+        mock_selector_select: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_used_socket.send.side_effect = ssl_eof_error
+
+        # Act
+        with pytest.raises(ConnectionAbortedError):
+            client.send_packet(mocker.sentinel.packet)
+
+        # Assert
+        mock_used_socket.settimeout.assert_not_called()
+        mock_used_socket.setblocking.assert_not_called()
+        mock_selector_select.assert_not_called()
+        mock_stream_protocol.generate_chunks.assert_called_once_with(mocker.sentinel.packet)
+        mock_used_socket.send.assert_called_once_with(b"packet\n")
+        mock_used_socket.getsockopt.assert_not_called()
 
     @pytest.mark.usefixtures("setup_consumer_mock")
     def test____recv_packet____blocking_or_not____receive_bytes_from_socket(
         self,
         client: TCPNetworkClient[Any, Any],
         recv_timeout: int | None,
-        mock_tcp_socket: MagicMock,
+        mock_used_socket: MagicMock,
         mock_stream_data_consumer: MagicMock,
         mock_selector_register: MagicMock,
         mock_selector_select: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_tcp_socket.recv.side_effect = [b"packet\n"]
+        mock_used_socket.recv.side_effect = [b"packet\n"]
 
         # Act
         packet: Any = client.recv_packet(timeout=recv_timeout)
 
         # Assert
-        mock_tcp_socket.settimeout.assert_not_called()
-        mock_tcp_socket.setblocking.assert_not_called()
+        mock_used_socket.settimeout.assert_not_called()
+        mock_used_socket.setblocking.assert_not_called()
 
-        if recv_timeout is None:
-            mock_selector_register.assert_not_called()
-            mock_selector_select.assert_not_called()
-        else:
-            mock_selector_register.assert_called_once_with(mock_tcp_socket, EVENT_READ)
-            mock_selector_select.assert_called_once_with(recv_timeout)
+        mock_selector_register.assert_not_called()
+        mock_selector_select.assert_not_called()
 
-        mock_tcp_socket.recv.assert_called_once_with(MAX_STREAM_BUFSIZE)
+        mock_used_socket.recv.assert_called_once_with(MAX_STREAM_BUFSIZE)
         mock_stream_data_consumer.feed.assert_called_once_with(b"packet\n")
         assert packet is mocker.sentinel.packet
 
@@ -572,20 +1207,20 @@ class TestTCPNetworkClient(BaseTestClient):
         self,
         client: TCPNetworkClient[Any, Any],
         recv_timeout: int | None,
-        mock_tcp_socket: MagicMock,
+        mock_used_socket: MagicMock,
         mock_stream_data_consumer: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_tcp_socket.recv.side_effect = [b"pac", b"ket\n"]
+        mock_used_socket.recv.side_effect = [b"pac", b"ket\n"]
 
         # Act
         packet: Any = client.recv_packet(timeout=recv_timeout)
 
         # Assert
-        mock_tcp_socket.settimeout.assert_not_called()
-        mock_tcp_socket.setblocking.assert_not_called()
-        assert mock_tcp_socket.recv.mock_calls == [mocker.call(MAX_STREAM_BUFSIZE) for _ in range(2)]
+        mock_used_socket.settimeout.assert_not_called()
+        mock_used_socket.setblocking.assert_not_called()
+        assert mock_used_socket.recv.mock_calls == [mocker.call(MAX_STREAM_BUFSIZE) for _ in range(2)]
         assert mock_stream_data_consumer.feed.mock_calls == [mocker.call(b"pac"), mocker.call(b"ket\n")]
         assert packet is mocker.sentinel.packet
 
@@ -604,50 +1239,50 @@ class TestTCPNetworkClient(BaseTestClient):
         client: TCPNetworkClient[Any, Any],
         max_recv_size: int,
         recv_timeout: int | None,
-        mock_tcp_socket: MagicMock,
+        mock_used_socket: MagicMock,
         mock_stream_data_consumer: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_tcp_socket.recv.side_effect = [b"pac", b"ket", b"\n"]
+        mock_used_socket.recv.side_effect = [b"pac", b"ket", b"\n"]
 
         # Act & Assert
         if max_recv_size == 3:
             packet: Any = client.recv_packet(timeout=recv_timeout)
 
-            assert mock_tcp_socket.recv.mock_calls == [mocker.call(max_recv_size) for _ in range(3)]
+            assert mock_used_socket.recv.mock_calls == [mocker.call(max_recv_size) for _ in range(3)]
             assert mock_stream_data_consumer.feed.mock_calls == [mocker.call(b"pac"), mocker.call(b"ket"), mocker.call(b"\n")]
             assert packet is mocker.sentinel.packet
         else:
             with pytest.raises(TimeoutError, match=r"^recv_packet\(\) timed out$"):
                 client.recv_packet(timeout=recv_timeout)
 
-            mock_tcp_socket.recv.assert_called_once_with(max_recv_size)
+            mock_used_socket.recv.assert_called_once_with(max_recv_size)
             mock_stream_data_consumer.feed.assert_called_once_with(b"pac")
 
-        mock_tcp_socket.settimeout.assert_not_called()
-        mock_tcp_socket.setblocking.assert_not_called()
+        mock_used_socket.settimeout.assert_not_called()
+        mock_used_socket.setblocking.assert_not_called()
 
     @pytest.mark.usefixtures("setup_consumer_mock")
     def test____recv_packet____blocking_or_not____extra_data(
         self,
         client: TCPNetworkClient[Any, Any],
         recv_timeout: int | None,
-        mock_tcp_socket: MagicMock,
+        mock_used_socket: MagicMock,
         mock_stream_data_consumer: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_tcp_socket.recv.side_effect = [b"packet_1\npacket_2\n"]
+        mock_used_socket.recv.side_effect = [b"packet_1\npacket_2\n"]
 
         # Act
         packet_1: Any = client.recv_packet(timeout=recv_timeout)
         packet_2: Any = client.recv_packet(timeout=recv_timeout)
 
         # Assert
-        mock_tcp_socket.recv.assert_called_once()
-        mock_tcp_socket.settimeout.assert_not_called()
-        mock_tcp_socket.setblocking.assert_not_called()
+        mock_used_socket.recv.assert_called_once()
+        mock_used_socket.settimeout.assert_not_called()
+        mock_used_socket.setblocking.assert_not_called()
         mock_stream_data_consumer.feed.assert_called_once_with(b"packet_1\npacket_2\n")
         assert packet_1 is mocker.sentinel.packet_1
         assert packet_2 is mocker.sentinel.packet_2
@@ -657,20 +1292,20 @@ class TestTCPNetworkClient(BaseTestClient):
         self,
         client: TCPNetworkClient[Any, Any],
         recv_timeout: int | None,
-        mock_tcp_socket: MagicMock,
+        mock_used_socket: MagicMock,
         mock_stream_data_consumer: MagicMock,
     ) -> None:
         # Arrange
-        mock_tcp_socket.recv.side_effect = [b""]
+        mock_used_socket.recv.side_effect = [b""]
 
         # Act
         with pytest.raises(ConnectionAbortedError):
             _ = client.recv_packet(timeout=recv_timeout)
 
         # Assert
-        mock_tcp_socket.settimeout.assert_not_called()
-        mock_tcp_socket.setblocking.assert_not_called()
-        mock_tcp_socket.recv.assert_called_once_with(MAX_STREAM_BUFSIZE)
+        mock_used_socket.settimeout.assert_not_called()
+        mock_used_socket.setblocking.assert_not_called()
+        mock_used_socket.recv.assert_called_once_with(MAX_STREAM_BUFSIZE)
         mock_stream_data_consumer.feed.assert_not_called()
 
     @pytest.mark.usefixtures("setup_consumer_mock")
@@ -678,13 +1313,13 @@ class TestTCPNetworkClient(BaseTestClient):
         self,
         client: TCPNetworkClient[Any, Any],
         recv_timeout: int | None,
-        mock_tcp_socket: MagicMock,
+        mock_used_socket: MagicMock,
         mock_stream_data_consumer: MagicMock,
     ) -> None:
         # Arrange
         from easynetwork.exceptions import StreamProtocolParseError
 
-        mock_tcp_socket.recv.side_effect = [b"packet\n"]
+        mock_used_socket.recv.side_effect = [b"packet\n"]
         expected_error = StreamProtocolParseError(b"", "deserialization", "Sorry")
         mock_stream_data_consumer.__next__.side_effect = [StopIteration, expected_error]
 
@@ -694,9 +1329,9 @@ class TestTCPNetworkClient(BaseTestClient):
         exception = exc_info.value
 
         # Assert
-        mock_tcp_socket.settimeout.assert_not_called()
-        mock_tcp_socket.setblocking.assert_not_called()
-        mock_tcp_socket.recv.assert_called_once_with(MAX_STREAM_BUFSIZE)
+        mock_used_socket.settimeout.assert_not_called()
+        mock_used_socket.setblocking.assert_not_called()
+        mock_used_socket.recv.assert_called_once_with(MAX_STREAM_BUFSIZE)
         mock_stream_data_consumer.feed.assert_called_once_with(b"packet\n")
         assert exception is expected_error
 
@@ -705,7 +1340,7 @@ class TestTCPNetworkClient(BaseTestClient):
         self,
         client: TCPNetworkClient[Any, Any],
         recv_timeout: int | None,
-        mock_tcp_socket: MagicMock,
+        mock_used_socket: MagicMock,
         mock_selector_register: MagicMock,
         mock_selector_select: MagicMock,
         mock_stream_data_consumer: MagicMock,
@@ -719,12 +1354,36 @@ class TestTCPNetworkClient(BaseTestClient):
             _ = client.recv_packet(timeout=recv_timeout)
 
         # Assert
-        mock_tcp_socket.settimeout.assert_not_called()
-        mock_tcp_socket.setblocking.assert_not_called()
+        mock_used_socket.settimeout.assert_not_called()
+        mock_used_socket.setblocking.assert_not_called()
         mock_selector_register.assert_not_called()
         mock_selector_select.assert_not_called()
         mock_stream_data_consumer.feed.assert_not_called()
-        mock_tcp_socket.recv.assert_not_called()
+        mock_used_socket.recv.assert_not_called()
+
+    @pytest.mark.usefixtures("setup_consumer_mock")
+    @pytest.mark.parametrize("use_ssl", ["USE_SSL"], indirect=True)
+    @pytest.mark.parametrize("ssl_eof_error", [SSLEOFError, SSLZeroReturnError])
+    def test____recv_packet____blocking_or_not____ssl____eof_error(
+        self,
+        client: TCPNetworkClient[Any, Any],
+        ssl_eof_error: Exception,
+        recv_timeout: int | None,
+        mock_used_socket: MagicMock,
+        mock_stream_data_consumer: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_used_socket.recv.side_effect = ssl_eof_error
+
+        # Act
+        with pytest.raises(ConnectionAbortedError):
+            _ = client.recv_packet(timeout=recv_timeout)
+
+        # Assert
+        mock_used_socket.settimeout.assert_not_called()
+        mock_used_socket.setblocking.assert_not_called()
+        mock_used_socket.recv.assert_called_once_with(MAX_STREAM_BUFSIZE)
+        mock_stream_data_consumer.feed.assert_not_called()
 
     @pytest.mark.parametrize(
         "recv_timeout",
@@ -737,21 +1396,30 @@ class TestTCPNetworkClient(BaseTestClient):
     def test____recv_packet____timeout(
         self,
         client: TCPNetworkClient[Any, Any],
+        use_ssl: bool,
         recv_timeout: int,
-        mock_tcp_socket: MagicMock,
+        mock_used_socket: MagicMock,
         mock_selector_select: MagicMock,
+        mock_selector_register: MagicMock,
         mock_stream_data_consumer: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_tcp_socket.recv.side_effect = AssertionError
-        self.selector_timeout_after_n_calls(mock_selector_select, mocker, nb_calls=0)
+        mock_used_socket.recv.side_effect = SSLWantReadError if use_ssl else BlockingIOError
+        self.selector_timeout_after_n_calls(mock_selector_select, mocker, nb_calls=1)
 
         # Act & Assert
         with pytest.raises(TimeoutError, match=r"^recv_packet\(\) timed out$"):
             _ = client.recv_packet(timeout=recv_timeout)
 
-        mock_tcp_socket.recv.assert_not_called()
+        if recv_timeout == 0:
+            assert len(mock_used_socket.recv.mock_calls) == 1
+            mock_selector_register.assert_not_called()
+            mock_selector_select.assert_not_called()
+        else:
+            assert len(mock_used_socket.recv.mock_calls) == 2
+            mock_selector_register.assert_called_with(mock_used_socket, EVENT_READ)
+            mock_selector_select.assert_any_call(recv_timeout)
         mock_stream_data_consumer.feed.assert_not_called()
 
     @pytest.mark.parametrize(
@@ -766,22 +1434,31 @@ class TestTCPNetworkClient(BaseTestClient):
     def test____iter_received_packets____yields_available_packets_with_given_timeout(
         self,
         client: TCPNetworkClient[Any, Any],
+        use_ssl: bool,
         max_recv_size: int,
         recv_timeout: int,
-        mock_tcp_socket: MagicMock,
+        mock_used_socket: MagicMock,
         mock_selector_select: MagicMock,
         mock_stream_data_consumer: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_tcp_socket.recv.side_effect = [b"pac", b"ket", b"_1\np", b"ack", b"et_", b"2\n", AssertionError]
-        self.selector_timeout_after_n_calls(mock_selector_select, mocker, nb_calls=6)
+        mock_used_socket.recv.side_effect = [
+            b"pac",
+            b"ket",
+            b"_1\np",
+            b"ack",
+            b"et_",
+            b"2\n",
+            SSLWantReadError if use_ssl else BlockingIOError,
+        ]
+        self.selector_timeout_after_n_calls(mock_selector_select, mocker, nb_calls=0)
 
         # Act
         packets = list(client.iter_received_packets(timeout=recv_timeout))
 
         # Assert
-        assert mock_tcp_socket.recv.mock_calls == [mocker.call(max_recv_size) for _ in range(6)]
+        assert mock_used_socket.recv.mock_calls == [mocker.call(max_recv_size) for _ in range(7)]
         assert mock_stream_data_consumer.feed.mock_calls == [
             mocker.call(b"pac"),
             mocker.call(b"ket"),
@@ -799,18 +1476,18 @@ class TestTCPNetworkClient(BaseTestClient):
         client: TCPNetworkClient[Any, Any],
         max_recv_size: int,
         recv_timeout: int | None,
-        mock_tcp_socket: MagicMock,
+        mock_used_socket: MagicMock,
         mock_stream_data_consumer: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_tcp_socket.recv.side_effect = [b"pac", b"ket", b"_1\np", b"ack", b"et_", b"2\n", b""]
+        mock_used_socket.recv.side_effect = [b"pac", b"ket", b"_1\np", b"ack", b"et_", b"2\n", b""]
 
         # Act
         packets = list(client.iter_received_packets(timeout=recv_timeout))
 
         # Assert
-        assert mock_tcp_socket.recv.mock_calls == [mocker.call(max_recv_size) for _ in range(7)]
+        assert mock_used_socket.recv.mock_calls == [mocker.call(max_recv_size) for _ in range(7)]
         assert mock_stream_data_consumer.feed.mock_calls == [
             mocker.call(b"pac"),
             mocker.call(b"ket"),
@@ -828,18 +1505,18 @@ class TestTCPNetworkClient(BaseTestClient):
         client: TCPNetworkClient[Any, Any],
         max_recv_size: int,
         recv_timeout: int | None,
-        mock_tcp_socket: MagicMock,
+        mock_used_socket: MagicMock,
         mock_stream_data_consumer: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_tcp_socket.recv.side_effect = [b"pac", b"ket", b"_1\np", b"ack", b"et_", b"2\n", OSError]
+        mock_used_socket.recv.side_effect = [b"pac", b"ket", b"_1\np", b"ack", b"et_", b"2\n", OSError]
 
         # Act
         packets = list(client.iter_received_packets(timeout=recv_timeout))
 
         # Assert
-        assert mock_tcp_socket.recv.mock_calls == [mocker.call(max_recv_size) for _ in range(7)]
+        assert mock_used_socket.recv.mock_calls == [mocker.call(max_recv_size) for _ in range(7)]
         assert mock_stream_data_consumer.feed.mock_calls == [
             mocker.call(b"pac"),
             mocker.call(b"ket"),
@@ -877,12 +1554,12 @@ class TestTCPNetworkClient(BaseTestClient):
         client: TCPNetworkClient[Any, Any],
         several_generators: bool,
         recv_timeout: int | None,
-        mock_tcp_socket: MagicMock,
+        mock_used_socket: MagicMock,
         mock_stream_data_consumer: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_tcp_socket.recv.side_effect = [b"packet_1\npacket_2\n"]
+        mock_used_socket.recv.side_effect = [b"packet_1\npacket_2\n"]
 
         # Act
         if several_generators:
@@ -894,7 +1571,7 @@ class TestTCPNetworkClient(BaseTestClient):
             packet_2 = next(iterator)
 
         # Assert
-        mock_tcp_socket.recv.assert_called_once_with(MAX_STREAM_BUFSIZE)
+        mock_used_socket.recv.assert_called_once_with(MAX_STREAM_BUFSIZE)
         mock_stream_data_consumer.feed.assert_called_once_with(b"packet_1\npacket_2\n")
         assert packet_1 is mocker.sentinel.packet_1
         assert packet_2 is mocker.sentinel.packet_2
@@ -904,7 +1581,7 @@ class TestTCPNetworkClient(BaseTestClient):
         self,
         client: TCPNetworkClient[Any, Any],
         recv_timeout: int | None,
-        mock_tcp_socket: MagicMock,
+        mock_used_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -912,7 +1589,7 @@ class TestTCPNetworkClient(BaseTestClient):
 
         mock_acquire = mocker.patch.object(Lock, "acquire", return_value=True)
         mock_release = mocker.patch.object(Lock, "release", return_value=None)
-        mock_tcp_socket.recv.side_effect = [b"packet_1\npacket_2\n"]
+        mock_used_socket.recv.side_effect = [b"packet_1\npacket_2\n"]
 
         # Act & Assert
         iterator = client.iter_received_packets(timeout=recv_timeout)
@@ -934,11 +1611,11 @@ class TestTCPNetworkClient(BaseTestClient):
         self,
         client: TCPNetworkClient[Any, Any],
         recv_timeout: int | None,
-        mock_tcp_socket: MagicMock,
+        mock_used_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_tcp_socket.recv.side_effect = [b"packet_1\n"]
+        mock_used_socket.recv.side_effect = [b"packet_1\n"]
 
         # Act & Assert
         iterator = client.iter_received_packets(timeout=recv_timeout)
@@ -953,17 +1630,17 @@ class TestTCPNetworkClient(BaseTestClient):
     def test____special_case____send_packet____eof_error____do_not_try_socket_send(
         self,
         client: TCPNetworkClient[Any, Any],
-        mock_tcp_socket: MagicMock,
+        mock_used_socket: MagicMock,
         mock_stream_protocol: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_tcp_socket.recv.side_effect = [b""]
+        mock_used_socket.recv.side_effect = [b""]
         with pytest.raises(ConnectionAbortedError):
             _ = client.recv_packet()
 
-        mock_tcp_socket.recv.reset_mock()
-        mock_tcp_socket.settimeout.reset_mock()
+        mock_used_socket.recv.reset_mock()
+        mock_used_socket.settimeout.reset_mock()
 
         # Act
         with pytest.raises(ConnectionAbortedError):
@@ -971,28 +1648,59 @@ class TestTCPNetworkClient(BaseTestClient):
 
         # Assert
         mock_stream_protocol.generate_chunks.assert_not_called()
-        mock_tcp_socket.settimeout.assert_not_called()
-        mock_tcp_socket.sendall.assert_not_called()
+        mock_used_socket.settimeout.assert_not_called()
+        mock_used_socket.send.assert_not_called()
 
     @pytest.mark.usefixtures("setup_consumer_mock")
     def test____special_case____recv_packet____blocking_or_not____eof_error____do_not_try_socket_recv_on_next_call(
         self,
         client: TCPNetworkClient[Any, Any],
         recv_timeout: int | None,
-        mock_tcp_socket: MagicMock,
+        mock_used_socket: MagicMock,
     ) -> None:
         # Arrange
-        mock_tcp_socket.recv.side_effect = [b""]
+        mock_used_socket.recv.side_effect = [b""]
         with pytest.raises(ConnectionAbortedError):
             _ = client.recv_packet(timeout=recv_timeout)
 
-        mock_tcp_socket.recv.reset_mock()
+        mock_used_socket.recv.reset_mock()
 
         # Act
         with pytest.raises(ConnectionAbortedError):
             _ = client.recv_packet(timeout=recv_timeout)
 
         # Assert
-        mock_tcp_socket.recv.assert_not_called()
-        mock_tcp_socket.settimeout.assert_not_called()
-        mock_tcp_socket.setblocking.assert_not_called()
+        mock_used_socket.recv.assert_not_called()
+        mock_used_socket.settimeout.assert_not_called()
+        mock_used_socket.setblocking.assert_not_called()
+
+    @pytest.mark.usefixtures("setup_consumer_mock")
+    @pytest.mark.parametrize("use_ssl", ["USE_SSL"], indirect=True)
+    def test____special_case____close____ssl____eof_error____do_not_try_to_unwrap(
+        self,
+        client: TCPNetworkClient[Any, Any],
+        recv_timeout: int | None,
+        mock_used_socket: MagicMock,
+        mock_tcp_socket: MagicMock,
+        mock_ssl_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_used_socket.recv.side_effect = [b""]
+        with pytest.raises(ConnectionAbortedError):
+            _ = client.recv_packet(timeout=recv_timeout)
+
+        mock_used_socket.recv.reset_mock()
+
+        # Act
+        client.close()
+
+        # Assert
+        assert client.is_closed()
+
+        mock_tcp_socket.shutdown.assert_not_called()
+        mock_ssl_socket.shutdown.assert_not_called()
+
+        mock_ssl_socket.unwrap.assert_not_called()
+
+        mock_tcp_socket.close.assert_not_called()
+        mock_ssl_socket.close.assert_called_once_with()

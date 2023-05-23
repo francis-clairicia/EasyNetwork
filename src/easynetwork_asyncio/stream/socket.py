@@ -34,8 +34,6 @@ class AsyncioTransportStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
         self,
         reader: asyncio.StreamReader,
         writer: asyncio.StreamWriter,
-        *,
-        remote_address: tuple[Any, ...] | None = None,
     ) -> None:
         super().__init__()
         self.__reader: asyncio.StreamReader = reader
@@ -43,8 +41,7 @@ class AsyncioTransportStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
 
         socket: asyncio.trsock.TransportSocket | None = writer.get_extra_info("socket")
         assert socket is not None, "Writer transport must be a socket transport"
-        if remote_address is None:
-            remote_address = writer.get_extra_info("peername")
+        remote_address = writer.get_extra_info("peername")
         if remote_address is None:
             import errno
 
@@ -53,7 +50,8 @@ class AsyncioTransportStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
 
     async def aclose(self) -> None:
         try:
-            self.__writer.close()
+            if not self.__writer.is_closing():
+                self.__writer.close()
             await self.__writer.wait_closed()
         except ConnectionError:
             # It is normal if there was connection errors during operations. But do not propagate this exception,
@@ -81,9 +79,8 @@ class AsyncioTransportStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
         return await self.__reader.read(bufsize)
 
     async def sendall(self, data: ReadableBuffer, /) -> None:
-        with memoryview(data).toreadonly() as data_view:
-            self.__writer.write(data_view)
-            await self.__writer.drain()
+        self.__writer.write(memoryview(data).toreadonly())
+        await self.__writer.drain()
 
     def socket(self) -> asyncio.trsock.TransportSocket:
         socket: asyncio.trsock.TransportSocket = self.__writer.get_extra_info("socket")
@@ -101,8 +98,6 @@ class RawStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
         self,
         socket: _socket.socket,
         loop: asyncio.AbstractEventLoop,
-        *,
-        remote_address: tuple[Any, ...] | None = None,
     ) -> None:
         super().__init__()
 
@@ -114,9 +109,7 @@ class RawStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
 
         assert socket.type == SOCK_STREAM, "A 'SOCK_STREAM' socket is expected"
 
-        if remote_address is None:
-            remote_address = socket.getpeername()
-        assert remote_address is not None
+        remote_address = socket.getpeername()
         self.__remote_addr: tuple[Any, ...] = tuple(remote_address)
 
     async def aclose(self) -> None:

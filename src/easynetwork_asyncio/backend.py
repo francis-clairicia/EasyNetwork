@@ -9,6 +9,7 @@ from __future__ import annotations
 
 __all__ = ["AsyncioBackend"]  # type: list[str]
 
+import functools
 import inspect
 import socket as _socket
 from typing import TYPE_CHECKING, Any, Callable, Coroutine, NoReturn, ParamSpec, Sequence, TypeVar, final
@@ -18,8 +19,10 @@ from easynetwork.api_async.backend.abc import AbstractAsyncBackend
 if TYPE_CHECKING:
     import asyncio as _asyncio
     import concurrent.futures
+    import ssl as _ssl
 
     from easynetwork.api_async.backend.abc import (
+        AbstractAcceptedSocket,
         AbstractAsyncDatagramSocketAdapter,
         AbstractAsyncListenerSocketAdapter,
         AbstractAsyncStreamSocketAdapter,
@@ -124,7 +127,6 @@ class AsyncioBackend(AbstractAsyncBackend):
         host: str,
         port: int,
         *,
-        family: int = 0,
         local_address: tuple[str, int] | None = None,
         happy_eyeballs_delay: float | None = None,
     ) -> AbstractAsyncStreamSocketAdapter:
@@ -133,17 +135,16 @@ class AsyncioBackend(AbstractAsyncBackend):
 
         import asyncio
 
+        if happy_eyeballs_delay is not None:
+            self._check_asyncio_transport("'happy_eyeballs_delay' option")
+
         if not self.__use_asyncio_transport:
             from ._utils import create_connection
             from .stream.socket import RawStreamSocketAdapter
 
             loop = asyncio.get_running_loop()
 
-            if happy_eyeballs_delay is not None:
-                transport = self.__use_asyncio_transport
-                raise ValueError(f"'happy_eyeballs_delay' option not supported with {transport=}")
-
-            socket = await create_connection(host, port, loop, family=family, local_address=local_address)
+            socket = await create_connection(host, port, loop, local_address=local_address)
             return RawStreamSocketAdapter(socket, loop)
 
         from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
@@ -154,7 +155,6 @@ class AsyncioBackend(AbstractAsyncBackend):
             reader, writer = await asyncio.open_connection(
                 host,
                 port,
-                family=family,
                 local_addr=local_address,
                 limit=MAX_STREAM_BUFSIZE,
             )
@@ -162,7 +162,52 @@ class AsyncioBackend(AbstractAsyncBackend):
             reader, writer = await asyncio.open_connection(
                 host,
                 port,
-                family=family,
+                local_addr=local_address,
+                happy_eyeballs_delay=happy_eyeballs_delay,
+                limit=MAX_STREAM_BUFSIZE,
+            )
+        return AsyncioTransportStreamSocketAdapter(reader, writer)
+
+    async def create_ssl_over_tcp_connection(
+        self,
+        host: str,
+        port: int,
+        ssl_context: _ssl.SSLContext,
+        *,
+        server_hostname: str | None,
+        ssl_handshake_timeout: float,
+        ssl_shutdown_timeout: float,
+        local_address: tuple[str, int] | None = None,
+        happy_eyeballs_delay: float | None = None,
+    ) -> AbstractAsyncStreamSocketAdapter:
+        self._check_ssl_support()
+        self.__verify_ssl_context(ssl_context)
+
+        import asyncio
+
+        from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
+
+        from .stream.socket import AsyncioTransportStreamSocketAdapter
+
+        if happy_eyeballs_delay is None:
+            reader, writer = await asyncio.open_connection(
+                host,
+                port,
+                ssl=ssl_context,
+                server_hostname=server_hostname,
+                ssl_handshake_timeout=float(ssl_handshake_timeout),
+                ssl_shutdown_timeout=float(ssl_shutdown_timeout),
+                local_addr=local_address,
+                limit=MAX_STREAM_BUFSIZE,
+            )
+        else:
+            reader, writer = await asyncio.open_connection(
+                host,
+                port,
+                ssl=ssl_context,
+                server_hostname=server_hostname,
+                ssl_handshake_timeout=float(ssl_handshake_timeout),
+                ssl_shutdown_timeout=float(ssl_shutdown_timeout),
                 local_addr=local_address,
                 happy_eyeballs_delay=happy_eyeballs_delay,
                 limit=MAX_STREAM_BUFSIZE,
@@ -187,19 +232,102 @@ class AsyncioBackend(AbstractAsyncBackend):
         reader, writer = await asyncio.open_connection(sock=socket, limit=MAX_STREAM_BUFSIZE)
         return AsyncioTransportStreamSocketAdapter(reader, writer)
 
+    async def wrap_ssl_over_tcp_client_socket(
+        self,
+        socket: _socket.socket,
+        ssl_context: _ssl.SSLContext,
+        *,
+        server_hostname: str,
+        ssl_handshake_timeout: float,
+        ssl_shutdown_timeout: float,
+    ) -> AbstractAsyncStreamSocketAdapter:
+        self._check_ssl_support()
+        self.__verify_ssl_context(ssl_context)
+
+        assert socket is not None, "Expected 'socket' to be a socket.socket instance"
+        socket.setblocking(False)
+
+        import asyncio
+
+        from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
+
+        from .stream.socket import AsyncioTransportStreamSocketAdapter
+
+        reader, writer = await asyncio.open_connection(
+            sock=socket,
+            ssl=ssl_context,
+            server_hostname=server_hostname,
+            ssl_handshake_timeout=float(ssl_handshake_timeout),
+            ssl_shutdown_timeout=float(ssl_shutdown_timeout),
+            limit=MAX_STREAM_BUFSIZE,
+        )
+        return AsyncioTransportStreamSocketAdapter(reader, writer)
+
     async def create_tcp_listeners(
         self,
         host: str | Sequence[str] | None,
         port: int,
+        backlog: int,
         *,
         family: int = 0,
-        backlog: int = 100,
         reuse_port: bool = False,
+    ) -> Sequence[AbstractAsyncListenerSocketAdapter]:
+        from .stream.listener import AcceptedSocket
+
+        return await self._create_tcp_listeners(
+            host,
+            port,
+            backlog,
+            functools.partial(AcceptedSocket, use_asyncio_transport=self.__use_asyncio_transport),
+            family=family,
+            reuse_port=reuse_port,
+        )
+
+    async def create_ssl_over_tcp_listeners(
+        self,
+        host: str | Sequence[str] | None,
+        port: int,
+        backlog: int,
+        ssl_context: _ssl.SSLContext,
+        ssl_handshake_timeout: float,
+        ssl_shutdown_timeout: float,
+        *,
+        family: int = 0,
+        reuse_port: bool = False,
+    ) -> Sequence[AbstractAsyncListenerSocketAdapter]:
+        self._check_ssl_support()
+
+        from .stream.listener import AcceptedSSLSocket
+
+        return await self._create_tcp_listeners(
+            host,
+            port,
+            backlog,
+            functools.partial(
+                AcceptedSSLSocket,
+                ssl_context=ssl_context,
+                ssl_handshake_timeout=float(ssl_handshake_timeout),
+                ssl_shutdown_timeout=float(ssl_shutdown_timeout),
+            ),
+            family=family,
+            reuse_port=reuse_port,
+        )
+
+    async def _create_tcp_listeners(
+        self,
+        host: str | Sequence[str] | None,
+        port: int,
+        backlog: int,
+        accepted_socket_factory: Callable[[_socket.socket, _asyncio.AbstractEventLoop], AbstractAcceptedSocket],
+        *,
+        family: int,
+        reuse_port: bool,
     ) -> Sequence[AbstractAsyncListenerSocketAdapter]:
         assert port is not None, "Expected 'port' to be an int"
 
         import asyncio
         import os
+        import sys
         from itertools import chain
 
         from easynetwork.tools._utils import open_listener_sockets_from_getaddrinfo_result
@@ -208,7 +336,7 @@ class AsyncioBackend(AbstractAsyncBackend):
 
         loop = asyncio.get_running_loop()
 
-        reuse_address = os.name not in ("nt", "cygwin") and hasattr(_socket, "SO_REUSEADDR")
+        reuse_address: bool = os.name not in ("nt", "cygwin") and sys.platform != "cygwin"
         hosts: Sequence[str | None]
         if host == "" or host is None:
             hosts = [None]
@@ -234,7 +362,7 @@ class AsyncioBackend(AbstractAsyncBackend):
 
         from .stream.listener import ListenerSocketAdapter
 
-        return [ListenerSocketAdapter(sock, loop, use_asyncio_transport=self.__use_asyncio_transport) for sock in sockets]
+        return [ListenerSocketAdapter(sock, loop, accepted_socket_factory) for sock in sockets]
 
     async def create_udp_endpoint(
         self,
@@ -325,3 +453,17 @@ class AsyncioBackend(AbstractAsyncBackend):
 
     def use_asyncio_transport(self) -> bool:
         return self.__use_asyncio_transport
+
+    def _check_asyncio_transport(self, context: str) -> None:
+        transport = self.__use_asyncio_transport
+        if not transport:
+            raise ValueError(f"{context} not supported with {transport=}")
+
+    def _check_ssl_support(self) -> None:
+        self._check_asyncio_transport("SSL/TLS")
+
+    def __verify_ssl_context(self, ctx: _ssl.SSLContext) -> None:
+        import ssl
+
+        if not isinstance(ctx, ssl.SSLContext):
+            raise ValueError(f"Expected a ssl.SSLContext instance, got {ctx!r}")

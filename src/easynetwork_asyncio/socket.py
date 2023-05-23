@@ -16,7 +16,7 @@ import errno as _errno
 from typing import TYPE_CHECKING, Any, Iterator, Literal, Self, TypeAlias
 from weakref import WeakSet
 
-from easynetwork.tools._utils import error_from_errno as _error_from_errno
+from easynetwork.tools._utils import check_socket_no_ssl as _check_socket_no_ssl, error_from_errno as _error_from_errno
 
 if TYPE_CHECKING:
     import socket as _socket
@@ -42,6 +42,7 @@ class AsyncSocket:
     def __init__(self, socket: _socket.socket, loop: asyncio.AbstractEventLoop) -> None:
         super().__init__()
 
+        _check_socket_no_ssl(socket)
         socket.setblocking(False)
 
         self.__socket: _socket.socket | None = socket
@@ -130,7 +131,7 @@ class AsyncSocket:
 
     async def recvfrom(self, bufsize: int, /) -> tuple[bytes, _socket._RetAddress]:
         with self.__conflict_detection("recv", abort_errno=_errno.ECONNABORTED) as socket:
-            return await self.__loop.sock_recvfrom(socket, bufsize)  # type: ignore[return-value]  # mypy most likely mismatch signature with loop.sock_recv()
+            return await self.__loop.sock_recvfrom(socket, bufsize)
 
     @contextlib.contextmanager
     def __conflict_detection(self, task_id: _SocketTaskId, *, abort_errno: int | None = None) -> Iterator[_socket.socket]:
@@ -148,8 +149,6 @@ class AsyncSocket:
             raise RuntimeError("This function should be called within a task.")
         assert task.get_loop() is self.__loop, "coroutine will not be executed with the bound event loop"
 
-        cancelling: int = task.cancelling()
-
         with contextlib.ExitStack() as stack:
             self.__tasks.add(task)
             stack.callback(self.__tasks.discard, task)
@@ -163,7 +162,7 @@ class AsyncSocket:
             try:
                 yield socket
             except asyncio.CancelledError:
-                if self.__socket is not None or task.uncancel() > cancelling:
+                if self.__socket is not None or task.uncancel() > 0:
                     raise
                 raise _error_from_errno(abort_errno) from None
             finally:

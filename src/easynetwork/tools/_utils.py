@@ -4,10 +4,21 @@ from __future__ import annotations
 
 __all__ = [
     "check_real_socket_state",
+    "check_socket_family",
+    "check_socket_no_ssl",
+    "concatenate_chunks",
+    "ensure_datagram_socket_bound",
     "error_from_errno",
+    "is_ssl_eof_error",
+    "is_ssl_socket",
     "open_listener_sockets_from_getaddrinfo_result",
+    "replace_kwargs",
+    "retry_socket_method",
+    "retry_ssl_socket_method",
     "set_reuseport",
-    "wait_socket_available_for_reading",
+    "set_tcp_nodelay",
+    "ssl_do_not_ignore_unexpected_eof",
+    "wait_socket_available",
 ]
 
 import contextlib
@@ -15,10 +26,28 @@ import errno as _errno
 import os
 import selectors as _selectors
 import socket as _socket
-from typing import TYPE_CHECKING, Any, Iterable
+import time
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Literal, ParamSpec, TypeGuard, TypeVar, assert_never
 
 if TYPE_CHECKING:
+    from ssl import SSLContext as _SSLContext, SSLError as _SSLError, SSLSocket as _SSLSocket
+
     from .socket import SocketProxy as _SocketProxy
+
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
+
+
+def replace_kwargs(kwargs: dict[str, Any], keys: dict[str, str]) -> None:
+    if not keys:
+        raise ValueError("Empty key dict")
+    for old_key, new_key in keys.items():
+        if new_key in kwargs:
+            raise TypeError(f"Cannot set {old_key!r} to {new_key!r}: {new_key!r} in dictionary")
+        try:
+            kwargs[new_key] = kwargs.pop(old_key)
+        except KeyError:
+            pass
 
 
 def error_from_errno(errno: int) -> OSError:
@@ -49,13 +78,124 @@ def check_real_socket_state(socket: _socket.socket | _SocketProxy) -> None:
         raise error_from_errno(errno)
 
 
-def wait_socket_available_for_reading(socket: _socket.socket, timeout: float | None) -> bool:
+def is_ssl_socket(socket: _socket.socket) -> TypeGuard[_SSLSocket]:
+    try:
+        import ssl
+    except ImportError:  # pragma: no cover
+        return False
+
+    return isinstance(socket, ssl.SSLSocket)
+
+
+def check_socket_no_ssl(socket: _socket.socket) -> None:
+    if is_ssl_socket(socket):
+        raise TypeError("ssl.SSLSocket instances are forbidden")
+
+
+def wait_socket_available(socket: _socket.socket, timeout: float | None, event: Literal["read", "write"]) -> bool:
     selector_cls: type[_selectors.BaseSelector] = getattr(_selectors, "PollSelector", _selectors.SelectSelector)
 
     with selector_cls() as selector:
-        selector.register(socket, _selectors.EVENT_READ)
-        ready_list = selector.select(timeout)
+        try:
+            match event:
+                case "read":
+                    selector.register(socket, _selectors.EVENT_READ)
+                case "write":
+                    selector.register(socket, _selectors.EVENT_WRITE)
+                case _:  # pragma: no cover
+                    assert_never(event)
+            ready_list = selector.select(timeout)
+        except (OSError, ValueError):
+            # There will be a OSError when using this socket afterward.
+            return True
         return len(ready_list) > 0
+
+
+def retry_socket_method(
+    socket: _socket.socket,
+    timeout: float | None,
+    event: Literal["read", "write"],
+    socket_method: Callable[_P, _R],
+    /,
+    *args: _P.args,
+    **kwargs: _P.kwargs,
+) -> _R:
+    assert not is_ssl_socket(socket), "ssl.SSLSocket instances are forbidden"
+    assert socket.gettimeout() == 0, "The socket must be non-blocking"
+    monotonic = time.monotonic  # pull function to local namespace
+    while True:
+        try:
+            return socket_method(*args, **kwargs)
+        except BlockingIOError:
+            pass
+        if timeout is not None and timeout <= 0:
+            break
+        _start = monotonic()
+        if not wait_socket_available(socket, timeout, event):
+            break
+        _end = monotonic()
+        if timeout is not None:
+            timeout -= _end - _start
+    raise error_from_errno(_errno.ETIMEDOUT)
+
+
+def retry_ssl_socket_method(
+    socket: _SSLSocket,
+    timeout: float | None,
+    socket_method: Callable[_P, _R],
+    /,
+    *args: _P.args,
+    **kwargs: _P.kwargs,
+) -> _R:
+    assert is_ssl_socket(socket), "Expected an ssl.SSLSocket instance"
+    assert socket.gettimeout() == 0, "The socket must be non-blocking"
+
+    import ssl
+
+    monotonic = time.monotonic  # pull function to local namespace
+    event: Literal["read", "write"]
+    while True:
+        try:
+            return socket_method(*args, **kwargs)
+        except (ssl.SSLWantReadError, ssl.SSLSyscallError):
+            event = "read"
+        except ssl.SSLWantWriteError:
+            event = "write"
+        if timeout is not None and timeout <= 0:
+            break
+        _start = monotonic()
+        if not wait_socket_available(socket, timeout, event):
+            break
+        _end = monotonic()
+        if timeout is not None:
+            timeout -= _end - _start
+    raise error_from_errno(_errno.ETIMEDOUT)
+
+
+def is_ssl_eof_error(exc: BaseException) -> TypeGuard[_SSLError]:
+    try:
+        import ssl
+    except ImportError:  # pragma: no cover
+        return False
+
+    match exc:
+        case ssl.SSLEOFError():
+            return True
+        case ssl.SSLError() if hasattr(exc, "strerror") and "UNEXPECTED_EOF_WHILE_READING" in exc.strerror:
+            # From Trio project:
+            # There appears to be a bug on Python 3.10, where SSLErrors
+            # aren't properly translated into SSLEOFErrors.
+            # This stringly-typed error check is borrowed from the AnyIO
+            # project.
+            return True
+    return False
+
+
+def ssl_do_not_ignore_unexpected_eof(ssl_context: _SSLContext) -> None:
+    import ssl
+
+    if hasattr(ssl, "OP_IGNORE_UNEXPECTED_EOF"):
+        ssl_context.options &= ~getattr(ssl, "OP_IGNORE_UNEXPECTED_EOF")
 
 
 def concatenate_chunks(chunks_iterable: Iterable[bytes]) -> bytes:
@@ -104,6 +244,7 @@ def open_listener_sockets_from_getaddrinfo_result(
     reuse_port: bool,
 ) -> list[_socket.socket]:
     sockets: list[_socket.socket] = []
+    reuse_address = reuse_address and hasattr(_socket, "SO_REUSEADDR")
     with contextlib.ExitStack() as socket_exit_stack:
         errors: list[OSError] = []
         for res in infos:
@@ -116,7 +257,11 @@ def open_listener_sockets_from_getaddrinfo_result(
                 continue
             sockets.append(sock)
             if reuse_address:
-                sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, True)
+                try:
+                    sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, True)
+                except OSError:  # pragma: no cover
+                    # Will fail later on bind()
+                    pass
             if reuse_port:
                 set_reuseport(sock)
             # Disable IPv4/IPv6 dual stack support (enabled by

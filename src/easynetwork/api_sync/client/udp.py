@@ -18,8 +18,9 @@ from ...protocol import DatagramProtocol
 from ...tools._utils import (
     check_real_socket_state as _check_real_socket_state,
     check_socket_family as _check_socket_family,
+    check_socket_no_ssl as _check_socket_no_ssl,
     ensure_datagram_socket_bound as _ensure_datagram_socket_bound,
-    wait_socket_available_for_reading as _wait_socket_available_for_reading,
+    retry_socket_method as _retry_socket_method,
 )
 from ...tools.socket import MAX_DATAGRAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
 from .abc import AbstractNetworkClient
@@ -98,6 +99,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             if socket.type != _socket.SOCK_DGRAM:
                 raise ValueError("Invalid socket type")
 
+            _check_socket_no_ssl(socket)
             if external_socket:
                 _check_socket_family(socket.family)
                 _ensure_datagram_socket_bound(socket)
@@ -107,7 +109,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
                     peername = None
 
             # Do not use global default timeout here
-            socket.settimeout(None)
+            socket.settimeout(0)
 
             self.__addr: SocketAddress = new_socket_address(socket.getsockname(), socket.family)
             self.__peer: SocketAddress | None = peername
@@ -169,21 +171,22 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             elif address is None:
                 raise ValueError("Invalid address: must not be None")
             data: bytes = self.__protocol.make_datagram(packet)
-            if address is None:
-                socket.send(data)
-            else:
-                socket.sendto(data, address)
-            _check_real_socket_state(socket)
+            try:
+                if address is None:
+                    _retry_socket_method(socket, None, "write", socket.send, data)
+                else:
+                    _retry_socket_method(socket, None, "write", socket.sendto, data, address)
+                _check_real_socket_state(socket)
+            finally:
+                del data
 
     def recv_packet_from(self, timeout: float | None = None) -> tuple[_ReceivedPacketT, SocketAddress]:
         with self.__receive_lock:
             if (socket := self.__socket) is None:
                 raise ClientClosedError("Closed client")
             try:
-                if timeout is not None and not _wait_socket_available_for_reading(socket, timeout):
-                    raise TimeoutError
-                data, sender = socket.recvfrom(MAX_DATAGRAM_BUFSIZE)
-            except (TimeoutError, BlockingIOError) as exc:
+                data, sender = _retry_socket_method(socket, timeout, "read", socket.recvfrom, MAX_DATAGRAM_BUFSIZE)
+            except TimeoutError as exc:
                 if timeout is None:  # pragma: no cover
                     raise RuntimeError("socket.recvfrom() timed out with timeout=None ?") from exc
                 raise TimeoutError("recv_packet() timed out") from None

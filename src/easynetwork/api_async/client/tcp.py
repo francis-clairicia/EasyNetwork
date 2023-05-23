@@ -10,23 +10,34 @@ __all__ = ["AsyncTCPNetworkClient"]
 
 import errno as _errno
 import socket as _socket
-from typing import Any, Callable, Generic, Iterator, Mapping, TypedDict, TypeVar, final, overload
+from typing import TYPE_CHECKING, Any, Callable, Generic, Iterator, Mapping, TypedDict, TypeVar, final, overload
 
 from ...exceptions import ClientClosedError, StreamProtocolParseError
 from ...protocol import StreamProtocol
 from ...tools._utils import (
     check_real_socket_state as _check_real_socket_state,
     check_socket_family as _check_socket_family,
+    check_socket_no_ssl as _check_socket_no_ssl,
     concatenate_chunks as _concatenate_chunks,
     error_from_errno as _error_from_errno,
     set_tcp_nodelay as _set_tcp_nodelay,
 )
-from ...tools.socket import MAX_STREAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
+from ...tools.socket import (
+    MAX_STREAM_BUFSIZE,
+    SSL_HANDSHAKE_TIMEOUT,
+    SSL_SHUTDOWN_TIMEOUT,
+    SocketAddress,
+    SocketProxy,
+    new_socket_address,
+)
 from ...tools.stream import StreamDataConsumer
 from ..backend.abc import AbstractAsyncBackend, AbstractAsyncStreamSocketAdapter, ILock
 from ..backend.factory import AsyncBackendFactory
 from ..backend.tasks import SingleTaskRunner
 from .abc import AbstractAsyncNetworkClient
+
+if TYPE_CHECKING:
+    from ssl import SSLContext as _SSLContext
 
 _ReceivedPacketT = TypeVar("_ReceivedPacketT")
 _SentPacketT = TypeVar("_SentPacketT")
@@ -61,9 +72,12 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         /,
         protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
         *,
-        family: int = ...,
         local_address: tuple[str, int] | None = ...,
         happy_eyeballs_delay: float | None = ...,
+        ssl: _SSLContext | bool | None = ...,
+        server_hostname: str | None = ...,
+        ssl_handshake_timeout: float | None = ...,
+        ssl_shutdown_timeout: float | None = ...,
         max_recv_size: int | None = ...,
         backend: str | AbstractAsyncBackend | None = ...,
         backend_kwargs: Mapping[str, Any] | None = ...,
@@ -77,6 +91,10 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         /,
         protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
         *,
+        ssl: _SSLContext | bool | None = ...,
+        server_hostname: str | None = ...,
+        ssl_handshake_timeout: float | None = ...,
+        ssl_shutdown_timeout: float | None = ...,
         max_recv_size: int | None = ...,
         backend: str | AbstractAsyncBackend | None = ...,
         backend_kwargs: Mapping[str, Any] | None = ...,
@@ -89,12 +107,17 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         /,
         protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
         *,
+        ssl: _SSLContext | bool | None = None,
+        server_hostname: str | None = None,
+        ssl_handshake_timeout: float | None = None,
+        ssl_shutdown_timeout: float | None = None,
         max_recv_size: int | None = None,
         backend: str | AbstractAsyncBackend | None = None,
         backend_kwargs: Mapping[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__()
+
         backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
         if max_recv_size is None:
             max_recv_size = MAX_STREAM_BUFSIZE
@@ -105,14 +128,64 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         self.__backend: AbstractAsyncBackend = backend
         self.__info: _ClientInfo | None = None
 
+        if ssl:
+            if isinstance(ssl, bool):
+                from ssl import create_default_context
+
+                ssl = create_default_context()
+                if server_hostname is not None and not server_hostname:
+                    ssl.check_hostname = False
+        else:
+            if server_hostname is not None:
+                raise ValueError("server_hostname is only meaningful with ssl")
+
+            if ssl_handshake_timeout is not None:
+                raise ValueError("ssl_handshake_timeout is only meaningful with ssl")
+
+            if ssl_shutdown_timeout is not None:
+                raise ValueError("ssl_shutdown_timeout is only meaningful with ssl")
+
+        def _value_or_default(value: float | None, default: float) -> float:
+            return value if value is not None else default
+
         self.__socket_connector: SingleTaskRunner[AbstractAsyncStreamSocketAdapter] | None = None
         match __arg:
             case _socket.socket() as socket:
-                self.__socket_connector = SingleTaskRunner(backend, backend.wrap_tcp_client_socket, socket, **kwargs)
+                _check_socket_no_ssl(socket)
+                if ssl:
+                    if server_hostname is None:
+                        raise ValueError("You must set server_hostname when using ssl without a host")
+                    self.__socket_connector = SingleTaskRunner(
+                        backend,
+                        backend.wrap_ssl_over_tcp_client_socket,
+                        socket,
+                        ssl_context=ssl,
+                        server_hostname=server_hostname,
+                        ssl_handshake_timeout=_value_or_default(ssl_handshake_timeout, SSL_HANDSHAKE_TIMEOUT),
+                        ssl_shutdown_timeout=_value_or_default(ssl_shutdown_timeout, SSL_SHUTDOWN_TIMEOUT),
+                        **kwargs,
+                    )
+                else:
+                    self.__socket_connector = SingleTaskRunner(backend, backend.wrap_tcp_client_socket, socket, **kwargs)
             case (host, port):
-                self.__socket_connector = SingleTaskRunner(backend, backend.create_tcp_connection, host, port, **kwargs)
+                if ssl:
+                    self.__socket_connector = SingleTaskRunner(
+                        backend,
+                        backend.create_ssl_over_tcp_connection,
+                        host,
+                        port,
+                        ssl_context=ssl,
+                        server_hostname=server_hostname,
+                        ssl_handshake_timeout=_value_or_default(ssl_handshake_timeout, SSL_HANDSHAKE_TIMEOUT),
+                        ssl_shutdown_timeout=_value_or_default(ssl_shutdown_timeout, SSL_SHUTDOWN_TIMEOUT),
+                        **kwargs,
+                    )
+                else:
+                    self.__socket_connector = SingleTaskRunner(backend, backend.create_tcp_connection, host, port, **kwargs)
             case _:  # pragma: no cover
                 raise TypeError("Invalid arguments")
+
+        assert self.__socket_connector is not None
 
         self.__receive_lock: ILock = backend.create_lock()
         self.__send_lock: ILock = backend.create_lock()

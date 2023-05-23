@@ -15,6 +15,8 @@ __all__ = [
     "ISocket",
     "MAX_DATAGRAM_BUFSIZE",
     "MAX_STREAM_BUFSIZE",
+    "SSL_HANDSHAKE_TIMEOUT",
+    "SSL_SHUTDOWN_TIMEOUT",
     "SocketProxy",
     "new_socket_address",
 ]
@@ -134,6 +136,14 @@ ACCEPT_CAPACITY_ERRNOS = frozenset(
 
 # How long to sleep when we get one of those errors
 ACCEPT_CAPACITY_ERROR_SLEEP_TIME = 0.100
+
+# Number of seconds to wait for SSL handshake to complete
+# The default timeout matches that of Nginx.
+SSL_HANDSHAKE_TIMEOUT = 60.0
+
+# Number of seconds to wait for SSL shutdown to complete
+# The default timeout mimics lingering_time
+SSL_SHUTDOWN_TIMEOUT = 30.0
 
 
 class ISocket(Protocol):

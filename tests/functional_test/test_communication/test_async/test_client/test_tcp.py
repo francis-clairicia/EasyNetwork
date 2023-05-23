@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import ssl
 from socket import AF_INET, IPPROTO_TCP, SHUT_WR, TCP_NODELAY, socket as Socket
-from typing import Any, AsyncIterator, Callable
+from typing import Any, AsyncIterator
 
 from easynetwork.api_async.client.tcp import AsyncTCPNetworkClient
 from easynetwork.exceptions import ClientClosedError, StreamProtocolParseError
@@ -199,9 +200,7 @@ class TestAsyncTCPNetworkClient:
 class TestAsyncTCPNetworkClientConnection:
     @pytest_asyncio.fixture(autouse=True)
     @staticmethod
-    async def server(
-        localhost_ip: str, unused_tcp_port_factory: Callable[[], int], socket_family: int
-    ) -> AsyncIterator[asyncio.Server]:
+    async def server(localhost_ip: str, socket_family: int) -> AsyncIterator[asyncio.Server]:
         async def client_connected_cb(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
             try:
                 data: bytes = await reader.readline()
@@ -214,7 +213,7 @@ class TestAsyncTCPNetworkClientConnection:
         async with await asyncio.start_server(
             client_connected_cb,
             host=localhost_ip,
-            port=unused_tcp_port_factory(),
+            port=0,
             family=socket_family,
         ) as server:
             await asyncio.sleep(0.01)
@@ -416,3 +415,105 @@ class TestAsyncTCPNetworkClientConnection:
             assert await client.recv_packet() == "Connected"
 
             assert client.is_connected()
+
+
+@pytest.mark.asyncio
+class TestAsyncSSLOverTCPNetworkClient:
+    @pytest_asyncio.fixture(autouse=True)
+    @staticmethod
+    async def server(localhost_ip: str, socket_family: int, server_ssl_context: ssl.SSLContext) -> AsyncIterator[asyncio.Server]:
+        async def client_connected_cb(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+            try:
+                data: bytes = await reader.readline()
+                writer.write(data)
+                await writer.drain()
+            finally:
+                writer.close()
+                await writer.wait_closed()
+
+        async with await asyncio.start_server(
+            client_connected_cb,
+            host=localhost_ip,
+            port=0,
+            family=socket_family,
+            ssl=server_ssl_context,
+        ) as server:
+            await asyncio.sleep(0.01)
+            yield server
+
+    @pytest.fixture
+    @staticmethod
+    def remote_address(server: asyncio.Server) -> tuple[str, int]:
+        return server.sockets[0].getsockname()[:2]
+
+    @pytest.fixture
+    @staticmethod
+    def backend_kwargs() -> dict[str, Any]:
+        return {}
+
+    async def test____dunder_init____handshake_and_shutdown(
+        self,
+        remote_address: tuple[str, int],
+        stream_protocol: StreamProtocol[str, str],
+        backend_kwargs: dict[str, Any],
+        client_ssl_context: ssl.SSLContext,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        async with AsyncTCPNetworkClient(
+            remote_address,
+            stream_protocol,
+            ssl=client_ssl_context,
+            server_hostname="test.example.com",
+            backend_kwargs=backend_kwargs,
+        ) as client:
+            await client.send_packet("Test")
+            assert await client.recv_packet() == "Test"
+
+    async def test____dunder_init____use_default_context(
+        self,
+        remote_address: tuple[str, int],
+        stream_protocol: StreamProtocol[str, str],
+        client_ssl_context: ssl.SSLContext,
+        backend_kwargs: dict[str, Any],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # Arrange
+        monkeypatch.setattr(ssl, "create_default_context", lambda *args, **kwargs: client_ssl_context)
+
+        # Act & Assert
+        async with AsyncTCPNetworkClient(
+            remote_address,
+            stream_protocol,
+            ssl=True,
+            server_hostname="test.example.com",
+            backend_kwargs=backend_kwargs,
+        ) as client:
+            await client.send_packet("Test")
+            assert await client.recv_packet() == "Test"
+
+    async def test____dunder_init____use_default_context____disable_hostname_check(
+        self,
+        remote_address: tuple[str, int],
+        stream_protocol: StreamProtocol[str, str],
+        client_ssl_context: ssl.SSLContext,
+        backend_kwargs: dict[str, Any],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # Arrange
+        check_hostname_by_default: bool = client_ssl_context.check_hostname
+        assert check_hostname_by_default
+        monkeypatch.setattr(ssl, "create_default_context", lambda *args, **kwargs: client_ssl_context)
+
+        # Act & Assert
+        async with AsyncTCPNetworkClient(
+            remote_address,
+            stream_protocol,
+            ssl=True,
+            server_hostname="",
+            backend_kwargs=backend_kwargs,
+        ) as client:
+            assert not client_ssl_context.check_hostname  # It must be set to False if server_hostname is an empty string
+            await client.send_packet("Test")
+            assert await client.recv_packet() == "Test"

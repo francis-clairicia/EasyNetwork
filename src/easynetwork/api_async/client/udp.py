@@ -17,6 +17,7 @@ from ...protocol import DatagramProtocol
 from ...tools._utils import (
     check_real_socket_state as _check_real_socket_state,
     check_socket_family as _check_socket_family,
+    check_socket_no_ssl as _check_socket_no_ssl,
     ensure_datagram_socket_bound as _ensure_datagram_socket_bound,
     error_from_errno as _error_from_errno,
 )
@@ -94,6 +95,7 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         self.__socket_builder: SingleTaskRunner[AbstractAsyncDatagramSocketAdapter] | None = None
         match kwargs:
             case {"socket": _socket.socket() as socket, **kwargs}:
+                _check_socket_no_ssl(socket)
                 _ensure_datagram_socket_bound(socket)
                 self.__socket_builder = SingleTaskRunner(backend, backend.wrap_udp_socket, socket, **kwargs)
             case _:

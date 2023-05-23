@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import socketserver
+import ssl
 from concurrent.futures import Future
 from socket import AF_INET, IPPROTO_TCP, SHUT_WR, TCP_NODELAY, socket as Socket
 from typing import Any, Callable, Iterator
@@ -196,25 +197,40 @@ class TestTCPNetworkClient:
         assert address == client.socket.getpeername()
 
 
+class TCPServer(socketserver.TCPServer):
+    class RequestHandler(socketserver.StreamRequestHandler):
+        def handle(self) -> None:
+            data: bytes = self.rfile.readline()
+            self.wfile.write(data)
+
+    allow_reuse_address = True
+
+    def __init__(
+        self,
+        server_address: tuple[str, int],
+        socket_family: int,
+        ssl_context: ssl.SSLContext | None = None,
+    ) -> None:
+        self.address_family = socket_family
+        super().__init__(server_address, self.RequestHandler)
+        self.ssl_context: ssl.SSLContext | None = ssl_context
+
+    def get_request(self) -> tuple[Socket, Any]:
+        socket, client_address = super().get_request()
+
+        if self.ssl_context:
+            socket = self.ssl_context.wrap_socket(socket, server_side=True, do_handshake_on_connect=True)
+
+        return socket, client_address
+
+
 class TestTCPNetworkClientConnection:
-    class Server(socketserver.TCPServer):
-        class RequestHandler(socketserver.StreamRequestHandler):
-            def handle(self) -> None:
-                data: bytes = self.rfile.readline()
-                self.wfile.write(data)
-
-        allow_reuse_address = True
-
-        def __init__(self, server_address: tuple[str, int], socket_family: int) -> None:
-            self.address_family = socket_family
-            super().__init__(server_address, self.RequestHandler)
-
     @pytest.fixture(autouse=True)
     @classmethod
     def server(cls, localhost_ip: str, socket_family: int) -> Iterator[socketserver.TCPServer]:
         from threading import Thread
 
-        with cls.Server((localhost_ip, 0), socket_family) as server:
+        with TCPServer((localhost_ip, 0), socket_family) as server:
             server_thread = Thread(target=server.serve_forever)
             server_thread.start()
             yield server
@@ -236,5 +252,90 @@ class TestTCPNetworkClientConnection:
 
         # Act & Assert
         with TCPNetworkClient(remote_address, stream_protocol, local_address=(localhost_ip, 0)) as client:
+            client.send_packet("Test")
+            assert client.recv_packet() == "Test"
+
+
+class TestSSLOverTCPNetworkClient:
+    @pytest.fixture(autouse=True)
+    @classmethod
+    def server(
+        cls,
+        localhost_ip: str,
+        socket_family: int,
+        server_ssl_context: ssl.SSLContext,
+    ) -> Iterator[socketserver.TCPServer]:
+        from threading import Thread
+
+        with TCPServer((localhost_ip, 0), socket_family, ssl_context=server_ssl_context) as server:
+            server_thread = Thread(target=server.serve_forever)
+            server_thread.start()
+            yield server
+            server.shutdown()
+            server_thread.join()
+
+    @pytest.fixture
+    @staticmethod
+    def remote_address(server: socketserver.TCPServer) -> tuple[str, int]:
+        return server.server_address[:2]  # type: ignore[return-value]
+
+    def test____dunder_init____handshake_and_shutdown(
+        self,
+        remote_address: tuple[str, int],
+        stream_protocol: StreamProtocol[str, str],
+        client_ssl_context: ssl.SSLContext,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        with TCPNetworkClient(
+            remote_address,
+            stream_protocol,
+            ssl=client_ssl_context,
+            server_hostname="test.example.com",
+        ) as client:
+            client.send_packet("Test")
+            assert client.recv_packet() == "Test"
+
+    def test____dunder_init____use_default_context(
+        self,
+        remote_address: tuple[str, int],
+        stream_protocol: StreamProtocol[str, str],
+        client_ssl_context: ssl.SSLContext,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # Arrange
+        monkeypatch.setattr(ssl, "create_default_context", lambda *args, **kwargs: client_ssl_context)
+
+        # Act & Assert
+        with TCPNetworkClient(
+            remote_address,
+            stream_protocol,
+            ssl=True,
+            server_hostname="test.example.com",
+        ) as client:
+            client.send_packet("Test")
+            assert client.recv_packet() == "Test"
+
+    def test____dunder_init____use_default_context____disable_hostname_check(
+        self,
+        remote_address: tuple[str, int],
+        stream_protocol: StreamProtocol[str, str],
+        client_ssl_context: ssl.SSLContext,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # Arrange
+        check_hostname_by_default: bool = client_ssl_context.check_hostname
+        assert check_hostname_by_default
+        monkeypatch.setattr(ssl, "create_default_context", lambda *args, **kwargs: client_ssl_context)
+
+        # Act & Assert
+        with TCPNetworkClient(
+            remote_address,
+            stream_protocol,
+            ssl=True,
+            server_hostname="",
+        ) as client:
+            assert not client_ssl_context.check_hostname  # It must be set to False if server_hostname is an empty string
             client.send_packet("Test")
             assert client.recv_packet() == "Test"

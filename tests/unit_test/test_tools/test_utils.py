@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from selectors import EVENT_READ, BaseSelector, SelectorKey
+import selectors
 from socket import (
     AF_INET,
     AF_INET6,
@@ -16,18 +16,21 @@ from socket import (
     SOL_SOCKET,
     TCP_NODELAY,
 )
-from typing import TYPE_CHECKING, Any, Callable, Sequence, cast
+from typing import TYPE_CHECKING, Any, Callable, Literal, Sequence, cast
 
 from easynetwork.tools._utils import (
     check_real_socket_state,
     check_socket_family,
+    check_socket_no_ssl,
     concatenate_chunks,
     ensure_datagram_socket_bound,
     error_from_errno,
+    is_ssl_socket,
     open_listener_sockets_from_getaddrinfo_result,
+    replace_kwargs,
     set_reuseport,
     set_tcp_nodelay,
-    wait_socket_available_for_reading,
+    wait_socket_available,
 )
 
 import pytest
@@ -58,6 +61,52 @@ def addrinfo_list() -> Sequence[tuple[int, int, int, str, tuple[Any, ...]]]:
         (AF_INET, SOCK_STREAM, IPPROTO_TCP, "", ("0.0.0.0", 65432)),
         (AF_INET6, SOCK_STREAM, IPPROTO_TCP, "", ("::", 65432, 0, 0)),
     )
+
+
+def test____replace_kwargs____rename_keys() -> None:
+    # Arrange
+    kwargs = {"arg1": 4, "arg2": 12, "not_modified": "Yes"}
+
+    # Act
+    replace_kwargs(kwargs, {"arg1": "arg12000", "arg2": "something"})
+
+    # Assert
+    assert kwargs == {"arg12000": 4, "something": 12, "not_modified": "Yes"}
+
+
+def test____replace_kwargs____ignore_missing_keys() -> None:
+    # Arrange
+    kwargs = {"arg1": 4, "not_modified": "Yes"}
+
+    # Act
+    replace_kwargs(kwargs, {"unknown": "something", "arg1": "arg12000"})
+
+    # Assert
+    assert kwargs == {"arg12000": 4, "not_modified": "Yes"}
+
+
+def test____replace_kwargs____error_target_already_present() -> None:
+    # Arrange
+    kwargs = {"arg1": 4, "arg12000": "Yes"}
+
+    # Act
+    with pytest.raises(TypeError, match=r"^Cannot set 'arg1' to 'arg12000': 'arg12000' in dictionary$"):
+        replace_kwargs(kwargs, {"arg1": "arg12000"})
+
+    # Assert
+    assert kwargs == {"arg1": 4, "arg12000": "Yes"}
+
+
+def test____replace_kwargs____error_empty_key_dict() -> None:
+    # Arrange
+    kwargs = {"arg1": 4, "arg12000": "Yes"}
+
+    # Act
+    with pytest.raises(ValueError, match=r"^Empty key dict$"):
+        replace_kwargs(kwargs, {})
+
+    # Assert
+    assert kwargs == {"arg1": 4, "arg12000": "Yes"}
 
 
 def test____error_from_errno____returns_OSError(mocker: MockerFixture) -> None:
@@ -124,11 +173,45 @@ def test____check_socket_family____invalid_family(socket_family: int) -> None:
         check_socket_family(socket_family)
 
 
+def test____is_ssl_socket____regular_socket(mock_socket_factory: Callable[[], MagicMock]) -> None:
+    # Arrange
+    mock_socket = mock_socket_factory()
+
+    # Act & Assert
+    assert not is_ssl_socket(mock_socket)
+
+
+def test____is_ssl_socket____ssl_socket(mock_ssl_socket: MagicMock) -> None:
+    # Arrange
+
+    # Act & Assert
+    assert is_ssl_socket(mock_ssl_socket)
+
+
+def test____check_socket_no_ssl____regular_socket(mock_socket_factory: Callable[[], MagicMock]) -> None:
+    # Arrange
+    mock_socket = mock_socket_factory()
+
+    # Act & Assert
+    check_socket_no_ssl(mock_socket)
+
+
+def test____check_socket_no_ssl____ssl_socket(mock_ssl_socket: MagicMock) -> None:
+    # Arrange
+
+    # Act & Assert
+    with pytest.raises(TypeError, match=r"^ssl\.SSLSocket instances are forbidden$"):
+        check_socket_no_ssl(mock_ssl_socket)
+
+
+@pytest.mark.parametrize(["event", "selector_event"], [("read", "EVENT_READ"), ("write", "EVENT_WRITE")])
 @pytest.mark.parametrize("timeout", [10.2, 0, None], ids=lambda value: f"timeout=={value}")
 @pytest.mark.parametrize("available", [True, False], ids=lambda value: f"available=={value}")
 @pytest.mark.parametrize("use_PollSelector", [True, False], ids=lambda value: f"use_PollSelector=={value}")
-def test____wait_socket_available_for_reading____returns_boolean_if_available_or_not(
+def test____wait_socket_available____returns_boolean_if_available_or_not(
     mock_socket_factory: Callable[[], MagicMock],
+    event: Literal["read", "write"],
+    selector_event: str,
     timeout: float | None,
     available: bool,
     use_PollSelector: bool,
@@ -136,28 +219,88 @@ def test____wait_socket_available_for_reading____returns_boolean_if_available_or
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Arrange
+    SELECTOR_EVENT: int = getattr(selectors, selector_event)
     mock_socket = mock_socket_factory()
-    mock_selector = mocker.NonCallableMagicMock(spec=BaseSelector)
+    mock_selector = mocker.NonCallableMagicMock(spec=selectors.BaseSelector)
     mock_selector.__enter__.return_value = mock_selector
     if use_PollSelector:
         mock_selector_cls = mocker.patch("selectors.PollSelector", return_value=mock_selector, create=True)
     else:
         monkeypatch.delattr("selectors.PollSelector", raising=False)
         mock_selector_cls = mocker.patch("selectors.SelectSelector", return_value=mock_selector)
+    mock_selector_register: MagicMock = mock_selector.register
     mock_selector_select: MagicMock = mock_selector.select
     if available:
-        mock_selector_select.return_value = [SelectorKey(mock_socket, 1, EVENT_READ, None)]
+        mock_selector_select.return_value = [selectors.SelectorKey(mock_socket, 1, SELECTOR_EVENT, None)]
     else:
         mock_selector_select.return_value = []
 
     # Act
-    status = wait_socket_available_for_reading(mock_socket, timeout)
+    status = wait_socket_available(mock_socket, timeout, event)
 
     # Assert
     mock_selector_cls.assert_called_once_with()
-    mock_selector.register.assert_called_once_with(mock_socket, EVENT_READ)
+    mock_selector_register.assert_called_once_with(mock_socket, SELECTOR_EVENT)
     mock_selector_select.assert_called_once_with(timeout)
     assert status == available
+
+
+@pytest.mark.parametrize(["event", "selector_event"], [("read", "EVENT_READ"), ("write", "EVENT_WRITE")])
+@pytest.mark.parametrize("timeout", [10.2, 0, None], ids=lambda value: f"timeout=={value}")
+def test____wait_socket_available____invalid_file_descriptor(
+    mock_socket_factory: Callable[[], MagicMock],
+    event: Literal["read", "write"],
+    selector_event: str,
+    timeout: float | None,
+    mocker: MockerFixture,
+) -> None:
+    # Arrange
+    SELECTOR_EVENT: int = getattr(selectors, selector_event)
+    mock_socket = mock_socket_factory()
+    mock_selector = mocker.NonCallableMagicMock(spec=selectors.BaseSelector)
+    mock_selector.__enter__.return_value = mock_selector
+    mock_selector_cls = mocker.patch("selectors.PollSelector", return_value=mock_selector, create=True)
+    mock_selector_register: MagicMock = mock_selector.register
+    mock_selector_select: MagicMock = mock_selector.select
+    mock_selector_register.side_effect = ValueError
+
+    # Act
+    status = wait_socket_available(mock_socket, timeout, event)
+
+    # Assert
+    mock_selector_cls.assert_called_once_with()
+    mock_selector_register.assert_called_once_with(mock_socket, SELECTOR_EVENT)
+    mock_selector_select.assert_not_called()
+    assert status is True
+
+
+@pytest.mark.parametrize(["event", "selector_event"], [("read", "EVENT_READ"), ("write", "EVENT_WRITE")])
+@pytest.mark.parametrize("timeout", [10.2, 0, None], ids=lambda value: f"timeout=={value}")
+def test____wait_socket_available____select_error(
+    mock_socket_factory: Callable[[], MagicMock],
+    event: Literal["read", "write"],
+    selector_event: str,
+    timeout: float | None,
+    mocker: MockerFixture,
+) -> None:
+    # Arrange
+    SELECTOR_EVENT: int = getattr(selectors, selector_event)
+    mock_socket = mock_socket_factory()
+    mock_selector = mocker.NonCallableMagicMock(spec=selectors.BaseSelector)
+    mock_selector.__enter__.return_value = mock_selector
+    mock_selector_cls = mocker.patch("selectors.PollSelector", return_value=mock_selector, create=True)
+    mock_selector_register: MagicMock = mock_selector.register
+    mock_selector_select: MagicMock = mock_selector.select
+    mock_selector_select.side_effect = OSError
+
+    # Act
+    status = wait_socket_available(mock_socket, timeout, event)
+
+    # Assert
+    mock_selector_cls.assert_called_once_with()
+    mock_selector_register.assert_called_once_with(mock_socket, SELECTOR_EVENT)
+    mock_selector_select.assert_called_once_with(timeout)
+    assert status is True
 
 
 def test____concanetate_chunks____join_several_bytestrings() -> None:
@@ -305,9 +448,11 @@ def test____set_tcp_nodelay____setsockopt(
 
 
 @pytest.mark.parametrize("reuse_address", [False, True], ids=lambda boolean: f"reuse_address=={boolean}")
+@pytest.mark.parametrize("SO_REUSEADDR_available", [False, True], ids=lambda boolean: f"SO_REUSEADDR_available=={boolean}")
 @pytest.mark.parametrize("reuse_port", [False, True], ids=lambda boolean: f"reuse_port=={boolean}")
 def test____open_listener_sockets_from_getaddrinfo_result____create_listener_sockets(
     reuse_address: bool,
+    SO_REUSEADDR_available: bool,
     reuse_port: bool,
     mock_socket_cls: MagicMock,
     mocker: MockerFixture,
@@ -318,6 +463,8 @@ def test____open_listener_sockets_from_getaddrinfo_result____create_listener_soc
     SO_REUSEPORT: int = 123456
     monkeypatch.setattr("socket.SO_REUSEPORT", SO_REUSEPORT, raising=False)
     backlog: int = 123456
+    if not SO_REUSEADDR_available:
+        monkeypatch.delattr("socket.SO_REUSEADDR", raising=True)
 
     # Act
     sockets = cast(
@@ -334,7 +481,7 @@ def test____open_listener_sockets_from_getaddrinfo_result____create_listener_soc
     assert len(sockets) == len(addrinfo_list)
     assert mock_socket_cls.mock_calls == [mocker.call(f, t, p) for f, t, p, _, _ in addrinfo_list]
     for socket, (sock_family, _, _, _, sock_addr) in zip(sockets, addrinfo_list, strict=True):
-        if reuse_address:
+        if reuse_address and SO_REUSEADDR_available:
             socket.setsockopt.assert_any_call(SOL_SOCKET, SO_REUSEADDR, True)
         if reuse_port:
             socket.setsockopt.assert_any_call(SOL_SOCKET, SO_REUSEPORT, True)

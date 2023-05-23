@@ -9,9 +9,10 @@ from __future__ import annotations
 __all__ = ["AsyncTCPNetworkServer"]
 
 import contextlib as _contextlib
+import errno as _errno
 import logging as _logging
 from collections import deque
-from typing import TYPE_CHECKING, Any, AsyncGenerator, Callable, Generic, Literal, Mapping, Sequence, TypeVar, final
+from typing import TYPE_CHECKING, Any, AsyncGenerator, Callable, Generic, Iterator, Literal, Mapping, Sequence, TypeVar, final
 
 from ...exceptions import ClientClosedError, StreamProtocolParseError
 from ...protocol import StreamProtocol
@@ -24,6 +25,8 @@ from ...tools.socket import (
     ACCEPT_CAPACITY_ERRNOS,
     ACCEPT_CAPACITY_ERROR_SLEEP_TIME,
     MAX_STREAM_BUFSIZE,
+    SSL_HANDSHAKE_TIMEOUT,
+    SSL_SHUTDOWN_TIMEOUT,
     SocketAddress,
     SocketProxy,
     new_socket_address,
@@ -35,7 +38,10 @@ from .abc import AbstractAsyncNetworkServer
 from .handler import AsyncBaseRequestHandler, AsyncClientInterface, AsyncStreamRequestHandler
 
 if TYPE_CHECKING:
+    from ssl import SSLContext as _SSLContext
+
     from ..backend.abc import (
+        AbstractAcceptedSocket,
         AbstractAsyncBackend,
         AbstractAsyncListenerSocketAdapter,
         AbstractAsyncStreamSocketAdapter,
@@ -72,6 +78,9 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         protocol: StreamProtocol[_ResponseT, _RequestT],
         request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT],
         *,
+        ssl: _SSLContext | None = None,
+        ssl_handshake_timeout: float | None = None,
+        ssl_shutdown_timeout: float | None = None,
         family: int = 0,
         backlog: int | None = None,
         reuse_port: bool = False,
@@ -88,16 +97,39 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         if backlog is None:
             backlog = 100
 
+        if ssl_handshake_timeout is not None and not ssl:
+            raise ValueError("ssl_handshake_timeout is only meaningful with ssl")
+
+        if ssl_shutdown_timeout is not None and not ssl:
+            raise ValueError("ssl_shutdown_timeout is only meaningful with ssl")
+
+        def _value_or_default(value: float | None, default: float) -> float:
+            return value if value is not None else default
+
         self.__listeners_factory: SingleTaskRunner[Sequence[AbstractAsyncListenerSocketAdapter]] | None
-        self.__listeners_factory = SingleTaskRunner(
-            backend,
-            backend.create_tcp_listeners,
-            host,
-            port,
-            family=family,
-            backlog=backlog,
-            reuse_port=reuse_port,
-        )
+        if ssl:
+            self.__listeners_factory = SingleTaskRunner(
+                backend,
+                backend.create_ssl_over_tcp_listeners,
+                host,
+                port,
+                backlog=backlog,
+                ssl_context=ssl,
+                ssl_handshake_timeout=_value_or_default(ssl_handshake_timeout, SSL_HANDSHAKE_TIMEOUT),
+                ssl_shutdown_timeout=_value_or_default(ssl_shutdown_timeout, SSL_SHUTDOWN_TIMEOUT),
+                family=family,
+                reuse_port=reuse_port,
+            )
+        else:
+            self.__listeners_factory = SingleTaskRunner(
+                backend,
+                backend.create_tcp_listeners,
+                host,
+                port,
+                backlog=backlog,
+                family=family,
+                reuse_port=reuse_port,
+            )
         if max_recv_size is None:
             max_recv_size = MAX_STREAM_BUFSIZE
         if not isinstance(max_recv_size, int) or max_recv_size <= 0:
@@ -255,7 +287,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         async with listener:
             while not listener.is_closing():
                 try:
-                    client_socket = await listener.accept()
+                    client_socket: AbstractAcceptedSocket = await listener.accept()
                 except OSError as exc:
                     import errno
                     import os
@@ -275,8 +307,16 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                     task_group.start_soon(client_task, client_socket)
                     del client_socket
 
-    async def __client_task(self, socket: AbstractAsyncStreamSocketAdapter) -> None:
+    async def __client_task(self, accepted_socket: AbstractAcceptedSocket) -> None:
         async with _contextlib.AsyncExitStack() as client_exit_stack:
+            client_exit_stack.enter_context(self.__suppress_and_log_remaining_exception())
+            client_exit_stack.enter_context(self.__suppress_ignorable_socket_errors())
+
+            try:
+                socket: AbstractAsyncStreamSocketAdapter = await accepted_socket.connect()
+            finally:
+                del accepted_socket
+
             client_exit_stack.push_async_callback(socket.abort)
             await client_exit_stack.enter_async_context(socket)
 
@@ -355,6 +395,25 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             self.__logger.error("-" * 40)
         finally:
             del exc
+
+    @_contextlib.contextmanager
+    def __suppress_ignorable_socket_errors(self) -> Iterator[None]:
+        try:
+            yield
+        except ConnectionError:
+            return
+        except OSError as exc:
+            if exc.errno not in {_errno.ENOTCONN, _errno.ENOTSOCK}:
+                self.__logger.exception("Error in client task")
+            return
+
+    @_contextlib.contextmanager
+    def __suppress_and_log_remaining_exception(self) -> Iterator[None]:
+        try:
+            yield
+        except Exception:
+            self.__logger.exception("Error in client task")
+            return
 
     def get_backend(self) -> AbstractAsyncBackend:
         return self.__backend
