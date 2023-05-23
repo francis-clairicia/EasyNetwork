@@ -12,8 +12,8 @@ from ._utils import get_all_socket_families
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
 
-SUPPORTED_FAMILIES: frozenset[str] = frozenset(AddressFamily.__members__)
-UNSUPPORTED_FAMILIES: frozenset[str] = get_all_socket_families().difference(SUPPORTED_FAMILIES)
+SUPPORTED_FAMILIES: tuple[str, ...] = tuple(sorted(AddressFamily.__members__))
+UNSUPPORTED_FAMILIES: tuple[str, ...] = tuple(sorted(get_all_socket_families().difference(SUPPORTED_FAMILIES)))
 
 
 class BaseTestSocket:
