@@ -49,9 +49,6 @@ class ListenerSocketAdapter(AbstractAsyncListenerSocketAdapter):
     async def aclose(self) -> None:
         return await self.__socket.aclose()
 
-    async def abort(self) -> None:
-        return await self.__socket.abort()
-
     async def accept(self) -> AbstractAcceptedSocket:
         client_socket, _ = await self.__socket.accept()
         return self.__accepted_socket_factory(client_socket, self.__socket.loop)

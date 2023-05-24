@@ -177,11 +177,6 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
                 # It is normal if there was connection errors during operations. But do not propagate this exception,
                 # as we will never reuse this socket
                 pass
-            except self.__backend.get_cancelled_exc_class():
-                try:
-                    await socket.abort()
-                finally:
-                    raise
 
     async def send_packet_to(
         self,
@@ -237,7 +232,7 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
 
     def fileno(self) -> int:
         socket = self.__socket
-        if socket is None or socket.is_closing():
+        if socket is None:
             return -1
         return socket.socket().fileno()
 
@@ -334,13 +329,16 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         return await self.__endpoint.aclose()
 
     async def send_packet(self, packet: _SentPacketT) -> None:
+        await self.wait_connected()
         return await self.__endpoint.send_packet_to(packet, None)
 
     async def recv_packet(self) -> _ReceivedPacketT:
+        await self.wait_connected()
         packet, _ = await self.__endpoint.recv_packet_from()
         return packet
 
     async def iter_received_packets(self) -> AsyncIterator[_ReceivedPacketT]:
+        await self.wait_connected()
         async for packet, _ in self.__endpoint.iter_received_packets_from():
             yield packet
 

@@ -76,26 +76,6 @@ class AsyncSocket:
         return self.__socket is None or self.__closing
 
     async def aclose(self) -> None:
-        wait_for: set[_SocketTaskId] = {"send"}
-        futures_to_wait_for_completion: set[asyncio.Future[None]] = {
-            f for tid in wait_for if (f := self.__waiters.get(tid)) is not None
-        }
-        self.__closing = True
-        if futures_to_wait_for_completion:
-            try:
-                await asyncio.wait(futures_to_wait_for_completion, return_when=asyncio.ALL_COMPLETED)
-            except asyncio.CancelledError:
-                try:
-                    await self.__real_close()
-                finally:
-                    raise
-
-        await self.__real_close()
-
-    async def abort(self) -> None:
-        await self.__real_close()
-
-    async def __real_close(self) -> None:
         socket, self.__socket = self.__socket, None
         self.__closing = True
 

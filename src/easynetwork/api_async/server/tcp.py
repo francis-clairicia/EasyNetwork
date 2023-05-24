@@ -178,7 +178,6 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         await self.__backend.coro_yield()
         async with _contextlib.AsyncExitStack() as exit_stack:
             for listener in listeners:
-                exit_stack.push_async_callback(listener.abort)
                 exit_stack.push_async_callback(listener.aclose)
 
     async def shutdown(self) -> None:
@@ -248,7 +247,6 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             # Main loop
             self.__mainloop_task = task_group.start_soon(self.__backend.sleep_forever)
             if self.__shutdown_asked:
-                await self.__backend.coro_yield()
                 self.__mainloop_task.cancel()
             try:
                 await self.__mainloop_task.join()
@@ -317,7 +315,6 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             finally:
                 del accepted_socket
 
-            client_exit_stack.push_async_callback(socket.abort)
             await client_exit_stack.enter_async_context(socket)
 
             logger: _logging.Logger = self.__logger

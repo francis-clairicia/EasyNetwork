@@ -140,20 +140,22 @@ class TestTransportBasedStreamSocket(BaseTestTransportStreamSocket):
         mock_asyncio_writer.wait_closed.assert_awaited_once_with()
         mock_asyncio_writer.transport.abort.assert_not_called()
 
-    async def test____abort____abort_transport_and_exit(
+    async def test____aclose____abort_transport_if_cancelled(
         self,
         socket: AsyncioTransportStreamSocketAdapter,
         mock_asyncio_writer: MagicMock,
     ) -> None:
         # Arrange
+        mock_asyncio_writer.wait_closed.side_effect = asyncio.CancelledError
 
         # Act
-        await socket.abort()
+        with pytest.raises(asyncio.CancelledError):
+            await socket.aclose()
 
         # Assert
+        mock_asyncio_writer.close.assert_called_once_with()
+        mock_asyncio_writer.wait_closed.assert_awaited_once_with()
         mock_asyncio_writer.transport.abort.assert_called_once_with()
-        mock_asyncio_writer.close.assert_not_called()
-        mock_asyncio_writer.wait_closed.assert_not_awaited()
 
     async def test____context____close_transport_and_wait_at_end(
         self,
@@ -374,19 +376,6 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestRawStream
 
         # Assert
         mock_async_socket.aclose.assert_awaited_once_with()
-
-    async def test____abort____close_socket(
-        self,
-        listener: ListenerSocketAdapter,
-        mock_async_socket: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act
-        await listener.abort()
-
-        # Assert
-        mock_async_socket.abort.assert_awaited_once_with()
 
     async def test____accept____create_accepted_socket(
         self,
@@ -772,19 +761,6 @@ class TestRawStreamSocketAdapter(BaseTestRawStreamSocket):
 
         # Assert
         mock_async_socket.aclose.assert_awaited_once_with()
-
-    async def test____abort____close_socket(
-        self,
-        socket: RawStreamSocketAdapter,
-        mock_async_socket: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act
-        await socket.abort()
-
-        # Assert
-        mock_async_socket.abort.assert_awaited_once_with()
 
     async def test____context____close_socket(
         self,

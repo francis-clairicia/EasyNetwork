@@ -202,10 +202,6 @@ class AbstractAsyncBaseSocketAdapter(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    async def abort(self) -> None:
-        raise NotImplementedError
-
-    @abstractmethod
     def get_local_address(self) -> tuple[Any, ...]:
         raise NotImplementedError
 
