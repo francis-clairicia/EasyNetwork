@@ -245,11 +245,6 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
                 # It is normal if there was connection errors during operations. But do not propagate this exception,
                 # as we will never reuse this socket
                 pass
-            except self.__backend.get_cancelled_exc_class():
-                try:
-                    await socket.abort()
-                finally:
-                    raise
 
     async def send_packet(self, packet: _SentPacketT) -> None:
         async with self.__send_lock:
@@ -303,7 +298,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
 
     def fileno(self) -> int:
         socket = self.__socket
-        if socket is None or socket.is_closing():
+        if socket is None:
             return -1
         return socket.socket().fileno()
 

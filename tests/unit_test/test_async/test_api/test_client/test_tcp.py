@@ -743,7 +743,6 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         # Assert
         assert client_not_connected.is_closing()
         mock_stream_socket_adapter.aclose.assert_not_awaited()
-        mock_stream_socket_adapter.abort.assert_not_awaited()
 
     async def test____aclose____await_socket_close____error_occurred(
         self,
@@ -763,7 +762,6 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         assert client_connected.is_closing()
         assert exc_info.value is error
         mock_stream_socket_adapter.aclose.assert_awaited_once_with()
-        mock_stream_socket_adapter.abort.assert_not_awaited()
 
     async def test____aclose____await_socket_close____hide_connection_error(
         self,
@@ -781,7 +779,6 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         # Assert
         assert client_connected.is_closing()
         mock_stream_socket_adapter.aclose.assert_awaited_once_with()
-        mock_stream_socket_adapter.abort.assert_not_awaited()
 
     async def test____aclose____already_closed(
         self,
@@ -797,7 +794,6 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
 
         # Assert
         mock_stream_socket_adapter.aclose.assert_awaited_once_with()
-        mock_stream_socket_adapter.abort.assert_not_awaited()
 
     async def test____aclose____cancelled(
         self,
@@ -814,7 +810,6 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
 
         # Assert
         mock_stream_socket_adapter.aclose.assert_awaited_once_with()
-        mock_stream_socket_adapter.abort.assert_awaited_once_with()
 
     @pytest.mark.parametrize("client_closed", [False, True], ids=lambda p: f"client_closed=={p}")
     async def test____get_local_address____return_saved_address(

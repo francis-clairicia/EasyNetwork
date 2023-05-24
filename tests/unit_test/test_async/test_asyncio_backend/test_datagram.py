@@ -705,21 +705,6 @@ class TestDatagramSocketAdapter:
         mock_endpoint.wait_closed.assert_awaited_once_with()
         mock_endpoint.transport.abort.assert_not_called()
 
-    async def test____abort____abort_transport_and_exit(
-        self,
-        socket: AsyncioTransportDatagramSocketAdapter,
-        mock_endpoint: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act
-        await socket.abort()
-
-        # Assert
-        mock_endpoint.transport.abort.assert_called_once_with()
-        mock_endpoint.close.assert_not_called()
-        mock_endpoint.wait_closed.assert_not_awaited()
-
     async def test____context____close_transport_and_wait_at_end(
         self,
         socket: AsyncioTransportDatagramSocketAdapter,
@@ -936,19 +921,6 @@ class TestRawDatagramSocketAdapter(BaseTestSocket):
 
         # Assert
         mock_async_socket.aclose.assert_awaited_once_with()
-
-    async def test____abort____close_socket(
-        self,
-        socket: RawDatagramSocketAdapter,
-        mock_async_socket: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act
-        await socket.abort()
-
-        # Assert
-        mock_async_socket.abort.assert_awaited_once_with()
 
     async def test____context____close_socket(
         self,

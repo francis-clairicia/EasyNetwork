@@ -104,7 +104,7 @@ class MixinTestAsyncSocketBusy(BaseTestAsyncSocket):
         # Arrange
         from errno import ENOTSOCK
 
-        await socket.abort()
+        await socket.aclose()
 
         # Act
         with pytest.raises(OSError) as exc_info:
@@ -127,7 +127,7 @@ class MixinTestAsyncSocketBusy(BaseTestAsyncSocket):
             busy_method_task: asyncio.Task[Any] = await self._busy_socket_task(socket_method(), event_loop, mock_socket_method)
 
         # Act
-        await socket.abort()
+        await socket.aclose()
         with pytest.raises(OSError) as exc_info:
             await busy_method_task
 
@@ -152,60 +152,6 @@ class MixinTestAsyncSocketBusy(BaseTestAsyncSocket):
         # Assert
         assert busy_method_task.cancelled()
         mock_socket_method.assert_not_called()
-
-
-class MixinTestAsyncSocketCloseMustWait(BaseTestAsyncSocket):
-    async def test____aclose____close_wait_for_method_to_finish(
-        self,
-        socket: AsyncSocket,
-        socket_method_to_await_before_close: Callable[[], Coroutine[Any, Any, Any]],
-        event_loop: asyncio.AbstractEventLoop,
-        mock_socket_close_method: MagicMock,
-        mock_socket_method_to_wait_before_close: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act
-        with self._set_sock_method_in_blocking_state(mock_socket_method_to_wait_before_close):
-            await self._busy_socket_task(
-                socket_method_to_await_before_close(), event_loop, mock_socket_method_to_wait_before_close
-            )
-
-            close_tasks = [event_loop.create_task(socket.aclose()) for _ in range(10)]
-            await asyncio.sleep(0.1)
-            assert not {t for t in close_tasks if t.done()}
-
-        await asyncio.wait(close_tasks)
-
-        # Assert
-        mock_socket_close_method.assert_called_once_with()
-
-    async def test____aclose____abort_if_cancelled(
-        self,
-        socket: AsyncSocket,
-        socket_method_to_await_before_close: Callable[[], Coroutine[Any, Any, Any]],
-        event_loop: asyncio.AbstractEventLoop,
-        mock_socket_close_method: MagicMock,
-        mock_socket_method_to_wait_before_close: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act
-        with self._set_sock_method_in_blocking_state(mock_socket_method_to_wait_before_close):
-            await self._busy_socket_task(
-                socket_method_to_await_before_close(), event_loop, mock_socket_method_to_wait_before_close
-            )
-
-            close_task = event_loop.create_task(socket.aclose())
-            await asyncio.sleep(0.1)
-            assert not close_task.done()
-
-            close_task.cancel()
-            await asyncio.wait([close_task])
-
-        # Assert
-        assert close_task.cancelled()
-        mock_socket_close_method.assert_called_once_with()
 
 
 @final
@@ -262,10 +208,8 @@ class TestAsyncSocketCommon(BaseTestAsyncSocket):
         # Assert
         assert socket_loop is event_loop
 
-    @pytest.mark.parametrize("abort", [False, True], ids=lambda boolean: f"abort=={boolean}")
     async def test____aclose____close_socket(
         self,
-        abort: bool,
         socket: AsyncSocket,
         mock_stdlib_socket: MagicMock,
     ) -> None:
@@ -273,19 +217,14 @@ class TestAsyncSocketCommon(BaseTestAsyncSocket):
         assert not socket.is_closing()
 
         # Act
-        if abort:
-            await socket.abort()
-        else:
-            await socket.aclose()
+        await socket.aclose()
 
         # Assert
         assert socket.is_closing()
         mock_stdlib_socket.close.assert_called_once_with()
 
-    @pytest.mark.parametrize("abort", [False, True], ids=lambda boolean: f"abort=={boolean}")
     async def test____aclose____idempotent(
         self,
-        abort: bool,
         socket: AsyncSocket,
         mock_stdlib_socket: MagicMock,
     ) -> None:
@@ -293,10 +232,7 @@ class TestAsyncSocketCommon(BaseTestAsyncSocket):
 
         # Act
         for _ in range(5):
-            if abort:
-                await socket.abort()
-            else:
-                await socket.aclose()
+            await socket.aclose()
 
         # Assert
         mock_stdlib_socket.close.assert_called_once_with()
@@ -371,7 +307,7 @@ class TestAsyncListenerSocket(MixinTestAsyncSocketBusy):
         mock_tcp_listener_socket.accept.assert_called_once_with()
 
 
-class TestAsyncStreamSocket(MixinTestAsyncSocketBusy, MixinTestAsyncSocketCloseMustWait):
+class TestAsyncStreamSocket(MixinTestAsyncSocketBusy):
     @pytest.fixture
     @staticmethod
     def mock_tcp_socket(mock_tcp_socket: MagicMock) -> MagicMock:
@@ -426,35 +362,6 @@ class TestAsyncStreamSocket(MixinTestAsyncSocketBusy, MixinTestAsyncSocketCloseM
     def mock_socket_close_method(mock_tcp_socket: MagicMock) -> MagicMock:
         return mock_tcp_socket.close
 
-    @pytest.fixture(params=["sendall"])
-    @staticmethod
-    def sock_method_name_to_await_before_close(request: Any) -> str:
-        return request.param
-
-    @pytest.fixture
-    @staticmethod
-    def socket_method_to_await_before_close(
-        sock_method_name_to_await_before_close: str,
-        socket: AsyncSocket,
-    ) -> Callable[[], Coroutine[Any, Any, Any]]:
-        match sock_method_name_to_await_before_close:
-            case "sendall":
-                return lambda: socket.sendall(b"data")
-            case _:
-                raise SystemError
-
-    @pytest.fixture
-    @staticmethod
-    def mock_socket_method_to_wait_before_close(
-        sock_method_name_to_await_before_close: str,
-        mock_tcp_socket: MagicMock,
-    ) -> MagicMock:
-        match sock_method_name_to_await_before_close:
-            case "sendall":
-                return mock_tcp_socket.send
-            case _:
-                raise SystemError
-
     async def test____sendall____sends_data_to_stdlib_socket(
         self,
         socket: AsyncSocket,
@@ -483,7 +390,7 @@ class TestAsyncStreamSocket(MixinTestAsyncSocketBusy, MixinTestAsyncSocketCloseM
         mock_tcp_socket.recv.assert_called_once_with(123456789)
 
 
-class TestAsyncDatagramSocket(MixinTestAsyncSocketBusy, MixinTestAsyncSocketCloseMustWait):
+class TestAsyncDatagramSocket(MixinTestAsyncSocketBusy):
     @pytest.fixture
     @staticmethod
     def mock_udp_socket(mock_udp_socket: MagicMock) -> MagicMock:
@@ -537,35 +444,6 @@ class TestAsyncDatagramSocket(MixinTestAsyncSocketBusy, MixinTestAsyncSocketClos
     @staticmethod
     def mock_socket_close_method(mock_udp_socket: MagicMock) -> MagicMock:
         return mock_udp_socket.close
-
-    @pytest.fixture(params=["sendto"])
-    @staticmethod
-    def sock_method_name_to_await_before_close(request: Any) -> str:
-        return request.param
-
-    @pytest.fixture
-    @staticmethod
-    def socket_method_to_await_before_close(
-        sock_method_name_to_await_before_close: str,
-        socket: AsyncSocket,
-    ) -> Callable[[], Coroutine[Any, Any, Any]]:
-        match sock_method_name_to_await_before_close:
-            case "sendto":
-                return lambda: socket.sendto(b"data", ("127.0.0.1", 11111))
-            case _:
-                raise SystemError
-
-    @pytest.fixture
-    @staticmethod
-    def mock_socket_method_to_wait_before_close(
-        sock_method_name_to_await_before_close: str,
-        mock_udp_socket: MagicMock,
-    ) -> MagicMock:
-        match sock_method_name_to_await_before_close:
-            case "sendto":
-                return mock_udp_socket.sendto
-            case _:
-                raise SystemError
 
     async def test____sendto____sends_data_to_stdlib_socket(
         self,

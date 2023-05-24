@@ -110,7 +110,6 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         if socket is None:
             return
         async with _contextlib.AsyncExitStack() as exit_stack:
-            exit_stack.push_async_callback(socket.abort)
             exit_stack.push_async_callback(socket.aclose)
 
     async def shutdown(self) -> None:
@@ -171,7 +170,6 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             # Main loop
             self.__mainloop_task = task_group.start_soon(self.__receive_datagrams_task, self.__socket, task_group)
             if self.__shutdown_asked:
-                await self.__backend.coro_yield()
                 self.__mainloop_task.cancel()
             try:
                 await self.__mainloop_task.join()

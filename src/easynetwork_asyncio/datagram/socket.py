@@ -43,10 +43,6 @@ class AsyncioTransportDatagramSocketAdapter(AbstractAsyncDatagramSocketAdapter):
             # as we will never reuse this socket
             pass
 
-    async def abort(self) -> None:
-        self.__endpoint.transport.abort()
-        await asyncio.sleep(0)
-
     def is_closing(self) -> bool:
         return self.__endpoint.is_closing()
 
@@ -88,9 +84,6 @@ class RawDatagramSocketAdapter(AbstractAsyncDatagramSocketAdapter):
 
     async def aclose(self) -> None:
         return await self.__socket.aclose()
-
-    async def abort(self) -> None:
-        return await self.__socket.abort()
 
     def is_closing(self) -> bool:
         return self.__socket.is_closing()
