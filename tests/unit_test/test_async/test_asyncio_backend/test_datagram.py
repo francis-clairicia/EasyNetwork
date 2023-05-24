@@ -705,6 +705,23 @@ class TestDatagramSocketAdapter:
         mock_endpoint.wait_closed.assert_awaited_once_with()
         mock_endpoint.transport.abort.assert_not_called()
 
+    async def test____aclose____abort_transport_if_cancelled(
+        self,
+        socket: AsyncioTransportDatagramSocketAdapter,
+        mock_endpoint: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_endpoint.wait_closed.side_effect = asyncio.CancelledError
+
+        # Act
+        with pytest.raises(asyncio.CancelledError):
+            await socket.aclose()
+
+        # Assert
+        mock_endpoint.close.assert_called_once_with()
+        mock_endpoint.wait_closed.assert_awaited_once_with()
+        mock_endpoint.transport.abort.assert_called_once_with()
+
     async def test____context____close_transport_and_wait_at_end(
         self,
         socket: AsyncioTransportDatagramSocketAdapter,

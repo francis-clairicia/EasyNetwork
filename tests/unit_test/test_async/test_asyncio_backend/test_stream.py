@@ -140,6 +140,23 @@ class TestTransportBasedStreamSocket(BaseTestTransportStreamSocket):
         mock_asyncio_writer.wait_closed.assert_awaited_once_with()
         mock_asyncio_writer.transport.abort.assert_not_called()
 
+    async def test____aclose____abort_transport_if_cancelled(
+        self,
+        socket: AsyncioTransportStreamSocketAdapter,
+        mock_asyncio_writer: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_asyncio_writer.wait_closed.side_effect = asyncio.CancelledError
+
+        # Act
+        with pytest.raises(asyncio.CancelledError):
+            await socket.aclose()
+
+        # Assert
+        mock_asyncio_writer.close.assert_called_once_with()
+        mock_asyncio_writer.wait_closed.assert_awaited_once_with()
+        mock_asyncio_writer.transport.abort.assert_called_once_with()
+
     async def test____context____close_transport_and_wait_at_end(
         self,
         socket: AsyncioTransportStreamSocketAdapter,
