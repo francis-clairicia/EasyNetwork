@@ -132,13 +132,11 @@ class MyAsyncTCPServer(AsyncTCPNetworkServer[str, str]):
 class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     @pytest.fixture(params=["NO_SSL", "USE_SSL"])
     @staticmethod
-    def use_ssl(request: Any, event_loop_name: str) -> bool:
+    def use_ssl(request: Any) -> bool:
         match request.param:
             case "NO_SSL":
                 return False
             case "USE_SSL":
-                if event_loop_name == "uvloop":
-                    pytest.xfail("Not supported yet")
                 return True
             case _:
                 raise SystemError
