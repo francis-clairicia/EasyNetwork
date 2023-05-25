@@ -297,6 +297,7 @@ class AsyncioBackend(AbstractAsyncBackend):
         reuse_port: bool = False,
     ) -> Sequence[AbstractAsyncListenerSocketAdapter]:
         self._check_ssl_support()
+        self.__verify_ssl_context(ssl_context)
 
         from .stream.listener import AcceptedSSLSocket
 

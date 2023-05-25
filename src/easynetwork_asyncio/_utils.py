@@ -25,7 +25,14 @@ async def _ensure_resolved(
     proto: int = 0,
     flags: int = 0,
 ) -> Sequence[tuple[int, int, int, str, tuple[Any, ...]]]:
-    info = await loop.getaddrinfo(host, port, family=family, type=type, proto=proto, flags=flags)
+    try:
+        info = _socket.getaddrinfo(
+            host, port, family=family, type=type, proto=proto, flags=flags | _socket.AI_NUMERICHOST | _socket.AI_NUMERICSERV
+        )
+    except _socket.gaierror as exc:
+        if exc.errno != _socket.EAI_NONAME:
+            raise
+        info = await loop.getaddrinfo(host, port, family=family, type=type, proto=proto, flags=flags)
     if not info:
         raise OSError(f"getaddrinfo({host!r}) returned empty list")
     return info
