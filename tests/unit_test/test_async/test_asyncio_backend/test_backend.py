@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import contextvars
 from typing import TYPE_CHECKING, Any, Callable, Sequence, cast
 
 from easynetwork_asyncio import AsyncioBackend
@@ -1147,18 +1148,19 @@ class TestAsyncIOBackend:
         mock_Event.assert_called_once_with()
         assert event is mocker.sentinel.event
 
-    async def test____run_in_thread____use_asyncio_to_thread(
+    async def test____run_in_thread____use_loop_run_in_executor(
         self,
+        event_loop: asyncio.AbstractEventLoop,
         backend: AsyncioBackend,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
         func_stub = mocker.stub()
-        mock_to_thread: AsyncMock = mocker.patch(
-            "asyncio.to_thread",
-            new_callable=mocker.AsyncMock,
-            return_value=mocker.sentinel.return_value,
-        )
+        executor_future = event_loop.create_future()
+        executor_future.set_result(mocker.sentinel.return_value)
+        mock_run_in_executor = mocker.patch.object(event_loop, "run_in_executor", return_value=executor_future)
+        mock_context = mocker.NonCallableMagicMock(spec=contextvars.Context)
+        mock_copy_context = mocker.patch("contextvars.copy_context", autospec=True, return_value=mock_context)
 
         # Act
         ret_val = await backend.run_in_thread(
@@ -1170,12 +1172,17 @@ class TestAsyncIOBackend:
         )
 
         # Assert
-        mock_to_thread.assert_awaited_once_with(
-            func_stub,
-            mocker.sentinel.arg1,
-            mocker.sentinel.arg2,
-            kw1=mocker.sentinel.kwargs1,
-            kw2=mocker.sentinel.kwargs2,
+        mock_copy_context.assert_called_once_with()
+        mock_run_in_executor.assert_called_once_with(
+            None,
+            partial_eq(
+                mock_context.run,
+                func_stub,
+                mocker.sentinel.arg1,
+                mocker.sentinel.arg2,
+                kw1=mocker.sentinel.kwargs1,
+                kw2=mocker.sentinel.kwargs2,
+            ),
         )
         func_stub.assert_not_called()
         assert ret_val is mocker.sentinel.return_value

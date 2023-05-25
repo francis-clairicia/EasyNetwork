@@ -243,11 +243,29 @@ class TestAsyncioBackend:
         import time
 
         task = event_loop.create_task(backend.run_in_thread(time.sleep, 0.5))
+        event_loop.call_later(0.1, task.cancel)
         event_loop.call_later(0.2, task.cancel)
+        event_loop.call_later(0.3, task.cancel)
+        event_loop.call_later(0.4, task.cancel)
 
         await task
 
         assert not task.cancelled()
+
+    @pytest.mark.feature_sniffio
+    async def test____run_in_thread____sniffio_contextvar_reset(self, backend: AsyncioBackend) -> None:
+        import sniffio
+
+        sniffio.current_async_library_cvar.set("asyncio")
+
+        def callback() -> str | None:
+            return sniffio.current_async_library_cvar.get()
+
+        cvar_inner = await backend.run_in_thread(callback)
+        cvar_outer = sniffio.current_async_library_cvar.get()
+
+        assert cvar_inner is None
+        assert cvar_outer == "asyncio"
 
     async def test____create_thread_pool_executor____run_sync(
         self,
@@ -266,6 +284,22 @@ class TestAsyncioBackend:
         async with backend.create_thread_pool_executor() as executor:
             await executor.shutdown()
             await executor.shutdown()
+
+    @pytest.mark.feature_sniffio
+    async def test____create_thread_pool_executor____sniffio_contextvar_reset(self, backend: AsyncioBackend) -> None:
+        import sniffio
+
+        sniffio.current_async_library_cvar.set("asyncio")
+
+        def callback() -> str | None:
+            return sniffio.current_async_library_cvar.get()
+
+        async with backend.create_thread_pool_executor() as executor:
+            cvar_inner = await executor.run(callback)
+        cvar_outer = sniffio.current_async_library_cvar.get()
+
+        assert cvar_inner is None
+        assert cvar_outer == "asyncio"
 
     async def test____create_threads_portal____run_coroutine_from_thread(
         self,
@@ -306,6 +340,28 @@ class TestAsyncioBackend:
 
         assert exc_info.value is expected_exception
 
+    @pytest.mark.feature_sniffio
+    async def test____create_threads_portal____run_coroutine_from_thread____sniffio_contextvar_reset(
+        self,
+        backend: AsyncioBackend,
+    ) -> None:
+        import sniffio
+
+        threads_portal = backend.create_threads_portal()
+        sniffio.current_async_library_cvar.set("main")
+
+        async def coroutine() -> str | None:
+            return sniffio.current_async_library_cvar.get()
+
+        def thread() -> str | None:
+            return threads_portal.run_coroutine(coroutine)
+
+        cvar_inner = await backend.run_in_thread(thread)
+        cvar_outer = sniffio.current_async_library_cvar.get()
+
+        assert cvar_inner == "asyncio"
+        assert cvar_outer == "main"
+
     async def test____create_threads_portal____run_sync_from_thread_in_event_loop(
         self,
         event_loop: asyncio.AbstractEventLoop,
@@ -344,3 +400,25 @@ class TestAsyncioBackend:
             await backend.run_in_thread(thread)
 
         assert exc_info.value is expected_exception
+
+    @pytest.mark.feature_sniffio
+    async def test____create_threads_portal____run_sync_from_thread_in_event_loop____sniffio_contextvar_reset(
+        self,
+        backend: AsyncioBackend,
+    ) -> None:
+        import sniffio
+
+        threads_portal = backend.create_threads_portal()
+        sniffio.current_async_library_cvar.set("main")
+
+        def callback() -> str | None:
+            return sniffio.current_async_library_cvar.get()
+
+        def thread() -> str | None:
+            return threads_portal.run_sync(callback)
+
+        cvar_inner = await backend.run_in_thread(thread)
+        cvar_outer = sniffio.current_async_library_cvar.get()
+
+        assert cvar_inner == "asyncio"
+        assert cvar_outer == "main"

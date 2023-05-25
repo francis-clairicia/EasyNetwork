@@ -9,6 +9,7 @@ from __future__ import annotations
 
 __all__ = ["AsyncioBackend"]  # type: list[str]
 
+import contextvars
 import functools
 import inspect
 import socket as _socket
@@ -296,6 +297,7 @@ class AsyncioBackend(AbstractAsyncBackend):
         reuse_port: bool = False,
     ) -> Sequence[AbstractAsyncListenerSocketAdapter]:
         self._check_ssl_support()
+        self.__verify_ssl_context(ssl_context)
 
         from .stream.listener import AcceptedSSLSocket
 
@@ -416,7 +418,18 @@ class AsyncioBackend(AbstractAsyncBackend):
     async def run_in_thread(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
         import asyncio
 
-        return await self.ignore_cancellation(asyncio.to_thread(__func, *args, **kwargs))
+        loop = asyncio.get_running_loop()
+        ctx = contextvars.copy_context()
+
+        try:
+            import sniffio
+        except ImportError:
+            pass
+        else:
+            ctx.run(sniffio.current_async_library_cvar.set, None)
+
+        func_call: Callable[..., _T] = functools.partial(ctx.run, __func, *args, **kwargs)  # type: ignore[assignment]
+        return await self._cancel_shielded_wait_asyncio_future(loop.run_in_executor(None, func_call))
 
     def create_thread_pool_executor(self, max_workers: int | None = None) -> AbstractAsyncThreadPoolExecutor:
         from .threads import AsyncThreadPoolExecutor

@@ -5,11 +5,25 @@ from __future__ import annotations
 import asyncio
 import asyncio.trsock
 import errno
-from socket import AF_INET, AF_INET6, AI_PASSIVE, IPPROTO_TCP, IPPROTO_UDP, SOCK_DGRAM, SOCK_STREAM, SOL_SOCKET
+from socket import (
+    AF_INET,
+    AF_INET6,
+    AI_NUMERICHOST,
+    AI_NUMERICSERV,
+    AI_PASSIVE,
+    EAI_BADFLAGS,
+    EAI_NONAME,
+    IPPROTO_TCP,
+    IPPROTO_UDP,
+    SOCK_DGRAM,
+    SOCK_STREAM,
+    SOL_SOCKET,
+    gaierror,
+)
 from typing import TYPE_CHECKING, Any, Callable, Literal, Sequence, assert_never
 
 from easynetwork.tools._utils import error_from_errno
-from easynetwork_asyncio._utils import create_connection, create_datagram_socket
+from easynetwork_asyncio._utils import _ensure_resolved, create_connection, create_datagram_socket
 
 import pytest
 
@@ -62,6 +76,11 @@ def mock_getaddrinfo(event_loop: asyncio.AbstractEventLoop, mocker: MockerFixtur
 
 
 @pytest.fixture
+def mock_stdlib_socket_getaddrinfo(mocker: MockerFixture) -> AsyncMock:
+    return mocker.patch("socket.getaddrinfo")
+
+
+@pytest.fixture
 def mock_sock_connect(event_loop: asyncio.AbstractEventLoop, mocker: MockerFixture) -> AsyncMock:
     return mocker.patch.object(event_loop, "sock_connect", new_callable=mocker.AsyncMock, return_value=None)
 
@@ -79,6 +98,133 @@ def mock_socket_ipv6(mock_socket_factory: Callable[[], MagicMock]) -> MagicMock:
 @pytest.fixture(autouse=True)
 def mock_socket_cls(mock_socket_ipv4: MagicMock, mock_socket_ipv6: MagicMock, mocker: MockerFixture) -> MagicMock:
     return mocker.patch("socket.socket", side_effect=[mock_socket_ipv4, mock_socket_ipv6])
+
+
+@pytest.mark.asyncio
+async def test____ensure_resolved____try_numeric_first(
+    event_loop: asyncio.AbstractEventLoop,
+    mock_getaddrinfo: AsyncMock,
+    mock_stdlib_socket_getaddrinfo: MagicMock,
+) -> None:
+    # Arrange
+    expected_result = stream_addrinfo_list(8080, families=[AF_INET])
+    mock_stdlib_socket_getaddrinfo.return_value = expected_result
+
+    # Act
+    info = await _ensure_resolved("127.0.0.1", 8080, 123456789, SOCK_STREAM, event_loop, proto=IPPROTO_TCP, flags=AI_PASSIVE)
+
+    # Assert
+    assert info == expected_result
+    mock_stdlib_socket_getaddrinfo.assert_called_once_with(
+        "127.0.0.1",
+        8080,
+        family=123456789,
+        type=SOCK_STREAM,
+        proto=IPPROTO_TCP,
+        flags=AI_PASSIVE | AI_NUMERICHOST | AI_NUMERICSERV,
+    )
+    mock_getaddrinfo.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test____ensure_resolved____try_numeric_first____success_but_return_empty_list(
+    event_loop: asyncio.AbstractEventLoop,
+    mock_getaddrinfo: AsyncMock,
+    mock_stdlib_socket_getaddrinfo: MagicMock,
+) -> None:
+    # Arrange
+    mock_stdlib_socket_getaddrinfo.return_value = []
+
+    # Act
+    with pytest.raises(OSError, match=r"^getaddrinfo\('127.0.0.1'\) returned empty list$"):
+        await _ensure_resolved("127.0.0.1", 8080, 123456789, SOCK_STREAM, event_loop, proto=IPPROTO_TCP, flags=AI_PASSIVE)
+
+    # Assert
+    mock_stdlib_socket_getaddrinfo.assert_called_once_with(
+        "127.0.0.1",
+        8080,
+        family=123456789,
+        type=SOCK_STREAM,
+        proto=IPPROTO_TCP,
+        flags=AI_PASSIVE | AI_NUMERICHOST | AI_NUMERICSERV,
+    )
+    mock_getaddrinfo.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test____ensure_resolved____fallback_to_async_getaddrinfo(
+    event_loop: asyncio.AbstractEventLoop,
+    mock_getaddrinfo: AsyncMock,
+    mock_stdlib_socket_getaddrinfo: MagicMock,
+) -> None:
+    # Arrange
+    expected_result = stream_addrinfo_list(8080, families=[AF_INET])
+    mock_stdlib_socket_getaddrinfo.side_effect = gaierror(EAI_NONAME, "Name or service not known")
+    mock_getaddrinfo.return_value = expected_result
+
+    # Act
+    info = await _ensure_resolved("127.0.0.1", 8080, 123456789, SOCK_STREAM, event_loop, proto=IPPROTO_TCP, flags=AI_PASSIVE)
+
+    # Assert
+    assert info == expected_result
+    mock_getaddrinfo.assert_awaited_once_with(
+        "127.0.0.1",
+        8080,
+        family=123456789,
+        type=SOCK_STREAM,
+        proto=IPPROTO_TCP,
+        flags=AI_PASSIVE,
+    )
+
+
+@pytest.mark.asyncio
+async def test____ensure_resolved____fallback_to_async_getaddrinfo____success_but_return_empty_list(
+    event_loop: asyncio.AbstractEventLoop,
+    mock_getaddrinfo: AsyncMock,
+    mock_stdlib_socket_getaddrinfo: MagicMock,
+) -> None:
+    # Arrange
+    mock_stdlib_socket_getaddrinfo.side_effect = gaierror(EAI_NONAME, "Name or service not known")
+    mock_getaddrinfo.return_value = []
+
+    # Act
+    with pytest.raises(OSError, match=r"^getaddrinfo\('127.0.0.1'\) returned empty list$"):
+        await _ensure_resolved("127.0.0.1", 8080, 123456789, SOCK_STREAM, event_loop, proto=IPPROTO_TCP, flags=AI_PASSIVE)
+
+    # Assert
+    mock_getaddrinfo.assert_awaited_once_with(
+        "127.0.0.1",
+        8080,
+        family=123456789,
+        type=SOCK_STREAM,
+        proto=IPPROTO_TCP,
+        flags=AI_PASSIVE,
+    )
+
+
+@pytest.mark.asyncio
+async def test____ensure_resolved____propagate_unrelated_gaierror(
+    event_loop: asyncio.AbstractEventLoop,
+    mock_getaddrinfo: AsyncMock,
+    mock_stdlib_socket_getaddrinfo: MagicMock,
+) -> None:
+    # Arrange
+    mock_stdlib_socket_getaddrinfo.side_effect = gaierror(EAI_BADFLAGS, "Invalid flags")
+
+    # Act
+    with pytest.raises(gaierror):
+        await _ensure_resolved("127.0.0.1", 8080, 123456789, SOCK_STREAM, event_loop, proto=IPPROTO_TCP, flags=AI_PASSIVE)
+
+    # Assert
+    mock_stdlib_socket_getaddrinfo.assert_called_once_with(
+        "127.0.0.1",
+        8080,
+        family=123456789,
+        type=SOCK_STREAM,
+        proto=IPPROTO_TCP,
+        flags=AI_PASSIVE | AI_NUMERICHOST | AI_NUMERICSERV,
+    )
+    mock_getaddrinfo.assert_not_awaited()
 
 
 @pytest.mark.asyncio

@@ -37,6 +37,14 @@ class AsyncThreadPoolExecutor(AbstractAsyncThreadPoolExecutor):
 
     async def run(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
         ctx = contextvars.copy_context()
+
+        try:
+            import sniffio
+        except ImportError:
+            pass
+        else:
+            ctx.run(sniffio.current_async_library_cvar.set, None)
+
         future: concurrent.futures.Future[_T] = self.__executor.submit(ctx.run, __func, *args, **kwargs)  # type: ignore[arg-type]
         return await self.__backend.wait_future(future)
 
@@ -84,7 +92,18 @@ class ThreadsPortal(AbstractThreadsPortal):
     def run_coroutine(self, __coro_func: Callable[_P, Coroutine[Any, Any, _T]], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
         if threading.get_ident() == self.parent_thread_id:
             raise RuntimeError("must be called in a different OS thread")
-        future = asyncio.run_coroutine_threadsafe(__coro_func(*args, **kwargs), self.__loop)
+
+        async def coroutine() -> _T:
+            try:
+                import sniffio
+            except ImportError:
+                pass
+            else:
+                sniffio.current_async_library_cvar.set("asyncio")
+
+            return await __coro_func(*args, **kwargs)
+
+        future = asyncio.run_coroutine_threadsafe(coroutine(), self.__loop)
         try:
             return future.result()
         finally:
@@ -98,6 +117,13 @@ class ThreadsPortal(AbstractThreadsPortal):
             future.set_running_or_notify_cancel()
             assert future.running()
             try:
+                try:
+                    import sniffio
+                except ImportError:
+                    pass
+                else:
+                    sniffio.current_async_library_cvar.set("asyncio")
+
                 result = __func(*args, **kwargs)
             except BaseException as exc:
                 future.set_exception(exc)
