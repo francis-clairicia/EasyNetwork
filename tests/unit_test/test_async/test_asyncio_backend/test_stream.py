@@ -460,14 +460,13 @@ class TestAcceptedSocket(BaseTestTransportStreamSocket, BaseTestRawStreamSocket)
     def mock_event_loop_connect_accepted_socket(
         event_loop: asyncio.AbstractEventLoop,
         mocker: MockerFixture,
-        mock_asyncio_reader_protocol: MagicMock,
         mock_asyncio_transport: MagicMock,
     ) -> AsyncMock:
         return mocker.patch.object(
             event_loop,
             "connect_accepted_socket",
             new_callable=mocker.AsyncMock,
-            return_value=(mock_asyncio_transport, mock_asyncio_reader_protocol),
+            return_value=(mock_asyncio_transport, mocker.sentinel.final_protocol),
         )
 
     @pytest.fixture
@@ -592,14 +591,13 @@ class TestAcceptedSSLSocket(BaseTestTransportStreamSocket):
     def mock_event_loop_connect_accepted_socket(
         event_loop: asyncio.AbstractEventLoop,
         mocker: MockerFixture,
-        mock_asyncio_reader_protocol: MagicMock,
         mock_asyncio_transport: MagicMock,
     ) -> AsyncMock:
         return mocker.patch.object(
             event_loop,
             "connect_accepted_socket",
             new_callable=mocker.AsyncMock,
-            return_value=(mock_asyncio_transport, mock_asyncio_reader_protocol),
+            return_value=(mock_asyncio_transport, mocker.sentinel.final_protocol),
         )
 
     @pytest.fixture

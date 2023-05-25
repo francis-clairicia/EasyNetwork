@@ -117,7 +117,7 @@ class AcceptedSocket(_BaseAcceptedSocket):
 
         reader = asyncio.streams.StreamReader(MAX_STREAM_BUFSIZE, loop)
         protocol = asyncio.streams.StreamReaderProtocol(reader, loop=loop)
-        transport, protocol = await loop.connect_accepted_socket(lambda: protocol, socket)
+        transport, _ = await loop.connect_accepted_socket(lambda: protocol, socket)
         writer = asyncio.streams.StreamWriter(transport, protocol, reader, loop)
         return AsyncioTransportStreamSocketAdapter(reader, writer)
 
@@ -151,7 +151,7 @@ class AcceptedSSLSocket(_BaseAcceptedSocket):
         loop = self.loop
         reader = asyncio.streams.StreamReader(MAX_STREAM_BUFSIZE, loop)
         protocol = asyncio.streams.StreamReaderProtocol(reader, loop=loop)
-        transport, protocol = await loop.connect_accepted_socket(
+        transport, _ = await loop.connect_accepted_socket(
             lambda: protocol,
             socket,
             ssl=self.__ssl_context,
