@@ -7,92 +7,45 @@
 
 from __future__ import annotations
 
-__all__ = ["AsyncThreadPoolExecutor", "ThreadsPortal"]
+__all__ = ["ThreadsPortal"]
 
 import asyncio
 import concurrent.futures
-import contextvars
-import threading
-from typing import TYPE_CHECKING, Any, Callable, Coroutine, ParamSpec, TypeVar, final
+import inspect
+from typing import Any, Callable, Coroutine, ParamSpec, TypeVar, final
 
-from easynetwork.api_async.backend.abc import AbstractAsyncThreadPoolExecutor, AbstractThreadsPortal
-
-if TYPE_CHECKING:
-    from easynetwork_asyncio.backend import AsyncioBackend
+from easynetwork.api_async.backend.abc import AbstractThreadsPortal
 
 _P = ParamSpec("_P")
 _T = TypeVar("_T")
 
 
 @final
-class AsyncThreadPoolExecutor(AbstractAsyncThreadPoolExecutor):
-    __slots__ = ("__backend", "__executor", "__shutdown_future")
-
-    def __init__(self, backend: AsyncioBackend, max_workers: int | None = None) -> None:
-        super().__init__()
-
-        self.__backend: AsyncioBackend = backend
-        self.__executor = concurrent.futures.ThreadPoolExecutor(max_workers)
-        self.__shutdown_future: concurrent.futures.Future[None] | None = None
-
-    async def run(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
-        ctx = contextvars.copy_context()
-
-        try:
-            import sniffio
-        except ImportError:
-            pass
-        else:
-            ctx.run(sniffio.current_async_library_cvar.set, None)
-
-        future: concurrent.futures.Future[_T] = self.__executor.submit(ctx.run, __func, *args, **kwargs)  # type: ignore[arg-type]
-        return await self.__backend.wait_future(future)
-
-    async def shutdown(self) -> None:
-        if self.__shutdown_future is not None:
-            return await self.__backend.wait_future(self.__shutdown_future)
-        shutdown_future: concurrent.futures.Future[None] = concurrent.futures.Future()
-        shutdown_future.set_running_or_notify_cancel()
-        assert shutdown_future.running()
-        thread = threading.Thread(target=self.__do_shutdown, args=(self.__executor, shutdown_future))
-        thread.start()
-        try:
-            self.__shutdown_future = shutdown_future
-            await self.__backend.wait_future(self.__shutdown_future)
-        finally:
-            del shutdown_future
-            thread.join()
-
-    @staticmethod
-    def __do_shutdown(
-        executor: concurrent.futures.ThreadPoolExecutor,
-        future: concurrent.futures.Future[None],
-    ) -> None:
-        try:
-            executor.shutdown(wait=True)
-        except BaseException as exc:  # pragma: no cover
-            future.set_exception(exc)
-        else:
-            future.set_result(None)
-        finally:
-            del future
-
-    def get_max_number_of_workers(self) -> int:
-        return self.__executor._max_workers
-
-
-@final
 class ThreadsPortal(AbstractThreadsPortal):
     __slots__ = ("__loop",)
 
-    def __init__(self) -> None:
+    def __init__(self, *, loop: asyncio.AbstractEventLoop | None = None) -> None:
         super().__init__()
-        self.__loop: asyncio.AbstractEventLoop = asyncio.get_running_loop()
+        if loop is None:
+            loop = asyncio.get_running_loop()
+        self.__loop: asyncio.AbstractEventLoop = loop
 
     def run_coroutine(self, __coro_func: Callable[_P, Coroutine[Any, Any, _T]], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
-        if threading.get_ident() == self.parent_thread_id:
-            raise RuntimeError("must be called in a different OS thread")
+        self.__check_running_loop()
+        future = self.run_coroutine_soon(__coro_func, *args, **kwargs)
+        del __coro_func, args, kwargs
+        try:
+            return future.result()
+        finally:
+            del future
 
+    def run_coroutine_soon(
+        self,
+        __coro_func: Callable[_P, Coroutine[Any, Any, _T]],
+        /,
+        *args: _P.args,
+        **kwargs: _P.kwargs,
+    ) -> concurrent.futures.Future[_T]:
         async def coroutine() -> _T:
             try:
                 import sniffio
@@ -101,21 +54,26 @@ class ThreadsPortal(AbstractThreadsPortal):
             else:
                 sniffio.current_async_library_cvar.set("asyncio")
 
-            return await __coro_func(*args, **kwargs)
+            coroutine = __coro_func(*args, **kwargs)
+            if not inspect.iscoroutine(coroutine):  # pragma: no cover
+                raise TypeError("A coroutine object is required")
+            return await coroutine
 
-        future = asyncio.run_coroutine_threadsafe(coroutine(), self.__loop)
+        return asyncio.run_coroutine_threadsafe(coroutine(), self.__loop)
+
+    def run_sync(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+        self.__check_running_loop()
+        future = self.run_sync_soon(__func, *args, **kwargs)
+        del __func, args, kwargs
         try:
             return future.result()
         finally:
             del future
 
-    def run_sync(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
-        if threading.get_ident() == self.parent_thread_id:
-            raise RuntimeError("must be called in a different OS thread")
-
+    def run_sync_soon(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> concurrent.futures.Future[_T]:
         def callback(future: concurrent.futures.Future[_T]) -> None:
-            future.set_running_or_notify_cancel()
-            assert future.running()
+            if not future.set_running_or_notify_cancel():
+                return
             try:
                 try:
                     import sniffio
@@ -135,10 +93,15 @@ class ThreadsPortal(AbstractThreadsPortal):
 
         future: concurrent.futures.Future[_T] = concurrent.futures.Future()
         self.__loop.call_soon_threadsafe(callback, future)
+        return future
+
+    def __check_running_loop(self) -> None:
         try:
-            return future.result()
-        finally:
-            del future
+            running_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        if running_loop is self.__loop:
+            raise RuntimeError("must be called in a different OS thread")
 
     @property
     def loop(self) -> asyncio.AbstractEventLoop:

@@ -37,6 +37,20 @@ class TestAsyncioBackend:
         assert await task == 42
         assert not task.cancelled()
 
+    async def test____ignore_cancellation____task_do_not_appear_in_registered_tasks(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        backend: AsyncioBackend,
+    ) -> None:
+        async def coroutine() -> bool:
+            task = asyncio.current_task()
+            assert task not in asyncio.all_tasks()
+            return True
+
+        task: asyncio.Task[bool] = event_loop.create_task(backend.ignore_cancellation(coroutine()))
+
+        assert await task is True
+
     async def test____ignore_cancellation____coroutine_cancelled_itself(
         self,
         event_loop: asyncio.AbstractEventLoop,
@@ -322,6 +336,26 @@ class TestAsyncioBackend:
 
         assert await backend.run_in_thread(thread) == 42
 
+    async def test____create_threads_portal____run_coroutine_from_thread____can_be_called_from_other_event_loop(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        backend: AsyncioBackend,
+    ) -> None:
+        threads_portal = backend.create_threads_portal()
+
+        async def coroutine(value: int) -> int:
+            assert asyncio.get_running_loop() is event_loop
+            return await asyncio.sleep(0.5, value)
+
+        def thread() -> int:
+            async def main() -> int:
+                assert asyncio.get_running_loop() is not event_loop
+                return threads_portal.run_coroutine(coroutine, 42)
+
+            return asyncio.run(main())
+
+        assert await backend.run_in_thread(thread) == 42
+
     async def test____create_threads_portal____run_coroutine_from_thread____exception_raised(
         self,
         backend: AsyncioBackend,
@@ -362,6 +396,62 @@ class TestAsyncioBackend:
         assert cvar_inner == "asyncio"
         assert cvar_outer == "main"
 
+    async def test____create_threads_portal____run_coroutine_soon(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        backend: AsyncioBackend,
+    ) -> None:
+        threads_portal = backend.create_threads_portal()
+
+        async def coroutine(value: int) -> int:
+            assert asyncio.get_running_loop() is event_loop
+            return await asyncio.sleep(0.5, value)
+
+        future = threads_portal.run_coroutine_soon(coroutine, 42)
+
+        await asyncio.wait({asyncio.wrap_future(future)})
+
+        assert future.result() == 42
+
+    async def test____create_threads_portal____run_coroutine_soon____exception_raised(
+        self,
+        backend: AsyncioBackend,
+    ) -> None:
+        threads_portal = backend.create_threads_portal()
+        expected_exception = OSError("Why not?")
+
+        async def coroutine(value: int) -> int:
+            raise expected_exception
+
+        future = threads_portal.run_coroutine_soon(coroutine, 42)
+
+        await asyncio.wait({asyncio.wrap_future(future)})
+
+        assert future.exception() is expected_exception
+
+    @pytest.mark.feature_sniffio
+    async def test____create_threads_portal____run_coroutine_soon____sniffio_contextvar_reset(
+        self,
+        backend: AsyncioBackend,
+    ) -> None:
+        import sniffio
+
+        threads_portal = backend.create_threads_portal()
+        sniffio.current_async_library_cvar.set("main")
+
+        async def coroutine() -> str | None:
+            return sniffio.current_async_library_cvar.get()
+
+        future = threads_portal.run_coroutine_soon(coroutine)
+
+        await asyncio.wait({asyncio.wrap_future(future)})
+
+        cvar_inner = future.result()
+        cvar_outer = sniffio.current_async_library_cvar.get()
+
+        assert cvar_inner == "asyncio"
+        assert cvar_outer == "main"
+
     async def test____create_threads_portal____run_sync_from_thread_in_event_loop(
         self,
         event_loop: asyncio.AbstractEventLoop,
@@ -380,6 +470,26 @@ class TestAsyncioBackend:
             with pytest.raises(RuntimeError):
                 asyncio.get_running_loop()
             return threads_portal.run_sync(not_threadsafe_func, 42)
+
+        assert await backend.run_in_thread(thread) == 42
+
+    async def test____create_threads_portal____run_sync_from_thread_in_event_loop____can_be_called_from_other_event_loop(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        backend: AsyncioBackend,
+    ) -> None:
+        threads_portal = backend.create_threads_portal()
+
+        def not_threadsafe_func(value: int) -> int:
+            assert asyncio.get_running_loop() is event_loop
+            return value
+
+        def thread() -> int:
+            async def main() -> int:
+                assert asyncio.get_running_loop() is not event_loop
+                return threads_portal.run_sync(not_threadsafe_func, 42)
+
+            return asyncio.run(main())
 
         assert await backend.run_in_thread(thread) == 42
 
@@ -422,3 +532,75 @@ class TestAsyncioBackend:
 
         assert cvar_inner == "asyncio"
         assert cvar_outer == "main"
+
+    async def test____create_threads_portal____run_sync_soon(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        backend: AsyncioBackend,
+    ) -> None:
+        threads_portal = backend.create_threads_portal()
+
+        def not_threadsafe_func(value: int) -> int:
+            assert asyncio.get_running_loop() is event_loop
+            return value
+
+        future = threads_portal.run_sync_soon(not_threadsafe_func, 42)
+
+        await asyncio.wait({asyncio.wrap_future(future)})
+
+        assert future.result() == 42
+
+    async def test____create_threads_portal____run_sync_soon____exception_raised(
+        self,
+        backend: AsyncioBackend,
+    ) -> None:
+        threads_portal = backend.create_threads_portal()
+        expected_exception = OSError("Why not?")
+
+        def not_threadsafe_func(value: int) -> int:
+            raise expected_exception
+
+        future = threads_portal.run_sync_soon(not_threadsafe_func, 42)
+
+        await asyncio.wait({asyncio.wrap_future(future)})
+
+        assert future.exception() is expected_exception
+
+    @pytest.mark.feature_sniffio
+    async def test____create_threads_portal____run_sync_soon____sniffio_contextvar_reset(
+        self,
+        backend: AsyncioBackend,
+    ) -> None:
+        import sniffio
+
+        threads_portal = backend.create_threads_portal()
+        sniffio.current_async_library_cvar.set("main")
+
+        def callback() -> str | None:
+            return sniffio.current_async_library_cvar.get()
+
+        future = threads_portal.run_sync_soon(callback)
+
+        await asyncio.wait({asyncio.wrap_future(future)})
+
+        cvar_inner = future.result()
+        cvar_outer = sniffio.current_async_library_cvar.get()
+
+        assert cvar_inner == "asyncio"
+        assert cvar_outer == "main"
+
+    async def test____create_threads_portal____run_sync_soon____do_not_run_func_if_cancelled(
+        self,
+        backend: AsyncioBackend,
+    ) -> None:
+        threads_portal = backend.create_threads_portal()
+
+        def not_threadsafe_func(value: int) -> int:
+            raise AssertionError("Function called")
+
+        future = threads_portal.run_sync_soon(not_threadsafe_func, 42)
+        future.cancel()
+
+        await asyncio.sleep(0.1)
+
+        assert future.cancelled()

@@ -19,12 +19,13 @@ __all__ = [
     "AbstractTask",
     "AbstractTaskGroup",
     "AbstractThreadsPortal",
+    "ICondition",
     "IEvent",
     "ILock",
 ]
 
 from abc import ABCMeta, abstractmethod
-from typing import TYPE_CHECKING, Any, Callable, Coroutine, Generic, NoReturn, ParamSpec, Protocol, Self, Sequence, TypeVar, final
+from typing import TYPE_CHECKING, Any, Callable, Coroutine, Generic, NoReturn, ParamSpec, Protocol, Self, Sequence, TypeVar
 
 if TYPE_CHECKING:
     import concurrent.futures
@@ -76,6 +77,17 @@ class IEvent(Protocol):
         ...
 
     def is_set(self) -> bool:  # pragma: no cover
+        ...
+
+
+class ICondition(ILock, Protocol):
+    def notify(self, __n: int = ..., /) -> None:  # pragma: no cover
+        ...
+
+    def notify_all(self) -> None:  # pragma: no cover
+        ...
+
+    async def wait(self) -> Any:  # pragma: no cover
         ...
 
 
@@ -158,25 +170,29 @@ class AbstractAsyncThreadPoolExecutor(metaclass=ABCMeta):
 
 
 class AbstractThreadsPortal(metaclass=ABCMeta):
-    __slots__ = ("__tid", "__weakref__")
-
-    def __init__(self) -> None:
-        import threading
-
-        self.__tid: int = threading.get_ident()
+    __slots__ = ("__weakref__",)
 
     @abstractmethod
     def run_coroutine(self, __coro_func: Callable[_P, Coroutine[Any, Any, _T]], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
         raise NotImplementedError
 
     @abstractmethod
+    def run_coroutine_soon(
+        self,
+        __coro_func: Callable[_P, Coroutine[Any, Any, _T]],
+        /,
+        *args: _P.args,
+        **kwargs: _P.kwargs,
+    ) -> concurrent.futures.Future[_T]:
+        raise NotImplementedError
+
+    @abstractmethod
     def run_sync(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
         raise NotImplementedError
 
-    @property
-    @final
-    def parent_thread_id(self) -> int:
-        return self.__tid
+    @abstractmethod
+    def run_sync_soon(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> concurrent.futures.Future[_T]:
+        raise NotImplementedError
 
 
 class AbstractAsyncBaseSocketAdapter(metaclass=ABCMeta):
@@ -386,12 +402,17 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    async def run_in_thread(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+    def create_condition_var(self, lock: ILock | None = ...) -> ICondition:
         raise NotImplementedError
 
     @abstractmethod
-    def create_thread_pool_executor(self, max_workers: int | None = ...) -> AbstractAsyncThreadPoolExecutor:
+    async def run_in_thread(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
         raise NotImplementedError
+
+    def create_thread_pool_executor(self, max_workers: int | None = None) -> AbstractAsyncThreadPoolExecutor:
+        from .threads import DefaultAsyncThreadPoolExecutor
+
+        return DefaultAsyncThreadPoolExecutor(self, max_workers)
 
     @abstractmethod
     def create_threads_portal(self) -> AbstractThreadsPortal:
