@@ -13,7 +13,7 @@ import contextvars
 import functools
 import inspect
 import socket as _socket
-from typing import TYPE_CHECKING, Any, Callable, Coroutine, NoReturn, ParamSpec, Sequence, TypeVar, final
+from typing import TYPE_CHECKING, Any, Callable, Coroutine, NoReturn, ParamSpec, Sequence, TypeVar
 
 from easynetwork.api_async.backend.abc import AbstractAsyncBackend
 
@@ -27,9 +27,9 @@ if TYPE_CHECKING:
         AbstractAsyncDatagramSocketAdapter,
         AbstractAsyncListenerSocketAdapter,
         AbstractAsyncStreamSocketAdapter,
-        AbstractAsyncThreadPoolExecutor,
         AbstractTaskGroup,
         AbstractThreadsPortal,
+        ICondition,
         IEvent,
         ILock,
     )
@@ -39,7 +39,6 @@ _T = TypeVar("_T")
 _T_co = TypeVar("_T_co", covariant=True)
 
 
-@final
 class AsyncioBackend(AbstractAsyncBackend):
     __slots__ = ("__use_asyncio_transport",)
 
@@ -415,6 +414,14 @@ class AsyncioBackend(AbstractAsyncBackend):
 
         return asyncio.Event()
 
+    def create_condition_var(self, lock: ILock | None = None) -> ICondition:
+        import asyncio
+
+        if lock is not None:
+            assert isinstance(lock, asyncio.Lock)
+
+        return asyncio.Condition(lock)
+
     async def run_in_thread(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
         import asyncio
 
@@ -430,11 +437,6 @@ class AsyncioBackend(AbstractAsyncBackend):
 
         func_call: Callable[..., _T] = functools.partial(ctx.run, __func, *args, **kwargs)  # type: ignore[assignment]
         return await self._cancel_shielded_wait_asyncio_future(loop.run_in_executor(None, func_call))
-
-    def create_thread_pool_executor(self, max_workers: int | None = None) -> AbstractAsyncThreadPoolExecutor:
-        from .threads import AsyncThreadPoolExecutor
-
-        return AsyncThreadPoolExecutor(self, max_workers)
 
     def create_threads_portal(self) -> AbstractThreadsPortal:
         from .threads import ThreadsPortal

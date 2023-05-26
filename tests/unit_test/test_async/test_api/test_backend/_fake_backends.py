@@ -10,9 +10,9 @@ from easynetwork.api_async.backend.abc import (
     AbstractAsyncDatagramSocketAdapter,
     AbstractAsyncListenerSocketAdapter,
     AbstractAsyncStreamSocketAdapter,
-    AbstractAsyncThreadPoolExecutor,
     AbstractTaskGroup,
     AbstractThreadsPortal,
+    ICondition,
     IEvent,
     ILock,
 )
@@ -64,10 +64,10 @@ class BaseFakeBackend(AbstractAsyncBackend):
     def create_event(self) -> IEvent:
         raise NotImplementedError
 
-    async def run_in_thread(self, __func: Callable[..., Any], /, *args: Any, **kwargs: Any) -> Any:
+    def create_condition_var(self, lock: ILock | None = ...) -> ICondition:
         raise NotImplementedError
 
-    def create_thread_pool_executor(self, *args: Any, **kwargs: Any) -> AbstractAsyncThreadPoolExecutor:
+    async def run_in_thread(self, __func: Callable[..., Any], /, *args: Any, **kwargs: Any) -> Any:
         raise NotImplementedError
 
     def create_threads_portal(self) -> AbstractThreadsPortal:

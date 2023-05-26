@@ -1148,6 +1148,24 @@ class TestAsyncIOBackend:
         mock_Event.assert_called_once_with()
         assert event is mocker.sentinel.event
 
+    @pytest.mark.parametrize("use_lock", [None, asyncio.Lock])
+    async def test____create_condition_var____use_asyncio_Condition_class(
+        self,
+        use_lock: type[asyncio.Lock] | None,
+        backend: AsyncioBackend,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_lock: MagicMock | None = None if use_lock is None else mocker.NonCallableMagicMock(spec=use_lock)
+        mock_Condition = mocker.patch("asyncio.Condition", return_value=mocker.sentinel.condition_var)
+
+        # Act
+        condition = backend.create_condition_var(mock_lock)
+
+        # Assert
+        mock_Condition.assert_called_once_with(mock_lock)
+        assert condition is mocker.sentinel.condition_var
+
     async def test____run_in_thread____use_loop_run_in_executor(
         self,
         event_loop: asyncio.AbstractEventLoop,
@@ -1194,14 +1212,14 @@ class TestAsyncIOBackend:
         backend: AsyncioBackend,
     ) -> None:
         # Arrange
-        from easynetwork_asyncio.threads import AsyncThreadPoolExecutor
+        from easynetwork.api_async.backend.threads import DefaultAsyncThreadPoolExecutor
 
         # Act
         async with backend.create_thread_pool_executor(max_workers) as executor:
             pass
 
         # Assert
-        assert isinstance(executor, AsyncThreadPoolExecutor)
+        assert isinstance(executor, DefaultAsyncThreadPoolExecutor)
         if max_workers is None:
             assert executor.get_max_number_of_workers() > 0
         else:
