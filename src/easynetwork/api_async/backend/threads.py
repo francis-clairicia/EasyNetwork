@@ -39,11 +39,12 @@ class DefaultAsyncThreadPoolExecutor(AbstractAsyncThreadPoolExecutor):
         ctx = contextvars.copy_context()
 
         try:
-            import sniffio
+            from sniffio import current_async_library_cvar
         except ImportError:
             pass
         else:
-            ctx.run(sniffio.current_async_library_cvar.set, None)
+            ctx.run(current_async_library_cvar.set, None)
+            del current_async_library_cvar
 
         future: concurrent.futures.Future[_T] = self.__executor.submit(ctx.run, __func, *args, **kwargs)  # type: ignore[arg-type]
         return await self.__backend.wait_future(future)
