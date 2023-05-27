@@ -12,8 +12,9 @@ runs:
     - uses: pdm-project/setup-pdm@v3
       with:
         python-version: ${{ inputs.python-version }}
-        cache: true
-        cache-dependency-path: './pdm.lock'
+        # There is issues when retrieving the cache on Windows
+        # cache: true
+        # cache-dependency-path: './pdm.lock'
     - name: Disable PDM update check
       run: echo "PDM_CHECK_UPDATE=False" >> $GITHUB_ENV
       shell: bash
