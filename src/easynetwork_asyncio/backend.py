@@ -74,7 +74,10 @@ class AsyncioBackend(AbstractAsyncBackend):
         # This task must be unregistered in order not to be cancelled by runner at event loop shutdown
         asyncio._unregister_task(task)
 
-        return await self._cancel_shielded_wait_asyncio_future(task)
+        try:
+            return await self._cancel_shielded_wait_asyncio_future(task)
+        finally:
+            del task
 
     async def wait_for(self, coroutine: Coroutine[Any, Any, _T_co], timeout: float | None) -> _T_co:
         import asyncio
@@ -91,14 +94,17 @@ class AsyncioBackend(AbstractAsyncBackend):
         current_task: _asyncio.Task[Any] = cls._current_asyncio_task()
         cancelling: int = current_task.cancelling()
 
-        while True:
-            if future.done():
-                return future.result()
-            try:
-                await asyncio.wait({future})
-            except asyncio.CancelledError:
-                while current_task.uncancel() > cancelling:
-                    continue
+        try:
+            while True:
+                if future.done():
+                    return future.result()
+                try:
+                    await asyncio.wait({future})
+                except asyncio.CancelledError:
+                    while current_task.uncancel() > cancelling:
+                        continue
+        finally:
+            del current_task, future
 
     def current_time(self) -> float:
         import asyncio
@@ -433,7 +439,12 @@ class AsyncioBackend(AbstractAsyncBackend):
             ctx.run(_sniffio_current_async_library_cvar.set, None)
 
         func_call: Callable[..., _T] = functools.partial(ctx.run, __func, *args, **kwargs)  # type: ignore[assignment]
-        return await self._cancel_shielded_wait_asyncio_future(loop.run_in_executor(None, func_call))
+        future = loop.run_in_executor(None, func_call)
+        del func_call, __func, args, kwargs
+        try:
+            return await self._cancel_shielded_wait_asyncio_future(future)
+        finally:
+            del future
 
     def create_threads_portal(self) -> AbstractThreadsPortal:
         from .threads import ThreadsPortal
@@ -459,12 +470,19 @@ class AsyncioBackend(AbstractAsyncBackend):
                 while current_task.uncancel() > cancelling:
                     continue
             else:
-                assert future.done()
-                return future.result()
+                try:
+                    assert future.done()
+                    return future.result()
+                finally:
+                    del future_wrapper, future
             finally:
                 del current_task
 
-        return await self._cancel_shielded_wait_asyncio_future(future_wrapper)
+        try:
+            del future
+            return await self._cancel_shielded_wait_asyncio_future(future_wrapper)
+        finally:
+            del future_wrapper
 
     def use_asyncio_transport(self) -> bool:
         return self.__use_asyncio_transport

@@ -43,7 +43,11 @@ class DefaultAsyncThreadPoolExecutor(AbstractAsyncThreadPoolExecutor):
             ctx.run(_sniffio_current_async_library_cvar.set, None)
 
         future: concurrent.futures.Future[_T] = self.__executor.submit(ctx.run, __func, *args, **kwargs)  # type: ignore[arg-type]
-        return await self.__backend.wait_future(future)
+        del __func, args, kwargs
+        try:
+            return await self.__backend.wait_future(future)
+        finally:
+            del future
 
     async def shutdown(self) -> None:
         if self.__shutdown_future is not None:

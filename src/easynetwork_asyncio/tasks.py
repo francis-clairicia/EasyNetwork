@@ -60,7 +60,10 @@ class Task(AbstractTask[_T_co]):
         # e.g. when awaiting from an another task than the one which creates the TaskGroup,
         #      you want to stop joining the sub-task, not accidentally cancel it.
         # It is primarily to avoid error prone code where tasks were not explicitly cancelled using task.cancel()
-        return await asyncio.shield(self.__t)
+        try:
+            return await asyncio.shield(self.__t)
+        finally:
+            del self  # This is needed to avoid circular reference with raised exception
 
 
 @final
@@ -84,7 +87,7 @@ class TaskGroup(AbstractTaskGroup):
     ) -> None:
         asyncio_tg: asyncio.TaskGroup = self.__asyncio_tg
         try:
-            return await type(asyncio_tg).__aexit__(asyncio_tg, exc_type, exc_val, exc_tb)
+            await type(asyncio_tg).__aexit__(asyncio_tg, exc_type, exc_val, exc_tb)
         finally:
             del exc_val, exc_tb, self
 
