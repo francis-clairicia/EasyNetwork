@@ -15,6 +15,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Final, Mapping, final
 
 from .abc import AbstractAsyncBackend
+from .sniffio import current_async_library as _sniffio_current_async_library
 
 if TYPE_CHECKING:
     from importlib.metadata import EntryPoint
@@ -32,15 +33,10 @@ class AsyncBackendFactory:
         if isinstance(backend, type):
             return backend
         if backend is None:
-            try:
-                if not guess_current_async_library:
-                    raise ModuleNotFoundError
-
-                import sniffio
-            except ModuleNotFoundError:
-                backend = "asyncio"
+            if guess_current_async_library:
+                backend = _sniffio_current_async_library()  # must raise if not recognized
             else:
-                backend = sniffio.current_async_library()  # must raise if not recognized
+                backend = "asyncio"
         return AsyncBackendFactory.__get_backend_cls(
             backend,
             "Running library {name!r} misses the backend implementation",

@@ -16,6 +16,7 @@ import inspect
 from typing import Any, Callable, Coroutine, ParamSpec, TypeVar, final
 
 from easynetwork.api_async.backend.abc import AbstractThreadsPortal
+from easynetwork.api_async.backend.sniffio import current_async_library_cvar as _sniffio_current_async_library_cvar
 
 _P = ParamSpec("_P")
 _T = TypeVar("_T")
@@ -47,24 +48,16 @@ class ThreadsPortal(AbstractThreadsPortal):
         *args: _P.args,
         **kwargs: _P.kwargs,
     ) -> concurrent.futures.Future[_T]:
-        ctx: contextvars.Context | None = None
-
-        try:
-            from sniffio import current_async_library_cvar
-        except ImportError:
-            pass
-        else:
-            ctx = contextvars.copy_context()
-            ctx.run(current_async_library_cvar.set, "asyncio")
-            del current_async_library_cvar
-
         coroutine = __coro_func(*args, **kwargs)
         if not inspect.iscoroutine(coroutine):  # pragma: no cover
             raise TypeError("A coroutine object is required")
 
-        if ctx is None:
-            return asyncio.run_coroutine_threadsafe(coroutine, self.__loop)
-        return ctx.run(asyncio.run_coroutine_threadsafe, coroutine, self.__loop)  # type: ignore[arg-type]
+        if _sniffio_current_async_library_cvar is not None:
+            ctx = contextvars.copy_context()
+            ctx.run(_sniffio_current_async_library_cvar.set, "asyncio")
+            return ctx.run(asyncio.run_coroutine_threadsafe, coroutine, self.__loop)  # type: ignore[arg-type]
+
+        return asyncio.run_coroutine_threadsafe(coroutine, self.__loop)
 
     def run_sync(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
         self.__check_running_loop()
@@ -91,13 +84,8 @@ class ThreadsPortal(AbstractThreadsPortal):
 
         ctx = contextvars.copy_context()
 
-        try:
-            from sniffio import current_async_library_cvar
-        except ImportError:
-            pass
-        else:
-            ctx.run(current_async_library_cvar.set, "asyncio")
-            del current_async_library_cvar
+        if _sniffio_current_async_library_cvar is not None:
+            ctx.run(_sniffio_current_async_library_cvar.set, "asyncio")
 
         future: concurrent.futures.Future[_T] = concurrent.futures.Future()
         self.__loop.call_soon_threadsafe(callback, future, context=ctx)

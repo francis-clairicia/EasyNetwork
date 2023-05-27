@@ -16,6 +16,7 @@ import socket as _socket
 from typing import TYPE_CHECKING, Any, Callable, Coroutine, NoReturn, ParamSpec, Sequence, TypeVar
 
 from easynetwork.api_async.backend.abc import AbstractAsyncBackend
+from easynetwork.api_async.backend.sniffio import current_async_library_cvar as _sniffio_current_async_library_cvar
 
 if TYPE_CHECKING:
     import asyncio as _asyncio
@@ -428,13 +429,8 @@ class AsyncioBackend(AbstractAsyncBackend):
         loop = asyncio.get_running_loop()
         ctx = contextvars.copy_context()
 
-        try:
-            from sniffio import current_async_library_cvar
-        except ImportError:
-            pass
-        else:
-            ctx.run(current_async_library_cvar.set, None)
-            del current_async_library_cvar
+        if _sniffio_current_async_library_cvar is not None:
+            ctx.run(_sniffio_current_async_library_cvar.set, None)
 
         func_call: Callable[..., _T] = functools.partial(ctx.run, __func, *args, **kwargs)  # type: ignore[assignment]
         return await self._cancel_shielded_wait_asyncio_future(loop.run_in_executor(None, func_call))
