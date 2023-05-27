@@ -16,6 +16,7 @@ import threading
 from typing import TYPE_CHECKING, Callable, ParamSpec, TypeVar, final
 
 from .abc import AbstractAsyncThreadPoolExecutor
+from .sniffio import current_async_library_cvar as _sniffio_current_async_library_cvar
 
 if TYPE_CHECKING:
     from .abc import AbstractAsyncBackend
@@ -38,12 +39,8 @@ class DefaultAsyncThreadPoolExecutor(AbstractAsyncThreadPoolExecutor):
     async def run(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
         ctx = contextvars.copy_context()
 
-        try:
-            import sniffio
-        except ImportError:
-            pass
-        else:
-            ctx.run(sniffio.current_async_library_cvar.set, None)
+        if _sniffio_current_async_library_cvar is not None:
+            ctx.run(_sniffio_current_async_library_cvar.set, None)
 
         future: concurrent.futures.Future[_T] = self.__executor.submit(ctx.run, __func, *args, **kwargs)  # type: ignore[arg-type]
         return await self.__backend.wait_future(future)

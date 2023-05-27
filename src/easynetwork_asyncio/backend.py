@@ -16,6 +16,7 @@ import socket as _socket
 from typing import TYPE_CHECKING, Any, Callable, Coroutine, NoReturn, ParamSpec, Sequence, TypeVar
 
 from easynetwork.api_async.backend.abc import AbstractAsyncBackend
+from easynetwork.api_async.backend.sniffio import current_async_library_cvar as _sniffio_current_async_library_cvar
 
 if TYPE_CHECKING:
     import asyncio as _asyncio
@@ -428,12 +429,8 @@ class AsyncioBackend(AbstractAsyncBackend):
         loop = asyncio.get_running_loop()
         ctx = contextvars.copy_context()
 
-        try:
-            import sniffio
-        except ImportError:
-            pass
-        else:
-            ctx.run(sniffio.current_async_library_cvar.set, None)
+        if _sniffio_current_async_library_cvar is not None:
+            ctx.run(_sniffio_current_async_library_cvar.set, None)
 
         func_call: Callable[..., _T] = functools.partial(ctx.run, __func, *args, **kwargs)  # type: ignore[assignment]
         return await self._cancel_shielded_wait_asyncio_future(loop.run_in_executor(None, func_call))
@@ -446,12 +443,13 @@ class AsyncioBackend(AbstractAsyncBackend):
     async def wait_future(self, future: concurrent.futures.Future[_T_co]) -> _T_co:
         import asyncio
 
-        current_task: _asyncio.Task[Any] = self._current_asyncio_task()
-        cancelling: int = current_task.cancelling()
+        future_wrapper = asyncio.wrap_future(future)
 
         if not future.running():  # There is a chance to cancel the future
+            current_task: _asyncio.Task[Any] = self._current_asyncio_task()
+            cancelling: int = current_task.cancelling()
             try:
-                await asyncio.wait({asyncio.wrap_future(future)})
+                await asyncio.wait({future_wrapper})
             except asyncio.CancelledError:
                 if future.cancel():
                     raise
@@ -463,8 +461,10 @@ class AsyncioBackend(AbstractAsyncBackend):
             else:
                 assert future.done()
                 return future.result()
+            finally:
+                del current_task
 
-        return await self._cancel_shielded_wait_asyncio_future(asyncio.wrap_future(future))
+        return await self._cancel_shielded_wait_asyncio_future(future_wrapper)
 
     def use_asyncio_transport(self) -> bool:
         return self.__use_asyncio_transport
