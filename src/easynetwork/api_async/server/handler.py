@@ -9,12 +9,11 @@ from __future__ import annotations
 __all__ = [
     "AsyncBaseRequestHandler",
     "AsyncClientInterface",
-    "AsyncDatagramRequestHandler",
     "AsyncStreamRequestHandler",
 ]
 
 from abc import ABCMeta, abstractmethod
-from typing import TYPE_CHECKING, Callable, Generic, TypeVar, final
+from typing import TYPE_CHECKING, AsyncGenerator, Callable, Generic, TypeVar, final
 
 if TYPE_CHECKING:
     from ...exceptions import BaseProtocolParseError
@@ -72,14 +71,11 @@ class AsyncBaseRequestHandler(Generic[_RequestT, _ResponseT], metaclass=ABCMeta)
         pass
 
     @abstractmethod
-    async def handle(self, request: _RequestT, client: AsyncClientInterface[_ResponseT], /) -> None:
+    def handle(self, client: AsyncClientInterface[_ResponseT], /) -> AsyncGenerator[None, _RequestT]:
         raise NotImplementedError
 
     async def bad_request(self, client: AsyncClientInterface[_ResponseT], exc: BaseProtocolParseError, /) -> None:
         pass
-
-    async def handle_error(self, client: AsyncClientInterface[_ResponseT], exc: Exception, /) -> bool:
-        return False
 
 
 class AsyncStreamRequestHandler(AsyncBaseRequestHandler[_RequestT, _ResponseT]):
@@ -93,10 +89,3 @@ class AsyncStreamRequestHandler(AsyncBaseRequestHandler[_RequestT, _ResponseT]):
 
     def set_stop_listening_callback(self, stop_listening_callback: Callable[[], None], /) -> None:
         pass
-
-
-class AsyncDatagramRequestHandler(AsyncBaseRequestHandler[_RequestT, _ResponseT]):
-    __slots__ = ()
-
-    async def accept_request_from(self, client_address: SocketAddress, /) -> bool:
-        return True

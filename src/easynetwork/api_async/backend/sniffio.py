@@ -20,13 +20,17 @@ current_async_library_cvar: ContextVar[str | None] | None
 
 try:
     import sniffio
-    from sniffio import current_async_library_cvar as current_async_library_cvar
 
     def current_async_library() -> str:
         return sniffio.current_async_library()
 
 except ImportError:
-    current_async_library_cvar = None
 
     def current_async_library() -> str:
         return "asyncio"
+
+
+try:
+    from sniffio import current_async_library_cvar as current_async_library_cvar
+except ImportError:
+    current_async_library_cvar = None

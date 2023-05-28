@@ -8,13 +8,13 @@ import contextlib
 import logging
 import ssl
 from socket import IPPROTO_TCP, TCP_NODELAY
-from typing import Any, AsyncIterator, Awaitable, Callable
+from typing import Any, AsyncGenerator, AsyncIterator, Awaitable, Callable
 from weakref import WeakValueDictionary
 
 from easynetwork.api_async.backend.abc import AbstractAsyncBackend
 from easynetwork.api_async.server.handler import AsyncClientInterface, AsyncStreamRequestHandler
 from easynetwork.api_async.server.tcp import AsyncTCPNetworkServer
-from easynetwork.exceptions import BaseProtocolParseError, ClientClosedError, StreamProtocolParseError
+from easynetwork.exceptions import BaseProtocolParseError, StreamProtocolParseError
 from easynetwork.protocol import StreamProtocol
 from easynetwork.tools.socket import SocketAddress
 from easynetwork_asyncio._utils import create_connection
@@ -23,10 +23,6 @@ import pytest
 import pytest_asyncio
 
 from .base import BaseTestAsyncServer
-
-
-class RandomErrorWithLogs(Exception):
-    pass
 
 
 class RandomError(Exception):
@@ -86,10 +82,8 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
         super().set_stop_listening_callback(stop_listening_callback)
         self.stop_listening = stop_listening_callback
 
-    async def handle(self, request: str, client: AsyncClientInterface[str]) -> None:
-        match request:
-            case "__error_with_logs__":
-                raise RandomErrorWithLogs("Sorry man!")
+    async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
+        match (yield):
             case "__error__":
                 raise RandomError("Sorry man!")
             case "__close__":
@@ -99,24 +93,13 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
             case "__stop_listening__":
                 self.stop_listening()
                 await client.send_packet("successfully stop listening")
-            case _:
+            case "__wait__":
+                request = yield
+                self.request_received[client.address].append(request)
+                await client.send_packet(f"After wait: {request}")
+            case request:
                 self.request_received[client.address].append(request)
                 await client.send_packet(request.upper())
-
-    async def handle_error(self, client: AsyncClientInterface[str], exc: Exception) -> bool:
-        if isinstance(exc, OSError):
-            assert client.is_closing()
-            with pytest.raises(ClientClosedError):
-                await client.send_packet(f'{exc.__class__.__name__}("{exc}")')
-            return False
-
-        assert not client.is_closing()
-        await client.send_packet(f'{exc.__class__.__name__}("{exc}")')
-        match exc:
-            case RandomErrorWithLogs():
-                return await super().handle_error(client, exc)
-            case _:
-                return True
 
     async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError) -> None:
         await super().bad_request(client, exc)
@@ -339,6 +322,21 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         assert await reader.readline() == b"WORLD\n"
         assert request_handler.request_received[client_address] == ["hello", "world"]
 
+    async def test____serve_forever____save_request_handler_context(
+        self,
+        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        request_handler: MyAsyncTCPRequestHandler,
+    ) -> None:
+        reader, writer = await client_factory()
+        client_address: tuple[Any, ...] = writer.get_extra_info("sockname")
+
+        writer.write(b"__wait__\nhello, world!\n")
+        await writer.drain()
+        await asyncio.sleep(0.1)
+
+        assert await reader.readline() == b"After wait: hello, world!\n"
+        assert request_handler.request_received[client_address] == ["hello, world!"]
+
     async def test____serve_forever____bad_request(
         self,
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
@@ -357,10 +355,8 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         assert request_handler.bad_request_received[client_address][0].error_type == "deserialization"
         assert request_handler.bad_request_received[client_address][0].__traceback__ is None
 
-    @pytest.mark.parametrize("with_logs", [False, True], ids=lambda boolean: f"with_logs=={boolean}")
     async def test____serve_forever____unexpected_error_during_process(
         self,
-        with_logs: bool,
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
         caplog: pytest.LogCaptureFixture,
         server: MyAsyncTCPServer,
@@ -368,19 +364,12 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         caplog.set_level(logging.ERROR, server.logger.name)
         reader, writer = await client_factory()
 
-        if with_logs:
-            writer.write(b"__error_with_logs__\n")
-        else:
-            writer.write(b"__error__\n")
+        writer.write(b"__error__\n")
         await writer.drain()
         await asyncio.sleep(0.1)
 
-        if with_logs:
-            assert await reader.readline() == b'RandomErrorWithLogs("Sorry man!")\n'
-            assert len(caplog.records) > 0
-        else:
-            assert await reader.readline() == b'RandomError("Sorry man!")\n'
-            assert len(caplog.records) == 0
+        assert await reader.read() == b""
+        assert len(caplog.records) > 0
 
     async def test____serve_forever____os_error(
         self,

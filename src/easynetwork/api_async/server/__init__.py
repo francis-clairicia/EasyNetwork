@@ -10,7 +10,6 @@ __all__ = [
     "AbstractAsyncNetworkServer",
     "AsyncBaseRequestHandler",
     "AsyncClientInterface",
-    "AsyncDatagramRequestHandler",
     "AsyncStreamRequestHandler",
     "AsyncTCPNetworkServer",
     "AsyncUDPNetworkServer",

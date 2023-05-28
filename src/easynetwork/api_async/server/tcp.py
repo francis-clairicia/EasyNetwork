@@ -12,7 +12,20 @@ import contextlib as _contextlib
 import errno as _errno
 import logging as _logging
 from collections import deque
-from typing import TYPE_CHECKING, Any, AsyncGenerator, Callable, Generic, Iterator, Literal, Mapping, Sequence, TypeVar, final
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    AsyncGenerator,
+    AsyncIterator,
+    Callable,
+    Generic,
+    Iterator,
+    Literal,
+    Mapping,
+    Sequence,
+    TypeVar,
+    final,
+)
 
 from ...exceptions import ClientClosedError, StreamProtocolParseError
 from ...protocol import StreamProtocol
@@ -318,11 +331,19 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             await client_exit_stack.enter_async_context(socket)
 
             logger: _logging.Logger = self.__logger
-            request_handler = self.__request_handler
             backend = self.__backend
             producer = StreamDataProducer(self.__protocol)
             consumer = StreamDataConsumer(self.__protocol)
-            client = _ConnectedClientAPI(backend, socket, producer, request_handler, logger)
+            client = _ConnectedClientAPI(backend, socket, producer, self.__request_handler, logger)
+            request_receiver = _RequestReceiver(
+                backend,
+                consumer,
+                socket,
+                self.__max_recv_size,
+                client,
+                self.__request_handler,
+                logger,
+            )
 
             client_exit_stack.callback(consumer.clear)
             client_exit_stack.callback(producer.clear)
@@ -331,61 +352,68 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
             logger.info("Accepted new connection (address = %s)", client.address)
 
-            if isinstance(request_handler, AsyncStreamRequestHandler):
-                await request_handler.on_connection(client)
+            if isinstance(self.__request_handler, AsyncStreamRequestHandler):
+                await self.__request_handler.on_connection(client)
             await client_exit_stack.enter_async_context(_contextlib.aclosing(client))
 
-            recv_bufsize: int = self.__max_recv_size
-
+            request_handler_generator: AsyncGenerator[None, _RequestT] | None = None
             try:
-                while not socket.is_closing():
-                    data: bytes = await socket.recv(recv_bufsize)
-                    if not data:  # Closed connection (EOF)
-                        raise ConnectionAbortedError
-                    logger.debug("Received %d bytes from %s", len(data), client.address)
-                    consumer.feed(data)
-                    del data
-
-                    async with _contextlib.aclosing(self.__iter_received_packets(consumer, client)) as request_generator:
-                        async for request in request_generator:
-                            logger.debug("Processing request sent by %s", client.address)
-                            await request_handler.handle(request, client)
-                            del request
-                            await backend.coro_yield()
-                            if client.is_closing():
-                                raise ClientClosedError
+                request_handler_generator = await self.__new_request_handler(client)
+                async for request in request_receiver:
+                    logger.debug("Processing request sent by %s", client.address)
+                    try:
+                        await request_handler_generator.asend(request)
+                    except StopAsyncIteration:
+                        request_handler_generator = None
+                    except BaseException:
+                        request_handler_generator = None
+                        raise
+                    finally:
+                        del request
+                    await backend.coro_yield()
+                    if client.is_closing():
+                        raise ClientClosedError
+                    if request_handler_generator is None:
+                        request_handler_generator = await self.__new_request_handler(client)
             except ConnectionError:
                 return
             except OSError as exc:
                 try:
                     await client.aclose()
                 finally:
-                    await self.__handle_error(client, exc)
+                    await self.__handle_error(request_handler_generator, client, exc)
                 return
             except Exception as exc:
-                await self.__handle_error(client, exc)
+                await self.__handle_error(request_handler_generator, client, exc)
                 return
+            finally:
+                if request_handler_generator is not None:
+                    await request_handler_generator.aclose()
 
-    async def __iter_received_packets(
-        self,
-        consumer: StreamDataConsumer[_RequestT],
-        client: AsyncClientInterface[_ResponseT],
-    ) -> AsyncGenerator[_RequestT, None]:
-        while True:
-            try:
-                for request in consumer:
-                    yield request
-                    del request
-                return
-            except StreamProtocolParseError as exc:
-                self.__logger.debug("Malformed request sent by %s", client.address)
-                await self.__request_handler.bad_request(client, exc.with_traceback(None))
-                await self.__backend.coro_yield()
-
-    async def __handle_error(self, client: AsyncClientInterface[_ResponseT], exc: Exception) -> None:
+    async def __new_request_handler(self, client: AsyncClientInterface[_ResponseT]) -> AsyncGenerator[None, _RequestT]:
+        request_handler_generator = self.__request_handler.handle(client)
         try:
-            if await self.__request_handler.handle_error(client, exc):
-                return
+            await anext(request_handler_generator)
+        except StopAsyncIteration:
+            raise RuntimeError("request_handler.handle() async generator did not yield") from None
+        return request_handler_generator
+
+    async def __handle_error(
+        self,
+        request_handler_generator: AsyncGenerator[None, _RequestT] | None,
+        client: AsyncClientInterface[_ResponseT],
+        exc: Exception,
+    ) -> None:
+        try:
+            if request_handler_generator is not None:
+                try:
+                    await request_handler_generator.athrow(exc)
+                except StopAsyncIteration:  # Clean shutdown, do not log
+                    return
+                except ConnectionError:
+                    pass
+                except Exception as _:
+                    exc = _
 
             self.__logger.error("-" * 40)
             self.__logger.error("Exception occurred during processing of request from %s", client.address, exc_info=exc)
@@ -427,6 +455,55 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
     @property
     def logger(self) -> _logging.Logger:
         return self.__logger
+
+
+class _RequestReceiver(Generic[_RequestT, _ResponseT]):
+    __slots__ = ("__backend", "__consumer", "__socket", "__max_recv_size", "__api", "__request_handler", "__logger")
+
+    def __init__(
+        self,
+        backend: AbstractAsyncBackend,
+        consumer: StreamDataConsumer[_RequestT],
+        socket: AbstractAsyncStreamSocketAdapter,
+        max_recv_size: int,
+        api: _ConnectedClientAPI[Any],
+        request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT],
+        logger: _logging.Logger,
+    ) -> None:
+        assert max_recv_size > 0, f"{max_recv_size=}"
+        self.__backend: AbstractAsyncBackend = backend
+        self.__consumer: StreamDataConsumer[_RequestT] = consumer
+        self.__socket: AbstractAsyncStreamSocketAdapter = socket
+        self.__max_recv_size: int = max_recv_size
+        self.__api: _ConnectedClientAPI[Any] = api
+        self.__request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT] = request_handler
+        self.__logger: _logging.Logger = logger
+
+    def __aiter__(self) -> AsyncIterator[_RequestT]:
+        return self
+
+    async def __anext__(self) -> _RequestT:
+        consumer: StreamDataConsumer[_RequestT] = self.__consumer
+        socket: AbstractAsyncStreamSocketAdapter = self.__socket
+        client: _ConnectedClientAPI[Any] = self.__api
+        logger: _logging.Logger = self.__logger
+        while True:
+            try:
+                return next(consumer)
+            except StreamProtocolParseError as exc:
+                logger.debug("Malformed request sent by %s", client.address)
+                await self.__request_handler.bad_request(client, exc.with_traceback(None))
+                await self.__backend.coro_yield()
+                continue
+            except StopIteration:
+                pass
+            data: bytes = await socket.recv(self.__max_recv_size) if not socket.is_closing() else b""
+            if not data:  # Closed connection (EOF)
+                break
+            logger.debug("Received %d bytes from %s", len(data), client.address)
+            consumer.feed(data)
+            del data
+        raise StopAsyncIteration
 
 
 @final

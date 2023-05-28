@@ -3,14 +3,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, AsyncGenerator
 
-from easynetwork.api_async.server.handler import (
-    AsyncBaseRequestHandler,
-    AsyncClientInterface,
-    AsyncDatagramRequestHandler,
-    AsyncStreamRequestHandler,
-)
+from easynetwork.api_async.server.handler import AsyncBaseRequestHandler, AsyncClientInterface, AsyncStreamRequestHandler
 from easynetwork.exceptions import BaseProtocolParseError
 from easynetwork.tools.socket import IPv4SocketAddress
 
@@ -40,15 +35,11 @@ class FakeClient(AsyncClientInterface[Any]):
 class BaseFakeHandler(AsyncBaseRequestHandler[Any, Any]):
     __slots__ = ()
 
-    async def handle(self, request: Any, client: AsyncClientInterface[Any]) -> None:
+    def handle(self, client: AsyncClientInterface[Any]) -> AsyncGenerator[None, Any]:
         raise NotImplementedError
 
 
 class FakeStreamHandler(AsyncStreamRequestHandler[Any, Any], BaseFakeHandler):
-    __slots__ = ()
-
-
-class FakeDatagramHandler(AsyncDatagramRequestHandler[Any, Any], BaseFakeHandler):
     __slots__ = ()
 
 
@@ -105,16 +96,6 @@ class BaseCommonTestsForRequestHandler:
         # Act & Assert
         assert (await request_handler.bad_request(mock_async_client, BaseProtocolParseError("deserialization", "test"))) is None
 
-    async def test____handle_error____return_False(
-        self,
-        mock_async_client: MagicMock,
-        request_handler: AsyncBaseRequestHandler[Any, Any],
-    ) -> None:
-        # Arrange
-
-        # Act & Assert
-        assert (await request_handler.handle_error(mock_async_client, BaseProtocolParseError("deserialization", "test"))) is False
-
 
 class TestAsyncStreamRequestHandler(BaseCommonTestsForRequestHandler):
     @pytest.fixture
@@ -151,19 +132,3 @@ class TestAsyncStreamRequestHandler(BaseCommonTestsForRequestHandler):
 
         # Act & Assert
         assert (await request_handler.on_disconnection(mock_async_client)) is None
-
-
-class TestAsyncDatagramRequestHandler(BaseCommonTestsForRequestHandler):
-    @pytest.fixture
-    @staticmethod
-    def request_handler() -> AsyncDatagramRequestHandler[Any, Any]:
-        return FakeDatagramHandler()
-
-    async def test____accept_request_from____return_True(
-        self,
-        request_handler: AsyncDatagramRequestHandler[Any, Any],
-    ) -> None:
-        # Arrange
-
-        # Act & Assert
-        assert (await request_handler.accept_request_from(IPv4SocketAddress("127.0.0.1", 12345))) is True

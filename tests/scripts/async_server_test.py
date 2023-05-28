@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-from typing import Callable
+from typing import AsyncGenerator, Callable
 
 from easynetwork.api_async.server.abc import AbstractAsyncNetworkServer
 from easynetwork.api_async.server.handler import AsyncBaseRequestHandler, AsyncClientInterface
@@ -14,10 +14,16 @@ from easynetwork.serializers.line import StringLineSerializer
 
 PORT = 9000
 
+logger = logging.getLogger("app")
+
 
 class MyAsyncRequestHandler(AsyncBaseRequestHandler[str, str]):
-    async def handle(self, request: str, client: AsyncClientInterface[str]) -> None:
-        await client.send_packet(request.upper())
+    async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
+        request: str = (yield).removesuffix("\n")
+        logger.debug(f"Received {request!r}")
+        if request == "wait:":
+            request = (yield).removesuffix("\n") + " after wait"
+        await client.send_packet(request.upper() + "\n")
 
 
 def create_tcp_server() -> AsyncTCPNetworkServer[str, str]:
