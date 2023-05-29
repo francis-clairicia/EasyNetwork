@@ -212,12 +212,14 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
     async def __service_actions_task(self) -> None:
         request_handler = self.__request_handler
         backend = self.__backend
+        if self.__service_actions_interval == float("+inf"):
+            return
         while True:
+            await backend.sleep(self.__service_actions_interval)
             try:
                 await request_handler.service_actions()
             except Exception:
                 self.__logger.exception("Error occurred in request_handler.service_actions()")
-            await backend.sleep(self.__service_actions_interval)
 
     async def __datagram_received_task(
         self,

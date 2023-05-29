@@ -96,10 +96,10 @@ class TestAsyncIOBackend:
         mock_sleep: AsyncMock = mocker.patch("asyncio.sleep", new_callable=mocker.async_stub)
 
         # Act
-        await backend.sleep(mocker.sentinel.delay)
+        await backend.sleep(123456789)
 
         # Assert
-        mock_sleep.assert_awaited_once_with(mocker.sentinel.delay)
+        mock_sleep.assert_awaited_once_with(123456789)
 
     @pytest.mark.parametrize("use_asyncio_transport", [True], indirect=True)
     @pytest.mark.parametrize("ssl", [False, True], ids=lambda p: f"ssl=={p}")
