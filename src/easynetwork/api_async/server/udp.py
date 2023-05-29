@@ -236,6 +236,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             if datagram_queue is not None:
                 datagram_queue.append(datagram)
                 condition.notify()
+                del client
                 return
             request_handler_generator: AsyncGenerator[None, _RequestT] | None = None
             datagram_queue = deque([datagram])
@@ -279,15 +280,19 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                         del request
                     await backend.coro_yield()
             except ConnectionError:
-                return
+                pass
             except self.__backend.get_cancelled_exc_class() as exc:
                 if request_handler_generator is not None:
-                    with _contextlib.suppress(StopAsyncIteration, ConnectionError):
-                        await request_handler_generator.athrow(exc)
+                    try:
+                        with _contextlib.suppress(StopAsyncIteration, ConnectionError):
+                            await request_handler_generator.athrow(exc)
+                    except Exception as exc:
+                        await self.__handle_error(None, client, exc)
                 raise
             except Exception as exc:
                 await self.__handle_error(request_handler_generator, client, exc)
             finally:
+                del client
                 async with (
                     _contextlib.aclosing(request_handler_generator)
                     if request_handler_generator is not None
@@ -312,17 +317,14 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         exc: Exception,
     ) -> None:
         try:
-            try:
-                if request_handler_generator is None:
-                    request_handler_generator = await self.__new_request_handler(client)
-                async with _contextlib.aclosing(request_handler_generator):
-                    await request_handler_generator.athrow(exc)
-            except StopAsyncIteration:  # Clean shutdown, do not log
-                return
-            except ConnectionError:
-                pass
-            except Exception as _:
-                exc = _
+            with _contextlib.suppress(ConnectionError):
+                if request_handler_generator is not None:
+                    try:
+                        await request_handler_generator.athrow(exc)
+                    except StopAsyncIteration:  # Clean shutdown, do not log
+                        return
+                    except Exception as _:
+                        exc = _
 
             self.__logger.error("-" * 40)
             self.__logger.error("Exception occurred during processing of request from %s", client.address, exc_info=exc)
@@ -403,6 +405,7 @@ class _ClientAPIManager(Generic[_ResponseT]):
             assert self.__per_client_lock_count[client] >= 0, f"{self.__per_client_lock_count[client]=}"
             if self.__per_client_lock_count[client] == 0:
                 del self.__per_client_lock_count[client], self.__per_client_lock[client]
+            del client
 
 
 @final
