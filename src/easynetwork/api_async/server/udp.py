@@ -241,8 +241,8 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             request_handler_generator: AsyncGenerator[None, _RequestT] | None = None
             datagram_queue = deque([datagram])
             try:
-                while not client.is_closing():
-                    while not datagram_queue:
+                while True:
+                    if not datagram_queue:
                         if request_handler_generator is None:
                             return
                         self.__client_datagram_queue[client] = datagram_queue
@@ -250,6 +250,10 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                             await condition.wait()
                         finally:
                             del self.__client_datagram_queue[client]
+                        assert len(datagram_queue) > 0, f"{len(datagram_queue)=}"
+                    if client.is_closing():
+                        datagram_queue.clear()
+                        return
                     datagram = datagram_queue.popleft()
                     try:
                         request: _RequestT = self.__protocol.build_packet_from_datagram(datagram)
