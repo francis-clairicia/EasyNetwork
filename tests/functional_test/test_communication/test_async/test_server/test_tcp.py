@@ -12,7 +12,7 @@ from typing import Any, AsyncGenerator, AsyncIterator, Awaitable, Callable
 from weakref import WeakValueDictionary
 
 from easynetwork.api_async.backend.abc import AbstractAsyncBackend
-from easynetwork.api_async.server.handler import AsyncClientInterface, AsyncStreamRequestHandler
+from easynetwork.api_async.server.handler import AsyncBaseRequestHandler, AsyncClientInterface, AsyncStreamRequestHandler
 from easynetwork.api_async.server.tcp import AsyncTCPNetworkServer
 from easynetwork.exceptions import BaseProtocolParseError, StreamProtocolParseError
 from easynetwork.protocol import StreamProtocol
@@ -107,6 +107,22 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
         await client.send_packet("wrong encoding man.")
 
 
+class TimeoutRequestHandler(AsyncBaseRequestHandler[str, str]):
+    async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
+        await client.send_packet("milk")
+        with pytest.raises(TimeoutError):
+            async with asyncio.timeout(1):
+                yield
+        await client.send_packet("successfully timed out")
+
+
+class CancellationRequestHandler(AsyncBaseRequestHandler[str, str]):
+    async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
+        await client.send_packet("milk")
+        yield
+        raise asyncio.CancelledError()
+
+
 class MyAsyncTCPServer(AsyncTCPNetworkServer[str, str]):
     __slots__ = ()
 
@@ -133,8 +149,9 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
 
     @pytest.fixture
     @staticmethod
-    def request_handler() -> MyAsyncTCPRequestHandler:
-        return MyAsyncTCPRequestHandler()
+    def request_handler(request: Any) -> AsyncBaseRequestHandler[str, str]:
+        request_handler_cls: type[AsyncBaseRequestHandler[str, str]] = getattr(request, "param", MyAsyncTCPRequestHandler)
+        return request_handler_cls()
 
     @pytest_asyncio.fixture
     @staticmethod
@@ -437,4 +454,25 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         request_handler.close_all_clients_on_connection = True
         reader, _ = await client_factory()
 
+        assert await reader.read() == b""
+
+    @pytest.mark.parametrize("request_handler", [TimeoutRequestHandler], indirect=True)
+    async def test____serve_forever____throw_cancelled_error(
+        self,
+        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+    ) -> None:
+        reader, _ = await client_factory()
+
+        assert await reader.readline() == b"successfully timed out\n"
+
+    @pytest.mark.parametrize("request_handler", [CancellationRequestHandler], indirect=True)
+    async def test____serve_forever____requst_handler_is_cancelled(
+        self,
+        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+    ) -> None:
+        reader, writer = await client_factory()
+
+        writer.write(b"something\n")
+        await writer.drain()
+        await asyncio.sleep(0.1)
         assert await reader.read() == b""

@@ -72,6 +72,22 @@ class MyAsyncUDPRequestHandler(AsyncBaseRequestHandler[str, str]):
         await client.send_packet("wrong encoding man.")
 
 
+class TimeoutRequestHandler(AsyncBaseRequestHandler[str, str]):
+    async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
+        assert (yield) == "something"
+        with pytest.raises(TimeoutError):
+            async with asyncio.timeout(1):
+                yield
+        await client.send_packet("successfully timed out")
+
+
+class CancellationRequestHandler(AsyncBaseRequestHandler[str, str]):
+    async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
+        yield
+        await client.send_packet("response")
+        raise asyncio.CancelledError()
+
+
 class MyAsyncUDPServer(AsyncUDPNetworkServer[str, str]):
     __slots__ = ()
 
@@ -88,13 +104,14 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
 
     @pytest.fixture
     @staticmethod
-    def request_handler() -> MyAsyncUDPRequestHandler:
-        return MyAsyncUDPRequestHandler()
+    def request_handler(request: Any) -> AsyncBaseRequestHandler[str, str]:
+        request_handler_cls: type[AsyncBaseRequestHandler[str, str]] = getattr(request, "param", MyAsyncUDPRequestHandler)
+        return request_handler_cls()
 
     @pytest_asyncio.fixture
     @staticmethod
     async def server(
-        request_handler: MyAsyncUDPRequestHandler,
+        request_handler: AsyncBaseRequestHandler[str, str],
         socket_family: int,
         localhost_ip: str,
         datagram_protocol: DatagramProtocol[str, str],
@@ -243,3 +260,23 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
 
         await endpoint.sendto(b"__os_error__", None)
         await asyncio.sleep(0.2)
+
+    @pytest.mark.parametrize("request_handler", [TimeoutRequestHandler], indirect=True)
+    async def test____serve_forever____throw_cancelled_error(
+        self,
+        client_factory: Callable[[], Awaitable[DatagramEndpoint]],
+    ) -> None:
+        endpoint = await client_factory()
+
+        await endpoint.sendto(b"something", None)
+        assert (await endpoint.recvfrom())[0] == b"successfully timed out"
+
+    @pytest.mark.parametrize("request_handler", [CancellationRequestHandler], indirect=True)
+    async def test____serve_forever____requst_handler_is_cancelled(
+        self,
+        client_factory: Callable[[], Awaitable[DatagramEndpoint]],
+    ) -> None:
+        endpoint = await client_factory()
+
+        await endpoint.sendto(b"something", None)
+        assert (await endpoint.recvfrom())[0] == b"response"

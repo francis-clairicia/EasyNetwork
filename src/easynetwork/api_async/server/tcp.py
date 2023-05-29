@@ -385,6 +385,11 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 finally:
                     await self.__handle_error(request_handler_generator, client, exc)
                 return
+            except self.__backend.get_cancelled_exc_class() as exc:
+                if request_handler_generator is not None:
+                    with _contextlib.suppress(StopAsyncIteration, ConnectionError):
+                        await request_handler_generator.athrow(exc)
+                raise
             except Exception as exc:
                 await self.__handle_error(request_handler_generator, client, exc)
                 return
