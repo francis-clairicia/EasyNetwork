@@ -337,7 +337,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             backend = self.__backend
             producer = StreamDataProducer(self.__protocol)
             consumer = StreamDataConsumer(self.__protocol)
-            client = _ConnectedClientAPI(backend, socket, producer, self.__request_handler, logger)
+            client = _ConnectedClientAPI(backend, socket, producer, logger)
             request_receiver = _RequestReceiver(
                 backend,
                 consumer,
@@ -357,6 +357,8 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
             if isinstance(self.__request_handler, AsyncStreamRequestHandler):
                 await self.__request_handler.on_connection(client)
+                client_exit_stack.callback(self.__logger.info, "%s disconnected", client.address)
+                client_exit_stack.push_async_callback(self.__request_handler.on_disconnection, client)
             await client_exit_stack.enter_async_context(_contextlib.aclosing(client))
 
             request_handler_generator: AsyncGenerator[None, _RequestT] | None = None
@@ -376,7 +378,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                             del request
                         await backend.coro_yield()
                         if client.is_closing():
-                            raise ClientClosedError
+                            return
                         if request_handler_generator is None:
                             request_handler_generator = await self.__new_request_handler(client)
             except OSError as exc:
@@ -520,7 +522,6 @@ class _ConnectedClientAPI(AsyncClientInterface[_ResponseT]):
     __slots__ = (
         "__socket",
         "__producer",
-        "__request_handler",
         "__send_lock",
         "__proxy",
         "__logger",
@@ -531,7 +532,6 @@ class _ConnectedClientAPI(AsyncClientInterface[_ResponseT]):
         backend: AbstractAsyncBackend,
         socket: AbstractAsyncStreamSocketAdapter,
         producer: StreamDataProducer[_ResponseT],
-        request_handler: AsyncBaseRequestHandler[Any, Any],
         logger: _logging.Logger,
     ) -> None:
         super().__init__(new_socket_address(socket.get_remote_address(), socket.socket().family))
@@ -540,7 +540,6 @@ class _ConnectedClientAPI(AsyncClientInterface[_ResponseT]):
         self.__producer: StreamDataProducer[_ResponseT] = producer
         self.__send_lock = backend.create_lock()
         self.__proxy: SocketProxy = SocketProxy(socket.socket())
-        self.__request_handler: AsyncBaseRequestHandler[Any, Any] = request_handler
         self.__logger: _logging.Logger = logger
 
     def is_closing(self) -> bool:
@@ -553,15 +552,7 @@ class _ConnectedClientAPI(AsyncClientInterface[_ResponseT]):
             if socket is None:
                 return
             self.__socket = None
-            request_handler = self.__request_handler
-            with _contextlib.suppress(Exception):
-                async with _contextlib.AsyncExitStack() as stack:
-                    stack.callback(self.__logger.info, "%s disconnected", self.address)
-                    if isinstance(request_handler, AsyncStreamRequestHandler):
-                        stack.push_async_callback(self.__send_lock.acquire)  # Re-acquire lock after calling on_disconnection()
-                        stack.push_async_callback(request_handler.on_disconnection, self)
-                        stack.callback(self.__send_lock.release)  # Release lock before calling on_disconnection()
-                    stack.push_async_callback(socket.aclose)
+            await socket.aclose()
 
     async def send_packet(self, packet: _ResponseT, /) -> None:
         self.__check_closed()
