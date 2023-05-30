@@ -417,14 +417,14 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         exc: Exception,
     ) -> None:
         try:
-            with _contextlib.suppress(ConnectionError):
-                if request_handler_generator is not None:
-                    try:
+            if request_handler_generator is not None:
+                try:
+                    with _contextlib.suppress(ConnectionError):
                         await request_handler_generator.athrow(exc)
-                    except StopAsyncIteration:  # Clean shutdown, do not log
-                        return
-                    except Exception as _:
-                        exc = _
+                except StopAsyncIteration:  # Clean shutdown, do not log
+                    return
+                except Exception as _:
+                    exc = _
 
             self.__logger.error("-" * 40)
             self.__logger.error("Exception occurred during processing of request from %s", client.address, exc_info=exc)
