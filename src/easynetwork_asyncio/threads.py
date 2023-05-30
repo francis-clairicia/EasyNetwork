@@ -74,9 +74,10 @@ class ThreadsPortal(AbstractThreadsPortal):
                 return
             try:
                 result = __func(*args, **kwargs)
+            except (SystemExit, KeyboardInterrupt):  # pragma: no cover
+                raise
             except BaseException as exc:
                 future.set_exception(exc)
-                raise
             else:
                 future.set_result(result)
             finally:

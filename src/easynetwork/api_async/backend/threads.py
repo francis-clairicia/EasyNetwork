@@ -71,6 +71,8 @@ class DefaultAsyncThreadPoolExecutor(AbstractAsyncThreadPoolExecutor):
     ) -> None:
         try:
             executor.shutdown(wait=True)
+        except (SystemExit, KeyboardInterrupt):  # pragma: no cover
+            raise
         except BaseException as exc:  # pragma: no cover
             future.set_exception(exc)
         else:
