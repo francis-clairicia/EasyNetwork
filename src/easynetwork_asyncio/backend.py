@@ -9,6 +9,7 @@ from __future__ import annotations
 
 __all__ = ["AsyncioBackend"]  # type: list[str]
 
+import asyncio
 import contextvars
 import functools
 import inspect
@@ -19,7 +20,6 @@ from easynetwork.api_async.backend.abc import AbstractAsyncBackend
 from easynetwork.api_async.backend.sniffio import current_async_library_cvar as _sniffio_current_async_library_cvar
 
 if TYPE_CHECKING:
-    import asyncio as _asyncio
     import concurrent.futures
     import ssl as _ssl
 
@@ -47,27 +47,19 @@ class AsyncioBackend(AbstractAsyncBackend):
         self.__use_asyncio_transport: bool = bool(transport)
 
     @staticmethod
-    def _current_asyncio_task() -> _asyncio.Task[Any]:
-        from asyncio import current_task
-
-        t: _asyncio.Task[Any] | None = current_task()
+    def _current_asyncio_task() -> asyncio.Task[Any]:
+        t: asyncio.Task[Any] | None = asyncio.current_task()
         if t is None:  # pragma: no cover
             raise RuntimeError("This function should be called within a task.")
         return t
 
     async def coro_yield(self) -> None:
-        import asyncio
-
         await asyncio.sleep(0)
 
     def get_cancelled_exc_class(self) -> type[BaseException]:
-        import asyncio
-
         return asyncio.CancelledError
 
     async def ignore_cancellation(self, coroutine: Coroutine[Any, Any, _T_co]) -> _T_co:
-        import asyncio
-
         assert inspect.iscoroutine(coroutine), "Expected a coroutine object"
         task: asyncio.Task[_T_co] = asyncio.create_task(coroutine)
 
@@ -80,18 +72,14 @@ class AsyncioBackend(AbstractAsyncBackend):
             del task
 
     async def wait_for(self, coroutine: Coroutine[Any, Any, _T_co], timeout: float | None) -> _T_co:
-        import asyncio
-
         assert inspect.iscoroutine(coroutine), "Expected a coroutine object"
 
         async with asyncio.timeout(timeout):
             return await coroutine
 
     @classmethod
-    async def _cancel_shielded_wait_asyncio_future(cls, future: _asyncio.Future[_T_co]) -> _T_co:
-        import asyncio
-
-        current_task: _asyncio.Task[Any] = cls._current_asyncio_task()
+    async def _cancel_shielded_wait_asyncio_future(cls, future: asyncio.Future[_T_co]) -> _T_co:
+        current_task: asyncio.Task[Any] = cls._current_asyncio_task()
         cancelling: int = current_task.cancelling()
 
         try:
@@ -107,19 +95,13 @@ class AsyncioBackend(AbstractAsyncBackend):
             del current_task, future
 
     def current_time(self) -> float:
-        import asyncio
-
         loop = asyncio.get_running_loop()
         return loop.time()
 
     async def sleep(self, delay: float) -> None:
-        import asyncio
-
         return await asyncio.sleep(delay)
 
     async def sleep_forever(self) -> NoReturn:
-        import asyncio
-
         loop = asyncio.get_running_loop()
         await loop.create_future()
         raise AssertionError("await an unused future cannot end in any other way than by cancellation")
@@ -139,8 +121,6 @@ class AsyncioBackend(AbstractAsyncBackend):
     ) -> AbstractAsyncStreamSocketAdapter:
         assert host is not None, "Expected 'host' to be a str"
         assert port is not None, "Expected 'port' to be an int"
-
-        import asyncio
 
         if happy_eyeballs_delay is not None:
             self._check_asyncio_transport("'happy_eyeballs_delay' option")
@@ -190,8 +170,6 @@ class AsyncioBackend(AbstractAsyncBackend):
         self._check_ssl_support()
         self.__verify_ssl_context(ssl_context)
 
-        import asyncio
-
         from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
 
         from .stream.socket import AsyncioTransportStreamSocketAdapter
@@ -225,8 +203,6 @@ class AsyncioBackend(AbstractAsyncBackend):
         assert socket is not None, "Expected 'socket' to be a socket.socket instance"
         socket.setblocking(False)
 
-        import asyncio
-
         if not self.__use_asyncio_transport:
             from .stream.socket import RawStreamSocketAdapter
 
@@ -253,8 +229,6 @@ class AsyncioBackend(AbstractAsyncBackend):
 
         assert socket is not None, "Expected 'socket' to be a socket.socket instance"
         socket.setblocking(False)
-
-        import asyncio
 
         from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
 
@@ -326,14 +300,13 @@ class AsyncioBackend(AbstractAsyncBackend):
         host: str | Sequence[str] | None,
         port: int,
         backlog: int,
-        accepted_socket_factory: Callable[[_socket.socket, _asyncio.AbstractEventLoop], AbstractAcceptedSocket],
+        accepted_socket_factory: Callable[[_socket.socket, asyncio.AbstractEventLoop], AbstractAcceptedSocket],
         *,
         family: int,
         reuse_port: bool,
     ) -> Sequence[AbstractAsyncListenerSocketAdapter]:
         assert port is not None, "Expected 'port' to be an int"
 
-        import asyncio
         import os
         import sys
         from itertools import chain
@@ -380,8 +353,6 @@ class AsyncioBackend(AbstractAsyncBackend):
         remote_address: tuple[str, int] | None = None,
         reuse_port: bool = False,
     ) -> AbstractAsyncDatagramSocketAdapter:
-        import asyncio
-
         from ._utils import create_datagram_socket
 
         socket = await create_datagram_socket(
@@ -398,8 +369,6 @@ class AsyncioBackend(AbstractAsyncBackend):
         assert socket is not None, "Expected 'socket' to be a socket.socket instance"
         socket.setblocking(False)
 
-        import asyncio
-
         if not self.__use_asyncio_transport:
             from .datagram.socket import RawDatagramSocketAdapter
 
@@ -412,26 +381,18 @@ class AsyncioBackend(AbstractAsyncBackend):
         return AsyncioTransportDatagramSocketAdapter(endpoint)
 
     def create_lock(self) -> ILock:
-        import asyncio
-
         return asyncio.Lock()
 
     def create_event(self) -> IEvent:
-        import asyncio
-
         return asyncio.Event()
 
     def create_condition_var(self, lock: ILock | None = None) -> ICondition:
-        import asyncio
-
         if lock is not None:
             assert isinstance(lock, asyncio.Lock)
 
         return asyncio.Condition(lock)
 
     async def run_in_thread(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
-        import asyncio
-
         loop = asyncio.get_running_loop()
         ctx = contextvars.copy_context()
 
@@ -452,12 +413,10 @@ class AsyncioBackend(AbstractAsyncBackend):
         return ThreadsPortal()
 
     async def wait_future(self, future: concurrent.futures.Future[_T_co]) -> _T_co:
-        import asyncio
-
         future_wrapper = asyncio.wrap_future(future)
 
         if not future.running():  # There is a chance to cancel the future
-            current_task: _asyncio.Task[Any] = self._current_asyncio_task()
+            current_task: asyncio.Task[Any] = self._current_asyncio_task()
             cancelling: int = current_task.cancelling()
             try:
                 await asyncio.wait({future_wrapper})
