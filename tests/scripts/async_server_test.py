@@ -34,7 +34,7 @@ def create_udp_server() -> AsyncUDPNetworkServer[str, str]:
     return AsyncUDPNetworkServer(None, PORT, DatagramProtocol(StringLineSerializer()), MyAsyncRequestHandler())
 
 
-async def main() -> None:
+def main() -> None:
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
@@ -72,12 +72,15 @@ async def main() -> None:
 
     logging.basicConfig(level=getattr(logging, args.log_level), format="[ %(levelname)s ] [ %(name)s ] %(message)s")
 
-    async with server_factory() as server:
-        await server.serve_forever()
+    async def main() -> None:
+        async with server_factory() as server:
+            await server.serve_forever()
+
+    return asyncio.run(main())
 
 
 if __name__ == "__main__":
     try:
-        asyncio.run(main())
+        main()
     except KeyboardInterrupt:
         pass

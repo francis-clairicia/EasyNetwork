@@ -30,6 +30,7 @@ from easynetwork.tools._utils import (
     replace_kwargs,
     set_reuseport,
     set_tcp_nodelay,
+    transform_future_exception,
     wait_socket_available,
 )
 
@@ -533,3 +534,29 @@ def test____open_listener_sockets_from_getaddrinfo_result____bind_failed(
 
     s1.close.assert_called_once_with()
     s2.close.assert_called_once_with()
+
+
+def test____transform_future_exception____keep_common_exception_as_is() -> None:
+    # Arrange
+    exception = BaseException()
+
+    # Act
+    new_exception = transform_future_exception(exception)
+
+    # Assert
+    assert new_exception is exception
+
+
+@pytest.mark.parametrize("exception", [SystemExit(0), KeyboardInterrupt()], ids=lambda f: type(f).__name__)
+def test____transform_future_exception____make_cancelled_error_from_exception(exception: BaseException) -> None:
+    # Arrange
+    from concurrent.futures import CancelledError
+
+    # Act
+    new_exception = transform_future_exception(exception)
+
+    # Assert
+    assert type(new_exception) is CancelledError
+    assert new_exception.__cause__ is exception
+    assert new_exception.__context__ is exception
+    assert new_exception.__suppress_context__

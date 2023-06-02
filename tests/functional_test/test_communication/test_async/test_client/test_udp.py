@@ -49,7 +49,7 @@ async def datagram_endpoint_factory(
                 local_addr=(localhost_ip, 0),
             )
             stack.push_async_callback(lambda: asyncio.wait_for(endpoint.wait_closed(), 3))
-            stack.callback(endpoint.transport.abort)
+            stack.callback(endpoint.close)
             return endpoint
 
         yield factory
@@ -69,10 +69,9 @@ class TestAsyncUDPNetworkClient:
 
     @pytest.fixture(params=[False, True], ids=lambda boolean: f"use_external_socket=={boolean}")
     @staticmethod
-    def use_external_socket(request: pytest.FixtureRequest) -> Socket | None:
+    def use_external_socket(request: pytest.FixtureRequest, udp_socket_factory: Callable[[], Socket]) -> Socket | None:
         use_external_socket: bool = getattr(request, "param")
         if use_external_socket:
-            udp_socket_factory: Callable[[], Socket] = request.getfixturevalue("udp_socket_factory")
             return udp_socket_factory()
         return None
 

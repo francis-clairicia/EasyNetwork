@@ -12,11 +12,11 @@ __all__ = ["ThreadsPortal"]
 import asyncio
 import concurrent.futures
 import contextvars
-import inspect
 from typing import Any, Callable, Coroutine, ParamSpec, TypeVar, final
 
 from easynetwork.api_async.backend.abc import AbstractThreadsPortal
 from easynetwork.api_async.backend.sniffio import current_async_library_cvar as _sniffio_current_async_library_cvar
+from easynetwork.tools._utils import transform_future_exception as _transform_future_exception
 
 _P = ParamSpec("_P")
 _T = TypeVar("_T")
@@ -49,9 +49,6 @@ class ThreadsPortal(AbstractThreadsPortal):
         **kwargs: _P.kwargs,
     ) -> concurrent.futures.Future[_T]:
         coroutine = __coro_func(*args, **kwargs)
-        if not inspect.iscoroutine(coroutine):  # pragma: no cover
-            raise TypeError("A coroutine object is required")
-
         if _sniffio_current_async_library_cvar is not None:
             ctx = contextvars.copy_context()
             ctx.run(_sniffio_current_async_library_cvar.set, "asyncio")
@@ -74,10 +71,10 @@ class ThreadsPortal(AbstractThreadsPortal):
                 return
             try:
                 result = __func(*args, **kwargs)
-            except (SystemExit, KeyboardInterrupt):  # pragma: no cover
-                raise
             except BaseException as exc:
-                future.set_exception(exc)
+                future.set_exception(_transform_future_exception(exc))
+                if isinstance(exc, (SystemExit, KeyboardInterrupt)):  # pragma: no cover
+                    raise
             else:
                 future.set_result(result)
             finally:

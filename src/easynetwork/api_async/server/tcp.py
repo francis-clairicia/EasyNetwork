@@ -228,7 +228,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             # Final teardown
             server_exit_stack.callback(self.__logger.info, "Server stopped")
             server_exit_stack.push_async_callback(self.server_close)
-            ###########
+            ################
 
             # Initialize request handler
             await self.__request_handler.service_init(self.__backend)

@@ -15,6 +15,7 @@ import contextvars
 import threading
 from typing import TYPE_CHECKING, Callable, ParamSpec, TypeVar, final
 
+from ...tools._utils import transform_future_exception as _transform_future_exception
 from .abc import AbstractAsyncThreadPoolExecutor
 from .sniffio import current_async_library_cvar as _sniffio_current_async_library_cvar
 
@@ -71,10 +72,10 @@ class DefaultAsyncThreadPoolExecutor(AbstractAsyncThreadPoolExecutor):
     ) -> None:
         try:
             executor.shutdown(wait=True)
-        except (SystemExit, KeyboardInterrupt):  # pragma: no cover
-            raise
         except BaseException as exc:  # pragma: no cover
-            future.set_exception(exc)
+            future.set_exception(_transform_future_exception(exc))
+            if isinstance(exc, (SystemExit, KeyboardInterrupt)):
+                raise
         else:
             future.set_result(None)
         finally:
