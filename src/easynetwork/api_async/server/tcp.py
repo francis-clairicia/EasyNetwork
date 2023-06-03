@@ -370,6 +370,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 else:
                     assert inspect.isawaitable(_on_connection_hook)
                     await _on_connection_hook
+                del _on_connection_hook
                 client_exit_stack.push_async_callback(self.__request_handler.on_disconnection, client)
             await client_exit_stack.enter_async_context(_contextlib.aclosing(client))
 
