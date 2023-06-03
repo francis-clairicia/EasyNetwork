@@ -278,6 +278,10 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
     __slots__ = ("__weakref__",)
 
     @abstractmethod
+    def bootstrap(self, coro_func: Callable[..., Coroutine[Any, Any, _T]], *args: Any) -> _T:
+        raise NotImplementedError
+
+    @abstractmethod
     async def coro_yield(self) -> None:
         raise NotImplementedError
 

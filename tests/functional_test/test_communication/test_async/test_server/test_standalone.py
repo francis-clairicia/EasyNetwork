@@ -8,11 +8,14 @@ import time
 from typing import AsyncGenerator, Callable
 
 from easynetwork.api_async.server.handler import AsyncBaseRequestHandler, AsyncClientInterface
-from easynetwork.api_async.server.standalone import AbstractStandaloneNetworkServer
+from easynetwork.api_async.server.standalone import (
+    AbstractStandaloneNetworkServer,
+    StandaloneTCPNetworkServer,
+    StandaloneUDPNetworkServer,
+)
 from easynetwork.api_async.server.tcp import AsyncTCPNetworkServer
 from easynetwork.api_async.server.udp import AsyncUDPNetworkServer
 from easynetwork.protocol import DatagramProtocol, StreamProtocol
-from easynetwork_asyncio.server import StandaloneTCPNetworkServer, StandaloneUDPNetworkServer
 
 import pytest
 
@@ -85,8 +88,14 @@ class TestStandaloneTCPNetworkServer(BaseTestStandaloneNetworkServer):
         runner_factory: Callable[[], asyncio.Runner] | None,
     ) -> StandaloneTCPNetworkServer[str, str]:
         return StandaloneTCPNetworkServer(
-            AsyncTCPNetworkServer(None, 0, stream_protocol, EchoRequestHandler(), backend="asyncio"),
-            runner_factory=runner_factory,
+            AsyncTCPNetworkServer(
+                None,
+                0,
+                stream_protocol,
+                EchoRequestHandler(),
+                backend="asyncio",
+                backend_kwargs={"runner_factory": runner_factory},
+            ),
         )
 
     def test____stop_listening____default_to_noop(self, server: StandaloneTCPNetworkServer[str, str]) -> None:
@@ -121,6 +130,12 @@ class TestStandaloneUDPNetworkServer(BaseTestStandaloneNetworkServer):
         runner_factory: Callable[[], asyncio.Runner] | None,
     ) -> StandaloneUDPNetworkServer[str, str]:
         return StandaloneUDPNetworkServer(
-            AsyncUDPNetworkServer(None, 0, datagram_protocol, EchoRequestHandler(), backend="asyncio"),
-            runner_factory=runner_factory,
+            AsyncUDPNetworkServer(
+                None,
+                0,
+                datagram_protocol,
+                EchoRequestHandler(),
+                backend="asyncio",
+                backend_kwargs={"runner_factory": runner_factory},
+            ),
         )

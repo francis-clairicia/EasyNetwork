@@ -6,10 +6,10 @@
 
 from __future__ import annotations
 
-__all__ = ["AbstractStandaloneNetworkServer", "BaseStandaloneTCPNetworkServer", "BaseStandaloneUDPNetworkServer"]
+__all__ = ["AbstractStandaloneNetworkServer", "StandaloneTCPNetworkServer", "StandaloneUDPNetworkServer"]
 
 from abc import ABCMeta, abstractmethod
-from typing import TYPE_CHECKING, Any, Callable, Coroutine, Generic, Self, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, Self, TypeVar
 
 from .tcp import AsyncTCPNetworkServer as _AsyncTCPNetworkServer
 from .udp import AsyncUDPNetworkServer as _AsyncUDPNetworkServer
@@ -78,13 +78,16 @@ class _BaseStandaloneNetworkServerImpl(AbstractStandaloneNetworkServer):
         if (portal := self.__threads_portal) is not None:
             portal.run_coroutine(self.__server.server_close)
         else:
-            self._bootstrap(self.__server.server_close)
+            backend = self.__server.get_backend()
+            backend.bootstrap(self.__server.server_close)
 
     def shutdown(self) -> None:
         if (portal := self.__threads_portal) is not None:
             portal.run_coroutine(self.__server.shutdown)
 
     def serve_forever(self) -> None:
+        import contextlib
+
         async def serve_forever() -> None:
             if self.__threads_portal is not None:
                 raise RuntimeError("Server is already running")
@@ -95,11 +98,9 @@ class _BaseStandaloneNetworkServerImpl(AbstractStandaloneNetworkServer):
             finally:
                 self.__threads_portal = None
 
-        self._bootstrap(serve_forever)
-
-    @abstractmethod
-    def _bootstrap(self, __func: Callable[..., Coroutine[Any, Any, None]], /, *args: Any) -> None:
-        raise NotImplementedError
+        backend = self.__server.get_backend()
+        with contextlib.suppress(backend.get_cancelled_exc_class()):
+            backend.bootstrap(serve_forever)
 
     @property
     def _server(self) -> AbstractAsyncNetworkServer:
@@ -110,7 +111,7 @@ class _BaseStandaloneNetworkServerImpl(AbstractStandaloneNetworkServer):
         return self.__threads_portal
 
 
-class BaseStandaloneTCPNetworkServer(_BaseStandaloneNetworkServerImpl, Generic[_RequestT, _ResponseT]):
+class StandaloneTCPNetworkServer(_BaseStandaloneNetworkServerImpl, Generic[_RequestT, _ResponseT]):
     __slots__ = ()
 
     def __init__(self, server: _AsyncTCPNetworkServer[_RequestT, _ResponseT]) -> None:
@@ -128,7 +129,7 @@ class BaseStandaloneTCPNetworkServer(_BaseStandaloneNetworkServerImpl, Generic[_
             ...
 
 
-class BaseStandaloneUDPNetworkServer(_BaseStandaloneNetworkServerImpl, Generic[_RequestT, _ResponseT]):
+class StandaloneUDPNetworkServer(_BaseStandaloneNetworkServerImpl, Generic[_RequestT, _ResponseT]):
     __slots__ = ()
 
     def __init__(self, server: _AsyncUDPNetworkServer[_RequestT, _ResponseT]) -> None:

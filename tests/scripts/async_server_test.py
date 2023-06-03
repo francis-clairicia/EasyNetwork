@@ -5,12 +5,15 @@ import logging
 from typing import AsyncGenerator, Callable
 
 from easynetwork.api_async.server.handler import AsyncBaseRequestHandler, AsyncClientInterface
-from easynetwork.api_async.server.standalone import AbstractStandaloneNetworkServer
+from easynetwork.api_async.server.standalone import (
+    AbstractStandaloneNetworkServer,
+    StandaloneTCPNetworkServer,
+    StandaloneUDPNetworkServer,
+)
 from easynetwork.api_async.server.tcp import AsyncTCPNetworkServer
 from easynetwork.api_async.server.udp import AsyncUDPNetworkServer
 from easynetwork.protocol import DatagramProtocol, StreamProtocol
 from easynetwork.serializers.line import StringLineSerializer
-from easynetwork_asyncio.server import StandaloneTCPNetworkServer, StandaloneUDPNetworkServer
 
 PORT = 9000
 

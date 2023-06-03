@@ -19,6 +19,9 @@ from easynetwork.api_async.backend.abc import (
 
 
 class BaseFakeBackend(AbstractAsyncBackend):
+    def bootstrap(self, coro_func: Callable[..., Coroutine[Any, Any, Any]], *args: Any) -> Any:
+        raise NotImplementedError
+
     async def sleep(self, delay: float) -> None:
         raise NotImplementedError
 

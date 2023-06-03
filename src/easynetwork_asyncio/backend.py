@@ -41,10 +41,15 @@ _T_co = TypeVar("_T_co", covariant=True)
 
 
 class AsyncioBackend(AbstractAsyncBackend):
-    __slots__ = ("__use_asyncio_transport",)
+    __slots__ = ("__use_asyncio_transport", "__asyncio_runner_factory")
 
-    def __init__(self, *, transport: bool = True) -> None:
+    def __init__(self, *, transport: bool = True, runner_factory: Callable[[], asyncio.Runner] | None = None) -> None:
         self.__use_asyncio_transport: bool = bool(transport)
+        self.__asyncio_runner_factory: Callable[[], asyncio.Runner] = runner_factory or asyncio.Runner
+
+    def bootstrap(self, coro_func: Callable[..., Coroutine[Any, Any, _T]], *args: Any) -> _T:
+        with self.__asyncio_runner_factory() as runner:
+            return runner.run(coro_func(*args))
 
     @staticmethod
     def _current_asyncio_task() -> asyncio.Task[Any]:
