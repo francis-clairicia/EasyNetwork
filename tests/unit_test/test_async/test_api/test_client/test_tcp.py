@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from socket import AF_INET6, IPPROTO_TCP, TCP_NODELAY
+from socket import AF_INET6, IPPROTO_TCP, SO_KEEPALIVE, SOL_SOCKET, TCP_NODELAY
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.api_async.client.tcp import AsyncTCPNetworkClient
@@ -206,7 +206,10 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_stream_socket_adapter.socket.assert_called_once_with()
         mock_stream_socket_adapter.get_local_address.assert_called_once_with()
         mock_stream_socket_adapter.get_remote_address.assert_called_once_with()
-        mock_tcp_socket.setsockopt.assert_called_once_with(IPPROTO_TCP, TCP_NODELAY, True)
+        assert mock_tcp_socket.setsockopt.mock_calls == [
+            mocker.call(IPPROTO_TCP, TCP_NODELAY, True),
+            mocker.call(SOL_SOCKET, SO_KEEPALIVE, True),
+        ]
         assert isinstance(client.socket, SocketProxy)
 
     async def test____dunder_init____backend____from_string(
@@ -255,6 +258,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_stream_data_consumer_cls: MagicMock,
         mock_stream_protocol: MagicMock,
         mock_new_backend: MagicMock,
+        mocker: MockerFixture,
     ) -> None:
         # Arrange
 
@@ -269,7 +273,10 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_stream_socket_adapter.socket.assert_called_once_with()
         mock_stream_socket_adapter.get_local_address.assert_called_once_with()
         mock_stream_socket_adapter.get_remote_address.assert_called_once_with()
-        mock_tcp_socket.setsockopt.assert_called_once_with(IPPROTO_TCP, TCP_NODELAY, True)
+        assert mock_tcp_socket.setsockopt.mock_calls == [
+            mocker.call(IPPROTO_TCP, TCP_NODELAY, True),
+            mocker.call(SOL_SOCKET, SO_KEEPALIVE, True),
+        ]
         assert isinstance(client.socket, SocketProxy)
 
     @pytest.mark.parametrize("max_recv_size", [None, 1, 2**64], ids=lambda p: f"max_recv_size=={p}")
@@ -396,7 +403,10 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_stream_socket_adapter.socket.assert_called_once_with()
         mock_stream_socket_adapter.get_local_address.assert_called_once_with()
         mock_stream_socket_adapter.get_remote_address.assert_called_once_with()
-        mock_tcp_socket.setsockopt.assert_called_once_with(IPPROTO_TCP, TCP_NODELAY, True)
+        assert mock_tcp_socket.setsockopt.mock_calls == [
+            mocker.call(IPPROTO_TCP, TCP_NODELAY, True),
+            mocker.call(SOL_SOCKET, SO_KEEPALIVE, True),
+        ]
         assert isinstance(client.socket, SocketProxy)
 
     @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")

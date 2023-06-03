@@ -11,6 +11,7 @@ from socket import (
     IPPROTO_TCP,
     IPV6_V6ONLY,
     SO_ERROR,
+    SO_KEEPALIVE,
     SO_REUSEADDR,
     SOCK_STREAM,
     SOL_SOCKET,
@@ -29,6 +30,7 @@ from easynetwork.tools._utils import (
     open_listener_sockets_from_getaddrinfo_result,
     replace_kwargs,
     set_reuseport,
+    set_tcp_keepalive,
     set_tcp_nodelay,
     transform_future_exception,
     wait_socket_available,
@@ -446,6 +448,18 @@ def test____set_tcp_nodelay____setsockopt(
 
     # Assert
     mock_tcp_socket.setsockopt.assert_called_once_with(IPPROTO_TCP, TCP_NODELAY, True)
+
+
+def test____set_tcp_keepalive____setsockopt(
+    mock_tcp_socket: MagicMock,
+) -> None:
+    # Arrange
+
+    # Act
+    set_tcp_keepalive(mock_tcp_socket)
+
+    # Assert
+    mock_tcp_socket.setsockopt.assert_called_once_with(SOL_SOCKET, SO_KEEPALIVE, True)
 
 
 @pytest.mark.parametrize("reuse_address", [False, True], ids=lambda boolean: f"reuse_address=={boolean}")

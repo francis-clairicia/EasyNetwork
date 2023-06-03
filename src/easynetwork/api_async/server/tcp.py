@@ -33,6 +33,7 @@ from ...protocol import StreamProtocol
 from ...tools._utils import (
     check_real_socket_state as _check_real_socket_state,
     concatenate_chunks as _concatenate_chunks,
+    set_tcp_keepalive as _set_tcp_keepalive,
     set_tcp_nodelay as _set_tcp_nodelay,
 )
 from ...tools.socket import (
@@ -356,6 +357,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             client_exit_stack.callback(producer.clear)
 
             _set_tcp_nodelay(client.socket)
+            _set_tcp_keepalive(client.socket)
 
             logger.info("Accepted new connection (address = %s)", client.address)
             client_exit_stack.callback(self.__logger.info, "%s disconnected", client.address)

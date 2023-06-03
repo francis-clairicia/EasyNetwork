@@ -20,6 +20,7 @@ from ...tools._utils import (
     check_socket_no_ssl as _check_socket_no_ssl,
     concatenate_chunks as _concatenate_chunks,
     error_from_errno as _error_from_errno,
+    set_tcp_keepalive as _set_tcp_keepalive,
     set_tcp_nodelay as _set_tcp_nodelay,
 )
 from ...tools.socket import (
@@ -220,6 +221,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
             "remote_address": remote_address,
         }
         _set_tcp_nodelay(socket_proxy)
+        _set_tcp_keepalive(socket_proxy)
 
     def is_connected(self) -> bool:
         return self.__socket is not None

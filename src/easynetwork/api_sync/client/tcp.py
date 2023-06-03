@@ -28,6 +28,7 @@ from ...tools._utils import (
     replace_kwargs as _replace_kwargs,
     retry_socket_method as _retry_socket_method,
     retry_ssl_socket_method as _retry_ssl_socket_method,
+    set_tcp_keepalive as _set_tcp_keepalive,
     set_tcp_nodelay as _set_tcp_nodelay,
     ssl_do_not_ignore_unexpected_eof as _ssl_do_not_ignore_unexpected_eof,
 )
@@ -193,6 +194,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                     ssl_shutdown_timeout = SSL_SHUTDOWN_TIMEOUT
 
             _set_tcp_nodelay(socket)
+            _set_tcp_keepalive(socket)
             self.__producer: Callable[[_SentPacketT], Iterator[bytes]] = protocol.generate_chunks
             self.__consumer: StreamDataConsumer[_ReceivedPacketT] = StreamDataConsumer(protocol)
             self.__socket_proxy = SocketProxy(socket, lock=self.__socket_lock)

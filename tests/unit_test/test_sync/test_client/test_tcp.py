@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import contextlib
 from selectors import EVENT_READ, EVENT_WRITE
-from socket import AF_INET6, IPPROTO_TCP, TCP_NODELAY
-from ssl import SSLEOFError, SSLError, SSLErrorNumber, SSLWantReadError, SSLWantWriteError, SSLZeroReturnError
+from socket import AF_INET6, IPPROTO_TCP, SO_KEEPALIVE, TCP_NODELAY
+from ssl import SOL_SOCKET, SSLEOFError, SSLError, SSLErrorNumber, SSLWantReadError, SSLWantWriteError, SSLZeroReturnError
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.api_sync.client.tcp import TCPNetworkClient
@@ -310,7 +310,10 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_ssl_socket.getsockname.assert_not_called()
         mock_ssl_socket.getpeername.assert_not_called()
 
-        used_socket.setsockopt.assert_called_once_with(IPPROTO_TCP, TCP_NODELAY, True)
+        assert used_socket.setsockopt.mock_calls == [
+            mocker.call(IPPROTO_TCP, TCP_NODELAY, True),
+            mocker.call(SOL_SOCKET, SO_KEEPALIVE, True),
+        ]
         used_socket.setblocking.assert_not_called()
         not_used_socket.setsockopt.assert_not_called()
         not_used_socket.setblocking.assert_not_called()
@@ -372,7 +375,10 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_ssl_socket.getsockname.assert_not_called()
         mock_ssl_socket.getpeername.assert_not_called()
 
-        used_socket.setsockopt.assert_called_once_with(IPPROTO_TCP, TCP_NODELAY, True)
+        assert used_socket.setsockopt.mock_calls == [
+            mocker.call(IPPROTO_TCP, TCP_NODELAY, True),
+            mocker.call(SOL_SOCKET, SO_KEEPALIVE, True),
+        ]
         used_socket.setblocking.assert_not_called()
         not_used_socket.setsockopt.assert_not_called()
         not_used_socket.setblocking.assert_not_called()
