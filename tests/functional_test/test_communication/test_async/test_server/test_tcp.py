@@ -66,7 +66,6 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
         await super().service_quit()
 
     async def on_connection(self, client: AsyncClientInterface[str]) -> None:
-        await super().on_connection(client)
         assert client.address not in self.connected_clients
         self.connected_clients[client.address] = client
         await client.send_packet("milk")
@@ -76,7 +75,6 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
 
     async def on_disconnection(self, client: AsyncClientInterface[str]) -> None:
         del self.connected_clients[client.address]
-        await super().on_disconnection(client)
 
     def set_stop_listening_callback(self, stop_listening_callback: Callable[[], None]) -> None:
         super().set_stop_listening_callback(stop_listening_callback)
@@ -121,6 +119,26 @@ class CancellationRequestHandler(AsyncBaseRequestHandler[str, str]):
         await client.send_packet("milk")
         yield
         raise asyncio.CancelledError()
+
+
+class InitialHandshakeRequestHandler(AsyncStreamRequestHandler[str, str]):
+    async def on_connection(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
+        await client.send_packet("milk")
+        try:
+            async with asyncio.timeout(1):
+                password = yield
+        except TimeoutError:
+            await client.send_packet("timeout error")
+            await client.aclose()
+            return
+        if password != "chocolate":
+            await client.send_packet("wrong password")
+            await client.aclose()
+        await client.send_packet("you can enter")
+
+    async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
+        request = yield
+        await client.send_packet(request)
 
 
 class MyAsyncTCPServer(AsyncTCPNetworkServer[str, str]):
@@ -466,7 +484,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         assert await reader.readline() == b"successfully timed out\n"
 
     @pytest.mark.parametrize("request_handler", [CancellationRequestHandler], indirect=True)
-    async def test____serve_forever____requst_handler_is_cancelled(
+    async def test____serve_forever____request_handler_is_cancelled(
         self,
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
     ) -> None:
@@ -476,3 +494,38 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         await writer.drain()
         await asyncio.sleep(0.1)
         assert await reader.read() == b""
+
+    @pytest.mark.parametrize("request_handler", [InitialHandshakeRequestHandler], indirect=True)
+    async def test____serve_forever____request_handler_on_connection_is_async_gen(
+        self,
+        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+    ) -> None:
+        reader, writer = await client_factory()
+
+        writer.write(b"chocolate\n")
+        await writer.drain()
+        assert await reader.readline() == b"you can enter\n"
+        writer.write(b"something\n")
+        await writer.drain()
+        assert await reader.readline() == b"something\n"
+
+    @pytest.mark.parametrize("request_handler", [InitialHandshakeRequestHandler], indirect=True)
+    async def test____serve_forever____request_handler_on_connection_is_async_gen____close_connection(
+        self,
+        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+    ) -> None:
+        reader, writer = await client_factory()
+
+        writer.write(b"something_else\n")
+        await writer.drain()
+        assert await reader.readline() == b"wrong password\n"
+        assert await reader.read() == b""
+
+    @pytest.mark.parametrize("request_handler", [InitialHandshakeRequestHandler], indirect=True)
+    async def test____serve_forever____request_handler_on_connection_is_async_gen____throw_cancel_error_within_generator(
+        self,
+        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+    ) -> None:
+        reader, _ = await client_factory()
+
+        assert await reader.readline() == b"timeout error\n"

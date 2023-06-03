@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import inspect
 from typing import TYPE_CHECKING, Any, AsyncGenerator
 
 from easynetwork.api_async.server.handler import AsyncBaseRequestHandler, AsyncClientInterface, AsyncStreamRequestHandler
@@ -121,7 +122,9 @@ class TestAsyncStreamRequestHandler(BaseCommonTestsForRequestHandler):
         # Arrange
 
         # Act & Assert
-        assert (await request_handler.on_connection(mock_async_client)) is None
+        coro_or_asyncgen = request_handler.on_connection(mock_async_client)
+        assert inspect.iscoroutine(coro_or_asyncgen)
+        assert (await coro_or_asyncgen) is None
 
     async def test____on_disconnection____return_None(
         self,

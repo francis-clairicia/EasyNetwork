@@ -13,7 +13,7 @@ __all__ = [
 ]
 
 from abc import ABCMeta, abstractmethod
-from typing import TYPE_CHECKING, AsyncGenerator, Callable, Generic, TypeVar, final
+from typing import TYPE_CHECKING, Any, AsyncGenerator, Callable, Coroutine, Generic, TypeVar, final
 
 if TYPE_CHECKING:
     from ...exceptions import BaseProtocolParseError
@@ -81,8 +81,13 @@ class AsyncBaseRequestHandler(Generic[_RequestT, _ResponseT], metaclass=ABCMeta)
 class AsyncStreamRequestHandler(AsyncBaseRequestHandler[_RequestT, _ResponseT]):
     __slots__ = ()
 
-    async def on_connection(self, client: AsyncClientInterface[_ResponseT], /) -> None:
-        pass
+    def on_connection(
+        self, client: AsyncClientInterface[_ResponseT], /
+    ) -> Coroutine[Any, Any, None] | AsyncGenerator[None, _RequestT]:
+        async def _pass() -> None:
+            pass
+
+        return _pass()
 
     async def on_disconnection(self, client: AsyncClientInterface[_ResponseT], /) -> None:
         pass

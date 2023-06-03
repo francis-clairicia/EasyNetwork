@@ -10,6 +10,7 @@ __all__ = ["AsyncTCPNetworkServer"]
 
 import contextlib as _contextlib
 import errno as _errno
+import inspect
 import logging as _logging
 from collections import deque
 from typing import (
@@ -354,17 +355,25 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             _set_tcp_nodelay(client.socket)
 
             logger.info("Accepted new connection (address = %s)", client.address)
+            client_exit_stack.callback(self.__logger.info, "%s disconnected", client.address)
 
+            request_handler_generator: AsyncGenerator[None, _RequestT] | None = None
             if isinstance(self.__request_handler, AsyncStreamRequestHandler):
-                await self.__request_handler.on_connection(client)
-                client_exit_stack.callback(self.__logger.info, "%s disconnected", client.address)
+                _on_connection_hook = self.__request_handler.on_connection(client)
+                if inspect.isasyncgen(_on_connection_hook):
+                    with _contextlib.suppress(StopAsyncIteration):
+                        await _on_connection_hook.asend(None)
+                        request_handler_generator = _on_connection_hook
+                else:
+                    assert inspect.isawaitable(_on_connection_hook)
+                    await _on_connection_hook
                 client_exit_stack.push_async_callback(self.__request_handler.on_disconnection, client)
             await client_exit_stack.enter_async_context(_contextlib.aclosing(client))
 
-            request_handler_generator: AsyncGenerator[None, _RequestT] | None = None
             try:
                 with _contextlib.suppress(ConnectionError):
-                    request_handler_generator = await self.__new_request_handler(client)
+                    if request_handler_generator is None:
+                        request_handler_generator = await self.__new_request_handler(client)
                     async for request in request_receiver:
                         logger.debug("Processing request sent by %s", client.address)
                         try:
