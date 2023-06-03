@@ -67,7 +67,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         reuse_port: bool = False,
         backend: str | AbstractAsyncBackend | None = None,
         backend_kwargs: Mapping[str, Any] | None = None,
-        service_actions_interval: float = 0.1,
+        service_actions_interval: float | None = None,
         logger: _logging.Logger | None = None,
     ) -> None:
         super().__init__()
@@ -85,6 +85,9 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             family=family,
             reuse_port=reuse_port,
         )
+
+        if service_actions_interval is None:
+            service_actions_interval = 0.1
 
         self.__service_actions_interval: float = max(service_actions_interval, 0)
         self.__backend: AbstractAsyncBackend = backend

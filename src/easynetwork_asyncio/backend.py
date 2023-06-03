@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-__all__ = ["AsyncioBackend"]  # type: list[str]
+__all__ = ["AsyncioBackend"]
 
 import asyncio
 import contextvars

@@ -1,16 +1,16 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
 import logging
 from typing import AsyncGenerator, Callable
 
-from easynetwork.api_async.server.abc import AbstractAsyncNetworkServer
 from easynetwork.api_async.server.handler import AsyncBaseRequestHandler, AsyncClientInterface
+from easynetwork.api_async.server.standalone import AbstractStandaloneNetworkServer
 from easynetwork.api_async.server.tcp import AsyncTCPNetworkServer
 from easynetwork.api_async.server.udp import AsyncUDPNetworkServer
 from easynetwork.protocol import DatagramProtocol, StreamProtocol
 from easynetwork.serializers.line import StringLineSerializer
+from easynetwork_asyncio.server import StandaloneTCPNetworkServer, StandaloneUDPNetworkServer
 
 PORT = 9000
 
@@ -26,12 +26,16 @@ class MyAsyncRequestHandler(AsyncBaseRequestHandler[str, str]):
         await client.send_packet(request.upper() + "\n")
 
 
-def create_tcp_server() -> AsyncTCPNetworkServer[str, str]:
-    return AsyncTCPNetworkServer(None, PORT, StreamProtocol(StringLineSerializer()), MyAsyncRequestHandler())
+def create_tcp_server() -> StandaloneTCPNetworkServer[str, str]:
+    return StandaloneTCPNetworkServer(
+        AsyncTCPNetworkServer(None, PORT, StreamProtocol(StringLineSerializer()), MyAsyncRequestHandler(), backend="asyncio")
+    )
 
 
-def create_udp_server() -> AsyncUDPNetworkServer[str, str]:
-    return AsyncUDPNetworkServer(None, PORT, DatagramProtocol(StringLineSerializer()), MyAsyncRequestHandler())
+def create_udp_server() -> StandaloneUDPNetworkServer[str, str]:
+    return StandaloneUDPNetworkServer(
+        AsyncUDPNetworkServer(None, PORT, DatagramProtocol(StringLineSerializer()), MyAsyncRequestHandler(), backend="asyncio")
+    )
 
 
 def main() -> None:
@@ -68,15 +72,12 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    server_factory: Callable[[], AbstractAsyncNetworkServer] = args.server_factory
+    server_factory: Callable[[], AbstractStandaloneNetworkServer] = args.server_factory
 
     logging.basicConfig(level=getattr(logging, args.log_level), format="[ %(levelname)s ] [ %(name)s ] %(message)s")
 
-    async def main() -> None:
-        async with server_factory() as server:
-            await server.serve_forever()
-
-    return asyncio.run(main())
+    with server_factory() as server:
+        return server.serve_forever()
 
 
 if __name__ == "__main__":

@@ -99,7 +99,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         backlog: int | None = None,
         reuse_port: bool = False,
         max_recv_size: int | None = None,
-        service_actions_interval: float = 0.1,
+        service_actions_interval: float | None = None,
         backend: str | AbstractAsyncBackend | None = None,
         backend_kwargs: Mapping[str, Any] | None = None,
         logger: _logging.Logger | None = None,
@@ -148,6 +148,9 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             max_recv_size = MAX_STREAM_BUFSIZE
         if not isinstance(max_recv_size, int) or max_recv_size <= 0:
             raise ValueError("'max_recv_size' must be a strictly positive integer")
+
+        if service_actions_interval is None:
+            service_actions_interval = 0.1
 
         assert isinstance(protocol, StreamProtocol)
 
