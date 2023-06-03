@@ -286,12 +286,10 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                     finally:
                         del request
                     await backend.coro_yield()
-            except ConnectionError:
-                pass
             except self.__backend.get_cancelled_exc_class() as exc:
                 if request_handler_generator is not None:
                     try:
-                        with _contextlib.suppress(StopAsyncIteration, ConnectionError):
+                        with _contextlib.suppress(StopAsyncIteration):
                             await request_handler_generator.athrow(exc)
                     except Exception as exc:
                         await self.__handle_error(None, client, exc)
@@ -326,8 +324,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         try:
             if request_handler_generator is not None:
                 try:
-                    with _contextlib.suppress(ConnectionError):
-                        await request_handler_generator.athrow(exc)
+                    await request_handler_generator.athrow(exc)
                 except StopAsyncIteration:  # Clean shutdown, do not log
                     return
                 except Exception as _:

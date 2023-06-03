@@ -377,25 +377,28 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             await client_exit_stack.enter_async_context(_contextlib.aclosing(client))
 
             try:
-                with _contextlib.suppress(ConnectionError):
+                if request_handler_generator is None:
+                    request_handler_generator = await self.__new_request_handler(client)
+                async for request in request_receiver:
+                    logger.debug("Processing request sent by %s", client.address)
+                    try:
+                        await request_handler_generator.asend(request)
+                    except StopAsyncIteration:
+                        request_handler_generator = None
+                    except BaseException:
+                        request_handler_generator = None
+                        raise
+                    finally:
+                        del request
+                    await backend.coro_yield()
+                    if client.is_closing():
+                        return
                     if request_handler_generator is None:
                         request_handler_generator = await self.__new_request_handler(client)
-                    async for request in request_receiver:
-                        logger.debug("Processing request sent by %s", client.address)
-                        try:
-                            await request_handler_generator.asend(request)
-                        except StopAsyncIteration:
-                            request_handler_generator = None
-                        except BaseException:
-                            request_handler_generator = None
-                            raise
-                        finally:
-                            del request
-                        await backend.coro_yield()
-                        if client.is_closing():
-                            return
-                        if request_handler_generator is None:
-                            request_handler_generator = await self.__new_request_handler(client)
+            except ConnectionError as exc:
+                if isinstance(exc, ClientClosedError):
+                    await self.__handle_error(request_handler_generator, client, exc)
+                return
             except OSError as exc:
                 try:
                     await client.aclose()
@@ -405,7 +408,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             except self.__backend.get_cancelled_exc_class() as exc:
                 if request_handler_generator is not None:
                     try:
-                        with _contextlib.suppress(StopAsyncIteration, ConnectionError):
+                        with _contextlib.suppress(StopAsyncIteration):
                             await request_handler_generator.athrow(exc)
                     except Exception as exc:
                         await self.__handle_error(None, client, exc)
@@ -434,8 +437,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         try:
             if request_handler_generator is not None:
                 try:
-                    with _contextlib.suppress(ConnectionError):
-                        await request_handler_generator.athrow(exc)
+                    await request_handler_generator.athrow(exc)
                 except StopAsyncIteration:  # Clean shutdown, do not log
                     return
                 except Exception as _:
@@ -451,11 +453,13 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
     def __suppress_ignorable_socket_errors(self) -> Iterator[None]:
         try:
             yield
+        except ClientClosedError:
+            raise
         except ConnectionError:
             return
         except OSError as exc:
             if exc.errno not in {_errno.ENOTCONN, _errno.ENOTSOCK}:
-                self.__logger.exception("Error in client task")
+                raise
             return
 
     @_contextlib.contextmanager

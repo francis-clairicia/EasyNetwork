@@ -134,6 +134,7 @@ class InitialHandshakeRequestHandler(AsyncStreamRequestHandler[str, str]):
         if password != "chocolate":
             await client.send_packet("wrong password")
             await client.aclose()
+            return
         await client.send_packet("you can enter")
 
     async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
