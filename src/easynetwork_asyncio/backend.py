@@ -89,6 +89,7 @@ class AsyncioBackend(AbstractAsyncBackend):
                 try:
                     await asyncio.wait({future})
                 except asyncio.CancelledError:
+                    assert current_task.cancelling() > cancelling
                     while current_task.uncancel() > cancelling:
                         continue
         finally:
@@ -426,6 +427,7 @@ class AsyncioBackend(AbstractAsyncBackend):
                 # future.cancel() failed, that means future.set_running_or_notify_cancel() has been called
                 # and sets future in RUNNING state.
                 # This future cannot be cancelled anymore, therefore it must be awaited.
+                assert current_task.cancelling() > cancelling
                 while current_task.uncancel() > cancelling:
                     continue
             else:

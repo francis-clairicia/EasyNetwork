@@ -31,6 +31,6 @@ except ImportError:
 
 
 try:
-    from sniffio import current_async_library_cvar as current_async_library_cvar
+    from sniffio import current_async_library_cvar
 except ImportError:
     current_async_library_cvar = None
