@@ -34,14 +34,14 @@ class ThreadsPortal(AbstractThreadsPortal):
 
     def run_coroutine(self, __coro_func: Callable[_P, Coroutine[Any, Any, _T]], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
         self.__check_running_loop()
-        future = self.run_coroutine_soon(__coro_func, *args, **kwargs)
+        future = self.__run_coroutine_soon(__coro_func, *args, **kwargs)
         del __coro_func, args, kwargs
         try:
             return self.__get_result(future)
         finally:
             del future
 
-    def run_coroutine_soon(
+    def __run_coroutine_soon(
         self,
         __coro_func: Callable[_P, Coroutine[Any, Any, _T]],
         /,
@@ -58,17 +58,17 @@ class ThreadsPortal(AbstractThreadsPortal):
 
     def run_sync(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
         self.__check_running_loop()
-        future = self.run_sync_soon(__func, *args, **kwargs)
+        future = self.__run_sync_soon(__func, *args, **kwargs)
         del __func, args, kwargs
         try:
             return self.__get_result(future)
         finally:
             del future
 
-    def run_sync_soon(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> concurrent.futures.Future[_T]:
+    def __run_sync_soon(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> concurrent.futures.Future[_T]:
         def callback(future: concurrent.futures.Future[_T]) -> None:
-            if not future.set_running_or_notify_cancel():
-                return
+            future.set_running_or_notify_cancel()
+            assert future.running()
             try:
                 result = __func(*args, **kwargs)
             except BaseException as exc:

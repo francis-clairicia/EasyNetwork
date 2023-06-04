@@ -177,21 +177,7 @@ class AbstractThreadsPortal(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    def run_coroutine_soon(
-        self,
-        __coro_func: Callable[_P, Coroutine[Any, Any, _T]],
-        /,
-        *args: _P.args,
-        **kwargs: _P.kwargs,
-    ) -> concurrent.futures.Future[_T]:
-        raise NotImplementedError
-
-    @abstractmethod
     def run_sync(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
-        raise NotImplementedError
-
-    @abstractmethod
-    def run_sync_soon(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> concurrent.futures.Future[_T]:
         raise NotImplementedError
 
 
