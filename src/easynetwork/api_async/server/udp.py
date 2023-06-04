@@ -324,9 +324,8 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         try:
             if request_handler_generator is not None:
                 try:
-                    await request_handler_generator.athrow(exc)
-                except StopAsyncIteration:  # Clean shutdown, do not log
-                    return
+                    with _contextlib.suppress(StopAsyncIteration):
+                        await request_handler_generator.athrow(exc)
                 except Exception as _:
                     exc = _
 
