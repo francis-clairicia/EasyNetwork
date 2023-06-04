@@ -94,8 +94,6 @@ class _BaseStandaloneNetworkServerImpl(AbstractStandaloneNetworkServer):
                 portal.run_coroutine(self.__server.shutdown)
 
     def serve_forever(self) -> None:
-        import contextlib
-
         async def serve_forever() -> None:
             if self.__threads_portal is not None:
                 raise RuntimeError("Server is already running")
@@ -107,7 +105,7 @@ class _BaseStandaloneNetworkServerImpl(AbstractStandaloneNetworkServer):
                 self.__threads_portal = None
 
         backend = self.__server.get_backend()
-        with contextlib.suppress(backend.get_cancelled_exc_class()):
+        with _contextlib.suppress(backend.get_cancelled_exc_class()):
             backend.bootstrap(serve_forever)
 
     @property
@@ -142,7 +140,7 @@ class StandaloneTCPNetworkServer(_BaseStandaloneNetworkServerImpl, Generic[_Requ
         logger: _logging.Logger | None = None,
         **kwargs: Any,
     ) -> None:
-        assert backend is not None, "You must explictly give a backend name or instance"
+        assert backend is not None, "You must explicitly give a backend name or instance"
         super().__init__(
             AsyncTCPNetworkServer(
                 host=host,
@@ -166,7 +164,8 @@ class StandaloneTCPNetworkServer(_BaseStandaloneNetworkServerImpl, Generic[_Requ
 
     def stop_listening(self) -> None:
         if (portal := self._portal) is not None:
-            portal.run_sync(self._server.stop_listening)
+            with _contextlib.suppress(RuntimeError):
+                portal.run_sync(self._server.stop_listening)
 
     if TYPE_CHECKING:
 
@@ -193,7 +192,7 @@ class StandaloneUDPNetworkServer(_BaseStandaloneNetworkServerImpl, Generic[_Requ
         logger: _logging.Logger | None = None,
         **kwargs: Any,
     ) -> None:
-        assert backend is not None, "You must explictly give a backend name or instance"
+        assert backend is not None, "You must explicitly give a backend name or instance"
         super().__init__(
             AsyncUDPNetworkServer(
                 host=host,
