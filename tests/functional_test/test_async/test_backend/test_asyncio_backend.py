@@ -374,6 +374,41 @@ class TestAsyncioBackend:
 
         assert exc_info.value is expected_exception
 
+    async def test____create_threads_portal____run_coroutine_from_thread____coroutine_cancelled(
+        self,
+        backend: AsyncioBackend,
+    ) -> None:
+        threads_portal = backend.create_threads_portal()
+
+        async def coroutine(value: int) -> int:
+            task = asyncio.current_task()
+            assert task is not None
+            task.get_loop().call_later(0.5, task.cancel)
+            await task.get_loop().create_future()
+            raise AssertionError("Not cancelled")
+
+        def thread() -> int:
+            return threads_portal.run_coroutine(coroutine, 42)
+
+        with pytest.raises(RuntimeError, match=r"^Operation cancelled$"):
+            await backend.run_in_thread(thread)
+
+    async def test____create_threads_portal____run_coroutine_from_thread____explicit_concurrent_future_Cancelled(
+        self,
+        backend: AsyncioBackend,
+    ) -> None:
+        threads_portal = backend.create_threads_portal()
+
+        async def coroutine(value: int) -> int:
+            raise FutureCancelledError()
+
+        def thread() -> int:
+            with pytest.raises(FutureCancelledError):
+                return threads_portal.run_coroutine(coroutine, 42)
+            return 54
+
+        assert await backend.run_in_thread(thread) == 54
+
     @pytest.mark.feature_sniffio
     async def test____create_threads_portal____run_coroutine_from_thread____sniffio_contextvar_reset(
         self,
@@ -510,6 +545,22 @@ class TestAsyncioBackend:
             await backend.run_in_thread(thread)
 
         assert exc_info.value is expected_exception
+
+    async def test____create_threads_portal____run_sync_from_thread_in_event_loop____explicit_concurrent_future_Cancelled(
+        self,
+        backend: AsyncioBackend,
+    ) -> None:
+        threads_portal = backend.create_threads_portal()
+
+        def not_threadsafe_func(value: int) -> int:
+            raise FutureCancelledError()
+
+        def thread() -> int:
+            with pytest.raises(FutureCancelledError):
+                return threads_portal.run_sync(not_threadsafe_func, 42)
+            return 54
+
+        assert await backend.run_in_thread(thread) == 54
 
     @pytest.mark.feature_sniffio
     async def test____create_threads_portal____run_sync_from_thread_in_event_loop____sniffio_contextvar_reset(

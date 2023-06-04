@@ -8,17 +8,22 @@ from __future__ import annotations
 
 __all__ = ["AbstractStandaloneNetworkServer", "StandaloneTCPNetworkServer", "StandaloneUDPNetworkServer"]
 
+import contextlib as _contextlib
 from abc import ABCMeta, abstractmethod
-from typing import TYPE_CHECKING, Any, Generic, Self, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, Mapping, Self, Sequence, TypeVar
 
-from .tcp import AsyncTCPNetworkServer as _AsyncTCPNetworkServer
-from .udp import AsyncUDPNetworkServer as _AsyncUDPNetworkServer
+from .tcp import AsyncTCPNetworkServer
+from .udp import AsyncUDPNetworkServer
 
 if TYPE_CHECKING:
+    import logging as _logging
+    from ssl import SSLContext as _SSLContext
     from types import TracebackType
 
-    from ..backend.abc import AbstractThreadsPortal
+    from ...protocol import DatagramProtocol, StreamProtocol
+    from ..backend.abc import AbstractAsyncBackend, AbstractThreadsPortal
     from .abc import AbstractAsyncNetworkServer
+    from .handler import AsyncBaseRequestHandler
 
 _RequestT = TypeVar("_RequestT")
 _ResponseT = TypeVar("_ResponseT")
@@ -71,19 +76,22 @@ class _BaseStandaloneNetworkServerImpl(AbstractStandaloneNetworkServer):
 
     def is_serving(self) -> bool:
         if (portal := self.__threads_portal) is not None:
-            return portal.run_sync(self.__server.is_serving)
+            with _contextlib.suppress(RuntimeError):
+                return portal.run_sync(self.__server.is_serving)
         return False
 
     def server_close(self) -> None:
         if (portal := self.__threads_portal) is not None:
-            portal.run_coroutine(self.__server.server_close)
+            with _contextlib.suppress(RuntimeError):
+                portal.run_coroutine(self.__server.server_close)
         else:
             backend = self.__server.get_backend()
             backend.bootstrap(self.__server.server_close)
 
     def shutdown(self) -> None:
         if (portal := self.__threads_portal) is not None:
-            portal.run_coroutine(self.__server.shutdown)
+            with _contextlib.suppress(RuntimeError):
+                portal.run_coroutine(self.__server.shutdown)
 
     def serve_forever(self) -> None:
         import contextlib
@@ -114,9 +122,47 @@ class _BaseStandaloneNetworkServerImpl(AbstractStandaloneNetworkServer):
 class StandaloneTCPNetworkServer(_BaseStandaloneNetworkServerImpl, Generic[_RequestT, _ResponseT]):
     __slots__ = ()
 
-    def __init__(self, server: _AsyncTCPNetworkServer[_RequestT, _ResponseT]) -> None:
-        assert isinstance(server, _AsyncTCPNetworkServer)
-        super().__init__(server)
+    def __init__(
+        self,
+        host: str | None | Sequence[str],
+        port: int,
+        protocol: StreamProtocol[_ResponseT, _RequestT],
+        request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT],
+        backend: str | AbstractAsyncBackend,
+        *,
+        ssl: _SSLContext | None = None,
+        ssl_handshake_timeout: float | None = None,
+        ssl_shutdown_timeout: float | None = None,
+        family: int = 0,
+        backlog: int | None = None,
+        reuse_port: bool = False,
+        max_recv_size: int | None = None,
+        service_actions_interval: float | None = None,
+        backend_kwargs: Mapping[str, Any] | None = None,
+        logger: _logging.Logger | None = None,
+        **kwargs: Any,
+    ) -> None:
+        assert backend is not None, "You must explictly give a backend name or instance"
+        super().__init__(
+            AsyncTCPNetworkServer(
+                host=host,
+                port=port,
+                protocol=protocol,
+                request_handler=request_handler,
+                ssl=ssl,
+                ssl_handshake_timeout=ssl_handshake_timeout,
+                ssl_shutdown_timeout=ssl_shutdown_timeout,
+                family=family,
+                backlog=backlog,
+                reuse_port=reuse_port,
+                max_recv_size=max_recv_size,
+                service_actions_interval=service_actions_interval,
+                backend=backend,
+                backend_kwargs=backend_kwargs,
+                logger=logger,
+                **kwargs,
+            )
+        )
 
     def stop_listening(self) -> None:
         if (portal := self._portal) is not None:
@@ -125,19 +171,47 @@ class StandaloneTCPNetworkServer(_BaseStandaloneNetworkServerImpl, Generic[_Requ
     if TYPE_CHECKING:
 
         @property
-        def _server(self) -> _AsyncTCPNetworkServer[_RequestT, _ResponseT]:
+        def _server(self) -> AsyncTCPNetworkServer[_RequestT, _ResponseT]:
             ...
 
 
 class StandaloneUDPNetworkServer(_BaseStandaloneNetworkServerImpl, Generic[_RequestT, _ResponseT]):
     __slots__ = ()
 
-    def __init__(self, server: _AsyncUDPNetworkServer[_RequestT, _ResponseT]) -> None:
-        assert isinstance(server, _AsyncUDPNetworkServer)
-        super().__init__(server)
+    def __init__(
+        self,
+        host: str | None,
+        port: int,
+        protocol: DatagramProtocol[_ResponseT, _RequestT],
+        request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT],
+        backend: str | AbstractAsyncBackend,
+        *,
+        family: int = 0,
+        reuse_port: bool = False,
+        backend_kwargs: Mapping[str, Any] | None = None,
+        service_actions_interval: float | None = None,
+        logger: _logging.Logger | None = None,
+        **kwargs: Any,
+    ) -> None:
+        assert backend is not None, "You must explictly give a backend name or instance"
+        super().__init__(
+            AsyncUDPNetworkServer(
+                host=host,
+                port=port,
+                protocol=protocol,
+                request_handler=request_handler,
+                family=family,
+                reuse_port=reuse_port,
+                backend=backend,
+                backend_kwargs=backend_kwargs,
+                service_actions_interval=service_actions_interval,
+                logger=logger,
+                **kwargs,
+            )
+        )
 
     if TYPE_CHECKING:
 
         @property
-        def _server(self) -> _AsyncUDPNetworkServer[_RequestT, _ResponseT]:
+        def _server(self) -> AsyncUDPNetworkServer[_RequestT, _ResponseT]:
             ...

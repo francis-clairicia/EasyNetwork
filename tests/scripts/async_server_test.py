@@ -10,8 +10,6 @@ from easynetwork.api_async.server.standalone import (
     StandaloneTCPNetworkServer,
     StandaloneUDPNetworkServer,
 )
-from easynetwork.api_async.server.tcp import AsyncTCPNetworkServer
-from easynetwork.api_async.server.udp import AsyncUDPNetworkServer
 from easynetwork.protocol import DatagramProtocol, StreamProtocol
 from easynetwork.serializers.line import StringLineSerializer
 
@@ -30,15 +28,11 @@ class MyAsyncRequestHandler(AsyncBaseRequestHandler[str, str]):
 
 
 def create_tcp_server() -> StandaloneTCPNetworkServer[str, str]:
-    return StandaloneTCPNetworkServer(
-        AsyncTCPNetworkServer(None, PORT, StreamProtocol(StringLineSerializer()), MyAsyncRequestHandler(), backend="asyncio")
-    )
+    return StandaloneTCPNetworkServer(None, PORT, StreamProtocol(StringLineSerializer()), MyAsyncRequestHandler(), "asyncio")
 
 
 def create_udp_server() -> StandaloneUDPNetworkServer[str, str]:
-    return StandaloneUDPNetworkServer(
-        AsyncUDPNetworkServer(None, PORT, DatagramProtocol(StringLineSerializer()), MyAsyncRequestHandler(), backend="asyncio")
-    )
+    return StandaloneUDPNetworkServer(None, PORT, DatagramProtocol(StringLineSerializer()), MyAsyncRequestHandler(), "asyncio")
 
 
 def main() -> None:

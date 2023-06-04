@@ -37,7 +37,7 @@ class ThreadsPortal(AbstractThreadsPortal):
         future = self.run_coroutine_soon(__coro_func, *args, **kwargs)
         del __coro_func, args, kwargs
         try:
-            return future.result()
+            return self.__get_result(future)
         finally:
             del future
 
@@ -61,7 +61,7 @@ class ThreadsPortal(AbstractThreadsPortal):
         future = self.run_sync_soon(__func, *args, **kwargs)
         del __func, args, kwargs
         try:
-            return future.result()
+            return self.__get_result(future)
         finally:
             del future
 
@@ -88,6 +88,19 @@ class ThreadsPortal(AbstractThreadsPortal):
         future: concurrent.futures.Future[_T] = concurrent.futures.Future()
         self.__loop.call_soon_threadsafe(callback, future, context=ctx)
         return future
+
+    @staticmethod
+    def __get_result(future: concurrent.futures.Future[_T]) -> _T:
+        try:
+            return future.result()
+        except asyncio.CancelledError:
+            raise concurrent.futures.CancelledError() from None
+        except concurrent.futures.CancelledError as exc:
+            if not future.cancelled():  # raised from future.exception()
+                raise
+            raise RuntimeError("Operation cancelled") from exc
+        finally:
+            del future
 
     def __check_running_loop(self) -> None:
         try:
