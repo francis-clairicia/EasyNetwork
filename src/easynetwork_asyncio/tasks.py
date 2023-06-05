@@ -7,12 +7,12 @@
 
 from __future__ import annotations
 
-__all__ = ["Task", "TaskGroup"]
+__all__ = ["Task", "TaskGroup", "TimeoutHandle", "timeout", "timeout_at"]
 
 import asyncio
 from typing import TYPE_CHECKING, Any, Callable, Coroutine, ParamSpec, Self, TypeVar, final
 
-from easynetwork.api_async.backend.abc import AbstractTask, AbstractTaskGroup
+from easynetwork.api_async.backend.abc import AbstractTask, AbstractTaskGroup, AbstractTimeoutHandle
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -99,3 +99,55 @@ class TaskGroup(AbstractTaskGroup):
         **kwargs: _P.kwargs,
     ) -> AbstractTask[_T]:
         return Task(self.__asyncio_tg.create_task(__coro_func(*args, **kwargs)))
+
+
+@final
+class TimeoutHandle(AbstractTimeoutHandle):
+    __slots__ = ("__handle",)
+
+    def __init__(self, handle: asyncio.Timeout) -> None:
+        super().__init__()
+        self.__handle: asyncio.Timeout = handle
+
+    def when(self) -> float:
+        deadline: float | None = self.__handle.when()
+        return deadline if deadline is not None else float("+inf")
+
+    def reschedule(self, when: float) -> None:
+        return self.__handle.reschedule(float(when) if when != float("+inf") else None)
+
+    def expired(self) -> bool:
+        return self.__handle.expired()
+
+
+class _TimeoutContextManager:
+    __slots__ = ("__handle",)
+
+    def __init__(self, handle: asyncio.Timeout) -> None:
+        super().__init__()
+        self.__handle: asyncio.Timeout = handle
+
+    async def __aenter__(self) -> TimeoutHandle:
+        handle: asyncio.Timeout = self.__handle
+        await type(handle).__aenter__(handle)
+        return TimeoutHandle(handle)
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        handle: asyncio.Timeout = self.__handle
+        try:
+            return await type(handle).__aexit__(handle, exc_type, exc_val, exc_tb)
+        finally:
+            del exc_val, exc_tb, self
+
+
+def timeout(delay: float) -> _TimeoutContextManager:
+    return _TimeoutContextManager(asyncio.timeout(float(delay) if delay != float("+inf") else None))
+
+
+def timeout_at(deadline: float) -> _TimeoutContextManager:
+    return _TimeoutContextManager(asyncio.timeout_at(float(deadline) if deadline != float("+inf") else None))

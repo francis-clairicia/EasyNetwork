@@ -19,13 +19,27 @@ __all__ = [
     "AbstractTask",
     "AbstractTaskGroup",
     "AbstractThreadsPortal",
+    "AbstractTimeoutHandle",
     "ICondition",
     "IEvent",
     "ILock",
 ]
 
 from abc import ABCMeta, abstractmethod
-from typing import TYPE_CHECKING, Any, Callable, Coroutine, Generic, NoReturn, ParamSpec, Protocol, Self, Sequence, TypeVar
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    AsyncContextManager,
+    Callable,
+    Coroutine,
+    Generic,
+    NoReturn,
+    ParamSpec,
+    Protocol,
+    Self,
+    Sequence,
+    TypeVar,
+)
 
 if TYPE_CHECKING:
     import concurrent.futures
@@ -260,6 +274,34 @@ class AbstractAcceptedSocket(metaclass=ABCMeta):
         raise NotImplementedError
 
 
+class AbstractTimeoutHandle(metaclass=ABCMeta):
+    __slots__ = ()
+
+    @abstractmethod
+    def when(self) -> float:
+        raise NotImplementedError
+
+    @abstractmethod
+    def reschedule(self, when: float) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def expired(self) -> bool:
+        raise NotImplementedError
+
+    @property
+    def deadline(self) -> float:
+        return self.when()
+
+    @deadline.setter
+    def deadline(self, value: float) -> None:
+        self.reschedule(value)
+
+    @deadline.deleter
+    def deadline(self) -> None:
+        self.reschedule(float("+inf"))
+
+
 class AbstractAsyncBackend(metaclass=ABCMeta):
     __slots__ = ("__weakref__",)
 
@@ -281,6 +323,14 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
 
     @abstractmethod
     async def wait_for(self, coroutine: Coroutine[Any, Any, _T_co], timeout: float | None) -> _T_co:
+        raise NotImplementedError
+
+    @abstractmethod
+    def timeout(self, delay: float) -> AsyncContextManager[AbstractTimeoutHandle]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def timeout_at(self, deadline: float) -> AsyncContextManager[AbstractTimeoutHandle]:
         raise NotImplementedError
 
     @abstractmethod

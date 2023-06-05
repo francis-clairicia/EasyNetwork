@@ -12,9 +12,8 @@ __all__ = ["AsyncioBackend"]
 import asyncio
 import contextvars
 import functools
-import inspect
 import socket as _socket
-from typing import TYPE_CHECKING, Any, Callable, Coroutine, NoReturn, ParamSpec, Sequence, TypeVar
+from typing import TYPE_CHECKING, Any, AsyncContextManager, Callable, Coroutine, NoReturn, ParamSpec, Sequence, TypeVar
 
 from easynetwork.api_async.backend.abc import AbstractAsyncBackend
 from easynetwork.api_async.backend.sniffio import current_async_library_cvar as _sniffio_current_async_library_cvar
@@ -30,6 +29,7 @@ if TYPE_CHECKING:
         AbstractAsyncStreamSocketAdapter,
         AbstractTaskGroup,
         AbstractThreadsPortal,
+        AbstractTimeoutHandle,
         ICondition,
         IEvent,
         ILock,
@@ -65,7 +65,7 @@ class AsyncioBackend(AbstractAsyncBackend):
         return asyncio.CancelledError
 
     async def ignore_cancellation(self, coroutine: Coroutine[Any, Any, _T_co]) -> _T_co:
-        assert inspect.iscoroutine(coroutine), "Expected a coroutine object"
+        assert asyncio.iscoroutine(coroutine), "Expected a coroutine object"
         task: asyncio.Task[_T_co] = asyncio.create_task(coroutine)
 
         # This task must be unregistered in order not to be cancelled by runner at event loop shutdown
@@ -77,10 +77,20 @@ class AsyncioBackend(AbstractAsyncBackend):
             del task
 
     async def wait_for(self, coroutine: Coroutine[Any, Any, _T_co], timeout: float | None) -> _T_co:
-        assert inspect.iscoroutine(coroutine), "Expected a coroutine object"
+        assert asyncio.iscoroutine(coroutine), "Expected a coroutine object"
 
         async with asyncio.timeout(timeout):
             return await coroutine
+
+    def timeout(self, delay: float) -> AsyncContextManager[AbstractTimeoutHandle]:
+        from .tasks import timeout
+
+        return timeout(delay)
+
+    def timeout_at(self, deadline: float) -> AsyncContextManager[AbstractTimeoutHandle]:
+        from .tasks import timeout_at
+
+        return timeout_at(deadline)
 
     @classmethod
     async def _cancel_shielded_wait_asyncio_future(cls, future: asyncio.Future[_T_co]) -> _T_co:

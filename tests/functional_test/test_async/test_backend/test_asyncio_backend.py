@@ -99,6 +99,68 @@ class TestAsyncioBackend:
         await asyncio.wait({task})
         assert task.cancelled()
 
+    async def test____timeout____respected(
+        self,
+        backend: AsyncioBackend,
+    ) -> None:
+        async with backend.timeout(1):
+            assert await asyncio.sleep(0.5, 42) == 42
+
+    async def test____timeout____timeout_error(
+        self,
+        backend: AsyncioBackend,
+    ) -> None:
+        with pytest.raises(TimeoutError):
+            async with backend.timeout(0.25):
+                await asyncio.sleep(0.5, 42)
+
+    async def test____timeout____cancellation(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        backend: AsyncioBackend,
+    ) -> None:
+        async def coroutine() -> None:
+            async with backend.timeout(0.25):
+                await asyncio.sleep(0.5, 42)
+
+        task = event_loop.create_task(coroutine())
+        event_loop.call_later(0.10, task.cancel)
+
+        await asyncio.wait({task})
+        assert task.cancelled()
+
+    async def test____timeout_at____respected(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        backend: AsyncioBackend,
+    ) -> None:
+        async with backend.timeout_at(event_loop.time() + 1):
+            assert await asyncio.sleep(0.5, 42) == 42
+
+    async def test____timeout_at____timeout_error(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        backend: AsyncioBackend,
+    ) -> None:
+        with pytest.raises(TimeoutError):
+            async with backend.timeout_at(event_loop.time() + 0.25):
+                await asyncio.sleep(0.5, 42)
+
+    async def test____timeout_at____cancellation(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        backend: AsyncioBackend,
+    ) -> None:
+        async def coroutine() -> None:
+            async with backend.timeout_at(event_loop.time() + 0.25):
+                await asyncio.sleep(0.5, 42)
+
+        task = event_loop.create_task(coroutine())
+        event_loop.call_later(0.10, task.cancel)
+
+        await asyncio.wait({task})
+        assert task.cancelled()
+
     async def test____sleep_forever____sleep_until_cancellation(
         self,
         event_loop: asyncio.AbstractEventLoop,
