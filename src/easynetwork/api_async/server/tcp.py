@@ -9,7 +9,6 @@ from __future__ import annotations
 __all__ = ["AsyncTCPNetworkServer"]
 
 import contextlib as _contextlib
-import errno as _errno
 import inspect
 import logging as _logging
 from collections import deque
@@ -329,7 +328,6 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
     async def __client_task(self, accepted_socket: AbstractAcceptedSocket) -> None:
         async with _contextlib.AsyncExitStack() as client_exit_stack:
             client_exit_stack.enter_context(self.__suppress_and_log_remaining_exception())
-            client_exit_stack.enter_context(self.__suppress_ignorable_socket_errors())
 
             try:
                 socket: AbstractAsyncStreamSocketAdapter = await accepted_socket.connect()
@@ -395,10 +393,6 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                         return
                     if request_handler_generator is None:
                         request_handler_generator = await self.__new_request_handler(client)
-            except ConnectionError as exc:
-                if isinstance(exc, ClientClosedError):
-                    await self.__handle_error(request_handler_generator, client, exc)
-                return
             except OSError as exc:
                 try:
                     await client.aclose()
@@ -447,19 +441,6 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             self.__logger.error("-" * 40)
         finally:
             del exc
-
-    @_contextlib.contextmanager
-    def __suppress_ignorable_socket_errors(self) -> Iterator[None]:
-        try:
-            yield
-        except ClientClosedError:
-            raise
-        except ConnectionError:
-            return
-        except OSError as exc:
-            if exc.errno not in {_errno.ENOTCONN, _errno.ENOTSOCK}:
-                raise
-            return
 
     @_contextlib.contextmanager
     def __suppress_and_log_remaining_exception(self) -> Iterator[None]:
