@@ -373,11 +373,15 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 del _on_connection_hook
                 client_exit_stack.push_async_callback(self.__request_handler.on_disconnection, client)
             await client_exit_stack.enter_async_context(_contextlib.aclosing(client))
+            if client.is_closing():
+                return
 
             try:
                 if request_handler_generator is None:
                     request_handler_generator = await self.__new_request_handler(client)
                 async for request in request_receiver:
+                    if client.is_closing():
+                        return
                     logger.debug("Processing request sent by %s", client.address)
                     try:
                         await request_handler_generator.asend(request)
@@ -398,7 +402,6 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                     await client.aclose()
                 finally:
                     await self.__handle_error(request_handler_generator, client, exc)
-                return
             except self.__backend.get_cancelled_exc_class() as exc:
                 if request_handler_generator is not None:
                     try:
@@ -409,7 +412,6 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 raise
             except Exception as exc:
                 await self.__handle_error(request_handler_generator, client, exc)
-                return
             finally:
                 if request_handler_generator is not None:
                     await request_handler_generator.aclose()
@@ -507,7 +509,10 @@ class _RequestReceiver(Generic[_RequestT, _ResponseT]):
                 continue
             except StopIteration:
                 pass
-            data: bytes = await socket.recv(self.__max_recv_size) if not socket.is_closing() else b""
+            try:
+                data: bytes = await socket.recv(self.__max_recv_size) if not socket.is_closing() else b""
+            except ConnectionError:
+                data = b""
             if not data:  # Closed connection (EOF)
                 break
             logger.debug("Received %d bytes from %s", len(data), client.address)

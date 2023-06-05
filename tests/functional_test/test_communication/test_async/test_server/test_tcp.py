@@ -32,11 +32,13 @@ class RandomError(Exception):
 class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
     connected_clients: WeakValueDictionary[SocketAddress, AsyncClientInterface[str]]
     request_received: collections.defaultdict[tuple[Any, ...], list[str]]
+    request_count: collections.Counter[tuple[Any, ...]]
     bad_request_received: collections.defaultdict[tuple[Any, ...], list[BaseProtocolParseError]]
     backend: AbstractAsyncBackend
     service_actions_count: int
     close_all_clients_on_service_actions: bool = False
     close_all_clients_on_connection: bool = False
+    close_client_after_n_request: int = -1
     stop_listening: Callable[[], None]
 
     async def service_init(self, backend: AbstractAsyncBackend) -> None:
@@ -45,6 +47,7 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
         self.connected_clients = WeakValueDictionary()
         self.service_actions_count = 0
         self.request_received = collections.defaultdict(list)
+        self.request_count = collections.Counter()
         self.bad_request_received = collections.defaultdict(list)
 
     async def service_actions(self) -> None:
@@ -60,6 +63,7 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
             self.backend,
             self.service_actions_count,
             self.request_received,
+            self.request_count,
             self.bad_request_received,
             self.stop_listening,
         )
@@ -75,13 +79,18 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
 
     async def on_disconnection(self, client: AsyncClientInterface[str]) -> None:
         del self.connected_clients[client.address]
+        del self.request_count[client.address]
 
     def set_stop_listening_callback(self, stop_listening_callback: Callable[[], None]) -> None:
         super().set_stop_listening_callback(stop_listening_callback)
         self.stop_listening = stop_listening_callback
 
     async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
-        match (yield):
+        if self.close_client_after_n_request >= 0 and self.request_count[client.address] >= self.close_client_after_n_request:
+            await client.aclose()
+        request = yield
+        self.request_count[client.address] += 1
+        match request:
             case "__error__":
                 raise RandomError("Sorry man!")
             case "__close__":
@@ -95,7 +104,7 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
                 request = yield
                 self.request_received[client.address].append(request)
                 await client.send_packet(f"After wait: {request}")
-            case request:
+            case _:
                 self.request_received[client.address].append(request)
                 await client.send_packet(request.upper())
 
@@ -357,6 +366,23 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         assert await reader.readline() == b"HELLO\n"
         assert await reader.readline() == b"WORLD\n"
         assert request_handler.request_received[client_address] == ["hello", "world"]
+
+    async def test____serve_forever____several_requests_at_same_time____close_between(
+        self,
+        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        request_handler: MyAsyncTCPRequestHandler,
+    ) -> None:
+        reader, writer = await client_factory()
+        client_address: tuple[Any, ...] = writer.get_extra_info("sockname")
+        request_handler.close_client_after_n_request = 1
+
+        writer.write(b"hello\nworld\n")
+        await writer.drain()
+        await asyncio.sleep(0.1)
+
+        assert await reader.readline() == b"HELLO\n"
+        assert await reader.read() == b""
+        assert request_handler.request_received[client_address] == ["hello"]
 
     async def test____serve_forever____save_request_handler_context(
         self,

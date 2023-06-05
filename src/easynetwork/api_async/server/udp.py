@@ -123,10 +123,6 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         if self.__socket_factory is not None:
             self.__socket_factory.cancel()
             self.__socket_factory = None
-        if self.__mainloop_task is not None:
-            self.__mainloop_task.cancel()
-            self.__mainloop_task = None
-            await self.__backend.coro_yield()
         socket, self.__socket = self.__socket, None
         if socket is None:
             return
@@ -274,6 +270,10 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
                     if request_handler_generator is None:
                         request_handler_generator = await self.__new_request_handler(client)
+
+                    if client.is_closing():
+                        datagram_queue.clear()
+                        return
 
                     self.__logger.debug("Processing request sent by %s", client.address)
                     try:
