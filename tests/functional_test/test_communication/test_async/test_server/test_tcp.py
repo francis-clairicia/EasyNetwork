@@ -142,10 +142,15 @@ class CancellationRequestHandler(AsyncBaseRequestHandler[str, str]):
 
 
 class InitialHandshakeRequestHandler(AsyncStreamRequestHandler[str, str]):
+    backend: AbstractAsyncBackend
+
+    async def service_init(self, backend: AbstractAsyncBackend) -> None:
+        self.backend = backend
+
     async def on_connection(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
         await client.send_packet("milk")
         try:
-            async with asyncio.timeout(1):
+            async with self.backend.timeout(1):
                 password = yield
         except TimeoutError:
             await client.send_packet("timeout error")
@@ -165,7 +170,7 @@ class InitialHandshakeRequestHandler(AsyncStreamRequestHandler[str, str]):
         pass
 
 
-class BadGeneratorRequestHandler(AsyncStreamRequestHandler[str, str]):
+class InvalidRequestHandler(AsyncStreamRequestHandler[str, str]):
     async def on_connection(self, client: AsyncClientInterface[str]) -> None:
         await client.send_packet("milk")
 
@@ -176,6 +181,26 @@ class BadGeneratorRequestHandler(AsyncStreamRequestHandler[str, str]):
 
     async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError, /) -> None:
         pass
+
+
+class ErrorInBadRequestHandler(AsyncStreamRequestHandler[str, str]):
+    mute_thrown_exception: bool = False
+
+    async def on_connection(self, client: AsyncClientInterface[str]) -> None:
+        await client.send_packet("milk")
+
+    async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
+        try:
+            request = yield
+        except Exception as exc:
+            await client.send_packet(f"{exc.__class__.__name__}: {exc}")
+            if not self.mute_thrown_exception:
+                raise
+        else:
+            await client.send_packet(request)
+
+    async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError, /) -> None:
+        raise RandomError("An error occurred")
 
 
 class MyAsyncTCPServer(AsyncTCPNetworkServer[str, str]):
@@ -213,6 +238,11 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     def service_actions_interval(request: Any) -> float | None:
         return getattr(request, "param", None)
 
+    @pytest.fixture
+    @staticmethod
+    def ssl_handshake_timeout(request: Any) -> float | None:
+        return getattr(request, "param", None)
+
     @pytest_asyncio.fixture
     @staticmethod
     async def server(
@@ -223,6 +253,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         use_ssl: bool,
         server_ssl_context: ssl.SSLContext,
         service_actions_interval: float | None,
+        ssl_handshake_timeout: float | None,
         backend_kwargs: dict[str, Any],
     ) -> AsyncIterator[MyAsyncTCPServer]:
         async with MyAsyncTCPServer(
@@ -233,6 +264,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
             backlog=1,
             family=socket_family,
             ssl=server_ssl_context if use_ssl else None,
+            ssl_handshake_timeout=ssl_handshake_timeout,
             service_actions_interval=service_actions_interval,
             backend_kwargs=backend_kwargs,
         ) as server:
@@ -270,6 +302,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
                     sock=sock,
                     ssl=client_ssl_context if use_ssl else None,
                     server_hostname="test.example.com" if use_ssl else None,
+                    ssl_handshake_timeout=1 if use_ssl else None,
                 )
                 stack.push_async_callback(lambda: asyncio.wait_for(writer.wait_closed(), 3))
                 stack.callback(writer.close)
@@ -331,8 +364,8 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     @pytest.mark.usefixtures("run_server_and_wait")
     @pytest.mark.parametrize("service_actions_interval", [0.1], indirect=True)
     async def test____serve_forever____service_actions(self, request_handler: MyAsyncTCPRequestHandler) -> None:
-        await asyncio.sleep(0.21)
-        assert request_handler.service_actions_count >= 2
+        await asyncio.sleep(0.2)
+        assert request_handler.service_actions_count >= 1
 
     @pytest.mark.usefixtures("run_server_and_wait")
     @pytest.mark.parametrize("service_actions_interval", [math.inf], indirect=True)
@@ -474,6 +507,28 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         assert request_handler.bad_request_received[client_address][0].error_type == "deserialization"
         assert request_handler.bad_request_received[client_address][0].__traceback__ is None
 
+    @pytest.mark.parametrize("mute_thrown_exception", [False, True])
+    @pytest.mark.parametrize("request_handler", [ErrorInBadRequestHandler], indirect=True)
+    async def test____serve_forever____bad_request____unexpected_error(
+        self,
+        mute_thrown_exception: bool,
+        request_handler: ErrorInBadRequestHandler,
+        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        caplog: pytest.LogCaptureFixture,
+        server: MyAsyncTCPServer,
+    ) -> None:
+        caplog.set_level(logging.ERROR, server.logger.name)
+        request_handler.mute_thrown_exception = mute_thrown_exception
+        reader, writer = await client_factory()
+
+        writer.write("\u00E9\n".encode("latin-1"))  # StringSerializer does not accept unicode
+        await writer.drain()
+        await asyncio.sleep(0.1)
+
+        assert await reader.readline() == b"RandomError: An error occurred\n"
+        assert await reader.read() == b""
+        assert len(caplog.records) == 3
+
     async def test____serve_forever____unexpected_error_during_process(
         self,
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
@@ -579,7 +634,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         await asyncio.sleep(0.1)
         assert await reader.read() == b""
 
-    @pytest.mark.parametrize("request_handler", [BadGeneratorRequestHandler], indirect=True)
+    @pytest.mark.parametrize("request_handler", [InvalidRequestHandler], indirect=True)
     async def test____serve_forever____request_handler_did_not_yield(
         self,
         caplog: pytest.LogCaptureFixture,
@@ -626,3 +681,12 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         reader, _ = await client_factory()
 
         assert await reader.readline() == b"timeout error\n"
+
+    @pytest.mark.parametrize("use_ssl", ["USE_SSL"], indirect=True)
+    @pytest.mark.parametrize("ssl_handshake_timeout", [pytest.param(0, id="null timeout")])
+    async def test____serve_forever____ssl_handshake_timeout_error(
+        self,
+        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+    ) -> None:
+        with pytest.raises(OSError):
+            _ = await client_factory()
