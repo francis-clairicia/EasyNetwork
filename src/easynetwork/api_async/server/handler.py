@@ -74,8 +74,9 @@ class AsyncBaseRequestHandler(Generic[_RequestT, _ResponseT], metaclass=ABCMeta)
     def handle(self, client: AsyncClientInterface[_ResponseT], /) -> AsyncGenerator[None, _RequestT]:
         raise NotImplementedError
 
+    @abstractmethod
     async def bad_request(self, client: AsyncClientInterface[_ResponseT], exc: BaseProtocolParseError, /) -> None:
-        pass
+        raise NotImplementedError
 
 
 class AsyncStreamRequestHandler(AsyncBaseRequestHandler[_RequestT, _ResponseT]):

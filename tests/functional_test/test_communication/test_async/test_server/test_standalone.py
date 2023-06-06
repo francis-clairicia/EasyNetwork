@@ -13,6 +13,7 @@ from easynetwork.api_async.server.standalone import (
     StandaloneTCPNetworkServer,
     StandaloneUDPNetworkServer,
 )
+from easynetwork.exceptions import BaseProtocolParseError
 from easynetwork.protocol import DatagramProtocol, StreamProtocol
 
 import pytest
@@ -22,6 +23,9 @@ class EchoRequestHandler(AsyncBaseRequestHandler[str, str]):
     async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
         request = yield
         await client.send_packet(request)
+
+    async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError, /) -> None:
+        await client.aclose()
 
 
 class BaseTestStandaloneNetworkServer:

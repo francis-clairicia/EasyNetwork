@@ -39,6 +39,9 @@ class BaseFakeHandler(AsyncBaseRequestHandler[Any, Any]):
     def handle(self, client: AsyncClientInterface[Any]) -> AsyncGenerator[None, Any]:
         raise NotImplementedError
 
+    async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError, /) -> None:
+        pass
+
 
 class FakeStreamHandler(AsyncStreamRequestHandler[Any, Any], BaseFakeHandler):
     __slots__ = ()
@@ -86,16 +89,6 @@ class BaseCommonTestsForRequestHandler:
 
         # Act & Assert
         assert (await request_handler.service_actions()) is None
-
-    async def test____bad_request____return_None(
-        self,
-        mock_async_client: MagicMock,
-        request_handler: AsyncBaseRequestHandler[Any, Any],
-    ) -> None:
-        # Arrange
-
-        # Act & Assert
-        assert (await request_handler.bad_request(mock_async_client, BaseProtocolParseError("deserialization", "test"))) is None
 
 
 class TestAsyncStreamRequestHandler(BaseCommonTestsForRequestHandler):

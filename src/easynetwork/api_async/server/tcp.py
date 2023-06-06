@@ -20,7 +20,6 @@ from typing import (
     Callable,
     Generic,
     Iterator,
-    Literal,
     Mapping,
     Sequence,
     TypeVar,
@@ -61,6 +60,7 @@ if TYPE_CHECKING:
         AbstractAsyncStreamSocketAdapter,
         AbstractTask,
         AbstractTaskGroup,
+        IEvent,
     )
 
 
@@ -75,7 +75,6 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         "__listeners_factory",
         "__protocol",
         "__request_handler",
-        "__is_up",
         "__is_shutdown",
         "__shutdown_asked",
         "__max_recv_size",
@@ -159,8 +158,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         self.__listeners: tuple[AbstractAsyncListenerSocketAdapter, ...] | None = None
         self.__protocol: StreamProtocol[_ResponseT, _RequestT] = protocol
         self.__request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT] = request_handler
-        self.__is_up = self.__backend.create_event()
-        self.__is_shutdown = self.__backend.create_event()
+        self.__is_shutdown: IEvent = self.__backend.create_event()
         self.__is_shutdown.set()
         self.__shutdown_asked: bool = False
         self.__max_recv_size: int = max_recv_size
@@ -170,13 +168,6 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
     def is_serving(self) -> bool:
         return self.__listeners is not None and all(not listener.is_closing() for listener in self.__listeners)
-
-    async def wait_for_server_to_be_up(self) -> Literal[True]:
-        if not self.__is_up.is_set():
-            if self.__listeners is None and self.__listeners_factory is None:
-                raise RuntimeError("Closed server")
-            await self.__is_up.wait()
-        return True
 
     def stop_listening(self) -> None:
         with _contextlib.ExitStack() as exit_stack:
@@ -208,7 +199,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         finally:
             self.__shutdown_asked = False
 
-    async def serve_forever(self) -> None:
+    async def serve_forever(self, *, is_up_event: IEvent | None = None) -> None:
         if not self.__is_shutdown.is_set():
             raise RuntimeError("Server is already running")
 
@@ -257,8 +248,8 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             #################
 
             # Server is up
-            self.__is_up.set()
-            server_exit_stack.callback(self.__is_up.clear)
+            if is_up_event is not None:
+                is_up_event.set()
             task_group.start_soon(self.__service_actions_task)
             ##############
 
@@ -303,14 +294,14 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         backend: AbstractAsyncBackend = self.__backend
         client_task = self.__client_task
         async with listener:
-            while not listener.is_closing():
+            while True:
                 try:
                     client_socket: AbstractAcceptedSocket = await listener.accept()
                 except OSError as exc:
-                    import errno
-                    import os
+                    if exc.errno in ACCEPT_CAPACITY_ERRNOS:  # pragma: no cover  # Not testable
+                        import errno
+                        import os
 
-                    if exc.errno in ACCEPT_CAPACITY_ERRNOS:
                         self.__logger.error(
                             "accept returned %s (%s); retrying in %s seconds",
                             errno.errorcode[exc.errno],
@@ -500,24 +491,32 @@ class _RequestReceiver(Generic[_RequestT, _ResponseT]):
         client: _ConnectedClientAPI[Any] = self.__api
         logger: _logging.Logger = self.__logger
         while True:
+            parse_error: StreamProtocolParseError | None = None
             try:
                 return next(consumer)
             except StreamProtocolParseError as exc:
-                logger.debug("Malformed request sent by %s", client.address)
-                await self.__request_handler.bad_request(client, exc.with_traceback(None))
-                await self.__backend.coro_yield()
-                continue
+                parse_error = exc.with_traceback(None)
             except StopIteration:
                 pass
+            if parse_error is not None:
+                try:
+                    logger.debug("Malformed request sent by %s", client.address)
+                    await self.__request_handler.bad_request(client, parse_error)
+                    await self.__backend.coro_yield()
+                finally:
+                    del parse_error
+                continue
             try:
                 data: bytes = await socket.recv(self.__max_recv_size) if not socket.is_closing() else b""
             except ConnectionError:
                 data = b""
             if not data:  # Closed connection (EOF)
                 break
-            logger.debug("Received %d bytes from %s", len(data), client.address)
-            consumer.feed(data)
-            del data
+            try:
+                logger.debug("Received %d bytes from %s", len(data), client.address)
+                consumer.feed(data)
+            finally:
+                del data
         raise StopAsyncIteration
 
 

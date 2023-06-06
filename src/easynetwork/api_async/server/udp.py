@@ -11,7 +11,7 @@ __all__ = ["AsyncUDPNetworkServer"]
 import contextlib as _contextlib
 import logging as _logging
 from collections import Counter, deque
-from typing import TYPE_CHECKING, Any, AsyncGenerator, AsyncIterator, Callable, Generic, Literal, Mapping, TypeVar, final
+from typing import TYPE_CHECKING, Any, AsyncGenerator, AsyncIterator, Callable, Generic, Mapping, TypeVar, final
 from weakref import WeakValueDictionary
 
 from ...exceptions import ClientClosedError, DatagramProtocolParseError
@@ -30,6 +30,7 @@ if TYPE_CHECKING:
         AbstractTask,
         AbstractTaskGroup,
         ICondition,
+        IEvent,
         ILock,
     )
 
@@ -45,7 +46,6 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         "__socket_factory",
         "__protocol",
         "__request_handler",
-        "__is_up",
         "__is_shutdown",
         "__shutdown_asked",
         "__sendto_lock",
@@ -94,8 +94,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         self.__socket: AbstractAsyncDatagramSocketAdapter | None = None
         self.__protocol: DatagramProtocol[_ResponseT, _RequestT] = protocol
         self.__request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT] = request_handler
-        self.__is_up = self.__backend.create_event()
-        self.__is_shutdown = self.__backend.create_event()
+        self.__is_shutdown: IEvent = self.__backend.create_event()
         self.__is_shutdown.set()
         self.__shutdown_asked: bool = False
         self.__sendto_lock: ILock = backend.create_lock()
@@ -112,33 +111,30 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
     def is_serving(self) -> bool:
         return self.__socket is not None
 
-    async def wait_for_server_to_be_up(self) -> Literal[True]:
-        if not self.__is_up.is_set():
-            if self.__socket is None and self.__socket_factory is None:
-                raise RuntimeError("Closed server")
-            await self.__is_up.wait()
-        return True
-
     async def server_close(self) -> None:
         if self.__socket_factory is not None:
             self.__socket_factory.cancel()
             self.__socket_factory = None
+        self.__stop_mainloop()
         socket, self.__socket = self.__socket, None
         if socket is None:
             return
         await socket.aclose()
 
     async def shutdown(self) -> None:
-        if self.__mainloop_task is not None:
-            self.__mainloop_task.cancel()
-            self.__mainloop_task = None
+        self.__stop_mainloop()
         self.__shutdown_asked = True
         try:
             await self.__is_shutdown.wait()
         finally:
             self.__shutdown_asked = False
 
-    async def serve_forever(self) -> None:
+    def __stop_mainloop(self) -> None:
+        if self.__mainloop_task is not None:
+            self.__mainloop_task.cancel()
+            self.__mainloop_task = None
+
+    async def serve_forever(self, *, is_up_event: IEvent | None = None) -> None:
         if not self.__is_shutdown.is_set():
             raise RuntimeError("Server is already running")
 
@@ -179,8 +175,8 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             #################
 
             # Server is up
-            self.__is_up.set()
-            server_exit_stack.callback(self.__is_up.clear)
+            if is_up_event is not None:
+                is_up_event.set()
             task_group.start_soon(self.__service_actions_task)
             ##############
 

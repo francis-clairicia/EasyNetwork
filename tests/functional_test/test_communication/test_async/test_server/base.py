@@ -15,11 +15,12 @@ import pytest_asyncio
 class BaseTestAsyncServer:
     @pytest_asyncio.fixture  # DO NOT SET autouse=True
     @staticmethod
-    async def run_server(server: AbstractAsyncNetworkServer) -> AsyncIterator[None]:
+    async def run_server(server: AbstractAsyncNetworkServer) -> AsyncIterator[asyncio.Event]:
+        event = asyncio.Event()
         async with asyncio.TaskGroup() as tg:
-            tg.create_task(server.serve_forever())
+            tg.create_task(server.serve_forever(is_up_event=event))
             await asyncio.sleep(0)
-            yield
+            yield event
             await server.shutdown()
 
     @pytest.mark.usefixtures("run_server")

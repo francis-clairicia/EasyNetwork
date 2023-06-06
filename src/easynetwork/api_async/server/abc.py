@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any, Self
 if TYPE_CHECKING:
     from types import TracebackType
 
-    from ..backend.abc import AbstractAsyncBackend
+    from ..backend.abc import AbstractAsyncBackend, IEvent
 
 
 class AbstractAsyncNetworkServer(metaclass=ABCMeta):
@@ -39,7 +39,7 @@ class AbstractAsyncNetworkServer(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    async def serve_forever(self) -> None:
+    async def serve_forever(self, *, is_up_event: IEvent | None = ...) -> None:
         raise NotImplementedError
 
     @abstractmethod

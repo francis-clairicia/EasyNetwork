@@ -67,7 +67,6 @@ class MyAsyncUDPRequestHandler(AsyncBaseRequestHandler[str, str]):
                 await client.send_packet(request.upper())
 
     async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError) -> None:
-        await super().bad_request(client, exc)
         self.bad_request_received[client.address].append(exc)
         await client.send_packet("wrong encoding man.")
 
@@ -80,12 +79,18 @@ class TimeoutRequestHandler(AsyncBaseRequestHandler[str, str]):
                 yield
         await client.send_packet("successfully timed out")
 
+    async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError, /) -> None:
+        pass
+
 
 class CancellationRequestHandler(AsyncBaseRequestHandler[str, str]):
     async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
         yield
         await client.send_packet("response")
         raise asyncio.CancelledError()
+
+    async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError, /) -> None:
+        pass
 
 
 class MyAsyncUDPServer(AsyncUDPNetworkServer[str, str]):
@@ -130,9 +135,9 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
 
     @pytest_asyncio.fixture
     @staticmethod
-    async def server_address(run_server: None, server: MyAsyncUDPServer) -> tuple[str, int]:
+    async def server_address(run_server: asyncio.Event, server: MyAsyncUDPServer) -> tuple[str, int]:
         async with asyncio.timeout(1):
-            await server.wait_for_server_to_be_up()
+            await run_server.wait()
         assert server.is_serving()
         assert server.socket is not None
         return server.socket.getsockname()[:2]
@@ -172,9 +177,10 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         backend_kwargs: dict[str, Any],
     ) -> None:
         async with MyAsyncUDPServer(host, 0, datagram_protocol, request_handler, backend_kwargs=backend_kwargs) as s:
-            _ = asyncio.create_task(s.serve_forever())
+            is_up_event = asyncio.Event()
+            _ = asyncio.create_task(s.serve_forever(is_up_event=is_up_event))
             async with asyncio.timeout(1):
-                await s.wait_for_server_to_be_up()
+                await is_up_event.wait()
 
             assert s.socket is not None
             assert s.get_protocol() is datagram_protocol
