@@ -115,7 +115,10 @@ class _BaseStandaloneNetworkServerImpl(AbstractStandaloneNetworkServer):
                 self.__threads_portal = None
 
         backend = self.__server.get_backend()
-        with _contextlib.suppress(backend.get_cancelled_exc_class()):
+        with _contextlib.suppress(backend.get_cancelled_exc_class()), _contextlib.ExitStack() as stack:
+            if is_up_event is not None:
+                # Force is_up_event to be set, in order not to stuck the waiting thread
+                stack.callback(is_up_event.set)
             backend.bootstrap(serve_forever)
 
     @property

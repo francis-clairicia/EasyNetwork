@@ -207,6 +207,9 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             # Wake up server
             self.__is_shutdown.clear()
             server_exit_stack.callback(self.__is_shutdown.set)
+            if is_up_event is not None:
+                # Force is_up_event to be set, in order not to stuck the waiting task
+                server_exit_stack.callback(is_up_event.set)
             ################
 
             # Bind and activate
