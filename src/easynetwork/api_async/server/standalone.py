@@ -17,11 +17,12 @@ from .udp import AsyncUDPNetworkServer
 
 if TYPE_CHECKING:
     import logging as _logging
+    import threading as _threading
     from ssl import SSLContext as _SSLContext
     from types import TracebackType
 
     from ...protocol import DatagramProtocol, StreamProtocol
-    from ..backend.abc import AbstractAsyncBackend, AbstractThreadsPortal
+    from ..backend.abc import AbstractAsyncBackend, AbstractThreadsPortal, IEvent
     from .abc import AbstractAsyncNetworkServer
     from .handler import AsyncBaseRequestHandler
 
@@ -51,7 +52,7 @@ class AbstractStandaloneNetworkServer(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    def serve_forever(self) -> None:
+    def serve_forever(self, *, is_up_event: _threading.Event | None = ...) -> None:
         raise NotImplementedError
 
     @abstractmethod
@@ -93,14 +94,23 @@ class _BaseStandaloneNetworkServerImpl(AbstractStandaloneNetworkServer):
             with _contextlib.suppress(RuntimeError):
                 portal.run_coroutine(self.__server.shutdown)
 
-    def serve_forever(self) -> None:
+    def serve_forever(self, *, is_up_event: _threading.Event | None = None) -> None:
+        async def wait_and_set_event(is_up_event_async: IEvent, is_up_event: _threading.Event) -> None:
+            await is_up_event_async.wait()
+            is_up_event.set()
+
         async def serve_forever() -> None:
             if self.__threads_portal is not None:
                 raise RuntimeError("Server is already running")
+            backend = self.__server.get_backend()
             try:
-                self.__threads_portal = self.__server.get_backend().create_threads_portal()
-                async with self.__server:
-                    await self.__server.serve_forever()
+                self.__threads_portal = backend.create_threads_portal()
+                is_up_event_async: IEvent | None = None
+                async with self.__server, backend.create_task_group() as task_group:
+                    if is_up_event is not None:
+                        is_up_event_async = backend.create_event()
+                        task_group.start_soon(wait_and_set_event, is_up_event_async, is_up_event)
+                    await self.__server.serve_forever(is_up_event=is_up_event_async)
             finally:
                 self.__threads_portal = None
 

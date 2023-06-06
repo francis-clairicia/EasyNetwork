@@ -49,6 +49,19 @@ class BaseTestStandaloneNetworkServer:
             t.join()
             assert not server.is_serving()
 
+    def test____shutdown____wait_server_to_be_up(self, server: AbstractStandaloneNetworkServer) -> None:
+        with server:
+            is_up_event = threading.Event()
+            t = threading.Thread(target=server.serve_forever, kwargs={"is_up_event": is_up_event}, daemon=True)
+            t.start()
+
+            is_up_event.wait(timeout=1)
+            assert server.is_serving()
+
+            server.shutdown()
+            t.join()
+            assert not server.is_serving()
+
     def test____server_close____while_server_is_running(self, server: AbstractStandaloneNetworkServer) -> None:
         with server:
             t = threading.Thread(target=server.serve_forever, daemon=True)
