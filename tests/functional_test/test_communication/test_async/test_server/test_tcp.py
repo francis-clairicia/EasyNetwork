@@ -8,22 +8,51 @@ import contextlib
 import logging
 import math
 import ssl
+import ssl as _ssl
 from socket import IPPROTO_TCP, TCP_NODELAY
-from typing import Any, AsyncGenerator, AsyncIterator, Awaitable, Callable
+from typing import Any, AsyncGenerator, AsyncIterator, Awaitable, Callable, Sequence
 from weakref import WeakValueDictionary
 
-from easynetwork.api_async.backend.abc import AbstractAsyncBackend
+from easynetwork.api_async.backend.abc import AbstractAsyncBackend, AbstractAsyncListenerSocketAdapter
 from easynetwork.api_async.server.handler import AsyncBaseRequestHandler, AsyncClientInterface, AsyncStreamRequestHandler
 from easynetwork.api_async.server.tcp import AsyncTCPNetworkServer
 from easynetwork.exceptions import BaseProtocolParseError, ClientClosedError, StreamProtocolParseError
 from easynetwork.protocol import StreamProtocol
 from easynetwork.tools.socket import SocketAddress
 from easynetwork_asyncio._utils import create_connection
+from easynetwork_asyncio.backend import AsyncioBackend
 
 import pytest
 import pytest_asyncio
 
 from .base import BaseTestAsyncServer
+
+
+class NoListenerErrorBackend(AsyncioBackend):
+    async def create_tcp_listeners(
+        self,
+        host: str | Sequence[str] | None,
+        port: int,
+        backlog: int,
+        *,
+        family: int = 0,
+        reuse_port: bool = False,
+    ) -> Sequence[AbstractAsyncListenerSocketAdapter]:
+        return []
+
+    async def create_ssl_over_tcp_listeners(
+        self,
+        host: str | Sequence[str] | None,
+        port: int,
+        backlog: int,
+        ssl_context: _ssl.SSLContext,
+        ssl_handshake_timeout: float,
+        ssl_shutdown_timeout: float,
+        *,
+        family: int = 0,
+        reuse_port: bool = False,
+    ) -> Sequence[AbstractAsyncListenerSocketAdapter]:
+        return []
 
 
 class RandomError(Exception):
@@ -329,6 +358,44 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
             assert s.get_protocol() is stream_protocol
 
             await s.shutdown()
+
+    @pytest.mark.parametrize("ssl_parameter", ["ssl_handshake_timeout", "ssl_shutdown_timeout"])
+    async def test____dunder_init____useless_parameter_if_no_ssl_context(
+        self,
+        ssl_parameter: str,
+        request_handler: MyAsyncTCPRequestHandler,
+        stream_protocol: StreamProtocol[str, str],
+    ) -> None:
+        kwargs: dict[str, Any] = {ssl_parameter: 30}
+        with pytest.raises(ValueError, match=r"^%s is only meaningful with ssl$" % ssl_parameter):
+            _ = MyAsyncTCPServer(None, 0, stream_protocol, request_handler, ssl=None, **kwargs)
+
+    @pytest.mark.parametrize(
+        "max_recv_size",
+        [
+            pytest.param(0, id="null size"),
+            pytest.param(-20, id="negative size"),
+        ],
+    )
+    async def test____dunder_init____negative_or_null_recv_size(
+        self,
+        max_recv_size: int,
+        request_handler: MyAsyncTCPRequestHandler,
+        stream_protocol: StreamProtocol[str, str],
+    ) -> None:
+        with pytest.raises(ValueError, match=r"^'max_recv_size' must be a strictly positive integer$"):
+            _ = MyAsyncTCPServer(None, 0, stream_protocol, request_handler, max_recv_size=max_recv_size)
+
+    async def test____serve_forever____empty_listener_list(
+        self,
+        request_handler: MyAsyncTCPRequestHandler,
+        stream_protocol: StreamProtocol[str, str],
+    ) -> None:
+        async with MyAsyncTCPServer(None, 0, stream_protocol, request_handler, backend=NoListenerErrorBackend()) as s:
+            with pytest.raises(OSError, match=r"^empty listeners list$"):
+                await s.serve_forever()
+
+            assert not s.sockets
 
     @pytest.mark.usefixtures("run_server_and_wait")
     async def test____serve_forever____backend_assignment(
