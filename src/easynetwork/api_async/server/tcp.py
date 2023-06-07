@@ -263,11 +263,6 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 self.__mainloop_task.cancel()
             try:
                 await self.__mainloop_task.join()
-            except self.__backend.get_cancelled_exc_class():
-                try:
-                    self.stop_listening()
-                finally:
-                    raise
             finally:
                 self.__mainloop_task = None
 
