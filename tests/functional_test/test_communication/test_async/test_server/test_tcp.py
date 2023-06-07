@@ -72,9 +72,11 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
     crash_service_actions: bool = False
     stop_listening: Callable[[], None]
 
-    async def service_init(self, backend: AbstractAsyncBackend) -> None:
-        await super().service_init(backend)
+    def set_async_backend(self, backend: AbstractAsyncBackend) -> None:
         self.backend = backend
+
+    async def service_init(self) -> None:
+        await super().service_init()
         self.connected_clients = WeakValueDictionary()
         self.service_actions_count = 0
         self.request_received = collections.defaultdict(list)
@@ -93,7 +95,6 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
     async def service_quit(self) -> None:
         del (
             self.connected_clients,
-            self.backend,
             self.service_actions_count,
             self.request_received,
             self.request_count,
@@ -173,7 +174,7 @@ class CancellationRequestHandler(AsyncBaseRequestHandler[str, str]):
 class InitialHandshakeRequestHandler(AsyncStreamRequestHandler[str, str]):
     backend: AbstractAsyncBackend
 
-    async def service_init(self, backend: AbstractAsyncBackend) -> None:
+    def set_async_backend(self, backend: AbstractAsyncBackend) -> None:
         self.backend = backend
 
     async def on_connection(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:

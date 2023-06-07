@@ -32,9 +32,11 @@ class MyAsyncUDPRequestHandler(AsyncBaseRequestHandler[str, str]):
     backend: AbstractAsyncBackend
     service_actions_count: int
 
-    async def service_init(self, backend: AbstractAsyncBackend) -> None:
-        await super().service_init(backend)
+    def set_async_backend(self, backend: AbstractAsyncBackend) -> None:
         self.backend = backend
+
+    async def service_init(self) -> None:
+        await super().service_init()
         self.service_actions_count = 0
         self.request_received = collections.defaultdict(list)
         self.bad_request_received = collections.defaultdict(list)
@@ -45,7 +47,6 @@ class MyAsyncUDPRequestHandler(AsyncBaseRequestHandler[str, str]):
 
     async def service_quit(self) -> None:
         del (
-            self.backend,
             self.service_actions_count,
             self.request_received,
             self.bad_request_received,

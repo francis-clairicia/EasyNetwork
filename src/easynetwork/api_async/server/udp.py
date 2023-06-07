@@ -158,7 +158,8 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             ################
 
             # Initialize request handler
-            await self.__request_handler.service_init(self.__backend)
+            self.__request_handler.set_async_backend(self.__backend)
+            await self.__request_handler.service_init()
             server_exit_stack.callback(self.__client_manager.clear)
             server_exit_stack.push_async_callback(self.__request_handler.service_quit)
             ############################

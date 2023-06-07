@@ -62,7 +62,7 @@ class TestAsyncClientInterface:
 
 @pytest.mark.asyncio
 class BaseCommonTestsForRequestHandler:
-    async def test____service_init____return_None(
+    async def test____set_async_backend____return_None(
         self,
         mock_backend: MagicMock,
         request_handler: AsyncBaseRequestHandler[Any, Any],
@@ -70,7 +70,16 @@ class BaseCommonTestsForRequestHandler:
         # Arrange
 
         # Act & Assert
-        assert (await request_handler.service_init(mock_backend)) is None
+        assert request_handler.set_async_backend(mock_backend) is None
+
+    async def test____service_init____return_None(
+        self,
+        request_handler: AsyncBaseRequestHandler[Any, Any],
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        assert (await request_handler.service_init()) is None
 
     async def test____service_quit____return_None(
         self,

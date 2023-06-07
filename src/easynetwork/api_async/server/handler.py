@@ -61,7 +61,10 @@ class AsyncClientInterface(Generic[_ResponseT], metaclass=ABCMeta):
 class AsyncBaseRequestHandler(Generic[_RequestT, _ResponseT], metaclass=ABCMeta):
     __slots__ = ("__weakref__",)
 
-    async def service_init(self, backend: AbstractAsyncBackend, /) -> None:
+    def set_async_backend(self, backend: AbstractAsyncBackend, /) -> None:
+        pass
+
+    async def service_init(self) -> None:
         pass
 
     async def service_quit(self) -> None:

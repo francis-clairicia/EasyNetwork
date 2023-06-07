@@ -229,7 +229,8 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             ################
 
             # Initialize request handler
-            await self.__request_handler.service_init(self.__backend)
+            self.__request_handler.set_async_backend(self.__backend)
+            await self.__request_handler.service_init()
             server_exit_stack.push_async_callback(self.__request_handler.service_quit)
             if isinstance(self.__request_handler, AsyncStreamRequestHandler):
                 self.__request_handler.set_stop_listening_callback(self.__make_stop_listening_callback())
