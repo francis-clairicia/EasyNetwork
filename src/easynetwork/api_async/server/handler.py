@@ -9,12 +9,11 @@ from __future__ import annotations
 __all__ = [
     "AsyncBaseRequestHandler",
     "AsyncClientInterface",
-    "AsyncDatagramRequestHandler",
     "AsyncStreamRequestHandler",
 ]
 
 from abc import ABCMeta, abstractmethod
-from typing import TYPE_CHECKING, Callable, Generic, TypeVar, final
+from typing import TYPE_CHECKING, Any, AsyncGenerator, Callable, Coroutine, Generic, TypeVar, final
 
 if TYPE_CHECKING:
     from ...exceptions import BaseProtocolParseError
@@ -62,7 +61,10 @@ class AsyncClientInterface(Generic[_ResponseT], metaclass=ABCMeta):
 class AsyncBaseRequestHandler(Generic[_RequestT, _ResponseT], metaclass=ABCMeta):
     __slots__ = ("__weakref__",)
 
-    async def service_init(self, backend: AbstractAsyncBackend, /) -> None:
+    def set_async_backend(self, backend: AbstractAsyncBackend, /) -> None:
+        pass
+
+    async def service_init(self) -> None:
         pass
 
     async def service_quit(self) -> None:
@@ -72,31 +74,27 @@ class AsyncBaseRequestHandler(Generic[_RequestT, _ResponseT], metaclass=ABCMeta)
         pass
 
     @abstractmethod
-    async def handle(self, request: _RequestT, client: AsyncClientInterface[_ResponseT], /) -> None:
+    def handle(self, client: AsyncClientInterface[_ResponseT], /) -> AsyncGenerator[None, _RequestT]:
         raise NotImplementedError
 
+    @abstractmethod
     async def bad_request(self, client: AsyncClientInterface[_ResponseT], exc: BaseProtocolParseError, /) -> None:
-        pass
-
-    async def handle_error(self, client: AsyncClientInterface[_ResponseT], exc: Exception, /) -> bool:
-        return False
+        raise NotImplementedError
 
 
 class AsyncStreamRequestHandler(AsyncBaseRequestHandler[_RequestT, _ResponseT]):
     __slots__ = ()
 
-    async def on_connection(self, client: AsyncClientInterface[_ResponseT], /) -> None:
-        pass
+    def on_connection(
+        self, client: AsyncClientInterface[_ResponseT], /
+    ) -> Coroutine[Any, Any, None] | AsyncGenerator[None, _RequestT]:
+        async def _pass() -> None:
+            pass
+
+        return _pass()
 
     async def on_disconnection(self, client: AsyncClientInterface[_ResponseT], /) -> None:
         pass
 
     def set_stop_listening_callback(self, stop_listening_callback: Callable[[], None], /) -> None:
         pass
-
-
-class AsyncDatagramRequestHandler(AsyncBaseRequestHandler[_RequestT, _ResponseT]):
-    __slots__ = ()
-
-    async def accept_request_from(self, client_address: SocketAddress, /) -> bool:
-        return True

@@ -18,9 +18,11 @@ __all__ = [
     "set_reuseport",
     "set_tcp_nodelay",
     "ssl_do_not_ignore_unexpected_eof",
+    "transform_future_exception",
     "wait_socket_available",
 ]
 
+import concurrent.futures
 import contextlib
 import errno as _errno
 import os
@@ -236,6 +238,13 @@ def set_tcp_nodelay(sock: _socket.socket | _SocketProxy) -> None:
         pass
 
 
+def set_tcp_keepalive(sock: _socket.socket | _SocketProxy) -> None:
+    try:
+        sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_KEEPALIVE, True)
+    except (OSError, AttributeError):  # pragma: no cover
+        pass
+
+
 def open_listener_sockets_from_getaddrinfo_result(
     infos: Iterable[tuple[int, int, int, str, tuple[Any, ...]]],
     *,
@@ -290,3 +299,17 @@ def open_listener_sockets_from_getaddrinfo_result(
         socket_exit_stack.pop_all()
 
     return sockets
+
+
+def transform_future_exception(exc: BaseException) -> BaseException:
+    match exc:
+        case SystemExit() | KeyboardInterrupt():
+            cancel_exc = concurrent.futures.CancelledError().with_traceback(exc.__traceback__)
+            try:
+                cancel_exc.__cause__ = cancel_exc.__context__ = exc
+                exc = cancel_exc
+            finally:
+                del cancel_exc
+        case _:
+            pass
+    return exc

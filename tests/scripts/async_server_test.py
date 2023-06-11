@@ -1,34 +1,45 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
 import logging
-from typing import Callable
+from typing import AsyncGenerator, Callable
 
-from easynetwork.api_async.server.abc import AbstractAsyncNetworkServer
 from easynetwork.api_async.server.handler import AsyncBaseRequestHandler, AsyncClientInterface
-from easynetwork.api_async.server.tcp import AsyncTCPNetworkServer
-from easynetwork.api_async.server.udp import AsyncUDPNetworkServer
+from easynetwork.api_async.server.standalone import (
+    AbstractStandaloneNetworkServer,
+    StandaloneTCPNetworkServer,
+    StandaloneUDPNetworkServer,
+)
+from easynetwork.exceptions import BaseProtocolParseError
 from easynetwork.protocol import DatagramProtocol, StreamProtocol
 from easynetwork.serializers.line import StringLineSerializer
 
 PORT = 9000
 
+logger = logging.getLogger("app")
+
 
 class MyAsyncRequestHandler(AsyncBaseRequestHandler[str, str]):
-    async def handle(self, request: str, client: AsyncClientInterface[str]) -> None:
-        await client.send_packet(request.upper())
+    async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
+        request: str = (yield).removesuffix("\n")
+        logger.debug(f"Received {request!r}")
+        if request == "wait:":
+            request = (yield).removesuffix("\n") + " after wait"
+        await client.send_packet(request.upper() + "\n")
+
+    async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError) -> None:
+        pass
 
 
-def create_tcp_server() -> AsyncTCPNetworkServer[str, str]:
-    return AsyncTCPNetworkServer(None, PORT, StreamProtocol(StringLineSerializer()), MyAsyncRequestHandler())
+def create_tcp_server() -> StandaloneTCPNetworkServer[str, str]:
+    return StandaloneTCPNetworkServer(None, PORT, StreamProtocol(StringLineSerializer()), MyAsyncRequestHandler(), "asyncio")
 
 
-def create_udp_server() -> AsyncUDPNetworkServer[str, str]:
-    return AsyncUDPNetworkServer(None, PORT, DatagramProtocol(StringLineSerializer()), MyAsyncRequestHandler())
+def create_udp_server() -> StandaloneUDPNetworkServer[str, str]:
+    return StandaloneUDPNetworkServer(None, PORT, DatagramProtocol(StringLineSerializer()), MyAsyncRequestHandler(), "asyncio")
 
 
-async def main() -> None:
+def main() -> None:
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
@@ -62,16 +73,16 @@ async def main() -> None:
 
     args = parser.parse_args()
 
-    server_factory: Callable[[], AbstractAsyncNetworkServer] = args.server_factory
+    server_factory: Callable[[], AbstractStandaloneNetworkServer] = args.server_factory
 
     logging.basicConfig(level=getattr(logging, args.log_level), format="[ %(levelname)s ] [ %(name)s ] %(message)s")
 
-    async with server_factory() as server:
-        await server.serve_forever()
+    with server_factory() as server:
+        return server.serve_forever()
 
 
 if __name__ == "__main__":
     try:
-        asyncio.run(main())
+        main()
     except KeyboardInterrupt:
         pass

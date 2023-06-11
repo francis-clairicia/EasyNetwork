@@ -24,6 +24,7 @@ class TestAsyncTCPNetworkClient:
     def server(socket_pair: tuple[Socket, Socket]) -> Socket:
         server = socket_pair[0]
         server.setsockopt(IPPROTO_TCP, TCP_NODELAY, 1)
+        server.setblocking(False)
         return server
 
     @pytest_asyncio.fixture
@@ -48,9 +49,14 @@ class TestAsyncTCPNetworkClient:
         await client.aclose()
         assert client.is_closing()
 
-    async def test____send_packet____default(self, client: AsyncTCPNetworkClient[str, str], server: Socket) -> None:
+    async def test____send_packet____default(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        client: AsyncTCPNetworkClient[str, str],
+        server: Socket,
+    ) -> None:
         await client.send_packet("ABCDEF")
-        assert await asyncio.to_thread(server.recv, 1024) == b"ABCDEF\n"
+        assert await event_loop.sock_recv(server, 1024) == b"ABCDEF\n"
 
     @pytest.mark.skipif_uvloop  # Error not triggered
     @pytest.mark.platform_linux  # Windows and MacOS raise ConnectionAbortedError but in the 2nd send() call
@@ -67,11 +73,12 @@ class TestAsyncTCPNetworkClient:
     @pytest.mark.platform_linux  # Windows and MacOS raise ConnectionAbortedError but in the 2nd send() call
     async def test____send_packet____connection_error____after_previous_successful_try(
         self,
+        event_loop: asyncio.AbstractEventLoop,
         client: AsyncTCPNetworkClient[str, str],
         server: Socket,
     ) -> None:
         await client.send_packet("ABCDEF")
-        assert await asyncio.to_thread(server.recv, 1024) == b"ABCDEF\n"
+        assert await event_loop.sock_recv(server, 1024) == b"ABCDEF\n"
         server.close()
         with pytest.raises(ConnectionError):
             await client.send_packet("ABCDEF")
@@ -80,11 +87,12 @@ class TestAsyncTCPNetworkClient:
     @pytest.mark.platform_linux  # Windows and MacOS raise ConnectionResetError but in the 2nd send() call sometimes (it is random)
     async def test____send_packet____connection_error____partial_read_then_close(
         self,
+        event_loop: asyncio.AbstractEventLoop,
         client: AsyncTCPNetworkClient[str, str],
         server: Socket,
     ) -> None:
         await client.send_packet("ABC")
-        assert await asyncio.to_thread(server.recv, 1) == b"A"
+        assert await event_loop.sock_recv(server, 1) == b"A"
         server.close()
         with pytest.raises(ConnectionError):
             await client.send_packet("DEF")

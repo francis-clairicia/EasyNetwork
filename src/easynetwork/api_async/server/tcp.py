@@ -9,16 +9,29 @@ from __future__ import annotations
 __all__ = ["AsyncTCPNetworkServer"]
 
 import contextlib as _contextlib
-import errno as _errno
+import inspect
 import logging as _logging
 from collections import deque
-from typing import TYPE_CHECKING, Any, AsyncGenerator, Callable, Generic, Iterator, Literal, Mapping, Sequence, TypeVar, final
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    AsyncGenerator,
+    AsyncIterator,
+    Callable,
+    Generic,
+    Iterator,
+    Mapping,
+    Sequence,
+    TypeVar,
+    final,
+)
 
 from ...exceptions import ClientClosedError, StreamProtocolParseError
 from ...protocol import StreamProtocol
 from ...tools._utils import (
     check_real_socket_state as _check_real_socket_state,
     concatenate_chunks as _concatenate_chunks,
+    set_tcp_keepalive as _set_tcp_keepalive,
     set_tcp_nodelay as _set_tcp_nodelay,
 )
 from ...tools.socket import (
@@ -47,6 +60,7 @@ if TYPE_CHECKING:
         AbstractAsyncStreamSocketAdapter,
         AbstractTask,
         AbstractTaskGroup,
+        IEvent,
     )
 
 
@@ -61,7 +75,6 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         "__listeners_factory",
         "__protocol",
         "__request_handler",
-        "__is_up",
         "__is_shutdown",
         "__shutdown_asked",
         "__max_recv_size",
@@ -85,7 +98,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         backlog: int | None = None,
         reuse_port: bool = False,
         max_recv_size: int | None = None,
-        service_actions_interval: float = 0.1,
+        service_actions_interval: float | None = None,
         backend: str | AbstractAsyncBackend | None = None,
         backend_kwargs: Mapping[str, Any] | None = None,
         logger: _logging.Logger | None = None,
@@ -135,6 +148,9 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         if not isinstance(max_recv_size, int) or max_recv_size <= 0:
             raise ValueError("'max_recv_size' must be a strictly positive integer")
 
+        if service_actions_interval is None:
+            service_actions_interval = 0.1
+
         assert isinstance(protocol, StreamProtocol)
 
         self.__service_actions_interval: float = max(service_actions_interval, 0)
@@ -142,8 +158,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         self.__listeners: tuple[AbstractAsyncListenerSocketAdapter, ...] | None = None
         self.__protocol: StreamProtocol[_ResponseT, _RequestT] = protocol
         self.__request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT] = request_handler
-        self.__is_up = self.__backend.create_event()
-        self.__is_shutdown = self.__backend.create_event()
+        self.__is_shutdown: IEvent = self.__backend.create_event()
         self.__is_shutdown.set()
         self.__shutdown_asked: bool = False
         self.__max_recv_size: int = max_recv_size
@@ -153,13 +168,6 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
     def is_serving(self) -> bool:
         return self.__listeners is not None and all(not listener.is_closing() for listener in self.__listeners)
-
-    async def wait_for_server_to_be_up(self) -> Literal[True]:
-        if not self.__is_up.is_set():
-            if self.__listeners is None and self.__listeners_factory is None:
-                raise RuntimeError("Closed server")
-            await self.__is_up.wait()
-        return True
 
     def stop_listening(self) -> None:
         with _contextlib.ExitStack() as exit_stack:
@@ -174,6 +182,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         listeners: Sequence[AbstractAsyncListenerSocketAdapter] | None = self.__listeners
         if listeners is None:
             return
+        self.__listeners = None
         self.stop_listening()
         await self.__backend.coro_yield()
         async with _contextlib.AsyncExitStack() as exit_stack:
@@ -190,7 +199,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         finally:
             self.__shutdown_asked = False
 
-    async def serve_forever(self) -> None:
+    async def serve_forever(self, *, is_up_event: IEvent | None = None) -> None:
         if not self.__is_shutdown.is_set():
             raise RuntimeError("Server is already running")
 
@@ -198,6 +207,9 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             # Wake up server
             self.__is_shutdown.clear()
             server_exit_stack.callback(self.__is_shutdown.set)
+            if is_up_event is not None:
+                # Force is_up_event to be set, in order not to stuck the waiting task
+                server_exit_stack.callback(is_up_event.set)
             ################
 
             # Bind and activate
@@ -213,11 +225,12 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
             # Final teardown
             server_exit_stack.callback(self.__logger.info, "Server stopped")
-            server_exit_stack.push_async_callback(self.server_close)
-            ###########
+            server_exit_stack.push_async_callback(lambda: self.__backend.ignore_cancellation(self.server_close()))
+            ################
 
             # Initialize request handler
-            await self.__request_handler.service_init(self.__backend)
+            self.__request_handler.set_async_backend(self.__backend)
+            await self.__request_handler.service_init()
             server_exit_stack.push_async_callback(self.__request_handler.service_quit)
             if isinstance(self.__request_handler, AsyncStreamRequestHandler):
                 self.__request_handler.set_stop_listening_callback(self.__make_stop_listening_callback())
@@ -239,8 +252,8 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             #################
 
             # Server is up
-            self.__is_up.set()
-            server_exit_stack.callback(self.__is_up.clear)
+            if is_up_event is not None:
+                is_up_event.set()
             task_group.start_soon(self.__service_actions_task)
             ##############
 
@@ -250,11 +263,6 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 self.__mainloop_task.cancel()
             try:
                 await self.__mainloop_task.join()
-            except self.__backend.get_cancelled_exc_class():
-                try:
-                    self.stop_listening()
-                finally:
-                    raise
             finally:
                 self.__mainloop_task = None
 
@@ -272,25 +280,26 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
     async def __service_actions_task(self) -> None:
         request_handler = self.__request_handler
         backend = self.__backend
+        if self.__service_actions_interval == float("+inf"):
+            return
         while True:
+            await backend.sleep(self.__service_actions_interval)
             try:
                 await request_handler.service_actions()
             except Exception:
                 self.__logger.exception("Error occurred in request_handler.service_actions()")
-            await backend.sleep(self.__service_actions_interval)
 
     async def __listener_task(self, listener: AbstractAsyncListenerSocketAdapter, task_group: AbstractTaskGroup) -> None:
-        backend: AbstractAsyncBackend = self.__backend
         client_task = self.__client_task
         async with listener:
-            while not listener.is_closing():
+            while True:
                 try:
                     client_socket: AbstractAcceptedSocket = await listener.accept()
-                except OSError as exc:
-                    import errno
-                    import os
-
+                except OSError as exc:  # pragma: no cover  # Not testable
                     if exc.errno in ACCEPT_CAPACITY_ERRNOS:
+                        import errno
+                        import os
+
                         self.__logger.error(
                             "accept returned %s (%s); retrying in %s seconds",
                             errno.errorcode[exc.errno],
@@ -298,7 +307,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                             ACCEPT_CAPACITY_ERROR_SLEEP_TIME,
                             exc_info=True,
                         )
-                        await backend.sleep(ACCEPT_CAPACITY_ERROR_SLEEP_TIME)
+                        await self.__backend.sleep(ACCEPT_CAPACITY_ERROR_SLEEP_TIME)
                     else:
                         raise
                 else:
@@ -308,7 +317,6 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
     async def __client_task(self, accepted_socket: AbstractAcceptedSocket) -> None:
         async with _contextlib.AsyncExitStack() as client_exit_stack:
             client_exit_stack.enter_context(self.__suppress_and_log_remaining_exception())
-            client_exit_stack.enter_context(self.__suppress_ignorable_socket_errors())
 
             try:
                 socket: AbstractAsyncStreamSocketAdapter = await accepted_socket.connect()
@@ -318,99 +326,107 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             await client_exit_stack.enter_async_context(socket)
 
             logger: _logging.Logger = self.__logger
-            request_handler = self.__request_handler
             backend = self.__backend
             producer = StreamDataProducer(self.__protocol)
             consumer = StreamDataConsumer(self.__protocol)
-            client = _ConnectedClientAPI(backend, socket, producer, request_handler, logger)
+            client = _ConnectedClientAPI(backend, socket, producer, logger)
+            request_receiver = _RequestReceiver(
+                backend,
+                consumer,
+                socket,
+                self.__max_recv_size,
+                client,
+                self.__request_handler,
+                logger,
+            )
 
             client_exit_stack.callback(consumer.clear)
             client_exit_stack.callback(producer.clear)
 
             _set_tcp_nodelay(client.socket)
+            _set_tcp_keepalive(client.socket)
 
             logger.info("Accepted new connection (address = %s)", client.address)
-
-            if isinstance(request_handler, AsyncStreamRequestHandler):
-                await request_handler.on_connection(client)
+            client_exit_stack.callback(self.__logger.info, "%s disconnected", client.address)
             await client_exit_stack.enter_async_context(_contextlib.aclosing(client))
+            client_exit_stack.enter_context(self.__suppress_and_log_remaining_exception(client_address=client.address))
 
-            recv_bufsize: int = self.__max_recv_size
+            request_handler_generator: AsyncGenerator[None, _RequestT] | None = None
+            if isinstance(self.__request_handler, AsyncStreamRequestHandler):
+                _on_connection_hook = self.__request_handler.on_connection(client)
+                if inspect.isasyncgen(_on_connection_hook):
+                    with _contextlib.suppress(StopAsyncIteration):
+                        await _on_connection_hook.asend(None)
+                        request_handler_generator = _on_connection_hook
+                else:
+                    assert inspect.isawaitable(_on_connection_hook)
+                    await _on_connection_hook
+                del _on_connection_hook
+                client_exit_stack.push_async_callback(self.__request_handler.on_disconnection, client)
+            if client.is_closing():
+                return
 
             try:
-                while not socket.is_closing():
-                    data: bytes = await socket.recv(recv_bufsize)
-                    if not data:  # Closed connection (EOF)
-                        raise ConnectionAbortedError
-                    logger.debug("Received %d bytes from %s", len(data), client.address)
-                    consumer.feed(data)
-                    del data
-
-                    async with _contextlib.aclosing(self.__iter_received_packets(consumer, client)) as request_generator:
-                        async for request in request_generator:
-                            logger.debug("Processing request sent by %s", client.address)
-                            await request_handler.handle(request, client)
-                            del request
-                            await backend.coro_yield()
-                            if client.is_closing():
-                                raise ClientClosedError
-            except ConnectionError:
-                return
+                if request_handler_generator is None:
+                    request_handler_generator = await self.__new_request_handler(client)
+                async for request in request_receiver:
+                    if client.is_closing():
+                        return
+                    logger.debug("Processing request sent by %s", client.address)
+                    try:
+                        await request_handler_generator.asend(request)
+                    except StopAsyncIteration:
+                        request_handler_generator = None
+                    except BaseException:
+                        request_handler_generator = None
+                        raise
+                    finally:
+                        del request
+                    await backend.coro_yield()
+                    if client.is_closing():
+                        return
+                    if request_handler_generator is None:
+                        request_handler_generator = await self.__new_request_handler(client)
             except OSError as exc:
                 try:
                     await client.aclose()
                 finally:
-                    await self.__handle_error(client, exc)
-                return
-            except Exception as exc:
-                await self.__handle_error(client, exc)
-                return
+                    await self.__throw_error(request_handler_generator, exc)
+                raise
+            except (Exception, self.__backend.get_cancelled_exc_class()) as exc:
+                await self.__throw_error(request_handler_generator, exc)
+                raise
+            finally:
+                if request_handler_generator is not None:
+                    await request_handler_generator.aclose()
 
-    async def __iter_received_packets(
-        self,
-        consumer: StreamDataConsumer[_RequestT],
-        client: AsyncClientInterface[_ResponseT],
-    ) -> AsyncGenerator[_RequestT, None]:
-        while True:
-            try:
-                for request in consumer:
-                    yield request
-                    del request
-                return
-            except StreamProtocolParseError as exc:
-                self.__logger.debug("Malformed request sent by %s", client.address)
-                await self.__request_handler.bad_request(client, exc.with_traceback(None))
-                await self.__backend.coro_yield()
-
-    async def __handle_error(self, client: AsyncClientInterface[_ResponseT], exc: Exception) -> None:
+    async def __new_request_handler(self, client: AsyncClientInterface[_ResponseT]) -> AsyncGenerator[None, _RequestT]:
+        request_handler_generator = self.__request_handler.handle(client)
         try:
-            if await self.__request_handler.handle_error(client, exc):
-                return
+            await anext(request_handler_generator)
+        except StopAsyncIteration:
+            raise RuntimeError("request_handler.handle() async generator did not yield") from None
+        return request_handler_generator
 
-            self.__logger.error("-" * 40)
-            self.__logger.error("Exception occurred during processing of request from %s", client.address, exc_info=exc)
-            self.__logger.error("-" * 40)
+    async def __throw_error(self, request_handler_generator: AsyncGenerator[None, _RequestT] | None, exc: BaseException) -> None:
+        try:
+            if request_handler_generator is not None:
+                with _contextlib.suppress(StopAsyncIteration):
+                    await request_handler_generator.athrow(exc)
         finally:
             del exc
 
     @_contextlib.contextmanager
-    def __suppress_ignorable_socket_errors(self) -> Iterator[None]:
-        try:
-            yield
-        except ConnectionError:
-            return
-        except OSError as exc:
-            if exc.errno not in {_errno.ENOTCONN, _errno.ENOTSOCK}:
-                self.__logger.exception("Error in client task")
-            return
-
-    @_contextlib.contextmanager
-    def __suppress_and_log_remaining_exception(self) -> Iterator[None]:
+    def __suppress_and_log_remaining_exception(self, client_address: SocketAddress | None = None) -> Iterator[None]:
         try:
             yield
         except Exception:
-            self.__logger.exception("Error in client task")
-            return
+            self.__logger.error("-" * 40)
+            if client_address is None:
+                self.__logger.exception("Error in client task")
+            else:
+                self.__logger.exception("Exception occurred during processing of request from %s", client_address)
+            self.__logger.error("-" * 40)
 
     def get_backend(self) -> AbstractAsyncBackend:
         return self.__backend
@@ -429,12 +445,66 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         return self.__logger
 
 
+class _RequestReceiver(Generic[_RequestT, _ResponseT]):
+    __slots__ = ("__backend", "__consumer", "__socket", "__max_recv_size", "__api", "__request_handler", "__logger")
+
+    def __init__(
+        self,
+        backend: AbstractAsyncBackend,
+        consumer: StreamDataConsumer[_RequestT],
+        socket: AbstractAsyncStreamSocketAdapter,
+        max_recv_size: int,
+        api: _ConnectedClientAPI[Any],
+        request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT],
+        logger: _logging.Logger,
+    ) -> None:
+        assert max_recv_size > 0, f"{max_recv_size=}"
+        self.__backend: AbstractAsyncBackend = backend
+        self.__consumer: StreamDataConsumer[_RequestT] = consumer
+        self.__socket: AbstractAsyncStreamSocketAdapter = socket
+        self.__max_recv_size: int = max_recv_size
+        self.__api: _ConnectedClientAPI[Any] = api
+        self.__request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT] = request_handler
+        self.__logger: _logging.Logger = logger
+
+    def __aiter__(self) -> AsyncIterator[_RequestT]:
+        return self
+
+    async def __anext__(self) -> _RequestT:
+        consumer: StreamDataConsumer[_RequestT] = self.__consumer
+        socket: AbstractAsyncStreamSocketAdapter = self.__socket
+        client: _ConnectedClientAPI[Any] = self.__api
+        logger: _logging.Logger = self.__logger
+        bufsize: int = self.__max_recv_size
+        while True:
+            try:
+                return next(consumer)
+            except StreamProtocolParseError as exc:
+                logger.debug("Malformed request sent by %s", client.address)
+                await self.__request_handler.bad_request(client, exc)
+                await self.__backend.coro_yield()
+                continue
+            except StopIteration:
+                pass
+            try:
+                data: bytes = await socket.recv(bufsize) if not socket.is_closing() else b""
+            except ConnectionError:
+                data = b""
+            if not data:  # Closed connection (EOF)
+                break
+            try:
+                logger.debug("Received %d bytes from %s", len(data), client.address)
+                consumer.feed(data)
+            finally:
+                del data
+        raise StopAsyncIteration
+
+
 @final
 class _ConnectedClientAPI(AsyncClientInterface[_ResponseT]):
     __slots__ = (
         "__socket",
         "__producer",
-        "__request_handler",
         "__send_lock",
         "__proxy",
         "__logger",
@@ -445,7 +515,6 @@ class _ConnectedClientAPI(AsyncClientInterface[_ResponseT]):
         backend: AbstractAsyncBackend,
         socket: AbstractAsyncStreamSocketAdapter,
         producer: StreamDataProducer[_ResponseT],
-        request_handler: AsyncBaseRequestHandler[Any, Any],
         logger: _logging.Logger,
     ) -> None:
         super().__init__(new_socket_address(socket.get_remote_address(), socket.socket().family))
@@ -454,7 +523,6 @@ class _ConnectedClientAPI(AsyncClientInterface[_ResponseT]):
         self.__producer: StreamDataProducer[_ResponseT] = producer
         self.__send_lock = backend.create_lock()
         self.__proxy: SocketProxy = SocketProxy(socket.socket())
-        self.__request_handler: AsyncBaseRequestHandler[Any, Any] = request_handler
         self.__logger: _logging.Logger = logger
 
     def is_closing(self) -> bool:
@@ -467,15 +535,7 @@ class _ConnectedClientAPI(AsyncClientInterface[_ResponseT]):
             if socket is None:
                 return
             self.__socket = None
-            request_handler = self.__request_handler
-            with _contextlib.suppress(Exception):
-                async with _contextlib.AsyncExitStack() as stack:
-                    stack.callback(self.__logger.info, "%s disconnected", self.address)
-                    if isinstance(request_handler, AsyncStreamRequestHandler):
-                        stack.push_async_callback(self.__send_lock.acquire)  # Re-acquire lock after calling on_disconnection()
-                        stack.push_async_callback(request_handler.on_disconnection, self)
-                        stack.callback(self.__send_lock.release)  # Release lock before calling on_disconnection()
-                    stack.push_async_callback(socket.aclose)
+            await socket.aclose()
 
     async def send_packet(self, packet: _ResponseT, /) -> None:
         self.__check_closed()

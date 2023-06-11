@@ -19,13 +19,27 @@ __all__ = [
     "AbstractTask",
     "AbstractTaskGroup",
     "AbstractThreadsPortal",
+    "AbstractTimeoutHandle",
     "ICondition",
     "IEvent",
     "ILock",
 ]
 
 from abc import ABCMeta, abstractmethod
-from typing import TYPE_CHECKING, Any, Callable, Coroutine, Generic, NoReturn, ParamSpec, Protocol, Self, Sequence, TypeVar
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    AsyncContextManager,
+    Callable,
+    Coroutine,
+    Generic,
+    NoReturn,
+    ParamSpec,
+    Protocol,
+    Self,
+    Sequence,
+    TypeVar,
+)
 
 if TYPE_CHECKING:
     import concurrent.futures
@@ -177,21 +191,7 @@ class AbstractThreadsPortal(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    def run_coroutine_soon(
-        self,
-        __coro_func: Callable[_P, Coroutine[Any, Any, _T]],
-        /,
-        *args: _P.args,
-        **kwargs: _P.kwargs,
-    ) -> concurrent.futures.Future[_T]:
-        raise NotImplementedError
-
-    @abstractmethod
     def run_sync(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
-        raise NotImplementedError
-
-    @abstractmethod
-    def run_sync_soon(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> concurrent.futures.Future[_T]:
         raise NotImplementedError
 
 
@@ -274,8 +274,40 @@ class AbstractAcceptedSocket(metaclass=ABCMeta):
         raise NotImplementedError
 
 
+class AbstractTimeoutHandle(metaclass=ABCMeta):
+    __slots__ = ()
+
+    @abstractmethod
+    def when(self) -> float:
+        raise NotImplementedError
+
+    @abstractmethod
+    def reschedule(self, when: float) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def expired(self) -> bool:
+        raise NotImplementedError
+
+    @property
+    def deadline(self) -> float:
+        return self.when()
+
+    @deadline.setter
+    def deadline(self, value: float) -> None:
+        self.reschedule(value)
+
+    @deadline.deleter
+    def deadline(self) -> None:
+        self.reschedule(float("+inf"))
+
+
 class AbstractAsyncBackend(metaclass=ABCMeta):
     __slots__ = ("__weakref__",)
+
+    @abstractmethod
+    def bootstrap(self, coro_func: Callable[..., Coroutine[Any, Any, _T]], *args: Any) -> _T:
+        raise NotImplementedError
 
     @abstractmethod
     async def coro_yield(self) -> None:
@@ -291,6 +323,14 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
 
     @abstractmethod
     async def wait_for(self, coroutine: Coroutine[Any, Any, _T_co], timeout: float | None) -> _T_co:
+        raise NotImplementedError
+
+    @abstractmethod
+    def timeout(self, delay: float) -> AsyncContextManager[AbstractTimeoutHandle]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def timeout_at(self, deadline: float) -> AsyncContextManager[AbstractTimeoutHandle]:
         raise NotImplementedError
 
     @abstractmethod

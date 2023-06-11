@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from socket import socket as Socket
-from typing import Any, Callable, Coroutine, NoReturn, Sequence, final
+from typing import Any, AsyncContextManager, Callable, Coroutine, NoReturn, Sequence, final
 
 from easynetwork.api_async.backend.abc import (
     AbstractAsyncBackend,
@@ -12,6 +12,7 @@ from easynetwork.api_async.backend.abc import (
     AbstractAsyncStreamSocketAdapter,
     AbstractTaskGroup,
     AbstractThreadsPortal,
+    AbstractTimeoutHandle,
     ICondition,
     IEvent,
     ILock,
@@ -19,6 +20,9 @@ from easynetwork.api_async.backend.abc import (
 
 
 class BaseFakeBackend(AbstractAsyncBackend):
+    def bootstrap(self, coro_func: Callable[..., Coroutine[Any, Any, Any]], *args: Any) -> Any:
+        raise NotImplementedError
+
     async def sleep(self, delay: float) -> None:
         raise NotImplementedError
 
@@ -35,6 +39,12 @@ class BaseFakeBackend(AbstractAsyncBackend):
         raise NotImplementedError
 
     async def wait_for(self, coroutine: Coroutine[Any, Any, Any], timeout: float | None) -> Any:
+        raise NotImplementedError
+
+    def timeout(self, delay: Any) -> AsyncContextManager[AbstractTimeoutHandle]:
+        raise NotImplementedError
+
+    def timeout_at(self, deadline: Any) -> AsyncContextManager[AbstractTimeoutHandle]:
         raise NotImplementedError
 
     def get_cancelled_exc_class(self) -> type[BaseException]:

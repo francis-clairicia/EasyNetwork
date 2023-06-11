@@ -7,9 +7,13 @@
 from __future__ import annotations
 
 __all__ = [
+    "BaseProtocolParseError",
     "ClientClosedError",
+    "DatagramProtocolParseError",
     "DeserializeError",
     "IncrementalDeserializeError",
+    "PacketConversionError",
+    "StreamProtocolParseError",
 ]
 
 from typing import Any, Literal, TypeAlias

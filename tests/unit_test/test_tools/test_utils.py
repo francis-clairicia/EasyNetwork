@@ -11,6 +11,7 @@ from socket import (
     IPPROTO_TCP,
     IPV6_V6ONLY,
     SO_ERROR,
+    SO_KEEPALIVE,
     SO_REUSEADDR,
     SOCK_STREAM,
     SOL_SOCKET,
@@ -29,7 +30,9 @@ from easynetwork.tools._utils import (
     open_listener_sockets_from_getaddrinfo_result,
     replace_kwargs,
     set_reuseport,
+    set_tcp_keepalive,
     set_tcp_nodelay,
+    transform_future_exception,
     wait_socket_available,
 )
 
@@ -447,6 +450,18 @@ def test____set_tcp_nodelay____setsockopt(
     mock_tcp_socket.setsockopt.assert_called_once_with(IPPROTO_TCP, TCP_NODELAY, True)
 
 
+def test____set_tcp_keepalive____setsockopt(
+    mock_tcp_socket: MagicMock,
+) -> None:
+    # Arrange
+
+    # Act
+    set_tcp_keepalive(mock_tcp_socket)
+
+    # Assert
+    mock_tcp_socket.setsockopt.assert_called_once_with(SOL_SOCKET, SO_KEEPALIVE, True)
+
+
 @pytest.mark.parametrize("reuse_address", [False, True], ids=lambda boolean: f"reuse_address=={boolean}")
 @pytest.mark.parametrize("SO_REUSEADDR_available", [False, True], ids=lambda boolean: f"SO_REUSEADDR_available=={boolean}")
 @pytest.mark.parametrize("reuse_port", [False, True], ids=lambda boolean: f"reuse_port=={boolean}")
@@ -533,3 +548,29 @@ def test____open_listener_sockets_from_getaddrinfo_result____bind_failed(
 
     s1.close.assert_called_once_with()
     s2.close.assert_called_once_with()
+
+
+def test____transform_future_exception____keep_common_exception_as_is() -> None:
+    # Arrange
+    exception = BaseException()
+
+    # Act
+    new_exception = transform_future_exception(exception)
+
+    # Assert
+    assert new_exception is exception
+
+
+@pytest.mark.parametrize("exception", [SystemExit(0), KeyboardInterrupt()], ids=lambda f: type(f).__name__)
+def test____transform_future_exception____make_cancelled_error_from_exception(exception: BaseException) -> None:
+    # Arrange
+    from concurrent.futures import CancelledError
+
+    # Act
+    new_exception = transform_future_exception(exception)
+
+    # Assert
+    assert type(new_exception) is CancelledError
+    assert new_exception.__cause__ is exception
+    assert new_exception.__context__ is exception
+    assert new_exception.__suppress_context__

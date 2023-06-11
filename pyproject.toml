@@ -43,13 +43,13 @@ Homepage = "https://github.com/francis-clairicia/EasyNetwork"
 
 [project.optional-dependencies]
 cbor = [
-  "cbor2>=5.4,<6",
+    "cbor2>=5.4,<6",
 ]
 msgpack = [
     "msgpack>=1.0.5",
 ]
 encryption = [
-  "cryptography>=39,<41",
+    "cryptography>=39,<41",
 ]
 sniffio = [
     "sniffio>=1.3.0",
