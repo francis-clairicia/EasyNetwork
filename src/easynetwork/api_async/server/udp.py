@@ -11,7 +11,7 @@ __all__ = ["AsyncUDPNetworkServer"]
 import contextlib as _contextlib
 import logging as _logging
 from collections import Counter, deque
-from typing import TYPE_CHECKING, Any, AsyncGenerator, AsyncIterator, Callable, Generic, Mapping, TypeVar, final
+from typing import TYPE_CHECKING, Any, AsyncGenerator, AsyncIterator, Callable, Generic, Iterator, Mapping, TypeVar, final
 from weakref import WeakValueDictionary
 
 from ...exceptions import ClientClosedError, DatagramProtocolParseError
@@ -116,10 +116,14 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             self.__socket_factory.cancel()
             self.__socket_factory = None
         self.__stop_mainloop()
-        socket, self.__socket = self.__socket, None
-        if socket is None:
-            return
-        await socket.aclose()
+        await self.__close_socket()
+
+    async def __close_socket(self) -> None:
+        async with self.__sendto_lock:
+            socket, self.__socket = self.__socket, None
+            if socket is None:
+                return
+            await socket.aclose()
 
     async def shutdown(self) -> None:
         self.__stop_mainloop()
@@ -142,6 +146,9 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             # Wake up server
             self.__is_shutdown.clear()
             server_exit_stack.callback(self.__is_shutdown.set)
+            if is_up_event is not None:
+                # Force is_up_event to be set, in order not to stuck the waiting task
+                server_exit_stack.callback(is_up_event.set)
             ################
 
             # Bind and activate
@@ -154,7 +161,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
             # Final teardown
             server_exit_stack.callback(self.__logger.info, "Server stopped")
-            server_exit_stack.push_async_callback(self.server_close)
+            server_exit_stack.push_async_callback(lambda: self.__backend.ignore_cancellation(self.server_close()))
             ################
 
             # Initialize request handler
@@ -162,6 +169,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             await self.__request_handler.service_init()
             server_exit_stack.callback(self.__client_manager.clear)
             server_exit_stack.push_async_callback(self.__request_handler.service_quit)
+            server_exit_stack.push_async_callback(self.__close_socket)
             ############################
 
             # Setup task group
@@ -198,7 +206,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         socket_family: int = socket.socket().family
         datagram_received_task = self.__datagram_received_task
         logger = self.__logger
-        while not socket.is_closing():
+        while True:
             datagram, client_address = await socket.recvfrom()
             client_address = new_socket_address(client_address, socket_family)
             logger.debug("Received a datagram from %s", client_address)
@@ -235,74 +243,55 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 del client
                 return
             request_handler_generator: AsyncGenerator[None, _RequestT] | None = None
-            datagram_queue = deque([datagram])
-            try:
-                while True:
-                    if not datagram_queue:
-                        if request_handler_generator is None:
-                            return
-                        self.__client_datagram_queue[client] = datagram_queue
+            datagram_queue = deque()  # Add datagram after creating the generator
+            with self.__suppress_and_log_remaining_exception(client_address):
+                try:
+                    request_handler_generator = await self.__new_request_handler(client)
+                    datagram_queue.append(datagram)
+                    while True:
+                        if not datagram_queue:
+                            self.__client_datagram_queue[client] = datagram_queue
+                            try:
+                                await condition.wait()
+                            finally:
+                                del self.__client_datagram_queue[client]
+                            assert len(datagram_queue) > 0, f"{len(datagram_queue)=}"
+                        datagram = datagram_queue.popleft()
                         try:
-                            await condition.wait()
+                            request: _RequestT = self.__protocol.build_packet_from_datagram(datagram)
+                        except DatagramProtocolParseError as exc:
+                            self.__logger.debug("Malformed request sent by %s", client.address)
+                            await self.__request_handler.bad_request(client, exc)
+                            await backend.coro_yield()
+                            continue
                         finally:
-                            del self.__client_datagram_queue[client]
-                        assert len(datagram_queue) > 0, f"{len(datagram_queue)=}"
-                    if client.is_closing():
-                        datagram_queue.clear()
-                        return
-                    datagram = datagram_queue.popleft()
-                    try:
-                        request: _RequestT = self.__protocol.build_packet_from_datagram(datagram)
-                    except DatagramProtocolParseError as exc:
-                        self.__logger.debug("Malformed request sent by %s", client.address)
-                        await self.__request_handler.bad_request(client, exc.with_traceback(None))
+                            del datagram
+
+                        self.__logger.debug("Processing request sent by %s", client.address)
+                        try:
+                            await request_handler_generator.asend(request)
+                        except StopAsyncIteration:
+                            request_handler_generator = None
+                            return
+                        except BaseException:
+                            request_handler_generator = None
+                            raise
+                        finally:
+                            del request
                         await backend.coro_yield()
-                        continue
-                    except Exception:
-                        if request_handler_generator is None:
-                            request_handler_generator = await self.__new_request_handler(client)
-                        raise
-                    finally:
-                        del datagram
-
-                    if request_handler_generator is None:
-                        request_handler_generator = await self.__new_request_handler(client)
-
-                    if client.is_closing():
-                        datagram_queue.clear()
-                        return
-
-                    self.__logger.debug("Processing request sent by %s", client.address)
-                    try:
-                        await request_handler_generator.asend(request)
-                    except StopAsyncIteration:
-                        request_handler_generator = None
-                    except BaseException:
-                        request_handler_generator = None
-                        raise
-                    finally:
-                        del request
-                    await backend.coro_yield()
-            except self.__backend.get_cancelled_exc_class() as exc:
-                if request_handler_generator is not None:
-                    try:
-                        with _contextlib.suppress(StopAsyncIteration):
-                            await request_handler_generator.athrow(exc)
-                    except Exception as exc:
-                        await self.__handle_error(None, client, exc)
-                raise
-            except Exception as exc:
-                await self.__handle_error(request_handler_generator, client, exc)
-            finally:
-                del client
-                async with (
-                    _contextlib.aclosing(request_handler_generator)
-                    if request_handler_generator is not None
-                    else _contextlib.nullcontext()
-                ):
-                    datagram_received_task = self.__datagram_received_task
-                    for datagram in datagram_queue:
-                        task_group.start_soon(datagram_received_task, socket, datagram, client_address, task_group)
+                except (Exception, self.__backend.get_cancelled_exc_class()) as exc:
+                    await self.__throw_error(request_handler_generator, exc)
+                    raise
+                finally:
+                    del client
+                    async with (
+                        _contextlib.aclosing(request_handler_generator)
+                        if request_handler_generator is not None
+                        else _contextlib.nullcontext()
+                    ):
+                        datagram_received_task = self.__datagram_received_task
+                        for datagram in datagram_queue:
+                            task_group.start_soon(datagram_received_task, socket, datagram, client_address, task_group)
 
     async def __new_request_handler(self, client: AsyncClientInterface[_ResponseT]) -> AsyncGenerator[None, _RequestT]:
         request_handler_generator = self.__request_handler.handle(client)
@@ -312,25 +301,22 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             raise RuntimeError("request_handler.handle() async generator did not yield") from None
         return request_handler_generator
 
-    async def __handle_error(
-        self,
-        request_handler_generator: AsyncGenerator[None, _RequestT] | None,
-        client: AsyncClientInterface[_ResponseT],
-        exc: Exception,
-    ) -> None:
+    async def __throw_error(self, request_handler_generator: AsyncGenerator[None, _RequestT] | None, exc: BaseException) -> None:
         try:
             if request_handler_generator is not None:
-                try:
-                    with _contextlib.suppress(StopAsyncIteration):
-                        await request_handler_generator.athrow(exc)
-                except Exception as _:
-                    exc = _
-
-            self.__logger.error("-" * 40)
-            self.__logger.error("Exception occurred during processing of request from %s", client.address, exc_info=exc)
-            self.__logger.error("-" * 40)
+                with _contextlib.suppress(StopAsyncIteration):
+                    await request_handler_generator.athrow(exc)
         finally:
             del exc
+
+    @_contextlib.contextmanager
+    def __suppress_and_log_remaining_exception(self, client_address: SocketAddress) -> Iterator[None]:
+        try:
+            yield
+        except Exception:
+            self.__logger.error("-" * 40)
+            self.__logger.exception("Exception occurred during processing of request from %s", client_address)
+            self.__logger.error("-" * 40)
 
     def get_backend(self) -> AbstractAsyncBackend:
         return self.__backend

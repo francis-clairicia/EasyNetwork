@@ -225,7 +225,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
             # Final teardown
             server_exit_stack.callback(self.__logger.info, "Server stopped")
-            server_exit_stack.push_async_callback(self.server_close)
+            server_exit_stack.push_async_callback(lambda: self.__backend.ignore_cancellation(self.server_close()))
             ################
 
             # Initialize request handler
@@ -348,6 +348,8 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
             logger.info("Accepted new connection (address = %s)", client.address)
             client_exit_stack.callback(self.__logger.info, "%s disconnected", client.address)
+            await client_exit_stack.enter_async_context(_contextlib.aclosing(client))
+            client_exit_stack.enter_context(self.__suppress_and_log_remaining_exception(client_address=client.address))
 
             request_handler_generator: AsyncGenerator[None, _RequestT] | None = None
             if isinstance(self.__request_handler, AsyncStreamRequestHandler):
@@ -361,7 +363,6 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                     await _on_connection_hook
                 del _on_connection_hook
                 client_exit_stack.push_async_callback(self.__request_handler.on_disconnection, client)
-            await client_exit_stack.enter_async_context(_contextlib.aclosing(client))
             if client.is_closing():
                 return
 
@@ -390,14 +391,11 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 try:
                     await client.aclose()
                 finally:
-                    await self.__handle_error(request_handler_generator, client, exc)
-            except self.__backend.get_cancelled_exc_class() as exc:
-                if request_handler_generator is not None:
-                    with _contextlib.suppress(StopAsyncIteration):
-                        await request_handler_generator.athrow(exc)
+                    await self.__throw_error(request_handler_generator, exc)
                 raise
-            except Exception as exc:
-                await self.__handle_error(request_handler_generator, client, exc)
+            except (Exception, self.__backend.get_cancelled_exc_class()) as exc:
+                await self.__throw_error(request_handler_generator, exc)
+                raise
             finally:
                 if request_handler_generator is not None:
                     await request_handler_generator.aclose()
@@ -410,33 +408,25 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             raise RuntimeError("request_handler.handle() async generator did not yield") from None
         return request_handler_generator
 
-    async def __handle_error(
-        self,
-        request_handler_generator: AsyncGenerator[None, _RequestT] | None,
-        client: AsyncClientInterface[_ResponseT],
-        exc: Exception,
-    ) -> None:
+    async def __throw_error(self, request_handler_generator: AsyncGenerator[None, _RequestT] | None, exc: BaseException) -> None:
         try:
             if request_handler_generator is not None:
-                try:
-                    with _contextlib.suppress(StopAsyncIteration):
-                        await request_handler_generator.athrow(exc)
-                except Exception as _:
-                    exc = _
-
-            self.__logger.error("-" * 40)
-            self.__logger.error("Exception occurred during processing of request from %s", client.address, exc_info=exc)
-            self.__logger.error("-" * 40)
+                with _contextlib.suppress(StopAsyncIteration):
+                    await request_handler_generator.athrow(exc)
         finally:
             del exc
 
     @_contextlib.contextmanager
-    def __suppress_and_log_remaining_exception(self) -> Iterator[None]:
+    def __suppress_and_log_remaining_exception(self, client_address: SocketAddress | None = None) -> Iterator[None]:
         try:
             yield
         except Exception:
-            self.__logger.exception("Error in client task")
-            return
+            self.__logger.error("-" * 40)
+            if client_address is None:
+                self.__logger.exception("Error in client task")
+            else:
+                self.__logger.exception("Exception occurred during processing of request from %s", client_address)
+            self.__logger.error("-" * 40)
 
     def get_backend(self) -> AbstractAsyncBackend:
         return self.__backend
@@ -490,7 +480,6 @@ class _RequestReceiver(Generic[_RequestT, _ResponseT]):
             try:
                 return next(consumer)
             except StreamProtocolParseError as exc:
-                exc = exc.with_traceback(None)  # Remove traceback to avoid memory leak until bad_request() finish
                 logger.debug("Malformed request sent by %s", client.address)
                 await self.__request_handler.bad_request(client, exc)
                 await self.__backend.coro_yield()

@@ -573,7 +573,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         assert request_handler.request_received[client_address] == []
         assert isinstance(request_handler.bad_request_received[client_address][0], StreamProtocolParseError)
         assert request_handler.bad_request_received[client_address][0].error_type == "deserialization"
-        assert request_handler.bad_request_received[client_address][0].__traceback__ is None
 
     @pytest.mark.parametrize("mute_thrown_exception", [False, True])
     @pytest.mark.parametrize("request_handler", [ErrorInBadRequestHandler], indirect=True)
@@ -611,7 +610,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         await asyncio.sleep(0.1)
 
         assert await reader.read() == b""
-        assert len(caplog.records) > 0
+        assert len(caplog.records) == 3
 
     async def test____serve_forever____os_error(
         self,
@@ -713,7 +712,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         reader, _ = await client_factory()
 
         assert await reader.read() == b""
-        assert len(caplog.records) > 0
+        assert len(caplog.records) == 3
 
     @pytest.mark.parametrize("request_handler", [InitialHandshakeRequestHandler], indirect=True)
     async def test____serve_forever____request_handler_on_connection_is_async_gen(
