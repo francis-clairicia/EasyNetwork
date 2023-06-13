@@ -130,7 +130,7 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         raise TypeError(f"cannot pickle {self.__class__.__name__!r} object")
 
     def is_bound(self) -> bool:
-        return self.__socket is not None
+        return self.__socket is not None and self.__info is not None
 
     async def wait_bound(self) -> None:
         if self.__socket is None:

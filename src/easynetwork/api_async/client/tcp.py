@@ -237,7 +237,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
             _set_tcp_keepalive(socket_proxy)
 
     def is_connected(self) -> bool:
-        return self.__socket is not None
+        return self.__socket is not None and self.__info is not None
 
     @final
     def is_closing(self) -> bool:
