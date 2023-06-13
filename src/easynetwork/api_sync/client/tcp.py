@@ -13,7 +13,7 @@ import errno as _errno
 import socket as _socket
 from threading import Lock as _Lock
 from time import monotonic as _time_monotonic
-from typing import TYPE_CHECKING, Any, Callable, Generic, Iterator, TypeVar, final, overload
+from typing import TYPE_CHECKING, Any, Callable, Generic, Iterator, Literal, NoReturn, TypeVar, final, overload
 
 from ...exceptions import ClientClosedError, StreamProtocolParseError
 from ...protocol import StreamProtocol
@@ -32,7 +32,7 @@ from ...tools._utils import (
     set_tcp_nodelay as _set_tcp_nodelay,
     ssl_do_not_ignore_unexpected_eof as _ssl_do_not_ignore_unexpected_eof,
 )
-from ...tools.socket import MAX_STREAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
+from ...tools.socket import CLOSED_SOCKET_ERRNOS, MAX_STREAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
 from ...tools.stream import StreamDataConsumer
 from .abc import AbstractNetworkClient
 
@@ -233,7 +233,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             self.__socket = None
             try:
                 if not self.__eof_reached and _is_ssl_socket(socket):
-                    with self.__convert_ssl_eof_error():
+                    with self.__convert_ssl_eof_error(), _contextlib.suppress(TimeoutError):
                         socket = _retry_ssl_socket_method(socket, self.__ssl_shutdown_timeout, socket.unwrap)
             except ConnectionError:
                 # It is normal if there was connection errors during operations. But do not propagate this exception,
@@ -243,14 +243,14 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 socket.close()
 
     def send_packet(self, packet: _SentPacketT) -> None:
-        with self.__send_lock:
+        with self.__send_lock, self.__convert_socket_error():
             socket = self.__ensure_connected()
             data: bytes = _concatenate_chunks(self.__producer(packet))
             buffer = memoryview(data)
             try:
                 remaining: int = len(data)
                 while remaining > 0:
-                    nb_bytes_sent: int
+                    nb_bytes_sent: int = 0
                     if _is_ssl_socket(socket):
                         with self.__convert_ssl_eof_error():
                             nb_bytes_sent = _retry_ssl_socket_method(socket, None, socket.send, buffer.toreadonly())
@@ -264,7 +264,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 del buffer, data
 
     def recv_packet(self, timeout: float | None = None) -> _ReceivedPacketT:
-        with self.__receive_lock:
+        with self.__receive_lock, self.__convert_socket_error():
             consumer = self.__consumer
             next_packet = self.__next_packet
             try:
@@ -278,7 +278,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             while True:
                 try:
                     _start = monotonic()
-                    chunk: bytes
+                    chunk: bytes = b""
                     if _is_ssl_socket(socket):
                         with self.__convert_ssl_eof_error():
                             chunk = _retry_ssl_socket_method(socket, timeout, socket.recv, bufsize)
@@ -290,8 +290,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                         raise RuntimeError("socket.recv() timed out with timeout=None ?") from exc
                     break
                 if not chunk:
-                    self.__eof_reached = True
-                    raise _error_from_errno(_errno.ECONNABORTED)
+                    self.__eof_error(False)
                 consumer.feed(chunk)
                 try:
                     return next_packet(consumer)
@@ -324,6 +323,19 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         return socket
 
     @_contextlib.contextmanager
+    def __convert_socket_error(self) -> Iterator[None]:
+        try:
+            yield
+        except (ConnectionAbortedError, ClientClosedError):
+            raise
+        except ConnectionError as exc:
+            self.__eof_error(exc)
+        except OSError as exc:
+            if exc.errno in CLOSED_SOCKET_ERRNOS:
+                self.__eof_error(exc)
+            raise
+
+    @_contextlib.contextmanager
     def __convert_ssl_eof_error(self) -> Iterator[None]:
         import ssl
 
@@ -331,9 +343,14 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             yield
         except ssl.SSLError as exc:
             if isinstance(exc, ssl.SSLZeroReturnError) or _is_ssl_eof_error(exc):
-                self.__eof_reached = True
-                raise _error_from_errno(_errno.ECONNABORTED) from exc
+                self.__eof_error(exc)
             raise
+
+    def __eof_error(self, cause: BaseException | None | Literal[False]) -> NoReturn:
+        self.__eof_reached = True
+        if cause is False:
+            raise _error_from_errno(_errno.ECONNABORTED)
+        raise _error_from_errno(_errno.ECONNABORTED) from cause
 
     def get_local_address(self) -> SocketAddress:
         return self.__addr

@@ -122,8 +122,8 @@ class TestTransportBasedStreamSocket(BaseTestTransportStreamSocket):
         mock_asyncio_writer.wait_closed.assert_awaited_once_with()
         mock_asyncio_writer.transport.abort.assert_not_called()
 
-    @pytest.mark.parametrize("exception_cls", ConnectionError.__subclasses__())
-    async def test____aclose____ignore_connection_error(
+    @pytest.mark.parametrize("exception_cls", [*ConnectionError.__subclasses__(), TimeoutError])
+    async def test____aclose____ignore_socket_error(
         self,
         exception_cls: type[ConnectionError],
         socket: AsyncioTransportStreamSocketAdapter,

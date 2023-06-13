@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import errno
+import os
 from socket import AF_INET6, IPPROTO_TCP, SO_KEEPALIVE, SOL_SOCKET, TCP_NODELAY
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.api_async.client.tcp import AsyncTCPNetworkClient
 from easynetwork.exceptions import ClientClosedError
-from easynetwork.tools.socket import MAX_STREAM_BUFSIZE, IPv4SocketAddress, IPv6SocketAddress, SocketProxy
+from easynetwork.tools.socket import CLOSED_SOCKET_ERRNOS, MAX_STREAM_BUFSIZE, IPv4SocketAddress, IPv6SocketAddress, SocketProxy
 
 import pytest
 import pytest_asyncio
@@ -773,13 +775,15 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         assert exc_info.value is error
         mock_stream_socket_adapter.aclose.assert_awaited_once_with()
 
+    @pytest.mark.parametrize("exception_cls", [ConnectionAbortedError, TimeoutError])
     async def test____aclose____await_socket_close____hide_connection_error(
         self,
+        exception_cls: type[OSError],
         client_connected: AsyncTCPNetworkClient[Any, Any],
         mock_stream_socket_adapter: MagicMock,
     ) -> None:
         # Arrange
-        error = ConnectionAbortedError()
+        error = exception_cls()
         mock_stream_socket_adapter.aclose.side_effect = error
         assert not client_connected.is_closing()
 
@@ -980,17 +984,17 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        from errno import ECONNRESET
+        from errno import EBUSY
         from socket import SO_ERROR, SOL_SOCKET
 
-        mock_tcp_socket.getsockopt.return_value = ECONNRESET
+        mock_tcp_socket.getsockopt.return_value = EBUSY
 
         # Act
         with pytest.raises(OSError) as exc_info:
             await client_connected_or_not.send_packet(mocker.sentinel.packet)
 
         # Assert
-        assert exc_info.value.errno == ECONNRESET
+        assert exc_info.value.errno == EBUSY
         mock_stream_protocol.generate_chunks.assert_called_once_with(mocker.sentinel.packet)
         mock_stream_socket_adapter.sendall.assert_awaited_once_with(b"packet\n")
         mock_tcp_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_ERROR)
@@ -1038,6 +1042,50 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_stream_socket_adapter.sendall.assert_not_awaited()
         mock_tcp_socket.getsockopt.assert_not_called()
 
+    @pytest.mark.usefixtures("setup_producer_mock")
+    async def test____send_packet____convert_connection_errors(
+        self,
+        client_connected_or_not: AsyncTCPNetworkClient[Any, Any],
+        mock_tcp_socket: MagicMock,
+        mock_stream_socket_adapter: MagicMock,
+        mock_stream_protocol: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_stream_socket_adapter.sendall.side_effect = ConnectionError
+
+        # Act
+        with pytest.raises(ConnectionAbortedError):
+            await client_connected_or_not.send_packet(mocker.sentinel.packet)
+
+        # Assert
+        mock_stream_protocol.generate_chunks.assert_called_once_with(mocker.sentinel.packet)
+        mock_stream_socket_adapter.sendall.assert_awaited_once_with(b"packet\n")
+        mock_tcp_socket.getsockopt.assert_not_called()
+
+    @pytest.mark.usefixtures("setup_producer_mock")
+    @pytest.mark.parametrize("closed_socket_errno", sorted(CLOSED_SOCKET_ERRNOS), ids=errno.errorcode.__getitem__)
+    async def test____send_packet____convert_closed_socket_error(
+        self,
+        closed_socket_errno: int,
+        client_connected_or_not: AsyncTCPNetworkClient[Any, Any],
+        mock_tcp_socket: MagicMock,
+        mock_stream_socket_adapter: MagicMock,
+        mock_stream_protocol: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_stream_socket_adapter.sendall.side_effect = OSError(closed_socket_errno, os.strerror(closed_socket_errno))
+
+        # Act
+        with pytest.raises(ConnectionAbortedError):
+            await client_connected_or_not.send_packet(mocker.sentinel.packet)
+
+        # Assert
+        mock_stream_protocol.generate_chunks.assert_called_once_with(mocker.sentinel.packet)
+        mock_stream_socket_adapter.sendall.assert_awaited_once_with(b"packet\n")
+        mock_tcp_socket.getsockopt.assert_not_called()
+
     @pytest.mark.usefixtures("setup_consumer_mock")
     async def test____recv_packet____receive_bytes_from_socket(
         self,
@@ -1053,7 +1101,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         packet: Any = await client_connected_or_not.recv_packet()
 
         # Assert
-        mock_stream_socket_adapter.recv.assert_called_once_with(MAX_STREAM_BUFSIZE)
+        mock_stream_socket_adapter.recv.assert_awaited_once_with(MAX_STREAM_BUFSIZE)
         mock_stream_data_consumer.feed.assert_called_once_with(b"packet\n")
         assert packet is mocker.sentinel.packet
 
@@ -1095,7 +1143,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         packet_2: Any = await client_connected_or_not.recv_packet()
 
         # Assert
-        mock_stream_socket_adapter.recv.assert_called_once()
+        mock_stream_socket_adapter.recv.assert_awaited_once()
         mock_stream_data_consumer.feed.assert_called_once_with(b"packet_1\npacket_2\n")
         mock_backend.coro_yield.assert_not_awaited()
         assert packet_1 is mocker.sentinel.packet_1
@@ -1117,7 +1165,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             _ = await client_connected_or_not.recv_packet()
 
         # Assert
-        mock_stream_socket_adapter.recv.assert_called_once_with(MAX_STREAM_BUFSIZE)
+        mock_stream_socket_adapter.recv.assert_awaited_once_with(MAX_STREAM_BUFSIZE)
         mock_stream_data_consumer.feed.assert_not_called()
         mock_backend.coro_yield.assert_not_awaited()
 
@@ -1142,7 +1190,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         exception = exc_info.value
 
         # Assert
-        mock_stream_socket_adapter.recv.assert_called_once_with(MAX_STREAM_BUFSIZE)
+        mock_stream_socket_adapter.recv.assert_awaited_once_with(MAX_STREAM_BUFSIZE)
         mock_stream_data_consumer.feed.assert_called_once_with(b"packet\n")
         mock_backend.coro_yield.assert_not_awaited()
         assert exception is expected_error
@@ -1186,6 +1234,48 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         # Assert
         mock_stream_data_consumer.feed.assert_not_called()
         mock_stream_socket_adapter.recv.assert_not_called()
+        mock_backend.coro_yield.assert_not_awaited()
+
+    @pytest.mark.usefixtures("setup_consumer_mock")
+    async def test____recv_packet____convert_connection_errors(
+        self,
+        client_connected_or_not: AsyncTCPNetworkClient[Any, Any],
+        mock_stream_socket_adapter: MagicMock,
+        mock_backend: MagicMock,
+        mock_stream_data_consumer: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_stream_socket_adapter.recv.side_effect = ConnectionError
+
+        # Act
+        with pytest.raises(ConnectionAbortedError):
+            _ = await client_connected_or_not.recv_packet()
+
+        # Assert
+        mock_stream_socket_adapter.recv.assert_awaited_once_with(MAX_STREAM_BUFSIZE)
+        mock_stream_data_consumer.feed.assert_not_called()
+        mock_backend.coro_yield.assert_not_awaited()
+
+    @pytest.mark.usefixtures("setup_consumer_mock")
+    @pytest.mark.parametrize("closed_socket_errno", sorted(CLOSED_SOCKET_ERRNOS), ids=errno.errorcode.__getitem__)
+    async def test____recv_packet____convert_closed_socket_errors(
+        self,
+        closed_socket_errno: int,
+        client_connected_or_not: AsyncTCPNetworkClient[Any, Any],
+        mock_stream_socket_adapter: MagicMock,
+        mock_backend: MagicMock,
+        mock_stream_data_consumer: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_stream_socket_adapter.recv.side_effect = OSError(closed_socket_errno, os.strerror(closed_socket_errno))
+
+        # Act
+        with pytest.raises(ConnectionAbortedError):
+            _ = await client_connected_or_not.recv_packet()
+
+        # Assert
+        mock_stream_socket_adapter.recv.assert_awaited_once_with(MAX_STREAM_BUFSIZE)
+        mock_stream_data_consumer.feed.assert_not_called()
         mock_backend.coro_yield.assert_not_awaited()
 
     @pytest.mark.usefixtures("setup_producer_mock", "setup_consumer_mock")

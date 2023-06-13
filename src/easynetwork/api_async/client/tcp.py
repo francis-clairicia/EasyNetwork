@@ -8,9 +8,23 @@ from __future__ import annotations
 
 __all__ = ["AsyncTCPNetworkClient"]
 
+import contextlib as _contextlib
 import errno as _errno
 import socket as _socket
-from typing import TYPE_CHECKING, Any, Callable, Generic, Iterator, Mapping, TypedDict, TypeVar, final, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Generic,
+    Iterator,
+    Literal,
+    Mapping,
+    NoReturn,
+    TypedDict,
+    TypeVar,
+    final,
+    overload,
+)
 
 from ...exceptions import ClientClosedError, StreamProtocolParseError
 from ...protocol import StreamProtocol
@@ -24,6 +38,7 @@ from ...tools._utils import (
     set_tcp_nodelay as _set_tcp_nodelay,
 )
 from ...tools.socket import (
+    CLOSED_SOCKET_ERRNOS,
     MAX_STREAM_BUFSIZE,
     SSL_HANDSHAKE_TIMEOUT,
     SSL_SHUTDOWN_TIMEOUT,
@@ -243,41 +258,42 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
                 return
             try:
                 await socket.aclose()
-            except ConnectionError:
+            except (ConnectionError, TimeoutError):
                 # It is normal if there was connection errors during operations. But do not propagate this exception,
                 # as we will never reuse this socket
                 pass
 
     async def send_packet(self, packet: _SentPacketT) -> None:
         async with self.__send_lock:
-            socket = await self.__ensure_connected()
-            await socket.sendall(_concatenate_chunks(self.__producer(packet)))
-            _check_real_socket_state(self.socket)
+            with self.__convert_socket_error():
+                socket = await self.__ensure_connected()
+                await socket.sendall(_concatenate_chunks(self.__producer(packet)))
+                _check_real_socket_state(self.socket)
 
     async def recv_packet(self) -> _ReceivedPacketT:
         async with self.__receive_lock:
-            consumer = self.__consumer
-            next_packet = self.__next_packet
-            try:
-                return next_packet(consumer)  # If there is enough data from last call to create a packet, return immediately
-            except StopIteration:
-                pass
-            socket = await self.__ensure_connected()
-            bufsize: int = self.__max_recv_size
-            backend = self.__backend
-            while True:
-                chunk: bytes = await socket.recv(bufsize)
-                if not chunk:
-                    self.__eof_reached = True
-                    raise _error_from_errno(_errno.ECONNABORTED)
-                consumer.feed(chunk)
-                del chunk
+            with self.__convert_socket_error():
+                consumer = self.__consumer
+                next_packet = self.__next_packet
                 try:
-                    return next_packet(consumer)
+                    return next_packet(consumer)  # If there is enough data from last call to create a packet, return immediately
                 except StopIteration:
                     pass
-                # Attempt failed, wait for one iteration
-                await backend.coro_yield()
+                socket = await self.__ensure_connected()
+                bufsize: int = self.__max_recv_size
+                backend = self.__backend
+                while True:
+                    chunk: bytes = await socket.recv(bufsize)
+                    if not chunk:
+                        self.__eof_error(False)
+                    consumer.feed(chunk)
+                    del chunk
+                    try:
+                        return next_packet(consumer)
+                    except StopIteration:
+                        pass
+                    # Attempt failed, wait for one iteration
+                    await backend.coro_yield()
 
     @staticmethod
     def __next_packet(consumer: StreamDataConsumer[_ReceivedPacketT]) -> _ReceivedPacketT:
@@ -313,6 +329,25 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         if self.__socket.is_closing() or self.__eof_reached:
             raise _error_from_errno(_errno.ECONNABORTED)
         return self.__socket
+
+    @_contextlib.contextmanager
+    def __convert_socket_error(self) -> Iterator[None]:
+        try:
+            yield
+        except (ConnectionAbortedError, ClientClosedError):
+            raise
+        except ConnectionError as exc:
+            self.__eof_error(exc)
+        except OSError as exc:
+            if exc.errno in CLOSED_SOCKET_ERRNOS:
+                self.__eof_error(exc)
+            raise
+
+    def __eof_error(self, cause: BaseException | None | Literal[False]) -> NoReturn:
+        self.__eof_reached = True
+        if cause is False:
+            raise _error_from_errno(_errno.ECONNABORTED)
+        raise _error_from_errno(_errno.ECONNABORTED) from cause
 
     @property
     @final
