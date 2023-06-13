@@ -218,25 +218,23 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         return f"<{type(self).__name__} socket={socket!r}>"
 
     async def wait_connected(self) -> None:
-        if self.__socket is not None:
-            return
-        if self.__socket_connector is None:
-            raise ClientClosedError("Client is closing, or is already closed")
-        self.__socket = await self.__socket_connector.run()
-        self.__socket_connector = None
-        if self.__info is not None:  # pragma: no cover
-            return
-        socket_proxy = SocketProxy(self.__socket.socket())
-        _check_socket_family(socket_proxy.family)
-        local_address: SocketAddress = new_socket_address(self.__socket.get_local_address(), socket_proxy.family)
-        remote_address: SocketAddress = new_socket_address(self.__socket.get_remote_address(), socket_proxy.family)
-        self.__info = {
-            "proxy": socket_proxy,
-            "local_address": local_address,
-            "remote_address": remote_address,
-        }
-        _set_tcp_nodelay(socket_proxy)
-        _set_tcp_keepalive(socket_proxy)
+        if self.__socket is None:
+            if self.__socket_connector is None:
+                raise ClientClosedError("Client is closing, or is already closed")
+            self.__socket = await self.__socket_connector.run()
+            self.__socket_connector = None
+        if self.__info is None:
+            socket_proxy = SocketProxy(self.__socket.socket())
+            _check_socket_family(socket_proxy.family)
+            local_address: SocketAddress = new_socket_address(self.__socket.get_local_address(), socket_proxy.family)
+            remote_address: SocketAddress = new_socket_address(self.__socket.get_remote_address(), socket_proxy.family)
+            self.__info = {
+                "proxy": socket_proxy,
+                "local_address": local_address,
+                "remote_address": remote_address,
+            }
+            _set_tcp_nodelay(socket_proxy)
+            _set_tcp_keepalive(socket_proxy)
 
     def is_connected(self) -> bool:
         return self.__socket is not None
