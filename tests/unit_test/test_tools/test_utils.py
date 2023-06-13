@@ -26,6 +26,7 @@ from easynetwork.tools._utils import (
     concatenate_chunks,
     ensure_datagram_socket_bound,
     error_from_errno,
+    is_ssl_eof_error,
     is_ssl_socket,
     open_listener_sockets_from_getaddrinfo_result,
     replace_kwargs,
@@ -205,6 +206,29 @@ def test____check_socket_no_ssl____ssl_socket(mock_ssl_socket: MagicMock) -> Non
     # Act & Assert
     with pytest.raises(TypeError, match=r"^ssl\.SSLSocket instances are forbidden$"):
         check_socket_no_ssl(mock_ssl_socket)
+
+
+def test____is_ssl_eof_error____SSLEOFError() -> None:
+    # Arrange
+    import ssl
+
+    # Act & Assert
+    assert is_ssl_eof_error(ssl.SSLEOFError())
+
+
+def test____is_ssl_eof_error____SSLError_with_specific_mnemonic() -> None:
+    # Arrange
+    import ssl
+
+    # Act & Assert
+    assert is_ssl_eof_error(ssl.SSLError(ssl.SSL_ERROR_SSL, "UNEXPECTED_EOF_WHILE_READING"))
+
+
+def test____is_ssl_eof_error____OSError() -> None:
+    # Arrange
+
+    # Act & Assert
+    assert not is_ssl_eof_error(OSError())
 
 
 @pytest.mark.parametrize(["event", "selector_event"], [("read", "EVENT_READ"), ("write", "EVENT_WRITE")])

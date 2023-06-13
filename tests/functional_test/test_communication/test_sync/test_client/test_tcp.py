@@ -54,7 +54,7 @@ class TestTCPNetworkClient:
         server: Socket,
     ) -> None:
         server.close()
-        with pytest.raises(ConnectionError):
+        with pytest.raises(ConnectionAbortedError):
             client.send_packet("ABCDEF")
 
     @pytest.mark.platform_linux  # Windows and MacOS raise ConnectionAbortedError but in the 2nd send() call
@@ -66,7 +66,7 @@ class TestTCPNetworkClient:
         client.send_packet("ABCDEF")
         assert server.recv(1024) == b"ABCDEF\n"
         server.close()
-        with pytest.raises(ConnectionError):
+        with pytest.raises(ConnectionAbortedError):
             client.send_packet("ABCDEF")
 
     def test____send_packet____connection_error____partial_read_then_close(
@@ -77,7 +77,7 @@ class TestTCPNetworkClient:
         client.send_packet("ABC")
         assert server.recv(1) == b"A"
         server.close()
-        with pytest.raises(ConnectionError):
+        with pytest.raises(ConnectionAbortedError):
             client.send_packet("DEF")
 
     def test____send_packet____closed_client(self, client: TCPNetworkClient[str, str]) -> None:

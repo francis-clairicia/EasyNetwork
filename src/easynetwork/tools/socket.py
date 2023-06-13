@@ -123,6 +123,16 @@ def new_socket_address(addr: tuple[Any, ...], family: int) -> SocketAddress:
 MAX_STREAM_BUFSIZE: Final[int] = 256 * 1024  # 256KiB
 MAX_DATAGRAM_BUFSIZE: Final[int] = 64 * 1024  # 64KiB
 
+# Errors that socket operations can return if the socket is closed
+CLOSED_SOCKET_ERRNOS = frozenset(
+    {
+        # Unix
+        _errno.EBADF,
+        # Windows
+        _errno.ENOTSOCK,
+    }
+)
+
 # Errors that accept(2) can return, and which indicate that the system is
 # overloaded
 ACCEPT_CAPACITY_ERRNOS = frozenset(

@@ -53,7 +53,7 @@ class AsyncioTransportStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
             if not self.__writer.is_closing():
                 self.__writer.close()
             await self.__writer.wait_closed()
-        except ConnectionError:
+        except (ConnectionError, TimeoutError):
             # It is normal if there was connection errors during operations. But do not propagate this exception,
             # as we will never reuse this socket
             pass

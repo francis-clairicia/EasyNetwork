@@ -66,7 +66,7 @@ class TestAsyncTCPNetworkClient:
         server: Socket,
     ) -> None:
         server.close()
-        with pytest.raises(ConnectionError):
+        with pytest.raises(ConnectionAbortedError):
             await client.send_packet("ABCDEF")
 
     @pytest.mark.skipif_uvloop  # Error not triggered
@@ -80,7 +80,7 @@ class TestAsyncTCPNetworkClient:
         await client.send_packet("ABCDEF")
         assert await event_loop.sock_recv(server, 1024) == b"ABCDEF\n"
         server.close()
-        with pytest.raises(ConnectionError):
+        with pytest.raises(ConnectionAbortedError):
             await client.send_packet("ABCDEF")
 
     @pytest.mark.skipif_uvloop  # Error not triggered
@@ -94,7 +94,7 @@ class TestAsyncTCPNetworkClient:
         await client.send_packet("ABC")
         assert await event_loop.sock_recv(server, 1) == b"A"
         server.close()
-        with pytest.raises(ConnectionError):
+        with pytest.raises(ConnectionAbortedError):
             await client.send_packet("DEF")
 
     async def test____send_packet____closed_client(self, client: AsyncTCPNetworkClient[str, str]) -> None:

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import contextlib
+import errno
+import os
 from selectors import EVENT_READ, EVENT_WRITE
 from socket import AF_INET6, IPPROTO_TCP, SO_KEEPALIVE, TCP_NODELAY
 from ssl import SOL_SOCKET, SSLEOFError, SSLError, SSLErrorNumber, SSLWantReadError, SSLWantWriteError, SSLZeroReturnError
@@ -11,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 from easynetwork.api_sync.client.tcp import TCPNetworkClient
 from easynetwork.exceptions import ClientClosedError
 from easynetwork.tools.socket import (
+    CLOSED_SOCKET_ERRNOS,
     MAX_STREAM_BUFSIZE,
     SSL_HANDSHAKE_TIMEOUT,
     SSL_SHUTDOWN_TIMEOUT,
@@ -931,8 +934,7 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_ssl_socket.unwrap.side_effect = [would_block_exception, mock_tcp_socket]
 
         # Act
-        with pytest.raises(TimeoutError) if expected_timeout == 0 else contextlib.nullcontext():
-            client.close()
+        client.close()
 
         # Assert
         assert client.is_closed()
@@ -1109,17 +1111,17 @@ class TestTCPNetworkClient(BaseTestClient):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        from errno import ECONNRESET
+        from errno import EBUSY
         from socket import SO_ERROR, SOL_SOCKET
 
-        mock_used_socket.getsockopt.return_value = ECONNRESET
+        mock_used_socket.getsockopt.return_value = EBUSY
 
         # Act
         with pytest.raises(OSError) as exc_info:
             client.send_packet(mocker.sentinel.packet)
 
         # Assert
-        assert exc_info.value.errno == ECONNRESET
+        assert exc_info.value.errno == EBUSY
         mock_used_socket.settimeout.assert_not_called()
         mock_used_socket.setblocking.assert_not_called()
         mock_selector_select.assert_not_called()
@@ -1166,6 +1168,56 @@ class TestTCPNetworkClient(BaseTestClient):
     ) -> None:
         # Arrange
         mock_used_socket.send.side_effect = ssl_eof_error
+
+        # Act
+        with pytest.raises(ConnectionAbortedError):
+            client.send_packet(mocker.sentinel.packet)
+
+        # Assert
+        mock_used_socket.settimeout.assert_not_called()
+        mock_used_socket.setblocking.assert_not_called()
+        mock_selector_select.assert_not_called()
+        mock_stream_protocol.generate_chunks.assert_called_once_with(mocker.sentinel.packet)
+        mock_used_socket.send.assert_called_once_with(b"packet\n")
+        mock_used_socket.getsockopt.assert_not_called()
+
+    @pytest.mark.usefixtures("setup_producer_mock")
+    def test____send_packet____convert_connection_errors(
+        self,
+        client: TCPNetworkClient[Any, Any],
+        mock_used_socket: MagicMock,
+        mock_stream_protocol: MagicMock,
+        mock_selector_select: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_used_socket.send.side_effect = ConnectionError
+
+        # Act
+        with pytest.raises(ConnectionAbortedError):
+            client.send_packet(mocker.sentinel.packet)
+
+        # Assert
+        mock_used_socket.settimeout.assert_not_called()
+        mock_used_socket.setblocking.assert_not_called()
+        mock_selector_select.assert_not_called()
+        mock_stream_protocol.generate_chunks.assert_called_once_with(mocker.sentinel.packet)
+        mock_used_socket.send.assert_called_once_with(b"packet\n")
+        mock_used_socket.getsockopt.assert_not_called()
+
+    @pytest.mark.usefixtures("setup_producer_mock")
+    @pytest.mark.parametrize("closed_socket_errno", sorted(CLOSED_SOCKET_ERRNOS), ids=errno.errorcode.__getitem__)
+    def test____send_packet____convert_closed_socket_errors(
+        self,
+        closed_socket_errno: int,
+        client: TCPNetworkClient[Any, Any],
+        mock_used_socket: MagicMock,
+        mock_stream_protocol: MagicMock,
+        mock_selector_select: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_used_socket.send.side_effect = OSError(closed_socket_errno, os.strerror(closed_socket_errno))
 
         # Act
         with pytest.raises(ConnectionAbortedError):
@@ -1303,6 +1355,50 @@ class TestTCPNetworkClient(BaseTestClient):
     ) -> None:
         # Arrange
         mock_used_socket.recv.side_effect = [b""]
+
+        # Act
+        with pytest.raises(ConnectionAbortedError):
+            _ = client.recv_packet(timeout=recv_timeout)
+
+        # Assert
+        mock_used_socket.settimeout.assert_not_called()
+        mock_used_socket.setblocking.assert_not_called()
+        mock_used_socket.recv.assert_called_once_with(MAX_STREAM_BUFSIZE)
+        mock_stream_data_consumer.feed.assert_not_called()
+
+    @pytest.mark.usefixtures("setup_consumer_mock")
+    def test____recv_packet____blocking_or_not____eof_error____convert_connection_errors(
+        self,
+        client: TCPNetworkClient[Any, Any],
+        recv_timeout: int | None,
+        mock_used_socket: MagicMock,
+        mock_stream_data_consumer: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_used_socket.recv.side_effect = ConnectionError
+
+        # Act
+        with pytest.raises(ConnectionAbortedError):
+            _ = client.recv_packet(timeout=recv_timeout)
+
+        # Assert
+        mock_used_socket.settimeout.assert_not_called()
+        mock_used_socket.setblocking.assert_not_called()
+        mock_used_socket.recv.assert_called_once_with(MAX_STREAM_BUFSIZE)
+        mock_stream_data_consumer.feed.assert_not_called()
+
+    @pytest.mark.usefixtures("setup_consumer_mock")
+    @pytest.mark.parametrize("closed_socket_errno", sorted(CLOSED_SOCKET_ERRNOS), ids=errno.errorcode.__getitem__)
+    def test____recv_packet____blocking_or_not____eof_error____convert_closed_socket_errors(
+        self,
+        closed_socket_errno: int,
+        client: TCPNetworkClient[Any, Any],
+        recv_timeout: int | None,
+        mock_used_socket: MagicMock,
+        mock_stream_data_consumer: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_used_socket.recv.side_effect = OSError(closed_socket_errno, os.strerror(closed_socket_errno))
 
         # Act
         with pytest.raises(ConnectionAbortedError):

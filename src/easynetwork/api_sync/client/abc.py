@@ -57,13 +57,19 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
         raise NotImplementedError
 
     def iter_received_packets(self, timeout: float | None = 0) -> Iterator[_ReceivedPacketT]:
+        from time import monotonic
+
         recv_packet = self.recv_packet
         while True:
             try:
+                _start = monotonic()
                 packet = recv_packet(timeout)
+                _end = monotonic()
             except OSError:
                 return
             yield packet
+            if timeout is not None:
+                timeout -= _end - _start
 
     @abstractmethod
     def fileno(self) -> int:
