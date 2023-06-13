@@ -200,14 +200,20 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
                 del data
 
     def iter_received_packets_from(self, timeout: float | None = 0) -> Iterator[tuple[_ReceivedPacketT, SocketAddress]]:
+        from time import monotonic
+
         recv_packet_from = self.recv_packet_from
 
         while True:
             try:
+                _start = monotonic()
                 packet_tuple = recv_packet_from(timeout=timeout)
+                _end = monotonic()
             except OSError:
                 return
-            yield packet_tuple  # yield out of lock scope
+            yield packet_tuple
+            if timeout is not None:
+                timeout -= _end - _start
 
     def get_local_address(self) -> SocketAddress:
         return self.__addr

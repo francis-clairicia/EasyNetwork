@@ -61,6 +61,8 @@ class TestAbstractNetworkClient:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
+        now: float = 798546132
+        mocker.patch("time.monotonic", return_value=now)
         received_packets_queue = deque([mocker.sentinel.packet_a, mocker.sentinel.packet_b, mocker.sentinel.packet_c])
 
         def side_effect(timeout: Any) -> Any:
@@ -88,6 +90,8 @@ class TestAbstractNetworkClient:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
+        now: float = 798546132
+        mocker.patch("time.monotonic", return_value=now)
         client = MockClient(mocker)
         client.mock_recv_packet.side_effect = [mocker.sentinel.packet_a, error]
 
