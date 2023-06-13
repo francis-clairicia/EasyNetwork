@@ -17,7 +17,6 @@ __all__ = [
     "retry_ssl_socket_method",
     "set_reuseport",
     "set_tcp_nodelay",
-    "ssl_do_not_ignore_unexpected_eof",
     "transform_future_exception",
     "wait_socket_available",
 ]
@@ -32,7 +31,7 @@ import time
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Literal, ParamSpec, TypeGuard, TypeVar, assert_never
 
 if TYPE_CHECKING:
-    from ssl import SSLContext as _SSLContext, SSLError as _SSLError, SSLSocket as _SSLSocket
+    from ssl import SSLError as _SSLError, SSLSocket as _SSLSocket
 
     from .socket import SocketProxy as _SocketProxy
 
@@ -191,13 +190,6 @@ def is_ssl_eof_error(exc: BaseException) -> TypeGuard[_SSLError]:
             # project.
             return True
     return False
-
-
-def ssl_do_not_ignore_unexpected_eof(ssl_context: _SSLContext) -> None:
-    import ssl
-
-    if hasattr(ssl, "OP_IGNORE_UNEXPECTED_EOF"):
-        ssl_context.options &= ~getattr(ssl, "OP_IGNORE_UNEXPECTED_EOF")
 
 
 def concatenate_chunks(chunks_iterable: Iterable[bytes]) -> bytes:

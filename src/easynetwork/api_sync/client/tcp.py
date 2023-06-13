@@ -30,7 +30,6 @@ from ...tools._utils import (
     retry_ssl_socket_method as _retry_ssl_socket_method,
     set_tcp_keepalive as _set_tcp_keepalive,
     set_tcp_nodelay as _set_tcp_nodelay,
-    ssl_do_not_ignore_unexpected_eof as _ssl_do_not_ignore_unexpected_eof,
 )
 from ...tools.socket import CLOSED_SOCKET_ERRNOS, MAX_STREAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
 from ...tools.stream import StreamDataConsumer
@@ -166,12 +165,13 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
 
             if ssl:
                 if isinstance(ssl, bool):
-                    from ssl import create_default_context
+                    import ssl as _ssl_module
 
-                    ssl = create_default_context()
+                    ssl = _ssl_module.create_default_context()
                     if not server_hostname:
                         ssl.check_hostname = False
-                    _ssl_do_not_ignore_unexpected_eof(ssl)
+                    if hasattr(_ssl_module, "OP_IGNORE_UNEXPECTED_EOF"):
+                        ssl.options &= ~getattr(_ssl_module, "OP_IGNORE_UNEXPECTED_EOF")
                 if not server_hostname:
                     server_hostname = None
                 socket = ssl.wrap_socket(
