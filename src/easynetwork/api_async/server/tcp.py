@@ -31,6 +31,7 @@ from ...protocol import StreamProtocol
 from ...tools._utils import (
     check_real_socket_state as _check_real_socket_state,
     concatenate_chunks as _concatenate_chunks,
+    recursively_clear_exception_traceback_frames as _recursively_clear_exception_traceback_frames,
     set_tcp_keepalive as _set_tcp_keepalive,
     set_tcp_nodelay as _set_tcp_nodelay,
 )
@@ -481,6 +482,7 @@ class _RequestReceiver(Generic[_RequestT, _ResponseT]):
                 return next(consumer)
             except StreamProtocolParseError as exc:
                 logger.debug("Malformed request sent by %s", client.address)
+                _recursively_clear_exception_traceback_frames(exc)
                 await self.__request_handler.bad_request(client, exc)
                 await self.__backend.coro_yield()
                 continue

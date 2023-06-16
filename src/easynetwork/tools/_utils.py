@@ -28,6 +28,7 @@ import os
 import selectors as _selectors
 import socket as _socket
 import time
+import traceback
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Literal, ParamSpec, TypeGuard, TypeVar, assert_never
 
 if TYPE_CHECKING:
@@ -305,3 +306,11 @@ def transform_future_exception(exc: BaseException) -> BaseException:
         case _:
             pass
     return exc
+
+
+def recursively_clear_exception_traceback_frames(exc: BaseException) -> None:
+    traceback.clear_frames(exc.__traceback__)
+    if exc.__context__ is not None:
+        recursively_clear_exception_traceback_frames(exc.__context__)
+    if exc.__cause__ is not exc.__context__ and exc.__cause__ is not None:
+        recursively_clear_exception_traceback_frames(exc.__cause__)
