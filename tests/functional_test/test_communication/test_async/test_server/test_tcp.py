@@ -596,6 +596,31 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         assert await reader.read() == b""
         assert len(caplog.records) == 3
 
+    async def test____serve_forever____bad_request____recursive_traceback_frame_clear_error(
+        self,
+        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        caplog: pytest.LogCaptureFixture,
+        server: MyAsyncTCPServer,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        caplog.set_level(logging.WARNING, server.logger.name)
+        reader, writer = await client_factory()
+
+        def infinite_recursion(exc: BaseException) -> None:
+            infinite_recursion(exc)
+
+        monkeypatch.setattr(
+            f"{AsyncTCPNetworkServer.__module__}._recursively_clear_exception_traceback_frames",
+            infinite_recursion,
+        )
+
+        writer.write("\u00E9\n".encode("latin-1"))  # StringSerializer does not accept unicode
+        await writer.drain()
+        await asyncio.sleep(0.1)
+
+        assert await reader.readline() == b"wrong encoding man.\n"
+        assert "Recursion depth reached when clearing exception's traceback frames" in [rec.message for rec in caplog.records]
+
     async def test____serve_forever____unexpected_error_during_process(
         self,
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],

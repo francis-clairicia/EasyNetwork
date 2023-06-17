@@ -29,6 +29,7 @@ from easynetwork.tools._utils import (
     is_ssl_eof_error,
     is_ssl_socket,
     open_listener_sockets_from_getaddrinfo_result,
+    recursively_clear_exception_traceback_frames,
     replace_kwargs,
     set_reuseport,
     set_tcp_keepalive,
@@ -598,3 +599,103 @@ def test____transform_future_exception____make_cancelled_error_from_exception(ex
     assert new_exception.__cause__ is exception
     assert new_exception.__context__ is exception
     assert new_exception.__suppress_context__
+
+
+def test____recursively_clear_exception_traceback_frames____exception_without_context_nor_cause(
+    mocker: MockerFixture,
+) -> None:
+    # Arrange
+    mock_clear_frames = mocker.patch("traceback.clear_frames", autospec=True)
+
+    def func() -> None:
+        raise Exception()
+
+    # Act
+    exception = pytest.raises(Exception, func).value
+    assert exception.__context__ is None and exception.__cause__ is None
+    recursively_clear_exception_traceback_frames(exception)
+
+    # Assert
+    mock_clear_frames.assert_called_once_with(exception.__traceback__)
+
+
+def test____recursively_clear_exception_traceback_frames____exception_with_context_but_no_explicit_cause(
+    mocker: MockerFixture,
+) -> None:
+    # Arrange
+    mock_clear_frames = mocker.patch("traceback.clear_frames", autospec=True)
+
+    def func() -> None:
+        try:
+            1 / 0
+        except ZeroDivisionError:
+            raise Exception()
+
+    # Act
+    exception = pytest.raises(Exception, func).value
+    assert isinstance(exception.__context__, ZeroDivisionError)
+    assert exception.__cause__ is None
+    recursively_clear_exception_traceback_frames(exception)
+
+    # Assert
+    assert mock_clear_frames.mock_calls == [
+        mocker.call(exception.__traceback__),
+        mocker.call(exception.__context__.__traceback__),
+    ]
+
+
+def test____recursively_clear_exception_traceback_frames____exception_with_explicit_cause(
+    mocker: MockerFixture,
+) -> None:
+    # Arrange
+    mock_clear_frames = mocker.patch("traceback.clear_frames", autospec=True)
+
+    def func() -> None:
+        try:
+            1 / 0
+        except ZeroDivisionError as exc:
+            raise Exception() from exc
+
+    # Act
+    exception = pytest.raises(Exception, func).value
+    assert isinstance(exception.__context__, ZeroDivisionError)
+    assert exception.__cause__ is exception.__context__
+    recursively_clear_exception_traceback_frames(exception)
+
+    # Assert
+    assert mock_clear_frames.mock_calls == [
+        mocker.call(exception.__traceback__),
+        mocker.call(exception.__context__.__traceback__),
+    ]
+
+
+def test____recursively_clear_exception_traceback_frames____exception_with_context_but_different_cause(
+    mocker: MockerFixture,
+) -> None:
+    # Arrange
+    mock_clear_frames = mocker.patch("traceback.clear_frames", autospec=True)
+
+    def func() -> None:
+        try:
+            1 / 0
+        except ZeroDivisionError as exc:
+            try:
+                raise ValueError()
+            except ValueError:
+                raise Exception() from exc
+
+    # Act
+    exception = pytest.raises(Exception, func).value
+    assert isinstance(exception.__context__, ValueError)
+    assert isinstance(exception.__context__.__context__, ZeroDivisionError)
+    assert exception.__context__.__cause__ is None
+    assert isinstance(exception.__cause__, ZeroDivisionError)
+    recursively_clear_exception_traceback_frames(exception)
+
+    # Assert
+    assert mock_clear_frames.mock_calls == [
+        mocker.call(exception.__traceback__),
+        mocker.call(exception.__context__.__traceback__),
+        mocker.call(exception.__context__.__context__.__traceback__),
+        mocker.call(exception.__cause__.__traceback__),
+    ]

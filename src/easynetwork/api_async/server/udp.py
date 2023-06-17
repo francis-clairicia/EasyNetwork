@@ -16,7 +16,10 @@ from weakref import WeakValueDictionary
 
 from ...exceptions import ClientClosedError, DatagramProtocolParseError
 from ...protocol import DatagramProtocol
-from ...tools._utils import check_real_socket_state as _check_real_socket_state
+from ...tools._utils import (
+    check_real_socket_state as _check_real_socket_state,
+    recursively_clear_exception_traceback_frames as _recursively_clear_exception_traceback_frames,
+)
 from ...tools.socket import SocketAddress, SocketProxy, new_socket_address
 from ..backend.factory import AsyncBackendFactory
 from ..backend.tasks import SingleTaskRunner
@@ -261,6 +264,10 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                             request: _RequestT = self.__protocol.build_packet_from_datagram(datagram)
                         except DatagramProtocolParseError as exc:
                             self.__logger.debug("Malformed request sent by %s", client.address)
+                            try:
+                                _recursively_clear_exception_traceback_frames(exc)
+                            except RecursionError:
+                                self.__logger.warning("Recursion depth reached when clearing exception's traceback frames")
                             await self.__request_handler.bad_request(client, exc)
                             await backend.coro_yield()
                             continue
