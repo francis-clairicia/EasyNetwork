@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import threading
 import time
-from typing import AsyncGenerator, Callable
+from typing import AsyncGenerator, Callable, Iterator
 
 from easynetwork.api_async.server.handler import AsyncBaseRequestHandler, AsyncClientInterface
 from easynetwork.api_async.server.standalone import (
@@ -29,27 +29,9 @@ class EchoRequestHandler(AsyncBaseRequestHandler[str, str]):
 
 
 class BaseTestStandaloneNetworkServer:
-    def test____is_serving____default_to_False(self, server: AbstractStandaloneNetworkServer) -> None:
-        with server:
-            assert not server.is_serving()
-
-    def test____shutdown____default_to_noop(self, server: AbstractStandaloneNetworkServer) -> None:
-        with server:
-            server.shutdown()
-
-    def test____shutdown____stop_serve_forever(self, server: AbstractStandaloneNetworkServer) -> None:
-        with server:
-            t = threading.Thread(target=server.serve_forever, daemon=True)
-            t.start()
-
-            time.sleep(0.1)
-            assert server.is_serving()
-
-            server.shutdown()
-            t.join()
-            assert not server.is_serving()
-
-    def test____shutdown____wait_server_to_be_up(self, server: AbstractStandaloneNetworkServer) -> None:
+    @pytest.fixture
+    @staticmethod
+    def start_server(server: AbstractStandaloneNetworkServer) -> Iterator[None]:
         with server:
             is_up_event = threading.Event()
             t = threading.Thread(target=server.serve_forever, kwargs={"is_up_event": is_up_event}, daemon=True)
@@ -58,32 +40,39 @@ class BaseTestStandaloneNetworkServer:
             is_up_event.wait(timeout=1)
             assert server.is_serving()
 
+            yield
+
             server.shutdown()
-            t.join()
             assert not server.is_serving()
 
+    def test____is_serving____default_to_False(self, server: AbstractStandaloneNetworkServer) -> None:
+        with server:
+            assert not server.is_serving()
+
+    def test____shutdown____default_to_noop(self, server: AbstractStandaloneNetworkServer) -> None:
+        with server:
+            server.shutdown()
+
+    def test____shutdown____while_server_is_running(self, server: AbstractStandaloneNetworkServer) -> None:
+        with server:
+            t = threading.Thread(target=server.serve_forever, daemon=True)
+            t.start()
+
+            time.sleep(1)
+            if not server.is_serving():
+                pytest.fail("Timeout error")
+
+            server.shutdown()
+            assert not server.is_serving()
+
+    @pytest.mark.usefixtures("start_server")
     def test____server_close____while_server_is_running(self, server: AbstractStandaloneNetworkServer) -> None:
-        with server:
-            t = threading.Thread(target=server.serve_forever, daemon=True)
-            t.start()
+        server.server_close()
 
-            time.sleep(0.1)
-            server.server_close()
-
-            server.shutdown()
-            t.join()
-
+    @pytest.mark.usefixtures("start_server")
     def test____serve_forever____error_server_already_running(self, server: AbstractStandaloneNetworkServer) -> None:
-        with server:
-            t = threading.Thread(target=server.serve_forever, daemon=True)
-            t.start()
-
-            time.sleep(0.1)
-            with pytest.raises(RuntimeError):
-                server.serve_forever()
-
-            server.shutdown()
-            t.join()
+        with pytest.raises(RuntimeError):
+            server.serve_forever()
 
 
 def custom_asyncio_runner() -> asyncio.Runner:
@@ -115,19 +104,12 @@ class TestStandaloneTCPNetworkServer(BaseTestStandaloneNetworkServer):
         with server:
             server.stop_listening()
 
+    @pytest.mark.usefixtures("start_server")
     def test____stop_listening____stop_accepting_new_connection(self, server: StandaloneTCPNetworkServer[str, str]) -> None:
-        with server:
-            t = threading.Thread(target=server.serve_forever, daemon=True)
-            t.start()
+        assert server.is_serving()
 
-            time.sleep(0.1)
-            assert server.is_serving()
-
-            server.stop_listening()
-            assert not server.is_serving()
-
-            server.shutdown()
-            t.join()
+        server.stop_listening()
+        assert not server.is_serving()
 
 
 class TestStandaloneUDPNetworkServer(BaseTestStandaloneNetworkServer):
