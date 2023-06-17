@@ -326,6 +326,25 @@ class TestAsyncioBackend:
         assert not task.cancelled()
         assert type(task.exception()) is FutureCancelledError
 
+    async def test____wait_future____already_done(
+        self,
+        backend: AsyncioBackend,
+    ) -> None:
+        future: Future[int] = Future()
+        future.set_result(42)
+
+        assert await backend.wait_future(future) == 42
+
+    async def test____wait_future____already_cancelled(
+        self,
+        backend: AsyncioBackend,
+    ) -> None:
+        future: Future[int] = Future()
+        future.cancel()
+
+        with pytest.raises(FutureCancelledError):
+            await backend.wait_future(future)
+
     async def test____run_in_thread____cannot_be_cancelled(
         self,
         event_loop: asyncio.AbstractEventLoop,
