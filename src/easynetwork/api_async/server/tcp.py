@@ -482,7 +482,10 @@ class _RequestReceiver(Generic[_RequestT, _ResponseT]):
                 return next(consumer)
             except StreamProtocolParseError as exc:
                 logger.debug("Malformed request sent by %s", client.address)
-                _recursively_clear_exception_traceback_frames(exc)
+                try:
+                    _recursively_clear_exception_traceback_frames(exc)
+                except RecursionError:
+                    logger.warning("Recursion depth reached when clearing exception's traceback frames")
                 await self.__request_handler.bad_request(client, exc)
                 await self.__backend.coro_yield()
                 continue

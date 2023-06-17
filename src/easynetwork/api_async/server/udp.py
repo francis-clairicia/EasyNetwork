@@ -264,7 +264,10 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                             request: _RequestT = self.__protocol.build_packet_from_datagram(datagram)
                         except DatagramProtocolParseError as exc:
                             self.__logger.debug("Malformed request sent by %s", client.address)
-                            _recursively_clear_exception_traceback_frames(exc)
+                            try:
+                                _recursively_clear_exception_traceback_frames(exc)
+                            except RecursionError:
+                                self.__logger.warning("Recursion depth reached when clearing exception's traceback frames")
                             await self.__request_handler.bad_request(client, exc)
                             await backend.coro_yield()
                             continue
