@@ -70,6 +70,8 @@ class AsyncioBackend(AbstractAsyncBackend):
             assert current_task.cancelling() > cancelling
             while current_task.uncancel() > cancelling:
                 continue
+        finally:
+            del current_task
 
     def get_cancelled_exc_class(self) -> type[BaseException]:
         return asyncio.CancelledError
@@ -108,15 +110,14 @@ class AsyncioBackend(AbstractAsyncBackend):
         cancelling: int = current_task.cancelling()
 
         try:
-            while True:
-                if future.done():
-                    return future.result()
+            while not future.done():
                 try:
                     await asyncio.wait({future})
                 except asyncio.CancelledError:
                     assert current_task.cancelling() > cancelling
                     while current_task.uncancel() > cancelling:
                         continue
+            return future.result()
         finally:
             del current_task, future
 
@@ -439,36 +440,38 @@ class AsyncioBackend(AbstractAsyncBackend):
         return ThreadsPortal()
 
     async def wait_future(self, future: concurrent.futures.Future[_T_co]) -> _T_co:
-        future_wrapper = asyncio.wrap_future(future)
-
-        if not future.running():  # There is a chance to cancel the future
-            current_task: asyncio.Task[Any] = self._current_asyncio_task()
-            cancelling: int = current_task.cancelling()
-            try:
-                await asyncio.wait({future_wrapper})
-            except asyncio.CancelledError:
-                if future.cancel():
-                    raise
-                # future.cancel() failed, that means future.set_running_or_notify_cancel() has been called
-                # and sets future in RUNNING state.
-                # This future cannot be cancelled anymore, therefore it must be awaited.
-                assert current_task.cancelling() > cancelling
-                while current_task.uncancel() > cancelling:
-                    continue
-            else:
-                try:
-                    assert future.done()
-                    return future.result()
-                finally:
-                    del future_wrapper, future
-            finally:
-                del current_task
-
         try:
-            del future
-            return await self._cancel_shielded_wait_asyncio_future(future_wrapper)
+            if future.done():
+                await self.cancel_shielded_coro_yield()
+                return future.result()
+
+            future_wrapper = asyncio.wrap_future(future)
+            try:
+                if not future.running():  # There is a chance to cancel the future
+                    current_task: asyncio.Task[Any] = self._current_asyncio_task()
+                    cancelling: int = current_task.cancelling()
+                    try:
+                        await asyncio.wait({future_wrapper})
+                    except asyncio.CancelledError:
+                        if future.cancel():
+                            raise
+                        # future.cancel() failed, that means future.set_running_or_notify_cancel() has been called
+                        # and sets future in RUNNING state.
+                        # This future cannot be cancelled anymore, therefore it must be awaited.
+                        assert current_task.cancelling() > cancelling
+                        while current_task.uncancel() > cancelling:
+                            continue
+                    else:
+                        assert future.done()
+                        return future.result()
+                    finally:
+                        del current_task
+
+                return await self._cancel_shielded_wait_asyncio_future(future_wrapper)
+            finally:
+                del future_wrapper
         finally:
-            del future_wrapper
+            del future
 
     def use_asyncio_transport(self) -> bool:
         return self.__use_asyncio_transport
