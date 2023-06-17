@@ -61,6 +61,16 @@ class AsyncioBackend(AbstractAsyncBackend):
     async def coro_yield(self) -> None:
         await asyncio.sleep(0)
 
+    async def cancel_shielded_coro_yield(self) -> None:
+        current_task: asyncio.Task[Any] = self._current_asyncio_task()
+        cancelling: int = current_task.cancelling()
+        try:
+            await asyncio.sleep(0)
+        except asyncio.CancelledError:
+            assert current_task.cancelling() > cancelling
+            while current_task.uncancel() > cancelling:
+                continue
+
     def get_cancelled_exc_class(self) -> type[BaseException]:
         return asyncio.CancelledError
 
@@ -115,7 +125,7 @@ class AsyncioBackend(AbstractAsyncBackend):
         return loop.time()
 
     async def sleep(self, delay: float) -> None:
-        return await asyncio.sleep(delay)
+        await asyncio.sleep(delay)
 
     async def sleep_forever(self) -> NoReturn:
         loop = asyncio.get_running_loop()

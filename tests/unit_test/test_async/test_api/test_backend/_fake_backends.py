@@ -35,6 +35,9 @@ class BaseFakeBackend(AbstractAsyncBackend):
     async def coro_yield(self) -> None:
         raise NotImplementedError
 
+    async def cancel_shielded_coro_yield(self) -> None:
+        raise NotImplementedError
+
     async def ignore_cancellation(self, coroutine: Coroutine[Any, Any, Any]) -> Any:
         raise NotImplementedError
 
