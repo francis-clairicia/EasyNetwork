@@ -23,6 +23,21 @@ class TestAsyncioBackend:
     async def test____use_asyncio_transport____True_by_default(self, backend: AsyncioBackend) -> None:
         assert backend.use_asyncio_transport()
 
+    async def test____cancel_shielded_coro_yield____mute_cancellation(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        backend: AsyncioBackend,
+    ) -> None:
+        task: asyncio.Task[None] = event_loop.create_task(backend.cancel_shielded_coro_yield())
+
+        await asyncio.sleep(0)
+
+        for _ in range(3):
+            task.cancel()
+
+        await task
+        assert not task.cancelled()
+
     async def test____ignore_cancellation____always_continue_on_cancellation(
         self,
         event_loop: asyncio.AbstractEventLoop,
@@ -338,40 +353,6 @@ class TestAsyncioBackend:
             return sniffio.current_async_library_cvar.get()
 
         cvar_inner = await backend.run_in_thread(callback)
-        cvar_outer = sniffio.current_async_library_cvar.get()
-
-        assert cvar_inner is None
-        assert cvar_outer == "asyncio"
-
-    async def test____create_thread_pool_executor____run_sync(
-        self,
-        backend: AsyncioBackend,
-    ) -> None:
-        def thread_fn(value: int) -> int:
-            return value
-
-        async with backend.create_thread_pool_executor() as executor:
-            assert await executor.run(thread_fn, 42) == 42
-
-    async def test____create_thread_pool_executor____shutdown_idempotent(
-        self,
-        backend: AsyncioBackend,
-    ) -> None:
-        async with backend.create_thread_pool_executor() as executor:
-            await executor.shutdown()
-            await executor.shutdown()
-
-    @pytest.mark.feature_sniffio
-    async def test____create_thread_pool_executor____sniffio_contextvar_reset(self, backend: AsyncioBackend) -> None:
-        import sniffio
-
-        sniffio.current_async_library_cvar.set("asyncio")
-
-        def callback() -> str | None:
-            return sniffio.current_async_library_cvar.get()
-
-        async with backend.create_thread_pool_executor() as executor:
-            cvar_inner = await executor.run(callback)
         cvar_outer = sniffio.current_async_library_cvar.get()
 
         assert cvar_inner is None

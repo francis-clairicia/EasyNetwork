@@ -32,6 +32,9 @@ class MockBackend(BaseFakeBackend):
     async def coro_yield(self) -> None:
         await self.mock_coro_yield()
 
+    async def cancel_shielded_coro_yield(self) -> None:
+        await self.mock_coro_yield()
+
     def get_cancelled_exc_class(self) -> type[BaseException]:
         return asyncio.CancelledError
 

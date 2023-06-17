@@ -15,7 +15,6 @@ __all__ = [
     "AbstractAsyncDatagramSocketAdapter",
     "AbstractAsyncListenerSocketAdapter",
     "AbstractAsyncStreamSocketAdapter",
-    "AbstractAsyncThreadPoolExecutor",
     "AbstractTask",
     "AbstractTaskGroup",
     "AbstractThreadsPortal",
@@ -156,33 +155,6 @@ class AbstractTaskGroup(metaclass=ABCMeta):
         raise NotImplementedError
 
 
-class AbstractAsyncThreadPoolExecutor(metaclass=ABCMeta):
-    __slots__ = ("__weakref__",)
-
-    async def __aenter__(self) -> Self:
-        return self
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: TracebackType | None,
-    ) -> None:
-        await self.shutdown()
-
-    @abstractmethod
-    async def run(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
-        raise NotImplementedError
-
-    @abstractmethod
-    async def shutdown(self) -> None:
-        raise NotImplementedError
-
-    @abstractmethod
-    def get_max_number_of_workers(self) -> int:
-        raise NotImplementedError
-
-
 class AbstractThreadsPortal(metaclass=ABCMeta):
     __slots__ = ("__weakref__",)
 
@@ -311,6 +283,10 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
 
     @abstractmethod
     async def coro_yield(self) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def cancel_shielded_coro_yield(self) -> None:
         raise NotImplementedError
 
     @abstractmethod
@@ -448,11 +424,6 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
     @abstractmethod
     async def run_in_thread(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
         raise NotImplementedError
-
-    def create_thread_pool_executor(self, max_workers: int | None = None) -> AbstractAsyncThreadPoolExecutor:
-        from .threads import DefaultAsyncThreadPoolExecutor
-
-        return DefaultAsyncThreadPoolExecutor(self, max_workers)
 
     @abstractmethod
     def create_threads_portal(self) -> AbstractThreadsPortal:
