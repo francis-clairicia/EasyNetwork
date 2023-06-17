@@ -66,6 +66,7 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "xfail_uvloop: Expected asyncio test to fail if uvloop is used")
 
 
+@pytest.hookimpl(trylast=True)  # type: ignore[misc]
 def pytest_report_header(config: pytest.Config) -> str:
     return f"asyncio event-loop: {config.getoption(ASYNCIO_EVENT_LOOP_OPTION)}"
 
