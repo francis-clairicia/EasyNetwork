@@ -30,7 +30,6 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    ContextManager,
     Final,
     Literal,
     NamedTuple,
@@ -212,11 +211,11 @@ class SocketProxy:
         self,
         socket: ISocket,
         *,
-        lock: _threading.Lock | _threading.RLock | None = None,
+        lock: Callable[[], _threading.Lock | _threading.RLock] | None = None,
         runner: Callable[[Callable[[], Any]], Any] | None = None,
     ) -> None:
         self.__socket: ISocket = socket
-        self.__lock_ctx: ContextManager[bool] = lock if lock is not None else contextlib.nullcontext(True)
+        self.__lock_ctx: Callable[[], _threading.Lock | _threading.RLock] | None = lock
         self.__runner: Callable[[Callable[[], Any]], Any] | None = runner
 
     def __repr__(self) -> str:
@@ -243,7 +242,7 @@ class SocketProxy:
         raise TypeError(f"cannot pickle {self.__class__.__name__!r} object")
 
     def __execute(self, __func: Callable[_P, _R], /, *args: _P.args, **kwargs: _P.kwargs) -> _R:
-        with self.__lock_ctx:
+        with lock_ctx() if (lock_ctx := self.__lock_ctx) is not None else contextlib.nullcontext():
             if (run := self.__runner) is not None:
                 if args or kwargs:
                     __func = functools.partial(__func, *args, **kwargs)

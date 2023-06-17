@@ -32,11 +32,6 @@ from ...base import UNSUPPORTED_FAMILIES
 from .base import BaseTestClient
 
 
-@pytest.fixture(scope="module", autouse=True)
-def setup_dummy_lock(module_mocker: MockerFixture, dummy_lock_cls: Any) -> None:
-    module_mocker.patch(f"{TCPNetworkClient.__module__}._Lock", new=dummy_lock_cls)
-
-
 @pytest.fixture(autouse=True)
 def remove_ssl_OP_IGNORE_UNEXPECTED_EOF(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delattr("ssl.OP_IGNORE_UNEXPECTED_EOF", raising=False)

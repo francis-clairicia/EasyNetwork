@@ -21,11 +21,6 @@ from ...base import UNSUPPORTED_FAMILIES
 from .base import BaseTestClient
 
 
-@pytest.fixture(scope="module", autouse=True)
-def setup_dummy_lock(module_mocker: MockerFixture, dummy_lock_cls: Any) -> None:
-    module_mocker.patch(f"{UDPNetworkEndpoint.__module__}._Lock", new=dummy_lock_cls)
-
-
 class TestUDPNetworkEndpoint(BaseTestClient):
     @pytest.fixture(scope="class", params=["AF_INET", "AF_INET6"])
     @staticmethod

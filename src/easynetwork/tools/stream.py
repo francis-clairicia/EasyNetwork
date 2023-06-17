@@ -12,11 +12,11 @@ __all__ = [
 ]
 
 from collections import deque
-from threading import Lock
 from typing import Any, Generator, Generic, Iterator, TypeVar, final
 
 from ..exceptions import StreamProtocolParseError
 from ..protocol import StreamProtocol
+from .lock import ForkSafeLock
 
 _SentPacketT = TypeVar("_SentPacketT")
 _ReceivedPacketT = TypeVar("_ReceivedPacketT")
@@ -36,7 +36,10 @@ class StreamDataProducer(Generic[_SentPacketT]):
         self.__p: StreamProtocol[_SentPacketT, Any] = protocol
         self.__g: Generator[bytes, None, None] | None = None
         self.__q: deque[_SentPacketT] = deque()
-        self.__lock = Lock()
+
+        from threading import Lock
+
+        self.__lock = ForkSafeLock(Lock)
 
     def __del__(self) -> None:  # pragma: no cover
         try:
@@ -53,7 +56,7 @@ class StreamDataProducer(Generic[_SentPacketT]):
         return self
 
     def __next__(self) -> bytes:
-        with self.__lock:
+        with self.__lock.get():
             protocol = self.__p
             queue: deque[_SentPacketT] = self.__q
             generator: Generator[bytes, None, None] | None
@@ -75,17 +78,17 @@ class StreamDataProducer(Generic[_SentPacketT]):
             raise StopIteration
 
     def pending_packets(self) -> bool:
-        with self.__lock:
+        with self.__lock.get():
             return self.__g is not None or bool(self.__q)
 
     def queue(self, *packets: _SentPacketT) -> None:
         if not packets:
             return
-        with self.__lock:
+        with self.__lock.get():
             self.__q.extend(packets)
 
     def clear(self) -> None:
-        with self.__lock:
+        with self.__lock.get():
             self.__q.clear()
             generator, self.__g = self.__g, None
             if generator is not None:
@@ -106,7 +109,10 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
         self.__p: StreamProtocol[Any, _ReceivedPacketT] = protocol
         self.__c: Generator[None, bytes, tuple[_ReceivedPacketT, bytes]] | None = None
         self.__b: bytes = b""
-        self.__lock = Lock()
+
+        from threading import Lock
+
+        self.__lock = ForkSafeLock(Lock)
 
     def __del__(self) -> None:  # pragma: no cover
         try:
@@ -123,7 +129,7 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
         return self
 
     def __next__(self) -> _ReceivedPacketT:
-        with self.__lock:
+        with self.__lock.get():
             chunk: bytes = self.__b
             if not chunk:
                 raise StopIteration
@@ -155,15 +161,15 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
         assert isinstance(chunk, (bytes, bytearray))
         if not chunk:
             return
-        with self.__lock:
+        with self.__lock.get():
             self.__b += chunk
 
     def get_buffer(self) -> bytes:
-        with self.__lock:
+        with self.__lock.get():
             return self.__b
 
     def clear(self) -> None:
-        with self.__lock:
+        with self.__lock.get():
             self.__b = b""
             consumer, self.__c = self.__c, None
             if consumer is not None:

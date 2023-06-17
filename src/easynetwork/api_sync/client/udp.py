@@ -10,7 +10,6 @@ __all__ = ["UDPNetworkClient", "UDPNetworkEndpoint"]
 
 import socket as _socket
 from operator import itemgetter as _itemgetter
-from threading import Lock as _Lock
 from typing import TYPE_CHECKING, Any, Generic, Iterator, Self, TypeVar, final, overload
 
 from ...exceptions import ClientClosedError, DatagramProtocolParseError
@@ -22,6 +21,7 @@ from ...tools._utils import (
     ensure_datagram_socket_bound as _ensure_datagram_socket_bound,
     retry_socket_method as _retry_socket_method,
 )
+from ...tools.lock import ForkSafeLock
 from ...tools.socket import MAX_DATAGRAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
 from .abc import AbstractNetworkClient
 
@@ -75,9 +75,12 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
     ) -> None:
         self.__socket: _socket.socket | None = None  # If any exception occurs, the client will already be in a closed state
         super().__init__()
-        self.__send_lock = _Lock()
-        self.__receive_lock = _Lock()
-        self.__socket_lock = _Lock()
+
+        from threading import Lock
+
+        self.__send_lock = ForkSafeLock(Lock)
+        self.__receive_lock = ForkSafeLock(Lock)
+        self.__socket_lock = ForkSafeLock(Lock)
 
         assert isinstance(protocol, DatagramProtocol)
 
@@ -113,7 +116,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
 
             self.__addr: SocketAddress = new_socket_address(socket.getsockname(), socket.family)
             self.__peer: SocketAddress | None = peername
-            self.__socket_proxy = SocketProxy(socket, lock=self.__socket_lock)
+            self.__socket_proxy = SocketProxy(socket, lock=self.__socket_lock.get)
         except BaseException:
             socket.close()
             raise
@@ -145,11 +148,11 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
 
     @final
     def is_closed(self) -> bool:
-        with self.__socket_lock:
+        with self.__socket_lock.get():
             return self.__socket is None
 
     def close(self) -> None:
-        with self.__send_lock, self.__socket_lock:
+        with self.__send_lock.get(), self.__socket_lock.get():
             if (socket := self.__socket) is None:
                 return
             self.__socket = None
@@ -160,7 +163,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         packet: _SentPacketT,
         address: tuple[str, int] | tuple[str, int, int, int] | None,
     ) -> None:
-        with self.__send_lock:
+        with self.__send_lock.get():
             if (socket := self.__socket) is None:
                 raise ClientClosedError("Closed client")
             if (remote_addr := self.__peer) is not None:
@@ -181,7 +184,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
                 del data
 
     def recv_packet_from(self, timeout: float | None = None) -> tuple[_ReceivedPacketT, SocketAddress]:
-        with self.__receive_lock:
+        with self.__receive_lock.get():
             if (socket := self.__socket) is None:
                 raise ClientClosedError("Closed client")
             try:
@@ -222,7 +225,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         return self.__peer
 
     def fileno(self) -> int:
-        with self.__socket_lock:
+        with self.__socket_lock.get():
             if (socket := self.__socket) is None:
                 return -1
             return socket.fileno()

@@ -11,7 +11,6 @@ __all__ = ["TCPNetworkClient"]
 import contextlib as _contextlib
 import errno as _errno
 import socket as _socket
-from threading import Lock as _Lock
 from time import monotonic as _time_monotonic
 from typing import TYPE_CHECKING, Any, Callable, Generic, Iterator, Literal, NoReturn, TypeVar, final, overload
 
@@ -31,6 +30,7 @@ from ...tools._utils import (
     set_tcp_keepalive as _set_tcp_keepalive,
     set_tcp_nodelay as _set_tcp_nodelay,
 )
+from ...tools.lock import ForkSafeLock
 from ...tools.socket import CLOSED_SOCKET_ERRNOS, MAX_STREAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
 from ...tools.stream import StreamDataConsumer
 from .abc import AbstractNetworkClient
@@ -105,9 +105,12 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
     ) -> None:
         self.__socket: _socket.socket | None = None  # If any exception occurs, the client will already be in a closed state
         super().__init__()
-        self.__send_lock = _Lock()
-        self.__receive_lock = _Lock()
-        self.__socket_lock = _Lock()
+
+        from threading import Lock
+
+        self.__send_lock = ForkSafeLock(Lock)
+        self.__receive_lock = ForkSafeLock(Lock)
+        self.__socket_lock = ForkSafeLock(Lock)
 
         if server_hostname is not None and not ssl:
             raise ValueError("server_hostname is only meaningful with ssl")
@@ -197,7 +200,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             _set_tcp_keepalive(socket)
             self.__producer: Callable[[_SentPacketT], Iterator[bytes]] = protocol.generate_chunks
             self.__consumer: StreamDataConsumer[_ReceivedPacketT] = StreamDataConsumer(protocol)
-            self.__socket_proxy = SocketProxy(socket, lock=self.__socket_lock)
+            self.__socket_proxy = SocketProxy(socket, lock=self.__socket_lock.get)
             self.__eof_reached: bool = False
             self.__max_recv_size: int = max_recv_size
             self.__ssl_shutdown_timeout: float | None = ssl_shutdown_timeout
@@ -223,11 +226,11 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
 
     @final
     def is_closed(self) -> bool:
-        with self.__socket_lock:
+        with self.__socket_lock.get():
             return self.__socket is None
 
     def close(self) -> None:
-        with self.__send_lock, self.__socket_lock:
+        with self.__send_lock.get(), self.__socket_lock.get():
             if (socket := self.__socket) is None:
                 return
             self.__socket = None
@@ -243,7 +246,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 socket.close()
 
     def send_packet(self, packet: _SentPacketT) -> None:
-        with self.__send_lock, self.__convert_socket_error():
+        with self.__send_lock.get(), self.__convert_socket_error():
             socket = self.__ensure_connected()
             data: bytes = _concatenate_chunks(self.__producer(packet))
             buffer = memoryview(data)
@@ -264,7 +267,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 del buffer, data
 
     def recv_packet(self, timeout: float | None = None) -> _ReceivedPacketT:
-        with self.__receive_lock, self.__convert_socket_error():
+        with self.__receive_lock.get(), self.__convert_socket_error():
             consumer = self.__consumer
             next_packet = self.__next_packet
             try:
@@ -359,7 +362,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         return self.__peer
 
     def fileno(self) -> int:
-        with self.__socket_lock:
+        with self.__socket_lock.get():
             if (socket := self.__socket) is None:
                 return -1
             return socket.fileno()
