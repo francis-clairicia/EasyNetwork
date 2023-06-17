@@ -21,4 +21,5 @@ PYTEST_PLUGINS_PACKAGE = f"{__package__}.pytest_plugins"
 pytest_plugins = [
     f"{PYTEST_PLUGINS_PACKAGE}.asyncio_event_loop",
     f"{PYTEST_PLUGINS_PACKAGE}.extra_features",
+    f"{PYTEST_PLUGINS_PACKAGE}.session_exit_code",
 ]
