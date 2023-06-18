@@ -145,7 +145,7 @@ warn_no_return = true
 warn_unreachable = true
 no_implicit_reexport = true
 strict_equality = true
-enable_error_code = ["truthy-bool", "ignore-without-code"]
+enable_error_code = ["truthy-bool", "ignore-without-code", "unused-awaitable"]
 
 [[tool.mypy.overrides]]
 module = [

@@ -364,15 +364,13 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                     await _on_connection_hook
                 del _on_connection_hook
                 client_exit_stack.push_async_callback(self.__request_handler.on_disconnection, client)
-            if client.is_closing():
-                return
 
             try:
+                if client.is_closing():
+                    return
                 if request_handler_generator is None:
                     request_handler_generator = await self.__new_request_handler(client)
                 async for request in request_receiver:
-                    if client.is_closing():
-                        return
                     logger.debug("Processing request sent by %s", client.address)
                     try:
                         await request_handler_generator.asend(request)
@@ -477,7 +475,7 @@ class _RequestReceiver(Generic[_RequestT, _ResponseT]):
         client: _ConnectedClientAPI[Any] = self.__api
         logger: _logging.Logger = self.__logger
         bufsize: int = self.__max_recv_size
-        while True:
+        while not socket.is_closing():
             try:
                 return next(consumer)
             except StreamProtocolParseError as exc:
@@ -492,7 +490,7 @@ class _RequestReceiver(Generic[_RequestT, _ResponseT]):
             except StopIteration:
                 pass
             try:
-                data: bytes = await socket.recv(bufsize) if not socket.is_closing() else b""
+                data: bytes = await socket.recv(bufsize)
             except ConnectionError:
                 data = b""
             if not data:  # Closed connection (EOF)
@@ -546,7 +544,11 @@ class _ConnectedClientAPI(AsyncClientInterface[_ResponseT]):
         self.__check_closed()
         self.__logger.debug("A response will be sent to %s", self.address)
         self.__producer.queue(packet)
+        del packet
         async with self.__send_lock:
+            if not self.__producer.pending_packets():  # pragma: no cover
+                # Someone else already flushed the producer queue while waiting for lock acquisition
+                return
             socket = self.__check_closed()
             data: bytes = _concatenate_chunks(self.__producer)
             try:

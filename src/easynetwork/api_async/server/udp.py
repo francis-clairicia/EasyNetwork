@@ -452,17 +452,22 @@ class _ClientAPI(AsyncClientInterface[_ResponseT]):
 
     async def send_packet(self, packet: _ResponseT, /) -> None:
         async with self.__send_lock:
-            socket = self.__socket_ref()
-            if socket is None or socket.is_closing():
-                raise ClientClosedError("Closed client")
+            socket = self.__check_closed()
             datagram: bytes = self.__protocol.make_datagram(packet)
-            self.__logger.debug("A datagram will be sent to %s", self.address)
             try:
+                del packet
+                self.__logger.debug("A datagram will be sent to %s", self.address)
                 await socket.sendto(datagram, self.address)
                 _check_real_socket_state(self.socket)
                 self.__logger.debug("Datagram successfully sent to %s.", self.address)
             finally:
                 del datagram
+
+    def __check_closed(self) -> AbstractAsyncDatagramSocketAdapter:
+        socket = self.__socket_ref()
+        if socket is None or socket.is_closing():
+            raise ClientClosedError("Closed client")
+        return socket
 
     @property
     def socket(self) -> SocketProxy:

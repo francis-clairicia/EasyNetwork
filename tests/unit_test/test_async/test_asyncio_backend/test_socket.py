@@ -85,7 +85,7 @@ class MixinTestAsyncSocketBusy(BaseTestAsyncSocket):
         from errno import EINPROGRESS
 
         with self._set_sock_method_in_blocking_state(mock_socket_method):
-            await self._busy_socket_task(socket_method(), event_loop, mock_socket_method)
+            _ = await self._busy_socket_task(socket_method(), event_loop, mock_socket_method)
 
         # Act
         with pytest.raises(OSError) as exc_info:
