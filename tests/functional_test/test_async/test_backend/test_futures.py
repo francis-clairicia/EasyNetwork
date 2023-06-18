@@ -9,14 +9,14 @@ from typing import AsyncIterator
 
 from easynetwork.api_async.backend.abc import AbstractAsyncBackend
 from easynetwork.api_async.backend.factory import AsyncBackendFactory
-from easynetwork.api_async.backend.futures import AsyncPoolExecutor
+from easynetwork.api_async.backend.futures import AsyncThreadPoolExecutor
 
 import pytest
 import pytest_asyncio
 
 
 @pytest.mark.asyncio
-class TestSingleTaskRunner:
+class TestAsyncThreadPoolExecutor:
     @pytest.fixture
     @staticmethod
     def backend() -> AbstractAsyncBackend:
@@ -29,13 +29,13 @@ class TestSingleTaskRunner:
 
     @pytest_asyncio.fixture
     @staticmethod
-    async def executor(backend: AbstractAsyncBackend, max_workers: int | None) -> AsyncIterator[AsyncPoolExecutor]:
-        async with AsyncPoolExecutor(backend, concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)) as executor:
+    async def executor(backend: AbstractAsyncBackend, max_workers: int | None) -> AsyncIterator[AsyncThreadPoolExecutor]:
+        async with AsyncThreadPoolExecutor(backend, max_workers=max_workers) as executor:
             yield executor
 
     async def test____run____submit_and_wait(
         self,
-        executor: AsyncPoolExecutor,
+        executor: AsyncThreadPoolExecutor,
     ) -> None:
         def thread_fn(value: int) -> int:
             return value
@@ -45,7 +45,7 @@ class TestSingleTaskRunner:
     async def test____run____ignore_cancellation(
         self,
         event_loop: asyncio.AbstractEventLoop,
-        executor: AsyncPoolExecutor,
+        executor: AsyncThreadPoolExecutor,
     ) -> None:
         task = event_loop.create_task(executor.run(time.sleep, 0.5))
 
@@ -59,7 +59,7 @@ class TestSingleTaskRunner:
     @pytest.mark.feature_sniffio
     async def test____run____sniffio_contextvar_reset(
         self,
-        executor: AsyncPoolExecutor,
+        executor: AsyncThreadPoolExecutor,
     ) -> None:
         import sniffio
 
@@ -76,7 +76,7 @@ class TestSingleTaskRunner:
 
     async def test____shutdown____idempotent(
         self,
-        executor: AsyncPoolExecutor,
+        executor: AsyncThreadPoolExecutor,
     ) -> None:
         await executor.shutdown()
         await executor.shutdown()
@@ -85,7 +85,7 @@ class TestSingleTaskRunner:
     async def test____shutdown____cancel_futures(
         self,
         event_loop: asyncio.AbstractEventLoop,
-        executor: AsyncPoolExecutor,
+        executor: AsyncThreadPoolExecutor,
     ) -> None:
         busy_task = event_loop.create_task(executor.run(time.sleep, 1))
 
