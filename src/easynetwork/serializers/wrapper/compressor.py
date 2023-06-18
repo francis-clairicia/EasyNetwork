@@ -92,11 +92,17 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_ST_contr
         try:
             data = decompressor.decompress(data)
         except self.__expected_error as exc:
-            raise DeserializeError(str(exc)) from exc
+            raise DeserializeError(str(exc), error_info={"data": data}) from exc
         if not decompressor.eof:
-            raise DeserializeError("Compressed data ended before the end-of-stream marker was reached")
-        if decompressor.unused_data:
-            raise DeserializeError("Trailing data error")
+            raise DeserializeError(
+                "Compressed data ended before the end-of-stream marker was reached",
+                error_info={"already_decompressed_data": data},
+            )
+        if unused_data := decompressor.unused_data:
+            raise DeserializeError(
+                "Trailing data error",
+                error_info={"decompressed_data": data, "extra": unused_data},
+            )
         del decompressor
         return self.__serializer.deserialize(data)
 
@@ -113,6 +119,10 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_ST_contr
                 raise IncrementalDeserializeError(
                     message=f"Decompression error: {exc}",
                     remaining_data=b"",
+                    error_info={
+                        "already_decompressed_chunks": results,
+                        "invalid_chunk": chunk,
+                    },
                 ) from exc
             if chunk:
                 results.append(chunk)

@@ -154,11 +154,19 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
         try:
             document: str = data.decode(self.__encoding, self.__unicode_errors)
         except UnicodeError as exc:
-            raise DeserializeError(f"Unicode decode error: {exc}") from exc
+            raise DeserializeError(f"Unicode decode error: {exc}", error_info={"data": data}) from exc
         try:
             packet: _DT_co = self.__decoder.decode(document)
         except JSONDecodeError as exc:
-            raise DeserializeError(f"JSON decode error: {exc}") from exc
+            raise DeserializeError(
+                f"JSON decode error: {exc}",
+                error_info={
+                    "document": exc.doc,
+                    "position": exc.pos,
+                    "lineno": exc.lineno,
+                    "colno": exc.colno,
+                },
+            ) from exc
         return packet
 
     @final
@@ -178,13 +186,20 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
             raise IncrementalDeserializeError(
                 f"Unicode decode error: {exc}",
                 remaining_data=remaining_data,
+                error_info={"data": complete_document},
             ) from exc
         try:
             packet, end = self.__decoder.raw_decode(document)
         except JSONDecodeError as exc:
             raise IncrementalDeserializeError(
-                f"JSON decode error: {exc} (document={document!r})",
+                f"JSON decode error: {exc}",
                 remaining_data=remaining_data,
+                error_info={
+                    "document": exc.doc,
+                    "position": exc.pos,
+                    "lineno": exc.lineno,
+                    "colno": exc.colno,
+                },
             ) from exc
         try:
             remaining_data = document[end:].encode(self.__encoding, self.__unicode_errors) + remaining_data

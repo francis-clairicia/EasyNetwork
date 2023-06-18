@@ -169,11 +169,11 @@ class FileBasedPacketSerializer(AbstractPacketSerializer[_ST_contra, _DT_co]):
             try:
                 packet: _DT_co = self.load_from_file(buffer)
             except EOFError as exc:
-                raise DeserializeError("Missing data to create packet") from exc
+                raise DeserializeError("Missing data to create packet", error_info={"data": buffer.getvalue()}) from exc
             except self.__expected_errors as exc:
-                raise DeserializeError(str(exc)) from exc
-            if buffer.read():  # There is still data after deserialization
-                raise DeserializeError("Extra data caught")
+                raise DeserializeError(str(exc), error_info={"data": buffer.getvalue()}) from exc
+            if extra := buffer.read():  # There is still data after deserialization
+                raise DeserializeError("Extra data caught", error_info={"packet": packet, "extra": extra})
         return packet
 
     @final
@@ -204,6 +204,7 @@ class FileBasedPacketSerializer(AbstractPacketSerializer[_ST_contra, _DT_co]):
                     raise IncrementalDeserializeError(
                         f"Deserialize error: {exc}",
                         remaining_data=remaining_data,
+                        error_info={"data": buffer.getvalue()},
                     ) from exc
                 else:
                     return packet, buffer.read()

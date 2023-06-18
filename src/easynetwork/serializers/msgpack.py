@@ -96,8 +96,8 @@ class MessagePackSerializer(AbstractPacketSerializer[_ST_contra, _DT_co]):
         try:
             return self.__unpackb(data)
         except msgpack.OutOfData as exc:
-            raise DeserializeError("Missing data to create packet") from exc
+            raise DeserializeError("Missing data to create packet", error_info={"data": data}) from exc
         except msgpack.ExtraData as exc:
-            raise DeserializeError("Extra data caught") from exc
+            raise DeserializeError("Extra data caught", error_info={"packet": exc.unpacked, "extra": exc.extra}) from exc  # type: ignore[attr-defined]
         except Exception as exc:  # The documentation says to catch all exceptions :)
-            raise DeserializeError(str(exc)) from exc
+            raise DeserializeError(str(exc) or "Invalid token", error_info={"data": data}) from exc

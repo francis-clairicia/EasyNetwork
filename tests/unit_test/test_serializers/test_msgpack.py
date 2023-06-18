@@ -145,6 +145,7 @@ class TestMessagePackSerializer(BaseSerializerConfigInstanceCheck):
 
         # Assert
         assert isinstance(exc_info.value.__cause__, msgpack.OutOfData)
+        assert exc_info.value.error_info == {"data": mocker.sentinel.data}
 
     def test____deserialize____extra_data(
         self,
@@ -155,7 +156,7 @@ class TestMessagePackSerializer(BaseSerializerConfigInstanceCheck):
         import msgpack
 
         serializer: MessagePackSerializer[Any, Any] = MessagePackSerializer()
-        mock_unpackb.side_effect = msgpack.ExtraData(mocker.sentinel.something, b"extra")
+        mock_unpackb.side_effect = msgpack.ExtraData(mocker.sentinel.packet, b"extra")
 
         # Act & Assert
         with pytest.raises(DeserializeError) as exc_info:
@@ -163,6 +164,7 @@ class TestMessagePackSerializer(BaseSerializerConfigInstanceCheck):
 
         # Assert
         assert isinstance(exc_info.value.__cause__, msgpack.ExtraData)
+        assert exc_info.value.error_info == {"packet": mocker.sentinel.packet, "extra": b"extra"}
 
     def test____deserialize____any_exception_occurs(
         self,
@@ -179,3 +181,4 @@ class TestMessagePackSerializer(BaseSerializerConfigInstanceCheck):
 
         # Assert
         assert isinstance(exc_info.value.__cause__, Exception)
+        assert exc_info.value.error_info == {"data": mocker.sentinel.data}

@@ -247,16 +247,23 @@ class TestPickleSerializer(BaseSerializerConfigInstanceCheck):
         # Assert
         mock_unpickler.load.assert_called_once()
         assert exc_info.value.__cause__ is mock_unpickler.load.side_effect
+        assert exc_info.value.error_info == {"data": b"data"}
 
     def test____deserialize____extra_data(
         self,
         unpickler_config: UnpicklerConfig | None,
         mock_unpickler: MagicMock,
+        bytes_io: BytesIO,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
         serializer: PickleSerializer[Any, Any] = PickleSerializer(unpickler_config=unpickler_config)
-        mock_unpickler.load.side_effect = lambda: mocker.sentinel.packet  # Do not read buffer
+
+        def unpickler_load() -> Any:
+            assert bytes_io.read(2) == b"da"
+            return mocker.sentinel.packet
+
+        mock_unpickler.load.side_effect = unpickler_load
 
         # Act
         with pytest.raises(DeserializeError, match=r"^Extra data caught$") as exc_info:
@@ -265,3 +272,4 @@ class TestPickleSerializer(BaseSerializerConfigInstanceCheck):
         # Assert
         mock_unpickler.load.assert_called_once()
         assert exc_info.value.__cause__ is None
+        assert exc_info.value.error_info == {"packet": mocker.sentinel.packet, "extra": b"ta"}

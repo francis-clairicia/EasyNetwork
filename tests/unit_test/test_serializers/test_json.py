@@ -232,6 +232,7 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         mock_bytes.decode.assert_called_once()
         mock_decoder.decode.assert_not_called()
         assert exception.__cause__ is mock_bytes.decode.side_effect
+        assert exception.error_info == {"data": mock_bytes}
 
     def test____deserialize____translate_json_decode_errors(
         self,
@@ -243,7 +244,7 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
 
         serializer: JSONSerializer[Any, Any] = JSONSerializer()
         mock_bytes = mocker.NonCallableMagicMock()
-        mock_decoder.decode.side_effect = JSONDecodeError("Invalid payload", "document", 0)
+        mock_decoder.decode.side_effect = JSONDecodeError("Invalid payload", "invalid\ndocument", 8)
 
         # Act
         with pytest.raises(DeserializeError) as exc_info:
@@ -254,6 +255,12 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         mock_bytes.decode.assert_called_once()
         mock_decoder.decode.assert_called_once()
         assert exception.__cause__ is mock_decoder.decode.side_effect
+        assert exception.error_info == {
+            "document": "invalid\ndocument",
+            "position": 8,
+            "lineno": 2,
+            "colno": 1,
+        }
 
     def test____incremental_deserialize____parse_and_decode_data(
         self,
@@ -324,6 +331,7 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         mock_decoder.raw_decode.assert_not_called()
         assert exception.remaining_data is mocker.sentinel.remaining_data
         assert exception.__cause__ is mock_bytes.decode.side_effect
+        assert exception.error_info == {"data": mock_bytes}
 
     def test____incremental_deserialize____translate_json_decode_errors(
         self,
@@ -344,7 +352,7 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
             unicode_errors=mocker.sentinel.str_errors,
         )
         mock_bytes = mocker.NonCallableMagicMock()
-        mock_decoder.raw_decode.side_effect = JSONDecodeError("Invalid payload", "document", 0)
+        mock_decoder.raw_decode.side_effect = JSONDecodeError("Invalid payload", "invalid\ndocument", 8)
         mock_json_parser.side_effect = raw_parse_side_effect
 
         # Act
@@ -359,3 +367,9 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         mock_decoder.raw_decode.assert_called_once()
         assert exception.remaining_data is mocker.sentinel.remaining_data
         assert exception.__cause__ is mock_decoder.raw_decode.side_effect
+        assert exception.error_info == {
+            "document": "invalid\ndocument",
+            "position": 8,
+            "lineno": 2,
+            "colno": 1,
+        }

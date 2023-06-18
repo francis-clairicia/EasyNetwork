@@ -116,7 +116,8 @@ class StreamProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
         try:
             packet, remaining_data = yield from self.__serializer.incremental_deserialize()
         except IncrementalDeserializeError as exc:
-            raise StreamProtocolParseError(exc.remaining_data, "deserialization", str(exc), error_info=exc.error_info) from exc
+            remaining_data, exc.remaining_data = exc.remaining_data, b""
+            raise StreamProtocolParseError(remaining_data, "deserialization", str(exc), error_info=exc.error_info) from exc
         except DeserializeError as exc:
             raise RuntimeError("DeserializeError raised instead of IncrementalDeserializeError") from exc
 

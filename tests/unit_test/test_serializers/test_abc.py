@@ -72,7 +72,7 @@ class TestAbstractIncrementalPacketSerializer:
         serializer = _IncrementalPacketSerializerForTest()
         mock_consumer_generator: MagicMock = mock_incremental_deserialize_func.return_value
         mock_consumer_generator.__next__.return_value = None
-        mock_consumer_generator.send.side_effect = StopIteration((mocker.sentinel.packet, b""))
+        mock_consumer_generator.send.side_effect = [StopIteration((mocker.sentinel.packet, b""))]
 
         # Act
         packet = serializer.deserialize(mocker.sentinel.data)
@@ -615,6 +615,7 @@ class TestFileBasedPacketSerializer:
         # Assert
         mock_load_from_file_func.assert_called_once_with(mocker.ANY)
         assert exception.__cause__ is mock_load_from_file_func.side_effect
+        assert exception.error_info == {"data": b"data"}
 
     @pytest.mark.parametrize("give_as_tuple", [False, True], ids=lambda boolean: f"give_as_tuple=={boolean}")
     def test____deserialize____translate_given_exceptions(
@@ -644,6 +645,7 @@ class TestFileBasedPacketSerializer:
         # Assert
         mock_load_from_file_func.assert_called_once_with(mocker.ANY)
         assert exception.__cause__ is mock_load_from_file_func.side_effect
+        assert exception.error_info == {"data": b"data"}
 
     def test____deserialize____with_remaining_data_to_read(
         self,
@@ -659,11 +661,13 @@ class TestFileBasedPacketSerializer:
         mock_load_from_file_func.side_effect = side_effect
 
         # Act
-        with pytest.raises(DeserializeError, match=r"^Extra data caught$"):
+        with pytest.raises(DeserializeError, match=r"^Extra data caught$") as exc_info:
             _ = serializer.deserialize(b"data")
+        exception = exc_info.value
 
         # Assert
         mock_load_from_file_func.assert_called_once_with(mocker.ANY)
+        assert exception.error_info == {"packet": mocker.sentinel.packet, "extra": b"ta"}
 
     def test____incremental_serialize____dump_to_file(
         self,
@@ -827,3 +831,4 @@ class TestFileBasedPacketSerializer:
         # Assert
         assert exception.remaining_data == b"other"
         assert type(exception.__cause__) is MyFileAPIValueError
+        assert exception.error_info == {"data": b"dataother"}

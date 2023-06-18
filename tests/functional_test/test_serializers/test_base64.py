@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import random
-from abc import abstractmethod
 from typing import Any, final
 
 from easynetwork.exceptions import DeserializeError
@@ -32,15 +31,10 @@ SAMPLES = [
 class BaseTestBase64EncodedSerializer(BaseTestIncrementalSerializer):
     #### Serializers
 
-    @classmethod
-    @abstractmethod
-    def get_signing_key(cls) -> bytes | None:
-        raise NotImplementedError
-
     @pytest.fixture(scope="class")
     @classmethod
-    def serializer(cls) -> Base64EncodedSerializer[bytes, bytes]:
-        return Base64EncodedSerializer(NoSerialization(), signing_key=cls.get_signing_key())
+    def serializer(cls, checksum: bool | bytes) -> Base64EncodedSerializer[bytes, bytes]:
+        return Base64EncodedSerializer(NoSerialization(), checksum=checksum)
 
     @pytest.fixture(scope="class")
     @staticmethod
@@ -65,14 +59,18 @@ class BaseTestBase64EncodedSerializer(BaseTestIncrementalSerializer):
 
     @pytest.fixture(scope="class")
     @classmethod
-    def expected_complete_data(cls, packet_to_serialize: bytes) -> bytes:
+    def expected_complete_data(cls, packet_to_serialize: bytes, checksum: bool | bytes) -> bytes:
         import base64
+        import hashlib
         import hmac
 
-        key: bytes | None = cls.get_signing_key()
-        if key is not None:
-            key = base64.urlsafe_b64decode(key)
-            packet_to_serialize += hmac.digest(key, packet_to_serialize, "sha256")
+        if checksum:
+            if isinstance(checksum, bytes):
+                key = base64.urlsafe_b64decode(checksum)
+                packet_to_serialize += hmac.digest(key, packet_to_serialize, "sha256")
+            else:
+                packet_to_serialize += hashlib.sha256(packet_to_serialize).digest()
+
         return base64.urlsafe_b64encode(packet_to_serialize)
 
     #### Incremental Serialize
@@ -117,10 +115,11 @@ class BaseTestBase64EncodedSerializer(BaseTestIncrementalSerializer):
 
 
 @final
-class TestBase64EncodedSerializerNoKey(BaseTestBase64EncodedSerializer):
-    @classmethod
-    def get_signing_key(cls) -> None:
-        return None
+class TestBase64EncodedSerializerChecksum(BaseTestBase64EncodedSerializer):
+    @pytest.fixture(scope="class", params=[False, True], ids=lambda boolean: f"checksum=={boolean}")
+    @staticmethod
+    def checksum(request: pytest.FixtureRequest) -> bool:
+        return getattr(request, "param")
 
 
 @final
@@ -128,6 +127,11 @@ class TestBase64EncodedSerializerWithKey(BaseTestBase64EncodedSerializer):
     @classmethod
     def get_signing_key(cls) -> bytes:
         return generate_key_from_string("key")
+
+    @pytest.fixture(scope="class")
+    @classmethod
+    def checksum(cls) -> bytes:
+        return cls.get_signing_key()
 
     def test____generate_key____create_url_safe_base64_encoded_bytes(self) -> None:
         # Arrange
@@ -149,7 +153,7 @@ class TestBase64EncodedSerializerWithKey(BaseTestBase64EncodedSerializer):
 
         # Act
         with pytest.raises(ValueError, match=r"^signing key must be 32 url-safe base64-encoded bytes\.$") as exc_info:
-            _ = Base64EncodedSerializer(NoSerialization(), signing_key=key)
+            _ = Base64EncodedSerializer(NoSerialization(), checksum=key)
         exception = exc_info.value
 
         # Assert
@@ -164,7 +168,7 @@ class TestBase64EncodedSerializerWithKey(BaseTestBase64EncodedSerializer):
 
         # Act
         with pytest.raises(ValueError, match=r"^signing key must be 32 url-safe base64-encoded bytes\.$") as exc_info:
-            _ = Base64EncodedSerializer(NoSerialization(), signing_key=key)
+            _ = Base64EncodedSerializer(NoSerialization(), checksum=key)
         exception = exc_info.value
 
         # Assert
@@ -180,10 +184,9 @@ class TestBase64EncodedSerializerWithKey(BaseTestBase64EncodedSerializer):
         import base64
         import hmac
 
-        another_key = generate_key_from_string("another_key")
-        assert another_key != self.get_signing_key()
+        assert generate_key_from_string("another_key") != self.get_signing_key()
         data_with_another_signature = base64.urlsafe_b64encode(
-            packet_to_serialize + hmac.digest(another_key, packet_to_serialize, "sha256")
+            packet_to_serialize + hmac.digest(b"another_key", packet_to_serialize, "sha256")
         )
         assert data_with_another_signature != expected_complete_data
 
