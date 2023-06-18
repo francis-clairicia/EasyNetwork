@@ -85,10 +85,18 @@ class TestStringLineSerializer(BaseTestIncrementalSerializer):
 
     #### Invalid data
 
-    @pytest.fixture(scope="class")
+    @pytest.fixture(scope="class", params=["unicode-error", "newline-error", "empty-string"])
     @staticmethod
-    def invalid_complete_data() -> bytes:
-        return "é".encode("latin-1")
+    def invalid_complete_data(request: pytest.FixtureRequest, newline: Literal["CR", "LF", "CRLF"]) -> bytes:
+        match getattr(request, "param"):
+            case "unicode-error":
+                return "é".encode("latin-1")
+            case "newline-error":
+                return b"string with " + _NEWLINES[newline] + b" in it"
+            case "empty-string":
+                return b""
+            case _:
+                pytest.fail("Invalid fixture parameter")
 
     @pytest.fixture
     @staticmethod

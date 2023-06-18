@@ -21,11 +21,11 @@ logger = logging.getLogger("app")
 
 class MyAsyncRequestHandler(AsyncBaseRequestHandler[str, str]):
     async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
-        request: str = (yield).removesuffix("\n")
+        request: str = yield
         logger.debug(f"Received {request!r}")
         if request == "wait:":
-            request = (yield).removesuffix("\n") + " after wait"
-        await client.send_packet(request.upper() + "\n")
+            request = (yield) + " after wait"
+        await client.send_packet(request.upper())
 
     async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError) -> None:
         pass

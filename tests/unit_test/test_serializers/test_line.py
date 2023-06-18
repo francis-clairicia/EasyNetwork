@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 from easynetwork.exceptions import DeserializeError
 from easynetwork.serializers.line import StringLineSerializer
 
 import pytest
-
-if TYPE_CHECKING:
-    from pytest_mock import MockerFixture
 
 _NEWLINES: dict[str, bytes] = {
     "LF": b"\n",
@@ -25,12 +22,12 @@ class TestStringLineSerializer:
     def newline(request: pytest.FixtureRequest) -> Literal["LF", "CR", "CRLF"]:
         return getattr(request, "param")
 
-    @pytest.fixture(params=["ascii", "utf-8"])
+    @pytest.fixture(params=["ascii"])
     @staticmethod
     def encoding(request: pytest.FixtureRequest) -> str:
         return getattr(request, "param")
 
-    @pytest.fixture(params=["strict", "ignore", "replace"])
+    @pytest.fixture(params=["strict"])
     @staticmethod
     def unicode_errors(request: pytest.FixtureRequest) -> str:
         return getattr(request, "param")
@@ -59,6 +56,8 @@ class TestStringLineSerializer:
         assert serializer.encoding == "ascii"
         assert serializer.unicode_errors == "strict"
 
+    @pytest.mark.parametrize("encoding", ["ascii", "utf-8"], indirect=True)
+    @pytest.mark.parametrize("unicode_errors", ["strict", "ignore", "replace"], indirect=True)
     def test____dunder_init____with_parameters(
         self,
         newline: Literal["LF", "CR", "CRLF"],
@@ -87,20 +86,15 @@ class TestStringLineSerializer:
     def test____serialize____encode_string(
         self,
         serializer: StringLineSerializer,
-        encoding: str,
-        unicode_errors: str,
-        mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_string = mocker.NonCallableMagicMock(spec=str)
-        mock_string.encode.return_value = mocker.sentinel.result
 
         # Act
-        data = serializer.serialize(mock_string)
+        data = serializer.serialize("abc")
 
         # Assert
-        assert data is mocker.sentinel.result
-        mock_string.encode.assert_called_once_with(encoding, unicode_errors)
+        assert isinstance(data, bytes)
+        assert data == b"abc"
 
     def test____serialize____not_a_string_error(
         self,
@@ -112,38 +106,99 @@ class TestStringLineSerializer:
         with pytest.raises(TypeError, match=r"^Expected a string, got 4$"):
             serializer.serialize(4)  # type: ignore[arg-type]
 
+    def test____serialize____empty_string_error(
+        self,
+        serializer: StringLineSerializer,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        with pytest.raises(ValueError, match=r"^Empty packet$"):
+            serializer.serialize("")
+
+    @pytest.mark.parametrize("position", ["beginning", "between", "end"])
+    def test____serialize____newline_in_string_error(
+        self,
+        position: Literal["beginning", "between", "end"],
+        serializer: StringLineSerializer,
+    ) -> None:
+        # Arrange
+        separator = serializer.separator.decode()
+        match position:
+            case "beginning":
+                packet = f"{separator}a"
+            case "between":
+                packet = f"a{separator}b"
+            case "end":
+                packet = f"b{separator}"
+            case _:
+                pytest.fail("Invalid fixture")
+
+        # Act & Assert
+        with pytest.raises(ValueError, match=r"^Newline found in string$"):
+            serializer.serialize(packet)
+
+    @pytest.mark.parametrize("with_newlines", [False, True], ids=lambda boolean: f"with_newlines=={boolean}")
     def test____deserialize____decode_string(
         self,
+        with_newlines: bool,
         serializer: StringLineSerializer,
-        encoding: str,
-        unicode_errors: str,
-        mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_bytes = mocker.NonCallableMagicMock(spec=bytes)
-        mock_bytes.decode.return_value = mocker.sentinel.result
 
         # Act
-        line = serializer.deserialize(mock_bytes)
+        line = serializer.deserialize(b"abc" + (serializer.separator * 3 if with_newlines else b""))
 
         # Assert
-        assert line is mocker.sentinel.result
-        mock_bytes.decode.assert_called_once_with(encoding, unicode_errors)
+        assert isinstance(line, str)
+        assert line == "abc"
 
+    @pytest.mark.parametrize("with_newlines", [False, True], ids=lambda boolean: f"with_newlines=={boolean}")
+    @pytest.mark.parametrize("encoding", ["ascii", "utf-8"], indirect=True)
     def test____deserialize____decode_string_error(
         self,
+        with_newlines: bool,
         serializer: StringLineSerializer,
-        encoding: str,
-        unicode_errors: str,
-        mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_bytes = mocker.NonCallableMagicMock(spec=bytes)
-        mock_bytes.decode.side_effect = UnicodeError
 
-        # Act
+        # Act & Assert
         with pytest.raises(DeserializeError):
-            serializer.deserialize(mock_bytes)
+            serializer.deserialize("é".encode("latin-1") + (serializer.separator * 3 if with_newlines else b""))
 
-        # Assert
-        mock_bytes.decode.assert_called_once_with(encoding, unicode_errors)
+    @pytest.mark.parametrize("with_newlines", [False, True], ids=lambda boolean: f"with_newlines=={boolean}")
+    def test____deserialize____empty_string_error(
+        self,
+        with_newlines: bool,
+        serializer: StringLineSerializer,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        with pytest.raises(DeserializeError):
+            serializer.deserialize(serializer.separator * 3 if with_newlines else b"")
+
+    @pytest.mark.parametrize("with_newlines_at_end", [False, True], ids=lambda boolean: f"with_newlines=={boolean}")
+    @pytest.mark.parametrize("position", ["beginning", "between"])
+    def test____deserialize____newline_in_string_error(
+        self,
+        with_newlines_at_end: bool,
+        position: Literal["beginning", "between"],
+        serializer: StringLineSerializer,
+    ) -> None:
+        # Arrange
+        separator = serializer.separator
+        match position:
+            case "beginning":
+                packet = separator + b"a"
+            case "between":
+                packet = b"a" + separator + b"b"
+            case _:
+                pytest.fail("Invalid fixture")
+
+        if with_newlines_at_end:
+            packet += separator
+
+        # Act & Assert
+        with pytest.raises(DeserializeError):
+            serializer.deserialize(packet)

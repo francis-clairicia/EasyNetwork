@@ -42,10 +42,22 @@ class StringLineSerializer(AutoSeparatedPacketSerializer[str, str]):
     def serialize(self, packet: str) -> bytes:
         if not isinstance(packet, str):
             raise TypeError(f"Expected a string, got {packet!r}")
-        return packet.encode(self.__encoding, self.__unicode_errors)
+        if len(packet) == 0:
+            raise ValueError("Empty packet")
+        data = packet.encode(self.__encoding, self.__unicode_errors)
+        if self.separator in data:
+            raise ValueError("Newline found in string")
+        return data
 
     @final
     def deserialize(self, data: bytes) -> str:
+        separator: bytes = self.separator
+        while data.endswith(separator):
+            data = data.removesuffix(separator)
+        if len(data) == 0:
+            raise DeserializeError("Empty packet")
+        if separator in data:
+            raise DeserializeError("Newline found in data which was not at the end")
         try:
             return data.decode(self.__encoding, self.__unicode_errors)
         except UnicodeError as exc:
