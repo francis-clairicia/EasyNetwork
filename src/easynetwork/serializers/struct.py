@@ -68,7 +68,7 @@ _NT = TypeVar("_NT", bound=NamedTuple)
 
 
 class NamedTupleStructSerializer(AbstractStructSerializer[_NT, _NT], Generic[_NT]):
-    __slots__ = ("__namedtuple_cls", "__string_fields", "__encoding", "__str_errors", "__strip_trailing_nul")
+    __slots__ = ("__namedtuple_cls", "__string_fields", "__encoding", "__unicode_errors", "__strip_trailing_nul")
 
     def __init__(
         self,
@@ -76,7 +76,7 @@ class NamedTupleStructSerializer(AbstractStructSerializer[_NT, _NT], Generic[_NT
         field_formats: SupportsKeysAndGetItem[str, str],
         format_endianness: str = "",
         encoding: str | None = "utf-8",
-        errors: str = "strict",
+        unicode_errors: str = "strict",
         strip_string_trailing_nul_bytes: bool = True,
     ) -> None:
         string_fields: set[str] = set()
@@ -95,17 +95,16 @@ class NamedTupleStructSerializer(AbstractStructSerializer[_NT, _NT], Generic[_NT
         self.__namedtuple_cls: type[_NT] = namedtuple_cls
         self.__string_fields: frozenset[str] = frozenset(string_fields)
         self.__encoding: str | None = encoding
-        self.__str_errors: str = errors
+        self.__unicode_errors: str = unicode_errors
         self.__strip_trailing_nul = bool(strip_string_trailing_nul_bytes)
 
     @final
     def iter_values(self, packet: _NT) -> _NT:
         assert isinstance(packet, self.__namedtuple_cls)
-        if (encoding := self.__encoding) is not None:
+        if (encoding := self.__encoding) is not None and self.__string_fields:
             string_fields: dict[str, str] = {field: getattr(packet, field) for field in self.__string_fields}
-            if string_fields:
-                str_errors: str = self.__str_errors
-                packet = packet._replace(**{field: value.encode(encoding, str_errors) for field, value in string_fields.items()})
+            unicode_errors: str = self.__unicode_errors
+            packet = packet._replace(**{field: value.encode(encoding, unicode_errors) for field, value in string_fields.items()})
         return packet
 
     @final
@@ -118,8 +117,8 @@ class NamedTupleStructSerializer(AbstractStructSerializer[_NT, _NT], Generic[_NT
                 string_fields = {field: value.rstrip(b"\0") for field, value in string_fields.items()}
                 to_replace = string_fields
             if (encoding := self.__encoding) is not None:
-                str_errors: str = self.__str_errors
-                to_replace = {field: value.decode(encoding, str_errors) for field, value in string_fields.items()}
+                unicode_errors: str = self.__unicode_errors
+                to_replace = {field: value.decode(encoding, unicode_errors) for field, value in string_fields.items()}
             if to_replace is not None:
                 p = p._replace(**to_replace)
         return p
