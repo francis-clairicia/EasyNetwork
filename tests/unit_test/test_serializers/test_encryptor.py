@@ -119,3 +119,4 @@ class TestEncryptorSerializer:
         mock_serializer.deserialize.assert_not_called()
         assert exception.__context__ is mock_fernet.decrypt.side_effect
         assert exception.__cause__ is None
+        assert exception.error_info is None

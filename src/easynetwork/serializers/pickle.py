@@ -87,7 +87,7 @@ class PickleSerializer(AbstractPacketSerializer[_ST_contra, _DT_co]):
             try:
                 packet: _DT_co = self.__unpickler_cls(buffer).load()
             except Exception as exc:
-                raise DeserializeError(str(exc) or "Invalid token") from exc
-            if buffer.read():  # There is still data after deserialization
-                raise DeserializeError("Extra data caught")
+                raise DeserializeError(str(exc) or "Invalid token", error_info={"data": buffer.getvalue()}) from exc
+            if extra := buffer.read():  # There is still data after deserialization
+                raise DeserializeError("Extra data caught", {"packet": packet, "extra": extra})
         return packet

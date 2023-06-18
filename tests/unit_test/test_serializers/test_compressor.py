@@ -183,6 +183,7 @@ class TestAbstractCompressorSerializer:
         mock_decompressor_stream_unused_data.assert_not_called()
         mock_serializer.deserialize.assert_not_called()
         assert exception.__cause__ is mock_decompressor_stream.decompress.side_effect
+        assert exception.error_info == {"data": mocker.sentinel.data}
 
     def test____deserialize____missing_data(
         self,
@@ -195,11 +196,15 @@ class TestAbstractCompressorSerializer:
     ) -> None:
         # Arrange
         serializer = _CompressorSerializerForTest(mock_serializer, ())
+        mock_decompressor_stream.decompress.return_value = mocker.sentinel.decompressed_data
         mock_decompressor_stream_eof.return_value = False
 
         # Act
-        with pytest.raises(DeserializeError, match=r"^Compressed data ended before the end-of-stream marker was reached$"):
+        with pytest.raises(
+            DeserializeError, match=r"^Compressed data ended before the end-of-stream marker was reached$"
+        ) as exc_info:
             _ = serializer.deserialize(mocker.sentinel.data)
+        exception = exc_info.value
 
         # Assert
         mock_serializer_new_decompressor_stream.assert_called_once_with()
@@ -207,6 +212,7 @@ class TestAbstractCompressorSerializer:
         mock_decompressor_stream_eof.assert_called_once()
         mock_decompressor_stream_unused_data.assert_not_called()
         mock_serializer.deserialize.assert_not_called()
+        assert exception.error_info == {"already_decompressed_data": mocker.sentinel.decompressed_data}
 
     def test____deserialize____extra_data(
         self,
@@ -219,12 +225,14 @@ class TestAbstractCompressorSerializer:
     ) -> None:
         # Arrange
         serializer = _CompressorSerializerForTest(mock_serializer, ())
+        mock_decompressor_stream.decompress.return_value = mocker.sentinel.decompressed_data
         mock_decompressor_stream_eof.return_value = True
         mock_decompressor_stream_unused_data.return_value = b"some extra data"
 
         # Act
-        with pytest.raises(DeserializeError, match=r"^Trailing data error$"):
+        with pytest.raises(DeserializeError, match=r"^Trailing data error$") as exc_info:
             _ = serializer.deserialize(mocker.sentinel.data)
+        exception = exc_info.value
 
         # Assert
         mock_serializer_new_decompressor_stream.assert_called_once_with()
@@ -232,6 +240,7 @@ class TestAbstractCompressorSerializer:
         mock_decompressor_stream_eof.assert_called_once()
         mock_decompressor_stream_unused_data.assert_called_once()
         mock_serializer.deserialize.assert_not_called()
+        assert exception.error_info == {"decompressed_data": mocker.sentinel.decompressed_data, "extra": b"some extra data"}
 
     def test____incremental_deserialize____decompress_chunks(
         self,
@@ -277,6 +286,8 @@ class TestAbstractCompressorSerializer:
         mock_decompressor_stream_unused_data: MagicMock,
     ) -> None:
         # Arrange
+        from collections import deque
+
         class MyStreamAPIBaseException(Exception):
             pass
 
@@ -305,6 +316,10 @@ class TestAbstractCompressorSerializer:
         mock_serializer.deserialize.assert_not_called()
         assert exception.__cause__ is mock_decompressor_stream.decompress.side_effect
         assert exception.remaining_data == b""
+        assert exception.error_info == {
+            "already_decompressed_chunks": deque([]),
+            "invalid_chunk": b"chunk",
+        }
 
     def test____incremental_deserialize____translate_deserialize_errors(
         self,

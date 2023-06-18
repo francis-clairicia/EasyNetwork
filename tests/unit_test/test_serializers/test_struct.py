@@ -145,6 +145,7 @@ class TestAbstractStructSerializer(BaseTestStructBasedSerializer):
         mock_struct_unpack.assert_called_once_with(mocker.sentinel.data)
         mock_serializer_from_tuple.assert_not_called()
         assert exception.__cause__ is mock_struct_unpack.side_effect
+        assert exception.error_info == {"data": mocker.sentinel.data}
 
     def test____deserialize____translate_any_exception_raised_by_from_tuple_method(
         self,
@@ -168,6 +169,7 @@ class TestAbstractStructSerializer(BaseTestStructBasedSerializer):
         mock_struct_unpack.assert_called_once_with(mocker.sentinel.data)
         mock_serializer_from_tuple.assert_called_once_with(mocker.sentinel.packet_tuple)
         assert exception.__cause__ is mock_serializer_from_tuple.side_effect
+        assert exception.error_info == {"unpacked_struct": mocker.sentinel.packet_tuple}
 
 
 class TestNamedTupleStructSerializer(BaseTestStructBasedSerializer):

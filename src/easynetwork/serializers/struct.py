@@ -52,11 +52,14 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_ST_contra, _DT_co]):
         try:
             packet_tuple: tuple[Any, ...] = self.__s.unpack(data)
         except _struct.error as exc:
-            raise DeserializeError(f"Invalid value: {exc}") from exc
+            raise DeserializeError(f"Invalid value: {exc}", error_info={"data": data}) from exc
         try:
             return self.from_tuple(packet_tuple)
         except Exception as exc:
-            raise DeserializeError(f"Error when building packet from unpacked struct value: {exc}") from exc
+            raise DeserializeError(
+                f"Error when building packet from unpacked struct value: {exc}",
+                error_info={"unpacked_struct": packet_tuple},
+            ) from exc
 
     @property
     @final

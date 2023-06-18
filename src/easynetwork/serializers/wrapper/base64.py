@@ -76,5 +76,5 @@ class Base64EncodedSerializer(AutoSeparatedPacketSerializer[_ST_contra, _DT_co])
         if (checksum := self.__checksum) is not None:
             data, digest = data[:-32], data[-32:]
             if not compare_digest(checksum(data), digest):
-                raise DeserializeError("Invalid token")
+                raise DeserializeError("Invalid token", error_info=None)
         return self.__serializer.deserialize(data)

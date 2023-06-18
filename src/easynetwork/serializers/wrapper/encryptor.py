@@ -63,5 +63,5 @@ class EncryptorSerializer(AutoSeparatedPacketSerializer[_ST_contra, _DT_co]):
         try:
             data = self.__fernet.decrypt(data, ttl=self.__token_ttl)
         except InvalidToken:
-            raise DeserializeError("Invalid token") from None
+            raise DeserializeError("Invalid token", error_info=None) from None
         return self.__serializer.deserialize(data)

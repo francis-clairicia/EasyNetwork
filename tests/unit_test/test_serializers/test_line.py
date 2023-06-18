@@ -161,10 +161,16 @@ class TestStringLineSerializer:
         serializer: StringLineSerializer,
     ) -> None:
         # Arrange
+        bad_unicode = "é".encode("latin-1")
 
         # Act & Assert
-        with pytest.raises(DeserializeError):
-            serializer.deserialize("é".encode("latin-1") + (serializer.separator * 3 if with_newlines else b""))
+        with pytest.raises(DeserializeError) as exc_info:
+            serializer.deserialize(bad_unicode + (serializer.separator * 3 if with_newlines else b""))
+        exception = exc_info.value
+
+        # Assert
+        assert isinstance(exception.__cause__, UnicodeError)
+        assert exception.error_info == {"data": bad_unicode}
 
     @pytest.mark.parametrize("with_newlines", [False, True], ids=lambda boolean: f"with_newlines=={boolean}")
     def test____deserialize____empty_string_error(
@@ -175,8 +181,13 @@ class TestStringLineSerializer:
         # Arrange
 
         # Act & Assert
-        with pytest.raises(DeserializeError):
+        with pytest.raises(DeserializeError) as exc_info:
             serializer.deserialize(serializer.separator * 3 if with_newlines else b"")
+        exception = exc_info.value
+
+        # Assert
+        assert exception.__cause__ is None
+        assert exception.error_info == {"data": b""}
 
     @pytest.mark.parametrize("with_newlines_at_end", [False, True], ids=lambda boolean: f"with_newlines=={boolean}")
     @pytest.mark.parametrize("position", ["beginning", "between"])
@@ -200,5 +211,10 @@ class TestStringLineSerializer:
             packet += separator
 
         # Act & Assert
-        with pytest.raises(DeserializeError):
+        with pytest.raises(DeserializeError) as exc_info:
             serializer.deserialize(packet)
+        exception = exc_info.value
+
+        # Assert
+        assert exception.__cause__ is None
+        assert exception.error_info == {"data": packet.removesuffix(separator)}
