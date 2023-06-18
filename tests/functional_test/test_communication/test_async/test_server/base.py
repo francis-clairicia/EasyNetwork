@@ -18,7 +18,7 @@ class BaseTestAsyncServer:
     async def run_server(server: AbstractAsyncNetworkServer) -> AsyncIterator[asyncio.Event]:
         event = asyncio.Event()
         async with asyncio.TaskGroup() as tg:
-            tg.create_task(server.serve_forever(is_up_event=event))
+            _ = tg.create_task(server.serve_forever(is_up_event=event))
             await asyncio.sleep(0)
             yield event
             await server.shutdown()

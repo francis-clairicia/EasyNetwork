@@ -284,8 +284,8 @@ class TestAsyncTCPNetworkClientConnection:
     ) -> None:
         async with AsyncTCPNetworkClient(remote_address, stream_protocol, backend_kwargs=backend_kwargs) as client:
             async with asyncio.TaskGroup() as task_group:
-                task_group.create_task(client.wait_connected())
-                task_group.create_task(client.wait_connected())
+                _ = task_group.create_task(client.wait_connected())
+                _ = task_group.create_task(client.wait_connected())
                 await asyncio.sleep(0)
             assert client.is_connected()
 
