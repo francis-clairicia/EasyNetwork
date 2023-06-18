@@ -452,7 +452,7 @@ class TestAsyncioBackend:
         def thread() -> int:
             return threads_portal.run_coroutine(coroutine, 42)
 
-        with pytest.raises(RuntimeError, match=r"^Operation cancelled$"):
+        with pytest.raises(asyncio.CancelledError):
             await backend.run_in_thread(thread)
 
     async def test____create_threads_portal____run_coroutine_from_thread____explicit_concurrent_future_Cancelled(
@@ -465,7 +465,7 @@ class TestAsyncioBackend:
             raise FutureCancelledError()
 
         def thread() -> int:
-            with pytest.raises(FutureCancelledError):
+            with pytest.raises(asyncio.CancelledError):  # asyncio do the job to convert the concurrent.futures.CancelledError
                 return threads_portal.run_coroutine(coroutine, 42)
             return 54
 
