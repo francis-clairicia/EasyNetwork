@@ -109,28 +109,10 @@ class TimeoutHandle(AbstractTimeoutHandle):
         super().__init__()
         self.__handle: asyncio.Timeout = handle
 
-    def when(self) -> float:
-        deadline: float | None = self.__handle.when()
-        return deadline if deadline is not None else float("+inf")
-
-    def reschedule(self, when: float) -> None:
-        return self.__handle.reschedule(float(when) if when != float("+inf") else None)
-
-    def expired(self) -> bool:
-        return self.__handle.expired()
-
-
-class _TimeoutContextManager:
-    __slots__ = ("__handle",)
-
-    def __init__(self, handle: asyncio.Timeout) -> None:
-        super().__init__()
-        self.__handle: asyncio.Timeout = handle
-
-    async def __aenter__(self) -> TimeoutHandle:
+    async def __aenter__(self) -> Self:
         handle: asyncio.Timeout = self.__handle
         await type(handle).__aenter__(handle)
-        return TimeoutHandle(handle)
+        return self
 
     async def __aexit__(
         self,
@@ -144,10 +126,20 @@ class _TimeoutContextManager:
         finally:
             del exc_val, exc_tb, self
 
+    def when(self) -> float:
+        deadline: float | None = self.__handle.when()
+        return deadline if deadline is not None else float("+inf")
 
-def timeout(delay: float) -> _TimeoutContextManager:
-    return _TimeoutContextManager(asyncio.timeout(float(delay) if delay != float("+inf") else None))
+    def reschedule(self, when: float) -> None:
+        return self.__handle.reschedule(float(when) if when != float("+inf") else None)
+
+    def expired(self) -> bool:
+        return self.__handle.expired()
 
 
-def timeout_at(deadline: float) -> _TimeoutContextManager:
-    return _TimeoutContextManager(asyncio.timeout_at(float(deadline) if deadline != float("+inf") else None))
+def timeout(delay: float) -> TimeoutHandle:
+    return TimeoutHandle(asyncio.timeout(float(delay) if delay != float("+inf") else None))
+
+
+def timeout_at(deadline: float) -> TimeoutHandle:
+    return TimeoutHandle(asyncio.timeout_at(float(deadline) if deadline != float("+inf") else None))
