@@ -41,9 +41,6 @@ class BaseFakeBackend(AbstractAsyncBackend):
     async def ignore_cancellation(self, coroutine: Coroutine[Any, Any, Any]) -> Any:
         raise NotImplementedError
 
-    async def wait_for(self, coroutine: Coroutine[Any, Any, Any], timeout: float | None) -> Any:
-        raise NotImplementedError
-
     def timeout(self, delay: Any) -> AsyncContextManager[AbstractTimeoutHandle]:
         raise NotImplementedError
 
