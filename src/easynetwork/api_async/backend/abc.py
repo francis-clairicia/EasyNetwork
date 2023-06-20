@@ -298,10 +298,6 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    async def wait_for(self, coroutine: Coroutine[Any, Any, _T_co], timeout: float | None) -> _T_co:
-        raise NotImplementedError
-
-    @abstractmethod
     def timeout(self, delay: float) -> AsyncContextManager[AbstractTimeoutHandle]:
         raise NotImplementedError
 

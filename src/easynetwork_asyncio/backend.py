@@ -88,12 +88,6 @@ class AsyncioBackend(AbstractAsyncBackend):
         finally:
             del task
 
-    async def wait_for(self, coroutine: Coroutine[Any, Any, _T_co], timeout: float | None) -> _T_co:
-        assert asyncio.iscoroutine(coroutine), "Expected a coroutine object"
-
-        async with asyncio.timeout(timeout):
-            return await coroutine
-
     def timeout(self, delay: float) -> AsyncContextManager[AbstractTimeoutHandle]:
         from .tasks import timeout
 
