@@ -82,7 +82,7 @@ class MixinTestAsyncSocketBusy(BaseTestAsyncSocket):
         mock_socket_method: MagicMock,
     ) -> None:
         # Arrange
-        from errno import EINPROGRESS
+        from errno import EBUSY
 
         with self._set_sock_method_in_blocking_state(mock_socket_method):
             _ = await self._busy_socket_task(socket_method(), event_loop, mock_socket_method)
@@ -92,7 +92,7 @@ class MixinTestAsyncSocketBusy(BaseTestAsyncSocket):
             await socket_method()
 
         # Assert
-        assert exc_info.value.errno == EINPROGRESS
+        assert exc_info.value.errno == EBUSY
         mock_socket_method.assert_not_called()
 
     async def test____method____closed_socket____before_attempt(

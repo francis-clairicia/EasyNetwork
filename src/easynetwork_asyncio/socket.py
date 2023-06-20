@@ -119,7 +119,7 @@ class AsyncSocket:
             raise _error_from_errno(_errno.ENOTSOCK)
 
         if task_id in self.__waiters:
-            raise _error_from_errno(_errno.EINPROGRESS)
+            raise _error_from_errno(_errno.EBUSY)
 
         if abort_errno is None:
             abort_errno = _errno.EINTR
