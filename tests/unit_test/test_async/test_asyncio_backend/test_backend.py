@@ -581,7 +581,7 @@ class TestAsyncIOBackend:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        from socket import AI_PASSIVE, SOCK_STREAM
+        from socket import AF_UNSPEC, AI_PASSIVE, SOCK_STREAM
 
         from easynetwork_asyncio.stream.listener import AcceptedSocket, AcceptedSSLSocket
 
@@ -632,7 +632,6 @@ class TestAsyncIOBackend:
                 remote_host,
                 remote_port,
                 mocker.sentinel.backlog,
-                family=mocker.sentinel.family,
                 ssl_context=mock_ssl_context,
                 ssl_handshake_timeout=123456.789,
                 ssl_shutdown_timeout=9876543.21,
@@ -643,7 +642,6 @@ class TestAsyncIOBackend:
                 remote_host,
                 remote_port,
                 mocker.sentinel.backlog,
-                family=mocker.sentinel.family,
                 reuse_port=mocker.sentinel.reuse_port,
             )
 
@@ -651,7 +649,7 @@ class TestAsyncIOBackend:
         mock_getaddrinfo.assert_awaited_once_with(
             remote_host,
             remote_port,
-            family=mocker.sentinel.family,
+            family=AF_UNSPEC,
             type=SOCK_STREAM,
             proto=0,
             flags=AI_PASSIVE,
@@ -746,7 +744,6 @@ class TestAsyncIOBackend:
                 remote_host,
                 remote_port,
                 mocker.sentinel.backlog,
-                family=AF_UNSPEC,
                 ssl_context=mock_ssl_context,
                 ssl_handshake_timeout=123456.789,
                 ssl_shutdown_timeout=9876543.21,
@@ -757,7 +754,6 @@ class TestAsyncIOBackend:
                 remote_host,
                 remote_port,
                 mocker.sentinel.backlog,
-                family=AF_UNSPEC,
                 reuse_port=mocker.sentinel.reuse_port,
             )
 
@@ -861,7 +857,6 @@ class TestAsyncIOBackend:
                 remote_hosts,
                 remote_port,
                 mocker.sentinel.backlog,
-                family=AF_UNSPEC,
                 ssl_context=mock_ssl_context,
                 ssl_handshake_timeout=123456.789,
                 ssl_shutdown_timeout=9876543.21,
@@ -872,7 +867,6 @@ class TestAsyncIOBackend:
                 remote_hosts,
                 remote_port,
                 mocker.sentinel.backlog,
-                family=AF_UNSPEC,
                 reuse_port=mocker.sentinel.reuse_port,
             )
 
@@ -946,7 +940,6 @@ class TestAsyncIOBackend:
                     remote_host,
                     remote_port,
                     mocker.sentinel.backlog,
-                    family=AF_UNSPEC,
                     ssl_context=mock_ssl_context,
                     ssl_handshake_timeout=123456.789,
                     ssl_shutdown_timeout=9876543.21,
@@ -957,7 +950,6 @@ class TestAsyncIOBackend:
                     remote_host,
                     remote_port,
                     mocker.sentinel.backlog,
-                    family=AF_UNSPEC,
                     reuse_port=mocker.sentinel.reuse_port,
                 )
 
@@ -982,8 +974,6 @@ class TestAsyncIOBackend:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        from socket import AF_UNSPEC
-
         remote_host = "remote_address"
         remote_port = 5000
         mock_getaddrinfo: AsyncMock = cast(
@@ -1010,7 +1000,6 @@ class TestAsyncIOBackend:
                 remote_host,
                 remote_port,
                 mocker.sentinel.backlog,
-                family=AF_UNSPEC,
                 ssl_context=mock_ssl_context,
                 ssl_handshake_timeout=123456.789,
                 ssl_shutdown_timeout=9876543.21,
@@ -1056,7 +1045,6 @@ class TestAsyncIOBackend:
 
         # Act
         socket = await backend.create_udp_endpoint(
-            family=1234,
             local_address=local_address,
             remote_address=remote_address,
             reuse_port=True,
@@ -1065,7 +1053,6 @@ class TestAsyncIOBackend:
         # Assert
         mock_create_datagram_socket.assert_awaited_once_with(
             loop=event_loop,
-            family=1234,
             local_address=local_address,
             remote_address=remote_address,
             reuse_port=True,

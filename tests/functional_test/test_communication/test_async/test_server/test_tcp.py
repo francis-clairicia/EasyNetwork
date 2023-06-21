@@ -277,7 +277,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     @staticmethod
     async def server(
         request_handler: MyAsyncTCPRequestHandler,
-        socket_family: int,
         localhost_ip: str,
         stream_protocol: StreamProtocol[str, str],
         use_ssl: bool,
@@ -292,7 +291,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
             stream_protocol,
             request_handler,
             backlog=1,
-            family=socket_family,
             ssl=server_ssl_context if use_ssl else None,
             ssl_handshake_timeout=ssl_handshake_timeout,
             service_actions_interval=service_actions_interval,
@@ -318,7 +316,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     @staticmethod
     async def client_factory(
         server_address: tuple[str, int],
-        socket_family: int,
         event_loop: asyncio.AbstractEventLoop,
         use_ssl: bool,
         client_ssl_context: ssl.SSLContext,
@@ -326,7 +323,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         async with contextlib.AsyncExitStack() as stack:
 
             async def factory() -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
-                sock = await create_connection(*server_address, event_loop, family=socket_family)
+                sock = await create_connection(*server_address, event_loop)
                 sock.setblocking(False)
                 reader, writer = await asyncio.open_connection(
                     sock=sock,

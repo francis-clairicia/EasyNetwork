@@ -8,6 +8,7 @@ import errno
 from socket import (
     AF_INET,
     AF_INET6,
+    AF_UNSPEC,
     AI_NUMERICHOST,
     AI_NUMERICSERV,
     AI_PASSIVE,
@@ -249,17 +250,17 @@ async def test____create_connection____default(
         mock_getaddrinfo.side_effect = [stream_addrinfo_list(remote_port), stream_addrinfo_list(local_address[1])]
 
     # Act
-    socket = await create_connection(remote_host, remote_port, event_loop, family=123456789, local_address=local_address)
+    socket = await create_connection(remote_host, remote_port, event_loop, local_address=local_address)
 
     # Assert
     if local_address is None:
         assert mock_getaddrinfo.await_args_list == [
-            mocker.call(remote_host, remote_port, family=123456789, type=SOCK_STREAM, proto=0, flags=0),
+            mocker.call(remote_host, remote_port, family=AF_UNSPEC, type=SOCK_STREAM, proto=0, flags=0),
         ]
     else:
         assert mock_getaddrinfo.await_args_list == [
-            mocker.call(remote_host, remote_port, family=123456789, type=SOCK_STREAM, proto=0, flags=0),
-            mocker.call(*local_address, family=123456789, type=SOCK_STREAM, proto=0, flags=0),
+            mocker.call(remote_host, remote_port, family=AF_UNSPEC, type=SOCK_STREAM, proto=0, flags=0),
+            mocker.call(*local_address, family=AF_UNSPEC, type=SOCK_STREAM, proto=0, flags=0),
         ]
 
     mock_socket_cls.assert_called_once_with(AF_INET, SOCK_STREAM, IPPROTO_TCP)
@@ -309,7 +310,7 @@ async def test____create_connection____first_failed(
             assert_never(fail_on)
 
     # Act
-    socket = await create_connection(remote_host, remote_port, event_loop, family=123456789, local_address=local_address)
+    socket = await create_connection(remote_host, remote_port, event_loop, local_address=local_address)
 
     # Assert
     assert mock_socket_cls.mock_calls == [
@@ -376,7 +377,7 @@ async def test____create_connection____all_failed(
 
     # Act
     with pytest.raises(ExceptionGroup) as exc_info:
-        await create_connection(remote_host, remote_port, event_loop, family=123456789, local_address=local_address)
+        await create_connection(remote_host, remote_port, event_loop, local_address=local_address)
 
     # Assert
     os_errors, exc = exc_info.value.split(OSError)
@@ -438,7 +439,7 @@ async def test____create_connection____unrelated_exception(
 
     # Act
     with pytest.raises(KeyboardInterrupt) as exc_info:
-        await create_connection(remote_host, remote_port, event_loop, family=123456789)
+        await create_connection(remote_host, remote_port, event_loop)
     if exc_info.value is not expected_failure_exception:  # What a great coincidence
         raise exc_info.value.with_traceback(exc_info.value.__traceback__) from None
 
@@ -472,7 +473,7 @@ async def test____create_connection____getaddrinfo_returned_empty_list(
 
     # Act
     with pytest.raises(OSError, match=r"^getaddrinfo\('localhost'\) returned empty list$"):
-        await create_connection(remote_host, remote_port, event_loop, family=123456789, local_address=local_address)
+        await create_connection(remote_host, remote_port, event_loop, local_address=local_address)
 
     # Assert
     mock_socket_cls.assert_not_called()
@@ -501,7 +502,7 @@ async def test____create_connection____getaddrinfo_return_mismatch(
 
     # Act
     with pytest.raises(OSError, match=r"^No matching local/remote pair according to family and proto found$"):
-        await create_connection(remote_host, remote_port, event_loop, family=123456789, local_address=local_address)
+        await create_connection(remote_host, remote_port, event_loop, local_address=local_address)
 
     # Assert
     mock_socket_cls.assert_not_called()
@@ -546,19 +547,18 @@ async def test____create_datagram_socket____default(
         event_loop,
         local_address=local_address,
         remote_address=remote_address,
-        family=123456789,
         reuse_port=set_reuse_port,
     )
 
     # Assert
     if remote_address is None:
         assert mock_getaddrinfo.await_args_list == [
-            mocker.call(*(local_address or (None, 0)), family=123456789, type=SOCK_DGRAM, proto=0, flags=AI_PASSIVE),
+            mocker.call(*(local_address or (None, 0)), family=AF_UNSPEC, type=SOCK_DGRAM, proto=0, flags=AI_PASSIVE),
         ]
     else:
         assert mock_getaddrinfo.await_args_list == [
-            mocker.call(*(local_address or (None, 0)), family=123456789, type=SOCK_DGRAM, proto=0, flags=AI_PASSIVE),
-            mocker.call(*remote_address, family=123456789, type=SOCK_DGRAM, proto=0, flags=0),
+            mocker.call(*(local_address or (None, 0)), family=AF_UNSPEC, type=SOCK_DGRAM, proto=0, flags=AI_PASSIVE),
+            mocker.call(*remote_address, family=AF_UNSPEC, type=SOCK_DGRAM, proto=0, flags=0),
         ]
 
     mock_socket_cls.assert_called_once_with(AF_INET, SOCK_DGRAM, IPPROTO_UDP)
@@ -593,12 +593,11 @@ async def test____create_datagram_socket____empty_string_as_local_host(
     await create_datagram_socket(
         event_loop,
         local_address=local_address,
-        family=123456789,
     )
 
     # Assert
     assert mock_getaddrinfo.await_args_list == [
-        mocker.call(None, 11111, family=123456789, type=SOCK_DGRAM, proto=0, flags=AI_PASSIVE),
+        mocker.call(None, 11111, family=AF_UNSPEC, type=SOCK_DGRAM, proto=0, flags=AI_PASSIVE),
     ]
 
 
@@ -638,7 +637,6 @@ async def test____create_datagram_socket____first_failed(
         event_loop,
         local_address=local_address,
         remote_address=remote_address,
-        family=123456789,
     )
 
     # Assert
@@ -705,7 +703,6 @@ async def test____create_datagram_socket____all_failed(
             event_loop,
             local_address=local_address,
             remote_address=remote_address,
-            family=123456789,
         )
 
     # Assert
@@ -763,7 +760,7 @@ async def test____create_datagram_socket____unrelated_exception(
 
     # Act
     with pytest.raises(KeyboardInterrupt) as exc_info:
-        await create_datagram_socket(event_loop, local_address=(local_host, local_port), family=123456789)
+        await create_datagram_socket(event_loop, local_address=(local_host, local_port))
     if exc_info.value is not expected_failure_exception:  # What a great coincidence
         raise exc_info.value.with_traceback(exc_info.value.__traceback__) from None
 
@@ -801,7 +798,6 @@ async def test____create_datagram_socket____getaddrinfo_returned_empty_list(
             event_loop,
             local_address=local_address,
             remote_address=remote_address,
-            family=123456789,
         )
 
     # Assert
@@ -835,7 +831,6 @@ async def test____create_datagram_socket____getaddrinfo_return_mismatch(
             event_loop,
             local_address=local_address,
             remote_address=remote_address,
-            family=123456789,
         )
 
     # Assert

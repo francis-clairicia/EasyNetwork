@@ -371,7 +371,6 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         port: int,
         backlog: int,
         *,
-        family: int = ...,
         reuse_port: bool = ...,
     ) -> Sequence[AbstractAsyncListenerSocketAdapter]:
         raise NotImplementedError
@@ -385,7 +384,6 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         *,
         ssl_handshake_timeout: float,
         ssl_shutdown_timeout: float,
-        family: int = ...,
         reuse_port: bool = ...,
     ) -> Sequence[AbstractAsyncListenerSocketAdapter]:
         raise NotImplementedError("SSL/TLS is not supported by this backend")
@@ -394,7 +392,6 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
     async def create_udp_endpoint(
         self,
         *,
-        family: int = ...,
         local_address: tuple[str | None, int] | None = ...,
         remote_address: tuple[str, int] | None = ...,
         reuse_port: bool = ...,

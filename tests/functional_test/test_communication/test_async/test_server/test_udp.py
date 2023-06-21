@@ -172,7 +172,6 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
     @staticmethod
     async def server(
         request_handler: AsyncBaseRequestHandler[str, str],
-        socket_family: int,
         localhost_ip: str,
         datagram_protocol: DatagramProtocol[str, str],
         service_actions_interval: float | None,
@@ -183,7 +182,6 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
             0,
             datagram_protocol,
             request_handler,
-            family=socket_family,
             service_actions_interval=service_actions_interval,
             backend_kwargs=backend_kwargs,
         ) as server:

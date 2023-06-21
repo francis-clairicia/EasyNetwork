@@ -160,7 +160,6 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
     async def test____dunder_init____with_remote_address(
         self,
         remote_address: tuple[str, int] | None,
-        socket_family: int,
         mock_datagram_socket_adapter: MagicMock,
         mock_datagram_protocol: MagicMock,
         mock_new_backend: MagicMock,
@@ -172,7 +171,6 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         # Act
         client: AsyncUDPNetworkEndpoint[Any, Any] = AsyncUDPNetworkEndpoint(
             mock_datagram_protocol,
-            family=socket_family,
             remote_address=remote_address,
             local_address=mocker.sentinel.local_address,
             reuse_port=mocker.sentinel.reuse_port,
@@ -182,7 +180,6 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         # Assert
         mock_new_backend.assert_called_once_with(None)
         mock_backend.create_udp_endpoint.assert_awaited_once_with(
-            family=socket_family,
             remote_address=remote_address,
             local_address=mocker.sentinel.local_address,
             reuse_port=mocker.sentinel.reuse_port,
@@ -930,7 +927,6 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
     async def test____dunder_init____with_remote_address(
         self,
         remote_address: tuple[str, int],
-        socket_family: int,
         mock_udp_socket: MagicMock,
         mock_datagram_protocol: MagicMock,
         mock_udp_endpoint_cls: MagicMock,
@@ -943,7 +939,6 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
         client: AsyncUDPNetworkClient[Any, Any] = AsyncUDPNetworkClient(
             remote_address,
             mock_datagram_protocol,
-            family=socket_family,
             local_address=mocker.sentinel.local_address,
             reuse_port=mocker.sentinel.reuse_port,
             backend=mock_backend,
@@ -953,7 +948,6 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
         # Assert
         mock_udp_endpoint_cls.assert_called_once_with(
             protocol=mock_datagram_protocol,
-            family=socket_family,
             remote_address=remote_address,
             local_address=mocker.sentinel.local_address,
             reuse_port=mocker.sentinel.reuse_port,
