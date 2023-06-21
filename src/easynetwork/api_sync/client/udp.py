@@ -20,6 +20,7 @@ from ...tools._utils import (
     check_socket_no_ssl as _check_socket_no_ssl,
     ensure_datagram_socket_bound as _ensure_datagram_socket_bound,
     retry_socket_method as _retry_socket_method,
+    set_reuseport as _set_reuseport,
 )
 from ...tools.lock import ForkSafeLock
 from ...tools.socket import MAX_DATAGRAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
@@ -51,9 +52,9 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         /,
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
         *,
-        family: int = ...,
+        local_address: tuple[str | None, int] | None = ...,
         remote_address: tuple[str, int] | None = ...,
-        local_address: tuple[str, int] | None = ...,
+        reuse_port: bool = ...,
     ) -> None:
         ...
 
@@ -103,8 +104,8 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
                 raise ValueError("Invalid socket type")
 
             _check_socket_no_ssl(socket)
+            _check_socket_family(socket.family)
             if external_socket:
-                _check_socket_family(socket.family)
                 _ensure_datagram_socket_bound(socket)
                 try:
                     peername = new_socket_address(socket.getpeername(), socket.family)
@@ -246,8 +247,8 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         /,
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
         *,
-        family: int = ...,
         local_address: tuple[str, int] | None = ...,
+        reuse_port: bool = ...,
     ) -> None:
         ...
 
@@ -336,24 +337,55 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
 
 def _create_udp_socket(
     *,
-    family: int = _socket.AF_INET,
+    local_address: tuple[str | None, int] | None = None,
     remote_address: tuple[str, int] | None = None,
-    local_address: tuple[str, int] | None = None,
+    reuse_port: bool = False,
 ) -> tuple[_socket.socket, SocketAddress | None]:
-    _check_socket_family(family)
-    socket = _socket.socket(family, _socket.SOCK_DGRAM)
-    try:
-        peername: SocketAddress | None = None
-        if local_address is None:
-            socket.bind(("", 0))
-        else:
-            local_host, local_port = local_address
-            socket.bind((local_host, local_port))
-        if remote_address is not None:
-            remote_host, remote_port = remote_address
-            socket.connect((remote_host, remote_port))
-            peername = new_socket_address(socket.getpeername(), socket.family)
-    except BaseException:
-        socket.close()
-        raise
-    return socket, peername
+    local_host: str | None
+    local_port: int
+    if local_address is None:
+        local_host = None
+        local_port = 0
+    else:
+        local_host, local_port = local_address
+        if local_host == "":
+            local_host = None
+        assert local_port is not None, "Expected 'port' to be an int"
+
+    errors: list[OSError] = []
+
+    for family, _, proto, _, sockaddr in _socket.getaddrinfo(
+        local_host,
+        local_port,
+        family=_socket.AF_UNSPEC,
+        type=_socket.SOCK_DGRAM,
+        flags=_socket.AI_PASSIVE,
+    ):
+        socket = _socket.socket(family, _socket.SOCK_DGRAM, proto)
+        try:
+            if reuse_port:
+                _set_reuseport(socket)
+
+            socket.bind(sockaddr)
+
+            peername: SocketAddress | None = None
+            if remote_address is not None:
+                remote_host, remote_port = remote_address
+                socket.connect((remote_host, remote_port))
+                peername = new_socket_address(socket.getpeername(), socket.family)
+            return socket, peername
+        except OSError as exc:
+            socket.close()
+            errors.append(exc)
+            continue
+        except BaseException:
+            socket.close()
+            raise
+
+    if errors:
+        try:
+            raise ExceptionGroup("Error when trying to create the UDP socket", errors)
+        finally:
+            errors = []
+
+    raise OSError(f"getaddrinfo({local_host!r}) returned empty list")

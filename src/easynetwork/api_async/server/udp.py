@@ -66,7 +66,6 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         protocol: DatagramProtocol[_ResponseT, _RequestT],
         request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT],
         *,
-        family: int = 0,
         reuse_port: bool = False,
         backend: str | AbstractAsyncBackend | None = None,
         backend_kwargs: Mapping[str, Any] | None = None,
@@ -85,7 +84,6 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             backend.create_udp_endpoint,
             local_address=(host, port),
             remote_address=None,
-            family=family,
             reuse_port=reuse_port,
         )
 

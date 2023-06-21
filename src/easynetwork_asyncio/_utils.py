@@ -116,13 +116,12 @@ async def create_connection(
     host: str,
     port: int,
     loop: asyncio.AbstractEventLoop,
-    family: int = 0,
     local_address: tuple[str, int] | None = None,
 ) -> _socket.socket:
     remote_addrinfo: Sequence[tuple[int, int, int, str, tuple[Any, ...]]] = await _ensure_resolved(
         host,
         port,
-        family=family,
+        family=_socket.AF_UNSPEC,
         type=_socket.SOCK_STREAM,
         loop=loop,
     )
@@ -132,7 +131,7 @@ async def create_connection(
         local_addrinfo = await _ensure_resolved(
             local_host,
             local_port,
-            family=family,
+            family=_socket.AF_UNSPEC,
             type=_socket.SOCK_STREAM,
             loop=loop,
         )
@@ -150,7 +149,6 @@ async def create_datagram_socket(
     loop: asyncio.AbstractEventLoop,
     local_address: tuple[str | None, int] | None = None,
     remote_address: tuple[str, int] | None = None,
-    family: int = 0,
     reuse_port: bool = False,
 ) -> _socket.socket:
     if local_address is None:
@@ -161,7 +159,7 @@ async def create_datagram_socket(
     local_addrinfo: Sequence[tuple[int, int, int, str, tuple[Any, ...]]] = await _ensure_resolved(
         local_host,
         local_port,
-        family=family,
+        family=_socket.AF_UNSPEC,
         type=_socket.SOCK_DGRAM,
         loop=loop,
         flags=_socket.AI_PASSIVE,
@@ -172,7 +170,7 @@ async def create_datagram_socket(
         remote_addrinfo = await _ensure_resolved(
             remote_host,
             remote_port,
-            family=family,
+            family=_socket.AF_UNSPEC,
             type=_socket.SOCK_DGRAM,
             loop=loop,
         )

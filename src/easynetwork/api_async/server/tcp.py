@@ -95,7 +95,6 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         ssl: _SSLContext | None = None,
         ssl_handshake_timeout: float | None = None,
         ssl_shutdown_timeout: float | None = None,
-        family: int = 0,
         backlog: int | None = None,
         reuse_port: bool = False,
         max_recv_size: int | None = None,
@@ -131,7 +130,6 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 ssl_context=ssl,
                 ssl_handshake_timeout=_value_or_default(ssl_handshake_timeout, SSL_HANDSHAKE_TIMEOUT),
                 ssl_shutdown_timeout=_value_or_default(ssl_shutdown_timeout, SSL_SHUTDOWN_TIMEOUT),
-                family=family,
                 reuse_port=reuse_port,
             )
         else:
@@ -141,7 +139,6 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 host,
                 port,
                 backlog=backlog,
-                family=family,
                 reuse_port=reuse_port,
             )
         if max_recv_size is None:

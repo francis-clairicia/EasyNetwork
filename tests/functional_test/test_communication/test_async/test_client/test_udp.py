@@ -80,7 +80,6 @@ class TestAsyncUDPNetworkClient:
     async def client(
         remote_address: tuple[str, int],
         use_external_socket: Socket | None,
-        socket_family: int,
         datagram_protocol: DatagramProtocol[str, str],
         use_asyncio_transport: bool,
     ) -> AsyncIterator[AsyncUDPNetworkClient[str, str]]:
@@ -90,9 +89,7 @@ class TestAsyncUDPNetworkClient:
                 use_external_socket, datagram_protocol, backend_kwargs={"transport": use_asyncio_transport}
             )
         else:
-            client = AsyncUDPNetworkClient(
-                remote_address, datagram_protocol, family=socket_family, backend_kwargs={"transport": use_asyncio_transport}
-            )
+            client = AsyncUDPNetworkClient(remote_address, datagram_protocol, backend_kwargs={"transport": use_asyncio_transport})
         async with client:
             assert client.is_connected()
             yield client
@@ -102,13 +99,11 @@ class TestAsyncUDPNetworkClient:
         self,
         remote_address: tuple[str, int],
         ipaddr_any: str,
-        socket_family: int,
         datagram_protocol: DatagramProtocol[str, str],
     ) -> None:
         async with AsyncUDPNetworkClient(
             remote_address,
             datagram_protocol,
-            family=socket_family,
             local_address=(ipaddr_any, 0),
         ) as client:
             assert client.is_connected()
@@ -290,13 +285,11 @@ class TestAsyncUDPNetworkClientConnection:
         self,
         remote_address: tuple[str, int],
         datagram_protocol: DatagramProtocol[str, str],
-        socket_family: int,
         backend_kwargs: dict[str, Any],
     ) -> None:
         async with AsyncUDPNetworkClient(
             remote_address,
             datagram_protocol,
-            family=socket_family,
             backend_kwargs=backend_kwargs,
         ) as client:
             await client.wait_connected()
@@ -308,13 +301,11 @@ class TestAsyncUDPNetworkClientConnection:
         self,
         remote_address: tuple[str, int],
         datagram_protocol: DatagramProtocol[str, str],
-        socket_family: int,
         backend_kwargs: dict[str, Any],
     ) -> None:
         async with AsyncUDPNetworkClient(
             remote_address,
             datagram_protocol,
-            family=socket_family,
             backend_kwargs=backend_kwargs,
         ) as client:
             async with asyncio.TaskGroup() as task_group:
@@ -327,14 +318,12 @@ class TestAsyncUDPNetworkClientConnection:
         self,
         remote_address: tuple[str, int],
         datagram_protocol: DatagramProtocol[str, str],
-        socket_family: int,
         backend_kwargs: dict[str, Any],
     ) -> None:
         async with contextlib.aclosing(
             AsyncUDPNetworkClient(
                 remote_address,
                 datagram_protocol,
-                family=socket_family,
                 backend_kwargs=backend_kwargs,
             )
         ) as client:
@@ -348,14 +337,12 @@ class TestAsyncUDPNetworkClientConnection:
         self,
         remote_address: tuple[str, int],
         datagram_protocol: DatagramProtocol[str, str],
-        socket_family: int,
         backend_kwargs: dict[str, Any],
     ) -> None:
         async with contextlib.aclosing(
             AsyncUDPNetworkClient(
                 remote_address,
                 datagram_protocol,
-                family=socket_family,
                 backend_kwargs=backend_kwargs,
             )
         ) as client:
@@ -367,14 +354,12 @@ class TestAsyncUDPNetworkClientConnection:
         self,
         remote_address: tuple[str, int],
         datagram_protocol: DatagramProtocol[str, str],
-        socket_family: int,
         backend_kwargs: dict[str, Any],
     ) -> None:
         async with contextlib.aclosing(
             AsyncUDPNetworkClient(
                 remote_address,
                 datagram_protocol,
-                family=socket_family,
                 backend_kwargs=backend_kwargs,
             )
         ) as client:
@@ -389,14 +374,12 @@ class TestAsyncUDPNetworkClientConnection:
         self,
         remote_address: tuple[str, int],
         datagram_protocol: DatagramProtocol[str, str],
-        socket_family: int,
         backend_kwargs: dict[str, Any],
     ) -> None:
         async with contextlib.aclosing(
             AsyncUDPNetworkClient(
                 remote_address,
                 datagram_protocol,
-                family=socket_family,
                 backend_kwargs=backend_kwargs,
             )
         ) as client:
@@ -411,14 +394,12 @@ class TestAsyncUDPNetworkClientConnection:
         self,
         remote_address: tuple[str, int],
         datagram_protocol: DatagramProtocol[str, str],
-        socket_family: int,
         backend_kwargs: dict[str, Any],
     ) -> None:
         async with contextlib.aclosing(
             AsyncUDPNetworkClient(
                 remote_address,
                 datagram_protocol,
-                family=socket_family,
                 backend_kwargs=backend_kwargs,
             )
         ) as client:
@@ -433,14 +414,12 @@ class TestAsyncUDPNetworkClientConnection:
         self,
         remote_address: tuple[str, int],
         datagram_protocol: DatagramProtocol[str, str],
-        socket_family: int,
         backend_kwargs: dict[str, Any],
     ) -> None:
         async with contextlib.aclosing(
             AsyncUDPNetworkClient(
                 remote_address,
                 datagram_protocol,
-                family=socket_family,
                 backend_kwargs=backend_kwargs,
             )
         ) as client:
@@ -455,14 +434,12 @@ class TestAsyncUDPNetworkClientConnection:
         self,
         remote_address: tuple[str, int],
         datagram_protocol: DatagramProtocol[str, str],
-        socket_family: int,
         backend_kwargs: dict[str, Any],
     ) -> None:
         async with contextlib.aclosing(
             AsyncUDPNetworkClient(
                 remote_address,
                 datagram_protocol,
-                family=socket_family,
                 backend_kwargs=backend_kwargs,
             )
         ) as client:
@@ -492,7 +469,6 @@ class TestAsyncUDPNetworkEndpoint:
     async def client(
         request: pytest.FixtureRequest,
         remote_address: tuple[str, int],
-        socket_family: int,
         localhost_ip: str,
         datagram_protocol: DatagramProtocol[str, str],
         use_asyncio_transport: bool,
@@ -508,7 +484,6 @@ class TestAsyncUDPNetworkEndpoint:
         async with AsyncUDPNetworkEndpoint(
             datagram_protocol,
             remote_address=address,
-            family=socket_family,
             local_address=(localhost_ip, 0),
             backend_kwargs={"transport": use_asyncio_transport},
         ) as client:
@@ -531,10 +506,9 @@ class TestAsyncUDPNetworkEndpoint:
     async def test____dunder_init____local_address____bind_to_all_interfaces(
         self,
         ipaddr_any: str,
-        socket_family: int,
         datagram_protocol: DatagramProtocol[str, str],
     ) -> None:
-        async with AsyncUDPNetworkEndpoint(datagram_protocol, family=socket_family, local_address=(ipaddr_any, 0)) as client:
+        async with AsyncUDPNetworkEndpoint(datagram_protocol, local_address=(ipaddr_any, 0)) as client:
             assert client.is_bound()
             assert client.get_local_address().port > 0
 

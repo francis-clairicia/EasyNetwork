@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from selectors import EVENT_READ, EVENT_WRITE
-from socket import AF_INET6, SOCK_DGRAM
+from socket import AF_INET, AF_INET6, AF_UNSPEC, AI_PASSIVE, IPPROTO_UDP, SOCK_DGRAM, SOL_SOCKET
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.api_sync.client.udp import UDPNetworkClient, UDPNetworkEndpoint
@@ -52,10 +52,10 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         mock_udp_socket: MagicMock,
         socket_family: int,
         global_local_address: tuple[str, int],
-    ) -> tuple[str, int]:
+    ) -> tuple[str, int] | None:
         address: tuple[str, int] | None = getattr(request, "param", global_local_address)
         cls.set_local_address_to_socket_mock(mock_udp_socket, socket_family, address)
-        return global_local_address
+        return address
 
     @pytest.fixture(autouse=True, params=[False, True], ids=lambda p: f"remote_address=={p}")
     @classmethod
@@ -120,6 +120,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         try:
             match use_external_socket:
                 case "REMOTE_ADDRESS":
+                    mocker.patch("socket.getaddrinfo", return_value=[(AF_INET, SOCK_DGRAM, IPPROTO_UDP, "", ("0.0.0.0", 0))])
                     mocker.patch("socket.socket", return_value=mock_udp_socket)
                     return UDPNetworkEndpoint(protocol=mock_datagram_protocol, remote_address=remote_address)
                 case "EXTERNAL_SOCKET":
@@ -154,22 +155,29 @@ class TestUDPNetworkEndpoint(BaseTestClient):
 
     def test____dunder_init____create_datagram_endpoint____default(
         self,
-        socket_family: int,
         mock_udp_socket: MagicMock,
         mock_datagram_protocol: MagicMock,
         mock_socket_proxy_cls: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
+        mock_getaddrinfo = mocker.patch(
+            "socket.getaddrinfo",
+            return_value=[
+                (AF_INET, SOCK_DGRAM, IPPROTO_UDP, "", ("0.0.0.0", 0)),
+                (AF_INET6, SOCK_DGRAM, IPPROTO_UDP, "", ("::", 0)),
+            ],
+        )
         mock_socket_cls = mocker.patch("socket.socket", return_value=mock_udp_socket)
         mock_socket_proxy_cls.return_value = mocker.sentinel.proxy
 
         # Act
-        endpoint: UDPNetworkEndpoint[Any, Any] = UDPNetworkEndpoint(protocol=mock_datagram_protocol, family=socket_family)
+        endpoint: UDPNetworkEndpoint[Any, Any] = UDPNetworkEndpoint(protocol=mock_datagram_protocol)
 
         # Assert
-        mock_socket_cls.assert_called_once_with(socket_family, SOCK_DGRAM)
-        mock_udp_socket.bind.assert_called_once_with(("", 0))
+        mock_getaddrinfo.assert_called_once_with(None, 0, family=AF_UNSPEC, type=SOCK_DGRAM, flags=AI_PASSIVE)
+        mock_socket_cls.assert_called_once_with(AF_INET, SOCK_DGRAM, IPPROTO_UDP)
+        mock_udp_socket.bind.assert_called_once_with(("0.0.0.0", 0))
         mock_udp_socket.connect.assert_not_called()
         mock_udp_socket.settimeout.assert_called_once_with(0)
         mock_udp_socket.setblocking.assert_not_called()
@@ -178,35 +186,62 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         assert endpoint.socket is mocker.sentinel.proxy
 
     @pytest.mark.parametrize(
-        "local_address", [None, ("local_address", 12345)], ids=lambda p: f"local_address=={p}", indirect=True
+        "local_address", [None, ("local_address", 12345), ("", 11111)], ids=lambda p: f"local_address=={p}", indirect=True
     )
+    @pytest.mark.parametrize("reuse_port", [False, True], ids=lambda p: f"reuse_port=={p}")
     def test____dunder_init____create_datagram_endpoint____with_parameters(
         self,
         socket_family: int,
+        reuse_port: bool,
         local_address: tuple[str, int] | None,
         remote_address: tuple[str, int] | None,
         mock_udp_socket: MagicMock,
         mock_datagram_protocol: MagicMock,
         mock_socket_proxy_cls: MagicMock,
         mocker: MockerFixture,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         # Arrange
+        SO_REUSEPORT: int = 123456
+        monkeypatch.setattr("socket.SO_REUSEPORT", SO_REUSEPORT, raising=False)
+        if local_address is None:
+            expected_local_address = ("::", 0) if socket_family == AF_INET6 else ("0.0.0.0", 0)
+        else:
+            expected_local_address = local_address
+        mock_getaddrinfo = mocker.patch(
+            "socket.getaddrinfo",
+            return_value=[
+                (AF_INET6, SOCK_DGRAM, IPPROTO_UDP, "", expected_local_address)
+                if socket_family == AF_INET6
+                else (AF_INET, SOCK_DGRAM, IPPROTO_UDP, "", expected_local_address)
+            ],
+        )
         mock_socket_cls = mocker.patch("socket.socket", return_value=mock_udp_socket)
 
         # Act
         _ = UDPNetworkEndpoint(
             protocol=mock_datagram_protocol,
-            family=socket_family,
             local_address=local_address,
             remote_address=remote_address,
+            reuse_port=reuse_port,
         )
 
         # Assert
-        mock_socket_cls.assert_called_once_with(socket_family, SOCK_DGRAM)
         if local_address is None:
-            mock_udp_socket.bind.assert_called_once_with(("", 0))
+            mock_getaddrinfo.assert_called_once_with(None, 0, family=AF_UNSPEC, type=SOCK_DGRAM, flags=AI_PASSIVE)
         else:
-            mock_udp_socket.bind.assert_called_once_with(local_address)
+            local_host, local_port = local_address
+            mock_getaddrinfo.assert_called_once_with(
+                local_host if local_host != "" else None,
+                local_port,
+                family=AF_UNSPEC,
+                type=SOCK_DGRAM,
+                flags=AI_PASSIVE,
+            )
+        mock_socket_cls.assert_called_once_with(socket_family, SOCK_DGRAM, IPPROTO_UDP)
+        if reuse_port:
+            mock_udp_socket.setsockopt.assert_any_call(SOL_SOCKET, SO_REUSEPORT, True)
+        mock_udp_socket.bind.assert_called_once_with(expected_local_address)
         if remote_address is None:
             mock_udp_socket.connect.assert_not_called()
             mock_udp_socket.getpeername.assert_not_called()
@@ -217,45 +252,96 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         mock_udp_socket.setblocking.assert_not_called()
         mock_socket_proxy_cls.assert_called_once_with(mock_udp_socket, lock=mocker.ANY)
 
-    @pytest.mark.parametrize("socket_family", list(UNSUPPORTED_FAMILIES), indirect=True)
-    def test____dunder_init____create_datagram_endpoint____invalid_socket_family(
-        self,
-        socket_family: int,
-        mock_datagram_protocol: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act & Assert
-        with pytest.raises(ValueError, match=r"^Only these families are supported: .+$"):
-            _ = UDPNetworkEndpoint(protocol=mock_datagram_protocol, family=socket_family)
-
     @pytest.mark.parametrize("error_on", ["bind", "connect"])
     @pytest.mark.parametrize("remote_address", [True], indirect=True)
-    def test____dunder_init____create_datagram_endpoint____close_socket_if_an_error_occurs(
+    def test____dunder_init____create_datagram_endpoint____close_socket_if_an_error_occurs____OSError(
         self,
         error_on: str,
         local_address: tuple[str, int],
         remote_address: tuple[str, int],
-        socket_family: int,
         mock_udp_socket: MagicMock,
         mock_datagram_protocol: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
+        mocker.patch(
+            "socket.getaddrinfo",
+            return_value=[
+                (AF_INET, SOCK_DGRAM, IPPROTO_UDP, "", ("0.0.0.0", 0)),
+                (AF_INET6, SOCK_DGRAM, IPPROTO_UDP, "", ("::", 0)),
+            ],
+        )
         mocker.patch("socket.socket", return_value=mock_udp_socket)
         mock_method: MagicMock = getattr(mock_udp_socket, error_on)
         mock_method.side_effect = OSError()
 
         # Act & Assert
-        with pytest.raises(type(mock_method.side_effect)) as exc_info:
+        with pytest.raises(ExceptionGroup) as exc_info:
             _ = UDPNetworkEndpoint(
                 protocol=mock_datagram_protocol,
-                family=socket_family,
+                local_address=local_address,
+                remote_address=remote_address,
+            )
+        match, exc = exc_info.value.split(OSError)
+        assert match is not None and match.exceptions == (mock_method.side_effect, mock_method.side_effect)
+        assert exc is None
+        assert mock_udp_socket.close.call_count == 2
+
+    @pytest.mark.parametrize("error_on", ["bind", "connect"])
+    @pytest.mark.parametrize("remote_address", [True], indirect=True)
+    def test____dunder_init____create_datagram_endpoint____close_socket_if_an_error_occurs____any_other_exception(
+        self,
+        error_on: str,
+        local_address: tuple[str, int],
+        remote_address: tuple[str, int],
+        mock_udp_socket: MagicMock,
+        mock_datagram_protocol: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mocker.patch(
+            "socket.getaddrinfo",
+            return_value=[
+                (AF_INET, SOCK_DGRAM, IPPROTO_UDP, "", ("0.0.0.0", 0)),
+                (AF_INET6, SOCK_DGRAM, IPPROTO_UDP, "", ("::", 0)),
+            ],
+        )
+        mocker.patch("socket.socket", return_value=mock_udp_socket)
+        mock_method: MagicMock = getattr(mock_udp_socket, error_on)
+        mock_method.side_effect = BaseException()
+
+        # Act & Assert
+        with pytest.raises(BaseException) as exc_info:
+            _ = UDPNetworkEndpoint(
+                protocol=mock_datagram_protocol,
                 local_address=local_address,
                 remote_address=remote_address,
             )
         assert exc_info.value is mock_method.side_effect
         mock_udp_socket.close.assert_called_once_with()
+
+    def test____dunder_init____create_datagram_endpoint____getaddrinfo_error_empty_list(
+        self,
+        mock_udp_socket: MagicMock,
+        mock_datagram_protocol: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_getaddrinfo = mocker.patch("socket.getaddrinfo", return_value=[])
+        mock_socket_cls = mocker.patch("socket.socket", return_value=mock_udp_socket)
+
+        # Act
+        with pytest.raises(OSError, match=r"^getaddrinfo\('local_address'\) returned empty list$"):
+            _ = UDPNetworkEndpoint(protocol=mock_datagram_protocol, local_address=("local_address", 0))
+
+        # Assert
+        mock_getaddrinfo.assert_called_once_with("local_address", 0, family=AF_UNSPEC, type=SOCK_DGRAM, flags=AI_PASSIVE)
+        mock_socket_cls.assert_not_called()
+        mock_udp_socket.bind.assert_not_called()
+        mock_udp_socket.connect.assert_not_called()
+        mock_udp_socket.settimeout.assert_not_called()
+        mock_udp_socket.setblocking.assert_not_called()
+        mock_udp_socket.getpeername.assert_not_called()
 
     @pytest.mark.parametrize("bound", [False, True], ids=lambda p: f"bound=={p}")
     def test____dunder_init____use_given_socket____default(
@@ -985,16 +1071,16 @@ class TestUDPNetworkClient:
         client: UDPNetworkClient[Any, Any] = UDPNetworkClient(
             remote_address,
             mock_datagram_protocol,
-            family=mocker.sentinel.family,
             local_address=mocker.sentinel.local_address,
+            reuse_port=mocker.sentinel.reuse_port,
         )
 
         # Assert
         mock_udp_endpoint_cls.assert_called_once_with(
             protocol=mock_datagram_protocol,
             remote_address=remote_address,
-            family=mocker.sentinel.family,
             local_address=mocker.sentinel.local_address,
+            reuse_port=mocker.sentinel.reuse_port,
         )
         mock_udp_endpoint.get_remote_address.assert_called_once_with()
         assert client.socket is mock_udp_socket

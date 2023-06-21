@@ -271,7 +271,6 @@ class AsyncioBackend(AbstractAsyncBackend):
         port: int,
         backlog: int,
         *,
-        family: int = 0,
         reuse_port: bool = False,
     ) -> Sequence[AbstractAsyncListenerSocketAdapter]:
         from .stream.listener import AcceptedSocket
@@ -281,7 +280,6 @@ class AsyncioBackend(AbstractAsyncBackend):
             port,
             backlog,
             functools.partial(AcceptedSocket, use_asyncio_transport=self.__use_asyncio_transport),
-            family=family,
             reuse_port=reuse_port,
         )
 
@@ -294,7 +292,6 @@ class AsyncioBackend(AbstractAsyncBackend):
         ssl_handshake_timeout: float,
         ssl_shutdown_timeout: float,
         *,
-        family: int = 0,
         reuse_port: bool = False,
     ) -> Sequence[AbstractAsyncListenerSocketAdapter]:
         self._check_ssl_support()
@@ -312,7 +309,6 @@ class AsyncioBackend(AbstractAsyncBackend):
                 ssl_handshake_timeout=float(ssl_handshake_timeout),
                 ssl_shutdown_timeout=float(ssl_shutdown_timeout),
             ),
-            family=family,
             reuse_port=reuse_port,
         )
 
@@ -323,7 +319,6 @@ class AsyncioBackend(AbstractAsyncBackend):
         backlog: int,
         accepted_socket_factory: Callable[[_socket.socket, asyncio.AbstractEventLoop], AbstractAcceptedSocket],
         *,
-        family: int,
         reuse_port: bool,
     ) -> Sequence[AbstractAsyncListenerSocketAdapter]:
         assert port is not None, "Expected 'port' to be an int"
@@ -350,7 +345,10 @@ class AsyncioBackend(AbstractAsyncBackend):
         infos: set[tuple[int, int, int, str, tuple[Any, ...]]] = set(
             chain.from_iterable(
                 await asyncio.gather(
-                    *[_ensure_resolved(host, port, family, _socket.SOCK_STREAM, loop, flags=_socket.AI_PASSIVE) for host in hosts]
+                    *[
+                        _ensure_resolved(host, port, _socket.AF_UNSPEC, _socket.SOCK_STREAM, loop, flags=_socket.AI_PASSIVE)
+                        for host in hosts
+                    ]
                 )
             )
         )
@@ -369,7 +367,6 @@ class AsyncioBackend(AbstractAsyncBackend):
     async def create_udp_endpoint(
         self,
         *,
-        family: int = 0,
         local_address: tuple[str | None, int] | None = None,
         remote_address: tuple[str, int] | None = None,
         reuse_port: bool = False,
@@ -378,7 +375,6 @@ class AsyncioBackend(AbstractAsyncBackend):
 
         socket = await create_datagram_socket(
             loop=asyncio.get_running_loop(),
-            family=family,
             local_address=local_address,
             remote_address=remote_address,
             reuse_port=reuse_port,
