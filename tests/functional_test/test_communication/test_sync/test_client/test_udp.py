@@ -35,12 +35,11 @@ class TestUDPNetworkClient:
     @staticmethod
     def client(
         server: Socket,
-        socket_family: int,
         localhost_ip: str,
         datagram_protocol: DatagramProtocol[str, str],
     ) -> Iterator[UDPNetworkClient[str, str]]:
         address: tuple[str, int] = server.getsockname()[:2]
-        with UDPNetworkClient(address, datagram_protocol, family=socket_family, local_address=(localhost_ip, 0)) as client:
+        with UDPNetworkClient(address, datagram_protocol, local_address=(localhost_ip, 0)) as client:
             yield client
 
     def test____close____idempotent(self, client: UDPNetworkClient[str, str]) -> None:
@@ -157,7 +156,6 @@ class TestUDPNetworkEndpoint:
     @staticmethod
     def client(
         request: pytest.FixtureRequest,
-        socket_family: int,
         localhost_ip: str,
         datagram_protocol: DatagramProtocol[str, str],
     ) -> Iterator[UDPNetworkEndpoint[str, str]]:
@@ -173,7 +171,6 @@ class TestUDPNetworkEndpoint:
         with UDPNetworkEndpoint(
             datagram_protocol,
             remote_address=address,
-            family=socket_family,
             local_address=(localhost_ip, 0),
         ) as client:
             yield client
