@@ -37,7 +37,8 @@ class BaseTestStandaloneNetworkServer:
             t = threading.Thread(target=server.serve_forever, kwargs={"is_up_event": is_up_event}, daemon=True)
             t.start()
 
-            is_up_event.wait(timeout=1)
+            if not is_up_event.wait(timeout=1):
+                raise TimeoutError("Too long to start")
             assert server.is_serving()
 
             yield
