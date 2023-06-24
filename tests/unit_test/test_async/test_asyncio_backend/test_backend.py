@@ -193,6 +193,7 @@ class TestAsyncIOBackend:
             new_callable=mocker.AsyncMock,
             return_value=(mock_asyncio_stream_reader_factory(), mock_asyncio_stream_writer_factory()),
         )
+        mocker.patch("asyncio.get_running_loop", return_value=mocker.NonCallableMagicMock(spec=asyncio.AbstractEventLoop))
         expected_ssl_kwargs: dict[str, Any] = {}
         if ssl:
             expected_ssl_kwargs = {
@@ -225,6 +226,65 @@ class TestAsyncIOBackend:
             *remote_address,
             **expected_ssl_kwargs,
             local_addr=local_address,
+            limit=MAX_STREAM_BUFSIZE,
+        )
+
+    @pytest.mark.parametrize("use_asyncio_transport", [True], indirect=True)
+    @pytest.mark.parametrize("ssl", [False, True], ids=lambda p: f"ssl=={p}")
+    async def test____create_tcp_connection____use_asyncio_open_connection____happy_eyeballs_delay_default_value_for_asyncio_implementation(
+        self,
+        ssl: bool,
+        local_address: tuple[str, int] | None,
+        remote_address: tuple[str, int],
+        backend: AsyncioBackend,
+        mock_asyncio_stream_reader_factory: Callable[[], MagicMock],
+        mock_asyncio_stream_writer_factory: Callable[[], MagicMock],
+        mock_ssl_context: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
+
+        mocker.patch("easynetwork_asyncio.stream.socket.AsyncioTransportStreamSocketAdapter", return_value=mocker.sentinel.socket)
+        mock_open_connection: AsyncMock = mocker.patch(
+            "asyncio.open_connection",
+            new_callable=mocker.AsyncMock,
+            return_value=(mock_asyncio_stream_reader_factory(), mock_asyncio_stream_writer_factory()),
+        )
+        mocker.patch("asyncio.get_running_loop", return_value=mocker.NonCallableMagicMock(spec=asyncio.base_events.BaseEventLoop))
+        expected_ssl_kwargs: dict[str, Any] = {}
+        if ssl:
+            expected_ssl_kwargs = {
+                "ssl": mock_ssl_context,
+                "server_hostname": "server_hostname",
+                "ssl_handshake_timeout": 123456.789,
+                "ssl_shutdown_timeout": 9876543.21,
+            }
+
+        # Act
+        if ssl:
+            await backend.create_ssl_over_tcp_connection(
+                *remote_address,
+                ssl_context=mock_ssl_context,
+                server_hostname="server_hostname",
+                ssl_handshake_timeout=123456.789,
+                ssl_shutdown_timeout=9876543.21,
+                happy_eyeballs_delay=None,
+                local_address=local_address,
+            )
+        else:
+            await backend.create_tcp_connection(
+                *remote_address,
+                happy_eyeballs_delay=None,
+                local_address=local_address,
+            )
+
+        # Assert
+        mock_open_connection.assert_awaited_once_with(
+            *remote_address,
+            **expected_ssl_kwargs,
+            local_addr=local_address,
+            happy_eyeballs_delay=0.25,
             limit=MAX_STREAM_BUFSIZE,
         )
 
