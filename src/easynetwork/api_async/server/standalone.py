@@ -12,6 +12,7 @@ import contextlib as _contextlib
 from abc import ABCMeta, abstractmethod
 from typing import TYPE_CHECKING, Any, Generic, Mapping, Self, Sequence, TypeVar
 
+from ...tools.socket import SocketAddress, SocketProxy
 from .tcp import AsyncTCPNetworkServer
 from .udp import AsyncUDPNetworkServer
 
@@ -178,6 +179,20 @@ class StandaloneTCPNetworkServer(_BaseStandaloneNetworkServerImpl, Generic[_Requ
             with _contextlib.suppress(RuntimeError):
                 portal.run_sync(self._server.stop_listening)
 
+    def get_addresses(self) -> Sequence[SocketAddress]:
+        if (portal := self._portal) is not None:
+            with _contextlib.suppress(RuntimeError):
+                return portal.run_sync(self._server.get_addresses)
+        return ()
+
+    @property
+    def sockets(self) -> Sequence[SocketProxy]:
+        if (portal := self._portal) is not None:
+            with _contextlib.suppress(RuntimeError):
+                sockets = portal.run_sync(lambda: self._server.sockets)
+                return tuple(SocketProxy(sock, runner=portal.run_sync) for sock in sockets)
+        return ()
+
     if TYPE_CHECKING:
 
         @property
@@ -217,6 +232,20 @@ class StandaloneUDPNetworkServer(_BaseStandaloneNetworkServerImpl, Generic[_Requ
                 **kwargs,
             )
         )
+
+    def get_address(self) -> SocketAddress | None:
+        if (portal := self._portal) is not None:
+            with _contextlib.suppress(RuntimeError):
+                return portal.run_sync(self._server.get_address)
+        return None
+
+    @property
+    def socket(self) -> SocketProxy | None:
+        if (portal := self._portal) is not None:
+            with _contextlib.suppress(RuntimeError):
+                socket = portal.run_sync(lambda: self._server.socket)
+                return SocketProxy(socket, runner=portal.run_sync) if socket is not None else None
+        return None
 
     if TYPE_CHECKING:
 

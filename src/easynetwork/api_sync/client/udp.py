@@ -8,6 +8,8 @@ from __future__ import annotations
 
 __all__ = ["UDPNetworkClient", "UDPNetworkEndpoint"]
 
+import contextlib as _contextlib
+import errno as _errno
 import socket as _socket
 from operator import itemgetter as _itemgetter
 from typing import TYPE_CHECKING, Any, Generic, Iterator, Self, TypeVar, final, overload
@@ -19,11 +21,12 @@ from ...tools._utils import (
     check_socket_family as _check_socket_family,
     check_socket_no_ssl as _check_socket_no_ssl,
     ensure_datagram_socket_bound as _ensure_datagram_socket_bound,
+    error_from_errno as _error_from_errno,
     retry_socket_method as _retry_socket_method,
     set_reuseport as _set_reuseport,
 )
 from ...tools.lock import ForkSafeLock
-from ...tools.socket import MAX_DATAGRAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
+from ...tools.socket import CLOSED_SOCKET_ERRNOS, MAX_DATAGRAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
 from .abc import AbstractNetworkClient
 
 if TYPE_CHECKING:
@@ -43,6 +46,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         "__send_lock",
         "__receive_lock",
         "__socket_lock",
+        "__retry_interval",
         "__weakref__",
     )
 
@@ -55,6 +59,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         local_address: tuple[str | None, int] | None = ...,
         remote_address: tuple[str, int] | None = ...,
         reuse_port: bool = ...,
+        retry_interval: float = ...,
     ) -> None:
         ...
 
@@ -65,6 +70,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
         *,
         socket: _socket.socket,
+        retry_interval: float = ...,
     ) -> None:
         ...
 
@@ -72,6 +78,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         self,
         /,
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
+        retry_interval: float = 1,
         **kwargs: Any,
     ) -> None:
         self.__socket: _socket.socket | None = None  # If any exception occurs, the client will already be in a closed state
@@ -86,6 +93,10 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         assert isinstance(protocol, DatagramProtocol)
 
         self.__protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT] = protocol
+
+        self.__retry_interval = float(retry_interval)
+        if self.__retry_interval <= 0:
+            raise ValueError("retry_interval must be a strictly positive float or None")
 
         socket: _socket.socket
         peername: SocketAddress | None = None
@@ -164,7 +175,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         packet: _SentPacketT,
         address: tuple[str, int] | tuple[str, int, int, int] | None,
     ) -> None:
-        with self.__send_lock.get():
+        with self.__send_lock.get(), self.__convert_socket_error():
             if (socket := self.__socket) is None:
                 raise ClientClosedError("Closed client")
             if (remote_addr := self.__peer) is not None:
@@ -175,21 +186,26 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             elif address is None:
                 raise ValueError("Invalid address: must not be None")
             data: bytes = self.__protocol.make_datagram(packet)
+            retry_interval: float = self.__retry_interval
             try:
                 if address is None:
-                    _retry_socket_method(socket, None, "write", socket.send, data)
+                    _retry_socket_method(socket, None, retry_interval, "write", socket.send, data)
                 else:
-                    _retry_socket_method(socket, None, "write", socket.sendto, data, address)
+                    _retry_socket_method(socket, None, retry_interval, "write", socket.sendto, data, address)
                 _check_real_socket_state(socket)
+            except TimeoutError as exc:  # pragma: no cover
+                raise RuntimeError("socket.sendto() timed out with timeout=None ?") from exc
             finally:
                 del data
 
     def recv_packet_from(self, timeout: float | None = None) -> tuple[_ReceivedPacketT, SocketAddress]:
-        with self.__receive_lock.get():
+        with self.__receive_lock.get(), self.__convert_socket_error():
             if (socket := self.__socket) is None:
                 raise ClientClosedError("Closed client")
+            retry_interval: float = self.__retry_interval
+            bufsize: int = MAX_DATAGRAM_BUFSIZE
             try:
-                data, sender = _retry_socket_method(socket, timeout, "read", socket.recvfrom, MAX_DATAGRAM_BUFSIZE)
+                data, sender = _retry_socket_method(socket, timeout, retry_interval, "read", socket.recvfrom, bufsize)
             except TimeoutError as exc:
                 if timeout is None:  # pragma: no cover
                     raise RuntimeError("socket.recvfrom() timed out with timeout=None ?") from exc
@@ -218,6 +234,15 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             yield packet_tuple
             if timeout is not None:
                 timeout -= _end - _start
+
+    @_contextlib.contextmanager
+    def __convert_socket_error(self) -> Iterator[None]:
+        try:
+            yield
+        except OSError as exc:
+            if exc.errno in CLOSED_SOCKET_ERRNOS:
+                raise _error_from_errno(_errno.ECONNABORTED) from exc
+            raise
 
     def get_local_address(self) -> SocketAddress:
         return self.__addr
@@ -249,6 +274,7 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         *,
         local_address: tuple[str, int] | None = ...,
         reuse_port: bool = ...,
+        retry_interval: float = ...,
     ) -> None:
         ...
 
@@ -258,6 +284,8 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         socket: _socket.socket,
         /,
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
+        *,
+        retry_interval: float = ...,
     ) -> None:
         ...
 

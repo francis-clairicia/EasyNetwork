@@ -243,7 +243,13 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 # as we will never reuse this socket
                 pass
             finally:
-                socket.close()
+                try:
+                    socket.shutdown(_socket.SHUT_RDWR)
+                except OSError:
+                    # On macOS, an OSError is raised if there is no connection
+                    pass
+                finally:
+                    socket.close()
 
     def send_packet(self, packet: _SentPacketT) -> None:
         with self.__send_lock.get(), self.__convert_socket_error():
@@ -258,11 +264,13 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                         with self.__convert_ssl_eof_error():
                             nb_bytes_sent = _retry_ssl_socket_method(socket, None, socket.send, buffer.toreadonly())
                     else:
-                        nb_bytes_sent = _retry_socket_method(socket, None, "write", socket.send, buffer.toreadonly())
+                        nb_bytes_sent = _retry_socket_method(socket, None, None, "write", socket.send, buffer.toreadonly())
                     assert nb_bytes_sent >= 0, "socket.send() returned a negative integer"
                     _check_real_socket_state(socket)
                     remaining -= nb_bytes_sent
                     buffer = buffer[nb_bytes_sent:]
+            except TimeoutError as exc:  # pragma: no cover
+                raise RuntimeError("socket.send() timed out with timeout=None ?") from exc
             finally:
                 del buffer, data
 
@@ -286,7 +294,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                         with self.__convert_ssl_eof_error():
                             chunk = _retry_ssl_socket_method(socket, timeout, socket.recv, bufsize)
                     else:
-                        chunk = _retry_socket_method(socket, timeout, "read", socket.recv, bufsize)
+                        chunk = _retry_socket_method(socket, timeout, None, "read", socket.recv, bufsize)
                     _end = monotonic()
                 except TimeoutError as exc:
                     if timeout is None:  # pragma: no cover

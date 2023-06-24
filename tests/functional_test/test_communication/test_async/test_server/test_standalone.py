@@ -37,7 +37,8 @@ class BaseTestStandaloneNetworkServer:
             t = threading.Thread(target=server.serve_forever, kwargs={"is_up_event": is_up_event}, daemon=True)
             t.start()
 
-            is_up_event.wait(timeout=1)
+            if not is_up_event.wait(timeout=1):
+                raise TimeoutError("Too long to start")
             assert server.is_serving()
 
             yield
@@ -102,14 +103,20 @@ class TestStandaloneTCPNetworkServer(BaseTestStandaloneNetworkServer):
 
     def test____stop_listening____default_to_noop(self, server: StandaloneTCPNetworkServer[str, str]) -> None:
         with server:
+            assert not server.sockets
+            assert not server.get_addresses()
             server.stop_listening()
 
     @pytest.mark.usefixtures("start_server")
     def test____stop_listening____stop_accepting_new_connection(self, server: StandaloneTCPNetworkServer[str, str]) -> None:
         assert server.is_serving()
+        assert len(server.sockets) > 0
+        assert len(server.get_addresses()) > 0
 
         server.stop_listening()
         assert not server.is_serving()
+        assert len(server.sockets) > 0  # Sockets are closed, but always available until server_close() call
+        assert len(server.get_addresses()) == 0
 
 
 class TestStandaloneUDPNetworkServer(BaseTestStandaloneNetworkServer):
@@ -132,3 +139,13 @@ class TestStandaloneUDPNetworkServer(BaseTestStandaloneNetworkServer):
             backend="asyncio",
             backend_kwargs={"runner_factory": runner_factory},
         )
+
+    def test____socket_property____server_is_not_running(self, server: StandaloneUDPNetworkServer[str, str]) -> None:
+        with server:
+            assert server.socket is None
+            assert server.get_address() is None
+
+    @pytest.mark.usefixtures("start_server")
+    def test____socket_property____server_is_running(self, server: StandaloneUDPNetworkServer[str, str]) -> None:
+        assert server.socket is not None
+        assert server.get_address() is not None
