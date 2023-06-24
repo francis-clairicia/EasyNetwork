@@ -10,6 +10,7 @@ from __future__ import annotations
 __all__ = ["AsyncioBackend"]
 
 import asyncio
+import asyncio.base_events
 import contextvars
 import functools
 import socket as _socket
@@ -155,6 +156,8 @@ class AsyncioBackend(AbstractAsyncBackend):
             socket = await create_connection(host, port, loop, local_address=local_address)
             return RawStreamSocketAdapter(socket, loop)
 
+        happy_eyeballs_delay = self._default_happy_eyeballs_delay(happy_eyeballs_delay)
+
         from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
 
         from .stream.socket import AsyncioTransportStreamSocketAdapter
@@ -191,6 +194,8 @@ class AsyncioBackend(AbstractAsyncBackend):
         self._check_ssl_support()
         self.__verify_ssl_context(ssl_context)
 
+        happy_eyeballs_delay = self._default_happy_eyeballs_delay(happy_eyeballs_delay)
+
         from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
 
         from .stream.socket import AsyncioTransportStreamSocketAdapter
@@ -219,6 +224,14 @@ class AsyncioBackend(AbstractAsyncBackend):
                 limit=MAX_STREAM_BUFSIZE,
             )
         return AsyncioTransportStreamSocketAdapter(reader, writer)
+
+    @staticmethod
+    def _default_happy_eyeballs_delay(happy_eyeballs_delay: float | None) -> float | None:
+        if happy_eyeballs_delay is None:
+            running_loop = asyncio.get_running_loop()
+            if isinstance(running_loop, asyncio.base_events.BaseEventLoop):  # Base class of standard implementation
+                happy_eyeballs_delay = 0.25  # Recommended value by the RFC 6555
+        return happy_eyeballs_delay
 
     async def wrap_tcp_client_socket(self, socket: _socket.socket) -> AbstractAsyncStreamSocketAdapter:
         assert socket is not None, "Expected 'socket' to be a socket.socket instance"
