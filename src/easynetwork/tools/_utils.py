@@ -140,7 +140,7 @@ def retry_socket_method(
             break
         is_retry_interval: bool
         wait_time: float | None
-        if retry_interval is None or (timeout is not None and timeout < retry_interval):
+        if retry_interval is None or (timeout is not None and timeout <= retry_interval):
             is_retry_interval = False
             wait_time = timeout
         else:
