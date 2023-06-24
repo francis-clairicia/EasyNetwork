@@ -186,6 +186,7 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
             backend_kwargs=backend_kwargs,
         ) as server:
             assert server.socket is None
+            assert server.get_address() is None
             yield server
 
     @pytest_asyncio.fixture
@@ -195,7 +196,9 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
             await run_server.wait()
         assert server.is_serving()
         assert server.socket is not None
-        return server.socket.getsockname()[:2]
+        server_address = server.get_address()
+        assert server_address is not None
+        return server_address.for_connection()
 
     @pytest.fixture
     @staticmethod

@@ -56,14 +56,20 @@ class SingleTaskRunner(Generic[_T_co]):
         if self.__task is not None:
             return await self.__task.join()
 
-        async with self.__backend.create_task_group() as task_group:
-            if self.__coro_func is None:
-                self.__task = task_group.start_soon(self.__backend.sleep_forever)
-                self.__task.cancel()
-            else:
-                coro_func, args, kwargs = self.__coro_func
-                self.__coro_func = None
-                self.__task = task_group.start_soon(coro_func, *args, **kwargs)
-                del coro_func, args, kwargs
+        try:
+            async with self.__backend.create_task_group() as task_group:
+                if self.__coro_func is None:
+                    self.__task = task_group.start_soon(self.__backend.sleep_forever)
+                    self.__task.cancel()
+                else:
+                    coro_func, args, kwargs = self.__coro_func
+                    self.__coro_func = None
+                    self.__task = task_group.start_soon(coro_func, *args, **kwargs)
+                    del coro_func, args, kwargs
+        except BaseExceptionGroup as excgrp:
+            if len(excgrp.exceptions) != 1:  # pragma: no cover  # Hard to test
+                raise
+            # This is most likely the unhandled exception raised by coro_func
+            raise excgrp.exceptions[0] from None
 
         return await self.__task.join()

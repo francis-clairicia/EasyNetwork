@@ -116,6 +116,7 @@ def wait_socket_available(socket: _socket.socket, timeout: float | None, event: 
 def retry_socket_method(
     socket: _socket.socket,
     timeout: float | None,
+    retry_interval: float | None,
     event: Literal["read", "write"],
     socket_method: Callable[_P, _R],
     /,
@@ -124,7 +125,12 @@ def retry_socket_method(
 ) -> _R:
     assert not is_ssl_socket(socket), "ssl.SSLSocket instances are forbidden"
     assert socket.gettimeout() == 0, "The socket must be non-blocking"
+    assert retry_interval is None or retry_interval > 0, "retry_interval must be a strictly positive float or None"
     monotonic = time.monotonic  # pull function to local namespace
+    if timeout == float("+inf"):
+        timeout = None
+    if retry_interval == float("+inf"):
+        retry_interval = None
     while True:
         try:
             return socket_method(*args, **kwargs)
@@ -132,9 +138,18 @@ def retry_socket_method(
             pass
         if timeout is not None and timeout <= 0:
             break
+        is_retry_interval: bool
+        wait_time: float | None
+        if retry_interval is None or (timeout is not None and timeout < retry_interval):
+            is_retry_interval = False
+            wait_time = timeout
+        else:
+            is_retry_interval = True
+            wait_time = retry_interval
         _start = monotonic()
-        if not wait_socket_available(socket, timeout, event):
-            break
+        if not wait_socket_available(socket, wait_time, event):
+            if not is_retry_interval:
+                break
         _end = monotonic()
         if timeout is not None:
             timeout -= _end - _start

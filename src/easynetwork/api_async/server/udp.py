@@ -179,9 +179,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             ##################
 
             # Enable socket
-            address: SocketAddress = new_socket_address(self.__socket.get_local_address(), self.__socket.socket().family)
-            self.__logger.info("Start serving at %s", address)
-            del address
+            self.__logger.info("Start serving at %s", self.get_address())
             #################
 
             # Server is up
@@ -322,6 +320,11 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             self.__logger.error("-" * 40)
             self.__logger.exception("Exception occurred during processing of request from %s", client_address)
             self.__logger.error("-" * 40)
+
+    def get_address(self) -> SocketAddress | None:
+        if (socket := self.__socket) is None or socket.is_closing():
+            return None
+        return new_socket_address(socket.get_local_address(), socket.socket().family)
 
     def get_backend(self) -> AbstractAsyncBackend:
         return self.__backend

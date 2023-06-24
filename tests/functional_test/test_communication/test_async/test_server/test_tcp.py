@@ -297,6 +297,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
             backend_kwargs=backend_kwargs,
         ) as server:
             assert not server.sockets
+            assert not server.get_addresses()
             yield server
 
     @pytest_asyncio.fixture
@@ -305,7 +306,9 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         async with asyncio.timeout(1):
             await run_server.wait()
         assert server.is_serving()
-        return server.sockets[0].getsockname()[:2]
+        server_addresses = server.get_addresses()
+        assert len(server_addresses) == 1
+        return server_addresses[0].for_connection()
 
     @pytest.fixture
     @staticmethod

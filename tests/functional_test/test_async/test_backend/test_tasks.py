@@ -71,3 +71,20 @@ class TestSingleTaskRunner:
             await runner.run()
 
         assert task.cancelled()
+
+    async def test____run____unhandled_exceptions(
+        self,
+        backend: AbstractAsyncBackend,
+        mocker: MockerFixture,
+    ) -> None:
+        my_exc = OSError()
+        coro_func = mocker.AsyncMock(spec=lambda *args, **kwargs: None, side_effect=[my_exc])
+        runner: SingleTaskRunner[Any] = SingleTaskRunner(backend, coro_func)
+
+        with pytest.raises(OSError) as exc_info_run_1:
+            _ = await runner.run()
+        with pytest.raises(OSError) as exc_info_run_2:
+            _ = await runner.run()
+
+        assert exc_info_run_1.value is my_exc
+        assert exc_info_run_2.value is my_exc

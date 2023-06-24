@@ -241,12 +241,9 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             ##################
 
             # Enable listener
-            addresses: list[SocketAddress] = []
             for listener in self.__listeners:
                 self.__listener_tasks.append(task_group.start_soon(self.__listener_task, listener, task_group))
-                addresses.append(new_socket_address(listener.get_local_address(), listener.socket().family))
-            self.__logger.info("Start serving at %s", ", ".join(map(str, addresses)))
-            del addresses
+            self.__logger.info("Start serving at %s", ", ".join(map(str, self.get_addresses())))
             #################
 
             # Server is up
@@ -423,6 +420,15 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             else:
                 self.__logger.exception("Exception occurred during processing of request from %s", client_address)
             self.__logger.error("-" * 40)
+
+    def get_addresses(self) -> Sequence[SocketAddress]:
+        if (listeners := self.__listeners) is None:
+            return ()
+        return tuple(
+            new_socket_address(listener.get_local_address(), listener.socket().family)
+            for listener in listeners
+            if not listener.is_closing()
+        )
 
     def get_backend(self) -> AbstractAsyncBackend:
         return self.__backend
