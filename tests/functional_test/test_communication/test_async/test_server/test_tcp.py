@@ -12,7 +12,7 @@ from socket import IPPROTO_TCP, TCP_NODELAY
 from typing import Any, AsyncGenerator, AsyncIterator, Awaitable, Callable, Sequence
 from weakref import WeakValueDictionary
 
-from easynetwork.api_async.backend.abc import AbstractAsyncBackend, AbstractAsyncListenerSocketAdapter
+from easynetwork.api_async.backend.abc import AbstractAsyncBackend
 from easynetwork.api_async.server.handler import AsyncBaseRequestHandler, AsyncClientInterface, AsyncStreamRequestHandler
 from easynetwork.api_async.server.tcp import AsyncTCPNetworkServer
 from easynetwork.exceptions import BaseProtocolParseError, ClientClosedError, StreamProtocolParseError
@@ -20,6 +20,7 @@ from easynetwork.protocol import StreamProtocol
 from easynetwork.tools.socket import SocketAddress
 from easynetwork_asyncio._utils import create_connection
 from easynetwork_asyncio.backend import AsyncioBackend
+from easynetwork_asyncio.stream.listener import ListenerSocketAdapter
 
 import pytest
 import pytest_asyncio
@@ -36,7 +37,7 @@ class NoListenerErrorBackend(AsyncioBackend):
         *,
         family: int = 0,
         reuse_port: bool = False,
-    ) -> Sequence[AbstractAsyncListenerSocketAdapter]:
+    ) -> Sequence[ListenerSocketAdapter]:
         return []
 
     async def create_ssl_over_tcp_listeners(
@@ -50,7 +51,7 @@ class NoListenerErrorBackend(AsyncioBackend):
         *,
         family: int = 0,
         reuse_port: bool = False,
-    ) -> Sequence[AbstractAsyncListenerSocketAdapter]:
+    ) -> Sequence[ListenerSocketAdapter]:
         return []
 
 

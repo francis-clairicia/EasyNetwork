@@ -13,7 +13,10 @@ import asyncio
 import asyncio.base_events
 import contextvars
 import functools
+import itertools
+import os
 import socket as _socket
+import sys
 from typing import TYPE_CHECKING, Any, AsyncContextManager, Callable, Coroutine, NoReturn, ParamSpec, Sequence, TypeVar
 
 try:
@@ -26,23 +29,24 @@ else:
 
 from easynetwork.api_async.backend.abc import AbstractAsyncBackend
 from easynetwork.api_async.backend.sniffio import current_async_library_cvar as _sniffio_current_async_library_cvar
+from easynetwork.tools._utils import open_listener_sockets_from_getaddrinfo_result
+from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
+
+from ._utils import _ensure_resolved, create_connection, create_datagram_socket
+from .datagram.endpoint import create_datagram_endpoint
+from .datagram.socket import AsyncioTransportDatagramSocketAdapter, RawDatagramSocketAdapter
+from .stream.listener import AcceptedSocket, AcceptedSSLSocket, ListenerSocketAdapter
+from .stream.socket import AsyncioTransportStreamSocketAdapter, RawStreamSocketAdapter
+from .tasks import TaskGroup, timeout, timeout_at
+from .threads import ThreadsPortal
 
 if TYPE_CHECKING:
     import concurrent.futures
     from ssl import SSLContext as _SSLContext
 
-    from easynetwork.api_async.backend.abc import (
-        AbstractAcceptedSocket,
-        AbstractAsyncDatagramSocketAdapter,
-        AbstractAsyncListenerSocketAdapter,
-        AbstractAsyncStreamSocketAdapter,
-        AbstractTaskGroup,
-        AbstractThreadsPortal,
-        AbstractTimeoutHandle,
-        ICondition,
-        IEvent,
-        ILock,
-    )
+    from easynetwork.api_async.backend.abc import AbstractAcceptedSocket, ILock
+
+    from .tasks import TimeoutHandle
 
 _P = ParamSpec("_P")
 _T = TypeVar("_T")
@@ -97,14 +101,10 @@ class AsyncioBackend(AbstractAsyncBackend):
         finally:
             del task
 
-    def timeout(self, delay: float) -> AsyncContextManager[AbstractTimeoutHandle]:
-        from .tasks import timeout
-
+    def timeout(self, delay: float) -> AsyncContextManager[TimeoutHandle]:
         return timeout(delay)
 
-    def timeout_at(self, deadline: float) -> AsyncContextManager[AbstractTimeoutHandle]:
-        from .tasks import timeout_at
-
+    def timeout_at(self, deadline: float) -> AsyncContextManager[TimeoutHandle]:
         return timeout_at(deadline)
 
     @classmethod
@@ -136,9 +136,7 @@ class AsyncioBackend(AbstractAsyncBackend):
         await loop.create_future()
         raise AssertionError("await an unused future cannot end in any other way than by cancellation")
 
-    def create_task_group(self) -> AbstractTaskGroup:
-        from .tasks import TaskGroup
-
+    def create_task_group(self) -> TaskGroup:
         return TaskGroup()
 
     async def create_tcp_connection(
@@ -148,7 +146,7 @@ class AsyncioBackend(AbstractAsyncBackend):
         *,
         local_address: tuple[str, int] | None = None,
         happy_eyeballs_delay: float | None = None,
-    ) -> AbstractAsyncStreamSocketAdapter:
+    ) -> AsyncioTransportStreamSocketAdapter | RawStreamSocketAdapter:
         assert host is not None, "Expected 'host' to be a str"
         assert port is not None, "Expected 'port' to be an int"
 
@@ -156,19 +154,11 @@ class AsyncioBackend(AbstractAsyncBackend):
             self._check_asyncio_transport("'happy_eyeballs_delay' option")
 
         if not self.__use_asyncio_transport:
-            from ._utils import create_connection
-            from .stream.socket import RawStreamSocketAdapter
-
             loop = asyncio.get_running_loop()
-
             socket = await create_connection(host, port, loop, local_address=local_address)
             return RawStreamSocketAdapter(socket, loop)
 
         happy_eyeballs_delay = self._default_happy_eyeballs_delay(happy_eyeballs_delay)
-
-        from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
-
-        from .stream.socket import AsyncioTransportStreamSocketAdapter
 
         if happy_eyeballs_delay is None:
             reader, writer = await asyncio.open_connection(
@@ -198,15 +188,11 @@ class AsyncioBackend(AbstractAsyncBackend):
         ssl_shutdown_timeout: float,
         local_address: tuple[str, int] | None = None,
         happy_eyeballs_delay: float | None = None,
-    ) -> AbstractAsyncStreamSocketAdapter:
+    ) -> AsyncioTransportStreamSocketAdapter:
         self._check_ssl_support()
         self.__verify_ssl_context(ssl_context)
 
         happy_eyeballs_delay = self._default_happy_eyeballs_delay(happy_eyeballs_delay)
-
-        from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
-
-        from .stream.socket import AsyncioTransportStreamSocketAdapter
 
         if happy_eyeballs_delay is None:
             reader, writer = await asyncio.open_connection(
@@ -241,18 +227,15 @@ class AsyncioBackend(AbstractAsyncBackend):
                 happy_eyeballs_delay = 0.25  # Recommended value by the RFC 6555
         return happy_eyeballs_delay
 
-    async def wrap_tcp_client_socket(self, socket: _socket.socket) -> AbstractAsyncStreamSocketAdapter:
+    async def wrap_tcp_client_socket(
+        self,
+        socket: _socket.socket,
+    ) -> AsyncioTransportStreamSocketAdapter | RawStreamSocketAdapter:
         assert socket is not None, "Expected 'socket' to be a socket.socket instance"
         socket.setblocking(False)
 
         if not self.__use_asyncio_transport:
-            from .stream.socket import RawStreamSocketAdapter
-
             return RawStreamSocketAdapter(socket, asyncio.get_running_loop())
-
-        from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
-
-        from .stream.socket import AsyncioTransportStreamSocketAdapter
 
         reader, writer = await asyncio.open_connection(sock=socket, limit=MAX_STREAM_BUFSIZE)
         return AsyncioTransportStreamSocketAdapter(reader, writer)
@@ -265,16 +248,12 @@ class AsyncioBackend(AbstractAsyncBackend):
         server_hostname: str,
         ssl_handshake_timeout: float,
         ssl_shutdown_timeout: float,
-    ) -> AbstractAsyncStreamSocketAdapter:
+    ) -> AsyncioTransportStreamSocketAdapter:
         self._check_ssl_support()
         self.__verify_ssl_context(ssl_context)
 
         assert socket is not None, "Expected 'socket' to be a socket.socket instance"
         socket.setblocking(False)
-
-        from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
-
-        from .stream.socket import AsyncioTransportStreamSocketAdapter
 
         reader, writer = await asyncio.open_connection(
             sock=socket,
@@ -293,9 +272,7 @@ class AsyncioBackend(AbstractAsyncBackend):
         backlog: int,
         *,
         reuse_port: bool = False,
-    ) -> Sequence[AbstractAsyncListenerSocketAdapter]:
-        from .stream.listener import AcceptedSocket
-
+    ) -> Sequence[ListenerSocketAdapter]:
         return await self._create_tcp_listeners(
             host,
             port,
@@ -314,11 +291,9 @@ class AsyncioBackend(AbstractAsyncBackend):
         ssl_shutdown_timeout: float,
         *,
         reuse_port: bool = False,
-    ) -> Sequence[AbstractAsyncListenerSocketAdapter]:
+    ) -> Sequence[ListenerSocketAdapter]:
         self._check_ssl_support()
         self.__verify_ssl_context(ssl_context)
-
-        from .stream.listener import AcceptedSSLSocket
 
         return await self._create_tcp_listeners(
             host,
@@ -341,16 +316,8 @@ class AsyncioBackend(AbstractAsyncBackend):
         accepted_socket_factory: Callable[[_socket.socket, asyncio.AbstractEventLoop], AbstractAcceptedSocket],
         *,
         reuse_port: bool,
-    ) -> Sequence[AbstractAsyncListenerSocketAdapter]:
+    ) -> Sequence[ListenerSocketAdapter]:
         assert port is not None, "Expected 'port' to be an int"
-
-        import os
-        import sys
-        from itertools import chain
-
-        from easynetwork.tools._utils import open_listener_sockets_from_getaddrinfo_result
-
-        from ._utils import _ensure_resolved
 
         loop = asyncio.get_running_loop()
 
@@ -364,7 +331,7 @@ class AsyncioBackend(AbstractAsyncBackend):
             hosts = host
 
         infos: set[tuple[int, int, int, str, tuple[Any, ...]]] = set(
-            chain.from_iterable(
+            itertools.chain.from_iterable(
                 await asyncio.gather(
                     *[
                         _ensure_resolved(host, port, _socket.AF_UNSPEC, _socket.SOCK_STREAM, loop, flags=_socket.AI_PASSIVE)
@@ -381,8 +348,6 @@ class AsyncioBackend(AbstractAsyncBackend):
             reuse_port=reuse_port,
         )
 
-        from .stream.listener import ListenerSocketAdapter
-
         return [ListenerSocketAdapter(sock, loop, accepted_socket_factory) for sock in sockets]
 
     async def create_udp_endpoint(
@@ -391,9 +356,7 @@ class AsyncioBackend(AbstractAsyncBackend):
         local_address: tuple[str | None, int] | None = None,
         remote_address: tuple[str, int] | None = None,
         reuse_port: bool = False,
-    ) -> AbstractAsyncDatagramSocketAdapter:
-        from ._utils import create_datagram_socket
-
+    ) -> AsyncioTransportDatagramSocketAdapter | RawDatagramSocketAdapter:
         socket = await create_datagram_socket(
             loop=asyncio.get_running_loop(),
             local_address=local_address,
@@ -403,28 +366,23 @@ class AsyncioBackend(AbstractAsyncBackend):
 
         return await self.wrap_udp_socket(socket)
 
-    async def wrap_udp_socket(self, socket: _socket.socket) -> AbstractAsyncDatagramSocketAdapter:
+    async def wrap_udp_socket(self, socket: _socket.socket) -> AsyncioTransportDatagramSocketAdapter | RawDatagramSocketAdapter:
         assert socket is not None, "Expected 'socket' to be a socket.socket instance"
         socket.setblocking(False)
 
         if not self.__use_asyncio_transport:
-            from .datagram.socket import RawDatagramSocketAdapter
-
             return RawDatagramSocketAdapter(socket, asyncio.get_running_loop())
-
-        from .datagram.endpoint import create_datagram_endpoint
-        from .datagram.socket import AsyncioTransportDatagramSocketAdapter
 
         endpoint = await create_datagram_endpoint(socket=socket)
         return AsyncioTransportDatagramSocketAdapter(endpoint)
 
-    def create_lock(self) -> ILock:
+    def create_lock(self) -> asyncio.Lock:
         return asyncio.Lock()
 
-    def create_event(self) -> IEvent:
+    def create_event(self) -> asyncio.Event:
         return asyncio.Event()
 
-    def create_condition_var(self, lock: ILock | None = None) -> ICondition:
+    def create_condition_var(self, lock: ILock | None = None) -> asyncio.Condition:
         if lock is not None:
             assert isinstance(lock, asyncio.Lock)
 
@@ -445,9 +403,7 @@ class AsyncioBackend(AbstractAsyncBackend):
         finally:
             del future
 
-    def create_threads_portal(self) -> AbstractThreadsPortal:
-        from .threads import ThreadsPortal
-
+    def create_threads_portal(self) -> ThreadsPortal:
         return ThreadsPortal()
 
     async def wait_future(self, future: concurrent.futures.Future[_T_co]) -> _T_co:

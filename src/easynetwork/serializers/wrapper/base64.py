@@ -12,6 +12,7 @@ __all__ = [
 
 import base64
 import binascii
+import os
 from hashlib import sha256 as hashlib_sha256
 from hmac import compare_digest, digest as hmac_digest
 from typing import Callable, TypeVar, assert_never, final
@@ -56,9 +57,7 @@ class Base64EncodedSerializer(AutoSeparatedPacketSerializer[_ST_contra, _DT_co])
 
     @classmethod
     def generate_key(cls) -> bytes:
-        from os import urandom
-
-        return base64.urlsafe_b64encode(urandom(32))
+        return base64.urlsafe_b64encode(os.urandom(32))
 
     @final
     def serialize(self, packet: _ST_contra) -> bytes:

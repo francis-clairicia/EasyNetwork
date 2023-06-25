@@ -832,7 +832,7 @@ class TestRawDatagramSocketAdapter(BaseTestSocket):
     @pytest.fixture(autouse=True)
     @staticmethod
     def mock_async_socket_cls(mock_async_socket: MagicMock, mocker: MockerFixture) -> MagicMock:
-        return mocker.patch("easynetwork_asyncio.socket.AsyncSocket", return_value=mock_async_socket)
+        return mocker.patch(f"{RawDatagramSocketAdapter.__module__}.AsyncSocket", return_value=mock_async_socket)
 
     @pytest.fixture
     @classmethod

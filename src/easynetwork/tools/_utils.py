@@ -39,6 +39,8 @@ else:
     ssl = _ssl
     del _ssl
 
+from .socket import AddressFamily
+
 if TYPE_CHECKING:
     from ssl import SSLError as _SSLError, SSLSocket as _SSLSocket
 
@@ -65,8 +67,6 @@ def error_from_errno(errno: int) -> OSError:
 
 
 def check_socket_family(family: int) -> None:
-    from .socket import AddressFamily
-
     supported_families: dict[str, int] = dict(AddressFamily.__members__)
 
     if family not in list(supported_families.values()):

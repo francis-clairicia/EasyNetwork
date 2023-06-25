@@ -11,6 +11,7 @@ __all__ = ["TCPNetworkClient"]
 import contextlib as _contextlib
 import errno as _errno
 import socket as _socket
+import threading
 from time import monotonic as _time_monotonic
 from typing import TYPE_CHECKING, Any, Callable, Generic, Iterator, Literal, NoReturn, TypeVar, cast, final, overload
 
@@ -39,7 +40,15 @@ from ...tools._utils import (
     set_tcp_nodelay as _set_tcp_nodelay,
 )
 from ...tools.lock import ForkSafeLock
-from ...tools.socket import CLOSED_SOCKET_ERRNOS, MAX_STREAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
+from ...tools.socket import (
+    CLOSED_SOCKET_ERRNOS,
+    MAX_STREAM_BUFSIZE,
+    SSL_HANDSHAKE_TIMEOUT,
+    SSL_SHUTDOWN_TIMEOUT,
+    SocketAddress,
+    SocketProxy,
+    new_socket_address,
+)
 from ...tools.stream import StreamDataConsumer
 from .abc import AbstractNetworkClient
 
@@ -114,11 +123,9 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         self.__socket: _socket.socket | None = None  # If any exception occurs, the client will already be in a closed state
         super().__init__()
 
-        from threading import Lock
-
-        self.__send_lock = ForkSafeLock(Lock)
-        self.__receive_lock = ForkSafeLock(Lock)
-        self.__socket_lock = ForkSafeLock(Lock)
+        self.__send_lock = ForkSafeLock(threading.Lock)
+        self.__receive_lock = ForkSafeLock(threading.Lock)
+        self.__socket_lock = ForkSafeLock(threading.Lock)
 
         if server_hostname is not None and not ssl:
             raise ValueError("server_hostname is only meaningful with ssl")
@@ -193,15 +200,11 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                     server_hostname=server_hostname,
                 )
                 if ssl_handshake_timeout is None:
-                    from ...tools.socket import SSL_HANDSHAKE_TIMEOUT
-
                     ssl_handshake_timeout = SSL_HANDSHAKE_TIMEOUT
 
                 _retry_ssl_socket_method(socket, ssl_handshake_timeout, socket.do_handshake, block=False)
 
                 if ssl_shutdown_timeout is None:
-                    from ...tools.socket import SSL_SHUTDOWN_TIMEOUT
-
                     ssl_shutdown_timeout = SSL_SHUTDOWN_TIMEOUT
 
             _set_tcp_nodelay(socket)

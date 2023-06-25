@@ -11,6 +11,7 @@ __all__ = [
     "StreamDataProducer",
 ]
 
+import threading
 from collections import deque
 from typing import Any, Generator, Generic, Iterator, TypeVar, final
 
@@ -37,9 +38,7 @@ class StreamDataProducer(Generic[_SentPacketT]):
         self.__g: Generator[bytes, None, None] | None = None
         self.__q: deque[_SentPacketT] = deque()
 
-        from threading import Lock
-
-        self.__lock = ForkSafeLock(Lock)
+        self.__lock = ForkSafeLock(threading.Lock)
 
     def __del__(self) -> None:  # pragma: no cover
         try:
@@ -110,9 +109,7 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
         self.__c: Generator[None, bytes, tuple[_ReceivedPacketT, bytes]] | None = None
         self.__b: bytes = b""
 
-        from threading import Lock
-
-        self.__lock = ForkSafeLock(Lock)
+        self.__lock = ForkSafeLock(threading.Lock)
 
     def __del__(self) -> None:  # pragma: no cover
         try:

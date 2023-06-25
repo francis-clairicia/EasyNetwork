@@ -13,10 +13,8 @@ __all__ = [
 ]
 
 import abc
-import bz2
-import zlib
 from collections import deque
-from typing import Generator, Protocol, TypeVar, final
+from typing import Final, Generator, Protocol, TypeVar, final
 
 from ...exceptions import DeserializeError, IncrementalDeserializeError
 from ..abc import AbstractIncrementalPacketSerializer, AbstractPacketSerializer
@@ -147,17 +145,27 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_ST_contr
 class BZ2CompressorSerializer(AbstractCompressorSerializer[_ST_contra, _DT_co]):
     __slots__ = ("__compresslevel",)
 
-    def __init__(self, serializer: AbstractPacketSerializer[_ST_contra, _DT_co], *, compress_level: int = 9) -> None:
+    BEST_COMPRESSION_LEVEL: Final[int] = 9
+
+    def __init__(self, serializer: AbstractPacketSerializer[_ST_contra, _DT_co], *, compress_level: int | None = None) -> None:
+        import bz2  # Import it now
+
+        del bz2
+
         super().__init__(serializer=serializer, expected_decompress_error=OSError)
-        self.__compresslevel: int = compress_level
+        self.__compresslevel: int = compress_level if compress_level is not None else self.BEST_COMPRESSION_LEVEL
 
     @final
-    def new_compressor_stream(self) -> bz2.BZ2Compressor:
-        return bz2.BZ2Compressor(self.__compresslevel)
+    def new_compressor_stream(self) -> CompressorInterface:
+        from bz2 import BZ2Compressor
+
+        return BZ2Compressor(self.__compresslevel)
 
     @final
-    def new_decompressor_stream(self) -> bz2.BZ2Decompressor:
-        return bz2.BZ2Decompressor()
+    def new_decompressor_stream(self) -> DecompressorInterface:
+        from bz2 import BZ2Decompressor
+
+        return BZ2Decompressor()
 
 
 class ZlibCompressorSerializer(AbstractCompressorSerializer[_ST_contra, _DT_co]):
@@ -167,15 +175,21 @@ class ZlibCompressorSerializer(AbstractCompressorSerializer[_ST_contra, _DT_co])
         self,
         serializer: AbstractPacketSerializer[_ST_contra, _DT_co],
         *,
-        compress_level: int = zlib.Z_BEST_COMPRESSION,
+        compress_level: int | None = None,
     ) -> None:
+        import zlib
+
         super().__init__(serializer=serializer, expected_decompress_error=zlib.error)
-        self.__compresslevel: int = compress_level
+        self.__compresslevel: int = compress_level if compress_level is not None else zlib.Z_BEST_COMPRESSION
 
     @final
-    def new_compressor_stream(self) -> zlib._Compress:
+    def new_compressor_stream(self) -> CompressorInterface:
+        import zlib
+
         return zlib.compressobj(self.__compresslevel)
 
     @final
-    def new_decompressor_stream(self) -> zlib._Decompress:
+    def new_decompressor_stream(self) -> DecompressorInterface:
+        import zlib
+
         return zlib.decompressobj()

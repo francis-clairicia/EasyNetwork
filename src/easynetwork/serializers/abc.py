@@ -14,6 +14,9 @@ __all__ = [
 from abc import ABCMeta, abstractmethod
 from typing import Any, Generator, Generic, TypeVar
 
+from ..exceptions import DeserializeError
+from ..tools._utils import concatenate_chunks as _concatenate_chunks
+
 _ST_contra = TypeVar("_ST_contra", contravariant=True)
 _DT_co = TypeVar("_DT_co", covariant=True)
 
@@ -45,13 +48,9 @@ class AbstractIncrementalPacketSerializer(AbstractPacketSerializer[_ST_contra, _
         raise NotImplementedError
 
     def serialize(self, packet: _ST_contra) -> bytes:
-        from ..tools._utils import concatenate_chunks
-
-        return concatenate_chunks(self.incremental_serialize(packet))
+        return _concatenate_chunks(self.incremental_serialize(packet))
 
     def deserialize(self, data: bytes) -> _DT_co:
-        from ..exceptions import DeserializeError
-
         consumer: Generator[None, bytes, tuple[_DT_co, bytes]] = self.incremental_deserialize()
         try:
             next(consumer)
