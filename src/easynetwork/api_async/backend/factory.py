@@ -11,14 +11,16 @@ from __future__ import annotations
 __all__ = ["AsyncBackendFactory"]
 
 import functools
-import importlib.metadata
 import inspect
 from collections import Counter
 from types import MappingProxyType
-from typing import Any, Final, Mapping, final
+from typing import TYPE_CHECKING, Any, Final, Mapping, final
 
 from .abc import AbstractAsyncBackend
 from .sniffio import current_async_library as _sniffio_current_async_library
+
+if TYPE_CHECKING:
+    from importlib.metadata import EntryPoint
 
 
 @final
@@ -126,7 +128,7 @@ class AsyncBackendFactory:
     @staticmethod
     @functools.cache
     def __load_backend_cls_from_entry_point(name: str) -> type[AbstractAsyncBackend]:
-        entry_point: importlib.metadata.EntryPoint = AsyncBackendFactory.__get_available_backends()[name]
+        entry_point: EntryPoint = AsyncBackendFactory.__get_available_backends()[name]
 
         entry_point_cls: Any = entry_point.load()
         if (
@@ -139,14 +141,16 @@ class AsyncBackendFactory:
 
     @staticmethod
     @functools.cache
-    def __get_available_backends() -> MappingProxyType[str, importlib.metadata.EntryPoint]:
-        entry_points = importlib.metadata.entry_points(group=AsyncBackendFactory.GROUP_NAME)
+    def __get_available_backends() -> MappingProxyType[str, EntryPoint]:
+        from importlib.metadata import entry_points as get_all_entry_points
+
+        entry_points = get_all_entry_points(group=AsyncBackendFactory.GROUP_NAME)
         duplicate_counter: Counter[str] = Counter([ep.name for ep in entry_points])
 
         if duplicates := set(name for name in duplicate_counter if duplicate_counter[name] > 1):
             raise TypeError(f"Conflicting backend name caught: {', '.join(map(repr, sorted(duplicates)))}")
 
-        backends: dict[str, importlib.metadata.EntryPoint] = {ep.name: ep for ep in entry_points}
+        backends: dict[str, EntryPoint] = {ep.name: ep for ep in entry_points}
 
         assert "asyncio" in backends, "SystemError: Missing 'asyncio' entry point."
 
