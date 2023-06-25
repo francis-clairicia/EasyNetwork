@@ -178,6 +178,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 max_recv_size = MAX_STREAM_BUFSIZE
             if not isinstance(max_recv_size, int) or max_recv_size <= 0:
                 raise ValueError("'max_recv_size' must be a strictly positive integer")
+            self.__max_recv_size: int = max_recv_size
 
             self.__retry_interval = retry_interval = float(retry_interval)
             if self.__retry_interval <= 0:
@@ -189,6 +190,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             self.__addr: SocketAddress = new_socket_address(socket.getsockname(), socket.family)
             self.__peer: SocketAddress = new_socket_address(socket.getpeername(), socket.family)
             self.__over_ssl: bool = False
+            self.__eof_reached: bool = False
 
             if ssl:
                 if _ssl_module is None:
@@ -214,7 +216,8 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 if ssl_handshake_timeout is None:
                     ssl_handshake_timeout = SSL_HANDSHAKE_TIMEOUT
 
-                _retry_ssl_socket_method(socket, ssl_handshake_timeout, retry_interval, socket.do_handshake, block=False)
+                with self.__convert_socket_error():
+                    _retry_ssl_socket_method(socket, ssl_handshake_timeout, retry_interval, socket.do_handshake, block=False)
 
                 if ssl_shutdown_timeout is None:
                     ssl_shutdown_timeout = SSL_SHUTDOWN_TIMEOUT
@@ -224,8 +227,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             self.__producer: Callable[[_SentPacketT], Iterator[bytes]] = protocol.generate_chunks
             self.__consumer: StreamDataConsumer[_ReceivedPacketT] = StreamDataConsumer(protocol)
             self.__socket_proxy = SocketProxy(socket, lock=self.__socket_lock.get)
-            self.__eof_reached: bool = False
-            self.__max_recv_size: int = max_recv_size
             self.__ssl_shutdown_timeout: float | None = ssl_shutdown_timeout
         except BaseException:
             socket.close()

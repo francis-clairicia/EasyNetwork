@@ -132,6 +132,7 @@ def _retry_impl(
     callback: Callable[[], _R],
 ) -> _R:
     assert socket.gettimeout() == 0, "The socket must be non-blocking"
+    assert retry_interval is None or retry_interval > 0, "retry_interval must be a strictly positive float or None"
 
     monotonic = time.monotonic  # pull function to local namespace
     event: Literal["read", "write"]
