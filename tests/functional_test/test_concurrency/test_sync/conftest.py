@@ -13,6 +13,7 @@ import pytest
 
 def _build_client(ipproto: Literal["TCP", "UDP"], server_address: tuple[str, int]) -> AbstractNetworkClient[str, str]:
     serializer = StringLineSerializer()
+    # The retry interval is already at 1 second by default but we enfore it for the tests
     match ipproto:
         case "TCP":
             return TCPNetworkClient(server_address, StreamProtocol(serializer), retry_interval=1.0)

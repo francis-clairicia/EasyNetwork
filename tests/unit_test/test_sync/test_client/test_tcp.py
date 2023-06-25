@@ -837,6 +837,7 @@ class TestTCPNetworkClient(BaseTestClient):
         self,
         ssl_handshake_timeout: float | None,
         use_socket: bool,
+        retry_interval: float,
         would_block_exception: Exception,
         would_block_event: int,
         remote_address: tuple[str, int],
@@ -861,6 +862,7 @@ class TestTCPNetworkClient(BaseTestClient):
                     ssl=mock_ssl_context,
                     server_hostname=server_hostname,
                     ssl_handshake_timeout=ssl_handshake_timeout,
+                    retry_interval=retry_interval,
                 )
             else:
                 _ = TCPNetworkClient(
@@ -869,6 +871,7 @@ class TestTCPNetworkClient(BaseTestClient):
                     ssl=mock_ssl_context,
                     server_hostname=server_hostname,
                     ssl_handshake_timeout=ssl_handshake_timeout,
+                    retry_interval=retry_interval,
                 )
 
         # Assert

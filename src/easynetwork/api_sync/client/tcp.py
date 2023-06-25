@@ -121,7 +121,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         ssl_handshake_timeout: float | None = None,
         ssl_shutdown_timeout: float | None = None,
         max_recv_size: int | None = None,
-        retry_interval: float = float("+inf"),
+        retry_interval: float = 1.0,
         **kwargs: Any,
     ) -> None:
         self.__socket: _socket.socket | None = None  # If any exception occurs, the client will already be in a closed state
