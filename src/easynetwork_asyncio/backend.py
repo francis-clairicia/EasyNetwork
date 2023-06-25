@@ -452,5 +452,7 @@ class AsyncioBackend(AbstractAsyncBackend):
         self._check_asyncio_transport("SSL/TLS")
 
     def __verify_ssl_context(self, ctx: _SSLContext) -> None:
-        if ssl is None or not isinstance(ctx, ssl.SSLContext):
+        if ssl is None:
+            raise RuntimeError("stdlib ssl module not available")
+        if not isinstance(ctx, ssl.SSLContext):
             raise ValueError(f"Expected a ssl.SSLContext instance, got {ctx!r}")

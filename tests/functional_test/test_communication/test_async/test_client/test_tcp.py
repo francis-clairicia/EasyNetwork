@@ -18,6 +18,7 @@ import pytest_asyncio
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("simulate_no_ssl_module")
 class TestAsyncTCPNetworkClient:
     @pytest.fixture
     @staticmethod
@@ -205,6 +206,7 @@ class TestAsyncTCPNetworkClient:
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("simulate_no_ssl_module")
 class TestAsyncTCPNetworkClientConnection:
     @pytest_asyncio.fixture(autouse=True)
     @staticmethod
@@ -525,3 +527,23 @@ class TestAsyncSSLOverTCPNetworkClient:
             assert not client_ssl_context.check_hostname  # It must be set to False if server_hostname is an empty string
             await client.send_packet("Test")
             assert await client.recv_packet() == "Test"
+
+    @pytest.mark.usefixtures("simulate_no_ssl_module")
+    async def test____dunder_init____no_ssl_module_available(
+        self,
+        remote_address: tuple[str, int],
+        stream_protocol: StreamProtocol[str, str],
+        backend_kwargs: dict[str, Any],
+        client_ssl_context: ssl.SSLContext,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        with pytest.raises(RuntimeError, match=r"^stdlib ssl module not available$"):
+            _ = AsyncTCPNetworkClient(
+                remote_address,
+                stream_protocol,
+                ssl=client_ssl_context,
+                server_hostname="test.example.com",
+                backend_kwargs=backend_kwargs,
+            )

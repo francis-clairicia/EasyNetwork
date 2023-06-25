@@ -18,6 +18,7 @@ import pytest
 from .....tools import TimeTest
 
 
+@pytest.mark.usefixtures("simulate_no_ssl_module")
 class TestTCPNetworkClient:
     @pytest.fixture
     @staticmethod
@@ -224,6 +225,7 @@ class TCPServer(socketserver.TCPServer):
         return socket, client_address
 
 
+@pytest.mark.usefixtures("simulate_no_ssl_module")
 class TestTCPNetworkClientConnection:
     @pytest.fixture(autouse=True)
     @classmethod
@@ -339,3 +341,21 @@ class TestSSLOverTCPNetworkClient:
             assert not client_ssl_context.check_hostname  # It must be set to False if server_hostname is an empty string
             client.send_packet("Test")
             assert client.recv_packet() == "Test"
+
+    @pytest.mark.usefixtures("simulate_no_ssl_module")
+    def test____dunder_init____no_ssl_module(
+        self,
+        remote_address: tuple[str, int],
+        stream_protocol: StreamProtocol[str, str],
+        client_ssl_context: ssl.SSLContext,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        with pytest.raises(RuntimeError, match=r"^stdlib ssl module not available$"):
+            _ = TCPNetworkClient(
+                remote_address,
+                stream_protocol,
+                ssl=client_ssl_context,
+                server_hostname="test.example.com",
+            )

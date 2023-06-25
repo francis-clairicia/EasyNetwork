@@ -169,8 +169,7 @@ def retry_ssl_socket_method(
     *args: _P.args,
     **kwargs: _P.kwargs,
 ) -> _R:
-    if ssl is None:
-        raise RuntimeError("stdlib ssl module not available")
+    assert ssl is not None, "stdlib ssl module not available"
     assert is_ssl_socket(socket), "Expected an ssl.SSLSocket instance"
     assert socket.gettimeout() == 0, "The socket must be non-blocking"
 

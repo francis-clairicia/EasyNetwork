@@ -270,10 +270,9 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             try:
                 remaining: int = len(data)
                 while remaining > 0:
-                    nb_bytes_sent: int = 0
+                    nb_bytes_sent: int
                     if _is_ssl_socket(socket):
-                        with self.__convert_ssl_eof_error():
-                            nb_bytes_sent = _retry_ssl_socket_method(socket, None, socket.send, buffer.toreadonly())
+                        nb_bytes_sent = _retry_ssl_socket_method(socket, None, socket.send, buffer.toreadonly())
                     else:
                         nb_bytes_sent = _retry_socket_method(socket, None, None, "write", socket.send, buffer.toreadonly())
                     assert nb_bytes_sent >= 0, "socket.send() returned a negative integer"
@@ -300,10 +299,9 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             while True:
                 try:
                     _start = monotonic()
-                    chunk: bytes = b""
+                    chunk: bytes
                     if _is_ssl_socket(socket):
-                        with self.__convert_ssl_eof_error():
-                            chunk = _retry_ssl_socket_method(socket, timeout, socket.recv, bufsize)
+                        chunk = _retry_ssl_socket_method(socket, timeout, socket.recv, bufsize)
                     else:
                         chunk = _retry_socket_method(socket, timeout, None, "read", socket.recv, bufsize)
                     _end = monotonic()
@@ -347,7 +345,8 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
     @_contextlib.contextmanager
     def __convert_socket_error(self) -> Iterator[None]:
         try:
-            yield
+            with self.__convert_ssl_eof_error():
+                yield
         except (ConnectionAbortedError, ClientClosedError):
             raise
         except ConnectionError as exc:

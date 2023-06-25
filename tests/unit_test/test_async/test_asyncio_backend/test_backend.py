@@ -446,6 +446,41 @@ class TestAsyncIOBackend:
         mock_asyncio_open_connection.assert_not_called()
         mock_AsyncioTransportStreamSocketAdapter.assert_not_called()
 
+    @pytest.mark.usefixtures("simulate_no_ssl_module")
+    @pytest.mark.parametrize("use_asyncio_transport", [True], indirect=True)
+    async def test____create_ssl_over_tcp_connection____no_ssl_module(
+        self,
+        local_address: tuple[str, int] | None,
+        remote_address: tuple[str, int],
+        backend: AsyncioBackend,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_AsyncioTransportStreamSocketAdapter: MagicMock = mocker.patch(
+            "easynetwork_asyncio.backend.AsyncioTransportStreamSocketAdapter", side_effect=AssertionError
+        )
+        mock_asyncio_open_connection: AsyncMock = mocker.patch(
+            "asyncio.open_connection",
+            new_callable=mocker.AsyncMock,
+            side_effect=AssertionError,
+        )
+
+        # Act
+        with pytest.raises(RuntimeError, match=r"^stdlib ssl module not available$"):
+            await backend.create_ssl_over_tcp_connection(
+                *remote_address,
+                ssl_context=True,  # type: ignore[arg-type]
+                server_hostname="server_hostname",
+                ssl_handshake_timeout=123456.789,
+                ssl_shutdown_timeout=9876543.21,
+                happy_eyeballs_delay=42,
+                local_address=local_address,
+            )
+
+        # Assert
+        mock_asyncio_open_connection.assert_not_called()
+        mock_AsyncioTransportStreamSocketAdapter.assert_not_called()
+
     async def test____wrap_tcp_client_socket____use_asyncio_open_connection(
         self,
         event_loop: asyncio.AbstractEventLoop,
@@ -611,6 +646,38 @@ class TestAsyncIOBackend:
 
         # Act
         with pytest.raises(ValueError, match=r"^Expected a ssl\.SSLContext instance, got True$"):
+            await backend.wrap_ssl_over_tcp_client_socket(
+                mock_tcp_socket,
+                ssl_context=True,  # type: ignore[arg-type]
+                server_hostname="server_hostname",
+                ssl_handshake_timeout=123456.789,
+                ssl_shutdown_timeout=9876543.21,
+            )
+
+        # Assert
+        mock_asyncio_open_connection.assert_not_called()
+        mock_AsyncioTransportStreamSocketAdapter.assert_not_called()
+
+    @pytest.mark.usefixtures("simulate_no_ssl_module")
+    @pytest.mark.parametrize("use_asyncio_transport", [True], indirect=True)
+    async def test____wrap_ssl_over_tcp_client_socket____no_ssl_module(
+        self,
+        mock_tcp_socket: MagicMock,
+        backend: AsyncioBackend,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_AsyncioTransportStreamSocketAdapter: MagicMock = mocker.patch(
+            "easynetwork_asyncio.backend.AsyncioTransportStreamSocketAdapter", side_effect=AssertionError
+        )
+        mock_asyncio_open_connection: AsyncMock = mocker.patch(
+            "asyncio.open_connection",
+            new_callable=mocker.AsyncMock,
+            side_effect=AssertionError,
+        )
+
+        # Act
+        with pytest.raises(RuntimeError, match=r"^stdlib ssl module not available$"):
             await backend.wrap_ssl_over_tcp_client_socket(
                 mock_tcp_socket,
                 ssl_context=True,  # type: ignore[arg-type]
