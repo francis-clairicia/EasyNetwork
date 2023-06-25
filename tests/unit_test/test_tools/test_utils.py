@@ -29,6 +29,7 @@ from easynetwork.tools._utils import (
     error_from_errno,
     is_ssl_eof_error,
     is_ssl_socket,
+    iter_bytes,
     open_listener_sockets_from_getaddrinfo_result,
     recursively_clear_exception_traceback_frames,
     replace_kwargs,
@@ -353,6 +354,18 @@ def test____concanetate_chunks____join_several_bytestrings() -> None:
 
     # Act
     result = concatenate_chunks(to_join)
+
+    # Assert
+    assert result == expected_result
+
+
+def test____iter_bytes____iterate_over_bytes_returning_one_byte() -> None:
+    # Arrange
+    to_split = b"abcd"
+    expected_result = [b"a", b"b", b"c", b"d"]
+
+    # Act
+    result = list(iter_bytes(to_split))
 
     # Assert
     assert result == expected_result
