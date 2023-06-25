@@ -261,7 +261,8 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             try:
                 if not self.__eof_reached and self.__is_ssl_socket(socket):
                     with self.__convert_ssl_eof_error(), _contextlib.suppress(TimeoutError):
-                        socket = _retry_ssl_socket_method(socket, self.__ssl_shutdown_timeout, None, socket.unwrap)
+                        retry_interval: float = self.__retry_interval
+                        socket = _retry_ssl_socket_method(socket, self.__ssl_shutdown_timeout, retry_interval, socket.unwrap)
             except ConnectionError:
                 # It is normal if there was connection errors during operations. But do not propagate this exception,
                 # as we will never reuse this socket
