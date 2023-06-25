@@ -11,8 +11,17 @@ __all__ = ["TCPNetworkClient"]
 import contextlib as _contextlib
 import errno as _errno
 import socket as _socket
+import threading
 from time import monotonic as _time_monotonic
-from typing import TYPE_CHECKING, Any, Callable, Generic, Iterator, Literal, NoReturn, TypeVar, final, overload
+from typing import TYPE_CHECKING, Any, Callable, Generic, Iterator, Literal, NoReturn, TypeVar, cast, final, overload
+
+try:
+    import ssl
+except ImportError:  # pragma: no cover
+    _ssl_module = None
+else:
+    _ssl_module = ssl
+    del ssl
 
 from ...exceptions import ClientClosedError, StreamProtocolParseError
 from ...protocol import StreamProtocol
@@ -31,7 +40,15 @@ from ...tools._utils import (
     set_tcp_nodelay as _set_tcp_nodelay,
 )
 from ...tools.lock import ForkSafeLock
-from ...tools.socket import CLOSED_SOCKET_ERRNOS, MAX_STREAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
+from ...tools.socket import (
+    CLOSED_SOCKET_ERRNOS,
+    MAX_STREAM_BUFSIZE,
+    SSL_HANDSHAKE_TIMEOUT,
+    SSL_SHUTDOWN_TIMEOUT,
+    SocketAddress,
+    SocketProxy,
+    new_socket_address,
+)
 from ...tools.stream import StreamDataConsumer
 from .abc import AbstractNetworkClient
 
@@ -106,11 +123,9 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         self.__socket: _socket.socket | None = None  # If any exception occurs, the client will already be in a closed state
         super().__init__()
 
-        from threading import Lock
-
-        self.__send_lock = ForkSafeLock(Lock)
-        self.__receive_lock = ForkSafeLock(Lock)
-        self.__socket_lock = ForkSafeLock(Lock)
+        self.__send_lock = ForkSafeLock(threading.Lock)
+        self.__receive_lock = ForkSafeLock(threading.Lock)
+        self.__socket_lock = ForkSafeLock(threading.Lock)
 
         if server_hostname is not None and not ssl:
             raise ValueError("server_hostname is only meaningful with ssl")
@@ -167,10 +182,10 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             self.__peer: SocketAddress = new_socket_address(socket.getpeername(), socket.family)
 
             if ssl:
+                if _ssl_module is None:
+                    raise RuntimeError("stdlib ssl module not available")
                 if isinstance(ssl, bool):
-                    import ssl as _ssl_module
-
-                    ssl = _ssl_module.create_default_context()
+                    ssl = cast("_SSLContext", _ssl_module.create_default_context())
                     if not server_hostname:
                         ssl.check_hostname = False
                     if hasattr(_ssl_module, "OP_IGNORE_UNEXPECTED_EOF"):
@@ -185,15 +200,11 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                     server_hostname=server_hostname,
                 )
                 if ssl_handshake_timeout is None:
-                    from ...tools.socket import SSL_HANDSHAKE_TIMEOUT
-
                     ssl_handshake_timeout = SSL_HANDSHAKE_TIMEOUT
 
                 _retry_ssl_socket_method(socket, ssl_handshake_timeout, socket.do_handshake, block=False)
 
                 if ssl_shutdown_timeout is None:
-                    from ...tools.socket import SSL_SHUTDOWN_TIMEOUT
-
                     ssl_shutdown_timeout = SSL_SHUTDOWN_TIMEOUT
 
             _set_tcp_nodelay(socket)
@@ -259,10 +270,9 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             try:
                 remaining: int = len(data)
                 while remaining > 0:
-                    nb_bytes_sent: int = 0
+                    nb_bytes_sent: int
                     if _is_ssl_socket(socket):
-                        with self.__convert_ssl_eof_error():
-                            nb_bytes_sent = _retry_ssl_socket_method(socket, None, socket.send, buffer.toreadonly())
+                        nb_bytes_sent = _retry_ssl_socket_method(socket, None, socket.send, buffer.toreadonly())
                     else:
                         nb_bytes_sent = _retry_socket_method(socket, None, None, "write", socket.send, buffer.toreadonly())
                     assert nb_bytes_sent >= 0, "socket.send() returned a negative integer"
@@ -289,10 +299,9 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             while True:
                 try:
                     _start = monotonic()
-                    chunk: bytes = b""
+                    chunk: bytes
                     if _is_ssl_socket(socket):
-                        with self.__convert_ssl_eof_error():
-                            chunk = _retry_ssl_socket_method(socket, timeout, socket.recv, bufsize)
+                        chunk = _retry_ssl_socket_method(socket, timeout, socket.recv, bufsize)
                     else:
                         chunk = _retry_socket_method(socket, timeout, None, "read", socket.recv, bufsize)
                     _end = monotonic()
@@ -336,7 +345,8 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
     @_contextlib.contextmanager
     def __convert_socket_error(self) -> Iterator[None]:
         try:
-            yield
+            with self.__convert_ssl_eof_error():
+                yield
         except (ConnectionAbortedError, ClientClosedError):
             raise
         except ConnectionError as exc:
@@ -348,12 +358,13 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
 
     @_contextlib.contextmanager
     def __convert_ssl_eof_error(self) -> Iterator[None]:
-        import ssl
-
+        if _ssl_module is None:
+            yield
+            return
         try:
             yield
-        except ssl.SSLError as exc:
-            if isinstance(exc, ssl.SSLZeroReturnError) or _is_ssl_eof_error(exc):
+        except _ssl_module.SSLError as exc:
+            if isinstance(exc, _ssl_module.SSLZeroReturnError) or _is_ssl_eof_error(exc):
                 self.__eof_error(exc)
             raise
 

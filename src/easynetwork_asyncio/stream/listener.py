@@ -19,6 +19,10 @@ from easynetwork.api_async.backend.abc import (
     AbstractAsyncListenerSocketAdapter,
     AbstractAsyncStreamSocketAdapter,
 )
+from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
+
+from ..socket import AsyncSocket
+from .socket import AsyncioTransportStreamSocketAdapter, RawStreamSocketAdapter
 
 if TYPE_CHECKING:
     import asyncio.trsock
@@ -37,8 +41,6 @@ class ListenerSocketAdapter(AbstractAsyncListenerSocketAdapter):
         accepted_socket_factory: Callable[[_socket.socket, asyncio.AbstractEventLoop], AbstractAcceptedSocket],
     ) -> None:
         super().__init__()
-
-        from ..socket import AsyncSocket
 
         self.__socket: AsyncSocket = AsyncSocket(socket, loop)
         self.__accepted_socket_factory = accepted_socket_factory
@@ -107,13 +109,7 @@ class AcceptedSocket(_BaseAcceptedSocket):
     async def _make_socket_adapter(self, socket: _socket.socket) -> AbstractAsyncStreamSocketAdapter:
         loop = self.loop
         if not self.__use_asyncio_transport:
-            from .socket import RawStreamSocketAdapter
-
             return RawStreamSocketAdapter(socket, loop)
-
-        from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
-
-        from .socket import AsyncioTransportStreamSocketAdapter
 
         reader = asyncio.streams.StreamReader(MAX_STREAM_BUFSIZE, loop)
         protocol = asyncio.streams.StreamReaderProtocol(reader, loop=loop)
@@ -144,10 +140,6 @@ class AcceptedSSLSocket(_BaseAcceptedSocket):
         self.__ssl_shutdown_timeout: float = float(ssl_shutdown_timeout)
 
     async def _make_socket_adapter(self, socket: _socket.socket) -> AbstractAsyncStreamSocketAdapter:
-        from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
-
-        from .socket import AsyncioTransportStreamSocketAdapter
-
         loop = self.loop
         reader = asyncio.streams.StreamReader(MAX_STREAM_BUFSIZE, loop)
         protocol = asyncio.streams.StreamReaderProtocol(reader, loop=loop)

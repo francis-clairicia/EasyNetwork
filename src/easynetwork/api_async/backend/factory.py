@@ -11,6 +11,8 @@ from __future__ import annotations
 __all__ = ["AsyncBackendFactory"]
 
 import functools
+import inspect
+from collections import Counter
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Final, Mapping, final
 
@@ -45,8 +47,6 @@ class AsyncBackendFactory:
 
     @staticmethod
     def set_default_backend(backend: str | type[AbstractAsyncBackend] | None) -> None:
-        import inspect
-
         match backend:
             case type() if not issubclass(backend, AbstractAsyncBackend) or inspect.isabstract(backend):
                 raise TypeError(f"Invalid backend class: {backend!r}")
@@ -128,8 +128,6 @@ class AsyncBackendFactory:
     @staticmethod
     @functools.cache
     def __load_backend_cls_from_entry_point(name: str) -> type[AbstractAsyncBackend]:
-        import inspect
-
         entry_point: EntryPoint = AsyncBackendFactory.__get_available_backends()[name]
 
         entry_point_cls: Any = entry_point.load()
@@ -144,7 +142,6 @@ class AsyncBackendFactory:
     @staticmethod
     @functools.cache
     def __get_available_backends() -> MappingProxyType[str, EntryPoint]:
-        from collections import Counter
         from importlib.metadata import entry_points as get_all_entry_points
 
         entry_points = get_all_entry_points(group=AsyncBackendFactory.GROUP_NAME)

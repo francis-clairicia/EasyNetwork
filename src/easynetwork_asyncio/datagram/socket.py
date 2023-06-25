@@ -10,13 +10,16 @@ from __future__ import annotations
 __all__ = ["AsyncioTransportDatagramSocketAdapter", "RawDatagramSocketAdapter"]
 
 import asyncio
+import socket as _socket
 from typing import TYPE_CHECKING, Any, final
 
 from easynetwork.api_async.backend.abc import AbstractAsyncDatagramSocketAdapter
+from easynetwork.tools.socket import MAX_DATAGRAM_BUFSIZE
+
+from ..socket import AsyncSocket
 
 if TYPE_CHECKING:
     import asyncio.trsock
-    import socket as _socket
 
     from _typeshed import ReadableBuffer
 
@@ -79,13 +82,9 @@ class RawDatagramSocketAdapter(AbstractAsyncDatagramSocketAdapter):
     ) -> None:
         super().__init__()
 
-        from socket import SOCK_DGRAM
-
-        from ..socket import AsyncSocket
-
         self.__socket: AsyncSocket = AsyncSocket(socket, loop)
 
-        assert socket.type == SOCK_DGRAM, "A 'SOCK_DGRAM' socket is expected"
+        assert socket.type == _socket.SOCK_DGRAM, "A 'SOCK_DGRAM' socket is expected"
 
     async def aclose(self) -> None:
         return await self.__socket.aclose()
@@ -103,8 +102,6 @@ class RawDatagramSocketAdapter(AbstractAsyncDatagramSocketAdapter):
             return None
 
     async def recvfrom(self) -> tuple[bytes, tuple[Any, ...]]:
-        from easynetwork.tools.socket import MAX_DATAGRAM_BUFSIZE
-
         return await self.__socket.recvfrom(MAX_DATAGRAM_BUFSIZE)
 
     async def sendto(self, data: ReadableBuffer, address: tuple[Any, ...] | None, /) -> None:

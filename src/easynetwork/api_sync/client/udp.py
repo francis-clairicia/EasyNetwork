@@ -11,6 +11,8 @@ __all__ = ["UDPNetworkClient", "UDPNetworkEndpoint"]
 import contextlib as _contextlib
 import errno as _errno
 import socket as _socket
+import threading
+import time
 from operator import itemgetter as _itemgetter
 from typing import TYPE_CHECKING, Any, Generic, Iterator, Self, TypeVar, final, overload
 
@@ -84,11 +86,9 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         self.__socket: _socket.socket | None = None  # If any exception occurs, the client will already be in a closed state
         super().__init__()
 
-        from threading import Lock
-
-        self.__send_lock = ForkSafeLock(Lock)
-        self.__receive_lock = ForkSafeLock(Lock)
-        self.__socket_lock = ForkSafeLock(Lock)
+        self.__send_lock = ForkSafeLock(threading.Lock)
+        self.__receive_lock = ForkSafeLock(threading.Lock)
+        self.__socket_lock = ForkSafeLock(threading.Lock)
 
         assert isinstance(protocol, DatagramProtocol)
 
@@ -220,7 +220,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
                 del data
 
     def iter_received_packets_from(self, timeout: float | None = 0) -> Iterator[tuple[_ReceivedPacketT, SocketAddress]]:
-        from time import monotonic
+        monotonic = time.monotonic
 
         recv_packet_from = self.recv_packet_from
 

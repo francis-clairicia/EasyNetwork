@@ -9,8 +9,11 @@ from __future__ import annotations
 __all__ = ["AsyncTCPNetworkServer"]
 
 import contextlib as _contextlib
+import errno as _errno
 import inspect
 import logging as _logging
+import os
+import weakref
 from collections import deque
 from typing import (
     TYPE_CHECKING,
@@ -262,8 +265,6 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 self.__mainloop_task = None
 
     def __make_stop_listening_callback(self) -> Callable[[], None]:
-        import weakref
-
         selfref = weakref.ref(self)
 
         def stop_listening() -> None:
@@ -292,12 +293,9 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                     client_socket: AbstractAcceptedSocket = await listener.accept()
                 except OSError as exc:  # pragma: no cover  # Not testable
                     if exc.errno in ACCEPT_CAPACITY_ERRNOS:
-                        import errno
-                        import os
-
                         self.__logger.error(
                             "accept returned %s (%s); retrying in %s seconds",
-                            errno.errorcode[exc.errno],
+                            _errno.errorcode[exc.errno],
                             os.strerror(exc.errno),
                             ACCEPT_CAPACITY_ERROR_SLEEP_TIME,
                             exc_info=True,

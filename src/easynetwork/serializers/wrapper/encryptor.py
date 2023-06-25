@@ -21,7 +21,7 @@ _DT_co = TypeVar("_DT_co", covariant=True)
 
 
 class EncryptorSerializer(AutoSeparatedPacketSerializer[_ST_contra, _DT_co]):
-    __slots__ = ("__serializer", "__fernet", "__token_ttl")
+    __slots__ = ("__serializer", "__fernet", "__token_ttl", "__invalid_token_cls")
 
     def __init__(
         self,
@@ -41,6 +41,7 @@ class EncryptorSerializer(AutoSeparatedPacketSerializer[_ST_contra, _DT_co]):
         self.__serializer: AbstractPacketSerializer[_ST_contra, _DT_co] = serializer
         self.__fernet = cryptography.fernet.Fernet(key)
         self.__token_ttl = token_ttl
+        self.__invalid_token_cls = cryptography.fernet.InvalidToken
 
     @classmethod
     def generate_key(cls) -> bytes:
@@ -58,10 +59,8 @@ class EncryptorSerializer(AutoSeparatedPacketSerializer[_ST_contra, _DT_co]):
 
     @final
     def deserialize(self, data: bytes) -> _DT_co:
-        from cryptography.fernet import InvalidToken
-
         try:
             data = self.__fernet.decrypt(data, ttl=self.__token_ttl)
-        except InvalidToken:
+        except self.__invalid_token_cls:
             raise DeserializeError("Invalid token", error_info=None) from None
         return self.__serializer.deserialize(data)

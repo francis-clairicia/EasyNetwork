@@ -22,9 +22,18 @@ from typing import (
     NoReturn,
     TypedDict,
     TypeVar,
+    cast,
     final,
     overload,
 )
+
+try:
+    import ssl as _ssl
+except ImportError:  # pragma: no cover
+    _ssl_module = None
+else:
+    _ssl_module = _ssl
+    del _ssl
 
 from ...exceptions import ClientClosedError, StreamProtocolParseError
 from ...protocol import StreamProtocol
@@ -145,10 +154,10 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         self.__info: _ClientInfo | None = None
 
         if ssl:
+            if _ssl_module is None:
+                raise RuntimeError("stdlib ssl module not available")
             if isinstance(ssl, bool):
-                from ssl import create_default_context
-
-                ssl = create_default_context()
+                ssl = cast("_SSLContext", _ssl_module.create_default_context())
                 if server_hostname is not None and not server_hostname:
                     ssl.check_hostname = False
         else:

@@ -58,13 +58,6 @@ class BaseTestTransportStreamSocket:
         return mock
 
 
-class BaseTestRawStreamSocket(BaseTestSocket):
-    @pytest.fixture(autouse=True)
-    @staticmethod
-    def mock_async_socket_cls(mock_async_socket: MagicMock, mocker: MockerFixture) -> MagicMock:
-        return mocker.patch("easynetwork_asyncio.socket.AsyncSocket", return_value=mock_async_socket)
-
-
 @pytest.mark.asyncio
 class TestTransportBasedStreamSocket(BaseTestTransportStreamSocket):
     @pytest.fixture
@@ -286,7 +279,12 @@ class TestTransportBasedStreamSocket(BaseTestTransportStreamSocket):
 
 
 @pytest.mark.asyncio
-class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestRawStreamSocket):
+class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestSocket):
+    @pytest.fixture(autouse=True)
+    @staticmethod
+    def mock_async_socket_cls(mock_async_socket: MagicMock, mocker: MockerFixture) -> MagicMock:
+        return mocker.patch(f"{ListenerSocketAdapter.__module__}.AsyncSocket", return_value=mock_async_socket)
+
     @pytest.fixture
     @classmethod
     def mock_tcp_listener_socket(
@@ -402,7 +400,12 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestRawStream
 
 
 @pytest.mark.asyncio
-class TestAcceptedSocket(BaseTestTransportStreamSocket, BaseTestRawStreamSocket):
+class TestAcceptedSocket(BaseTestTransportStreamSocket, BaseTestSocket):
+    @pytest.fixture(autouse=True)
+    @staticmethod
+    def mock_async_socket_cls(mock_async_socket: MagicMock, mocker: MockerFixture) -> MagicMock:
+        return mocker.patch(f"{ListenerSocketAdapter.__module__}.AsyncSocket", return_value=mock_async_socket)
+
     @pytest.fixture(params=[False, True], ids=lambda boolean: f"use_asyncio_transport=={boolean}")
     @staticmethod
     def use_asyncio_transport(request: Any) -> bool:
@@ -412,7 +415,7 @@ class TestAcceptedSocket(BaseTestTransportStreamSocket, BaseTestRawStreamSocket)
     @staticmethod
     def mock_transport_stream_socket_adapter_cls(mock_stream_socket_adapter: MagicMock, mocker: MockerFixture) -> MagicMock:
         return mocker.patch(
-            "easynetwork_asyncio.stream.socket.AsyncioTransportStreamSocketAdapter",
+            f"{ListenerSocketAdapter.__module__}.AsyncioTransportStreamSocketAdapter",
             return_value=mock_stream_socket_adapter,
         )
 
@@ -420,7 +423,7 @@ class TestAcceptedSocket(BaseTestTransportStreamSocket, BaseTestRawStreamSocket)
     @staticmethod
     def mock_raw_stream_socket_adapter_cls(mock_stream_socket_adapter: MagicMock, mocker: MockerFixture) -> MagicMock:
         return mocker.patch(
-            "easynetwork_asyncio.stream.socket.RawStreamSocketAdapter",
+            f"{ListenerSocketAdapter.__module__}.RawStreamSocketAdapter",
             return_value=mock_stream_socket_adapter,
         )
 
@@ -551,7 +554,7 @@ class TestAcceptedSSLSocket(BaseTestTransportStreamSocket):
     @staticmethod
     def mock_transport_stream_socket_adapter_cls(mock_stream_socket_adapter: MagicMock, mocker: MockerFixture) -> MagicMock:
         return mocker.patch(
-            "easynetwork_asyncio.stream.socket.AsyncioTransportStreamSocketAdapter",
+            f"{ListenerSocketAdapter.__module__}.AsyncioTransportStreamSocketAdapter",
             return_value=mock_stream_socket_adapter,
         )
 
@@ -668,7 +671,12 @@ class TestAcceptedSSLSocket(BaseTestTransportStreamSocket):
 
 
 @pytest.mark.asyncio
-class TestRawStreamSocketAdapter(BaseTestRawStreamSocket):
+class TestRawStreamSocketAdapter(BaseTestSocket):
+    @pytest.fixture(autouse=True)
+    @staticmethod
+    def mock_async_socket_cls(mock_async_socket: MagicMock, mocker: MockerFixture) -> MagicMock:
+        return mocker.patch(f"{RawStreamSocketAdapter.__module__}.AsyncSocket", return_value=mock_async_socket)
+
     @pytest.fixture
     @classmethod
     def mock_tcp_socket(cls, mock_tcp_socket: MagicMock) -> MagicMock:

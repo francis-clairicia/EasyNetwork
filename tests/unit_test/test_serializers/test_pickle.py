@@ -108,7 +108,7 @@ class TestPickleSerializer(BaseSerializerConfigInstanceCheck):
     def pickler_optimize(request: Any) -> bool:
         return request.param
 
-    @pytest.fixture
+    @pytest.fixture(autouse=True)
     @staticmethod
     def mock_pickletools_optimize(mocker: MockerFixture) -> MagicMock:
         return mocker.patch("pickletools.optimize", autospec=True)

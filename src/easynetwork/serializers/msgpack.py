@@ -54,7 +54,7 @@ class MessageUnpackerConfig:
 
 
 class MessagePackSerializer(AbstractPacketSerializer[_ST_contra, _DT_co]):
-    __slots__ = ("__packb", "__unpackb")
+    __slots__ = ("__packb", "__unpackb", "__unpack_out_of_data_cls", "__unpack_extra_data_cls")
 
     def __init__(
         self,
@@ -84,6 +84,8 @@ class MessagePackSerializer(AbstractPacketSerializer[_ST_contra, _DT_co]):
 
         self.__packb = partial(msgpack.packb, **dataclass_asdict(packer_config), autoreset=True)
         self.__unpackb = partial(msgpack.unpackb, **dataclass_asdict(unpacker_config))
+        self.__unpack_out_of_data_cls = msgpack.OutOfData
+        self.__unpack_extra_data_cls = msgpack.ExtraData
 
     @final
     def serialize(self, packet: _ST_contra) -> bytes:
@@ -91,13 +93,11 @@ class MessagePackSerializer(AbstractPacketSerializer[_ST_contra, _DT_co]):
 
     @final
     def deserialize(self, data: bytes) -> _DT_co:
-        import msgpack
-
         try:
             return self.__unpackb(data)
-        except msgpack.OutOfData as exc:
+        except self.__unpack_out_of_data_cls as exc:
             raise DeserializeError("Missing data to create packet", error_info={"data": data}) from exc
-        except msgpack.ExtraData as exc:
+        except self.__unpack_extra_data_cls as exc:
             raise DeserializeError("Extra data caught", error_info={"packet": exc.unpacked, "extra": exc.extra}) from exc  # type: ignore[attr-defined]
         except Exception as exc:  # The documentation says to catch all exceptions :)
             raise DeserializeError(str(exc) or "Invalid token", error_info={"data": data}) from exc

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import selectors
+import ssl
 from socket import (
     AF_INET,
     AF_INET6,
@@ -193,6 +194,14 @@ def test____is_ssl_socket____ssl_socket(mock_ssl_socket: MagicMock) -> None:
     assert is_ssl_socket(mock_ssl_socket)
 
 
+@pytest.mark.usefixtures("simulate_no_ssl_module")
+def test____is_ssl_socket____no_ssl_module(mock_ssl_socket: MagicMock) -> None:
+    # Arrange
+
+    # Act & Assert
+    assert not is_ssl_socket(mock_ssl_socket)
+
+
 def test____check_socket_no_ssl____regular_socket(mock_socket_factory: Callable[[], MagicMock]) -> None:
     # Arrange
     mock_socket = mock_socket_factory()
@@ -211,7 +220,6 @@ def test____check_socket_no_ssl____ssl_socket(mock_ssl_socket: MagicMock) -> Non
 
 def test____is_ssl_eof_error____SSLEOFError() -> None:
     # Arrange
-    import ssl
 
     # Act & Assert
     assert is_ssl_eof_error(ssl.SSLEOFError())
@@ -219,7 +227,6 @@ def test____is_ssl_eof_error____SSLEOFError() -> None:
 
 def test____is_ssl_eof_error____SSLError_with_specific_mnemonic() -> None:
     # Arrange
-    import ssl
 
     # Act & Assert
     assert is_ssl_eof_error(ssl.SSLError(ssl.SSL_ERROR_SSL, "UNEXPECTED_EOF_WHILE_READING"))
@@ -230,6 +237,14 @@ def test____is_ssl_eof_error____OSError() -> None:
 
     # Act & Assert
     assert not is_ssl_eof_error(OSError())
+
+
+@pytest.mark.usefixtures("simulate_no_ssl_module")
+def test____is_ssl_eof_error____no_ssl_module() -> None:
+    # Arrange
+
+    # Act & Assert
+    assert not is_ssl_eof_error(ssl.SSLEOFError())
 
 
 @pytest.mark.parametrize(["event", "selector_event"], [("read", "EVENT_READ"), ("write", "EVENT_WRITE")])

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 __all__ = ["AbstractStructSerializer", "NamedTupleStructSerializer"]
 
-import struct as _struct
 from abc import abstractmethod
 from typing import TYPE_CHECKING, Any, Generic, Iterable, NamedTuple, TypeVar, final
 
@@ -16,6 +15,8 @@ from ..exceptions import DeserializeError
 from .base_stream import FixedSizePacketSerializer
 
 if TYPE_CHECKING:
+    from struct import Struct as _Struct
+
     from _typeshed import SupportsKeysAndGetItem
 
 _ST_contra = TypeVar("_ST_contra", contravariant=True)
@@ -26,14 +27,17 @@ _ENDIANNESS_CHARACTERS: frozenset[str] = frozenset({"@", "=", "<", ">", "!"})
 
 
 class AbstractStructSerializer(FixedSizePacketSerializer[_ST_contra, _DT_co]):
-    __slots__ = ("__s",)
+    __slots__ = ("__s", "__error_cls")
 
     def __init__(self, format: str) -> None:
+        from struct import Struct, error
+
         if format and format[0] not in _ENDIANNESS_CHARACTERS:
             format = f"!{format}"  # network byte order
-        struct = _struct.Struct(format)
+        struct = Struct(format)
         super().__init__(struct.size)
-        self.__s: _struct.Struct = struct
+        self.__s: _Struct = struct
+        self.__error_cls = error
 
     @abstractmethod
     def iter_values(self, packet: _ST_contra) -> Iterable[Any]:
@@ -51,7 +55,7 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_ST_contra, _DT_co]):
     def deserialize(self, data: bytes) -> _DT_co:
         try:
             packet_tuple: tuple[Any, ...] = self.__s.unpack(data)
-        except _struct.error as exc:
+        except self.__error_cls as exc:
             raise DeserializeError(f"Invalid value: {exc}", error_info={"data": data}) from exc
         try:
             return self.from_tuple(packet_tuple)
@@ -63,7 +67,7 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_ST_contra, _DT_co]):
 
     @property
     @final
-    def struct(self) -> _struct.Struct:
+    def struct(self) -> _Struct:
         return self.__s
 
 

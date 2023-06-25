@@ -10,14 +10,17 @@ from __future__ import annotations
 __all__ = ["AsyncioTransportStreamSocketAdapter", "RawStreamSocketAdapter"]
 
 import asyncio
+import errno
+import socket as _socket
 from typing import TYPE_CHECKING, Any, final
 
 from easynetwork.api_async.backend.abc import AbstractAsyncStreamSocketAdapter
 from easynetwork.tools._utils import error_from_errno as _error_from_errno
 
+from ..socket import AsyncSocket
+
 if TYPE_CHECKING:
     import asyncio.trsock
-    import socket as _socket
 
     from _typeshed import ReadableBuffer
 
@@ -43,8 +46,6 @@ class AsyncioTransportStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
         assert socket is not None, "Writer transport must be a socket transport"
         remote_address = writer.get_extra_info("peername")
         if remote_address is None:
-            import errno
-
             raise _error_from_errno(errno.ENOTCONN)
         self.__remote_addr: tuple[Any, ...] = tuple(remote_address)
 
@@ -102,13 +103,9 @@ class RawStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
     ) -> None:
         super().__init__()
 
-        from socket import SOCK_STREAM
-
-        from ..socket import AsyncSocket
-
         self.__socket: AsyncSocket = AsyncSocket(socket, loop)
 
-        assert socket.type == SOCK_STREAM, "A 'SOCK_STREAM' socket is expected"
+        assert socket.type == _socket.SOCK_STREAM, "A 'SOCK_STREAM' socket is expected"
 
         remote_address = socket.getpeername()
         self.__remote_addr: tuple[Any, ...] = tuple(remote_address)

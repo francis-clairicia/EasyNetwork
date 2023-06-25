@@ -8,6 +8,7 @@ from __future__ import annotations
 
 __all__ = ["AbstractNetworkClient"]
 
+import time
 from abc import ABCMeta, abstractmethod
 from typing import TYPE_CHECKING, Any, Generic, Iterator, Self, TypeVar
 
@@ -57,7 +58,7 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
         raise NotImplementedError
 
     def iter_received_packets(self, timeout: float | None = 0) -> Iterator[_ReceivedPacketT]:
-        from time import monotonic
+        monotonic = time.monotonic
 
         recv_packet = self.recv_packet
         while True:
