@@ -13,7 +13,7 @@ import errno as _errno
 import socket as _socket
 import threading
 from time import monotonic as _time_monotonic
-from typing import TYPE_CHECKING, Any, Callable, Generic, Iterator, Literal, NoReturn, TypeVar, cast, final, overload
+from typing import TYPE_CHECKING, Any, Callable, Generic, Iterator, Literal, NoReturn, TypeGuard, TypeVar, cast, final, overload
 
 try:
     import ssl
@@ -32,7 +32,6 @@ from ...tools._utils import (
     concatenate_chunks as _concatenate_chunks,
     error_from_errno as _error_from_errno,
     is_ssl_eof_error as _is_ssl_eof_error,
-    is_ssl_socket as _is_ssl_socket,
     replace_kwargs as _replace_kwargs,
     retry_socket_method as _retry_socket_method,
     retry_ssl_socket_method as _retry_ssl_socket_method,
@@ -53,7 +52,7 @@ from ...tools.stream import StreamDataConsumer
 from .abc import AbstractNetworkClient
 
 if TYPE_CHECKING:
-    from ssl import SSLContext as _SSLContext
+    from ssl import SSLContext as _SSLContext, SSLSocket as _SSLSocket
 
 _ReceivedPacketT = TypeVar("_ReceivedPacketT")
 _SentPacketT = TypeVar("_SentPacketT")
@@ -62,6 +61,7 @@ _SentPacketT = TypeVar("_SentPacketT")
 class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Generic[_SentPacketT, _ReceivedPacketT]):
     __slots__ = (
         "__socket",
+        "__over_ssl",
         "__socket_proxy",
         "__send_lock",
         "__receive_lock",
@@ -188,6 +188,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
 
             self.__addr: SocketAddress = new_socket_address(socket.getsockname(), socket.family)
             self.__peer: SocketAddress = new_socket_address(socket.getpeername(), socket.family)
+            self.__over_ssl: bool = False
 
             if ssl:
                 if _ssl_module is None:
@@ -207,6 +208,9 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                     suppress_ragged_eofs=False,  # Suppressed or not, it will be transformed to a ConnectionAbortedError so...
                     server_hostname=server_hostname,
                 )
+
+                self.__over_ssl = True
+
                 if ssl_handshake_timeout is None:
                     ssl_handshake_timeout = SSL_HANDSHAKE_TIMEOUT
 
@@ -254,7 +258,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 return
             self.__socket = None
             try:
-                if not self.__eof_reached and _is_ssl_socket(socket):
+                if not self.__eof_reached and self.__is_ssl_socket(socket):
                     with self.__convert_ssl_eof_error(), _contextlib.suppress(TimeoutError):
                         socket = _retry_ssl_socket_method(socket, self.__ssl_shutdown_timeout, None, socket.unwrap)
             except ConnectionError:
@@ -277,6 +281,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             buffer = memoryview(data)
             timeout = None
             retry_interval: float = self.__retry_interval
+            _is_ssl_socket = self.__is_ssl_socket
             try:
                 remaining: int = len(data)
                 while remaining > 0:
@@ -306,6 +311,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             bufsize: int = self.__max_recv_size
             monotonic = _time_monotonic  # pull function to local namespace
             retry_interval: float = self.__retry_interval
+            _is_ssl_socket = self.__is_ssl_socket
 
             while True:
                 try:
@@ -396,6 +402,11 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             if (socket := self.__socket) is None:
                 return -1
             return socket.fileno()
+
+    def __is_ssl_socket(self, socket: _socket.socket) -> TypeGuard[_SSLSocket]:
+        # Optimization: Instead of always do a isinstance(), do it once then use the TypeGuard to cast the socket type
+        # for static type checkers
+        return self.__over_ssl
 
     @property
     @final
