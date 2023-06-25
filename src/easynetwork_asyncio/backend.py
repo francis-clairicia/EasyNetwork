@@ -16,12 +16,20 @@ import functools
 import socket as _socket
 from typing import TYPE_CHECKING, Any, AsyncContextManager, Callable, Coroutine, NoReturn, ParamSpec, Sequence, TypeVar
 
+try:
+    import ssl as _ssl
+except ImportError:  # pragma: no cover
+    ssl = None
+else:
+    ssl = _ssl
+    del _ssl
+
 from easynetwork.api_async.backend.abc import AbstractAsyncBackend
 from easynetwork.api_async.backend.sniffio import current_async_library_cvar as _sniffio_current_async_library_cvar
 
 if TYPE_CHECKING:
     import concurrent.futures
-    import ssl as _ssl
+    from ssl import SSLContext as _SSLContext
 
     from easynetwork.api_async.backend.abc import (
         AbstractAcceptedSocket,
@@ -183,7 +191,7 @@ class AsyncioBackend(AbstractAsyncBackend):
         self,
         host: str,
         port: int,
-        ssl_context: _ssl.SSLContext,
+        ssl_context: _SSLContext,
         *,
         server_hostname: str | None,
         ssl_handshake_timeout: float,
@@ -252,7 +260,7 @@ class AsyncioBackend(AbstractAsyncBackend):
     async def wrap_ssl_over_tcp_client_socket(
         self,
         socket: _socket.socket,
-        ssl_context: _ssl.SSLContext,
+        ssl_context: _SSLContext,
         *,
         server_hostname: str,
         ssl_handshake_timeout: float,
@@ -301,7 +309,7 @@ class AsyncioBackend(AbstractAsyncBackend):
         host: str | Sequence[str] | None,
         port: int,
         backlog: int,
-        ssl_context: _ssl.SSLContext,
+        ssl_context: _SSLContext,
         ssl_handshake_timeout: float,
         ssl_shutdown_timeout: float,
         *,
@@ -487,8 +495,6 @@ class AsyncioBackend(AbstractAsyncBackend):
     def _check_ssl_support(self) -> None:
         self._check_asyncio_transport("SSL/TLS")
 
-    def __verify_ssl_context(self, ctx: _ssl.SSLContext) -> None:
-        import ssl
-
-        if not isinstance(ctx, ssl.SSLContext):
+    def __verify_ssl_context(self, ctx: _SSLContext) -> None:
+        if ssl is None or not isinstance(ctx, ssl.SSLContext):
             raise ValueError(f"Expected a ssl.SSLContext instance, got {ctx!r}")

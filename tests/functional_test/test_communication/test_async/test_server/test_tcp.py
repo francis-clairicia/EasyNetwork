@@ -8,7 +8,6 @@ import contextlib
 import logging
 import math
 import ssl
-import ssl as _ssl
 from socket import IPPROTO_TCP, TCP_NODELAY
 from typing import Any, AsyncGenerator, AsyncIterator, Awaitable, Callable, Sequence
 from weakref import WeakValueDictionary
@@ -45,7 +44,7 @@ class NoListenerErrorBackend(AsyncioBackend):
         host: str | Sequence[str] | None,
         port: int,
         backlog: int,
-        ssl_context: _ssl.SSLContext,
+        ssl_context: ssl.SSLContext,
         ssl_handshake_timeout: float,
         ssl_shutdown_timeout: float,
         *,

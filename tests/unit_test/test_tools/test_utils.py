@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import selectors
+import ssl
 from socket import (
     AF_INET,
     AF_INET6,
@@ -211,7 +212,6 @@ def test____check_socket_no_ssl____ssl_socket(mock_ssl_socket: MagicMock) -> Non
 
 def test____is_ssl_eof_error____SSLEOFError() -> None:
     # Arrange
-    import ssl
 
     # Act & Assert
     assert is_ssl_eof_error(ssl.SSLEOFError())
@@ -219,7 +219,6 @@ def test____is_ssl_eof_error____SSLEOFError() -> None:
 
 def test____is_ssl_eof_error____SSLError_with_specific_mnemonic() -> None:
     # Arrange
-    import ssl
 
     # Act & Assert
     assert is_ssl_eof_error(ssl.SSLError(ssl.SSL_ERROR_SSL, "UNEXPECTED_EOF_WHILE_READING"))

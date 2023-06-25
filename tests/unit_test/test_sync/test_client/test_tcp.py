@@ -6,8 +6,8 @@ import contextlib
 import errno
 import os
 from selectors import EVENT_READ, EVENT_WRITE
-from socket import AF_INET6, IPPROTO_TCP, SHUT_RDWR, SO_KEEPALIVE, TCP_NODELAY
-from ssl import SOL_SOCKET, SSLEOFError, SSLError, SSLErrorNumber, SSLWantReadError, SSLWantWriteError, SSLZeroReturnError
+from socket import AF_INET6, IPPROTO_TCP, SHUT_RDWR, SO_KEEPALIVE, SOL_SOCKET, TCP_NODELAY
+from ssl import SSLEOFError, SSLError, SSLErrorNumber, SSLWantReadError, SSLWantWriteError, SSLZeroReturnError
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.api_sync.client.tcp import TCPNetworkClient

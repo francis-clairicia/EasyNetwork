@@ -12,7 +12,15 @@ import contextlib as _contextlib
 import errno as _errno
 import socket as _socket
 from time import monotonic as _time_monotonic
-from typing import TYPE_CHECKING, Any, Callable, Generic, Iterator, Literal, NoReturn, TypeVar, final, overload
+from typing import TYPE_CHECKING, Any, Callable, Generic, Iterator, Literal, NoReturn, TypeVar, cast, final, overload
+
+try:
+    import ssl
+except ImportError:  # pragma: no cover
+    _ssl_module = None
+else:
+    _ssl_module = ssl
+    del ssl
 
 from ...exceptions import ClientClosedError, StreamProtocolParseError
 from ...protocol import StreamProtocol
@@ -167,10 +175,10 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             self.__peer: SocketAddress = new_socket_address(socket.getpeername(), socket.family)
 
             if ssl:
+                if _ssl_module is None:
+                    raise RuntimeError("stdlib ssl module not available")
                 if isinstance(ssl, bool):
-                    import ssl as _ssl_module
-
-                    ssl = _ssl_module.create_default_context()
+                    ssl = cast("_SSLContext", _ssl_module.create_default_context())
                     if not server_hostname:
                         ssl.check_hostname = False
                     if hasattr(_ssl_module, "OP_IGNORE_UNEXPECTED_EOF"):
@@ -348,12 +356,13 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
 
     @_contextlib.contextmanager
     def __convert_ssl_eof_error(self) -> Iterator[None]:
-        import ssl
-
+        if _ssl_module is None:
+            yield
+            return
         try:
             yield
-        except ssl.SSLError as exc:
-            if isinstance(exc, ssl.SSLZeroReturnError) or _is_ssl_eof_error(exc):
+        except _ssl_module.SSLError as exc:
+            if isinstance(exc, _ssl_module.SSLZeroReturnError) or _is_ssl_eof_error(exc):
                 self.__eof_error(exc)
             raise
 

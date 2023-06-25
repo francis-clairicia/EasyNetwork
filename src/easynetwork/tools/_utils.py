@@ -31,6 +31,14 @@ import time
 import traceback
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Literal, ParamSpec, TypeGuard, TypeVar, assert_never
 
+try:
+    import ssl as _ssl
+except ImportError:  # pragma: no cover
+    ssl = None
+else:
+    ssl = _ssl
+    del _ssl
+
 if TYPE_CHECKING:
     from ssl import SSLError as _SSLError, SSLSocket as _SSLSocket
 
@@ -81,11 +89,8 @@ def check_real_socket_state(socket: _socket.socket | _SocketProxy) -> None:
 
 
 def is_ssl_socket(socket: _socket.socket) -> TypeGuard[_SSLSocket]:
-    try:
-        import ssl
-    except ImportError:  # pragma: no cover
+    if ssl is None:
         return False
-
     return isinstance(socket, ssl.SSLSocket)
 
 
@@ -164,10 +169,10 @@ def retry_ssl_socket_method(
     *args: _P.args,
     **kwargs: _P.kwargs,
 ) -> _R:
+    if ssl is None:
+        raise RuntimeError("stdlib ssl module not available")
     assert is_ssl_socket(socket), "Expected an ssl.SSLSocket instance"
     assert socket.gettimeout() == 0, "The socket must be non-blocking"
-
-    import ssl
 
     monotonic = time.monotonic  # pull function to local namespace
     event: Literal["read", "write"]
@@ -190,9 +195,7 @@ def retry_ssl_socket_method(
 
 
 def is_ssl_eof_error(exc: BaseException) -> TypeGuard[_SSLError]:
-    try:
-        import ssl
-    except ImportError:  # pragma: no cover
+    if ssl is None:
         return False
 
     match exc:
