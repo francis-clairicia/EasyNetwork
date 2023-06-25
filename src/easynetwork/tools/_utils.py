@@ -180,7 +180,7 @@ def retry_socket_method(
     def callback() -> _R:
         try:
             return socket_method(*args, **kwargs)
-        except BlockingIOError:
+        except (BlockingIOError, TimeoutError, InterruptedError):
             raise _WouldBlock(event) from None
 
     return _retry_impl(socket, timeout, retry_interval, callback)
