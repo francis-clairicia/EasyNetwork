@@ -374,12 +374,12 @@ class TestBZ2CompressorSerializer(BaseTestCompressorSerializerImplementation):
     def serializer_cls() -> type[BZ2CompressorSerializer[Any, Any]]:
         return BZ2CompressorSerializer
 
-    @pytest.fixture
+    @pytest.fixture(autouse=True)
     @staticmethod
     def mock_bz2_compressor_cls(mocker: MockerFixture) -> MagicMock:
         return mocker.patch("bz2.BZ2Compressor")
 
-    @pytest.fixture
+    @pytest.fixture(autouse=True)
     @staticmethod
     def mock_bz2_decompressor_cls(mocker: MockerFixture) -> MagicMock:
         return mocker.patch("bz2.BZ2Decompressor")

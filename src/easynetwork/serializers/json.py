@@ -103,7 +103,7 @@ class _JSONParser:
 
 
 class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
-    __slots__ = ("__encoder", "__decoder", "__encoding", "__unicode_errors")
+    __slots__ = ("__encoder", "__decoder", "__decoder_error_cls", "__encoding", "__unicode_errors")
 
     def __init__(
         self,
@@ -113,7 +113,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
         encoding: str = "utf-8",
         unicode_errors: str = "strict",
     ) -> None:
-        from json import JSONDecoder, JSONEncoder
+        from json import JSONDecodeError, JSONDecoder, JSONEncoder
 
         super().__init__()
         self.__encoder: JSONEncoder
@@ -131,6 +131,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
 
         self.__encoder = JSONEncoder(**dataclass_asdict(encoder_config))
         self.__decoder = JSONDecoder(**dataclass_asdict(decoder_config))
+        self.__decoder_error_cls = JSONDecodeError
 
         self.__encoding: str = encoding
         self.__unicode_errors: str = unicode_errors
@@ -149,15 +150,13 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
 
     @final
     def deserialize(self, data: bytes) -> _DT_co:
-        from json import JSONDecodeError
-
         try:
             document: str = data.decode(self.__encoding, self.__unicode_errors)
         except UnicodeError as exc:
             raise DeserializeError(f"Unicode decode error: {exc}", error_info={"data": data}) from exc
         try:
             packet: _DT_co = self.__decoder.decode(document)
-        except JSONDecodeError as exc:
+        except self.__decoder_error_cls as exc:
             raise DeserializeError(
                 f"JSON decode error: {exc}",
                 error_info={

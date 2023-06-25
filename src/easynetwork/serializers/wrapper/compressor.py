@@ -143,33 +143,29 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_ST_contr
 
 
 class BZ2CompressorSerializer(AbstractCompressorSerializer[_ST_contra, _DT_co]):
-    __slots__ = ("__compresslevel",)
+    __slots__ = ("__compresslevel", "__compressor_factory", "__decompressor_factory")
 
     BEST_COMPRESSION_LEVEL: Final[int] = 9
 
     def __init__(self, serializer: AbstractPacketSerializer[_ST_contra, _DT_co], *, compress_level: int | None = None) -> None:
-        import bz2  # Import it now
-
-        del bz2
+        import bz2
 
         super().__init__(serializer=serializer, expected_decompress_error=OSError)
         self.__compresslevel: int = compress_level if compress_level is not None else self.BEST_COMPRESSION_LEVEL
+        self.__compressor_factory = bz2.BZ2Compressor
+        self.__decompressor_factory = bz2.BZ2Decompressor
 
     @final
     def new_compressor_stream(self) -> CompressorInterface:
-        from bz2 import BZ2Compressor
-
-        return BZ2Compressor(self.__compresslevel)
+        return self.__compressor_factory(self.__compresslevel)
 
     @final
     def new_decompressor_stream(self) -> DecompressorInterface:
-        from bz2 import BZ2Decompressor
-
-        return BZ2Decompressor()
+        return self.__decompressor_factory()
 
 
 class ZlibCompressorSerializer(AbstractCompressorSerializer[_ST_contra, _DT_co]):
-    __slots__ = ("__compresslevel",)
+    __slots__ = ("__compresslevel", "__compressor_factory", "__decompressor_factory")
 
     def __init__(
         self,
@@ -181,15 +177,13 @@ class ZlibCompressorSerializer(AbstractCompressorSerializer[_ST_contra, _DT_co])
 
         super().__init__(serializer=serializer, expected_decompress_error=zlib.error)
         self.__compresslevel: int = compress_level if compress_level is not None else zlib.Z_BEST_COMPRESSION
+        self.__compressor_factory = zlib.compressobj
+        self.__decompressor_factory = zlib.decompressobj
 
     @final
     def new_compressor_stream(self) -> CompressorInterface:
-        import zlib
-
-        return zlib.compressobj(self.__compresslevel)
+        return self.__compressor_factory(self.__compresslevel)
 
     @final
     def new_decompressor_stream(self) -> DecompressorInterface:
-        import zlib
-
-        return zlib.decompressobj()
+        return self.__decompressor_factory()

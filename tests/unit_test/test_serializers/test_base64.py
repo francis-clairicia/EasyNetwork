@@ -16,12 +16,12 @@ if TYPE_CHECKING:
 
 
 class TestBase64EncodedSerializer:
-    @pytest.fixture
+    @pytest.fixture(autouse=True)
     @staticmethod
     def mock_b64encode(mocker: MockerFixture) -> MagicMock:
         return mocker.patch("base64.urlsafe_b64encode", autospec=True)
 
-    @pytest.fixture
+    @pytest.fixture(autouse=True)
     @staticmethod
     def mock_b64decode(mocker: MockerFixture) -> MagicMock:
         return mocker.patch("base64.urlsafe_b64decode", autospec=True)
