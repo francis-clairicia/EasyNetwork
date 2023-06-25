@@ -32,11 +32,11 @@ class MyAsyncRequestHandler(AsyncBaseRequestHandler[str, str]):
 
 
 def create_tcp_server() -> StandaloneTCPNetworkServer[str, str]:
-    return StandaloneTCPNetworkServer(None, PORT, StreamProtocol(StringLineSerializer()), MyAsyncRequestHandler(), "asyncio")
+    return StandaloneTCPNetworkServer(None, PORT, StreamProtocol(StringLineSerializer()), MyAsyncRequestHandler())
 
 
 def create_udp_server() -> StandaloneUDPNetworkServer[str, str]:
-    return StandaloneUDPNetworkServer(None, PORT, DatagramProtocol(StringLineSerializer()), MyAsyncRequestHandler(), "asyncio")
+    return StandaloneUDPNetworkServer(None, PORT, DatagramProtocol(StringLineSerializer()), MyAsyncRequestHandler())
 
 
 def main() -> None:

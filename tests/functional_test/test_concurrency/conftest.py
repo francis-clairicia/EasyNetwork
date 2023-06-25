@@ -35,12 +35,11 @@ def ipproto(request: pytest.FixtureRequest) -> Literal["TCP", "UDP"]:
 def _build_server(ipproto: Literal["TCP", "UDP"]) -> AbstractStandaloneNetworkServer:
     serializer = StringLineSerializer()
     request_handler = EchoRequestHandler()
-    backend = "asyncio"
     match ipproto:
         case "TCP":
-            return StandaloneTCPNetworkServer(None, 0, StreamProtocol(serializer), request_handler, backend)
+            return StandaloneTCPNetworkServer(None, 0, StreamProtocol(serializer), request_handler)
         case "UDP":
-            return StandaloneUDPNetworkServer(None, 0, DatagramProtocol(serializer), request_handler, backend)
+            return StandaloneUDPNetworkServer(None, 0, DatagramProtocol(serializer), request_handler)
         case _:
             pytest.fail("Invalid ipproto")
 
