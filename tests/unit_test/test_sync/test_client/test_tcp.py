@@ -196,12 +196,18 @@ class TestTCPNetworkClient(BaseTestClient):
     def ssl_shutdown_timeout(request: Any) -> float | None:
         return getattr(request, "param", None)
 
+    @pytest.fixture
+    @staticmethod
+    def retry_interval(request: Any) -> float:
+        return getattr(request, "param", float("+inf"))
+
     @pytest.fixture(params=["REMOTE_ADDRESS", "EXTERNAL_SOCKET"])
     @staticmethod
     def client(
         request: Any,
         max_recv_size: int | None,
         ssl_shutdown_timeout: float | None,
+        retry_interval: float,
         remote_address: tuple[str, int],
         mock_tcp_socket: MagicMock,
         mock_stream_protocol: MagicMock,
@@ -220,6 +226,7 @@ class TestTCPNetworkClient(BaseTestClient):
                         server_hostname=server_hostname,
                         max_recv_size=max_recv_size,
                         ssl_shutdown_timeout=ssl_shutdown_timeout,
+                        retry_interval=retry_interval,
                     )
                 case "EXTERNAL_SOCKET":
                     return TCPNetworkClient(
@@ -229,6 +236,7 @@ class TestTCPNetworkClient(BaseTestClient):
                         server_hostname=server_hostname,
                         max_recv_size=max_recv_size,
                         ssl_shutdown_timeout=ssl_shutdown_timeout,
+                        retry_interval=retry_interval,
                     )
                 case invalid:
                     pytest.fail(f"Invalid fixture param: Got {invalid!r}")
@@ -543,6 +551,52 @@ class TestTCPNetworkClient(BaseTestClient):
                     remote_address,
                     protocol=mock_stream_protocol,
                     max_recv_size=max_recv_size,
+                    ssl=ssl_context,
+                    server_hostname=server_hostname,
+                )
+
+        # Assert
+        if ssl_context:
+            ssl_context.wrap_socket.assert_not_called()
+        mock_ssl_create_default_context.assert_not_called()
+        mock_stream_data_consumer_cls.assert_not_called()
+        mock_socket_proxy_cls.assert_not_called()
+        mock_tcp_socket.getsockname.assert_not_called()
+        mock_tcp_socket.getpeername.assert_not_called()
+        mock_tcp_socket.close.assert_called_once_with()
+
+    @pytest.mark.parametrize("retry_interval", [0, -12.34])
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    def test____dunder_init____retry_interval____invalid_value(
+        self,
+        retry_interval: float,
+        use_socket: bool,
+        remote_address: tuple[str, int],
+        mock_tcp_socket: MagicMock,
+        mock_stream_protocol: MagicMock,
+        mock_stream_data_consumer_cls: MagicMock,
+        mock_socket_proxy_cls: MagicMock,
+        mock_ssl_create_default_context: MagicMock,
+        ssl_context: MagicMock | None,
+        server_hostname: Any | None,
+    ) -> None:
+        # Arrange
+
+        # Act
+        with pytest.raises(ValueError, match=r"^retry_interval must be a strictly positive float or None$"):
+            if use_socket:
+                _ = TCPNetworkClient(
+                    mock_tcp_socket,
+                    protocol=mock_stream_protocol,
+                    retry_interval=retry_interval,
+                    ssl=ssl_context,
+                    server_hostname=server_hostname,
+                )
+            else:
+                _ = TCPNetworkClient(
+                    remote_address,
+                    protocol=mock_stream_protocol,
+                    retry_interval=retry_interval,
                     ssl=ssl_context,
                     server_hostname=server_hostname,
                 )

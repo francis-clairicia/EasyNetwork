@@ -119,29 +119,31 @@ def wait_socket_available(socket: _socket.socket, timeout: float | None, event: 
         return len(ready_list) > 0
 
 
-def retry_socket_method(
+class _WouldBlock(Exception):
+    def __init__(self, event: Literal["read", "write"]) -> None:
+        super().__init__(event)
+        self.event: Literal["read", "write"] = event
+
+
+def _retry_impl(
     socket: _socket.socket,
     timeout: float | None,
     retry_interval: float | None,
-    event: Literal["read", "write"],
-    socket_method: Callable[_P, _R],
-    /,
-    *args: _P.args,
-    **kwargs: _P.kwargs,
+    callback: Callable[[], _R],
 ) -> _R:
-    assert not is_ssl_socket(socket), "ssl.SSLSocket instances are forbidden"
     assert socket.gettimeout() == 0, "The socket must be non-blocking"
-    assert retry_interval is None or retry_interval > 0, "retry_interval must be a strictly positive float or None"
+
     monotonic = time.monotonic  # pull function to local namespace
+    event: Literal["read", "write"]
     if timeout == float("+inf"):
         timeout = None
     if retry_interval == float("+inf"):
         retry_interval = None
     while True:
         try:
-            return socket_method(*args, **kwargs)
-        except BlockingIOError:
-            pass
+            return callback()
+        except _WouldBlock as exc:
+            event = exc.event
         if timeout is not None and timeout <= 0:
             break
         is_retry_interval: bool
@@ -162,36 +164,48 @@ def retry_socket_method(
     raise error_from_errno(_errno.ETIMEDOUT)
 
 
-def retry_ssl_socket_method(
-    socket: _SSLSocket,
+def retry_socket_method(
+    socket: _socket.socket,
     timeout: float | None,
+    retry_interval: float | None,
+    event: Literal["read", "write"],
     socket_method: Callable[_P, _R],
     /,
     *args: _P.args,
     **kwargs: _P.kwargs,
 ) -> _R:
-    assert ssl is not None, "stdlib ssl module not available"
-    assert is_ssl_socket(socket), "Expected an ssl.SSLSocket instance"
-    assert socket.gettimeout() == 0, "The socket must be non-blocking"
+    assert not is_ssl_socket(socket), "ssl.SSLSocket instances are forbidden"
 
-    monotonic = time.monotonic  # pull function to local namespace
-    event: Literal["read", "write"]
-    while True:
+    def callback() -> _R:
+        try:
+            return socket_method(*args, **kwargs)
+        except BlockingIOError:
+            raise _WouldBlock(event) from None
+
+    return _retry_impl(socket, timeout, retry_interval, callback)
+
+
+def retry_ssl_socket_method(
+    socket: _SSLSocket,
+    timeout: float | None,
+    retry_interval: float | None,
+    socket_method: Callable[_P, _R],
+    /,
+    *args: _P.args,
+    **kwargs: _P.kwargs,
+) -> _R:
+    assert is_ssl_socket(socket), "Expected an ssl.SSLSocket instance"
+
+    def callback() -> _R:
+        assert ssl is not None, "stdlib ssl module not available"
         try:
             return socket_method(*args, **kwargs)
         except (ssl.SSLWantReadError, ssl.SSLSyscallError):
-            event = "read"
+            raise _WouldBlock("read") from None
         except ssl.SSLWantWriteError:
-            event = "write"
-        if timeout is not None and timeout <= 0:
-            break
-        _start = monotonic()
-        if not wait_socket_available(socket, timeout, event):
-            break
-        _end = monotonic()
-        if timeout is not None:
-            timeout -= _end - _start
-    raise error_from_errno(_errno.ETIMEDOUT)
+            raise _WouldBlock("write") from None
+
+    return _retry_impl(socket, timeout, retry_interval, callback)
 
 
 def is_ssl_eof_error(exc: BaseException) -> TypeGuard[_SSLError]:
