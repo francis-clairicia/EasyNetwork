@@ -99,7 +99,6 @@ class TestStandaloneTCPNetworkServer(BaseTestStandaloneNetworkServer):
             0,
             stream_protocol,
             EchoRequestHandler(),
-            backend="asyncio",
             backend_kwargs={"runner_factory": runner_factory},
         )
 
@@ -138,7 +137,6 @@ class TestStandaloneUDPNetworkServer(BaseTestStandaloneNetworkServer):
             0,
             datagram_protocol,
             EchoRequestHandler(),
-            backend="asyncio",
             backend_kwargs={"runner_factory": runner_factory},
         )
 
