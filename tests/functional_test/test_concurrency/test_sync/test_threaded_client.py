@@ -23,16 +23,15 @@ def executor(client: ClientType) -> Iterator[ThreadPoolExecutor]:
 
 
 def test____recv_packet____in_a_background_thread(executor: ThreadPoolExecutor, client: ClientType) -> None:
-    recv_packet = executor.submit(client.recv_packet, timeout=None)
+    recv_packet = executor.submit(client.recv_packet, timeout=30)  # Ensure this thread does not stuck the executor shutdown
     while not recv_packet.running():
         time.sleep(0.1)
 
     client.send_packet("Hello world!")
-    assert recv_packet.result() == "Hello world!"
+    assert recv_packet.result(timeout=30) == "Hello world!"
 
 
 @pytest.mark.slow
-@pytest.mark.xfail(raises=TimeoutError, reason="This test fails sometimes, do not know why")
 def test____recv_packet____close_while_waiting(executor: ThreadPoolExecutor, client: ClientType) -> None:
     recv_packet = executor.submit(client.recv_packet, timeout=3)
     while not recv_packet.running():

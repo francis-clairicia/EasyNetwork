@@ -9,6 +9,7 @@ from __future__ import annotations
 __all__ = ["AbstractStandaloneNetworkServer", "StandaloneTCPNetworkServer", "StandaloneUDPNetworkServer"]
 
 import contextlib as _contextlib
+import threading as _threading
 from abc import ABCMeta, abstractmethod
 from typing import TYPE_CHECKING, Any, Generic, Mapping, Self, Sequence, TypeVar
 
@@ -18,7 +19,6 @@ from .udp import AsyncUDPNetworkServer
 
 if TYPE_CHECKING:
     import logging as _logging
-    import threading as _threading
     from ssl import SSLContext as _SSLContext
     from types import TracebackType
 
@@ -69,12 +69,15 @@ class _BaseStandaloneNetworkServerImpl(AbstractStandaloneNetworkServer):
     __slots__ = (
         "__server",
         "__threads_portal",
+        "__is_shutdown",
     )
 
     def __init__(self, server: AbstractAsyncNetworkServer) -> None:
         super().__init__()
         self.__server: AbstractAsyncNetworkServer = server
         self.__threads_portal: AbstractThreadsPortal | None = None
+        self.__is_shutdown = _threading.Event()
+        self.__is_shutdown.set()
 
     def is_serving(self) -> bool:
         if (portal := self.__threads_portal) is not None:
@@ -92,8 +95,11 @@ class _BaseStandaloneNetworkServerImpl(AbstractStandaloneNetworkServer):
 
     def shutdown(self) -> None:
         if (portal := self.__threads_portal) is not None:
-            with _contextlib.suppress(RuntimeError):
+            CancelledError = self.__server.get_backend().get_cancelled_exc_class()
+            with _contextlib.suppress(RuntimeError, CancelledError):
+                # If shutdown() have been cancelled, that means the scheduler itself is shutting down, and this is what we want
                 portal.run_coroutine(self.__server.shutdown)
+        self.__is_shutdown.wait()
 
     def serve_forever(self, *, is_up_event: _threading.Event | None = None) -> None:
         async def wait_and_set_event(is_up_event_async: IEvent, is_up_event: _threading.Event) -> None:
@@ -117,6 +123,9 @@ class _BaseStandaloneNetworkServerImpl(AbstractStandaloneNetworkServer):
 
         backend = self.__server.get_backend()
         with _contextlib.suppress(backend.get_cancelled_exc_class()), _contextlib.ExitStack() as stack:
+            stack.callback(self.__is_shutdown.set)
+            self.__is_shutdown.clear()
+
             if is_up_event is not None:
                 # Force is_up_event to be set, in order not to stuck the waiting thread
                 stack.callback(is_up_event.set)

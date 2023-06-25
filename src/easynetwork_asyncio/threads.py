@@ -93,10 +93,10 @@ class ThreadsPortal(AbstractThreadsPortal):
     def __get_result(future: concurrent.futures.Future[_T]) -> _T:
         try:
             return future.result()
-        except concurrent.futures.CancelledError as exc:
+        except concurrent.futures.CancelledError:
             if not future.cancelled():  # raised from future.exception()
                 raise
-            raise asyncio.CancelledError() from exc
+            raise asyncio.CancelledError() from None
         finally:
             del future
 

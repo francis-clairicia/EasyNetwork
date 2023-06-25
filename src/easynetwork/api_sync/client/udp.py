@@ -80,7 +80,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         self,
         /,
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
-        retry_interval: float = 1,
+        retry_interval: float = 1.0,
         **kwargs: Any,
     ) -> None:
         self.__socket: _socket.socket | None = None  # If any exception occurs, the client will already be in a closed state
