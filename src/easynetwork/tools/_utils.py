@@ -29,6 +29,7 @@ import selectors as _selectors
 import socket as _socket
 import time
 import traceback
+from struct import unpack
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Literal, ParamSpec, TypeGuard, TypeVar, assert_never
 
 try:
@@ -211,9 +212,11 @@ def is_ssl_eof_error(exc: BaseException) -> TypeGuard[_SSLError]:
 
 
 def concatenate_chunks(chunks_iterable: Iterable[bytes]) -> bytes:
-    # The list call should be roughly
-    # equivalent to the PySequence_Fast that ''.join() would do.
-    return b"".join(list(chunks_iterable))
+    return b"".join(chunks_iterable)
+
+
+def iter_bytes(b: bytes | bytearray) -> Iterable[bytes]:
+    return unpack(f"{len(b)}c", b)
 
 
 def ensure_datagram_socket_bound(sock: _socket.socket) -> None:

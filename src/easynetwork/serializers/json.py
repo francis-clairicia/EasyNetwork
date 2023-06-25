@@ -18,6 +18,7 @@ from dataclasses import asdict as dataclass_asdict, dataclass
 from typing import Any, Callable, Generator, TypeVar, final
 
 from ..exceptions import DeserializeError, IncrementalDeserializeError
+from ..tools._utils import iter_bytes
 from .abc import AbstractIncrementalPacketSerializer
 
 _ST_contra = TypeVar("_ST_contra", contravariant=True)
@@ -50,12 +51,12 @@ class JSONDecoderConfig:
 
 class _JSONParser:
     @staticmethod
+    def _escaped(partial_document: bytes) -> bool:
+        return ((len(partial_document) - len(partial_document.rstrip(b"\\"))) % 2) == 1
+
+    @staticmethod
     def raw_parse() -> Generator[None, bytes, tuple[bytes, bytes]]:
-        import struct
-
-        def escaped(partial_document: bytes) -> bool:
-            return ((len(partial_document) - len(partial_document.rstrip(b"\\"))) % 2) == 1
-
+        escaped = _JSONParser._escaped
         enclosure_counter: Counter[bytes] = Counter()
         partial_document: bytearray = bytearray()
         first_enclosure: bytes = b""
@@ -63,7 +64,7 @@ class _JSONParser:
             while not (chunk := (yield)):  # Skip empty bytes
                 continue
             char: bytes
-            for nb_chars, char in enumerate(struct.unpack(f"{len(chunk)}c", chunk), start=1):
+            for nb_chars, char in enumerate(iter_bytes(chunk), start=1):
                 match char:
                     case b'"' if not escaped(partial_document):
                         enclosure_counter[b'"'] = 0 if enclosure_counter[b'"'] == 1 else 1
@@ -170,8 +171,6 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
 
     @final
     def incremental_deserialize(self) -> Generator[None, bytes, tuple[_DT_co, bytes]]:
-        from json import JSONDecodeError
-
         complete_document, remaining_data = yield from _JSONParser.raw_parse()
 
         if not complete_document:
@@ -189,7 +188,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
             ) from exc
         try:
             packet, end = self.__decoder.raw_decode(document)
-        except JSONDecodeError as exc:
+        except self.__decoder_error_cls as exc:
             raise IncrementalDeserializeError(
                 f"JSON decode error: {exc}",
                 remaining_data=remaining_data,

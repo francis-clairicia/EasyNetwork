@@ -8,6 +8,7 @@ from typing import Any, Callable, final
 
 from easynetwork.exceptions import DeserializeError, IncrementalDeserializeError
 from easynetwork.serializers.abc import AbstractIncrementalPacketSerializer, AbstractPacketSerializer
+from easynetwork.tools._utils import iter_bytes
 
 import pytest
 
@@ -192,14 +193,6 @@ class BaseTestIncrementalSerializer(BaseTestSerializer):
         packet_to_serialize: Any,
     ) -> None:
         # Arrange
-        import struct
-
-        chunks_list: list[bytes] = list(
-            struct.unpack(f"{len(complete_data_for_incremental_deserialize)}c", complete_data_for_incremental_deserialize)
-        )
-        assert all(len(b) == 1 for b in chunks_list) and b"".join(chunks_list) == complete_data_for_incremental_deserialize
-
-        del complete_data_for_incremental_deserialize, struct
 
         consumer = serializer_for_deserialization.incremental_deserialize()
         next(consumer)
@@ -208,7 +201,8 @@ class BaseTestIncrementalSerializer(BaseTestSerializer):
         with pytest.raises(StopIteration) as exc_info:
             # The generator can stop at any moment (no need to go to the last byte)
             # However, the remaining data returned should be empty
-            for chunk in chunks_list:
+            for chunk in iter_bytes(complete_data_for_incremental_deserialize):
+                assert len(chunk) == 1
                 if empty_bytes_before:
                     try:
                         consumer.send(b"")
