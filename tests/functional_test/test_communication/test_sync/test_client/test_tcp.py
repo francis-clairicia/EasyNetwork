@@ -233,7 +233,7 @@ class TestTCPNetworkClientConnection:
         from threading import Thread
 
         with TCPServer((localhost_ip, 0), socket_family) as server:
-            server_thread = Thread(target=server.serve_forever)
+            server_thread = Thread(target=server.serve_forever, daemon=True)
             server_thread.start()
             yield server
             server.shutdown()
@@ -270,7 +270,7 @@ class TestSSLOverTCPNetworkClient:
         from threading import Thread
 
         with TCPServer((localhost_ip, 0), socket_family, ssl_context=server_ssl_context) as server:
-            server_thread = Thread(target=server.serve_forever)
+            server_thread = Thread(target=server.serve_forever, daemon=True)
             server_thread.start()
             yield server
             server.shutdown()

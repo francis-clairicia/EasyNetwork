@@ -45,6 +45,7 @@ class BaseTestStandaloneNetworkServer:
 
             server.shutdown()
             assert not server.is_serving()
+            t.join()
 
     def test____is_serving____default_to_False(self, server: AbstractStandaloneNetworkServer) -> None:
         with server:
@@ -65,6 +66,7 @@ class BaseTestStandaloneNetworkServer:
 
             server.shutdown()
             assert not server.is_serving()
+            t.join()
 
     @pytest.mark.usefixtures("start_server")
     def test____server_close____while_server_is_running(self, server: AbstractStandaloneNetworkServer) -> None:
