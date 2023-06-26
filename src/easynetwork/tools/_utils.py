@@ -45,7 +45,7 @@ from .socket import AddressFamily
 if TYPE_CHECKING:
     from ssl import SSLError as _SSLError, SSLSocket as _SSLSocket
 
-    from .socket import SocketProxy as _SocketProxy
+    from .socket import SupportsSocketOptions
 
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
@@ -74,7 +74,7 @@ def check_socket_family(family: int) -> None:
         raise ValueError(f"Only these families are supported: {', '.join(supported_families)}")
 
 
-def check_real_socket_state(socket: _socket.socket | _SocketProxy) -> None:
+def check_real_socket_state(socket: SupportsSocketOptions) -> None:
     """Verify socket saved error and raise OSError if there is one
 
     There is some functions such as socket.send() which do not immediately fail and save the errno
@@ -249,7 +249,7 @@ def ensure_datagram_socket_bound(sock: _socket.socket) -> None:
         sock.bind(("", 0))
 
 
-def set_reuseport(sock: _socket.socket) -> None:
+def set_reuseport(sock: SupportsSocketOptions) -> None:
     if not hasattr(_socket, "SO_REUSEPORT"):
         raise ValueError("reuse_port not supported by socket module")
     else:
@@ -259,14 +259,14 @@ def set_reuseport(sock: _socket.socket) -> None:
             raise ValueError("reuse_port not supported by socket module, SO_REUSEPORT defined but not implemented.") from None
 
 
-def set_tcp_nodelay(sock: _socket.socket | _SocketProxy) -> None:
+def set_tcp_nodelay(sock: SupportsSocketOptions) -> None:
     try:
         sock.setsockopt(_socket.IPPROTO_TCP, _socket.TCP_NODELAY, True)
     except (OSError, AttributeError):  # pragma: no cover
         pass
 
 
-def set_tcp_keepalive(sock: _socket.socket | _SocketProxy) -> None:
+def set_tcp_keepalive(sock: SupportsSocketOptions) -> None:
     try:
         sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_KEEPALIVE, True)
     except (OSError, AttributeError):  # pragma: no cover

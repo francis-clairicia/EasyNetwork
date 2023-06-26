@@ -18,6 +18,7 @@ __all__ = [
     "SSL_HANDSHAKE_TIMEOUT",
     "SSL_SHUTDOWN_TIMEOUT",
     "SocketProxy",
+    "SupportsSocketOptions",
     "new_socket_address",
 ]
 
@@ -155,16 +156,7 @@ SSL_HANDSHAKE_TIMEOUT = 60.0
 SSL_SHUTDOWN_TIMEOUT = 30.0
 
 
-class ISocket(Protocol):
-    def fileno(self) -> int:  # pragma: no cover
-        ...
-
-    def dup(self) -> _socket.socket:  # pragma: no cover
-        ...
-
-    def get_inheritable(self) -> bool:  # pragma: no cover
-        ...
-
+class SupportsSocketOptions(Protocol):
     @overload
     def getsockopt(self, __level: int, __optname: int, /) -> int:
         ...
@@ -179,6 +171,14 @@ class ISocket(Protocol):
 
     @overload
     def setsockopt(self, __level: int, __optname: int, __value: None, __optlen: int, /) -> None:
+        ...
+
+
+class ISocket(SupportsSocketOptions, Protocol):
+    def fileno(self) -> int:  # pragma: no cover
+        ...
+
+    def get_inheritable(self) -> bool:  # pragma: no cover
         ...
 
     def getpeername(self) -> _socket._RetAddress:  # pragma: no cover
@@ -253,7 +253,9 @@ class SocketProxy:
         return self.__execute(self.__socket.fileno)
 
     def dup(self) -> _socket.socket:
-        return self.__execute(self.__socket.dup)
+        new_socket = _socket.fromfd(self.fileno(), self.family, self.type, self.proto)
+        new_socket.setblocking(False)
+        return new_socket
 
     def get_inheritable(self) -> bool:
         return self.__execute(self.__socket.get_inheritable)

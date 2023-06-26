@@ -135,19 +135,31 @@ class TestSocketProxy:
         mock_tcp_socket: MagicMock,
         mocker: MockerFixture,
         runner_stub: MagicMock | None,
+        mock_tcp_socket_factory: Callable[[], MagicMock],
     ) -> None:
         # Arrange
-        mock_tcp_socket.dup.return_value = mocker.sentinel.dup_socket
+        mock_tcp_socket.fileno.return_value = mocker.sentinel.fd
+        mock_new_socket = mock_tcp_socket_factory()
+        mock_socket_fromfd = mocker.patch("socket.fromfd", autospec=True, return_value=mock_new_socket)
         socket_proxy = SocketProxy(mock_tcp_socket, runner=runner_stub)
 
         # Act
         socket = socket_proxy.dup()
 
         # Assert
-        mock_tcp_socket.dup.assert_called_once_with()
-        assert socket is mocker.sentinel.dup_socket
+        mock_tcp_socket.dup.assert_not_called()
+        mock_tcp_socket.fileno.assert_called_once_with()
+        mock_socket_fromfd.assert_called_once_with(
+            mocker.sentinel.fd,
+            mock_tcp_socket.family,
+            mock_tcp_socket.type,
+            mock_tcp_socket.proto,
+        )
+        mock_new_socket.setblocking.assert_called_once_with(False)
+        mock_new_socket.settimeout.assert_not_called()
+        assert socket is mock_new_socket
         if runner_stub is not None:
-            runner_stub.assert_called_once_with(mock_tcp_socket.dup)
+            runner_stub.assert_called_once_with(mock_tcp_socket.fileno)
 
     def test____get_inheritable____sub_call(
         self,
