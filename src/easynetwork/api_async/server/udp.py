@@ -14,7 +14,7 @@ from collections import Counter, deque
 from typing import TYPE_CHECKING, Any, AsyncGenerator, AsyncIterator, Callable, Generic, Iterator, Mapping, TypeVar, final
 from weakref import WeakValueDictionary
 
-from ...exceptions import ClientClosedError, DatagramProtocolParseError
+from ...exceptions import ClientClosedError, DatagramProtocolParseError, ServerAlreadyRunning, ServerClosedError
 from ...protocol import DatagramProtocol
 from ...tools._utils import (
     check_real_socket_state as _check_real_socket_state,
@@ -141,7 +141,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
     async def serve_forever(self, *, is_up_event: IEvent | None = None) -> None:
         if not self.__is_shutdown.is_set():
-            raise RuntimeError("Server is already running")
+            raise ServerAlreadyRunning("Server is already running")
 
         async with _contextlib.AsyncExitStack() as server_exit_stack:
             # Wake up server
@@ -155,7 +155,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             # Bind and activate
             assert self.__socket is None
             if self.__socket_factory is None:
-                raise RuntimeError("Closed server")
+                raise ServerClosedError("Closed server")
             self.__socket = await self.__socket_factory.run()
             self.__socket_factory = None
             ###################

@@ -13,6 +13,8 @@ __all__ = [
     "DeserializeError",
     "IncrementalDeserializeError",
     "PacketConversionError",
+    "ServerAlreadyRunning",
+    "ServerClosedError",
     "StreamProtocolParseError",
 ]
 
@@ -21,6 +23,14 @@ from typing import Any, Literal, TypeAlias
 
 class ClientClosedError(ConnectionError):
     """Error raised when trying to do an operation on a closed client"""
+
+
+class ServerClosedError(RuntimeError):
+    """Error raised when trying to do an operation on a closed server"""
+
+
+class ServerAlreadyRunning(RuntimeError):
+    """Error raised if serve_forever() is called twice"""
 
 
 class DeserializeError(Exception):
