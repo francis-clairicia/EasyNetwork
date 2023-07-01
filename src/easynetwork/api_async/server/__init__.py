@@ -14,6 +14,7 @@ __all__ = [
     "AsyncStreamRequestHandler",
     "AsyncTCPNetworkServer",
     "AsyncUDPNetworkServer",
+    "StandaloneNetworkServerThread",
     "StandaloneTCPNetworkServer",
     "StandaloneUDPNetworkServer",
 ]

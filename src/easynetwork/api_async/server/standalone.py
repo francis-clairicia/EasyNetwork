@@ -6,13 +6,20 @@
 
 from __future__ import annotations
 
-__all__ = ["AbstractStandaloneNetworkServer", "StandaloneTCPNetworkServer", "StandaloneUDPNetworkServer"]
+__all__ = [
+    "AbstractStandaloneNetworkServer",
+    "StandaloneNetworkServerThread",
+    "StandaloneTCPNetworkServer",
+    "StandaloneUDPNetworkServer",
+]
 
 import contextlib as _contextlib
 import threading as _threading
+import time
 from abc import ABCMeta, abstractmethod
 from typing import TYPE_CHECKING, Any, Generic, Mapping, Self, Sequence, TypeVar
 
+from ...exceptions import ServerAlreadyRunning
 from ...tools.socket import SocketAddress, SocketProxy
 from .tcp import AsyncTCPNetworkServer
 from .udp import AsyncUDPNetworkServer
@@ -29,6 +36,8 @@ if TYPE_CHECKING:
 
 _RequestT = TypeVar("_RequestT")
 _ResponseT = TypeVar("_ResponseT")
+
+_ServerT = TypeVar("_ServerT", bound="AbstractStandaloneNetworkServer")
 
 
 class AbstractStandaloneNetworkServer(metaclass=ABCMeta):
@@ -61,7 +70,7 @@ class AbstractStandaloneNetworkServer(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    def shutdown(self) -> None:
+    def shutdown(self, timeout: float | None = ...) -> None:
         raise NotImplementedError
 
 
@@ -86,20 +95,34 @@ class _BaseStandaloneNetworkServerImpl(AbstractStandaloneNetworkServer):
         return False
 
     def server_close(self) -> None:
+        backend = self.__server.get_backend()
         if (portal := self.__threads_portal) is not None:
             with _contextlib.suppress(RuntimeError):
-                portal.run_coroutine(self.__server.server_close)
+                portal.run_coroutine(lambda: backend.ignore_cancellation(self.__server.server_close()))
         else:
-            backend = self.__server.get_backend()
+            self.__is_shutdown.wait()  # Ensure we are not in the interval between the server shutdown and the scheduler shutdown
             backend.bootstrap(self.__server.server_close)
 
-    def shutdown(self) -> None:
+    def shutdown(self, timeout: float | None = None) -> None:
         if (portal := self.__threads_portal) is not None:
             CancelledError = self.__server.get_backend().get_cancelled_exc_class()
             with _contextlib.suppress(RuntimeError, CancelledError):
                 # If shutdown() have been cancelled, that means the scheduler itself is shutting down, and this is what we want
-                portal.run_coroutine(self.__server.shutdown)
-        self.__is_shutdown.wait()
+                if timeout is None:
+                    portal.run_coroutine(self.__server.shutdown)
+                else:
+                    _start = time.monotonic()
+                    try:
+                        portal.run_coroutine(self.__do_shutdown_with_timeout, timeout)
+                    finally:
+                        timeout -= time.monotonic() - _start
+        self.__is_shutdown.wait(timeout)
+
+    async def __do_shutdown_with_timeout(self, timeout_delay: float) -> None:
+        backend = self.__server.get_backend()
+        with _contextlib.suppress(TimeoutError):
+            async with backend.timeout(timeout_delay):
+                await self.__server.shutdown()
 
     def serve_forever(self, *, is_up_event: _threading.Event | None = None) -> None:
         async def wait_and_set_event(is_up_event_async: IEvent, is_up_event: _threading.Event) -> None:
@@ -108,7 +131,7 @@ class _BaseStandaloneNetworkServerImpl(AbstractStandaloneNetworkServer):
 
         async def serve_forever() -> None:
             if self.__threads_portal is not None:
-                raise RuntimeError("Server is already running")
+                raise ServerAlreadyRunning("Server is already running")
             backend = self.__server.get_backend()
             try:
                 self.__threads_portal = backend.create_threads_portal()
@@ -261,3 +284,39 @@ class StandaloneUDPNetworkServer(_BaseStandaloneNetworkServerImpl, Generic[_Requ
         @property
         def _server(self) -> AsyncUDPNetworkServer[_RequestT, _ResponseT]:
             ...
+
+
+class StandaloneNetworkServerThread(_threading.Thread, Generic[_ServerT]):
+    def __init__(
+        self,
+        server: _ServerT,
+        group: None = None,
+        name: str | None = None,
+        *,
+        daemon: bool | None = None,
+    ) -> None:
+        super().__init__(group=group, target=None, name=name, daemon=daemon)
+        self.__server: _ServerT = server
+        self.__is_up_event: _threading.Event = _threading.Event()
+
+    def start(self) -> None:
+        super().start()
+        self.__is_up_event.wait()
+
+    def run(self) -> None:
+        return self.__server.serve_forever(is_up_event=self.__is_up_event)
+
+    def join(self, timeout: float | None = None) -> None:
+        _start = time.monotonic()
+        try:
+            if self.is_alive():
+                self.__server.shutdown(timeout=timeout)
+        finally:
+            _end = time.monotonic()
+            if timeout is not None:
+                timeout -= _end - _start
+            super().join(timeout=timeout)
+
+    @property
+    def server(self) -> _ServerT:
+        return self.__server

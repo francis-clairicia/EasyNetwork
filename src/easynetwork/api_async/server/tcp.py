@@ -29,7 +29,7 @@ from typing import (
     final,
 )
 
-from ...exceptions import ClientClosedError, StreamProtocolParseError
+from ...exceptions import ClientClosedError, ServerAlreadyRunning, ServerClosedError, StreamProtocolParseError
 from ...protocol import StreamProtocol
 from ...tools._utils import (
     check_real_socket_state as _check_real_socket_state,
@@ -185,7 +185,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             return
         self.__listeners = None
         self.stop_listening()
-        await self.__backend.coro_yield()
+        await self.__backend.cancel_shielded_coro_yield()
         async with _contextlib.AsyncExitStack() as exit_stack:
             for listener in listeners:
                 exit_stack.push_async_callback(listener.aclose)
@@ -202,7 +202,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
     async def serve_forever(self, *, is_up_event: IEvent | None = None) -> None:
         if not self.__is_shutdown.is_set():
-            raise RuntimeError("Server is already running")
+            raise ServerAlreadyRunning("Server is already running")
 
         async with _contextlib.AsyncExitStack() as server_exit_stack:
             # Wake up server
@@ -216,7 +216,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             # Bind and activate
             assert self.__listeners is None
             if self.__listeners_factory is None:
-                raise RuntimeError("Closed server")
+                raise ServerClosedError("Closed server")
             self.__listeners = tuple(await self.__listeners_factory.run())
             self.__listeners_factory = None
             if not self.__listeners:

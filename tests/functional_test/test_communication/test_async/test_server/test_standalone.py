@@ -10,10 +10,11 @@ from typing import AsyncGenerator, Callable, Iterator
 from easynetwork.api_async.server.handler import AsyncBaseRequestHandler, AsyncClientInterface
 from easynetwork.api_async.server.standalone import (
     AbstractStandaloneNetworkServer,
+    StandaloneNetworkServerThread,
     StandaloneTCPNetworkServer,
     StandaloneUDPNetworkServer,
 )
-from easynetwork.exceptions import BaseProtocolParseError
+from easynetwork.exceptions import BaseProtocolParseError, ServerAlreadyRunning
 from easynetwork.protocol import DatagramProtocol, StreamProtocol
 
 import pytest
@@ -31,21 +32,18 @@ class EchoRequestHandler(AsyncBaseRequestHandler[str, str]):
 class BaseTestStandaloneNetworkServer:
     @pytest.fixture
     @staticmethod
-    def start_server(server: AbstractStandaloneNetworkServer) -> Iterator[None]:
+    def start_server(
+        server: AbstractStandaloneNetworkServer,
+    ) -> Iterator[StandaloneNetworkServerThread[AbstractStandaloneNetworkServer]]:
         with server:
-            is_up_event = threading.Event()
-            t = threading.Thread(target=server.serve_forever, kwargs={"is_up_event": is_up_event}, daemon=True)
-            t.start()
+            server_thread = StandaloneNetworkServerThread(server, daemon=True)
+            server_thread.start()
 
-            if not is_up_event.wait(timeout=1):
-                raise TimeoutError("Too long to start")
-            assert server.is_serving()
+            assert server_thread.server is server
 
-            yield
+            yield server_thread
 
-            server.shutdown()
-            assert not server.is_serving()
-            t.join()
+            server_thread.join(timeout=1)
 
     def test____is_serving____default_to_False(self, server: AbstractStandaloneNetworkServer) -> None:
         with server:
@@ -55,7 +53,23 @@ class BaseTestStandaloneNetworkServer:
         with server:
             server.shutdown()
 
+    @pytest.mark.usefixtures("start_server")
     def test____shutdown____while_server_is_running(self, server: AbstractStandaloneNetworkServer) -> None:
+        assert server.is_serving()
+
+        server.shutdown()
+        assert not server.is_serving()
+
+    @pytest.mark.usefixtures("start_server")
+    def test____server_close____while_server_is_running(self, server: AbstractStandaloneNetworkServer) -> None:
+        server.server_close()
+
+    @pytest.mark.usefixtures("start_server")
+    def test____serve_forever____error_server_already_running(self, server: AbstractStandaloneNetworkServer) -> None:
+        with pytest.raises(ServerAlreadyRunning):
+            server.serve_forever()
+
+    def test____serve_forever____without_is_up_event(self, server: AbstractStandaloneNetworkServer) -> None:
         with server:
             t = threading.Thread(target=server.serve_forever, daemon=True)
             t.start()
@@ -68,14 +82,12 @@ class BaseTestStandaloneNetworkServer:
             assert not server.is_serving()
             t.join()
 
-    @pytest.mark.usefixtures("start_server")
-    def test____server_close____while_server_is_running(self, server: AbstractStandaloneNetworkServer) -> None:
-        server.server_close()
-
-    @pytest.mark.usefixtures("start_server")
-    def test____serve_forever____error_server_already_running(self, server: AbstractStandaloneNetworkServer) -> None:
-        with pytest.raises(RuntimeError):
-            server.serve_forever()
+    def test____server_thread____several_join(
+        self,
+        start_server: StandaloneNetworkServerThread[AbstractStandaloneNetworkServer],
+    ) -> None:
+        start_server.join()
+        start_server.join()
 
 
 def custom_asyncio_runner() -> asyncio.Runner:
