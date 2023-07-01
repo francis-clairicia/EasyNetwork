@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import threading
+import time
 from typing import AsyncGenerator, Callable, Iterator
 
 from easynetwork.api_async.server.handler import AsyncBaseRequestHandler, AsyncClientInterface
@@ -66,6 +68,19 @@ class BaseTestStandaloneNetworkServer:
     def test____serve_forever____error_server_already_running(self, server: AbstractStandaloneNetworkServer) -> None:
         with pytest.raises(ServerAlreadyRunning):
             server.serve_forever()
+
+    def test____serve_forever____without_is_up_event(self, server: AbstractStandaloneNetworkServer) -> None:
+        with server:
+            t = threading.Thread(target=server.serve_forever, daemon=True)
+            t.start()
+
+            time.sleep(1)
+            if not server.is_serving():
+                pytest.fail("Timeout error")
+
+            server.shutdown()
+            assert not server.is_serving()
+            t.join()
 
     def test____server_thread____several_join(
         self,
