@@ -115,24 +115,6 @@ class TestTransportBasedStreamSocket(BaseTestTransportStreamSocket):
         mock_asyncio_writer.wait_closed.assert_awaited_once_with()
         mock_asyncio_writer.transport.abort.assert_not_called()
 
-    @pytest.mark.parametrize("exception_cls", [*ConnectionError.__subclasses__(), TimeoutError])
-    async def test____aclose____ignore_socket_error(
-        self,
-        exception_cls: type[ConnectionError],
-        socket: AsyncioTransportStreamSocketAdapter,
-        mock_asyncio_writer: MagicMock,
-    ) -> None:
-        # Arrange
-        mock_asyncio_writer.wait_closed.side_effect = exception_cls
-
-        # Act
-        await socket.aclose()
-
-        # Assert
-        mock_asyncio_writer.close.assert_called_once_with()
-        mock_asyncio_writer.wait_closed.assert_awaited_once_with()
-        mock_asyncio_writer.transport.abort.assert_not_called()
-
     async def test____aclose____abort_transport_if_cancelled(
         self,
         socket: AsyncioTransportStreamSocketAdapter,

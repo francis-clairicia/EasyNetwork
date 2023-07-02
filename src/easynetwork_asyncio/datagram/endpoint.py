@@ -177,7 +177,7 @@ class DatagramEndpointProtocol(asyncio.DatagramProtocol):
 
         if isinstance(self.__loop, asyncio.base_events.BaseEventLoop) and hasattr(transport, "_address"):
             # There is an asyncio issue where the private address attribute is not updated with the actual remote address
-            # if the transport is instanciated with an external socket ( await loop.create_datagram_endpoint(sock=my_socket)  )
+            # if the transport is instanciated with an external socket ( await loop.create_datagram_endpoint(sock=my_socket) )
             # This is a monkeypatch to force update the internal address attribute
             try:
                 setattr(transport, "_address", transport.get_extra_info("peername", None))
@@ -188,7 +188,10 @@ class DatagramEndpointProtocol(asyncio.DatagramProtocol):
         self.__connection_lost = True
 
         if not self.__closed.done():
-            self.__closed.set_result(None)
+            if exc is None:
+                self.__closed.set_result(None)
+            else:
+                self.__closed.set_exception(exc)
 
         for waiter in self.__drain_waiters:
             if not waiter.done():
