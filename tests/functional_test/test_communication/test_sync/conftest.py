@@ -14,16 +14,16 @@ def schedule_call_in_thread_with_future(
     request: pytest.FixtureRequest,
 ) -> Iterator[Callable[[float, Callable[[], Any]], Future[Any]]]:
     with ThreadPoolExecutor(thread_name_prefix=f"pytest-easynetwork_{request.node.name}") as executor:
-        monotonic = time.monotonic
+        perf_counter = time.perf_counter
 
         def task(time_to_sleep: float, callback: Callable[[], Any], submit_timestamp: float) -> None:
-            time_to_sleep -= monotonic() - submit_timestamp
+            time_to_sleep -= perf_counter() - submit_timestamp
             if time_to_sleep > 0:
                 time.sleep(time_to_sleep)
             callback()
 
         def schedule_call(time_to_sleep: float, callback: Callable[[], Any]) -> Future[Any]:
-            return executor.submit(task, time_to_sleep, callback, monotonic())
+            return executor.submit(task, time_to_sleep, callback, perf_counter())
 
         yield schedule_call
 

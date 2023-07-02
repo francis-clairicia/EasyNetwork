@@ -24,14 +24,14 @@ class TimeTest:
         self.expected_time: float = expected_time
         self.approx: float | None = approx
         self.start_time: float = -1
-        self._monotonic = time.monotonic
+        self._perf_counter = time.perf_counter
 
     def __enter__(self) -> TimeTest:
         if self.start_time >= 0:
             raise TypeError("Not reentrant context manager")
-        self.start_time = self._monotonic()
+        self.start_time = self._perf_counter()
         return self
 
     def __exit__(self, *args: Any) -> None:
-        end_time = self._monotonic()
+        end_time = self._perf_counter()
         assert end_time - self.start_time == pytest.approx(self.expected_time, rel=self.approx)

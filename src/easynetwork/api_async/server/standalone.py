@@ -111,11 +111,11 @@ class _BaseStandaloneNetworkServerImpl(AbstractStandaloneNetworkServer):
                 if timeout is None:
                     portal.run_coroutine(self.__server.shutdown)
                 else:
-                    _start = time.monotonic()
+                    _start = time.perf_counter()
                     try:
                         portal.run_coroutine(self.__do_shutdown_with_timeout, timeout)
                     finally:
-                        timeout -= time.monotonic() - _start
+                        timeout -= time.perf_counter() - _start
         self.__is_shutdown.wait(timeout)
 
     async def __do_shutdown_with_timeout(self, timeout_delay: float) -> None:
@@ -307,12 +307,12 @@ class StandaloneNetworkServerThread(_threading.Thread, Generic[_ServerT]):
         return self.__server.serve_forever(is_up_event=self.__is_up_event)
 
     def join(self, timeout: float | None = None) -> None:
-        _start = time.monotonic()
+        _start = time.perf_counter()
         try:
             if self.is_alive():
                 self.__server.shutdown(timeout=timeout)
         finally:
-            _end = time.monotonic()
+            _end = time.perf_counter()
             if timeout is not None:
                 timeout -= _end - _start
             super().join(timeout=timeout)
