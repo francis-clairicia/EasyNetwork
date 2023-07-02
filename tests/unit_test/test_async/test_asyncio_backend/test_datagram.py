@@ -467,7 +467,7 @@ class TestDatagramEndpointProtocol:
         protocol.connection_lost(exception)  # Double call must not change anything
 
         # Assert
-        assert close_waiter.done() and close_waiter.exception() is None
+        assert close_waiter.done() and close_waiter.exception() is exception
         mock_asyncio_recv_queue.put_nowait.assert_called_once_with((None, None))
         mock_asyncio_exception_queue.put_nowait.assert_called_once_with(exception)
         mock_asyncio_transport.close.assert_called_once_with()  # just to be sure :)
@@ -678,24 +678,6 @@ class TestDatagramSocketAdapter:
         mock_endpoint: MagicMock,
     ) -> None:
         # Arrange
-
-        # Act
-        await socket.aclose()
-
-        # Assert
-        mock_endpoint.close.assert_called_once_with()
-        mock_endpoint.wait_closed.assert_awaited_once_with()
-        mock_endpoint.transport.abort.assert_not_called()
-
-    @pytest.mark.parametrize("exception_cls", ConnectionError.__subclasses__())
-    async def test____aclose____ignore_connection_error(
-        self,
-        exception_cls: type[ConnectionError],
-        socket: AsyncioTransportDatagramSocketAdapter,
-        mock_endpoint: MagicMock,
-    ) -> None:
-        # Arrange
-        mock_endpoint.wait_closed.side_effect = exception_cls
 
         # Act
         await socket.aclose()

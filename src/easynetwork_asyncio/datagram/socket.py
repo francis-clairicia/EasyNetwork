@@ -41,15 +41,9 @@ class AsyncioTransportDatagramSocketAdapter(AbstractAsyncDatagramSocketAdapter):
         try:
             self.__endpoint.close()
             return await self.__endpoint.wait_closed()
-        except ConnectionError:
-            # It is normal if there was connection errors during operations. But do not propagate this exception,
-            # as we will never reuse this socket
-            pass
         except asyncio.CancelledError:
-            try:
-                self.__endpoint.transport.abort()
-            finally:
-                raise
+            self.__endpoint.transport.abort()
+            raise
 
     def is_closing(self) -> bool:
         return self.__endpoint.is_closing()
