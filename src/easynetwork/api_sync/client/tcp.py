@@ -12,7 +12,7 @@ import contextlib as _contextlib
 import errno as _errno
 import socket as _socket
 import threading
-from time import perf_counter as _time_monotonic
+from time import perf_counter as _time_perf_counter
 from typing import TYPE_CHECKING, Any, Callable, Generic, Iterator, Literal, NoReturn, TypeGuard, TypeVar, cast, final, overload
 
 try:
@@ -311,7 +311,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 pass
             socket = self.__ensure_connected()
             bufsize: int = self.__max_recv_size
-            perf_counter = _time_monotonic  # pull function to local namespace
+            perf_counter = _time_perf_counter  # pull function to local namespace
             retry_interval: float = self.__retry_interval
             _is_ssl_socket = self.__is_ssl_socket
 
