@@ -220,15 +220,15 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
                 del data
 
     def iter_received_packets_from(self, timeout: float | None = 0) -> Iterator[tuple[_ReceivedPacketT, SocketAddress]]:
-        monotonic = time.monotonic
+        perf_counter = time.perf_counter
 
         recv_packet_from = self.recv_packet_from
 
         while True:
             try:
-                _start = monotonic()
+                _start = perf_counter()
                 packet_tuple = recv_packet_from(timeout=timeout)
-                _end = monotonic()
+                _end = perf_counter()
             except OSError:
                 return
             yield packet_tuple

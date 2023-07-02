@@ -134,7 +134,7 @@ def _retry_impl(
     assert socket.gettimeout() == 0, "The socket must be non-blocking"
     assert retry_interval is None or retry_interval > 0, "retry_interval must be a strictly positive float or None"
 
-    monotonic = time.monotonic  # pull function to local namespace
+    perf_counter = time.perf_counter  # pull function to local namespace
     event: Literal["read", "write"]
     if timeout == float("+inf"):
         timeout = None
@@ -155,11 +155,11 @@ def _retry_impl(
         else:
             is_retry_interval = True
             wait_time = retry_interval
-        _start = monotonic()
+        _start = perf_counter()
         if not wait_socket_available(socket, wait_time, event):
             if not is_retry_interval:
                 break
-        _end = monotonic()
+        _end = perf_counter()
         if timeout is not None:
             timeout -= _end - _start
     raise error_from_errno(_errno.ETIMEDOUT)

@@ -12,7 +12,7 @@ import contextlib as _contextlib
 import errno as _errno
 import socket as _socket
 import threading
-from time import monotonic as _time_monotonic
+from time import perf_counter as _time_monotonic
 from typing import TYPE_CHECKING, Any, Callable, Generic, Iterator, Literal, NoReturn, TypeGuard, TypeVar, cast, final, overload
 
 try:
@@ -311,19 +311,19 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 pass
             socket = self.__ensure_connected()
             bufsize: int = self.__max_recv_size
-            monotonic = _time_monotonic  # pull function to local namespace
+            perf_counter = _time_monotonic  # pull function to local namespace
             retry_interval: float = self.__retry_interval
             _is_ssl_socket = self.__is_ssl_socket
 
             while True:
                 try:
-                    _start = monotonic()
+                    _start = perf_counter()
                     chunk: bytes
                     if _is_ssl_socket(socket):
                         chunk = _retry_ssl_socket_method(socket, timeout, retry_interval, socket.recv, bufsize)
                     else:
                         chunk = _retry_socket_method(socket, timeout, retry_interval, "read", socket.recv, bufsize)
-                    _end = monotonic()
+                    _end = perf_counter()
                 except TimeoutError as exc:
                     if timeout is None:  # pragma: no cover
                         raise RuntimeError("socket.recv() timed out with timeout=None ?") from exc

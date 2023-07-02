@@ -58,14 +58,14 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
         raise NotImplementedError
 
     def iter_received_packets(self, timeout: float | None = 0) -> Iterator[_ReceivedPacketT]:
-        monotonic = time.monotonic
+        perf_counter = time.perf_counter
 
         recv_packet = self.recv_packet
         while True:
             try:
-                _start = monotonic()
+                _start = perf_counter()
                 packet = recv_packet(timeout)
-                _end = monotonic()
+                _end = perf_counter()
             except OSError:
                 return
             yield packet

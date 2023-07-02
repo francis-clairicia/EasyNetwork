@@ -24,7 +24,7 @@ class TimeTest:
         self.expected_time: float = expected_time
         self.approx: float | None = approx
         self.start_time: float = -1
-        self._monotonic = time.monotonic
+        self._monotonic = time.perf_counter
 
     def __enter__(self) -> TimeTest:
         if self.start_time >= 0:
