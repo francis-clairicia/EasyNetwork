@@ -27,3 +27,4 @@ per-file-ignores =
     src/easynetwork/__init__.py:F401,F403,F405
     src/easynetwork/*/__init__.py:F401,F403,F405
     tests/*.py:DALL001
+    docs/*/*.py:DALL001

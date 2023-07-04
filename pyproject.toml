@@ -95,6 +95,11 @@ test = [
     "trove-classifiers==2023.5.2",
     "trustme>=1.0.0",
 ]
+doc = [
+    "sphinx>=6.2.1",
+    "sphinx-rtd-theme>=1.2.2",
+    "sphinx-tabs>=3.4.1",
+]
 
 ############################ hatchling configuration ############################
 
@@ -121,6 +126,9 @@ combine_as_imports = true
 sections = ["FUTURE", "STDLIB", "EASYNETWORK", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"]
 known_easynetwork = ["easynetwork", "easynetwork_asyncio"]
 add_imports = ["from __future__ import annotations"]
+extend_skip = [
+    "docs/source/conf.py"
+]
 
 [tool.black]
 line-length = 130
