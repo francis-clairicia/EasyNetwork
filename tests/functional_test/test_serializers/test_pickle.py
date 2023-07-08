@@ -48,7 +48,7 @@ class TestPickleSerializer(BaseTestSerializer):
     @pytest.fixture(scope="class")
     @staticmethod
     def serializer_for_serialization(pickler_config: PicklerConfig, pickler_optimize: bool) -> PickleSerializer[Any, Any]:
-        return PickleSerializer(pickler_config=pickler_config, optimize=pickler_optimize)
+        return PickleSerializer(pickler_config=pickler_config, pickler_optimize=pickler_optimize)
 
     @pytest.fixture(scope="class")
     @staticmethod

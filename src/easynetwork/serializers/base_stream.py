@@ -28,7 +28,7 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_ST_cont
 
     def __init__(self, separator: bytes, **kwargs: Any) -> None:
         super().__init__(**kwargs)
-        assert isinstance(separator, (bytes, bytearray))
+        assert isinstance(separator, bytes)
         separator = bytes(separator)
         if len(separator) < 1:
             raise ValueError("Empty separator")
@@ -54,23 +54,22 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_ST_cont
 
     @final
     def incremental_deserialize(self) -> Generator[None, bytes, tuple[_DT_co, bytes]]:
-        buffer: bytearray = bytearray((yield))
+        buffer: bytes = yield
         separator: bytes = self.__separator
         separator_length: int = len(separator)
         while True:
             data, found_separator, buffer = buffer.partition(separator)
             if found_separator:
+                del found_separator
                 if not data:  # There was successive separators
                     continue
                 break
             assert not buffer
-            buffer = data
-            buffer.extend((yield))
-        del found_separator
+            buffer = data + (yield)
         while buffer.startswith(separator):  # Remove successive separators which can already be eliminated
-            del buffer[:separator_length]
+            buffer = buffer[separator_length:]
         try:
-            packet = self.deserialize(bytes(data))
+            packet = self.deserialize(data)
         except DeserializeError as exc:
             raise IncrementalDeserializeError(
                 f"Error when deserializing data: {exc}",
@@ -114,14 +113,20 @@ class FixedSizePacketSerializer(AbstractIncrementalPacketSerializer[_ST_contra, 
 
     @final
     def incremental_deserialize(self) -> Generator[None, bytes, tuple[_DT_co, bytes]]:
-        buffer = bytearray((yield))
+        buffer: bytes = yield
         packet_size: int = self.__size
-        while len(buffer) < packet_size:
-            buffer.extend((yield))
-        data = buffer[:packet_size]
-        del buffer[:packet_size]
+        while (buffer_size := len(buffer)) < packet_size:
+            buffer += yield
+
+        # Do not copy if the size is *exactly* as expected
+        if buffer_size == packet_size:
+            data = buffer
+            buffer = b""
+        else:
+            data = buffer[:packet_size]
+            buffer = buffer[packet_size:]
         try:
-            packet = self.deserialize(bytes(data))
+            packet = self.deserialize(data)
         except DeserializeError as exc:
             raise IncrementalDeserializeError(
                 f"Error when deserializing data: {exc}",
@@ -165,13 +170,14 @@ class FileBasedPacketSerializer(AbstractPacketSerializer[_ST_contra, _DT_co]):
     @final
     def deserialize(self, data: bytes) -> _DT_co:
         with BytesIO(data) as buffer:
-            del data
             try:
                 packet: _DT_co = self.load_from_file(buffer)
             except EOFError as exc:
-                raise DeserializeError("Missing data to create packet", error_info={"data": buffer.getvalue()}) from exc
+                raise DeserializeError("Missing data to create packet", error_info={"data": data}) from exc
             except self.__expected_errors as exc:
-                raise DeserializeError(str(exc), error_info={"data": buffer.getvalue()}) from exc
+                raise DeserializeError(str(exc), error_info={"data": data}) from exc
+            finally:
+                del data
             if extra := buffer.read():  # There is still data after deserialization
                 raise DeserializeError("Extra data caught", error_info={"packet": packet, "extra": extra})
         return packet

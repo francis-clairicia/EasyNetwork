@@ -29,8 +29,7 @@ import selectors as _selectors
 import socket as _socket
 import time
 import traceback
-from struct import unpack
-from typing import TYPE_CHECKING, Any, Callable, Iterable, Literal, ParamSpec, TypeGuard, TypeVar, assert_never
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Iterator, Literal, ParamSpec, TypeGuard, TypeVar, assert_never
 
 try:
     import ssl as _ssl
@@ -230,8 +229,8 @@ def concatenate_chunks(chunks_iterable: Iterable[bytes]) -> bytes:
     return b"".join(chunks_iterable)
 
 
-def iter_bytes(b: bytes | bytearray) -> Iterable[bytes]:
-    return unpack(f"{len(b)}c", b)
+def iter_bytes(b: bytes | bytearray | memoryview) -> Iterator[bytes]:
+    return map(int.to_bytes, b)
 
 
 def ensure_datagram_socket_bound(sock: _socket.socket) -> None:

@@ -26,6 +26,7 @@ _DT_co = TypeVar("_DT_co", covariant=True)
 
 
 _JSON_VALUE_BYTES: frozenset[int] = frozenset(bytes(string.digits + string.ascii_letters + string.punctuation, "ascii"))
+_ESCAPE_BYTE: int = b"\\"[0]
 
 
 @dataclass(kw_only=True)
@@ -52,7 +53,13 @@ class JSONDecoderConfig:
 class _JSONParser:
     @staticmethod
     def _escaped(partial_document: bytes) -> bool:
-        return ((len(partial_document) - len(partial_document.rstrip(b"\\"))) % 2) == 1
+        escaped = False
+        for byte in reversed(partial_document):
+            if byte == _ESCAPE_BYTE:
+                escaped = not escaped
+            else:
+                break
+        return escaped
 
     @staticmethod
     def raw_parse() -> Generator[None, bytes, tuple[bytes, bytes]]:
@@ -80,27 +87,34 @@ class _JSONParser:
                     case b" " | b"\t" | b"\n" | b"\r":  # Optimization: Skip spaces
                         continue
                     case _ if len(enclosure_counter) == 0:  # No enclosure, only value
-                        assert not partial_document
-                        return (yield from _JSONParser._raw_parse_plain_value(partial_document, chunk[nb_chars - 1 :]))
+                        assert len(partial_document) == 0, f"{partial_document=!r}"
+                        partial_document.extend(chunk[nb_chars - 1 :] if nb_chars > 1 else chunk)
+                        del chunk
+                        return (yield from _JSONParser._raw_parse_plain_value(partial_document))
+                    case _:  # JSON syntax character, quickly go to next character
+                        partial_document.extend(char)
+                        continue
                 assert len(enclosure_counter) > 0
                 partial_document.extend(char)
                 if not first_enclosure:
                     first_enclosure = next(iter(enclosure_counter))
                 if enclosure_counter[first_enclosure] <= 0:  # 1st found is closed
-                    return partial_document, chunk[nb_chars:]
+                    return bytes(partial_document), chunk[nb_chars:]
+
+            # Delete chunk before restart (yield)
+            del chunk
 
     @staticmethod
-    def _raw_parse_plain_value(buffer_array: bytearray, chunk: bytes) -> Generator[None, bytes, tuple[bytes, bytes]]:
-        while True:
-            non_printable_idx: int = next((idx for idx, byte in enumerate(chunk) if byte not in _JSON_VALUE_BYTES), -1)
-            if non_printable_idx < 0:
-                buffer_array.extend(chunk)
-                while not (chunk := (yield)):
-                    continue
+    def _raw_parse_plain_value(plain_value: bytearray) -> Generator[None, bytes, tuple[bytes, bytes]]:
+        chunk: bytes
+        while (non_printable_idx := next((idx for idx, byte in enumerate(plain_value) if byte not in _JSON_VALUE_BYTES), -1)) < 0:
+            while not (chunk := (yield)):
                 continue
-            break
-        buffer_array.extend(chunk[:non_printable_idx])
-        return buffer_array, chunk[non_printable_idx:]
+            plain_value.extend(chunk)
+            del chunk
+        remaining = bytes(plain_value[non_printable_idx:])
+        del plain_value[non_printable_idx:]
+        return bytes(plain_value), remaining
 
 
 class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):

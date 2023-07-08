@@ -64,7 +64,7 @@ class StreamDataProducer(Generic[_SentPacketT]):
             except StopIteration:
                 pass
             else:
-                assert isinstance(chunk, (bytes, bytearray))
+                assert type(chunk) is bytes, repr(chunk)
                 self.__g = generator
                 return chunk
             finally:
@@ -132,18 +132,21 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
         except StopIteration as exc:
             packet, remaining = exc.value
         except StreamProtocolParseError as exc:
-            self.__b, exc.remaining_data = bytes(exc.remaining_data), b""
+            remaining, exc.remaining_data = exc.remaining_data, b""
+            assert type(remaining) is bytes, repr(remaining)
+            self.__b = remaining
             raise
         else:
             self.__c = consumer
             raise StopIteration
         finally:
             del consumer, chunk
-        self.__b = bytes(remaining)
+        assert type(remaining) is bytes, repr(remaining)
+        self.__b = remaining
         return packet
 
     def feed(self, chunk: bytes) -> None:
-        assert isinstance(chunk, (bytes, bytearray))
+        assert type(chunk) is bytes, repr(chunk)
         if not chunk:
             return
         self.__b += chunk

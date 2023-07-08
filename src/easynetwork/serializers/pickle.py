@@ -56,14 +56,14 @@ class PickleSerializer(AbstractPacketSerializer[_ST_contra, _DT_co]):
         *,
         pickler_cls: type[_Pickler] | None = None,
         unpickler_cls: type[_Unpickler] | None = None,
-        optimize: bool = False,
+        pickler_optimize: bool = False,
     ) -> None:
         super().__init__()
 
         import pickle
 
         self.__optimize: Callable[[bytes], bytes] | None = None
-        if optimize:
+        if pickler_optimize:
             import pickletools
 
             self.__optimize = pickletools.optimize
@@ -97,11 +97,12 @@ class PickleSerializer(AbstractPacketSerializer[_ST_contra, _DT_co]):
     @final
     def deserialize(self, data: bytes) -> _DT_co:
         with BytesIO(data) as buffer:
-            del data
             try:
                 packet: _DT_co = self.__unpickler_cls(buffer).load()
             except Exception as exc:
-                raise DeserializeError(str(exc) or "Invalid token", error_info={"data": buffer.getvalue()}) from exc
+                raise DeserializeError(str(exc) or "Invalid token", error_info={"data": data}) from exc
+            finally:
+                del data
             if extra := buffer.read():  # There is still data after deserialization
                 raise DeserializeError("Extra data caught", {"packet": packet, "extra": extra})
         return packet

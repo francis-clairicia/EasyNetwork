@@ -238,7 +238,7 @@ class TestAbstractCompressorSerializer:
         mock_serializer_new_decompressor_stream.assert_called_once_with()
         mock_decompressor_stream.decompress.assert_called_once_with(mocker.sentinel.data)
         mock_decompressor_stream_eof.assert_called_once()
-        mock_decompressor_stream_unused_data.assert_called_once()
+        assert mock_decompressor_stream_unused_data.call_count == 2
         mock_serializer.deserialize.assert_not_called()
         assert exception.error_info == {"decompressed_data": mocker.sentinel.decompressed_data, "extra": b"some extra data"}
 

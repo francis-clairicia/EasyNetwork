@@ -125,7 +125,10 @@ class TestPickleSerializer(BaseSerializerConfigInstanceCheck):
     ) -> None:
         # Arrange
         mock_pickletools_optimize.return_value = b"optimized pickle"
-        serializer: PickleSerializer[Any, Any] = PickleSerializer(pickler_config=pickler_config, optimize=pickler_optimize)
+        serializer: PickleSerializer[Any, Any] = PickleSerializer(
+            pickler_config=pickler_config,
+            pickler_optimize=pickler_optimize,
+        )
 
         # Act
         data: bytes = serializer.serialize(mocker.sentinel.packet)
@@ -158,7 +161,10 @@ class TestPickleSerializer(BaseSerializerConfigInstanceCheck):
         # Arrange
         mock_other_pickler_cls: MagicMock = mocker.stub()
         mock_other_pickler: MagicMock = mock_other_pickler_cls.return_value
-        serializer: PickleSerializer[Any, Any] = PickleSerializer(pickler_cls=mock_other_pickler_cls, optimize=pickler_optimize)
+        serializer: PickleSerializer[Any, Any] = PickleSerializer(
+            pickler_cls=mock_other_pickler_cls,
+            pickler_optimize=pickler_optimize,
+        )
         del mock_pickler.dump
 
         # Act
