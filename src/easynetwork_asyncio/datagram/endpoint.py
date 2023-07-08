@@ -89,9 +89,9 @@ class DatagramEndpoint:
         return self.__transport.is_closing()
 
     async def recvfrom(self) -> tuple[bytes, tuple[Any, ...]]:
+        self.__check_exceptions()
         if self.__transport.is_closing():
             raise _error_from_errno(_errno.ECONNABORTED)
-        self.__check_exceptions()
         data, address = await self.__recv_queue.get()
         if data is None or address is None:
             self.__check_exceptions()  # Woken up because an error occurred ?
@@ -100,9 +100,9 @@ class DatagramEndpoint:
         return data, address
 
     async def sendto(self, data: bytes | bytearray | memoryview, address: tuple[Any, ...] | None = None, /) -> None:
+        self.__check_exceptions()
         if self.__transport.is_closing():
             raise _error_from_errno(_errno.ECONNABORTED)
-        self.__check_exceptions()
         self.__transport.sendto(data, address)
         await self.__protocol._drain_helper()
 

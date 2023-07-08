@@ -20,7 +20,7 @@ from ...tools._utils import (
     check_real_socket_state as _check_real_socket_state,
     recursively_clear_exception_traceback_frames as _recursively_clear_exception_traceback_frames,
 )
-from ...tools.socket import SocketAddress, SocketProxy, new_socket_address
+from ...tools.socket import MAX_DATAGRAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
 from ..backend.factory import AsyncBackendFactory
 from ..backend.tasks import SingleTaskRunner
 from .abc import AbstractAsyncNetworkServer
@@ -205,8 +205,9 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         socket_family: int = socket.socket().family
         datagram_received_task = self.__datagram_received_task
         logger = self.__logger
+        bufsize: int = MAX_DATAGRAM_BUFSIZE
         while True:
-            datagram, client_address = await socket.recvfrom()
+            datagram, client_address = await socket.recvfrom(bufsize)
             client_address = new_socket_address(client_address, socket_family)
             logger.debug("Received a datagram from %s", client_address)
             task_group.start_soon(datagram_received_task, socket, datagram, client_address, task_group)
