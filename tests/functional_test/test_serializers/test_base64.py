@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import random
-from typing import Any, final
+from typing import Any, Literal, final
 
 from easynetwork.exceptions import DeserializeError
 from easynetwork.serializers.wrapper.base64 import Base64EncodedSerializer
@@ -31,10 +31,19 @@ SAMPLES = [
 class BaseTestBase64EncodedSerializer(BaseTestIncrementalSerializer):
     #### Serializers
 
+    @pytest.fixture(scope="class", params=["standard", "urlsafe"])
+    @staticmethod
+    def alphabet(request: pytest.FixtureRequest) -> Literal["standard", "urlsafe"]:
+        return getattr(request, "param")
+
     @pytest.fixture(scope="class")
     @classmethod
-    def serializer(cls, checksum: bool | bytes) -> Base64EncodedSerializer[bytes, bytes]:
-        return Base64EncodedSerializer(NoSerialization(), checksum=checksum)
+    def serializer(
+        cls,
+        checksum: bool | bytes,
+        alphabet: Literal["standard", "urlsafe"],
+    ) -> Base64EncodedSerializer[bytes, bytes]:
+        return Base64EncodedSerializer(NoSerialization(), alphabet=alphabet, checksum=checksum)
 
     @pytest.fixture(scope="class")
     @staticmethod
@@ -59,7 +68,12 @@ class BaseTestBase64EncodedSerializer(BaseTestIncrementalSerializer):
 
     @pytest.fixture(scope="class")
     @classmethod
-    def expected_complete_data(cls, packet_to_serialize: bytes, checksum: bool | bytes) -> bytes:
+    def expected_complete_data(
+        cls,
+        packet_to_serialize: bytes,
+        checksum: bool | bytes,
+        alphabet: Literal["standard", "urlsafe"],
+    ) -> bytes:
         import base64
         import hashlib
         import hmac
@@ -71,6 +85,8 @@ class BaseTestBase64EncodedSerializer(BaseTestIncrementalSerializer):
             else:
                 packet_to_serialize += hashlib.sha256(packet_to_serialize).digest()
 
+        if alphabet == "standard":
+            return base64.standard_b64encode(packet_to_serialize)
         return base64.urlsafe_b64encode(packet_to_serialize)
 
     #### Incremental Serialize

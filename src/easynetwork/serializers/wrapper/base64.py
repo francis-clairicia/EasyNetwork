@@ -11,7 +11,7 @@ __all__ = [
 ]
 
 import os
-from typing import Callable, TypeVar, assert_never, final
+from typing import Callable, Literal, TypeVar, assert_never, final
 
 from ...exceptions import DeserializeError
 from ..abc import AbstractPacketSerializer
@@ -28,6 +28,7 @@ class Base64EncodedSerializer(AutoSeparatedPacketSerializer[_ST_contra, _DT_co])
         self,
         serializer: AbstractPacketSerializer[_ST_contra, _DT_co],
         *,
+        alphabet: Literal["standard", "urlsafe"] = "urlsafe",
         checksum: bool | str | bytes = False,
         separator: bytes = b"\r\n",
     ) -> None:
@@ -56,8 +57,16 @@ class Base64EncodedSerializer(AutoSeparatedPacketSerializer[_ST_contra, _DT_co])
             case _:  # pragma: no cover
                 assert_never(checksum)
 
-        self.__encode = base64.urlsafe_b64encode
-        self.__decode = base64.urlsafe_b64decode
+        match alphabet:
+            case "standard":
+                self.__encode = base64.standard_b64encode
+                self.__decode = base64.standard_b64decode
+            case "urlsafe":
+                self.__encode = base64.urlsafe_b64encode
+                self.__decode = base64.urlsafe_b64decode
+            case _:  # pragma: no cover
+                assert_never(alphabet)
+
         self.__decode_error_cls = binascii.Error
         self.__compare_digest = compare_digest
 

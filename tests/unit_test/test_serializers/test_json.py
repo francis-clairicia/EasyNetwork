@@ -47,7 +47,9 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
     def mock_decoder(mocker: MockerFixture) -> MagicMock:
         from json import JSONDecoder
 
-        return mocker.NonCallableMagicMock(spec=JSONDecoder)
+        mock_decoder = mocker.NonCallableMagicMock(spec=JSONDecoder)
+        del mock_decoder.raw_decode  # JSONSeralizer must never use it
+        return mock_decoder
 
     @pytest.fixture(autouse=True)
     @staticmethod
@@ -280,9 +282,7 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         )
         mock_bytes = mocker.NonCallableMagicMock()
         mock_string_document = mock_bytes.decode.return_value = mocker.NonCallableMagicMock()
-        mock_sliced_string = mock_string_document.__getitem__.return_value = mocker.NonCallableMagicMock()
-        mock_sliced_string.encode.return_value = b"Trailing data + "
-        mock_decoder.raw_decode.return_value = mocker.sentinel.packet, 123456789
+        mock_decoder.decode.return_value = mocker.sentinel.packet
         mock_json_parser.side_effect = raw_parse_side_effect
 
         # Act
@@ -293,11 +293,9 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         # Assert
         mock_json_parser.assert_called_once_with()
         mock_bytes.decode.assert_called_once_with(mocker.sentinel.encoding, mocker.sentinel.str_errors)
-        mock_decoder.raw_decode.assert_called_once_with(mock_string_document)
-        mock_string_document.__getitem__.assert_called_once_with(slice(123456789, None, None))
-        mock_sliced_string.encode.assert_called_once_with(mocker.sentinel.encoding, mocker.sentinel.str_errors)
+        mock_decoder.decode.assert_called_once_with(mock_string_document)
         assert packet is mocker.sentinel.packet
-        assert remaining_data == b"Trailing data + Hello World !"
+        assert remaining_data == b"Hello World !"
 
     def test____incremental_deserialize____translate_unicode_decode_errors(
         self,
@@ -328,7 +326,7 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
 
         # Assert
         mock_bytes.decode.assert_called_once()
-        mock_decoder.raw_decode.assert_not_called()
+        mock_decoder.decode.assert_not_called()
         assert exception.remaining_data is mocker.sentinel.remaining_data
         assert exception.__cause__ is mock_bytes.decode.side_effect
         assert exception.error_info == {"data": mock_bytes}
@@ -352,7 +350,7 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
             unicode_errors=mocker.sentinel.str_errors,
         )
         mock_bytes = mocker.NonCallableMagicMock()
-        mock_decoder.raw_decode.side_effect = JSONDecodeError("Invalid payload", "invalid\ndocument", 8)
+        mock_decoder.decode.side_effect = JSONDecodeError("Invalid payload", "invalid\ndocument", 8)
         mock_json_parser.side_effect = raw_parse_side_effect
 
         # Act
@@ -364,9 +362,9 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
 
         # Assert
         mock_bytes.decode.assert_called_once()
-        mock_decoder.raw_decode.assert_called_once()
+        mock_decoder.decode.assert_called_once()
         assert exception.remaining_data is mocker.sentinel.remaining_data
-        assert exception.__cause__ is mock_decoder.raw_decode.side_effect
+        assert exception.__cause__ is mock_decoder.decode.side_effect
         assert exception.error_info == {
             "document": "invalid\ndocument",
             "position": 8,

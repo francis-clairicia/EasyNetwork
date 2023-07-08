@@ -38,9 +38,9 @@ class StringSerializer(AbstractIncrementalPacketSerializer[str, str]):
             raise DeserializeError(str(exc)) from exc
 
     def incremental_deserialize(self) -> Generator[None, bytes, tuple[str, bytes]]:
-        buffer: bytearray = bytearray()
+        buffer = b""
         while True:
-            buffer.extend((yield))
+            buffer += yield
             if b"\n" not in buffer:
                 continue
             data, buffer = buffer.split(b"\n", 1)
