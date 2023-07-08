@@ -21,7 +21,7 @@ from ...tools._utils import (
     ensure_datagram_socket_bound as _ensure_datagram_socket_bound,
     error_from_errno as _error_from_errno,
 )
-from ...tools.socket import SocketAddress, SocketProxy, new_socket_address
+from ...tools.socket import MAX_DATAGRAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
 from ..backend.abc import AbstractAsyncBackend, AbstractAsyncDatagramSocketAdapter, ILock
 from ..backend.factory import AsyncBackendFactory
 from ..backend.tasks import SingleTaskRunner
@@ -197,7 +197,7 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
     async def recv_packet_from(self) -> tuple[_ReceivedPacketT, SocketAddress]:
         async with self.__receive_lock:
             socket = await self.__ensure_opened()
-            data, sender = await socket.recvfrom()
+            data, sender = await socket.recvfrom(MAX_DATAGRAM_BUFSIZE)
             try:
                 return self.__protocol.build_packet_from_datagram(data), new_socket_address(sender, self.socket.family)
             except DatagramProtocolParseError:

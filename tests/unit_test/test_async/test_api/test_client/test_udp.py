@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from easynetwork.api_async.client.udp import AsyncUDPNetworkClient, AsyncUDPNetworkEndpoint
 from easynetwork.exceptions import ClientClosedError
-from easynetwork.tools.socket import IPv4SocketAddress, IPv6SocketAddress, SocketProxy
+from easynetwork.tools.socket import MAX_DATAGRAM_BUFSIZE, IPv4SocketAddress, IPv6SocketAddress, SocketProxy
 
 import pytest
 import pytest_asyncio
@@ -727,7 +727,7 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         packet, sender = await client_bound_or_not.recv_packet_from()
 
         # Assert
-        mock_datagram_socket_adapter.recvfrom.assert_awaited_once_with()
+        mock_datagram_socket_adapter.recvfrom.assert_awaited_once_with(MAX_DATAGRAM_BUFSIZE)
         mock_datagram_protocol.build_packet_from_datagram.assert_called_once_with(b"packet")
         assert packet is mocker.sentinel.packet
         assert (sender.host, sender.port) == sender_address
@@ -753,7 +753,7 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         exception = exc_info.value
 
         # Assert
-        mock_datagram_socket_adapter.recvfrom.assert_awaited_once_with()
+        mock_datagram_socket_adapter.recvfrom.assert_awaited_once_with(MAX_DATAGRAM_BUFSIZE)
         mock_datagram_protocol.build_packet_from_datagram.assert_called_once_with(b"packet")
         assert exception is expected_error
 
@@ -814,7 +814,7 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         packets = [(p, (s.host, s.port)) async for p, s in client_bound_or_not.iter_received_packets_from()]
 
         # Assert
-        assert mock_datagram_socket_adapter.recvfrom.await_args_list == [mocker.call() for _ in range(3)]
+        assert mock_datagram_socket_adapter.recvfrom.await_args_list == [mocker.call(MAX_DATAGRAM_BUFSIZE) for _ in range(3)]
         assert mock_datagram_protocol.build_packet_from_datagram.mock_calls == [
             mocker.call(b"packet_1"),
             mocker.call(b"packet_2"),
@@ -845,7 +845,7 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         exception = exc_info.value
 
         # Assert
-        mock_datagram_socket_adapter.recvfrom.assert_awaited_once_with()
+        mock_datagram_socket_adapter.recvfrom.assert_awaited_once_with(MAX_DATAGRAM_BUFSIZE)
         mock_datagram_protocol.build_packet_from_datagram.assert_called_once_with(b"packet")
         assert exception is expected_error
 

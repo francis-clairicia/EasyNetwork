@@ -222,7 +222,7 @@ class AbstractAsyncDatagramSocketAdapter(AbstractAsyncBaseSocketAdapter):
         raise NotImplementedError
 
     @abstractmethod
-    async def recvfrom(self) -> tuple[bytes, tuple[Any, ...]]:
+    async def recvfrom(self, __bufsize: int, /) -> tuple[bytes, tuple[Any, ...]]:
         raise NotImplementedError
 
     @abstractmethod

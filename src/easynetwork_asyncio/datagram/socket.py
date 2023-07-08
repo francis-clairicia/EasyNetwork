@@ -14,7 +14,6 @@ import socket as _socket
 from typing import TYPE_CHECKING, Any, final
 
 from easynetwork.api_async.backend.abc import AbstractAsyncDatagramSocketAdapter
-from easynetwork.tools.socket import MAX_DATAGRAM_BUFSIZE
 
 from ..socket import AsyncSocket
 
@@ -54,8 +53,11 @@ class AsyncioTransportDatagramSocketAdapter(AbstractAsyncDatagramSocketAdapter):
     def get_remote_address(self) -> tuple[Any, ...] | None:
         return self.__endpoint.get_extra_info("peername")
 
-    async def recvfrom(self) -> tuple[bytes, tuple[Any, ...]]:
-        return await self.__endpoint.recvfrom()
+    async def recvfrom(self, bufsize: int, /) -> tuple[bytes, tuple[Any, ...]]:
+        data, address = await self.__endpoint.recvfrom()
+        if len(data) > bufsize:
+            data = data[:bufsize]
+        return data, address
 
     async def sendto(self, data: ReadableBuffer, address: tuple[Any, ...] | None, /) -> None:
         await self.__endpoint.sendto(memoryview(data), address)
@@ -95,8 +97,8 @@ class RawDatagramSocketAdapter(AbstractAsyncDatagramSocketAdapter):
         except OSError:
             return None
 
-    async def recvfrom(self) -> tuple[bytes, tuple[Any, ...]]:
-        return await self.__socket.recvfrom(MAX_DATAGRAM_BUFSIZE)
+    async def recvfrom(self, bufsize: int, /) -> tuple[bytes, tuple[Any, ...]]:
+        return await self.__socket.recvfrom(bufsize)
 
     async def sendto(self, data: ReadableBuffer, address: tuple[Any, ...] | None, /) -> None:
         if address is None:

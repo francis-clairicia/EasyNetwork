@@ -214,6 +214,7 @@ class TestDatagramEndpoint:
         # Arrange
         from errno import ECONNABORTED
 
+        mock_asyncio_exception_queue.get_nowait.side_effect = asyncio.QueueEmpty
         mock_asyncio_transport.is_closing.return_value = True
 
         # Act
@@ -222,7 +223,7 @@ class TestDatagramEndpoint:
 
         # Assert
         assert exc_info.value.errno == ECONNABORTED
-        mock_asyncio_exception_queue.get_nowait.assert_not_called()
+        mock_asyncio_exception_queue.get_nowait.assert_called_once()
         mock_asyncio_recv_queue.get.assert_not_awaited()
 
     async def test____recvfrom____connection_lost____transport_closed_by_protocol_while_waiting(
@@ -338,7 +339,7 @@ class TestDatagramEndpoint:
 
         # Assert
         assert exc_info.value.errno == ECONNABORTED
-        mock_asyncio_exception_queue.get_nowait.assert_not_called()
+        mock_asyncio_exception_queue.get_nowait.assert_called_once()
         mock_asyncio_transport.sendto.assert_not_called()
         mock_asyncio_protocol._drain_helper.assert_not_awaited()
 
@@ -741,14 +742,48 @@ class TestDatagramSocketAdapter:
         mock_endpoint: MagicMock,
     ) -> None:
         # Arrange
-        mock_endpoint.recvfrom.return_value = (b"data", ("an_address", 12345))
+        received_data = b"data"
+        mock_endpoint.recvfrom.return_value = (received_data, ("an_address", 12345))
 
         # Act
-        data, address = await socket.recvfrom()
+        data, address = await socket.recvfrom(65536)
 
         # Assert
         mock_endpoint.recvfrom.assert_awaited_once_with()
-        assert data == b"data"
+        assert data is received_data  # Should not be copied
+        assert address == ("an_address", 12345)
+
+    async def test____recvfrom____read_from_reader____exact_size(
+        self,
+        socket: AsyncioTransportDatagramSocketAdapter,
+        mock_endpoint: MagicMock,
+    ) -> None:
+        # Arrange
+        received_data = b"data"
+        mock_endpoint.recvfrom.return_value = (received_data, ("an_address", 12345))
+
+        # Act
+        data, address = await socket.recvfrom(len(received_data))
+
+        # Assert
+        mock_endpoint.recvfrom.assert_awaited_once_with()
+        assert data is received_data  # Should not be copied
+        assert address == ("an_address", 12345)
+
+    async def test____recvfrom____read_from_reader____too_big_datagram(
+        self,
+        socket: AsyncioTransportDatagramSocketAdapter,
+        mock_endpoint: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_endpoint.recvfrom.return_value = (b"data", ("an_address", 12345))
+
+        # Act
+        data, address = await socket.recvfrom(2)
+
+        # Assert
+        mock_endpoint.recvfrom.assert_awaited_once_with()
+        assert data == b"da"
         assert address == ("an_address", 12345)
 
     @pytest.mark.parametrize("address", [("127.0.0.1", 12345), None], ids=repr)
@@ -941,17 +976,15 @@ class TestRawDatagramSocketAdapter(BaseTestSocket):
         mock_async_socket: MagicMock,
     ) -> None:
         # Arrange
-        from easynetwork.tools.socket import MAX_DATAGRAM_BUFSIZE
-
         mock_async_socket.recvfrom.return_value = (b"data", ("127.0.0.1", 12345))
 
         # Act
-        data, address = await socket.recvfrom()
+        data, address = await socket.recvfrom(123456789)
 
         # Assert
         assert data == b"data"
         assert address == ("127.0.0.1", 12345)
-        mock_async_socket.recvfrom.assert_awaited_once_with(MAX_DATAGRAM_BUFSIZE)
+        mock_async_socket.recvfrom.assert_awaited_once_with(123456789)
 
     @pytest.mark.parametrize("address", [("127.0.0.1", 12345), None])
     async def test_____sendto____sends_data_to_async_socket(
