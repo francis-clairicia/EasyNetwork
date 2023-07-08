@@ -289,9 +289,9 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 while remaining > 0:
                     sent: int
                     if _is_ssl_socket(socket):
-                        sent = _retry_ssl_socket_method(socket, timeout, retry_interval, socket.send, buffer.toreadonly())
+                        sent = _retry_ssl_socket_method(socket, timeout, retry_interval, socket.send, buffer)
                     else:
-                        sent = _retry_socket_method(socket, timeout, retry_interval, "write", socket.send, buffer.toreadonly())
+                        sent = _retry_socket_method(socket, timeout, retry_interval, "write", socket.send, buffer)
                     assert sent >= 0, "socket.send() returned a negative integer"
                     _check_real_socket_state(socket)
                     remaining -= sent

@@ -75,7 +75,7 @@ class AsyncioTransportStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
         return await self.__reader.read(bufsize)
 
     async def sendall(self, data: ReadableBuffer, /) -> None:
-        self.__writer.write(memoryview(data).toreadonly())
+        self.__writer.write(memoryview(data))
         await self.__writer.drain()
 
     def socket(self) -> asyncio.trsock.TransportSocket:

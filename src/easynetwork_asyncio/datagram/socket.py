@@ -58,7 +58,7 @@ class AsyncioTransportDatagramSocketAdapter(AbstractAsyncDatagramSocketAdapter):
         return await self.__endpoint.recvfrom()
 
     async def sendto(self, data: ReadableBuffer, address: tuple[Any, ...] | None, /) -> None:
-        await self.__endpoint.sendto(memoryview(data).toreadonly(), address)
+        await self.__endpoint.sendto(memoryview(data), address)
 
     def socket(self) -> asyncio.trsock.TransportSocket:
         socket: asyncio.trsock.TransportSocket = self.__endpoint.get_extra_info("socket")
