@@ -194,10 +194,7 @@ class FileBasedPacketSerializer(AbstractPacketSerializer[_ST_contra, _DT_co]):
     def incremental_deserialize(self) -> Generator[None, bytes, tuple[_DT_co, bytes]]:
         with BytesIO() as buffer:
             while True:
-                while not (chunk := (yield)):
-                    continue
-                buffer.write(chunk)
-                del chunk
+                buffer.write((yield))
                 buffer.seek(0)
                 try:
                     packet: _DT_co = self.load_from_file(buffer)

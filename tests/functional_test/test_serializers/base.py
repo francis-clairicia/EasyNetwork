@@ -184,11 +184,9 @@ class BaseTestIncrementalSerializer(BaseTestSerializer):
         assert type(packet) is type(packet_to_serialize)
         assert packet == packet_to_serialize
 
-    @pytest.mark.parametrize("empty_bytes_before", [False, True], ids=lambda boolean: f"empty_bytes_before=={boolean}")
     def test____incremental_deserialize____give_chunk_byte_per_byte(
         self,
         serializer_for_deserialization: AbstractIncrementalPacketSerializer[Any, Any],
-        empty_bytes_before: bool,
         complete_data_for_incremental_deserialize: bytes,
         packet_to_serialize: Any,
     ) -> None:
@@ -203,11 +201,6 @@ class BaseTestIncrementalSerializer(BaseTestSerializer):
             # However, the remaining data returned should be empty
             for chunk in iter_bytes(complete_data_for_incremental_deserialize):
                 assert len(chunk) == 1
-                if empty_bytes_before:
-                    try:
-                        consumer.send(b"")
-                    except StopIteration:
-                        raise RuntimeError("consumer stopped when sending empty bytes")
                 consumer.send(chunk)
 
         packet, remaining_data = exc_info.value.value

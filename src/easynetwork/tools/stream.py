@@ -151,8 +151,8 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
             return
         self.__b += chunk
 
-    def get_buffer(self) -> bytes:
-        return self.__b
+    def get_buffer(self) -> memoryview:
+        return memoryview(self.__b)
 
     def clear(self) -> None:
         self.__b = b""

@@ -18,6 +18,7 @@ SAMPLES: list[tuple[Any, str]] = [
     ("", "empty string"),
     ("non-empty", "non-empty string"),
     ("non-empty with é", "non-empty with unicode"),
+    ("\\", "escape character"),
     ([], "empty list"),
     ({}, "empty dict"),
     ([1, 2, 3], "non-empty list"),
