@@ -1,7 +1,8 @@
 # EasyNetwork
 [![Build](https://github.com/francis-clairicia/EasyNetwork/actions/workflows/build.yml/badge.svg)](https://github.com/francis-clairicia/EasyNetwork/actions/workflows/build.yml)
-[![Test](https://github.com/francis-clairicia/EasyNetwork/actions/workflows/test.yml/badge.svg)](https://github.com/francis-clairicia/EasyNetwork/actions/workflows/test.yml)
 [![Lint](https://github.com/francis-clairicia/EasyNetwork/actions/workflows/lint.yml/badge.svg)](https://github.com/francis-clairicia/EasyNetwork/actions/workflows/lint.yml)
+[![Test](https://github.com/francis-clairicia/EasyNetwork/actions/workflows/test.yml/badge.svg)](https://github.com/francis-clairicia/EasyNetwork/actions/workflows/test.yml)
+[![codecov](https://codecov.io/gh/francis-clairicia/EasyNetwork/branch/main/graph/badge.svg?token=3EGAHE4LZY)](https://codecov.io/gh/francis-clairicia/EasyNetwork)
 
 [![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit)](https://github.com/pre-commit/pre-commit)
 [![pre-commit.ci status](https://results.pre-commit.ci/badge/github/francis-clairicia/EasyNetwork/main.svg)](https://results.pre-commit.ci/latest/github/francis-clairicia/EasyNetwork/main)
