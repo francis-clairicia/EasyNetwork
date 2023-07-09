@@ -17,7 +17,8 @@ import os
 import socket as _socket
 import sys
 from collections.abc import Callable, Coroutine, Sequence
-from typing import TYPE_CHECKING, Any, AsyncContextManager, NoReturn, ParamSpec, TypeVar
+from contextlib import AbstractAsyncContextManager as AsyncContextManager
+from typing import TYPE_CHECKING, Any, NoReturn, ParamSpec, TypeVar
 
 try:
     import ssl as _ssl
