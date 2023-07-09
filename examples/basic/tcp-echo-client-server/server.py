@@ -32,6 +32,10 @@ class EchoRequestHandler(AsyncBaseRequestHandler[RequestType, ResponseType]):
         response: ResponseType = request
         await client.send_packet(response)
 
+        # Leaving the generator will NOT close the connection, a new generator will be created afterwards.
+        # You may manually close the connection if you want to:
+        # await client.aclose()
+
     async def bad_request(self, client: AsyncClientInterface[ResponseType], exc: BaseProtocolParseError) -> None:
         # Invalid JSON data sent
         await client.send_packet({"data": {"error": "Invalid JSON", "code": "parse_error"}})
