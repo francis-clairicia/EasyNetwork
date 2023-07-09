@@ -15,7 +15,7 @@
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![Imports: isort](https://img.shields.io/badge/%20imports-isort-%231674b1?style=flat&labelColor=ef8336)](https://pycqa.github.io/isort/)
 
-The easiest way to use sockets in Python
+The easiest way to use sockets in Python !
 
 ## Installation
 ### From PyPI repository
@@ -30,14 +30,19 @@ cd EasyNetwork
 pip install --user .
 ```
 
-## Usage
+## Description
 EasyNetwork fully encapsulates socket handling, offering you a high-level interface enabling an application/software to fully handle the logic part
 with Python objects without worrying about how to process, send or receive data across the network.
+
+The communication protocol can be whatever you want, be it json, pickle, ASCII, structure, base64 encoded, compressed, encrypted,
+or any other format not part of the standard library.
+You choose the data format, and the library takes care of the rest.
 
 Works with TCP and UDP, for Internet sockets ([AF_INET](https://docs.python.org/3/library/socket.html#socket.AF_INET) and [AF_INET6](https://docs.python.org/3/library/socket.html#socket.AF_INET6))
 
 N.B.: Unix sockets are expressly not supported.
 
+## Usage
 ### TCP Echo server with JSON data
 ```py
 import logging
