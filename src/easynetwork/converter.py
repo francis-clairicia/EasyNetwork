@@ -8,7 +8,8 @@ from __future__ import annotations
 __all__ = ["AbstractPacketConverter", "AbstractPacketConverterComposite", "RequestResponseConverterBuilder"]
 
 from abc import ABCMeta, abstractmethod
-from typing import Any, Callable, Generic, TypeVar, final
+from collections.abc import Callable
+from typing import Any, Generic, TypeVar, final
 
 _SentDTOPacketT = TypeVar("_SentDTOPacketT")
 _ReceivedDTOPacketT = TypeVar("_ReceivedDTOPacketT")

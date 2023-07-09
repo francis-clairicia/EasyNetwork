@@ -11,7 +11,8 @@ __all__ = [
 ]
 
 from abc import ABCMeta, abstractmethod
-from typing import Any, Generator, Generic, TypeVar
+from collections.abc import Generator
+from typing import Any, Generic, TypeVar
 
 from ..exceptions import DeserializeError
 from ..tools._utils import concatenate_chunks as _concatenate_chunks

@@ -12,7 +12,8 @@ import asyncio
 import asyncio.trsock
 import contextlib
 import errno as _errno
-from typing import TYPE_CHECKING, Any, Iterator, Literal, Self, TypeAlias
+from collections.abc import Iterator
+from typing import TYPE_CHECKING, Any, Literal, Self, TypeAlias
 from weakref import WeakSet
 
 from easynetwork.tools._utils import check_socket_no_ssl as _check_socket_no_ssl, error_from_errno as _error_from_errno

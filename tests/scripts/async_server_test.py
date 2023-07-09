@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 import logging
-from typing import AsyncGenerator, Callable
+from collections.abc import AsyncGenerator, Callable
 
 from easynetwork.api_async.server.handler import AsyncBaseRequestHandler, AsyncClientInterface
 from easynetwork.api_async.server.standalone import (

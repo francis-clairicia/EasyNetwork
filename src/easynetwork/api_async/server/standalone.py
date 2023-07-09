@@ -16,7 +16,8 @@ import contextlib as _contextlib
 import threading as _threading
 import time
 from abc import ABCMeta, abstractmethod
-from typing import TYPE_CHECKING, Any, Generic, Mapping, Self, Sequence, TypeVar
+from collections.abc import Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Generic, Self, TypeVar
 
 from ...exceptions import ServerAlreadyRunning
 from ...tools.socket import SocketAddress, SocketProxy

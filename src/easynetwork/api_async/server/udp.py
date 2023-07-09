@@ -10,7 +10,8 @@ __all__ = ["AsyncUDPNetworkServer"]
 import contextlib as _contextlib
 import logging as _logging
 from collections import Counter, deque
-from typing import TYPE_CHECKING, Any, AsyncGenerator, AsyncIterator, Callable, Generic, Iterator, Mapping, TypeVar, final
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterator, Mapping
+from typing import TYPE_CHECKING, Any, Generic, TypeVar, final
 from weakref import WeakValueDictionary
 
 from ...exceptions import ClientClosedError, DatagramProtocolParseError, ServerAlreadyRunning, ServerClosedError

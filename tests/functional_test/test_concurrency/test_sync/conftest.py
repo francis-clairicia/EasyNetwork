@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Iterator, Literal
+from collections.abc import Iterator
+from typing import Literal
 
 from easynetwork.api_sync.client import AbstractNetworkClient, TCPNetworkClient, UDPNetworkClient
 from easynetwork.protocol import DatagramProtocol, StreamProtocol

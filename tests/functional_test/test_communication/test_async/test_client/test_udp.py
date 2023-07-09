@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from collections.abc import AsyncIterator, Awaitable, Callable
 from socket import AF_INET, socket as Socket
-from typing import Any, AsyncIterator, Awaitable, Callable
+from typing import Any
 
 from easynetwork.api_async.client.udp import AsyncUDPNetworkClient, AsyncUDPNetworkEndpoint
 from easynetwork.exceptions import ClientClosedError, DatagramProtocolParseError

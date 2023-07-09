@@ -3,8 +3,9 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import ssl
+from collections.abc import AsyncIterator
 from socket import AF_INET, IPPROTO_TCP, SHUT_WR, TCP_NODELAY, socket as Socket
-from typing import Any, AsyncIterator
+from typing import Any
 
 from easynetwork.api_async.client.tcp import AsyncTCPNetworkClient
 from easynetwork.exceptions import ClientClosedError, StreamProtocolParseError

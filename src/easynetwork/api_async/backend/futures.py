@@ -11,7 +11,8 @@ __all__ = ["AsyncExecutor", "AsyncThreadPoolExecutor"]
 
 import concurrent.futures
 import contextvars
-from typing import TYPE_CHECKING, Any, Callable, ParamSpec, Self, TypeVar, overload
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, ParamSpec, Self, TypeVar, overload
 
 from .sniffio import current_async_library_cvar as _sniffio_current_async_library_cvar
 

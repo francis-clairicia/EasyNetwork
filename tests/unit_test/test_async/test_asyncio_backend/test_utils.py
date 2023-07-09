@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import asyncio.trsock
 import errno
+from collections.abc import Callable, Sequence
 from socket import (
     AF_INET,
     AF_INET6,
@@ -19,7 +20,7 @@ from socket import (
     SOL_SOCKET,
     gaierror,
 )
-from typing import TYPE_CHECKING, Any, Callable, Literal, Sequence, assert_never
+from typing import TYPE_CHECKING, Any, Literal, assert_never
 
 from easynetwork.tools._utils import error_from_errno
 from easynetwork_asyncio._utils import _ensure_resolved, create_connection, create_datagram_socket

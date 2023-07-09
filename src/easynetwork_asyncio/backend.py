@@ -16,7 +16,8 @@ import itertools
 import os
 import socket as _socket
 import sys
-from typing import TYPE_CHECKING, Any, AsyncContextManager, Callable, Coroutine, NoReturn, ParamSpec, Sequence, TypeVar
+from collections.abc import Callable, Coroutine, Sequence
+from typing import TYPE_CHECKING, Any, AsyncContextManager, NoReturn, ParamSpec, TypeVar
 
 try:
     import ssl as _ssl

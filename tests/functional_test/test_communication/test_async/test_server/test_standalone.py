@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import threading
 import time
-from typing import AsyncGenerator, Callable, Iterator
+from collections.abc import AsyncGenerator, Callable, Iterator
 
 from easynetwork.api_async.server.handler import AsyncBaseRequestHandler, AsyncClientInterface
 from easynetwork.api_async.server.standalone import (

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Coroutine, Sequence
 from socket import socket as Socket
-from typing import Any, AsyncContextManager, Callable, Coroutine, NoReturn, Sequence, final
+from typing import Any, AsyncContextManager, NoReturn, final
 
 from easynetwork.api_async.backend.abc import (
     AbstractAsyncBackend,

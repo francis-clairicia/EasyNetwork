@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Coroutine, Iterator
 from socket import socket as Socket
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Coroutine, Iterator, Literal, assert_never, final
+from typing import TYPE_CHECKING, Any, Literal, assert_never, final
 
 from easynetwork.api_async.backend.abc import AbstractAsyncBackend
 from easynetwork.api_async.backend.factory import AsyncBackendFactory
@@ -339,7 +340,7 @@ class TestAsyncBackendFactory:
 
         # Act & Assert
         with pytest.raises(
-            TypeError, match=r"^Invalid backend class \(not a subclass of %r\): %r$" % (default_backend_cls, MockBackend)
+            TypeError, match=rf"^Invalid backend class \(not a subclass of {default_backend_cls!r}\): {MockBackend!r}$"
         ):
             AsyncBackendFactory.extend(backend_name, MockBackend)
 

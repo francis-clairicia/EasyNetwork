@@ -9,7 +9,8 @@ from __future__ import annotations
 __all__ = ["Task", "TaskGroup", "TimeoutHandle", "timeout", "timeout_at"]
 
 import asyncio
-from typing import TYPE_CHECKING, Any, Callable, Coroutine, ParamSpec, Self, TypeVar, final
+from collections.abc import Callable, Coroutine
+from typing import TYPE_CHECKING, Any, ParamSpec, Self, TypeVar, final
 
 from easynetwork.api_async.backend.abc import AbstractTask, AbstractTaskGroup, AbstractTimeoutHandle
 

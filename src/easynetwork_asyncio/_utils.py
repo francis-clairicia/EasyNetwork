@@ -10,7 +10,8 @@ __all__ = ["create_connection", "create_datagram_socket"]
 
 import asyncio
 import socket as _socket
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 from easynetwork.tools._utils import set_reuseport as _set_reuseport
 

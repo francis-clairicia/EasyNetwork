@@ -11,9 +11,10 @@ __all__ = [
     "CBORSerializer",
 ]
 
+from collections.abc import Callable
 from dataclasses import asdict as dataclass_asdict, dataclass
 from functools import partial
-from typing import IO, TYPE_CHECKING, Any, Callable, TypeVar, final
+from typing import IO, TYPE_CHECKING, Any, TypeVar, final
 
 from .base_stream import FileBasedPacketSerializer
 

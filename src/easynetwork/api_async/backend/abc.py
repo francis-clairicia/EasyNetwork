@@ -24,20 +24,8 @@ __all__ = [
 ]
 
 from abc import ABCMeta, abstractmethod
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    AsyncContextManager,
-    Callable,
-    Coroutine,
-    Generic,
-    NoReturn,
-    ParamSpec,
-    Protocol,
-    Self,
-    Sequence,
-    TypeVar,
-)
+from collections.abc import Callable, Coroutine, Sequence
+from typing import TYPE_CHECKING, Any, AsyncContextManager, Generic, NoReturn, ParamSpec, Protocol, Self, TypeVar
 
 if TYPE_CHECKING:
     import concurrent.futures

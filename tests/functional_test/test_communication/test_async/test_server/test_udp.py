@@ -5,7 +5,8 @@ import collections
 import contextlib
 import logging
 import math
-from typing import Any, AsyncGenerator, AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
+from typing import Any
 
 from easynetwork.api_async.backend.abc import AbstractAsyncBackend
 from easynetwork.api_async.server.handler import AsyncBaseRequestHandler, AsyncClientInterface

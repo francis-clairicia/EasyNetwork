@@ -11,7 +11,8 @@ __all__ = ["ListenerSocketAdapter"]
 import asyncio
 import asyncio.streams
 from abc import abstractmethod
-from typing import TYPE_CHECKING, Any, Callable, final
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, final
 
 from easynetwork.api_async.backend.abc import (
     AbstractAcceptedSocket,

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import ssl
+from collections.abc import Callable, Iterator
 from contextlib import ExitStack
 from functools import partial
 from socket import AF_INET, AF_INET6, SOCK_DGRAM, SOCK_STREAM, has_ipv6 as HAS_IPV6, socket as Socket
-from typing import Any, Callable, Iterator
+from typing import Any
 
 from easynetwork.protocol import DatagramProtocol, StreamProtocol
 

@@ -11,8 +11,9 @@ import contextlib as _contextlib
 import errno as _errno
 import socket as _socket
 import threading
+from collections.abc import Callable, Iterator
 from time import perf_counter as _time_perf_counter
-from typing import TYPE_CHECKING, Any, Callable, Generic, Iterator, Literal, NoReturn, TypeGuard, TypeVar, cast, final, overload
+from typing import TYPE_CHECKING, Any, Generic, Literal, NoReturn, TypeGuard, TypeVar, cast, final, overload
 
 try:
     import ssl

@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import contextlib
 import random
-from typing import IO, TYPE_CHECKING, Any, Generator, final
+from collections.abc import Generator
+from typing import IO, TYPE_CHECKING, Any, final
 
 from easynetwork.exceptions import DeserializeError, IncrementalDeserializeError
 from easynetwork.serializers.abc import AbstractIncrementalPacketSerializer
@@ -788,7 +789,7 @@ class TestFileBasedPacketSerializer:
     ) -> None:
         # Arrange
         def side_effect(file: IO[bytes]) -> Any:
-            if len((data := file.read(4))) < 4:
+            if len(data := file.read(4)) < 4:
                 assert data == b"data"[: len(data)]
                 raise EOFError
             assert data == b"data"
@@ -829,7 +830,7 @@ class TestFileBasedPacketSerializer:
             pass
 
         def side_effect(file: IO[bytes]) -> Any:
-            if len((data := file.read(4))) < 4:
+            if len(data := file.read(4)) < 4:
                 assert data == b"data"[: len(data)]
                 raise MyFileAPIEOFError
             assert data.startswith(b"data")

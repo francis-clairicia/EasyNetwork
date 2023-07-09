@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import socket
-from typing import TYPE_CHECKING, Any, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 from easynetwork.tools.socket import (
     AddressFamily,

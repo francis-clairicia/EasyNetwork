@@ -10,7 +10,8 @@ __all__ = [
     "StreamProtocol",
 ]
 
-from typing import Any, Generator, Generic, TypeVar, overload
+from collections.abc import Generator
+from typing import Any, Generic, TypeVar, overload
 
 from .converter import AbstractPacketConverterComposite
 from .exceptions import (

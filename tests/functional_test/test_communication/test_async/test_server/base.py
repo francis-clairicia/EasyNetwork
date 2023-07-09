@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 from easynetwork.api_async.server.abc import AbstractAsyncNetworkServer
 from easynetwork.exceptions import ServerAlreadyRunning, ServerClosedError

@@ -11,7 +11,8 @@ __all__ = [
 ]
 
 from collections import deque
-from typing import Any, Generator, Generic, Iterator, TypeVar, final
+from collections.abc import Generator, Iterator
+from typing import Any, Generic, TypeVar, final
 
 from ..exceptions import StreamProtocolParseError
 from ..protocol import StreamProtocol

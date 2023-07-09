@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import collections
-from typing import TYPE_CHECKING, Any, Iterable, final
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, Any, final
 
 from easynetwork.exceptions import DeserializeError
 from easynetwork.serializers.struct import _ENDIANNESS_CHARACTERS, AbstractStructSerializer, NamedTupleStructSerializer
@@ -224,7 +225,7 @@ class TestNamedTupleStructSerializer(BaseTestStructBasedSerializer):
         field_formats[field] += endianness
 
         # Act & Assert
-        with pytest.raises(ValueError, match=r"^{!r}: Invalid field format$".format(field)):
+        with pytest.raises(ValueError, match=rf"^{field!r}: Invalid field format$"):
             _ = NamedTupleStructSerializer(namedtuple_cls, field_formats)
 
         mock_struct_cls.assert_not_called()
@@ -241,7 +242,7 @@ class TestNamedTupleStructSerializer(BaseTestStructBasedSerializer):
         del field_formats[field]
 
         # Act & Assert
-        with pytest.raises(KeyError, match=r"^{!r}$".format(field)):
+        with pytest.raises(KeyError, match=rf"^{field!r}$"):
             _ = NamedTupleStructSerializer(namedtuple_cls, field_formats)
 
         mock_struct_cls.assert_not_called()
@@ -260,7 +261,7 @@ class TestNamedTupleStructSerializer(BaseTestStructBasedSerializer):
         field_formats[field] = format
 
         # Act & Assert
-        with pytest.raises(ValueError, match=r"^{!r}: Invalid field format$".format(field)):
+        with pytest.raises(ValueError, match=rf"^{field!r}: Invalid field format$"):
             _ = NamedTupleStructSerializer(namedtuple_cls, field_formats)
 
         mock_struct_cls.assert_not_called()
@@ -279,7 +280,7 @@ class TestNamedTupleStructSerializer(BaseTestStructBasedSerializer):
         field_formats[field] = format
 
         # Act & Assert
-        with pytest.raises(ValueError, match=r"^{!r}: Invalid field format$".format(field)):
+        with pytest.raises(ValueError, match=rf"^{field!r}: Invalid field format$"):
             _ = NamedTupleStructSerializer(namedtuple_cls, field_formats)
 
         mock_struct_cls.assert_not_called()
@@ -298,7 +299,7 @@ class TestNamedTupleStructSerializer(BaseTestStructBasedSerializer):
         field_formats[field] = format
 
         # Act & Assert
-        with pytest.raises(ValueError, match=r"^{!r}: Invalid field format$".format(field)):
+        with pytest.raises(ValueError, match=rf"^{field!r}: Invalid field format$"):
             _ = NamedTupleStructSerializer(namedtuple_cls, field_formats)
 
         mock_struct_cls.assert_not_called()

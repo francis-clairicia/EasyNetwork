@@ -42,7 +42,7 @@ def _catch_star_imports_within_packages() -> dict[str, list[str]]:
     all_packages: dict[str, list[str]] = {}
     for package_name in ALL_EASYNETWORK_PACKAGES:
         package_file = inspect.getfile(import_module(package_name))
-        with open(package_file, "r") as package_fp:
+        with open(package_file) as package_fp:
             package_source = package_fp.read()
         tree = ast.parse(package_source, package_file)
         start_import_modules: list[str] = []

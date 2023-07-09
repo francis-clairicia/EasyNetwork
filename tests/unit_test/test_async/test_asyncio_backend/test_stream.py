@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import asyncio.trsock
-from typing import TYPE_CHECKING, Any, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 from easynetwork.api_async.backend.abc import AbstractAcceptedSocket
 from easynetwork_asyncio.stream.listener import AcceptedSocket, AcceptedSSLSocket, ListenerSocketAdapter

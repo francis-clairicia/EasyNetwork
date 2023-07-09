@@ -10,21 +10,8 @@ __all__ = ["AsyncTCPNetworkClient"]
 import contextlib as _contextlib
 import errno as _errno
 import socket as _socket
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Callable,
-    Generic,
-    Iterator,
-    Literal,
-    Mapping,
-    NoReturn,
-    TypedDict,
-    TypeVar,
-    cast,
-    final,
-    overload,
-)
+from collections.abc import Callable, Iterator, Mapping
+from typing import TYPE_CHECKING, Any, Generic, Literal, NoReturn, TypedDict, TypeVar, cast, final, overload
 
 try:
     import ssl as _ssl

@@ -12,7 +12,8 @@ __all__ = [
 ]
 
 from abc import ABCMeta, abstractmethod
-from typing import TYPE_CHECKING, Any, AsyncGenerator, Callable, Coroutine, Generic, TypeVar, final
+from collections.abc import AsyncGenerator, Callable, Coroutine
+from typing import TYPE_CHECKING, Any, Generic, TypeVar, final
 
 if TYPE_CHECKING:
     from ...exceptions import BaseProtocolParseError

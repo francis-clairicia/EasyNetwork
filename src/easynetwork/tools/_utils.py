@@ -27,7 +27,8 @@ import selectors as _selectors
 import socket as _socket
 import time
 import traceback
-from typing import TYPE_CHECKING, Any, Callable, Iterable, Iterator, Literal, ParamSpec, TypeGuard, TypeVar, assert_never
+from collections.abc import Callable, Iterable, Iterator
+from typing import TYPE_CHECKING, Any, Literal, ParamSpec, TypeGuard, TypeVar, assert_never
 
 try:
     import ssl as _ssl
@@ -312,7 +313,7 @@ def open_listener_sockets_from_getaddrinfo_result(
             except OSError as exc:
                 errors.append(
                     OSError(
-                        exc.errno, "error while attempting to bind on address %r: %s" % (sa, exc.strerror.lower())
+                        exc.errno, f"error while attempting to bind on address {sa!r}: {exc.strerror.lower()}"
                     ).with_traceback(exc.__traceback__)
                 )
                 continue

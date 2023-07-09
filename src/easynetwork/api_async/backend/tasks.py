@@ -9,7 +9,8 @@ from __future__ import annotations
 
 __all__ = ["SingleTaskRunner"]
 
-from typing import TYPE_CHECKING, Any, Callable, Coroutine, Generic, ParamSpec, TypeVar
+from collections.abc import Callable, Coroutine
+from typing import TYPE_CHECKING, Any, Generic, ParamSpec, TypeVar
 
 if TYPE_CHECKING:
     from .abc import AbstractAsyncBackend, AbstractTask

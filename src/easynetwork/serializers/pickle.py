@@ -11,10 +11,11 @@ __all__ = [
     "UnpicklerConfig",
 ]
 
+from collections.abc import Callable
 from dataclasses import asdict as dataclass_asdict, dataclass, field
 from functools import partial
 from io import BytesIO
-from typing import IO, TYPE_CHECKING, Callable, TypeVar, final
+from typing import IO, TYPE_CHECKING, TypeVar, final
 
 from ..exceptions import DeserializeError
 from .abc import AbstractPacketSerializer

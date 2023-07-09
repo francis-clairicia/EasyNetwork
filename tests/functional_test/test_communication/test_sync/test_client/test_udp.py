@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator
 from socket import AF_INET, socket as Socket
-from typing import Any, Callable, Iterator
+from typing import Any
 
 from easynetwork.api_sync.client.udp import UDPNetworkClient, UDPNetworkEndpoint
 from easynetwork.exceptions import ClientClosedError, DatagramProtocolParseError

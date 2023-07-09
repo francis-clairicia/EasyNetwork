@@ -8,7 +8,8 @@ from __future__ import annotations
 __all__ = ["AbstractStructSerializer", "NamedTupleStructSerializer"]
 
 from abc import abstractmethod
-from typing import TYPE_CHECKING, Any, Generic, Iterable, NamedTuple, TypeVar, final
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, Any, Generic, NamedTuple, TypeVar, final
 
 from ..exceptions import DeserializeError
 from .base_stream import FixedSizePacketSerializer

@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import socketserver
 import ssl
+from collections.abc import Callable, Iterator
 from concurrent.futures import Future
 from socket import AF_INET, IPPROTO_TCP, SHUT_WR, TCP_NODELAY, socket as Socket
-from typing import Any, Callable, Iterator
+from typing import Any
 
 from easynetwork.api_sync.client.tcp import TCPNetworkClient
 from easynetwork.exceptions import ClientClosedError, StreamProtocolParseError

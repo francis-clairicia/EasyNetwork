@@ -11,9 +11,10 @@ __all__ = [
     "MessageUnpackerConfig",
 ]
 
+from collections.abc import Callable
 from dataclasses import asdict as dataclass_asdict, dataclass, field
 from functools import partial
-from typing import Any, Callable, TypeVar, final
+from typing import Any, TypeVar, final
 
 from ..exceptions import DeserializeError
 from .abc import AbstractPacketSerializer

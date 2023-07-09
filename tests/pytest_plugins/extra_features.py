@@ -22,9 +22,9 @@ def pytest_configure(config: pytest.Config) -> None:
 
 
 def _get_markers_starting_with_prefix(item: pytest.Item, prefix: str, *, remove: bool) -> set[str]:
-    markers = set(mark.name for mark in item.iter_markers() if mark.name.startswith(prefix))
+    markers = {mark.name for mark in item.iter_markers() if mark.name.startswith(prefix)}
     if remove:
-        markers = set(m.removeprefix(prefix) for m in markers)
+        markers = {m.removeprefix(prefix) for m in markers}
     return markers
 
 

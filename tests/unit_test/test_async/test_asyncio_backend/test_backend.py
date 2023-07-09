@@ -3,7 +3,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import contextvars
-from typing import TYPE_CHECKING, Any, Callable, Sequence, cast
+from collections.abc import Callable, Sequence
+from typing import TYPE_CHECKING, Any, cast
 
 from easynetwork.api_async.backend.abc import AbstractAsyncStreamSocketAdapter
 from easynetwork_asyncio import AsyncioBackend

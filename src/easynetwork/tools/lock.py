@@ -11,7 +11,8 @@ __all__ = ["ForkSafeLock"]
 
 import os
 import threading
-from typing import Callable, Generic, TypeVar, cast, overload
+from collections.abc import Callable
+from typing import Generic, TypeVar, cast, overload
 
 _L = TypeVar("_L", bound="threading.RLock | threading.Lock")
 

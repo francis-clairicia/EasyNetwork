@@ -13,7 +13,8 @@ __all__ = [
 
 import abc
 from collections import deque
-from typing import Final, Generator, Protocol, TypeVar, final
+from collections.abc import Generator
+from typing import Final, Protocol, TypeVar, final
 
 from ...exceptions import DeserializeError, IncrementalDeserializeError
 from ..abc import AbstractIncrementalPacketSerializer, AbstractPacketSerializer
