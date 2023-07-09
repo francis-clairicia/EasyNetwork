@@ -156,7 +156,7 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         mock_string.encode.assert_called_once_with(mocker.sentinel.encoding, mocker.sentinel.str_errors)
         assert data is mocker.sentinel.data
 
-    def test____incremental_serialize____iterencode_packet(
+    def test____incremental_serialize____encode_packet(
         self,
         mock_encoder: MagicMock,
         mocker: MockerFixture,
@@ -166,32 +166,16 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
             encoding=mocker.sentinel.encoding,
             unicode_errors=mocker.sentinel.str_errors,
         )
-        chunk_a = mocker.NonCallableMagicMock(**{"encode.return_value": mocker.sentinel.chunk_a})
-        chunk_b = mocker.NonCallableMagicMock(**{"encode.return_value": mocker.sentinel.chunk_b})
-        chunk_c = mocker.NonCallableMagicMock(**{"encode.return_value": mocker.sentinel.chunk_c})
-        mock_encoder.iterencode.return_value = iter([chunk_a, chunk_b, chunk_c])
+        mock_string = mock_encoder.encode.return_value = mocker.NonCallableMagicMock()
+        mock_string.encode.return_value = mocker.sentinel.data
 
-        # Act & Assert
-        generator = serializer.incremental_serialize(mocker.sentinel.packet)
-        first_chunk = next(generator)
-        chunk_a.encode.assert_called_once_with(mocker.sentinel.encoding, mocker.sentinel.str_errors)
-        assert first_chunk is mocker.sentinel.chunk_a
-        del chunk_a, first_chunk
-        second_chunk = next(generator)
-        chunk_b.encode.assert_called_once_with(mocker.sentinel.encoding, mocker.sentinel.str_errors)
-        assert second_chunk is mocker.sentinel.chunk_b
-        del chunk_b, second_chunk
-        third_chunk = next(generator)
-        chunk_c.encode.assert_called_once_with(mocker.sentinel.encoding, mocker.sentinel.str_errors)
-        assert third_chunk is mocker.sentinel.chunk_c
-        del chunk_c, third_chunk
-        last_chunk = next(generator)
-        assert isinstance(last_chunk, bytes)
-        assert last_chunk == b"\n"
-        with pytest.raises(StopIteration):
-            next(generator)
+        # Act
+        chunks = list(serializer.incremental_serialize(mocker.sentinel.packet))
 
-        mock_encoder.iterencode.assert_called_once_with(mocker.sentinel.packet)
+        # Assert
+        mock_encoder.encode.assert_called_once_with(mocker.sentinel.packet)
+        mock_string.encode.assert_called_once_with(mocker.sentinel.encoding, mocker.sentinel.str_errors)
+        assert chunks == [mocker.sentinel.data, b"\n"]
 
     def test____deserialize____decode_data(
         self,

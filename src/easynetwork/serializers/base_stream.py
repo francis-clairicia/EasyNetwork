@@ -24,15 +24,15 @@ _DT_co = TypeVar("_DT_co", covariant=True)
 
 
 class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
-    __slots__ = ("__separator",)
+    __slots__ = ("__separator", "__incremental_serialize_check_separator")
 
-    def __init__(self, separator: bytes, **kwargs: Any) -> None:
+    def __init__(self, separator: bytes, *, incremental_serialize_check_separator: bool = True, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         assert isinstance(separator, bytes)
-        separator = bytes(separator)
         if len(separator) < 1:
             raise ValueError("Empty separator")
         self.__separator: bytes = separator
+        self.__incremental_serialize_check_separator = bool(incremental_serialize_check_separator)
 
     @abstractmethod
     def serialize(self, packet: _ST_contra) -> bytes:
@@ -42,11 +42,14 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_ST_cont
     def incremental_serialize(self, packet: _ST_contra) -> Generator[bytes, None, None]:
         data: bytes = self.serialize(packet)
         separator: bytes = self.__separator
-        while data.endswith(separator):
-            data = data.removesuffix(separator)
-        if separator in data:
-            raise ValueError(f"{separator!r} separator found in serialized packet {packet!r} which was not at the end")
-        yield data + separator
+        if self.__incremental_serialize_check_separator:
+            while data.endswith(separator):
+                data = data.removesuffix(separator)
+            if separator in data:
+                raise ValueError(f"{separator!r} separator found in serialized packet {packet!r} which was not at the end")
+        yield data
+        del data
+        yield separator
 
     @abstractmethod
     def deserialize(self, data: bytes) -> _DT_co:

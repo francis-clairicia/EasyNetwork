@@ -103,18 +103,21 @@ class TestStringLineSerializer:
         # Arrange
 
         # Act & Assert
-        with pytest.raises(TypeError, match=r"^Expected a string, got 4$"):
+        with pytest.raises(AssertionError, match=r"^Expected a string, got 4$"):
             serializer.serialize(4)  # type: ignore[arg-type]
 
-    def test____serialize____empty_string_error(
+    def test____serialize____empty_string(
         self,
         serializer: StringLineSerializer,
     ) -> None:
         # Arrange
 
-        # Act & Assert
-        with pytest.raises(ValueError, match=r"^Empty packet$"):
-            serializer.serialize("")
+        # Act
+        data = serializer.serialize("")
+
+        # Assert
+        assert isinstance(data, bytes)
+        assert data == b""
 
     @pytest.mark.parametrize("position", ["beginning", "between", "end"])
     def test____serialize____newline_in_string_error(
@@ -171,50 +174,3 @@ class TestStringLineSerializer:
         # Assert
         assert isinstance(exception.__cause__, UnicodeError)
         assert exception.error_info == {"data": bad_unicode}
-
-    @pytest.mark.parametrize("with_newlines", [False, True], ids=lambda boolean: f"with_newlines=={boolean}")
-    def test____deserialize____empty_string_error(
-        self,
-        with_newlines: bool,
-        serializer: StringLineSerializer,
-    ) -> None:
-        # Arrange
-
-        # Act & Assert
-        with pytest.raises(DeserializeError) as exc_info:
-            serializer.deserialize(serializer.separator * 3 if with_newlines else b"")
-        exception = exc_info.value
-
-        # Assert
-        assert exception.__cause__ is None
-        assert exception.error_info == {"data": b""}
-
-    @pytest.mark.parametrize("with_newlines_at_end", [False, True], ids=lambda boolean: f"with_newlines=={boolean}")
-    @pytest.mark.parametrize("position", ["beginning", "between"])
-    def test____deserialize____newline_in_string_error(
-        self,
-        with_newlines_at_end: bool,
-        position: Literal["beginning", "between"],
-        serializer: StringLineSerializer,
-    ) -> None:
-        # Arrange
-        separator = serializer.separator
-        match position:
-            case "beginning":
-                packet = separator + b"a"
-            case "between":
-                packet = b"a" + separator + b"b"
-            case _:
-                pytest.fail("Invalid fixture")
-
-        if with_newlines_at_end:
-            packet += separator
-
-        # Act & Assert
-        with pytest.raises(DeserializeError) as exc_info:
-            serializer.deserialize(packet)
-        exception = exc_info.value
-
-        # Assert
-        assert exception.__cause__ is None
-        assert exception.error_info == {"data": packet.removesuffix(separator)}

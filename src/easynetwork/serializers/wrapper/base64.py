@@ -37,7 +37,7 @@ class Base64EncodedSerializer(AutoSeparatedPacketSerializer[_ST_contra, _DT_co])
         from hashlib import sha256 as hashlib_sha256
         from hmac import compare_digest, digest as hmac_digest
 
-        super().__init__(separator=separator)
+        super().__init__(separator=separator, incremental_serialize_check_separator=not separator.isspace())
         assert isinstance(serializer, AbstractPacketSerializer)
         self.__serializer: AbstractPacketSerializer[_ST_contra, _DT_co] = serializer
         self.__checksum: Callable[[bytes], bytes] | None

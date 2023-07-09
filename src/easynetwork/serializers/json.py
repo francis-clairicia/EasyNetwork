@@ -172,10 +172,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
 
     @final
     def incremental_serialize(self, packet: _ST_contra) -> Generator[bytes, None, None]:
-        encoding: str = self.__encoding
-        str_errors: str = self.__unicode_errors
-        for chunk in self.__encoder.iterencode(packet):
-            yield chunk.encode(encoding, str_errors)
+        yield self.__encoder.encode(packet).encode(self.__encoding, self.__unicode_errors)
         yield b"\n"
 
     @final

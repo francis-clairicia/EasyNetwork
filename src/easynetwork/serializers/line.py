@@ -34,16 +34,13 @@ class StringLineSerializer(AutoSeparatedPacketSerializer[str, str]):
                 separator = b"\r\n"
             case _:
                 assert_never(newline)
-        super().__init__(separator=separator)
+        super().__init__(separator=separator, incremental_serialize_check_separator=False)
         self.__encoding: str = encoding
         self.__unicode_errors: str = unicode_errors
 
     @final
     def serialize(self, packet: str) -> bytes:
-        if not isinstance(packet, str):
-            raise TypeError(f"Expected a string, got {packet!r}")
-        if len(packet) == 0:
-            raise ValueError("Empty packet")
+        assert isinstance(packet, str), f"Expected a string, got {packet!r}"
         data = packet.encode(self.__encoding, self.__unicode_errors)
         if self.separator in data:
             raise ValueError("Newline found in string")
@@ -54,19 +51,17 @@ class StringLineSerializer(AutoSeparatedPacketSerializer[str, str]):
         separator: bytes = self.separator
         while data.endswith(separator):
             data = data.removesuffix(separator)
-        if len(data) == 0:
-            raise DeserializeError("Empty packet", error_info={"data": data})
-        if separator in data:
-            raise DeserializeError("Newline found in data which was not at the end", error_info={"data": data})
         try:
             return data.decode(self.__encoding, self.__unicode_errors)
         except UnicodeError as exc:
             raise DeserializeError(str(exc), error_info={"data": data}) from exc
 
     @property
+    @final
     def encoding(self) -> str:
         return self.__encoding
 
     @property
+    @final
     def unicode_errors(self) -> str:
         return self.__unicode_errors

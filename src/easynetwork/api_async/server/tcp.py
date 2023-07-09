@@ -276,10 +276,11 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
     async def __service_actions_task(self) -> None:
         request_handler = self.__request_handler
         backend = self.__backend
-        if self.__service_actions_interval == float("+inf"):
+        service_actions_interval = self.__service_actions_interval
+        if service_actions_interval == float("+inf"):
             return
         while True:
-            await backend.sleep(self.__service_actions_interval)
+            await backend.sleep(service_actions_interval)
             try:
                 await request_handler.service_actions()
             except Exception:
@@ -356,6 +357,8 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                     await _on_connection_hook
                 del _on_connection_hook
                 client_exit_stack.push_async_callback(self.__request_handler.on_disconnection, client)
+
+            del client_exit_stack
 
             try:
                 if client.is_closing():
@@ -544,14 +547,15 @@ class _ConnectedClientAPI(AsyncClientInterface[_ResponseT]):
     async def send_packet(self, packet: _ResponseT, /) -> None:
         self.__check_closed()
         self.__logger.debug("A response will be sent to %s", self.address)
-        self.__producer.queue(packet)
+        producer = self.__producer
+        producer.queue(packet)
         del packet
         async with self.__send_lock:
-            if not self.__producer.pending_packets():  # pragma: no cover
+            if not producer.pending_packets():  # pragma: no cover
                 # Someone else already flushed the producer queue while waiting for lock acquisition
                 return
             socket = self.__check_closed()
-            data: bytes = _concatenate_chunks(self.__producer)
+            data: bytes = _concatenate_chunks(producer)
             try:
                 await socket.sendall(data)
                 _check_real_socket_state(self.socket)

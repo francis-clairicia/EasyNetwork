@@ -236,7 +236,7 @@ class TestDatagramEndpoint:
         # Arrange
         from errno import ECONNABORTED
 
-        mock_asyncio_recv_queue.get.return_value = (None, None)  # None is sent to queue when readers must wake up
+        mock_asyncio_recv_queue.get.return_value = None  # None is sent to queue when readers must wake up
         mock_asyncio_exception_queue.get_nowait.side_effect = asyncio.QueueEmpty
         mock_asyncio_transport.is_closing.side_effect = [False, True]  # 1st call OK, 2nd not so much
 
@@ -276,7 +276,7 @@ class TestDatagramEndpoint:
         # Arrange
         from itertools import count
 
-        mock_asyncio_recv_queue.get.return_value = (None, None)  # None is sent to queue when readers must wake up
+        mock_asyncio_recv_queue.get.return_value = None  # None is sent to queue when readers must wake up
 
         _count = count()
 
@@ -446,7 +446,7 @@ class TestDatagramEndpointProtocol:
 
         # Assert
         assert close_waiter.done() and close_waiter.exception() is None and close_waiter.result() is None
-        mock_asyncio_recv_queue.put_nowait.assert_called_once_with((None, None))
+        mock_asyncio_recv_queue.put_nowait.assert_called_once_with(None)
         mock_asyncio_exception_queue.put_nowait.assert_not_called()
         mock_asyncio_transport.close.assert_called_once_with()  # just to be sure :)
 
@@ -469,7 +469,7 @@ class TestDatagramEndpointProtocol:
 
         # Assert
         assert close_waiter.done() and close_waiter.exception() is exception
-        mock_asyncio_recv_queue.put_nowait.assert_called_once_with((None, None))
+        mock_asyncio_recv_queue.put_nowait.assert_called_once_with(None)
         mock_asyncio_exception_queue.put_nowait.assert_called_once_with(exception)
         mock_asyncio_transport.close.assert_called_once_with()  # just to be sure :)
 
@@ -515,7 +515,7 @@ class TestDatagramEndpointProtocol:
 
         # Assert
         mock_asyncio_exception_queue.put_nowait.assert_called_once_with(exception)
-        mock_asyncio_recv_queue.put_nowait.assert_called_once_with((None, None))
+        mock_asyncio_recv_queue.put_nowait.assert_called_once_with(None)
 
     def test____error_received____do_not_push_to_queue_ater_connection_lost(
         self,

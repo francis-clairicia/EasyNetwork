@@ -67,9 +67,9 @@ def error_from_errno(errno: int) -> OSError:
 
 
 def check_socket_family(family: int) -> None:
-    supported_families: dict[str, int] = dict(AddressFamily.__members__)
+    supported_families = AddressFamily.__members__
 
-    if family not in list(supported_families.values()):
+    if family not in supported_families.values():
         raise ValueError(f"Only these families are supported: {', '.join(supported_families)}")
 
 
@@ -100,7 +100,10 @@ def check_socket_no_ssl(socket: _socket.socket) -> None:
 
 
 def wait_socket_available(socket: _socket.socket, timeout: float | None, event: Literal["read", "write"]) -> bool:
-    selector_cls: type[_selectors.BaseSelector] = getattr(_selectors, "PollSelector", _selectors.SelectSelector)
+    try:
+        selector_cls: type[_selectors.BaseSelector] = getattr(_selectors, "PollSelector")
+    except AttributeError:
+        selector_cls = _selectors.SelectSelector
 
     with selector_cls() as selector:
         try:
@@ -124,6 +127,9 @@ class _WouldBlock(Exception):
         self.event: Literal["read", "write"] = event
 
 
+_inf = float("+inf")
+
+
 def _retry_impl(
     socket: _socket.socket,
     timeout: float | None,
@@ -135,9 +141,9 @@ def _retry_impl(
 
     perf_counter = time.perf_counter  # pull function to local namespace
     event: Literal["read", "write"]
-    if timeout == float("+inf"):
+    if timeout == _inf:
         timeout = None
-    if retry_interval == float("+inf"):
+    if retry_interval == _inf:
         retry_interval = None
     while True:
         try:
@@ -194,7 +200,7 @@ def retry_ssl_socket_method(
     *args: _P.args,
     **kwargs: _P.kwargs,
 ) -> _R:
-    assert is_ssl_socket(socket), "Expected an ssl.SSLSocket instance"
+    assert is_ssl_socket(socket), "Expected a ssl.SSLSocket instance"
 
     def callback() -> _R:
         assert ssl is not None, "stdlib ssl module not available"

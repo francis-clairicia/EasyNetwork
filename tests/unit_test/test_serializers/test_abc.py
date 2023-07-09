@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import random
 from typing import IO, TYPE_CHECKING, Any, Generator, final
 
@@ -163,6 +164,11 @@ class TestAutoSeparatedPacketSerializer:
     def mock_deserialize_func(mocker: MockerFixture) -> MagicMock:
         return mocker.patch.object(_AutoSeparatedPacketSerializerForTest, "deserialize")
 
+    @pytest.fixture(params=[False, True], ids=lambda p: f"check_separator=={p}")
+    @staticmethod
+    def check_separator(request: pytest.FixtureRequest) -> bool:
+        return getattr(request, "param")
+
     @pytest.mark.parametrize("separator", [b"\n", b".", b"\r\n", b"--"], ids=lambda p: f"separator=={p}")
     def test____properties____right_values(self, separator: bytes) -> None:
         # Arrange
@@ -182,11 +188,15 @@ class TestAutoSeparatedPacketSerializer:
 
     def test____incremental_serialize____append_separator(
         self,
+        check_separator: bool,
         mock_serialize_func: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer = _AutoSeparatedPacketSerializerForTest(separator=b"\r\n")
+        serializer = _AutoSeparatedPacketSerializerForTest(
+            separator=b"\r\n",
+            incremental_serialize_check_separator=check_separator,
+        )
         mock_serialize_func.return_value = b"data"
 
         # Act
@@ -194,15 +204,19 @@ class TestAutoSeparatedPacketSerializer:
 
         # Assert
         mock_serialize_func.assert_called_once_with(mocker.sentinel.packet)
-        assert data == [b"data\r\n"]
+        assert data == [b"data", b"\r\n"]
 
     def test____incremental_serialize____keep_already_present_separator(
         self,
+        check_separator: bool,
         mock_serialize_func: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer = _AutoSeparatedPacketSerializerForTest(separator=b"\r\n")
+        serializer = _AutoSeparatedPacketSerializerForTest(
+            separator=b"\r\n",
+            incremental_serialize_check_separator=check_separator,
+        )
         mock_serialize_func.return_value = b"data\r\n"
 
         # Act
@@ -210,15 +224,19 @@ class TestAutoSeparatedPacketSerializer:
 
         # Assert
         mock_serialize_func.assert_called_once_with(mocker.sentinel.packet)
-        assert data == [b"data\r\n"]
+        assert data == [b"data" if check_separator else b"data\r\n", b"\r\n"]
 
     def test____incremental_serialize____remove_useless_trailing_separators(
         self,
+        check_separator: bool,
         mock_serialize_func: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer = _AutoSeparatedPacketSerializerForTest(separator=b"\r\n")
+        serializer = _AutoSeparatedPacketSerializerForTest(
+            separator=b"\r\n",
+            incremental_serialize_check_separator=check_separator,
+        )
         mock_serialize_func.return_value = b"data\r\n\r\n\r\n\r\n"
 
         # Act
@@ -226,15 +244,19 @@ class TestAutoSeparatedPacketSerializer:
 
         # Assert
         mock_serialize_func.assert_called_once_with(mocker.sentinel.packet)
-        assert data == [b"data\r\n"]
+        assert data == [b"data" if check_separator else b"data\r\n\r\n\r\n\r\n", b"\r\n"]
 
     def test____incremental_serialize____does_not_remove_partial_separator_at_end(
         self,
+        check_separator: bool,
         mock_serialize_func: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer = _AutoSeparatedPacketSerializerForTest(separator=b"\r\n")
+        serializer = _AutoSeparatedPacketSerializerForTest(
+            separator=b"\r\n",
+            incremental_serialize_check_separator=check_separator,
+        )
         mock_serialize_func.return_value = b"data\r\r\n"
 
         # Act
@@ -242,22 +264,26 @@ class TestAutoSeparatedPacketSerializer:
 
         # Assert
         mock_serialize_func.assert_called_once_with(mocker.sentinel.packet)
-        assert data == [b"data\r\r\n"]
+        assert data == [b"data\r" if check_separator else b"data\r\r\n", b"\r\n"]
 
     def test____incremental_serialize____error_if_separator_is_within_output(
         self,
+        check_separator: bool,
         mock_serialize_func: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer = _AutoSeparatedPacketSerializerForTest(separator=b"\r\n")
+        serializer = _AutoSeparatedPacketSerializerForTest(
+            separator=b"\r\n",
+            incremental_serialize_check_separator=check_separator,
+        )
         mock_serialize_func.return_value = b"data\r\nother"
 
         # Act & Assert
         with pytest.raises(
             ValueError,
             match=r"^b'[\\]r[\\]n' separator found in serialized packet sentinel\.packet which was not at the end$",
-        ):
+        ) if check_separator else contextlib.nullcontext():
             list(serializer.incremental_serialize(mocker.sentinel.packet))
 
     @pytest.mark.parametrize(

@@ -107,7 +107,7 @@ class NamedTupleStructSerializer(AbstractStructSerializer[_NT, _NT], Generic[_NT
 
     @final
     def iter_values(self, packet: _NT) -> _NT:
-        assert isinstance(packet, self.__namedtuple_cls)
+        assert isinstance(packet, self.__namedtuple_cls), repr(packet)
         if (encoding := self.__encoding) is not None and self.__string_fields:
             string_fields: dict[str, str] = {field: getattr(packet, field) for field in self.__string_fields}
             unicode_errors: str = self.__unicode_errors
