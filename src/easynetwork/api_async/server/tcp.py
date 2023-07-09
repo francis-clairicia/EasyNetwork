@@ -138,7 +138,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             raise ValueError("'max_recv_size' must be a strictly positive integer")
 
         if service_actions_interval is None:
-            service_actions_interval = 0.1
+            service_actions_interval = 1.0
 
         assert isinstance(protocol, StreamProtocol)
 
