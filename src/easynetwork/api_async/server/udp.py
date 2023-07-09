@@ -206,20 +206,24 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         datagram_received_task = self.__datagram_received_task
         logger = self.__logger
         bufsize: int = MAX_DATAGRAM_BUFSIZE
-        while True:
-            datagram, client_address = await socket.recvfrom(bufsize)
-            client_address = new_socket_address(client_address, socket_family)
-            logger.debug("Received a datagram from %s", client_address)
-            task_group.start_soon(datagram_received_task, socket, datagram, client_address, task_group)
-            del datagram, client_address
+        try:
+            while True:
+                datagram, client_address = await socket.recvfrom(bufsize)
+                client_address = new_socket_address(client_address, socket_family)
+                logger.debug("Received a datagram from %s", client_address)
+                task_group.start_soon(datagram_received_task, socket, datagram, client_address, task_group)
+                del datagram, client_address
+        finally:
+            del datagram_received_task
 
     async def __service_actions_task(self) -> None:
         request_handler = self.__request_handler
         backend = self.__backend
-        if self.__service_actions_interval == float("+inf"):
+        service_actions_interval = self.__service_actions_interval
+        if service_actions_interval == float("+inf"):
             return
         while True:
-            await backend.sleep(self.__service_actions_interval)
+            await backend.sleep(service_actions_interval)
             try:
                 await request_handler.service_actions()
             except Exception:
@@ -243,11 +247,10 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 del client
                 return
             request_handler_generator: AsyncGenerator[None, _RequestT] | None = None
-            datagram_queue = deque()  # Add datagram after creating the generator
+            datagram_queue = deque([datagram])
             with self.__suppress_and_log_remaining_exception(client_address):
+                request_handler_generator = await self.__new_request_handler(client)
                 try:
-                    request_handler_generator = await self.__new_request_handler(client)
-                    datagram_queue.append(datagram)
                     while True:
                         if not datagram_queue:
                             self.__client_datagram_queue[client] = datagram_queue
@@ -294,8 +297,11 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                         else _contextlib.nullcontext()
                     ):
                         datagram_received_task = self.__datagram_received_task
-                        for datagram in datagram_queue:
-                            task_group.start_soon(datagram_received_task, socket, datagram, client_address, task_group)
+                        try:
+                            for datagram in datagram_queue:
+                                task_group.start_soon(datagram_received_task, socket, datagram, client_address, task_group)
+                        finally:
+                            del datagram_received_task
 
     async def __new_request_handler(self, client: AsyncClientInterface[_ResponseT]) -> AsyncGenerator[None, _RequestT]:
         request_handler_generator = self.__request_handler.handle(client)

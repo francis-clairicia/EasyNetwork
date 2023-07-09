@@ -291,8 +291,8 @@ class SocketProxy:
         return new_socket_address(self.__execute(socket.getsockname), socket.family)
 
     @property
-    def family(self) -> AddressFamily:
-        return AddressFamily(self.__socket.family)
+    def family(self) -> _socket.AddressFamily:
+        return _socket.AddressFamily(self.__socket.family)
 
     @property
     def type(self) -> _socket.SocketKind:

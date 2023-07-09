@@ -36,7 +36,7 @@ async def create_datagram_endpoint(
     socket: _socket.socket | None = None,
 ) -> DatagramEndpoint:
     loop = asyncio.get_running_loop()
-    recv_queue: asyncio.Queue[tuple[bytes | None, tuple[Any, ...] | None]] = asyncio.Queue()
+    recv_queue: asyncio.Queue[tuple[bytes, tuple[Any, ...]] | None] = asyncio.Queue()
     exception_queue: asyncio.Queue[Exception] = asyncio.Queue()
 
     transport, protocol = await loop.create_datagram_endpoint(
@@ -66,11 +66,11 @@ class DatagramEndpoint:
         transport: asyncio.DatagramTransport,
         protocol: DatagramEndpointProtocol,
         *,
-        recv_queue: asyncio.Queue[tuple[bytes | None, tuple[Any, ...] | None]],
+        recv_queue: asyncio.Queue[tuple[bytes, tuple[Any, ...]] | None],
         exception_queue: asyncio.Queue[Exception],
     ) -> None:
         super().__init__()
-        self.__recv_queue: asyncio.Queue[tuple[bytes | None, tuple[Any, ...] | None]] = recv_queue
+        self.__recv_queue: asyncio.Queue[tuple[bytes, tuple[Any, ...]] | None] = recv_queue
         self.__exception_queue: asyncio.Queue[Exception] = exception_queue
         self.__transport: asyncio.DatagramTransport = transport
         self.__protocol: DatagramEndpointProtocol = protocol
@@ -92,12 +92,12 @@ class DatagramEndpoint:
         self.__check_exceptions()
         if self.__transport.is_closing():
             raise _error_from_errno(_errno.ECONNABORTED)
-        data, address = await self.__recv_queue.get()
-        if data is None or address is None:
+        data_and_address = await self.__recv_queue.get()
+        if data_and_address is None:
             self.__check_exceptions()  # Woken up because an error occurred ?
             assert self.__transport.is_closing()
             raise _error_from_errno(_errno.ECONNABORTED)  # Connection lost otherwise
-        return data, address
+        return data_and_address
 
     async def sendto(self, data: bytes | bytearray | memoryview, address: tuple[Any, ...] | None = None, /) -> None:
         self.__check_exceptions()
@@ -145,14 +145,14 @@ class DatagramEndpointProtocol(asyncio.DatagramProtocol):
         self,
         *,
         loop: asyncio.AbstractEventLoop | None = None,
-        recv_queue: asyncio.Queue[tuple[bytes | None, tuple[Any, ...] | None]],
+        recv_queue: asyncio.Queue[tuple[bytes, tuple[Any, ...]] | None],
         exception_queue: asyncio.Queue[Exception],
     ) -> None:
         super().__init__()
         if loop is None:
             loop = asyncio.get_running_loop()
         self.__loop: asyncio.AbstractEventLoop = loop
-        self.__recv_queue: asyncio.Queue[tuple[bytes | None, tuple[Any, ...] | None]] = recv_queue
+        self.__recv_queue: asyncio.Queue[tuple[bytes, tuple[Any, ...]] | None] = recv_queue
         self.__exception_queue: asyncio.Queue[Exception] = exception_queue
         self.__transport: asyncio.BaseTransport | None = None
         self.__closed: asyncio.Future[None] = loop.create_future()
@@ -201,7 +201,7 @@ class DatagramEndpointProtocol(asyncio.DatagramProtocol):
                     waiter.set_exception(exc)
 
         if self.__transport is not None:
-            self.__recv_queue.put_nowait((None, None))  # Wake up endpoint
+            self.__recv_queue.put_nowait(None)  # Wake up endpoint
             if exc is not None:
                 self.__exception_queue.put_nowait(exc)
             self.__transport.close()
@@ -216,7 +216,7 @@ class DatagramEndpointProtocol(asyncio.DatagramProtocol):
     def error_received(self, exc: Exception) -> None:
         if self.__transport is not None:
             self.__exception_queue.put_nowait(exc)
-            self.__recv_queue.put_nowait((None, None))  # Wake up endpoint
+            self.__recv_queue.put_nowait(None)  # Wake up endpoint
 
     def pause_writing(self) -> None:
         assert not self.__write_paused

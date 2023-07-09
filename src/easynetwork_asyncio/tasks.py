@@ -101,6 +101,9 @@ class TaskGroup(AbstractTaskGroup):
         return Task(self.__asyncio_tg.create_task(__coro_func(*args, **kwargs)))
 
 
+_inf = float("+inf")
+
+
 @final
 class TimeoutHandle(AbstractTimeoutHandle):
     __slots__ = ("__handle",)
@@ -128,18 +131,21 @@ class TimeoutHandle(AbstractTimeoutHandle):
 
     def when(self) -> float:
         deadline: float | None = self.__handle.when()
-        return deadline if deadline is not None else float("+inf")
+        return deadline if deadline is not None else _inf
 
     def reschedule(self, when: float) -> None:
-        return self.__handle.reschedule(float(when) if when != float("+inf") else None)
+        assert when is not None
+        return self.__handle.reschedule(when if when != _inf else None)
 
     def expired(self) -> bool:
         return self.__handle.expired()
 
 
 def timeout(delay: float) -> TimeoutHandle:
-    return TimeoutHandle(asyncio.timeout(float(delay) if delay != float("+inf") else None))
+    assert delay is not None
+    return TimeoutHandle(asyncio.timeout(delay if delay != _inf else None))
 
 
 def timeout_at(deadline: float) -> TimeoutHandle:
-    return TimeoutHandle(asyncio.timeout_at(float(deadline) if deadline != float("+inf") else None))
+    assert deadline is not None
+    return TimeoutHandle(asyncio.timeout_at(deadline if deadline != _inf else None))
