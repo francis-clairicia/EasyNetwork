@@ -42,7 +42,7 @@ N.B.: Unix sockets are expressly not supported.
 ```py
 import logging
 from collections.abc import AsyncGenerator
-from typing import Any
+from typing import Any, TypeAlias
 
 from easynetwork.api_async.server import AsyncBaseRequestHandler, AsyncClientInterface, StandaloneTCPNetworkServer
 from easynetwork.exceptions import BaseProtocolParseError
@@ -50,21 +50,27 @@ from easynetwork.protocol import StreamProtocol
 from easynetwork.serializers import JSONSerializer
 
 
-class JSONProtocol(StreamProtocol[Any, Any]):
+# These TypeAliases are there to help you understand where requests and responses are used in the code
+RequestType: TypeAlias = Any
+ResponseType: TypeAlias = Any
+
+
+class JSONProtocol(StreamProtocol[RequestType, ResponseType]):
     def __init__(self) -> None:
         super().__init__(JSONSerializer())
 
 
-class EchoRequestHandler(AsyncBaseRequestHandler[Any, Any]):
-    async def handle(self, client: AsyncClientInterface[Any]) -> AsyncGenerator[None, Any]:
-        request = yield  # A JSON request has been sent by this client
+class EchoRequestHandler(AsyncBaseRequestHandler[RequestType, ResponseType]):
+    async def handle(self, client: AsyncClientInterface[ResponseType]) -> AsyncGenerator[None, RequestType]:
+        request: RequestType = yield  # A JSON request has been sent by this client
 
         print(f"{client.address} sent {request!r}")
 
         # As a good echo handler, the request is sent back to the client
-        await client.send_packet(request)
+        response: ResponseType = request
+        await client.send_packet(response)
 
-    async def bad_request(self, client: AsyncClientInterface[Any], exc: BaseProtocolParseError) -> None:
+    async def bad_request(self, client: AsyncClientInterface[ResponseType], exc: BaseProtocolParseError) -> None:
         # Invalid JSON data sent
         await client.send_packet({"data": {"error": "Invalid JSON", "code": "parse_error"}})
 
