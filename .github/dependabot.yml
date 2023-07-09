@@ -7,5 +7,7 @@ updates:
       day: "sunday"
     commit-message:
       prefix: "[dependabot]"
+    labels:
+      - "integration"
     reviewers:
       - "francis-clairicia"
