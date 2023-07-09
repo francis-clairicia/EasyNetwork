@@ -31,6 +31,117 @@ pip install --user .
 ```
 
 ## Usage
+EasyNetwork fully encapsulates socket handling, offering you a high-level interface enabling an application/software to fully handle the logic part
+with Python objects without worrying about how to process, send or receive data across the network.
+
+Works with TCP and UDP, for Internet sockets ([AF_INET](https://docs.python.org/3/library/socket.html#socket.AF_INET) and [AF_INET6](https://docs.python.org/3/library/socket.html#socket.AF_INET6))
+
+N.B.: Unix sockets are expressly not supported.
+
+### TCP Echo server with JSON data
+```py
+import logging
+from collections.abc import AsyncGenerator
+from typing import Any
+
+from easynetwork.api_async.server import AsyncBaseRequestHandler, AsyncClientInterface, StandaloneTCPNetworkServer
+from easynetwork.exceptions import BaseProtocolParseError
+from easynetwork.protocol import StreamProtocol
+from easynetwork.serializers import JSONSerializer
+
+
+class JSONProtocol(StreamProtocol[Any, Any]):
+    def __init__(self) -> None:
+        super().__init__(JSONSerializer())
+
+
+class EchoRequestHandler(AsyncBaseRequestHandler[Any, Any]):
+    async def handle(self, client: AsyncClientInterface[Any]) -> AsyncGenerator[None, Any]:
+        request = yield  # A JSON request has been sent by this client
+
+        print(f"{client.address} sent {request!r}")
+
+        # As a good echo handler, the request is sent back to the client
+        await client.send_packet(request)
+
+    async def bad_request(self, client: AsyncClientInterface[Any], exc: BaseProtocolParseError) -> None:
+        # Invalid JSON data sent
+        await client.send_packet({"data": {"error": "Invalid JSON", "code": "parse_error"}})
+
+
+def main() -> None:
+    host = None  # Bind on all interfaces
+    # host = "" works too
+    port = 9000
+
+    logging.basicConfig(level=logging.INFO, format="[ %(levelname)s ] [ %(name)s ] %(message)s")
+    with StandaloneTCPNetworkServer(host, port, JSONProtocol(), EchoRequestHandler()) as server:
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            pass
+
+
+if __name__ == "__main__":
+    main()
+```
+
+### TCP Echo client with JSON data
+```py
+from typing import Any
+
+from easynetwork.api_sync.client import TCPNetworkClient
+from easynetwork.protocol import StreamProtocol
+from easynetwork.serializers import JSONSerializer
+
+
+class JSONProtocol(StreamProtocol[Any, Any]):
+    def __init__(self) -> None:
+        super().__init__(JSONSerializer())
+
+
+def main() -> None:
+    with TCPNetworkClient(("localhost", 9000), JSONProtocol()) as client:
+        client.send_packet({"data": {"my_body": ["as json"]}})
+        response = client.recv_packet()  # response will be a JSON
+        print(response["data"])  # prints {'my_body': ['as json']}
+
+
+if __name__ == "__main__":
+    main()
+```
+
+<details markdown="1">
+<summary>Asynchronous version ( with <code>async def</code> )</summary>
+
+```py
+import asyncio
+from typing import Any
+
+from easynetwork.api_async.client import AsyncTCPNetworkClient
+from easynetwork.protocol import StreamProtocol
+from easynetwork.serializers import JSONSerializer
+
+
+class JSONProtocol(StreamProtocol[Any, Any]):
+    def __init__(self) -> None:
+        super().__init__(JSONSerializer())
+
+
+async def main() -> None:
+    async with AsyncTCPNetworkClient(("localhost", 9000), JSONProtocol()) as client:
+        await client.send_packet({"data": {"my_body": ["as json"]}})
+        response = await client.recv_packet()  # response will be a JSON
+        print(response["data"])  # prints {'my_body': ['as json']}
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+</details>
+
+### Other examples
 Check out the [available examples](./examples) for an overview.
 
 ### Documentation
