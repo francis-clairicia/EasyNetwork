@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
 #
 #
@@ -17,7 +16,9 @@ import itertools
 import os
 import socket as _socket
 import sys
-from typing import TYPE_CHECKING, Any, AsyncContextManager, Callable, Coroutine, NoReturn, ParamSpec, Sequence, TypeVar
+from collections.abc import Callable, Coroutine, Sequence
+from contextlib import AbstractAsyncContextManager as AsyncContextManager
+from typing import TYPE_CHECKING, Any, NoReturn, ParamSpec, TypeVar
 
 try:
     import ssl as _ssl

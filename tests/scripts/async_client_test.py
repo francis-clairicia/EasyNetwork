@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-from typing import Callable
+from collections.abc import Callable
 
 from easynetwork.api_async.client import AbstractAsyncNetworkClient, AsyncTCPNetworkClient, AsyncUDPNetworkClient
 from easynetwork.protocol import DatagramProtocol, StreamProtocol

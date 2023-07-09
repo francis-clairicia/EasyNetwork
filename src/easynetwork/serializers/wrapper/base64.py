@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
 #
 #
@@ -11,7 +10,8 @@ __all__ = [
 ]
 
 import os
-from typing import Callable, Literal, TypeVar, assert_never, final
+from collections.abc import Callable
+from typing import Literal, TypeVar, assert_never, final
 
 from ...exceptions import DeserializeError
 from ..abc import AbstractPacketSerializer

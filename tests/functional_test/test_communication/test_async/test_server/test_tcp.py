@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 from __future__ import annotations
 
 import asyncio
@@ -8,8 +6,9 @@ import contextlib
 import logging
 import math
 import ssl
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Sequence
 from socket import IPPROTO_TCP, TCP_NODELAY
-from typing import Any, AsyncGenerator, AsyncIterator, Awaitable, Callable, Sequence
+from typing import Any
 from weakref import WeakValueDictionary
 
 from easynetwork.api_async.backend.abc import AbstractAsyncBackend

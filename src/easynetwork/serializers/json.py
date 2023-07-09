@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
 #
 #
@@ -15,8 +14,9 @@ __all__ = [
 import re
 import string
 from collections import Counter
+from collections.abc import Callable, Generator
 from dataclasses import asdict as dataclass_asdict, dataclass
-from typing import Any, Callable, Generator, TypeVar, final
+from typing import Any, TypeVar, final
 
 from ..exceptions import DeserializeError, IncrementalDeserializeError
 from ..tools._utils import iter_bytes

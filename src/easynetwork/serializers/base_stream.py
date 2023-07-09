@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
 #
 #
@@ -13,8 +12,9 @@ __all__ = [
 ]
 
 from abc import abstractmethod
+from collections.abc import Generator
 from io import BytesIO
-from typing import IO, Any, Generator, TypeVar, final
+from typing import IO, Any, TypeVar, final
 
 from ..exceptions import DeserializeError, IncrementalDeserializeError
 from .abc import AbstractIncrementalPacketSerializer, AbstractPacketSerializer

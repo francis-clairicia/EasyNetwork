@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
 #
 #
@@ -26,21 +25,9 @@ import contextlib
 import errno as _errno
 import functools
 import socket as _socket
+from collections.abc import Callable
 from enum import IntEnum, unique
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Callable,
-    Final,
-    Literal,
-    NamedTuple,
-    ParamSpec,
-    Protocol,
-    TypeAlias,
-    TypeVar,
-    final,
-    overload,
-)
+from typing import TYPE_CHECKING, Any, Final, Literal, NamedTuple, ParamSpec, Protocol, TypeAlias, TypeVar, final, overload
 
 if TYPE_CHECKING:
     import threading as _threading

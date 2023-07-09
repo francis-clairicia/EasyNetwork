@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
 #
 #
@@ -12,7 +11,8 @@ __all__ = ["ThreadsPortal"]
 import asyncio
 import concurrent.futures
 import contextvars
-from typing import Any, Callable, Coroutine, ParamSpec, TypeVar, final
+from collections.abc import Callable, Coroutine
+from typing import Any, ParamSpec, TypeVar, final
 
 from easynetwork.api_async.backend.abc import AbstractThreadsPortal
 from easynetwork.api_async.backend.sniffio import current_async_library_cvar as _sniffio_current_async_library_cvar

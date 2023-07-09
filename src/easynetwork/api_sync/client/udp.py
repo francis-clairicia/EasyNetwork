@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
 #
 #
@@ -13,8 +12,9 @@ import errno as _errno
 import socket as _socket
 import threading
 import time
+from collections.abc import Iterator
 from operator import itemgetter as _itemgetter
-from typing import TYPE_CHECKING, Any, Generic, Iterator, Self, TypeVar, final, overload
+from typing import TYPE_CHECKING, Any, Generic, Self, TypeVar, final, overload
 
 from ...exceptions import ClientClosedError, DatagramProtocolParseError
 from ...protocol import DatagramProtocol

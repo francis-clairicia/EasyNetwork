@@ -1,10 +1,10 @@
-# -*- coding: utf-8 -*-
 # mypy: disable_error_code=func-returns-value
 
 from __future__ import annotations
 
 import inspect
-from typing import TYPE_CHECKING, Any, AsyncGenerator
+from collections.abc import AsyncGenerator
+from typing import TYPE_CHECKING, Any
 
 from easynetwork.api_async.server.handler import AsyncBaseRequestHandler, AsyncClientInterface, AsyncStreamRequestHandler
 from easynetwork.exceptions import BaseProtocolParseError

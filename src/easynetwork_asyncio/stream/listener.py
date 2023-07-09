@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
 #
 #
@@ -12,7 +11,8 @@ __all__ = ["ListenerSocketAdapter"]
 import asyncio
 import asyncio.streams
 from abc import abstractmethod
-from typing import TYPE_CHECKING, Any, Callable, final
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, final
 
 from easynetwork.api_async.backend.abc import (
     AbstractAcceptedSocket,

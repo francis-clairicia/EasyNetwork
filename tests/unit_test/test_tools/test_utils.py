@@ -1,10 +1,9 @@
-# -*- coding: utf-8 -*-
-
 from __future__ import annotations
 
 import os
 import selectors
 import ssl
+from collections.abc import Callable, Sequence
 from socket import (
     AF_INET,
     AF_INET6,
@@ -18,7 +17,7 @@ from socket import (
     SOL_SOCKET,
     TCP_NODELAY,
 )
-from typing import TYPE_CHECKING, Any, Callable, Literal, Sequence, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from easynetwork.tools._utils import (
     check_real_socket_state,

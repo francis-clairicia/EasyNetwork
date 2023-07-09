@@ -1,12 +1,12 @@
-# -*- coding: utf-8 -*-
 # mypy: disable_error_code=override
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
+from collections.abc import Callable, Coroutine, Iterator
 from socket import socket as Socket
-from typing import TYPE_CHECKING, Any, Callable, Coroutine, Iterator, final
+from typing import TYPE_CHECKING, Any, final
 
 from easynetwork_asyncio.socket import AsyncSocket
 

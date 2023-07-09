@@ -1,10 +1,9 @@
-# -*- coding: utf-8 -*
-
 from __future__ import annotations
 
 import random
 from abc import ABCMeta
-from typing import Any, Callable, final
+from collections.abc import Callable
+from typing import Any, final
 
 from easynetwork.exceptions import DeserializeError, IncrementalDeserializeError
 from easynetwork.serializers.abc import AbstractIncrementalPacketSerializer, AbstractPacketSerializer

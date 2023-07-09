@@ -4,7 +4,7 @@ import argparse
 import concurrent.futures
 import logging
 import time
-from typing import Callable
+from collections.abc import Callable
 
 from easynetwork.api_sync.client import AbstractNetworkClient, TCPNetworkClient, UDPNetworkClient
 from easynetwork.protocol import DatagramProtocol, StreamProtocol

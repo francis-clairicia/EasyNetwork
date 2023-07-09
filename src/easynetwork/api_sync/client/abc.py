@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
 #
 #
@@ -10,7 +9,8 @@ __all__ = ["AbstractNetworkClient"]
 
 import time
 from abc import ABCMeta, abstractmethod
-from typing import TYPE_CHECKING, Any, Generic, Iterator, Self, TypeVar
+from collections.abc import Iterator
+from typing import TYPE_CHECKING, Any, Generic, Self, TypeVar
 
 from ...tools.socket import SocketAddress
 

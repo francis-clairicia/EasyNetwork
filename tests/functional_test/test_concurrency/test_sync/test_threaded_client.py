@@ -1,10 +1,9 @@
-# -*- coding: utf-8 -*-
-
 from __future__ import annotations
 
 import time
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
-from typing import Iterator, TypeAlias
+from typing import TypeAlias
 
 from easynetwork.api_sync.client.abc import AbstractNetworkClient
 

@@ -1,9 +1,8 @@
-# -*- coding: utf-8 -*-
-
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from easynetwork_asyncio.datagram.endpoint import DatagramEndpoint
 from easynetwork_asyncio.socket import AsyncSocket

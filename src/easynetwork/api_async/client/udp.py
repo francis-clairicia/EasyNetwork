@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
 #
 #
@@ -10,7 +9,8 @@ __all__ = ["AsyncUDPNetworkClient", "AsyncUDPNetworkEndpoint"]
 
 import errno as _errno
 import socket as _socket
-from typing import TYPE_CHECKING, Any, AsyncIterator, Generic, Mapping, Self, TypedDict, TypeVar, final, overload
+from collections.abc import AsyncIterator, Mapping
+from typing import TYPE_CHECKING, Any, Generic, Self, TypedDict, TypeVar, final, overload
 
 from ...exceptions import ClientClosedError, DatagramProtocolParseError
 from ...protocol import DatagramProtocol

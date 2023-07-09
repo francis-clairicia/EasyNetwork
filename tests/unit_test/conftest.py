@@ -1,11 +1,10 @@
-# -*- coding: utf-8 -*-
-
 from __future__ import annotations
 
 import pathlib
+from collections.abc import Callable
 from socket import AF_INET, IPPROTO_TCP, IPPROTO_UDP, SOCK_DGRAM, SOCK_STREAM, socket as Socket
 from ssl import SSLContext, SSLSocket
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from easynetwork.converter import AbstractPacketConverterComposite
 from easynetwork.protocol import DatagramProtocol, StreamProtocol

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
 #
 #
@@ -13,8 +12,9 @@ __all__ = ["AsyncBackendFactory"]
 import functools
 import inspect
 from collections import Counter
+from collections.abc import Mapping
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Final, Mapping, final
+from typing import TYPE_CHECKING, Any, Final, final
 
 from .abc import AbstractAsyncBackend
 from .sniffio import current_async_library as _sniffio_current_async_library
@@ -147,7 +147,7 @@ class AsyncBackendFactory:
         entry_points = get_all_entry_points(group=AsyncBackendFactory.GROUP_NAME)
         duplicate_counter: Counter[str] = Counter([ep.name for ep in entry_points])
 
-        if duplicates := set(name for name in duplicate_counter if duplicate_counter[name] > 1):
+        if duplicates := {name for name in duplicate_counter if duplicate_counter[name] > 1}:
             raise TypeError(f"Conflicting backend name caught: {', '.join(map(repr, sorted(duplicates)))}")
 
         backends: dict[str, EntryPoint] = {ep.name: ep for ep in entry_points}

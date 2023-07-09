@@ -6,6 +6,11 @@ ci:
   skip: [mypy]
 
 repos:
+  - repo: https://github.com/asottile/pyupgrade
+    rev: v3.9.0
+    hooks:
+      - id: pyupgrade
+        args: ['--py311-plus']
   - repo: local
     hooks:
       - id: mypy

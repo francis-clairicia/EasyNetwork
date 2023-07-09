@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
 #
 #
@@ -11,7 +10,8 @@ __all__ = [
     "StreamProtocol",
 ]
 
-from typing import Any, Generator, Generic, TypeVar, overload
+from collections.abc import Generator
+from typing import Any, Generic, TypeVar, overload
 
 from .converter import AbstractPacketConverterComposite
 from .exceptions import (

@@ -1,11 +1,9 @@
-# -*- coding: utf-8 -*-
-
 from __future__ import annotations
 
 import asyncio
 import concurrent.futures
 import time
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 from easynetwork.api_async.backend.abc import AbstractAsyncBackend
 from easynetwork.api_async.backend.factory import AsyncBackendFactory

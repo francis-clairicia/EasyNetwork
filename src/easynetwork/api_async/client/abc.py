@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
 #
 #
@@ -9,7 +8,8 @@ from __future__ import annotations
 __all__ = ["AbstractAsyncNetworkClient"]
 
 from abc import ABCMeta, abstractmethod
-from typing import TYPE_CHECKING, Any, AsyncIterator, Generic, Self, TypeVar
+from collections.abc import AsyncIterator
+from typing import TYPE_CHECKING, Any, Generic, Self, TypeVar
 
 from ...tools.socket import SocketAddress
 

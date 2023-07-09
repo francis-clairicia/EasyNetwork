@@ -1,10 +1,9 @@
-# -*- coding: utf-8 -*-
-
 from __future__ import annotations
 
 import time
+from collections.abc import Callable, Iterator
 from concurrent.futures import Future, ThreadPoolExecutor
-from typing import Any, Callable, Iterator
+from typing import Any
 
 import pytest
 

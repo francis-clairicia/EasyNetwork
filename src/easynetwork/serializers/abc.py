@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
 #
 #
@@ -12,7 +11,8 @@ __all__ = [
 ]
 
 from abc import ABCMeta, abstractmethod
-from typing import Any, Generator, Generic, TypeVar
+from collections.abc import Generator
+from typing import Any, Generic, TypeVar
 
 from ..exceptions import DeserializeError
 from ..tools._utils import concatenate_chunks as _concatenate_chunks

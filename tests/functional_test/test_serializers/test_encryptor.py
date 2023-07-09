@@ -1,9 +1,9 @@
-# -*- coding: utf-8 -*-
 # mypy: disable_error_code=override
 
 from __future__ import annotations
 
-from typing import Any, Callable, final
+from collections.abc import Callable
+from typing import Any, final
 
 from easynetwork.serializers.wrapper.encryptor import EncryptorSerializer
 
