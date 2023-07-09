@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # mypy: disable-error-code=override
 
 from __future__ import annotations

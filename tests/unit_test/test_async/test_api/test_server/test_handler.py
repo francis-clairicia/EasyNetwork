@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # mypy: disable_error_code=func-returns-value
 
 from __future__ import annotations
