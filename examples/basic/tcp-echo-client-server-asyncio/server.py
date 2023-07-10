@@ -3,11 +3,12 @@
 #
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncGenerator
 from typing import Any, TypeAlias
 
-from easynetwork.api_async.server import AsyncBaseRequestHandler, AsyncClientInterface, StandaloneTCPNetworkServer
+from easynetwork.api_async.server import AsyncBaseRequestHandler, AsyncClientInterface, AsyncTCPNetworkServer
 from easynetwork.exceptions import BaseProtocolParseError
 from easynetwork.protocol import StreamProtocol
 from easynetwork.serializers import JSONSerializer
@@ -23,10 +24,13 @@ class JSONProtocol(StreamProtocol[ResponseType, RequestType]):
 
 
 class EchoRequestHandler(AsyncBaseRequestHandler[RequestType, ResponseType]):
+    def __init__(self) -> None:
+        self.logger: logging.Logger = logging.getLogger(self.__class__.__name__)
+
     async def handle(self, client: AsyncClientInterface[ResponseType]) -> AsyncGenerator[None, RequestType]:
         request: RequestType = yield  # A JSON request has been sent by this client
 
-        print(f"{client.address} sent {request!r}")
+        self.logger.info(f"{client.address} sent {request!r}")
 
         # As a good echo handler, the request is sent back to the client
         response: ResponseType = request
@@ -41,18 +45,18 @@ class EchoRequestHandler(AsyncBaseRequestHandler[RequestType, ResponseType]):
         await client.send_packet({"data": {"error": "Invalid JSON", "code": "parse_error"}})
 
 
-def main() -> None:
+async def main() -> None:
     host = None  # Bind on all interfaces
     # host = "" works too
     port = 9000
 
     logging.basicConfig(level=logging.INFO, format="[ %(levelname)s ] [ %(name)s ] %(message)s")
-    with StandaloneTCPNetworkServer(host, port, JSONProtocol(), EchoRequestHandler()) as server:
+    async with AsyncTCPNetworkServer(host, port, JSONProtocol(), EchoRequestHandler()) as server:
         try:
-            server.serve_forever()
-        except KeyboardInterrupt:
+            await server.serve_forever()
+        except asyncio.CancelledError:
             pass
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

@@ -3,12 +3,11 @@
 #
 from __future__ import annotations
 
-import asyncio
 import logging
 from collections.abc import AsyncGenerator
 from typing import Any, TypeAlias
 
-from easynetwork.api_async.server import AsyncBaseRequestHandler, AsyncClientInterface, AsyncTCPNetworkServer
+from easynetwork.api_async.server import AsyncBaseRequestHandler, AsyncClientInterface, StandaloneTCPNetworkServer
 from easynetwork.exceptions import BaseProtocolParseError
 from easynetwork.protocol import StreamProtocol
 from easynetwork.serializers import JSONSerializer
@@ -24,10 +23,13 @@ class JSONProtocol(StreamProtocol[ResponseType, RequestType]):
 
 
 class EchoRequestHandler(AsyncBaseRequestHandler[RequestType, ResponseType]):
+    def __init__(self) -> None:
+        self.logger: logging.Logger = logging.getLogger(self.__class__.__name__)
+
     async def handle(self, client: AsyncClientInterface[ResponseType]) -> AsyncGenerator[None, RequestType]:
         request: RequestType = yield  # A JSON request has been sent by this client
 
-        print(f"{client.address} sent {request!r}")
+        self.logger.info(f"{client.address} sent {request!r}")
 
         # As a good echo handler, the request is sent back to the client
         response: ResponseType = request
@@ -42,18 +44,18 @@ class EchoRequestHandler(AsyncBaseRequestHandler[RequestType, ResponseType]):
         await client.send_packet({"data": {"error": "Invalid JSON", "code": "parse_error"}})
 
 
-async def main() -> None:
+def main() -> None:
     host = None  # Bind on all interfaces
     # host = "" works too
     port = 9000
 
     logging.basicConfig(level=logging.INFO, format="[ %(levelname)s ] [ %(name)s ] %(message)s")
-    async with AsyncTCPNetworkServer(host, port, JSONProtocol(), EchoRequestHandler()) as server:
+    with StandaloneTCPNetworkServer(host, port, JSONProtocol(), EchoRequestHandler()) as server:
         try:
-            await server.serve_forever()
-        except asyncio.CancelledError:
+            server.serve_forever()
+        except KeyboardInterrupt:
             pass
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

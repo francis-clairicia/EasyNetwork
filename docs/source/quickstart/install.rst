@@ -21,17 +21,17 @@ Here is the full list:
 
 * Serializer extensions:
 
-   * ``cbor``: Installs the required dependencies for ``CBORSerializer``
+   * ``cbor``: Installs the required dependencies for ``CBORSerializer``.
 
-   * ``encryption``: Installs the required dependencies for ``EncryptorSerializer``
+   * ``encryption``: Installs the required dependencies for ``EncryptorSerializer``.
 
-   * ``msgpack``: Installs the required dependencies for ``MessagePackSerializer``
+   * ``msgpack``: Installs the required dependencies for ``MessagePackSerializer``.
 
 * Asynchronous I/O extensions:
 
-   * ``sniffio``: Installs the version supported and tested of `sniffio <https://github.com/python-trio/sniffio>`_
+   * ``sniffio``: Installs the version supported and tested of `sniffio <https://github.com/python-trio/sniffio>`_.
 
-   * ``uvloop``: Installs the version supported and tested of `uvloop <https://github.com/MagicStack/uvloop>`_
+   * ``uvloop``: Installs the version supported and tested of `uvloop <https://github.com/MagicStack/uvloop>`_.
 
 
 Example where the ``cbor`` and ``msgpack`` extensions are installed:

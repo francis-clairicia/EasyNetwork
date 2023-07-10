@@ -15,7 +15,7 @@
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![Imports: isort](https://img.shields.io/badge/%20imports-isort-%231674b1?style=flat&labelColor=ef8336)](https://pycqa.github.io/isort/)
 
-The easiest way to use sockets in Python !
+The easiest way to use sockets in Python!
 
 ## Installation
 ### From PyPI repository
@@ -66,10 +66,13 @@ class JSONProtocol(StreamProtocol[ResponseType, RequestType]):
 
 
 class EchoRequestHandler(AsyncBaseRequestHandler[RequestType, ResponseType]):
+    def __init__(self) -> None:
+        self.logger: logging.Logger = logging.getLogger(self.__class__.__name__)
+
     async def handle(self, client: AsyncClientInterface[ResponseType]) -> AsyncGenerator[None, RequestType]:
         request: RequestType = yield  # A JSON request has been sent by this client
 
-        print(f"{client.address} sent {request!r}")
+        self.logger.info(f"{client.address} sent {request!r}")
 
         # As a good echo handler, the request is sent back to the client
         response: ResponseType = request
