@@ -18,7 +18,7 @@ RequestType: TypeAlias = Any
 ResponseType: TypeAlias = Any
 
 
-class JSONProtocol(StreamProtocol[RequestType, ResponseType]):
+class JSONProtocol(StreamProtocol[ResponseType, RequestType]):
     def __init__(self) -> None:
         super().__init__(JSONSerializer())
 

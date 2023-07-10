@@ -38,9 +38,9 @@ The communication protocol can be whatever you want, be it json, pickle, ASCII, 
 or any other format not part of the standard library.
 You choose the data format, and the library takes care of the rest.
 
-Works with TCP and UDP, for Internet sockets ([AF_INET](https://docs.python.org/3/library/socket.html#socket.AF_INET) and [AF_INET6](https://docs.python.org/3/library/socket.html#socket.AF_INET6))
+Works with TCP and UDP, for Internet sockets ([AF_INET](https://docs.python.org/3/library/socket.html#socket.AF_INET) and [AF_INET6](https://docs.python.org/3/library/socket.html#socket.AF_INET6) socket families)
 
-N.B.: Unix sockets are expressly not supported.
+N.B.: Unix sockets ([AF_UNIX](https://docs.python.org/3/library/socket.html#socket.AF_UNIX) family) are expressly not supported.
 
 ## Usage
 ### TCP Echo server with JSON data
@@ -60,7 +60,7 @@ RequestType: TypeAlias = Any
 ResponseType: TypeAlias = Any
 
 
-class JSONProtocol(StreamProtocol[RequestType, ResponseType]):
+class JSONProtocol(StreamProtocol[ResponseType, RequestType]):
     def __init__(self) -> None:
         super().__init__(JSONSerializer())
 
