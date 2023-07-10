@@ -19,6 +19,9 @@
             130
         ]
     },
+    "[restructuredtext]": {
+        "editor.tabSize": 3
+    },
     "black-formatter.args": [
         "--config",
         "pyproject.toml",
