@@ -10,7 +10,7 @@ Welcome to EasyNetwork's documentation!
    :caption: Table of Contents
 
    quickstart/index
-   tutorial/index
+   tutorials/index
 
 
 Useful links

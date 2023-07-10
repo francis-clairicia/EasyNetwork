@@ -9,7 +9,7 @@ from __future__ import annotations
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 project = "EasyNetwork"
-copyright = "2023, FrankySnow9"
+copyright = "2023, Francis Clairicia-Rose-Claire-Josephine"
 author = "FrankySnow9"
 release = "1.0.0rc4"
 
