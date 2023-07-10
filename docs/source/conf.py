@@ -19,6 +19,7 @@ release = "1.0.0rc4"
 extensions = [
     "sphinx.ext.duration",
     "sphinx.ext.intersphinx",
+    "sphinx.ext.todo",
     "sphinx_rtd_theme",
     "sphinx_tabs.tabs",
 ]
@@ -33,6 +34,13 @@ exclude_patterns = []
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
 }
+
+
+# -- sphinx.ext.todo configuration -------------------------------------------
+# https://www.sphinx-doc.org/en/master/usage/extensions/todo.html
+
+todo_include_todos = True
+todo_emit_warnings = True
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output

@@ -13,13 +13,13 @@ Optional dependencies
 
 EasyNetwork has no required dependencies, but the library comes with a bunch of optional dependencies to meet specific needs.
 
-.. warning::
-
-   TODO: Add cross-reference links
-
 Here is the full list:
 
 * Serializer extensions:
+
+   .. todo::
+
+      Add cross-reference links
 
    * ``cbor``: Installs the required dependencies for ``CBORSerializer``.
 
@@ -28,6 +28,10 @@ Here is the full list:
    * ``msgpack``: Installs the required dependencies for ``MessagePackSerializer``.
 
 * Asynchronous I/O extensions:
+
+   .. todo::
+
+      Reference backend customization section
 
    * ``sniffio``: Installs the version supported and tested of `sniffio <https://github.com/python-trio/sniffio>`_.
 
