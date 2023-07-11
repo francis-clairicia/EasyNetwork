@@ -15,6 +15,9 @@
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![Imports: isort](https://img.shields.io/badge/%20imports-isort-%231674b1?style=flat&labelColor=ef8336)](https://pycqa.github.io/isort/)
 
+[![Hatch project](https://img.shields.io/badge/%F0%9F%A5%9A-Hatch-4051b5.svg)](https://github.com/pypa/hatch)
+[![pdm-managed](https://img.shields.io/badge/pdm-managed-blueviolet)](https://pdm.fming.dev)
+
 The easiest way to use sockets in Python!
 
 ## Installation
@@ -38,9 +41,9 @@ The communication protocol can be whatever you want, be it json, pickle, ASCII, 
 or any other format not part of the standard library.
 You choose the data format, and the library takes care of the rest.
 
-Works with TCP and UDP, for Internet sockets ([AF_INET](https://docs.python.org/3/library/socket.html#socket.AF_INET) and [AF_INET6](https://docs.python.org/3/library/socket.html#socket.AF_INET6) socket families)
+Works with TCP and UDP, for Internet sockets ([AF_INET](https://docs.python.org/3/library/socket.html#socket.AF_INET) and [AF_INET6](https://docs.python.org/3/library/socket.html#socket.AF_INET6) socket families).
 
-N.B.: Unix sockets ([AF_UNIX](https://docs.python.org/3/library/socket.html#socket.AF_UNIX) family) are expressly not supported.
+N.B.: Unix sockets ([AF_UNIX](https://docs.python.org/3/library/socket.html#socket.AF_UNIX) family) are expressly *not* supported.
 
 ## Usage
 ### TCP Echo server with JSON data
