@@ -53,16 +53,16 @@ For communication via TCP, a ``StreamProtocol`` object must be created.
 
    Of course, you are under no obligation to create a subclass.
 
-   The main advantage of this model is to declaratively define the communication protocol
+   The main advantage of this model is to declaratively define the :term:`communication protocol`
    (the name of the class being that of the protocol, the types of objects sent and received, etc.).
 
-   Another advantage is that the serializer (and converter, if any) can be configured in a single place in the project.
+   Another advantage is that the :term:`serializer` (and :term:`converter`, if any) can be configured in a single place in the project.
 
 
 Step 2: The server
 ------------------
 
-Now that we have established the communication protocol, we can create our server.
+Now that we have established the :term:`communication protocol`, we can create our server.
 
 Create your request handler
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -72,51 +72,54 @@ this method will process incoming requests.
 
 Its ``bad_request()`` method must also be overridden to handle parsing errors.
 
-.. literalinclude:: ../_include/examples/tutorials/basic/server.py
-   :lines: 11-26
-   :lineno-start: 11
+.. literalinclude:: ../_include/examples/tutorials/basic/echo_request_handler.py
+   :linenos:
+   :caption: echo_request_handler.py
 
 .. note::
 
    Pay attention to ``handle()``, it is an :std:term:`asynchronous generator` function.
 
-   All requests sent by a client are literally injected into the generator via the ``yield`` statement.
+   All requests sent by a client are literally injected into the generator via the :ref:`yield <yield>` statement.
 
-   .. literalinclude:: ../_include/examples/tutorials/basic/server.py
-      :lines: 17-18
-      :lineno-start: 17
+   .. literalinclude:: ../_include/examples/tutorials/basic/echo_request_handler.py
+      :lines: 15-16
+      :lineno-start: 15
       :emphasize-lines: 2
       :dedent:
 
-.. note::
+   You can ``yield`` several times if you want to wait for a new packet from the client in the same context.
+
+.. warning::
 
    Leaving the generator will *not* close the connection, a new generator will be created afterwards.
-   You may manually close the connection if you want to::
+   You may, however, explicitly close the connection if you want to::
 
       await client.aclose()
 
 Start the server
 ^^^^^^^^^^^^^^^^
 
-Second, you must instantiate one of the server classes, passing it the server's address, the :term:`protocol object` instance, and the request handler instance.
+Second, you must instantiate the TCP server class, passing it the server's address, the :term:`protocol object` instance,
+and the request handler instance.
 
-We want a TCP server, so ``StandaloneTCPNetworkServer`` will do the trick.
+.. tabs::
 
-.. literalinclude:: ../_include/examples/tutorials/basic/server.py
-   :lines: 29-
-   :lineno-start: 29
+   .. group-tab:: Synchronous
+
+      .. literalinclude:: ../_include/examples/tutorials/basic/server.py
+         :linenos:
+         :caption: server.py
+
+   .. group-tab:: Asynchronous
+
+      .. literalinclude:: ../_include/examples/tutorials/basic/async_server.py
+         :linenos:
+         :caption: async_server.py
 
 .. note::
 
    Setting ``host`` to ``None`` will bind the server in all interfaces.
-
-Full code
-^^^^^^^^^
-
-.. literalinclude:: ../_include/examples/tutorials/basic/server.py
-   :linenos:
-   :caption: server.py
-
 
 .. Links
 

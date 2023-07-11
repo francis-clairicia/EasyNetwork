@@ -42,6 +42,11 @@ intersphinx_mapping = {
 todo_include_todos = True
 todo_emit_warnings = False
 
+# -- sphinx-tabs configuration -----------------------------------------------
+# https://sphinx-tabs.readthedocs.io/en/latest/
+
+sphinx_tabs_disable_tab_closing = True
+
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 

@@ -6,4 +6,8 @@
 
    * Asynchronous API with :code:`async def` functions, using an asynchronous framework to perform I/O operations.
 
-     All examples assume that you are using :py:mod:`asyncio`.
+     All asynchronous API examples assume that you are using :py:mod:`asyncio`.
+
+     .. todo::
+
+        Talk about `this one <https://github.com/francis-clairicia/easynetwork-trio>`_.
