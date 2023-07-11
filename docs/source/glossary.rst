@@ -7,7 +7,7 @@ Glossary
    communication protocol
       A communication protocol is a set of formal rules describing how to transmit or exchange data, especially across a network.
 
-      In EasyNetwork, it's up to the developer to define his communication protocol using an object :term:`protocol`.
+      In EasyNetwork, it's up to the developer to define his communication protocol using a :term:`protocol object`.
 
    converter
       An object responsible for bridging the gap between the Python objects manipulated by the application/software
@@ -21,7 +21,7 @@ Glossary
    one-shot serializer
       See :term:`serializer`.
 
-   protocol
+   protocol object
       An object representing a :term:`communication protocol`. It consists of a :term:`serializer` and, optionally, a :term:`converter`.
 
    serializer
