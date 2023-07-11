@@ -11,6 +11,7 @@ Welcome to EasyNetwork's documentation!
 
    quickstart/index
    tutorials/index
+   glossary
 
 
 Useful links

@@ -25,7 +25,7 @@ extensions = [
 ]
 
 templates_path = []
-exclude_patterns = []
+exclude_patterns = ["_include"]
 
 
 # -- sphinx.ext.intersphinx configuration ------------------------------------
@@ -40,7 +40,7 @@ intersphinx_mapping = {
 # https://www.sphinx-doc.org/en/master/usage/extensions/todo.html
 
 todo_include_todos = True
-todo_emit_warnings = True
+todo_emit_warnings = False
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
