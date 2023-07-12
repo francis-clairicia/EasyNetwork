@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from easynetwork.api_async.server import StandaloneTCPNetworkServer
+from easynetwork.api_sync.server import StandaloneTCPNetworkServer
 
 from echo_request_handler import EchoRequestHandler
 from json_protocol import JSONProtocol
