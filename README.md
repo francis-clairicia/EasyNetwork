@@ -169,4 +169,4 @@ Check out the [available examples](./examples) for an overview.
 Coming soon.
 
 ## License
-This project is licensed under the terms of the [MIT License](https://github.com/francis-clairicia/EasyNetwork/blob/main/LICENSE).
+This project is licensed under the terms of the [Apache Software License 2.0](https://github.com/francis-clairicia/EasyNetwork/blob/main/LICENSE).
