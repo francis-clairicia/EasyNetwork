@@ -52,7 +52,8 @@ import logging
 from collections.abc import AsyncGenerator
 from typing import Any, TypeAlias
 
-from easynetwork.api_async.server import AsyncBaseRequestHandler, AsyncClientInterface, StandaloneTCPNetworkServer
+from easynetwork.api_async.server import AsyncBaseRequestHandler, AsyncClientInterface
+from easynetwork.api_sync.server import StandaloneTCPNetworkServer
 from easynetwork.exceptions import BaseProtocolParseError
 from easynetwork.protocol import StreamProtocol
 from easynetwork.serializers import JSONSerializer
