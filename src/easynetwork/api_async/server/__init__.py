@@ -7,19 +7,14 @@ from __future__ import annotations
 
 __all__ = [
     "AbstractAsyncNetworkServer",
-    "AbstractStandaloneNetworkServer",
     "AsyncBaseRequestHandler",
     "AsyncClientInterface",
     "AsyncStreamRequestHandler",
     "AsyncTCPNetworkServer",
     "AsyncUDPNetworkServer",
-    "StandaloneNetworkServerThread",
-    "StandaloneTCPNetworkServer",
-    "StandaloneUDPNetworkServer",
 ]
 
 from .abc import *
 from .handler import *
-from .standalone import *
 from .tcp import *
 from .udp import *

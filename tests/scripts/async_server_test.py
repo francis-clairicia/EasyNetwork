@@ -5,7 +5,7 @@ import logging
 from collections.abc import AsyncGenerator, Callable
 
 from easynetwork.api_async.server.handler import AsyncBaseRequestHandler, AsyncClientInterface
-from easynetwork.api_async.server.standalone import (
+from easynetwork.api_sync.server.standalone import (
     AbstractStandaloneNetworkServer,
     StandaloneTCPNetworkServer,
     StandaloneUDPNetworkServer,

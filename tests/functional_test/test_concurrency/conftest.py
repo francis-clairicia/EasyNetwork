@@ -5,7 +5,7 @@ from collections.abc import AsyncGenerator, Iterator
 from typing import Literal
 
 from easynetwork.api_async.server.handler import AsyncBaseRequestHandler, AsyncClientInterface
-from easynetwork.api_async.server.standalone import (
+from easynetwork.api_sync.server.standalone import (
     AbstractStandaloneNetworkServer,
     StandaloneTCPNetworkServer,
     StandaloneUDPNetworkServer,
