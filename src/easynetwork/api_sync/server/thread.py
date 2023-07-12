@@ -11,24 +11,22 @@ __all__ = [
 
 import threading as _threading
 import time
-from typing import Generic, TypeVar
 
 from .abc import AbstractStandaloneNetworkServer
 
-_ServerT = TypeVar("_ServerT", bound="AbstractStandaloneNetworkServer")
 
-
-class StandaloneNetworkServerThread(_threading.Thread, Generic[_ServerT]):
+class StandaloneNetworkServerThread(_threading.Thread):
     def __init__(
         self,
-        server: _ServerT,
+        server: AbstractStandaloneNetworkServer,
         group: None = None,
         name: str | None = None,
         *,
         daemon: bool | None = None,
     ) -> None:
         super().__init__(group=group, target=None, name=name, daemon=daemon)
-        self.__server: _ServerT = server
+        assert isinstance(server, AbstractStandaloneNetworkServer), repr(server)
+        self.__server: AbstractStandaloneNetworkServer | None = server
         self.__is_up_event: _threading.Event = _threading.Event()
 
     def start(self) -> None:
@@ -36,19 +34,21 @@ class StandaloneNetworkServerThread(_threading.Thread, Generic[_ServerT]):
         self.__is_up_event.wait()
 
     def run(self) -> None:
-        return self.__server.serve_forever(is_up_event=self.__is_up_event)
+        assert self.__server is not None, f"{self.__server=}"
+        try:
+            return self.__server.serve_forever(is_up_event=self.__is_up_event)
+        finally:
+            self.__server = None
+            self.__is_up_event.set()
 
     def join(self, timeout: float | None = None) -> None:
         _start = time.perf_counter()
         try:
-            if self.is_alive():
-                self.__server.shutdown(timeout=timeout)
+            server = self.__server
+            if server is not None:
+                server.shutdown(timeout=timeout)
         finally:
             _end = time.perf_counter()
             if timeout is not None:
                 timeout -= _end - _start
             super().join(timeout=timeout)
-
-    @property
-    def server(self) -> _ServerT:
-        return self.__server

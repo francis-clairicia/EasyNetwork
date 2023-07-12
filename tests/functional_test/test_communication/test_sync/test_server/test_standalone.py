@@ -30,12 +30,10 @@ class BaseTestStandaloneNetworkServer:
     @staticmethod
     def start_server(
         server: AbstractStandaloneNetworkServer,
-    ) -> Iterator[StandaloneNetworkServerThread[AbstractStandaloneNetworkServer]]:
+    ) -> Iterator[StandaloneNetworkServerThread]:
         with server:
             server_thread = StandaloneNetworkServerThread(server, daemon=True)
             server_thread.start()
-
-            assert server_thread.server is server
 
             yield server_thread
 
@@ -80,7 +78,7 @@ class BaseTestStandaloneNetworkServer:
 
     def test____server_thread____several_join(
         self,
-        start_server: StandaloneNetworkServerThread[AbstractStandaloneNetworkServer],
+        start_server: StandaloneNetworkServerThread,
     ) -> None:
         start_server.join()
         start_server.join()
