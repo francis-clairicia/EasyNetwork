@@ -6,12 +6,10 @@ import time
 from collections.abc import AsyncGenerator, Callable, Iterator
 
 from easynetwork.api_async.server.handler import AsyncBaseRequestHandler, AsyncClientInterface
-from easynetwork.api_async.server.standalone import (
-    AbstractStandaloneNetworkServer,
-    StandaloneNetworkServerThread,
-    StandaloneTCPNetworkServer,
-    StandaloneUDPNetworkServer,
-)
+from easynetwork.api_sync.server.abc import AbstractStandaloneNetworkServer
+from easynetwork.api_sync.server.tcp import StandaloneTCPNetworkServer
+from easynetwork.api_sync.server.thread import StandaloneNetworkServerThread
+from easynetwork.api_sync.server.udp import StandaloneUDPNetworkServer
 from easynetwork.exceptions import BaseProtocolParseError, ServerAlreadyRunning
 from easynetwork.protocol import DatagramProtocol, StreamProtocol
 
@@ -32,12 +30,10 @@ class BaseTestStandaloneNetworkServer:
     @staticmethod
     def start_server(
         server: AbstractStandaloneNetworkServer,
-    ) -> Iterator[StandaloneNetworkServerThread[AbstractStandaloneNetworkServer]]:
+    ) -> Iterator[StandaloneNetworkServerThread]:
         with server:
             server_thread = StandaloneNetworkServerThread(server, daemon=True)
             server_thread.start()
-
-            assert server_thread.server is server
 
             yield server_thread
 
@@ -82,7 +78,7 @@ class BaseTestStandaloneNetworkServer:
 
     def test____server_thread____several_join(
         self,
-        start_server: StandaloneNetworkServerThread[AbstractStandaloneNetworkServer],
+        start_server: StandaloneNetworkServerThread,
     ) -> None:
         start_server.join()
         start_server.join()

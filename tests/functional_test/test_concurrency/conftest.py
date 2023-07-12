@@ -5,11 +5,9 @@ from collections.abc import AsyncGenerator, Iterator
 from typing import Literal
 
 from easynetwork.api_async.server.handler import AsyncBaseRequestHandler, AsyncClientInterface
-from easynetwork.api_async.server.standalone import (
-    AbstractStandaloneNetworkServer,
-    StandaloneTCPNetworkServer,
-    StandaloneUDPNetworkServer,
-)
+from easynetwork.api_sync.server.abc import AbstractStandaloneNetworkServer
+from easynetwork.api_sync.server.tcp import StandaloneTCPNetworkServer
+from easynetwork.api_sync.server.udp import StandaloneUDPNetworkServer
 from easynetwork.exceptions import BaseProtocolParseError
 from easynetwork.protocol import DatagramProtocol, StreamProtocol
 from easynetwork.serializers.line import StringLineSerializer
