@@ -6,12 +6,10 @@ import time
 from collections.abc import AsyncGenerator, Callable, Iterator
 
 from easynetwork.api_async.server.handler import AsyncBaseRequestHandler, AsyncClientInterface
-from easynetwork.api_sync.server.standalone import (
-    AbstractStandaloneNetworkServer,
-    StandaloneNetworkServerThread,
-    StandaloneTCPNetworkServer,
-    StandaloneUDPNetworkServer,
-)
+from easynetwork.api_sync.server.abc import AbstractStandaloneNetworkServer
+from easynetwork.api_sync.server.tcp import StandaloneTCPNetworkServer
+from easynetwork.api_sync.server.thread import StandaloneNetworkServerThread
+from easynetwork.api_sync.server.udp import StandaloneUDPNetworkServer
 from easynetwork.exceptions import BaseProtocolParseError, ServerAlreadyRunning
 from easynetwork.protocol import DatagramProtocol, StreamProtocol
 
