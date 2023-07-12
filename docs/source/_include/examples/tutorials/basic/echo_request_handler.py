@@ -15,6 +15,8 @@ class EchoRequestHandler(AsyncBaseRequestHandler[RequestType, ResponseType]):
     async def handle(self, client: AsyncClientInterface[ResponseType]) -> AsyncGenerator[None, RequestType]:
         request: RequestType = yield  # A JSON request has been sent by this client
 
+        print(f"{client.address} sent {request}")
+
         # As a good echo handler, the request is sent back to the client
         response: ResponseType = request
         await client.send_packet(response)
@@ -22,4 +24,4 @@ class EchoRequestHandler(AsyncBaseRequestHandler[RequestType, ResponseType]):
     async def bad_request(self, client: AsyncClientInterface[ResponseType], exc: BaseProtocolParseError) -> None:
         # Invalid JSON data sent
         # This is an example of how you can answer to an invalid request; do whatever you want
-        await client.send_packet({"data": {"error": "Invalid JSON", "code": "parse_error"}})
+        await client.send_packet({"error": "Invalid JSON", "code": "parse_error"})

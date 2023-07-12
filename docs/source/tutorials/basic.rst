@@ -37,7 +37,7 @@ For the tutorial, ``JSONSerializer`` will be used.
 
    * Add cross-references
 
-   * Link to all the available serializer
+   * Link to all the available serializers
 
 
 Build your :term:`protocol object`
@@ -97,6 +97,7 @@ Its ``bad_request()`` method must also be overridden to handle parsing errors.
 
       await client.aclose()
 
+
 Start the server
 ^^^^^^^^^^^^^^^^
 
@@ -120,6 +121,25 @@ and the request handler instance.
 .. note::
 
    Setting ``host`` to ``None`` will bind the server in all interfaces.
+
+
+Step 3: The client
+------------------
+
+.. tabs::
+
+   .. group-tab:: Synchronous
+
+      .. literalinclude:: ../_include/examples/tutorials/basic/client.py
+         :linenos:
+         :caption: client.py
+
+   .. group-tab:: Asynchronous
+
+      .. literalinclude:: ../_include/examples/tutorials/basic/async_client.py
+         :linenos:
+         :caption: async_client.py
+
 
 .. Links
 
