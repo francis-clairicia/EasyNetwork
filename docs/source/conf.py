@@ -17,6 +17,7 @@ release = "1.0.0rc4"
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 extensions = [
+    # "sphinx.ext.autosectionlabel",
     "sphinx.ext.duration",
     "sphinx.ext.intersphinx",
     "sphinx.ext.todo",
@@ -26,6 +27,12 @@ extensions = [
 
 templates_path = []
 exclude_patterns = ["_include"]
+
+
+# -- sphinx.ext.autosectionlabel configuration -------------------------------------------
+# https://www.sphinx-doc.org/en/master/usage/extensions/autosectionlabel.html
+
+# autosectionlabel_prefix_document = True
 
 
 # -- sphinx.ext.intersphinx configuration ------------------------------------
@@ -41,6 +48,7 @@ intersphinx_mapping = {
 
 todo_include_todos = True
 todo_emit_warnings = False
+
 
 # -- sphinx-tabs configuration -----------------------------------------------
 # https://sphinx-tabs.readthedocs.io/en/latest/

@@ -15,7 +15,7 @@ class EchoRequestHandler(AsyncBaseRequestHandler[RequestType, ResponseType]):
     async def handle(self, client: AsyncClientInterface[ResponseType]) -> AsyncGenerator[None, RequestType]:
         request: RequestType = yield  # A JSON request has been sent by this client
 
-        print(f"{client.address} sent {request}")
+        print(f"{client.address.host} sent {request}")
 
         # As a good echo handler, the request is sent back to the client
         response: ResponseType = request

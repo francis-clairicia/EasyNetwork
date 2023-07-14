@@ -46,7 +46,7 @@ Glossary
 
       * one-shot serializers
 
-        One-shot serializers provide the full representation of a Python object in bytes **in a single function call**,
+        One-shot serializers provide the full representation of a Python object in :py:class:`bytes` **in a single function call**,
         and need this same full representation to recreate the object **at once**.
 
         .. note::
@@ -55,8 +55,8 @@ Glossary
 
       * incremental serializers
 
-        Incremental serializers, on the other hand, provide the representation of the Python object in bytes **part by part**
-        (or directly at once if the underlying API does not provide incremental support).
+        Incremental serializers, on the other hand, provide the full representation of the Python object in :py:class:`bytes` **part by part**,
+        sometimes including additional metadata used during deserialization.
 
         During deserialization, they have the ability **to know when the** :term:`packet` **is complete** (and wait if incomplete)
         and which bytes are not part of the initial :term:`packet`.

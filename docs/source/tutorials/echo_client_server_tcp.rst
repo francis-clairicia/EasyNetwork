@@ -1,16 +1,12 @@
 .. highlight:: python
 
-Basic tutorial - An echo client/server over TCP
-===============================================
-
-.. include:: ../_include/sync-async-variants.rst
-
-
-Goal
-----
+An echo client/server over TCP
+==============================
 
 To see how to create a server and a client with the minimum requirements,
 let's create a server that will return everything sent by a connected client.
+
+.. include:: ../_include/sync-async-variants.rst
 
 
 Step 1: The :term:`communication protocol`
@@ -45,7 +41,7 @@ Build your :term:`protocol object`
 
 For communication via TCP, a ``StreamProtocol`` object must be created.
 
-.. literalinclude:: ../_include/examples/tutorials/basic/json_protocol.py
+.. literalinclude:: ../_include/examples/tutorials/echo_client_server_tcp/json_protocol.py
    :linenos:
    :caption: json_protocol.py
 
@@ -72,7 +68,7 @@ this method will process incoming requests.
 
 Its ``bad_request()`` method must also be overridden to handle parsing errors.
 
-.. literalinclude:: ../_include/examples/tutorials/basic/echo_request_handler.py
+.. literalinclude:: ../_include/examples/tutorials/echo_client_server_tcp/echo_request_handler.py
    :linenos:
    :caption: echo_request_handler.py
 
@@ -82,7 +78,7 @@ Its ``bad_request()`` method must also be overridden to handle parsing errors.
 
    All requests sent by a client are literally injected into the generator via the :ref:`yield <yield>` statement.
 
-   .. literalinclude:: ../_include/examples/tutorials/basic/echo_request_handler.py
+   .. literalinclude:: ../_include/examples/tutorials/echo_client_server_tcp/echo_request_handler.py
       :lines: 15-16
       :lineno-start: 15
       :emphasize-lines: 2
@@ -108,38 +104,78 @@ and the request handler instance.
 
    .. group-tab:: Synchronous
 
-      .. literalinclude:: ../_include/examples/tutorials/basic/server.py
+      .. literalinclude:: ../_include/examples/tutorials/echo_client_server_tcp/server.py
          :linenos:
          :caption: server.py
 
    .. group-tab:: Asynchronous
 
-      .. literalinclude:: ../_include/examples/tutorials/basic/async_server.py
+      .. literalinclude:: ../_include/examples/tutorials/echo_client_server_tcp/async_server.py
          :linenos:
-         :caption: async_server.py
+         :caption: server.py
 
 .. note::
 
-   Setting ``host`` to ``None`` will bind the server in all interfaces.
+   Setting ``host`` to ``None`` will bind the server to all interfaces.
+
+   This means the server is ready to accept connections with IPv4 and IPv6 addresses (if available).
 
 
 Step 3: The client
 ------------------
 
+This is the client side:
+
 .. tabs::
 
    .. group-tab:: Synchronous
 
-      .. literalinclude:: ../_include/examples/tutorials/basic/client.py
+      .. literalinclude:: ../_include/examples/tutorials/echo_client_server_tcp/client.py
          :linenos:
          :caption: client.py
 
    .. group-tab:: Asynchronous
 
-      .. literalinclude:: ../_include/examples/tutorials/basic/async_client.py
+      .. literalinclude:: ../_include/examples/tutorials/echo_client_server_tcp/async_client.py
          :linenos:
-         :caption: async_client.py
+         :caption: client.py
 
+
+Outputs
+-------
+
+The output of the example should look something like this:
+
+Server:
+
+.. tabs::
+
+   .. group-tab:: IPv4 connection
+
+      .. code-block:: console
+
+         (.venv) $ python server.py
+         127.0.0.1 sent {'command-line arguments': ['Hello', 'world!']}
+         127.0.0.1 sent {'command-line arguments': ['Python', 'is', 'nice']}
+
+   .. group-tab:: IPv6 connection
+
+      .. code-block:: console
+
+         (.venv) $ python server.py
+         ::1 sent {'command-line arguments': ['Hello', 'world!']}
+         ::1 sent {'command-line arguments': ['Python', 'is', 'nice']}
+
+Client:
+
+.. code-block:: console
+
+   (.venv) $ python client.py Hello world!
+   Sent:     {'command-line arguments': ['Hello', 'world!']}
+   Received: {'command-line arguments': ['Hello', 'world!']}
+   (.venv) $ python client.py Python is nice
+   Sent:     {'command-line arguments': ['Python', 'is', 'nice']}
+   Received: {'command-line arguments': ['Python', 'is', 'nice']}
 
 .. Links
 
