@@ -73,10 +73,9 @@ class AbstractAsyncNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metacl
         raise NotImplementedError
 
     async def iter_received_packets(self) -> AsyncIterator[_ReceivedPacketT]:
-        recv_packet = self.recv_packet
         while True:
             try:
-                packet = await recv_packet()
+                packet = await self.recv_packet()
             except OSError:
                 return
             yield packet

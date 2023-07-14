@@ -277,10 +277,12 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
                 backend = self.__backend
                 while True:
                     chunk: bytes = await socket.recv(bufsize)
-                    if not chunk:
-                        self.__eof_error(False)
-                    consumer.feed(chunk)
-                    del chunk
+                    try:
+                        if not chunk:
+                            self.__eof_error(False)
+                        consumer.feed(chunk)
+                    finally:
+                        del chunk
                     try:
                         return next_packet(consumer)
                     except StopIteration:

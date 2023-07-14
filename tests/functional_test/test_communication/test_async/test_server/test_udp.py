@@ -89,6 +89,8 @@ class MyAsyncUDPRequestHandler(AsyncBaseRequestHandler[str, str]):
                 await client.send_packet(request.upper())
 
     async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError) -> None:
+        assert isinstance(exc, DatagramProtocolParseError)
+        assert exc.sender_address == client.address
         self.bad_request_received[client.address].append(exc)
         await client.send_packet("wrong encoding man.")
 

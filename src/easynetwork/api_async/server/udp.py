@@ -9,6 +9,7 @@ __all__ = ["AsyncUDPNetworkServer"]
 
 import contextlib as _contextlib
 import logging as _logging
+import math
 from collections import Counter, deque
 from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterator, Mapping
 from typing import TYPE_CHECKING, Any, Generic, TypeVar, final
@@ -220,7 +221,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         request_handler = self.__request_handler
         backend = self.__backend
         service_actions_interval = self.__service_actions_interval
-        if service_actions_interval == float("+inf"):
+        if math.isinf(service_actions_interval):
             return
         while True:
             await backend.sleep(service_actions_interval)
@@ -263,6 +264,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                         try:
                             request: _RequestT = self.__protocol.build_packet_from_datagram(datagram)
                         except DatagramProtocolParseError as exc:
+                            exc.sender_address = client.address
                             self.__logger.debug("Malformed request sent by %s", client.address)
                             try:
                                 _recursively_clear_exception_traceback_frames(exc)

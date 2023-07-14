@@ -198,21 +198,19 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         async with self.__receive_lock:
             socket = await self.__ensure_opened()
             data, sender = await socket.recvfrom(MAX_DATAGRAM_BUFSIZE)
+            sender = new_socket_address(sender, self.socket.family)
             try:
-                return self.__protocol.build_packet_from_datagram(data), new_socket_address(sender, self.socket.family)
-            except DatagramProtocolParseError:
+                return self.__protocol.build_packet_from_datagram(data), sender
+            except DatagramProtocolParseError as exc:
+                exc.sender_address = sender
                 raise
-            except Exception as exc:  # pragma: no cover
-                raise RuntimeError(str(exc)) from exc
             finally:
                 del data
 
     async def iter_received_packets_from(self) -> AsyncIterator[tuple[_ReceivedPacketT, SocketAddress]]:
-        recv_packet_from = self.recv_packet_from
-
         while True:
             try:
-                packet_tuple = await recv_packet_from()
+                packet_tuple = await self.recv_packet_from()
             except OSError:
                 return
             yield packet_tuple

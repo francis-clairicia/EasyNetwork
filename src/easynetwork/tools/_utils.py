@@ -16,6 +16,7 @@ __all__ = [
     "set_reuseport",
     "set_tcp_nodelay",
     "transform_future_exception",
+    "validate_timeout_delay",
     "wait_socket_available",
 ]
 
@@ -28,6 +29,7 @@ import socket as _socket
 import time
 import traceback
 from collections.abc import Callable, Iterable, Iterator
+from math import isinf, isnan
 from typing import TYPE_CHECKING, Any, Literal, ParamSpec, TypeGuard, TypeVar, assert_never
 
 try:
@@ -126,9 +128,6 @@ class _WouldBlock(Exception):
         self.event: Literal["read", "write"] = event
 
 
-_inf = float("+inf")
-
-
 def _retry_impl(
     socket: _socket.socket,
     timeout: float | None,
@@ -136,14 +135,17 @@ def _retry_impl(
     callback: Callable[[], _R],
 ) -> _R:
     assert socket.gettimeout() == 0, "The socket must be non-blocking"
-    assert retry_interval is None or retry_interval > 0, "retry_interval must be a strictly positive float or None"
 
     perf_counter = time.perf_counter  # pull function to local namespace
     event: Literal["read", "write"]
-    if timeout == _inf:
-        timeout = None
-    if retry_interval == _inf:
-        retry_interval = None
+    if timeout is not None:
+        timeout = validate_timeout_delay(timeout, positive_check=False)
+        if isinf(timeout) and timeout > 0:
+            timeout = None
+    if retry_interval is not None:
+        retry_interval = validate_timeout_delay(retry_interval, positive_check=True)
+        if isinf(retry_interval):
+            retry_interval = None
     while True:
         try:
             return callback()
@@ -166,7 +168,17 @@ def _retry_impl(
         _end = perf_counter()
         if timeout is not None:
             timeout -= _end - _start
+    if timeout is None:  # pragma: no cover
+        raise RuntimeError("timeout error with timeout=None ?")
     raise error_from_errno(_errno.ETIMEDOUT)
+
+
+def validate_timeout_delay(delay: float, *, positive_check: bool) -> float:
+    if isnan(delay):
+        raise ValueError("Invalid delay: NaN (not a number)")
+    if positive_check and delay < 0:
+        raise ValueError("Invalid delay: negative value")
+    return delay
 
 
 def retry_socket_method(

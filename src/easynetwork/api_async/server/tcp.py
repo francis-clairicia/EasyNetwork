@@ -11,6 +11,7 @@ import contextlib as _contextlib
 import errno as _errno
 import inspect
 import logging as _logging
+import math
 import os
 import weakref
 from collections import deque
@@ -265,7 +266,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         request_handler = self.__request_handler
         backend = self.__backend
         service_actions_interval = self.__service_actions_interval
-        if service_actions_interval == float("+inf"):
+        if math.isinf(service_actions_interval):
             return
         while True:
             await backend.sleep(service_actions_interval)
@@ -484,10 +485,10 @@ class _RequestReceiver(Generic[_RequestT, _ResponseT]):
             try:
                 data: bytes = await socket.recv(bufsize)
             except ConnectionError:
-                data = b""
-            if not data:  # Closed connection (EOF)
                 break
             try:
+                if not data:  # Closed connection (EOF)
+                    break
                 logger.debug("Received %d bytes from %s", len(data), client.address)
                 consumer.feed(data)
             finally:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import errno
 import os
 from selectors import EVENT_READ, EVENT_WRITE
@@ -166,6 +167,18 @@ class TestUDPNetworkEndpoint(BaseTestClient):
     )
     @staticmethod
     def recv_timeout(request: Any) -> Any:
+        return request.param
+
+    @pytest.fixture(
+        params=[
+            pytest.param(None, id="blocking (None)"),
+            pytest.param(float("+inf"), id="blocking (+inf)"),
+            pytest.param(0, id="non_blocking"),
+            pytest.param(123456789, id="with_timeout"),
+        ]
+    )
+    @staticmethod
+    def send_timeout(request: Any) -> Any:
         return request.param
 
     def test____dunder_init____create_datagram_endpoint____default(
@@ -437,7 +450,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         # Arrange
 
         # Act
-        with pytest.raises(ValueError, match=r"^retry_interval must be a strictly positive float or None$"):
+        with pytest.raises(ValueError, match=r"^retry_interval must be a strictly positive float$"):
             _ = UDPNetworkEndpoint(
                 protocol=mock_datagram_protocol,
                 socket=mock_udp_socket,
@@ -580,6 +593,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
     def test____send_packet_to____send_bytes_to_socket____without_remote____default(
         self,
         client: UDPNetworkEndpoint[Any, Any],
+        send_timeout: float | None,
         mock_udp_socket: MagicMock,
         mock_datagram_protocol: MagicMock,
         mock_selector_select: MagicMock,
@@ -591,7 +605,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         target_address: tuple[str, int] = ("remote_address", 5000)
 
         # Act
-        client.send_packet_to(mocker.sentinel.packet, target_address)
+        client.send_packet_to(mocker.sentinel.packet, target_address, timeout=send_timeout)
 
         # Assert
         mock_udp_socket.settimeout.assert_not_called()
@@ -607,6 +621,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
     def test____send_packet_to____send_bytes_to_socket____without_remote____blocking_operation(
         self,
         client: UDPNetworkEndpoint[Any, Any],
+        send_timeout: float | None,
         mock_udp_socket: MagicMock,
         mock_datagram_protocol: MagicMock,
         mock_selector_register: MagicMock,
@@ -621,23 +636,32 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         mock_udp_socket.sendto.side_effect = [BlockingIOError, len(b"packet")]
 
         # Act
-        client.send_packet_to(mocker.sentinel.packet, target_address)
+        with pytest.raises(TimeoutError) if send_timeout == 0 else contextlib.nullcontext():
+            client.send_packet_to(mocker.sentinel.packet, target_address, timeout=send_timeout)
 
         # Assert
         mock_udp_socket.settimeout.assert_not_called()
         mock_udp_socket.setblocking.assert_not_called()
-        mock_selector_register.assert_called_once_with(mock_udp_socket, EVENT_WRITE)
-        mock_selector_select.assert_called_once_with(None)
         mock_udp_socket.send.assert_not_called()
-        assert mock_udp_socket.sendto.mock_calls == [mocker.call(b"packet", target_address) for _ in range(2)]
-        mock_datagram_protocol.make_datagram.assert_called_once_with(mocker.sentinel.packet)
-        mock_udp_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_ERROR)
+        if send_timeout != 0:
+            mock_selector_register.assert_called_once_with(mock_udp_socket, EVENT_WRITE)
+            mock_selector_select.assert_called_once_with(None if send_timeout in (None, float("+inf")) else send_timeout)
+            assert mock_udp_socket.sendto.mock_calls == [mocker.call(b"packet", target_address) for _ in range(2)]
+            mock_datagram_protocol.make_datagram.assert_called_once_with(mocker.sentinel.packet)
+            mock_udp_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_ERROR)
+        else:
+            mock_selector_register.assert_not_called()
+            mock_selector_select.assert_not_called()
+            assert mock_udp_socket.sendto.mock_calls == [mocker.call(b"packet", target_address)]
+            mock_datagram_protocol.make_datagram.assert_called_once_with(mocker.sentinel.packet)
+            mock_udp_socket.getsockopt.assert_not_called()
 
     @pytest.mark.parametrize("remote_address", [False], indirect=True)
     @pytest.mark.usefixtures("setup_protocol_mock")
     def test____send_packet_to____send_bytes_to_socket____without_remote____None_address_error(
         self,
         client: UDPNetworkEndpoint[Any, Any],
+        send_timeout: float | None,
         mock_udp_socket: MagicMock,
         mock_selector_select: MagicMock,
         mock_datagram_protocol: MagicMock,
@@ -647,7 +671,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
 
         # Act
         with pytest.raises(ValueError, match=r"^Invalid address: must not be None$"):
-            client.send_packet_to(mocker.sentinel.packet, None)
+            client.send_packet_to(mocker.sentinel.packet, None, timeout=send_timeout)
 
         # Assert
         mock_udp_socket.send.assert_not_called()
@@ -664,6 +688,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
     def test____send_packet_to____send_bytes_to_socket____with_remote____default(
         self,
         client: UDPNetworkEndpoint[Any, Any],
+        send_timeout: float | None,
         target_address: tuple[str, int] | None,
         mock_udp_socket: MagicMock,
         mock_selector_select: MagicMock,
@@ -674,7 +699,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         from socket import SO_ERROR, SOL_SOCKET
 
         # Act
-        client.send_packet_to(mocker.sentinel.packet, target_address)
+        client.send_packet_to(mocker.sentinel.packet, target_address, timeout=send_timeout)
 
         # Assert
         mock_udp_socket.settimeout.assert_not_called()
@@ -691,6 +716,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
     def test____send_packet_to____send_bytes_to_socket____with_remote____blocking_operation(
         self,
         client: UDPNetworkEndpoint[Any, Any],
+        send_timeout: float | None,
         target_address: tuple[str, int] | None,
         mock_udp_socket: MagicMock,
         mock_selector_register: MagicMock,
@@ -704,23 +730,32 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         mock_udp_socket.send.side_effect = [BlockingIOError, len(b"packet")]
 
         # Act
-        client.send_packet_to(mocker.sentinel.packet, target_address)
+        with pytest.raises(TimeoutError) if send_timeout == 0 else contextlib.nullcontext():
+            client.send_packet_to(mocker.sentinel.packet, target_address, timeout=send_timeout)
 
         # Assert
         mock_udp_socket.settimeout.assert_not_called()
         mock_udp_socket.setblocking.assert_not_called()
-        mock_selector_register.assert_called_once_with(mock_udp_socket, EVENT_WRITE)
-        mock_selector_select.assert_called_once_with(None)
         mock_udp_socket.sendto.assert_not_called()
-        assert mock_udp_socket.send.mock_calls == [mocker.call(b"packet") for _ in range(2)]
-        mock_datagram_protocol.make_datagram.assert_called_once_with(mocker.sentinel.packet)
-        mock_udp_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_ERROR)
+        if send_timeout != 0:
+            mock_selector_register.assert_called_once_with(mock_udp_socket, EVENT_WRITE)
+            mock_selector_select.assert_called_once_with(None if send_timeout in (None, float("+inf")) else send_timeout)
+            assert mock_udp_socket.send.mock_calls == [mocker.call(b"packet") for _ in range(2)]
+            mock_datagram_protocol.make_datagram.assert_called_once_with(mocker.sentinel.packet)
+            mock_udp_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_ERROR)
+        else:
+            mock_selector_register.assert_not_called()
+            mock_selector_select.assert_not_called()
+            assert mock_udp_socket.send.mock_calls == [mocker.call(b"packet")]
+            mock_datagram_protocol.make_datagram.assert_called_once_with(mocker.sentinel.packet)
+            mock_udp_socket.getsockopt.assert_not_called()
 
     @pytest.mark.parametrize("remote_address", [True], indirect=True)
     @pytest.mark.usefixtures("setup_protocol_mock")
     def test____send_packet_to____send_bytes_to_socket____with_remote____invalid_target_address(
         self,
         client: UDPNetworkEndpoint[Any, Any],
+        send_timeout: float | None,
         mock_udp_socket: MagicMock,
         mock_selector_select: MagicMock,
         mock_datagram_protocol: MagicMock,
@@ -731,7 +766,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
 
         # Act
         with pytest.raises(ValueError, match=r"^Invalid address: must be None or .+$"):
-            client.send_packet_to(mocker.sentinel.packet, target_address)
+            client.send_packet_to(mocker.sentinel.packet, target_address, timeout=send_timeout)
 
         # Assert
         mock_udp_socket.settimeout.assert_not_called()
@@ -891,6 +926,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         mock_udp_socket.recvfrom.assert_called_once_with(MAX_DATAGRAM_BUFSIZE)
         mock_datagram_protocol.build_packet_from_datagram.assert_called_once_with(b"packet")
         assert exception is expected_error
+        assert (exception.sender_address.host, exception.sender_address.port) == sender_address
 
     @pytest.mark.usefixtures("setup_protocol_mock")
     def test____recv_packet_from____blocking_or_not____closed_client_error(
@@ -1077,6 +1113,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         mock_udp_socket.recvfrom.assert_called_once_with(MAX_DATAGRAM_BUFSIZE)
         mock_datagram_protocol.build_packet_from_datagram.assert_called_once_with(b"packet")
         assert exception is expected_error
+        assert (exception.sender_address.host, exception.sender_address.port) == sender_address
 
     @pytest.mark.usefixtures("setup_protocol_mock")
     def test____iter_received_packets_from____release_internal_lock_before_yield(
@@ -1219,7 +1256,6 @@ class TestUDPNetworkClient:
         mock_udp_socket: MagicMock,
         mock_datagram_protocol: MagicMock,
         mock_udp_endpoint: MagicMock,
-        mocker: MockerFixture,
     ) -> None:
         # Arrange
         mock_udp_endpoint.get_remote_address.return_value = None
@@ -1305,9 +1341,40 @@ class TestUDPNetworkClient:
         client.send_packet(mocker.sentinel.packet)
 
         # Assert
-        mock_udp_endpoint.send_packet_to.assert_called_once_with(mocker.sentinel.packet, None)
+        mock_udp_endpoint.send_packet_to.assert_called_once_with(mocker.sentinel.packet, None, timeout=None)
+
+    def test____send_packet____default_with_timeout(
+        self,
+        client: UDPNetworkClient[Any, Any],
+        mock_udp_endpoint: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_udp_endpoint.send_packet_to.return_value = None
+
+        # Act
+        client.send_packet(mocker.sentinel.packet, timeout=mocker.sentinel.timeout)
+
+        # Assert
+        mock_udp_endpoint.send_packet_to.assert_called_once_with(mocker.sentinel.packet, None, timeout=mocker.sentinel.timeout)
 
     def test____recv_packet____default(
+        self,
+        client: UDPNetworkClient[Any, Any],
+        mock_udp_endpoint: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_udp_endpoint.recv_packet_from.return_value = (mocker.sentinel.packet, ("remote_address", 5000))
+
+        # Act
+        packet = client.recv_packet()
+
+        # Assert
+        mock_udp_endpoint.recv_packet_from.assert_called_once_with(timeout=None)
+        assert packet is mocker.sentinel.packet
+
+    def test____recv_packet____default_with_timeout(
         self,
         client: UDPNetworkClient[Any, Any],
         mock_udp_endpoint: MagicMock,
@@ -1342,6 +1409,28 @@ class TestUDPNetworkClient:
         assert exception is mock_udp_endpoint.recv_packet_from.side_effect
 
     def test____iter_received_packets____default(
+        self,
+        client: UDPNetworkClient[Any, Any],
+        mock_udp_endpoint: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_udp_endpoint.iter_received_packets_from.side_effect = lambda timeout: iter(
+            [
+                (mocker.sentinel.packet_1, ("remote_address", 5000)),
+                (mocker.sentinel.packet_2, ("remote_address", 5000)),
+                (mocker.sentinel.packet_3, ("remote_address", 5000)),
+            ]
+        )
+
+        # Act
+        packets = list(client.iter_received_packets())
+
+        # Assert
+        mock_udp_endpoint.iter_received_packets_from.assert_called_once_with(timeout=0)
+        assert packets == [mocker.sentinel.packet_1, mocker.sentinel.packet_2, mocker.sentinel.packet_3]
+
+    def test____iter_received_packets____default_with_timeout(
         self,
         client: UDPNetworkClient[Any, Any],
         mock_udp_endpoint: MagicMock,
