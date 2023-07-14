@@ -17,7 +17,10 @@ __all__ = [
     "StreamProtocolParseError",
 ]
 
-from typing import Any, Literal, TypeAlias
+from typing import TYPE_CHECKING, Any, Literal, TypeAlias
+
+if TYPE_CHECKING:
+    from .tools.socket import SocketAddress
 
 
 class ClientClosedError(ConnectionError):
@@ -61,7 +64,7 @@ class BaseProtocolParseError(Exception):
 
 
 class DatagramProtocolParseError(BaseProtocolParseError):
-    pass
+    sender_address: SocketAddress
 
 
 class StreamProtocolParseError(BaseProtocolParseError):

@@ -754,6 +754,7 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         mock_datagram_socket_adapter.recvfrom.assert_awaited_once_with(MAX_DATAGRAM_BUFSIZE)
         mock_datagram_protocol.build_packet_from_datagram.assert_called_once_with(b"packet")
         assert exception is expected_error
+        assert (exception.sender_address.host, exception.sender_address.port) == sender_address
 
     @pytest.mark.usefixtures("setup_protocol_mock")
     async def test____recv_packet_from____closed_client_error(
@@ -846,6 +847,7 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         mock_datagram_socket_adapter.recvfrom.assert_awaited_once_with(MAX_DATAGRAM_BUFSIZE)
         mock_datagram_protocol.build_packet_from_datagram.assert_called_once_with(b"packet")
         assert exception is expected_error
+        assert (exception.sender_address.host, exception.sender_address.port) == sender_address
 
     @pytest.mark.usefixtures("setup_protocol_mock")
     async def test____iter_received_packets_from____closed_client_during_iteration(
