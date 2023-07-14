@@ -143,6 +143,7 @@ class TestDatagramProtocol:
         assert exception.message == "Deserialization error"
         assert exception.error_info is mocker.sentinel.error_info
         assert exception.__cause__ is mock_serializer.deserialize.side_effect
+        assert not hasattr(exception, "sender_address")
 
     def test____build_packet_from_datagram____conversion_error(
         self,
@@ -169,6 +170,7 @@ class TestDatagramProtocol:
         assert exception.message == "Conversion error"
         assert exception.error_info is mocker.sentinel.error_info
         assert exception.__cause__ is mock_convert_func.side_effect
+        assert not hasattr(exception, "sender_address")
 
 
 class TestStreamProtocol:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import os
 import selectors
 import ssl
@@ -36,6 +37,7 @@ from easynetwork.tools._utils import (
     set_tcp_keepalive,
     set_tcp_nodelay,
     transform_future_exception,
+    validate_timeout_delay,
     wait_socket_available,
 )
 
@@ -344,6 +346,47 @@ def test____wait_socket_available____select_error(
     mock_selector_register.assert_called_once_with(mock_socket, SELECTOR_EVENT)
     mock_selector_select.assert_called_once_with(timeout)
     assert status is True
+
+
+@pytest.mark.parametrize("delay", [1, 3.14, math.inf])
+@pytest.mark.parametrize("positive_check", [False, True], ids=lambda positive_check: f"{positive_check=}")
+def test____validate_timeout_delay____positive_value(delay: float, positive_check: bool) -> None:
+    # Arrange
+
+    # Act & Assert
+    assert validate_timeout_delay(delay, positive_check=positive_check) == delay
+
+
+@pytest.mark.parametrize("positive_check", [False, True], ids=lambda positive_check: f"{positive_check=}")
+def test____validate_timeout_delay____null_value(positive_check: bool) -> None:
+    # Arrange
+    delay: float = 0.0
+
+    # Act & Assert
+    assert validate_timeout_delay(delay, positive_check=positive_check) == delay
+
+
+@pytest.mark.parametrize("delay", [-1, -3.14, -math.inf])
+@pytest.mark.parametrize("positive_check", [False, True], ids=lambda positive_check: f"{positive_check=}")
+def test____validate_timeout_delay____negative_value(delay: float, positive_check: bool) -> None:
+    # Arrange
+
+    # Act & Assert
+    if positive_check:
+        with pytest.raises(ValueError, match=r"^Invalid delay: negative value$"):
+            validate_timeout_delay(delay, positive_check=positive_check)
+    else:
+        assert validate_timeout_delay(delay, positive_check=positive_check) == delay
+
+
+@pytest.mark.parametrize("positive_check", [False, True], ids=lambda positive_check: f"{positive_check=}")
+def test____validate_timeout_delay____not_a_number(positive_check: bool) -> None:
+    # Arrange
+    delay: float = math.nan
+
+    # Act & Assert
+    with pytest.raises(ValueError, match=r"^Invalid delay: NaN \(not a number\)$"):
+        validate_timeout_delay(delay, positive_check=positive_check)
 
 
 def test____concanetate_chunks____join_several_bytestrings() -> None:

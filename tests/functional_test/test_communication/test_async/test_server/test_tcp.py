@@ -144,6 +144,7 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
                 await client.send_packet(request.upper())
 
     async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError) -> None:
+        assert isinstance(exc, StreamProtocolParseError)
         self.bad_request_received[client.address].append(exc)
         await client.send_packet("wrong encoding man.")
 

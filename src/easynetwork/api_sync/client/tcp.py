@@ -9,10 +9,11 @@ __all__ = ["TCPNetworkClient"]
 
 import contextlib as _contextlib
 import errno as _errno
+import math
 import socket as _socket
 import threading
+import time
 from collections.abc import Callable, Iterator
-from time import perf_counter as _time_perf_counter
 from typing import TYPE_CHECKING, Any, Generic, Literal, NoReturn, TypeGuard, TypeVar, cast, final, overload
 
 try:
@@ -23,7 +24,7 @@ else:
     _ssl_module = ssl
     del ssl
 
-from ...exceptions import ClientClosedError, StreamProtocolParseError
+from ...exceptions import ClientClosedError
 from ...protocol import StreamProtocol
 from ...tools._utils import (
     check_real_socket_state as _check_real_socket_state,
@@ -37,6 +38,7 @@ from ...tools._utils import (
     retry_ssl_socket_method as _retry_ssl_socket_method,
     set_tcp_keepalive as _set_tcp_keepalive,
     set_tcp_nodelay as _set_tcp_nodelay,
+    validate_timeout_delay as _validate_timeout_delay,
 )
 from ...tools.lock import ForkSafeLock
 from ...tools.socket import (
@@ -180,9 +182,12 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 raise ValueError("'max_recv_size' must be a strictly positive integer")
             self.__max_recv_size: int = max_recv_size
 
-            self.__retry_interval = retry_interval = float(retry_interval)
+            self.__retry_interval: float | None
+            self.__retry_interval = retry_interval = _validate_timeout_delay(float(retry_interval), positive_check=False)
             if self.__retry_interval <= 0:
-                raise ValueError("retry_interval must be a strictly positive float or None")
+                raise ValueError("retry_interval must be a strictly positive float")
+            if math.isinf(self.__retry_interval):
+                self.__retry_interval = None
 
             # Do not use global default timeout here
             socket.settimeout(0)
@@ -261,7 +266,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             try:
                 if not self.__eof_reached and self.__is_ssl_socket(socket):
                     with self.__convert_ssl_eof_error(), _contextlib.suppress(TimeoutError):
-                        retry_interval: float = self.__retry_interval
+                        retry_interval: float | None = self.__retry_interval
                         socket = _retry_ssl_socket_method(socket, self.__ssl_shutdown_timeout, retry_interval, socket.unwrap)
             except ConnectionError:
                 # It is normal if there was connection errors during operations. But do not propagate this exception,
@@ -276,83 +281,77 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 finally:
                     socket.close()
 
-    def send_packet(self, packet: _SentPacketT) -> None:
+    def send_packet(self, packet: _SentPacketT, *, timeout: float | None = None) -> None:
         with self.__send_lock.get(), self.__convert_socket_error():
             socket = self.__ensure_connected()
             data: bytes = _concatenate_chunks(self.__producer(packet))
             buffer = memoryview(data)
-            timeout = None
-            retry_interval: float = self.__retry_interval
-            _is_ssl_socket = self.__is_ssl_socket
+            assert buffer.itemsize == 1
+            perf_counter = time.perf_counter  # pull function to local namespace
+            retry_interval: float | None = self.__retry_interval
             try:
                 remaining: int = len(data)
                 while remaining > 0:
                     sent: int
-                    if _is_ssl_socket(socket):
-                        sent = _retry_ssl_socket_method(socket, timeout, retry_interval, socket.send, buffer)
-                    else:
-                        sent = _retry_socket_method(socket, timeout, retry_interval, "write", socket.send, buffer)
-                    assert sent >= 0, "socket.send() returned a negative integer"
-                    _check_real_socket_state(socket)
+                    try:
+                        _start = perf_counter()
+                        if self.__is_ssl_socket(socket):
+                            sent = _retry_ssl_socket_method(socket, timeout, retry_interval, socket.send, buffer)
+                        else:
+                            sent = _retry_socket_method(socket, timeout, retry_interval, "write", socket.send, buffer)
+                        _end = perf_counter()
+                    except TimeoutError:
+                        raise TimeoutError("send_packet() timed out") from None
+                    assert sent >= 0, f"socket.send() returned a negative integer ({sent=})"
                     remaining -= sent
                     buffer = buffer[sent:]
-            except TimeoutError as exc:  # pragma: no cover
-                raise RuntimeError("socket.send() timed out with timeout=None ?") from exc
+                    if timeout is not None:
+                        timeout -= _end - _start
+                _check_real_socket_state(socket)
             finally:
                 del buffer, data
 
-    def recv_packet(self, timeout: float | None = None) -> _ReceivedPacketT:
+    def recv_packet(self, *, timeout: float | None = None) -> _ReceivedPacketT:
         with self.__receive_lock.get(), self.__convert_socket_error():
             consumer = self.__consumer
-            next_packet = self.__next_packet
             try:
-                return next_packet(consumer)  # If there is enough data from last call to create a packet, return immediately
+                return next(consumer)  # If there is enough data from last call to create a packet, return immediately
             except StopIteration:
                 pass
             socket = self.__ensure_connected()
             bufsize: int = self.__max_recv_size
-            perf_counter = _time_perf_counter  # pull function to local namespace
-            retry_interval: float = self.__retry_interval
-            _is_ssl_socket = self.__is_ssl_socket
+            perf_counter = time.perf_counter  # pull function to local namespace
+            retry_interval: float | None = self.__retry_interval
 
             while True:
                 try:
                     _start = perf_counter()
                     chunk: bytes
-                    if _is_ssl_socket(socket):
+                    if self.__is_ssl_socket(socket):
                         chunk = _retry_ssl_socket_method(socket, timeout, retry_interval, socket.recv, bufsize)
                     else:
                         chunk = _retry_socket_method(socket, timeout, retry_interval, "read", socket.recv, bufsize)
                     _end = perf_counter()
-                except TimeoutError as exc:
-                    if timeout is None:  # pragma: no cover
-                        raise RuntimeError("socket.recv() timed out with timeout=None ?") from exc
+                except TimeoutError:
                     break
-                if not chunk:
-                    self.__eof_error(False)
-                consumer.feed(chunk)
                 try:
-                    return next_packet(consumer)
+                    if not chunk:
+                        self.__eof_error(False)
+                    buffer_not_full: bool = len(chunk) < bufsize
+                    consumer.feed(chunk)
+                finally:
+                    del chunk
+                try:
+                    return next(consumer)
                 except StopIteration:
                     if timeout is not None:
                         if timeout > 0:
                             timeout -= _end - _start
-                        elif len(chunk) < bufsize:
+                        elif buffer_not_full:
                             break
                     continue
-                finally:
-                    del chunk
             # Loop break
             raise TimeoutError("recv_packet() timed out")
-
-    @staticmethod
-    def __next_packet(consumer: StreamDataConsumer[_ReceivedPacketT]) -> _ReceivedPacketT:
-        try:
-            return next(consumer)
-        except (StopIteration, StreamProtocolParseError):
-            raise
-        except Exception as exc:  # pragma: no cover
-            raise RuntimeError(str(exc)) from exc
 
     def __ensure_connected(self) -> _socket.socket:
         if (socket := self.__socket) is None:

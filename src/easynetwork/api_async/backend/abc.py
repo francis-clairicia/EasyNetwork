@@ -23,6 +23,7 @@ __all__ = [
     "ILock",
 ]
 
+import math
 from abc import ABCMeta, abstractmethod
 from collections.abc import Callable, Coroutine, Sequence
 from contextlib import AbstractAsyncContextManager as AsyncContextManager
@@ -259,7 +260,7 @@ class AbstractTimeoutHandle(metaclass=ABCMeta):
 
     @deadline.deleter
     def deadline(self) -> None:
-        self.reschedule(float("+inf"))
+        self.reschedule(math.inf)
 
 
 class AbstractAsyncBackend(metaclass=ABCMeta):

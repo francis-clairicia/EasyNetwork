@@ -9,6 +9,7 @@ from __future__ import annotations
 __all__ = ["Task", "TaskGroup", "TimeoutHandle", "timeout", "timeout_at"]
 
 import asyncio
+import math
 from collections.abc import Callable, Coroutine
 from typing import TYPE_CHECKING, Any, ParamSpec, Self, TypeVar, final
 
@@ -101,9 +102,6 @@ class TaskGroup(AbstractTaskGroup):
         return Task(self.__asyncio_tg.create_task(__coro_func(*args, **kwargs)))
 
 
-_inf = float("+inf")
-
-
 @final
 class TimeoutHandle(AbstractTimeoutHandle):
     __slots__ = ("__handle",)
@@ -131,11 +129,11 @@ class TimeoutHandle(AbstractTimeoutHandle):
 
     def when(self) -> float:
         deadline: float | None = self.__handle.when()
-        return deadline if deadline is not None else _inf
+        return deadline if deadline is not None else math.inf
 
     def reschedule(self, when: float) -> None:
         assert when is not None
-        return self.__handle.reschedule(when if when != _inf else None)
+        return self.__handle.reschedule(when if when != math.inf else None)
 
     def expired(self) -> bool:
         return self.__handle.expired()
@@ -143,9 +141,9 @@ class TimeoutHandle(AbstractTimeoutHandle):
 
 def timeout(delay: float) -> TimeoutHandle:
     assert delay is not None
-    return TimeoutHandle(asyncio.timeout(delay if delay != _inf else None))
+    return TimeoutHandle(asyncio.timeout(delay if delay != math.inf else None))
 
 
 def timeout_at(deadline: float) -> TimeoutHandle:
     assert deadline is not None
-    return TimeoutHandle(asyncio.timeout_at(deadline if deadline != _inf else None))
+    return TimeoutHandle(asyncio.timeout_at(deadline if deadline != math.inf else None))

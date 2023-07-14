@@ -32,7 +32,7 @@ class MockClient(AbstractNetworkClient[Any, Any]):
     def get_remote_address(self) -> SocketAddress:
         raise NotImplementedError
 
-    def send_packet(self, packet: Any) -> None:
+    def send_packet(self, *args: Any, **kwargs: Any) -> None:
         raise NotImplementedError
 
     def recv_packet(self, timeout: float | None = None) -> Any:

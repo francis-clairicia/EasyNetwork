@@ -255,6 +255,18 @@ class TestTCPNetworkClient(BaseTestClient):
     def recv_timeout(request: Any) -> Any:
         return request.param
 
+    @pytest.fixture(
+        params=[
+            pytest.param(None, id="blocking (None)"),
+            pytest.param(float("+inf"), id="blocking (+inf)"),
+            pytest.param(0, id="non_blocking"),
+            pytest.param(123456789, id="with_timeout"),
+        ]
+    )
+    @staticmethod
+    def send_timeout(request: Any) -> Any:
+        return request.param
+
     def test____dunder_init____connect_to_remote(
         self,
         remote_address: tuple[str, int],
@@ -581,7 +593,7 @@ class TestTCPNetworkClient(BaseTestClient):
         # Arrange
 
         # Act
-        with pytest.raises(ValueError, match=r"^retry_interval must be a strictly positive float or None$"):
+        with pytest.raises(ValueError, match=r"^retry_interval must be a strictly positive float$"):
             if use_socket:
                 _ = TCPNetworkClient(
                     mock_tcp_socket,
@@ -1124,6 +1136,7 @@ class TestTCPNetworkClient(BaseTestClient):
     def test____send_packet____send_bytes_to_socket(
         self,
         client: TCPNetworkClient[Any, Any],
+        send_timeout: float | None,
         mock_used_socket: MagicMock,
         mock_stream_protocol: MagicMock,
         mock_selector_select: MagicMock,
@@ -1133,7 +1146,7 @@ class TestTCPNetworkClient(BaseTestClient):
         from socket import SO_ERROR, SOL_SOCKET
 
         # Act
-        client.send_packet(mocker.sentinel.packet)
+        client.send_packet(mocker.sentinel.packet, timeout=send_timeout)
 
         # Assert
         mock_used_socket.settimeout.assert_not_called()
@@ -1147,6 +1160,7 @@ class TestTCPNetworkClient(BaseTestClient):
     def test____send_packet____blocking_operation(
         self,
         client: TCPNetworkClient[Any, Any],
+        send_timeout: float | None,
         use_ssl: bool,
         mock_used_socket: MagicMock,
         mock_stream_protocol: MagicMock,
@@ -1160,20 +1174,27 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_used_socket.send.side_effect = [SSLWantWriteError if use_ssl else BlockingIOError, len(b"pack"), len(b"et\n")]
 
         # Act
-        client.send_packet(mocker.sentinel.packet)
+        with pytest.raises(TimeoutError) if send_timeout == 0 else contextlib.nullcontext():
+            client.send_packet(mocker.sentinel.packet, timeout=send_timeout)
 
         # Assert
         mock_used_socket.settimeout.assert_not_called()
         mock_used_socket.setblocking.assert_not_called()
-        mock_selector_register.assert_called_once_with(mock_used_socket, EVENT_WRITE)
-        mock_selector_select.assert_called_once_with(None)
         mock_stream_protocol.generate_chunks.assert_called_once_with(mocker.sentinel.packet)
-        assert mock_used_socket.send.mock_calls == [
-            mocker.call(b"packet\n"),
-            mocker.call(b"packet\n"),
-            mocker.call(b"et\n"),
-        ]
-        assert mock_used_socket.getsockopt.mock_calls == [mocker.call(SOL_SOCKET, SO_ERROR) for _ in range(2)]
+        if send_timeout != 0:
+            mock_selector_register.assert_called_with(mock_used_socket, EVENT_WRITE)
+            mock_selector_select.assert_called()
+            assert mock_used_socket.send.mock_calls == [
+                mocker.call(b"packet\n"),
+                mocker.call(b"packet\n"),
+                mocker.call(b"et\n"),
+            ]
+            mock_used_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_ERROR)
+        else:
+            mock_selector_register.assert_not_called()
+            mock_selector_select.assert_not_called()
+            assert mock_used_socket.send.mock_calls == [mocker.call(b"packet\n")]
+            mock_used_socket.getsockopt.assert_not_called()
 
     @pytest.mark.usefixtures("setup_producer_mock")
     def test____send_packet____raise_error_saved_in_SO_ERROR_option(

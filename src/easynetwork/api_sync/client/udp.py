@@ -9,6 +9,7 @@ __all__ = ["UDPNetworkClient", "UDPNetworkEndpoint"]
 
 import contextlib as _contextlib
 import errno as _errno
+import math
 import socket as _socket
 import threading
 import time
@@ -26,6 +27,7 @@ from ...tools._utils import (
     error_from_errno as _error_from_errno,
     retry_socket_method as _retry_socket_method,
     set_reuseport as _set_reuseport,
+    validate_timeout_delay as _validate_timeout_delay,
 )
 from ...tools.lock import ForkSafeLock
 from ...tools.socket import CLOSED_SOCKET_ERRNOS, MAX_DATAGRAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
@@ -94,9 +96,12 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
 
         self.__protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT] = protocol
 
-        self.__retry_interval = float(retry_interval)
+        self.__retry_interval: float | None
+        self.__retry_interval = retry_interval = _validate_timeout_delay(float(retry_interval), positive_check=False)
         if self.__retry_interval <= 0:
-            raise ValueError("retry_interval must be a strictly positive float or None")
+            raise ValueError("retry_interval must be a strictly positive float")
+        if math.isinf(self.__retry_interval):
+            self.__retry_interval = None
 
         socket: _socket.socket
         peername: SocketAddress | None = None
@@ -174,6 +179,8 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         self,
         packet: _SentPacketT,
         address: tuple[str, int] | tuple[str, int, int, int] | None,
+        *,
+        timeout: float | None = None,
     ) -> None:
         with self.__send_lock.get(), self.__convert_socket_error():
             if (socket := self.__socket) is None:
@@ -186,48 +193,43 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             elif address is None:
                 raise ValueError("Invalid address: must not be None")
             data: bytes = self.__protocol.make_datagram(packet)
-            retry_interval: float = self.__retry_interval
+            retry_interval: float | None = self.__retry_interval
             try:
                 if address is None:
-                    _retry_socket_method(socket, None, retry_interval, "write", socket.send, data)
+                    _retry_socket_method(socket, timeout, retry_interval, "write", socket.send, data)
                 else:
-                    _retry_socket_method(socket, None, retry_interval, "write", socket.sendto, data, address)
+                    _retry_socket_method(socket, timeout, retry_interval, "write", socket.sendto, data, address)
                 _check_real_socket_state(socket)
-            except TimeoutError as exc:  # pragma: no cover
-                raise RuntimeError("socket.sendto() timed out with timeout=None ?") from exc
+            except TimeoutError:
+                raise TimeoutError("send_packet() timed out") from None
             finally:
                 del data
 
-    def recv_packet_from(self, timeout: float | None = None) -> tuple[_ReceivedPacketT, SocketAddress]:
+    def recv_packet_from(self, *, timeout: float | None = None) -> tuple[_ReceivedPacketT, SocketAddress]:
         with self.__receive_lock.get(), self.__convert_socket_error():
             if (socket := self.__socket) is None:
                 raise ClientClosedError("Closed client")
-            retry_interval: float = self.__retry_interval
+            retry_interval: float | None = self.__retry_interval
             bufsize: int = MAX_DATAGRAM_BUFSIZE
             try:
                 data, sender = _retry_socket_method(socket, timeout, retry_interval, "read", socket.recvfrom, bufsize)
-            except TimeoutError as exc:
-                if timeout is None:  # pragma: no cover
-                    raise RuntimeError("socket.recvfrom() timed out with timeout=None ?") from exc
+            except TimeoutError:
                 raise TimeoutError("recv_packet() timed out") from None
+            sender = new_socket_address(sender, socket.family)
             try:
-                return self.__protocol.build_packet_from_datagram(data), new_socket_address(sender, socket.family)
-            except DatagramProtocolParseError:
+                return self.__protocol.build_packet_from_datagram(data), sender
+            except DatagramProtocolParseError as exc:
+                exc.sender_address = sender
                 raise
-            except Exception as exc:  # pragma: no cover
-                raise RuntimeError(str(exc)) from exc
             finally:
                 del data
 
-    def iter_received_packets_from(self, timeout: float | None = 0) -> Iterator[tuple[_ReceivedPacketT, SocketAddress]]:
+    def iter_received_packets_from(self, *, timeout: float | None = 0) -> Iterator[tuple[_ReceivedPacketT, SocketAddress]]:
         perf_counter = time.perf_counter
-
-        recv_packet_from = self.recv_packet_from
-
         while True:
             try:
                 _start = perf_counter()
-                packet_tuple = recv_packet_from(timeout=timeout)
+                packet_tuple = self.recv_packet_from(timeout=timeout)
                 _end = perf_counter()
             except OSError:
                 return
@@ -344,14 +346,14 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
     def get_remote_address(self) -> SocketAddress:
         return self.__peer
 
-    def send_packet(self, packet: _SentPacketT) -> None:
-        return self.__endpoint.send_packet_to(packet, None)
+    def send_packet(self, packet: _SentPacketT, *, timeout: float | None = None) -> None:
+        return self.__endpoint.send_packet_to(packet, None, timeout=timeout)
 
-    def recv_packet(self, timeout: float | None = None) -> _ReceivedPacketT:
+    def recv_packet(self, *, timeout: float | None = None) -> _ReceivedPacketT:
         packet, _ = self.__endpoint.recv_packet_from(timeout=timeout)
         return packet
 
-    def iter_received_packets(self, timeout: float | None = 0) -> Iterator[_ReceivedPacketT]:
+    def iter_received_packets(self, *, timeout: float | None = 0) -> Iterator[_ReceivedPacketT]:
         return map(_itemgetter(0), self.__endpoint.iter_received_packets_from(timeout=timeout))
 
     def fileno(self) -> int:
