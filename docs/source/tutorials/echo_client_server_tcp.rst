@@ -179,4 +179,4 @@ Client:
 
 .. Links
 
-.. _FTP: https://fr.wikipedia.org/wiki/File_Transfer_Protocol
+.. _FTP: https://en.wikipedia.org/wiki/File_Transfer_Protocol
