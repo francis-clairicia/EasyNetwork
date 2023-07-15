@@ -69,10 +69,6 @@ Glossary
 
            They are de facto "one shot" serializers too.
 
-      .. todo::
-
-         Add a "See also" section to go in "How to write a serializer ?"
-
 .. Links
 
 .. _UDP: https://en.wikipedia.org/wiki/User_Datagram_Protocol
