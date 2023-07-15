@@ -11,6 +11,7 @@ Welcome to EasyNetwork's documentation!
 
    quickstart/index
    tutorials/index
+   api/index
    glossary
 
 
@@ -18,3 +19,6 @@ Useful links
 ------------
 
 * Source code: https://github.com/francis-clairicia/EasyNetwork
+* :ref:`genindex`
+* :ref:`modindex`
+* :ref:`search`

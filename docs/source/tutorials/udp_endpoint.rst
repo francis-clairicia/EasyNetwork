@@ -12,9 +12,9 @@ The :term:`communication protocol`
 
 You will need a :term:`protocol object`, as for the :ref:`echo client/server over TCP <echo-client-server-tcp-protocol>`.
 
-For the tutorial, ``JSONSerializer`` will also be used.
+For the tutorial, :class:`.JSONSerializer` will also be used.
 
-For communication via UDP, a ``DatagramProtocol`` object must be created this time.
+For communication via UDP, a :class:`.DatagramProtocol` object must be created this time.
 
 .. literalinclude:: ../_include/examples/tutorials/udp_endpoint/json_protocol.py
    :linenos:

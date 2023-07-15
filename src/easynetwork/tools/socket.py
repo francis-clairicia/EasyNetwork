@@ -22,11 +22,14 @@ __all__ = [
     "AF_INET",
     "AF_INET6",
     "AddressFamily",
+    "IPv4SocketAddress",
+    "IPv6SocketAddress",
     "ISocket",
     "MAX_DATAGRAM_BUFSIZE",
     "MAX_STREAM_BUFSIZE",
     "SSL_HANDSHAKE_TIMEOUT",
     "SSL_SHUTDOWN_TIMEOUT",
+    "SocketAddress",
     "SocketProxy",
     "SupportsSocketOptions",
     "new_socket_address",
@@ -89,6 +92,7 @@ class IPv6SocketAddress(NamedTuple):
 
 
 SocketAddress: TypeAlias = IPv4SocketAddress | IPv6SocketAddress
+"""Alias for :class:`IPv4SocketAddress` | :class:`IPv6SocketAddress`"""
 
 
 @overload

@@ -17,7 +17,7 @@ release = "1.0.0rc4"
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 extensions = [
-    # "sphinx.ext.autosectionlabel",
+    "sphinx.ext.autodoc",
     "sphinx.ext.duration",
     "sphinx.ext.intersphinx",
     "sphinx.ext.todo",
@@ -29,11 +29,16 @@ templates_path = []
 exclude_patterns = ["_include"]
 
 
-# -- sphinx.ext.autosectionlabel configuration -------------------------------------------
-# https://www.sphinx-doc.org/en/master/usage/extensions/autosectionlabel.html
+# -- sphinx.ext.autodoc configuration -------------------------------------------
+# https://www.sphinx-doc.org/en/master/usage/extensions/autodoc.html
 
-# autosectionlabel_prefix_document = True
-
+autoclass_content = "both"
+autodoc_member_order = "bysource"
+autodoc_type_aliases = {
+    "ProtocolParseErrorType": "ProtocolParseErrorType",
+    "SocketAddress": "SocketAddress",
+}
+autodoc_preserve_defaults = True
 
 # -- sphinx.ext.intersphinx configuration ------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/extensions/intersphinx.html

@@ -17,15 +17,11 @@ Here is the full list:
 
 * Serializer extensions:
 
-   .. todo::
+   * ``cbor``: Installs the required dependencies for :class:`.CBORSerializer`.
 
-      Add cross-reference links
+   * ``encryption``: Installs the required dependencies for :class:`.EncryptorSerializer`.
 
-   * ``cbor``: Installs the required dependencies for ``CBORSerializer``.
-
-   * ``encryption``: Installs the required dependencies for ``EncryptorSerializer``.
-
-   * ``msgpack``: Installs the required dependencies for ``MessagePackSerializer``.
+   * ``msgpack``: Installs the required dependencies for :class:`.MessagePackSerializer`.
 
 * Asynchronous I/O extensions:
 

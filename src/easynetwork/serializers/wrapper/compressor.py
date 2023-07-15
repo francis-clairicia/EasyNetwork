@@ -25,7 +25,7 @@ __all__ = [
 import abc
 from collections import deque
 from collections.abc import Generator
-from typing import Final, Protocol, TypeVar, final
+from typing import Protocol, TypeVar, final
 
 from ...exceptions import DeserializeError, IncrementalDeserializeError
 from ..abc import AbstractIncrementalPacketSerializer, AbstractPacketSerializer
@@ -36,7 +36,7 @@ _DT_co = TypeVar("_DT_co", covariant=True)
 
 class CompressorInterface(Protocol, metaclass=abc.ABCMeta):
     @abc.abstractmethod
-    def compress(self, __data: bytes, /) -> bytes:
+    def compress(self, data: bytes, /) -> bytes:
         raise NotImplementedError
 
     @abc.abstractmethod
@@ -46,7 +46,7 @@ class CompressorInterface(Protocol, metaclass=abc.ABCMeta):
 
 class DecompressorInterface(Protocol, metaclass=abc.ABCMeta):
     @abc.abstractmethod
-    def decompress(self, __data: bytes, /) -> bytes:
+    def decompress(self, data: bytes, /) -> bytes:
         raise NotImplementedError
 
     @property
@@ -155,13 +155,11 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_ST_contr
 class BZ2CompressorSerializer(AbstractCompressorSerializer[_ST_contra, _DT_co]):
     __slots__ = ("__compresslevel", "__compressor_factory", "__decompressor_factory")
 
-    BEST_COMPRESSION_LEVEL: Final[int] = 9
-
     def __init__(self, serializer: AbstractPacketSerializer[_ST_contra, _DT_co], *, compress_level: int | None = None) -> None:
         import bz2
 
         super().__init__(serializer=serializer, expected_decompress_error=OSError)
-        self.__compresslevel: int = compress_level if compress_level is not None else self.BEST_COMPRESSION_LEVEL
+        self.__compresslevel: int = compress_level if compress_level is not None else 9
         self.__compressor_factory = bz2.BZ2Compressor
         self.__decompressor_factory = bz2.BZ2Decompressor
 

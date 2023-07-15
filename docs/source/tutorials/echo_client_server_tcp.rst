@@ -18,29 +18,23 @@ Before doing all this networking stuff, you need to know what you want to transm
 Choose the :term:`serializer`
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-There is a bunch of serializers available in ``easynetwork.serializers`` for everyone to enjoy:
+There is a bunch of serializers available in :mod:`easynetwork.serializers` for everyone to enjoy:
 
-* ``JSONSerializer``: an :term:`incremental serializer` using the :mod:`json` module.
+* :class:`.JSONSerializer`: an :term:`incremental serializer` using the :mod:`json` module.
 
-* ``PickleSerializer``: a :term:`one-shot serializer` using the :mod:`pickle` module.
+* :class:`.PickleSerializer`: a :term:`one-shot serializer` using the :mod:`pickle` module.
 
-* ``StringLineSerializer``: an :term:`incremental serializer` for communication based on ASCII character strings (e.g. `FTP`_).
+* :class:`.StringLineSerializer`: an :term:`incremental serializer` for communication based on ASCII character strings (e.g. `FTP`_).
 
 * etc.
 
-For the tutorial, ``JSONSerializer`` will be used.
-
-.. todo::
-
-   * Add cross-references
-
-   * Link to all the available serializers
+For the tutorial, :class:`.JSONSerializer` will be used.
 
 
 Build your :term:`protocol object`
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-For communication via TCP, a ``StreamProtocol`` object must be created.
+For communication via TCP, a :class:`.StreamProtocol` object must be created.
 
 .. literalinclude:: ../_include/examples/tutorials/echo_client_server_tcp/json_protocol.py
    :linenos:
@@ -64,10 +58,10 @@ Now that we have established the :term:`communication protocol`, we can create o
 Create your request handler
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-First, you must create a request handler class by subclassing the ``AsyncBaseRequestHandler`` class and overriding its ``handle()`` method;
-this method will process incoming requests.
+First, you must create a request handler class by subclassing the :class:`.AsyncBaseRequestHandler` class and overriding
+its :meth:`~.AsyncBaseRequestHandler.handle` method; this method will process incoming requests.
 
-Its ``bad_request()`` method must also be overridden to handle parsing errors.
+Its :meth:`~.AsyncBaseRequestHandler.bad_request` method must also be overridden to handle parsing errors.
 
 .. literalinclude:: ../_include/examples/tutorials/echo_client_server_tcp/echo_request_handler.py
    :linenos:
@@ -75,7 +69,7 @@ Its ``bad_request()`` method must also be overridden to handle parsing errors.
 
 .. note::
 
-   Pay attention to ``handle()``, it is an :std:term:`asynchronous generator` function.
+   Pay attention to :meth:`~.AsyncBaseRequestHandler.handle`, it is an :std:term:`asynchronous generator` function.
 
    All requests sent by a client are literally injected into the generator via the :keyword:`yield` statement.
 
@@ -91,7 +85,7 @@ Its ``bad_request()`` method must also be overridden to handle parsing errors.
 
    Leaving the generator will *not* close the connection, a new generator will be created afterwards.
 
-   The same applies to the ``bad_request()`` method.
+   The same applies to the :meth:`~.AsyncBaseRequestHandler.bad_request` method.
 
    You may, however, explicitly close the connection if you want to::
 
@@ -120,7 +114,7 @@ and the request handler instance.
 
 .. note::
 
-   Setting ``host`` to ``None`` will bind the server to all interfaces.
+   Setting ``host`` to :data:`None` will bind the server to all interfaces.
 
    This means the server is ready to accept connections with IPv4 and IPv6 addresses (if available).
 
