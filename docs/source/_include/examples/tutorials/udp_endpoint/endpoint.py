@@ -8,7 +8,11 @@ from easynetwork.api_sync.client.udp import UDPNetworkEndpoint
 from json_protocol import JSONProtocol
 
 
-def sender(endpoint: UDPNetworkEndpoint[Any, Any], address: tuple[str, int], to_send: list[str]) -> None:
+def sender(
+    endpoint: UDPNetworkEndpoint[Any, Any],
+    address: tuple[str, int],
+    to_send: list[str],
+) -> None:
     # Send data to the specified address
     sent_data = {"command-line arguments": to_send}
     endpoint.send_packet_to(sent_data, address)
@@ -17,7 +21,7 @@ def sender(endpoint: UDPNetworkEndpoint[Any, Any], address: tuple[str, int], to_
     received_data, sender_address = endpoint.recv_packet_from()
 
     print(f"Sent to {address[0]}:{address[1]}       : {sent_data}")
-    print(f"Received from {sender_address.host}:{sender_address.port} : {received_data}")
+    print(f"Received from {sender_address} : {received_data}")
 
 
 def receiver(endpoint: UDPNetworkEndpoint[Any, Any]) -> None:
@@ -40,7 +44,8 @@ def main() -> None:
                 sender(endpoint, (host, port), to_send)
 
             case ["receiver"]:
-                print(f"Receiver available on port {endpoint.get_local_address().port}")
+                receiver_port = endpoint.get_local_address().port
+                print(f"Receiver available on port {receiver_port}")
 
                 receiver(endpoint)
 

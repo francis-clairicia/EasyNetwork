@@ -9,7 +9,11 @@ from easynetwork.api_async.client.udp import AsyncUDPNetworkEndpoint
 from json_protocol import JSONProtocol
 
 
-async def sender(endpoint: AsyncUDPNetworkEndpoint[Any, Any], address: tuple[str, int], to_send: list[str]) -> None:
+async def sender(
+    endpoint: AsyncUDPNetworkEndpoint[Any, Any],
+    address: tuple[str, int],
+    to_send: list[str],
+) -> None:
     # Send data to the specified address
     sent_data = {"command-line arguments": to_send}
     await endpoint.send_packet_to(sent_data, address)
@@ -18,7 +22,7 @@ async def sender(endpoint: AsyncUDPNetworkEndpoint[Any, Any], address: tuple[str
     received_data, sender_address = await endpoint.recv_packet_from()
 
     print(f"Sent to {address[0]}:{address[1]}       : {sent_data}")
-    print(f"Received from {sender_address.host}:{sender_address.port} : {received_data}")
+    print(f"Received from {sender_address} : {received_data}")
 
 
 async def receiver(endpoint: AsyncUDPNetworkEndpoint[Any, Any]) -> None:
@@ -41,7 +45,8 @@ async def main() -> None:
                 await sender(endpoint, (host, port), to_send)
 
             case ["receiver"]:
-                print(f"Receiver available on port {endpoint.get_local_address().port}")
+                receiver_port = endpoint.get_local_address().port
+                print(f"Receiver available on port {receiver_port}")
 
                 await receiver(endpoint)
 

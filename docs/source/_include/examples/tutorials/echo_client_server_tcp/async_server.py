@@ -11,8 +11,10 @@ from json_protocol import JSONProtocol
 async def main() -> None:
     host = None
     port = 9000
+    protocol = JSONProtocol()
+    handler = EchoRequestHandler()
 
-    async with AsyncTCPNetworkServer(host, port, JSONProtocol(), EchoRequestHandler()) as server:
+    async with AsyncTCPNetworkServer(host, port, protocol, handler) as server:
         try:
             await server.serve_forever()
         except asyncio.CancelledError:

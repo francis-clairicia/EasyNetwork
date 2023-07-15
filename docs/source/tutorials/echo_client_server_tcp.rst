@@ -80,9 +80,9 @@ Its ``bad_request()`` method must also be overridden to handle parsing errors.
    All requests sent by a client are literally injected into the generator via the :keyword:`yield` statement.
 
    .. literalinclude:: ../_include/examples/tutorials/echo_client_server_tcp/echo_request_handler.py
-      :lines: 15-16
-      :lineno-start: 15
-      :emphasize-lines: 2
+      :lines: 16-20
+      :lineno-start: 16
+      :emphasize-lines: 5
       :dedent:
 
    You can :keyword:`yield` several times if you want to wait for a new packet from the client in the same context.
@@ -90,6 +90,9 @@ Its ``bad_request()`` method must also be overridden to handle parsing errors.
 .. warning::
 
    Leaving the generator will *not* close the connection, a new generator will be created afterwards.
+
+   The same applies to the ``bad_request()`` method.
+
    You may, however, explicitly close the connection if you want to::
 
       await client.aclose()

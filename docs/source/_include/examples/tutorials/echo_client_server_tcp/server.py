@@ -9,8 +9,10 @@ from json_protocol import JSONProtocol
 def main() -> None:
     host = None
     port = 9000
+    protocol = JSONProtocol()
+    handler = EchoRequestHandler()
 
-    with StandaloneTCPNetworkServer(host, port, JSONProtocol(), EchoRequestHandler()) as server:
+    with StandaloneTCPNetworkServer(host, port, protocol, handler) as server:
         try:
             server.serve_forever()
         except KeyboardInterrupt:
