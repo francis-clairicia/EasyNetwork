@@ -57,7 +57,6 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
     @overload
     def __init__(
         self,
-        /,
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
         *,
         local_address: tuple[str | None, int] | None = ...,
@@ -70,7 +69,6 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
     @overload
     def __init__(
         self,
-        /,
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
         *,
         socket: _socket.socket,
@@ -80,8 +78,8 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
 
     def __init__(
         self,
-        /,
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
+        *,
         retry_interval: float = 1.0,
         **kwargs: Any,
     ) -> None:

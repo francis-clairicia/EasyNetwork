@@ -163,9 +163,6 @@ if __name__ == "__main__":
 
 </details>
 
-### Other examples
-Check out the [available examples](./examples) for an overview.
-
 ### Documentation
 Coming soon.
 

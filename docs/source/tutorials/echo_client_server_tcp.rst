@@ -8,9 +8,10 @@ let's create a server that will return everything sent by a connected client.
 
 .. include:: ../_include/sync-async-variants.rst
 
+.. _echo-client-server-tcp-protocol:
 
-Step 1: The :term:`communication protocol`
-------------------------------------------
+The :term:`communication protocol`
+----------------------------------
 
 Before doing all this networking stuff, you need to know what you want to transmit and in what format.
 
@@ -19,9 +20,9 @@ Choose the :term:`serializer`
 
 There is a bunch of serializers available in ``easynetwork.serializers`` for everyone to enjoy:
 
-* ``JSONSerializer``: an :term:`incremental serializer` using the :py:mod:`json` module.
+* ``JSONSerializer``: an :term:`incremental serializer` using the :mod:`json` module.
 
-* ``PickleSerializer``: a :term:`one-shot serializer` using the :py:mod:`pickle` module.
+* ``PickleSerializer``: a :term:`one-shot serializer` using the :mod:`pickle` module.
 
 * ``StringLineSerializer``: an :term:`incremental serializer` for communication based on ASCII character strings (e.g. `FTP`_).
 
@@ -55,8 +56,8 @@ For communication via TCP, a ``StreamProtocol`` object must be created.
    Another advantage is that the :term:`serializer` (and :term:`converter`, if any) can be configured in a single place in the project.
 
 
-Step 2: The server
-------------------
+The server
+----------
 
 Now that we have established the :term:`communication protocol`, we can create our server.
 
@@ -76,7 +77,7 @@ Its ``bad_request()`` method must also be overridden to handle parsing errors.
 
    Pay attention to ``handle()``, it is an :std:term:`asynchronous generator` function.
 
-   All requests sent by a client are literally injected into the generator via the :ref:`yield <yield>` statement.
+   All requests sent by a client are literally injected into the generator via the :keyword:`yield` statement.
 
    .. literalinclude:: ../_include/examples/tutorials/echo_client_server_tcp/echo_request_handler.py
       :lines: 15-16
@@ -84,7 +85,7 @@ Its ``bad_request()`` method must also be overridden to handle parsing errors.
       :emphasize-lines: 2
       :dedent:
 
-   You can ``yield`` several times if you want to wait for a new packet from the client in the same context.
+   You can :keyword:`yield` several times if you want to wait for a new packet from the client in the same context.
 
 .. warning::
 
@@ -121,8 +122,8 @@ and the request handler instance.
    This means the server is ready to accept connections with IPv4 and IPv6 addresses (if available).
 
 
-Step 3: The client
-------------------
+The client
+----------
 
 This is the client side:
 

@@ -9,8 +9,8 @@ or any other format not part of the standard library.
 You choose the data format, and the library takes care of the rest.
 
 
-Works with TCP and UDP, for Internet sockets (:py:data:`socket.AF_INET` and :py:data:`socket.AF_INET6` families).
+Works with TCP and UDP, for Internet sockets (:data:`socket.AF_INET` and :data:`socket.AF_INET6` families).
 
 .. warning::
 
-   Unix sockets (:py:data:`socket.AF_UNIX` family) are expressly *not* supported.
+   Unix sockets (:data:`socket.AF_UNIX` family) are expressly *not* supported.

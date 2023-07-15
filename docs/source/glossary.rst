@@ -28,7 +28,7 @@ Glossary
       An object representing a :term:`communication protocol`. It consists of a :term:`serializer` and, optionally, a :term:`converter`.
 
    serializer
-      A serializer is the lowest layer for passing from a Python object to raw data (:py:class:`bytes`) and vice versa.
+      A serializer is the lowest layer for passing from a Python object to raw data (:class:`bytes`) and vice versa.
 
       It must have no knowledge of the object's validity with regard to the application/software logic,
       nor the meaning of data with regard to the :term:`communication protocol`.
@@ -46,7 +46,7 @@ Glossary
 
       * one-shot serializers
 
-        One-shot serializers provide the full representation of a Python object in :py:class:`bytes` **in a single function call**,
+        One-shot serializers provide the full representation of a Python object in :class:`bytes` **in a single function call**,
         and need this same full representation to recreate the object **at once**.
 
         .. note::
@@ -55,7 +55,7 @@ Glossary
 
       * incremental serializers
 
-        Incremental serializers, on the other hand, provide the full representation of the Python object in :py:class:`bytes` **part by part**,
+        Incremental serializers, on the other hand, provide the full representation of the Python object in :class:`bytes` **part by part**,
         sometimes including additional metadata used during deserialization.
 
         During deserialization, they have the ability **to know when the** :term:`packet` **is complete** (and wait if incomplete)
