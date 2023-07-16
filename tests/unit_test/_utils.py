@@ -19,7 +19,7 @@ class DummyLock:
     def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None) -> None:
         self.release()
 
-    def acquire(self, blocking: bool = True, timeout: float = 0) -> bool:
+    def acquire(self, blocking: bool = True, timeout: float = -1) -> bool:
         return True
 
     def release(self) -> None:
