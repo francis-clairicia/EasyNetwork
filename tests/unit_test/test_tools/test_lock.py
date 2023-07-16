@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 
 from easynetwork.tools.lock import ForkSafeLock
 
+import pytest
+
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
 
@@ -14,7 +16,17 @@ if TYPE_CHECKING:
 
 
 class TestForkSafeLock:
-    def test____dunder_init____create_threading_RLock_by_default(self) -> None:
+    @pytest.fixture(scope="class")
+    @staticmethod
+    def RLock() -> type[threading.RLock]:
+        return type(threading.RLock())
+
+    @pytest.fixture(scope="class")
+    @staticmethod
+    def Lock() -> type[threading.Lock]:
+        return type(threading.Lock())
+
+    def test____dunder_init____create_threading_RLock_by_default(self, RLock: type[threading.RLock]) -> None:
         # Arrange
         safe_lock = ForkSafeLock()
 
@@ -22,9 +34,9 @@ class TestForkSafeLock:
         lock = safe_lock.get()
 
         # Assert
-        assert isinstance(lock, threading.RLock)
+        assert isinstance(lock, RLock)
 
-    def test____dunder_init____custom_lock_factory(self, mocker: MockerFixture) -> None:
+    def test____dunder_init____custom_lock_factory(self, mocker: MockerFixture, Lock: type[threading.Lock]) -> None:
         # Arrange
         lock_factory: MagicMock = mocker.MagicMock(side_effect=threading.Lock)
         safe_lock: ForkSafeLock[threading.Lock] = ForkSafeLock(lock_factory)
@@ -34,7 +46,7 @@ class TestForkSafeLock:
 
         # Assert
         lock_factory.assert_called_once_with()
-        assert isinstance(lock, threading.Lock)
+        assert isinstance(lock, Lock)
 
     def test____get____always_return_the_same_lock_object(self, mocker: MockerFixture) -> None:
         # Arrange

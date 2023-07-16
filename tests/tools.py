@@ -31,6 +31,10 @@ class TimeTest:
         self.start_time = self._perf_counter()
         return self
 
-    def __exit__(self, *args: Any) -> None:
+    def __exit__(self, exc_type: type[Exception] | None, exc_value: Exception | None, exc_tb: Any) -> None:
+        if exc_type is not None:
+            # If an exception occurred, we cannot say if this respects the execution timeout
+            return
+        assert self.start_time >= 0
         end_time = self._perf_counter()
         assert end_time - self.start_time == pytest.approx(self.expected_time, rel=self.approx)
