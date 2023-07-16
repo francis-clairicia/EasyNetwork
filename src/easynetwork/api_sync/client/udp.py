@@ -36,6 +36,7 @@ from ...tools._utils import (
     check_socket_no_ssl as _check_socket_no_ssl,
     ensure_datagram_socket_bound as _ensure_datagram_socket_bound,
     error_from_errno as _error_from_errno,
+    lock_with_timeout as _lock_with_timeout,
     retry_socket_method as _retry_socket_method,
     set_reuseport as _set_reuseport,
     validate_timeout_delay as _validate_timeout_delay,
@@ -191,7 +192,10 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         *,
         timeout: float | None = None,
     ) -> None:
-        with self.__send_lock.get(), self.__convert_socket_error():
+        with (
+            _lock_with_timeout(self.__send_lock.get(), timeout, error_message="send_packet() timed out") as timeout,
+            self.__convert_socket_error(),
+        ):
             if (socket := self.__socket) is None:
                 raise ClientClosedError("Closed client")
             if (remote_addr := self.__peer) is not None:
@@ -215,7 +219,10 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
                 del data
 
     def recv_packet_from(self, *, timeout: float | None = None) -> tuple[_ReceivedPacketT, SocketAddress]:
-        with self.__receive_lock.get(), self.__convert_socket_error():
+        with (
+            _lock_with_timeout(self.__receive_lock.get(), timeout, error_message="recv_packet() timed out") as timeout,
+            self.__convert_socket_error(),
+        ):
             if (socket := self.__socket) is None:
                 raise ClientClosedError("Closed client")
             retry_interval: float | None = self.__retry_interval

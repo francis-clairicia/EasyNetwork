@@ -23,6 +23,7 @@ __all__ = [
     "error_from_errno",
     "is_ssl_eof_error",
     "is_ssl_socket",
+    "lock_with_timeout",
     "open_listener_sockets_from_getaddrinfo_result",
     "replace_kwargs",
     "retry_socket_method",
@@ -40,6 +41,7 @@ import errno as _errno
 import os
 import selectors as _selectors
 import socket as _socket
+import threading
 import time
 import traceback
 from collections.abc import Callable, Iterable, Iterator
@@ -377,3 +379,26 @@ def recursively_clear_exception_traceback_frames(exc: BaseException) -> None:
         recursively_clear_exception_traceback_frames(exc.__context__)
     if exc.__cause__ is not exc.__context__ and exc.__cause__ is not None:
         recursively_clear_exception_traceback_frames(exc.__cause__)
+
+
+@contextlib.contextmanager
+def lock_with_timeout(
+    lock: threading.RLock | threading.Lock,
+    timeout: float | None,
+    *,
+    error_message: str = "timed out",
+) -> Iterator[float | None]:
+    if timeout is None:
+        with lock:
+            yield None
+        return
+    timeout = validate_timeout_delay(timeout, positive_check=False)
+    _start = time.perf_counter()
+    if not lock.acquire(True, timeout if timeout > 0 else 0.0):
+        raise TimeoutError(error_message)
+    try:
+        _end = time.perf_counter()
+        timeout -= _end - _start
+        yield timeout if timeout > 0 else 0.0
+    finally:
+        lock.release()

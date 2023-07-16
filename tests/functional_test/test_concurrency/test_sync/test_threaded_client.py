@@ -9,6 +9,8 @@ from easynetwork.api_sync.client.abc import AbstractNetworkClient
 
 import pytest
 
+from ....tools import TimeTest
+
 ClientType: TypeAlias = AbstractNetworkClient[str, str]
 
 
@@ -40,3 +42,23 @@ def test____recv_packet____close_while_waiting(executor: ThreadPoolExecutor, cli
 
     client.close()
     assert isinstance(recv_packet.exception(), ConnectionAbortedError)
+
+
+@pytest.mark.slow
+def test____recv_packet____lock_acquisition____timeout(executor: ThreadPoolExecutor, client: ClientType) -> None:
+    background_recv_packet = executor.submit(client.recv_packet, timeout=3)
+    while not background_recv_packet.running():
+        time.sleep(0.1)
+
+    with TimeTest(1, approx=1e-1), pytest.raises(TimeoutError):
+        client.recv_packet(timeout=1)
+
+
+@pytest.mark.slow
+def test____recv_packet____lock_acquisition____timeout_reduced(executor: ThreadPoolExecutor, client: ClientType) -> None:
+    background_recv_packet = executor.submit(client.recv_packet, timeout=1)
+    while not background_recv_packet.running():
+        time.sleep(0.1)
+
+    with TimeTest(3, approx=1e-1), pytest.raises(TimeoutError):
+        client.recv_packet(timeout=3)

@@ -19,7 +19,14 @@ if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
 from ...base import UNSUPPORTED_FAMILIES
-from .base import BaseTestClient
+from .base import BaseTestClient, dummy_lock_with_timeout
+
+
+@pytest.fixture(autouse=True, scope="module")
+def patch_lock_with_timeout(module_mocker: MockerFixture) -> None:
+    module = UDPNetworkEndpoint.__module__
+
+    module_mocker.patch(f"{module}._lock_with_timeout", new=dummy_lock_with_timeout)
 
 
 class TestUDPNetworkEndpoint(BaseTestClient):

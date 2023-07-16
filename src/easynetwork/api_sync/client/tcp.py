@@ -44,6 +44,7 @@ from ...tools._utils import (
     concatenate_chunks as _concatenate_chunks,
     error_from_errno as _error_from_errno,
     is_ssl_eof_error as _is_ssl_eof_error,
+    lock_with_timeout as _lock_with_timeout,
     replace_kwargs as _replace_kwargs,
     retry_socket_method as _retry_socket_method,
     retry_ssl_socket_method as _retry_ssl_socket_method,
@@ -293,7 +294,10 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                     socket.close()
 
     def send_packet(self, packet: _SentPacketT, *, timeout: float | None = None) -> None:
-        with self.__send_lock.get(), self.__convert_socket_error():
+        with (
+            _lock_with_timeout(self.__send_lock.get(), timeout, error_message="send_packet() timed out") as timeout,
+            self.__convert_socket_error(),
+        ):
             socket = self.__ensure_connected()
             data: bytes = _concatenate_chunks(self.__producer(packet))
             buffer = memoryview(data)
@@ -323,7 +327,10 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 del buffer, data
 
     def recv_packet(self, *, timeout: float | None = None) -> _ReceivedPacketT:
-        with self.__receive_lock.get(), self.__convert_socket_error():
+        with (
+            _lock_with_timeout(self.__receive_lock.get(), timeout, error_message="recv_packet() timed out") as timeout,
+            self.__convert_socket_error(),
+        ):
             consumer = self.__consumer
             try:
                 return next(consumer)  # If there is enough data from last call to create a packet, return immediately

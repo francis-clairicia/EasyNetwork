@@ -4,6 +4,7 @@ import math
 import os
 import selectors
 import ssl
+import threading
 from collections.abc import Callable, Sequence
 from socket import (
     AF_INET,
@@ -30,6 +31,7 @@ from easynetwork.tools._utils import (
     is_ssl_eof_error,
     is_ssl_socket,
     iter_bytes,
+    lock_with_timeout,
     open_listener_sockets_from_getaddrinfo_result,
     recursively_clear_exception_traceback_frames,
     replace_kwargs,
@@ -769,3 +771,51 @@ def test____recursively_clear_exception_traceback_frames____exception_with_conte
         mocker.call(exception.__context__.__context__.__traceback__),
         mocker.call(exception.__cause__.__traceback__),
     ]
+
+
+def test____lock_with_timeout____acquire_and_release_with_timeout_at_None() -> None:
+    # Arrange
+    lock = threading.Lock()
+
+    # Act & Assert
+    assert not lock.locked()
+    with lock_with_timeout(lock, None) as timeout:
+        assert timeout is None
+        assert lock.locked()
+    assert not lock.locked()
+
+
+def test____lock_with_timeout____acquire_and_release_with_timeout_value() -> None:
+    # Arrange
+    lock = threading.Lock()
+
+    # Act & Assert
+    assert not lock.locked()
+    with lock_with_timeout(lock, 1.0) as timeout:
+        assert timeout is not None and timeout == pytest.approx(1.0, rel=1e-1)
+        assert lock.locked()
+    assert not lock.locked()
+
+
+def test____lock_with_timeout____acquire_and_release_with_timeout_value____timeout_error() -> None:
+    # Arrange
+    lock = threading.Lock()
+
+    # Act & Assert
+    lock.acquire()
+    assert lock.locked()
+    with pytest.raises(TimeoutError):
+        with lock_with_timeout(lock, 1.0):
+            pytest.fail("This should timeout.")
+
+
+def test____lock_with_timeout____acquire_and_release_with_timeout_value____null_timeout() -> None:
+    # Arrange
+    lock = threading.Lock()
+
+    # Act & Assert
+    lock.acquire()
+    assert lock.locked()
+    with pytest.raises(TimeoutError):
+        with lock_with_timeout(lock, 0):
+            pytest.fail("This should timeout.")
