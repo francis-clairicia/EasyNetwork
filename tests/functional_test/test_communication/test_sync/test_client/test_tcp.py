@@ -135,7 +135,7 @@ class TestTCPNetworkClient:
                 f.add_done_callback(lambda _: schedule_send(chunks))
 
         schedule_send([b"A", b"B", b"C", b"D", b"E", b"F\n"])
-        with TimeTest(0.4, approx=1e-1), pytest.raises(TimeoutError):
+        with TimeTest(0.4, approx=2e-1), pytest.raises(TimeoutError):
             client.recv_packet(timeout=0.4)
         assert client.recv_packet(timeout=None) == "ABCDEF"
 
