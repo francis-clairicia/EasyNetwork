@@ -21,7 +21,7 @@ else:
     _ssl_module = _ssl
     del _ssl
 
-from ...exceptions import ClientClosedError, StreamProtocolParseError
+from ...exceptions import ClientClosedError
 from ...protocol import StreamProtocol
 from ...tools._utils import (
     check_real_socket_state as _check_real_socket_state,
@@ -214,22 +214,30 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
 
     async def wait_connected(self) -> None:
         if self.__socket is None:
-            if self.__socket_connector is None:
+            socket_connector = self.__socket_connector
+            if socket_connector is None:
                 raise ClientClosedError("Client is closing, or is already closed")
-            self.__socket = await self.__socket_connector.run()
+            socket = await socket_connector.run()
+            if self.__socket_connector is None:  # wait_connected() or aclose() called in concurrency
+                return await self.__backend.cancel_shielded_coro_yield()
+            self.__socket = socket
             self.__socket_connector = None
         if self.__info is None:
-            socket_proxy = SocketProxy(self.__socket.socket())
-            _check_socket_family(socket_proxy.family)
-            local_address: SocketAddress = new_socket_address(self.__socket.get_local_address(), socket_proxy.family)
-            remote_address: SocketAddress = new_socket_address(self.__socket.get_remote_address(), socket_proxy.family)
-            self.__info = {
-                "proxy": socket_proxy,
-                "local_address": local_address,
-                "remote_address": remote_address,
-            }
-            _set_tcp_nodelay(socket_proxy)
-            _set_tcp_keepalive(socket_proxy)
+            self.__info = self.__build_info_dict(self.__socket)
+            _set_tcp_nodelay(self.__info["proxy"])
+            _set_tcp_keepalive(self.__info["proxy"])
+
+    @staticmethod
+    def __build_info_dict(socket: AbstractAsyncStreamSocketAdapter) -> _ClientInfo:
+        socket_proxy = SocketProxy(socket.socket())
+        _check_socket_family(socket_proxy.family)
+        local_address: SocketAddress = new_socket_address(socket.get_local_address(), socket_proxy.family)
+        remote_address: SocketAddress = new_socket_address(socket.get_remote_address(), socket_proxy.family)
+        return {
+            "proxy": socket_proxy,
+            "local_address": local_address,
+            "remote_address": remote_address,
+        }
 
     def is_connected(self) -> bool:
         return self.__socket is not None and self.__info is not None
@@ -267,9 +275,8 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         async with self.__receive_lock:
             with self.__convert_socket_error():
                 consumer = self.__consumer
-                next_packet = self.__next_packet
                 try:
-                    return next_packet(consumer)  # If there is enough data from last call to create a packet, return immediately
+                    return next(consumer)  # If there is enough data from last call to create a packet, return immediately
                 except StopIteration:
                     pass
                 socket = await self.__ensure_connected()
@@ -284,20 +291,11 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
                     finally:
                         del chunk
                     try:
-                        return next_packet(consumer)
+                        return next(consumer)
                     except StopIteration:
                         pass
                     # Attempt failed, wait for one iteration
                     await backend.coro_yield()
-
-    @staticmethod
-    def __next_packet(consumer: StreamDataConsumer[_ReceivedPacketT]) -> _ReceivedPacketT:
-        try:
-            return next(consumer)
-        except (StopIteration, StreamProtocolParseError):
-            raise
-        except Exception as exc:  # pragma: no cover
-            raise RuntimeError(str(exc)) from exc
 
     def get_local_address(self) -> SocketAddress:
         if self.__info is None:

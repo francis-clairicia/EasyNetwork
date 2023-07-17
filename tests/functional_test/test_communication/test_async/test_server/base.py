@@ -36,3 +36,12 @@ class BaseTestAsyncServer:
         await server.server_close()
         with pytest.raises(ServerClosedError):
             await server.serve_forever()
+
+    async def test____serve_forever____concurrent_shutdown(
+        self,
+        server: AbstractAsyncNetworkServer,
+        run_server: asyncio.Event,
+    ) -> None:
+        await run_server.wait()
+
+        await asyncio.gather(*[server.shutdown() for _ in range(10)])

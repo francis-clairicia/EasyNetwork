@@ -129,6 +129,9 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
     async def shutdown(self) -> None:
         self.__stop_mainloop()
+        if self.__shutdown_asked:
+            await self.__is_shutdown.wait()
+            return
         self.__shutdown_asked = True
         try:
             await self.__is_shutdown.wait()
@@ -337,9 +340,6 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
     def get_backend(self) -> AbstractAsyncBackend:
         return self.__backend
-
-    def get_protocol(self) -> DatagramProtocol[_ResponseT, _RequestT]:
-        return self.__protocol
 
     @property
     def socket(self) -> SocketProxy | None:
