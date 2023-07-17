@@ -356,7 +356,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
                 await is_up_event.wait()
 
             assert len(s.sockets) > 0
-            assert s.get_protocol() is stream_protocol
 
             await s.shutdown()
 

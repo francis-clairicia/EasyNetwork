@@ -133,25 +133,33 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
 
     async def wait_bound(self) -> None:
         if self.__socket is None:
-            if self.__socket_builder is None:
+            socket_builder = self.__socket_builder
+            if socket_builder is None:
                 raise ClientClosedError("Client is closing, or is already closed")
-            self.__socket = await self.__socket_builder.run()
+            socket = await socket_builder.run()
+            if self.__socket_builder is None:  # wait_bound() or aclose() called in concurrency
+                return await self.__backend.cancel_shielded_coro_yield()
+            self.__socket = socket
             self.__socket_builder = None
         if self.__info is None:
-            socket_proxy = SocketProxy(self.__socket.socket())
-            _check_socket_family(socket_proxy.family)
-            local_address: SocketAddress = new_socket_address(self.__socket.get_local_address(), socket_proxy.family)
-            assert local_address.port > 0, f"{self.__socket} is not bound to a local address"
-            remote_address: SocketAddress | None
-            if (peername := self.__socket.get_remote_address()) is not None:
-                remote_address = new_socket_address(peername, socket_proxy.family)
-            else:
-                remote_address = None
-            self.__info = {
-                "proxy": socket_proxy,
-                "local_address": local_address,
-                "remote_address": remote_address,
-            }
+            self.__info = self.__build_info_dict(self.__socket)
+
+    @staticmethod
+    def __build_info_dict(socket: AbstractAsyncDatagramSocketAdapter) -> _EndpointInfo:
+        socket_proxy = SocketProxy(socket.socket())
+        _check_socket_family(socket_proxy.family)
+        local_address: SocketAddress = new_socket_address(socket.get_local_address(), socket_proxy.family)
+        assert local_address.port > 0, f"{socket} is not bound to a local address"
+        remote_address: SocketAddress | None
+        if (peername := socket.get_remote_address()) is None:
+            remote_address = None
+        else:
+            remote_address = new_socket_address(peername, socket_proxy.family)
+        return {
+            "proxy": socket_proxy,
+            "local_address": local_address,
+            "remote_address": remote_address,
+        }
 
     @final
     def is_closing(self) -> bool:

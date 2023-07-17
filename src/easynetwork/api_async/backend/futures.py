@@ -72,6 +72,7 @@ class AsyncThreadPoolExecutor(AsyncExecutor):
         thread_name_prefix: str = ...,
         initializer: Callable[..., object] | None = ...,
         initargs: tuple[Any, ...] = ...,
+        **kwargs: Any,
     ) -> None:
         ...
 
