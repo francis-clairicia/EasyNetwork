@@ -88,7 +88,8 @@ class EchoRequestHandler(AsyncBaseRequestHandler[RequestType, ResponseType]):
 
     async def bad_request(self, client: AsyncClientInterface[ResponseType], exc: BaseProtocolParseError) -> None:
         # Invalid JSON data sent
-        await client.send_packet({"data": {"error": "Invalid JSON", "code": "parse_error"}})
+        # This is an example of how you can answer to an invalid request
+        await client.send_packet({"error": "Invalid JSON", "code": "parse_error"})
 
 
 def main() -> None:
@@ -125,8 +126,8 @@ class JSONProtocol(StreamProtocol[Any, Any]):
 def main() -> None:
     with TCPNetworkClient(("localhost", 9000), JSONProtocol()) as client:
         client.send_packet({"data": {"my_body": ["as json"]}})
-        response = client.recv_packet()  # response will be a JSON
-        print(response["data"])  # prints {'my_body': ['as json']}
+        response = client.recv_packet()  # response should be the sent dictionary
+        print(response)  # prints {'data': {'my_body': ['as json']}}
 
 
 if __name__ == "__main__":
@@ -153,8 +154,8 @@ class JSONProtocol(StreamProtocol[Any, Any]):
 async def main() -> None:
     async with AsyncTCPNetworkClient(("localhost", 9000), JSONProtocol()) as client:
         await client.send_packet({"data": {"my_body": ["as json"]}})
-        response = await client.recv_packet()  # response will be a JSON
-        print(response["data"])  # prints {'my_body': ['as json']}
+        response = await client.recv_packet()  # response should be the sent dictionary
+        print(response)  # prints {'data': {'my_body': ['as json']}}
 
 
 if __name__ == "__main__":
