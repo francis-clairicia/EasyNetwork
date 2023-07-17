@@ -194,6 +194,9 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         if self.__mainloop_task is not None:
             self.__mainloop_task.cancel()
             self.__mainloop_task = None
+        if self.__shutdown_asked:
+            await self.__is_shutdown.wait()
+            return
         self.__shutdown_asked = True
         try:
             await self.__is_shutdown.wait()
@@ -433,9 +436,6 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
     def get_backend(self) -> AbstractAsyncBackend:
         return self.__backend
-
-    def get_protocol(self) -> StreamProtocol[_ResponseT, _RequestT]:
-        return self.__protocol
 
     @property
     def sockets(self) -> Sequence[SocketProxy]:

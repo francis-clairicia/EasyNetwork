@@ -271,7 +271,14 @@ class TestAsyncTCPNetworkClientConnection:
         stream_protocol: StreamProtocol[str, str],
         backend_kwargs: dict[str, Any],
     ) -> None:
-        async with AsyncTCPNetworkClient(remote_address, stream_protocol, backend_kwargs=backend_kwargs) as client:
+        async with contextlib.aclosing(
+            AsyncTCPNetworkClient(
+                remote_address,
+                stream_protocol,
+                backend_kwargs=backend_kwargs,
+            ),
+        ) as client:
+            assert not client.is_connected()
             await client.wait_connected()
             assert client.is_connected()
             await client.wait_connected()
@@ -283,11 +290,14 @@ class TestAsyncTCPNetworkClientConnection:
         stream_protocol: StreamProtocol[str, str],
         backend_kwargs: dict[str, Any],
     ) -> None:
-        async with AsyncTCPNetworkClient(remote_address, stream_protocol, backend_kwargs=backend_kwargs) as client:
-            async with asyncio.TaskGroup() as task_group:
-                _ = task_group.create_task(client.wait_connected())
-                _ = task_group.create_task(client.wait_connected())
-                await asyncio.sleep(0)
+        async with contextlib.aclosing(
+            AsyncTCPNetworkClient(
+                remote_address,
+                stream_protocol,
+                backend_kwargs=backend_kwargs,
+            ),
+        ) as client:
+            await asyncio.gather(*[client.wait_connected() for _ in range(5)])
             assert client.is_connected()
 
     async def test____wait_connected____is_closing____connection_not_performed_yet(

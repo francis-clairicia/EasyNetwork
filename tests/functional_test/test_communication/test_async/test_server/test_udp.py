@@ -242,7 +242,6 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
                 await is_up_event.wait()
 
             assert s.socket is not None
-            assert s.get_protocol() is datagram_protocol
 
             await s.shutdown()
 
