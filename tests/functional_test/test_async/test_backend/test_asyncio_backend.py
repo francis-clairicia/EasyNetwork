@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 from concurrent.futures import CancelledError as FutureCancelledError, Future
 
 from easynetwork.api_async.backend.factory import AsyncBackendFactory
 from easynetwork_asyncio.backend import AsyncioBackend
 
 import pytest
+
+cvar_for_test: contextvars.ContextVar[str] = contextvars.ContextVar("cvar_for_test", default="")
 
 
 @pytest.mark.asyncio
@@ -235,6 +238,21 @@ class TestAsyncioBackend:
             assert outer_task.cancelled()
             assert not inner_task.cancelled()
             assert await inner_task.join() == 42
+
+    async def test____create_task_group____start_soon_with_context(
+        self,
+        backend: AsyncioBackend,
+    ) -> None:
+        async def coroutine(value: str) -> None:
+            cvar_for_test.set(value)
+
+        async with backend.create_task_group() as task_group:
+            cvar_for_test.set("something")
+            ctx = contextvars.copy_context()
+            task = task_group.start_soon_with_context(ctx, coroutine, value="other")
+            await task.wait()
+            assert cvar_for_test.get() == "something"
+            assert ctx.run(cvar_for_test.get) == "other"
 
     async def test____wait_future____wait_until_done(
         self,
