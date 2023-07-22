@@ -159,6 +159,48 @@ class TestAsyncioBackend:
         with pytest.raises(asyncio.CancelledError):
             await sleep_task
 
+    async def test____spawn_task____run_coroutine_in_background(
+        self,
+        backend: AsyncioBackend,
+    ) -> None:
+        async def coroutine(value: int) -> int:
+            return await asyncio.sleep(0.5, value)
+
+        task = backend.spawn_task(coroutine, 42)
+        await asyncio.sleep(1)
+        assert task.done()
+        assert await task.join() == 42
+
+    async def test____spawn_task____task_cancellation(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        backend: AsyncioBackend,
+    ) -> None:
+        async def coroutine(value: int) -> int:
+            return await asyncio.sleep(0.5, value)
+
+        task = backend.spawn_task(coroutine, 42)
+
+        event_loop.call_later(0.2, task.cancel)
+
+        with pytest.raises(asyncio.CancelledError):
+            await task.join()
+
+        assert task.cancelled()
+
+    async def test____spawn_task____exception(
+        self,
+        backend: AsyncioBackend,
+    ) -> None:
+        async def coroutine(value: int) -> int:
+            await asyncio.sleep(0.1)
+            raise ZeroDivisionError
+
+        task = backend.spawn_task(coroutine, 42)
+
+        with pytest.raises(ZeroDivisionError):
+            await task.join()
+
     async def test____create_task_group____task_pool(
         self,
         backend: AsyncioBackend,
