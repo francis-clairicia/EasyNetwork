@@ -53,6 +53,7 @@ class SingleTaskRunner(Generic[_T_co]):
         return True
 
     async def run(self) -> _T_co:
+        must_cancel_inner_task: bool = False
         if self.__task is None:
             if self.__coro_func is None:
                 self.__task = self.__backend.spawn_task(self.__backend.sleep_forever)
@@ -62,8 +63,14 @@ class SingleTaskRunner(Generic[_T_co]):
                 self.__coro_func = None
                 self.__task = self.__backend.spawn_task(coro_func, *args, **kwargs)
                 del coro_func, args, kwargs
+                must_cancel_inner_task = True
 
         try:
             return await self.__task.join()
+        except self.__backend.get_cancelled_exc_class():
+            if must_cancel_inner_task:
+                self.__task.cancel()
+                await self.__task.wait()
+            raise
         finally:
             del self  # Avoid circular reference with raised exception (if any)
