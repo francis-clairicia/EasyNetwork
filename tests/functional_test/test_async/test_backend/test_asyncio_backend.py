@@ -40,8 +40,10 @@ class TestAsyncioBackend:
         assert not task.cancelled()
         assert task.cancelling() == 2
 
+    @pytest.mark.parametrize("cancel_message", ["something", None], ids=lambda p: f"cancel_message=={p!r}")
     async def test____cancel_shielded_coro_yield____cancel_at_the_next_checkpoint(
         self,
+        cancel_message: str | None,
         event_loop: asyncio.AbstractEventLoop,
         backend: AsyncioBackend,
     ) -> None:
@@ -59,13 +61,17 @@ class TestAsyncioBackend:
         await asyncio.sleep(0)
 
         for _ in range(3):
-            task.cancel()
+            task.cancel(msg=cancel_message)
 
-        with pytest.raises(asyncio.CancelledError):
+        with pytest.raises(asyncio.CancelledError) as exc_info:
             await task
         assert task.cancelled()
         assert task.cancelling() == 3
         assert test_list == ["a", "b"]
+        if cancel_message is None:
+            assert exc_info.value.args == ()
+        else:
+            assert exc_info.value.args == (cancel_message,)
 
     async def test____ignore_cancellation____always_continue_on_cancellation(
         self,

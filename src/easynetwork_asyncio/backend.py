@@ -79,11 +79,16 @@ class AsyncioBackend(AbstractAsyncBackend):
         current_task: asyncio.Task[Any] = self._current_asyncio_task()
         try:
             await asyncio.sleep(0)
-        except asyncio.CancelledError:
+        except asyncio.CancelledError as exc:
+            msg: str | None
+            if exc.args:
+                msg = exc.args[0]
+            else:
+                msg = None
             # uncancel so the Task object is aware we have explicitly caught the exception...
             current_task.uncancel()
             # ...but cancel it again so the next step will throw a CancelledError
-            current_task.get_loop().call_soon(current_task.cancel)
+            current_task.get_loop().call_soon(current_task.cancel, msg)
         finally:
             del current_task
 
