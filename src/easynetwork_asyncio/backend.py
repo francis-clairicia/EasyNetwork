@@ -38,7 +38,7 @@ from .datagram.endpoint import create_datagram_endpoint
 from .datagram.socket import AsyncioTransportDatagramSocketAdapter, RawDatagramSocketAdapter
 from .stream.listener import AcceptedSocket, AcceptedSSLSocket, ListenerSocketAdapter
 from .stream.socket import AsyncioTransportStreamSocketAdapter, RawStreamSocketAdapter
-from .tasks import TaskGroup, timeout, timeout_at
+from .tasks import Task, TaskGroup, timeout, timeout_at
 from .threads import ThreadsPortal
 
 if TYPE_CHECKING:
@@ -77,13 +77,18 @@ class AsyncioBackend(AbstractAsyncBackend):
 
     async def cancel_shielded_coro_yield(self) -> None:
         current_task: asyncio.Task[Any] = self._current_asyncio_task()
-        cancelling: int = current_task.cancelling()
         try:
             await asyncio.sleep(0)
-        except asyncio.CancelledError:
-            assert current_task.cancelling() > cancelling
-            while current_task.uncancel() > cancelling:
-                continue
+        except asyncio.CancelledError as exc:
+            msg: str | None
+            if exc.args:
+                msg = exc.args[0]
+            else:
+                msg = None
+            # uncancel so the Task object is aware we have explicitly caught the exception...
+            current_task.uncancel()
+            # ...but cancel it again so the next step will throw a CancelledError
+            current_task.get_loop().call_soon(current_task.cancel, msg)
         finally:
             del current_task
 
@@ -136,6 +141,15 @@ class AsyncioBackend(AbstractAsyncBackend):
         loop = asyncio.get_running_loop()
         await loop.create_future()
         raise AssertionError("await an unused future cannot end in any other way than by cancellation")
+
+    def spawn_task(
+        self,
+        coro_func: Callable[_P, Coroutine[Any, Any, _T]],
+        /,
+        *args: _P.args,
+        **kwargs: _P.kwargs,
+    ) -> Task[_T]:
+        return Task(asyncio.create_task(coro_func(*args, **kwargs)))
 
     def create_task_group(self) -> TaskGroup:
         return TaskGroup()

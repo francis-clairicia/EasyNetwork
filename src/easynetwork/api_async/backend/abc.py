@@ -321,6 +321,16 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         return await self.sleep(max(deadline - self.current_time(), 0))
 
     @abstractmethod
+    def spawn_task(
+        self,
+        coro_func: Callable[_P, Coroutine[Any, Any, _T]],
+        /,
+        *args: _P.args,
+        **kwargs: _P.kwargs,
+    ) -> AbstractTask[_T]:
+        raise NotImplementedError
+
+    @abstractmethod
     def create_task_group(self) -> AbstractTaskGroup:
         raise NotImplementedError
 
