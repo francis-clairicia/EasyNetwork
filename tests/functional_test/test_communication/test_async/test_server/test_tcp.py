@@ -200,13 +200,23 @@ class InitialHandshakeRequestHandler(AsyncStreamRequestHandler[str, str]):
         pass
 
 
-class InvalidRequestHandler(AsyncStreamRequestHandler[str, str]):
+class RequestRefusedHandler(AsyncStreamRequestHandler[str, str]):
+    refuse_after: int = 2**64
+
+    async def service_init(self) -> None:
+        self.request_count: collections.Counter[AsyncClientInterface[str]] = collections.Counter()
+
     async def on_connection(self, client: AsyncClientInterface[str]) -> None:
         await client.send_packet("milk")
 
+    async def on_disconnection(self, client: AsyncClientInterface[str]) -> None:
+        self.request_count.pop(client, None)
+
     async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
-        return
-        request = yield  # type: ignore[unreachable]
+        if self.request_count[client] >= self.refuse_after:
+            return
+        request = yield
+        self.request_count[client] += 1
         await client.send_packet(request)
 
     async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError, /) -> None:
@@ -231,6 +241,19 @@ class ErrorInBadRequestHandler(AsyncStreamRequestHandler[str, str]):
 
     async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError, /) -> None:
         raise RandomError("An error occurred")
+
+
+class ErrorBeforeYieldHandler(AsyncStreamRequestHandler[str, str]):
+    async def on_connection(self, client: AsyncClientInterface[str]) -> None:
+        await client.send_packet("milk")
+
+    async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
+        raise RandomError("An error occurred")
+        request = yield  # type: ignore[unreachable]
+        await client.send_packet(request)
+
+    async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError, /) -> None:
+        pass
 
 
 class MyAsyncTCPServer(AsyncTCPNetworkServer[str, str]):
@@ -725,8 +748,8 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         await asyncio.sleep(0.1)
         assert await reader.read() == b""
 
-    @pytest.mark.parametrize("request_handler", [InvalidRequestHandler], indirect=True)
-    async def test____serve_forever____request_handler_did_not_yield(
+    @pytest.mark.parametrize("request_handler", [ErrorBeforeYieldHandler], indirect=True)
+    async def test____serve_forever____request_handler_crashed_before_yield(
         self,
         caplog: pytest.LogCaptureFixture,
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
@@ -737,6 +760,28 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
 
         assert await reader.read() == b""
         assert len(caplog.records) == 3
+
+    @pytest.mark.parametrize("request_handler", [RequestRefusedHandler], indirect=True)
+    @pytest.mark.parametrize("refuse_after", [0, 5], ids=lambda p: f"refuse_after=={p}")
+    async def test____serve_forever____request_handler_did_not_yield(
+        self,
+        refuse_after: int,
+        request_handler: RequestRefusedHandler,
+        caplog: pytest.LogCaptureFixture,
+        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        server: MyAsyncTCPServer,
+    ) -> None:
+        request_handler.refuse_after = refuse_after
+        caplog.set_level(logging.ERROR, server.logger.name)
+        reader, writer = await client_factory()
+
+        for _ in range(refuse_after):
+            writer.write(b"something\n")
+            await writer.drain()
+            assert await reader.readline() == b"something\n"
+
+        assert await reader.read() == b""
+        assert len(caplog.records) == 0
 
     @pytest.mark.parametrize("request_handler", [InitialHandshakeRequestHandler], indirect=True)
     async def test____serve_forever____request_handler_on_connection_is_async_gen(

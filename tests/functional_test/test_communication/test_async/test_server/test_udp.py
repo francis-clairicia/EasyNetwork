@@ -132,10 +132,18 @@ class CancellationRequestHandler(AsyncBaseRequestHandler[str, str]):
         pass
 
 
-class InvalidRequestHandler(AsyncBaseRequestHandler[str, str]):
+class RequestRefusedHandler(AsyncBaseRequestHandler[str, str]):
+    refuse_after: int = 2**64
+    bypass_refusal: bool = False
+
+    async def service_init(self) -> None:
+        self.request_count: collections.Counter[AsyncClientInterface[str]] = collections.Counter()
+
     async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
-        return
-        request = yield  # type: ignore[unreachable]
+        if self.request_count[client] >= self.refuse_after and not self.bypass_refusal:
+            return
+        request = yield
+        self.request_count[client] += 1
         await client.send_packet(request)
 
     async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError, /) -> None:
@@ -157,6 +165,19 @@ class ErrorInBadRequestHandler(AsyncBaseRequestHandler[str, str]):
 
     async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError, /) -> None:
         raise RandomError("An error occurred")
+
+
+class ErrorBeforeYieldHandler(AsyncBaseRequestHandler[str, str]):
+    raise_error: bool = False
+
+    async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
+        if self.raise_error:
+            raise RandomError("An error occurred")
+        request = yield
+        await client.send_packet(request)
+
+    async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError, /) -> None:
+        pass
 
 
 class MyAsyncUDPServer(AsyncUDPNetworkServer[str, str]):
@@ -479,9 +500,10 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         await endpoint.sendto(b"something", None)
         assert (await endpoint.recvfrom())[0] == b"response"
 
-    @pytest.mark.parametrize("request_handler", [InvalidRequestHandler], indirect=True)
-    async def test____serve_forever____request_handler_did_not_yield(
+    @pytest.mark.parametrize("request_handler", [ErrorBeforeYieldHandler], indirect=True)
+    async def test____serve_forever____request_handler_crashed_before_yield(
         self,
+        request_handler: ErrorBeforeYieldHandler,
         caplog: pytest.LogCaptureFixture,
         client_factory: Callable[[], Awaitable[DatagramEndpoint]],
         server: MyAsyncUDPServer,
@@ -489,9 +511,43 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         caplog.set_level(logging.ERROR, server.logger.name)
         endpoint = await client_factory()
 
+        request_handler.raise_error = True
         await endpoint.sendto(b"something", None)
-        await asyncio.sleep(0.5)
+        with pytest.raises(TimeoutError):
+            async with asyncio.timeout(0.5):
+                await endpoint.recvfrom()
         assert len(caplog.records) == 3
+        request_handler.raise_error = False
+        await endpoint.sendto(b"hello world", None)
+        assert (await endpoint.recvfrom())[0] == b"hello world"
+
+    @pytest.mark.parametrize("request_handler", [RequestRefusedHandler], indirect=True)
+    @pytest.mark.parametrize("refuse_after", [0, 5], ids=lambda p: f"refuse_after=={p}")
+    async def test____serve_forever____request_handler_did_not_yield(
+        self,
+        refuse_after: int,
+        request_handler: RequestRefusedHandler,
+        caplog: pytest.LogCaptureFixture,
+        client_factory: Callable[[], Awaitable[DatagramEndpoint]],
+        server: MyAsyncUDPServer,
+    ) -> None:
+        request_handler.bypass_refusal = False
+        request_handler.refuse_after = refuse_after
+        caplog.set_level(logging.ERROR, server.logger.name)
+        endpoint = await client_factory()
+
+        for _ in range(refuse_after):
+            await endpoint.sendto(b"a", None)
+            assert (await endpoint.recvfrom())[0] == b"a"
+
+        await endpoint.sendto(b"something", None)
+        with pytest.raises(TimeoutError):
+            async with asyncio.timeout(0.5):
+                await endpoint.recvfrom()
+        assert len(caplog.records) == 0
+        request_handler.bypass_refusal = True
+        await endpoint.sendto(b"hello world", None)
+        assert (await endpoint.recvfrom())[0] == b"hello world"
 
     @pytest.mark.usefixtures("start_task_with_context")
     @pytest.mark.parametrize("request_handler", [ConcurrencyTestRequestHandler], indirect=True)
