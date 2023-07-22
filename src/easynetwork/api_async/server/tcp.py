@@ -290,6 +290,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 self.__logger.exception("Error occurred in request_handler.service_actions()")
 
     async def __listener_task(self, listener: AbstractAsyncListenerSocketAdapter, task_group: AbstractTaskGroup) -> None:
+        backend = self.__backend
         client_task = self.__client_task
         async with listener:
             while True:
@@ -304,12 +305,13 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                             ACCEPT_CAPACITY_ERROR_SLEEP_TIME,
                             exc_info=True,
                         )
-                        await self.__backend.sleep(ACCEPT_CAPACITY_ERROR_SLEEP_TIME)
+                        await backend.sleep(ACCEPT_CAPACITY_ERROR_SLEEP_TIME)
                     else:
                         raise
                 else:
                     task_group.start_soon(client_task, client_socket)
                     del client_socket
+                    await backend.coro_yield()
 
     async def __client_task(self, accepted_socket: AbstractAcceptedSocket) -> None:
         async with _contextlib.AsyncExitStack() as client_exit_stack:
@@ -368,6 +370,8 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                     return
                 if request_handler_generator is None:
                     request_handler_generator = await self.__new_request_handler(client)
+                    if request_handler_generator is None:
+                        return
                 async for request in request_receiver:
                     logger.debug("Processing request sent by %s", client.address)
                     try:
@@ -381,9 +385,11 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                         del request
                     await backend.coro_yield()
                     if client.is_closing():
-                        return
+                        break
                     if request_handler_generator is None:
                         request_handler_generator = await self.__new_request_handler(client)
+                        if request_handler_generator is None:
+                            break
             except OSError as exc:
                 try:
                     await client.aclose()
@@ -397,12 +403,12 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 if request_handler_generator is not None:
                     await request_handler_generator.aclose()
 
-    async def __new_request_handler(self, client: AsyncClientInterface[_ResponseT]) -> AsyncGenerator[None, _RequestT]:
+    async def __new_request_handler(self, client: AsyncClientInterface[_ResponseT]) -> AsyncGenerator[None, _RequestT] | None:
         request_handler_generator = self.__request_handler.handle(client)
         try:
             await anext(request_handler_generator)
         except StopAsyncIteration:
-            raise RuntimeError("request_handler.handle() async generator did not yield") from None
+            return None
         return request_handler_generator
 
     async def __throw_error(self, request_handler_generator: AsyncGenerator[None, _RequestT] | None, exc: BaseException) -> None:

@@ -34,6 +34,7 @@ __all__ = [
     "ILock",
 ]
 
+import contextvars
 import math
 from abc import ABCMeta, abstractmethod
 from collections.abc import Callable, Coroutine, Sequence
@@ -153,6 +154,16 @@ class AbstractTaskGroup(metaclass=ABCMeta):
         **kwargs: _P.kwargs,
     ) -> AbstractTask[_T]:
         raise NotImplementedError
+
+    def start_soon_with_context(
+        self,
+        context: contextvars.Context,
+        coro_func: Callable[_P, Coroutine[Any, Any, _T]],
+        /,
+        *args: _P.args,
+        **kwargs: _P.kwargs,
+    ) -> AbstractTask[_T]:
+        raise NotImplementedError("contextvars.Context management not supported by this backend")
 
 
 class AbstractThreadsPortal(metaclass=ABCMeta):

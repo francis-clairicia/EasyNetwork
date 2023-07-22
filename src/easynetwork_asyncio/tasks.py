@@ -20,6 +20,7 @@ from __future__ import annotations
 __all__ = ["Task", "TaskGroup", "TimeoutHandle", "timeout", "timeout_at"]
 
 import asyncio
+import contextvars
 import math
 from collections.abc import Callable, Coroutine
 from typing import TYPE_CHECKING, Any, ParamSpec, Self, TypeVar, final
@@ -111,6 +112,17 @@ class TaskGroup(AbstractTaskGroup):
         **kwargs: _P.kwargs,
     ) -> AbstractTask[_T]:
         return Task(self.__asyncio_tg.create_task(__coro_func(*args, **kwargs)))
+
+    def start_soon_with_context(
+        self,
+        context: contextvars.Context,
+        coro_func: Callable[_P, Coroutine[Any, Any, _T]],
+        /,
+        *args: _P.args,
+        **kwargs: _P.kwargs,
+    ) -> AbstractTask[_T]:
+        assert context is not None
+        return Task(self.__asyncio_tg.create_task(coro_func(*args, **kwargs), context=context))
 
 
 @final
