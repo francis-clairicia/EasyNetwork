@@ -77,13 +77,13 @@ class AsyncioBackend(AbstractAsyncBackend):
 
     async def cancel_shielded_coro_yield(self) -> None:
         current_task: asyncio.Task[Any] = self._current_asyncio_task()
-        cancelling: int = current_task.cancelling()
         try:
             await asyncio.sleep(0)
         except asyncio.CancelledError:
-            assert current_task.cancelling() > cancelling
-            while current_task.uncancel() > cancelling:
-                continue
+            # uncancel so the Task object is aware we have explicitly caught the exception...
+            current_task.uncancel()
+            # ...but cancel it again so the next step will throw a CancelledError
+            current_task.get_loop().call_soon(current_task.cancel)
         finally:
             del current_task
 

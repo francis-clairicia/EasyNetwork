@@ -38,6 +38,34 @@ class TestAsyncioBackend:
 
         await task
         assert not task.cancelled()
+        assert task.cancelling() == 2
+
+    async def test____cancel_shielded_coro_yield____cancel_at_the_next_checkpoint(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        backend: AsyncioBackend,
+    ) -> None:
+        test_list: list[str] = []
+
+        async def coroutine() -> None:
+            test_list.append("a")
+            await backend.cancel_shielded_coro_yield()
+            test_list.append("b")
+            await backend.coro_yield()
+            test_list.append("this should not be in the list")
+
+        task: asyncio.Task[None] = event_loop.create_task(coroutine())
+
+        await asyncio.sleep(0)
+
+        for _ in range(3):
+            task.cancel()
+
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert task.cancelled()
+        assert task.cancelling() == 3
+        assert test_list == ["a", "b"]
 
     async def test____ignore_cancellation____always_continue_on_cancellation(
         self,
