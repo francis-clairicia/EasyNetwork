@@ -283,6 +283,9 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                     # In case of failure, deque the 1st datagram; it must not be handled
                     del datagram_queue[0]
                     raise
+                if request_handler_generator is None:
+                    del datagram_queue[0]
+                    return
                 try:
                     while True:
                         if not datagram_queue:
@@ -327,12 +330,12 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                     if request_handler_generator is not None:
                         await request_handler_generator.aclose()
 
-    async def __new_request_handler(self, client: AsyncClientInterface[_ResponseT]) -> AsyncGenerator[None, _RequestT]:
+    async def __new_request_handler(self, client: AsyncClientInterface[_ResponseT]) -> AsyncGenerator[None, _RequestT] | None:
         request_handler_generator = self.__request_handler.handle(client)
         try:
             await anext(request_handler_generator)
         except StopAsyncIteration:
-            raise RuntimeError("request_handler.handle() async generator did not yield") from None
+            return None
         return request_handler_generator
 
     async def __throw_error(self, request_handler_generator: AsyncGenerator[None, _RequestT] | None, exc: BaseException) -> None:
