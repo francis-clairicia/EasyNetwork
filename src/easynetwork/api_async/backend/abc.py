@@ -117,6 +117,10 @@ class AbstractTask(Generic[_T_co], metaclass=ABCMeta):
     async def join(self) -> _T_co:
         raise NotImplementedError
 
+    @abstractmethod
+    async def join_or_cancel(self) -> _T_co:
+        raise NotImplementedError
+
 
 class AbstractTaskGroup(metaclass=ABCMeta):
     __slots__ = ("__weakref__",)

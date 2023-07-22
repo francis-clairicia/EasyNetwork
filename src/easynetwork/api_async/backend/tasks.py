@@ -66,11 +66,9 @@ class SingleTaskRunner(Generic[_T_co]):
                 must_cancel_inner_task = True
 
         try:
-            return await self.__task.join()
-        except self.__backend.get_cancelled_exc_class():
             if must_cancel_inner_task:
-                self.__task.cancel()
-                await self.__task.wait()
-            raise
+                return await self.__task.join_or_cancel()
+            else:
+                return await self.__task.join()
         finally:
             del self  # Avoid circular reference with raised exception (if any)
