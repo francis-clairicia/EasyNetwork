@@ -107,6 +107,21 @@ class TimeoutRequestHandler(AsyncBaseRequestHandler[str, str]):
         pass
 
 
+class ConcurrencyTestRequestHandler(AsyncBaseRequestHandler[str, str]):
+    sleep_time_before_second_yield: float = 0.0
+    sleep_time_before_response: float = 0.0
+
+    async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
+        assert (yield) == "something"
+        await asyncio.sleep(self.sleep_time_before_second_yield)
+        request = yield
+        await asyncio.sleep(self.sleep_time_before_response)
+        await client.send_packet(f"After wait: {request}")
+
+    async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError, /) -> None:
+        pass
+
+
 class CancellationRequestHandler(AsyncBaseRequestHandler[str, str]):
     async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
         yield
@@ -226,6 +241,25 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
                 return endpoint
 
             yield factory
+
+    @pytest.fixture(
+        params=[
+            pytest.param(True, id="TaskGroup.start_soon_with_context available"),
+            pytest.param(False, id="TaskGroup.start_soon_with_context unavailable"),
+        ]
+    )
+    @staticmethod
+    def start_task_with_context(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+        match getattr(request, "param"):
+            case True:
+                pass
+            case False:
+                from easynetwork.api_async.backend.abc import AbstractTaskGroup
+                from easynetwork_asyncio.tasks import TaskGroup
+
+                monkeypatch.setattr(TaskGroup, "start_soon_with_context", AbstractTaskGroup.start_soon_with_context)
+            case invalid_param:
+                pytest.fail(f"Invalid param: {invalid_param!r}")
 
     @pytest.mark.parametrize("host", [None, ""], ids=repr)
     async def test____dunder_init____bind_on_all_available_interfaces(
@@ -458,3 +492,38 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         await endpoint.sendto(b"something", None)
         await asyncio.sleep(0.5)
         assert len(caplog.records) == 3
+
+    @pytest.mark.usefixtures("start_task_with_context")
+    @pytest.mark.parametrize("request_handler", [ConcurrencyTestRequestHandler], indirect=True)
+    async def test____serve_forever____datagram_while_request_handle_is_performed(
+        self,
+        request_handler: ConcurrencyTestRequestHandler,
+        client_factory: Callable[[], Awaitable[DatagramEndpoint]],
+    ) -> None:
+        request_handler.sleep_time_before_second_yield = 0.5
+        endpoint = await client_factory()
+
+        await endpoint.sendto(b"something", None)
+        await endpoint.sendto(b"hello, world.", None)
+        async with asyncio.timeout(1):
+            assert (await endpoint.recvfrom())[0] == b"After wait: hello, world."
+
+    @pytest.mark.usefixtures("start_task_with_context")
+    @pytest.mark.parametrize("request_handler", [ConcurrencyTestRequestHandler], indirect=True)
+    async def test____serve_forever____too_many_datagrams_while_request_handle_is_performed(
+        self,
+        request_handler: ConcurrencyTestRequestHandler,
+        client_factory: Callable[[], Awaitable[DatagramEndpoint]],
+    ) -> None:
+        request_handler.sleep_time_before_response = 0.5
+        endpoint = await client_factory()
+
+        await endpoint.sendto(b"something", None)
+        await asyncio.sleep(0.1)
+        await endpoint.sendto(b"hello, world.", None)
+        await endpoint.sendto(b"something", None)
+        await asyncio.sleep(0.1)
+        await endpoint.sendto(b"hello, world. new game +", None)
+        async with asyncio.timeout(1):
+            assert (await endpoint.recvfrom())[0] == b"After wait: hello, world."
+            assert (await endpoint.recvfrom())[0] == b"After wait: hello, world. new game +"
