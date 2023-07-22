@@ -64,23 +64,22 @@ class SingleTaskRunner(Generic[_T_co]):
         return True
 
     async def run(self) -> _T_co:
-        if self.__task is not None:
-            return await self.__task.join()
+        must_cancel_inner_task: bool = False
+        if self.__task is None:
+            if self.__coro_func is None:
+                self.__task = self.__backend.spawn_task(self.__backend.sleep_forever)
+                self.__task.cancel()
+            else:
+                coro_func, args, kwargs = self.__coro_func
+                self.__coro_func = None
+                self.__task = self.__backend.spawn_task(coro_func, *args, **kwargs)
+                del coro_func, args, kwargs
+                must_cancel_inner_task = True
 
         try:
-            async with self.__backend.create_task_group() as task_group:
-                if self.__coro_func is None:
-                    self.__task = task_group.start_soon(self.__backend.sleep_forever)
-                    self.__task.cancel()
-                else:
-                    coro_func, args, kwargs = self.__coro_func
-                    self.__coro_func = None
-                    self.__task = task_group.start_soon(coro_func, *args, **kwargs)
-                    del coro_func, args, kwargs
-        except BaseExceptionGroup as excgrp:
-            if len(excgrp.exceptions) != 1:  # pragma: no cover  # Hard to test
-                raise
-            # This is most likely the unhandled exception raised by coro_func
-            raise excgrp.exceptions[0] from None
-
-        return await self.__task.join()
+            if must_cancel_inner_task:
+                return await self.__task.join_or_cancel()
+            else:
+                return await self.__task.join()
+        finally:
+            del self  # Avoid circular reference with raised exception (if any)

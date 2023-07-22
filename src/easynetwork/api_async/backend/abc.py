@@ -128,6 +128,10 @@ class AbstractTask(Generic[_T_co], metaclass=ABCMeta):
     async def join(self) -> _T_co:
         raise NotImplementedError
 
+    @abstractmethod
+    async def join_or_cancel(self) -> _T_co:
+        raise NotImplementedError
+
 
 class AbstractTaskGroup(metaclass=ABCMeta):
     __slots__ = ("__weakref__",)
@@ -330,6 +334,16 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
 
     async def sleep_until(self, deadline: float) -> None:
         return await self.sleep(max(deadline - self.current_time(), 0))
+
+    @abstractmethod
+    def spawn_task(
+        self,
+        coro_func: Callable[_P, Coroutine[Any, Any, _T]],
+        /,
+        *args: _P.args,
+        **kwargs: _P.kwargs,
+    ) -> AbstractTask[_T]:
+        raise NotImplementedError
 
     @abstractmethod
     def create_task_group(self) -> AbstractTaskGroup:

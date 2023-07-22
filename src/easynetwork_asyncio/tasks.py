@@ -64,19 +64,31 @@ class Task(AbstractTask[_T_co]):
         return self.__t.cancelled()
 
     async def wait(self) -> None:
-        if self.__t.done():
-            return
-        await asyncio.wait({self.__t})
+        task = self.__t
+        try:
+            if task.done():
+                return
+            await asyncio.wait({task})
+        finally:
+            del task, self  # This is needed to avoid circular reference with raised exception
 
     async def join(self) -> _T_co:
         # If the caller cancels the join() task, it should not stop the inner task
         # e.g. when awaiting from an another task than the one which creates the TaskGroup,
         #      you want to stop joining the sub-task, not accidentally cancel it.
         # It is primarily to avoid error prone code where tasks were not explicitly cancelled using task.cancel()
+        task = self.__t
         try:
-            return await asyncio.shield(self.__t)
+            return await asyncio.shield(task)
         finally:
-            del self  # This is needed to avoid circular reference with raised exception
+            del task, self  # This is needed to avoid circular reference with raised exception
+
+    async def join_or_cancel(self) -> _T_co:
+        task = self.__t
+        try:
+            return await task
+        finally:
+            del task, self  # This is needed to avoid circular reference with raised exception
 
 
 @final

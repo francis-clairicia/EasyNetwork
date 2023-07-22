@@ -37,6 +37,18 @@ class BaseTestAsyncServer:
         with pytest.raises(ServerClosedError):
             await server.serve_forever()
 
+    async def test____serve_forever____shutdown_while_setup(
+        self,
+        server: AbstractAsyncNetworkServer,
+    ) -> None:
+        event = asyncio.Event()
+        async with asyncio.TaskGroup() as tg:
+            _ = tg.create_task(server.serve_forever(is_up_event=event))
+            await asyncio.sleep(0)
+            assert not event.is_set()
+            await server.shutdown()
+            assert event.is_set()
+
     async def test____serve_forever____concurrent_shutdown(
         self,
         server: AbstractAsyncNetworkServer,

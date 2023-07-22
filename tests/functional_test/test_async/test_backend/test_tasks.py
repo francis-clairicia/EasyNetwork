@@ -86,3 +86,38 @@ class TestSingleTaskRunner:
 
         assert exc_info_run_1.value is my_exc
         assert exc_info_run_2.value is my_exc
+
+    async def test____run____waiting_task_is_cancelled(self, backend: AbstractAsyncBackend) -> None:
+        inner_task: list[asyncio.Task[int] | None] = []
+
+        async def coro_func(value: int) -> int:
+            inner_task.append(asyncio.current_task())
+            return await asyncio.sleep(3600, value)
+
+        runner: SingleTaskRunner[Any] = SingleTaskRunner(backend, coro_func, 42)
+
+        task = asyncio.create_task(runner.run())
+        await asyncio.sleep(0.1)
+
+        task.cancel()
+
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        assert inner_task[0] is not None and inner_task[0].cancelled()
+
+    async def test____run____waiting_task_is_cancelled____not_the_first_runner(self, backend: AbstractAsyncBackend) -> None:
+        async def coro_func(value: int) -> int:
+            return await asyncio.sleep(0.5, value)
+
+        runner: SingleTaskRunner[Any] = SingleTaskRunner(backend, coro_func, 42)
+
+        task = asyncio.create_task(runner.run())
+        task_2 = asyncio.create_task(runner.run())
+        await asyncio.sleep(0.1)
+
+        task_2.cancel()
+
+        assert await task == 42
+        with pytest.raises(asyncio.CancelledError):
+            await task_2
