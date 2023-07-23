@@ -33,6 +33,10 @@ Here is the full list:
 
    * ``uvloop``: Installs the version supported and tested of `uvloop <https://github.com/MagicStack/uvloop>`_.
 
+      .. todo::
+
+         Document uvloop known issues and caveats
+
 
 Example where the ``cbor`` and ``msgpack`` extensions are installed:
 
