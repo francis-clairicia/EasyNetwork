@@ -16,6 +16,7 @@ from easynetwork.api_async.server.handler import AsyncBaseRequestHandler, AsyncC
 from easynetwork.api_async.server.tcp import AsyncTCPNetworkServer
 from easynetwork.exceptions import BaseProtocolParseError, ClientClosedError, StreamProtocolParseError
 from easynetwork.protocol import StreamProtocol
+from easynetwork.tools._utils import set_socket_linger
 from easynetwork.tools.socket import SocketAddress
 from easynetwork_asyncio._utils import create_connection
 from easynetwork_asyncio.backend import AsyncioBackend
@@ -347,10 +348,10 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         client_ssl_context: ssl.SSLContext,
     ) -> AsyncIterator[Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]]]:
         async with contextlib.AsyncExitStack() as stack:
+            stack.enter_context(contextlib.suppress(OSError))
 
             async def factory() -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
                 sock = await create_connection(*server_address, event_loop)
-                sock.setblocking(False)
                 reader, writer = await asyncio.open_connection(
                     sock=sock,
                     ssl=client_ssl_context if use_ssl else None,
@@ -390,7 +391,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         stream_protocol: StreamProtocol[str, str],
     ) -> None:
         kwargs: dict[str, Any] = {ssl_parameter: 30}
-        with pytest.raises(ValueError, match=r"^%s is only meaningful with ssl$" % ssl_parameter):
+        with pytest.raises(ValueError, match=rf"^{ssl_parameter} is only meaningful with ssl$"):
             _ = MyAsyncTCPServer(None, 0, stream_protocol, request_handler, ssl=None, **kwargs)
 
     @pytest.mark.parametrize(
@@ -450,6 +451,36 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         async with asyncio.timeout(1):
             while client_address in request_handler.connected_clients:
                 await asyncio.sleep(0.1)
+
+    # skip Windows for this test, the ECONNRESET will happen on socket.send() or socket.recv()
+    @pytest.mark.xfail('sys.platform == "win32"', reason="socket.getpeername() works by some magic")
+    @pytest.mark.parametrize("socket_family", ["AF_INET"], indirect=True)
+    @pytest.mark.parametrize("use_ssl", ["NO_SSL"], indirect=True)
+    async def test____serve_forever____accept_client____client_sent_RST_packet_right_after_accept(
+        self,
+        server_address: tuple[str, int],
+        caplog: pytest.LogCaptureFixture,
+        server: MyAsyncTCPServer,
+    ) -> None:
+        from socket import socket as SocketType
+
+        caplog.set_level(logging.WARNING, server.logger.name)
+        socket = SocketType()
+
+        # See this thread about SO_LINGER option with null timeout: https://stackoverflow.com/q/3757289
+        set_socket_linger(socket, timeout=0)
+
+        socket.connect(server_address)
+        socket.close()  # Sends RST packet instead of FIN because of null timeout linger
+
+        # The server will accept a socket which is already in a "Not connected" state
+        # and will fail at client initialization when calling socket.getpeername() (errno.ENOTCONN will be raised)
+        await asyncio.sleep(0.1)
+
+        # ENOTCONN error should not create a big Traceback error but only a warning (at least)
+        assert len(caplog.records) == 1
+        assert caplog.records[0].levelno == logging.WARNING
+        assert caplog.records[0].message == "A client connection was interrupted just after listener.accept()"
 
     @pytest.mark.usefixtures("run_server_and_wait")
     @pytest.mark.parametrize("service_actions_interval", [0.1], indirect=True)
@@ -669,7 +700,9 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         await writer.drain()
         await asyncio.sleep(0.1)
 
-        assert await reader.read() == b""
+        with pytest.raises(ConnectionResetError):
+            assert await reader.read() == b""
+            raise ConnectionResetError
 
     async def test____serve_forever____explicitly_closed_by_request_handler(
         self,
@@ -773,14 +806,20 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     ) -> None:
         request_handler.refuse_after = refuse_after
         caplog.set_level(logging.ERROR, server.logger.name)
-        reader, writer = await client_factory()
 
-        for _ in range(refuse_after):
-            writer.write(b"something\n")
-            await writer.drain()
-            assert await reader.readline() == b"something\n"
+        with pytest.raises(ConnectionResetError):
+            # If refuse after is equal to zero, client_factory() can raise ConnectionResetError
+            reader, writer = await client_factory()
 
-        assert await reader.read() == b""
+            for _ in range(refuse_after):
+                writer.write(b"something\n")
+                await writer.drain()
+                assert await reader.readline() == b"something\n"
+
+            assert await reader.read() == b""
+
+            # Should not go here but just to be sure...
+            raise ConnectionResetError
         assert len(caplog.records) == 0
 
     @pytest.mark.parametrize("request_handler", [InitialHandshakeRequestHandler], indirect=True)
@@ -819,10 +858,24 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         assert await reader.readline() == b"timeout error\n"
 
     @pytest.mark.parametrize("use_ssl", ["USE_SSL"], indirect=True)
-    @pytest.mark.parametrize("ssl_handshake_timeout", [pytest.param(0, id="null timeout")])
+    @pytest.mark.parametrize("ssl_handshake_timeout", [pytest.param(1, id="timeout==1sec")], indirect=True)
     async def test____serve_forever____ssl_handshake_timeout_error(
         self,
-        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        server_address: tuple[str, int],
+        event_loop: asyncio.AbstractEventLoop,
+        caplog: pytest.LogCaptureFixture,
+        server: MyAsyncTCPServer,
     ) -> None:
+        caplog.set_level(logging.ERROR, server.logger.name)
+        socket = await create_connection(*server_address, event_loop)
         with pytest.raises(OSError):
-            _ = await client_factory()
+            # The SSL handshake expects the client to send the list of encryption algorithms.
+            # But we won't, so the server will close the connection after 1 second
+            # and raise a TimeoutError or ConnectionAbortedError.
+            assert await event_loop.sock_recv(socket, 256 * 1024) == b""
+            # If sock_recv() did not raise, manually trigger the error
+            raise ConnectionAbortedError
+
+        await asyncio.sleep(0.1)
+        assert len(caplog.records) == 3
+        assert caplog.records[1].message == "Error in client task"

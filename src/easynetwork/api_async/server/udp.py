@@ -34,6 +34,7 @@ from ...protocol import DatagramProtocol
 from ...tools._utils import (
     check_real_socket_state as _check_real_socket_state,
     recursively_clear_exception_traceback_frames as _recursively_clear_exception_traceback_frames,
+    remove_traceback_frames_in_place as _remove_traceback_frames_in_place,
 )
 from ...tools.socket import MAX_DATAGRAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
 from ..backend.factory import AsyncBackendFactory
@@ -144,7 +145,8 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             socket, self.__socket = self.__socket, None
             if socket is None:
                 return
-            await socket.aclose()
+            with _contextlib.suppress(OSError):
+                await socket.aclose()
 
     async def shutdown(self) -> None:
         self.__stop_mainloop()
@@ -371,7 +373,8 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
     def __suppress_and_log_remaining_exception(self, client_address: SocketAddress) -> Iterator[None]:
         try:
             yield
-        except Exception:
+        except Exception as exc:
+            _remove_traceback_frames_in_place(exc, 1)  # Removes the 'yield' frame just above
             self.__logger.error("-" * 40)
             self.__logger.exception("Exception occurred during processing of request from %s", client_address)
             self.__logger.error("-" * 40)

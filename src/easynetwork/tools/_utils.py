@@ -21,14 +21,17 @@ __all__ = [
     "concatenate_chunks",
     "ensure_datagram_socket_bound",
     "error_from_errno",
+    "get_socket_linger_struct",
     "is_ssl_eof_error",
     "is_ssl_socket",
     "lock_with_timeout",
     "open_listener_sockets_from_getaddrinfo_result",
+    "remove_traceback_frames_in_place",
     "replace_kwargs",
     "retry_socket_method",
     "retry_ssl_socket_method",
     "set_reuseport",
+    "set_socket_linger",
     "set_tcp_nodelay",
     "transform_future_exception",
     "validate_timeout_delay",
@@ -46,6 +49,7 @@ import time
 import traceback
 from collections.abc import Callable, Iterable, Iterator
 from math import isinf, isnan
+from struct import Struct
 from typing import TYPE_CHECKING, Any, Literal, ParamSpec, TypeGuard, TypeVar, assert_never
 
 try:
@@ -305,6 +309,27 @@ def set_tcp_keepalive(sock: SupportsSocketOptions) -> None:
         pass
 
 
+if os.name == "nt":  # Windows
+    # https://learn.microsoft.com/en-us/windows/win32/api/winsock2/ns-winsock2-linger
+    # linger struct uses unsigned short ints
+    _linger_struct = Struct("@HH")
+else:  # Unix/macOS
+    # https://manpages.debian.org/bookworm/manpages/socket.7.en.html#SO_LINGER
+    # linger struct uses signed ints
+    _linger_struct = Struct("@ii")
+
+
+def get_socket_linger_struct() -> Struct:
+    return _linger_struct
+
+
+def set_socket_linger(sock: SupportsSocketOptions, timeout: int | None) -> None:
+    if timeout is None:
+        sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_LINGER, _linger_struct.pack(False, 0))
+    else:
+        sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_LINGER, _linger_struct.pack(True, timeout))
+
+
 def open_listener_sockets_from_getaddrinfo_result(
     infos: Iterable[tuple[int, int, int, str, tuple[Any, ...]]],
     *,
@@ -379,6 +404,13 @@ def recursively_clear_exception_traceback_frames(exc: BaseException) -> None:
         recursively_clear_exception_traceback_frames(exc.__context__)
     if exc.__cause__ is not exc.__context__ and exc.__cause__ is not None:
         recursively_clear_exception_traceback_frames(exc.__cause__)
+
+
+def remove_traceback_frames_in_place(exc: BaseException, n: int) -> None:
+    for _ in range(n):
+        if exc.__traceback__ is None:
+            break
+        exc.__traceback__ = exc.__traceback__.tb_next
 
 
 @contextlib.contextmanager

@@ -65,25 +65,6 @@ class TestTransportBasedStreamSocket(BaseTestTransportStreamSocket):
     def socket(mock_asyncio_reader: MagicMock, mock_asyncio_writer: MagicMock) -> AsyncioTransportStreamSocketAdapter:
         return AsyncioTransportStreamSocketAdapter(mock_asyncio_reader, mock_asyncio_writer)
 
-    async def test____dunder_init____transport_not_connected(
-        self,
-        asyncio_writer_extra_info: dict[str, Any],
-        mock_asyncio_reader: MagicMock,
-        mock_asyncio_writer: MagicMock,
-    ) -> None:
-        # Arrange
-        from errno import ENOTCONN
-
-        ### asyncio.Transport implementations explicitly set peername to None if the socket is not connected
-        asyncio_writer_extra_info["peername"] = None
-
-        # Act & Assert
-        with pytest.raises(OSError) as exc_info:
-            AsyncioTransportStreamSocketAdapter(mock_asyncio_reader, mock_asyncio_writer)
-
-        assert exc_info.value.errno == ENOTCONN
-        mock_asyncio_writer.get_extra_info.assert_called_with("peername")
-
     async def test____aclose____close_transport_and_wait(
         self,
         socket: AsyncioTransportStreamSocketAdapter,
@@ -245,6 +226,23 @@ class TestTransportBasedStreamSocket(BaseTestTransportStreamSocket):
 
         # Assert
         assert raddr == asyncio_writer_extra_info["peername"]
+
+    async def test____getpeername____transport_not_connected(
+        self,
+        socket: AsyncioTransportStreamSocketAdapter,
+        asyncio_writer_extra_info: dict[str, Any],
+    ) -> None:
+        # Arrange
+        from errno import ENOTCONN
+
+        ### asyncio.Transport implementations explicitly set peername to None if the socket is not connected
+        asyncio_writer_extra_info["peername"] = None
+
+        # Act & Assert
+        with pytest.raises(OSError) as exc_info:
+            socket.get_remote_address()
+
+        assert exc_info.value.errno == ENOTCONN
 
     async def test____socket____returns_transport_socket(
         self,

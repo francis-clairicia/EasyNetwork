@@ -40,7 +40,7 @@ class AsyncioTransportStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
     __slots__ = (
         "__reader",
         "__writer",
-        "__remote_addr",
+        "__socket",
     )
 
     def __init__(
@@ -54,10 +54,7 @@ class AsyncioTransportStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
 
         socket: asyncio.trsock.TransportSocket | None = writer.get_extra_info("socket")
         assert socket is not None, "Writer transport must be a socket transport"
-        remote_address = writer.get_extra_info("peername")
-        if remote_address is None:
-            raise _error_from_errno(errno.ENOTCONN)
-        self.__remote_addr: tuple[Any, ...] = tuple(remote_address)
+        self.__socket: asyncio.trsock.TransportSocket = socket
 
     async def aclose(self) -> None:
         try:
@@ -75,7 +72,10 @@ class AsyncioTransportStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
         return self.__writer.get_extra_info("sockname")
 
     def get_remote_address(self) -> tuple[Any, ...]:
-        return self.__remote_addr
+        remote_address: tuple[Any, ...] | None = self.__writer.get_extra_info("peername")
+        if remote_address is None:
+            raise _error_from_errno(errno.ENOTCONN)
+        return remote_address
 
     async def recv(self, bufsize: int, /) -> bytes:
         if bufsize < 0:
@@ -89,8 +89,7 @@ class AsyncioTransportStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
         await self.__writer.drain()
 
     def socket(self) -> asyncio.trsock.TransportSocket:
-        socket: asyncio.trsock.TransportSocket = self.__writer.get_extra_info("socket")
-        return socket
+        return self.__socket
 
 
 @final
