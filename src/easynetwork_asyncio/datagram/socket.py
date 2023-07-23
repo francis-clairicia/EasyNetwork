@@ -26,7 +26,10 @@ if TYPE_CHECKING:
 
 @final
 class AsyncioTransportDatagramSocketAdapter(AbstractAsyncDatagramSocketAdapter):
-    __slots__ = ("__endpoint",)
+    __slots__ = (
+        "__endpoint",
+        "__socket",
+    )
 
     def __init__(self, endpoint: DatagramEndpoint) -> None:
         super().__init__()
@@ -34,6 +37,8 @@ class AsyncioTransportDatagramSocketAdapter(AbstractAsyncDatagramSocketAdapter):
 
         socket: asyncio.trsock.TransportSocket | None = endpoint.get_extra_info("socket")
         assert socket is not None, "transport must be a socket transport"
+
+        self.__socket: asyncio.trsock.TransportSocket = socket
 
     async def aclose(self) -> None:
         try:
@@ -62,8 +67,7 @@ class AsyncioTransportDatagramSocketAdapter(AbstractAsyncDatagramSocketAdapter):
         await self.__endpoint.sendto(memoryview(data), address)
 
     def socket(self) -> asyncio.trsock.TransportSocket:
-        socket: asyncio.trsock.TransportSocket = self.__endpoint.get_extra_info("socket")
-        return socket
+        return self.__socket
 
 
 @final

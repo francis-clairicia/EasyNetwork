@@ -14,6 +14,7 @@ from socket import (
     IPV6_V6ONLY,
     SO_ERROR,
     SO_KEEPALIVE,
+    SO_LINGER,
     SO_REUSEADDR,
     SOCK_STREAM,
     SOL_SOCKET,
@@ -28,14 +29,17 @@ from easynetwork.tools._utils import (
     concatenate_chunks,
     ensure_datagram_socket_bound,
     error_from_errno,
+    get_socket_linger_struct,
     is_ssl_eof_error,
     is_ssl_socket,
     iter_bytes,
     lock_with_timeout,
     open_listener_sockets_from_getaddrinfo_result,
     recursively_clear_exception_traceback_frames,
+    remove_traceback_frames_in_place,
     replace_kwargs,
     set_reuseport,
+    set_socket_linger,
     set_tcp_keepalive,
     set_tcp_nodelay,
     transform_future_exception,
@@ -559,6 +563,26 @@ def test____set_tcp_keepalive____setsockopt(
     mock_tcp_socket.setsockopt.assert_called_once_with(SOL_SOCKET, SO_KEEPALIVE, True)
 
 
+@pytest.mark.parametrize("timeout", [None, 0, 60])
+def test____set_socket_linger____setsockopt(
+    mock_tcp_socket: MagicMock,
+    timeout: int | None,
+) -> None:
+    # Arrange
+    linger_struct = get_socket_linger_struct()
+    expected_buffer: bytes
+    if timeout is None:
+        expected_buffer = linger_struct.pack(0, 0)  # Disabled
+    else:
+        expected_buffer = linger_struct.pack(1, timeout)  # Enabled with timeout
+
+    # Act
+    set_socket_linger(mock_tcp_socket, timeout)
+
+    # Assert
+    mock_tcp_socket.setsockopt.assert_called_once_with(SOL_SOCKET, SO_LINGER, expected_buffer)
+
+
 @pytest.mark.parametrize("reuse_address", [False, True], ids=lambda boolean: f"reuse_address=={boolean}")
 @pytest.mark.parametrize("SO_REUSEADDR_available", [False, True], ids=lambda boolean: f"SO_REUSEADDR_available=={boolean}")
 @pytest.mark.parametrize("reuse_port", [False, True], ids=lambda boolean: f"reuse_port=={boolean}")
@@ -771,6 +795,31 @@ def test____recursively_clear_exception_traceback_frames____exception_with_conte
         mocker.call(exception.__context__.__context__.__traceback__),
         mocker.call(exception.__cause__.__traceback__),
     ]
+
+
+@pytest.mark.parametrize("n", [-1, 0, 2, 2000])
+def test____remove_traceback_frames_in_place____remove_n_first_traceback(n: int) -> None:
+    # Arrange
+    import traceback
+
+    def inner_func() -> None:
+        raise Exception()
+
+    def func() -> None:
+        inner_func()
+
+    # Act
+    exception = pytest.raises(Exception, func).value
+    assert len(list(traceback.walk_tb(exception.__traceback__))) == 3
+    remove_traceback_frames_in_place(exception, n)
+
+    # Assert
+    if 0 <= n <= 3:
+        assert len(list(traceback.walk_tb(exception.__traceback__))) == 3 - n
+    elif n < 0:
+        assert len(list(traceback.walk_tb(exception.__traceback__))) == 3
+    else:  # n > 3
+        assert len(list(traceback.walk_tb(exception.__traceback__))) == 0
 
 
 def test____lock_with_timeout____acquire_and_release_with_timeout_at_None() -> None:
