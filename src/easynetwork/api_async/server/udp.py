@@ -242,13 +242,13 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             try:
                 logger.debug("Received a datagram from %s", client.address)
                 with client_manager.datagram_queue(client) as datagram_queue:
-                    # datagram_received_task() is running (or will be run) if datagram_queue is not empty
+                    datagram_queue.append(datagram)
+
+                    # datagram_received_task() is running (or will be run) if datagram_queue was not empty
                     # Therefore, start a new task only if there was no previous datagrams
-                    if not datagram_queue:
+                    if len(datagram_queue) == 1:
                         if client not in client_task_running_set or client in clients_waiting_for_new_datagrams:
                             task_group.start_soon(datagram_received_task_method, client, task_group)
-
-                    datagram_queue.append(datagram)
 
                 del datagram_queue
             finally:
