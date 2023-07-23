@@ -24,7 +24,12 @@ _SUPPORTED_FAMILIES = tuple(_FAMILY_TO_LOCALHOST)
 
 @pytest.fixture(params=_SUPPORTED_FAMILIES, ids=lambda f: str(getattr(f, "name", f)))
 def socket_family(request: Any) -> int:
-    return request.param
+    family: str | int = request.param
+    if isinstance(family, str):
+        import socket as _socket
+
+        family = _socket.AddressFamily(getattr(_socket, family))
+    return family
 
 
 @pytest.fixture

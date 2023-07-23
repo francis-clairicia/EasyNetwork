@@ -24,6 +24,8 @@ from ...tools._utils import (
     check_real_socket_state as _check_real_socket_state,
     concatenate_chunks as _concatenate_chunks,
     recursively_clear_exception_traceback_frames as _recursively_clear_exception_traceback_frames,
+    remove_traceback_frames_in_place as _remove_traceback_frames_in_place,
+    set_socket_linger as _set_socket_linger,
     set_tcp_keepalive as _set_tcp_keepalive,
     set_tcp_nodelay as _set_tcp_nodelay,
 )
@@ -33,6 +35,7 @@ from ...tools.socket import (
     MAX_STREAM_BUFSIZE,
     SSL_HANDSHAKE_TIMEOUT,
     SSL_SHUTDOWN_TIMEOUT,
+    ISocket,
     SocketAddress,
     SocketProxy,
     new_socket_address,
@@ -311,7 +314,11 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             finally:
                 del accepted_socket
 
-            await client_exit_stack.enter_async_context(socket)
+            client_exit_stack.push_async_callback(self.__force_close_stream_socket, socket)
+
+            # If the socket was not closed gracefully, (i.e. client.aclose() failed )
+            # tell the OS to immediately abort the connection when calling socket.socket.close()
+            client_exit_stack.callback(self.__set_socket_linger_if_not_closed, socket.socket())
 
             logger: _logging.Logger = self.__logger
             backend = self.__backend
@@ -360,6 +367,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 if request_handler_generator is None:
                     request_handler_generator = await self.__new_request_handler(client)
                     if request_handler_generator is None:
+                        await client.aclose(abort=True)
                         return
                 async for request in request_receiver:
                     logger.debug("Processing request sent by %s", client.address)
@@ -378,10 +386,11 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                     if request_handler_generator is None:
                         request_handler_generator = await self.__new_request_handler(client)
                         if request_handler_generator is None:
+                            await client.aclose(abort=True)
                             break
             except OSError as exc:
                 try:
-                    await client.aclose()
+                    await client.aclose(abort=True)
                 finally:
                     await self.__throw_error(request_handler_generator, exc)
                 raise
@@ -408,11 +417,42 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         finally:
             del exc
 
+    @staticmethod
+    async def __force_close_stream_socket(socket: AbstractAsyncStreamSocketAdapter) -> None:
+        with _contextlib.suppress(ConnectionError, TimeoutError):
+            await socket.aclose()
+
+    @classmethod
+    def __have_errno(cls, exc: OSError | BaseExceptionGroup[OSError], errnos: set[int]) -> bool:
+        if isinstance(exc, BaseExceptionGroup):
+            return any(cls.__have_errno(exc, errnos) for exc in exc.exceptions)
+        return exc.errno in errnos
+
+    @staticmethod
+    def __set_socket_linger_if_not_closed(socket: ISocket) -> None:
+        with _contextlib.suppress(OSError):
+            if socket.fileno() > -1:
+                _set_socket_linger(socket, timeout=0)
+
     @_contextlib.contextmanager
     def __suppress_and_log_remaining_exception(self, client_address: SocketAddress | None = None) -> Iterator[None]:
         try:
-            yield
-        except Exception:
+            if client_address is None:
+                try:
+                    yield
+                except* OSError as excgrp:
+                    if self.__have_errno(excgrp, {_errno.ENOTCONN, _errno.EINVAL}):
+                        # The remote host closed the connection before starting the task.
+                        # See this test for more information:
+                        # test____serve_forever____accept_client____client_sent_RST_packet_right_after_accept
+
+                        self.__logger.warning("A client connection was interrupted just after listener.accept()")
+                    else:
+                        raise
+            else:
+                yield
+        except Exception as exc:
+            _remove_traceback_frames_in_place(exc, 1)  # Removes the 'yield' frame just above
             self.__logger.error("-" * 40)
             if client_address is None:
                 self.__logger.exception("Error in client task")
@@ -531,13 +571,19 @@ class _ConnectedClientAPI(AsyncClientInterface[_ResponseT]):
         socket = self.__socket
         return socket is None or socket.is_closing()
 
-    async def aclose(self) -> None:
+    async def aclose(self, *, abort: bool = False) -> None:
         async with self.__send_lock:
             socket = self.__socket
             if socket is None:
                 return
             self.__socket = None
-            await socket.aclose()
+            try:
+                if abort:
+                    # Tell the OS to immediately abort the connection when calling socket.socket.close() or socket.socket.shutdown()
+                    _set_socket_linger(self.socket, timeout=0)
+            finally:
+                with _contextlib.suppress(ConnectionError, TimeoutError):
+                    await socket.aclose()
 
     async def send_packet(self, packet: _ResponseT, /) -> None:
         self.__check_closed()
