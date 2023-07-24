@@ -87,9 +87,6 @@ class IEvent(Protocol):
     def set(self) -> None:  # pragma: no cover
         ...
 
-    def clear(self) -> None:  # pragma: no cover
-        ...
-
     def is_set(self) -> bool:  # pragma: no cover
         ...
 
