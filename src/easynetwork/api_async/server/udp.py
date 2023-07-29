@@ -15,7 +15,7 @@ import operator
 import weakref
 from collections import Counter, deque
 from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterator, Mapping
-from typing import TYPE_CHECKING, Any, Generic, TypeVar, final
+from typing import TYPE_CHECKING, Any, Generic, TypeVar, assert_never, final
 from weakref import WeakValueDictionary
 
 from ...exceptions import ClientClosedError, DatagramProtocolParseError, ServerAlreadyRunning, ServerClosedError
@@ -28,6 +28,7 @@ from ...tools._utils import (
 from ...tools.socket import MAX_DATAGRAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
 from ..backend.factory import AsyncBackendFactory
 from ..backend.tasks import SingleTaskRunner
+from ._tools.actions import ErrorAction as _ErrorAction, RequestAction as _RequestAction
 from .abc import AbstractAsyncNetworkServer
 from .handler import AsyncBaseRequestHandler, AsyncClientInterface
 
@@ -272,6 +273,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 condition.notify()
                 return
             request_handler_generator: AsyncGenerator[None, _RequestT] | None = None
+            logger: _logging.Logger = self.__logger
             with (
                 self.__suppress_and_log_remaining_exception(client.address),
                 self.__client_manager.datagram_queue(client) as datagram_queue,
@@ -290,44 +292,59 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                     return
                 try:
                     while True:
-                        if not datagram_queue:
-                            self.__clients_waiting_for_new_datagrams.add(client)
+                        action: _RequestAction[_RequestT] | _ErrorAction
+                        try:
+                            if not datagram_queue:
+                                self.__clients_waiting_for_new_datagrams.add(client)
+                                try:
+                                    await condition.wait()
+                                finally:
+                                    self.__clients_waiting_for_new_datagrams.discard(client)
+                                self.__check_datagram_queue_not_empty(datagram_queue)
+                            datagram = datagram_queue.popleft()
                             try:
-                                await condition.wait()
+                                action = _RequestAction(self.__protocol.build_packet_from_datagram(datagram))
                             finally:
-                                self.__clients_waiting_for_new_datagrams.discard(client)
-                            self.__check_datagram_queue_not_empty(datagram_queue)
-                        datagram = datagram_queue.popleft()
-                        try:
-                            request: _RequestT = self.__protocol.build_packet_from_datagram(datagram)
-                        except DatagramProtocolParseError as exc:
-                            exc.sender_address = client.address
-                            self.__logger.debug("Malformed request sent by %s", client.address)
-                            try:
-                                _recursively_clear_exception_traceback_frames(exc)
-                            except RecursionError:
-                                self.__logger.warning("Recursion depth reached when clearing exception's traceback frames")
-                            await self.__request_handler.bad_request(client, exc)
-                            await backend.coro_yield()
-                            continue
-                        finally:
-                            del datagram
+                                del datagram
+                        except BaseException as exc:
+                            action = _ErrorAction(exc)
 
-                        self.__logger.debug("Processing request sent by %s", client.address)
                         try:
-                            await request_handler_generator.asend(request)
-                        except StopAsyncIteration:
-                            request_handler_generator = None
-                            return
-                        except BaseException:
-                            request_handler_generator = None
-                            raise
+                            match action:
+                                case _RequestAction(request):
+                                    logger.debug("Processing request sent by %s", client.address)
+                                    try:
+                                        await request_handler_generator.asend(request)
+                                    except StopAsyncIteration:
+                                        request_handler_generator = None
+                                        return
+                                    finally:
+                                        del request
+                                case _ErrorAction(DatagramProtocolParseError() as exception):
+                                    exception.sender_address = client.address
+                                    logger.debug("Malformed request sent by %s", client.address)
+                                    try:
+                                        try:
+                                            _recursively_clear_exception_traceback_frames(exception)
+                                        except RecursionError:
+                                            logger.warning("Recursion depth reached when clearing exception's traceback frames")
+                                        await self.__request_handler.bad_request(client, exception)
+                                    finally:
+                                        del exception
+                                case _ErrorAction(exception):
+                                    try:
+                                        await request_handler_generator.athrow(exception)
+                                    except StopAsyncIteration:
+                                        request_handler_generator = None
+                                        return
+                                    finally:
+                                        del exception
+                                case _:  # pragma: no cover
+                                    assert_never(action)
                         finally:
-                            del request
-                        await backend.coro_yield()
-                except (Exception, self.__backend.get_cancelled_exc_class()) as exc:
-                    await self.__throw_error(request_handler_generator, exc)
-                    raise
+                            del action
+
+                        await backend.cancel_shielded_coro_yield()
                 finally:
                     if request_handler_generator is not None:
                         await request_handler_generator.aclose()
@@ -339,14 +356,6 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         except StopAsyncIteration:
             return None
         return request_handler_generator
-
-    async def __throw_error(self, request_handler_generator: AsyncGenerator[None, _RequestT] | None, exc: BaseException) -> None:
-        try:
-            if request_handler_generator is not None:
-                with _contextlib.suppress(StopAsyncIteration):
-                    await request_handler_generator.athrow(exc)
-        finally:
-            del exc
 
     @staticmethod
     def __check_datagram_queue_not_empty(datagram_queue: deque[bytes]) -> None:
@@ -361,7 +370,15 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
     @_contextlib.contextmanager
     def __suppress_and_log_remaining_exception(self, client_address: SocketAddress) -> Iterator[None]:
         try:
-            yield
+            try:
+                yield
+            except* ClientClosedError as excgrp:
+                _remove_traceback_frames_in_place(excgrp, 1)  # Removes the 'yield' frame just above
+                self.__logger.warning(
+                    "There have been attempts to do operation on closed client %s",
+                    client_address,
+                    exc_info=True,
+                )
         except Exception as exc:
             _remove_traceback_frames_in_place(exc, 1)  # Removes the 'yield' frame just above
             self.__logger.error("-" * 40)
