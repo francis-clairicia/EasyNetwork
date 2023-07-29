@@ -22,7 +22,6 @@ from ...exceptions import ClientClosedError, ServerAlreadyRunning, ServerClosedE
 from ...protocol import StreamProtocol
 from ...tools._utils import (
     check_real_socket_state as _check_real_socket_state,
-    concatenate_chunks as _concatenate_chunks,
     recursively_clear_exception_traceback_frames as _recursively_clear_exception_traceback_frames,
     remove_traceback_frames_in_place as _remove_traceback_frames_in_place,
     set_socket_linger as _set_socket_linger,
@@ -597,14 +596,9 @@ class _ConnectedClientAPI(AsyncClientInterface[_ResponseT]):
                 # Someone else already flushed the producer queue while waiting for lock acquisition
                 return
             socket = self.__check_closed()
-            data: bytes = _concatenate_chunks(producer)
-            try:
-                await socket.sendall(data)
-                _check_real_socket_state(self.socket)
-                nb_bytes_sent: int = len(data)
-            finally:
-                del data
-            self.__logger.debug("%d byte(s) sent to %s", nb_bytes_sent, self.address)
+            await socket.sendall_fromiter(producer)
+            _check_real_socket_state(self.socket)
+            self.__logger.debug("Data sent to %s", self.address)
 
     def __check_closed(self) -> AbstractAsyncStreamSocketAdapter:
         socket = self.__socket
