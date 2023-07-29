@@ -37,7 +37,7 @@ __all__ = [
 import contextvars
 import math
 from abc import ABCMeta, abstractmethod
-from collections.abc import Callable, Coroutine, Sequence
+from collections.abc import Callable, Coroutine, Iterable, Sequence
 from contextlib import AbstractAsyncContextManager as AsyncContextManager
 from typing import TYPE_CHECKING, Any, Generic, NoReturn, ParamSpec, Protocol, Self, TypeVar
 
@@ -46,8 +46,6 @@ if TYPE_CHECKING:
     import socket as _socket
     import ssl as _ssl
     from types import TracebackType
-
-    from _typeshed import ReadableBuffer
 
     from ...tools.socket import ISocket
 
@@ -222,8 +220,11 @@ class AbstractAsyncStreamSocketAdapter(AbstractAsyncBaseSocketAdapter):
         raise NotImplementedError
 
     @abstractmethod
-    async def sendall(self, __data: ReadableBuffer, /) -> None:
+    async def sendall(self, __data: bytes, /) -> None:
         raise NotImplementedError
+
+    async def sendall_fromiter(self, iterable_of_data: Iterable[bytes], /) -> None:
+        await self.sendall(b"".join(iterable_of_data))
 
 
 class AbstractAsyncDatagramSocketAdapter(AbstractAsyncBaseSocketAdapter):
@@ -238,7 +239,7 @@ class AbstractAsyncDatagramSocketAdapter(AbstractAsyncBaseSocketAdapter):
         raise NotImplementedError
 
     @abstractmethod
-    async def sendto(self, __data: ReadableBuffer, __address: tuple[Any, ...] | None, /) -> None:
+    async def sendto(self, __data: bytes, __address: tuple[Any, ...] | None, /) -> None:
         raise NotImplementedError
 
 

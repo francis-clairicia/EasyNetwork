@@ -131,6 +131,12 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
                 await client.aclose()
                 with pytest.raises(ClientClosedError):
                     await client.send_packet("something never sent")
+            case "__closed_client_error__":
+                await client.aclose()
+                await client.send_packet("something never sent")
+            case "__connection_error__":
+                await client.aclose()  # Close before for graceful close
+                raise ConnectionResetError("Because why not?")
             case "__os_error__":
                 raise OSError("Server issue.")
             case "__stop_listening__":
@@ -150,13 +156,24 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
         await client.send_packet("wrong encoding man.")
 
 
-class TimeoutRequestHandler(AsyncBaseRequestHandler[str, str]):
-    async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
+class TimeoutRequestHandler(AsyncStreamRequestHandler[str, str]):
+    request_timeout: float = 1.0
+    timeout_on_second_yield: bool = False
+
+    async def on_connection(self, client: AsyncClientInterface[str]) -> None:
         await client.send_packet("milk")
-        with pytest.raises(TimeoutError):
-            async with asyncio.timeout(1):
-                yield
-        await client.send_packet("successfully timed out")
+
+    async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
+        if self.timeout_on_second_yield:
+            request = yield
+            await client.send_packet(request)
+        try:
+            with pytest.raises(TimeoutError):
+                async with asyncio.timeout(self.request_timeout):
+                    yield
+            await client.send_packet("successfully timed out")
+        finally:
+            self.request_timeout = 1.0  # Force reset to 1 second in order not to overload the server
 
     async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError, /) -> None:
         pass
@@ -174,12 +191,15 @@ class CancellationRequestHandler(AsyncBaseRequestHandler[str, str]):
 
 class InitialHandshakeRequestHandler(AsyncStreamRequestHandler[str, str]):
     backend: AbstractAsyncBackend
+    bypass_handshake: bool = False
 
     def set_async_backend(self, backend: AbstractAsyncBackend) -> None:
         self.backend = backend
 
     async def on_connection(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
         await client.send_packet("milk")
+        if self.bypass_handshake:
+            return
         try:
             async with self.backend.timeout(1):
                 password = yield
@@ -224,7 +244,7 @@ class RequestRefusedHandler(AsyncStreamRequestHandler[str, str]):
         pass
 
 
-class ErrorInBadRequestHandler(AsyncStreamRequestHandler[str, str]):
+class ErrorInRequestHandler(AsyncStreamRequestHandler[str, str]):
     mute_thrown_exception: bool = False
 
     async def on_connection(self, client: AsyncClientInterface[str]) -> None:
@@ -440,7 +460,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         assert client_address in request_handler.connected_clients
 
         writer.write(b"hello, world.\n")
-        await writer.drain()
         assert await reader.readline() == b"HELLO, WORLD.\n"
 
         assert request_handler.request_received[client_address] == ["hello, world."]
@@ -534,10 +553,8 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         await asyncio.sleep(0.3)
 
         writer.write(b"hello\n")
-        await writer.drain()
         assert await reader.readline() == b"HELLO\n"
         writer.write(b"world!\n")
-        await writer.drain()
         assert await reader.readline() == b"WORLD!\n"
 
         writer.close()
@@ -553,11 +570,9 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         client_address: tuple[Any, ...] = writer.get_extra_info("sockname")
 
         writer.write(b"hello")
-        await writer.drain()
         await asyncio.sleep(0.1)
 
         writer.write(b", world!\n")
-        await writer.drain()
 
         assert await reader.readline() == b"HELLO, WORLD!\n"
         assert request_handler.request_received[client_address] == ["hello, world!"]
@@ -571,7 +586,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         client_address: tuple[Any, ...] = writer.get_extra_info("sockname")
 
         writer.write(b"hello\nworld\n")
-        await writer.drain()
         await asyncio.sleep(0.1)
 
         assert await reader.readline() == b"HELLO\n"
@@ -588,7 +602,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         request_handler.close_client_after_n_request = 1
 
         writer.write(b"hello\nworld\n")
-        await writer.drain()
         await asyncio.sleep(0.1)
 
         assert await reader.readline() == b"HELLO\n"
@@ -604,7 +617,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         client_address: tuple[Any, ...] = writer.get_extra_info("sockname")
 
         writer.write(b"__wait__\nhello, world!\n")
-        await writer.drain()
         await asyncio.sleep(0.1)
 
         assert await reader.readline() == b"After wait: hello, world!\n"
@@ -619,7 +631,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         client_address: tuple[Any, ...] = writer.get_extra_info("sockname")
 
         writer.write("\u00E9\n".encode("latin-1"))  # StringSerializer does not accept unicode
-        await writer.drain()
         await asyncio.sleep(0.1)
 
         assert await reader.readline() == b"wrong encoding man.\n"
@@ -627,26 +638,22 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         assert isinstance(request_handler.bad_request_received[client_address][0], StreamProtocolParseError)
         assert request_handler.bad_request_received[client_address][0].error_type == "deserialization"
 
-    @pytest.mark.parametrize("mute_thrown_exception", [False, True])
-    @pytest.mark.parametrize("request_handler", [ErrorInBadRequestHandler], indirect=True)
+    @pytest.mark.parametrize("request_handler", [ErrorInRequestHandler], indirect=True)
     async def test____serve_forever____bad_request____unexpected_error(
         self,
-        mute_thrown_exception: bool,
-        request_handler: ErrorInBadRequestHandler,
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
         caplog: pytest.LogCaptureFixture,
         server: MyAsyncTCPServer,
     ) -> None:
         caplog.set_level(logging.ERROR, server.logger.name)
-        request_handler.mute_thrown_exception = mute_thrown_exception
         reader, writer = await client_factory()
 
         writer.write("\u00E9\n".encode("latin-1"))  # StringSerializer does not accept unicode
-        await writer.drain()
         await asyncio.sleep(0.1)
 
-        assert await reader.readline() == b"RandomError: An error occurred\n"
-        assert await reader.read() == b""
+        with pytest.raises(ConnectionResetError):
+            assert await reader.read() == b""
+            raise ConnectionResetError
         assert len(caplog.records) == 3
 
     async def test____serve_forever____bad_request____recursive_traceback_frame_clear_error(
@@ -668,11 +675,41 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         )
 
         writer.write("\u00E9\n".encode("latin-1"))  # StringSerializer does not accept unicode
-        await writer.drain()
         await asyncio.sleep(0.1)
 
         assert await reader.readline() == b"wrong encoding man.\n"
         assert "Recursion depth reached when clearing exception's traceback frames" in [rec.message for rec in caplog.records]
+
+    @pytest.mark.parametrize("mute_thrown_exception", [False, True])
+    @pytest.mark.parametrize("request_handler", [ErrorInRequestHandler], indirect=True)
+    @pytest.mark.parametrize("serializer", [pytest.param("invalid", id="serializer_crash")], indirect=True)
+    async def test____serve_forever____internal_error(
+        self,
+        mute_thrown_exception: bool,
+        request_handler: ErrorInRequestHandler,
+        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        caplog: pytest.LogCaptureFixture,
+        server: MyAsyncTCPServer,
+    ) -> None:
+        caplog.set_level(logging.ERROR, server.logger.name)
+        request_handler.mute_thrown_exception = mute_thrown_exception
+        reader, writer = await client_factory()
+
+        writer.write(b"something\n")  # StringSerializer does not accept unicode
+        await asyncio.sleep(0.1)
+
+        if mute_thrown_exception:
+            assert await reader.readline() == b"SystemError: CRASH\n"
+            writer.write(b"something\n")  # StringSerializer does not accept unicode
+            await asyncio.sleep(0.1)
+            assert await reader.readline() == b"SystemError: CRASH\n"
+            assert len(caplog.records) == 0  # After two attempts
+        else:
+            with pytest.raises(ConnectionResetError):
+                assert await reader.readline() == b"SystemError: CRASH\n"
+                assert await reader.read() == b""
+                raise ConnectionResetError
+            assert len(caplog.records) == 3
 
     async def test____serve_forever____unexpected_error_during_process(
         self,
@@ -684,10 +721,11 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         reader, writer = await client_factory()
 
         writer.write(b"__error__\n")
-        await writer.drain()
         await asyncio.sleep(0.1)
 
-        assert await reader.read() == b""
+        with pytest.raises(ConnectionResetError):
+            assert await reader.read() == b""
+            raise ConnectionResetError
         assert len(caplog.records) == 3
 
     async def test____serve_forever____os_error(
@@ -697,12 +735,44 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         reader, writer = await client_factory()
 
         writer.write(b"__os_error__\n")
-        await writer.drain()
         await asyncio.sleep(0.1)
 
         with pytest.raises(ConnectionResetError):
             assert await reader.read() == b""
             raise ConnectionResetError
+
+    async def test____serve_forever____use_of_a_closed_client_in_request_handler(
+        self,
+        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        caplog: pytest.LogCaptureFixture,
+        server: MyAsyncTCPServer,
+    ) -> None:
+        caplog.set_level(logging.WARNING, server.logger.name)
+        reader, writer = await client_factory()
+        host, port = writer.get_extra_info("sockname")[:2]
+
+        writer.write(b"__closed_client_error__\n")
+        await asyncio.sleep(0.1)
+
+        assert await reader.read() == b""
+        assert len(caplog.records) == 1
+        assert caplog.records[0].levelno == logging.WARNING
+        assert caplog.records[0].message == f"There have been attempts to do operation on closed client {host}:{port}"
+
+    async def test____serve_forever____connection_error_in_request_handler(
+        self,
+        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        caplog: pytest.LogCaptureFixture,
+        server: MyAsyncTCPServer,
+    ) -> None:
+        caplog.set_level(logging.WARNING, server.logger.name)
+        reader, writer = await client_factory()
+
+        writer.write(b"__connection_error__\n")
+        await asyncio.sleep(0.1)
+
+        assert await reader.read() == b""
+        assert len(caplog.records) == 0
 
     async def test____serve_forever____explicitly_closed_by_request_handler(
         self,
@@ -711,7 +781,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         reader, writer = await client_factory()
 
         writer.write(b"__close__\n")
-        await writer.drain()
         await asyncio.sleep(0.1)
 
         assert await reader.read() == b""
@@ -736,7 +805,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         reader, writer = await client_factory()
 
         writer.write(b"__stop_listening__\n")
-        await writer.drain()
         await asyncio.sleep(0.1)
 
         assert await reader.readline() == b"successfully stop listening\n"
@@ -761,11 +829,22 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         assert await reader.read() == b""
 
     @pytest.mark.parametrize("request_handler", [TimeoutRequestHandler], indirect=True)
+    @pytest.mark.parametrize("request_timeout", [0.0, 1.0], ids=lambda p: f"timeout=={p}")
+    @pytest.mark.parametrize("timeout_on_second_yield", [False, True], ids=lambda p: f"timeout_on_second_yield=={p}")
     async def test____serve_forever____throw_cancelled_error(
         self,
+        request_timeout: float,
+        timeout_on_second_yield: bool,
+        request_handler: TimeoutRequestHandler,
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
     ) -> None:
-        reader, _ = await client_factory()
+        request_handler.request_timeout = request_timeout
+        request_handler.timeout_on_second_yield = timeout_on_second_yield
+        reader, writer = await client_factory()
+
+        if timeout_on_second_yield:
+            writer.write(b"something\n")
+            assert await reader.readline() == b"something\n"
 
         assert await reader.readline() == b"successfully timed out\n"
 
@@ -777,9 +856,10 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         reader, writer = await client_factory()
 
         writer.write(b"something\n")
-        await writer.drain()
         await asyncio.sleep(0.1)
-        assert await reader.read() == b""
+        with pytest.raises(ConnectionResetError):
+            assert await reader.read() == b""
+            raise ConnectionResetError
 
     @pytest.mark.parametrize("request_handler", [ErrorBeforeYieldHandler], indirect=True)
     async def test____serve_forever____request_handler_crashed_before_yield(
@@ -789,9 +869,12 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         server: MyAsyncTCPServer,
     ) -> None:
         caplog.set_level(logging.ERROR, server.logger.name)
-        reader, _ = await client_factory()
 
-        assert await reader.read() == b""
+        with pytest.raises(ConnectionResetError):
+            reader, _ = await client_factory()
+            assert await reader.read() == b""
+            raise ConnectionResetError
+        await asyncio.sleep(0.1)
         assert len(caplog.records) == 3
 
     @pytest.mark.parametrize("request_handler", [RequestRefusedHandler], indirect=True)
@@ -813,7 +896,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
 
             for _ in range(refuse_after):
                 writer.write(b"something\n")
-                await writer.drain()
                 assert await reader.readline() == b"something\n"
 
             assert await reader.read() == b""
@@ -830,10 +912,8 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         reader, writer = await client_factory()
 
         writer.write(b"chocolate\n")
-        await writer.drain()
         assert await reader.readline() == b"you can enter\n"
         writer.write(b"something\n")
-        await writer.drain()
         assert await reader.readline() == b"something\n"
 
     @pytest.mark.parametrize("request_handler", [InitialHandshakeRequestHandler], indirect=True)
@@ -844,7 +924,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         reader, writer = await client_factory()
 
         writer.write(b"something_else\n")
-        await writer.drain()
         assert await reader.readline() == b"wrong password\n"
         assert await reader.read() == b""
 
@@ -856,6 +935,18 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         reader, _ = await client_factory()
 
         assert await reader.readline() == b"timeout error\n"
+
+    @pytest.mark.parametrize("request_handler", [InitialHandshakeRequestHandler], indirect=True)
+    async def test____serve_forever____request_handler_on_connection_is_async_gen____exit_before_first_yield(
+        self,
+        request_handler: InitialHandshakeRequestHandler,
+        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+    ) -> None:
+        request_handler.bypass_handshake = True
+        reader, writer = await client_factory()
+
+        writer.write(b"something_else\n")
+        assert await reader.readline() == b"something_else\n"
 
     @pytest.mark.parametrize("use_ssl", ["USE_SSL"], indirect=True)
     @pytest.mark.parametrize("ssl_handshake_timeout", [pytest.param(1, id="timeout==1sec")], indirect=True)

@@ -18,7 +18,6 @@ __all__ = [
     "check_real_socket_state",
     "check_socket_family",
     "check_socket_no_ssl",
-    "concatenate_chunks",
     "ensure_datagram_socket_bound",
     "error_from_errno",
     "get_socket_linger_struct",
@@ -260,10 +259,6 @@ def is_ssl_eof_error(exc: BaseException) -> TypeGuard[_SSLError]:
             # project.
             return True
     return False
-
-
-def concatenate_chunks(chunks_iterable: Iterable[bytes]) -> bytes:
-    return b"".join(chunks_iterable)
 
 
 def iter_bytes(b: bytes | bytearray | memoryview) -> Iterator[bytes]:

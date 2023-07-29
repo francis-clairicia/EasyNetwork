@@ -22,6 +22,7 @@ __all__ = ["AsyncioTransportStreamSocketAdapter", "RawStreamSocketAdapter"]
 import asyncio
 import errno
 import socket as _socket
+from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, final
 
 from easynetwork.api_async.backend.abc import AbstractAsyncStreamSocketAdapter
@@ -31,8 +32,6 @@ from ..socket import AsyncSocket
 
 if TYPE_CHECKING:
     import asyncio.trsock
-
-    from _typeshed import ReadableBuffer
 
 
 @final
@@ -84,8 +83,12 @@ class AsyncioTransportStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
             return b""
         return await self.__reader.read(bufsize)
 
-    async def sendall(self, data: ReadableBuffer, /) -> None:
-        self.__writer.write(memoryview(data))
+    async def sendall(self, data: bytes, /) -> None:
+        self.__writer.write(data)
+        await self.__writer.drain()
+
+    async def sendall_fromiter(self, iterable_of_data: Iterable[bytes], /) -> None:
+        self.__writer.writelines(iterable_of_data)
         await self.__writer.drain()
 
     def socket(self) -> asyncio.trsock.TransportSocket:
@@ -128,7 +131,7 @@ class RawStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
     async def recv(self, bufsize: int, /) -> bytes:
         return await self.__socket.recv(bufsize)
 
-    async def sendall(self, data: ReadableBuffer, /) -> None:
+    async def sendall(self, data: bytes, /) -> None:
         await self.__socket.sendall(data)
 
     def socket(self) -> asyncio.trsock.TransportSocket:

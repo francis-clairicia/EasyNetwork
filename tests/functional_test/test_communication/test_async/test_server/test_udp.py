@@ -76,6 +76,8 @@ class MyAsyncUDPRequestHandler(AsyncBaseRequestHandler[str, str]):
                 await client.aclose()
                 assert not client.is_closing()
                 await client.send_packet("not closed X)")
+            case "__closed_client_error__":
+                raise ClientClosedError
             case "__eq__":
                 assert client in list(self.created_clients)
                 assert object() not in list(self.created_clients)
@@ -96,12 +98,20 @@ class MyAsyncUDPRequestHandler(AsyncBaseRequestHandler[str, str]):
 
 
 class TimeoutRequestHandler(AsyncBaseRequestHandler[str, str]):
+    request_timeout: float = 1.0
+
     async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
         assert (yield) == "something"
-        with pytest.raises(TimeoutError):
-            async with asyncio.timeout(1):
-                yield
-        await client.send_packet("successfully timed out")
+        try:
+            with pytest.raises(TimeoutError):
+                async with asyncio.timeout(self.request_timeout):
+                    yield
+            await client.send_packet("successfully timed out")
+        except BaseException:
+            await client.send_packet("error occurred")
+            raise
+        finally:
+            self.request_timeout = 1.0  # Force reset to 1 second in order not to overload the server
 
     async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError, /) -> None:
         pass
@@ -402,24 +412,22 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         assert isinstance(request_handler.bad_request_received[client_address][0], DatagramProtocolParseError)
         assert request_handler.bad_request_received[client_address][0].error_type == "deserialization"
 
-    @pytest.mark.parametrize("mute_thrown_exception", [False, True])
     @pytest.mark.parametrize("request_handler", [ErrorInBadRequestHandler], indirect=True)
     async def test____serve_forever____bad_request____unexpected_error(
         self,
-        mute_thrown_exception: bool,
-        request_handler: ErrorInBadRequestHandler,
         client_factory: Callable[[], Awaitable[DatagramEndpoint]],
         caplog: pytest.LogCaptureFixture,
         server: MyAsyncUDPServer,
     ) -> None:
         caplog.set_level(logging.ERROR, server.logger.name)
-        request_handler.mute_thrown_exception = mute_thrown_exception
         endpoint = await client_factory()
 
         await endpoint.sendto("\u00E9".encode("latin-1"), None)  # StringSerializer does not accept unicode
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.2)
 
-        assert (await endpoint.recvfrom())[0] == b"RandomError: An error occurred"
+        with pytest.raises(TimeoutError):
+            async with asyncio.timeout(1):
+                assert (await endpoint.recvfrom())[0] == b"RandomError: An error occurred"
         assert len(caplog.records) == 3
 
     async def test____serve_forever____bad_request____recursive_traceback_frame_clear_error(
@@ -446,6 +454,33 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         assert (await endpoint.recvfrom())[0] == b"wrong encoding man."
         assert "Recursion depth reached when clearing exception's traceback frames" in [rec.message for rec in caplog.records]
 
+    @pytest.mark.parametrize("mute_thrown_exception", [False, True])
+    @pytest.mark.parametrize("request_handler", [ErrorInBadRequestHandler], indirect=True)
+    @pytest.mark.parametrize("serializer", [pytest.param("invalid", id="serializer_crash")], indirect=True)
+    async def test____serve_forever____internal_error(
+        self,
+        mute_thrown_exception: bool,
+        request_handler: ErrorInBadRequestHandler,
+        client_factory: Callable[[], Awaitable[DatagramEndpoint]],
+        caplog: pytest.LogCaptureFixture,
+        server: MyAsyncUDPServer,
+    ) -> None:
+        caplog.set_level(logging.ERROR, server.logger.name)
+        request_handler.mute_thrown_exception = mute_thrown_exception
+        endpoint = await client_factory()
+
+        await endpoint.sendto(b"something", None)
+        await asyncio.sleep(0.2)
+
+        assert (await endpoint.recvfrom())[0] == b"SystemError: CRASH"
+        if mute_thrown_exception:
+            await endpoint.sendto(b"something", None)
+            await asyncio.sleep(0.2)
+            assert (await endpoint.recvfrom())[0] == b"SystemError: CRASH"
+            assert len(caplog.records) == 0  # After two attempts
+        else:
+            assert len(caplog.records) == 3
+
     async def test____serve_forever____unexpected_error_during_process(
         self,
         client_factory: Callable[[], Awaitable[DatagramEndpoint]],
@@ -463,11 +498,16 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
     async def test____serve_forever____os_error(
         self,
         client_factory: Callable[[], Awaitable[DatagramEndpoint]],
+        caplog: pytest.LogCaptureFixture,
+        server: MyAsyncUDPServer,
     ) -> None:
+        caplog.set_level(logging.ERROR, server.logger.name)
         endpoint = await client_factory()
 
         await endpoint.sendto(b"__os_error__", None)
         await asyncio.sleep(0.2)
+
+        assert len(caplog.records) == 3
 
     async def test____serve_forever____close_is_noop(
         self,
@@ -480,15 +520,37 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
 
         assert (await endpoint.recvfrom())[0] == b"not closed X)"
 
-    @pytest.mark.parametrize("request_handler", [TimeoutRequestHandler], indirect=True)
-    async def test____serve_forever____throw_cancelled_error(
+    async def test____serve_forever____use_of_a_closed_client_in_request_handler(  # In a world where this thing happen
         self,
         client_factory: Callable[[], Awaitable[DatagramEndpoint]],
+        caplog: pytest.LogCaptureFixture,
+        server: MyAsyncUDPServer,
     ) -> None:
+        caplog.set_level(logging.WARNING, server.logger.name)
+        endpoint = await client_factory()
+        host, port = endpoint.get_extra_info("sockname")[:2]
+
+        await endpoint.sendto(b"__closed_client_error__", None)
+        await asyncio.sleep(0.2)
+
+        assert len(caplog.records) == 1
+        assert caplog.records[0].levelno == logging.WARNING
+        assert caplog.records[0].message == f"There have been attempts to do operation on closed client {host}:{port}"
+
+    @pytest.mark.parametrize("request_handler", [TimeoutRequestHandler], indirect=True)
+    @pytest.mark.parametrize("request_timeout", [0.0, 1.0], ids=lambda p: f"timeout=={p}")
+    async def test____serve_forever____throw_cancelled_error(
+        self,
+        request_timeout: float,
+        request_handler: TimeoutRequestHandler,
+        client_factory: Callable[[], Awaitable[DatagramEndpoint]],
+    ) -> None:
+        request_handler.request_timeout = request_timeout
         endpoint = await client_factory()
 
         await endpoint.sendto(b"something", None)
-        assert (await endpoint.recvfrom())[0] == b"successfully timed out"
+        async with asyncio.timeout(request_timeout + 1):
+            assert (await endpoint.recvfrom())[0] == b"successfully timed out"
 
     @pytest.mark.parametrize("request_handler", [CancellationRequestHandler], indirect=True)
     async def test____serve_forever____request_handler_is_cancelled(

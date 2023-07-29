@@ -969,6 +969,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
 
         # Assert
         mock_stream_protocol.generate_chunks.assert_called_once_with(mocker.sentinel.packet)
+        mock_stream_socket_adapter.sendall_fromiter.assert_called_once()
         mock_stream_socket_adapter.sendall.assert_awaited_once_with(b"packet\n")
         mock_tcp_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_ERROR)
 
@@ -994,6 +995,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         # Assert
         assert exc_info.value.errno == EBUSY
         mock_stream_protocol.generate_chunks.assert_called_once_with(mocker.sentinel.packet)
+        mock_stream_socket_adapter.sendall_fromiter.assert_called_once()
         mock_stream_socket_adapter.sendall.assert_awaited_once_with(b"packet\n")
         mock_tcp_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_ERROR)
 
@@ -1016,6 +1018,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
 
         # Assert
         mock_stream_protocol.generate_chunks.assert_not_called()
+        mock_stream_socket_adapter.sendall_fromiter.assert_not_called()
         mock_stream_socket_adapter.sendall.assert_not_called()
         mock_tcp_socket.getsockopt.assert_not_called()
 
@@ -1037,6 +1040,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
 
         # Assert
         mock_stream_protocol.generate_chunks.assert_not_called()
+        mock_stream_socket_adapter.sendall_fromiter.assert_not_called()
         mock_stream_socket_adapter.sendall.assert_not_awaited()
         mock_tcp_socket.getsockopt.assert_not_called()
 
@@ -1058,6 +1062,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
 
         # Assert
         mock_stream_protocol.generate_chunks.assert_called_once_with(mocker.sentinel.packet)
+        mock_stream_socket_adapter.sendall_fromiter.assert_called_once()
         mock_stream_socket_adapter.sendall.assert_awaited_once_with(b"packet\n")
         mock_tcp_socket.getsockopt.assert_not_called()
 
@@ -1081,6 +1086,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
 
         # Assert
         mock_stream_protocol.generate_chunks.assert_called_once_with(mocker.sentinel.packet)
+        mock_stream_socket_adapter.sendall_fromiter.assert_called_once()
         mock_stream_socket_adapter.sendall.assert_awaited_once_with(b"packet\n")
         mock_tcp_socket.getsockopt.assert_not_called()
 
@@ -1297,6 +1303,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
 
         # Assert
         mock_stream_protocol.generate_chunks.assert_not_called()
+        mock_stream_socket_adapter.sendall_fromiter.assert_not_called()
         mock_stream_socket_adapter.sendall.assert_not_called()
 
     @pytest.mark.usefixtures("setup_consumer_mock")

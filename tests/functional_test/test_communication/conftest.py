@@ -12,7 +12,7 @@ from easynetwork.protocol import DatagramProtocol, StreamProtocol
 import pytest
 import trustme
 
-from .serializer import StringSerializer
+from .serializer import NotGoodStringSerializer, StringSerializer
 
 _FAMILY_TO_LOCALHOST: dict[int, str] = {
     AF_INET: "127.0.0.1",
@@ -61,14 +61,21 @@ def udp_socket_factory(socket_factory: Callable[[int], Socket]) -> Callable[[], 
     return partial(socket_factory, SOCK_DGRAM)
 
 
-@pytest.fixture(scope="package")
-def stream_protocol() -> StreamProtocol[str, str]:
-    return StreamProtocol(StringSerializer())
+@pytest.fixture
+def serializer(request: pytest.FixtureRequest) -> StringSerializer:
+    if getattr(request, "param", "") == "invalid":
+        return NotGoodStringSerializer()
+    return StringSerializer()
 
 
-@pytest.fixture(scope="package")
-def datagram_protocol() -> DatagramProtocol[str, str]:
-    return DatagramProtocol(StringSerializer())
+@pytest.fixture
+def stream_protocol(serializer: StringSerializer) -> StreamProtocol[str, str]:
+    return StreamProtocol(serializer)
+
+
+@pytest.fixture
+def datagram_protocol(serializer: StringSerializer) -> DatagramProtocol[str, str]:
+    return DatagramProtocol(serializer)
 
 
 # Origin: https://gist.github.com/4325783, by Geert Jansen.  Public domain.

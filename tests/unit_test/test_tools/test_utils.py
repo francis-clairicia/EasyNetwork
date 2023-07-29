@@ -26,7 +26,6 @@ from easynetwork.tools._utils import (
     check_real_socket_state,
     check_socket_family,
     check_socket_no_ssl,
-    concatenate_chunks,
     ensure_datagram_socket_bound,
     error_from_errno,
     get_socket_linger_struct,
@@ -393,18 +392,6 @@ def test____validate_timeout_delay____not_a_number(positive_check: bool) -> None
     # Act & Assert
     with pytest.raises(ValueError, match=r"^Invalid delay: NaN \(not a number\)$"):
         validate_timeout_delay(delay, positive_check=positive_check)
-
-
-def test____concanetate_chunks____join_several_bytestrings() -> None:
-    # Arrange
-    to_join = [b"a", b"b", b"cd", b"", b"efgh"]
-    expected_result = b"abcdefgh"
-
-    # Act
-    result = concatenate_chunks(to_join)
-
-    # Assert
-    assert result == expected_result
 
 
 def test____iter_bytes____iterate_over_bytes_returning_one_byte() -> None:

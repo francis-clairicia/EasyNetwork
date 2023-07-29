@@ -200,16 +200,19 @@ class FileBasedPacketSerializer(AbstractPacketSerializer[_ST_contra, _DT_co]):
     def incremental_serialize(self, packet: _ST_contra) -> Generator[bytes, None, None]:
         with BytesIO() as buffer:
             self.dump_to_file(packet, buffer)
+            if buffer.getbuffer().nbytes == 0:
+                return
             data = buffer.getvalue()
-        if data:
-            yield data
+        yield data
 
     @final
     def incremental_deserialize(self) -> Generator[None, bytes, tuple[_DT_co, bytes]]:
-        with BytesIO() as buffer:
+        with BytesIO((yield)) as buffer:
+            initial: bool = True
             while True:
-                buffer.write((yield))
-                buffer.seek(0)
+                if not initial:
+                    buffer.write((yield))
+                    buffer.seek(0)
                 try:
                     packet: _DT_co = self.load_from_file(buffer)
                 except EOFError:
@@ -225,3 +228,5 @@ class FileBasedPacketSerializer(AbstractPacketSerializer[_ST_contra, _DT_co]):
                     ) from exc
                 else:
                     return packet, buffer.read()
+                finally:
+                    initial = False
