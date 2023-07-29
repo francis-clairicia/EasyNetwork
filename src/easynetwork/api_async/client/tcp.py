@@ -27,7 +27,6 @@ from ...tools._utils import (
     check_real_socket_state as _check_real_socket_state,
     check_socket_family as _check_socket_family,
     check_socket_no_ssl as _check_socket_no_ssl,
-    concatenate_chunks as _concatenate_chunks,
     error_from_errno as _error_from_errno,
     set_tcp_keepalive as _set_tcp_keepalive,
     set_tcp_nodelay as _set_tcp_nodelay,
@@ -268,7 +267,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         async with self.__send_lock:
             with self.__convert_socket_error():
                 socket = await self.__ensure_connected()
-                await socket.sendall(_concatenate_chunks(self.__producer(packet)))
+                await socket.sendall_fromiter(self.__producer(packet))
                 _check_real_socket_state(self.socket)
 
     async def recv_packet(self) -> _ReceivedPacketT:

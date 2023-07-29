@@ -55,6 +55,7 @@ def mock_backend(fake_cancellation_cls: type[BaseException], mocker: MockerFixtu
 def mock_stream_socket_adapter_factory(mocker: MockerFixture) -> Callable[[], MagicMock]:
     def factory() -> MagicMock:
         mock = mocker.NonCallableMagicMock(spec=AbstractAsyncStreamSocketAdapter)
+        mock.sendall_fromiter = mocker.MagicMock(side_effect=lambda iterable_of_data: mock.sendall(b"".join(iterable_of_data)))
         mock.is_closing.return_value = False
         return mock
 

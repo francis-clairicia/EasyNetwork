@@ -19,8 +19,6 @@ from ..socket import AsyncSocket
 if TYPE_CHECKING:
     import asyncio.trsock
 
-    from _typeshed import ReadableBuffer
-
     from .endpoint import DatagramEndpoint
 
 
@@ -63,8 +61,8 @@ class AsyncioTransportDatagramSocketAdapter(AbstractAsyncDatagramSocketAdapter):
             data = data[:bufsize]
         return data, address
 
-    async def sendto(self, data: ReadableBuffer, address: tuple[Any, ...] | None, /) -> None:
-        await self.__endpoint.sendto(memoryview(data), address)
+    async def sendto(self, data: bytes, address: tuple[Any, ...] | None, /) -> None:
+        await self.__endpoint.sendto(data, address)
 
     def socket(self) -> asyncio.trsock.TransportSocket:
         return self.__socket
@@ -103,7 +101,7 @@ class RawDatagramSocketAdapter(AbstractAsyncDatagramSocketAdapter):
     async def recvfrom(self, bufsize: int, /) -> tuple[bytes, tuple[Any, ...]]:
         return await self.__socket.recvfrom(bufsize)
 
-    async def sendto(self, data: ReadableBuffer, address: tuple[Any, ...] | None, /) -> None:
+    async def sendto(self, data: bytes, address: tuple[Any, ...] | None, /) -> None:
         if address is None:
             await self.__socket.sendall(data)
         else:

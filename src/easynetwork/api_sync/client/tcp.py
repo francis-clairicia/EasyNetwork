@@ -30,7 +30,6 @@ from ...tools._utils import (
     check_real_socket_state as _check_real_socket_state,
     check_socket_family as _check_socket_family,
     check_socket_no_ssl as _check_socket_no_ssl,
-    concatenate_chunks as _concatenate_chunks,
     error_from_errno as _error_from_errno,
     is_ssl_eof_error as _is_ssl_eof_error,
     lock_with_timeout as _lock_with_timeout,
@@ -288,13 +287,13 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             self.__convert_socket_error(),
         ):
             socket = self.__ensure_connected()
-            data: bytes = _concatenate_chunks(self.__producer(packet))
+            data: bytes = b"".join(self.__producer(packet))
             buffer = memoryview(data)
             assert buffer.itemsize == 1
             perf_counter = time.perf_counter  # pull function to local namespace
             retry_interval: float | None = self.__retry_interval
             try:
-                remaining: int = len(data)
+                remaining: int = buffer.nbytes
                 while remaining > 0:
                     sent: int
                     try:

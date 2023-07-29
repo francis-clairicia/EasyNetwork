@@ -199,7 +199,27 @@ class TestTransportBasedStreamSocket(BaseTestTransportStreamSocket):
 
         # Assert
         mock_asyncio_writer.write.assert_called_once_with(b"data to send")
+        mock_asyncio_writer.writelines.assert_not_called()
         mock_asyncio_writer.drain.assert_awaited_once_with()
+
+    async def test____sendall_fromiter____writelines_and_drain(
+        self,
+        socket: AsyncioTransportStreamSocketAdapter,
+        mock_asyncio_writer: MagicMock,
+    ) -> None:
+        # Arrange
+        written_chunks: list[bytes] = []
+
+        mock_asyncio_writer.writelines.side_effect = written_chunks.extend
+
+        # Act
+        await socket.sendall_fromiter([b"data", b"to", b"send"])
+
+        # Assert
+        mock_asyncio_writer.write.assert_not_called()
+        mock_asyncio_writer.writelines.assert_called_once()
+        mock_asyncio_writer.drain.assert_awaited_once_with()
+        assert written_chunks == [b"data", b"to", b"send"]
 
     async def test____getsockname____return_sockname_extra_info(
         self,
@@ -790,3 +810,17 @@ class TestRawStreamSocketAdapter(BaseTestSocket):
 
         # Assert
         mock_async_socket.sendall.assert_awaited_once_with(b"data")
+
+    async def test_____sendall_fromiter____sends_concatenated_data_to_async_socket(
+        self,
+        socket: RawStreamSocketAdapter,
+        mock_async_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_async_socket.sendall.return_value = None
+
+        # Act
+        await socket.sendall_fromiter([b"data", b"to", b"send"])
+
+        # Assert
+        mock_async_socket.sendall.assert_awaited_once_with(b"datatosend")
