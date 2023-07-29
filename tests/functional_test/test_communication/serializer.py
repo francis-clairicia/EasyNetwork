@@ -50,3 +50,14 @@ class StringSerializer(AbstractIncrementalPacketSerializer[str, str]):
                 return data.decode(encoding=self.encoding), buffer
             except UnicodeError as exc:
                 raise IncrementalDeserializeError(str(exc), buffer) from exc
+
+
+class NotGoodStringSerializer(StringSerializer):
+    __slots__ = ()
+
+    def deserialize(self, data: bytes) -> str:
+        raise SystemError("CRASH")
+
+    def incremental_deserialize(self) -> Generator[None, bytes, tuple[str, bytes]]:
+        yield
+        raise SystemError("CRASH")
