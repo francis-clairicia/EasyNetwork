@@ -75,6 +75,10 @@ class StandaloneUDPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
                 return SocketProxy(socket, runner=portal.run_sync) if socket is not None else None
         return None
 
+    @property
+    def logger(self) -> _logging.Logger:
+        return self._server.logger
+
     if TYPE_CHECKING:
 
         @property

@@ -9,6 +9,7 @@ from easynetwork.api_async.backend.abc import (
     AbstractAsyncDatagramSocketAdapter,
     AbstractAsyncListenerSocketAdapter,
     AbstractAsyncStreamSocketAdapter,
+    AbstractRunner,
     AbstractTask,
     AbstractTaskGroup,
     AbstractThreadsPortal,
@@ -20,7 +21,7 @@ from easynetwork.api_async.backend.abc import (
 
 
 class BaseFakeBackend(AbstractAsyncBackend):
-    def bootstrap(self, coro_func: Callable[..., Coroutine[Any, Any, Any]], *args: Any) -> Any:
+    def new_runner(self) -> AbstractRunner:
         raise NotImplementedError
 
     async def sleep(self, delay: float) -> None:
