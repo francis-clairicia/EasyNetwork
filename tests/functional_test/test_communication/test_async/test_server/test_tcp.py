@@ -77,6 +77,8 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
 
     async def service_init(self) -> None:
         await super().service_init()
+        assert hasattr(self, "backend")
+        assert not hasattr(self, "stop_listening")
         self.connected_clients = WeakValueDictionary()
         self.service_actions_count = 0
         self.request_received = collections.defaultdict(list)
@@ -94,6 +96,7 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
 
     async def service_quit(self) -> None:
         del (
+            self.backend,
             self.connected_clients,
             self.service_actions_count,
             self.request_received,
@@ -371,37 +374,75 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
             stack.enter_context(contextlib.suppress(OSError))
 
             async def factory() -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
-                sock = await create_connection(*server_address, event_loop)
-                reader, writer = await asyncio.open_connection(
-                    sock=sock,
-                    ssl=client_ssl_context if use_ssl else None,
-                    server_hostname="test.example.com" if use_ssl else None,
-                    ssl_handshake_timeout=1 if use_ssl else None,
-                )
-                stack.push_async_callback(lambda: asyncio.wait_for(writer.wait_closed(), 3))
-                stack.callback(writer.close)
-                assert await reader.readline() == b"milk\n"
+                async with asyncio.timeout(30):
+                    sock = await create_connection(*server_address, event_loop)
+                    reader, writer = await asyncio.open_connection(
+                        sock=sock,
+                        ssl=client_ssl_context if use_ssl else None,
+                        server_hostname="test.example.com" if use_ssl else None,
+                        ssl_handshake_timeout=1 if use_ssl else None,
+                    )
+                    stack.push_async_callback(lambda: asyncio.wait_for(writer.wait_closed(), 3))
+                    stack.callback(writer.close)
+                    assert await reader.readline() == b"milk\n"
                 return reader, writer
 
             yield factory
 
     @pytest.mark.parametrize("host", [None, ""], ids=repr)
+    @pytest.mark.parametrize("log_client_connection", [True, False], ids=lambda p: f"log_client_connection=={p}")
+    @pytest.mark.parametrize("use_ssl", ["NO_SSL"], indirect=True)
     async def test____dunder_init____bind_on_all_available_interfaces(
         self,
         host: str | None,
+        log_client_connection: bool,
         request_handler: MyAsyncTCPRequestHandler,
         stream_protocol: StreamProtocol[str, str],
         backend_kwargs: dict[str, Any],
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
-        async with MyAsyncTCPServer(host, 0, stream_protocol, request_handler, backend_kwargs=backend_kwargs) as s:
+        async with MyAsyncTCPServer(
+            host,
+            0,
+            stream_protocol,
+            request_handler,
+            backend_kwargs=backend_kwargs,
+            log_client_connection=log_client_connection,
+        ) as s:
+            caplog.set_level(logging.DEBUG, s.logger.name)
             is_up_event = asyncio.Event()
             _ = asyncio.create_task(s.serve_forever(is_up_event=is_up_event))
             async with asyncio.timeout(1):
                 await is_up_event.wait()
 
-            assert len(s.sockets) > 0
+            try:
+                assert len(s.get_addresses()) > 0
+                assert len(s.sockets) > 0
 
-            await s.shutdown()
+                port = s.get_addresses()[0].port
+
+                reader, writer = await asyncio.open_connection("localhost", port)
+
+                assert await reader.readline() == b"milk\n"
+
+                client_host, client_port = writer.get_extra_info("sockname")[:2]
+
+                writer.close()
+                await writer.wait_closed()
+                await asyncio.sleep(0.1)
+
+            finally:
+                await s.shutdown()
+
+            expected_accept_message = f"Accepted new connection (address = {client_host}:{client_port})"
+            expected_disconnect_message = f"{client_host}:{client_port} disconnected"
+            expected_log_level: int = logging.INFO if log_client_connection else logging.DEBUG
+
+            accept_record = next((record for record in caplog.records if record.message == expected_accept_message), None)
+            disconnect_record = next((record for record in caplog.records if record.message == expected_disconnect_message), None)
+
+            assert accept_record is not None and disconnect_record is not None
+            assert accept_record.levelno == expected_log_level and disconnect_record.levelno == expected_log_level
 
     @pytest.mark.parametrize("ssl_parameter", ["ssl_handshake_timeout", "ssl_shutdown_timeout"])
     async def test____dunder_init____useless_parameter_if_no_ssl_context(
@@ -810,6 +851,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         assert await reader.readline() == b"successfully stop listening\n"
 
         assert not server.is_serving()
+        await asyncio.sleep(0.1)
 
         with pytest.raises(ExceptionGroup) as exc_info:
             await client_factory()

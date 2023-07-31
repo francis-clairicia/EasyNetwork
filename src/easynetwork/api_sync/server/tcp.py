@@ -48,6 +48,7 @@ class StandaloneTCPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
         max_recv_size: int | None = None,
         service_actions_interval: float | None = None,
         backend_kwargs: Mapping[str, Any] | None = None,
+        log_client_connection: bool | None = None,
         logger: _logging.Logger | None = None,
         **kwargs: Any,
     ) -> None:
@@ -67,6 +68,7 @@ class StandaloneTCPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
                 service_actions_interval=service_actions_interval,
                 backend=backend,
                 backend_kwargs=backend_kwargs,
+                log_client_connection=log_client_connection,
                 logger=logger,
                 **kwargs,
             )
@@ -90,6 +92,10 @@ class StandaloneTCPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
                 sockets = portal.run_sync(lambda: self._server.sockets)
                 return tuple(SocketProxy(sock, runner=portal.run_sync) for sock in sockets)
         return ()
+
+    @property
+    def logger(self) -> _logging.Logger:
+        return self._server.logger
 
     if TYPE_CHECKING:
 

@@ -32,7 +32,6 @@ from typing import TYPE_CHECKING, Any, Final, Literal, NamedTuple, ParamSpec, Pr
 if TYPE_CHECKING:
     import threading as _threading
 
-    from _typeshed import ReadableBuffer
 
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
@@ -153,7 +152,7 @@ class SupportsSocketOptions(Protocol):
         ...
 
     @overload
-    def setsockopt(self, __level: int, __optname: int, __value: int | ReadableBuffer, /) -> None:
+    def setsockopt(self, __level: int, __optname: int, __value: int | bytes, /) -> None:
         ...
 
     @overload
@@ -259,7 +258,7 @@ class SocketProxy:
         return self.__execute(self.__socket.getsockopt, *args)
 
     @overload
-    def setsockopt(self, __level: int, __optname: int, __value: int | ReadableBuffer, /) -> None:
+    def setsockopt(self, __level: int, __optname: int, __value: int | bytes, /) -> None:
         ...
 
     @overload

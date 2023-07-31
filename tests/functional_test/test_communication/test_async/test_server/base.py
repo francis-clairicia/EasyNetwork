@@ -13,6 +13,11 @@ import pytest_asyncio
 
 @pytest.mark.asyncio
 class BaseTestAsyncServer:
+    @pytest.fixture(autouse=True)
+    @staticmethod
+    def disable_asyncio_logs(caplog: pytest.LogCaptureFixture) -> None:
+        caplog.set_level("ERROR", "asyncio")
+
     @pytest_asyncio.fixture  # DO NOT SET autouse=True
     @staticmethod
     async def run_server(server: AbstractAsyncNetworkServer) -> AsyncIterator[asyncio.Event]:
@@ -27,6 +32,19 @@ class BaseTestAsyncServer:
             yield event
             await server.shutdown()
 
+    async def test____server_close____idempotent(self, server: AbstractAsyncNetworkServer) -> None:
+        await server.server_close()
+        await server.server_close()
+        await server.server_close()
+
+    async def test____server_close____while_server_is_running(
+        self,
+        server: AbstractAsyncNetworkServer,
+        run_server: asyncio.Event,
+    ) -> None:
+        await run_server.wait()
+        await server.server_close()
+
     @pytest.mark.usefixtures("run_server")
     async def test____serve_forever____error_already_running(self, server: AbstractAsyncNetworkServer) -> None:
         with pytest.raises(ServerAlreadyRunning):
@@ -37,7 +55,7 @@ class BaseTestAsyncServer:
         with pytest.raises(ServerClosedError):
             await server.serve_forever()
 
-    async def test____serve_forever____shutdown_while_setup(
+    async def test____serve_forever____shutdown_during_setup(
         self,
         server: AbstractAsyncNetworkServer,
     ) -> None:
@@ -49,11 +67,27 @@ class BaseTestAsyncServer:
             await server.shutdown()
             assert event.is_set()
 
+    async def test____serve_forever____without_is_up_event(
+        self,
+        server: AbstractAsyncNetworkServer,
+    ) -> None:
+        async with asyncio.TaskGroup() as tg:
+            _ = tg.create_task(server.serve_forever())
+
+            await asyncio.sleep(1)
+            if not server.is_serving():
+                pytest.fail("Timeout error")
+
+            await server.shutdown()
+
+    @pytest.mark.parametrize("server_is_up", [False, True], ids=lambda p: f"server_is_up=={p}")
     async def test____serve_forever____concurrent_shutdown(
         self,
+        server_is_up: bool,
         server: AbstractAsyncNetworkServer,
         run_server: asyncio.Event,
     ) -> None:
-        await run_server.wait()
+        if server_is_up:
+            await run_server.wait()
 
         await asyncio.gather(*[server.shutdown() for _ in range(10)])

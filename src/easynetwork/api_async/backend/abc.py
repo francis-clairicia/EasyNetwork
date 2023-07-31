@@ -89,6 +89,24 @@ class ICondition(ILock, Protocol):
         ...
 
 
+class AbstractRunner(metaclass=ABCMeta):
+    __slots__ = ("__weakref__",)
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None) -> None:
+        self.close()
+
+    @abstractmethod
+    def close(self) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def run(self, coro_func: Callable[..., Coroutine[Any, Any, _T]], *args: Any) -> _T:
+        raise NotImplementedError
+
+
 class AbstractTask(Generic[_T_co], metaclass=ABCMeta):
     __slots__ = ("__weakref__",)
 
@@ -280,8 +298,12 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
     __slots__ = ("__weakref__",)
 
     @abstractmethod
-    def bootstrap(self, coro_func: Callable[..., Coroutine[Any, Any, _T]], *args: Any) -> _T:
+    def new_runner(self) -> AbstractRunner:
         raise NotImplementedError
+
+    def bootstrap(self, coro_func: Callable[..., Coroutine[Any, Any, _T]], *args: Any) -> _T:
+        with self.new_runner() as runner:
+            return runner.run(coro_func, *args)
 
     @abstractmethod
     async def coro_yield(self) -> None:

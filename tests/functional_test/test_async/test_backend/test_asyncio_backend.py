@@ -476,7 +476,7 @@ class TestAsyncioBackend:
                 assert asyncio.get_running_loop() is not event_loop
                 return threads_portal.run_coroutine(coroutine, 42)
 
-            return asyncio.run(main())
+            return backend.bootstrap(main)
 
         assert await backend.run_in_thread(thread) == 42
 
@@ -592,7 +592,7 @@ class TestAsyncioBackend:
                 assert asyncio.get_running_loop() is not event_loop
                 return threads_portal.run_sync(not_threadsafe_func, 42)
 
-            return asyncio.run(main())
+            return backend.bootstrap(main)
 
         assert await backend.run_in_thread(thread) == 42
 

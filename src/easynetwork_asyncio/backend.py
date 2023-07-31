@@ -36,6 +36,7 @@ from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
 from ._utils import _ensure_resolved, create_connection, create_datagram_socket
 from .datagram.endpoint import create_datagram_endpoint
 from .datagram.socket import AsyncioTransportDatagramSocketAdapter, RawDatagramSocketAdapter
+from .runner import AsyncioRunner
 from .stream.listener import AcceptedSocket, AcceptedSSLSocket, ListenerSocketAdapter
 from .stream.socket import AsyncioTransportStreamSocketAdapter, RawStreamSocketAdapter
 from .tasks import Task, TaskGroup, timeout, timeout_at
@@ -61,9 +62,8 @@ class AsyncioBackend(AbstractAsyncBackend):
         self.__use_asyncio_transport: bool = bool(transport)
         self.__asyncio_runner_factory: Callable[[], asyncio.Runner] = runner_factory or asyncio.Runner
 
-    def bootstrap(self, coro_func: Callable[..., Coroutine[Any, Any, _T]], *args: Any) -> _T:
-        with self.__asyncio_runner_factory() as runner:
-            return runner.run(coro_func(*args))
+    def new_runner(self) -> AsyncioRunner:
+        return AsyncioRunner(self.__asyncio_runner_factory())
 
     @staticmethod
     def _current_asyncio_task() -> asyncio.Task[Any]:
