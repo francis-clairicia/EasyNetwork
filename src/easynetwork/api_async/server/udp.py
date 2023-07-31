@@ -25,7 +25,7 @@ import math
 import operator
 import weakref
 from collections import Counter, deque
-from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterator, Mapping
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Coroutine, Iterator, Mapping
 from typing import TYPE_CHECKING, Any, Generic, TypeVar, assert_never, final
 from weakref import WeakValueDictionary
 
@@ -33,6 +33,7 @@ from ...exceptions import ClientClosedError, DatagramProtocolParseError, ServerA
 from ...protocol import DatagramProtocol
 from ...tools._utils import (
     check_real_socket_state as _check_real_socket_state,
+    make_callback as _make_callback,
     recursively_clear_exception_traceback_frames as _recursively_clear_exception_traceback_frames,
     remove_traceback_frames_in_place as _remove_traceback_frames_in_place,
 )
@@ -67,6 +68,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         "__backend",
         "__socket",
         "__socket_factory",
+        "__socket_factory_runner",
         "__protocol",
         "__request_handler",
         "__is_shutdown",
@@ -99,14 +101,14 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
         assert isinstance(protocol, DatagramProtocol)
 
-        self.__socket_factory: SingleTaskRunner[AbstractAsyncDatagramSocketAdapter] | None
-        self.__socket_factory = SingleTaskRunner(
-            backend,
+        self.__socket_factory: Callable[[], Coroutine[Any, Any, AbstractAsyncDatagramSocketAdapter]] | None
+        self.__socket_factory = _make_callback(
             backend.create_udp_endpoint,
             local_address=(host, port),
             remote_address=None,
             reuse_port=reuse_port,
         )
+        self.__socket_factory_runner: SingleTaskRunner[AbstractAsyncDatagramSocketAdapter] | None = None
 
         if service_actions_interval is None:
             service_actions_interval = 1.0
@@ -132,25 +134,32 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         self.__client_task_running: set[_ClientAPI[_ResponseT]] = set()
 
     def is_serving(self) -> bool:
-        return self.__socket is not None
+        return (socket := self.__socket) is not None and not socket.is_closing()
 
     async def server_close(self) -> None:
-        if self.__socket_factory is not None:
-            self.__socket_factory.cancel()
-            self.__socket_factory = None
-        self.__stop_mainloop()
+        self.__kill_socket_factory_runner()
+        self.__socket_factory = None
         await self.__close_socket()
 
     async def __close_socket(self) -> None:
-        async with self.__sendto_lock:
+        async with _contextlib.AsyncExitStack() as exit_stack:
             socket, self.__socket = self.__socket, None
-            if socket is None:
-                return
-            with _contextlib.suppress(OSError):
-                await socket.aclose()
+            if socket is not None:
+
+                async def close_socket(socket: AbstractAsyncDatagramSocketAdapter) -> None:
+                    with _contextlib.suppress(OSError):
+                        await socket.aclose()
+
+                exit_stack.push_async_callback(close_socket, socket)
+
+            if self.__mainloop_task is not None:
+                self.__mainloop_task.cancel()
+                exit_stack.push_async_callback(self.__mainloop_task.wait)
 
     async def shutdown(self) -> None:
-        self.__stop_mainloop()
+        self.__kill_socket_factory_runner()
+        if self.__mainloop_task is not None:
+            self.__mainloop_task.cancel()
         if self.__shutdown_asked:
             await self.__is_shutdown.wait()
             return
@@ -160,35 +169,38 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         finally:
             self.__shutdown_asked = False
 
-    def __stop_mainloop(self) -> None:
-        if self.__mainloop_task is not None:
-            self.__mainloop_task.cancel()
-            self.__mainloop_task = None
+    def __kill_socket_factory_runner(self) -> None:
+        if self.__socket_factory_runner is not None:
+            self.__socket_factory_runner.cancel()
 
     async def serve_forever(self, *, is_up_event: IEvent | None = None) -> None:
-        if not self.__is_shutdown.is_set():
-            raise ServerAlreadyRunning("Server is already running")
-
         async with _contextlib.AsyncExitStack() as server_exit_stack:
-            # Wake up server
-            self.__is_shutdown = is_shutdown = self.__backend.create_event()
-            server_exit_stack.callback(is_shutdown.set)
             if is_up_event is not None:
                 # Force is_up_event to be set, in order not to stuck the waiting task
                 server_exit_stack.callback(is_up_event.set)
+
+            # Wake up server
+            if not self.__is_shutdown.is_set():
+                raise ServerAlreadyRunning("Server is already running")
+            self.__is_shutdown = is_shutdown = self.__backend.create_event()
+            server_exit_stack.callback(is_shutdown.set)
             ################
 
             # Bind and activate
             assert self.__socket is None
+            assert self.__socket_factory_runner is None
             if self.__socket_factory is None:
                 raise ServerClosedError("Closed server")
-            self.__socket = await self.__socket_factory.run()
-            self.__socket_factory = None
+            try:
+                self.__socket_factory_runner = SingleTaskRunner(self.__backend, self.__socket_factory)
+                self.__socket = await self.__socket_factory_runner.run()
+            finally:
+                self.__socket_factory_runner = None
             ###################
 
             # Final teardown
             server_exit_stack.callback(self.__logger.info, "Server stopped")
-            server_exit_stack.push_async_callback(lambda: self.__backend.ignore_cancellation(self.server_close()))
+            server_exit_stack.push_async_callback(lambda: self.__backend.ignore_cancellation(self.__close_socket()))
             ################
 
             # Initialize request handler
@@ -215,22 +227,22 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             ##############
 
             # Main loop
-            self.__mainloop_task = task_group.start_soon(self.__receive_datagrams_task, self.__socket, task_group)
+            self.__mainloop_task = task_group.start_soon(self.__receive_datagrams, self.__socket, task_group)
             if self.__shutdown_asked:
                 self.__mainloop_task.cancel()
             try:
-                await self.__mainloop_task.join()
+                await self.__mainloop_task.join_or_cancel()
             finally:
                 self.__mainloop_task = None
 
-    async def __receive_datagrams_task(
+    async def __receive_datagrams(
         self,
         socket: AbstractAsyncDatagramSocketAdapter,
         task_group: AbstractTaskGroup,
     ) -> None:
         backend = self.__backend
         socket_family: int = socket.socket().family
-        datagram_received_task_method = self.__datagram_received_task
+        datagram_received_task_method = self.__datagram_received_coroutine
         logger: _logging.Logger = self.__logger
         bufsize: int = MAX_DATAGRAM_BUFSIZE
         client_manager: _ClientAPIManager[_ResponseT] = self.__client_manager
@@ -272,7 +284,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             except Exception:
                 self.__logger.exception("Error occurred in request_handler.service_actions()")
 
-    async def __datagram_received_task(
+    async def __datagram_received_coroutine(
         self,
         client: _ClientAPI[_ResponseT],
         task_group: AbstractTaskGroup,
@@ -409,9 +421,9 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         finally:
             if datagram_queue:
                 try:
-                    task_group.start_soon_with_context(default_context, self.__datagram_received_task, client, task_group)
+                    task_group.start_soon_with_context(default_context, self.__datagram_received_coroutine, client, task_group)
                 except NotImplementedError:
-                    default_context.run(task_group.start_soon, self.__datagram_received_task, client, task_group)  # type: ignore[arg-type]
+                    default_context.run(task_group.start_soon, self.__datagram_received_coroutine, client, task_group)  # type: ignore[arg-type]
 
     @_contextlib.contextmanager
     def __client_task_running_context(self, client: _ClientAPI[_ResponseT]) -> Iterator[None]:
@@ -529,7 +541,7 @@ class _TemporaryValue(Generic[_KT, _VT]):
             assert self.__counter[key] >= 0, f"{self.__counter[key]=}"
             if self.__counter[key] == 0 and self.__must_delete_value(value):
                 del self.__counter[key], self.__values[key]
-            del key
+            del key, value
 
 
 @final

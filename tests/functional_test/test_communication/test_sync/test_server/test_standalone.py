@@ -10,7 +10,7 @@ from easynetwork.api_sync.server.abc import AbstractStandaloneNetworkServer
 from easynetwork.api_sync.server.tcp import StandaloneTCPNetworkServer
 from easynetwork.api_sync.server.thread import StandaloneNetworkServerThread
 from easynetwork.api_sync.server.udp import StandaloneUDPNetworkServer
-from easynetwork.exceptions import BaseProtocolParseError, ServerAlreadyRunning
+from easynetwork.exceptions import BaseProtocolParseError, ServerAlreadyRunning, ServerClosedError
 from easynetwork.protocol import DatagramProtocol, StreamProtocol
 
 import pytest
@@ -54,6 +54,11 @@ class BaseTestStandaloneNetworkServer:
         server.shutdown()
         assert not server.is_serving()
 
+    def test____server_close____idempotent(self, server: AbstractStandaloneNetworkServer) -> None:
+        server.server_close()
+        server.server_close()
+        server.server_close()
+
     @pytest.mark.usefixtures("start_server")
     def test____server_close____while_server_is_running(self, server: AbstractStandaloneNetworkServer) -> None:
         server.server_close()
@@ -61,6 +66,12 @@ class BaseTestStandaloneNetworkServer:
     @pytest.mark.usefixtures("start_server")
     def test____serve_forever____error_server_already_running(self, server: AbstractStandaloneNetworkServer) -> None:
         with pytest.raises(ServerAlreadyRunning):
+            server.serve_forever()
+
+    def test____serve_forever____error_server_closed(self, server: AbstractStandaloneNetworkServer) -> None:
+        server.server_close()
+
+        with pytest.raises(ServerClosedError):
             server.serve_forever()
 
     def test____serve_forever____without_is_up_event(self, server: AbstractStandaloneNetworkServer) -> None:
@@ -108,6 +119,22 @@ class TestStandaloneTCPNetworkServer(BaseTestStandaloneNetworkServer):
             backend_kwargs={"runner_factory": runner_factory},
         )
 
+    @pytest.mark.parametrize("runner_factory", [None], indirect=True)
+    def test____serve_forever____serve_several_times(self, server: StandaloneTCPNetworkServer[str, str]) -> None:
+        with server:
+            for _ in range(3):
+                assert not server.is_serving()
+                assert not server.get_addresses()
+
+                server_thread = StandaloneNetworkServerThread(server, daemon=True)
+                server_thread.start()
+                try:
+                    assert server.is_serving()
+                    assert len(server.get_addresses()) > 0
+                    time.sleep(0.5)
+                finally:
+                    server_thread.join()
+
     def test____stop_listening____default_to_noop(self, server: StandaloneTCPNetworkServer[str, str]) -> None:
         with server:
             assert not server.sockets
@@ -124,6 +151,9 @@ class TestStandaloneTCPNetworkServer(BaseTestStandaloneNetworkServer):
         assert not server.is_serving()
         assert len(server.sockets) > 0  # Sockets are closed, but always available until server_close() call
         assert len(server.get_addresses()) == 0
+
+    def test____logger_property____exposed(self, server: StandaloneTCPNetworkServer[str, str]) -> None:
+        assert server.logger is server._server.logger
 
 
 class TestStandaloneUDPNetworkServer(BaseTestStandaloneNetworkServer):
@@ -146,6 +176,22 @@ class TestStandaloneUDPNetworkServer(BaseTestStandaloneNetworkServer):
             backend_kwargs={"runner_factory": runner_factory},
         )
 
+    @pytest.mark.parametrize("runner_factory", [None], indirect=True)
+    def test____serve_forever____serve_several_times(self, server: StandaloneUDPNetworkServer[str, str]) -> None:
+        with server:
+            for _ in range(3):
+                assert not server.is_serving()
+                assert server.get_address() is None
+
+                server_thread = StandaloneNetworkServerThread(server, daemon=True)
+                server_thread.start()
+                try:
+                    assert server.is_serving()
+                    assert server.get_address() is not None
+                    time.sleep(0.5)
+                finally:
+                    server_thread.join()
+
     def test____socket_property____server_is_not_running(self, server: StandaloneUDPNetworkServer[str, str]) -> None:
         with server:
             assert server.socket is None
@@ -155,3 +201,6 @@ class TestStandaloneUDPNetworkServer(BaseTestStandaloneNetworkServer):
     def test____socket_property____server_is_running(self, server: StandaloneUDPNetworkServer[str, str]) -> None:
         assert server.socket is not None
         assert server.get_address() is not None
+
+    def test____logger_property____exposed(self, server: StandaloneUDPNetworkServer[str, str]) -> None:
+        assert server.logger is server._server.logger

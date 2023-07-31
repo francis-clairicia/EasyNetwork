@@ -24,6 +24,7 @@ __all__ = [
     "is_ssl_eof_error",
     "is_ssl_socket",
     "lock_with_timeout",
+    "make_callback",
     "open_listener_sockets_from_getaddrinfo_result",
     "remove_traceback_frames_in_place",
     "replace_kwargs",
@@ -40,6 +41,7 @@ __all__ = [
 import concurrent.futures
 import contextlib
 import errno as _errno
+import functools
 import os
 import selectors as _selectors
 import socket as _socket
@@ -80,6 +82,10 @@ def replace_kwargs(kwargs: dict[str, Any], keys: dict[str, str]) -> None:
             kwargs[new_key] = kwargs.pop(old_key)
         except KeyError:
             pass
+
+
+def make_callback(func: Callable[_P, _R], /, *args: _P.args, **kwargs: _P.kwargs) -> Callable[[], _R]:
+    return functools.partial(func, *args, **kwargs)
 
 
 def error_from_errno(errno: int) -> OSError:

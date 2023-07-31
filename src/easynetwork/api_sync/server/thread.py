@@ -53,13 +53,15 @@ class StandaloneNetworkServerThread(_threading.Thread):
             self.__is_up_event.set()
 
     def join(self, timeout: float | None = None) -> None:
-        _start = time.perf_counter()
-        try:
-            server = self.__server
-            if server is not None:
+        server = self.__server
+        if server is not None:
+            _start = time.perf_counter()
+            try:
                 server.shutdown(timeout=timeout)
-        finally:
-            _end = time.perf_counter()
-            if timeout is not None:
-                timeout -= _end - _start
+            finally:
+                _end = time.perf_counter()
+                if timeout is not None:
+                    timeout -= _end - _start
+                super().join(timeout=timeout)
+        else:
             super().join(timeout=timeout)

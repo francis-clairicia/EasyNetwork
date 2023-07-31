@@ -33,6 +33,7 @@ from easynetwork.tools._utils import (
     is_ssl_socket,
     iter_bytes,
     lock_with_timeout,
+    make_callback,
     open_listener_sockets_from_getaddrinfo_result,
     recursively_clear_exception_traceback_frames,
     remove_traceback_frames_in_place,
@@ -120,6 +121,19 @@ def test____replace_kwargs____error_empty_key_dict() -> None:
 
     # Assert
     assert kwargs == {"arg1": 4, "arg12000": "Yes"}
+
+
+def test____make_callback____build_no_arg_callable(mocker: MockerFixture) -> None:
+    # Arrange
+    stub = mocker.stub()
+    stub.return_value = mocker.sentinel.ret_val
+
+    # Act
+    cb = make_callback(stub, mocker.sentinel.arg1, mocker.sentinel.arg2, kw1=mocker.sentinel.kw1, kw2=mocker.sentinel.kw2)
+
+    # Assert
+    assert cb() is mocker.sentinel.ret_val
+    stub.assert_called_once_with(mocker.sentinel.arg1, mocker.sentinel.arg2, kw1=mocker.sentinel.kw1, kw2=mocker.sentinel.kw2)
 
 
 def test____error_from_errno____returns_OSError(mocker: MockerFixture) -> None:
