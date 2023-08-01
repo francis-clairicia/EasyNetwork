@@ -31,7 +31,7 @@ __all__ = [
     "StreamProtocolParseError",
 ]
 
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .tools.socket import SocketAddress
@@ -98,23 +98,15 @@ class PacketConversionError(Exception):
 class BaseProtocolParseError(Exception):
     """Parsing error raised by a :term:`protocol object`"""
 
-    def __init__(self, error_type: Literal["deserialization", "conversion"], message: str, error_info: Any = None) -> None:
+    def __init__(self, error: DeserializeError | PacketConversionError) -> None:
         """
-        :param error_type: Error type identifier
-        :param message: Error message
-        :param error_info: Additional error data
+        :param error: Error instance
         """
 
-        super().__init__(f"Error while parsing data: {message}")
+        super().__init__(f"Error while parsing data: {error}")
 
-        self.error_type: Literal["deserialization", "conversion"] = error_type
-        """Error type identifier"""
-
-        self.error_info: Any = error_info
-        """Additional error data"""
-
-        self.message: str = message
-        """Error message"""
+        self.error: DeserializeError | PacketConversionError = error
+        """Error instance"""
 
 
 class DatagramProtocolParseError(BaseProtocolParseError):
@@ -127,25 +119,16 @@ class DatagramProtocolParseError(BaseProtocolParseError):
 class StreamProtocolParseError(BaseProtocolParseError):
     """Parsing error raised by :class:`easynetwork.protocol.StreamProtocol`"""
 
-    def __init__(
-        self,
-        remaining_data: bytes,
-        error_type: Literal["deserialization", "conversion"],
-        message: str,
-        error_info: Any = None,
-    ) -> None:
+    def __init__(self, remaining_data: bytes, error: IncrementalDeserializeError | PacketConversionError) -> None:
         """
         :param remaining_data: Unused trailing data
-        :param error_type: Error type identifier
-        :param message: Error message
-        :param error_info: Additional error data
+        :param error: Error instance
         """
 
-        super().__init__(
-            error_type=error_type,
-            message=message,
-            error_info=error_info,
-        )
+        super().__init__(error)
+
+        self.error: IncrementalDeserializeError | PacketConversionError
+        """Error instance"""
 
         self.remaining_data: bytes = remaining_data
         """Unused trailing data"""

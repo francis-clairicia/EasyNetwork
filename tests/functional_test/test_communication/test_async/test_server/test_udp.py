@@ -11,7 +11,7 @@ from typing import Any
 from easynetwork.api_async.backend.abc import AbstractAsyncBackend
 from easynetwork.api_async.server.handler import AsyncBaseRequestHandler, AsyncClientInterface
 from easynetwork.api_async.server.udp import AsyncUDPNetworkServer
-from easynetwork.exceptions import BaseProtocolParseError, ClientClosedError, DatagramProtocolParseError
+from easynetwork.exceptions import BaseProtocolParseError, ClientClosedError, DatagramProtocolParseError, DeserializeError
 from easynetwork.protocol import DatagramProtocol
 from easynetwork_asyncio.datagram.endpoint import DatagramEndpoint, create_datagram_endpoint
 
@@ -410,7 +410,7 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         assert (await endpoint.recvfrom())[0] == b"wrong encoding man."
         assert request_handler.request_received[client_address] == []
         assert isinstance(request_handler.bad_request_received[client_address][0], DatagramProtocolParseError)
-        assert request_handler.bad_request_received[client_address][0].error_type == "deserialization"
+        assert isinstance(request_handler.bad_request_received[client_address][0].error, DeserializeError)
 
     @pytest.mark.parametrize("request_handler", [ErrorInBadRequestHandler], indirect=True)
     async def test____serve_forever____bad_request____unexpected_error(

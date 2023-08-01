@@ -400,11 +400,18 @@ def transform_future_exception(exc: BaseException) -> BaseException:
 
 
 def recursively_clear_exception_traceback_frames(exc: BaseException) -> None:
+    _recursively_clear_exception_traceback_frames_with_memo(exc, set())
+
+
+def _recursively_clear_exception_traceback_frames_with_memo(exc: BaseException, memo: set[int]) -> None:
+    if id(exc) in memo:
+        return
+    memo.add(id(exc))
     traceback.clear_frames(exc.__traceback__)
     if exc.__context__ is not None:
-        recursively_clear_exception_traceback_frames(exc.__context__)
+        _recursively_clear_exception_traceback_frames_with_memo(exc.__context__, memo)
     if exc.__cause__ is not exc.__context__ and exc.__cause__ is not None:
-        recursively_clear_exception_traceback_frames(exc.__cause__)
+        _recursively_clear_exception_traceback_frames_with_memo(exc.__cause__, memo)
 
 
 def remove_traceback_frames_in_place(exc: BaseException, n: int) -> None:

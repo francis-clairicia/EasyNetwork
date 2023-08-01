@@ -14,7 +14,12 @@ from weakref import WeakValueDictionary
 from easynetwork.api_async.backend.abc import AbstractAsyncBackend
 from easynetwork.api_async.server.handler import AsyncBaseRequestHandler, AsyncClientInterface, AsyncStreamRequestHandler
 from easynetwork.api_async.server.tcp import AsyncTCPNetworkServer
-from easynetwork.exceptions import BaseProtocolParseError, ClientClosedError, StreamProtocolParseError
+from easynetwork.exceptions import (
+    BaseProtocolParseError,
+    ClientClosedError,
+    IncrementalDeserializeError,
+    StreamProtocolParseError,
+)
 from easynetwork.protocol import StreamProtocol
 from easynetwork.tools._utils import set_socket_linger
 from easynetwork.tools.socket import SocketAddress
@@ -677,7 +682,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         assert await reader.readline() == b"wrong encoding man.\n"
         assert request_handler.request_received[client_address] == []
         assert isinstance(request_handler.bad_request_received[client_address][0], StreamProtocolParseError)
-        assert request_handler.bad_request_received[client_address][0].error_type == "deserialization"
+        assert isinstance(request_handler.bad_request_received[client_address][0].error, IncrementalDeserializeError)
 
     @pytest.mark.parametrize("request_handler", [ErrorInRequestHandler], indirect=True)
     async def test____serve_forever____bad_request____unexpected_error(
