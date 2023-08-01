@@ -9,7 +9,7 @@ from ssl import SSLEOFError, SSLError, SSLErrorNumber, SSLWantReadError, SSLWant
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.api_sync.client.tcp import TCPNetworkClient
-from easynetwork.exceptions import ClientClosedError
+from easynetwork.exceptions import ClientClosedError, IncrementalDeserializeError
 from easynetwork.tools.socket import (
     CLOSED_SOCKET_ERRNOS,
     MAX_STREAM_BUFSIZE,
@@ -1524,7 +1524,7 @@ class TestTCPNetworkClient(BaseTestClient):
         from easynetwork.exceptions import StreamProtocolParseError
 
         mock_used_socket.recv.side_effect = [b"packet\n"]
-        expected_error = StreamProtocolParseError(b"", "deserialization", "Sorry")
+        expected_error = StreamProtocolParseError(b"", IncrementalDeserializeError("Sorry", b""))
         mock_stream_data_consumer.__next__.side_effect = [StopIteration, expected_error]
 
         # Act
@@ -1741,7 +1741,7 @@ class TestTCPNetworkClient(BaseTestClient):
         # Arrange
         from easynetwork.exceptions import StreamProtocolParseError
 
-        mock_stream_data_consumer.__next__.side_effect = StreamProtocolParseError(b"", "deserialization", "Sorry")
+        mock_stream_data_consumer.__next__.side_effect = StreamProtocolParseError(b"", IncrementalDeserializeError("Sorry", b""))
 
         # Act
         with pytest.raises(StreamProtocolParseError) as exc_info:

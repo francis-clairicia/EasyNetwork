@@ -8,7 +8,7 @@ from socket import AF_INET, AF_INET6, AF_UNSPEC, AI_PASSIVE, IPPROTO_UDP, SOCK_D
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.api_sync.client.udp import UDPNetworkClient, UDPNetworkEndpoint
-from easynetwork.exceptions import ClientClosedError
+from easynetwork.exceptions import ClientClosedError, DeserializeError
 from easynetwork.tools.socket import CLOSED_SOCKET_ERRNOS, MAX_DATAGRAM_BUFSIZE, IPv4SocketAddress, IPv6SocketAddress
 
 import pytest
@@ -921,7 +921,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         from easynetwork.exceptions import DatagramProtocolParseError
 
         mock_udp_socket.recvfrom.side_effect = [(b"packet", sender_address)]
-        expected_error = DatagramProtocolParseError("deserialization", "Sorry")
+        expected_error = DatagramProtocolParseError(DeserializeError("Sorry"))
         mock_datagram_protocol.build_packet_from_datagram.side_effect = expected_error
 
         # Act
@@ -1108,7 +1108,7 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         from easynetwork.exceptions import DatagramProtocolParseError
 
         mock_udp_socket.recvfrom.side_effect = [(b"packet", sender_address)]
-        expected_error = DatagramProtocolParseError("deserialization", "Sorry")
+        expected_error = DatagramProtocolParseError(DeserializeError("Sorry"))
         mock_datagram_protocol.build_packet_from_datagram.side_effect = expected_error
 
         # Act
