@@ -139,9 +139,7 @@ class TestDatagramProtocol:
 
         # Assert
         mock_convert_func.assert_not_called()
-        assert exception.error_type == "deserialization"
-        assert exception.message == "Deserialization error"
-        assert exception.error_info is mocker.sentinel.error_info
+        assert exception.error is mock_serializer.deserialize.side_effect
         assert exception.__cause__ is mock_serializer.deserialize.side_effect
         assert not hasattr(exception, "sender_address")
 
@@ -166,9 +164,7 @@ class TestDatagramProtocol:
 
         # Assert
         mock_convert_func.assert_called_once()
-        assert exception.error_type == "conversion"
-        assert exception.message == "Conversion error"
-        assert exception.error_info is mocker.sentinel.error_info
+        assert exception.error is mock_convert_func.side_effect
         assert exception.__cause__ is mock_convert_func.side_effect
         assert not hasattr(exception, "sender_address")
 
@@ -326,11 +322,9 @@ class TestStreamProtocol:
 
         # Assert
         mock_convert_func.assert_not_called()
-        assert exception.error_type == "deserialization"
+        assert isinstance(exception.error, IncrementalDeserializeError)
         assert exception.remaining_data is mocker.sentinel.chunk
-        assert exception.message == "Deserialization error"
-        assert exception.error_info is mocker.sentinel.error_info
-        assert isinstance(exception.__cause__, DeserializeError)
+        assert isinstance(exception.__cause__, IncrementalDeserializeError)
 
     def test____build_packet_from_chunks____wrong_deserialize_error(
         self,
@@ -380,8 +374,6 @@ class TestStreamProtocol:
 
         # Assert
         mock_convert_func.assert_called_once()
-        assert exception.error_type == "conversion"
+        assert isinstance(exception.error, PacketConversionError)
         assert exception.remaining_data is mocker.sentinel.chunk
-        assert exception.message == "Conversion error"
-        assert exception.error_info is mocker.sentinel.error_info
         assert exception.__cause__ is mock_convert_func.side_effect

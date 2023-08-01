@@ -794,7 +794,7 @@ def test____recursively_clear_exception_traceback_frames____exception_with_conte
         mocker.call(exception.__traceback__),
         mocker.call(exception.__context__.__traceback__),
         mocker.call(exception.__context__.__context__.__traceback__),
-        mocker.call(exception.__cause__.__traceback__),
+        # mocker.call(exception.__cause__.__traceback__),  # Already cleared because of the context nesting
     ]
 
 

@@ -17,7 +17,7 @@ __all__ = [
     "StreamProtocolParseError",
 ]
 
-from typing import TYPE_CHECKING, Any, Literal, TypeAlias
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .tools.socket import SocketAddress
@@ -54,13 +54,9 @@ class PacketConversionError(Exception):
 
 
 class BaseProtocolParseError(Exception):
-    ParseErrorType: TypeAlias = Literal["deserialization", "conversion"]
-
-    def __init__(self, error_type: ParseErrorType, message: str, error_info: Any = None) -> None:
-        super().__init__(f"Error while parsing data: {message}")
-        self.error_type: BaseProtocolParseError.ParseErrorType = error_type
-        self.error_info: Any = error_info
-        self.message: str = message
+    def __init__(self, error: DeserializeError | PacketConversionError) -> None:
+        super().__init__(f"Error while parsing data: {error}")
+        self.error: DeserializeError | PacketConversionError = error
 
 
 class DatagramProtocolParseError(BaseProtocolParseError):
@@ -68,16 +64,7 @@ class DatagramProtocolParseError(BaseProtocolParseError):
 
 
 class StreamProtocolParseError(BaseProtocolParseError):
-    def __init__(
-        self,
-        remaining_data: bytes,
-        error_type: StreamProtocolParseError.ParseErrorType,
-        message: str,
-        error_info: Any = None,
-    ) -> None:
-        super().__init__(
-            error_type=error_type,
-            message=message,
-            error_info=error_info,
-        )
+    def __init__(self, remaining_data: bytes, error: IncrementalDeserializeError | PacketConversionError) -> None:
+        super().__init__(error)
+        self.error: IncrementalDeserializeError | PacketConversionError
         self.remaining_data: bytes = remaining_data

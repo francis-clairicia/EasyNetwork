@@ -68,12 +68,12 @@ class DatagramProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
         try:
             packet: _ReceivedPacketT = self.__serializer.deserialize(datagram)
         except DeserializeError as exc:
-            raise DatagramProtocolParseError("deserialization", str(exc), error_info=exc.error_info) from exc
+            raise DatagramProtocolParseError(exc) from exc
         if (converter := self.__converter) is not None:
             try:
                 packet = converter.create_from_dto_packet(packet)
             except PacketConversionError as exc:
-                raise DatagramProtocolParseError("conversion", str(exc), error_info=exc.error_info) from exc
+                raise DatagramProtocolParseError(exc) from exc
         return packet
 
 
@@ -117,7 +117,7 @@ class StreamProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
             packet, remaining_data = yield from self.__serializer.incremental_deserialize()
         except IncrementalDeserializeError as exc:
             remaining_data, exc.remaining_data = exc.remaining_data, b""
-            raise StreamProtocolParseError(remaining_data, "deserialization", str(exc), error_info=exc.error_info) from exc
+            raise StreamProtocolParseError(remaining_data, exc) from exc
         except DeserializeError as exc:
             raise RuntimeError("DeserializeError raised instead of IncrementalDeserializeError") from exc
 
@@ -125,6 +125,6 @@ class StreamProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
             try:
                 packet = converter.create_from_dto_packet(packet)
             except PacketConversionError as exc:
-                raise StreamProtocolParseError(remaining_data, "conversion", str(exc), error_info=exc.error_info) from exc
+                raise StreamProtocolParseError(remaining_data, exc) from exc
 
         return packet, remaining_data
