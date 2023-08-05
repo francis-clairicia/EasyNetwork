@@ -7,6 +7,7 @@ from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any, cast
 
 from easynetwork.api_async.backend.abc import AbstractAsyncStreamSocketAdapter
+from easynetwork.tools.constants import MAX_STREAM_BUFSIZE
 from easynetwork_asyncio import AsyncioBackend
 
 import pytest
@@ -120,8 +121,6 @@ class TestAsyncIOBackend:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
-
         mock_asyncio_reader = mock_asyncio_stream_reader_factory()
         mock_asyncio_writer = mock_asyncio_stream_writer_factory()
         mock_StreamSocketAdapter: MagicMock = mocker.patch(
@@ -186,8 +185,6 @@ class TestAsyncIOBackend:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
-
         mocker.patch("easynetwork_asyncio.backend.AsyncioTransportStreamSocketAdapter", return_value=mocker.sentinel.socket)
         mock_open_connection: AsyncMock = mocker.patch(
             "asyncio.open_connection",
@@ -244,8 +241,6 @@ class TestAsyncIOBackend:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
-
         mocker.patch("easynetwork_asyncio.backend.AsyncioTransportStreamSocketAdapter", return_value=mocker.sentinel.socket)
         mock_open_connection: AsyncMock = mocker.patch(
             "asyncio.open_connection",
@@ -491,8 +486,6 @@ class TestAsyncIOBackend:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
-
         mock_asyncio_reader = mock_asyncio_stream_reader_factory()
         mock_asyncio_writer = mock_asyncio_stream_writer_factory()
         mock_AsyncioTransportStreamSocketAdapter: MagicMock = mocker.patch(
@@ -538,8 +531,6 @@ class TestAsyncIOBackend:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
-
         mock_asyncio_reader = mock_asyncio_stream_reader_factory()
         mock_asyncio_writer = mock_asyncio_stream_writer_factory()
         mock_AsyncioTransportStreamSocketAdapter: MagicMock = mocker.patch(

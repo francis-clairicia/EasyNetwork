@@ -37,7 +37,8 @@ from ...tools._utils import (
     recursively_clear_exception_traceback_frames as _recursively_clear_exception_traceback_frames,
     remove_traceback_frames_in_place as _remove_traceback_frames_in_place,
 )
-from ...tools.socket import MAX_DATAGRAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
+from ...tools.constants import MAX_DATAGRAM_BUFSIZE
+from ...tools.socket import SocketAddress, SocketProxy, new_socket_address
 from ..backend.factory import AsyncBackendFactory
 from ..backend.tasks import SingleTaskRunner
 from ._tools.actions import ErrorAction as _ErrorAction, RequestAction as _RequestAction

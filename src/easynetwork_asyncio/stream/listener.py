@@ -30,7 +30,7 @@ from easynetwork.api_async.backend.abc import (
     AbstractAsyncListenerSocketAdapter,
     AbstractAsyncStreamSocketAdapter,
 )
-from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
+from easynetwork.tools.constants import MAX_STREAM_BUFSIZE
 
 from ..socket import AsyncSocket
 from .socket import AsyncioTransportStreamSocketAdapter, RawStreamSocketAdapter

@@ -8,6 +8,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.api_async.backend.abc import AbstractAcceptedSocket
+from easynetwork.tools.constants import MAX_STREAM_BUFSIZE
 from easynetwork_asyncio.stream.listener import AcceptedSocket, AcceptedSSLSocket, ListenerSocketAdapter
 from easynetwork_asyncio.stream.socket import AsyncioTransportStreamSocketAdapter, RawStreamSocketAdapter
 
@@ -501,7 +502,6 @@ class TestAcceptedSocket(BaseTestTransportStreamSocket, BaseTestSocket):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
 
         # Act
         socket = await accepted_socket.connect()
@@ -641,7 +641,6 @@ class TestAcceptedSSLSocket(BaseTestTransportStreamSocket):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
 
         # Act
         socket = await accepted_socket.connect()

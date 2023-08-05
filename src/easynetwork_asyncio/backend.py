@@ -41,10 +41,9 @@ else:
 
 from easynetwork.api_async.backend.abc import AbstractAsyncBackend
 from easynetwork.api_async.backend.sniffio import current_async_library_cvar as _sniffio_current_async_library_cvar
-from easynetwork.tools._utils import open_listener_sockets_from_getaddrinfo_result
-from easynetwork.tools.socket import MAX_STREAM_BUFSIZE
+from easynetwork.tools.constants import MAX_STREAM_BUFSIZE
 
-from ._utils import _ensure_resolved, create_connection, create_datagram_socket
+from ._utils import _ensure_resolved, create_connection, create_datagram_socket, open_listener_sockets_from_getaddrinfo_result
 from .datagram.endpoint import create_datagram_endpoint
 from .datagram.socket import AsyncioTransportDatagramSocketAdapter, RawDatagramSocketAdapter
 from .runner import AsyncioRunner

@@ -37,6 +37,8 @@ else:
 
 from ...exceptions import ClientClosedError
 from ...protocol import StreamProtocol
+from ...tools._lock import ForkSafeLock
+from ...tools._stream import StreamDataConsumer
 from ...tools._utils import (
     check_real_socket_state as _check_real_socket_state,
     check_socket_family as _check_socket_family,
@@ -47,21 +49,10 @@ from ...tools._utils import (
     replace_kwargs as _replace_kwargs,
     retry_socket_method as _retry_socket_method,
     retry_ssl_socket_method as _retry_ssl_socket_method,
-    set_tcp_keepalive as _set_tcp_keepalive,
-    set_tcp_nodelay as _set_tcp_nodelay,
     validate_timeout_delay as _validate_timeout_delay,
 )
-from ...tools.lock import ForkSafeLock
-from ...tools.socket import (
-    CLOSED_SOCKET_ERRNOS,
-    MAX_STREAM_BUFSIZE,
-    SSL_HANDSHAKE_TIMEOUT,
-    SSL_SHUTDOWN_TIMEOUT,
-    SocketAddress,
-    SocketProxy,
-    new_socket_address,
-)
-from ...tools.stream import StreamDataConsumer
+from ...tools.constants import CLOSED_SOCKET_ERRNOS, MAX_STREAM_BUFSIZE, SSL_HANDSHAKE_TIMEOUT, SSL_SHUTDOWN_TIMEOUT
+from ...tools.socket import SocketAddress, SocketProxy, new_socket_address, set_tcp_keepalive, set_tcp_nodelay
 from .abc import AbstractNetworkClient
 
 if TYPE_CHECKING:
@@ -238,8 +229,10 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 if ssl_shutdown_timeout is None:
                     ssl_shutdown_timeout = SSL_SHUTDOWN_TIMEOUT
 
-            _set_tcp_nodelay(socket)
-            _set_tcp_keepalive(socket)
+            with _contextlib.suppress(OSError):
+                set_tcp_nodelay(socket, True)
+            with _contextlib.suppress(OSError):
+                set_tcp_keepalive(socket, True)
             self.__producer: Callable[[_SentPacketT], Iterator[bytes]] = protocol.generate_chunks
             self.__consumer: StreamDataConsumer[_ReceivedPacketT] = StreamDataConsumer(protocol)
             self.__socket_proxy = SocketProxy(socket, lock=self.__socket_lock.get)

@@ -17,11 +17,12 @@
 
 from __future__ import annotations
 
-__all__ = ["create_connection", "create_datagram_socket"]
+__all__ = ["create_connection", "create_datagram_socket", "open_listener_sockets_from_getaddrinfo_result"]
 
 import asyncio
+import contextlib
 import socket as _socket
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from typing import Any
 
 from easynetwork.tools._utils import set_reuseport as _set_reuseport
@@ -193,3 +194,57 @@ async def create_datagram_socket(
         loop=loop,
         reuse_port=reuse_port,
     )
+
+
+def open_listener_sockets_from_getaddrinfo_result(
+    infos: Iterable[tuple[int, int, int, str, tuple[Any, ...]]],
+    *,
+    backlog: int,
+    reuse_address: bool,
+    reuse_port: bool,
+) -> list[_socket.socket]:
+    sockets: list[_socket.socket] = []
+    reuse_address = reuse_address and hasattr(_socket, "SO_REUSEADDR")
+    with contextlib.ExitStack() as socket_exit_stack:
+        errors: list[OSError] = []
+        for af, _, proto, _, sa in infos:
+            try:
+                sock = socket_exit_stack.enter_context(contextlib.closing(_socket.socket(af, _socket.SOCK_STREAM, proto)))
+            except OSError:
+                # Assume it's a bad family/type/protocol combination.
+                continue
+            sockets.append(sock)
+            if reuse_address:
+                try:
+                    sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, True)
+                except OSError:  # pragma: no cover
+                    # Will fail later on bind()
+                    pass
+            if reuse_port:
+                _set_reuseport(sock)
+            # Disable IPv4/IPv6 dual stack support (enabled by
+            # default on Linux) which makes a single socket
+            # listen on both address families.
+            if _socket.has_ipv6 and af == _socket.AF_INET6 and hasattr(_socket, "IPPROTO_IPV6"):
+                sock.setsockopt(_socket.IPPROTO_IPV6, _socket.IPV6_V6ONLY, True)
+            try:
+                sock.bind(sa)
+            except OSError as exc:
+                errors.append(
+                    OSError(
+                        exc.errno, f"error while attempting to bind on address {sa!r}: {exc.strerror.lower()}"
+                    ).with_traceback(exc.__traceback__)
+                )
+                continue
+            sock.listen(backlog)
+
+        if errors:
+            try:
+                raise ExceptionGroup("Error when trying to create TCP listeners", errors)
+            finally:
+                errors = []
+
+        # There were no errors, therefore do not close the sockets
+        socket_exit_stack.pop_all()
+
+    return sockets

@@ -535,7 +535,7 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
 
         assert len(caplog.records) == 1
         assert caplog.records[0].levelno == logging.WARNING
-        assert caplog.records[0].message == f"There have been attempts to do operation on closed client {host}:{port}"
+        assert caplog.records[0].message == f"There have been attempts to do operation on closed client ({host!r}, {port})"
 
     @pytest.mark.parametrize("request_handler", [TimeoutRequestHandler], indirect=True)
     @pytest.mark.parametrize("request_timeout", [0.0, 1.0], ids=lambda p: f"timeout=={p}")

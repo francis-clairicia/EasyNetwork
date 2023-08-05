@@ -10,14 +10,8 @@ from typing import TYPE_CHECKING, Any
 
 from easynetwork.api_sync.client.tcp import TCPNetworkClient
 from easynetwork.exceptions import ClientClosedError, IncrementalDeserializeError
-from easynetwork.tools.socket import (
-    CLOSED_SOCKET_ERRNOS,
-    MAX_STREAM_BUFSIZE,
-    SSL_HANDSHAKE_TIMEOUT,
-    SSL_SHUTDOWN_TIMEOUT,
-    IPv4SocketAddress,
-    IPv6SocketAddress,
-)
+from easynetwork.tools.constants import CLOSED_SOCKET_ERRNOS, MAX_STREAM_BUFSIZE, SSL_HANDSHAKE_TIMEOUT, SSL_SHUTDOWN_TIMEOUT
+from easynetwork.tools.socket import IPv4SocketAddress, IPv6SocketAddress
 
 import pytest
 

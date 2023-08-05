@@ -4,7 +4,7 @@ from collections.abc import Generator
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.exceptions import IncrementalDeserializeError
-from easynetwork.tools.stream import StreamDataConsumer, StreamDataProducer
+from easynetwork.tools._stream import StreamDataConsumer, StreamDataProducer
 
 import pytest
 

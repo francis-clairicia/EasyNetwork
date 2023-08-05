@@ -32,7 +32,8 @@ from ...tools._utils import (
     ensure_datagram_socket_bound as _ensure_datagram_socket_bound,
     error_from_errno as _error_from_errno,
 )
-from ...tools.socket import MAX_DATAGRAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
+from ...tools.constants import MAX_DATAGRAM_BUFSIZE
+from ...tools.socket import SocketAddress, SocketProxy, new_socket_address
 from ..backend.abc import AbstractAsyncBackend, AbstractAsyncDatagramSocketAdapter, ILock
 from ..backend.factory import AsyncBackendFactory
 from ..backend.tasks import SingleTaskRunner
