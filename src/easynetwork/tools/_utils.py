@@ -6,19 +6,15 @@ __all__ = [
     "check_socket_no_ssl",
     "ensure_datagram_socket_bound",
     "error_from_errno",
-    "get_socket_linger_struct",
     "is_ssl_eof_error",
     "is_ssl_socket",
     "lock_with_timeout",
     "make_callback",
-    "open_listener_sockets_from_getaddrinfo_result",
     "remove_traceback_frames_in_place",
     "replace_kwargs",
     "retry_socket_method",
     "retry_ssl_socket_method",
     "set_reuseport",
-    "set_socket_linger",
-    "set_tcp_nodelay",
     "transform_future_exception",
     "validate_timeout_delay",
     "wait_socket_available",
@@ -34,9 +30,8 @@ import socket as _socket
 import threading
 import time
 import traceback
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterator
 from math import isinf, isnan
-from struct import Struct
 from typing import TYPE_CHECKING, Any, Literal, ParamSpec, TypeGuard, TypeVar, assert_never
 
 try:
@@ -280,95 +275,6 @@ def set_reuseport(sock: SupportsSocketOptions) -> None:
             sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEPORT, True)
         except OSError:
             raise ValueError("reuse_port not supported by socket module, SO_REUSEPORT defined but not implemented.") from None
-
-
-def set_tcp_nodelay(sock: SupportsSocketOptions) -> None:
-    try:
-        sock.setsockopt(_socket.IPPROTO_TCP, _socket.TCP_NODELAY, True)
-    except (OSError, AttributeError):  # pragma: no cover
-        pass
-
-
-def set_tcp_keepalive(sock: SupportsSocketOptions) -> None:
-    try:
-        sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_KEEPALIVE, True)
-    except (OSError, AttributeError):  # pragma: no cover
-        pass
-
-
-if os.name == "nt":  # Windows
-    # https://learn.microsoft.com/en-us/windows/win32/api/winsock2/ns-winsock2-linger
-    # linger struct uses unsigned short ints
-    _linger_struct = Struct("@HH")
-else:  # Unix/macOS
-    # https://manpages.debian.org/bookworm/manpages/socket.7.en.html#SO_LINGER
-    # linger struct uses signed ints
-    _linger_struct = Struct("@ii")
-
-
-def get_socket_linger_struct() -> Struct:
-    return _linger_struct
-
-
-def set_socket_linger(sock: SupportsSocketOptions, timeout: int | None) -> None:
-    if timeout is None:
-        sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_LINGER, _linger_struct.pack(False, 0))
-    else:
-        sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_LINGER, _linger_struct.pack(True, timeout))
-
-
-def open_listener_sockets_from_getaddrinfo_result(
-    infos: Iterable[tuple[int, int, int, str, tuple[Any, ...]]],
-    *,
-    backlog: int,
-    reuse_address: bool,
-    reuse_port: bool,
-) -> list[_socket.socket]:
-    sockets: list[_socket.socket] = []
-    reuse_address = reuse_address and hasattr(_socket, "SO_REUSEADDR")
-    with contextlib.ExitStack() as socket_exit_stack:
-        errors: list[OSError] = []
-        for af, _, proto, _, sa in infos:
-            try:
-                sock = socket_exit_stack.enter_context(contextlib.closing(_socket.socket(af, _socket.SOCK_STREAM, proto)))
-            except OSError:
-                # Assume it's a bad family/type/protocol combination.
-                continue
-            sockets.append(sock)
-            if reuse_address:
-                try:
-                    sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, True)
-                except OSError:  # pragma: no cover
-                    # Will fail later on bind()
-                    pass
-            if reuse_port:
-                set_reuseport(sock)
-            # Disable IPv4/IPv6 dual stack support (enabled by
-            # default on Linux) which makes a single socket
-            # listen on both address families.
-            if _socket.has_ipv6 and af == _socket.AF_INET6 and hasattr(_socket, "IPPROTO_IPV6"):
-                sock.setsockopt(_socket.IPPROTO_IPV6, _socket.IPV6_V6ONLY, True)
-            try:
-                sock.bind(sa)
-            except OSError as exc:
-                errors.append(
-                    OSError(
-                        exc.errno, f"error while attempting to bind on address {sa!r}: {exc.strerror.lower()}"
-                    ).with_traceback(exc.__traceback__)
-                )
-                continue
-            sock.listen(backlog)
-
-        if errors:
-            try:
-                raise ExceptionGroup("Error when trying to create TCP listeners", errors)
-            finally:
-                errors = []
-
-        # There were no errors, therefore do not close the sockets
-        socket_exit_stack.pop_all()
-
-    return sockets
 
 
 def transform_future_exception(exc: BaseException) -> BaseException:

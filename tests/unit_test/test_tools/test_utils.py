@@ -5,22 +5,9 @@ import os
 import selectors
 import ssl
 import threading
-from collections.abc import Callable, Sequence
-from socket import (
-    AF_INET,
-    AF_INET6,
-    IPPROTO_IPV6,
-    IPPROTO_TCP,
-    IPV6_V6ONLY,
-    SO_ERROR,
-    SO_KEEPALIVE,
-    SO_LINGER,
-    SO_REUSEADDR,
-    SOCK_STREAM,
-    SOL_SOCKET,
-    TCP_NODELAY,
-)
-from typing import TYPE_CHECKING, Any, Literal, cast
+from collections.abc import Callable
+from socket import SO_ERROR, SOL_SOCKET
+from typing import TYPE_CHECKING, Any, Literal
 
 from easynetwork.tools._utils import (
     check_real_socket_state,
@@ -28,20 +15,15 @@ from easynetwork.tools._utils import (
     check_socket_no_ssl,
     ensure_datagram_socket_bound,
     error_from_errno,
-    get_socket_linger_struct,
     is_ssl_eof_error,
     is_ssl_socket,
     iter_bytes,
     lock_with_timeout,
     make_callback,
-    open_listener_sockets_from_getaddrinfo_result,
     recursively_clear_exception_traceback_frames,
     remove_traceback_frames_in_place,
     replace_kwargs,
     set_reuseport,
-    set_socket_linger,
-    set_tcp_keepalive,
-    set_tcp_nodelay,
     transform_future_exception,
     validate_timeout_delay,
     wait_socket_available,
@@ -67,14 +49,6 @@ def socket_family(request: Any) -> Any:
     import socket
 
     return getattr(socket, request.param)
-
-
-@pytest.fixture
-def addrinfo_list() -> Sequence[tuple[int, int, int, str, tuple[Any, ...]]]:
-    return (
-        (AF_INET, SOCK_STREAM, IPPROTO_TCP, "", ("0.0.0.0", 65432)),
-        (AF_INET6, SOCK_STREAM, IPPROTO_TCP, "", ("::", 65432, 0, 0)),
-    )
 
 
 def test____replace_kwargs____rename_keys() -> None:
@@ -538,138 +512,6 @@ def test____set_reuseport____not_supported____defined_but_not_implemented(
 
     # Assert
     mock_tcp_socket.setsockopt.assert_called_once_with(SOL_SOCKET, SO_REUSEPORT, True)
-
-
-def test____set_tcp_nodelay____setsockopt(
-    mock_tcp_socket: MagicMock,
-) -> None:
-    # Arrange
-
-    # Act
-    set_tcp_nodelay(mock_tcp_socket)
-
-    # Assert
-    mock_tcp_socket.setsockopt.assert_called_once_with(IPPROTO_TCP, TCP_NODELAY, True)
-
-
-def test____set_tcp_keepalive____setsockopt(
-    mock_tcp_socket: MagicMock,
-) -> None:
-    # Arrange
-
-    # Act
-    set_tcp_keepalive(mock_tcp_socket)
-
-    # Assert
-    mock_tcp_socket.setsockopt.assert_called_once_with(SOL_SOCKET, SO_KEEPALIVE, True)
-
-
-@pytest.mark.parametrize("timeout", [None, 0, 60])
-def test____set_socket_linger____setsockopt(
-    mock_tcp_socket: MagicMock,
-    timeout: int | None,
-) -> None:
-    # Arrange
-    linger_struct = get_socket_linger_struct()
-    expected_buffer: bytes
-    if timeout is None:
-        expected_buffer = linger_struct.pack(0, 0)  # Disabled
-    else:
-        expected_buffer = linger_struct.pack(1, timeout)  # Enabled with timeout
-
-    # Act
-    set_socket_linger(mock_tcp_socket, timeout)
-
-    # Assert
-    mock_tcp_socket.setsockopt.assert_called_once_with(SOL_SOCKET, SO_LINGER, expected_buffer)
-
-
-@pytest.mark.parametrize("reuse_address", [False, True], ids=lambda boolean: f"reuse_address=={boolean}")
-@pytest.mark.parametrize("SO_REUSEADDR_available", [False, True], ids=lambda boolean: f"SO_REUSEADDR_available=={boolean}")
-@pytest.mark.parametrize("reuse_port", [False, True], ids=lambda boolean: f"reuse_port=={boolean}")
-def test____open_listener_sockets_from_getaddrinfo_result____create_listener_sockets(
-    reuse_address: bool,
-    SO_REUSEADDR_available: bool,
-    reuse_port: bool,
-    mock_socket_cls: MagicMock,
-    mocker: MockerFixture,
-    addrinfo_list: Sequence[tuple[int, int, int, str, tuple[Any, ...]]],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # Arrange
-    SO_REUSEPORT: int = 123456
-    monkeypatch.setattr("socket.SO_REUSEPORT", SO_REUSEPORT, raising=False)
-    backlog: int = 123456
-    if not SO_REUSEADDR_available:
-        monkeypatch.delattr("socket.SO_REUSEADDR", raising=True)
-
-    # Act
-    sockets = cast(
-        "list[MagicMock]",
-        open_listener_sockets_from_getaddrinfo_result(
-            addrinfo_list,
-            backlog=backlog,
-            reuse_address=reuse_address,
-            reuse_port=reuse_port,
-        ),
-    )
-
-    # Assert
-    assert len(sockets) == len(addrinfo_list)
-    assert mock_socket_cls.mock_calls == [mocker.call(f, t, p) for f, t, p, _, _ in addrinfo_list]
-    for socket, (sock_family, _, _, _, sock_addr) in zip(sockets, addrinfo_list, strict=True):
-        if reuse_address and SO_REUSEADDR_available:
-            socket.setsockopt.assert_any_call(SOL_SOCKET, SO_REUSEADDR, True)
-        if reuse_port:
-            socket.setsockopt.assert_any_call(SOL_SOCKET, SO_REUSEPORT, True)
-        if sock_family == AF_INET6:
-            socket.setsockopt.assert_any_call(IPPROTO_IPV6, IPV6_V6ONLY, True)
-        socket.bind.assert_called_once_with(sock_addr)
-        socket.listen.assert_called_once_with(backlog)
-        socket.close.assert_not_called()
-
-
-def test____open_listener_sockets_from_getaddrinfo_result____ignore_bad_combinations(
-    mock_socket_cls: MagicMock,
-    mock_tcp_socket_factory: Callable[[], MagicMock],
-    addrinfo_list: Sequence[tuple[int, int, int, str, tuple[Any, ...]]],
-) -> None:
-    # Arrange
-    assert len(addrinfo_list) == 2  # In prevention
-    mock_socket_cls.side_effect = [mock_tcp_socket_factory(), OSError]
-
-    # Act
-    sockets = open_listener_sockets_from_getaddrinfo_result(addrinfo_list, backlog=10, reuse_address=True, reuse_port=False)
-
-    # Assert
-    assert len(sockets) == 1
-
-
-def test____open_listener_sockets_from_getaddrinfo_result____bind_failed(
-    mock_socket_cls: MagicMock,
-    mock_tcp_socket_factory: Callable[[], MagicMock],
-    addrinfo_list: Sequence[tuple[int, int, int, str, tuple[Any, ...]]],
-) -> None:
-    # Arrange
-    assert len(addrinfo_list) == 2  # In prevention
-    s1, s2 = mock_tcp_socket_factory(), mock_tcp_socket_factory()
-    mock_socket_cls.side_effect = [s1, s2]
-    s2.bind.side_effect = OSError(1234, "error message")
-
-    # Act
-    with pytest.raises(ExceptionGroup) as exc_info:
-        open_listener_sockets_from_getaddrinfo_result(addrinfo_list, backlog=10, reuse_address=True, reuse_port=False)
-
-    # Assert
-    os_errors, exc = exc_info.value.split(OSError)
-    assert exc is None
-    assert os_errors is not None
-    assert len(os_errors.exceptions) == 1
-    assert isinstance(os_errors.exceptions[0], OSError)
-    assert os_errors.exceptions[0].errno == 1234
-
-    s1.close.assert_called_once_with()
-    s2.close.assert_called_once_with()
 
 
 def test____transform_future_exception____keep_common_exception_as_is() -> None:

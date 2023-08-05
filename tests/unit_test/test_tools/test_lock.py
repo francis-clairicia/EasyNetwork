@@ -5,7 +5,7 @@ import random
 import threading
 from typing import TYPE_CHECKING
 
-from easynetwork.tools.lock import ForkSafeLock
+from easynetwork.tools._lock import ForkSafeLock
 
 import pytest
 

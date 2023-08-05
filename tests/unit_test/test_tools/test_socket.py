@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import socket
 from collections.abc import Callable
+from socket import IPPROTO_TCP, SO_KEEPALIVE, SO_LINGER, SOL_SOCKET, TCP_NODELAY
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.tools.socket import (
@@ -10,7 +11,12 @@ from easynetwork.tools.socket import (
     IPv6SocketAddress,
     SocketAddress,
     SocketProxy,
+    disable_socket_linger,
+    enable_socket_linger,
+    get_socket_linger_struct,
     new_socket_address,
+    set_tcp_keepalive,
+    set_tcp_nodelay,
 )
 
 import pytest
@@ -248,3 +254,61 @@ class TestSocketProxy:
         assert address is mocker.sentinel.converted_address
         if runner_stub is not None:
             runner_stub.assert_called_once_with(getattr(mock_tcp_socket, method))
+
+
+@pytest.mark.parametrize("state", [False, True])
+def test____set_tcp_nodelay____setsockopt(
+    state: bool,
+    mock_tcp_socket: MagicMock,
+) -> None:
+    # Arrange
+
+    # Act
+    set_tcp_nodelay(mock_tcp_socket, state)
+
+    # Assert
+    mock_tcp_socket.setsockopt.assert_called_once_with(IPPROTO_TCP, TCP_NODELAY, state)
+
+
+@pytest.mark.parametrize("state", [False, True])
+def test____set_tcp_keepalive____setsockopt(
+    state: bool,
+    mock_tcp_socket: MagicMock,
+) -> None:
+    # Arrange
+
+    # Act
+    set_tcp_keepalive(mock_tcp_socket, state)
+
+    # Assert
+    mock_tcp_socket.setsockopt.assert_called_once_with(SOL_SOCKET, SO_KEEPALIVE, state)
+
+
+@pytest.mark.parametrize("timeout", [0, 60])
+def test____enable_socket_linger____setsockopt(
+    mock_tcp_socket: MagicMock,
+    timeout: int,
+) -> None:
+    # Arrange
+    linger_struct = get_socket_linger_struct()
+    expected_buffer: bytes = linger_struct.pack(1, timeout)  # Enabled with timeout
+
+    # Act
+    enable_socket_linger(mock_tcp_socket, timeout)
+
+    # Assert
+    mock_tcp_socket.setsockopt.assert_called_once_with(SOL_SOCKET, SO_LINGER, expected_buffer)
+
+
+def test____disable_socket_linger____setsockopt(
+    mock_tcp_socket: MagicMock,
+) -> None:
+    # Arrange
+    linger_struct = get_socket_linger_struct()
+    expected_buffer: bytes = linger_struct.pack(0, 0)
+
+    # Act
+    disable_socket_linger(mock_tcp_socket)
+
+    # Assert
+    mock_tcp_socket.setsockopt.assert_called_once_with(SOL_SOCKET, SO_LINGER, expected_buffer)

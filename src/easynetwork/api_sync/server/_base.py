@@ -13,7 +13,7 @@ import time
 from typing import TYPE_CHECKING, Self
 
 from ...exceptions import ServerAlreadyRunning, ServerClosedError
-from ...tools.lock import ForkSafeLock
+from ...tools._lock import ForkSafeLock
 from .abc import AbstractStandaloneNetworkServer
 
 if TYPE_CHECKING:

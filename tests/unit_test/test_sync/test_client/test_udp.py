@@ -9,7 +9,8 @@ from typing import TYPE_CHECKING, Any
 
 from easynetwork.api_sync.client.udp import UDPNetworkClient, UDPNetworkEndpoint
 from easynetwork.exceptions import ClientClosedError, DeserializeError
-from easynetwork.tools.socket import CLOSED_SOCKET_ERRNOS, MAX_DATAGRAM_BUFSIZE, IPv4SocketAddress, IPv6SocketAddress
+from easynetwork.tools.constants import CLOSED_SOCKET_ERRNOS, MAX_DATAGRAM_BUFSIZE
+from easynetwork.tools.socket import IPv4SocketAddress, IPv6SocketAddress
 
 import pytest
 

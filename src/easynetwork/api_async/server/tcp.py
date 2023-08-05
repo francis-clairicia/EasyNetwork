@@ -20,27 +20,29 @@ from typing import TYPE_CHECKING, Any, Generic, TypeVar, assert_never, final
 
 from ...exceptions import ClientClosedError, ServerAlreadyRunning, ServerClosedError, StreamProtocolParseError
 from ...protocol import StreamProtocol
+from ...tools._stream import StreamDataConsumer, StreamDataProducer
 from ...tools._utils import (
     check_real_socket_state as _check_real_socket_state,
     make_callback as _make_callback,
     recursively_clear_exception_traceback_frames as _recursively_clear_exception_traceback_frames,
     remove_traceback_frames_in_place as _remove_traceback_frames_in_place,
-    set_socket_linger as _set_socket_linger,
-    set_tcp_keepalive as _set_tcp_keepalive,
-    set_tcp_nodelay as _set_tcp_nodelay,
 )
-from ...tools.socket import (
+from ...tools.constants import (
     ACCEPT_CAPACITY_ERRNOS,
     ACCEPT_CAPACITY_ERROR_SLEEP_TIME,
     MAX_STREAM_BUFSIZE,
     SSL_HANDSHAKE_TIMEOUT,
     SSL_SHUTDOWN_TIMEOUT,
+)
+from ...tools.socket import (
     ISocket,
     SocketAddress,
     SocketProxy,
+    enable_socket_linger,
     new_socket_address,
+    set_tcp_keepalive,
+    set_tcp_nodelay,
 )
-from ...tools.stream import StreamDataConsumer, StreamDataProducer
 from ..backend.factory import AsyncBackendFactory
 from ..backend.tasks import SingleTaskRunner
 from ._tools.actions import ErrorAction as _ErrorAction, RequestAction as _RequestAction
@@ -368,8 +370,10 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             client_exit_stack.callback(consumer.clear)
             client_exit_stack.callback(producer.clear)
 
-            _set_tcp_nodelay(client.socket)
-            _set_tcp_keepalive(client.socket)
+            with _contextlib.suppress(OSError):
+                set_tcp_nodelay(client.socket, True)
+            with _contextlib.suppress(OSError):
+                set_tcp_keepalive(client.socket, True)
 
             logger.log(self.__client_connection_log_level, "Accepted new connection (address = %s)", client.address)
             client_exit_stack.callback(self.__logger.log, self.__client_connection_log_level, "%s disconnected", client.address)
@@ -466,7 +470,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
     def __set_socket_linger_if_not_closed(socket: ISocket) -> None:
         with _contextlib.suppress(OSError):
             if socket.fileno() > -1:
-                _set_socket_linger(socket, timeout=0)
+                enable_socket_linger(socket, timeout=0)
 
     @_contextlib.contextmanager
     def __suppress_and_log_remaining_exception(self, client_address: SocketAddress | None = None) -> Iterator[None]:

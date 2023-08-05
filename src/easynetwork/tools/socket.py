@@ -6,28 +6,26 @@
 from __future__ import annotations
 
 __all__ = [
-    "ACCEPT_CAPACITY_ERRNOS",
-    "ACCEPT_CAPACITY_ERROR_SLEEP_TIME",
-    "AF_INET",
-    "AF_INET6",
     "AddressFamily",
     "ISocket",
-    "MAX_DATAGRAM_BUFSIZE",
-    "MAX_STREAM_BUFSIZE",
-    "SSL_HANDSHAKE_TIMEOUT",
-    "SSL_SHUTDOWN_TIMEOUT",
     "SocketProxy",
     "SupportsSocketOptions",
+    "disable_socket_linger",
+    "enable_socket_linger",
+    "get_socket_linger_struct",
     "new_socket_address",
+    "set_tcp_keepalive",
+    "set_tcp_nodelay",
 ]
 
 import contextlib
-import errno as _errno
 import functools
+import os
 import socket as _socket
 from collections.abc import Callable
 from enum import IntEnum, unique
-from typing import TYPE_CHECKING, Any, Final, Literal, NamedTuple, ParamSpec, Protocol, TypeAlias, TypeVar, final, overload
+from struct import Struct
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple, ParamSpec, Protocol, TypeAlias, TypeVar, assert_never, final, overload
 
 if TYPE_CHECKING:
     import threading as _threading
@@ -45,11 +43,8 @@ class AddressFamily(IntEnum):
     def __repr__(self) -> str:
         return f"{type(self).__name__}.{self.name}"
 
-    __str__ = __repr__
-
-
-AF_INET: Final[Literal[AddressFamily.AF_INET]] = AddressFamily.AF_INET
-AF_INET6: Final[Literal[AddressFamily.AF_INET6]] = AddressFamily.AF_INET6
+    def __str__(self) -> str:  # pragma: no cover
+        return repr(self)
 
 
 class IPv4SocketAddress(NamedTuple):
@@ -57,7 +52,7 @@ class IPv4SocketAddress(NamedTuple):
     port: int
 
     def __str__(self) -> str:  # pragma: no cover
-        return f"{self.host}:{self.port}"
+        return f"({self.host!r}, {self.port:d})"
 
     def for_connection(self) -> tuple[str, int]:
         return self.host, self.port
@@ -70,7 +65,7 @@ class IPv6SocketAddress(NamedTuple):
     scope_id: int = 0
 
     def __str__(self) -> str:  # pragma: no cover
-        return f"{self.host}:{self.port}"
+        return f"({self.host!r}, {self.port:d})"
 
     def for_connection(self) -> tuple[str, int]:
         return self.host, self.port
@@ -97,49 +92,14 @@ def new_socket_address(addr: tuple[Any, ...], family: int) -> SocketAddress:
 
 
 def new_socket_address(addr: tuple[Any, ...], family: int) -> SocketAddress:
-    match AddressFamily(family):
+    family = AddressFamily(family)
+    match family:
         case AddressFamily.AF_INET:
             return IPv4SocketAddress(*addr)
         case AddressFamily.AF_INET6:
             return IPv6SocketAddress(*addr)
         case _:  # pragma: no cover
-            raise AssertionError
-
-
-MAX_STREAM_BUFSIZE: Final[int] = 256 * 1024  # 256KiB
-MAX_DATAGRAM_BUFSIZE: Final[int] = 64 * 1024  # 64KiB
-
-# Errors that socket operations can return if the socket is closed
-CLOSED_SOCKET_ERRNOS = frozenset(
-    {
-        # Unix
-        _errno.EBADF,
-        # Windows
-        _errno.ENOTSOCK,
-    }
-)
-
-# Errors that accept(2) can return, and which indicate that the system is
-# overloaded
-ACCEPT_CAPACITY_ERRNOS = frozenset(
-    {
-        _errno.EMFILE,
-        _errno.ENFILE,
-        _errno.ENOMEM,
-        _errno.ENOBUFS,
-    }
-)
-
-# How long to sleep when we get one of those errors
-ACCEPT_CAPACITY_ERROR_SLEEP_TIME = 0.100
-
-# Number of seconds to wait for SSL handshake to complete
-# The default timeout matches that of Nginx.
-SSL_HANDSHAKE_TIMEOUT = 60.0
-
-# Number of seconds to wait for SSL shutdown to complete
-# The default timeout mimics lingering_time
-SSL_SHUTDOWN_TIMEOUT = 30.0
+            assert_never(family)
 
 
 class SupportsSocketOptions(Protocol):
@@ -287,3 +247,37 @@ class SocketProxy:
     @property
     def proto(self) -> int:
         return self.__socket.proto
+
+
+def set_tcp_nodelay(sock: SupportsSocketOptions, state: bool) -> None:
+    state = bool(state)
+    with contextlib.suppress(AttributeError):
+        sock.setsockopt(_socket.IPPROTO_TCP, _socket.TCP_NODELAY, state)
+
+
+def set_tcp_keepalive(sock: SupportsSocketOptions, state: bool) -> None:
+    state = bool(state)
+    with contextlib.suppress(AttributeError):
+        sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_KEEPALIVE, state)
+
+
+if os.name == "nt":  # Windows
+    # https://learn.microsoft.com/en-us/windows/win32/api/winsock2/ns-winsock2-linger
+    # linger struct uses unsigned short ints
+    _linger_struct = Struct("@HH")
+else:  # Unix/macOS
+    # https://manpages.debian.org/bookworm/manpages/socket.7.en.html#SO_LINGER
+    # linger struct uses signed ints
+    _linger_struct = Struct("@ii")
+
+
+def get_socket_linger_struct() -> Struct:
+    return _linger_struct
+
+
+def enable_socket_linger(sock: SupportsSocketOptions, timeout: int) -> None:
+    sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_LINGER, _linger_struct.pack(True, timeout))
+
+
+def disable_socket_linger(sock: SupportsSocketOptions) -> None:
+    sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_LINGER, _linger_struct.pack(False, 0))
