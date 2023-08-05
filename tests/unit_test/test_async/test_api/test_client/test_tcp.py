@@ -7,7 +7,8 @@ from typing import TYPE_CHECKING, Any
 
 from easynetwork.api_async.client.tcp import AsyncTCPNetworkClient
 from easynetwork.exceptions import ClientClosedError, IncrementalDeserializeError
-from easynetwork.tools.socket import CLOSED_SOCKET_ERRNOS, MAX_STREAM_BUFSIZE, IPv4SocketAddress, IPv6SocketAddress, SocketProxy
+from easynetwork.tools.constants import CLOSED_SOCKET_ERRNOS, MAX_STREAM_BUFSIZE, SSL_HANDSHAKE_TIMEOUT, SSL_SHUTDOWN_TIMEOUT
+from easynetwork.tools.socket import IPv4SocketAddress, IPv6SocketAddress, SocketProxy
 
 import pytest
 import pytest_asyncio
@@ -452,8 +453,6 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        from easynetwork.tools.socket import SSL_HANDSHAKE_TIMEOUT, SSL_SHUTDOWN_TIMEOUT
-
         mock_backend.create_tcp_connection.side_effect = AssertionError
         mock_backend.wrap_tcp_client_socket.side_effect = AssertionError
 

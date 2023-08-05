@@ -23,24 +23,15 @@ else:
 
 from ...exceptions import ClientClosedError
 from ...protocol import StreamProtocol
+from ...tools._stream import StreamDataConsumer
 from ...tools._utils import (
     check_real_socket_state as _check_real_socket_state,
     check_socket_family as _check_socket_family,
     check_socket_no_ssl as _check_socket_no_ssl,
     error_from_errno as _error_from_errno,
-    set_tcp_keepalive as _set_tcp_keepalive,
-    set_tcp_nodelay as _set_tcp_nodelay,
 )
-from ...tools.socket import (
-    CLOSED_SOCKET_ERRNOS,
-    MAX_STREAM_BUFSIZE,
-    SSL_HANDSHAKE_TIMEOUT,
-    SSL_SHUTDOWN_TIMEOUT,
-    SocketAddress,
-    SocketProxy,
-    new_socket_address,
-)
-from ...tools.stream import StreamDataConsumer
+from ...tools.constants import CLOSED_SOCKET_ERRNOS, MAX_STREAM_BUFSIZE, SSL_HANDSHAKE_TIMEOUT, SSL_SHUTDOWN_TIMEOUT
+from ...tools.socket import SocketAddress, SocketProxy, new_socket_address, set_tcp_keepalive, set_tcp_nodelay
 from ..backend.abc import AbstractAsyncBackend, AbstractAsyncStreamSocketAdapter, ILock
 from ..backend.factory import AsyncBackendFactory
 from ..backend.tasks import SingleTaskRunner
@@ -223,8 +214,10 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
             self.__socket_connector = None
         if self.__info is None:
             self.__info = self.__build_info_dict(self.__socket)
-            _set_tcp_nodelay(self.__info["proxy"])
-            _set_tcp_keepalive(self.__info["proxy"])
+            with _contextlib.suppress(OSError):
+                set_tcp_nodelay(self.__info["proxy"], True)
+            with _contextlib.suppress(OSError):
+                set_tcp_keepalive(self.__info["proxy"], True)
 
     @staticmethod
     def __build_info_dict(socket: AbstractAsyncStreamSocketAdapter) -> _ClientInfo:

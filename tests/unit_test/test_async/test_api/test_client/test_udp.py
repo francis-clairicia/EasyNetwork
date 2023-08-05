@@ -5,7 +5,8 @@ from typing import TYPE_CHECKING, Any, cast
 
 from easynetwork.api_async.client.udp import AsyncUDPNetworkClient, AsyncUDPNetworkEndpoint
 from easynetwork.exceptions import ClientClosedError, DeserializeError
-from easynetwork.tools.socket import MAX_DATAGRAM_BUFSIZE, IPv4SocketAddress, IPv6SocketAddress, SocketProxy
+from easynetwork.tools.constants import MAX_DATAGRAM_BUFSIZE
+from easynetwork.tools.socket import IPv4SocketAddress, IPv6SocketAddress, SocketProxy
 
 import pytest
 import pytest_asyncio

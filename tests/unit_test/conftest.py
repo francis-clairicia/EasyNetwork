@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 from easynetwork.converter import AbstractPacketConverterComposite
 from easynetwork.protocol import DatagramProtocol, StreamProtocol
 from easynetwork.serializers.abc import AbstractIncrementalPacketSerializer, AbstractPacketSerializer
-from easynetwork.tools.stream import StreamDataConsumer, StreamDataProducer
+from easynetwork.tools._stream import StreamDataConsumer, StreamDataProducer
 
 import pytest
 

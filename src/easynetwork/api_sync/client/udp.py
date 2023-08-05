@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, Generic, Self, TypeVar, final, overload
 
 from ...exceptions import ClientClosedError, DatagramProtocolParseError
 from ...protocol import DatagramProtocol
+from ...tools._lock import ForkSafeLock
 from ...tools._utils import (
     check_real_socket_state as _check_real_socket_state,
     check_socket_family as _check_socket_family,
@@ -30,8 +31,8 @@ from ...tools._utils import (
     set_reuseport as _set_reuseport,
     validate_timeout_delay as _validate_timeout_delay,
 )
-from ...tools.lock import ForkSafeLock
-from ...tools.socket import CLOSED_SOCKET_ERRNOS, MAX_DATAGRAM_BUFSIZE, SocketAddress, SocketProxy, new_socket_address
+from ...tools.constants import CLOSED_SOCKET_ERRNOS, MAX_DATAGRAM_BUFSIZE
+from ...tools.socket import SocketAddress, SocketProxy, new_socket_address
 from .abc import AbstractNetworkClient
 
 if TYPE_CHECKING:

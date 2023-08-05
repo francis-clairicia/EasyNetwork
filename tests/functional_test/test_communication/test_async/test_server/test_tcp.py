@@ -21,8 +21,7 @@ from easynetwork.exceptions import (
     StreamProtocolParseError,
 )
 from easynetwork.protocol import StreamProtocol
-from easynetwork.tools._utils import set_socket_linger
-from easynetwork.tools.socket import SocketAddress
+from easynetwork.tools.socket import SocketAddress, enable_socket_linger
 from easynetwork_asyncio._utils import create_connection
 from easynetwork_asyncio.backend import AsyncioBackend
 from easynetwork_asyncio.stream.listener import ListenerSocketAdapter
@@ -439,8 +438,8 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
             finally:
                 await s.shutdown()
 
-            expected_accept_message = f"Accepted new connection (address = {client_host}:{client_port})"
-            expected_disconnect_message = f"{client_host}:{client_port} disconnected"
+            expected_accept_message = f"Accepted new connection (address = ({client_host!r}, {client_port}))"
+            expected_disconnect_message = f"({client_host!r}, {client_port}) disconnected"
             expected_log_level: int = logging.INFO if log_client_connection else logging.DEBUG
 
             accept_record = next((record for record in caplog.records if record.message == expected_accept_message), None)
@@ -533,7 +532,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         socket = SocketType()
 
         # See this thread about SO_LINGER option with null timeout: https://stackoverflow.com/q/3757289
-        set_socket_linger(socket, timeout=0)
+        enable_socket_linger(socket, timeout=0)
 
         socket.connect(server_address)
         socket.close()  # Sends RST packet instead of FIN because of null timeout linger
@@ -803,7 +802,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         assert await reader.read() == b""
         assert len(caplog.records) == 1
         assert caplog.records[0].levelno == logging.WARNING
-        assert caplog.records[0].message == f"There have been attempts to do operation on closed client {host}:{port}"
+        assert caplog.records[0].message == f"There have been attempts to do operation on closed client ({host!r}, {port})"
 
     async def test____serve_forever____connection_error_in_request_handler(
         self,
