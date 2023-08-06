@@ -23,7 +23,13 @@ extensions = [
     "sphinx.ext.todo",
     "sphinx_rtd_theme",
     "sphinx_tabs.tabs",
+    "sphinx_toolbox.github",
+    "sphinx_toolbox.sidebar_links",
 ]
+
+highlight_language = "python3"
+
+manpages_url = "https://manpages.debian.org/{path}"
 
 templates_path = []
 exclude_patterns = ["_include"]
@@ -59,6 +65,12 @@ todo_emit_warnings = False
 # https://sphinx-tabs.readthedocs.io/en/latest/
 
 sphinx_tabs_disable_tab_closing = True
+
+# -- sphinx-toolbox.github configuration -------------------------------------
+# https://sphinx-toolbox.readthedocs.io/en/stable/extensions/github.html
+
+github_username = "francis-clairicia"
+github_repository = "EasyNetwork"
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output

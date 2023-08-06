@@ -1,5 +1,3 @@
-.. highlight:: python
-
 An echo client/server over TCP
 ==============================
 
@@ -55,6 +53,8 @@ The server
 
 Now that we have established the :term:`communication protocol`, we can create our server.
 
+.. _echo-client-server-tcp-request-handler:
+
 Create your request handler
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -71,11 +71,12 @@ Its :meth:`~.AsyncBaseRequestHandler.bad_request` method must also be overridden
 
    Pay attention to :meth:`~.AsyncBaseRequestHandler.handle`, it is an :std:term:`asynchronous generator` function.
 
-   All requests sent by a client are literally injected into the generator via the :keyword:`yield` statement.
+   All requests sent by the client are literally injected into the generator via the :keyword:`yield` statement.
 
    .. literalinclude:: ../_include/examples/tutorials/echo_client_server_tcp/echo_request_handler.py
-      :lines: 16-20
-      :lineno-start: 16
+      :start-at: async def handle
+      :end-at: yield
+      :lineno-match:
       :emphasize-lines: 5
       :dedent:
 
@@ -85,7 +86,7 @@ Its :meth:`~.AsyncBaseRequestHandler.bad_request` method must also be overridden
 
    Leaving the generator will *not* close the connection, a new generator will be created afterwards.
 
-   The same applies to the :meth:`~.AsyncBaseRequestHandler.bad_request` method.
+   The same applies to :meth:`~.AsyncBaseRequestHandler.bad_request`.
 
    You may, however, explicitly close the connection if you want to::
 

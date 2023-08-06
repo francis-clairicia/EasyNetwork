@@ -16,7 +16,12 @@
 
 from __future__ import annotations
 
-__all__ = ["AbstractPacketConverter", "AbstractPacketConverterComposite", "RequestResponseConverterBuilder"]
+__all__ = [
+    "AbstractPacketConverter",
+    "AbstractPacketConverterComposite",
+    "PacketConverterComposite",
+    "RequestResponseConverterBuilder",
+]
 
 from abc import ABCMeta, abstractmethod
 from collections.abc import Callable
@@ -37,11 +42,11 @@ class AbstractPacketConverterComposite(
     __slots__ = ("__weakref__",)
 
     @abstractmethod
-    def create_from_dto_packet(self, packet: _ReceivedDTOPacketT) -> _ReceivedPacketT:
+    def create_from_dto_packet(self, packet: _ReceivedDTOPacketT, /) -> _ReceivedPacketT:
         raise NotImplementedError
 
     @abstractmethod
-    def convert_to_dto_packet(self, obj: _SentPacketT) -> _SentDTOPacketT:
+    def convert_to_dto_packet(self, obj: _SentPacketT, /) -> _SentDTOPacketT:
         raise NotImplementedError
 
 
@@ -60,11 +65,11 @@ class PacketConverterComposite(
         self.__convert_to_dto: Callable[[_SentPacketT], _SentDTOPacketT] = convert_to_dto
 
     @final
-    def create_from_dto_packet(self, packet: _ReceivedDTOPacketT) -> _ReceivedPacketT:
+    def create_from_dto_packet(self, packet: _ReceivedDTOPacketT, /) -> _ReceivedPacketT:
         return self.__create_from_dto(packet)
 
     @final
-    def convert_to_dto_packet(self, obj: _SentPacketT) -> _SentDTOPacketT:
+    def convert_to_dto_packet(self, obj: _SentPacketT, /) -> _SentDTOPacketT:
         return self.__convert_to_dto(obj)
 
 
@@ -74,11 +79,11 @@ class AbstractPacketConverter(
     __slots__ = ()
 
     @abstractmethod
-    def create_from_dto_packet(self, packet: _DTOPacketT) -> _PacketT:
+    def create_from_dto_packet(self, packet: _DTOPacketT, /) -> _PacketT:
         raise NotImplementedError
 
     @abstractmethod
-    def convert_to_dto_packet(self, obj: _PacketT) -> _DTOPacketT:
+    def convert_to_dto_packet(self, obj: _PacketT, /) -> _DTOPacketT:
         raise NotImplementedError
 
 

@@ -1,4 +1,7 @@
 # EasyNetwork
+
+The easiest way to use sockets in Python!
+
 [![Build](https://github.com/francis-clairicia/EasyNetwork/actions/workflows/build.yml/badge.svg)](https://github.com/francis-clairicia/EasyNetwork/actions/workflows/build.yml)
 [![Lint](https://github.com/francis-clairicia/EasyNetwork/actions/workflows/lint.yml/badge.svg)](https://github.com/francis-clairicia/EasyNetwork/actions/workflows/lint.yml)
 [![Test](https://github.com/francis-clairicia/EasyNetwork/actions/workflows/test.yml/badge.svg)](https://github.com/francis-clairicia/EasyNetwork/actions/workflows/test.yml)
@@ -11,14 +14,13 @@
 [![PyPI - License](https://img.shields.io/pypi/l/easynetwork)](https://github.com/francis-clairicia/EasyNetwork/blob/main/LICENSE)
 ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/easynetwork)
 
+[![CodeFactor](https://www.codefactor.io/repository/github/francis-clairicia/easynetwork/badge)](https://www.codefactor.io/repository/github/francis-clairicia/easynetwork)
 [![Checked with mypy](http://www.mypy-lang.org/static/mypy_badge.svg)](http://mypy-lang.org/)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![Imports: isort](https://img.shields.io/badge/%20imports-isort-%231674b1?style=flat&labelColor=ef8336)](https://pycqa.github.io/isort/)
 
 [![Hatch project](https://img.shields.io/badge/%F0%9F%A5%9A-Hatch-4051b5.svg)](https://github.com/pypa/hatch)
 [![pdm-managed](https://img.shields.io/badge/pdm-managed-blueviolet)](https://pdm.fming.dev)
-
-The easiest way to use sockets in Python!
 
 ## Installation
 ### From PyPI repository
@@ -37,7 +39,7 @@ pip install --user .
 EasyNetwork fully encapsulates socket handling, offering you a high-level interface enabling an application/software to fully handle the logic part
 with Python objects without worrying about how to process, send or receive data across the network.
 
-The communication protocol can be whatever you want, be it json, pickle, ASCII, structure, base64 encoded, compressed, encrypted,
+The communication protocol can be whatever you want, be it JSON, pickle, ASCII, structure, base64 encoded, compressed, encrypted,
 or any other format not part of the standard library.
 You choose the data format, and the library takes care of the rest.
 

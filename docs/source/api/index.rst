@@ -7,6 +7,7 @@ API Reference
    api_async
    api_sync
    serializers
+   converter
    protocol
    exceptions
    tools

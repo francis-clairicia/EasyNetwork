@@ -67,7 +67,7 @@ Glossary
 
         .. note::
 
-           They are de facto "one shot" serializers too.
+           They are de facto "one-shot" serializers too.
 
 .. Links
 

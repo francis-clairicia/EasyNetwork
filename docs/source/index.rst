@@ -14,11 +14,19 @@ Welcome to EasyNetwork's documentation!
    api/index
    glossary
 
+.. sidebar-links::
+   :caption: Links
+   :github:
+   :pypi: easynetwork
 
-Useful links
-------------
+   genindex
+   modindex
 
-* Source code: https://github.com/francis-clairicia/EasyNetwork
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
+.. only:: html
+
+   Useful links
+   ------------
+
+   * :github:repo:`Source code <francis-clairicia/EasyNetwork>`
+   * :ref:`genindex`
+   * :ref:`modindex`
