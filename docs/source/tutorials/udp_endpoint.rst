@@ -51,7 +51,7 @@ Receiver:
 
    (.venv) $ python endpoint.py receiver
    Receiver available on port 58456
-   127.0.0.1:35985 sent {'command-line arguments': ['Hello', 'world!']}
+   From ('127.0.0.1', 35985): {'command-line arguments': ['Hello', 'world!']}
 
 
 Sender:
@@ -59,5 +59,5 @@ Sender:
 .. code-block:: console
 
    (.venv) $ python endpoint.py sender "127.0.0.1:58456" Hello world!
-   Sent to 127.0.0.1:58456       : {'command-line arguments': ['Hello', 'world!']}
-   Received from 127.0.0.1:58456 : {'command-line arguments': ['Hello', 'world!']}
+   Sent to ('127.0.0.1', 58456)       : {'command-line arguments': ['Hello', 'world!']}
+   Received from ('127.0.0.1', 58456) : {'command-line arguments': ['Hello', 'world!']}

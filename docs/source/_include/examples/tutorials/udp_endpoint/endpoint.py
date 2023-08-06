@@ -20,7 +20,7 @@ def sender(
     # Receive data and shut down
     received_data, sender_address = endpoint.recv_packet_from()
 
-    print(f"Sent to {address[0]}:{address[1]}       : {sent_data}")
+    print(f"Sent to {address[:2]}       : {sent_data}")
     print(f"Received from {sender_address} : {received_data}")
 
 
@@ -28,7 +28,7 @@ def receiver(endpoint: UDPNetworkEndpoint[Any, Any]) -> None:
     # JSON data has been sent by "sender_address"
     received_data, sender_address = endpoint.recv_packet_from()
 
-    print(f"{sender_address.host}:{sender_address.port} sent {received_data}")
+    print(f"From {sender_address}: {received_data}")
 
     # Send back to the sender
     endpoint.send_packet_to(received_data, sender_address)
