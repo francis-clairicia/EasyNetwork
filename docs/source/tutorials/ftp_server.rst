@@ -150,8 +150,8 @@ Here, we'll only initialize the logger, but we could also use it to prepare the 
    :dedent:
 
 
-Control connection hook
-"""""""""""""""""""""""
+Control connection hooks
+""""""""""""""""""""""""
 
 Here are the new features brought by :class:`.AsyncStreamRequestHandler`: It is possible to perform actions when connecting/disconnecting the client.
 

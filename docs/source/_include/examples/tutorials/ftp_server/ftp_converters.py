@@ -70,7 +70,7 @@ class FTPReplyConverter(AbstractPacketConverter[FTPReply, str]):
 
         assert 0 <= code < 1000, f"Invalid reply code {code:d}"
 
-        # Multi-line replies exists, but we won't deal with them in this tutorial.
+        # Multi-line replies exist, but we won't deal with them in this tutorial.
         assert "\n" not in message, "message contains newline character"
         separator = " "
 
