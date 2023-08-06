@@ -3,6 +3,9 @@ Practical application — Build an FTP server from scratch
 
 .. include:: ../_include/sync-async-variants.rst
 
+.. contents:: Table of Contents
+   :local:
+
 
 TL;DR
 -----
@@ -16,8 +19,8 @@ We are not going to implement all the requests (that is not the point). The tuto
 and exploit all (or most) of the EasyNetwork library's features.
 
 
-The :term:`communication protocol`
-----------------------------------
+The communication protocol
+--------------------------
 
 FTP requests and responses are transmitted as ASCII strings separated by a carriage return (``\r\n``).
 
@@ -56,8 +59,8 @@ An FTP reply consists of a three-digit number (transmitted as three alphanumeric
    :end-before: @staticmethod
 
 
-Use :term:`converters <converter>` to handle character strings
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Use converters to handle character strings
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 The client will send a character string and expect a character string in return. :class:`.StringLineSerializer` will handle this part,
 but we have created our objects in order not to manipulate strings.
@@ -83,10 +86,10 @@ To remedy this, we will use :term:`converters <converter>` to switch between our
    An improvement would be to process them here and not leave the job to the request handler.
    But since we are not building a real (complete and fully featured) FTP server, we will leave the code as is.
 
-The :term:`protocol object`
-^^^^^^^^^^^^^^^^^^^^^^^^^^^
+The protocol object
+^^^^^^^^^^^^^^^^^^^
 
-Now that we have our business objects, we can create our protocol class.
+Now that we have our business objects, we can create our :term:`protocol object`.
 
 .. literalinclude:: ../_include/examples/tutorials/ftp_server/ftp_server_protocol.py
    :linenos:
@@ -160,7 +163,7 @@ Here are the new features brought by :class:`.AsyncStreamRequestHandler`: It is 
    :dedent:
 
 
-The :meth:`~.AsyncBaseRequestHandler.handle` method
+The :meth:`~AsyncBaseRequestHandler.handle` method
 """""""""""""""""""""""""""""""""""""""""""""""""""
 
 Only ``NOOP`` and ``QUIT`` commands will be implemented for this tutorial.
@@ -171,7 +174,7 @@ Only ``NOOP`` and ``QUIT`` commands will be implemented for this tutorial.
    :dedent:
 
 
-The :meth:`~.AsyncBaseRequestHandler.bad_request` method
+The :meth:`~AsyncBaseRequestHandler.bad_request` method
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""
 
 All parse errors are considered syntax errors.

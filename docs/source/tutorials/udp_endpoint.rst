@@ -1,5 +1,3 @@
-.. highlight:: python
-
 Create a UDP endpoint
 =====================
 
@@ -7,8 +5,12 @@ This tutorial will show you how to create a ready-to-use datagram endpoint over 
 
 .. include:: ../_include/sync-async-variants.rst
 
-The :term:`communication protocol`
-----------------------------------
+.. contents:: Table of Contents
+   :local:
+
+
+The communication protocol
+--------------------------
 
 You will need a :term:`protocol object`, as for the :ref:`echo client/server over TCP <echo-client-server-tcp-protocol>`.
 

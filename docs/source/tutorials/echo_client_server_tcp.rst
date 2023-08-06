@@ -6,15 +6,18 @@ let's create a server that will return everything sent by a connected client.
 
 .. include:: ../_include/sync-async-variants.rst
 
+.. contents:: Table of Contents
+   :local:
+
 .. _echo-client-server-tcp-protocol:
 
-The :term:`communication protocol`
-----------------------------------
+The communication protocol
+--------------------------
 
-Before doing all this networking stuff, you need to know what you want to transmit and in what format.
+Before doing all this networking stuff, you need to know what you want to transmit and in what format. It is your :term:`communication protocol`.
 
-Choose the :term:`serializer`
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Choose the serializer
+^^^^^^^^^^^^^^^^^^^^^
 
 There is a bunch of serializers available in :mod:`easynetwork.serializers` for everyone to enjoy:
 
@@ -29,10 +32,10 @@ There is a bunch of serializers available in :mod:`easynetwork.serializers` for 
 For the tutorial, :class:`.JSONSerializer` will be used.
 
 
-Build your :term:`protocol object`
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Build your protocol object
+^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-For communication via TCP, a :class:`.StreamProtocol` object must be created.
+For communication via TCP, a :class:`.StreamProtocol` :term:`protocol object` must be created.
 
 .. literalinclude:: ../_include/examples/tutorials/echo_client_server_tcp/json_protocol.py
    :linenos:

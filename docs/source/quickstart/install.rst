@@ -29,9 +29,9 @@ Here is the full list:
 
       Reference backend customization section
 
-   * ``sniffio``: Installs the version supported and tested of `sniffio <https://github.com/python-trio/sniffio>`_.
+   * ``sniffio``: Installs the version supported and tested of :github:repo:`sniffio <python-trio/sniffio>`.
 
-   * ``uvloop``: Installs the version supported and tested of `uvloop <https://github.com/MagicStack/uvloop>`_.
+   * ``uvloop``: Installs the version supported and tested of :github:repo:`uvloop <MagicStack/uvloop>`.
 
       .. todo::
 
