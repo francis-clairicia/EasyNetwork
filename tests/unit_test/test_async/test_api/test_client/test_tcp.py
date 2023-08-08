@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import errno
 import os
 from socket import AF_INET6, IPPROTO_TCP, SO_KEEPALIVE, SOL_SOCKET, TCP_NODELAY
@@ -18,6 +19,7 @@ if TYPE_CHECKING:
 
     from pytest_mock import MockerFixture
 
+from ...._utils import AsyncDummyLock
 from .base import BaseTestClient
 
 
@@ -411,7 +413,15 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         assert isinstance(client.socket, SocketProxy)
 
     @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
-    @pytest.mark.parametrize("ssl_parameter", ["server_hostname", "ssl_handshake_timeout", "ssl_shutdown_timeout"])
+    @pytest.mark.parametrize(
+        "ssl_parameter",
+        [
+            "server_hostname",
+            "ssl_handshake_timeout",
+            "ssl_shutdown_timeout",
+            "ssl_shared_lock",
+        ],
+    )
     async def test____dunder_init____ssl____useless_parameter_if_no_context(
         self,
         ssl_parameter: str,
@@ -425,7 +435,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         kwargs = {ssl_parameter: mocker.sentinel.value}
 
         # Act & Assert
-        with pytest.raises(ValueError, match=r"^%s is only meaningful with ssl$" % ssl_parameter):
+        with pytest.raises(ValueError, match=rf"^{ssl_parameter} is only meaningful with ssl$"):
             if use_socket:
                 _ = AsyncTCPNetworkClient(
                     mock_tcp_socket,
@@ -1089,6 +1099,109 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_stream_socket_adapter.sendall.assert_awaited_once_with(b"packet\n")
         mock_tcp_socket.getsockopt.assert_not_called()
 
+    @pytest.mark.usefixtures("setup_producer_mock")
+    @pytest.mark.parametrize("error", [OSError, None])
+    @pytest.mark.parametrize("mock_stream_socket_adapter_factory", ["eof_support"], indirect=True)
+    async def test____send_eof____socket_send_eof(
+        self,
+        client_connected_or_not: AsyncTCPNetworkClient[Any, Any],
+        error: type[BaseException] | None,
+        mock_stream_socket_adapter: MagicMock,
+        mock_stream_protocol: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        if error is None:
+            mock_stream_socket_adapter.send_eof.return_value = None
+        else:
+            mock_stream_socket_adapter.send_eof.side_effect = error
+
+        # Act
+        with pytest.raises(error) if error is not None else contextlib.nullcontext():
+            await client_connected_or_not.send_eof()
+
+        # Assert
+        mock_stream_socket_adapter.send_eof.assert_awaited_once_with()
+        with pytest.raises(RuntimeError, match=r"^send_eof\(\) has been called earlier$"):
+            await client_connected_or_not.send_packet(mocker.sentinel.packet)
+        mock_stream_protocol.generate_chunks.assert_not_called()
+        mock_stream_socket_adapter.sendall_fromiter.assert_not_called()
+        mock_stream_socket_adapter.sendall.assert_not_awaited()
+
+    @pytest.mark.usefixtures("setup_producer_mock")
+    @pytest.mark.parametrize("mock_stream_socket_adapter_factory", ["eof_support", None], indirect=True)
+    async def test____send_eof____closed_client(
+        self,
+        client_connected_or_not: AsyncTCPNetworkClient[Any, Any],
+        mock_stream_socket_adapter: MagicMock,
+    ) -> None:
+        # Arrange
+        if hasattr(mock_stream_socket_adapter, "send_eof"):
+            mock_stream_socket_adapter.send_eof.return_value = None
+        await client_connected_or_not.aclose()
+
+        # Act
+        await client_connected_or_not.send_eof()
+
+        # Assert
+        if hasattr(mock_stream_socket_adapter, "send_eof"):
+            mock_stream_socket_adapter.send_eof.assert_not_awaited()
+
+    @pytest.mark.usefixtures("setup_producer_mock")
+    @pytest.mark.parametrize("mock_stream_socket_adapter_factory", ["eof_support"], indirect=True)
+    async def test____send_eof____unexpected_socket_close(
+        self,
+        client_connected_or_not: AsyncTCPNetworkClient[Any, Any],
+        mock_stream_socket_adapter: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_stream_socket_adapter.send_eof.return_value = None
+        mock_stream_socket_adapter.is_closing.return_value = True
+
+        # Act
+        await client_connected_or_not.send_eof()
+
+        # Assert
+        mock_stream_socket_adapter.send_eof.assert_not_awaited()
+
+    @pytest.mark.usefixtures("setup_producer_mock")
+    @pytest.mark.parametrize("mock_stream_socket_adapter_factory", ["eof_support"], indirect=True)
+    async def test____send_eof____idempotent(
+        self,
+        client_connected_or_not: AsyncTCPNetworkClient[Any, Any],
+        mock_stream_socket_adapter: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_stream_socket_adapter.send_eof.return_value = None
+        await client_connected_or_not.send_eof()
+
+        # Act
+        await client_connected_or_not.send_eof()
+
+        # Assert
+        mock_stream_socket_adapter.send_eof.assert_awaited_once()
+
+    @pytest.mark.usefixtures("setup_producer_mock")
+    async def test____send_eof____not_supported(
+        self,
+        client_connected_or_not: AsyncTCPNetworkClient[Any, Any],
+        mock_stream_socket_adapter: MagicMock,
+        mock_stream_protocol: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        assert not hasattr(mock_stream_socket_adapter, "send_eof")
+
+        # Act
+        with pytest.raises(NotImplementedError):
+            await client_connected_or_not.send_eof()
+
+        # Assert
+        await client_connected_or_not.send_packet(mocker.sentinel.packet)
+        mock_stream_protocol.generate_chunks.assert_called()
+        mock_stream_socket_adapter.sendall_fromiter.assert_called()
+        mock_stream_socket_adapter.sendall.assert_awaited()
+
     @pytest.mark.usefixtures("setup_consumer_mock")
     async def test____recv_packet____receive_bytes_from_socket(
         self,
@@ -1282,7 +1395,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_backend.coro_yield.assert_not_awaited()
 
     @pytest.mark.usefixtures("setup_producer_mock", "setup_consumer_mock")
-    async def test____special_case____send_packet____eof_error____do_not_try_socket_send(
+    async def test____special_case____send_packet____eof_error____still_try_socket_send(
         self,
         client_connected_or_not: AsyncTCPNetworkClient[Any, Any],
         mock_stream_socket_adapter: MagicMock,
@@ -1297,13 +1410,12 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_stream_socket_adapter.recv.reset_mock()
 
         # Act
-        with pytest.raises(ConnectionAbortedError):
-            await client_connected_or_not.send_packet(mocker.sentinel.packet)
+        await client_connected_or_not.send_packet(mocker.sentinel.packet)
 
         # Assert
-        mock_stream_protocol.generate_chunks.assert_not_called()
-        mock_stream_socket_adapter.sendall_fromiter.assert_not_called()
-        mock_stream_socket_adapter.sendall.assert_not_called()
+        mock_stream_protocol.generate_chunks.assert_called_with(mocker.sentinel.packet)
+        mock_stream_socket_adapter.sendall_fromiter.assert_called()
+        mock_stream_socket_adapter.sendall.assert_called_with(b"packet\n")
 
     @pytest.mark.usefixtures("setup_consumer_mock")
     async def test____special_case____recv_packet____eof_error____do_not_try_socket_recv_on_next_call(
@@ -1324,6 +1436,77 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
 
         # Assert
         mock_stream_socket_adapter.recv.assert_not_called()
+
+    @pytest.mark.usefixtures("setup_producer_mock", "setup_consumer_mock")
+    async def test____special_case____separate_send_and_receive_locks(
+        self,
+        client_connected_or_not: AsyncTCPNetworkClient[Any, Any],
+        mock_stream_socket_adapter: MagicMock,
+        mock_stream_protocol: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        async def recv_side_effect(bufsize: int) -> bytes:
+            await client_connected_or_not.send_packet(mocker.sentinel.packet)
+            return b""
+
+        mock_stream_socket_adapter.recv = mocker.MagicMock(side_effect=recv_side_effect)
+
+        # Act
+        with pytest.raises(ConnectionAbortedError):
+            _ = await client_connected_or_not.recv_packet()
+
+        # Assert
+        mock_stream_protocol.generate_chunks.assert_called_with(mocker.sentinel.packet)
+        mock_stream_socket_adapter.sendall_fromiter.assert_called()
+        mock_stream_socket_adapter.sendall.assert_called_with(b"packet\n")
+
+    @pytest.mark.usefixtures("setup_producer_mock", "setup_consumer_mock")
+    @pytest.mark.parametrize("ssl_shared_lock", [None, False, True], ids=lambda p: f"ssl_shared_lock=={p}")
+    async def test____special_case____separate_send_and_receive_locks____ssl(
+        self,
+        remote_address: tuple[str, int],
+        ssl_shared_lock: bool | None,
+        mock_stream_socket_adapter: MagicMock,
+        mock_stream_protocol: MagicMock,
+        mock_backend: MagicMock,
+        mock_ssl_context: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        client: AsyncTCPNetworkClient[Any, Any] = AsyncTCPNetworkClient(
+            remote_address,
+            protocol=mock_stream_protocol,
+            ssl=mock_ssl_context,
+            server_hostname="server_hostname",
+            ssl_shared_lock=ssl_shared_lock,
+            backend=mock_backend,
+        )
+        await client.wait_connected()
+
+        if ssl_shared_lock is None:
+            ssl_shared_lock = True  # Should be true by default
+
+        async def recv_side_effect(bufsize: int) -> bytes:
+            with pytest.raises(AsyncDummyLock.AcquireFailed) if ssl_shared_lock else contextlib.nullcontext():
+                await client.send_packet(mocker.sentinel.packet)
+            return b""
+
+        mock_stream_socket_adapter.recv = mocker.MagicMock(side_effect=recv_side_effect)
+
+        # Act
+        with pytest.raises(ConnectionAbortedError):
+            _ = await client.recv_packet()
+
+        # Assert
+        if ssl_shared_lock:
+            mock_stream_protocol.generate_chunks.assert_not_called()
+            mock_stream_socket_adapter.sendall_fromiter.assert_not_called()
+            mock_stream_socket_adapter.sendall.assert_not_called()
+        else:
+            mock_stream_protocol.generate_chunks.assert_called_with(mocker.sentinel.packet)
+            mock_stream_socket_adapter.sendall_fromiter.assert_called()
+            mock_stream_socket_adapter.sendall.assert_called_with(b"packet\n")
 
     async def test____get_backend____default(
         self,

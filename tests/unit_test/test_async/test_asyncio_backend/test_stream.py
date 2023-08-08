@@ -4,13 +4,18 @@ from __future__ import annotations
 
 import asyncio
 import asyncio.trsock
+import contextlib
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.api_async.backend.abc import AbstractAcceptedSocket
 from easynetwork.tools.constants import MAX_STREAM_BUFSIZE
 from easynetwork_asyncio.stream.listener import AcceptedSocket, AcceptedSSLSocket, ListenerSocketAdapter
-from easynetwork_asyncio.stream.socket import AsyncioTransportStreamSocketAdapter, RawStreamSocketAdapter
+from easynetwork_asyncio.stream.socket import (
+    AsyncioTransportHalfCloseableStreamSocketAdapter,
+    AsyncioTransportStreamSocketAdapter,
+    RawStreamSocketAdapter,
+)
 
 import pytest
 
@@ -60,12 +65,7 @@ class BaseTestTransportStreamSocket:
 
 
 @pytest.mark.asyncio
-class TestTransportBasedStreamSocket(BaseTestTransportStreamSocket):
-    @pytest.fixture
-    @staticmethod
-    def socket(mock_asyncio_reader: MagicMock, mock_asyncio_writer: MagicMock) -> AsyncioTransportStreamSocketAdapter:
-        return AsyncioTransportStreamSocketAdapter(mock_asyncio_reader, mock_asyncio_writer)
-
+class BaseTestAsyncioTransportBasedStreamSocket(BaseTestTransportStreamSocket):
     async def test____aclose____close_transport_and_wait(
         self,
         socket: AsyncioTransportStreamSocketAdapter,
@@ -277,6 +277,74 @@ class TestTransportBasedStreamSocket(BaseTestTransportStreamSocket):
 
         # Assert
         assert transport_socket is mock_tcp_socket
+
+
+@pytest.mark.asyncio
+class TestAsyncioTransportStreamSocketAdapter(BaseTestAsyncioTransportBasedStreamSocket):
+    @pytest.fixture
+    @staticmethod
+    def socket(mock_asyncio_reader: MagicMock, mock_asyncio_writer: MagicMock) -> AsyncioTransportStreamSocketAdapter:
+        mock_asyncio_writer.can_write_eof.return_value = False
+        return AsyncioTransportStreamSocketAdapter(mock_asyncio_reader, mock_asyncio_writer)
+
+    @pytest.mark.parametrize("can_write_eof", [False, True], ids=lambda p: f"can_write_eof=={p}")
+    async def test____dunder_new____instanciate_subclass(
+        self,
+        can_write_eof: bool,
+        mock_asyncio_reader: MagicMock,
+        mock_asyncio_writer: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_asyncio_writer.can_write_eof.return_value = can_write_eof
+
+        # Act
+        socket = AsyncioTransportStreamSocketAdapter(mock_asyncio_reader, mock_asyncio_writer)
+
+        # Assert
+        if can_write_eof:
+            assert type(socket) is AsyncioTransportHalfCloseableStreamSocketAdapter
+        else:
+            assert type(socket) is AsyncioTransportStreamSocketAdapter
+
+
+@pytest.mark.asyncio
+class TestAsyncioTransportHalfCloseableStreamSocketAdapter(BaseTestAsyncioTransportBasedStreamSocket):
+    @pytest.fixture
+    @staticmethod
+    def socket(
+        mock_asyncio_reader: MagicMock,
+        mock_asyncio_writer: MagicMock,
+    ) -> AsyncioTransportHalfCloseableStreamSocketAdapter:
+        mock_asyncio_writer.can_write_eof.return_value = True
+        return AsyncioTransportHalfCloseableStreamSocketAdapter(mock_asyncio_reader, mock_asyncio_writer)
+
+    @pytest.mark.parametrize("can_write_eof", [False, True], ids=lambda p: f"can_write_eof=={p}")
+    async def test____dunder_new____check_write_eof_possibility(
+        self,
+        can_write_eof: bool,
+        mock_asyncio_reader: MagicMock,
+        mock_asyncio_writer: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_asyncio_writer.can_write_eof.return_value = can_write_eof
+
+        # Act & Assert
+        with pytest.raises(ValueError) if not can_write_eof else contextlib.nullcontext():
+            _ = AsyncioTransportHalfCloseableStreamSocketAdapter(mock_asyncio_reader, mock_asyncio_writer)
+
+    async def test____send_eof____write_eof(
+        self,
+        socket: AsyncioTransportHalfCloseableStreamSocketAdapter,
+        mock_asyncio_writer: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_asyncio_writer.write_eof.return_value = None
+
+        # Act
+        await socket.send_eof()
+
+        # Assert
+        mock_asyncio_writer.write_eof.assert_called_once_with()
 
 
 @pytest.mark.asyncio
@@ -729,7 +797,6 @@ class TestRawStreamSocketAdapter(BaseTestSocket):
         mock_tcp_socket: MagicMock,
     ) -> None:
         # Arrange
-        mock_tcp_socket.getpeername.assert_called_once_with()
 
         # Act
         remote_address = socket.get_remote_address()
@@ -823,3 +890,35 @@ class TestRawStreamSocketAdapter(BaseTestSocket):
 
         # Assert
         mock_async_socket.sendall.assert_awaited_once_with(b"datatosend")
+
+    async def test_____send_eof____shutdown_socket(
+        self,
+        socket: RawStreamSocketAdapter,
+        mock_async_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        from socket import SHUT_WR
+
+        mock_async_socket.shutdown.return_value = None
+        mock_async_socket.did_shutdown_SHUT_WR = False
+
+        # Act
+        await socket.send_eof()
+
+        # Assert
+        mock_async_socket.shutdown.assert_awaited_once_with(SHUT_WR)
+
+    async def test_____send_eof____already_shutdown(
+        self,
+        socket: RawStreamSocketAdapter,
+        mock_async_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_async_socket.shutdown.return_value = None
+        mock_async_socket.did_shutdown_SHUT_WR = True
+
+        # Act
+        await socket.send_eof()
+
+        # Assert
+        mock_async_socket.shutdown.assert_not_awaited()

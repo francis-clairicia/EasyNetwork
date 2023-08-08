@@ -12,6 +12,7 @@ __all__ = [
     "AbstractAsyncBackend",
     "AbstractAsyncBaseSocketAdapter",
     "AbstractAsyncDatagramSocketAdapter",
+    "AbstractAsyncHalfCloseableStreamSocketAdapter",
     "AbstractAsyncListenerSocketAdapter",
     "AbstractAsyncStreamSocketAdapter",
     "AbstractTask",
@@ -232,6 +233,14 @@ class AbstractAsyncStreamSocketAdapter(AbstractAsyncBaseSocketAdapter):
 
     async def sendall_fromiter(self, iterable_of_data: Iterable[bytes], /) -> None:
         await self.sendall(b"".join(iterable_of_data))
+
+
+class AbstractAsyncHalfCloseableStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
+    __slots__ = ()
+
+    @abstractmethod
+    async def send_eof(self) -> None:
+        raise NotImplementedError
 
 
 class AbstractAsyncDatagramSocketAdapter(AbstractAsyncBaseSocketAdapter):
