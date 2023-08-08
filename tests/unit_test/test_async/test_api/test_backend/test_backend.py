@@ -287,14 +287,14 @@ class TestAsyncBackendFactory:
         # Arrange
 
         # Act & Assert
-        with pytest.raises(TypeError, match=r"^Invalid backend class: %r$" % invalid_cls):
+        with pytest.raises(TypeError, match=rf"^Invalid backend class: {invalid_cls!r}$"):
             AsyncBackendFactory.set_default_backend(invalid_cls)
 
     def test____set_default_backend____from_class____error_abstract_class_given(self) -> None:
         # Arrange
 
         # Act & Assert
-        with pytest.raises(TypeError, match=r"^Invalid backend class: %r$" % AbstractAsyncBackend):
+        with pytest.raises(TypeError, match=rf"^Invalid backend class: {AbstractAsyncBackend!r}$"):
             AsyncBackendFactory.set_default_backend(AbstractAsyncBackend)
 
     @pytest.mark.parametrize("backend_name", list(BACKENDS))

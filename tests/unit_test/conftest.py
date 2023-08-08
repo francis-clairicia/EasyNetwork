@@ -33,6 +33,7 @@ def mock_socket_factory(mocker: MockerFixture) -> Callable[[], MagicMock]:
         mock_socket.family = AF_INET
         mock_socket.type = -1
         mock_socket.proto = 0
+        mock_socket.fileno.return_value = 123
         return mock_socket
 
     return factory
@@ -82,6 +83,7 @@ def mock_ssl_socket_factory(mocker: MockerFixture) -> Callable[[], MagicMock]:
         mock_socket.family = AF_INET
         mock_socket.type = SOCK_STREAM
         mock_socket.proto = IPPROTO_TCP
+        mock_socket.fileno.return_value = 123
         mock_socket.do_handshake.return_value = None
         return mock_socket
 

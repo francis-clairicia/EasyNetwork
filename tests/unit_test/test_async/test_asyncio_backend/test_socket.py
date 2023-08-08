@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from collections.abc import Callable, Coroutine, Iterator
-from socket import socket as Socket
+from socket import SHUT_RD, SHUT_RDWR, SHUT_WR, socket as Socket
 from typing import TYPE_CHECKING, Any, final
 
 from easynetwork_asyncio.socket import AsyncSocket
@@ -135,8 +135,50 @@ class MixinTestAsyncSocketBusy(BaseTestAsyncSocket):
         assert exc_info.value.errno == abort_errno
         mock_socket_method.assert_not_called()
 
+    @pytest.mark.parametrize("cancellation_requests", [1, 3])
     async def test____method____external_cancellation_during_attempt(
         self,
+        cancellation_requests: int,
+        socket_method: Callable[[], Coroutine[Any, Any, Any]],
+        event_loop: asyncio.AbstractEventLoop,
+        mock_socket_method: MagicMock,
+    ) -> None:
+        # Arrange
+        with self._set_sock_method_in_blocking_state(mock_socket_method):
+            busy_method_task: asyncio.Task[Any] = await self._busy_socket_task(socket_method(), event_loop, mock_socket_method)
+
+        # Act
+        for _ in range(cancellation_requests):
+            busy_method_task.cancel()
+        await asyncio.wait([busy_method_task])
+
+        # Assert
+        assert busy_method_task.cancelled()
+        mock_socket_method.assert_not_called()
+
+    async def test____method____raises_CancelledError(
+        self,
+        socket_method: Callable[[], Coroutine[Any, Any, Any]],
+        event_loop: asyncio.AbstractEventLoop,
+        mock_socket_method: MagicMock,
+    ) -> None:
+        # Arrange
+        with self._set_sock_method_in_blocking_state(mock_socket_method):
+            busy_method_task: asyncio.Task[Any] = await self._busy_socket_task(socket_method(), event_loop, mock_socket_method)
+
+        mock_socket_method.side_effect = asyncio.CancelledError
+
+        # Act
+        await asyncio.wait([busy_method_task])
+
+        # Assert
+        mock_socket_method.assert_called()
+        assert busy_method_task.cancelled()
+        assert busy_method_task.cancelling() == 0
+
+    async def test____method____cancellation_and_close_at_same_time(
+        self,
+        socket: AsyncSocket,
         socket_method: Callable[[], Coroutine[Any, Any, Any]],
         event_loop: asyncio.AbstractEventLoop,
         mock_socket_method: MagicMock,
@@ -147,11 +189,13 @@ class MixinTestAsyncSocketBusy(BaseTestAsyncSocket):
 
         # Act
         busy_method_task.cancel()
+        await socket.aclose()
         await asyncio.wait([busy_method_task])
 
         # Assert
-        assert busy_method_task.cancelled()
         mock_socket_method.assert_not_called()
+        assert busy_method_task.cancelled()
+        assert busy_method_task.cancelling() == 1
 
 
 @final
@@ -313,6 +357,7 @@ class TestAsyncStreamSocket(MixinTestAsyncSocketBusy):
     def mock_tcp_socket(mock_tcp_socket: MagicMock) -> MagicMock:
         mock_tcp_socket.recv.return_value = b"data"
         mock_tcp_socket.send.side_effect = len
+        mock_tcp_socket.shutdown.return_value = None
         return mock_tcp_socket
 
     @pytest.fixture
@@ -388,6 +433,135 @@ class TestAsyncStreamSocket(MixinTestAsyncSocketBusy):
         # Assert
         assert data == b"data"
         mock_tcp_socket.recv.assert_called_once_with(123456789)
+
+    @pytest.mark.parametrize(
+        "shutdown_how",
+        [
+            pytest.param(SHUT_RD, id="SHUT_RD"),
+            pytest.param(SHUT_WR, id="SHUT_WR"),
+            pytest.param(SHUT_RDWR, id="SHUT_RDWR"),
+        ],
+    )
+    async def test____shutdown____calls_socket_shutdown(
+        self,
+        shutdown_how: int,
+        socket: AsyncSocket,
+        mock_tcp_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        assert not socket.did_shutdown_SHUT_WR
+
+        # Act
+        await socket.shutdown(shutdown_how)
+
+        # Assert
+        mock_tcp_socket.shutdown.assert_called_once_with(shutdown_how)
+        assert socket.did_shutdown_SHUT_WR == (shutdown_how in (SHUT_RDWR, SHUT_WR))
+
+    async def test____shutdown____SHUT_WR_flag_not_reset(
+        self,
+        socket: AsyncSocket,
+        mock_tcp_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        await socket.shutdown(SHUT_WR)
+
+        # Act
+        await socket.shutdown(SHUT_RD)
+
+        # Assert
+        mock_tcp_socket.shutdown.assert_called_with(SHUT_RD)
+        assert socket.did_shutdown_SHUT_WR
+
+    @pytest.mark.parametrize(
+        "shutdown_how",
+        [
+            pytest.param(SHUT_RD, id="SHUT_RD"),
+            pytest.param(SHUT_WR, id="SHUT_WR"),
+            pytest.param(SHUT_RDWR, id="SHUT_RDWR"),
+        ],
+    )
+    async def test____shutdown____closed_socket(
+        self,
+        shutdown_how: int,
+        socket: AsyncSocket,
+        mock_tcp_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        from errno import ENOTSOCK
+
+        await socket.aclose()
+
+        # Act
+        with pytest.raises(OSError) as exc_info:
+            await socket.shutdown(shutdown_how)
+
+        # Assert
+        assert exc_info.value.errno == ENOTSOCK
+        mock_tcp_socket.shutdown.assert_not_called()
+        assert not socket.did_shutdown_SHUT_WR
+
+    @pytest.mark.parametrize(
+        "shutdown_how",
+        [
+            pytest.param(SHUT_RD, id="SHUT_RD"),
+            pytest.param(SHUT_WR, id="SHUT_WR"),
+            pytest.param(SHUT_RDWR, id="SHUT_RDWR"),
+        ],
+    )
+    async def test____shutdown____busy_socket_send(
+        self,
+        shutdown_how: int,
+        socket: AsyncSocket,
+        event_loop: asyncio.AbstractEventLoop,
+        mock_tcp_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        from errno import EBUSY
+
+        with self._set_sock_method_in_blocking_state(mock_tcp_socket.send):
+            _ = await self._busy_socket_task(socket.sendall(b"data"), event_loop, mock_tcp_socket.send)
+
+        # Act & Assert
+        if shutdown_how == SHUT_RD:
+            await socket.shutdown(shutdown_how)
+
+            mock_tcp_socket.shutdown.assert_called_once_with(SHUT_RD)
+        else:
+            with pytest.raises(OSError) as exc_info:
+                await socket.shutdown(shutdown_how)
+
+            assert exc_info.value.errno == EBUSY
+            mock_tcp_socket.shutdown.assert_not_called()
+
+        # Assert
+        assert not socket.did_shutdown_SHUT_WR
+
+    @pytest.mark.parametrize(
+        "shutdown_how",
+        [
+            pytest.param(SHUT_RD, id="SHUT_RD"),
+            pytest.param(SHUT_WR, id="SHUT_WR"),
+            pytest.param(SHUT_RDWR, id="SHUT_RDWR"),
+        ],
+    )
+    async def test____shutdown____busy_socket_recv(
+        self,
+        shutdown_how: int,
+        socket: AsyncSocket,
+        event_loop: asyncio.AbstractEventLoop,
+        mock_tcp_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        with self._set_sock_method_in_blocking_state(mock_tcp_socket.recv):
+            _ = await self._busy_socket_task(socket.recv(1024), event_loop, mock_tcp_socket.recv)
+
+        # Act
+        await socket.shutdown(shutdown_how)
+
+        # Assert
+        mock_tcp_socket.shutdown.assert_called_once_with(shutdown_how)
+        assert socket.did_shutdown_SHUT_WR == (shutdown_how in (SHUT_RDWR, SHUT_WR))
 
 
 class TestAsyncDatagramSocket(MixinTestAsyncSocketBusy):

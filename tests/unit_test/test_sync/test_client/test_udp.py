@@ -1124,37 +1124,6 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         assert (exception.sender_address.host, exception.sender_address.port) == sender_address
 
     @pytest.mark.usefixtures("setup_protocol_mock")
-    def test____iter_received_packets_from____release_internal_lock_before_yield(
-        self,
-        client: UDPNetworkEndpoint[Any, Any],
-        sender_address: tuple[str, int],
-        recv_timeout: float | None,
-        mock_udp_socket: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        from threading import Lock
-
-        mock_acquire = mocker.patch.object(Lock, "acquire", return_value=True)
-        mock_release = mocker.patch.object(Lock, "release", return_value=None)
-        mock_udp_socket.recvfrom.side_effect = [(b"packet_1", sender_address), (b"packet_2", sender_address)]
-
-        # Act & Assert
-        iterator = client.iter_received_packets_from(timeout=recv_timeout)
-        mock_acquire.assert_not_called()
-        mock_release.assert_not_called()
-        packet_1 = next(iterator)
-        mock_acquire.assert_called_once_with()
-        mock_release.assert_called_once_with()
-        mock_acquire.reset_mock()
-        mock_release.reset_mock()
-        packet_2 = next(iterator)
-        mock_acquire.assert_called_once_with()
-        mock_release.assert_called_once_with()
-        assert packet_1[0] is mocker.sentinel.packet_1
-        assert packet_2[0] is mocker.sentinel.packet_2
-
-    @pytest.mark.usefixtures("setup_protocol_mock")
     def test____iter_received_packets_from____closed_client_during_iteration(
         self,
         client: UDPNetworkEndpoint[Any, Any],

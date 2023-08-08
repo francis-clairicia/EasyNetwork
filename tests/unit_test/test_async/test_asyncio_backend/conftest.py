@@ -21,6 +21,7 @@ def mock_async_socket_factory(mocker: MockerFixture, event_loop: asyncio.Abstrac
         mock = mocker.NonCallableMagicMock(spec=AsyncSocket)
         mock.is_closing.return_value = False
         mock.loop = event_loop
+        mock.did_shutdown_SHUT_WR = False
         return mock
 
     return factory
@@ -55,6 +56,7 @@ def mock_asyncio_stream_writer_factory(mocker: MockerFixture) -> Callable[[], Ma
     def factory() -> MagicMock:
         mock = mocker.NonCallableMagicMock(spec=asyncio.StreamWriter)
         mock.is_closing.return_value = False
+        mock.can_write_eof.return_value = True
         return mock
 
     return factory

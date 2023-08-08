@@ -47,10 +47,12 @@ from .socket import AddressFamily
 if TYPE_CHECKING:
     from ssl import SSLError as _SSLError, SSLSocket as _SSLSocket
 
-    from .socket import SupportsSocketOptions
+    from .socket import ISocket, SupportsSocketOptions
 
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
+
+_ExcType = TypeVar("_ExcType", bound=BaseException)
 
 
 def replace_kwargs(kwargs: dict[str, Any], keys: dict[str, str]) -> None:
@@ -80,7 +82,7 @@ def check_socket_family(family: int) -> None:
         raise ValueError(f"Only these families are supported: {', '.join(supported_families)}")
 
 
-def check_real_socket_state(socket: SupportsSocketOptions) -> None:
+def check_real_socket_state(socket: ISocket) -> None:
     """Verify socket saved error and raise OSError if there is one
 
     There is some functions such as socket.send() which do not immediately fail and save the errno
@@ -89,6 +91,8 @@ def check_real_socket_state(socket: SupportsSocketOptions) -> None:
     On Windows: The returned value should be the error returned by WSAGetLastError(), but the socket methods always call
     this function to raise an error, so getsockopt(SO_ERROR) will most likely always return zero :)
     """
+    if socket.fileno() < 0:
+        return
     errno = socket.getsockopt(_socket.SOL_SOCKET, _socket.SO_ERROR)
     if errno != 0:
         # The SO_ERROR is automatically reset to zero after getting the value
@@ -125,7 +129,7 @@ def wait_socket_available(socket: _socket.socket, timeout: float | None, event: 
         except (OSError, ValueError):
             # There will be a OSError when using this socket afterward.
             return True
-        return len(ready_list) > 0
+        return bool(ready_list)
 
 
 class _WouldBlock(Exception):
@@ -306,11 +310,13 @@ def _recursively_clear_exception_traceback_frames_with_memo(exc: BaseException, 
         _recursively_clear_exception_traceback_frames_with_memo(exc.__cause__, memo)
 
 
-def remove_traceback_frames_in_place(exc: BaseException, n: int) -> None:
+def remove_traceback_frames_in_place(exc: _ExcType, n: int) -> _ExcType:
+    tb = exc.__traceback__
     for _ in range(n):
-        if exc.__traceback__ is None:
+        if tb is None:
             break
-        exc.__traceback__ = exc.__traceback__.tb_next
+        tb = tb.tb_next
+    return exc.with_traceback(tb)
 
 
 @contextlib.contextmanager

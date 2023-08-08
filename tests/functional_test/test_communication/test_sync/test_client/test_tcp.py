@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import socketserver
 import ssl
+import time
 from collections.abc import Callable, Iterator
 from concurrent.futures import Future
 from socket import AF_INET, IPPROTO_TCP, SHUT_WR, TCP_NODELAY, socket as Socket
@@ -47,7 +48,6 @@ class TestTCPNetworkClient:
         client.send_packet("ABCDEF")
         assert server.recv(1024) == b"ABCDEF\n"
 
-    @pytest.mark.platform_linux  # Windows and MacOS raise ConnectionAbortedError but in the 2nd send() call
     def test____send_packet____connection_error____fresh_connection_closed_by_server(
         self,
         client: TCPNetworkClient[str, str],
@@ -55,9 +55,10 @@ class TestTCPNetworkClient:
     ) -> None:
         server.close()
         with pytest.raises(ConnectionAbortedError):
-            client.send_packet("ABCDEF")
+            for _ in range(3):  # Windows and macOS catch the issue after several send()
+                client.send_packet("ABCDEF")
+                time.sleep(0.01)
 
-    @pytest.mark.platform_linux  # Windows and MacOS raise ConnectionAbortedError but in the 2nd send() call
     def test____send_packet____connection_error____after_previous_successful_try(
         self,
         client: TCPNetworkClient[str, str],
@@ -67,7 +68,9 @@ class TestTCPNetworkClient:
         assert server.recv(1024) == b"ABCDEF\n"
         server.close()
         with pytest.raises(ConnectionAbortedError):
-            client.send_packet("ABCDEF")
+            for _ in range(3):  # Windows and macOS catch the issue after several send()
+                client.send_packet("ABCDEF")
+                time.sleep(0.01)
 
     def test____send_packet____connection_error____partial_read_then_close(
         self,
@@ -84,6 +87,36 @@ class TestTCPNetworkClient:
         client.close()
         with pytest.raises(ClientClosedError):
             client.send_packet("ABCDEF")
+
+    def test____send_eof____close_write_stream(
+        self,
+        client: TCPNetworkClient[str, str],
+        server: Socket,
+    ) -> None:
+        client.send_eof()
+        assert server.recv(1024) == b""
+        with pytest.raises(RuntimeError):
+            client.send_packet("ABC")
+
+        server.sendall(b"ABCDEF\n")
+        assert client.recv_packet() == "ABCDEF"
+
+    def test____send_eof____closed_client(
+        self,
+        client: TCPNetworkClient[str, str],
+    ) -> None:
+        client.close()
+        client.send_eof()
+
+    def test____send_eof____idempotent(
+        self,
+        client: TCPNetworkClient[str, str],
+        server: Socket,
+    ) -> None:
+        client.send_eof()
+        assert server.recv(1024) == b""
+        client.send_eof()
+        client.send_eof()
 
     def test____recv_packet____default(self, client: TCPNetworkClient[str, str], server: Socket) -> None:
         server.sendall(b"ABCDEF\n")
@@ -139,10 +172,18 @@ class TestTCPNetworkClient:
             client.recv_packet(timeout=0.4)
         assert client.recv_packet(timeout=None) == "ABCDEF"
 
-    def test____recv_packet____eof(self, client: TCPNetworkClient[str, str], server: Socket) -> None:
+    def test____recv_packet____eof____closed_remote(self, client: TCPNetworkClient[str, str], server: Socket) -> None:
         server.close()
         with pytest.raises(ConnectionAbortedError):
             client.recv_packet()
+
+    def test____recv_packet____eof____shutdown_write_only(self, client: TCPNetworkClient[str, str], server: Socket) -> None:
+        server.shutdown(SHUT_WR)
+        with pytest.raises(ConnectionAbortedError):
+            client.recv_packet()
+
+        client.send_packet("ABCDEF")
+        assert server.recv(1024) == b"ABCDEF\n"
 
     def test____recv_packet____client_close_error(self, client: TCPNetworkClient[str, str]) -> None:
         client.close()
@@ -358,3 +399,24 @@ class TestSSLOverTCPNetworkClient:
                 ssl=client_ssl_context,
                 server_hostname="test.example.com",
             )
+
+    def test____send_eof____not_supported(
+        self,
+        remote_address: tuple[str, int],
+        stream_protocol: StreamProtocol[str, str],
+        client_ssl_context: ssl.SSLContext,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        with TCPNetworkClient(
+            remote_address,
+            stream_protocol,
+            ssl=client_ssl_context,
+            server_hostname="test.example.com",
+        ) as client:
+            with pytest.raises(NotImplementedError):
+                client.send_eof()
+
+            client.send_packet("Test")
+            assert client.recv_packet() == "Test"

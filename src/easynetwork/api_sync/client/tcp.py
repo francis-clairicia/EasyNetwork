@@ -14,7 +14,7 @@ import socket as _socket
 import threading
 import time
 from collections.abc import Callable, Iterator
-from typing import TYPE_CHECKING, Any, Generic, Literal, NoReturn, TypeGuard, TypeVar, cast, final, overload
+from typing import TYPE_CHECKING, Any, Generic, NoReturn, TypeGuard, TypeVar, cast, final, overload
 
 try:
     import ssl
@@ -64,6 +64,8 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         "__addr",
         "__peer",
         "__eof_reached",
+        "__eof_sent",
+        "__last_ssl_eof_error",
         "__max_recv_size",
         "__retry_interval",
         "__ssl_shutdown_timeout",
@@ -82,6 +84,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         server_hostname: str | None = ...,
         ssl_handshake_timeout: float | None = ...,
         ssl_shutdown_timeout: float | None = ...,
+        ssl_shared_lock: bool | None = ...,
         max_recv_size: int | None = ...,
         retry_interval: float = ...,
     ) -> None:
@@ -98,6 +101,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         server_hostname: str | None = ...,
         ssl_handshake_timeout: float | None = ...,
         ssl_shutdown_timeout: float | None = ...,
+        ssl_shared_lock: bool | None = ...,
         max_recv_size: int | None = ...,
         retry_interval: float = ...,
     ) -> None:
@@ -113,16 +117,13 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         server_hostname: str | None = None,
         ssl_handshake_timeout: float | None = None,
         ssl_shutdown_timeout: float | None = None,
+        ssl_shared_lock: bool | None = None,
         max_recv_size: int | None = None,
         retry_interval: float = 1.0,
         **kwargs: Any,
     ) -> None:
         self.__socket: _socket.socket | None = None  # If any exception occurs, the client will already be in a closed state
         super().__init__()
-
-        self.__send_lock = ForkSafeLock(threading.Lock)
-        self.__receive_lock = ForkSafeLock(threading.Lock)
-        self.__socket_lock = ForkSafeLock(threading.Lock)
 
         if server_hostname is not None and not ssl:
             raise ValueError("server_hostname is only meaningful with ssl")
@@ -132,6 +133,12 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
 
         if ssl_shutdown_timeout is not None and not ssl:
             raise ValueError("ssl_shutdown_timeout is only meaningful with ssl")
+
+        if ssl_shared_lock is not None and not ssl:
+            raise ValueError("ssl_shared_lock is only meaningful with ssl")
+
+        if ssl_shared_lock is None:
+            ssl_shared_lock = True
 
         socket: _socket.socket
         match __arg:
@@ -187,6 +194,8 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             self.__peer: SocketAddress = new_socket_address(socket.getpeername(), socket.family)
             self.__over_ssl: bool = False
             self.__eof_reached: bool = False
+            self.__eof_sent: bool = False
+            self.__last_ssl_eof_error: Exception | None = None
 
             if ssl:
                 if _ssl_module is None:
@@ -203,7 +212,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                     socket,
                     server_side=False,
                     do_handshake_on_connect=False,
-                    suppress_ragged_eofs=False,  # Suppressed or not, it will be transformed to a ConnectionAbortedError so...
+                    suppress_ragged_eofs=False,
                     server_hostname=server_hostname,
                 )
 
@@ -217,6 +226,16 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
 
                 if ssl_shutdown_timeout is None:
                     ssl_shutdown_timeout = SSL_SHUTDOWN_TIMEOUT
+
+            assert ssl_shared_lock is not None
+            self.__send_lock: ForkSafeLock[threading.Lock]
+            self.__receive_lock: ForkSafeLock[threading.Lock]
+            if self.__over_ssl and ssl_shared_lock:
+                self.__send_lock = self.__receive_lock = ForkSafeLock(threading.Lock)
+            else:
+                self.__send_lock = ForkSafeLock(threading.Lock)
+                self.__receive_lock = ForkSafeLock(threading.Lock)
+            self.__socket_lock: ForkSafeLock[threading.Lock] = ForkSafeLock(threading.Lock)
 
             with _contextlib.suppress(OSError):
                 set_tcp_nodelay(socket, True)
@@ -253,12 +272,13 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
 
     def close(self) -> None:
         with self.__send_lock.get(), self.__socket_lock.get():
+            self.__last_ssl_eof_error = None
             if (socket := self.__socket) is None:
                 return
             self.__socket = None
             try:
                 if not self.__eof_reached and self.__is_ssl_socket(socket):
-                    with self.__convert_ssl_eof_error(), _contextlib.suppress(TimeoutError):
+                    with self.__convert_socket_error(), _contextlib.suppress(TimeoutError):
                         retry_interval: float | None = self.__retry_interval
                         socket = _retry_ssl_socket_method(socket, self.__ssl_shutdown_timeout, retry_interval, socket.unwrap)
             except ConnectionError:
@@ -275,11 +295,13 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                     socket.close()
 
     def send_packet(self, packet: _SentPacketT, *, timeout: float | None = None) -> None:
-        with (
-            _lock_with_timeout(self.__send_lock.get(), timeout, error_message="send_packet() timed out") as timeout,
-            self.__convert_socket_error(),
-        ):
+        with _lock_with_timeout(self.__send_lock.get(), timeout, error_message="send_packet() timed out") as timeout:
             socket = self.__ensure_connected()
+            if self.__eof_sent:
+                raise RuntimeError("send_eof() has been called earlier")
+            if self.__over_ssl and self.__eof_reached:
+                self.__abort_eof()
+
             data: bytes = b"".join(self.__producer(packet))
             buffer = memoryview(data)
             assert buffer.itemsize == 1
@@ -287,55 +309,71 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             retry_interval: float | None = self.__retry_interval
             try:
                 remaining: int = buffer.nbytes
-                while remaining > 0:
-                    sent: int
-                    try:
-                        _start = perf_counter()
-                        if self.__is_ssl_socket(socket):
-                            sent = _retry_ssl_socket_method(socket, timeout, retry_interval, socket.send, buffer)
-                        else:
-                            sent = _retry_socket_method(socket, timeout, retry_interval, "write", socket.send, buffer)
-                        _end = perf_counter()
-                    except TimeoutError:
-                        raise TimeoutError("send_packet() timed out") from None
-                    assert sent >= 0, f"socket.send() returned a negative integer ({sent=})"
-                    remaining -= sent
-                    buffer = buffer[sent:]
-                    if timeout is not None:
-                        timeout -= _end - _start
-                _check_real_socket_state(socket)
+                with self.__convert_socket_error():
+                    while remaining > 0:
+                        sent: int
+                        try:
+                            _start = perf_counter()
+                            if self.__is_ssl_socket(socket):
+                                sent = _retry_ssl_socket_method(socket, timeout, retry_interval, socket.send, buffer)
+                            else:
+                                sent = _retry_socket_method(socket, timeout, retry_interval, "write", socket.send, buffer)
+                            _end = perf_counter()
+                        except TimeoutError:
+                            raise TimeoutError("send_packet() timed out") from None
+                        assert sent >= 0, f"socket.send() returned a negative integer ({sent=})"
+                        remaining -= sent
+                        buffer = buffer[sent:]
+                        if timeout is not None:
+                            timeout -= _end - _start
+                    _check_real_socket_state(socket)
             finally:
                 del buffer, data
 
+    def send_eof(self) -> None:
+        if self.__over_ssl:
+            # ssl.SSLSocket.shutdown() would shutdown both read and write streams
+            raise NotImplementedError
+
+        with self.__send_lock.get(), self.__socket_lock.get():
+            if self.__eof_sent:
+                return
+            self.__eof_sent = True
+            if (socket := self.__socket) is not None:
+                socket.shutdown(_socket.SHUT_WR)
+
     def recv_packet(self, *, timeout: float | None = None) -> _ReceivedPacketT:
-        with (
-            _lock_with_timeout(self.__receive_lock.get(), timeout, error_message="recv_packet() timed out") as timeout,
-            self.__convert_socket_error(),
-        ):
+        with _lock_with_timeout(self.__receive_lock.get(), timeout, error_message="recv_packet() timed out") as timeout:
             consumer = self.__consumer
             try:
                 return next(consumer)  # If there is enough data from last call to create a packet, return immediately
             except StopIteration:
                 pass
+
             socket = self.__ensure_connected()
+            if self.__eof_reached:
+                self.__abort_eof()
+
             bufsize: int = self.__max_recv_size
             perf_counter = time.perf_counter  # pull function to local namespace
             retry_interval: float | None = self.__retry_interval
 
             while True:
-                try:
-                    _start = perf_counter()
-                    chunk: bytes
-                    if self.__is_ssl_socket(socket):
-                        chunk = _retry_ssl_socket_method(socket, timeout, retry_interval, socket.recv, bufsize)
-                    else:
-                        chunk = _retry_socket_method(socket, timeout, retry_interval, "read", socket.recv, bufsize)
-                    _end = perf_counter()
-                except TimeoutError:
-                    break
+                with self.__convert_socket_error():
+                    try:
+                        _start = perf_counter()
+                        chunk: bytes
+                        if self.__is_ssl_socket(socket):
+                            chunk = _retry_ssl_socket_method(socket, timeout, retry_interval, socket.recv, bufsize)
+                        else:
+                            chunk = _retry_socket_method(socket, timeout, retry_interval, "read", socket.recv, bufsize)
+                        _end = perf_counter()
+                    except TimeoutError:
+                        break
                 try:
                     if not chunk:
-                        self.__eof_error(False)
+                        self.__eof_reached = True
+                        self.__abort_eof()
                     buffer_not_full: bool = len(chunk) < bufsize
                     consumer.feed(chunk)
                 finally:
@@ -355,8 +393,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
     def __ensure_connected(self) -> _socket.socket:
         if (socket := self.__socket) is None:
             raise ClientClosedError("Closed client")
-        if self.__eof_reached:
-            raise _error_from_errno(_errno.ECONNABORTED)
         return socket
 
     @_contextlib.contextmanager
@@ -364,13 +400,11 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         try:
             with self.__convert_ssl_eof_error():
                 yield
-        except (ConnectionAbortedError, ClientClosedError):
-            raise
         except ConnectionError as exc:
-            self.__eof_error(exc)
+            self.__abort(exc)
         except OSError as exc:
             if exc.errno in CLOSED_SOCKET_ERRNOS:
-                self.__eof_error(exc)
+                self.__abort(exc)
             raise
 
     @_contextlib.contextmanager
@@ -382,14 +416,24 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             yield
         except _ssl_module.SSLError as exc:
             if isinstance(exc, _ssl_module.SSLZeroReturnError) or _is_ssl_eof_error(exc):
-                self.__eof_error(exc)
+                exc = exc.with_traceback(None)
+                exc.__context__ = exc.__cause__ = None
+                self.__eof_reached = True
+                self.__last_ssl_eof_error = exc
+                self.__abort(exc)
             raise
 
-    def __eof_error(self, cause: BaseException | None | Literal[False]) -> NoReturn:
-        self.__eof_reached = True
-        if cause is False:
+    @staticmethod
+    def __abort(cause: BaseException | None) -> NoReturn:
+        if cause is None:
             raise _error_from_errno(_errno.ECONNABORTED)
         raise _error_from_errno(_errno.ECONNABORTED) from cause
+
+    def __abort_eof(self) -> NoReturn:
+        if self.__over_ssl:
+            self.__abort(self.__last_ssl_eof_error)
+        else:
+            self.__abort(None)
 
     def get_local_address(self) -> SocketAddress:
         return self.__addr

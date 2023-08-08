@@ -155,6 +155,19 @@ def test____check_real_socket_state____socket_with_error(mock_tcp_socket: MagicM
     mock_error_from_errno.assert_called_once_with(errno)
 
 
+def test____check_real_socket_state____closed_socket(mock_tcp_socket: MagicMock, mocker: MockerFixture) -> None:
+    # Arrange
+    mock_tcp_socket.fileno.return_value = -1
+    mock_error_from_errno = mocker.patch(f"{error_from_errno.__module__}.{error_from_errno.__qualname__}")
+
+    # Act
+    check_real_socket_state(mock_tcp_socket)
+
+    # Assert
+    mock_tcp_socket.getsockopt.assert_not_called()
+    mock_error_from_errno.assert_not_called()
+
+
 def test____check_socket_family____valid_family(socket_family: int) -> None:
     # Arrange
 
@@ -654,9 +667,10 @@ def test____remove_traceback_frames_in_place____remove_n_first_traceback(n: int)
     # Act
     exception = pytest.raises(Exception, func).value
     assert len(list(traceback.walk_tb(exception.__traceback__))) == 3
-    remove_traceback_frames_in_place(exception, n)
+    _returned_exception = remove_traceback_frames_in_place(exception, n)
 
     # Assert
+    assert _returned_exception is exception
     if 0 <= n <= 3:
         assert len(list(traceback.walk_tb(exception.__traceback__))) == 3 - n
     elif n < 0:
