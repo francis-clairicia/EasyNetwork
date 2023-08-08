@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 
     from pytest_mock import MockerFixture
 
+from ..._utils import DummyLock
 from ...base import UNSUPPORTED_FAMILIES
 from .base import BaseTestClient, dummy_lock_with_timeout
 
@@ -2046,8 +2047,8 @@ class TestTCPNetworkClient(BaseTestClient):
             ssl_shared_lock = True  # Should be true by default
 
         def during_select() -> None:
-            with pytest.raises(TimeoutError) if ssl_shared_lock else contextlib.nullcontext():
-                client.send_packet(mocker.sentinel.packet, timeout=0)
+            with pytest.raises(DummyLock.WouldBlock) if ssl_shared_lock else contextlib.nullcontext():
+                client.send_packet(mocker.sentinel.packet)
 
         mock_used_socket.recv.side_effect = [SSLWantReadError, b""]
         self.selector_action_during_select(mock_selector_select, mocker, during_select)

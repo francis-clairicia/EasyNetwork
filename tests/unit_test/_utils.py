@@ -8,11 +8,14 @@ from typing import Any
 class _LockMixin:
     _locked_count: int = 0
 
+    class WouldBlock(Exception):
+        pass
+
     def _acquire(self, blocking: bool = True, timeout: float = -1) -> bool:
         if self._locked_count > 0:
             if not blocking or timeout >= 0:
                 return False
-            raise RuntimeError(f"{self.__class__.__name__}.acquire() would block")
+            raise _LockMixin.WouldBlock(f"{self.__class__.__name__}.acquire() would block")
 
         self._locked_count += 1
         return True
