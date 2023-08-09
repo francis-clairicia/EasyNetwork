@@ -130,10 +130,10 @@ class TaskGroup(AbstractTaskGroup):
 
 @final
 class TimeoutHandle(AbstractTimeoutHandle):
-    __slots__ = ("__handle", "__only_move_on", "__weakref__")
+    __slots__ = ("__handle", "__only_move_on")
 
     __current_handle: WeakKeyDictionary[asyncio.Task[Any], deque[TimeoutHandle]] = WeakKeyDictionary()
-    __delayed_task_cancel_dict: WeakKeyDictionary[TimeoutHandle, asyncio.Handle] = WeakKeyDictionary()
+    __delayed_task_cancel_dict: WeakKeyDictionary[asyncio.Task[Any], asyncio.Handle] = WeakKeyDictionary()
 
     def __init__(self, handle: asyncio.Timeout, *, only_move_on: bool = False) -> None:
         super().__init__()
@@ -170,10 +170,12 @@ class TimeoutHandle(AbstractTimeoutHandle):
         finally:
             delayed_task_cancel = None
             try:
-                delayed_task_cancel = self.__delayed_task_cancel_dict.pop(self.__current_handle[current_task].popleft(), None)
+                self.__current_handle[current_task].popleft()
             except LookupError:  # pragma: no cover
                 pass
             finally:
+                if not self.__current_handle.get(current_task):
+                    delayed_task_cancel = self.__delayed_task_cancel_dict.pop(current_task, None)
                 if delayed_task_cancel is not None:
                     delayed_task_cancel.cancel()
                 del current_task, exc_val, exc_tb, self
@@ -196,9 +198,10 @@ class TimeoutHandle(AbstractTimeoutHandle):
 
     @classmethod
     def _delayed_task_cancel(cls, task: asyncio.Task[Any], task_cancel_handle: asyncio.Handle) -> None:
-        current_handle_queue = cls.__current_handle.get(task)
-        if current_handle_queue:
-            cls.__delayed_task_cancel_dict[current_handle_queue[0]] = task_cancel_handle
+        if cls.__current_handle.get(task):
+            if task in cls.__delayed_task_cancel_dict:
+                cls.__delayed_task_cancel_dict[task].cancel()
+            cls.__delayed_task_cancel_dict[task] = task_cancel_handle
 
 
 def timeout(delay: float) -> TimeoutHandle:

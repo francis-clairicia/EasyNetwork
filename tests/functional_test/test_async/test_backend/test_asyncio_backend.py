@@ -741,3 +741,41 @@ class TestAsyncioBackend:
 
         assert await task == 42
         assert checkpoints == ["cancel_shielded_coro_yield", "coro_yield"]
+
+    async def test____cancel_shielded_coro_yield____cancel_at_timeout_end_if_nested(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        backend: AsyncioBackend,
+    ) -> None:
+        checkpoints: list[str] = []
+
+        async def coroutine(value: int) -> int:
+            current_task = asyncio.current_task()
+            assert current_task is not None
+
+            async with backend.move_on_after(0) as handle:
+                async with backend.timeout(0):
+                    async with backend.timeout(0):
+                        await backend.cancel_shielded_coro_yield()
+                        checkpoints.append("inner_cancel_shielded_coro_yield")
+                        assert current_task.cancelling() == 2
+
+                    await backend.cancel_shielded_coro_yield()
+                    assert current_task.cancelling() == 1
+                    checkpoints.append("cancel_shielded_coro_yield")
+
+                checkpoints.append("inner_coro_yield")
+                await backend.coro_yield()
+                checkpoints.append("should_not_be_here")
+
+            assert current_task.cancelling() == 0
+
+            assert handle.expired()
+            await backend.coro_yield()
+            checkpoints.append("coro_yield")
+            return value
+
+        task = event_loop.create_task(coroutine(42))
+
+        assert await task == 42
+        assert checkpoints == ["inner_cancel_shielded_coro_yield", "cancel_shielded_coro_yield", "inner_coro_yield", "coro_yield"]
