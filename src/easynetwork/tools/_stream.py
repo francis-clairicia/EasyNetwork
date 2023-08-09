@@ -72,7 +72,7 @@ class StreamDataProducer(Generic[_SentPacketT]):
         raise StopIteration
 
     def pending_packets(self) -> bool:
-        return self.__g is not None or len(self.__q) > 0
+        return self.__g is not None or bool(self.__q)
 
     def queue(self, *packets: _SentPacketT) -> None:
         self.__q.extend(packets)
@@ -149,7 +149,10 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
         assert type(chunk) is bytes, repr(chunk)
         if not chunk:
             return
-        self.__b += chunk
+        if self.__b:
+            self.__b += chunk
+        else:
+            self.__b = chunk
 
     def get_buffer(self) -> memoryview:
         return memoryview(self.__b)

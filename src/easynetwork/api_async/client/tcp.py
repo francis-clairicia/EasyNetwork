@@ -285,7 +285,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
             if self.__eof_sent:
                 raise RuntimeError("send_eof() has been called earlier")
             with self.__convert_socket_error():
-                await socket.sendall_fromiter(self.__producer(packet))
+                await socket.sendall_fromiter(filter(None, self.__producer(packet)))
                 _check_real_socket_state(self.socket)
 
     async def send_eof(self) -> None:
