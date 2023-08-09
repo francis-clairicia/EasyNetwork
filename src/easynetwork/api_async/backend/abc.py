@@ -339,6 +339,14 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
+    def move_on_after(self, delay: float) -> AsyncContextManager[AbstractTimeoutHandle]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def move_on_at(self, deadline: float) -> AsyncContextManager[AbstractTimeoutHandle]:
+        raise NotImplementedError
+
+    @abstractmethod
     def current_time(self) -> float:
         raise NotImplementedError
 

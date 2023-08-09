@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import math
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from easynetwork_asyncio.tasks import Task, TimeoutHandle, timeout, timeout_at
+from easynetwork_asyncio.tasks import Task, TimeoutHandle, move_on_after, move_on_at, timeout, timeout_at
 
 import pytest
 
@@ -163,7 +164,13 @@ class TestTimeout:
         return TimeoutHandle(mock_asyncio_timeout_handle)
 
     @pytest.mark.asyncio
-    async def test____timeout____schedule_timeout(self, mocker: MockerFixture, mock_asyncio_timeout_handle: MagicMock) -> None:
+    @pytest.mark.parametrize("timeout", [timeout, move_on_after])
+    async def test____timeout____schedule_timeout(
+        self,
+        timeout: Callable[[float], TimeoutHandle],
+        mocker: MockerFixture,
+        mock_asyncio_timeout_handle: MagicMock,
+    ) -> None:
         # Arrange
         mock_timeout = mocker.patch("asyncio.timeout", return_value=mock_asyncio_timeout_handle)
 
@@ -176,7 +183,13 @@ class TestTimeout:
         mock_asyncio_timeout_handle.__aenter__.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test____timeout____handle_infinite(self, mocker: MockerFixture, mock_asyncio_timeout_handle: MagicMock) -> None:
+    @pytest.mark.parametrize("timeout", [timeout, move_on_after])
+    async def test____timeout____handle_infinite(
+        self,
+        timeout: Callable[[float], TimeoutHandle],
+        mocker: MockerFixture,
+        mock_asyncio_timeout_handle: MagicMock,
+    ) -> None:
         # Arrange
         mock_timeout = mocker.patch("asyncio.timeout", return_value=mock_asyncio_timeout_handle)
 
@@ -189,7 +202,13 @@ class TestTimeout:
         mock_asyncio_timeout_handle.__aenter__.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test____timeout_at____schedule_timeout(self, mocker: MockerFixture, mock_asyncio_timeout_handle: MagicMock) -> None:
+    @pytest.mark.parametrize("timeout_at", [timeout_at, move_on_at])
+    async def test____timeout_at____schedule_timeout(
+        self,
+        timeout_at: Callable[[float], TimeoutHandle],
+        mocker: MockerFixture,
+        mock_asyncio_timeout_handle: MagicMock,
+    ) -> None:
         # Arrange
         mock_timeout_at = mocker.patch("asyncio.timeout_at", return_value=mock_asyncio_timeout_handle)
 
@@ -202,7 +221,13 @@ class TestTimeout:
         mock_asyncio_timeout_handle.__aenter__.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test____timeout_at____handle_infinite(self, mocker: MockerFixture, mock_asyncio_timeout_handle: MagicMock) -> None:
+    @pytest.mark.parametrize("timeout_at", [timeout_at, move_on_at])
+    async def test____timeout_at____handle_infinite(
+        self,
+        timeout_at: Callable[[float], TimeoutHandle],
+        mocker: MockerFixture,
+        mock_asyncio_timeout_handle: MagicMock,
+    ) -> None:
         # Arrange
         mock_timeout_at = mocker.patch("asyncio.timeout_at", return_value=mock_asyncio_timeout_handle)
 
