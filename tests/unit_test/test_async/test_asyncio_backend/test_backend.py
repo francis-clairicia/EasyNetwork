@@ -47,7 +47,7 @@ class TestAsyncIOBackend:
         backend: AsyncioBackend,
         use_asyncio_transport: bool,
     ) -> None:
-        assert backend.use_asyncio_transport() == use_asyncio_transport
+        assert backend.using_asyncio_transport() == use_asyncio_transport
 
     @pytest.mark.parametrize("cancel_shielded", [False, True], ids=lambda b: f"cancel_shielded=={b}")
     async def test____coro_yield____use_asyncio_sleep(

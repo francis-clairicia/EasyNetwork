@@ -38,7 +38,7 @@ from .datagram.socket import AsyncioTransportDatagramSocketAdapter, RawDatagramS
 from .runner import AsyncioRunner
 from .stream.listener import AcceptedSocket, AcceptedSSLSocket, ListenerSocketAdapter
 from .stream.socket import AsyncioTransportStreamSocketAdapter, RawStreamSocketAdapter
-from .tasks import Task, TaskGroup, timeout, timeout_at
+from .tasks import Task, TaskGroup, TimeoutHandle, move_on_after, move_on_at, timeout, timeout_at
 from .threads import ThreadsPortal
 
 if TYPE_CHECKING:
@@ -46,8 +46,6 @@ if TYPE_CHECKING:
     from ssl import SSLContext as _SSLContext
 
     from easynetwork.api_async.backend.abc import AbstractAcceptedSocket, ILock
-
-    from .tasks import TimeoutHandle
 
 _P = ParamSpec("_P")
 _T = TypeVar("_T")
@@ -87,7 +85,8 @@ class AsyncioBackend(AbstractAsyncBackend):
             # uncancel so the Task object is aware we have explicitly caught the exception...
             current_task.uncancel()
             # ...but cancel it again so the next step will throw a CancelledError
-            current_task.get_loop().call_soon(current_task.cancel, msg)
+            handle = current_task.get_loop().call_soon(current_task.cancel, msg)
+            TimeoutHandle._delayed_task_cancel(current_task, handle)
         finally:
             del current_task
 
@@ -111,6 +110,12 @@ class AsyncioBackend(AbstractAsyncBackend):
 
     def timeout_at(self, deadline: float) -> AsyncContextManager[TimeoutHandle]:
         return timeout_at(deadline)
+
+    def move_on_after(self, delay: float) -> AsyncContextManager[TimeoutHandle]:
+        return move_on_after(delay)
+
+    def move_on_at(self, deadline: float) -> AsyncContextManager[TimeoutHandle]:
+        return move_on_at(deadline)
 
     @classmethod
     async def _cancel_shielded_wait_asyncio_future(cls, future: asyncio.Future[_T_co]) -> _T_co:
@@ -423,7 +428,6 @@ class AsyncioBackend(AbstractAsyncBackend):
     async def wait_future(self, future: concurrent.futures.Future[_T_co]) -> _T_co:
         try:
             if future.done():
-                await self.cancel_shielded_coro_yield()
                 return future.result()
 
             future_wrapper = asyncio.wrap_future(future)
@@ -454,7 +458,7 @@ class AsyncioBackend(AbstractAsyncBackend):
         finally:
             del future
 
-    def use_asyncio_transport(self) -> bool:
+    def using_asyncio_transport(self) -> bool:
         return self.__use_asyncio_transport
 
     def _check_asyncio_transport(self, context: str) -> None:

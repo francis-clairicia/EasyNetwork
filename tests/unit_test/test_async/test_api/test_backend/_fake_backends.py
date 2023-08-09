@@ -48,6 +48,12 @@ class BaseFakeBackend(AbstractAsyncBackend):
     def timeout_at(self, deadline: Any) -> AsyncContextManager[AbstractTimeoutHandle]:
         raise NotImplementedError
 
+    def move_on_after(self, delay: Any) -> AsyncContextManager[AbstractTimeoutHandle]:
+        raise NotImplementedError
+
+    def move_on_at(self, deadline: Any) -> AsyncContextManager[AbstractTimeoutHandle]:
+        raise NotImplementedError
+
     def get_cancelled_exc_class(self) -> type[BaseException]:
         raise NotImplementedError
 
