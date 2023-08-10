@@ -77,10 +77,7 @@ class AsyncioBackend(AbstractAsyncBackend):
         try:
             await asyncio.sleep(0)
         except asyncio.CancelledError as exc:
-            # uncancel so the Task object is aware we have explicitly caught the exception...
-            current_task.uncancel()
-            # ...but cancel it again so the next step will throw a CancelledError
-            self._reschedule_task_cancellation(current_task, self._get_cancelled_error_message(exc))
+            TimeoutHandle._reschedule_delayed_task_cancel(current_task, self._get_cancelled_error_message(exc))
         finally:
             del current_task
 
@@ -118,10 +115,8 @@ class AsyncioBackend(AbstractAsyncBackend):
         cls,
         future: asyncio.Future[Any],
         abort_func: Callable[[], bool] | None,
-        force_reschedule_cancellation: bool = False,
     ) -> None:
         current_task: asyncio.Task[Any] = cls._current_asyncio_task()
-        cancelling: int = current_task.cancelling()
         abort: bool | None = None
         task_cancelled: bool = False
         task_cancel_msg: str | None = None
@@ -141,11 +136,8 @@ class AsyncioBackend(AbstractAsyncBackend):
                     task_cancelled = True
                     task_cancel_msg = cls._get_cancelled_error_message(exc)
 
-                    assert current_task.cancelling() > cancelling
-                    while current_task.uncancel() > cancelling:
-                        continue
-            if task_cancelled and (force_reschedule_cancellation or not future.cancelled()):
-                cls._reschedule_task_cancellation(current_task, task_cancel_msg)
+            if task_cancelled and not future.cancelled():
+                TimeoutHandle._reschedule_delayed_task_cancel(current_task, task_cancel_msg)
         finally:
             task_cancel_msg = None
             del current_task, future
@@ -158,11 +150,6 @@ class AsyncioBackend(AbstractAsyncBackend):
         else:
             msg = None
         return msg
-
-    @staticmethod
-    def _reschedule_task_cancellation(task: asyncio.Task[Any], cancel_msg: str | None) -> None:
-        handle = task.get_loop().call_soon(task.cancel, cancel_msg)
-        TimeoutHandle._delayed_task_cancel(task, handle)
 
     def current_time(self) -> float:
         loop = asyncio.get_running_loop()
@@ -458,19 +445,22 @@ class AsyncioBackend(AbstractAsyncBackend):
         return ThreadsPortal()
 
     async def wait_future(self, future: concurrent.futures.Future[_T_co]) -> _T_co:
-        if future.done():
-            return future.result()
-
-        future_wrapper = asyncio.wrap_future(future)
-        # If future.cancel() failed, that means future.set_running_or_notify_cancel() has been called
-        # and set future in RUNNING state.
-        # This future cannot be cancelled anymore, therefore it must be awaited.
-        await self._cancel_shielded_wait_asyncio_future(future_wrapper, future.cancel, force_reschedule_cancellation=True)
-        if future_wrapper.cancelled():
+        if not future.done():
+            future_wrapper = asyncio.wrap_future(future)
+            # If future.cancel() failed, that means future.set_running_or_notify_cancel() has been called
+            # and set future in RUNNING state.
+            # This future cannot be cancelled anymore, therefore it must be awaited.
+            await self._cancel_shielded_wait_asyncio_future(future_wrapper, future.cancel)
+            if not future_wrapper.cancelled():
+                # Unwrap "future_wrapper" instead to prevent reports about unhandled exceptions.
+                assert future_wrapper.done()
+                return future_wrapper.result()
             assert future.done()
-            return future.result()  # will raise the right exception
-        assert future_wrapper.done()
-        return future_wrapper.result()
+
+        if future.cancelled():
+            # Task cancellation prevails over future cancellation
+            await asyncio.sleep(0)
+        return future.result()
 
     def using_asyncio_transport(self) -> bool:
         return self.__use_asyncio_transport
