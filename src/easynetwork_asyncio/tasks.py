@@ -130,24 +130,28 @@ class TaskGroup(AbstractTaskGroup):
 
 @final
 class TimeoutHandle(AbstractTimeoutHandle):
-    __slots__ = ("__handle", "__only_move_on")
+    __slots__ = ("__handle", "__only_move_on", "__already_delayed_cancellation")
 
-    __current_handle: WeakKeyDictionary[asyncio.Task[Any], deque[TimeoutHandle]] = WeakKeyDictionary()
+    __current_handle_dict: WeakKeyDictionary[asyncio.Task[Any], deque[TimeoutHandle]] = WeakKeyDictionary()
     __delayed_task_cancel_dict: WeakKeyDictionary[asyncio.Task[Any], asyncio.Handle] = WeakKeyDictionary()
 
     def __init__(self, handle: asyncio.Timeout, *, only_move_on: bool = False) -> None:
         super().__init__()
         self.__handle: asyncio.Timeout = handle
         self.__only_move_on: bool = bool(only_move_on)
+        self.__already_delayed_cancellation: bool = True
 
     async def __aenter__(self) -> Self:
-        handle: asyncio.Timeout = self.__handle
-        await type(handle).__aenter__(handle)
+        timeout_handle: asyncio.Timeout = self.__handle
+        await type(timeout_handle).__aenter__(timeout_handle)
         current_task = asyncio.current_task()
         assert current_task is not None
-        current_handle = self.__current_handle.setdefault(current_task, deque())
-        current_handle.appendleft(self)
-        current_task.add_done_callback(self.__current_handle.pop)
+        current_handle_dict = self.__current_handle_dict
+        if current_task not in current_handle_dict:
+            current_handle_dict[current_task] = deque()
+            current_task.add_done_callback(current_handle_dict.pop)
+        current_handle_dict[current_task].appendleft(self)
+        self.__already_delayed_cancellation = current_task in self.__delayed_task_cancel_dict
         return self
 
     async def __aexit__(
@@ -156,11 +160,11 @@ class TimeoutHandle(AbstractTimeoutHandle):
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> bool | None:
-        handle: asyncio.Timeout = self.__handle
+        timeout_handle: asyncio.Timeout = self.__handle
         current_task = asyncio.current_task()
         assert current_task is not None
         try:
-            await type(handle).__aexit__(handle, exc_type, exc_val, exc_tb)
+            await type(timeout_handle).__aexit__(timeout_handle, exc_type, exc_val, exc_tb)
         except TimeoutError:
             if self.__only_move_on:
                 return True
@@ -170,14 +174,15 @@ class TimeoutHandle(AbstractTimeoutHandle):
         finally:
             delayed_task_cancel = None
             try:
-                self.__current_handle[current_task].popleft()
+                self.__current_handle_dict[current_task].popleft()
             except LookupError:  # pragma: no cover
                 pass
             finally:
-                if not self.__current_handle.get(current_task):
-                    delayed_task_cancel = self.__delayed_task_cancel_dict.pop(current_task, None)
-                if delayed_task_cancel is not None:
-                    delayed_task_cancel.cancel()
+                if not self.__already_delayed_cancellation:
+                    if not self.__current_handle_dict.get(current_task):
+                        delayed_task_cancel = self.__delayed_task_cancel_dict.pop(current_task, None)
+                    if delayed_task_cancel is not None:
+                        delayed_task_cancel.cancel()
                 del current_task, exc_val, exc_tb, self
 
     def when(self) -> float:
@@ -197,11 +202,23 @@ class TimeoutHandle(AbstractTimeoutHandle):
         return time_value if time_value != math.inf else None
 
     @classmethod
-    def _delayed_task_cancel(cls, task: asyncio.Task[Any], task_cancel_handle: asyncio.Handle) -> None:
-        if cls.__current_handle.get(task):
+    def _reschedule_delayed_task_cancel(cls, task: asyncio.Task[Any], cancel_msg: str | None) -> None:
+        task_cancel_handle = task.get_loop().call_soon(cls.__cancel_task_unless_done, task, cancel_msg)
+        if cls.__current_handle_dict.get(task):
             if task in cls.__delayed_task_cancel_dict:
                 cls.__delayed_task_cancel_dict[task].cancel()
             cls.__delayed_task_cancel_dict[task] = task_cancel_handle
+        else:
+            assert task not in cls.__delayed_task_cancel_dict
+            cls.__delayed_task_cancel_dict[task] = task_cancel_handle
+            task.get_loop().call_soon(cls.__delayed_task_cancel_dict.pop, task, None)
+
+    @staticmethod
+    def __cancel_task_unless_done(task: asyncio.Task[Any], cancel_msg: str | None) -> None:
+        if task.done():
+            return
+        task.uncancel()
+        task.cancel(cancel_msg)
 
 
 def timeout(delay: float) -> TimeoutHandle:
