@@ -39,17 +39,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
+  unit-tests:
     if: |
       (github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Bump version:'))
       && (github.event_name != 'pull_request' || github.event.pull_request.draft != true)
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, windows-2022, macos-12]
         python_version: ['3.11']
-        test_context: [unit, functional]
 
     steps:
       - uses: actions/checkout@v3
@@ -58,7 +56,7 @@ jobs:
         with:
           python-version: ${{ matrix.python_version }}
       - name: Launch tests
-        run: tox run -f py$(echo ${{ matrix.python_version }} | tr -d .)-${{ matrix.test_context }} -- -v
+        run: tox run -f py$(echo ${{ matrix.python_version }} | tr -d .)-unit -- -v
       - name: Generate coverage report
         if: hashFiles('.coverage.*') != ''  # Rudimentary `file.exists()`
         run: |
@@ -69,12 +67,43 @@ jobs:
         uses: codecov/codecov-action@v3
         with:
           flags: >-  # Mark which lines are covered by which envs
-            test,
-            test-${{ matrix.test_context }},
+            test-unit,
+            Py-${{ matrix.python_version }}
+
+  functional-tests:
+    if: |
+      (github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Bump version:'))
+      && (github.event_name != 'pull_request' || github.event.pull_request.draft != true)
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-2022, macos-12]
+        python_version: ['3.11']
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup tox (python ${{ matrix.python_version }})
+        uses: ./.github/actions/setup-tox
+        with:
+          python-version: ${{ matrix.python_version }}
+      - name: Launch tests
+        run: tox run -f py$(echo ${{ matrix.python_version }} | tr -d .)-functional -- -v
+      - name: Generate coverage report
+        if: hashFiles('.coverage.*') != ''  # Rudimentary `file.exists()`
+        run: |
+          tox run -e coverage
+          tox exec -e coverage -- coverage xml
+      - name: Upload coverage to codecov
+        if: hashFiles('coverage.xml') != ''  # Rudimentary `file.exists()`
+        uses: codecov/codecov-action@v3
+        with:
+          flags: >-  # Mark which lines are covered by which envs
+            test-functional,
             OS-${{ runner.os }},
             Py-${{ matrix.python_version }}
 
-  other-test:
+  other-tests:
     if: |
       (github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Bump version:'))
       && (github.event_name != 'pull_request' || github.event.pull_request.draft != true)
