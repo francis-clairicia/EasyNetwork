@@ -9,16 +9,15 @@ inputs:
 runs:
   using: 'composite'
   steps:
-    - uses: pdm-project/setup-pdm@v3
-      with:
-        version: '2.7.4'
-        python-version: ${{ inputs.python-version }}
-        # There is issues when retrieving the cache on Windows
-        cache: ${{ runner.os != 'Windows' }}
-        cache-dependency-path: './pdm.lock'
     - name: Disable PDM update check
       run: echo "PDM_CHECK_UPDATE=False" >> $GITHUB_ENV
       shell: bash
+    - uses: pdm-project/setup-pdm@v3
+      with:
+        version: '2.8.2'
+        python-version: ${{ inputs.python-version }}
+        cache: true
+        cache-dependency-path: './pdm.lock'
     - name: Install dependencies
       run: pdm sync --global --project=. --no-self --dev --group=tox
       shell: bash
