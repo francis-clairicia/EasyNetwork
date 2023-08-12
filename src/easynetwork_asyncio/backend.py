@@ -388,24 +388,15 @@ class AsyncioBackend(AbstractAsyncBackend):
         family: int = 0
         if local_address is None and remote_address is None:
             family = _socket.AF_INET
-        if not self.__use_asyncio_transport:
-            loop = asyncio.get_running_loop()
-            socket = await create_datagram_socket(
-                loop=loop,
-                family=family,
-                local_address=local_address,
-                remote_address=remote_address,
-                reuse_port=reuse_port,
-            )
-            return RawDatagramSocketAdapter(socket, loop)
 
-        endpoint = await create_datagram_endpoint(
+        socket = await create_datagram_socket(
+            loop=asyncio.get_running_loop(),
             family=family,
-            local_addr=local_address,
-            remote_addr=remote_address,
+            local_address=local_address,
+            remote_address=remote_address,
             reuse_port=reuse_port,
         )
-        return AsyncioTransportDatagramSocketAdapter(endpoint)
+        return await self.wrap_udp_socket(socket)
 
     async def wrap_udp_socket(self, socket: _socket.socket) -> AsyncioTransportDatagramSocketAdapter | RawDatagramSocketAdapter:
         assert socket is not None, "Expected 'socket' to be a socket.socket instance"

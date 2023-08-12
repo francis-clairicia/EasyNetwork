@@ -1166,24 +1166,18 @@ class TestAsyncIOBackend:
         )
 
         # Assert
+        mock_create_datagram_socket.assert_awaited_once_with(
+            loop=event_loop,
+            family=expected_family,
+            local_address=local_address,
+            remote_address=remote_address,
+            reuse_port=mocker.sentinel.reuse_port,
+        )
         if use_asyncio_transport:
-            mock_create_datagram_endpoint.assert_awaited_once_with(
-                family=expected_family,
-                local_addr=local_address,
-                remote_addr=remote_address,
-                reuse_port=mocker.sentinel.reuse_port,
-            )
-            mock_create_datagram_socket.assert_not_awaited()
+            mock_create_datagram_endpoint.assert_awaited_once_with(socket=mock_udp_socket)
             mock_AsyncioTransportDatagramSocketAdapter.assert_called_once_with(mock_endpoint)
             mock_RawDatagramSocketAdapter.assert_not_called()
         else:
-            mock_create_datagram_socket.assert_awaited_once_with(
-                loop=event_loop,
-                family=expected_family,
-                local_address=local_address,
-                remote_address=remote_address,
-                reuse_port=mocker.sentinel.reuse_port,
-            )
             mock_create_datagram_endpoint.assert_not_awaited()
             mock_RawDatagramSocketAdapter.assert_called_once_with(mock_udp_socket, event_loop)
             mock_AsyncioTransportDatagramSocketAdapter.assert_not_called()
