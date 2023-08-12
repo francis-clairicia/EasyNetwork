@@ -417,7 +417,7 @@ def test____ensure_datagram_socket_bound____socket_not_bound____null_port(
     ensure_datagram_socket_bound(mock_udp_socket)
 
     # Assert
-    mock_udp_socket.bind.assert_called_once_with(("", 0))
+    mock_udp_socket.bind.assert_called_once_with(("localhost", 0))
 
 
 def test____ensure_datagram_socket_bound____socket_not_bound____EINVAL_error_when_calling_getsockname(
@@ -432,7 +432,7 @@ def test____ensure_datagram_socket_bound____socket_not_bound____EINVAL_error_whe
     ensure_datagram_socket_bound(mock_udp_socket)
 
     # Assert
-    mock_udp_socket.bind.assert_called_once_with(("", 0))
+    mock_udp_socket.bind.assert_called_once_with(("localhost", 0))
 
 
 def test____ensure_datagram_socket_bound____already_bound(
@@ -478,12 +478,10 @@ def test____ensure_datagram_socket_bound____invalid_socket_type(
 
 def test____set_reuseport____setsockopt(
     mock_tcp_socket: MagicMock,
-    monkeypatch: pytest.MonkeyPatch,
+    SO_REUSEPORT: int,
 ) -> None:
     # Arrange
-    SO_REUSEPORT: int = 123456
     mock_tcp_socket.setsockopt.return_value = None
-    monkeypatch.setattr("socket.SO_REUSEPORT", SO_REUSEPORT, raising=False)
 
     # Act
     set_reuseport(mock_tcp_socket)
@@ -492,13 +490,12 @@ def test____set_reuseport____setsockopt(
     mock_tcp_socket.setsockopt.assert_called_once_with(SOL_SOCKET, SO_REUSEPORT, True)
 
 
+@pytest.mark.usefixtures("remove_SO_REUSEPORT_support")
 def test____set_reuseport____not_supported____not_defined(
     mock_tcp_socket: MagicMock,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Arrange
     mock_tcp_socket.setsockopt.side_effect = OSError
-    monkeypatch.delattr("socket.SO_REUSEPORT", raising=False)
 
     # Act
     with pytest.raises(ValueError, match=r"^reuse_port not supported by socket module$"):
@@ -510,12 +507,10 @@ def test____set_reuseport____not_supported____not_defined(
 
 def test____set_reuseport____not_supported____defined_but_not_implemented(
     mock_tcp_socket: MagicMock,
-    monkeypatch: pytest.MonkeyPatch,
+    SO_REUSEPORT: int,
 ) -> None:
     # Arrange
-    SO_REUSEPORT: int = 123456
     mock_tcp_socket.setsockopt.side_effect = OSError
-    monkeypatch.setattr("socket.SO_REUSEPORT", SO_REUSEPORT, raising=False)
 
     # Act
     with pytest.raises(

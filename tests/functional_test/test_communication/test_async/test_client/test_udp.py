@@ -93,21 +93,6 @@ class TestAsyncUDPNetworkClient:
             assert client.is_connected()
             yield client
 
-    @pytest.mark.parametrize("ipaddr_any", ["", None], ids=repr)
-    async def test____dunder_init____local_address____bind_to_all_interfaces(
-        self,
-        remote_address: tuple[str, int],
-        ipaddr_any: str,
-        datagram_protocol: DatagramProtocol[str, str],
-    ) -> None:
-        async with AsyncUDPNetworkClient(
-            remote_address,
-            datagram_protocol,
-            local_address=(ipaddr_any, 0),
-        ) as client:
-            assert client.is_connected()
-            assert client.get_local_address().port > 0
-
     async def test____dunder_init____remote_address____not_set(
         self,
         udp_socket_factory: Callable[[], Socket],
@@ -499,16 +484,6 @@ class TestAsyncUDPNetworkEndpoint:
 
         socket = Socket(socket_family, SOCK_DGRAM)
         async with AsyncUDPNetworkEndpoint(socket=socket, protocol=datagram_protocol) as client:
-            assert client.is_bound()
-            assert client.get_local_address().port > 0
-
-    @pytest.mark.parametrize("ipaddr_any", ["", None], ids=repr)
-    async def test____dunder_init____local_address____bind_to_all_interfaces(
-        self,
-        ipaddr_any: str,
-        datagram_protocol: DatagramProtocol[str, str],
-    ) -> None:
-        async with AsyncUDPNetworkEndpoint(datagram_protocol, local_address=(ipaddr_any, 0)) as client:
             assert client.is_bound()
             assert client.get_local_address().port > 0
 

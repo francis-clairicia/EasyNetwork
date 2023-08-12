@@ -76,8 +76,6 @@ class AsyncioTransportStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
     async def recv(self, bufsize: int, /) -> bytes:
         if bufsize < 0:
             raise ValueError("'bufsize' must be a positive or null integer")
-        if bufsize == 0:
-            return b""
         return await self.__reader.read(bufsize)
 
     async def sendall(self, data: bytes, /) -> None:

@@ -15,7 +15,6 @@ __all__ = [
 import asyncio
 import asyncio.base_events
 import collections
-import contextlib
 import errno as _errno
 import socket as _socket
 from typing import TYPE_CHECKING, Any, final
@@ -37,6 +36,9 @@ async def create_datagram_endpoint(
     loop = asyncio.get_running_loop()
     recv_queue: asyncio.Queue[tuple[bytes, tuple[Any, ...]] | None] = asyncio.Queue()
     exception_queue: asyncio.Queue[Exception] = asyncio.Queue()
+    flags: int = 0
+    if remote_addr is not None:
+        flags |= _socket.AI_PASSIVE
 
     transport, protocol = await loop.create_datagram_endpoint(
         lambda: DatagramEndpointProtocol(loop=loop, recv_queue=recv_queue, exception_queue=exception_queue),
@@ -45,6 +47,7 @@ async def create_datagram_endpoint(
         remote_addr=remote_addr,
         reuse_port=reuse_port,
         sock=socket,
+        flags=flags,
     )
 
     return DatagramEndpoint(transport, protocol, recv_queue=recv_queue, exception_queue=exception_queue)
@@ -174,14 +177,15 @@ class DatagramEndpointProtocol(asyncio.DatagramProtocol):
         self.__transport = transport
         self.__connection_lost = False
 
-        if isinstance(self.__loop, asyncio.base_events.BaseEventLoop) and hasattr(transport, "_address"):
+        peername: tuple[Any, ...] | None = transport.get_extra_info("peername", None)
+        if peername is not None and isinstance(self.__loop, asyncio.base_events.BaseEventLoop):
             # There is an asyncio issue where the private address attribute is not updated with the actual remote address
-            # if the transport is instanciated with an external socket ( await loop.create_datagram_endpoint(sock=my_socket) )
+            # if the transport is instanciated with an external socket:
+            #     await loop.create_datagram_endpoint(sock=my_socket)
+            #
             # This is a monkeypatch to force update the internal address attribute
-            try:
-                setattr(transport, "_address", transport.get_extra_info("peername", None))
-            except Exception:  # pragma: no cover
-                pass
+            if hasattr(transport, "_address") and getattr(transport, "_address") != peername:
+                setattr(transport, "_address", peername)
 
     def connection_lost(self, exc: Exception | None) -> None:
         self.__connection_lost = True
@@ -238,14 +242,13 @@ class DatagramEndpointProtocol(asyncio.DatagramProtocol):
             raise _error_from_errno(_errno.ECONNABORTED)
         if not self.__write_paused:
             return
-        with contextlib.ExitStack() as stack:
-            waiter = self.__loop.create_future()
-            self.__drain_waiters.append(waiter)
-            stack.callback(self.__drain_waiters.remove, waiter)
-            try:
-                await waiter
-            finally:
-                del waiter
+        waiter = self.__loop.create_future()
+        self.__drain_waiters.append(waiter)
+        try:
+            await waiter
+        finally:
+            self.__drain_waiters.remove(waiter)
+            del waiter
 
     def _get_close_waiter(self) -> asyncio.Future[None]:
         return self.__closed

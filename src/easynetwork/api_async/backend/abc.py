@@ -443,7 +443,7 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
     async def create_udp_endpoint(
         self,
         *,
-        local_address: tuple[str | None, int] | None = ...,
+        local_address: tuple[str, int] | None = ...,
         remote_address: tuple[str, int] | None = ...,
         reuse_port: bool = ...,
     ) -> AbstractAsyncDatagramSocketAdapter:

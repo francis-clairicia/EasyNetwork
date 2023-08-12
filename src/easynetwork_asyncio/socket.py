@@ -83,7 +83,6 @@ class AsyncSocket:
             await asyncio.shield(self.__close_waiter)
             return
         async with contextlib.AsyncExitStack() as stack:
-            stack.push_async_callback(asyncio.sleep, 0)
             stack.callback(self.__close_waiter.set_result, None)
             stack.callback(socket.close)
 
@@ -97,6 +96,8 @@ class AsyncSocket:
             futures_to_wait_for_completion: set[asyncio.Future[None]] = set(self.__waiters.values())
             if futures_to_wait_for_completion:
                 await asyncio.wait(futures_to_wait_for_completion, return_when=asyncio.ALL_COMPLETED)
+
+        await asyncio.sleep(0)
 
     async def accept(self) -> tuple[_socket.socket, _socket._RetAddress]:
         with self.__conflict_detection("accept", abort_errno=_errno.EINTR) as socket:

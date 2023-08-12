@@ -27,55 +27,20 @@ from typing import TYPE_CHECKING, Any, Literal, assert_never, cast
 
 from easynetwork.tools._utils import error_from_errno
 from easynetwork_asyncio._utils import (
-    _ensure_resolved,
     create_connection,
     create_datagram_socket,
+    ensure_resolved,
     open_listener_sockets_from_getaddrinfo_result,
 )
 
 import pytest
 
+from ..._utils import datagram_addrinfo_list, stream_addrinfo_list
+
 if TYPE_CHECKING:
     from unittest.mock import AsyncMock, MagicMock
 
     from pytest_mock import MockerFixture
-
-
-_DEFAULT_FAMILIES: Sequence[int] = (AF_INET, AF_INET6)
-
-
-def __addrinfo_list(
-    port: int,
-    socktype: int,
-    proto: int,
-    families: Sequence[int] = _DEFAULT_FAMILIES,
-) -> Sequence[tuple[int, int, int, str, tuple[Any, ...]]]:
-    assert families, "families is empty"
-
-    infos: list[tuple[int, int, int, str, tuple[Any, ...]]] = []
-
-    for af in families:
-        if af == AF_INET:
-            infos.append((af, socktype, proto, "", ("127.0.0.1", port)))
-        elif af == AF_INET6:
-            infos.append((af, socktype, proto, "", ("::1", port, 0, 0)))
-        else:
-            raise ValueError(af)
-    return infos
-
-
-def stream_addrinfo_list(
-    port: int,
-    families: Sequence[int] = _DEFAULT_FAMILIES,
-) -> Sequence[tuple[int, int, int, str, tuple[Any, ...]]]:
-    return __addrinfo_list(port, SOCK_STREAM, IPPROTO_TCP, families)
-
-
-def datagram_addrinfo_list(
-    port: int,
-    families: Sequence[int] = _DEFAULT_FAMILIES,
-) -> Sequence[tuple[int, int, int, str, tuple[Any, ...]]]:
-    return __addrinfo_list(port, SOCK_DGRAM, IPPROTO_UDP, families)
 
 
 @pytest.fixture
@@ -119,7 +84,7 @@ async def test____ensure_resolved____try_numeric_first(
     mock_stdlib_socket_getaddrinfo.return_value = expected_result
 
     # Act
-    info = await _ensure_resolved("127.0.0.1", 8080, 123456789, SOCK_STREAM, event_loop, proto=IPPROTO_TCP, flags=AI_PASSIVE)
+    info = await ensure_resolved("127.0.0.1", 8080, 123456789, SOCK_STREAM, event_loop, proto=IPPROTO_TCP, flags=AI_PASSIVE)
 
     # Assert
     assert info == expected_result
@@ -145,7 +110,7 @@ async def test____ensure_resolved____try_numeric_first____success_but_return_emp
 
     # Act
     with pytest.raises(OSError, match=r"^getaddrinfo\('127.0.0.1'\) returned empty list$"):
-        await _ensure_resolved("127.0.0.1", 8080, 123456789, SOCK_STREAM, event_loop, proto=IPPROTO_TCP, flags=AI_PASSIVE)
+        await ensure_resolved("127.0.0.1", 8080, 123456789, SOCK_STREAM, event_loop, proto=IPPROTO_TCP, flags=AI_PASSIVE)
 
     # Assert
     mock_stdlib_socket_getaddrinfo.assert_called_once_with(
@@ -171,7 +136,7 @@ async def test____ensure_resolved____fallback_to_async_getaddrinfo(
     mock_getaddrinfo.return_value = expected_result
 
     # Act
-    info = await _ensure_resolved("127.0.0.1", 8080, 123456789, SOCK_STREAM, event_loop, proto=IPPROTO_TCP, flags=AI_PASSIVE)
+    info = await ensure_resolved("127.0.0.1", 8080, 123456789, SOCK_STREAM, event_loop, proto=IPPROTO_TCP, flags=AI_PASSIVE)
 
     # Assert
     assert info == expected_result
@@ -197,7 +162,7 @@ async def test____ensure_resolved____fallback_to_async_getaddrinfo____success_bu
 
     # Act
     with pytest.raises(OSError, match=r"^getaddrinfo\('127.0.0.1'\) returned empty list$"):
-        await _ensure_resolved("127.0.0.1", 8080, 123456789, SOCK_STREAM, event_loop, proto=IPPROTO_TCP, flags=AI_PASSIVE)
+        await ensure_resolved("127.0.0.1", 8080, 123456789, SOCK_STREAM, event_loop, proto=IPPROTO_TCP, flags=AI_PASSIVE)
 
     # Assert
     mock_getaddrinfo.assert_awaited_once_with(
@@ -221,7 +186,7 @@ async def test____ensure_resolved____propagate_unrelated_gaierror(
 
     # Act
     with pytest.raises(gaierror):
-        await _ensure_resolved("127.0.0.1", 8080, 123456789, SOCK_STREAM, event_loop, proto=IPPROTO_TCP, flags=AI_PASSIVE)
+        await ensure_resolved("127.0.0.1", 8080, 123456789, SOCK_STREAM, event_loop, proto=IPPROTO_TCP, flags=AI_PASSIVE)
 
     # Assert
     mock_stdlib_socket_getaddrinfo.assert_called_once_with(
@@ -392,6 +357,7 @@ async def test____create_connection____all_failed(
     assert os_errors is not None
     assert len(os_errors.exceptions) == 2
     assert all(isinstance(exc, OSError) for exc in os_errors.exceptions)
+    del os_errors
 
     assert mock_socket_cls.mock_calls == [
         mocker.call(AF_INET, SOCK_STREAM, IPPROTO_TCP),
@@ -434,7 +400,7 @@ async def test____create_connection____unrelated_exception(
     remote_host, remote_port = "localhost", 12345
 
     mock_getaddrinfo.side_effect = [stream_addrinfo_list(remote_port)]
-    expected_failure_exception = KeyboardInterrupt()
+    expected_failure_exception = BaseException()
 
     match fail_on:
         case "socket":
@@ -445,12 +411,11 @@ async def test____create_connection____unrelated_exception(
             assert_never(fail_on)
 
     # Act
-    with pytest.raises(KeyboardInterrupt) as exc_info:
+    with pytest.raises(BaseException) as exc_info:
         await create_connection(remote_host, remote_port, event_loop)
-    if exc_info.value is not expected_failure_exception:  # What a great coincidence
-        raise exc_info.value.with_traceback(exc_info.value.__traceback__) from None
 
     # Assert
+    assert exc_info.value is expected_failure_exception
     if fail_on != "socket":
         mock_socket_ipv4.close.assert_called_once_with()
 
@@ -492,7 +457,6 @@ async def test____create_connection____getaddrinfo_returned_empty_list(
 @pytest.mark.asyncio
 async def test____create_connection____getaddrinfo_return_mismatch(
     event_loop: asyncio.AbstractEventLoop,
-    mock_socket_cls: MagicMock,
     mock_socket_ipv4: MagicMock,
     mock_socket_ipv6: MagicMock,
     mock_getaddrinfo: AsyncMock,
@@ -508,11 +472,17 @@ async def test____create_connection____getaddrinfo_return_mismatch(
     ]
 
     # Act
-    with pytest.raises(OSError, match=r"^No matching local/remote pair according to family and proto found$"):
+    with pytest.raises(ExceptionGroup) as exc_info:
         await create_connection(remote_host, remote_port, event_loop, local_address=local_address)
 
     # Assert
-    mock_socket_cls.assert_not_called()
+    os_errors, exc = exc_info.value.split(OSError)
+    assert exc is None
+    assert os_errors is not None
+    assert len(os_errors.exceptions) == 1
+    assert str(os_errors.exceptions[0]) == f"no matching local address with family={AF_INET6!r} found"
+    del os_errors
+
     mock_socket_ipv4.bind.assert_not_called()
     mock_socket_ipv6.bind.assert_not_called()
     mock_sock_connect.assert_not_called()
@@ -533,40 +503,38 @@ async def test____create_datagram_socket____default(
     mock_getaddrinfo: AsyncMock,
     mock_sock_connect: AsyncMock,
     mocker: MockerFixture,
-    monkeypatch: pytest.MonkeyPatch,
+    SO_REUSEPORT: int,
 ) -> None:
     # Arrange
-    SO_REUSEPORT: int = 123456
-    monkeypatch.setattr("socket.SO_REUSEPORT", SO_REUSEPORT, raising=False)
     remote_address: tuple[str, int] | None = ("localhost", 12345) if with_remote_address else None
     local_address: tuple[str, int] | None = ("localhost", 11111) if with_local_address else None
 
-    if remote_address is None:
-        mock_getaddrinfo.side_effect = [datagram_addrinfo_list(local_address[1] if local_address else 0)]
-    else:
-        mock_getaddrinfo.side_effect = [
-            datagram_addrinfo_list(local_address[1] if local_address else 0),
-            datagram_addrinfo_list(remote_address[1]),
-        ]
+    mock_getaddrinfo_side_effect: list[Any] = []
+    if local_address is not None:
+        mock_getaddrinfo_side_effect.append(datagram_addrinfo_list(local_address[1], [AF_INET]))
+    if remote_address is not None:
+        mock_getaddrinfo_side_effect.append(datagram_addrinfo_list(remote_address[1], [AF_INET]))
+    mock_getaddrinfo.side_effect = mock_getaddrinfo_side_effect
 
     # Act
     socket = await create_datagram_socket(
         event_loop,
+        family=AF_INET,
         local_address=local_address,
         remote_address=remote_address,
         reuse_port=set_reuse_port,
     )
 
     # Assert
-    if remote_address is None:
-        assert mock_getaddrinfo.await_args_list == [
-            mocker.call(*(local_address or (None, 0)), family=AF_UNSPEC, type=SOCK_DGRAM, proto=0, flags=AI_PASSIVE),
-        ]
-    else:
-        assert mock_getaddrinfo.await_args_list == [
-            mocker.call(*(local_address or (None, 0)), family=AF_UNSPEC, type=SOCK_DGRAM, proto=0, flags=AI_PASSIVE),
-            mocker.call(*remote_address, family=AF_UNSPEC, type=SOCK_DGRAM, proto=0, flags=0),
-        ]
+    expected_await_args_list: list[Any] = []
+    if local_address is not None:
+        expected_flags = AI_PASSIVE if remote_address is None else 0
+        expected_await_args_list.append(
+            mocker.call(*local_address, family=AF_INET, type=SOCK_DGRAM, proto=0, flags=expected_flags)
+        )
+    if remote_address is not None:
+        expected_await_args_list.append(mocker.call(*remote_address, family=AF_INET, type=SOCK_DGRAM, proto=0, flags=0))
+    assert mock_getaddrinfo.await_args_list == expected_await_args_list
 
     mock_socket_cls.assert_called_once_with(AF_INET, SOCK_DGRAM, IPPROTO_UDP)
     assert socket is mock_socket_ipv4
@@ -574,7 +542,10 @@ async def test____create_datagram_socket____default(
     mock_socket_ipv4.setblocking.assert_called_once_with(False)
     if set_reuse_port:
         mock_socket_ipv4.setsockopt.assert_any_call(SOL_SOCKET, SO_REUSEPORT, True)
-    mock_socket_ipv4.bind.assert_called_once_with(("127.0.0.1", 11111 if local_address else 0))
+    if local_address is None:
+        mock_socket_ipv4.bind.assert_not_called()
+    else:
+        mock_socket_ipv4.bind.assert_called_once_with(("127.0.0.1", 11111))
     if remote_address is None:
         mock_sock_connect.assert_not_called()
     else:
@@ -583,29 +554,6 @@ async def test____create_datagram_socket____default(
 
     mock_socket_ipv6.setblocking.assert_not_called()
     mock_socket_ipv6.bind.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test____create_datagram_socket____empty_string_as_local_host(
-    event_loop: asyncio.AbstractEventLoop,
-    mock_getaddrinfo: AsyncMock,
-    mocker: MockerFixture,
-) -> None:
-    # Arrange
-    local_address: tuple[str, int] = ("", 11111)
-
-    mock_getaddrinfo.side_effect = [datagram_addrinfo_list(local_address[1])]
-
-    # Act
-    await create_datagram_socket(
-        event_loop,
-        local_address=local_address,
-    )
-
-    # Assert
-    assert mock_getaddrinfo.await_args_list == [
-        mocker.call(None, 11111, family=AF_UNSPEC, type=SOCK_DGRAM, proto=0, flags=AI_PASSIVE),
-    ]
 
 
 @pytest.mark.asyncio
@@ -718,6 +666,7 @@ async def test____create_datagram_socket____all_failed(
     assert os_errors is not None
     assert len(os_errors.exceptions) == 2
     assert all(isinstance(exc, OSError) for exc in os_errors.exceptions)
+    del os_errors
 
     assert mock_socket_cls.mock_calls == [
         mocker.call(AF_INET, SOCK_DGRAM, IPPROTO_UDP),
@@ -743,6 +692,26 @@ async def test____create_datagram_socket____all_failed(
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("remove_SO_REUSEPORT_support")
+async def test____create_datagram_socket____SO_REUSEPORT_not_supported(
+    event_loop: asyncio.AbstractEventLoop,
+    mock_socket_ipv4: MagicMock,
+    mock_getaddrinfo: AsyncMock,
+) -> None:
+    # Arrange
+    local_host, local_port = "localhost", 11111
+
+    mock_getaddrinfo.side_effect = [datagram_addrinfo_list(local_port)]
+
+    # Act
+    with pytest.raises(ValueError):
+        await create_datagram_socket(event_loop, local_address=(local_host, local_port), reuse_port=True)
+
+    # Assert
+    mock_socket_ipv4.close.assert_called_once_with()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("fail_on", ["socket", "bind"], ids=lambda fail_on: f"fail_on=={fail_on}")
 async def test____create_datagram_socket____unrelated_exception(
     event_loop: asyncio.AbstractEventLoop,
@@ -755,7 +724,7 @@ async def test____create_datagram_socket____unrelated_exception(
     local_host, local_port = "localhost", 11111
 
     mock_getaddrinfo.side_effect = [datagram_addrinfo_list(local_port)]
-    expected_failure_exception = KeyboardInterrupt()
+    expected_failure_exception = BaseException()
 
     match fail_on:
         case "socket":
@@ -766,12 +735,11 @@ async def test____create_datagram_socket____unrelated_exception(
             assert_never(fail_on)
 
     # Act
-    with pytest.raises(KeyboardInterrupt) as exc_info:
+    with pytest.raises(BaseException) as exc_info:
         await create_datagram_socket(event_loop, local_address=(local_host, local_port))
-    if exc_info.value is not expected_failure_exception:  # What a great coincidence
-        raise exc_info.value.with_traceback(exc_info.value.__traceback__) from None
 
     # Assert
+    assert exc_info.value is expected_failure_exception
     if fail_on != "socket":
         mock_socket_ipv4.close.assert_called_once_with()
 
@@ -847,6 +815,40 @@ async def test____create_datagram_socket____getaddrinfo_return_mismatch(
     mock_sock_connect.assert_not_called()
 
 
+@pytest.mark.asyncio
+async def test____create_datagram_socket____only_family____no_directives(
+    event_loop: asyncio.AbstractEventLoop,
+    mock_socket_cls: MagicMock,
+) -> None:
+    # Arrange
+
+    # Act
+    with pytest.raises(ValueError, match=r"^unexpected address family$"):
+        await create_datagram_socket(event_loop)
+
+    # Assert
+    mock_socket_cls.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("remove_SO_REUSEPORT_support")
+async def test____create_datagram_socket____only_family____SO_REUSEPORT_not_supported(
+    event_loop: asyncio.AbstractEventLoop,
+    mock_socket_ipv4: MagicMock,
+    mock_socket_cls: MagicMock,
+) -> None:
+    # Arrange
+    mock_socket_cls.side_effect = [mock_socket_ipv4]
+
+    # Act
+    with pytest.raises(ValueError):
+        await create_datagram_socket(event_loop, family=AF_INET, reuse_port=True)
+
+    # Assert
+    mock_socket_cls.assert_called_once_with(AF_INET, SOCK_DGRAM, IPPROTO_UDP)
+    mock_socket_ipv4.close.assert_called_once_with()
+
+
 @pytest.fixture
 def addrinfo_list() -> Sequence[tuple[int, int, int, str, tuple[Any, ...]]]:
     return (
@@ -866,10 +868,9 @@ def test____open_listener_sockets_from_getaddrinfo_result____create_listener_soc
     mocker: MockerFixture,
     addrinfo_list: Sequence[tuple[int, int, int, str, tuple[Any, ...]]],
     monkeypatch: pytest.MonkeyPatch,
+    SO_REUSEPORT: int,
 ) -> None:
     # Arrange
-    SO_REUSEPORT: int = 123456
-    monkeypatch.setattr("socket.SO_REUSEPORT", SO_REUSEPORT, raising=False)
     backlog: int = 123456
     if not SO_REUSEADDR_available:
         monkeypatch.delattr("socket.SO_REUSEADDR", raising=True)

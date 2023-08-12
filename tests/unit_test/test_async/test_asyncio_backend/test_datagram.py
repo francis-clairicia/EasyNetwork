@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from socket import AI_PASSIVE
+from typing import TYPE_CHECKING, Any, cast
 
 from easynetwork_asyncio.datagram.endpoint import DatagramEndpoint, DatagramEndpointProtocol, create_datagram_endpoint
 from easynetwork_asyncio.datagram.socket import AsyncioTransportDatagramSocketAdapter, RawDatagramSocketAdapter
@@ -22,10 +23,20 @@ class CustomException(Exception):
 
 
 @pytest.mark.asyncio
-async def test____create_datagram_endpoint____return_DatagramEndpoint_instance(mocker: MockerFixture) -> None:
+@pytest.mark.parametrize("local_address", ["local_address", None], ids=lambda p: f"local_address=={p}")
+@pytest.mark.parametrize("remote_address", ["remote_address", None], ids=lambda p: f"remote_address=={p}")
+@pytest.mark.parametrize("reuse_port", [False, True], ids=lambda p: f"reuse_port=={p}")
+async def test____create_datagram_endpoint____return_DatagramEndpoint_instance(
+    local_address: Any | None,
+    remote_address: Any | None,
+    reuse_port: bool,
+    mocker: MockerFixture,
+) -> None:
     # Arrange
-    from typing import cast
-
+    if local_address is not None:
+        local_address = getattr(mocker.sentinel, local_address)
+    if remote_address is not None:
+        remote_address = getattr(mocker.sentinel, remote_address)
     mock_DatagramEndpoint = mocker.patch(
         f"{create_datagram_endpoint.__module__}.DatagramEndpoint",
         return_value=mocker.sentinel.endpoint,
@@ -42,13 +53,16 @@ async def test____create_datagram_endpoint____return_DatagramEndpoint_instance(m
             ),
         ),
     )
+    expected_flags: int = 0
+    if remote_address is not None:
+        expected_flags |= AI_PASSIVE
 
     # Act
     endpoint = await create_datagram_endpoint(
         family=mocker.sentinel.socket_family,
-        local_addr=mocker.sentinel.local_address,
-        remote_addr=mocker.sentinel.remote_address,
-        reuse_port=mocker.sentinel.reuse_port,
+        local_addr=local_address,
+        remote_addr=remote_address,
+        reuse_port=reuse_port,
         socket=mocker.sentinel.stdlib_socket,
     )
 
@@ -56,10 +70,11 @@ async def test____create_datagram_endpoint____return_DatagramEndpoint_instance(m
     mock_loop_create_datagram_endpoint.assert_awaited_once_with(
         mocker.ANY,  # protocol_factory
         family=mocker.sentinel.socket_family,
-        local_addr=mocker.sentinel.local_address,
-        remote_addr=mocker.sentinel.remote_address,
-        reuse_port=mocker.sentinel.reuse_port,
+        local_addr=local_address,
+        remote_addr=remote_address,
+        reuse_port=reuse_port,
         sock=mocker.sentinel.stdlib_socket,
+        flags=expected_flags,
     )
     mock_DatagramEndpoint.assert_called_once_with(
         mocker.sentinel.transport,
@@ -381,6 +396,10 @@ class TestDatagramEndpointProtocol:
     def mock_asyncio_transport(mocker: MockerFixture) -> MagicMock:
         mock = mocker.NonCallableMagicMock(spec=asyncio.DatagramTransport)
         mock.is_closing.return_value = False
+
+        # Tell connection_made() not to try to monkeypatch this mock object
+        del mock._address
+
         return mock
 
     @staticmethod

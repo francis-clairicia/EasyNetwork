@@ -30,9 +30,8 @@ else:
 
 from easynetwork.api_async.backend.abc import AbstractAsyncBackend
 from easynetwork.api_async.backend.sniffio import current_async_library_cvar as _sniffio_current_async_library_cvar
-from easynetwork.tools.constants import MAX_STREAM_BUFSIZE
 
-from ._utils import _ensure_resolved, create_connection, create_datagram_socket, open_listener_sockets_from_getaddrinfo_result
+from ._utils import create_connection, create_datagram_socket, ensure_resolved, open_listener_sockets_from_getaddrinfo_result
 from .datagram.endpoint import create_datagram_endpoint
 from .datagram.socket import AsyncioTransportDatagramSocketAdapter, RawDatagramSocketAdapter
 from .runner import AsyncioRunner
@@ -201,7 +200,6 @@ class AsyncioBackend(AbstractAsyncBackend):
                 host,
                 port,
                 local_addr=local_address,
-                limit=MAX_STREAM_BUFSIZE,
             )
         else:
             reader, writer = await asyncio.open_connection(
@@ -209,7 +207,6 @@ class AsyncioBackend(AbstractAsyncBackend):
                 port,
                 local_addr=local_address,
                 happy_eyeballs_delay=happy_eyeballs_delay,
-                limit=MAX_STREAM_BUFSIZE,
             )
         return AsyncioTransportStreamSocketAdapter(reader, writer)
 
@@ -239,7 +236,6 @@ class AsyncioBackend(AbstractAsyncBackend):
                 ssl_handshake_timeout=float(ssl_handshake_timeout),
                 ssl_shutdown_timeout=float(ssl_shutdown_timeout),
                 local_addr=local_address,
-                limit=MAX_STREAM_BUFSIZE,
             )
         else:
             reader, writer = await asyncio.open_connection(
@@ -251,7 +247,6 @@ class AsyncioBackend(AbstractAsyncBackend):
                 ssl_shutdown_timeout=float(ssl_shutdown_timeout),
                 local_addr=local_address,
                 happy_eyeballs_delay=happy_eyeballs_delay,
-                limit=MAX_STREAM_BUFSIZE,
             )
         return AsyncioTransportStreamSocketAdapter(reader, writer)
 
@@ -273,7 +268,7 @@ class AsyncioBackend(AbstractAsyncBackend):
         if not self.__use_asyncio_transport:
             return RawStreamSocketAdapter(socket, asyncio.get_running_loop())
 
-        reader, writer = await asyncio.open_connection(sock=socket, limit=MAX_STREAM_BUFSIZE)
+        reader, writer = await asyncio.open_connection(sock=socket)
         return AsyncioTransportStreamSocketAdapter(reader, writer)
 
     async def wrap_ssl_over_tcp_client_socket(
@@ -297,7 +292,6 @@ class AsyncioBackend(AbstractAsyncBackend):
             server_hostname=server_hostname,
             ssl_handshake_timeout=float(ssl_handshake_timeout),
             ssl_shutdown_timeout=float(ssl_shutdown_timeout),
-            limit=MAX_STREAM_BUFSIZE,
         )
         return AsyncioTransportStreamSocketAdapter(reader, writer)
 
@@ -353,8 +347,6 @@ class AsyncioBackend(AbstractAsyncBackend):
         *,
         reuse_port: bool,
     ) -> Sequence[ListenerSocketAdapter]:
-        assert port is not None, "Expected 'port' to be an int"
-
         loop = asyncio.get_running_loop()
 
         reuse_address: bool = os.name not in ("nt", "cygwin") and sys.platform != "cygwin"
@@ -370,7 +362,7 @@ class AsyncioBackend(AbstractAsyncBackend):
             itertools.chain.from_iterable(
                 await asyncio.gather(
                     *[
-                        _ensure_resolved(host, port, _socket.AF_UNSPEC, _socket.SOCK_STREAM, loop, flags=_socket.AI_PASSIVE)
+                        ensure_resolved(host, port, _socket.AF_UNSPEC, _socket.SOCK_STREAM, loop, flags=_socket.AI_PASSIVE)
                         for host in hosts
                     ]
                 )
@@ -389,18 +381,31 @@ class AsyncioBackend(AbstractAsyncBackend):
     async def create_udp_endpoint(
         self,
         *,
-        local_address: tuple[str | None, int] | None = None,
+        local_address: tuple[str, int] | None = None,
         remote_address: tuple[str, int] | None = None,
         reuse_port: bool = False,
     ) -> AsyncioTransportDatagramSocketAdapter | RawDatagramSocketAdapter:
-        socket = await create_datagram_socket(
-            loop=asyncio.get_running_loop(),
-            local_address=local_address,
-            remote_address=remote_address,
+        family: int = 0
+        if local_address is None and remote_address is None:
+            family = _socket.AF_INET
+        if not self.__use_asyncio_transport:
+            loop = asyncio.get_running_loop()
+            socket = await create_datagram_socket(
+                loop=loop,
+                family=family,
+                local_address=local_address,
+                remote_address=remote_address,
+                reuse_port=reuse_port,
+            )
+            return RawDatagramSocketAdapter(socket, loop)
+
+        endpoint = await create_datagram_endpoint(
+            family=family,
+            local_addr=local_address,
+            remote_addr=remote_address,
             reuse_port=reuse_port,
         )
-
-        return await self.wrap_udp_socket(socket)
+        return AsyncioTransportDatagramSocketAdapter(endpoint)
 
     async def wrap_udp_socket(self, socket: _socket.socket) -> AsyncioTransportDatagramSocketAdapter | RawDatagramSocketAdapter:
         assert socket is not None, "Expected 'socket' to be a socket.socket instance"

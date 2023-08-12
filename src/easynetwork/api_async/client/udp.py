@@ -100,7 +100,7 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
                 self.__socket_builder = SingleTaskRunner(backend, backend.wrap_udp_socket, socket, **kwargs)
             case _:
                 if kwargs.get("local_address") is None:
-                    kwargs["local_address"] = (None, 0)
+                    kwargs["local_address"] = ("localhost", 0)
                 self.__socket_builder = SingleTaskRunner(backend, backend.create_udp_endpoint, **kwargs)
 
         self.__receive_lock: ILock = backend.create_lock()

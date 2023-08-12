@@ -27,6 +27,20 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
 
 
 @pytest.fixture
+def SO_REUSEPORT(monkeypatch: pytest.MonkeyPatch) -> int:
+    import socket
+
+    if not hasattr(socket, "SO_REUSEPORT"):
+        monkeypatch.setattr("socket.SO_REUSEPORT", 15, raising=False)
+    return getattr(socket, "SO_REUSEPORT")
+
+
+@pytest.fixture
+def remove_SO_REUSEPORT_support(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delattr("socket.SO_REUSEPORT", raising=False)
+
+
+@pytest.fixture
 def mock_socket_factory(mocker: MockerFixture) -> Callable[[], MagicMock]:
     def factory() -> MagicMock:
         mock_socket = mocker.NonCallableMagicMock(spec=Socket)
