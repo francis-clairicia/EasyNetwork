@@ -102,6 +102,9 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
         assert isinstance(protocol, DatagramProtocol)
 
+        if host is None:
+            host = "localhost"
+
         self.__socket_factory: Callable[[], Coroutine[Any, Any, AbstractAsyncDatagramSocketAdapter]] | None
         self.__socket_factory = _make_callback(
             backend.create_udp_endpoint,

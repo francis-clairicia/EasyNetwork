@@ -23,6 +23,7 @@ __all__ = [
     "AbstractAsyncBackend",
     "AbstractAsyncBaseSocketAdapter",
     "AbstractAsyncDatagramSocketAdapter",
+    "AbstractAsyncHalfCloseableStreamSocketAdapter",
     "AbstractAsyncListenerSocketAdapter",
     "AbstractAsyncStreamSocketAdapter",
     "AbstractTask",
@@ -245,6 +246,14 @@ class AbstractAsyncStreamSocketAdapter(AbstractAsyncBaseSocketAdapter):
         await self.sendall(b"".join(iterable_of_data))
 
 
+class AbstractAsyncHalfCloseableStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
+    __slots__ = ()
+
+    @abstractmethod
+    async def send_eof(self) -> None:
+        raise NotImplementedError
+
+
 class AbstractAsyncDatagramSocketAdapter(AbstractAsyncBaseSocketAdapter):
     __slots__ = ()
 
@@ -338,6 +347,14 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
 
     @abstractmethod
     def timeout_at(self, deadline: float) -> AsyncContextManager[AbstractTimeoutHandle]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def move_on_after(self, delay: float) -> AsyncContextManager[AbstractTimeoutHandle]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def move_on_at(self, deadline: float) -> AsyncContextManager[AbstractTimeoutHandle]:
         raise NotImplementedError
 
     @abstractmethod
@@ -437,7 +454,7 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
     async def create_udp_endpoint(
         self,
         *,
-        local_address: tuple[str | None, int] | None = ...,
+        local_address: tuple[str, int] | None = ...,
         remote_address: tuple[str, int] | None = ...,
         reuse_port: bool = ...,
     ) -> AbstractAsyncDatagramSocketAdapter:

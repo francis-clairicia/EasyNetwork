@@ -72,7 +72,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         self,
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
         *,
-        local_address: tuple[str | None, int] | None = ...,
+        local_address: tuple[str, int] | None = ...,
         remote_address: tuple[str, int] | None = ...,
         reuse_port: bool = ...,
         retry_interval: float = ...,
@@ -115,14 +115,13 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             self.__retry_interval = None
 
         socket: _socket.socket
-        peername: SocketAddress | None = None
         external_socket: bool
         match kwargs:
             case {"socket": _socket.socket() as socket, **remainder} if not remainder:
                 external_socket = True
             case _ if "socket" not in kwargs:
                 external_socket = False
-                socket, peername = _create_udp_socket(**kwargs)
+                socket = _create_udp_socket(**kwargs)
             case _:  # pragma: no cover
                 raise TypeError("Invalid arguments")
 
@@ -134,10 +133,10 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             _check_socket_family(socket.family)
             if external_socket:
                 _ensure_datagram_socket_bound(socket)
-                try:
-                    peername = new_socket_address(socket.getpeername(), socket.family)
-                except OSError:
-                    peername = None
+            try:
+                peername = new_socket_address(socket.getpeername(), socket.family)
+            except OSError:
+                peername = None
 
             # Do not use global default timeout here
             socket.settimeout(0)
@@ -384,55 +383,78 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
 
 def _create_udp_socket(
     *,
-    local_address: tuple[str | None, int] | None = None,
+    local_address: tuple[str, int] | None = None,
     remote_address: tuple[str, int] | None = None,
     reuse_port: bool = False,
-) -> tuple[_socket.socket, SocketAddress | None]:
+) -> _socket.socket:
     local_host: str | None
     local_port: int
     if local_address is None:
-        local_host = None
+        local_host = "localhost"
         local_port = 0
+        local_address = (local_host, local_port)
     else:
         local_host, local_port = local_address
-        if local_host == "":
-            local_host = None
-        assert local_port is not None, "Expected 'port' to be an int"
+
+    flags: int = 0
+    if not remote_address:
+        flags |= _socket.AI_PASSIVE
 
     errors: list[OSError] = []
 
     for family, _, proto, _, sockaddr in _socket.getaddrinfo(
-        local_host,
-        local_port,
+        *(remote_address or local_address),
         family=_socket.AF_UNSPEC,
         type=_socket.SOCK_DGRAM,
-        flags=_socket.AI_PASSIVE,
+        flags=flags,
     ):
-        socket = _socket.socket(family, _socket.SOCK_DGRAM, proto)
+        try:
+            socket = _socket.socket(family, _socket.SOCK_DGRAM, proto)
+        except OSError as exc:
+            errors.append(exc)
+            continue
+        except BaseException:
+            errors.clear()
+            raise
         try:
             if reuse_port:
                 _set_reuseport(socket)
 
-            socket.bind(sockaddr)
+            if remote_address is None:
+                local_sockaddr = sockaddr
+                remote_sockaddr = None
+            else:
+                local_sockaddr = local_address
+                remote_sockaddr = sockaddr
 
-            peername: SocketAddress | None = None
-            if remote_address is not None:
-                remote_host, remote_port = remote_address
-                socket.connect((remote_host, remote_port))
-                peername = new_socket_address(socket.getpeername(), socket.family)
-            return socket, peername
+            del sockaddr
+
+            try:
+                socket.bind(local_sockaddr)
+            except OSError as exc:
+                msg = f"error while attempting to bind to address {local_sockaddr!r}: {exc.strerror.lower()}"
+                raise OSError(exc.errno, msg).with_traceback(exc.__traceback__) from None
+            if remote_sockaddr:
+                socket.connect(remote_sockaddr)
+
+            errors.clear()
+            return socket
         except OSError as exc:
             socket.close()
             errors.append(exc)
             continue
         except BaseException:
+            errors.clear()
             socket.close()
             raise
 
     if errors:
         try:
-            raise ExceptionGroup("Error when trying to create the UDP socket", errors)
+            raise ExceptionGroup("Could not create the UDP socket", errors)
         finally:
-            errors = []
-
-    raise OSError(f"getaddrinfo({local_host!r}) returned empty list")
+            errors.clear()
+    elif remote_address is not None:
+        remote_host = remote_address[0]
+        raise OSError(f"getaddrinfo({remote_host!r}) returned empty list")
+    else:
+        raise OSError(f"getaddrinfo({local_host!r}) returned empty list")

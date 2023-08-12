@@ -30,7 +30,6 @@ from easynetwork.api_async.backend.abc import (
     AbstractAsyncListenerSocketAdapter,
     AbstractAsyncStreamSocketAdapter,
 )
-from easynetwork.tools.constants import MAX_STREAM_BUFSIZE
 
 from ..socket import AsyncSocket
 from .socket import AsyncioTransportStreamSocketAdapter, RawStreamSocketAdapter
@@ -122,7 +121,7 @@ class AcceptedSocket(_BaseAcceptedSocket):
         if not self.__use_asyncio_transport:
             return RawStreamSocketAdapter(socket, loop)
 
-        reader = asyncio.streams.StreamReader(MAX_STREAM_BUFSIZE, loop)
+        reader = asyncio.streams.StreamReader(loop=loop)
         protocol = asyncio.streams.StreamReaderProtocol(reader, loop=loop)
         transport, _ = await loop.connect_accepted_socket(lambda: protocol, socket)
         writer = asyncio.streams.StreamWriter(transport, protocol, reader, loop)
@@ -152,7 +151,7 @@ class AcceptedSSLSocket(_BaseAcceptedSocket):
 
     async def _make_socket_adapter(self, socket: _socket.socket) -> AbstractAsyncStreamSocketAdapter:
         loop = self.loop
-        reader = asyncio.streams.StreamReader(MAX_STREAM_BUFSIZE, loop)
+        reader = asyncio.streams.StreamReader(loop=loop)
         protocol = asyncio.streams.StreamReaderProtocol(reader, loop=loop)
         transport, _ = await loop.connect_accepted_socket(
             lambda: protocol,

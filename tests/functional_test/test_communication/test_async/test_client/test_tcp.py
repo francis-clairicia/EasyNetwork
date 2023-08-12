@@ -58,8 +58,6 @@ class TestAsyncTCPNetworkClient:
         await client.send_packet("ABCDEF")
         assert await event_loop.sock_recv(server, 1024) == b"ABCDEF\n"
 
-    @pytest.mark.skipif_uvloop  # Error not triggered
-    @pytest.mark.platform_linux  # Windows and MacOS raise ConnectionAbortedError but in the 2nd send() call
     async def test____send_packet____connection_error____fresh_connection_closed_by_server(
         self,
         client: AsyncTCPNetworkClient[str, str],
@@ -67,10 +65,10 @@ class TestAsyncTCPNetworkClient:
     ) -> None:
         server.close()
         with pytest.raises(ConnectionAbortedError):
-            await client.send_packet("ABCDEF")
+            for _ in range(3):  # Windows and macOS catch the issue after several send()
+                await client.send_packet("ABCDEF")
+                await asyncio.sleep(0)
 
-    @pytest.mark.skipif_uvloop  # Error not triggered
-    @pytest.mark.platform_linux  # Windows and MacOS raise ConnectionAbortedError but in the 2nd send() call
     async def test____send_packet____connection_error____after_previous_successful_try(
         self,
         event_loop: asyncio.AbstractEventLoop,
@@ -81,10 +79,10 @@ class TestAsyncTCPNetworkClient:
         assert await event_loop.sock_recv(server, 1024) == b"ABCDEF\n"
         server.close()
         with pytest.raises(ConnectionAbortedError):
-            await client.send_packet("ABCDEF")
+            for _ in range(3):  # Windows and macOS catch the issue after several send()
+                await client.send_packet("ABCDEF")
+                await asyncio.sleep(0)
 
-    @pytest.mark.skipif_uvloop  # Error not triggered
-    @pytest.mark.platform_linux  # Windows and MacOS raise ConnectionResetError but in the 2nd send() call sometimes (it is random)
     async def test____send_packet____connection_error____partial_read_then_close(
         self,
         event_loop: asyncio.AbstractEventLoop,
@@ -95,12 +93,45 @@ class TestAsyncTCPNetworkClient:
         assert await event_loop.sock_recv(server, 1) == b"A"
         server.close()
         with pytest.raises(ConnectionAbortedError):
-            await client.send_packet("DEF")
+            for _ in range(3):  # Windows and macOS catch the issue after several send()
+                await client.send_packet("DEF")
+                await asyncio.sleep(0)
 
     async def test____send_packet____closed_client(self, client: AsyncTCPNetworkClient[str, str]) -> None:
         await client.aclose()
         with pytest.raises(ClientClosedError):
             await client.send_packet("ABCDEF")
+
+    async def test____send_eof____close_write_stream(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        client: AsyncTCPNetworkClient[str, str],
+        server: Socket,
+    ) -> None:
+        await client.send_eof()
+        assert await event_loop.sock_recv(server, 1024) == b""
+        with pytest.raises(RuntimeError):
+            await client.send_packet("ABC")
+        await event_loop.sock_sendall(server, b"ABCDEF\n")
+        assert await client.recv_packet() == "ABCDEF"
+
+    async def test____send_eof____closed_client(
+        self,
+        client: AsyncTCPNetworkClient[str, str],
+    ) -> None:
+        await client.aclose()
+        await client.send_eof()
+
+    async def test____send_eof____idempotent(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        client: AsyncTCPNetworkClient[str, str],
+        server: Socket,
+    ) -> None:
+        await client.send_eof()
+        assert await event_loop.sock_recv(server, 1024) == b""
+        await client.send_eof()
+        await client.send_eof()
 
     async def test____recv_packet____default(
         self,
@@ -144,10 +175,23 @@ class TestAsyncTCPNetworkClient:
         await event_loop.sock_sendall(server, b"J\n")
         assert await task == "IJ"
 
-    async def test____recv_packet____eof(self, client: AsyncTCPNetworkClient[str, str], server: Socket) -> None:
+    async def test____recv_packet____eof____closed_remote(self, client: AsyncTCPNetworkClient[str, str], server: Socket) -> None:
         server.close()
         with pytest.raises(ConnectionAbortedError):
             await client.recv_packet()
+
+    async def test____recv_packet____eof____shutdown_write_only(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        client: AsyncTCPNetworkClient[str, str],
+        server: Socket,
+    ) -> None:
+        server.shutdown(SHUT_WR)
+        with pytest.raises(ConnectionAbortedError):
+            await client.recv_packet()
+
+        await client.send_packet("ABCDEF")
+        assert await event_loop.sock_recv(server, 1024) == b"ABCDEF\n"
 
     async def test____recv_packet____client_close_error(self, client: AsyncTCPNetworkClient[str, str]) -> None:
         await client.aclose()
@@ -556,3 +600,26 @@ class TestAsyncSSLOverTCPNetworkClient:
                 server_hostname="test.example.com",
                 backend_kwargs=backend_kwargs,
             )
+
+    async def test____send_eof____not_supported(
+        self,
+        remote_address: tuple[str, int],
+        stream_protocol: StreamProtocol[str, str],
+        backend_kwargs: dict[str, Any],
+        client_ssl_context: ssl.SSLContext,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        async with AsyncTCPNetworkClient(
+            remote_address,
+            stream_protocol,
+            ssl=client_ssl_context,
+            server_hostname="test.example.com",
+            backend_kwargs=backend_kwargs,
+        ) as client:
+            with pytest.raises(NotImplementedError):
+                await client.send_eof()
+
+            await client.send_packet("Test")
+            assert await client.recv_packet() == "Test"

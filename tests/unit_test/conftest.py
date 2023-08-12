@@ -27,12 +27,27 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
 
 
 @pytest.fixture
+def SO_REUSEPORT(monkeypatch: pytest.MonkeyPatch) -> int:
+    import socket
+
+    if not hasattr(socket, "SO_REUSEPORT"):
+        monkeypatch.setattr("socket.SO_REUSEPORT", 15, raising=False)
+    return getattr(socket, "SO_REUSEPORT")
+
+
+@pytest.fixture
+def remove_SO_REUSEPORT_support(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delattr("socket.SO_REUSEPORT", raising=False)
+
+
+@pytest.fixture
 def mock_socket_factory(mocker: MockerFixture) -> Callable[[], MagicMock]:
     def factory() -> MagicMock:
         mock_socket = mocker.NonCallableMagicMock(spec=Socket)
         mock_socket.family = AF_INET
         mock_socket.type = -1
         mock_socket.proto = 0
+        mock_socket.fileno.return_value = 123
         return mock_socket
 
     return factory
@@ -82,6 +97,7 @@ def mock_ssl_socket_factory(mocker: MockerFixture) -> Callable[[], MagicMock]:
         mock_socket.family = AF_INET
         mock_socket.type = SOCK_STREAM
         mock_socket.proto = IPPROTO_TCP
+        mock_socket.fileno.return_value = 123
         mock_socket.do_handshake.return_value = None
         return mock_socket
 

@@ -41,15 +41,14 @@ else:
 
 from easynetwork.api_async.backend.abc import AbstractAsyncBackend
 from easynetwork.api_async.backend.sniffio import current_async_library_cvar as _sniffio_current_async_library_cvar
-from easynetwork.tools.constants import MAX_STREAM_BUFSIZE
 
-from ._utils import _ensure_resolved, create_connection, create_datagram_socket, open_listener_sockets_from_getaddrinfo_result
+from ._utils import create_connection, create_datagram_socket, ensure_resolved, open_listener_sockets_from_getaddrinfo_result
 from .datagram.endpoint import create_datagram_endpoint
 from .datagram.socket import AsyncioTransportDatagramSocketAdapter, RawDatagramSocketAdapter
 from .runner import AsyncioRunner
 from .stream.listener import AcceptedSocket, AcceptedSSLSocket, ListenerSocketAdapter
 from .stream.socket import AsyncioTransportStreamSocketAdapter, RawStreamSocketAdapter
-from .tasks import Task, TaskGroup, timeout, timeout_at
+from .tasks import Task, TaskGroup, TimeoutHandle, move_on_after, move_on_at, timeout, timeout_at
 from .threads import ThreadsPortal
 
 if TYPE_CHECKING:
@@ -57,8 +56,6 @@ if TYPE_CHECKING:
     from ssl import SSLContext as _SSLContext
 
     from easynetwork.api_async.backend.abc import AbstractAcceptedSocket, ILock
-
-    from .tasks import TimeoutHandle
 
 _P = ParamSpec("_P")
 _T = TypeVar("_T")
@@ -90,15 +87,7 @@ class AsyncioBackend(AbstractAsyncBackend):
         try:
             await asyncio.sleep(0)
         except asyncio.CancelledError as exc:
-            msg: str | None
-            if exc.args:
-                msg = exc.args[0]
-            else:
-                msg = None
-            # uncancel so the Task object is aware we have explicitly caught the exception...
-            current_task.uncancel()
-            # ...but cancel it again so the next step will throw a CancelledError
-            current_task.get_loop().call_soon(current_task.cancel, msg)
+            TimeoutHandle._reschedule_delayed_task_cancel(current_task, self._get_cancelled_error_message(exc))
         finally:
             del current_task
 
@@ -113,7 +102,9 @@ class AsyncioBackend(AbstractAsyncBackend):
         asyncio._unregister_task(task)
 
         try:
-            return await self._cancel_shielded_wait_asyncio_future(task)
+            await self._cancel_shielded_wait_asyncio_future(task, None)
+            assert task.done()
+            return task.result()
         finally:
             del task
 
@@ -123,22 +114,52 @@ class AsyncioBackend(AbstractAsyncBackend):
     def timeout_at(self, deadline: float) -> AsyncContextManager[TimeoutHandle]:
         return timeout_at(deadline)
 
+    def move_on_after(self, delay: float) -> AsyncContextManager[TimeoutHandle]:
+        return move_on_after(delay)
+
+    def move_on_at(self, deadline: float) -> AsyncContextManager[TimeoutHandle]:
+        return move_on_at(deadline)
+
     @classmethod
-    async def _cancel_shielded_wait_asyncio_future(cls, future: asyncio.Future[_T_co]) -> _T_co:
+    async def _cancel_shielded_wait_asyncio_future(
+        cls,
+        future: asyncio.Future[Any],
+        abort_func: Callable[[], bool] | None,
+    ) -> None:
         current_task: asyncio.Task[Any] = cls._current_asyncio_task()
-        cancelling: int = current_task.cancelling()
+        abort: bool | None = None
+        task_cancelled: bool = False
+        task_cancel_msg: str | None = None
 
         try:
             while not future.done():
                 try:
                     await asyncio.wait({future})
-                except asyncio.CancelledError:
-                    assert current_task.cancelling() > cancelling
-                    while current_task.uncancel() > cancelling:
-                        continue
-            return future.result()
+                except asyncio.CancelledError as exc:
+                    if abort is None:
+                        if abort_func is None:
+                            abort = False
+                        else:
+                            abort = bool(abort_func())
+                    if abort:
+                        raise
+                    task_cancelled = True
+                    task_cancel_msg = cls._get_cancelled_error_message(exc)
+
+            if task_cancelled and not future.cancelled():
+                TimeoutHandle._reschedule_delayed_task_cancel(current_task, task_cancel_msg)
         finally:
+            task_cancel_msg = None
             del current_task, future
+
+    @staticmethod
+    def _get_cancelled_error_message(exc: asyncio.CancelledError) -> str | None:
+        msg: str | None
+        if exc.args:
+            msg = exc.args[0]
+        else:
+            msg = None
+        return msg
 
     def current_time(self) -> float:
         loop = asyncio.get_running_loop()
@@ -190,7 +211,6 @@ class AsyncioBackend(AbstractAsyncBackend):
                 host,
                 port,
                 local_addr=local_address,
-                limit=MAX_STREAM_BUFSIZE,
             )
         else:
             reader, writer = await asyncio.open_connection(
@@ -198,7 +218,6 @@ class AsyncioBackend(AbstractAsyncBackend):
                 port,
                 local_addr=local_address,
                 happy_eyeballs_delay=happy_eyeballs_delay,
-                limit=MAX_STREAM_BUFSIZE,
             )
         return AsyncioTransportStreamSocketAdapter(reader, writer)
 
@@ -228,7 +247,6 @@ class AsyncioBackend(AbstractAsyncBackend):
                 ssl_handshake_timeout=float(ssl_handshake_timeout),
                 ssl_shutdown_timeout=float(ssl_shutdown_timeout),
                 local_addr=local_address,
-                limit=MAX_STREAM_BUFSIZE,
             )
         else:
             reader, writer = await asyncio.open_connection(
@@ -240,7 +258,6 @@ class AsyncioBackend(AbstractAsyncBackend):
                 ssl_shutdown_timeout=float(ssl_shutdown_timeout),
                 local_addr=local_address,
                 happy_eyeballs_delay=happy_eyeballs_delay,
-                limit=MAX_STREAM_BUFSIZE,
             )
         return AsyncioTransportStreamSocketAdapter(reader, writer)
 
@@ -262,7 +279,7 @@ class AsyncioBackend(AbstractAsyncBackend):
         if not self.__use_asyncio_transport:
             return RawStreamSocketAdapter(socket, asyncio.get_running_loop())
 
-        reader, writer = await asyncio.open_connection(sock=socket, limit=MAX_STREAM_BUFSIZE)
+        reader, writer = await asyncio.open_connection(sock=socket)
         return AsyncioTransportStreamSocketAdapter(reader, writer)
 
     async def wrap_ssl_over_tcp_client_socket(
@@ -286,7 +303,6 @@ class AsyncioBackend(AbstractAsyncBackend):
             server_hostname=server_hostname,
             ssl_handshake_timeout=float(ssl_handshake_timeout),
             ssl_shutdown_timeout=float(ssl_shutdown_timeout),
-            limit=MAX_STREAM_BUFSIZE,
         )
         return AsyncioTransportStreamSocketAdapter(reader, writer)
 
@@ -342,8 +358,6 @@ class AsyncioBackend(AbstractAsyncBackend):
         *,
         reuse_port: bool,
     ) -> Sequence[ListenerSocketAdapter]:
-        assert port is not None, "Expected 'port' to be an int"
-
         loop = asyncio.get_running_loop()
 
         reuse_address: bool = os.name not in ("nt", "cygwin") and sys.platform != "cygwin"
@@ -359,7 +373,7 @@ class AsyncioBackend(AbstractAsyncBackend):
             itertools.chain.from_iterable(
                 await asyncio.gather(
                     *[
-                        _ensure_resolved(host, port, _socket.AF_UNSPEC, _socket.SOCK_STREAM, loop, flags=_socket.AI_PASSIVE)
+                        ensure_resolved(host, port, _socket.AF_UNSPEC, _socket.SOCK_STREAM, loop, flags=_socket.AI_PASSIVE)
                         for host in hosts
                     ]
                 )
@@ -378,17 +392,21 @@ class AsyncioBackend(AbstractAsyncBackend):
     async def create_udp_endpoint(
         self,
         *,
-        local_address: tuple[str | None, int] | None = None,
+        local_address: tuple[str, int] | None = None,
         remote_address: tuple[str, int] | None = None,
         reuse_port: bool = False,
     ) -> AsyncioTransportDatagramSocketAdapter | RawDatagramSocketAdapter:
+        family: int = 0
+        if local_address is None and remote_address is None:
+            family = _socket.AF_INET
+
         socket = await create_datagram_socket(
             loop=asyncio.get_running_loop(),
+            family=family,
             local_address=local_address,
             remote_address=remote_address,
             reuse_port=reuse_port,
         )
-
         return await self.wrap_udp_socket(socket)
 
     async def wrap_udp_socket(self, socket: _socket.socket) -> AsyncioTransportDatagramSocketAdapter | RawDatagramSocketAdapter:
@@ -424,7 +442,9 @@ class AsyncioBackend(AbstractAsyncBackend):
         future = loop.run_in_executor(None, func_call)
         del func_call, __func, args, kwargs
         try:
-            return await self._cancel_shielded_wait_asyncio_future(future)
+            await self._cancel_shielded_wait_asyncio_future(future, None)
+            assert future.done()
+            return future.result()
         finally:
             del future
 
@@ -432,40 +452,24 @@ class AsyncioBackend(AbstractAsyncBackend):
         return ThreadsPortal()
 
     async def wait_future(self, future: concurrent.futures.Future[_T_co]) -> _T_co:
-        try:
-            if future.done():
-                await self.cancel_shielded_coro_yield()
-                return future.result()
-
+        if not future.done():
             future_wrapper = asyncio.wrap_future(future)
-            try:
-                if not future.running():  # There is a chance to cancel the future
-                    current_task: asyncio.Task[Any] = self._current_asyncio_task()
-                    cancelling: int = current_task.cancelling()
-                    try:
-                        await asyncio.wait({future_wrapper})
-                    except asyncio.CancelledError:
-                        if future.cancel():
-                            raise
-                        # future.cancel() failed, that means future.set_running_or_notify_cancel() has been called
-                        # and sets future in RUNNING state.
-                        # This future cannot be cancelled anymore, therefore it must be awaited.
-                        assert current_task.cancelling() > cancelling
-                        while current_task.uncancel() > cancelling:
-                            continue
-                    else:
-                        assert future.done()
-                        return future.result()
-                    finally:
-                        del current_task
+            # If future.cancel() failed, that means future.set_running_or_notify_cancel() has been called
+            # and set future in RUNNING state.
+            # This future cannot be cancelled anymore, therefore it must be awaited.
+            await self._cancel_shielded_wait_asyncio_future(future_wrapper, future.cancel)
+            if not future_wrapper.cancelled():
+                # Unwrap "future_wrapper" instead to prevent reports about unhandled exceptions.
+                assert future_wrapper.done()
+                return future_wrapper.result()
+            assert future.done()
 
-                return await self._cancel_shielded_wait_asyncio_future(future_wrapper)
-            finally:
-                del future_wrapper
-        finally:
-            del future
+        if future.cancelled():
+            # Task cancellation prevails over future cancellation
+            await asyncio.sleep(0)
+        return future.result()
 
-    def use_asyncio_transport(self) -> bool:
+    def using_asyncio_transport(self) -> bool:
         return self.__use_asyncio_transport
 
     def _check_asyncio_transport(self, context: str) -> None:

@@ -155,6 +155,19 @@ def test____check_real_socket_state____socket_with_error(mock_tcp_socket: MagicM
     mock_error_from_errno.assert_called_once_with(errno)
 
 
+def test____check_real_socket_state____closed_socket(mock_tcp_socket: MagicMock, mocker: MockerFixture) -> None:
+    # Arrange
+    mock_tcp_socket.fileno.return_value = -1
+    mock_error_from_errno = mocker.patch(f"{error_from_errno.__module__}.{error_from_errno.__qualname__}")
+
+    # Act
+    check_real_socket_state(mock_tcp_socket)
+
+    # Assert
+    mock_tcp_socket.getsockopt.assert_not_called()
+    mock_error_from_errno.assert_not_called()
+
+
 def test____check_socket_family____valid_family(socket_family: int) -> None:
     # Arrange
 
@@ -404,7 +417,7 @@ def test____ensure_datagram_socket_bound____socket_not_bound____null_port(
     ensure_datagram_socket_bound(mock_udp_socket)
 
     # Assert
-    mock_udp_socket.bind.assert_called_once_with(("", 0))
+    mock_udp_socket.bind.assert_called_once_with(("localhost", 0))
 
 
 def test____ensure_datagram_socket_bound____socket_not_bound____EINVAL_error_when_calling_getsockname(
@@ -419,7 +432,7 @@ def test____ensure_datagram_socket_bound____socket_not_bound____EINVAL_error_whe
     ensure_datagram_socket_bound(mock_udp_socket)
 
     # Assert
-    mock_udp_socket.bind.assert_called_once_with(("", 0))
+    mock_udp_socket.bind.assert_called_once_with(("localhost", 0))
 
 
 def test____ensure_datagram_socket_bound____already_bound(
@@ -465,12 +478,10 @@ def test____ensure_datagram_socket_bound____invalid_socket_type(
 
 def test____set_reuseport____setsockopt(
     mock_tcp_socket: MagicMock,
-    monkeypatch: pytest.MonkeyPatch,
+    SO_REUSEPORT: int,
 ) -> None:
     # Arrange
-    SO_REUSEPORT: int = 123456
     mock_tcp_socket.setsockopt.return_value = None
-    monkeypatch.setattr("socket.SO_REUSEPORT", SO_REUSEPORT, raising=False)
 
     # Act
     set_reuseport(mock_tcp_socket)
@@ -479,13 +490,12 @@ def test____set_reuseport____setsockopt(
     mock_tcp_socket.setsockopt.assert_called_once_with(SOL_SOCKET, SO_REUSEPORT, True)
 
 
+@pytest.mark.usefixtures("remove_SO_REUSEPORT_support")
 def test____set_reuseport____not_supported____not_defined(
     mock_tcp_socket: MagicMock,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Arrange
     mock_tcp_socket.setsockopt.side_effect = OSError
-    monkeypatch.delattr("socket.SO_REUSEPORT", raising=False)
 
     # Act
     with pytest.raises(ValueError, match=r"^reuse_port not supported by socket module$"):
@@ -497,12 +507,10 @@ def test____set_reuseport____not_supported____not_defined(
 
 def test____set_reuseport____not_supported____defined_but_not_implemented(
     mock_tcp_socket: MagicMock,
-    monkeypatch: pytest.MonkeyPatch,
+    SO_REUSEPORT: int,
 ) -> None:
     # Arrange
-    SO_REUSEPORT: int = 123456
     mock_tcp_socket.setsockopt.side_effect = OSError
-    monkeypatch.setattr("socket.SO_REUSEPORT", SO_REUSEPORT, raising=False)
 
     # Act
     with pytest.raises(
@@ -654,9 +662,10 @@ def test____remove_traceback_frames_in_place____remove_n_first_traceback(n: int)
     # Act
     exception = pytest.raises(Exception, func).value
     assert len(list(traceback.walk_tb(exception.__traceback__))) == 3
-    remove_traceback_frames_in_place(exception, n)
+    _returned_exception = remove_traceback_frames_in_place(exception, n)
 
     # Assert
+    assert _returned_exception is exception
     if 0 <= n <= 3:
         assert len(list(traceback.walk_tb(exception.__traceback__))) == 3 - n
     elif n < 0:

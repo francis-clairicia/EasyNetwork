@@ -23,9 +23,9 @@ import asyncio
 import errno
 import socket as _socket
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, Any, final
+from typing import TYPE_CHECKING, Any, Self, cast, final
 
-from easynetwork.api_async.backend.abc import AbstractAsyncStreamSocketAdapter
+from easynetwork.api_async.backend.abc import AbstractAsyncHalfCloseableStreamSocketAdapter, AbstractAsyncStreamSocketAdapter
 from easynetwork.tools._utils import error_from_errno as _error_from_errno
 
 from ..socket import AsyncSocket
@@ -34,13 +34,21 @@ if TYPE_CHECKING:
     import asyncio.trsock
 
 
-@final
 class AsyncioTransportStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
     __slots__ = (
         "__reader",
         "__writer",
         "__socket",
     )
+
+    def __new__(
+        cls,
+        reader: asyncio.StreamReader,
+        writer: asyncio.StreamWriter,
+    ) -> Self:
+        if cls is AsyncioTransportStreamSocketAdapter and writer.can_write_eof():
+            return cast(Self, super().__new__(AsyncioTransportHalfCloseableStreamSocketAdapter))
+        return super().__new__(cls)
 
     def __init__(
         self,
@@ -79,8 +87,6 @@ class AsyncioTransportStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
     async def recv(self, bufsize: int, /) -> bytes:
         if bufsize < 0:
             raise ValueError("'bufsize' must be a positive or null integer")
-        if bufsize == 0:
-            return b""
         return await self.__reader.read(bufsize)
 
     async def sendall(self, data: bytes, /) -> None:
@@ -91,16 +97,33 @@ class AsyncioTransportStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
         self.__writer.writelines(iterable_of_data)
         await self.__writer.drain()
 
+    async def _send_eof_impl(self) -> None:
+        assert self.__writer.can_write_eof()
+        self.__writer.write_eof()
+        await asyncio.sleep(0)
+
     def socket(self) -> asyncio.trsock.TransportSocket:
         return self.__socket
 
 
 @final
-class RawStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
-    __slots__ = (
-        "__socket",
-        "__remote_addr",
-    )
+class AsyncioTransportHalfCloseableStreamSocketAdapter(
+    AsyncioTransportStreamSocketAdapter,
+    AbstractAsyncHalfCloseableStreamSocketAdapter,
+):
+    __slots__ = ()
+
+    def __new__(cls, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> Self:
+        if not writer.can_write_eof():
+            raise ValueError(f"{writer!r} cannot write eof")
+        return super().__new__(cls, reader, writer)
+
+    send_eof = AsyncioTransportStreamSocketAdapter._send_eof_impl
+
+
+@final
+class RawStreamSocketAdapter(AbstractAsyncHalfCloseableStreamSocketAdapter):
+    __slots__ = ("__socket",)
 
     def __init__(
         self,
@@ -113,9 +136,6 @@ class RawStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
 
         assert socket.type == _socket.SOCK_STREAM, "A 'SOCK_STREAM' socket is expected"
 
-        remote_address = socket.getpeername()
-        self.__remote_addr: tuple[Any, ...] = tuple(remote_address)
-
     async def aclose(self) -> None:
         return await self.__socket.aclose()
 
@@ -126,13 +146,22 @@ class RawStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
         return self.__socket.socket.getsockname()
 
     def get_remote_address(self) -> tuple[Any, ...]:
-        return self.__remote_addr
+        return self.__socket.socket.getpeername()
 
     async def recv(self, bufsize: int, /) -> bytes:
         return await self.__socket.recv(bufsize)
 
     async def sendall(self, data: bytes, /) -> None:
         await self.__socket.sendall(data)
+
+    async def send_eof(self) -> None:
+        socket = self.__socket
+        if socket.did_shutdown_SHUT_WR:
+            # On macOS, calling shutdown a second time raises ENOTCONN, but
+            # send_eof needs to be idempotent.
+            await asyncio.sleep(0)
+            return
+        await socket.shutdown(_socket.SHUT_WR)
 
     def socket(self) -> asyncio.trsock.TransportSocket:
         return self.__socket.socket

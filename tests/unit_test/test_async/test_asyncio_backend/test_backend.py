@@ -4,10 +4,10 @@ import asyncio
 import contextlib
 import contextvars
 from collections.abc import Callable, Sequence
+from socket import AF_INET
 from typing import TYPE_CHECKING, Any, cast
 
 from easynetwork.api_async.backend.abc import AbstractAsyncStreamSocketAdapter
-from easynetwork.tools.constants import MAX_STREAM_BUFSIZE
 from easynetwork_asyncio import AsyncioBackend
 
 import pytest
@@ -47,7 +47,7 @@ class TestAsyncIOBackend:
         backend: AsyncioBackend,
         use_asyncio_transport: bool,
     ) -> None:
-        assert backend.use_asyncio_transport() == use_asyncio_transport
+        assert backend.using_asyncio_transport() == use_asyncio_transport
 
     @pytest.mark.parametrize("cancel_shielded", [False, True], ids=lambda b: f"cancel_shielded=={b}")
     async def test____coro_yield____use_asyncio_sleep(
@@ -166,7 +166,6 @@ class TestAsyncIOBackend:
             **expected_ssl_kwargs,
             happy_eyeballs_delay=42,
             local_addr=local_address,
-            limit=MAX_STREAM_BUFSIZE,
         )
         mock_StreamSocketAdapter.assert_called_once_with(mock_asyncio_reader, mock_asyncio_writer)
         assert socket is mocker.sentinel.socket
@@ -224,7 +223,6 @@ class TestAsyncIOBackend:
             *remote_address,
             **expected_ssl_kwargs,
             local_addr=local_address,
-            limit=MAX_STREAM_BUFSIZE,
         )
 
     @pytest.mark.parametrize("use_asyncio_transport", [True], indirect=True)
@@ -281,7 +279,6 @@ class TestAsyncIOBackend:
             **expected_ssl_kwargs,
             local_addr=local_address,
             happy_eyeballs_delay=0.25,
-            limit=MAX_STREAM_BUFSIZE,
         )
 
     @pytest.mark.parametrize("use_asyncio_transport", [False], indirect=True)
@@ -507,10 +504,7 @@ class TestAsyncIOBackend:
 
         # Assert
         if use_asyncio_transport:
-            mock_open_connection.assert_awaited_once_with(
-                sock=mock_tcp_socket,
-                limit=MAX_STREAM_BUFSIZE,
-            )
+            mock_open_connection.assert_awaited_once_with(sock=mock_tcp_socket)
             mock_AsyncioTransportStreamSocketAdapter.assert_called_once_with(mock_asyncio_reader, mock_asyncio_writer)
             mock_RawStreamSocketAdapter.assert_not_called()
         else:
@@ -565,7 +559,6 @@ class TestAsyncIOBackend:
                 server_hostname="server_hostname",
                 ssl_handshake_timeout=123456.789,
                 ssl_shutdown_timeout=9876543.21,
-                limit=MAX_STREAM_BUFSIZE,
             )
             mock_AsyncioTransportStreamSocketAdapter.assert_called_once_with(mock_asyncio_reader, mock_asyncio_writer)
             assert socket is mocker.sentinel.socket
@@ -792,7 +785,7 @@ class TestAsyncIOBackend:
         indirect=["use_asyncio_transport"],
     )
     @pytest.mark.parametrize("remote_host", [None, ""], ids=repr)
-    async def test____create_tcp_listeners____bind_on_any_interfaces(
+    async def test____create_tcp_listeners____bind_to_any_interfaces(
         self,
         remote_host: str,
         event_loop: asyncio.AbstractEventLoop,
@@ -905,7 +898,7 @@ class TestAsyncIOBackend:
         ],
         indirect=["use_asyncio_transport"],
     )
-    async def test____create_tcp_listeners____bind_on_several_hosts(
+    async def test____create_tcp_listeners____bind_to_several_hosts(
         self,
         event_loop: asyncio.AbstractEventLoop,
         backend: AsyncioBackend,
@@ -1161,20 +1154,24 @@ class TestAsyncIOBackend:
             new_callable=mocker.AsyncMock,
             return_value=mock_udp_socket,
         )
+        expected_family = 0
+        if local_address is None and remote_address is None:
+            expected_family = AF_INET
 
         # Act
         socket = await backend.create_udp_endpoint(
             local_address=local_address,
             remote_address=remote_address,
-            reuse_port=True,
+            reuse_port=mocker.sentinel.reuse_port,
         )
 
         # Assert
         mock_create_datagram_socket.assert_awaited_once_with(
             loop=event_loop,
+            family=expected_family,
             local_address=local_address,
             remote_address=remote_address,
-            reuse_port=True,
+            reuse_port=mocker.sentinel.reuse_port,
         )
         if use_asyncio_transport:
             mock_create_datagram_endpoint.assert_awaited_once_with(socket=mock_udp_socket)
@@ -1186,7 +1183,6 @@ class TestAsyncIOBackend:
             mock_AsyncioTransportDatagramSocketAdapter.assert_not_called()
 
         assert socket is mocker.sentinel.socket
-        mock_udp_socket.setblocking.assert_called_with(False)
 
     async def test____wrap_udp_socket____use_loop_create_datagram_endpoint(
         self,

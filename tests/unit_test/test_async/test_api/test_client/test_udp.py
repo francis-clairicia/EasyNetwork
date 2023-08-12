@@ -193,7 +193,6 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         remote_address: tuple[str, int] | None,
         mock_datagram_protocol: MagicMock,
         mock_backend: MagicMock,
-        mocker: MockerFixture,
     ) -> None:
         # Arrange
 
@@ -208,7 +207,7 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         # Assert
         mock_backend.create_udp_endpoint.assert_awaited_once_with(
             remote_address=remote_address,
-            local_address=(None, 0),
+            local_address=("localhost", 0),
         )
 
     async def test____dunder_init____backend____from_string(
@@ -290,7 +289,7 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         )
 
         # Assert
-        mock_udp_socket.bind.assert_called_once_with(("", 0))
+        mock_udp_socket.bind.assert_called_once_with(("localhost", 0))
 
     async def test____context____close_endpoint_at_end(
         self,

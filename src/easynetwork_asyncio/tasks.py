@@ -22,8 +22,10 @@ __all__ = ["Task", "TaskGroup", "TimeoutHandle", "timeout", "timeout_at"]
 import asyncio
 import contextvars
 import math
+from collections import deque
 from collections.abc import Callable, Coroutine
 from typing import TYPE_CHECKING, Any, ParamSpec, Self, TypeVar, final
+from weakref import WeakKeyDictionary
 
 from easynetwork.api_async.backend.abc import AbstractTask, AbstractTaskGroup, AbstractTimeoutHandle
 
@@ -139,15 +141,28 @@ class TaskGroup(AbstractTaskGroup):
 
 @final
 class TimeoutHandle(AbstractTimeoutHandle):
-    __slots__ = ("__handle",)
+    __slots__ = ("__handle", "__only_move_on", "__already_delayed_cancellation")
 
-    def __init__(self, handle: asyncio.Timeout) -> None:
+    __current_handle_dict: WeakKeyDictionary[asyncio.Task[Any], deque[TimeoutHandle]] = WeakKeyDictionary()
+    __delayed_task_cancel_dict: WeakKeyDictionary[asyncio.Task[Any], asyncio.Handle] = WeakKeyDictionary()
+
+    def __init__(self, handle: asyncio.Timeout, *, only_move_on: bool = False) -> None:
         super().__init__()
         self.__handle: asyncio.Timeout = handle
+        self.__only_move_on: bool = bool(only_move_on)
+        self.__already_delayed_cancellation: bool = True
 
     async def __aenter__(self) -> Self:
-        handle: asyncio.Timeout = self.__handle
-        await type(handle).__aenter__(handle)
+        timeout_handle: asyncio.Timeout = self.__handle
+        await type(timeout_handle).__aenter__(timeout_handle)
+        current_task = asyncio.current_task()
+        assert current_task is not None
+        current_handle_dict = self.__current_handle_dict
+        if current_task not in current_handle_dict:
+            current_handle_dict[current_task] = deque()
+            current_task.add_done_callback(current_handle_dict.pop)
+        current_handle_dict[current_task].appendleft(self)
+        self.__already_delayed_cancellation = current_task in self.__delayed_task_cancel_dict
         return self
 
     async def __aexit__(
@@ -155,12 +170,31 @@ class TimeoutHandle(AbstractTimeoutHandle):
         exc_type: type[BaseException] | None,
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
-    ) -> None:
-        handle: asyncio.Timeout = self.__handle
+    ) -> bool | None:
+        timeout_handle: asyncio.Timeout = self.__handle
+        current_task = asyncio.current_task()
+        assert current_task is not None
         try:
-            return await type(handle).__aexit__(handle, exc_type, exc_val, exc_tb)
+            await type(timeout_handle).__aexit__(timeout_handle, exc_type, exc_val, exc_tb)
+        except TimeoutError:
+            if self.__only_move_on:
+                return True
+            raise
+        else:
+            return None
         finally:
-            del exc_val, exc_tb, self
+            delayed_task_cancel = None
+            try:
+                self.__current_handle_dict[current_task].popleft()
+            except LookupError:  # pragma: no cover
+                pass
+            finally:
+                if not self.__already_delayed_cancellation:
+                    if not self.__current_handle_dict.get(current_task):
+                        delayed_task_cancel = self.__delayed_task_cancel_dict.pop(current_task, None)
+                    if delayed_task_cancel is not None:
+                        delayed_task_cancel.cancel()
+                del current_task, exc_val, exc_tb, self
 
     def when(self) -> float:
         deadline: float | None = self.__handle.when()
@@ -168,17 +202,47 @@ class TimeoutHandle(AbstractTimeoutHandle):
 
     def reschedule(self, when: float) -> None:
         assert when is not None
-        return self.__handle.reschedule(when if when != math.inf else None)
+        return self.__handle.reschedule(self._cast_time(when))
 
     def expired(self) -> bool:
         return self.__handle.expired()
 
+    @staticmethod
+    def _cast_time(time_value: float) -> float | None:
+        assert time_value is not None
+        return time_value if time_value != math.inf else None
+
+    @classmethod
+    def _reschedule_delayed_task_cancel(cls, task: asyncio.Task[Any], cancel_msg: str | None) -> None:
+        task_cancel_handle = task.get_loop().call_soon(cls.__cancel_task_unless_done, task, cancel_msg)
+        if cls.__current_handle_dict.get(task):
+            if task in cls.__delayed_task_cancel_dict:
+                cls.__delayed_task_cancel_dict[task].cancel()
+            cls.__delayed_task_cancel_dict[task] = task_cancel_handle
+        else:
+            assert task not in cls.__delayed_task_cancel_dict
+            cls.__delayed_task_cancel_dict[task] = task_cancel_handle
+            task.get_loop().call_soon(cls.__delayed_task_cancel_dict.pop, task, None)
+
+    @staticmethod
+    def __cancel_task_unless_done(task: asyncio.Task[Any], cancel_msg: str | None) -> None:
+        if task.done():
+            return
+        task.uncancel()
+        task.cancel(cancel_msg)
+
 
 def timeout(delay: float) -> TimeoutHandle:
-    assert delay is not None
-    return TimeoutHandle(asyncio.timeout(delay if delay != math.inf else None))
+    return TimeoutHandle(asyncio.timeout(TimeoutHandle._cast_time(delay)))
 
 
 def timeout_at(deadline: float) -> TimeoutHandle:
-    assert deadline is not None
-    return TimeoutHandle(asyncio.timeout_at(deadline if deadline != math.inf else None))
+    return TimeoutHandle(asyncio.timeout_at(TimeoutHandle._cast_time(deadline)))
+
+
+def move_on_after(delay: float) -> TimeoutHandle:
+    return TimeoutHandle(asyncio.timeout(TimeoutHandle._cast_time(delay)), only_move_on=True)
+
+
+def move_on_at(deadline: float) -> TimeoutHandle:
+    return TimeoutHandle(asyncio.timeout_at(TimeoutHandle._cast_time(deadline)), only_move_on=True)

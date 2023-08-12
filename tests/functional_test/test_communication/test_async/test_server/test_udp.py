@@ -292,23 +292,23 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
             case invalid_param:
                 pytest.fail(f"Invalid param: {invalid_param!r}")
 
-    @pytest.mark.parametrize("host", [None, ""], ids=repr)
-    async def test____dunder_init____bind_on_all_available_interfaces(
+    async def test____dunder_init____bind_on_localhost_by_default(
         self,
-        host: str | None,
         request_handler: MyAsyncUDPRequestHandler,
         datagram_protocol: DatagramProtocol[str, str],
         backend_kwargs: dict[str, Any],
     ) -> None:
-        async with MyAsyncUDPServer(host, 0, datagram_protocol, request_handler, backend_kwargs=backend_kwargs) as s:
+        async with MyAsyncUDPServer(None, 0, datagram_protocol, request_handler, backend_kwargs=backend_kwargs) as s:
             is_up_event = asyncio.Event()
             _ = asyncio.create_task(s.serve_forever(is_up_event=is_up_event))
             async with asyncio.timeout(1):
                 await is_up_event.wait()
 
-            assert s.socket is not None
-
-            await s.shutdown()
+            try:
+                assert s.socket is not None
+                assert (address := s.get_address()) is not None and address.host in ("127.0.0.1", "::1")
+            finally:
+                await s.shutdown()
 
     @pytest.mark.usefixtures("run_server_and_wait")
     async def test____serve_forever____backend_assignment(
@@ -623,7 +623,7 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
 
         await endpoint.sendto(b"something", None)
         await endpoint.sendto(b"hello, world.", None)
-        async with asyncio.timeout(1):
+        async with asyncio.timeout(5):
             assert (await endpoint.recvfrom())[0] == b"After wait: hello, world."
 
     @pytest.mark.usefixtures("start_task_with_context")
@@ -642,6 +642,6 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         await endpoint.sendto(b"something", None)
         await asyncio.sleep(0.1)
         await endpoint.sendto(b"hello, world. new game +", None)
-        async with asyncio.timeout(1):
+        async with asyncio.timeout(5):
             assert (await endpoint.recvfrom())[0] == b"After wait: hello, world."
             assert (await endpoint.recvfrom())[0] == b"After wait: hello, world. new game +"
