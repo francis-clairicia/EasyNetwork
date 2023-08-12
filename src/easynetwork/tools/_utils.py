@@ -268,7 +268,7 @@ def ensure_datagram_socket_bound(sock: _socket.socket) -> None:
         is_bound = False
 
     if not is_bound:
-        sock.bind(("", 0))
+        sock.bind(("localhost", 0))
 
 
 def set_reuseport(sock: SupportsSocketOptions) -> None:

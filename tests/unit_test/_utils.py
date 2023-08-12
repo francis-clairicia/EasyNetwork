@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import functools
+from collections.abc import Sequence
+from socket import AF_INET, AF_INET6, IPPROTO_TCP, IPPROTO_UDP, SOCK_DGRAM, SOCK_STREAM
 from types import TracebackType
 from typing import Any
+
+_DEFAULT_FAMILIES: Sequence[int] = (AF_INET, AF_INET6)
 
 
 class _LockMixin:
@@ -93,3 +97,39 @@ def _get_all_socket_families() -> frozenset[str]:
     import socket
 
     return frozenset(v for v in dir(socket) if v.startswith("AF_"))
+
+
+def __addrinfo_list(
+    port: int,
+    socktype: int,
+    proto: int,
+    families: Sequence[int],
+) -> Sequence[tuple[int, int, int, str, tuple[Any, ...]]]:
+    assert families, "families is empty"
+
+    infos: list[tuple[int, int, int, str, tuple[Any, ...]]] = []
+
+    for af in families:
+        sockaddr: tuple[Any, ...]
+        if af == AF_INET:
+            sockaddr = ("127.0.0.1", port)
+        elif af == AF_INET6:
+            sockaddr = ("::1", port, 0, 0)
+        else:
+            raise ValueError(af)
+        infos.append((af, socktype, proto, "", sockaddr))
+    return infos
+
+
+def stream_addrinfo_list(
+    port: int,
+    families: Sequence[int] = _DEFAULT_FAMILIES,
+) -> Sequence[tuple[int, int, int, str, tuple[Any, ...]]]:
+    return __addrinfo_list(port, SOCK_STREAM, IPPROTO_TCP, families)
+
+
+def datagram_addrinfo_list(
+    port: int,
+    families: Sequence[int] = _DEFAULT_FAMILIES,
+) -> Sequence[tuple[int, int, int, str, tuple[Any, ...]]]:
+    return __addrinfo_list(port, SOCK_DGRAM, IPPROTO_UDP, families)

@@ -396,7 +396,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     @pytest.mark.parametrize("host", [None, ""], ids=repr)
     @pytest.mark.parametrize("log_client_connection", [True, False], ids=lambda p: f"log_client_connection=={p}")
     @pytest.mark.parametrize("use_ssl", ["NO_SSL"], indirect=True)
-    async def test____dunder_init____bind_on_all_available_interfaces(
+    async def test____dunder_init____bind_to_all_available_interfaces(
         self,
         host: str | None,
         log_client_connection: bool,

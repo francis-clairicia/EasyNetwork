@@ -9,7 +9,6 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.api_async.backend.abc import AbstractAcceptedSocket
-from easynetwork.tools.constants import MAX_STREAM_BUFSIZE
 from easynetwork_asyncio.stream.listener import AcceptedSocket, AcceptedSSLSocket, ListenerSocketAdapter
 from easynetwork_asyncio.stream.socket import (
     AsyncioTransportHalfCloseableStreamSocketAdapter,
@@ -160,18 +159,19 @@ class BaseTestAsyncioTransportBasedStreamSocket(BaseTestTransportStreamSocket):
         mock_asyncio_reader.read.assert_awaited_once_with(1024)
         assert data == b"data"
 
-    async def test____recv____null_bufsize_directly_return(
+    async def test____recv____null_bufsize(
         self,
         socket: AsyncioTransportStreamSocketAdapter,
         mock_asyncio_reader: MagicMock,
     ) -> None:
         # Arrange
+        mock_asyncio_reader.read.return_value = b""
 
         # Act
         data: bytes = await socket.recv(0)
 
         # Assert
-        mock_asyncio_reader.read.assert_not_awaited()
+        mock_asyncio_reader.read.assert_awaited_once_with(0)
         assert data == b""
 
     async def test____recv____negative_bufsize_error(
@@ -578,7 +578,7 @@ class TestAcceptedSocket(BaseTestTransportStreamSocket, BaseTestSocket):
         assert socket is mock_stream_socket_adapter
         if use_asyncio_transport:
             mock_raw_stream_socket_adapter_cls.assert_not_called()
-            mock_asyncio_reader_cls.assert_called_once_with(MAX_STREAM_BUFSIZE, event_loop)
+            mock_asyncio_reader_cls.assert_called_once_with(loop=event_loop)
             mock_asyncio_reader_protocol_cls.assert_called_once_with(mock_asyncio_reader, loop=event_loop)
             mock_event_loop_connect_accepted_socket.assert_awaited_once_with(
                 mocker.ANY,  # protocol_factory
@@ -716,7 +716,7 @@ class TestAcceptedSSLSocket(BaseTestTransportStreamSocket):
         # Assert
         assert socket is mock_stream_socket_adapter
 
-        mock_asyncio_reader_cls.assert_called_once_with(MAX_STREAM_BUFSIZE, event_loop)
+        mock_asyncio_reader_cls.assert_called_once_with(loop=event_loop)
         mock_asyncio_reader_protocol_cls.assert_called_once_with(mock_asyncio_reader, loop=event_loop)
         mock_event_loop_connect_accepted_socket.assert_awaited_once_with(
             mocker.ANY,  # protocol_factory
