@@ -125,19 +125,6 @@ async def create_datagram_socket(
     remote_address: tuple[str, int] | None = None,
     reuse_port: bool = False,
 ) -> _socket.socket:
-    if local_address is None and remote_address is None:
-        if family == 0:
-            raise ValueError("unexpected address family")
-        socket = _socket.socket(family, _socket.SOCK_DGRAM, _socket.IPPROTO_UDP)
-        try:
-            socket.setblocking(False)
-            if reuse_port:
-                _set_reuseport(socket)
-        except BaseException:
-            socket.close()
-            raise
-        return socket
-
     local_addrinfo: Sequence[tuple[int, int, int, str, tuple[Any, ...]]] | None = None
     if local_address is not None:
         local_host, local_port = local_address
@@ -160,31 +147,15 @@ async def create_datagram_socket(
             loop=loop,
         )
 
-    ## Taken from asyncio.base_events module
-    ## c.f. https://github.com/python/cpython/blob/v3.11.2/Lib/asyncio/base_events.py#L1325
-
-    # join address by (family, protocol)
-    addr_infos: dict[tuple[int, int], list[tuple[Any, ...] | None]] = {}  # Using order preserving dict
-    for idx, infos in ((0, local_addrinfo), (1, remote_addrinfo)):
-        if infos is not None:
-            for family, _, proto, _, address in infos:
-                key = (family, proto)
-                if key not in addr_infos:
-                    addr_infos[key] = [None, None]
-                addr_infos[key][idx] = address
-
-    # each addr has to have info for each (family, proto) pair
-    addr_pairs_info = [
-        (key, addr_pair)
-        for key, addr_pair in addr_infos.items()
-        if not ((local_addrinfo and addr_pair[0] is None) or (remote_addrinfo and addr_pair[1] is None))
-    ]
-
     errors: list[OSError] = []
 
     del local_address, remote_address
 
-    for (family, proto), (local_sockaddr, remote_sockaddr) in addr_pairs_info:
+    for (family, proto), (local_sockaddr, remote_sockaddr) in _get_datagram_socket_addr_pairs_info(
+        family=family,
+        local_addrinfo=local_addrinfo,
+        remote_addrinfo=remote_addrinfo,
+    ):
         try:
             socket = _socket.socket(family, _socket.SOCK_DGRAM, proto)
         except OSError as exc:
@@ -227,6 +198,34 @@ async def create_datagram_socket(
             errors.clear()
 
     raise OSError("No matching local/remote pair according to family and proto found")
+
+
+## Taken from asyncio.base_events module
+## c.f. https://github.com/python/cpython/blob/v3.11.2/Lib/asyncio/base_events.py#L1325
+def _get_datagram_socket_addr_pairs_info(
+    family: int,
+    local_addrinfo: Sequence[tuple[int, int, int, str, tuple[Any, ...]]] | None,
+    remote_addrinfo: Sequence[tuple[int, int, int, str, tuple[Any, ...]]] | None,
+) -> list[tuple[tuple[int, int], Sequence[tuple[Any, ...] | None]]]:
+    if local_addrinfo is None and remote_addrinfo is None:
+        if family == 0:
+            raise ValueError("unexpected address family")
+        return [((family, _socket.IPPROTO_UDP), (None, None))]
+
+    addr_infos: dict[tuple[int, int], list[tuple[Any, ...] | None]] = {}
+    for idx, infos in ((0, local_addrinfo), (1, remote_addrinfo)):
+        if infos is not None:
+            for family, _, proto, _, address in infos:
+                key = (family, proto)
+                if key not in addr_infos:
+                    addr_infos[key] = [None, None]
+                addr_infos[key][idx] = address
+
+    return [
+        (key, addr_pair)
+        for key, addr_pair in addr_infos.items()
+        if not ((local_addrinfo and addr_pair[0] is None) or (remote_addrinfo and addr_pair[1] is None))
+    ]
 
 
 def open_listener_sockets_from_getaddrinfo_result(
