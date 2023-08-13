@@ -43,11 +43,11 @@ class AsyncExecutor:
     ) -> None:
         await self.shutdown()
 
-    async def run(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+    async def run(self, func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
         try:
-            return await self.__backend.wait_future(self.__executor.submit(__func, *args, **kwargs))
+            return await self.__backend.wait_future(self.__executor.submit(func, *args, **kwargs))
         finally:
-            del __func, args, kwargs
+            del func, args, kwargs
 
     def shutdown_nowait(self, *, cancel_futures: bool = False) -> None:
         self.__executor.shutdown(wait=False, cancel_futures=cancel_futures)
@@ -79,13 +79,13 @@ class AsyncThreadPoolExecutor(AsyncExecutor):
     def __init__(self, backend: AbstractAsyncBackend, **kwargs: Any) -> None:
         super().__init__(backend, concurrent.futures.ThreadPoolExecutor(**kwargs))
 
-    async def run(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+    async def run(self, func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
         ctx = contextvars.copy_context()
 
         if _sniffio_current_async_library_cvar is not None:
             ctx.run(_sniffio_current_async_library_cvar.set, None)
 
         try:
-            return await super().run(ctx.run, __func, *args, **kwargs)  # type: ignore[arg-type]
+            return await super().run(ctx.run, func, *args, **kwargs)  # type: ignore[arg-type]
         finally:
-            del __func, args, kwargs
+            del func, args, kwargs

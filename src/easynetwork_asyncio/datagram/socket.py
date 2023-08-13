@@ -79,10 +79,10 @@ class RawDatagramSocketAdapter(AbstractAsyncDatagramSocketAdapter):
     ) -> None:
         super().__init__()
 
-        self.__socket: AsyncSocket = AsyncSocket(socket, loop)
-
         if socket.type != _socket.SOCK_DGRAM:
             raise ValueError("A 'SOCK_DGRAM' socket is expected")
+
+        self.__socket: AsyncSocket = AsyncSocket(socket, loop)
 
     async def aclose(self) -> None:
         return await self.__socket.aclose()

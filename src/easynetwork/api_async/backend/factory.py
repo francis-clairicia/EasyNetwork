@@ -70,12 +70,12 @@ class AsyncBackendFactory:
         AsyncBackendFactory.__BACKEND_EXTENSIONS[backend_name] = backend_cls
 
     @staticmethod
-    def new(__backend: str | None = None, /, **kwargs: Any) -> AbstractAsyncBackend:
+    def new(backend: str | None = None, /, **kwargs: Any) -> AbstractAsyncBackend:
         backend_cls: type[AbstractAsyncBackend]
-        if __backend is None:
+        if backend is None:
             backend_cls = AsyncBackendFactory.get_default_backend(guess_current_async_library=True)
         else:
-            backend_cls = AsyncBackendFactory.__get_backend_cls(__backend, extended=True)
+            backend_cls = AsyncBackendFactory.__get_backend_cls(backend, extended=True)
         return backend_cls(**kwargs)
 
     @staticmethod

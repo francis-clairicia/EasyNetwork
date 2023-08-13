@@ -25,7 +25,7 @@ _DT_co = TypeVar("_DT_co", covariant=True)
 
 class CompressorInterface(Protocol, metaclass=abc.ABCMeta):
     @abc.abstractmethod
-    def compress(self, __data: bytes, /) -> bytes:
+    def compress(self, data: bytes, /) -> bytes:
         raise NotImplementedError
 
     @abc.abstractmethod
@@ -35,7 +35,7 @@ class CompressorInterface(Protocol, metaclass=abc.ABCMeta):
 
 class DecompressorInterface(Protocol, metaclass=abc.ABCMeta):
     @abc.abstractmethod
-    def decompress(self, __data: bytes, /) -> bytes:
+    def decompress(self, data: bytes, /) -> bytes:
         raise NotImplementedError
 
     @property

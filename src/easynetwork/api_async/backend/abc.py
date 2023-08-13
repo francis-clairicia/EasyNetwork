@@ -80,7 +80,7 @@ class IEvent(Protocol):
 
 
 class ICondition(ILock, Protocol):
-    def notify(self, __n: int = ..., /) -> None:  # pragma: no cover
+    def notify(self, n: int = ..., /) -> None:  # pragma: no cover
         ...
 
     def notify_all(self) -> None:  # pragma: no cover
@@ -181,11 +181,11 @@ class AbstractThreadsPortal(metaclass=ABCMeta):
     __slots__ = ("__weakref__",)
 
     @abstractmethod
-    def run_coroutine(self, __coro_func: Callable[_P, Coroutine[Any, Any, _T]], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+    def run_coroutine(self, coro_func: Callable[_P, Coroutine[Any, Any, _T]], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
         raise NotImplementedError
 
     @abstractmethod
-    def run_sync(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+    def run_sync(self, func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
         raise NotImplementedError
 
 
@@ -228,11 +228,11 @@ class AbstractAsyncStreamSocketAdapter(AbstractAsyncBaseSocketAdapter):
         raise NotImplementedError
 
     @abstractmethod
-    async def recv(self, __bufsize: int, /) -> bytes:
+    async def recv(self, bufsize: int, /) -> bytes:
         raise NotImplementedError
 
     @abstractmethod
-    async def sendall(self, __data: bytes, /) -> None:
+    async def sendall(self, data: bytes, /) -> None:
         raise NotImplementedError
 
     async def sendall_fromiter(self, iterable_of_data: Iterable[bytes], /) -> None:
@@ -255,11 +255,11 @@ class AbstractAsyncDatagramSocketAdapter(AbstractAsyncBaseSocketAdapter):
         raise NotImplementedError
 
     @abstractmethod
-    async def recvfrom(self, __bufsize: int, /) -> tuple[bytes, tuple[Any, ...]]:
+    async def recvfrom(self, bufsize: int, /) -> tuple[bytes, tuple[Any, ...]]:
         raise NotImplementedError
 
     @abstractmethod
-    async def sendto(self, __data: bytes, __address: tuple[Any, ...] | None, /) -> None:
+    async def sendto(self, data: bytes, address: tuple[Any, ...] | None, /) -> None:
         raise NotImplementedError
 
 
@@ -470,7 +470,7 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    async def run_in_thread(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+    async def run_in_thread(self, func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
         raise NotImplementedError
 
     @abstractmethod

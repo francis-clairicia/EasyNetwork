@@ -415,16 +415,16 @@ class AsyncioBackend(AbstractAsyncBackend):
 
         return asyncio.Condition(lock)
 
-    async def run_in_thread(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+    async def run_in_thread(self, func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
         loop = asyncio.get_running_loop()
         ctx = contextvars.copy_context()
 
         if _sniffio_current_async_library_cvar is not None:
             ctx.run(_sniffio_current_async_library_cvar.set, None)
 
-        func_call: Callable[..., _T] = functools.partial(ctx.run, __func, *args, **kwargs)  # type: ignore[assignment]
+        func_call: Callable[..., _T] = functools.partial(ctx.run, func, *args, **kwargs)  # type: ignore[assignment]
         future = loop.run_in_executor(None, func_call)
-        del func_call, __func, args, kwargs
+        del func_call, func, args, kwargs
         try:
             await self._cancel_shielded_wait_asyncio_future(future, None)
             assert future.done()  # nosec assert_used
