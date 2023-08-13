@@ -24,7 +24,7 @@ from collections.abc import Callable, Coroutine
 from typing import TYPE_CHECKING, Any, Generic, ParamSpec, TypeVar
 
 if TYPE_CHECKING:
-    from .abc import AbstractAsyncBackend, AbstractTask
+    from .abc import AbstractAsyncBackend, AbstractSystemTask
 
 
 _P = ParamSpec("_P")
@@ -55,7 +55,7 @@ class SingleTaskRunner(Generic[_T_co]):
             args,
             kwargs,
         )
-        self.__task: AbstractTask[_T_co] | None = None
+        self.__task: AbstractSystemTask[_T_co] | None = None
 
     def cancel(self) -> bool:
         self.__coro_func = None

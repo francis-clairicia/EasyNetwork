@@ -235,7 +235,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             if self.__shutdown_asked:
                 self.__mainloop_task.cancel()
             try:
-                await self.__mainloop_task.join_or_cancel()
+                await self.__mainloop_task.join()
             finally:
                 self.__mainloop_task = None
 
