@@ -10,7 +10,7 @@ from easynetwork.api_async.backend.abc import (
     AbstractAsyncListenerSocketAdapter,
     AbstractAsyncStreamSocketAdapter,
     AbstractRunner,
-    AbstractTask,
+    AbstractSystemTask,
     AbstractTaskGroup,
     AbstractThreadsPortal,
     AbstractTimeoutHandle,
@@ -57,7 +57,7 @@ class BaseFakeBackend(AbstractAsyncBackend):
     def get_cancelled_exc_class(self) -> type[BaseException]:
         raise NotImplementedError
 
-    def spawn_task(self, *args: Any, **kwargs: Any) -> AbstractTask[Any]:
+    def spawn_task(self, *args: Any, **kwargs: Any) -> AbstractSystemTask[Any]:
         raise NotImplementedError
 
     def create_task_group(self) -> AbstractTaskGroup:

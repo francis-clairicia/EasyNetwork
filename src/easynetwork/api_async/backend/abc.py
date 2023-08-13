@@ -131,6 +131,10 @@ class AbstractTask(Generic[_T_co], metaclass=ABCMeta):
     async def join(self) -> _T_co:
         raise NotImplementedError
 
+
+class AbstractSystemTask(AbstractTask[_T_co]):
+    __slots__ = ()
+
     @abstractmethod
     async def join_or_cancel(self) -> _T_co:
         raise NotImplementedError
@@ -368,7 +372,7 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         /,
         *args: _P.args,
         **kwargs: _P.kwargs,
-    ) -> AbstractTask[_T]:
+    ) -> AbstractSystemTask[_T]:
         raise NotImplementedError
 
     @abstractmethod

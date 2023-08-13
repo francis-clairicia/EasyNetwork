@@ -37,14 +37,14 @@ def fake_cancellation_cls() -> type[BaseException]:
 
 @pytest.fixture
 def mock_backend(fake_cancellation_cls: type[BaseException], mocker: MockerFixture) -> MagicMock:
-    from easynetwork_asyncio.tasks import Task, TaskGroup
+    from easynetwork_asyncio.tasks import SystemTask, TaskGroup
 
     from .._utils import AsyncDummyLock
 
     mock_backend = mocker.NonCallableMagicMock(spec=AbstractAsyncBackend)
 
     mock_backend.get_cancelled_exc_class.return_value = fake_cancellation_cls
-    mock_backend.spawn_task = lambda coro_func, *args, **kwargs: Task(asyncio.create_task(coro_func(*args, **kwargs)))
+    mock_backend.spawn_task = lambda coro_func, *args, **kwargs: SystemTask(coro_func(*args, **kwargs))
     mock_backend.create_lock = AsyncDummyLock
     mock_backend.create_event = asyncio.Event
     mock_backend.create_task_group = TaskGroup

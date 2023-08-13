@@ -16,7 +16,7 @@ from collections.abc import Callable, Coroutine
 from typing import TYPE_CHECKING, Any, ParamSpec, Self, TypeVar, final
 from weakref import WeakKeyDictionary
 
-from easynetwork.api_async.backend.abc import AbstractTask, AbstractTaskGroup, AbstractTimeoutHandle
+from easynetwork.api_async.backend.abc import AbstractSystemTask, AbstractTask, AbstractTaskGroup, AbstractTimeoutHandle
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -27,7 +27,6 @@ _T = TypeVar("_T")
 _T_co = TypeVar("_T_co", covariant=True)
 
 
-@final
 class Task(AbstractTask[_T_co]):
     __slots__ = ("__t", "__h")
 
@@ -37,7 +36,7 @@ class Task(AbstractTask[_T_co]):
 
     def __hash__(self) -> int:
         if (h := self.__h) is None:
-            self.__h = h = hash((Task, self.__t, 0xFF))
+            self.__h = h = hash((self.__class__, self.__t, 0xFF))
         return h
 
     def __eq__(self, other: object, /) -> bool:
@@ -74,8 +73,20 @@ class Task(AbstractTask[_T_co]):
         finally:
             del task, self  # This is needed to avoid circular reference with raised exception
 
+    @property
+    def _asyncio_task(self) -> asyncio.Task[_T_co]:
+        return self.__t
+
+
+@final
+class SystemTask(Task[_T_co], AbstractSystemTask[_T_co]):
+    __slots__ = ()
+
+    def __init__(self, coroutine: Coroutine[Any, Any, _T_co]) -> None:
+        super().__init__(asyncio.create_task(coroutine))
+
     async def join_or_cancel(self) -> _T_co:
-        task = self.__t
+        task = self._asyncio_task
         try:
             return await task
         finally:

@@ -37,7 +37,7 @@ from .datagram.socket import AsyncioTransportDatagramSocketAdapter, RawDatagramS
 from .runner import AsyncioRunner
 from .stream.listener import AcceptedSocket, AcceptedSSLSocket, ListenerSocketAdapter
 from .stream.socket import AsyncioTransportStreamSocketAdapter, RawStreamSocketAdapter
-from .tasks import Task, TaskGroup, TimeoutHandle, move_on_after, move_on_at, timeout, timeout_at
+from .tasks import SystemTask, TaskGroup, TimeoutHandle, move_on_after, move_on_at, timeout, timeout_at
 from .threads import ThreadsPortal
 
 if TYPE_CHECKING:
@@ -168,8 +168,8 @@ class AsyncioBackend(AbstractAsyncBackend):
         /,
         *args: _P.args,
         **kwargs: _P.kwargs,
-    ) -> Task[_T]:
-        return Task(asyncio.create_task(coro_func(*args, **kwargs)))
+    ) -> SystemTask[_T]:
+        return SystemTask(coro_func(*args, **kwargs))
 
     def create_task_group(self) -> TaskGroup:
         return TaskGroup()
