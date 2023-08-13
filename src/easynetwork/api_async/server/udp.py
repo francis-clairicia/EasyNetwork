@@ -355,7 +355,13 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                                             _recursively_clear_exception_traceback_frames(exception)
                                         except RecursionError:
                                             logger.warning("Recursion depth reached when clearing exception's traceback frames")
-                                        await self.__request_handler.bad_request(client, exception)
+                                        should_close_handle = not (await self.__request_handler.bad_request(client, exception))
+                                        if should_close_handle:
+                                            try:
+                                                await request_handler_generator.aclose()
+                                            finally:
+                                                request_handler_generator = None
+                                            return
                                     finally:
                                         del exception
                                 case _ErrorAction(exception):
