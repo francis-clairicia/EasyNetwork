@@ -160,7 +160,7 @@ class RequestRefusedHandler(AsyncBaseRequestHandler[str, str]):
         pass
 
 
-class ErrorInBadRequestHandler(AsyncBaseRequestHandler[str, str]):
+class ErrorInRequestHandler(AsyncBaseRequestHandler[str, str]):
     mute_thrown_exception: bool = False
 
     async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
@@ -188,6 +188,24 @@ class ErrorBeforeYieldHandler(AsyncBaseRequestHandler[str, str]):
 
     async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError, /) -> None:
         pass
+
+
+class CloseHandleAfterBadRequest(AsyncBaseRequestHandler[str, str]):
+    bad_request_return_value: bool | None = None
+
+    async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
+        await client.send_packet("new handle")
+        try:
+            request = yield
+        except GeneratorExit:
+            await client.send_packet("GeneratorExit")
+            raise
+        else:
+            await client.send_packet(request)
+
+    async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError) -> bool | None:
+        await client.send_packet("wrong encoding")
+        return self.bad_request_return_value
 
 
 class MyAsyncUDPServer(AsyncUDPNetworkServer[str, str]):
@@ -412,7 +430,32 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         assert isinstance(request_handler.bad_request_received[client_address][0], DatagramProtocolParseError)
         assert isinstance(request_handler.bad_request_received[client_address][0].error, DeserializeError)
 
-    @pytest.mark.parametrize("request_handler", [ErrorInBadRequestHandler], indirect=True)
+    @pytest.mark.parametrize("request_handler", [CloseHandleAfterBadRequest], indirect=True)
+    @pytest.mark.parametrize("bad_request_return_value", [None, False, True])
+    async def test____serve_forever____bad_request____return_value(
+        self,
+        bad_request_return_value: bool | None,
+        request_handler: CloseHandleAfterBadRequest,
+        client_factory: Callable[[], Awaitable[DatagramEndpoint]],
+    ) -> None:
+        request_handler.bad_request_return_value = bad_request_return_value
+        endpoint = await client_factory()
+
+        await endpoint.sendto("\u00E9".encode("latin-1"), None)  # StringSerializer does not accept unicode
+        await asyncio.sleep(0.1)
+        assert (await endpoint.recvfrom())[0] == b"new handle"
+
+        assert (await endpoint.recvfrom())[0] == b"wrong encoding"
+        await endpoint.sendto(b"something valid", None)
+        await asyncio.sleep(0.1)
+
+        if bad_request_return_value in (None, False):
+            assert (await endpoint.recvfrom())[0] == b"GeneratorExit"
+            assert (await endpoint.recvfrom())[0] == b"new handle"
+
+        assert (await endpoint.recvfrom())[0] == b"something valid"
+
+    @pytest.mark.parametrize("request_handler", [ErrorInRequestHandler], indirect=True)
     async def test____serve_forever____bad_request____unexpected_error(
         self,
         client_factory: Callable[[], Awaitable[DatagramEndpoint]],
@@ -427,7 +470,8 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
 
         with pytest.raises(TimeoutError):
             async with asyncio.timeout(1):
-                assert (await endpoint.recvfrom())[0] == b"RandomError: An error occurred"
+                await endpoint.recvfrom()
+                pytest.fail("Should not arrive here")
         assert len(caplog.records) == 3
 
     async def test____serve_forever____bad_request____recursive_traceback_frame_clear_error(
@@ -455,12 +499,12 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         assert "Recursion depth reached when clearing exception's traceback frames" in [rec.message for rec in caplog.records]
 
     @pytest.mark.parametrize("mute_thrown_exception", [False, True])
-    @pytest.mark.parametrize("request_handler", [ErrorInBadRequestHandler], indirect=True)
+    @pytest.mark.parametrize("request_handler", [ErrorInRequestHandler], indirect=True)
     @pytest.mark.parametrize("serializer", [pytest.param("invalid", id="serializer_crash")], indirect=True)
     async def test____serve_forever____internal_error(
         self,
         mute_thrown_exception: bool,
-        request_handler: ErrorInBadRequestHandler,
+        request_handler: ErrorInRequestHandler,
         client_factory: Callable[[], Awaitable[DatagramEndpoint]],
         caplog: pytest.LogCaptureFixture,
         server: MyAsyncUDPServer,

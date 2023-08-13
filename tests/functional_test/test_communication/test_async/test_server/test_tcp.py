@@ -167,6 +167,9 @@ class TimeoutRequestHandler(AsyncStreamRequestHandler[str, str]):
     request_timeout: float = 1.0
     timeout_on_second_yield: bool = False
 
+    def set_async_backend(self, backend: AbstractAsyncBackend) -> None:
+        self.backend = backend
+
     async def on_connection(self, client: AsyncClientInterface[str]) -> None:
         await client.send_packet("milk")
 
@@ -176,7 +179,7 @@ class TimeoutRequestHandler(AsyncStreamRequestHandler[str, str]):
             await client.send_packet(request)
         try:
             with pytest.raises(TimeoutError):
-                async with asyncio.timeout(self.request_timeout):
+                async with self.backend.timeout(self.request_timeout):
                     yield
             await client.send_packet("successfully timed out")
         finally:
@@ -282,6 +285,27 @@ class ErrorBeforeYieldHandler(AsyncStreamRequestHandler[str, str]):
 
     async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError, /) -> None:
         pass
+
+
+class CloseHandleAfterBadRequest(AsyncStreamRequestHandler[str, str]):
+    bad_request_return_value: bool | None = None
+
+    async def on_connection(self, client: AsyncClientInterface[str]) -> None:
+        await client.send_packet("milk")
+
+    async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
+        await client.send_packet("new handle")
+        try:
+            request = yield
+        except GeneratorExit:
+            await client.send_packet("GeneratorExit")
+            raise
+        else:
+            await client.send_packet(request)
+
+    async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError) -> bool | None:
+        await client.send_packet("wrong encoding")
+        return self.bad_request_return_value
 
 
 class MyAsyncTCPServer(AsyncTCPNetworkServer[str, str]):
@@ -682,6 +706,31 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         assert request_handler.request_received[client_address] == []
         assert isinstance(request_handler.bad_request_received[client_address][0], StreamProtocolParseError)
         assert isinstance(request_handler.bad_request_received[client_address][0].error, IncrementalDeserializeError)
+
+    @pytest.mark.parametrize("request_handler", [CloseHandleAfterBadRequest], indirect=True)
+    @pytest.mark.parametrize("bad_request_return_value", [None, False, True])
+    async def test____serve_forever____bad_request____return_value(
+        self,
+        bad_request_return_value: bool | None,
+        request_handler: CloseHandleAfterBadRequest,
+        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+    ) -> None:
+        request_handler.bad_request_return_value = bad_request_return_value
+        reader, writer = await client_factory()
+
+        assert await reader.readline() == b"new handle\n"
+        writer.write("\u00E9\n".encode("latin-1"))  # StringSerializer does not accept unicode
+        await asyncio.sleep(0.1)
+
+        assert await reader.readline() == b"wrong encoding\n"
+        writer.write(b"something valid\n")
+        await asyncio.sleep(0.1)
+
+        if bad_request_return_value in (None, False):
+            assert await reader.readline() == b"GeneratorExit\n"
+            assert await reader.readline() == b"new handle\n"
+
+        assert await reader.readline() == b"something valid\n"
 
     @pytest.mark.parametrize("request_handler", [ErrorInRequestHandler], indirect=True)
     async def test____serve_forever____bad_request____unexpected_error(
