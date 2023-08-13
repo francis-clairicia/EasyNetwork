@@ -111,7 +111,7 @@ async def create_connection(
             socket.close()
             raise
 
-    assert errors
+    assert errors  # nosec assert_used
     try:
         raise ExceptionGroup("create_connection() failed", errors)
     finally:

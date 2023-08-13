@@ -54,8 +54,6 @@ class DatagramProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
         serializer: AbstractPacketSerializer[Any, Any],
         converter: AbstractPacketConverterComposite[_SentPacketT, Any, _ReceivedPacketT, Any] | None = None,
     ) -> None:
-        assert isinstance(serializer, AbstractPacketSerializer)
-        assert converter is None or isinstance(converter, AbstractPacketConverterComposite)
         self.__serializer: AbstractPacketSerializer[Any, Any] = serializer
         self.__converter: AbstractPacketConverterComposite[_SentPacketT, Any, _ReceivedPacketT, Any] | None = converter
 
@@ -101,8 +99,6 @@ class StreamProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
         serializer: AbstractIncrementalPacketSerializer[Any, Any],
         converter: AbstractPacketConverterComposite[_SentPacketT, Any, _ReceivedPacketT, Any] | None = None,
     ) -> None:
-        assert isinstance(serializer, AbstractIncrementalPacketSerializer)
-        assert converter is None or isinstance(converter, AbstractPacketConverterComposite)
         self.__serializer: AbstractIncrementalPacketSerializer[Any, Any] = serializer
         self.__converter: AbstractPacketConverterComposite[_SentPacketT, Any, _ReceivedPacketT, Any] | None = converter
 

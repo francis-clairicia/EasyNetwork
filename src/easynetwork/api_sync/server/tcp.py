@@ -52,7 +52,8 @@ class StandaloneTCPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
         logger: _logging.Logger | None = None,
         **kwargs: Any,
     ) -> None:
-        assert backend is not None, "You must explicitly give a backend name or instance"
+        if backend is None:
+            raise ValueError("You must explicitly give a backend name or instance")
         super().__init__(
             AsyncTCPNetworkServer(
                 host=host,

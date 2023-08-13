@@ -67,8 +67,8 @@ class ThreadsPortal(AbstractThreadsPortal):
 
     def __run_sync_soon(self, __func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> concurrent.futures.Future[_T]:
         def callback(future: concurrent.futures.Future[_T]) -> None:
-            future.set_running_or_notify_cancel()
-            assert future.running()
+            if not future.set_running_or_notify_cancel():
+                return
             try:
                 result = __func(*args, **kwargs)
             except BaseException as exc:

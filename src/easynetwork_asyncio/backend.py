@@ -84,7 +84,8 @@ class AsyncioBackend(AbstractAsyncBackend):
         return asyncio.CancelledError
 
     async def ignore_cancellation(self, coroutine: Coroutine[Any, Any, _T_co]) -> _T_co:
-        assert asyncio.iscoroutine(coroutine), "Expected a coroutine object"
+        if not asyncio.iscoroutine(coroutine):
+            raise TypeError("Expected a coroutine object")
         task: asyncio.Task[_T_co] = asyncio.create_task(coroutine)
 
         # This task must be unregistered in order not to be cancelled by runner at event loop shutdown
@@ -92,7 +93,7 @@ class AsyncioBackend(AbstractAsyncBackend):
 
         try:
             await self._cancel_shielded_wait_asyncio_future(task, None)
-            assert task.done()
+            assert task.done()  # nosec assert_used
             return task.result()
         finally:
             del task
@@ -182,9 +183,6 @@ class AsyncioBackend(AbstractAsyncBackend):
         local_address: tuple[str, int] | None = None,
         happy_eyeballs_delay: float | None = None,
     ) -> AsyncioTransportStreamSocketAdapter | RawStreamSocketAdapter:
-        assert host is not None, "Expected 'host' to be a str"
-        assert port is not None, "Expected 'port' to be an int"
-
         if happy_eyeballs_delay is not None:
             self._check_asyncio_transport("'happy_eyeballs_delay' option")
 
@@ -262,7 +260,6 @@ class AsyncioBackend(AbstractAsyncBackend):
         self,
         socket: _socket.socket,
     ) -> AsyncioTransportStreamSocketAdapter | RawStreamSocketAdapter:
-        assert socket is not None, "Expected 'socket' to be a socket.socket instance"
         socket.setblocking(False)
 
         if not self.__use_asyncio_transport:
@@ -283,7 +280,6 @@ class AsyncioBackend(AbstractAsyncBackend):
         self._check_ssl_support()
         self.__verify_ssl_context(ssl_context)
 
-        assert socket is not None, "Expected 'socket' to be a socket.socket instance"
         socket.setblocking(False)
 
         reader, writer = await asyncio.open_connection(
@@ -399,7 +395,6 @@ class AsyncioBackend(AbstractAsyncBackend):
         return await self.wrap_udp_socket(socket)
 
     async def wrap_udp_socket(self, socket: _socket.socket) -> AsyncioTransportDatagramSocketAdapter | RawDatagramSocketAdapter:
-        assert socket is not None, "Expected 'socket' to be a socket.socket instance"
         socket.setblocking(False)
 
         if not self.__use_asyncio_transport:
@@ -416,7 +411,7 @@ class AsyncioBackend(AbstractAsyncBackend):
 
     def create_condition_var(self, lock: ILock | None = None) -> asyncio.Condition:
         if lock is not None:
-            assert isinstance(lock, asyncio.Lock)
+            assert isinstance(lock, asyncio.Lock)  # nosec assert_used
 
         return asyncio.Condition(lock)
 
@@ -432,7 +427,7 @@ class AsyncioBackend(AbstractAsyncBackend):
         del func_call, __func, args, kwargs
         try:
             await self._cancel_shielded_wait_asyncio_future(future, None)
-            assert future.done()
+            assert future.done()  # nosec assert_used
             return future.result()
         finally:
             del future
@@ -449,9 +444,9 @@ class AsyncioBackend(AbstractAsyncBackend):
             await self._cancel_shielded_wait_asyncio_future(future_wrapper, future.cancel)
             if not future_wrapper.cancelled():
                 # Unwrap "future_wrapper" instead to prevent reports about unhandled exceptions.
-                assert future_wrapper.done()
+                assert future_wrapper.done()  # nosec assert_used
                 return future_wrapper.result()
-            assert future.done()
+            assert future.done()  # nosec assert_used
 
         if future.cancelled():
             # Task cancellation prevails over future cancellation

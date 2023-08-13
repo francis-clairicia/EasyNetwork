@@ -94,8 +94,6 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         self.__receive_lock = ForkSafeLock(threading.Lock)
         self.__socket_lock = ForkSafeLock(threading.Lock)
 
-        assert isinstance(protocol, DatagramProtocol)
-
         self.__protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT] = protocol
 
         self.__retry_interval: float | None

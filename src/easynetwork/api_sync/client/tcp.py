@@ -200,15 +200,19 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             if ssl:
                 if _ssl_module is None:
                     raise RuntimeError("stdlib ssl module not available")
+
+                ssl_context: _SSLContext
                 if isinstance(ssl, bool):
-                    ssl = cast("_SSLContext", _ssl_module.create_default_context())
+                    ssl_context = cast("_SSLContext", _ssl_module.create_default_context())
                     if not server_hostname:
-                        ssl.check_hostname = False
+                        ssl_context.check_hostname = False
                     if hasattr(_ssl_module, "OP_IGNORE_UNEXPECTED_EOF"):
-                        ssl.options &= ~getattr(_ssl_module, "OP_IGNORE_UNEXPECTED_EOF")
+                        ssl_context.options &= ~getattr(_ssl_module, "OP_IGNORE_UNEXPECTED_EOF")
+                else:
+                    ssl_context = ssl
                 if not server_hostname:
                     server_hostname = None
-                socket = ssl.wrap_socket(
+                socket = ssl_context.wrap_socket(
                     socket,
                     server_side=False,
                     do_handshake_on_connect=False,
@@ -227,7 +231,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 if ssl_shutdown_timeout is None:
                     ssl_shutdown_timeout = SSL_SHUTDOWN_TIMEOUT
 
-            assert ssl_shared_lock is not None
+            assert ssl_shared_lock is not None  # nosec assert_used
             self.__send_lock: ForkSafeLock[threading.Lock]
             self.__receive_lock: ForkSafeLock[threading.Lock]
             if self.__over_ssl and ssl_shared_lock:
@@ -304,7 +308,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
 
             data: bytes = b"".join(self.__producer(packet))
             buffer = memoryview(data)
-            assert buffer.itemsize == 1
             perf_counter = time.perf_counter  # pull function to local namespace
             retry_interval: float | None = self.__retry_interval
             try:
@@ -321,7 +324,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                             _end = perf_counter()
                         except TimeoutError:
                             raise TimeoutError("send_packet() timed out") from None
-                        assert sent >= 0, f"socket.send() returned a negative integer ({sent=})"
                         remaining -= sent
                         buffer = buffer[sent:]
                         if timeout is not None:

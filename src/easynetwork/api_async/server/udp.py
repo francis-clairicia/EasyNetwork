@@ -89,8 +89,6 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
         backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
 
-        assert isinstance(protocol, DatagramProtocol)
-
         if host is None:
             host = "localhost"
 
@@ -180,8 +178,8 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             ################
 
             # Bind and activate
-            assert self.__socket is None
-            assert self.__socket_factory_runner is None
+            assert self.__socket is None  # nosec assert_used
+            assert self.__socket_factory_runner is None  # nosec assert_used
             if self.__socket_factory is None:
                 raise ServerClosedError("Closed server")
             try:
@@ -426,7 +424,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
     @_contextlib.contextmanager
     def __client_task_running_context(self, client: _ClientAPI[_ResponseT]) -> Iterator[None]:
-        assert client not in self.__client_task_running
+        assert client not in self.__client_task_running  # nosec assert_used
         self.__client_task_running.add(client)
         try:
             yield
@@ -537,7 +535,7 @@ class _TemporaryValue(Generic[_KT, _VT]):
             yield value
         finally:
             self.__counter[key] -= 1
-            assert self.__counter[key] >= 0, f"{self.__counter[key]=}"
+            assert self.__counter[key] >= 0, f"{self.__counter[key]=}"  # nosec assert_used
             if self.__counter[key] == 0 and self.__must_delete_value(value):
                 del self.__counter[key], self.__values[key]
             del key, value

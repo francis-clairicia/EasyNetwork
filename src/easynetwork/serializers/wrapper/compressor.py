@@ -58,10 +58,9 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_ST_contr
         expected_decompress_error: type[Exception] | tuple[type[Exception], ...],
     ) -> None:
         super().__init__()
-        assert isinstance(serializer, AbstractPacketSerializer)
         if not isinstance(expected_decompress_error, tuple):
             expected_decompress_error = (expected_decompress_error,)
-        assert all(issubclass(e, Exception) for e in expected_decompress_error)
+        assert all(issubclass(e, Exception) for e in expected_decompress_error)  # nosec assert_used
         self.__serializer: AbstractPacketSerializer[_ST_contra, _DT_co] = serializer
         self.__expected_error: tuple[type[Exception], ...] = expected_decompress_error
 

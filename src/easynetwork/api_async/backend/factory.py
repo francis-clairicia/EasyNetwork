@@ -152,6 +152,6 @@ class AsyncBackendFactory:
 
         backends: dict[str, EntryPoint] = {ep.name: ep for ep in entry_points}
 
-        assert "asyncio" in backends, "SystemError: Missing 'asyncio' entry point."
+        assert "asyncio" in backends, "SystemError: Missing 'asyncio' entry point."  # nosec assert_used
 
         return MappingProxyType(backends)

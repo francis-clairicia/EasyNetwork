@@ -154,8 +154,6 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         if service_actions_interval is None:
             service_actions_interval = 1.0
 
-        assert isinstance(protocol, StreamProtocol)
-
         self.__service_actions_interval: float = max(service_actions_interval, 0)
         self.__backend: AbstractAsyncBackend = backend
         self.__listeners: tuple[AbstractAsyncListenerSocketAdapter, ...] | None = None
@@ -239,8 +237,8 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             ################
 
             # Bind and activate
-            assert self.__listeners is None
-            assert self.__listeners_factory_runner is None
+            assert self.__listeners is None  # nosec assert_used
+            assert self.__listeners_factory_runner is None  # nosec assert_used
             if self.__listeners_factory is None:
                 raise ServerClosedError("Closed server")
             try:
@@ -392,7 +390,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                     else:
                         request_handler_generator = _on_connection_hook
                 else:
-                    assert inspect.isawaitable(_on_connection_hook)
+                    assert inspect.isawaitable(_on_connection_hook)  # nosec assert_used
                     await _on_connection_hook
                 del _on_connection_hook
                 client_exit_stack.push_async_callback(self.__request_handler.on_disconnection, client)
@@ -551,7 +549,7 @@ class _RequestReceiver(Generic[_RequestT]):
         api: _ConnectedClientAPI[Any],
         logger: _logging.Logger,
     ) -> None:
-        assert max_recv_size > 0, f"{max_recv_size=}"
+        assert max_recv_size > 0, f"{max_recv_size=}"  # nosec assert_used
         self.__consumer: StreamDataConsumer[_RequestT] = consumer
         self.__socket: AbstractAsyncStreamSocketAdapter = socket
         self.__max_recv_size: int = max_recv_size

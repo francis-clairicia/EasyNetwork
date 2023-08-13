@@ -34,7 +34,7 @@ class AsyncioTransportDatagramSocketAdapter(AbstractAsyncDatagramSocketAdapter):
         self.__endpoint: DatagramEndpoint = endpoint
 
         socket: asyncio.trsock.TransportSocket | None = endpoint.get_extra_info("socket")
-        assert socket is not None, "transport must be a socket transport"
+        assert socket is not None, "transport must be a socket transport"  # nosec assert_used
 
         self.__socket: asyncio.trsock.TransportSocket = socket
 
@@ -81,7 +81,8 @@ class RawDatagramSocketAdapter(AbstractAsyncDatagramSocketAdapter):
 
         self.__socket: AsyncSocket = AsyncSocket(socket, loop)
 
-        assert socket.type == _socket.SOCK_DGRAM, "A 'SOCK_DGRAM' socket is expected"
+        if socket.type != _socket.SOCK_DGRAM:
+            raise ValueError("A 'SOCK_DGRAM' socket is expected")
 
     async def aclose(self) -> None:
         return await self.__socket.aclose()
