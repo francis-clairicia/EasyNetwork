@@ -40,7 +40,11 @@ keywords = [
 ]
 
 [project.urls]
+# TODO: "Homepage" will be the documentation URL
 Homepage = "https://github.com/francis-clairicia/EasyNetwork"
+"Issue Tracker" = "https://github.com/francis-clairicia/EasyNetwork/issues"
+"Release Notes" = "https://github.com/francis-clairicia/EasyNetwork/releases"
+"Source Code" = "https://github.com/francis-clairicia/EasyNetwork"
 
 [project.optional-dependencies]
 cbor = [
