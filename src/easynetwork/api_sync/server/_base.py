@@ -10,15 +10,21 @@ __all__ = ["BaseStandaloneNetworkServerImpl"]
 import contextlib as _contextlib
 import threading as _threading
 import time
-from typing import TYPE_CHECKING, Self
+from collections.abc import Callable, Coroutine, Iterator
+from typing import TYPE_CHECKING, Any, ParamSpec, Self, TypeVar, final
 
+from ...api_async.backend.abc import AbstractThreadsPortal
 from ...exceptions import ServerAlreadyRunning, ServerClosedError
 from ...tools._lock import ForkSafeLock
 from .abc import AbstractStandaloneNetworkServer, SupportsEventSet
 
 if TYPE_CHECKING:
-    from ...api_async.backend.abc import AbstractRunner, AbstractThreadsPortal
+    from ...api_async.backend.abc import AbstractAsyncBackend, AbstractRunner
     from ...api_async.server.abc import AbstractAsyncNetworkServer
+
+
+_P = ParamSpec("_P")
+_T = TypeVar("_T")
 
 
 class BaseStandaloneNetworkServerImpl(AbstractStandaloneNetworkServer):
@@ -34,7 +40,7 @@ class BaseStandaloneNetworkServerImpl(AbstractStandaloneNetworkServer):
     def __init__(self, server: AbstractAsyncNetworkServer) -> None:
         super().__init__()
         self.__server: AbstractAsyncNetworkServer = server
-        self.__threads_portal: AbstractThreadsPortal | None = None
+        self.__threads_portal: _ServerThreadsPortal | None = None
         self.__is_shutdown = _threading.Event()
         self.__is_shutdown.set()
         self.__runner: AbstractRunner | None = self.__server.get_backend().new_runner()
@@ -87,19 +93,6 @@ class BaseStandaloneNetworkServerImpl(AbstractStandaloneNetworkServer):
             await self.__server.shutdown()
 
     def serve_forever(self, *, is_up_event: SupportsEventSet | None = None) -> None:
-        async def serve_forever(locks_stack: _contextlib.ExitStack) -> None:
-            backend = self.__server.get_backend()
-            try:
-                self.__threads_portal = backend.create_threads_portal()
-
-                # Initialization finished; release the locks
-                locks_stack.close()
-
-                await self.__server.serve_forever(is_up_event=is_up_event)
-            finally:
-                self.__threads_portal = None
-                await backend.cancel_shielded_coro_yield()  # Everyone must know about the server's death :)
-
         backend = self.__server.get_backend()
         with _contextlib.ExitStack() as server_exit_stack, _contextlib.suppress(backend.get_cancelled_exc_class()):
             if is_up_event is not None:
@@ -122,11 +115,20 @@ class BaseStandaloneNetworkServerImpl(AbstractStandaloneNetworkServer):
             self.__is_shutdown.clear()
             server_exit_stack.callback(self.__is_shutdown.set)
 
-            # Ensure all coroutines/callbacks scheduled in threads are finished (100ms is quite sufficient)
-            server_exit_stack.callback(runner.run, backend.sleep, 0.1)  # type: ignore[arg-type]
+            async def serve_forever(runner: AbstractRunner) -> None:
+                try:
+                    self.__threads_portal = _ServerThreadsPortal(backend, runner)
+                    server_exit_stack.callback(self.__threads_portal._wait_for_all_requests)
+
+                    # Initialization finished; release the locks
+                    locks_stack.close()
+
+                    await self.__server.serve_forever(is_up_event=is_up_event)
+                finally:
+                    self.__threads_portal = None
 
             try:
-                runner.run(serve_forever, locks_stack)
+                runner.run(serve_forever, runner)
             finally:
                 # Acquire the bootstrap lock at teardown, before calling is_shutdown.set().
                 locks_stack.enter_context(self.__bootstrap_lock.get())
@@ -139,3 +141,35 @@ class BaseStandaloneNetworkServerImpl(AbstractStandaloneNetworkServer):
     def _portal(self) -> AbstractThreadsPortal | None:
         with self.__bootstrap_lock.get():
             return self.__threads_portal
+
+
+@final
+class _ServerThreadsPortal(AbstractThreadsPortal):
+    __slots__ = ("__backend", "__runner", "__portal", "__request_count")
+
+    def __init__(self, backend: AbstractAsyncBackend, runner: AbstractRunner) -> None:
+        super().__init__()
+        self.__backend: AbstractAsyncBackend = backend
+        self.__runner: AbstractRunner = runner
+        self.__portal: AbstractThreadsPortal = backend.create_threads_portal()
+        self.__request_count: int = 0
+
+    def run_coroutine(self, coro_func: Callable[_P, Coroutine[Any, Any, _T]], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+        with self.__request_context():
+            return self.__portal.run_coroutine(coro_func, *args, **kwargs)
+
+    def run_sync(self, func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+        with self.__request_context():
+            return self.__portal.run_sync(func, *args, **kwargs)
+
+    def _wait_for_all_requests(self) -> None:
+        while self.__request_count > 0:
+            self.__runner.run(self.__backend.coro_yield)
+
+    @_contextlib.contextmanager
+    def __request_context(self) -> Iterator[None]:
+        self.__request_count += 1
+        try:
+            yield
+        finally:
+            self.__request_count -= 1
