@@ -10,6 +10,7 @@ __all__ = [
     "StandaloneNetworkServerThread",
     "StandaloneTCPNetworkServer",
     "StandaloneUDPNetworkServer",
+    "SupportsEventSet",
 ]
 
 from .abc import *

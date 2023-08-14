@@ -12,6 +12,7 @@ __all__ = [
     "AsyncStreamRequestHandler",
     "AsyncTCPNetworkServer",
     "AsyncUDPNetworkServer",
+    "SupportsEventSet",
 ]
 
 from .abc import *

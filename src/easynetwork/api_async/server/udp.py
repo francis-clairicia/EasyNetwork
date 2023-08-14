@@ -31,7 +31,7 @@ from ...tools.socket import SocketAddress, SocketProxy, new_socket_address
 from ..backend.factory import AsyncBackendFactory
 from ..backend.tasks import SingleTaskRunner
 from ._tools.actions import ErrorAction as _ErrorAction, RequestAction as _RequestAction
-from .abc import AbstractAsyncNetworkServer
+from .abc import AbstractAsyncNetworkServer, SupportsEventSet
 from .handler import AsyncBaseRequestHandler, AsyncClientInterface
 
 if TYPE_CHECKING:
@@ -169,7 +169,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         if self.__socket_factory_runner is not None:
             self.__socket_factory_runner.cancel()
 
-    async def serve_forever(self, *, is_up_event: IEvent | None = None) -> None:
+    async def serve_forever(self, *, is_up_event: SupportsEventSet | None = None) -> None:
         async with _contextlib.AsyncExitStack() as server_exit_stack:
             if is_up_event is not None:
                 # Force is_up_event to be set, in order not to stuck the waiting task
