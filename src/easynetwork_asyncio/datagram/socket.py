@@ -9,10 +9,12 @@ from __future__ import annotations
 __all__ = ["AsyncioTransportDatagramSocketAdapter", "RawDatagramSocketAdapter"]
 
 import asyncio
+import errno
 import socket as _socket
 from typing import TYPE_CHECKING, Any, final
 
 from easynetwork.api_async.backend.abc import AbstractAsyncDatagramSocketAdapter
+from easynetwork.tools._utils import error_from_errno as _error_from_errno
 
 from ..socket import AsyncSocket
 
@@ -50,7 +52,10 @@ class AsyncioTransportDatagramSocketAdapter(AbstractAsyncDatagramSocketAdapter):
         return self.__endpoint.is_closing()
 
     def get_local_address(self) -> tuple[Any, ...]:
-        return self.__endpoint.get_extra_info("sockname")
+        local_address: tuple[Any, ...] | None = self.__endpoint.get_extra_info("sockname")
+        if local_address is None:
+            raise _error_from_errno(errno.ENOTSOCK)
+        return local_address
 
     def get_remote_address(self) -> tuple[Any, ...] | None:
         return self.__endpoint.get_extra_info("peername")

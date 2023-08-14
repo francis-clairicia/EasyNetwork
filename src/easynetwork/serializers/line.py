@@ -39,6 +39,8 @@ class StringLineSerializer(AutoSeparatedPacketSerializer[str, str]):
 
     @final
     def serialize(self, packet: str) -> bytes:
+        if not isinstance(packet, str):
+            raise TypeError(f"Expected a string, got {packet!r}")
         data = packet.encode(self.__encoding, self.__unicode_errors)
         if self.separator in data:
             raise ValueError("Newline found in string")

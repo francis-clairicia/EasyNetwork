@@ -65,7 +65,10 @@ class AsyncioTransportStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
         return self.__writer.is_closing()
 
     def get_local_address(self) -> tuple[Any, ...]:
-        return self.__writer.get_extra_info("sockname")
+        local_address: tuple[Any, ...] | None = self.__writer.get_extra_info("sockname")
+        if local_address is None:
+            raise _error_from_errno(errno.ENOTSOCK)
+        return local_address
 
     def get_remote_address(self) -> tuple[Any, ...]:
         remote_address: tuple[Any, ...] | None = self.__writer.get_extra_info("peername")

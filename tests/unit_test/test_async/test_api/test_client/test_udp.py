@@ -1082,6 +1082,21 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
         mock_udp_endpoint.get_remote_address.assert_called_once()
         assert address == ("remote_address", 5000)
 
+    async def test____get_remote_address____no_remote_address_configured(
+        self,
+        client: AsyncUDPNetworkClient[Any, Any],
+        mock_udp_endpoint: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_udp_endpoint.get_remote_address.return_value = None
+
+        # Act
+        with pytest.raises(OSError, match=r"^No remote address configured$"):
+            _ = client.get_remote_address()
+
+        # Assert
+        mock_udp_endpoint.get_remote_address.assert_called_once()
+
     async def test____send_packet____default(
         self,
         client: AsyncUDPNetworkClient[Any, Any],

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Literal
 
 from easynetwork.exceptions import DeserializeError
-from easynetwork.serializers.wrapper.base64 import Base64EncodedSerializer
+from easynetwork.serializers.wrapper.base64 import Base64EncoderSerializer
 
 import pytest
 
@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
 
-class TestBase64EncodedSerializer:
+class TestBase64EncoderSerializer:
     @pytest.fixture(params=["standard", "urlsafe"])
     @staticmethod
     def alphabet(request: pytest.FixtureRequest) -> Literal["standard", "urlsafe"]:
@@ -35,7 +35,7 @@ class TestBase64EncodedSerializer:
         from easynetwork.serializers.base_stream import AutoSeparatedPacketSerializer
 
         # Act & Assert
-        assert getattr(Base64EncodedSerializer, method) is getattr(AutoSeparatedPacketSerializer, method)
+        assert getattr(Base64EncoderSerializer, method) is getattr(AutoSeparatedPacketSerializer, method)
 
     def test____serialize____encode_previously_serialized_data(
         self,
@@ -45,7 +45,7 @@ class TestBase64EncodedSerializer:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer: Base64EncodedSerializer[Any, Any] = Base64EncodedSerializer(mock_serializer, alphabet=alphabet)
+        serializer: Base64EncoderSerializer[Any, Any] = Base64EncoderSerializer(mock_serializer, alphabet=alphabet)
         mock_serializer.serialize.return_value = mocker.sentinel.data_not_encoded
         mock_b64encode.return_value = mocker.sentinel.data_encoded
 
@@ -65,7 +65,7 @@ class TestBase64EncodedSerializer:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer: Base64EncodedSerializer[Any, Any] = Base64EncodedSerializer(mock_serializer, alphabet=alphabet)
+        serializer: Base64EncoderSerializer[Any, Any] = Base64EncoderSerializer(mock_serializer, alphabet=alphabet)
         mock_b64decode.return_value = mocker.sentinel.data_not_encoded
         mock_serializer.deserialize.return_value = mocker.sentinel.packet
 
@@ -87,7 +87,7 @@ class TestBase64EncodedSerializer:
         # Arrange
         import binascii
 
-        serializer: Base64EncodedSerializer[Any, Any] = Base64EncodedSerializer(mock_serializer, alphabet=alphabet)
+        serializer: Base64EncoderSerializer[Any, Any] = Base64EncoderSerializer(mock_serializer, alphabet=alphabet)
         mock_b64decode.side_effect = binascii.Error()
 
         # Act
@@ -110,7 +110,7 @@ class TestBase64EncodedSerializer:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer: Base64EncodedSerializer[Any, Any] = Base64EncodedSerializer(mock_serializer)
+        serializer: Base64EncoderSerializer[Any, Any] = Base64EncoderSerializer(mock_serializer)
         mock_serializer.serialize.return_value = mocker.sentinel.data_not_encoded
         mock_b64encode.return_value = mocker.sentinel.data_encoded
         mock_b64decode.return_value = mocker.sentinel.data_not_encoded

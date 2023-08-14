@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 __all__ = [
-    "Base64EncodedSerializer",
+    "Base64EncoderSerializer",
 ]
 
 import os
@@ -21,7 +21,7 @@ _ST_contra = TypeVar("_ST_contra", contravariant=True)
 _DT_co = TypeVar("_DT_co", covariant=True)
 
 
-class Base64EncodedSerializer(AutoSeparatedPacketSerializer[_ST_contra, _DT_co]):
+class Base64EncoderSerializer(AutoSeparatedPacketSerializer[_ST_contra, _DT_co]):
     __slots__ = ("__serializer", "__encode", "__decode", "__compare_digest", "__decode_error_cls", "__checksum")
 
     def __init__(

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
+from errno import ENOTSOCK
 from socket import AI_PASSIVE
 from typing import TYPE_CHECKING, Any, cast
 
@@ -656,7 +657,7 @@ class TestDatagramEndpointProtocol:
 
 
 @pytest.mark.asyncio
-class TestDatagramSocketAdapter:
+class TestAsyncioTransportDatagramSocketAdapter:
     @pytest.fixture
     @staticmethod
     def mock_udp_socket(mock_udp_socket: MagicMock) -> MagicMock:
@@ -832,6 +833,21 @@ class TestDatagramSocketAdapter:
         # Assert
         assert laddr == endpoint_extra_info["sockname"]
 
+    async def test____getsockname____transport_closed(
+        self,
+        socket: AsyncioTransportDatagramSocketAdapter,
+        endpoint_extra_info: dict[str, Any],
+    ) -> None:
+        # Arrange
+        ### asyncio.DatagramTransport implementations will clear the extra dict on close()
+        endpoint_extra_info.clear()
+
+        # Act & Assert
+        with pytest.raises(OSError) as exc_info:
+            socket.get_local_address()
+
+        assert exc_info.value.errno == ENOTSOCK
+
     @pytest.mark.parametrize("peername", [("127.0.0.1", 9999), None])
     async def test____getpeername____return_peername_extra_info(
         self,
@@ -901,6 +917,17 @@ class TestRawDatagramSocketAdapter(BaseTestSocket):
 
         # Assert
         assert socket.socket() is mock_udp_socket
+
+    async def test____dunder_init____invalid_socket_type(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        mock_tcp_socket: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        with pytest.raises(ValueError, match=r"^A 'SOCK_DGRAM' socket is expected$"):
+            _ = RawDatagramSocketAdapter(mock_tcp_socket, event_loop)
 
     async def test____get_local_address____returns_socket_address(
         self,
