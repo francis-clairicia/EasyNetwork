@@ -62,7 +62,8 @@ from easynetwork.protocol import StreamProtocol
 from easynetwork.serializers import JSONSerializer
 
 
-# These TypeAliases are there to help you understand where requests and responses are used in the code
+# These TypeAliases are there to help you understand
+# where requests and responses are used in the code
 RequestType: TypeAlias = Any
 ResponseType: TypeAlias = Any
 
@@ -76,7 +77,10 @@ class EchoRequestHandler(AsyncBaseRequestHandler[RequestType, ResponseType]):
     def __init__(self) -> None:
         self.logger: logging.Logger = logging.getLogger(self.__class__.__name__)
 
-    async def handle(self, client: AsyncClientInterface[ResponseType]) -> AsyncGenerator[None, RequestType]:
+    async def handle(
+        self,
+        client: AsyncClientInterface[ResponseType],
+    ) -> AsyncGenerator[None, RequestType]:
         request: RequestType = yield  # A JSON request has been sent by this client
 
         self.logger.info(f"{client.address} sent {request!r}")
@@ -85,11 +89,16 @@ class EchoRequestHandler(AsyncBaseRequestHandler[RequestType, ResponseType]):
         response: ResponseType = request
         await client.send_packet(response)
 
-        # Leaving the generator will NOT close the connection, a new generator will be created afterwards.
+        # Leaving the generator will NOT close the connection,
+        # a new generator will be created afterwards.
         # You may manually close the connection if you want to:
         # await client.aclose()
 
-    async def bad_request(self, client: AsyncClientInterface[ResponseType], exc: BaseProtocolParseError) -> None:
+    async def bad_request(
+        self,
+        client: AsyncClientInterface[ResponseType],
+        exc: BaseProtocolParseError,
+    ) -> None:
         # Invalid JSON data sent
         # This is an example of how you can answer to an invalid request
         await client.send_packet({"error": "Invalid JSON", "code": "parse_error"})
