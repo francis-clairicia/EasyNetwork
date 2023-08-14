@@ -144,7 +144,7 @@ def _retry_impl(
     retry_interval: float | None,
     callback: Callable[[], _R],
 ) -> _R:
-    assert socket.gettimeout() == 0, "The socket must be non-blocking"
+    assert socket.gettimeout() == 0, "The socket must be non-blocking"  # nosec assert_used
 
     perf_counter = time.perf_counter  # pull function to local namespace
     event: Literal["read", "write"]
@@ -201,7 +201,7 @@ def retry_socket_method(
     *args: _P.args,
     **kwargs: _P.kwargs,
 ) -> _R:
-    assert not is_ssl_socket(socket), "ssl.SSLSocket instances are forbidden"
+    assert not is_ssl_socket(socket), "ssl.SSLSocket instances are forbidden"  # nosec assert_used
 
     def callback() -> _R:
         try:
@@ -221,10 +221,10 @@ def retry_ssl_socket_method(
     *args: _P.args,
     **kwargs: _P.kwargs,
 ) -> _R:
-    assert is_ssl_socket(socket), "Expected a ssl.SSLSocket instance"
+    assert is_ssl_socket(socket), "Expected a ssl.SSLSocket instance"  # nosec assert_used
 
     def callback() -> _R:
-        assert ssl is not None, "stdlib ssl module not available"
+        assert ssl is not None, "stdlib ssl module not available"  # nosec assert_used
         try:
             return socket_method(*args, **kwargs)
         except (ssl.SSLWantReadError, ssl.SSLSyscallError):
@@ -257,7 +257,7 @@ def iter_bytes(b: bytes | bytearray | memoryview) -> Iterator[bytes]:
 
 
 def ensure_datagram_socket_bound(sock: _socket.socket) -> None:
-    assert sock.family in (_socket.AF_INET, _socket.AF_INET6), "Invalid socket family."
+    check_socket_family(sock.family)
     if sock.type != _socket.SOCK_DGRAM:
         raise ValueError("Invalid socket type. Expected SOCK_DGRAM socket.")
     try:

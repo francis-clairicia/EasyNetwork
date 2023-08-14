@@ -6,7 +6,7 @@ import random
 from typing import Any, Literal, final
 
 from easynetwork.exceptions import DeserializeError
-from easynetwork.serializers.wrapper.base64 import Base64EncodedSerializer
+from easynetwork.serializers.wrapper.base64 import Base64EncoderSerializer
 
 import pytest
 
@@ -27,7 +27,7 @@ SAMPLES = [
 ]
 
 
-class BaseTestBase64EncodedSerializer(BaseTestIncrementalSerializer):
+class BaseTestBase64EncoderSerializer(BaseTestIncrementalSerializer):
     #### Serializers
 
     @pytest.fixture(scope="class", params=["standard", "urlsafe"])
@@ -41,19 +41,19 @@ class BaseTestBase64EncodedSerializer(BaseTestIncrementalSerializer):
         cls,
         checksum: bool | bytes,
         alphabet: Literal["standard", "urlsafe"],
-    ) -> Base64EncodedSerializer[bytes, bytes]:
-        return Base64EncodedSerializer(NoSerialization(), alphabet=alphabet, checksum=checksum)
+    ) -> Base64EncoderSerializer[bytes, bytes]:
+        return Base64EncoderSerializer(NoSerialization(), alphabet=alphabet, checksum=checksum)
 
     @pytest.fixture(scope="class")
     @staticmethod
-    def serializer_for_serialization(serializer: Base64EncodedSerializer[bytes, bytes]) -> Base64EncodedSerializer[bytes, bytes]:
+    def serializer_for_serialization(serializer: Base64EncoderSerializer[bytes, bytes]) -> Base64EncoderSerializer[bytes, bytes]:
         return serializer
 
     @pytest.fixture(scope="class")
     @staticmethod
     def serializer_for_deserialization(
-        serializer: Base64EncodedSerializer[bytes, bytes]
-    ) -> Base64EncodedSerializer[bytes, bytes]:
+        serializer: Base64EncoderSerializer[bytes, bytes]
+    ) -> Base64EncoderSerializer[bytes, bytes]:
         return serializer
 
     #### Packets to test
@@ -130,7 +130,7 @@ class BaseTestBase64EncodedSerializer(BaseTestIncrementalSerializer):
 
 
 @final
-class TestBase64EncodedSerializerChecksum(BaseTestBase64EncodedSerializer):
+class TestBase64EncoderSerializerChecksum(BaseTestBase64EncoderSerializer):
     @pytest.fixture(scope="class", params=[False, True], ids=lambda boolean: f"checksum=={boolean}")
     @staticmethod
     def checksum(request: pytest.FixtureRequest) -> bool:
@@ -138,7 +138,7 @@ class TestBase64EncodedSerializerChecksum(BaseTestBase64EncodedSerializer):
 
 
 @final
-class TestBase64EncodedSerializerWithKey(BaseTestBase64EncodedSerializer):
+class TestBase64EncoderSerializerWithKey(BaseTestBase64EncoderSerializer):
     @classmethod
     def get_signing_key(cls) -> bytes:
         return generate_key_from_string("key")
@@ -153,7 +153,7 @@ class TestBase64EncodedSerializerWithKey(BaseTestBase64EncodedSerializer):
         from base64 import urlsafe_b64decode
 
         # Act
-        key = Base64EncodedSerializer.generate_key()
+        key = Base64EncoderSerializer.generate_key()
 
         # Assert
         assert isinstance(key, bytes)
@@ -168,7 +168,7 @@ class TestBase64EncodedSerializerWithKey(BaseTestBase64EncodedSerializer):
 
         # Act
         with pytest.raises(ValueError, match=r"^signing key must be 32 url-safe base64-encoded bytes\.$") as exc_info:
-            _ = Base64EncodedSerializer(NoSerialization(), checksum=key)
+            _ = Base64EncoderSerializer(NoSerialization(), checksum=key)
         exception = exc_info.value
 
         # Assert
@@ -183,7 +183,7 @@ class TestBase64EncodedSerializerWithKey(BaseTestBase64EncodedSerializer):
 
         # Act
         with pytest.raises(ValueError, match=r"^signing key must be 32 url-safe base64-encoded bytes\.$") as exc_info:
-            _ = Base64EncodedSerializer(NoSerialization(), checksum=key)
+            _ = Base64EncoderSerializer(NoSerialization(), checksum=key)
         exception = exc_info.value
 
         # Assert
@@ -191,7 +191,7 @@ class TestBase64EncodedSerializerWithKey(BaseTestBase64EncodedSerializer):
 
     def test____deserialize____invalid_signature(
         self,
-        serializer: Base64EncodedSerializer[bytes, bytes],
+        serializer: Base64EncoderSerializer[bytes, bytes],
         packet_to_serialize: bytes,
         expected_complete_data: bytes,
     ) -> None:

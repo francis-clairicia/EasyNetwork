@@ -101,7 +101,7 @@ class TestStringLineSerializer:
         # Arrange
 
         # Act & Assert
-        with pytest.raises(AssertionError, match=r"^Expected a string, got 4$"):
+        with pytest.raises(TypeError, match=r"^Expected a string, got 4$"):
             serializer.serialize(4)  # type: ignore[arg-type]
 
     def test____serialize____empty_string(

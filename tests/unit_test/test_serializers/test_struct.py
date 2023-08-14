@@ -345,6 +345,17 @@ class TestNamedTupleStructSerializer(BaseTestStructBasedSerializer):
         assert iterable.x == b"1234"
         assert iterable.y == b"56789"
 
+    def test____iter_values____wrong_namedtuple(self) -> None:
+        # Arrange
+        namedtuple_cls = collections.namedtuple("namedtuple_cls", ["x", "y"])
+        namedtuple_cls_copy = collections.namedtuple("namedtuple_cls_copy", ["x", "y"])
+        namedtuple_instance = namedtuple_cls_copy(1234, 56789)
+        serializer = NamedTupleStructSerializer(namedtuple_cls, {"x": "I", "y": "I"})
+
+        # Act & Assert
+        with pytest.raises(TypeError, match=r"^Expected a namedtuple_cls instance, got namedtuple_cls_copy\(x=1234, y=56789\)$"):
+            _ = serializer.iter_values(namedtuple_instance)  # type: ignore[arg-type]
+
     def test____from_tuple____construct_namedtuple____without_strings(self) -> None:
         # Arrange
         namedtuple_cls = collections.namedtuple("namedtuple_cls", ["x", "y"])

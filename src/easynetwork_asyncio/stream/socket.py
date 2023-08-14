@@ -49,7 +49,7 @@ class AsyncioTransportStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
         self.__writer: asyncio.StreamWriter = writer
 
         socket: asyncio.trsock.TransportSocket | None = writer.get_extra_info("socket")
-        assert socket is not None, "Writer transport must be a socket transport"
+        assert socket is not None, "Writer transport must be a socket transport"  # nosec assert_used
         self.__socket: asyncio.trsock.TransportSocket = socket
 
     async def aclose(self) -> None:
@@ -65,7 +65,10 @@ class AsyncioTransportStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
         return self.__writer.is_closing()
 
     def get_local_address(self) -> tuple[Any, ...]:
-        return self.__writer.get_extra_info("sockname")
+        local_address: tuple[Any, ...] | None = self.__writer.get_extra_info("sockname")
+        if local_address is None:
+            raise _error_from_errno(errno.ENOTSOCK)
+        return local_address
 
     def get_remote_address(self) -> tuple[Any, ...]:
         remote_address: tuple[Any, ...] | None = self.__writer.get_extra_info("peername")
@@ -87,7 +90,7 @@ class AsyncioTransportStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
         await self.__writer.drain()
 
     async def _send_eof_impl(self) -> None:
-        assert self.__writer.can_write_eof()
+        assert self.__writer.can_write_eof()  # nosec assert_used
         self.__writer.write_eof()
         await asyncio.sleep(0)
 
@@ -121,9 +124,10 @@ class RawStreamSocketAdapter(AbstractAsyncHalfCloseableStreamSocketAdapter):
     ) -> None:
         super().__init__()
 
-        self.__socket: AsyncSocket = AsyncSocket(socket, loop)
+        if socket.type != _socket.SOCK_STREAM:
+            raise ValueError("A 'SOCK_STREAM' socket is expected")
 
-        assert socket.type == _socket.SOCK_STREAM, "A 'SOCK_STREAM' socket is expected"
+        self.__socket: AsyncSocket = AsyncSocket(socket, loop)
 
     async def aclose(self) -> None:
         return await self.__socket.aclose()

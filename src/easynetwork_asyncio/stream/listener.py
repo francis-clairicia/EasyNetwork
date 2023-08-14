@@ -83,7 +83,7 @@ class _BaseAcceptedSocket(AbstractAcceptedSocket):
 
     async def connect(self) -> AbstractAsyncStreamSocketAdapter:
         socket, self.__socket = self.__socket, None
-        assert socket is not None, f"{self.__class__.__name__}.connect() called twice"
+        assert socket is not None, f"{self.__class__.__name__}.connect() called twice"  # nosec assert_used
 
         return await self._make_socket_adapter(socket)
 
@@ -131,8 +131,6 @@ class AcceptedSSLSocket(_BaseAcceptedSocket):
         ssl_shutdown_timeout: float,
     ) -> None:
         super().__init__(socket, loop)
-
-        assert ssl_context is not None
 
         self.__ssl_context: _ssl.SSLContext = ssl_context
         self.__ssl_handshake_timeout: float = float(ssl_handshake_timeout)

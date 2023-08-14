@@ -282,6 +282,28 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         ]
         assert isinstance(client.socket, SocketProxy)
 
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    async def test____dunder_init____protocol____invalid_value(
+        self,
+        request: pytest.FixtureRequest,
+        use_socket: bool,
+        mock_datagram_protocol: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        with pytest.raises(TypeError, match=r"^Expected a StreamProtocol object, got .*$"):
+            if use_socket:
+                _ = AsyncTCPNetworkClient(
+                    request.getfixturevalue("mock_tcp_socket"),
+                    mock_datagram_protocol,
+                )
+            else:
+                _ = AsyncTCPNetworkClient(
+                    request.getfixturevalue("remote_address"),
+                    mock_datagram_protocol,
+                )
+
     @pytest.mark.parametrize("max_recv_size", [None, 1, 2**64], ids=lambda p: f"max_recv_size=={p}")
     @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
     async def test____dunder_init____max_recv_size____valid_value(

@@ -73,6 +73,14 @@ class TestAbstractCompressorSerializer:
         del type(mock).eof
         del type(mock).unused_data
 
+    def test____dunder_init____invalid_serializer(self, mocker: MockerFixture) -> None:
+        # Arrange
+        mock_not_serializer = mocker.NonCallableMagicMock(spec=object)
+
+        # Act
+        with pytest.raises(TypeError, match=r"^Expected a serializer instance, got .+$"):
+            _CompressorSerializerForTest(mock_not_serializer, ())
+
     def test____serialize____compress_data(
         self,
         mock_serializer: MagicMock,

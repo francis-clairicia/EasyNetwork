@@ -44,6 +44,22 @@ class TestDatagramProtocol:
             case _:
                 raise AssertionError("Invalid param")
 
+    def test____dunder_init____invalid_serializer(self, mocker: MockerFixture) -> None:
+        # Arrange
+        mock_not_serializer = mocker.NonCallableMagicMock(spec=object)
+
+        # Act & Assert
+        with pytest.raises(TypeError, match=r"^Expected a serializer instance, got .+$"):
+            DatagramProtocol(mock_not_serializer)
+
+    def test____dunder_init____invalid_converter(self, mock_serializer: MagicMock, mocker: MockerFixture) -> None:
+        # Arrange
+        mock_not_converter = mocker.NonCallableMagicMock(spec=object)
+
+        # Act & Assert
+        with pytest.raises(TypeError, match=r"^Expected a converter instance, got .+$"):
+            DatagramProtocol(mock_serializer, mock_not_converter)
+
     def test____make_datagram____without_converter(
         self,
         protocol_without_converter: DatagramProtocol[Any, Any],
@@ -213,6 +229,29 @@ class TestStreamProtocol:
     def build_packet_from_chunks_side_effect_deserialize_error(self) -> Generator[None, bytes, tuple[Any, bytes]]:
         data = yield
         raise IncrementalDeserializeError("Deserialization error", data, error_info=self.sentinel.error_info)
+
+    def test____dunder_init____invalid_serializer(self, mocker: MockerFixture) -> None:
+        # Arrange
+        mock_not_serializer = mocker.NonCallableMagicMock(spec=object)
+
+        # Act & Assert
+        with pytest.raises(TypeError, match=r"^Expected an incremental serializer instance, got .+$"):
+            StreamProtocol(mock_not_serializer)
+
+    def test____dunder_init____invalid_serializer____not_incremental(self, mock_serializer: MagicMock) -> None:
+        # Arrange
+
+        # Act & Assert
+        with pytest.raises(TypeError, match=r"^Expected an incremental serializer instance, got .+$"):
+            StreamProtocol(mock_serializer)
+
+    def test____dunder_init____invalid_converter(self, mock_incremental_serializer: MagicMock, mocker: MockerFixture) -> None:
+        # Arrange
+        mock_not_converter = mocker.NonCallableMagicMock(spec=object)
+
+        # Act & Assert
+        with pytest.raises(TypeError, match=r"^Expected a converter instance, got .+$"):
+            StreamProtocol(mock_incremental_serializer, mock_not_converter)
 
     def test____generate_chunk____without_converter(
         self,

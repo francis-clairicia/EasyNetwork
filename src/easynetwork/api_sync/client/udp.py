@@ -90,11 +90,8 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         self.__socket: _socket.socket | None = None  # If any exception occurs, the client will already be in a closed state
         super().__init__()
 
-        self.__send_lock = ForkSafeLock(threading.Lock)
-        self.__receive_lock = ForkSafeLock(threading.Lock)
-        self.__socket_lock = ForkSafeLock(threading.Lock)
-
-        assert isinstance(protocol, DatagramProtocol)
+        if not isinstance(protocol, DatagramProtocol):
+            raise TypeError(f"Expected a DatagramProtocol object, got {protocol!r}")
 
         self.__protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT] = protocol
 
@@ -134,6 +131,11 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
 
             self.__addr: SocketAddress = new_socket_address(socket.getsockname(), socket.family)
             self.__peer: SocketAddress | None = peername
+
+            self.__send_lock = ForkSafeLock(threading.Lock)
+            self.__receive_lock = ForkSafeLock(threading.Lock)
+            self.__socket_lock = ForkSafeLock(threading.Lock)
+
             self.__socket_proxy = SocketProxy(socket, lock=self.__socket_lock.get)
         except BaseException:
             socket.close()

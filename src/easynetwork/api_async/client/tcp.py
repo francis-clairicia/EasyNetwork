@@ -128,6 +128,11 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
     ) -> None:
         super().__init__()
 
+        if not isinstance(protocol, StreamProtocol):
+            raise TypeError(f"Expected a StreamProtocol object, got {protocol!r}")
+        self.__consumer: StreamDataConsumer[_ReceivedPacketT] = StreamDataConsumer(protocol)
+        self.__producer: Callable[[_SentPacketT], Iterator[bytes]] = protocol.generate_chunks
+
         backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
         if max_recv_size is None:
             max_recv_size = MAX_STREAM_BUFSIZE
@@ -201,8 +206,8 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
             case _:  # pragma: no cover
                 raise TypeError("Invalid arguments")
 
-        assert self.__socket_connector is not None
-        assert ssl_shared_lock is not None
+        assert self.__socket_connector is not None  # nosec assert_used
+        assert ssl_shared_lock is not None  # nosec assert_used
 
         self.__receive_lock: ILock
         self.__send_lock: ILock
@@ -211,8 +216,6 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         else:
             self.__receive_lock = backend.create_lock()
             self.__send_lock = backend.create_lock()
-        self.__producer: Callable[[_SentPacketT], Iterator[bytes]] = protocol.generate_chunks
-        self.__consumer: StreamDataConsumer[_ReceivedPacketT] = StreamDataConsumer(protocol)
         self.__eof_reached: bool = False
         self.__eof_sent: bool = False
         self.__max_recv_size: int = max_recv_size
@@ -356,7 +359,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
 
     async def __ensure_connected(self, *, check_socket_is_closing: bool) -> AbstractAsyncStreamSocketAdapter:
         await self.wait_connected()
-        assert self.__socket is not None
+        assert self.__socket is not None  # nosec assert_used
         socket = self.__socket
         if check_socket_is_closing and socket.is_closing():
             self.__abort(None)

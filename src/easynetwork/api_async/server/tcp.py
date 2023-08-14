@@ -107,6 +107,11 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
     ) -> None:
         super().__init__()
 
+        if not isinstance(protocol, StreamProtocol):
+            raise TypeError(f"Expected a StreamProtocol object, got {protocol!r}")
+        if not isinstance(request_handler, AsyncBaseRequestHandler):
+            raise TypeError(f"Expected an AsyncBaseRequestHandler object, got {request_handler!r}")
+
         backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
 
         if backlog is None:
@@ -114,6 +119,11 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
         if log_client_connection is None:
             log_client_connection = True
+
+        if max_recv_size is None:
+            max_recv_size = MAX_STREAM_BUFSIZE
+        if not isinstance(max_recv_size, int) or max_recv_size <= 0:
+            raise ValueError("'max_recv_size' must be a strictly positive integer")
 
         if ssl_handshake_timeout is not None and not ssl:
             raise ValueError("ssl_handshake_timeout is only meaningful with ssl")
@@ -146,15 +156,8 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             )
         self.__listeners_factory_runner: SingleTaskRunner[Sequence[AbstractAsyncListenerSocketAdapter]] | None = None
 
-        if max_recv_size is None:
-            max_recv_size = MAX_STREAM_BUFSIZE
-        if not isinstance(max_recv_size, int) or max_recv_size <= 0:
-            raise ValueError("'max_recv_size' must be a strictly positive integer")
-
         if service_actions_interval is None:
             service_actions_interval = 1.0
-
-        assert isinstance(protocol, StreamProtocol)
 
         self.__service_actions_interval: float = max(service_actions_interval, 0)
         self.__backend: AbstractAsyncBackend = backend
@@ -239,8 +242,8 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             ################
 
             # Bind and activate
-            assert self.__listeners is None
-            assert self.__listeners_factory_runner is None
+            assert self.__listeners is None  # nosec assert_used
+            assert self.__listeners_factory_runner is None  # nosec assert_used
             if self.__listeners_factory is None:
                 raise ServerClosedError("Closed server")
             try:
@@ -392,7 +395,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                     else:
                         request_handler_generator = _on_connection_hook
                 else:
-                    assert inspect.isawaitable(_on_connection_hook)
+                    assert inspect.isawaitable(_on_connection_hook)  # nosec assert_used
                     await _on_connection_hook
                 del _on_connection_hook
                 client_exit_stack.push_async_callback(self.__request_handler.on_disconnection, client)
@@ -551,7 +554,7 @@ class _RequestReceiver(Generic[_RequestT]):
         api: _ConnectedClientAPI[Any],
         logger: _logging.Logger,
     ) -> None:
-        assert max_recv_size > 0, f"{max_recv_size=}"
+        assert max_recv_size > 0, f"{max_recv_size=}"  # nosec assert_used
         self.__consumer: StreamDataConsumer[_RequestT] = consumer
         self.__socket: AbstractAsyncStreamSocketAdapter = socket
         self.__max_recv_size: int = max_recv_size
