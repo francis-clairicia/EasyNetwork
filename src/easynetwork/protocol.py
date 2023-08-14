@@ -72,8 +72,10 @@ class DatagramProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
         :param converter: The :term:`converter` to use
         """
 
-        assert isinstance(serializer, AbstractPacketSerializer)
-        assert converter is None or isinstance(converter, AbstractPacketConverterComposite)
+        if not isinstance(serializer, AbstractPacketSerializer):
+            raise TypeError(f"Expected a serializer instance, got {serializer!r}")
+        if converter is not None and not isinstance(converter, AbstractPacketConverterComposite):
+            raise TypeError(f"Expected a converter instance, got {converter!r}")
         self.__serializer: AbstractPacketSerializer[Any, Any] = serializer
         self.__converter: AbstractPacketConverterComposite[_SentPacketT, Any, _ReceivedPacketT, Any] | None = converter
 
@@ -142,8 +144,10 @@ class StreamProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
         :param converter: The :term:`converter` to use
         """
 
-        assert isinstance(serializer, AbstractIncrementalPacketSerializer)
-        assert converter is None or isinstance(converter, AbstractPacketConverterComposite)
+        if not isinstance(serializer, AbstractIncrementalPacketSerializer):
+            raise TypeError(f"Expected an incremental serializer instance, got {serializer!r}")
+        if converter is not None and not isinstance(converter, AbstractPacketConverterComposite):
+            raise TypeError(f"Expected a converter instance, got {converter!r}")
         self.__serializer: AbstractIncrementalPacketSerializer[Any, Any] = serializer
         self.__converter: AbstractPacketConverterComposite[_SentPacketT, Any, _ReceivedPacketT, Any] | None = converter
 

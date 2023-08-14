@@ -39,7 +39,7 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_ST_cont
 
     def __init__(self, separator: bytes, *, incremental_serialize_check_separator: bool = True, **kwargs: Any) -> None:
         super().__init__(**kwargs)
-        assert isinstance(separator, bytes)
+        separator = bytes(separator)
         if len(separator) < 1:
             raise ValueError("Empty separator")
         self.__separator: bytes = separator
@@ -78,7 +78,7 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_ST_cont
                 if not data:  # There was successive separators
                     continue
                 break
-            assert not buffer
+            assert not buffer  # nosec assert_used
             buffer = data + (yield)
         while buffer.startswith(separator):  # Remove successive separators which can already be eliminated
             buffer = buffer[separator_length:]
@@ -164,7 +164,7 @@ class FileBasedPacketSerializer(AbstractPacketSerializer[_ST_contra, _DT_co]):
         super().__init__(**kwargs)
         if not isinstance(expected_load_error, tuple):
             expected_load_error = (expected_load_error,)
-        assert all(issubclass(e, Exception) for e in expected_load_error)
+        assert all(issubclass(e, Exception) for e in expected_load_error)  # nosec assert_used
         self.__expected_errors: tuple[type[Exception], ...] = expected_load_error
 
     @abstractmethod

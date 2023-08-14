@@ -108,7 +108,7 @@ class DatagramEndpoint:
         data_and_address = await self.__recv_queue.get()
         if data_and_address is None:
             self.__check_exceptions()  # Woken up because an error occurred ?
-            assert self.__transport.is_closing()
+            assert self.__transport.is_closing()  # nosec assert_used
             raise _error_from_errno(_errno.ECONNABORTED)  # Connection lost otherwise
         return data_and_address
 
@@ -184,7 +184,7 @@ class DatagramEndpointProtocol(asyncio.DatagramProtocol):
                 closed.exception()
 
     def connection_made(self, transport: asyncio.BaseTransport) -> None:
-        assert self.__transport is None, "Transport already set"
+        assert self.__transport is None, "Transport already set"  # nosec assert_used
         self.__transport = transport
         self.__connection_lost = False
 
@@ -233,13 +233,13 @@ class DatagramEndpointProtocol(asyncio.DatagramProtocol):
             self.__recv_queue.put_nowait(None)  # Wake up endpoint
 
     def pause_writing(self) -> None:
-        assert not self.__write_paused
+        assert not self.__write_paused  # nosec assert_used
         self.__write_paused = True
 
         super().pause_writing()
 
     def resume_writing(self) -> None:
-        assert self.__write_paused
+        assert self.__write_paused  # nosec assert_used
         self.__write_paused = False
 
         for waiter in self.__drain_waiters:

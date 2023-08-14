@@ -146,7 +146,6 @@ class TaskGroup(AbstractTaskGroup):
         *args: _P.args,
         **kwargs: _P.kwargs,
     ) -> AbstractTask[_T]:
-        assert context is not None
         return Task(self.__asyncio_tg.create_task(coro_func(*args, **kwargs), context=context))
 
 
@@ -167,7 +166,7 @@ class TimeoutHandle(AbstractTimeoutHandle):
         timeout_handle: asyncio.Timeout = self.__handle
         await type(timeout_handle).__aenter__(timeout_handle)
         current_task = asyncio.current_task()
-        assert current_task is not None
+        assert current_task is not None  # nosec assert_used
         current_handle_dict = self.__current_handle_dict
         if current_task not in current_handle_dict:
             current_handle_dict[current_task] = deque()
@@ -184,7 +183,7 @@ class TimeoutHandle(AbstractTimeoutHandle):
     ) -> bool | None:
         timeout_handle: asyncio.Timeout = self.__handle
         current_task = asyncio.current_task()
-        assert current_task is not None
+        assert current_task is not None  # nosec assert_used
         try:
             await type(timeout_handle).__aexit__(timeout_handle, exc_type, exc_val, exc_tb)
         except TimeoutError:
@@ -212,7 +211,6 @@ class TimeoutHandle(AbstractTimeoutHandle):
         return deadline if deadline is not None else math.inf
 
     def reschedule(self, when: float) -> None:
-        assert when is not None
         return self.__handle.reschedule(self._cast_time(when))
 
     def expired(self) -> bool:
@@ -220,7 +218,7 @@ class TimeoutHandle(AbstractTimeoutHandle):
 
     @staticmethod
     def _cast_time(time_value: float) -> float | None:
-        assert time_value is not None
+        assert time_value is not None  # nosec assert_used
         return time_value if time_value != math.inf else None
 
     @classmethod
@@ -231,7 +229,7 @@ class TimeoutHandle(AbstractTimeoutHandle):
                 cls.__delayed_task_cancel_dict[task].cancel()
             cls.__delayed_task_cancel_dict[task] = task_cancel_handle
         else:
-            assert task not in cls.__delayed_task_cancel_dict
+            assert task not in cls.__delayed_task_cancel_dict  # nosec assert_used
             cls.__delayed_task_cancel_dict[task] = task_cancel_handle
             task.get_loop().call_soon(cls.__delayed_task_cancel_dict.pop, task, None)
 

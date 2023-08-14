@@ -20,6 +20,14 @@ class TestStreamDataProducer:
     def producer(mock_stream_protocol: MagicMock) -> StreamDataProducer[Any]:
         return StreamDataProducer(mock_stream_protocol)
 
+    def test____dunder_init____invalid_protocol(self, mock_serializer: MagicMock) -> None:
+        # Arrange
+        from easynetwork.protocol import DatagramProtocol
+
+        # Act & Assert
+        with pytest.raises(TypeError, match=r"^Expected a StreamProtocol object, got .*$"):
+            _ = StreamDataProducer(DatagramProtocol(mock_serializer))  # type: ignore[arg-type]
+
     def test____dunder_iter____return_self(self, producer: StreamDataProducer[Any]) -> None:
         # Arrange
 
@@ -247,6 +255,14 @@ class TestStreamDataConsumer:
     @staticmethod
     def consumer(mock_stream_protocol: MagicMock) -> StreamDataConsumer[Any]:
         return StreamDataConsumer(mock_stream_protocol)
+
+    def test____dunder_init____invalid_protocol(self, mock_serializer: MagicMock) -> None:
+        # Arrange
+        from easynetwork.protocol import DatagramProtocol
+
+        # Act & Assert
+        with pytest.raises(TypeError, match=r"^Expected a StreamProtocol object, got .*$"):
+            _ = StreamDataConsumer(DatagramProtocol(mock_serializer))  # type: ignore[arg-type]
 
     def test____dunder_iter____return_self(self, consumer: StreamDataConsumer[Any]) -> None:
         # Arrange

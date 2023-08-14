@@ -53,7 +53,7 @@ class BaseStandaloneNetworkServerImpl(AbstractStandaloneNetworkServer):
         self.__bootstrap_lock = ForkSafeLock()
 
     def __enter__(self) -> Self:
-        assert self.__runner is not None, "Server is entered twice"
+        assert self.__runner is not None, "Server is entered twice"  # nosec assert_used
         self.__runner.__enter__()
         return super().__enter__()
 
@@ -100,7 +100,6 @@ class BaseStandaloneNetworkServerImpl(AbstractStandaloneNetworkServer):
 
     def serve_forever(self, *, is_up_event: _threading.Event | None = None) -> None:
         async def serve_forever() -> None:
-            assert self.__threads_portal is None, "Server is already running"
             backend = self.__server.get_backend()
             try:
                 self.__threads_portal = backend.create_threads_portal()

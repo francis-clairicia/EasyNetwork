@@ -291,6 +291,29 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         # Assert
         mock_udp_socket.bind.assert_called_once_with(("localhost", 0))
 
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    async def test____dunder_init____protocol____invalid_value(
+        self,
+        use_socket: bool,
+        remote_address: tuple[str, int] | None,
+        mock_udp_socket: MagicMock,
+        mock_stream_protocol: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        with pytest.raises(TypeError, match=r"^Expected a DatagramProtocol object, got .*$"):
+            if use_socket:
+                _ = AsyncUDPNetworkEndpoint(
+                    socket=mock_udp_socket,
+                    protocol=mock_stream_protocol,
+                )
+            else:
+                _ = AsyncUDPNetworkEndpoint(
+                    remote_address=remote_address,
+                    protocol=mock_stream_protocol,
+                )
+
     async def test____context____close_endpoint_at_end(
         self,
         client_not_bound: AsyncUDPNetworkEndpoint[Any, Any],
@@ -1081,6 +1104,21 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
         # Assert
         mock_udp_endpoint.get_remote_address.assert_called_once()
         assert address == ("remote_address", 5000)
+
+    async def test____get_remote_address____no_remote_address_configured(
+        self,
+        client: AsyncUDPNetworkClient[Any, Any],
+        mock_udp_endpoint: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_udp_endpoint.get_remote_address.return_value = None
+
+        # Act
+        with pytest.raises(OSError, match=r"^No remote address configured$"):
+            _ = client.get_remote_address()
+
+        # Assert
+        mock_udp_endpoint.get_remote_address.assert_called_once()
 
     async def test____send_packet____default(
         self,

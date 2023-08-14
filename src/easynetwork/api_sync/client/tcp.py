@@ -136,6 +136,24 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         self.__socket: _socket.socket | None = None  # If any exception occurs, the client will already be in a closed state
         super().__init__()
 
+        if not isinstance(protocol, StreamProtocol):
+            raise TypeError(f"Expected a StreamProtocol object, got {protocol!r}")
+        self.__consumer: StreamDataConsumer[_ReceivedPacketT] = StreamDataConsumer(protocol)
+        self.__producer: Callable[[_SentPacketT], Iterator[bytes]] = protocol.generate_chunks
+
+        if max_recv_size is None:
+            max_recv_size = MAX_STREAM_BUFSIZE
+        if not isinstance(max_recv_size, int) or max_recv_size <= 0:
+            raise ValueError("'max_recv_size' must be a strictly positive integer")
+        self.__max_recv_size: int = max_recv_size
+
+        self.__retry_interval: float | None
+        self.__retry_interval = retry_interval = _validate_timeout_delay(float(retry_interval), positive_check=False)
+        if self.__retry_interval <= 0:
+            raise ValueError("retry_interval must be a strictly positive float")
+        if math.isinf(self.__retry_interval):
+            self.__retry_interval = None
+
         if server_hostname is not None and not ssl:
             raise ValueError("server_hostname is only meaningful with ssl")
 
@@ -185,19 +203,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             _check_socket_family(socket.family)
             _check_socket_no_ssl(socket)
 
-            if max_recv_size is None:
-                max_recv_size = MAX_STREAM_BUFSIZE
-            if not isinstance(max_recv_size, int) or max_recv_size <= 0:
-                raise ValueError("'max_recv_size' must be a strictly positive integer")
-            self.__max_recv_size: int = max_recv_size
-
-            self.__retry_interval: float | None
-            self.__retry_interval = retry_interval = _validate_timeout_delay(float(retry_interval), positive_check=False)
-            if self.__retry_interval <= 0:
-                raise ValueError("retry_interval must be a strictly positive float")
-            if math.isinf(self.__retry_interval):
-                self.__retry_interval = None
-
             # Do not use global default timeout here
             socket.settimeout(0)
 
@@ -211,15 +216,19 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             if ssl:
                 if _ssl_module is None:
                     raise RuntimeError("stdlib ssl module not available")
+
+                ssl_context: _SSLContext
                 if isinstance(ssl, bool):
-                    ssl = cast("_SSLContext", _ssl_module.create_default_context())
+                    ssl_context = cast("_SSLContext", _ssl_module.create_default_context())
                     if not server_hostname:
-                        ssl.check_hostname = False
+                        ssl_context.check_hostname = False
                     if hasattr(_ssl_module, "OP_IGNORE_UNEXPECTED_EOF"):
-                        ssl.options &= ~getattr(_ssl_module, "OP_IGNORE_UNEXPECTED_EOF")
+                        ssl_context.options &= ~getattr(_ssl_module, "OP_IGNORE_UNEXPECTED_EOF")
+                else:
+                    ssl_context = ssl
                 if not server_hostname:
                     server_hostname = None
-                socket = ssl.wrap_socket(
+                socket = ssl_context.wrap_socket(
                     socket,
                     server_side=False,
                     do_handshake_on_connect=False,
@@ -238,7 +247,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 if ssl_shutdown_timeout is None:
                     ssl_shutdown_timeout = SSL_SHUTDOWN_TIMEOUT
 
-            assert ssl_shared_lock is not None
+            assert ssl_shared_lock is not None  # nosec assert_used
             self.__send_lock: ForkSafeLock[threading.Lock]
             self.__receive_lock: ForkSafeLock[threading.Lock]
             if self.__over_ssl and ssl_shared_lock:
@@ -252,8 +261,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 set_tcp_nodelay(socket, True)
             with _contextlib.suppress(OSError):
                 set_tcp_keepalive(socket, True)
-            self.__producer: Callable[[_SentPacketT], Iterator[bytes]] = protocol.generate_chunks
-            self.__consumer: StreamDataConsumer[_ReceivedPacketT] = StreamDataConsumer(protocol)
+
             self.__socket_proxy = SocketProxy(socket, lock=self.__socket_lock.get)
             self.__ssl_shutdown_timeout: float | None = ssl_shutdown_timeout
         except BaseException:
@@ -315,7 +323,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
 
             data: bytes = b"".join(self.__producer(packet))
             buffer = memoryview(data)
-            assert buffer.itemsize == 1
             perf_counter = time.perf_counter  # pull function to local namespace
             retry_interval: float | None = self.__retry_interval
             try:
@@ -332,7 +339,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                             _end = perf_counter()
                         except TimeoutError:
                             raise TimeoutError("send_packet() timed out") from None
-                        assert sent >= 0, f"socket.send() returned a negative integer ({sent=})"
                         remaining -= sent
                         buffer = buffer[sent:]
                         if timeout is not None:

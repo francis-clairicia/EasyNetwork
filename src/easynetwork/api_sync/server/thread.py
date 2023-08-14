@@ -36,7 +36,6 @@ class StandaloneNetworkServerThread(_threading.Thread):
         daemon: bool | None = None,
     ) -> None:
         super().__init__(group=group, target=None, name=name, daemon=daemon)
-        assert isinstance(server, AbstractStandaloneNetworkServer), repr(server)
         self.__server: AbstractStandaloneNetworkServer | None = server
         self.__is_up_event: _threading.Event = _threading.Event()
 
@@ -45,7 +44,7 @@ class StandaloneNetworkServerThread(_threading.Thread):
         self.__is_up_event.wait()
 
     def run(self) -> None:
-        assert self.__server is not None, f"{self.__server=}"
+        assert self.__server is not None, f"{self.__server=}"  # nosec assert_used
         try:
             return self.__server.serve_forever(is_up_event=self.__is_up_event)
         finally:

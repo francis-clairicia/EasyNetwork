@@ -109,7 +109,7 @@ class _JSONParser:
                                 raise _JSONParser._PlainValueError
                             case _:  # JSON character, quickly go to next character
                                 continue
-                        assert len(enclosure_counter) > 0
+                        assert len(enclosure_counter) > 0  # nosec assert_used
                         if not first_enclosure:
                             first_enclosure = next(iter(enclosure_counter))
                         if enclosure_counter[first_enclosure] <= 0:  # 1st found is closed

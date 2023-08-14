@@ -6,6 +6,8 @@ import asyncio
 import asyncio.trsock
 import contextlib
 from collections.abc import Callable
+from errno import ENOTCONN, ENOTSOCK
+from socket import SHUT_WR
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.api_async.backend.abc import AbstractAcceptedSocket
@@ -235,6 +237,22 @@ class BaseTestAsyncioTransportBasedStreamSocket(BaseTestTransportStreamSocket):
         # Assert
         assert laddr == asyncio_writer_extra_info["sockname"]
 
+    async def test____getsockname____transport_closed(
+        self,
+        socket: AsyncioTransportStreamSocketAdapter,
+        asyncio_writer_extra_info: dict[str, Any],
+    ) -> None:
+        # Arrange
+        ### asyncio.Transport implementations will clear the extra dict on close()
+        asyncio_writer_extra_info.clear()
+
+        # Act
+        # Act & Assert
+        with pytest.raises(OSError) as exc_info:
+            socket.get_local_address()
+
+        assert exc_info.value.errno == ENOTSOCK
+
     async def test____getpeername____return_peername_extra_info(
         self,
         socket: AsyncioTransportStreamSocketAdapter,
@@ -254,8 +272,6 @@ class BaseTestAsyncioTransportBasedStreamSocket(BaseTestTransportStreamSocket):
         asyncio_writer_extra_info: dict[str, Any],
     ) -> None:
         # Arrange
-        from errno import ENOTCONN
-
         ### asyncio.Transport implementations explicitly set peername to None if the socket is not connected
         asyncio_writer_extra_info["peername"] = None
 
@@ -777,6 +793,17 @@ class TestRawStreamSocketAdapter(BaseTestSocket):
         # Assert
         assert socket.socket() is mock_tcp_socket
 
+    async def test____dunder_init____invalid_socket_type(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        mock_udp_socket: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        with pytest.raises(ValueError, match=r"^A 'SOCK_STREAM' socket is expected$"):
+            _ = RawStreamSocketAdapter(mock_udp_socket, event_loop)
+
     async def test____get_local_address____returns_socket_address(
         self,
         socket: RawStreamSocketAdapter,
@@ -897,8 +924,6 @@ class TestRawStreamSocketAdapter(BaseTestSocket):
         mock_async_socket: MagicMock,
     ) -> None:
         # Arrange
-        from socket import SHUT_WR
-
         mock_async_socket.shutdown.return_value = None
         mock_async_socket.did_shutdown_SHUT_WR = False
 

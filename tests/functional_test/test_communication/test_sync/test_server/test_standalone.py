@@ -119,6 +119,16 @@ class TestStandaloneTCPNetworkServer(BaseTestStandaloneNetworkServer):
             backend_kwargs={"runner_factory": runner_factory},
         )
 
+    def test____dunder_init____invalid_backend(self, stream_protocol: StreamProtocol[str, str]) -> None:
+        with pytest.raises(ValueError, match=r"^You must explicitly give a backend name or instance$"):
+            _ = StandaloneTCPNetworkServer(
+                None,
+                0,
+                stream_protocol,
+                EchoRequestHandler(),
+                backend=None,  # type: ignore[arg-type]
+            )
+
     @pytest.mark.parametrize("runner_factory", [None], indirect=True)
     def test____serve_forever____serve_several_times(self, server: StandaloneTCPNetworkServer[str, str]) -> None:
         with server:
@@ -175,6 +185,16 @@ class TestStandaloneUDPNetworkServer(BaseTestStandaloneNetworkServer):
             EchoRequestHandler(),
             backend_kwargs={"runner_factory": runner_factory},
         )
+
+    def test____dunder_init____invalid_backend(self, datagram_protocol: DatagramProtocol[str, str]) -> None:
+        with pytest.raises(ValueError, match=r"^You must explicitly give a backend name or instance$"):
+            _ = StandaloneUDPNetworkServer(
+                None,
+                0,
+                datagram_protocol,
+                EchoRequestHandler(),
+                backend=None,  # type: ignore[arg-type]
+            )
 
     @pytest.mark.parametrize("runner_factory", [None], indirect=True)
     def test____serve_forever____serve_several_times(self, server: StandaloneUDPNetworkServer[str, str]) -> None:

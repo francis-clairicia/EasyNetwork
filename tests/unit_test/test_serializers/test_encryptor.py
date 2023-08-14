@@ -35,6 +35,14 @@ class TestEncryptorSerializer:
         # Act & Assert
         assert getattr(EncryptorSerializer, method) is getattr(AutoSeparatedPacketSerializer, method)
 
+    def test____dunder_init____invalid_serializer(self, mocker: MockerFixture) -> None:
+        # Arrange
+        mock_not_serializer = mocker.NonCallableMagicMock(spec=object)
+
+        # Act
+        with pytest.raises(TypeError, match=r"^Expected a serializer instance, got .+$"):
+            EncryptorSerializer(mock_not_serializer, key=mocker.sentinel.key)
+
     def test____dunder_init____fernet_creation(
         self,
         mock_serializer: MagicMock,

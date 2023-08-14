@@ -86,6 +86,9 @@ flake8 = [
     "flake8-pyi>=22.11.0",
     "flake8-dunder-all @ git+https://github.com/francis-clairicia/flake8-dunder-all.git@v0.1.0",
 ]
+bandit = [
+    "bandit>=1.7.5",
+]
 test = [
     "pytest~=7.3",
     "pytest-xdist>=3.3.1",

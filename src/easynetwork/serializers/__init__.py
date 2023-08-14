@@ -23,7 +23,7 @@ __all__ = [
     "AbstractStructSerializer",
     "AutoSeparatedPacketSerializer",
     "BZ2CompressorSerializer",
-    "Base64EncodedSerializer",
+    "Base64EncoderSerializer",
     "CBORDecoderConfig",
     "CBOREncoderConfig",
     "CBORSerializer",

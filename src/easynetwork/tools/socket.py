@@ -118,19 +118,19 @@ def new_socket_address(addr: tuple[Any, ...], family: int) -> SocketAddress:
 
 class SupportsSocketOptions(Protocol):
     @overload
-    def getsockopt(self, __level: int, __optname: int, /) -> int:
+    def getsockopt(self, level: int, optname: int, /) -> int:
         ...
 
     @overload
-    def getsockopt(self, __level: int, __optname: int, __buflen: int, /) -> bytes:
+    def getsockopt(self, level: int, optname: int, buflen: int, /) -> bytes:
         ...
 
     @overload
-    def setsockopt(self, __level: int, __optname: int, __value: int | bytes, /) -> None:
+    def setsockopt(self, level: int, optname: int, value: int | bytes, /) -> None:
         ...
 
     @overload
-    def setsockopt(self, __level: int, __optname: int, __value: None, __optlen: int, /) -> None:
+    def setsockopt(self, level: int, optname: int, value: None, optlen: int, /) -> None:
         ...
 
 
@@ -201,13 +201,13 @@ class SocketProxy:
     def __getstate__(self) -> Any:  # pragma: no cover
         raise TypeError(f"cannot pickle {self.__class__.__name__!r} object")
 
-    def __execute(self, __func: Callable[_P, _R], /, *args: _P.args, **kwargs: _P.kwargs) -> _R:
+    def __execute(self, func: Callable[_P, _R], /, *args: _P.args, **kwargs: _P.kwargs) -> _R:
         with lock_ctx() if (lock_ctx := self.__lock_ctx) is not None else contextlib.nullcontext():
             if (run := self.__runner) is not None:
                 if args or kwargs:
-                    __func = functools.partial(__func, *args, **kwargs)
-                return run(__func)
-            return __func(*args, **kwargs)
+                    func = functools.partial(func, *args, **kwargs)
+                return run(func)
+            return func(*args, **kwargs)
 
     def fileno(self) -> int:
         return self.__execute(self.__socket.fileno)
@@ -221,22 +221,22 @@ class SocketProxy:
         return self.__execute(self.__socket.get_inheritable)
 
     @overload
-    def getsockopt(self, __level: int, __optname: int, /) -> int:
+    def getsockopt(self, level: int, optname: int, /) -> int:
         ...
 
     @overload
-    def getsockopt(self, __level: int, __optname: int, __buflen: int, /) -> bytes:
+    def getsockopt(self, level: int, optname: int, buflen: int, /) -> bytes:
         ...
 
     def getsockopt(self, *args: Any) -> int | bytes:
         return self.__execute(self.__socket.getsockopt, *args)
 
     @overload
-    def setsockopt(self, __level: int, __optname: int, __value: int | bytes, /) -> None:
+    def setsockopt(self, level: int, optname: int, value: int | bytes, /) -> None:
         ...
 
     @overload
-    def setsockopt(self, __level: int, __optname: int, __value: None, __optlen: int, /) -> None:
+    def setsockopt(self, level: int, optname: int, value: None, optlen: int, /) -> None:
         ...
 
     def setsockopt(self, *args: Any) -> None:

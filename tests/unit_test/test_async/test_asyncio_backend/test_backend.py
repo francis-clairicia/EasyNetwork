@@ -107,6 +107,20 @@ class TestAsyncIOBackend:
         # Assert
         mock_sleep.assert_awaited_once_with(123456789)
 
+    async def test____ignore_cancellation____not_a_coroutine(
+        self,
+        backend: AsyncioBackend,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_asyncio_is_coroutine: MagicMock = mocker.patch("asyncio.iscoroutine", autospec=True, return_value=False)
+
+        # Act & Assert
+        with pytest.raises(TypeError, match=r"^Expected a coroutine object$"):
+            await backend.ignore_cancellation(mocker.sentinel.coroutine)
+
+        mock_asyncio_is_coroutine.assert_called_once_with(mocker.sentinel.coroutine)
+
     @pytest.mark.parametrize("use_asyncio_transport", [True], indirect=True)
     @pytest.mark.parametrize("ssl", [False, True], ids=lambda p: f"ssl=={p}")
     async def test____create_tcp_connection____use_asyncio_open_connection(
