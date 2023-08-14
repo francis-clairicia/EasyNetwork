@@ -37,6 +37,14 @@ class TestBase64EncoderSerializer:
         # Act & Assert
         assert getattr(Base64EncoderSerializer, method) is getattr(AutoSeparatedPacketSerializer, method)
 
+    def test____dunder_init____invalid_serializer(self, mocker: MockerFixture) -> None:
+        # Arrange
+        mock_not_serializer = mocker.NonCallableMagicMock(spec=object)
+
+        # Act
+        with pytest.raises(TypeError, match=r"^Expected a serializer instance, got .+$"):
+            Base64EncoderSerializer(mock_not_serializer)
+
     def test____serialize____encode_previously_serialized_data(
         self,
         alphabet: Literal["standard", "urlsafe"],

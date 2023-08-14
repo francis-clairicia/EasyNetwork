@@ -419,7 +419,7 @@ class TestTCPNetworkClient(BaseTestClient):
     def test____dunder_init____use_given_socket____invalid_socket_family(
         self,
         mock_tcp_socket: MagicMock,
-        mock_datagram_protocol: MagicMock,
+        mock_stream_protocol: MagicMock,
         ssl_context: MagicMock | None,
         server_hostname: Any | None,
     ) -> None:
@@ -429,7 +429,7 @@ class TestTCPNetworkClient(BaseTestClient):
         with pytest.raises(ValueError, match=r"^Only these families are supported: .+$"):
             _ = TCPNetworkClient(
                 mock_tcp_socket,
-                protocol=mock_datagram_protocol,
+                protocol=mock_stream_protocol,
                 ssl=ssl_context,
                 server_hostname=server_hostname,
             )
@@ -439,7 +439,6 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_udp_socket: MagicMock,
         mock_socket_create_connection: MagicMock,
         mock_socket_proxy_cls: MagicMock,
-        mock_stream_data_consumer_cls: MagicMock,
         mock_stream_protocol: MagicMock,
         mock_ssl_create_default_context: MagicMock,
         ssl_context: MagicMock | None,
@@ -457,7 +456,6 @@ class TestTCPNetworkClient(BaseTestClient):
             )
 
         # Assert
-        mock_stream_data_consumer_cls.assert_not_called()
         mock_socket_create_connection.assert_not_called()
         mock_ssl_create_default_context.assert_not_called()
         mock_socket_proxy_cls.assert_not_called()
@@ -472,7 +470,6 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_tcp_socket: MagicMock,
         mock_socket_create_connection: MagicMock,
         mock_socket_proxy_cls: MagicMock,
-        mock_stream_data_consumer_cls: MagicMock,
         mock_stream_protocol: MagicMock,
         mock_ssl_create_default_context: MagicMock,
         ssl_context: MagicMock | None,
@@ -492,7 +489,6 @@ class TestTCPNetworkClient(BaseTestClient):
 
         # Assert
         assert exc_info.value is enotconn_exception
-        mock_stream_data_consumer_cls.assert_not_called()
         mock_socket_create_connection.assert_not_called()
         mock_ssl_create_default_context.assert_not_called()
         if ssl_context:
@@ -501,6 +497,48 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_tcp_socket.getsockname.assert_called_once_with()
         mock_tcp_socket.getpeername.assert_called_once_with()
         mock_tcp_socket.close.assert_called_once_with()
+
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    def test____dunder_init____protocol____invalid_value(
+        self,
+        use_socket: bool,
+        remote_address: tuple[str, int],
+        mock_tcp_socket: MagicMock,
+        mock_datagram_protocol: MagicMock,
+        mock_socket_proxy_cls: MagicMock,
+        mock_socket_create_connection: MagicMock,
+        mock_ssl_create_default_context: MagicMock,
+        ssl_context: MagicMock | None,
+        server_hostname: Any | None,
+    ) -> None:
+        # Arrange
+
+        # Act
+        with pytest.raises(TypeError, match=r"^Expected a StreamProtocol object, got .*$"):
+            if use_socket:
+                _ = TCPNetworkClient(
+                    mock_tcp_socket,
+                    protocol=mock_datagram_protocol,
+                    ssl=ssl_context,
+                    server_hostname=server_hostname,
+                )
+            else:
+                _ = TCPNetworkClient(
+                    remote_address,
+                    protocol=mock_datagram_protocol,
+                    ssl=ssl_context,
+                    server_hostname=server_hostname,
+                )
+
+        # Assert
+        mock_socket_create_connection.assert_not_called()
+        if ssl_context:
+            ssl_context.wrap_socket.assert_not_called()
+        mock_ssl_create_default_context.assert_not_called()
+        mock_socket_proxy_cls.assert_not_called()
+        mock_tcp_socket.getsockname.assert_not_called()
+        mock_tcp_socket.getpeername.assert_not_called()
+        mock_tcp_socket.close.assert_not_called()
 
     @pytest.mark.parametrize("max_recv_size", [None, 1, 2**64], ids=lambda p: f"max_recv_size=={p}")
     @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
@@ -548,8 +586,8 @@ class TestTCPNetworkClient(BaseTestClient):
         remote_address: tuple[str, int],
         mock_tcp_socket: MagicMock,
         mock_stream_protocol: MagicMock,
-        mock_stream_data_consumer_cls: MagicMock,
         mock_socket_proxy_cls: MagicMock,
+        mock_socket_create_connection: MagicMock,
         mock_ssl_create_default_context: MagicMock,
         ssl_context: MagicMock | None,
         server_hostname: Any | None,
@@ -576,14 +614,14 @@ class TestTCPNetworkClient(BaseTestClient):
                 )
 
         # Assert
+        mock_socket_create_connection.assert_not_called()
         if ssl_context:
             ssl_context.wrap_socket.assert_not_called()
         mock_ssl_create_default_context.assert_not_called()
-        mock_stream_data_consumer_cls.assert_not_called()
         mock_socket_proxy_cls.assert_not_called()
         mock_tcp_socket.getsockname.assert_not_called()
         mock_tcp_socket.getpeername.assert_not_called()
-        mock_tcp_socket.close.assert_called_once_with()
+        mock_tcp_socket.close.assert_not_called()
 
     @pytest.mark.parametrize("retry_interval", [0, -12.34])
     @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
@@ -594,8 +632,8 @@ class TestTCPNetworkClient(BaseTestClient):
         remote_address: tuple[str, int],
         mock_tcp_socket: MagicMock,
         mock_stream_protocol: MagicMock,
-        mock_stream_data_consumer_cls: MagicMock,
         mock_socket_proxy_cls: MagicMock,
+        mock_socket_create_connection: MagicMock,
         mock_ssl_create_default_context: MagicMock,
         ssl_context: MagicMock | None,
         server_hostname: Any | None,
@@ -622,14 +660,14 @@ class TestTCPNetworkClient(BaseTestClient):
                 )
 
         # Assert
+        mock_socket_create_connection.assert_not_called()
         if ssl_context:
             ssl_context.wrap_socket.assert_not_called()
         mock_ssl_create_default_context.assert_not_called()
-        mock_stream_data_consumer_cls.assert_not_called()
         mock_socket_proxy_cls.assert_not_called()
         mock_tcp_socket.getsockname.assert_not_called()
         mock_tcp_socket.getpeername.assert_not_called()
-        mock_tcp_socket.close.assert_called_once_with()
+        mock_tcp_socket.close.assert_not_called()
 
     @pytest.mark.parametrize("use_ssl", ["NO_SSL"], indirect=True)
     @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")

@@ -107,6 +107,11 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
     ) -> None:
         super().__init__()
 
+        if not isinstance(protocol, StreamProtocol):
+            raise TypeError(f"Expected a StreamProtocol object, got {protocol!r}")
+        if not isinstance(request_handler, AsyncBaseRequestHandler):
+            raise TypeError(f"Expected an AsyncBaseRequestHandler object, got {request_handler!r}")
+
         backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
 
         if backlog is None:
@@ -114,6 +119,11 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
         if log_client_connection is None:
             log_client_connection = True
+
+        if max_recv_size is None:
+            max_recv_size = MAX_STREAM_BUFSIZE
+        if not isinstance(max_recv_size, int) or max_recv_size <= 0:
+            raise ValueError("'max_recv_size' must be a strictly positive integer")
 
         if ssl_handshake_timeout is not None and not ssl:
             raise ValueError("ssl_handshake_timeout is only meaningful with ssl")
@@ -145,11 +155,6 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 reuse_port=reuse_port,
             )
         self.__listeners_factory_runner: SingleTaskRunner[Sequence[AbstractAsyncListenerSocketAdapter]] | None = None
-
-        if max_recv_size is None:
-            max_recv_size = MAX_STREAM_BUFSIZE
-        if not isinstance(max_recv_size, int) or max_recv_size <= 0:
-            raise ValueError("'max_recv_size' must be a strictly positive integer")
 
         if service_actions_interval is None:
             service_actions_interval = 1.0

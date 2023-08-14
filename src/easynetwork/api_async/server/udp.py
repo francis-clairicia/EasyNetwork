@@ -87,6 +87,11 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
     ) -> None:
         super().__init__()
 
+        if not isinstance(protocol, DatagramProtocol):
+            raise TypeError(f"Expected a DatagramProtocol object, got {protocol!r}")
+        if not isinstance(request_handler, AsyncBaseRequestHandler):
+            raise TypeError(f"Expected an AsyncBaseRequestHandler object, got {request_handler!r}")
+
         backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
 
         if host is None:

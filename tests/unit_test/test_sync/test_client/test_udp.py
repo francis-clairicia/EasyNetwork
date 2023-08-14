@@ -324,6 +324,27 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         mock_tcp_socket.getpeername.assert_not_called()
         mock_tcp_socket.close.assert_called_once_with()
 
+    def test____dunder_init____protocol____invalid_value(
+        self,
+        mock_udp_socket: MagicMock,
+        mock_socket_proxy_cls: MagicMock,
+        mock_stream_protocol: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act
+        with pytest.raises(TypeError, match=r"^Expected a DatagramProtocol object, got .*$"):
+            _ = UDPNetworkEndpoint(
+                protocol=mock_stream_protocol,
+                socket=mock_udp_socket,
+            )
+
+        # Assert
+        mock_socket_proxy_cls.assert_not_called()
+        mock_udp_socket.getsockname.assert_not_called()
+        mock_udp_socket.getpeername.assert_not_called()
+        mock_udp_socket.close.assert_not_called()
+
     @pytest.mark.parametrize("retry_interval", [0, -12.34])
     def test____dunder_init____retry_interval____invalid_value(
         self,

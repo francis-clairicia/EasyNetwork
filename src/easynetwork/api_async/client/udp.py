@@ -88,6 +88,10 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         super().__init__()
         backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
 
+        if not isinstance(protocol, DatagramProtocol):
+            raise TypeError(f"Expected a DatagramProtocol object, got {protocol!r}")
+
+        self.__protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT] = protocol
         self.__socket: AbstractAsyncDatagramSocketAdapter | None = None
         self.__backend: AbstractAsyncBackend = backend
         self.__info: _EndpointInfo | None = None
@@ -105,7 +109,6 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
 
         self.__receive_lock: ILock = backend.create_lock()
         self.__send_lock: ILock = backend.create_lock()
-        self.__protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT] = protocol
 
     def __repr__(self) -> str:
         try:
@@ -150,8 +153,8 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         socket_proxy = SocketProxy(socket.socket())
         _check_socket_family(socket_proxy.family)
         local_address: SocketAddress = new_socket_address(socket.get_local_address(), socket_proxy.family)
-        if local_address.port == 0:  # pragma: no cover
-            raise OSError(f"{socket} is not bound to a local address")
+        if local_address.port == 0:
+            raise AssertionError(f"{socket} is not bound to a local address")
         remote_address: SocketAddress | None
         if (peername := socket.get_remote_address()) is None:
             remote_address = None

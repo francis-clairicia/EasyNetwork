@@ -38,6 +38,8 @@ class Base64EncoderSerializer(AutoSeparatedPacketSerializer[_ST_contra, _DT_co])
         from hmac import compare_digest, digest as hmac_digest
 
         super().__init__(separator=separator, incremental_serialize_check_separator=not separator.isspace())
+        if not isinstance(serializer, AbstractPacketSerializer):
+            raise TypeError(f"Expected a serializer instance, got {serializer!r}")
         self.__serializer: AbstractPacketSerializer[_ST_contra, _DT_co] = serializer
         self.__checksum: Callable[[bytes], bytes] | None
         match checksum:
