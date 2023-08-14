@@ -66,6 +66,7 @@ jobs:
         if: hashFiles('coverage.xml') != ''  # Rudimentary `file.exists()`
         uses: codecov/codecov-action@v3
         with:
+          token: ${{ secrets.CODECOV_TOKEN }}
           flags: >-  # Mark which lines are covered by which envs
             test-unit,
             Py-${{ matrix.python_version }}
@@ -98,6 +99,7 @@ jobs:
         if: hashFiles('coverage.xml') != ''  # Rudimentary `file.exists()`
         uses: codecov/codecov-action@v3
         with:
+          token: ${{ secrets.CODECOV_TOKEN }}
           flags: >-  # Mark which lines are covered by which envs
             test-functional,
             OS-${{ runner.os }},
