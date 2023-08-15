@@ -18,13 +18,15 @@ from __future__ import annotations
 
 __all__ = [
     "AbstractStandaloneNetworkServer",
+    "SupportsEventSet",
 ]
 
 from abc import ABCMeta, abstractmethod
 from typing import TYPE_CHECKING, Any, Self
 
+from ...api_async.server.abc import SupportsEventSet
+
 if TYPE_CHECKING:
-    import threading as _threading
     from types import TracebackType
 
 
@@ -50,7 +52,7 @@ class AbstractStandaloneNetworkServer(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    def serve_forever(self, *, is_up_event: _threading.Event | None = ...) -> None:
+    def serve_forever(self, *, is_up_event: SupportsEventSet | None = ...) -> None:
         raise NotImplementedError
 
     @abstractmethod

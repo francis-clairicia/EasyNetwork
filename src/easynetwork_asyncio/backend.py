@@ -151,7 +151,7 @@ class AsyncioBackend(AbstractAsyncBackend):
                 TimeoutHandle._reschedule_delayed_task_cancel(current_task, task_cancel_msg)
         finally:
             task_cancel_msg = None
-            del current_task, future
+            del current_task, future, abort_func
 
     @staticmethod
     def _get_cancelled_error_message(exc: asyncio.CancelledError) -> str | None:
@@ -449,20 +449,27 @@ class AsyncioBackend(AbstractAsyncBackend):
     async def wait_future(self, future: concurrent.futures.Future[_T_co]) -> _T_co:
         if not future.done():
             future_wrapper = asyncio.wrap_future(future)
-            # If future.cancel() failed, that means future.set_running_or_notify_cancel() has been called
-            # and set future in RUNNING state.
-            # This future cannot be cancelled anymore, therefore it must be awaited.
-            await self._cancel_shielded_wait_asyncio_future(future_wrapper, future.cancel)
-            if not future_wrapper.cancelled():
-                # Unwrap "future_wrapper" instead to prevent reports about unhandled exceptions.
-                assert future_wrapper.done()  # nosec assert_used
-                return future_wrapper.result()
+            try:
+                # If future.cancel() failed, that means future.set_running_or_notify_cancel() has been called
+                # and set future in RUNNING state.
+                # This future cannot be cancelled anymore, therefore it must be awaited.
+                await self._cancel_shielded_wait_asyncio_future(future_wrapper, future.cancel)
+                if not future_wrapper.cancelled():
+                    del future
+                    # Unwrap "future_wrapper" instead to prevent reports about unhandled exceptions.
+                    assert future_wrapper.done()  # nosec assert_used
+                    return future_wrapper.result()
+            finally:
+                del future_wrapper
             assert future.done()  # nosec assert_used
 
-        if future.cancelled():
-            # Task cancellation prevails over future cancellation
-            await asyncio.sleep(0)
-        return future.result()
+        try:
+            if future.cancelled():
+                # Task cancellation prevails over future cancellation
+                await asyncio.sleep(0)
+            return future.result()
+        finally:
+            del future
 
     def using_asyncio_transport(self) -> bool:
         return self.__use_asyncio_transport

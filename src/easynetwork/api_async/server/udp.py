@@ -42,8 +42,8 @@ from ...tools.socket import SocketAddress, SocketProxy, new_socket_address
 from ..backend.factory import AsyncBackendFactory
 from ..backend.tasks import SingleTaskRunner
 from ._tools.actions import ErrorAction as _ErrorAction, RequestAction as _RequestAction
-from .abc import AbstractAsyncNetworkServer
-from .handler import AsyncBaseRequestHandler, AsyncClientInterface
+from .abc import AbstractAsyncNetworkServer, SupportsEventSet
+from .handler import AsyncDatagramClient, AsyncDatagramRequestHandler
 
 if TYPE_CHECKING:
     from ..backend.abc import (
@@ -85,10 +85,10 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
     def __init__(
         self,
-        host: str | None,
+        host: str,
         port: int,
         protocol: DatagramProtocol[_ResponseT, _RequestT],
-        request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT],
+        request_handler: AsyncDatagramRequestHandler[_RequestT, _ResponseT],
         *,
         reuse_port: bool = False,
         backend: str | AbstractAsyncBackend | None = None,
@@ -100,13 +100,10 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
         if not isinstance(protocol, DatagramProtocol):
             raise TypeError(f"Expected a DatagramProtocol object, got {protocol!r}")
-        if not isinstance(request_handler, AsyncBaseRequestHandler):
-            raise TypeError(f"Expected an AsyncBaseRequestHandler object, got {request_handler!r}")
+        if not isinstance(request_handler, AsyncDatagramRequestHandler):
+            raise TypeError(f"Expected an AsyncDatagramRequestHandler object, got {request_handler!r}")
 
         backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
-
-        if host is None:
-            host = "localhost"
 
         self.__socket_factory: Callable[[], Coroutine[Any, Any, AbstractAsyncDatagramSocketAdapter]] | None
         self.__socket_factory = _make_callback(
@@ -124,7 +121,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         self.__backend: AbstractAsyncBackend = backend
         self.__socket: AbstractAsyncDatagramSocketAdapter | None = None
         self.__protocol: DatagramProtocol[_ResponseT, _RequestT] = protocol
-        self.__request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT] = request_handler
+        self.__request_handler: AsyncDatagramRequestHandler[_RequestT, _ResponseT] = request_handler
         self.__is_shutdown: IEvent = self.__backend.create_event()
         self.__is_shutdown.set()
         self.__shutdown_asked: bool = False
@@ -180,7 +177,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         if self.__socket_factory_runner is not None:
             self.__socket_factory_runner.cancel()
 
-    async def serve_forever(self, *, is_up_event: IEvent | None = None) -> None:
+    async def serve_forever(self, *, is_up_event: SupportsEventSet | None = None) -> None:
         async with _contextlib.AsyncExitStack() as server_exit_stack:
             if is_up_event is not None:
                 # Force is_up_event to be set, in order not to stuck the waiting task
@@ -385,7 +382,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                     if request_handler_generator is not None:
                         await request_handler_generator.aclose()
 
-    async def __new_request_handler(self, client: AsyncClientInterface[_ResponseT]) -> AsyncGenerator[None, _RequestT] | None:
+    async def __new_request_handler(self, client: _ClientAPI[_ResponseT]) -> AsyncGenerator[None, _RequestT] | None:
         request_handler_generator = self.__request_handler.handle(client)
         try:
             await anext(request_handler_generator)
@@ -472,7 +469,6 @@ class _ClientAPIManager(Generic[_ResponseT]):
         "__clients",
         "__client_lock",
         "__client_queue",
-        "__backend",
         "__protocol",
         "__send_lock",
         "__logger",
@@ -490,7 +486,6 @@ class _ClientAPIManager(Generic[_ResponseT]):
 
         self.__clients: WeakValueDictionary[tuple[AbstractAsyncDatagramSocketAdapter, SocketAddress], _ClientAPI[_ResponseT]]
         self.__clients = WeakValueDictionary()
-        self.__backend: AbstractAsyncBackend = backend
         self.__protocol: DatagramProtocol[_ResponseT, Any] = protocol
         self.__send_lock: ILock = send_lock
         self.__logger: _logging.Logger = logger
@@ -508,7 +503,7 @@ class _ClientAPIManager(Generic[_ResponseT]):
         try:
             return self.__clients[key]
         except KeyError:
-            client = _ClientAPI(self.__backend, address, socket, self.__protocol, self.__send_lock, self.__logger)
+            client = _ClientAPI(address, socket, self.__protocol, self.__send_lock, self.__logger)
             self.__clients[key] = client
             return client
 
@@ -558,9 +553,8 @@ class _TemporaryValue(Generic[_KT, _VT]):
 
 
 @final
-class _ClientAPI(AsyncClientInterface[_ResponseT]):
+class _ClientAPI(AsyncDatagramClient[_ResponseT]):
     __slots__ = (
-        "__backend",
         "__socket_ref",
         "__socket_proxy",
         "__protocol",
@@ -571,7 +565,6 @@ class _ClientAPI(AsyncClientInterface[_ResponseT]):
 
     def __init__(
         self,
-        backend: AbstractAsyncBackend,
         address: SocketAddress,
         socket: AbstractAsyncDatagramSocketAdapter,
         protocol: DatagramProtocol[_ResponseT, Any],
@@ -580,8 +573,7 @@ class _ClientAPI(AsyncClientInterface[_ResponseT]):
     ) -> None:
         super().__init__(address)
 
-        self.__backend: AbstractAsyncBackend = backend
-        self.__socket_ref: Callable[[], AbstractAsyncDatagramSocketAdapter | None] = weakref.ref(socket)
+        self.__socket_ref: weakref.ref[AbstractAsyncDatagramSocketAdapter] = weakref.ref(socket)
         self.__socket_proxy: SocketProxy = SocketProxy(socket.socket())
         self.__h: int | None = None
         self.__protocol: DatagramProtocol[_ResponseT, Any] = protocol
@@ -590,19 +582,16 @@ class _ClientAPI(AsyncClientInterface[_ResponseT]):
 
     def __hash__(self) -> int:
         if (h := self.__h) is None:
-            self.__h = h = hash((_ClientAPI, self.address, 0xFF))
+            self.__h = h = hash((_ClientAPI, self.__socket_ref, self.address, 0xFF))
         return h
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, _ClientAPI):
             return NotImplemented
-        return self.address == other.address
+        return self.__socket_ref == other.__socket_ref and self.address == other.address
 
     def is_closing(self) -> bool:
         return (socket := self.__socket_ref()) is None or socket.is_closing()
-
-    async def aclose(self) -> None:
-        await self.__backend.coro_yield()
 
     async def send_packet(self, packet: _ResponseT, /) -> None:
         async with self.__send_lock:

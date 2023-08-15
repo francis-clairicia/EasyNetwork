@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     from ssl import SSLContext as _SSLContext
 
     from ...api_async.backend.abc import AbstractAsyncBackend
-    from ...api_async.server.handler import AsyncBaseRequestHandler
+    from ...api_async.server.handler import AsyncStreamRequestHandler
     from ...protocol import StreamProtocol
 
 _RequestT = TypeVar("_RequestT")
@@ -48,7 +48,7 @@ class StandaloneTCPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
         host: str | None | Sequence[str],
         port: int,
         protocol: StreamProtocol[_ResponseT, _RequestT],
-        request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT],
+        request_handler: AsyncStreamRequestHandler[_RequestT, _ResponseT],
         backend: str | AbstractAsyncBackend = "asyncio",
         *,
         ssl: _SSLContext | None = None,

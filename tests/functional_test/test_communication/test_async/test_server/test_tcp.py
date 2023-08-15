@@ -12,7 +12,7 @@ from typing import Any
 from weakref import WeakValueDictionary
 
 from easynetwork.api_async.backend.abc import AbstractAsyncBackend
-from easynetwork.api_async.server.handler import AsyncBaseRequestHandler, AsyncClientInterface, AsyncStreamRequestHandler
+from easynetwork.api_async.server.handler import AsyncStreamClient, AsyncStreamRequestHandler
 from easynetwork.api_async.server.tcp import AsyncTCPNetworkServer
 from easynetwork.exceptions import (
     BaseProtocolParseError,
@@ -64,7 +64,7 @@ class RandomError(Exception):
 
 
 class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
-    connected_clients: WeakValueDictionary[SocketAddress, AsyncClientInterface[str]]
+    connected_clients: WeakValueDictionary[SocketAddress, AsyncStreamClient[str]]
     request_received: collections.defaultdict[tuple[Any, ...], list[str]]
     request_count: collections.Counter[tuple[Any, ...]]
     bad_request_received: collections.defaultdict[tuple[Any, ...], list[BaseProtocolParseError]]
@@ -110,7 +110,7 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
         )
         await super().service_quit()
 
-    async def on_connection(self, client: AsyncClientInterface[str]) -> None:
+    async def on_connection(self, client: AsyncStreamClient[str]) -> None:
         assert client.address not in self.connected_clients
         self.connected_clients[client.address] = client
         await client.send_packet("milk")
@@ -118,7 +118,7 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
             await self.backend.sleep(0.1)
             await client.aclose()
 
-    async def on_disconnection(self, client: AsyncClientInterface[str]) -> None:
+    async def on_disconnection(self, client: AsyncStreamClient[str]) -> None:
         del self.connected_clients[client.address]
         del self.request_count[client.address]
 
@@ -126,7 +126,7 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
         super().set_stop_listening_callback(stop_listening_callback)
         self.stop_listening = stop_listening_callback
 
-    async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
+    async def handle(self, client: AsyncStreamClient[str]) -> AsyncGenerator[None, str]:
         if self.close_client_after_n_request >= 0 and self.request_count[client.address] >= self.close_client_after_n_request:
             await client.aclose()
         request = yield
@@ -157,7 +157,7 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
                 self.request_received[client.address].append(request)
                 await client.send_packet(request.upper())
 
-    async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError) -> None:
+    async def bad_request(self, client: AsyncStreamClient[str], exc: BaseProtocolParseError) -> None:
         assert isinstance(exc, StreamProtocolParseError)
         self.bad_request_received[client.address].append(exc)
         await client.send_packet("wrong encoding man.")
@@ -170,10 +170,10 @@ class TimeoutRequestHandler(AsyncStreamRequestHandler[str, str]):
     def set_async_backend(self, backend: AbstractAsyncBackend) -> None:
         self.backend = backend
 
-    async def on_connection(self, client: AsyncClientInterface[str]) -> None:
+    async def on_connection(self, client: AsyncStreamClient[str]) -> None:
         await client.send_packet("milk")
 
-    async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
+    async def handle(self, client: AsyncStreamClient[str]) -> AsyncGenerator[None, str]:
         if self.timeout_on_second_yield:
             request = yield
             await client.send_packet(request)
@@ -185,17 +185,19 @@ class TimeoutRequestHandler(AsyncStreamRequestHandler[str, str]):
         finally:
             self.request_timeout = 1.0  # Force reset to 1 second in order not to overload the server
 
-    async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError, /) -> None:
+    async def bad_request(self, client: AsyncStreamClient[str], exc: BaseProtocolParseError, /) -> None:
         pass
 
 
-class CancellationRequestHandler(AsyncBaseRequestHandler[str, str]):
-    async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
+class CancellationRequestHandler(AsyncStreamRequestHandler[str, str]):
+    async def on_connection(self, client: AsyncStreamClient[str]) -> None:
         await client.send_packet("milk")
+
+    async def handle(self, client: AsyncStreamClient[str]) -> AsyncGenerator[None, str]:
         yield
         raise asyncio.CancelledError()
 
-    async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError, /) -> None:
+    async def bad_request(self, client: AsyncStreamClient[str], exc: BaseProtocolParseError, /) -> None:
         pass
 
 
@@ -206,7 +208,7 @@ class InitialHandshakeRequestHandler(AsyncStreamRequestHandler[str, str]):
     def set_async_backend(self, backend: AbstractAsyncBackend) -> None:
         self.backend = backend
 
-    async def on_connection(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
+    async def on_connection(self, client: AsyncStreamClient[str]) -> AsyncGenerator[None, str]:
         await client.send_packet("milk")
         if self.bypass_handshake:
             return
@@ -223,11 +225,11 @@ class InitialHandshakeRequestHandler(AsyncStreamRequestHandler[str, str]):
             return
         await client.send_packet("you can enter")
 
-    async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
+    async def handle(self, client: AsyncStreamClient[str]) -> AsyncGenerator[None, str]:
         request = yield
         await client.send_packet(request)
 
-    async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError, /) -> None:
+    async def bad_request(self, client: AsyncStreamClient[str], exc: BaseProtocolParseError, /) -> None:
         pass
 
 
@@ -235,32 +237,32 @@ class RequestRefusedHandler(AsyncStreamRequestHandler[str, str]):
     refuse_after: int = 2**64
 
     async def service_init(self) -> None:
-        self.request_count: collections.Counter[AsyncClientInterface[str]] = collections.Counter()
+        self.request_count: collections.Counter[AsyncStreamClient[str]] = collections.Counter()
 
-    async def on_connection(self, client: AsyncClientInterface[str]) -> None:
+    async def on_connection(self, client: AsyncStreamClient[str]) -> None:
         await client.send_packet("milk")
 
-    async def on_disconnection(self, client: AsyncClientInterface[str]) -> None:
+    async def on_disconnection(self, client: AsyncStreamClient[str]) -> None:
         self.request_count.pop(client, None)
 
-    async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
+    async def handle(self, client: AsyncStreamClient[str]) -> AsyncGenerator[None, str]:
         if self.request_count[client] >= self.refuse_after:
             return
         request = yield
         self.request_count[client] += 1
         await client.send_packet(request)
 
-    async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError, /) -> None:
+    async def bad_request(self, client: AsyncStreamClient[str], exc: BaseProtocolParseError, /) -> None:
         pass
 
 
 class ErrorInRequestHandler(AsyncStreamRequestHandler[str, str]):
     mute_thrown_exception: bool = False
 
-    async def on_connection(self, client: AsyncClientInterface[str]) -> None:
+    async def on_connection(self, client: AsyncStreamClient[str]) -> None:
         await client.send_packet("milk")
 
-    async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
+    async def handle(self, client: AsyncStreamClient[str]) -> AsyncGenerator[None, str]:
         try:
             request = yield
         except Exception as exc:
@@ -270,30 +272,30 @@ class ErrorInRequestHandler(AsyncStreamRequestHandler[str, str]):
         else:
             await client.send_packet(request)
 
-    async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError, /) -> None:
+    async def bad_request(self, client: AsyncStreamClient[str], exc: BaseProtocolParseError, /) -> None:
         raise RandomError("An error occurred")
 
 
 class ErrorBeforeYieldHandler(AsyncStreamRequestHandler[str, str]):
-    async def on_connection(self, client: AsyncClientInterface[str]) -> None:
+    async def on_connection(self, client: AsyncStreamClient[str]) -> None:
         await client.send_packet("milk")
 
-    async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
+    async def handle(self, client: AsyncStreamClient[str]) -> AsyncGenerator[None, str]:
         raise RandomError("An error occurred")
         request = yield  # type: ignore[unreachable]
         await client.send_packet(request)
 
-    async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError, /) -> None:
+    async def bad_request(self, client: AsyncStreamClient[str], exc: BaseProtocolParseError, /) -> None:
         pass
 
 
 class CloseHandleAfterBadRequest(AsyncStreamRequestHandler[str, str]):
     bad_request_return_value: bool | None = None
 
-    async def on_connection(self, client: AsyncClientInterface[str]) -> None:
+    async def on_connection(self, client: AsyncStreamClient[str]) -> None:
         await client.send_packet("milk")
 
-    async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
+    async def handle(self, client: AsyncStreamClient[str]) -> AsyncGenerator[None, str]:
         await client.send_packet("new handle")
         try:
             request = yield
@@ -303,7 +305,7 @@ class CloseHandleAfterBadRequest(AsyncStreamRequestHandler[str, str]):
         else:
             await client.send_packet(request)
 
-    async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError) -> bool | None:
+    async def bad_request(self, client: AsyncStreamClient[str], exc: BaseProtocolParseError) -> bool | None:
         await client.send_packet("wrong encoding")
         return self.bad_request_return_value
 
@@ -334,8 +336,8 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
 
     @pytest.fixture
     @staticmethod
-    def request_handler(request: Any) -> AsyncBaseRequestHandler[str, str]:
-        request_handler_cls: type[AsyncBaseRequestHandler[str, str]] = getattr(request, "param", MyAsyncTCPRequestHandler)
+    def request_handler(request: Any) -> AsyncStreamRequestHandler[str, str]:
+        request_handler_cls: type[AsyncStreamRequestHandler[str, str]] = getattr(request, "param", MyAsyncTCPRequestHandler)
         return request_handler_cls()
 
     @pytest.fixture
@@ -603,7 +605,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     ) -> None:
         _ = await client_factory()
 
-        connected_client: AsyncClientInterface[str] = list(request_handler.connected_clients.values())[0]
+        connected_client: AsyncStreamClient[str] = list(request_handler.connected_clients.values())[0]
 
         tcp_nodelay_state: int = connected_client.socket.getsockopt(IPPROTO_TCP, TCP_NODELAY)
 

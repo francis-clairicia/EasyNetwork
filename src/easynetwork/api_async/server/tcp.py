@@ -58,8 +58,8 @@ from ..backend.abc import AbstractAsyncHalfCloseableStreamSocketAdapter
 from ..backend.factory import AsyncBackendFactory
 from ..backend.tasks import SingleTaskRunner
 from ._tools.actions import ErrorAction as _ErrorAction, RequestAction as _RequestAction
-from .abc import AbstractAsyncNetworkServer
-from .handler import AsyncBaseRequestHandler, AsyncClientInterface, AsyncStreamRequestHandler
+from .abc import AbstractAsyncNetworkServer, SupportsEventSet
+from .handler import AsyncStreamClient, AsyncStreamRequestHandler
 
 if TYPE_CHECKING:
     from ssl import SSLContext as _SSLContext
@@ -102,7 +102,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         host: str | None | Sequence[str],
         port: int,
         protocol: StreamProtocol[_ResponseT, _RequestT],
-        request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT],
+        request_handler: AsyncStreamRequestHandler[_RequestT, _ResponseT],
         *,
         ssl: _SSLContext | None = None,
         ssl_handshake_timeout: float | None = None,
@@ -120,8 +120,8 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
         if not isinstance(protocol, StreamProtocol):
             raise TypeError(f"Expected a StreamProtocol object, got {protocol!r}")
-        if not isinstance(request_handler, AsyncBaseRequestHandler):
-            raise TypeError(f"Expected an AsyncBaseRequestHandler object, got {request_handler!r}")
+        if not isinstance(request_handler, AsyncStreamRequestHandler):
+            raise TypeError(f"Expected an AsyncStreamRequestHandler object, got {request_handler!r}")
 
         backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
 
@@ -174,7 +174,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         self.__backend: AbstractAsyncBackend = backend
         self.__listeners: tuple[AbstractAsyncListenerSocketAdapter, ...] | None = None
         self.__protocol: StreamProtocol[_ResponseT, _RequestT] = protocol
-        self.__request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT] = request_handler
+        self.__request_handler: AsyncStreamRequestHandler[_RequestT, _ResponseT] = request_handler
         self.__is_shutdown: IEvent = self.__backend.create_event()
         self.__is_shutdown.set()
         self.__shutdown_asked: bool = False
@@ -239,7 +239,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         if self.__listeners_factory_runner is not None:
             self.__listeners_factory_runner.cancel()
 
-    async def serve_forever(self, *, is_up_event: IEvent | None = None) -> None:
+    async def serve_forever(self, *, is_up_event: SupportsEventSet | None = None) -> None:
         async with _contextlib.AsyncExitStack() as server_exit_stack:
             if is_up_event is not None:
                 # Force is_up_event to be set, in order not to stuck the waiting task
@@ -276,8 +276,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             self.__request_handler.set_async_backend(self.__backend)
             await self.__request_handler.service_init()
             server_exit_stack.push_async_callback(self.__request_handler.service_quit)
-            if isinstance(self.__request_handler, AsyncStreamRequestHandler):
-                self.__request_handler.set_stop_listening_callback(self.__make_stop_listening_callback())
+            self.__request_handler.set_stop_listening_callback(self.__make_stop_listening_callback())
             ############################
 
             # Setup task group
@@ -396,20 +395,19 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             client_exit_stack.enter_context(self.__suppress_and_log_remaining_exception(client_address=client.address))
 
             request_handler_generator: AsyncGenerator[None, _RequestT] | None = None
-            if isinstance(self.__request_handler, AsyncStreamRequestHandler):
-                _on_connection_hook = self.__request_handler.on_connection(client)
-                if inspect.isasyncgen(_on_connection_hook):
-                    try:
-                        await _on_connection_hook.asend(None)
-                    except StopAsyncIteration:
-                        pass
-                    else:
-                        request_handler_generator = _on_connection_hook
+            _on_connection_hook = self.__request_handler.on_connection(client)
+            if inspect.isasyncgen(_on_connection_hook):
+                try:
+                    await _on_connection_hook.asend(None)
+                except StopAsyncIteration:
+                    pass
                 else:
-                    assert inspect.isawaitable(_on_connection_hook)  # nosec assert_used
-                    await _on_connection_hook
-                del _on_connection_hook
-                client_exit_stack.push_async_callback(self.__request_handler.on_disconnection, client)
+                    request_handler_generator = _on_connection_hook
+            else:
+                assert inspect.isawaitable(_on_connection_hook)  # nosec assert_used
+                await _on_connection_hook
+            del _on_connection_hook
+            client_exit_stack.push_async_callback(self.__request_handler.on_disconnection, client)
 
             del client_exit_stack
 
@@ -468,7 +466,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 if request_handler_generator is not None:
                     await request_handler_generator.aclose()
 
-    async def __new_request_handler(self, client: AsyncClientInterface[_ResponseT]) -> AsyncGenerator[None, _RequestT] | None:
+    async def __new_request_handler(self, client: _ConnectedClientAPI[_ResponseT]) -> AsyncGenerator[None, _RequestT] | None:
         request_handler_generator = self.__request_handler.handle(client)
         try:
             await anext(request_handler_generator)
@@ -604,7 +602,7 @@ class _RequestReceiver(Generic[_RequestT]):
 
 
 @final
-class _ConnectedClientAPI(AsyncClientInterface[_ResponseT]):
+class _ConnectedClientAPI(AsyncStreamClient[_ResponseT]):
     __slots__ = (
         "__socket",
         "__closed",

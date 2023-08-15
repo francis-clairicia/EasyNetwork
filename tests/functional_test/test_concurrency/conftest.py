@@ -4,7 +4,12 @@ import threading
 from collections.abc import AsyncGenerator, Iterator
 from typing import Literal
 
-from easynetwork.api_async.server.handler import AsyncBaseRequestHandler, AsyncClientInterface
+from easynetwork.api_async.server.handler import (
+    AsyncBaseClientInterface,
+    AsyncDatagramRequestHandler,
+    AsyncStreamClient,
+    AsyncStreamRequestHandler,
+)
 from easynetwork.api_sync.server.abc import AbstractStandaloneNetworkServer
 from easynetwork.api_sync.server.tcp import StandaloneTCPNetworkServer
 from easynetwork.api_sync.server.udp import StandaloneUDPNetworkServer
@@ -15,13 +20,14 @@ from easynetwork.serializers.line import StringLineSerializer
 import pytest
 
 
-class EchoRequestHandler(AsyncBaseRequestHandler[str, str]):
-    async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
+class EchoRequestHandler(AsyncStreamRequestHandler[str, str], AsyncDatagramRequestHandler[str, str]):
+    async def handle(self, client: AsyncBaseClientInterface[str]) -> AsyncGenerator[None, str]:
         request = yield
         await client.send_packet(request)
 
-    async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError, /) -> None:
-        await client.aclose()
+    async def bad_request(self, client: AsyncBaseClientInterface[str], exc: BaseProtocolParseError, /) -> None:
+        if isinstance(client, AsyncStreamClient):
+            await client.aclose()
 
 
 @pytest.fixture(params=["TCP", "UDP"])
@@ -36,7 +42,7 @@ def _build_server(ipproto: Literal["TCP", "UDP"]) -> AbstractStandaloneNetworkSe
         case "TCP":
             return StandaloneTCPNetworkServer(None, 0, StreamProtocol(serializer), request_handler)
         case "UDP":
-            return StandaloneUDPNetworkServer(None, 0, DatagramProtocol(serializer), request_handler)
+            return StandaloneUDPNetworkServer("localhost", 0, DatagramProtocol(serializer), request_handler)
         case _:
             pytest.fail("Invalid ipproto")
 

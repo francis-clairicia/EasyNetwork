@@ -6,9 +6,13 @@ import inspect
 from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Any
 
-from easynetwork.api_async.server.handler import AsyncBaseRequestHandler, AsyncClientInterface, AsyncStreamRequestHandler
+from easynetwork.api_async.server.handler import (
+    AsyncBaseClientInterface,
+    AsyncBaseRequestHandler,
+    AsyncDatagramRequestHandler,
+    AsyncStreamRequestHandler,
+)
 from easynetwork.exceptions import BaseProtocolParseError
-from easynetwork.tools.socket import IPv4SocketAddress
 
 import pytest
 
@@ -18,46 +22,22 @@ if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
 
-class FakeClient(AsyncClientInterface[Any]):
-    async def send_packet(self, packet: Any) -> None:
-        raise NotImplementedError
-
-    def is_closing(self) -> bool:
-        raise NotImplementedError
-
-    async def aclose(self) -> None:
-        raise NotImplementedError
-
-    @property
-    def socket(self) -> Any:
-        raise NotImplementedError
-
-
-class BaseFakeHandler(AsyncBaseRequestHandler[Any, Any]):
+class BaseFakeHandler(AsyncBaseRequestHandler):
     __slots__ = ()
 
-    def handle(self, client: AsyncClientInterface[Any]) -> AsyncGenerator[None, Any]:
+    def handle(self, client: AsyncBaseClientInterface[Any]) -> AsyncGenerator[None, Any]:
         raise NotImplementedError
 
-    async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError, /) -> None:
+    async def bad_request(self, client: AsyncBaseClientInterface[Any], exc: BaseProtocolParseError, /) -> None:
         pass
 
 
-class FakeStreamHandler(AsyncStreamRequestHandler[Any, Any], BaseFakeHandler):
+class FakeStreamHandler(BaseFakeHandler, AsyncStreamRequestHandler[Any, Any]):
     __slots__ = ()
 
 
-@pytest.mark.asyncio
-class TestAsyncClientInterface:
-    async def test____address____saved_address_is_good(self) -> None:
-        # Arrange
-        address = IPv4SocketAddress("127.0.0.1", 12345)
-
-        # Act
-        client = FakeClient(address)
-
-        # Assert
-        assert client.address is address
+class FakeDatagramHandler(BaseFakeHandler, AsyncDatagramRequestHandler[Any, Any]):
+    __slots__ = ()
 
 
 @pytest.mark.asyncio
@@ -65,7 +45,7 @@ class BaseCommonTestsForRequestHandler:
     async def test____set_async_backend____return_None(
         self,
         mock_backend: MagicMock,
-        request_handler: AsyncBaseRequestHandler[Any, Any],
+        request_handler: AsyncBaseRequestHandler,
     ) -> None:
         # Arrange
 
@@ -74,7 +54,7 @@ class BaseCommonTestsForRequestHandler:
 
     async def test____service_init____return_None(
         self,
-        request_handler: AsyncBaseRequestHandler[Any, Any],
+        request_handler: AsyncBaseRequestHandler,
     ) -> None:
         # Arrange
 
@@ -83,7 +63,7 @@ class BaseCommonTestsForRequestHandler:
 
     async def test____service_quit____return_None(
         self,
-        request_handler: AsyncBaseRequestHandler[Any, Any],
+        request_handler: AsyncBaseRequestHandler,
     ) -> None:
         # Arrange
 
@@ -92,12 +72,19 @@ class BaseCommonTestsForRequestHandler:
 
     async def test____service_actions____return_None(
         self,
-        request_handler: AsyncBaseRequestHandler[Any, Any],
+        request_handler: AsyncBaseRequestHandler,
     ) -> None:
         # Arrange
 
         # Act & Assert
         assert (await request_handler.service_actions()) is None
+
+
+class TestAsyncDatagramRequestHandler(BaseCommonTestsForRequestHandler):
+    @pytest.fixture
+    @staticmethod
+    def request_handler() -> AsyncDatagramRequestHandler[Any, Any]:
+        return FakeDatagramHandler()
 
 
 class TestAsyncStreamRequestHandler(BaseCommonTestsForRequestHandler):
@@ -118,22 +105,22 @@ class TestAsyncStreamRequestHandler(BaseCommonTestsForRequestHandler):
 
     async def test____on_connection____return_None(
         self,
-        mock_async_client: MagicMock,
+        mock_async_stream_client: MagicMock,
         request_handler: AsyncStreamRequestHandler[Any, Any],
     ) -> None:
         # Arrange
 
         # Act & Assert
-        coro_or_asyncgen = request_handler.on_connection(mock_async_client)
+        coro_or_asyncgen = request_handler.on_connection(mock_async_stream_client)
         assert inspect.iscoroutine(coro_or_asyncgen)
         assert (await coro_or_asyncgen) is None
 
     async def test____on_disconnection____return_None(
         self,
-        mock_async_client: MagicMock,
+        mock_async_stream_client: MagicMock,
         request_handler: AsyncStreamRequestHandler[Any, Any],
     ) -> None:
         # Arrange
 
         # Act & Assert
-        assert (await request_handler.on_disconnection(mock_async_client)) is None
+        assert (await request_handler.on_disconnection(mock_async_stream_client)) is None

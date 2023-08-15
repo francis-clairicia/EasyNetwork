@@ -16,15 +16,23 @@
 
 from __future__ import annotations
 
-__all__ = ["AbstractAsyncNetworkServer"]
+__all__ = [
+    "AbstractAsyncNetworkServer",
+    "SupportsEventSet",
+]
 
 from abc import ABCMeta, abstractmethod
-from typing import TYPE_CHECKING, Any, Self
+from typing import TYPE_CHECKING, Any, Protocol, Self
 
 if TYPE_CHECKING:
     from types import TracebackType
 
-    from ..backend.abc import AbstractAsyncBackend, IEvent
+    from ..backend.abc import AbstractAsyncBackend
+
+
+class SupportsEventSet(Protocol):
+    def set(self) -> None:  # pragma: no cover
+        ...
 
 
 class AbstractAsyncNetworkServer(metaclass=ABCMeta):
@@ -49,7 +57,7 @@ class AbstractAsyncNetworkServer(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    async def serve_forever(self, *, is_up_event: IEvent | None = ...) -> None:
+    async def serve_forever(self, *, is_up_event: SupportsEventSet | None = ...) -> None:
         raise NotImplementedError
 
     @abstractmethod

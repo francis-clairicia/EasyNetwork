@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from easynetwork.api_async.server.handler import AsyncClientInterface
+from easynetwork.api_async.server.handler import AsyncDatagramClient, AsyncStreamClient
 
 import pytest
 
@@ -13,5 +13,10 @@ if TYPE_CHECKING:
 
 
 @pytest.fixture
-def mock_async_client(mocker: MockerFixture) -> MagicMock:
-    return mocker.NonCallableMagicMock(spec=AsyncClientInterface)
+def mock_async_datagram_client(mocker: MockerFixture) -> MagicMock:
+    return mocker.NonCallableMagicMock(spec=AsyncDatagramClient)
+
+
+@pytest.fixture
+def mock_async_stream_client(mocker: MockerFixture) -> MagicMock:
+    return mocker.NonCallableMagicMock(spec=AsyncStreamClient)
