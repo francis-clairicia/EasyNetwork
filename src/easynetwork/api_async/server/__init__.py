@@ -7,8 +7,11 @@ from __future__ import annotations
 
 __all__ = [
     "AbstractAsyncNetworkServer",
+    "AsyncBaseClientInterface",
     "AsyncBaseRequestHandler",
-    "AsyncClientInterface",
+    "AsyncDatagramClient",
+    "AsyncDatagramRequestHandler",
+    "AsyncStreamClient",
     "AsyncStreamRequestHandler",
     "AsyncTCPNetworkServer",
     "AsyncUDPNetworkServer",

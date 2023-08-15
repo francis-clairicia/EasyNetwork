@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     import logging as _logging
 
     from ...api_async.backend.abc import AbstractAsyncBackend
-    from ...api_async.server.handler import AsyncBaseRequestHandler
+    from ...api_async.server.handler import AsyncDatagramRequestHandler
     from ...protocol import DatagramProtocol
 
 _RequestT = TypeVar("_RequestT")
@@ -33,10 +33,10 @@ class StandaloneUDPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
 
     def __init__(
         self,
-        host: str | None,
+        host: str,
         port: int,
         protocol: DatagramProtocol[_ResponseT, _RequestT],
-        request_handler: AsyncBaseRequestHandler[_RequestT, _ResponseT],
+        request_handler: AsyncDatagramRequestHandler[_RequestT, _ResponseT],
         backend: str | AbstractAsyncBackend = "asyncio",
         *,
         reuse_port: bool = False,

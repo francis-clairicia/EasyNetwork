@@ -9,7 +9,7 @@ from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from typing import Any
 
 from easynetwork.api_async.backend.abc import AbstractAsyncBackend
-from easynetwork.api_async.server.handler import AsyncBaseRequestHandler, AsyncClientInterface
+from easynetwork.api_async.server.handler import AsyncDatagramClient, AsyncDatagramRequestHandler
 from easynetwork.api_async.server.udp import AsyncUDPNetworkServer
 from easynetwork.exceptions import BaseProtocolParseError, ClientClosedError, DatagramProtocolParseError, DeserializeError
 from easynetwork.protocol import DatagramProtocol
@@ -26,10 +26,10 @@ class RandomError(Exception):
     pass
 
 
-class MyAsyncUDPRequestHandler(AsyncBaseRequestHandler[str, str]):
+class MyAsyncUDPRequestHandler(AsyncDatagramRequestHandler[str, str]):
     request_received: collections.defaultdict[tuple[Any, ...], list[str]]
     bad_request_received: collections.defaultdict[tuple[Any, ...], list[BaseProtocolParseError]]
-    created_clients: set[AsyncClientInterface[str]]
+    created_clients: set[AsyncDatagramClient[str]]
     backend: AbstractAsyncBackend
     service_actions_count: int
     crash_service_actions: bool = False
@@ -65,17 +65,13 @@ class MyAsyncUDPRequestHandler(AsyncBaseRequestHandler[str, str]):
         )
         await super().service_quit()
 
-    async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
+    async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[None, str]:
         self.created_clients.add(client)
         match (yield):
             case "__error__":
                 raise RandomError("Sorry man!")
             case "__os_error__":
                 raise OSError("Server issue.")
-            case "__close__":
-                await client.aclose()
-                assert not client.is_closing()
-                await client.send_packet("not closed X)")
             case "__closed_client_error__":
                 raise ClientClosedError
             case "__eq__":
@@ -90,17 +86,17 @@ class MyAsyncUDPRequestHandler(AsyncBaseRequestHandler[str, str]):
                 self.request_received[client.address].append(request)
                 await client.send_packet(request.upper())
 
-    async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError) -> None:
+    async def bad_request(self, client: AsyncDatagramClient[str], exc: BaseProtocolParseError) -> None:
         assert isinstance(exc, DatagramProtocolParseError)
         assert exc.sender_address == client.address
         self.bad_request_received[client.address].append(exc)
         await client.send_packet("wrong encoding man.")
 
 
-class TimeoutRequestHandler(AsyncBaseRequestHandler[str, str]):
+class TimeoutRequestHandler(AsyncDatagramRequestHandler[str, str]):
     request_timeout: float = 1.0
 
-    async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
+    async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[None, str]:
         assert (yield) == "something"
         try:
             with pytest.raises(TimeoutError):
@@ -113,57 +109,57 @@ class TimeoutRequestHandler(AsyncBaseRequestHandler[str, str]):
         finally:
             self.request_timeout = 1.0  # Force reset to 1 second in order not to overload the server
 
-    async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError, /) -> None:
+    async def bad_request(self, client: AsyncDatagramClient[str], exc: BaseProtocolParseError, /) -> None:
         pass
 
 
-class ConcurrencyTestRequestHandler(AsyncBaseRequestHandler[str, str]):
+class ConcurrencyTestRequestHandler(AsyncDatagramRequestHandler[str, str]):
     sleep_time_before_second_yield: float = 0.0
     sleep_time_before_response: float = 0.0
 
-    async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
+    async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[None, str]:
         assert (yield) == "something"
         await asyncio.sleep(self.sleep_time_before_second_yield)
         request = yield
         await asyncio.sleep(self.sleep_time_before_response)
         await client.send_packet(f"After wait: {request}")
 
-    async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError, /) -> None:
+    async def bad_request(self, client: AsyncDatagramClient[str], exc: BaseProtocolParseError, /) -> None:
         pass
 
 
-class CancellationRequestHandler(AsyncBaseRequestHandler[str, str]):
-    async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
+class CancellationRequestHandler(AsyncDatagramRequestHandler[str, str]):
+    async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[None, str]:
         yield
         await client.send_packet("response")
         raise asyncio.CancelledError()
 
-    async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError, /) -> None:
+    async def bad_request(self, client: AsyncDatagramClient[str], exc: BaseProtocolParseError, /) -> None:
         pass
 
 
-class RequestRefusedHandler(AsyncBaseRequestHandler[str, str]):
+class RequestRefusedHandler(AsyncDatagramRequestHandler[str, str]):
     refuse_after: int = 2**64
     bypass_refusal: bool = False
 
     async def service_init(self) -> None:
-        self.request_count: collections.Counter[AsyncClientInterface[str]] = collections.Counter()
+        self.request_count: collections.Counter[AsyncDatagramClient[str]] = collections.Counter()
 
-    async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
+    async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[None, str]:
         if self.request_count[client] >= self.refuse_after and not self.bypass_refusal:
             return
         request = yield
         self.request_count[client] += 1
         await client.send_packet(request)
 
-    async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError, /) -> None:
+    async def bad_request(self, client: AsyncDatagramClient[str], exc: BaseProtocolParseError, /) -> None:
         pass
 
 
-class ErrorInRequestHandler(AsyncBaseRequestHandler[str, str]):
+class ErrorInRequestHandler(AsyncDatagramRequestHandler[str, str]):
     mute_thrown_exception: bool = False
 
-    async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
+    async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[None, str]:
         try:
             request = yield
         except Exception as exc:
@@ -173,27 +169,27 @@ class ErrorInRequestHandler(AsyncBaseRequestHandler[str, str]):
         else:
             await client.send_packet(request)
 
-    async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError, /) -> None:
+    async def bad_request(self, client: AsyncDatagramClient[str], exc: BaseProtocolParseError, /) -> None:
         raise RandomError("An error occurred")
 
 
-class ErrorBeforeYieldHandler(AsyncBaseRequestHandler[str, str]):
+class ErrorBeforeYieldHandler(AsyncDatagramRequestHandler[str, str]):
     raise_error: bool = False
 
-    async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
+    async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[None, str]:
         if self.raise_error:
             raise RandomError("An error occurred")
         request = yield
         await client.send_packet(request)
 
-    async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError, /) -> None:
+    async def bad_request(self, client: AsyncDatagramClient[str], exc: BaseProtocolParseError, /) -> None:
         pass
 
 
-class CloseHandleAfterBadRequest(AsyncBaseRequestHandler[str, str]):
+class CloseHandleAfterBadRequest(AsyncDatagramRequestHandler[str, str]):
     bad_request_return_value: bool | None = None
 
-    async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
+    async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[None, str]:
         await client.send_packet("new handle")
         try:
             request = yield
@@ -203,7 +199,7 @@ class CloseHandleAfterBadRequest(AsyncBaseRequestHandler[str, str]):
         else:
             await client.send_packet(request)
 
-    async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError) -> bool | None:
+    async def bad_request(self, client: AsyncDatagramClient[str], exc: BaseProtocolParseError) -> bool | None:
         await client.send_packet("wrong encoding")
         return self.bad_request_return_value
 
@@ -224,8 +220,8 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
 
     @pytest.fixture
     @staticmethod
-    def request_handler(request: Any) -> AsyncBaseRequestHandler[str, str]:
-        request_handler_cls: type[AsyncBaseRequestHandler[str, str]] = getattr(request, "param", MyAsyncUDPRequestHandler)
+    def request_handler(request: Any) -> AsyncDatagramRequestHandler[str, str]:
+        request_handler_cls: type[AsyncDatagramRequestHandler[str, str]] = getattr(request, "param", MyAsyncUDPRequestHandler)
         return request_handler_cls()
 
     @pytest.fixture
@@ -236,7 +232,7 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
     @pytest_asyncio.fixture
     @staticmethod
     async def server(
-        request_handler: AsyncBaseRequestHandler[str, str],
+        request_handler: AsyncDatagramRequestHandler[str, str],
         localhost_ip: str,
         datagram_protocol: DatagramProtocol[str, str],
         service_actions_interval: float | None,
@@ -309,24 +305,6 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
                 monkeypatch.setattr(TaskGroup, "start_soon_with_context", AbstractTaskGroup.start_soon_with_context)
             case invalid_param:
                 pytest.fail(f"Invalid param: {invalid_param!r}")
-
-    async def test____dunder_init____bind_on_localhost_by_default(
-        self,
-        request_handler: MyAsyncUDPRequestHandler,
-        datagram_protocol: DatagramProtocol[str, str],
-        backend_kwargs: dict[str, Any],
-    ) -> None:
-        async with MyAsyncUDPServer(None, 0, datagram_protocol, request_handler, backend_kwargs=backend_kwargs) as s:
-            is_up_event = asyncio.Event()
-            _ = asyncio.create_task(s.serve_forever(is_up_event=is_up_event))
-            async with asyncio.timeout(1):
-                await is_up_event.wait()
-
-            try:
-                assert s.socket is not None
-                assert (address := s.get_address()) is not None and address.host in ("127.0.0.1", "::1")
-            finally:
-                await s.shutdown()
 
     @pytest.mark.usefixtures("run_server_and_wait")
     async def test____serve_forever____backend_assignment(
@@ -552,17 +530,6 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         await asyncio.sleep(0.2)
 
         assert len(caplog.records) == 3
-
-    async def test____serve_forever____close_is_noop(
-        self,
-        client_factory: Callable[[], Awaitable[DatagramEndpoint]],
-    ) -> None:
-        endpoint = await client_factory()
-
-        await endpoint.sendto(b"__close__", None)
-        await asyncio.sleep(0.1)
-
-        assert (await endpoint.recvfrom())[0] == b"not closed X)"
 
     async def test____serve_forever____use_of_a_closed_client_in_request_handler(  # In a world where this thing happen
         self,
