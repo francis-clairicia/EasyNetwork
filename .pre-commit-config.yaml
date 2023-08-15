@@ -31,6 +31,15 @@ repos:
         types_or: [python, pyi]
         require_serial: true
         pass_filenames: false
+      - id: mypy
+        name: mypy (docs)
+        files: ^((src|docs/source)/)
+        exclude: ^(docs/source/conf.py)$
+        entry: tox run -q -e mypy-docs
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+        pass_filenames: false
   - repo: https://github.com/PyCQA/isort
     rev: '5.12.0'
     hooks:
