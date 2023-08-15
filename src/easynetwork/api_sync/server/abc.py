@@ -18,7 +18,6 @@ from __future__ import annotations
 
 __all__ = [
     "AbstractStandaloneNetworkServer",
-    "SupportsEventSet",
 ]
 
 from abc import ABCMeta, abstractmethod

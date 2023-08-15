@@ -25,9 +25,10 @@ from collections.abc import Callable, Coroutine, Iterator
 from typing import TYPE_CHECKING, Any, ParamSpec, Self, TypeVar, final
 
 from ...api_async.backend.abc import AbstractThreadsPortal
+from ...api_async.server.abc import SupportsEventSet
 from ...exceptions import ServerAlreadyRunning, ServerClosedError
 from ...tools._lock import ForkSafeLock
-from .abc import AbstractStandaloneNetworkServer, SupportsEventSet
+from .abc import AbstractStandaloneNetworkServer
 
 if TYPE_CHECKING:
     from ...api_async.backend.abc import AbstractAsyncBackend, AbstractRunner

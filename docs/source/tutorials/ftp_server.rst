@@ -131,9 +131,6 @@ The request handler
 
 Let's create this request handler.
 
-Unlike the :ref:`echo client/server over TCP tutorial <echo-client-server-tcp-request-handler>`,
-we will use :class:`.AsyncStreamRequestHandler` base class because it adds new features specific to TCP servers.
-
 Service initialization
 """"""""""""""""""""""
 
@@ -153,7 +150,7 @@ Here, we'll only initialize the logger, but we could also use it to prepare the 
 Control connection hooks
 """"""""""""""""""""""""
 
-Here are the new features brought by :class:`.AsyncStreamRequestHandler`: It is possible to perform actions when connecting/disconnecting the client.
+Here are the features brought by :class:`.AsyncStreamRequestHandler`: It is possible to perform actions when connecting/disconnecting the client.
 
 .. literalinclude:: ../_include/examples/tutorials/ftp_server/ftp_server_request_handler.py
    :pyobject: FTPRequestHandler
@@ -163,8 +160,8 @@ Here are the new features brought by :class:`.AsyncStreamRequestHandler`: It is 
    :dedent:
 
 
-The :meth:`~AsyncBaseRequestHandler.handle` method
-"""""""""""""""""""""""""""""""""""""""""""""""""""
+The :meth:`~handle` method
+""""""""""""""""""""""""""""""""""""""""""""""""""""
 
 Only ``NOOP`` and ``QUIT`` commands will be implemented for this tutorial.
 
@@ -174,8 +171,8 @@ Only ``NOOP`` and ``QUIT`` commands will be implemented for this tutorial.
    :dedent:
 
 
-The :meth:`~AsyncBaseRequestHandler.bad_request` method
-""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+The :meth:`~bad_request` method
+"""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 
 All parse errors are considered syntax errors.
 

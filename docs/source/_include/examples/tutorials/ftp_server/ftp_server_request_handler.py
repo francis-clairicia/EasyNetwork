@@ -4,8 +4,8 @@ import contextlib
 import logging
 from collections.abc import AsyncGenerator
 
-from easynetwork.api_async.server import AsyncClientInterface, AsyncStreamRequestHandler
-from easynetwork.exceptions import BaseProtocolParseError
+from easynetwork.api_async.server import AsyncStreamClient, AsyncStreamRequestHandler
+from easynetwork.exceptions import StreamProtocolParseError
 
 from ftp_command import FTPCommand
 from ftp_reply import FTPReply
@@ -16,17 +16,17 @@ class FTPRequestHandler(AsyncStreamRequestHandler[FTPRequest, FTPReply]):
     async def service_init(self) -> None:
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    async def on_connection(self, client: AsyncClientInterface[FTPReply]) -> None:
+    async def on_connection(self, client: AsyncStreamClient[FTPReply]) -> None:
         await client.send_packet(FTPReply.service_ready_for_new_user())
 
-    async def on_disconnection(self, client: AsyncClientInterface[FTPReply]) -> None:
+    async def on_disconnection(self, client: AsyncStreamClient[FTPReply]) -> None:
         with contextlib.suppress(ConnectionError):
             if not client.is_closing():
                 await client.send_packet(FTPReply.connection_close(unexpected=True))
 
     async def handle(
         self,
-        client: AsyncClientInterface[FTPReply],
+        client: AsyncStreamClient[FTPReply],
     ) -> AsyncGenerator[None, FTPRequest]:
         request: FTPRequest = yield
         self.logger.info("Sent by client %s: %s", client.address, request)
@@ -43,8 +43,8 @@ class FTPRequestHandler(AsyncStreamRequestHandler[FTPRequest, FTPReply]):
 
     async def bad_request(
         self,
-        client: AsyncClientInterface[FTPReply],
-        exc: BaseProtocolParseError,
+        client: AsyncStreamClient[FTPReply],
+        exc: StreamProtocolParseError,
     ) -> None:
         self.logger.warning(
             "%s: %s: %s",

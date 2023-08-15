@@ -3,8 +3,8 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator
 from typing import Any, TypeAlias
 
-from easynetwork.api_async.server import AsyncBaseRequestHandler, AsyncClientInterface
-from easynetwork.exceptions import BaseProtocolParseError
+from easynetwork.api_async.server import AsyncStreamClient, AsyncStreamRequestHandler
+from easynetwork.exceptions import StreamProtocolParseError
 
 # These TypeAliases are there to help you understand
 # where requests and responses are used
@@ -12,10 +12,10 @@ RequestType: TypeAlias = Any
 ResponseType: TypeAlias = Any
 
 
-class EchoRequestHandler(AsyncBaseRequestHandler[RequestType, ResponseType]):
+class EchoRequestHandler(AsyncStreamRequestHandler[RequestType, ResponseType]):
     async def handle(
         self,
-        client: AsyncClientInterface[ResponseType],
+        client: AsyncStreamClient[ResponseType],
     ) -> AsyncGenerator[None, RequestType]:
         request: RequestType = yield  # A JSON request has been sent by this client
 
@@ -27,8 +27,8 @@ class EchoRequestHandler(AsyncBaseRequestHandler[RequestType, ResponseType]):
 
     async def bad_request(
         self,
-        client: AsyncClientInterface[ResponseType],
-        exc: BaseProtocolParseError,
+        client: AsyncStreamClient[ResponseType],
+        exc: StreamProtocolParseError,
     ) -> None:
         # Invalid JSON data sent
         # This is an example of how you can answer to an invalid request

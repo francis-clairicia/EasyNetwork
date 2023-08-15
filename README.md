@@ -55,12 +55,11 @@ import logging
 from collections.abc import AsyncGenerator
 from typing import Any, TypeAlias
 
-from easynetwork.api_async.server import AsyncBaseRequestHandler, AsyncClientInterface
+from easynetwork.api_async.server import AsyncStreamClient, AsyncStreamRequestHandler
 from easynetwork.api_sync.server import StandaloneTCPNetworkServer
-from easynetwork.exceptions import BaseProtocolParseError
+from easynetwork.exceptions import StreamProtocolParseError
 from easynetwork.protocol import StreamProtocol
 from easynetwork.serializers import JSONSerializer
-
 
 # These TypeAliases are there to help you understand
 # where requests and responses are used in the code
@@ -73,13 +72,13 @@ class JSONProtocol(StreamProtocol[ResponseType, RequestType]):
         super().__init__(JSONSerializer())
 
 
-class EchoRequestHandler(AsyncBaseRequestHandler[RequestType, ResponseType]):
+class EchoRequestHandler(AsyncStreamRequestHandler[RequestType, ResponseType]):
     def __init__(self) -> None:
         self.logger: logging.Logger = logging.getLogger(self.__class__.__name__)
 
     async def handle(
         self,
-        client: AsyncClientInterface[ResponseType],
+        client: AsyncStreamClient[ResponseType],
     ) -> AsyncGenerator[None, RequestType]:
         request: RequestType = yield  # A JSON request has been sent by this client
 
@@ -96,8 +95,8 @@ class EchoRequestHandler(AsyncBaseRequestHandler[RequestType, ResponseType]):
 
     async def bad_request(
         self,
-        client: AsyncClientInterface[ResponseType],
-        exc: BaseProtocolParseError,
+        client: AsyncStreamClient[ResponseType],
+        exc: StreamProtocolParseError,
     ) -> None:
         # Invalid JSON data sent
         # This is an example of how you can answer to an invalid request

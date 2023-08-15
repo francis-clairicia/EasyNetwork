@@ -61,10 +61,10 @@ Now that we have established the :term:`communication protocol`, we can create o
 Create your request handler
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-First, you must create a request handler class by subclassing the :class:`.AsyncBaseRequestHandler` class and overriding
-its :meth:`~.AsyncBaseRequestHandler.handle` method; this method will process incoming requests.
+First, you must create a request handler class by subclassing the :class:`.AsyncStreamRequestHandler` class and overriding
+its :meth:`~.AsyncStreamRequestHandler.handle` method; this method will process incoming requests.
 
-Its :meth:`~.AsyncBaseRequestHandler.bad_request` method must also be overridden to handle parsing errors.
+Its :meth:`~.AsyncStreamRequestHandler.bad_request` method must also be overridden to handle parsing errors.
 
 .. literalinclude:: ../_include/examples/tutorials/echo_client_server_tcp/echo_request_handler.py
    :linenos:
@@ -72,7 +72,7 @@ Its :meth:`~.AsyncBaseRequestHandler.bad_request` method must also be overridden
 
 .. note::
 
-   Pay attention to :meth:`~.AsyncBaseRequestHandler.handle`, it is an :std:term:`asynchronous generator` function.
+   Pay attention to :meth:`~.AsyncStreamRequestHandler.handle`, it is an :std:term:`asynchronous generator` function.
 
    All requests sent by the client are literally injected into the generator via the :keyword:`yield` statement.
 
@@ -89,7 +89,7 @@ Its :meth:`~.AsyncBaseRequestHandler.bad_request` method must also be overridden
 
    Leaving the generator will *not* close the connection, a new generator will be created afterwards.
 
-   The same applies to :meth:`~.AsyncBaseRequestHandler.bad_request`.
+   The same applies to :meth:`~.AsyncStreamRequestHandler.bad_request`.
 
    You may, however, explicitly close the connection if you want to::
 

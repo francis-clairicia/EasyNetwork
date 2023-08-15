@@ -38,14 +38,13 @@ def main() -> None:
     with UDPNetworkEndpoint(JSONProtocol()) as endpoint:
         match sys.argv[1:]:
             case ["sender", address_string, *to_send]:
-                host, port_string = address_string.split(":")
+                host, port_string = address_string.split(",")
                 port = int(port_string)
 
                 sender(endpoint, (host, port), to_send)
 
             case ["receiver"]:
-                receiver_port = endpoint.get_local_address().port
-                print(f"Receiver available on port {receiver_port}")
+                print(f"Receiver available on {endpoint.get_local_address()}")
 
                 receiver(endpoint)
 
