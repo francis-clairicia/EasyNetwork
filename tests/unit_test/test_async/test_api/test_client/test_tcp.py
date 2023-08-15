@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
 from ...._utils import AsyncDummyLock
+from ....base import UNSUPPORTED_FAMILIES
 from .base import BaseTestClient
 
 
@@ -281,6 +282,30 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             mocker.call(SOL_SOCKET, SO_KEEPALIVE, True),
         ]
         assert isinstance(client.socket, SocketProxy)
+
+    @pytest.mark.parametrize("socket_family", list(UNSUPPORTED_FAMILIES), indirect=True)
+    @pytest.mark.parametrize("use_ssl", [False, True], ids=lambda p: f"use_ssl=={p}")
+    async def test____dunder_init____use_given_socket____invalid_socket_family(
+        self,
+        use_ssl: bool,
+        mock_tcp_socket: MagicMock,
+        mock_stream_protocol: MagicMock,
+    ) -> None:
+        # Arrange
+        ssl_context: bool = False
+        server_hostname: str | None = None
+        if use_ssl:
+            ssl_context = True
+            server_hostname = "test.example.com"
+
+        # Act & Assert
+        with pytest.raises(ValueError, match=r"^Only these families are supported: .+$"):
+            _ = AsyncTCPNetworkClient(
+                mock_tcp_socket,
+                protocol=mock_stream_protocol,
+                ssl=ssl_context,
+                server_hostname=server_hostname,
+            )
 
     @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
     async def test____dunder_init____protocol____invalid_value(

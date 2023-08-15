@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 
     from pytest_mock import MockerFixture
 
+from ....base import UNSUPPORTED_FAMILIES
 from .base import BaseTestClient
 
 
@@ -290,6 +291,21 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
 
         # Assert
         mock_udp_socket.bind.assert_called_once_with(("localhost", 0))
+
+    @pytest.mark.parametrize("socket_family", list(UNSUPPORTED_FAMILIES), indirect=True)
+    async def test____dunder_init____use_given_socket____invalid_socket_family(
+        self,
+        mock_udp_socket: MagicMock,
+        mock_datagram_protocol: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        with pytest.raises(ValueError, match=r"^Only these families are supported: .+$"):
+            _ = AsyncUDPNetworkEndpoint(
+                mock_datagram_protocol,
+                socket=mock_udp_socket,
+            )
 
     @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
     async def test____dunder_init____protocol____invalid_value(
