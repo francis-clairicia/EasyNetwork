@@ -172,6 +172,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         self.__socket_connector: SingleTaskRunner[AbstractAsyncStreamSocketAdapter] | None = None
         match __arg:
             case _socket.socket() as socket:
+                _check_socket_family(socket.family)
                 _check_socket_no_ssl(socket)
                 if ssl:
                     if server_hostname is None:
@@ -248,7 +249,6 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
     @staticmethod
     def __build_info_dict(socket: AbstractAsyncStreamSocketAdapter) -> _ClientInfo:
         socket_proxy = SocketProxy(socket.socket())
-        _check_socket_family(socket_proxy.family)
         local_address: SocketAddress = new_socket_address(socket.get_local_address(), socket_proxy.family)
         remote_address: SocketAddress = new_socket_address(socket.get_remote_address(), socket_proxy.family)
         return {
