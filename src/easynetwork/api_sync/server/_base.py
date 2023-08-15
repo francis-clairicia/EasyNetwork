@@ -145,7 +145,7 @@ class BaseStandaloneNetworkServerImpl(AbstractStandaloneNetworkServer):
 
 @final
 class _ServerThreadsPortal(AbstractThreadsPortal):
-    __slots__ = ("__backend", "__runner", "__portal", "__request_count")
+    __slots__ = ("__backend", "__runner", "__portal", "__request_count", "__request_count_lock")
 
     def __init__(self, backend: AbstractAsyncBackend, runner: AbstractRunner) -> None:
         super().__init__()
@@ -153,6 +153,7 @@ class _ServerThreadsPortal(AbstractThreadsPortal):
         self.__runner: AbstractRunner = runner
         self.__portal: AbstractThreadsPortal = backend.create_threads_portal()
         self.__request_count: int = 0
+        self.__request_count_lock = ForkSafeLock()
 
     def run_coroutine(self, coro_func: Callable[_P, Coroutine[Any, Any, _T]], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
         with self.__request_context():
@@ -168,8 +169,11 @@ class _ServerThreadsPortal(AbstractThreadsPortal):
 
     @_contextlib.contextmanager
     def __request_context(self) -> Iterator[None]:
-        self.__request_count += 1
+        request_count_lock = self.__request_count_lock
+        with request_count_lock.get():
+            self.__request_count += 1
         try:
             yield
         finally:
-            self.__request_count -= 1
+            with request_count_lock.get():
+                self.__request_count -= 1

@@ -6,8 +6,11 @@
 from __future__ import annotations
 
 __all__ = [
+    "AsyncBaseClientInterface",
     "AsyncBaseRequestHandler",
-    "AsyncClientInterface",
+    "AsyncDatagramClient",
+    "AsyncDatagramRequestHandler",
+    "AsyncStreamClient",
     "AsyncStreamRequestHandler",
 ]
 
@@ -16,7 +19,7 @@ from collections.abc import AsyncGenerator, Callable, Coroutine
 from typing import TYPE_CHECKING, Any, Generic, TypeVar, final
 
 if TYPE_CHECKING:
-    from ...exceptions import BaseProtocolParseError
+    from ...exceptions import DatagramProtocolParseError, StreamProtocolParseError
     from ...tools.socket import SocketAddress, SocketProxy
     from ..backend.abc import AbstractAsyncBackend
 
@@ -25,7 +28,7 @@ _RequestT = TypeVar("_RequestT")
 _ResponseT = TypeVar("_ResponseT")
 
 
-class AsyncClientInterface(Generic[_ResponseT], metaclass=ABCMeta):
+class AsyncBaseClientInterface(Generic[_ResponseT], metaclass=ABCMeta):
     __slots__ = ("__addr", "__weakref__")
 
     def __init__(self, address: SocketAddress) -> None:
@@ -35,16 +38,15 @@ class AsyncClientInterface(Generic[_ResponseT], metaclass=ABCMeta):
     def __repr__(self) -> str:
         return f"<client with address {self.address} at {id(self):#x}>"
 
+    def __getstate__(self) -> Any:  # pragma: no cover
+        raise TypeError(f"cannot pickle {self.__class__.__name__!r} object")
+
     @abstractmethod
     async def send_packet(self, packet: _ResponseT, /) -> None:
         raise NotImplementedError
 
     @abstractmethod
     def is_closing(self) -> bool:
-        raise NotImplementedError
-
-    @abstractmethod
-    async def aclose(self) -> None:
         raise NotImplementedError
 
     @property
@@ -58,7 +60,27 @@ class AsyncClientInterface(Generic[_ResponseT], metaclass=ABCMeta):
         raise NotImplementedError
 
 
-class AsyncBaseRequestHandler(Generic[_RequestT, _ResponseT], metaclass=ABCMeta):
+class AsyncStreamClient(AsyncBaseClientInterface[_ResponseT]):
+    __slots__ = ()
+
+    @abstractmethod
+    async def aclose(self) -> None:
+        raise NotImplementedError
+
+
+class AsyncDatagramClient(AsyncBaseClientInterface[_ResponseT]):
+    __slots__ = ()
+
+    @abstractmethod
+    def __hash__(self) -> int:
+        raise NotImplementedError
+
+    @abstractmethod
+    def __eq__(self, other: object, /) -> bool:
+        raise NotImplementedError
+
+
+class AsyncBaseRequestHandler(metaclass=ABCMeta):
     __slots__ = ("__weakref__",)
 
     def set_async_backend(self, backend: AbstractAsyncBackend, /) -> None:
@@ -73,28 +95,42 @@ class AsyncBaseRequestHandler(Generic[_RequestT, _ResponseT], metaclass=ABCMeta)
     async def service_actions(self) -> None:
         pass
 
-    @abstractmethod
-    def handle(self, client: AsyncClientInterface[_ResponseT], /) -> AsyncGenerator[None, _RequestT]:
-        raise NotImplementedError
 
-    @abstractmethod
-    async def bad_request(self, client: AsyncClientInterface[_ResponseT], exc: BaseProtocolParseError, /) -> bool | None:
-        raise NotImplementedError
-
-
-class AsyncStreamRequestHandler(AsyncBaseRequestHandler[_RequestT, _ResponseT]):
+class AsyncStreamRequestHandler(AsyncBaseRequestHandler, Generic[_RequestT, _ResponseT]):
     __slots__ = ()
 
+    @abstractmethod
+    def handle(self, client: AsyncStreamClient[_ResponseT], /) -> AsyncGenerator[None, _RequestT]:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def bad_request(self, client: AsyncStreamClient[_ResponseT], exc: StreamProtocolParseError, /) -> bool | None:
+        raise NotImplementedError
+
     def on_connection(
-        self, client: AsyncClientInterface[_ResponseT], /
+        self,
+        client: AsyncStreamClient[_ResponseT],
+        /,
     ) -> Coroutine[Any, Any, None] | AsyncGenerator[None, _RequestT]:
         async def _pass() -> None:
             pass
 
         return _pass()
 
-    async def on_disconnection(self, client: AsyncClientInterface[_ResponseT], /) -> None:
+    async def on_disconnection(self, client: AsyncStreamClient[_ResponseT], /) -> None:
         pass
 
     def set_stop_listening_callback(self, stop_listening_callback: Callable[[], None], /) -> None:
         pass
+
+
+class AsyncDatagramRequestHandler(AsyncBaseRequestHandler, Generic[_RequestT, _ResponseT]):
+    __slots__ = ()
+
+    @abstractmethod
+    def handle(self, client: AsyncDatagramClient[_ResponseT], /) -> AsyncGenerator[None, _RequestT]:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def bad_request(self, client: AsyncDatagramClient[_ResponseT], exc: DatagramProtocolParseError, /) -> bool | None:
+        raise NotImplementedError

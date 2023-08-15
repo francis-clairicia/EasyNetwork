@@ -5,7 +5,12 @@ import threading
 import time
 from collections.abc import AsyncGenerator, Callable, Iterator
 
-from easynetwork.api_async.server.handler import AsyncBaseRequestHandler, AsyncClientInterface
+from easynetwork.api_async.server.handler import (
+    AsyncBaseClientInterface,
+    AsyncDatagramRequestHandler,
+    AsyncStreamClient,
+    AsyncStreamRequestHandler,
+)
 from easynetwork.api_sync.server.abc import AbstractStandaloneNetworkServer
 from easynetwork.api_sync.server.tcp import StandaloneTCPNetworkServer
 from easynetwork.api_sync.server.thread import StandaloneNetworkServerThread
@@ -16,13 +21,14 @@ from easynetwork.protocol import DatagramProtocol, StreamProtocol
 import pytest
 
 
-class EchoRequestHandler(AsyncBaseRequestHandler[str, str]):
-    async def handle(self, client: AsyncClientInterface[str]) -> AsyncGenerator[None, str]:
+class EchoRequestHandler(AsyncStreamRequestHandler[str, str], AsyncDatagramRequestHandler[str, str]):
+    async def handle(self, client: AsyncBaseClientInterface[str]) -> AsyncGenerator[None, str]:
         request = yield
         await client.send_packet(request)
 
-    async def bad_request(self, client: AsyncClientInterface[str], exc: BaseProtocolParseError, /) -> None:
-        await client.aclose()
+    async def bad_request(self, client: AsyncBaseClientInterface[str], exc: BaseProtocolParseError, /) -> None:
+        if isinstance(client, AsyncStreamClient):
+            await client.aclose()
 
 
 class BaseTestStandaloneNetworkServer:
@@ -179,7 +185,7 @@ class TestStandaloneUDPNetworkServer(BaseTestStandaloneNetworkServer):
         runner_factory: Callable[[], asyncio.Runner] | None,
     ) -> StandaloneUDPNetworkServer[str, str]:
         return StandaloneUDPNetworkServer(
-            None,
+            "localhost",
             0,
             datagram_protocol,
             EchoRequestHandler(),
@@ -189,7 +195,7 @@ class TestStandaloneUDPNetworkServer(BaseTestStandaloneNetworkServer):
     def test____dunder_init____invalid_backend(self, datagram_protocol: DatagramProtocol[str, str]) -> None:
         with pytest.raises(ValueError, match=r"^You must explicitly give a backend name or instance$"):
             _ = StandaloneUDPNetworkServer(
-                None,
+                "localhost",
                 0,
                 datagram_protocol,
                 EchoRequestHandler(),
