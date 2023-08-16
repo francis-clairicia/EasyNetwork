@@ -87,7 +87,7 @@ class BaseFakeBackend(AbstractAsyncBackend):
     def create_condition_var(self, lock: ILock | None = ...) -> ICondition:
         raise NotImplementedError
 
-    async def run_in_thread(self, __func: Callable[..., Any], /, *args: Any, **kwargs: Any) -> Any:
+    async def run_in_thread(self, func: Callable[..., Any], /, *args: Any, **kwargs: Any) -> Any:
         raise NotImplementedError
 
     def create_threads_portal(self) -> AbstractThreadsPortal:

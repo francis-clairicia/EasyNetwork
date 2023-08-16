@@ -62,9 +62,9 @@ class ILock(Protocol):
 
     async def __aexit__(
         self,
-        __exc_type: type[BaseException] | None,
-        __exc_val: BaseException | None,
-        __exc_tb: TracebackType | None,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
         /,
     ) -> bool | None:  # pragma: no cover
         ...
@@ -170,7 +170,7 @@ class AbstractTaskGroup(metaclass=ABCMeta):
     @abstractmethod
     def start_soon(
         self,
-        __coro_func: Callable[_P, Coroutine[Any, Any, _T]],
+        coro_func: Callable[_P, Coroutine[Any, Any, _T]],
         /,
         *args: _P.args,
         **kwargs: _P.kwargs,

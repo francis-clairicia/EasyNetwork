@@ -131,12 +131,12 @@ class TaskGroup(AbstractTaskGroup):
 
     def start_soon(
         self,
-        __coro_func: Callable[_P, Coroutine[Any, Any, _T]],
+        coro_func: Callable[_P, Coroutine[Any, Any, _T]],
         /,
         *args: _P.args,
         **kwargs: _P.kwargs,
     ) -> AbstractTask[_T]:
-        return Task(self.__asyncio_tg.create_task(__coro_func(*args, **kwargs)))
+        return Task(self.__asyncio_tg.create_task(coro_func(*args, **kwargs)))
 
     def start_soon_with_context(
         self,

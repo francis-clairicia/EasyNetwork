@@ -41,17 +41,17 @@ class SingleTaskRunner(Generic[_T_co]):
 
     def __init__(
         self,
-        __backend: AbstractAsyncBackend,
-        __coro_func: Callable[_P, Coroutine[Any, Any, _T_co]],
+        backend: AbstractAsyncBackend,
+        coro_func: Callable[_P, Coroutine[Any, Any, _T_co]],
         /,
         *args: _P.args,
         **kwargs: _P.kwargs,
     ) -> None:
         super().__init__()
 
-        self.__backend: AbstractAsyncBackend = __backend
+        self.__backend: AbstractAsyncBackend = backend
         self.__coro_func: tuple[Callable[..., Coroutine[Any, Any, _T_co]], tuple[Any, ...], dict[str, Any]] | None = (
-            __coro_func,
+            coro_func,
             args,
             kwargs,
         )
