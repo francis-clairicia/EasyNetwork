@@ -3,4 +3,3 @@
 
 .. automodule:: easynetwork.protocol
    :members:
-   :show-inheritance:

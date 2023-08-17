@@ -4,4 +4,3 @@
 .. automodule:: easynetwork.serializers.json
    :members:
    :undoc-members:
-   :show-inheritance:

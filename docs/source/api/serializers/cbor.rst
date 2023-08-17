@@ -4,4 +4,3 @@
 .. automodule:: easynetwork.serializers.cbor
    :members:
    :undoc-members:
-   :show-inheritance:

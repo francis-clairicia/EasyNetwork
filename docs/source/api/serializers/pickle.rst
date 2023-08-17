@@ -4,4 +4,3 @@
 .. automodule:: easynetwork.serializers.pickle
    :members:
    :undoc-members:
-   :show-inheritance:

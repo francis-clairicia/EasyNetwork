@@ -3,4 +3,3 @@
 
 .. automodule:: easynetwork.exceptions
    :members:
-   :show-inheritance:

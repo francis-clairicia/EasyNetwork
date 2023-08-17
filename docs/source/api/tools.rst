@@ -10,4 +10,3 @@
 .. automodule:: easynetwork.tools.socket
    :members:
    :undoc-members:
-   :show-inheritance:

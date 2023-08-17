@@ -4,4 +4,3 @@
 .. automodule:: easynetwork.api_sync.client
    :members:
    :undoc-members:
-   :show-inheritance:
