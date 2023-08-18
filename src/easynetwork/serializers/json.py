@@ -43,7 +43,7 @@ _whitespaces_match: Callable[[bytes, int], re.Match[bytes]] = re.compile(rb"[ \t
 @dataclass(kw_only=True)
 class JSONEncoderConfig:
     """
-    A :mod:`dataclass <dataclasses>` with the JSON encoder options.
+    A dataclass with the JSON encoder options.
 
     See :class:`json.JSONEncoder` for more information.
     """
@@ -60,7 +60,7 @@ class JSONEncoderConfig:
 @dataclass(kw_only=True)
 class JSONDecoderConfig:
     """
-    A :mod:`dataclass <dataclasses>` with the JSON decoder options.
+    A dataclass with the JSON decoder options.
 
     See :class:`json.JSONDecoder` for more information.
     """

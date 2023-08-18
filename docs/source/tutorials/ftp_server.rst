@@ -1,5 +1,6 @@
+********************************************************
 Practical application — Build an FTP server from scratch
-========================================================
+********************************************************
 
 .. include:: ../_include/sync-async-variants.rst
 
@@ -8,7 +9,7 @@ Practical application — Build an FTP server from scratch
 
 
 TL;DR
------
+=====
 
 Yes, I know, you will never need to create your own FTP server (unless you want your own service). However, it is still interesting
 to see the structure of such a model, based on a standardized communication protocol.
@@ -20,14 +21,14 @@ and exploit all (or most) of the EasyNetwork library's features.
 
 
 The communication protocol
---------------------------
+==========================
 
 FTP requests and responses are transmitted as ASCII strings separated by a carriage return (``\r\n``).
 
 Let's say we want to have two classes ``FTPRequest`` and ``FTPReply`` to manage them in our request handler.
 
 ``FTPRequest`` object
-^^^^^^^^^^^^^^^^^^^^^
+---------------------
 
 An FTP client request consists of a command and, optionally, arguments separated by a space character.
 
@@ -49,7 +50,7 @@ Second, we define the ``FTPRequest`` class that will be used:
 
 
 ``FTPReply`` object
-^^^^^^^^^^^^^^^^^^^
+-------------------
 
 An FTP reply consists of a three-digit number (transmitted as three alphanumeric characters) followed by some text.
 
@@ -60,7 +61,7 @@ An FTP reply consists of a three-digit number (transmitted as three alphanumeric
 
 
 Use converters to handle character strings
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+------------------------------------------
 
 The client will send a character string and expect a character string in return. :class:`.StringLineSerializer` will handle this part,
 but we have created our objects in order not to manipulate strings.
@@ -87,7 +88,7 @@ To remedy this, we will use :term:`converters <converter>` to switch between our
    But since we are not building a real (complete and fully featured) FTP server, we will leave the code as is.
 
 The protocol object
-^^^^^^^^^^^^^^^^^^^
+-------------------
 
 Now that we have our business objects, we can create our :term:`protocol object`.
 
@@ -111,10 +112,10 @@ Now that we have our business objects, we can create our :term:`protocol object`
 
 
 The server
-----------
+==========
 
 ``FTPReply``: Define default replies
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+------------------------------------
 
 A good way to reply to the client with default replies is to define them in methods.
 
@@ -127,12 +128,12 @@ Here are just a few that will be used in this tutorial.
 
 
 The request handler
-^^^^^^^^^^^^^^^^^^^
+-------------------
 
 Let's create this request handler.
 
 Service initialization
-""""""""""""""""""""""
+^^^^^^^^^^^^^^^^^^^^^^
 
 A feature we could have used for the :ref:`echo client/server over TCP tutorial <echo-client-server-tcp-request-handler>`
 is to define actions to perform at start/end of the server.
@@ -148,7 +149,7 @@ Here, we'll only initialize the logger, but we could also use it to prepare the 
 
 
 Control connection hooks
-""""""""""""""""""""""""
+^^^^^^^^^^^^^^^^^^^^^^^^
 
 Here are the features brought by :class:`.AsyncStreamRequestHandler`: It is possible to perform actions when connecting/disconnecting the client.
 
@@ -161,7 +162,7 @@ Here are the features brought by :class:`.AsyncStreamRequestHandler`: It is poss
 
 
 The :meth:`~handle` method
-""""""""""""""""""""""""""""""""""""""""""""""""""""
+^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Only ``NOOP`` and ``QUIT`` commands will be implemented for this tutorial.
 
@@ -172,7 +173,7 @@ Only ``NOOP`` and ``QUIT`` commands will be implemented for this tutorial.
 
 
 The :meth:`~bad_request` method
-"""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 All parse errors are considered syntax errors.
 
@@ -183,7 +184,7 @@ All parse errors are considered syntax errors.
 
 
 Full code
-"""""""""
+^^^^^^^^^
 
 .. literalinclude:: ../_include/examples/tutorials/ftp_server/ftp_server_request_handler.py
    :caption: ftp_server_request_handler.py
@@ -191,7 +192,7 @@ Full code
 
 
 Start the server
-^^^^^^^^^^^^^^^^
+----------------
 
 .. tabs::
 
@@ -209,7 +210,7 @@ Start the server
 
 
 Outputs
--------
+=======
 
 The output of the example should look something like this:
 

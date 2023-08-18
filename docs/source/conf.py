@@ -26,7 +26,6 @@ extensions = [
     "sphinx_toolbox.github",
     "sphinx_toolbox.sidebar_links",
     "sphinx_toolbox.more_autodoc.autoprotocol",
-    "sphinx_toolbox.more_autodoc.no_docstring",
 ]
 
 highlight_language = "python3"
@@ -45,6 +44,7 @@ autodoc_member_order = "bysource"
 autodoc_default_options = {
     "undoc-members": True,
     "member-order": "bysource",
+    "no-value": True,
     "show-inheritance": True,
 }
 autodoc_typehints = "description"

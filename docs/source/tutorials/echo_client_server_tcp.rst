@@ -1,5 +1,6 @@
+******************************
 An echo client/server over TCP
-==============================
+******************************
 
 To see how to create a server and a client with the minimum requirements,
 let's create a server that will return everything sent by a connected client.
@@ -12,12 +13,12 @@ let's create a server that will return everything sent by a connected client.
 .. _echo-client-server-tcp-protocol:
 
 The communication protocol
---------------------------
+==========================
 
 Before doing all this networking stuff, you need to know what you want to transmit and in what format. It is your :term:`communication protocol`.
 
 Choose the serializer
-^^^^^^^^^^^^^^^^^^^^^
+---------------------
 
 There is a bunch of serializers available in :mod:`easynetwork.serializers` for everyone to enjoy:
 
@@ -33,7 +34,7 @@ For the tutorial, :class:`.JSONSerializer` will be used.
 
 
 Build your protocol object
-^^^^^^^^^^^^^^^^^^^^^^^^^^
+--------------------------
 
 For communication via TCP, a :class:`.StreamProtocol` :term:`protocol object` must be created.
 
@@ -52,14 +53,14 @@ For communication via TCP, a :class:`.StreamProtocol` :term:`protocol object` mu
 
 
 The server
-----------
+==========
 
 Now that we have established the :term:`communication protocol`, we can create our server.
 
 .. _echo-client-server-tcp-request-handler:
 
 Create your request handler
-^^^^^^^^^^^^^^^^^^^^^^^^^^^
+---------------------------
 
 First, you must create a request handler class by subclassing the :class:`.AsyncStreamRequestHandler` class and overriding
 its :meth:`~.AsyncStreamRequestHandler.handle` method; this method will process incoming requests.
@@ -97,7 +98,7 @@ Its :meth:`~.AsyncStreamRequestHandler.bad_request` method must also be overridd
 
 
 Start the server
-^^^^^^^^^^^^^^^^
+----------------
 
 Second, you must instantiate the TCP server class, passing it the server's address, the :term:`protocol object` instance,
 and the request handler instance.
@@ -124,7 +125,7 @@ and the request handler instance.
 
 
 The client
-----------
+==========
 
 This is the client side:
 
@@ -144,7 +145,7 @@ This is the client side:
 
 
 Outputs
--------
+=======
 
 The output of the example should look something like this:
 

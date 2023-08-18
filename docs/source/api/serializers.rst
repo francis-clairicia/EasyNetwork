@@ -1,5 +1,6 @@
+***********
 Serializers
-===========
+***********
 
 .. automodule:: easynetwork.serializers
 
@@ -7,7 +8,7 @@ Serializers
    :local:
 
 Base classes
-------------
+============
 
 .. autoclass:: easynetwork.serializers.AbstractPacketSerializer
    :members:
@@ -17,7 +18,7 @@ Base classes
 
 
 Stream base classes
--------------------
+===================
 
 Here are abstract classes that implement common stream protocol patterns.
 
@@ -32,7 +33,7 @@ Here are abstract classes that implement common stream protocol patterns.
 
 
 JSON serializer
----------------
+===============
 
 .. autoclass:: easynetwork.serializers.JSONEncoderConfig
    :members:

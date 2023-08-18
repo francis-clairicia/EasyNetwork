@@ -1,5 +1,6 @@
+*********************
 Create a UDP endpoint
-=====================
+*********************
 
 This tutorial will show you how to create a ready-to-use datagram endpoint over UDP.
 
@@ -10,7 +11,7 @@ This tutorial will show you how to create a ready-to-use datagram endpoint over 
 
 
 The communication protocol
---------------------------
+==========================
 
 You will need a :term:`protocol object`, as for the :ref:`echo client/server over TCP <echo-client-server-tcp-protocol>`.
 
@@ -25,7 +26,7 @@ For communication via UDP, a :class:`.DatagramProtocol` object must be created t
 
 
 The UDP endpoint
-----------------
+================
 
 Here is an example of how to use a UDP endpoint:
 
