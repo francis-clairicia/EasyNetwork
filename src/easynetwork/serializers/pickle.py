@@ -50,8 +50,8 @@ class PicklerConfig:
     See :class:`pickle.Pickler` for more information.
     """
 
-    protocol: int = field(default_factory=_get_default_pickler_protocol)  #: :meta hide-value:
-    fix_imports: bool = False  #: :meta hide-value:
+    protocol: int = field(default_factory=_get_default_pickler_protocol)
+    fix_imports: bool = False
 
 
 @dataclass(kw_only=True)
@@ -62,9 +62,9 @@ class UnpicklerConfig:
     See :class:`pickle.Unpickler` for more information.
     """
 
-    fix_imports: bool = False  #: :meta hide-value:
-    encoding: str = "utf-8"  #: :meta hide-value:
-    errors: str = "strict"  #: :meta hide-value:
+    fix_imports: bool = False
+    encoding: str = "utf-8"
+    errors: str = "strict"
 
 
 class PickleSerializer(AbstractPacketSerializer[SerializedPacketT_contra, DeserializedPacketT_co]):

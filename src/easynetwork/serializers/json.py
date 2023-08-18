@@ -48,13 +48,13 @@ class JSONEncoderConfig:
     See :class:`json.JSONEncoder` for more information.
     """
 
-    skipkeys: bool = False  #: :meta hide-value:
-    check_circular: bool = True  #: :meta hide-value:
-    ensure_ascii: bool = True  #: :meta hide-value:
-    allow_nan: bool = True  #: :meta hide-value:
-    indent: int | None = None  #: :meta hide-value:
-    separators: tuple[str, str] | None = (",", ":")  #: :meta hide-value:  # Compact JSON (w/o whitespaces)
-    default: Callable[..., Any] | None = None  #: :meta hide-value:
+    skipkeys: bool = False
+    check_circular: bool = True
+    ensure_ascii: bool = True
+    allow_nan: bool = True
+    indent: int | None = None
+    separators: tuple[str, str] | None = (",", ":")  # Compact JSON (w/o whitespaces)
+    default: Callable[..., Any] | None = None
 
 
 @dataclass(kw_only=True)
@@ -65,12 +65,12 @@ class JSONDecoderConfig:
     See :class:`json.JSONDecoder` for more information.
     """
 
-    object_hook: Callable[..., Any] | None = None  #: :meta hide-value:
-    parse_int: Callable[[str], Any] | None = None  #: :meta hide-value:
-    parse_float: Callable[[str], Any] | None = None  #: :meta hide-value:
-    parse_constant: Callable[[str], Any] | None = None  #: :meta hide-value:
-    object_pairs_hook: Callable[[list[tuple[str, Any]]], Any] | None = None  #: :meta hide-value:
-    strict: bool = True  #: :meta hide-value:
+    object_hook: Callable[..., Any] | None = None
+    parse_int: Callable[[str], Any] | None = None
+    parse_float: Callable[[str], Any] | None = None
+    parse_constant: Callable[[str], Any] | None = None
+    object_pairs_hook: Callable[[list[tuple[str, Any]]], Any] | None = None
+    strict: bool = True
 
 
 class _JSONParser:
@@ -171,8 +171,14 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[SerializedPacketT_contr
         Arguments:
             encoder_config: Parameter object to configure the :class:`~json.JSONEncoder`.
             decoder_config: Parameter object to configure the :class:`~json.JSONDecoder`.
-            encoding: String encoding (See :ref:`standard-encodings`).
-            unicode_errors: Controls how encoding errors are handled (See :ref:`error-handlers` for details).
+            encoding: String encoding.
+            unicode_errors: Controls how encoding errors are handled.
+
+        See also:
+            For string encoding parameters:
+
+            * :ref:`standard-encodings`.
+            * :ref:`error-handlers`.
         """
         from json import JSONDecodeError, JSONDecoder, JSONEncoder
 
@@ -201,6 +207,11 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[SerializedPacketT_contr
     def serialize(self, packet: SerializedPacketT_contra) -> bytes:
         """
         Returns the JSON representation of the Python object `packet`.
+
+        Roughly equivalent to::
+
+            def serialize(packet):
+                return json.dumps(packet)
 
         Arguments:
             packet: The Python object to serialize.
@@ -241,6 +252,11 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[SerializedPacketT_contr
         """
         Creates a Python object representing the raw JSON :term:`packet` from `data`.
 
+        Roughly equivalent to::
+
+            def deserialize(data):
+                return json.loads(data)
+
         Arguments:
             data: The byte sequence to deserialize.
 
@@ -254,7 +270,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[SerializedPacketT_contr
             >>> from easynetwork.serializers import JSONSerializer
             >>> s = JSONSerializer()
             >>> s.deserialize(b'{"key":[1,2,3],"data":null}')
-            {"key": [1, 2, 3], "data": None}
+            {'key': [1, 2, 3], 'data': None}
         """
         try:
             document: str = data.decode(self.__encoding, self.__unicode_errors)
@@ -299,7 +315,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[SerializedPacketT_contr
             >>> consumer.send(b',"data":null}{"something":"remaining"}')
             Traceback (most recent call last):
             ...
-            StopIteration: ({"key": [1, 2, 3], "data": None}, b'{"something":"remaining"}')
+            StopIteration: ({'key': [1, 2, 3], 'data': None}, b'{"something":"remaining"}')
         """
         complete_document, remaining_data = yield from _JSONParser.raw_parse()
 

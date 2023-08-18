@@ -38,8 +38,8 @@ JSON serializer
 .. autoclass:: easynetwork.serializers.JSONSerializer
    :members:
 
-Parameter objects
------------------
+JSON serializer configuration
+-----------------------------
 
 .. autoclass:: easynetwork.serializers.JSONEncoderConfig
    :members:
@@ -62,11 +62,19 @@ Pickle serializer
 .. autoclass:: easynetwork.serializers.PickleSerializer
    :members:
 
-Parameter objects
------------------
+Pickle serializer configuration
+-------------------------------
 
 .. autoclass:: easynetwork.serializers.PicklerConfig
    :members:
 
 .. autoclass:: easynetwork.serializers.UnpicklerConfig
+   :members:
+
+
+String serializer
+=================
+
+.. autoclass:: easynetwork.serializers.StringLineSerializer
+   :inherited-members:
    :members:
