@@ -84,11 +84,12 @@ class PickleSerializer(AbstractPacketSerializer[SerializedPacketT_contra, Deseri
         pickler_optimize: bool = False,
     ) -> None:
         """
-        :param pickler_config: Parameter object to configure the :class:`~pickle.Pickler`.
-        :param unpickler_config: Parameter object to configure the :class:`~pickle.Unpickler`.
-        :param pickler_cls: The :class:`~pickle.Pickler` class to use (see :ref:`pickle-inst`).
-        :param unpickler_cls: The :class:`~pickle.Unpickler` class to use (see :ref:`pickle-restrict`).
-        :param pickler_optimize: If `True`, :func:`pickletools.optimize` will be applied to :meth:`pickle.Pickler.dump` output.
+        Arguments:
+            pickler_config: Parameter object to configure the :class:`~pickle.Pickler`.
+            unpickler_config: Parameter object to configure the :class:`~pickle.Unpickler`.
+            pickler_cls: The :class:`~pickle.Pickler` class to use (see :ref:`pickle-inst`).
+            unpickler_cls: The :class:`~pickle.Unpickler` class to use (see :ref:`pickle-restrict`).
+            pickler_optimize: If `True`, :func:`pickletools.optimize` will be applied to :meth:`pickle.Pickler.dump` output.
         """
         super().__init__()
 
@@ -127,8 +128,11 @@ class PickleSerializer(AbstractPacketSerializer[SerializedPacketT_contra, Deseri
             def serialize(packet):
                 return pickle.dumps(packet)
 
-        :param packet: The Python object to serialize.
-        :returns: A byte sequence.
+        Arguments:
+            packet: The Python object to serialize.
+
+        Returns:
+            a byte sequence.
         """
         with BytesIO() as buffer:
             self.__pickler_cls(buffer).dump(packet)
@@ -147,10 +151,15 @@ class PickleSerializer(AbstractPacketSerializer[SerializedPacketT_contra, Deseri
             def deserialize(data):
                 return pickle.loads(data)
 
-        :param data: The byte sequence to deserialize.
-        :raises DeserializeError: Too little or too much data to parse.
-        :raises DeserializeError: An unrelated deserialization error occurred.
-        :returns: The deserialized Python object.
+        Arguments:
+            data: The byte sequence to deserialize.
+
+        Raises:
+            DeserializeError: Too little or too much data to parse.
+            DeserializeError: An unrelated deserialization error occurred.
+
+        Returns:
+            the deserialized Python object.
         """
         with BytesIO(data) as buffer:
             try:

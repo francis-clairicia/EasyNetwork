@@ -46,8 +46,11 @@ class AbstractPacketSerializer(Generic[SerializedPacketT_contra, DeserializedPac
         """
         Returns the byte representation of the Python object `packet`.
 
-        :param packet: The Python object to serialize.
-        :returns: A byte sequence.
+        Arguments:
+            packet: The Python object to serialize.
+
+        Returns:
+            a byte sequence.
         """
         raise NotImplementedError
 
@@ -56,9 +59,14 @@ class AbstractPacketSerializer(Generic[SerializedPacketT_contra, DeserializedPac
         """
         Creates a Python object representing the raw :term:`packet` from `data`.
 
-        :param data: The byte sequence to deserialize.
-        :raises DeserializeError: An unrelated deserialization error occurred.
-        :returns: The deserialized Python object.
+        Arguments:
+            data: The byte sequence to deserialize.
+
+        Raises:
+            DeserializeError: An unrelated deserialization error occurred.
+
+        Returns:
+            the deserialized Python object.
         """
         raise NotImplementedError
 
@@ -80,8 +88,11 @@ class AbstractIncrementalPacketSerializer(AbstractPacketSerializer[SerializedPac
         The main purpose of this method is to add metadata that could not be included in the output of :meth:`.serialize`,
         such as headers, separators, and so on. It is used in the :meth:`.incremental_deserialize` method.
 
-        :param packet: The Python object to serialize.
-        :returns: A generator yielding all the parts of the :term:`packet`.
+        Arguments:
+            packet: The Python object to serialize.
+
+        Yields:
+            all the parts of the :term:`packet`.
         """
         raise NotImplementedError
 
@@ -90,9 +101,14 @@ class AbstractIncrementalPacketSerializer(AbstractPacketSerializer[SerializedPac
         """
         Creates a Python object representing the raw :term:`packet`.
 
-        :raises IncrementalDeserializeError: An unrelated deserialization error occurred.
-        :returns: A generator which yields until the whole :term:`packet` has been deserialized and returns a tuple with
-                  the deserialized packet and the unused trailing data.
+        Raises:
+            IncrementalDeserializeError: An unrelated deserialization error occurred.
+
+        Yields:
+            until the whole :term:`packet` has been deserialized.
+
+        Returns:
+            a tuple with the deserialized Python object and the unused trailing data.
         """
         raise NotImplementedError
 
@@ -102,8 +118,11 @@ class AbstractIncrementalPacketSerializer(AbstractPacketSerializer[SerializedPac
 
         The default implementation concatenates and returns the parts sent by :meth:`.incremental_serialize`.
 
-        :param packet: The Python object to serialize.
-        :returns: A byte sequence.
+        Arguments:
+            packet: The Python object to serialize.
+
+        Returns:
+            a byte sequence.
         """
         return b"".join(self.incremental_serialize(packet))
 
@@ -113,10 +132,15 @@ class AbstractIncrementalPacketSerializer(AbstractPacketSerializer[SerializedPac
 
         The default implementation uses :meth:`.incremental_deserialize` and expects it to deserialize ``data`` at once.
 
-        :param data: The byte sequence to deserialize.
-        :raises DeserializeError: Too little or too much data to parse.
-        :raises DeserializeError: An unrelated deserialization error occurred.
-        :returns: The deserialized Python object.
+        Arguments:
+            data: The byte sequence to deserialize.
+
+        Raises:
+            DeserializeError: Too little or too much data to parse.
+            DeserializeError: An unrelated deserialization error occurred.
+
+        Returns:
+            the deserialized Python object.
         """
         consumer: Generator[None, bytes, tuple[DeserializedPacketT_co, bytes]] = self.incremental_deserialize()
         try:

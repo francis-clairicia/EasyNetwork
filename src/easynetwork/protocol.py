@@ -42,7 +42,7 @@ _ReceivedPacketT = TypeVar("_ReceivedPacketT")
 
 
 class DatagramProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
-    """A :term:`protocol object` class for datagram communication"""
+    """A :term:`protocol object` class for datagram communication."""
 
     __slots__ = ("__serializer", "__converter", "__weakref__")
 
@@ -68,8 +68,9 @@ class DatagramProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
         converter: AbstractPacketConverterComposite[_SentPacketT, Any, _ReceivedPacketT, Any] | None = None,
     ) -> None:
         """
-        :param serializer: The :term:`serializer` to use
-        :param converter: The :term:`converter` to use
+        Arguments:
+            serializer: The :term:`serializer` to use.
+            converter: The :term:`converter` to use.
         """
 
         if not isinstance(serializer, AbstractPacketSerializer):
@@ -83,8 +84,11 @@ class DatagramProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
         """
         Serializes a Python object to a raw datagram :term:`packet`.
 
-        :param packet: The :term:`packet` as a Python object to serialize
-        :returns: The serialized :term:`packet`
+        Arguments:
+            :param packet: The :term:`packet` as a Python object to serialize.
+
+        Returns:
+            the serialized :term:`packet`.
         """
 
         if (converter := self.__converter) is not None:
@@ -95,10 +99,15 @@ class DatagramProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
         """
         Creates a Python object representing the raw datagram :term:`packet`.
 
-        :param bytes datagram: The datagram :term:`packet` to deserialize
-        :returns: The deserialized :term:`packet`
-        :raises DatagramProtocolParseError: in case of deserialization error
-        :raises DatagramProtocolParseError: in case of conversion error (if there is a :term:`converter`)
+        Arguments:
+            :param datagram: The datagram :term:`packet` to deserialize.
+
+        Raises:
+            DatagramProtocolParseError: in case of deserialization error.
+            DatagramProtocolParseError: in case of conversion error (if there is a :term:`converter`).
+
+        Returns:
+            the deserialized :term:`packet`.
         """
 
         try:
@@ -114,7 +123,7 @@ class DatagramProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
 
 
 class StreamProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
-    """A :term:`protocol object` class for connection-oriented stream communication"""
+    """A :term:`protocol object` class for connection-oriented stream communication."""
 
     __slots__ = ("__serializer", "__converter", "__weakref__")
 
@@ -140,8 +149,9 @@ class StreamProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
         converter: AbstractPacketConverterComposite[_SentPacketT, Any, _ReceivedPacketT, Any] | None = None,
     ) -> None:
         """
-        :param serializer: The :term:`incremental serializer` to use
-        :param converter: The :term:`converter` to use
+        Arguments:
+            serializer: The :term:`incremental serializer` to use.
+            converter: The :term:`converter` to use.
         """
 
         if not isinstance(serializer, AbstractIncrementalPacketSerializer):
@@ -155,8 +165,11 @@ class StreamProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
         """
         Serializes a Python object to a raw :term:`packet` part by part.
 
-        :param packet: The :term:`packet` as a Python object to serialize
-        :returns: A generator yielding all the parts of the :term:`packet`
+        Arguments:
+            packet: The :term:`packet` as a Python object to serialize.
+
+        Yields:
+            all the parts of the :term:`packet`.
         """
 
         if (converter := self.__converter) is not None:
@@ -167,11 +180,16 @@ class StreamProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
         """
         Creates a Python object representing the raw :term:`packet`.
 
-        :returns: A generator which yields until the whole :term:`packet` has been deserialized and returns a tuple with
-                  the deserialized packet and the unused trailing data
-        :raises StreamProtocolParseError: in case of deserialization error
-        :raises StreamProtocolParseError: in case of conversion error (if there is a :term:`converter`)
-        :raises RuntimeError: The :term:`serializer` raised :class:`.DeserializeError` instead of :class:`.IncrementalDeserializeError`
+        Raises:
+            StreamProtocolParseError: in case of deserialization error.
+            StreamProtocolParseError: in case of conversion error (if there is a :term:`converter`).
+            RuntimeError: The :term:`serializer` raised :class:`.DeserializeError` instead of :class:`.IncrementalDeserializeError`.
+
+        Yields:
+            until the whole :term:`packet` has been deserialized.
+
+        Returns:
+            a tuple with the deserialized Python object and the unused trailing data.
         """
 
         packet: _ReceivedPacketT

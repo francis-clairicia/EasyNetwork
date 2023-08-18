@@ -20,6 +20,7 @@ extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.duration",
     "sphinx.ext.intersphinx",
+    "sphinx.ext.napoleon",
     "sphinx.ext.todo",
     "sphinx_rtd_theme",
     "sphinx_tabs.tabs",
@@ -63,6 +64,12 @@ autodoc_inherit_docstrings = False
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
 }
+
+
+# -- sphinx.ext.napoleon configuration -------------------------------------------
+# https://www.sphinx-doc.org/en/master/usage/extensions/napoleon.html
+
+napoleon_numpy_docstring = False
 
 
 # -- sphinx.ext.todo configuration -------------------------------------------

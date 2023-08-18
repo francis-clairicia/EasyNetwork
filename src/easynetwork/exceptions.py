@@ -38,55 +38,58 @@ if TYPE_CHECKING:
 
 
 class ClientClosedError(ConnectionError):
-    """Error raised when trying to do an operation on a closed client"""
+    """Error raised when trying to do an operation on a closed client."""
 
 
 class ServerClosedError(RuntimeError):
-    """Error raised when trying to do an operation on a closed server"""
+    """Error raised when trying to do an operation on a closed server."""
 
 
 class ServerAlreadyRunning(RuntimeError):
-    """The server is already running"""
+    """The server is already running."""
 
 
 class DeserializeError(Exception):
-    """Error raised by a :term:`serializer` if the data format is invalid"""
+    """Error raised by a :term:`serializer` if the data format is invalid."""
 
     def __init__(self, message: str, error_info: Any = None) -> None:
         """
-        :param message: Error message
-        :param error_info: Additional error data
+        Arguments:
+            message: Error message.
+            error_info: Additional error data.
         """
 
         super().__init__(message)
 
         self.error_info: Any = error_info
-        """Additional error data"""
+        """Additional error data."""
 
 
 class IncrementalDeserializeError(DeserializeError):
-    """Error raised by an :term:`incremental serializer` if the data format is invalid"""
+    """Error raised by an :term:`incremental serializer` if the data format is invalid."""
 
     def __init__(self, message: str, remaining_data: bytes, error_info: Any = None) -> None:
         """
-        :param message: Error message
-        :param remaining_data: Unused trailing data
-        :param error_info: Additional error data
+        Arguments:
+            message: Error message.
+            remaining_data: Unused trailing data.
+            error_info: Additional error data.
         """
 
         super().__init__(message, error_info=error_info)
 
         self.remaining_data: bytes = remaining_data
-        """Unused trailing data"""
+        """Unused trailing data."""
 
 
 class PacketConversionError(Exception):
-    """The deserialized :term:`packet` is invalid"""
+    """The deserialized :term:`packet` is invalid."""
 
     def __init__(self, message: str, error_info: Any = None) -> None:
         """
-        :param message: Error message
-        :param error_info: Additional error data
+        Arguments:
+            message: Error message.
+            error_info: Additional error data.
         """
 
         super().__init__(message)
@@ -96,39 +99,41 @@ class PacketConversionError(Exception):
 
 
 class BaseProtocolParseError(Exception):
-    """Parsing error raised by a :term:`protocol object`"""
+    """Parsing error raised by a :term:`protocol object`."""
 
     def __init__(self, error: DeserializeError | PacketConversionError) -> None:
         """
-        :param error: Error instance
+        Arguments:
+            error: Error instance.
         """
 
         super().__init__(f"Error while parsing data: {error}")
 
         self.error: DeserializeError | PacketConversionError = error
-        """Error instance"""
+        """Error instance."""
 
 
 class DatagramProtocolParseError(BaseProtocolParseError):
-    """Parsing error raised by :class:`easynetwork.protocol.DatagramProtocol`"""
+    """Parsing error raised by :class:`easynetwork.protocol.DatagramProtocol`."""
 
     sender_address: SocketAddress
     """Address of the sender."""
 
 
 class StreamProtocolParseError(BaseProtocolParseError):
-    """Parsing error raised by :class:`easynetwork.protocol.StreamProtocol`"""
+    """Parsing error raised by :class:`easynetwork.protocol.StreamProtocol`."""
 
     def __init__(self, remaining_data: bytes, error: IncrementalDeserializeError | PacketConversionError) -> None:
         """
-        :param remaining_data: Unused trailing data
-        :param error: Error instance
+        Arguments:
+            remaining_data: Unused trailing data.
+            error: Error instance.
         """
 
         super().__init__(error)
 
         self.error: IncrementalDeserializeError | PacketConversionError
-        """Error instance"""
+        """Error instance."""
 
         self.remaining_data: bytes = remaining_data
-        """Unused trailing data"""
+        """Unused trailing data."""

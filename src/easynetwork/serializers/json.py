@@ -168,10 +168,11 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[SerializedPacketT_contr
         unicode_errors: str = "strict",
     ) -> None:
         """
-        :param encoder_config: Parameter object to configure the :class:`~json.JSONEncoder`.
-        :param decoder_config: Parameter object to configure the :class:`~json.JSONDecoder`.
-        :param encoding: String encoding (See :ref:`standard-encodings`).
-        :param unicode_errors: Controls how encoding errors are handled (See :ref:`error-handlers` for details).
+        Arguments:
+            encoder_config: Parameter object to configure the :class:`~json.JSONEncoder`.
+            decoder_config: Parameter object to configure the :class:`~json.JSONDecoder`.
+            encoding: String encoding (See :ref:`standard-encodings`).
+            unicode_errors: Controls how encoding errors are handled (See :ref:`error-handlers` for details).
         """
         from json import JSONDecodeError, JSONDecoder, JSONEncoder
 
@@ -201,13 +202,17 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[SerializedPacketT_contr
         """
         Returns the JSON representation of the Python object `packet`.
 
-        >>> from easynetwork.serializers import JSONSerializer
-        >>> s = JSONSerializer()
-        >>> s.serialize({"key": [1, 2, 3], "data": None})
-        b'{"key":[1,2,3],"data":null}'
+        Arguments:
+            packet: The Python object to serialize.
 
-        :param packet: The Python object to serialize.
-        :returns: A byte sequence.
+        Returns:
+            a byte sequence.
+
+        Example:
+            >>> from easynetwork.serializers import JSONSerializer
+            >>> s = JSONSerializer()
+            >>> s.serialize({"key": [1, 2, 3], "data": None})
+            b'{"key":[1,2,3],"data":null}'
         """
         return self.__encoder.encode(packet).encode(self.__encoding, self.__unicode_errors)
 
@@ -216,13 +221,17 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[SerializedPacketT_contr
         r"""
         Returns the JSON representation of the Python object `packet`.
 
-        >>> from easynetwork.serializers import JSONSerializer
-        >>> s = JSONSerializer()
-        >>> b"".join(s.incremental_serialize({"key": [1, 2, 3], "data": None}))
-        b'{"key":[1,2,3],"data":null}\n'
+        Arguments:
+            packet: The Python object to serialize.
 
-        :param packet: The Python object to serialize.
-        :returns: A generator yielding all the parts of the JSON :term:`packet`.
+        Yields:
+            all the parts of the JSON :term:`packet`.
+
+        Example:
+            >>> from easynetwork.serializers import JSONSerializer
+            >>> s = JSONSerializer()
+            >>> b"".join(s.incremental_serialize({"key": [1, 2, 3], "data": None}))
+            b'{"key":[1,2,3],"data":null}\n'
         """
         yield self.__encoder.encode(packet).encode(self.__encoding, self.__unicode_errors)
         yield b"\n"
@@ -232,14 +241,20 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[SerializedPacketT_contr
         """
         Creates a Python object representing the raw JSON :term:`packet` from `data`.
 
-        >>> from easynetwork.serializers import JSONSerializer
-        >>> s = JSONSerializer()
-        >>> s.deserialize(b'{"key":[1,2,3],"data":null}')
-        {"key": [1, 2, 3], "data": None}
+        Arguments:
+            data: The byte sequence to deserialize.
 
-        :param data: The byte sequence to deserialize.
-        :raises DeserializeError: A :class:`UnicodeError` or :class:`~json.JSONDecodeError` have been raised.
-        :returns: The deserialized Python object.
+        Raises:
+            DeserializeError: A :class:`UnicodeError` or :class:`~json.JSONDecodeError` have been raised.
+
+        Returns:
+            the deserialized Python object.
+
+        Example:
+            >>> from easynetwork.serializers import JSONSerializer
+            >>> s = JSONSerializer()
+            >>> s.deserialize(b'{"key":[1,2,3],"data":null}')
+            {"key": [1, 2, 3], "data": None}
         """
         try:
             document: str = data.decode(self.__encoding, self.__unicode_errors)
@@ -266,19 +281,25 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[SerializedPacketT_contr
         """
         Creates a Python object representing the raw JSON :term:`packet`.
 
-        >>> from easynetwork.serializers import JSONSerializer
-        >>> s = JSONSerializer()
-        >>> consumer = s.incremental_deserialize()
-        >>> next(consumer)
-        >>> consumer.send(b'{"key":[1,2,3]')
-        >>> consumer.send(b',"data":null}{"something":"remaining"}')
-        Traceback (most recent call last):
-        ...
-        StopIteration: ({"key": [1, 2, 3], "data": None}, b'{"something":"remaining"}')
+        Raises:
+            IncrementalDeserializeError: A :class:`UnicodeError` or :class:`~json.JSONDecodeError` have been raised.
 
-        :raises IncrementalDeserializeError: A :class:`UnicodeError` or :class:`~json.JSONDecodeError` have been raised.
-        :returns: A generator which yields until the whole :term:`packet` has been deserialized and returns a tuple with
-                  the deserialized packet and the unused trailing data.
+        Yields:
+            until the whole :term:`packet` has been deserialized.
+
+        Returns:
+            a tuple with the deserialized Python object and the unused trailing data.
+
+        Example:
+            >>> from easynetwork.serializers import JSONSerializer
+            >>> s = JSONSerializer()
+            >>> consumer = s.incremental_deserialize()
+            >>> next(consumer)
+            >>> consumer.send(b'{"key":[1,2,3]')
+            >>> consumer.send(b',"data":null}{"something":"remaining"}')
+            Traceback (most recent call last):
+            ...
+            StopIteration: ({"key": [1, 2, 3], "data": None}, b'{"something":"remaining"}')
         """
         complete_document, remaining_data = yield from _JSONParser.raw_parse()
 
