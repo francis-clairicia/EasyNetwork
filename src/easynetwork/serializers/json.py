@@ -174,11 +174,9 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[SerializedPacketT_contr
             encoding: String encoding.
             unicode_errors: Controls how encoding errors are handled.
 
-        See also:
-            For string encoding parameters:
+        See Also:
+            :ref:`standard-encodings` and :ref:`error-handlers`.
 
-            * :ref:`standard-encodings`.
-            * :ref:`error-handlers`.
         """
         from json import JSONDecodeError, JSONDecoder, JSONEncoder
 

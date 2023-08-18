@@ -36,6 +36,12 @@ if TYPE_CHECKING:
 
 @dataclass(kw_only=True)
 class CBOREncoderConfig:
+    """
+    A dataclass with the CBOR encoder options.
+
+    See :class:`cbor2.encoder.CBOREncoder` for more information.
+    """
+
     datetime_as_timestamp: bool = False
     timezone: datetime.tzinfo | None = None
     value_sharing: bool = False
@@ -47,12 +53,24 @@ class CBOREncoderConfig:
 
 @dataclass(kw_only=True)
 class CBORDecoderConfig:
+    """
+    A dataclass with the CBOR decoder options.
+
+    See :class:`cbor2.decoder.CBORDecoder` for more information.
+    """
+
     object_hook: Callable[..., Any] | None = None
     tag_hook: Callable[..., Any] | None = None
     str_errors: str = "strict"
 
 
 class CBORSerializer(FileBasedPacketSerializer[SerializedPacketT_contra, DeserializedPacketT_co]):
+    """
+    A :term:`serializer` built on top of the :external+cbor2:doc:`cbor2 <index>` module.
+
+    Needs ``cbor`` extra dependencies.
+    """
+
     __slots__ = ("__encoder_cls", "__decoder_cls")
 
     def __init__(
@@ -60,6 +78,11 @@ class CBORSerializer(FileBasedPacketSerializer[SerializedPacketT_contra, Deseria
         encoder_config: CBOREncoderConfig | None = None,
         decoder_config: CBORDecoderConfig | None = None,
     ) -> None:
+        """
+        Arguments:
+            encoder_config: Parameter object to configure the :class:`~cbor.encoder.CBOREncoder`.
+            decoder_config: Parameter object to configure the :class:`~cbor.decoder.CBORDecoder`.
+        """
         try:
             import cbor2
         except ModuleNotFoundError as exc:  # pragma: no cover
@@ -84,8 +107,34 @@ class CBORSerializer(FileBasedPacketSerializer[SerializedPacketT_contra, Deseria
 
     @final
     def dump_to_file(self, packet: SerializedPacketT_contra, file: IO[bytes]) -> None:
+        """
+        Write the CBOR representation of `packet` to `file`.
+
+        Roughly equivalent to::
+
+            def dump_to_file(self, packet, file):
+                cbor2.dump(packet, file)
+
+        Arguments:
+            packet: The Python object to serialize.
+            file: The :std:term:`binary file` to write to.
+        """
         self.__encoder_cls(file).encode(packet)
 
     @final
     def load_from_file(self, file: IO[bytes]) -> DeserializedPacketT_co:
+        """
+        Read from `file` to deserialize the raw CBOR :term:`packet`.
+
+        Roughly equivalent to::
+
+            def load_from_file(self, file):
+                return cbor2.load(file)
+
+        Arguments:
+            file: The :std:term:`binary file` to read from.
+
+        Returns:
+            the deserialized Python object.
+        """
         return self.__decoder_cls(file).decode()

@@ -1,6 +1,8 @@
 Welcome to EasyNetwork's documentation!
 =======================================
 
+.. automodule:: easynetwork
+
 .. note::
 
    This project is under active development.

@@ -9,6 +9,8 @@ To use EasyNetwork, first install it using :program:`pip`:
    (.venv) $ pip install easynetwork
 
 
+.. _optional-dependencies:
+
 Optional dependencies
 =====================
 

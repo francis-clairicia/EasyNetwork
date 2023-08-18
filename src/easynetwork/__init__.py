@@ -12,9 +12,9 @@
 # limitations under the License.
 #
 #
-"""The easiest way to use sockets in Python
+"""The easiest way to use sockets in Python!
 
-EasyNetwork is a high-level interface for networking in Python
+EasyNetwork is a high-level interface for networking in Python.
 """
 
 from __future__ import annotations

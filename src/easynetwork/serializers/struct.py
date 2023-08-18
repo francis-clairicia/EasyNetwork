@@ -224,11 +224,8 @@ class NamedTupleStructSerializer(AbstractStructSerializer[NamedTupleVar, NamedTu
             unicode_errors: Controls how encoding errors are handled. Ignored if `encoding` is set to :data:`None`.
             strip_string_trailing_nul_bytes: If `True` (the default), removes ``\0`` characters at the end of a string field.
 
-        See also:
-            For string encoding parameters:
-
-            * :ref:`standard-encodings`.
-            * :ref:`error-handlers`.
+        See Also:
+            :ref:`standard-encodings` and :ref:`error-handlers`.
         """
         string_fields: set[str] = set()
 

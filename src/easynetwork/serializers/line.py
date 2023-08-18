@@ -51,11 +51,8 @@ class StringLineSerializer(AutoSeparatedPacketSerializer[str, str]):
             encoding: String encoding. Defaults to ``"ascii"``.
             unicode_errors: Controls how encoding errors are handled.
 
-        See also:
-            For string encoding parameters:
-
-            * :ref:`standard-encodings`.
-            * :ref:`error-handlers`.
+        See Also:
+            :ref:`standard-encodings` and :ref:`error-handlers`.
         """
         separator: bytes
         match newline:
