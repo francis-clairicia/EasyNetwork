@@ -76,6 +76,11 @@ class StringLineSerializer(AutoSeparatedPacketSerializer[str, str]):
         """
         Encodes the given string to bytes.
 
+        Roughly equivalent to::
+
+            def serialize(self, packet):
+                return packet.encode()
+
         Arguments:
             packet: The string to encode.
 
@@ -107,6 +112,11 @@ class StringLineSerializer(AutoSeparatedPacketSerializer[str, str]):
     def deserialize(self, data: bytes) -> str:
         r"""
         Decodes `data` and returns the string.
+
+        Roughly equivalent to::
+
+            def deserialize(self, data):
+                return data.decode()
 
         Arguments:
             packet: The data to decode.

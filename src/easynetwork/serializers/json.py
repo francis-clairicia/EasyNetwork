@@ -210,7 +210,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[SerializedPacketT_contr
 
         Roughly equivalent to::
 
-            def serialize(packet):
+            def serialize(self, packet):
                 return json.dumps(packet)
 
         Arguments:
@@ -254,7 +254,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[SerializedPacketT_contr
 
         Roughly equivalent to::
 
-            def deserialize(data):
+            def deserialize(self, data):
                 return json.loads(data)
 
         Arguments:

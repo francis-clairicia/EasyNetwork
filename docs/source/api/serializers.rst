@@ -78,3 +78,18 @@ String serializer
 .. autoclass:: easynetwork.serializers.StringLineSerializer
    :inherited-members:
    :members:
+
+
+Structure serializer
+====================
+
+Serializers that use the :mod:`struct` module.
+
+There is a base class :class:`.AbstractStructSerializer` to easily manipulate structured data.
+
+.. autoclass:: easynetwork.serializers.AbstractStructSerializer
+   :inherited-members:
+   :members:
+
+.. autoclass:: easynetwork.serializers.NamedTupleStructSerializer
+   :members:

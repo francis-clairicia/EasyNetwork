@@ -53,6 +53,7 @@ autodoc_typehints_description_target = "documented_params"
 autodoc_type_aliases = {
     "_Pickler": "pickle.Pickler",
     "_Unpickler": "pickle.Unpickler",
+    "_Struct": "struct.Struct",
     "SocketAddress": "SocketAddress",
 }
 autodoc_inherit_docstrings = False

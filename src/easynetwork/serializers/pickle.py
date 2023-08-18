@@ -125,7 +125,7 @@ class PickleSerializer(AbstractPacketSerializer[SerializedPacketT_contra, Deseri
 
         Roughly equivalent to::
 
-            def serialize(packet):
+            def serialize(self, packet):
                 return pickle.dumps(packet)
 
         Arguments:
@@ -148,7 +148,7 @@ class PickleSerializer(AbstractPacketSerializer[SerializedPacketT_contra, Deseri
 
         Roughly equivalent to::
 
-            def deserialize(data):
+            def deserialize(self, data):
                 return pickle.loads(data)
 
         Arguments:
