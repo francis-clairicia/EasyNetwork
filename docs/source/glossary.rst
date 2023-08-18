@@ -49,10 +49,6 @@ Glossary
         One-shot serializers provide the full representation of a Python object in :class:`bytes` **in a single function call**,
         and need this same full representation to recreate the object **at once**.
 
-        .. note::
-
-           They are particularly useful for datagram communication (e.g. `UDP`_).
-
       * incremental serializers
 
         Incremental serializers, on the other hand, provide the full representation of the Python object in :class:`bytes` **part by part**,
@@ -60,17 +56,3 @@ Glossary
 
         During deserialization, they have the ability **to know when the** :term:`packet` **is complete** (and wait if incomplete)
         and which bytes are not part of the initial :term:`packet`.
-
-        .. note::
-
-           They are particularly useful for connection-oriented stream communication (e.g. `TCP`_).
-
-        .. note::
-
-           They are de facto "one-shot" serializers too.
-
-.. Links
-
-.. _UDP: https://en.wikipedia.org/wiki/User_Datagram_Protocol
-
-.. _TCP: https://en.wikipedia.org/wiki/Transmission_Control_Protocol

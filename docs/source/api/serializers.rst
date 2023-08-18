@@ -1,12 +1,44 @@
-:mod:`easynetwork.serializers`
-==============================
+Serializers
+===========
 
 .. automodule:: easynetwork.serializers
 
-This module re-export all classes defined in the following modules:
+.. contents:: Table of Contents
+   :local:
 
-.. toctree::
-   :maxdepth: 2
-   :glob:
+Base classes
+------------
 
-   serializers/*
+.. autoclass:: easynetwork.serializers.AbstractPacketSerializer
+   :members:
+
+.. autoclass:: easynetwork.serializers.AbstractIncrementalPacketSerializer
+   :members:
+
+
+Stream base classes
+-------------------
+
+Here are abstract classes that implement common stream protocol patterns.
+
+.. autoclass:: easynetwork.serializers.AutoSeparatedPacketSerializer
+   :members:
+
+.. autoclass:: easynetwork.serializers.FixedSizePacketSerializer
+   :members:
+
+.. autoclass:: easynetwork.serializers.FileBasedPacketSerializer
+   :members:
+
+
+JSON serializer
+---------------
+
+.. autoclass:: easynetwork.serializers.JSONEncoderConfig
+   :members:
+
+.. autoclass:: easynetwork.serializers.JSONDecoderConfig
+   :members:
+
+.. autoclass:: easynetwork.serializers.JSONSerializer
+   :members:

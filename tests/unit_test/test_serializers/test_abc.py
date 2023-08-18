@@ -116,13 +116,14 @@ class TestAbstractIncrementalPacketSerializer:
         mock_consumer_generator.send.side_effect = StopIteration((mocker.sentinel.packet, b"extra"))
 
         # Act
-        with pytest.raises(DeserializeError, match=r"^Extra data caught$"):
+        with pytest.raises(DeserializeError, match=r"^Extra data caught$") as exc_info:
             _ = serializer.deserialize(mocker.sentinel.data)
 
         # Assert
         mock_incremental_deserialize_func.assert_called_once_with()
         mock_consumer_generator.__next__.assert_called_once_with()
         mock_consumer_generator.send.assert_called_once_with(mocker.sentinel.data)
+        assert exc_info.value.error_info == {"packet": mocker.sentinel.packet, "extra": b"extra"}
 
     def test____deserialize____consumer_did_not_yield(
         self,

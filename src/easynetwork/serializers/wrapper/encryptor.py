@@ -20,22 +20,20 @@ __all__ = [
     "EncryptorSerializer",
 ]
 
-from typing import TypeVar, final
+from typing import final
 
 from ...exceptions import DeserializeError
+from .._typevars import DeserializedPacketT_co, SerializedPacketT_contra
 from ..abc import AbstractPacketSerializer
 from ..base_stream import AutoSeparatedPacketSerializer
 
-_ST_contra = TypeVar("_ST_contra", contravariant=True)
-_DT_co = TypeVar("_DT_co", covariant=True)
 
-
-class EncryptorSerializer(AutoSeparatedPacketSerializer[_ST_contra, _DT_co]):
+class EncryptorSerializer(AutoSeparatedPacketSerializer[SerializedPacketT_contra, DeserializedPacketT_co]):
     __slots__ = ("__serializer", "__fernet", "__token_ttl", "__invalid_token_cls")
 
     def __init__(
         self,
-        serializer: AbstractPacketSerializer[_ST_contra, _DT_co],
+        serializer: AbstractPacketSerializer[SerializedPacketT_contra, DeserializedPacketT_co],
         key: str | bytes,
         *,
         token_ttl: int | None = None,
@@ -49,7 +47,7 @@ class EncryptorSerializer(AutoSeparatedPacketSerializer[_ST_contra, _DT_co]):
         super().__init__(separator=separator, incremental_serialize_check_separator=not separator.isspace())
         if not isinstance(serializer, AbstractPacketSerializer):
             raise TypeError(f"Expected a serializer instance, got {serializer!r}")
-        self.__serializer: AbstractPacketSerializer[_ST_contra, _DT_co] = serializer
+        self.__serializer: AbstractPacketSerializer[SerializedPacketT_contra, DeserializedPacketT_co] = serializer
         self.__fernet = cryptography.fernet.Fernet(key)
         self.__token_ttl = token_ttl
         self.__invalid_token_cls = cryptography.fernet.InvalidToken
@@ -64,12 +62,12 @@ class EncryptorSerializer(AutoSeparatedPacketSerializer[_ST_contra, _DT_co]):
         return cryptography.fernet.Fernet.generate_key()
 
     @final
-    def serialize(self, packet: _ST_contra) -> bytes:
+    def serialize(self, packet: SerializedPacketT_contra) -> bytes:
         data = self.__serializer.serialize(packet)
         return self.__fernet.encrypt(data)
 
     @final
-    def deserialize(self, data: bytes) -> _DT_co:
+    def deserialize(self, data: bytes) -> DeserializedPacketT_co:
         try:
             data = self.__fernet.decrypt(data, ttl=self.__token_ttl)
         except self.__invalid_token_cls:

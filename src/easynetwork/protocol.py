@@ -165,12 +165,13 @@ class StreamProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
 
     def build_packet_from_chunks(self) -> Generator[None, bytes, tuple[_ReceivedPacketT, bytes]]:
         """
-        Creates a Python object representing the raw datagram :term:`packet`.
+        Creates a Python object representing the raw :term:`packet`.
 
         :returns: A generator which yields until the whole :term:`packet` has been deserialized and returns a tuple with
                   the deserialized packet and the unused trailing data
         :raises StreamProtocolParseError: in case of deserialization error
         :raises StreamProtocolParseError: in case of conversion error (if there is a :term:`converter`)
+        :raises RuntimeError: The :term:`serializer` raised :class:`.DeserializeError` instead of :class:`.IncrementalDeserializeError`
         """
 
         packet: _ReceivedPacketT

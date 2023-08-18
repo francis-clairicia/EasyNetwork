@@ -25,13 +25,11 @@ __all__ = [
 from collections.abc import Callable
 from dataclasses import asdict as dataclass_asdict, dataclass, field
 from functools import partial
-from typing import Any, TypeVar, final
+from typing import Any, final
 
 from ..exceptions import DeserializeError
+from ._typevars import DeserializedPacketT_co, SerializedPacketT_contra
 from .abc import AbstractPacketSerializer
-
-_ST_contra = TypeVar("_ST_contra", contravariant=True)
-_DT_co = TypeVar("_DT_co", covariant=True)
 
 
 def _get_default_ext_hook() -> Callable[[int, bytes], Any]:
@@ -64,7 +62,7 @@ class MessageUnpackerConfig:
     ext_hook: Callable[[int, bytes], Any] = field(default_factory=_get_default_ext_hook)
 
 
-class MessagePackSerializer(AbstractPacketSerializer[_ST_contra, _DT_co]):
+class MessagePackSerializer(AbstractPacketSerializer[SerializedPacketT_contra, DeserializedPacketT_co]):
     __slots__ = ("__packb", "__unpackb", "__unpack_out_of_data_cls", "__unpack_extra_data_cls")
 
     def __init__(
@@ -78,8 +76,8 @@ class MessagePackSerializer(AbstractPacketSerializer[_ST_contra, _DT_co]):
             raise ModuleNotFoundError("message-pack dependencies are missing. Consider adding 'msgpack' extra") from exc
 
         super().__init__()
-        self.__packb: Callable[[_ST_contra], bytes]
-        self.__unpackb: Callable[[bytes], _DT_co]
+        self.__packb: Callable[[SerializedPacketT_contra], bytes]
+        self.__unpackb: Callable[[bytes], DeserializedPacketT_co]
 
         if packer_config is None:
             packer_config = MessagePackerConfig()
@@ -99,11 +97,11 @@ class MessagePackSerializer(AbstractPacketSerializer[_ST_contra, _DT_co]):
         self.__unpack_extra_data_cls = msgpack.ExtraData
 
     @final
-    def serialize(self, packet: _ST_contra) -> bytes:
+    def serialize(self, packet: SerializedPacketT_contra) -> bytes:
         return self.__packb(packet)
 
     @final
-    def deserialize(self, data: bytes) -> _DT_co:
+    def deserialize(self, data: bytes) -> DeserializedPacketT_co:
         try:
             return self.__unpackb(data)
         except self.__unpack_out_of_data_cls as exc:

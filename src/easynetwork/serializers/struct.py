@@ -23,6 +23,7 @@ from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, Generic, NamedTuple, TypeVar, final
 
 from ..exceptions import DeserializeError
+from ._typevars import DeserializedPacketT_co, SerializedPacketT_contra
 from .base_stream import FixedSizePacketSerializer
 
 if TYPE_CHECKING:
@@ -30,14 +31,11 @@ if TYPE_CHECKING:
 
     from _typeshed import SupportsKeysAndGetItem
 
-_ST_contra = TypeVar("_ST_contra", contravariant=True)
-_DT_co = TypeVar("_DT_co", covariant=True)
-
 
 _ENDIANNESS_CHARACTERS: frozenset[str] = frozenset({"@", "=", "<", ">", "!"})
 
 
-class AbstractStructSerializer(FixedSizePacketSerializer[_ST_contra, _DT_co]):
+class AbstractStructSerializer(FixedSizePacketSerializer[SerializedPacketT_contra, DeserializedPacketT_co]):
     __slots__ = ("__s", "__error_cls")
 
     def __init__(self, format: str) -> None:
@@ -51,19 +49,19 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_ST_contra, _DT_co]):
         self.__error_cls = error
 
     @abstractmethod
-    def iter_values(self, packet: _ST_contra) -> Iterable[Any]:
+    def iter_values(self, packet: SerializedPacketT_contra) -> Iterable[Any]:
         raise NotImplementedError
 
     @final
-    def serialize(self, packet: _ST_contra) -> bytes:
+    def serialize(self, packet: SerializedPacketT_contra) -> bytes:
         return self.__s.pack(*self.iter_values(packet))
 
     @abstractmethod
-    def from_tuple(self, t: tuple[Any, ...]) -> _DT_co:
+    def from_tuple(self, t: tuple[Any, ...]) -> DeserializedPacketT_co:
         raise NotImplementedError
 
     @final
-    def deserialize(self, data: bytes) -> _DT_co:
+    def deserialize(self, data: bytes) -> DeserializedPacketT_co:
         try:
             packet_tuple: tuple[Any, ...] = self.__s.unpack(data)
         except self.__error_cls as exc:
@@ -82,15 +80,15 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_ST_contra, _DT_co]):
         return self.__s
 
 
-_NT = TypeVar("_NT", bound=NamedTuple)
+NamedTupleVar = TypeVar("NamedTupleVar", bound=NamedTuple)
 
 
-class NamedTupleStructSerializer(AbstractStructSerializer[_NT, _NT], Generic[_NT]):
+class NamedTupleStructSerializer(AbstractStructSerializer[NamedTupleVar, NamedTupleVar], Generic[NamedTupleVar]):
     __slots__ = ("__namedtuple_cls", "__string_fields", "__encoding", "__unicode_errors", "__strip_trailing_nul")
 
     def __init__(
         self,
-        namedtuple_cls: type[_NT],
+        namedtuple_cls: type[NamedTupleVar],
         field_formats: SupportsKeysAndGetItem[str, str],
         format_endianness: str = "",
         encoding: str | None = "utf-8",
@@ -110,14 +108,14 @@ class NamedTupleStructSerializer(AbstractStructSerializer[_NT, _NT], Generic[_NT
             elif len(field_fmt) != 1 or not field_fmt.isalpha():
                 raise ValueError(f"{field!r}: Invalid field format")
         super().__init__(f"{format_endianness}{''.join(map(field_formats.__getitem__, namedtuple_cls._fields))}")
-        self.__namedtuple_cls: type[_NT] = namedtuple_cls
+        self.__namedtuple_cls: type[NamedTupleVar] = namedtuple_cls
         self.__string_fields: frozenset[str] = frozenset(string_fields)
         self.__encoding: str | None = encoding
         self.__unicode_errors: str = unicode_errors
         self.__strip_trailing_nul = bool(strip_string_trailing_nul_bytes)
 
     @final
-    def iter_values(self, packet: _NT) -> _NT:
+    def iter_values(self, packet: NamedTupleVar) -> NamedTupleVar:
         if not isinstance(packet, self.__namedtuple_cls):
             namedtuple_name = self.__namedtuple_cls.__name__
             raise TypeError(f"Expected a {namedtuple_name} instance, got {packet!r}")
@@ -128,7 +126,7 @@ class NamedTupleStructSerializer(AbstractStructSerializer[_NT, _NT], Generic[_NT
         return packet
 
     @final
-    def from_tuple(self, t: tuple[Any, ...]) -> _NT:
+    def from_tuple(self, t: tuple[Any, ...]) -> NamedTupleVar:
         p = self.__namedtuple_cls._make(t)
         string_fields: dict[str, bytes] = {field: getattr(p, field) for field in self.__string_fields}
         if string_fields:

@@ -1,6 +1,5 @@
-:mod:`easynetwork.converter`
-============================
+Converters
+==========
 
 .. automodule:: easynetwork.converter
    :members:
-   :undoc-members:

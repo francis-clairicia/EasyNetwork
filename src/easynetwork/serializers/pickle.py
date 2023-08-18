@@ -26,16 +26,14 @@ from collections.abc import Callable
 from dataclasses import asdict as dataclass_asdict, dataclass, field
 from functools import partial
 from io import BytesIO
-from typing import IO, TYPE_CHECKING, TypeVar, final
+from typing import IO, TYPE_CHECKING, final
 
 from ..exceptions import DeserializeError
+from ._typevars import DeserializedPacketT_co, SerializedPacketT_contra
 from .abc import AbstractPacketSerializer
 
 if TYPE_CHECKING:
     from pickle import Pickler as _Pickler, Unpickler as _Unpickler
-
-_ST_contra = TypeVar("_ST_contra", contravariant=True)
-_DT_co = TypeVar("_DT_co", covariant=True)
 
 
 def _get_default_pickler_protocol() -> int:
@@ -57,7 +55,7 @@ class UnpicklerConfig:
     errors: str = "strict"
 
 
-class PickleSerializer(AbstractPacketSerializer[_ST_contra, _DT_co]):
+class PickleSerializer(AbstractPacketSerializer[SerializedPacketT_contra, DeserializedPacketT_co]):
     __slots__ = ("__optimize", "__pickler_cls", "__unpickler_cls")
 
     def __init__(
@@ -97,7 +95,7 @@ class PickleSerializer(AbstractPacketSerializer[_ST_contra, _DT_co]):
         self.__unpickler_cls = partial(unpickler_cls or pickle.Unpickler, **dataclass_asdict(unpickler_config), buffers=None)
 
     @final
-    def serialize(self, packet: _ST_contra) -> bytes:
+    def serialize(self, packet: SerializedPacketT_contra) -> bytes:
         with BytesIO() as buffer:
             self.__pickler_cls(buffer).dump(packet)
             pickle: bytes = buffer.getvalue()
@@ -106,10 +104,10 @@ class PickleSerializer(AbstractPacketSerializer[_ST_contra, _DT_co]):
         return pickle
 
     @final
-    def deserialize(self, data: bytes) -> _DT_co:
+    def deserialize(self, data: bytes) -> DeserializedPacketT_co:
         with BytesIO(data) as buffer:
             try:
-                packet: _DT_co = self.__unpickler_cls(buffer).load()
+                packet: DeserializedPacketT_co = self.__unpickler_cls(buffer).load()
             except Exception as exc:
                 raise DeserializeError(str(exc) or "Invalid token", error_info={"data": data}) from exc
             finally:

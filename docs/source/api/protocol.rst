@@ -1,5 +1,5 @@
-:mod:`easynetwork.protocol`
-===========================
+Protocols
+=========
 
 .. automodule:: easynetwork.protocol
    :members:

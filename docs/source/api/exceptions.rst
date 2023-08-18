@@ -1,5 +1,5 @@
-:mod:`easynetwork.exceptions`
-=============================
+Exceptions
+==========
 
 .. automodule:: easynetwork.exceptions
    :members:

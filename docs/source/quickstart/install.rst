@@ -1,7 +1,7 @@
 Installation
 ============
 
-To use EasyNetwork, first install it using pip:
+To use EasyNetwork, first install it using :program:`pip`:
 
 .. code-block:: console
 

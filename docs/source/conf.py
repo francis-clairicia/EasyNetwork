@@ -25,6 +25,8 @@ extensions = [
     "sphinx_tabs.tabs",
     "sphinx_toolbox.github",
     "sphinx_toolbox.sidebar_links",
+    "sphinx_toolbox.more_autodoc.autoprotocol",
+    "sphinx_toolbox.more_autodoc.no_docstring",
 ]
 
 highlight_language = "python3"
@@ -38,13 +40,21 @@ exclude_patterns = ["_include"]
 # -- sphinx.ext.autodoc configuration -------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/extensions/autodoc.html
 
-autoclass_content = "both"
+autodoc_class_signature = "separated"
 autodoc_member_order = "bysource"
+autodoc_default_options = {
+    "undoc-members": True,
+    "member-order": "bysource",
+    "show-inheritance": True,
+}
+autodoc_typehints = "description"
+autodoc_typehints_description_target = "documented_params"
 autodoc_type_aliases = {
     "ProtocolParseErrorType": "ProtocolParseErrorType",
     "SocketAddress": "SocketAddress",
 }
-autodoc_preserve_defaults = True
+autodoc_inherit_docstrings = False
+# autodoc_preserve_defaults = True
 
 # -- sphinx.ext.intersphinx configuration ------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/extensions/intersphinx.html

@@ -27,15 +27,12 @@ import string
 from collections import Counter
 from collections.abc import Callable, Generator
 from dataclasses import asdict as dataclass_asdict, dataclass
-from typing import Any, TypeVar, final
+from typing import Any, final
 
 from ..exceptions import DeserializeError, IncrementalDeserializeError
 from ..tools._utils import iter_bytes
+from ._typevars import DeserializedPacketT_co, SerializedPacketT_contra
 from .abc import AbstractIncrementalPacketSerializer
-
-_ST_contra = TypeVar("_ST_contra", contravariant=True)
-_DT_co = TypeVar("_DT_co", covariant=True)
-
 
 _JSON_VALUE_BYTES: frozenset[int] = frozenset(bytes(string.digits + string.ascii_letters + string.punctuation, "ascii"))
 _ESCAPE_BYTE: int = b"\\"[0]
@@ -45,6 +42,12 @@ _whitespaces_match: Callable[[bytes, int], re.Match[bytes]] = re.compile(rb"[ \t
 
 @dataclass(kw_only=True)
 class JSONEncoderConfig:
+    """
+    A :mod:`dataclass <dataclasses>` with the JSON encoder options.
+
+    See :class:`json.JSONEncoder` for more information.
+    """
+
     skipkeys: bool = False
     check_circular: bool = True
     ensure_ascii: bool = True
@@ -56,6 +59,12 @@ class JSONEncoderConfig:
 
 @dataclass(kw_only=True)
 class JSONDecoderConfig:
+    """
+    A :mod:`dataclass <dataclasses>` with the JSON decoder options.
+
+    See :class:`json.JSONDecoder` for more information.
+    """
+
     object_hook: Callable[..., Any] | None = None
     parse_int: Callable[[str], Any] | None = None
     parse_float: Callable[[str], Any] | None = None
@@ -143,7 +152,11 @@ class _JSONParser:
         return partial_document[:index], partial_document[index:]
 
 
-class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
+class JSONSerializer(AbstractIncrementalPacketSerializer[SerializedPacketT_contra, DeserializedPacketT_co]):
+    """
+    A serializer built on top of the :mod:`json` module.
+    """
+
     __slots__ = ("__encoder", "__decoder", "__decoder_error_cls", "__encoding", "__unicode_errors")
 
     def __init__(
@@ -154,6 +167,12 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
         encoding: str = "utf-8",
         unicode_errors: str = "strict",
     ) -> None:
+        """
+        :param encoder_config: Parameter object to configure the :class:`~json.JSONEncoder`.
+        :param decoder_config: Parameter object to configure the :class:`~json.JSONDecoder`.
+        :param encoding: String encoding (See :ref:`standard-encodings`).
+        :param unicode_errors: Controls how encoding errors are handled (See :ref:`error-handlers` for details).
+        """
         from json import JSONDecodeError, JSONDecoder, JSONEncoder
 
         super().__init__()
@@ -178,16 +197,50 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
         self.__unicode_errors: str = unicode_errors
 
     @final
-    def serialize(self, packet: _ST_contra) -> bytes:
+    def serialize(self, packet: SerializedPacketT_contra) -> bytes:
+        """
+        Returns the JSON representation of the Python object `packet`.
+
+        >>> from easynetwork.serializers import JSONSerializer
+        >>> s = JSONSerializer()
+        >>> s.serialize({"key": [1, 2, 3], "data": None})
+        b'{"key":[1,2,3],"data":null}'
+
+        :param packet: The Python object to serialize.
+        :returns: A byte sequence.
+        """
         return self.__encoder.encode(packet).encode(self.__encoding, self.__unicode_errors)
 
     @final
-    def incremental_serialize(self, packet: _ST_contra) -> Generator[bytes, None, None]:
+    def incremental_serialize(self, packet: SerializedPacketT_contra) -> Generator[bytes, None, None]:
+        r"""
+        Returns the JSON representation of the Python object `packet`.
+
+        >>> from easynetwork.serializers import JSONSerializer
+        >>> s = JSONSerializer()
+        >>> b"".join(s.incremental_serialize({"key": [1, 2, 3], "data": None}))
+        b'{"key":[1,2,3],"data":null}\n'
+
+        :param packet: The Python object to serialize.
+        :returns: A generator yielding all the parts of the JSON :term:`packet`.
+        """
         yield self.__encoder.encode(packet).encode(self.__encoding, self.__unicode_errors)
         yield b"\n"
 
     @final
-    def deserialize(self, data: bytes) -> _DT_co:
+    def deserialize(self, data: bytes) -> DeserializedPacketT_co:
+        """
+        Creates a Python object representing the raw JSON :term:`packet` from `data`.
+
+        >>> from easynetwork.serializers import JSONSerializer
+        >>> s = JSONSerializer()
+        >>> s.deserialize(b'{"key":[1,2,3],"data":null}')
+        {"key": [1, 2, 3], "data": None}
+
+        :param data: The byte sequence to deserialize.
+        :raises DeserializeError: A :class:`UnicodeError` or :class:`~json.JSONDecodeError` have been raised.
+        :returns: The deserialized Python object.
+        """
         try:
             document: str = data.decode(self.__encoding, self.__unicode_errors)
         except UnicodeError as exc:
@@ -195,7 +248,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
         finally:
             del data
         try:
-            packet: _DT_co = self.__decoder.decode(document)
+            packet: DeserializedPacketT_co = self.__decoder.decode(document)
         except self.__decoder_error_cls as exc:
             raise DeserializeError(
                 f"JSON decode error: {exc}",
@@ -209,7 +262,24 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
         return packet
 
     @final
-    def incremental_deserialize(self) -> Generator[None, bytes, tuple[_DT_co, bytes]]:
+    def incremental_deserialize(self) -> Generator[None, bytes, tuple[DeserializedPacketT_co, bytes]]:
+        """
+        Creates a Python object representing the raw JSON :term:`packet`.
+
+        >>> from easynetwork.serializers import JSONSerializer
+        >>> s = JSONSerializer()
+        >>> consumer = s.incremental_deserialize()
+        >>> next(consumer)
+        >>> consumer.send(b'{"key":[1,2,3]')
+        >>> consumer.send(b',"data":null}{"something":"remaining"}')
+        Traceback (most recent call last):
+        ...
+        StopIteration: ({"key": [1, 2, 3], "data": None}, b'{"something":"remaining"}')
+
+        :raises IncrementalDeserializeError: A :class:`UnicodeError` or :class:`~json.JSONDecodeError` have been raised.
+        :returns: A generator which yields until the whole :term:`packet` has been deserialized and returns a tuple with
+                  the deserialized packet and the unused trailing data.
+        """
         complete_document, remaining_data = yield from _JSONParser.raw_parse()
 
         if not complete_document:
@@ -217,7 +287,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
             complete_document = remaining_data
             remaining_data = b""
 
-        packet: _DT_co
+        packet: DeserializedPacketT_co
         try:
             document: str = complete_document.decode(self.__encoding, self.__unicode_errors)
         except UnicodeError as exc:

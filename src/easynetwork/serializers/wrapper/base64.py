@@ -22,22 +22,20 @@ __all__ = [
 
 import os
 from collections.abc import Callable
-from typing import Literal, TypeVar, assert_never, final
+from typing import Literal, assert_never, final
 
 from ...exceptions import DeserializeError
+from .._typevars import DeserializedPacketT_co, SerializedPacketT_contra
 from ..abc import AbstractPacketSerializer
 from ..base_stream import AutoSeparatedPacketSerializer
 
-_ST_contra = TypeVar("_ST_contra", contravariant=True)
-_DT_co = TypeVar("_DT_co", covariant=True)
 
-
-class Base64EncoderSerializer(AutoSeparatedPacketSerializer[_ST_contra, _DT_co]):
+class Base64EncoderSerializer(AutoSeparatedPacketSerializer[SerializedPacketT_contra, DeserializedPacketT_co]):
     __slots__ = ("__serializer", "__encode", "__decode", "__compare_digest", "__decode_error_cls", "__checksum")
 
     def __init__(
         self,
-        serializer: AbstractPacketSerializer[_ST_contra, _DT_co],
+        serializer: AbstractPacketSerializer[SerializedPacketT_contra, DeserializedPacketT_co],
         *,
         alphabet: Literal["standard", "urlsafe"] = "urlsafe",
         checksum: bool | str | bytes = False,
@@ -51,7 +49,7 @@ class Base64EncoderSerializer(AutoSeparatedPacketSerializer[_ST_contra, _DT_co])
         super().__init__(separator=separator, incremental_serialize_check_separator=not separator.isspace())
         if not isinstance(serializer, AbstractPacketSerializer):
             raise TypeError(f"Expected a serializer instance, got {serializer!r}")
-        self.__serializer: AbstractPacketSerializer[_ST_contra, _DT_co] = serializer
+        self.__serializer: AbstractPacketSerializer[SerializedPacketT_contra, DeserializedPacketT_co] = serializer
         self.__checksum: Callable[[bytes], bytes] | None
         match checksum:
             case False:
@@ -89,14 +87,14 @@ class Base64EncoderSerializer(AutoSeparatedPacketSerializer[_ST_contra, _DT_co])
         return base64.urlsafe_b64encode(os.urandom(32))
 
     @final
-    def serialize(self, packet: _ST_contra) -> bytes:
+    def serialize(self, packet: SerializedPacketT_contra) -> bytes:
         data = self.__serializer.serialize(packet)
         if (checksum := self.__checksum) is not None:
             data += checksum(data)
         return self.__encode(data)
 
     @final
-    def deserialize(self, data: bytes) -> _DT_co:
+    def deserialize(self, data: bytes) -> DeserializedPacketT_co:
         try:
             data = self.__decode(data)
         except self.__decode_error_cls:

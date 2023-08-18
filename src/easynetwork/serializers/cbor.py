@@ -25,15 +25,13 @@ __all__ = [
 from collections.abc import Callable
 from dataclasses import asdict as dataclass_asdict, dataclass
 from functools import partial
-from typing import IO, TYPE_CHECKING, Any, TypeVar, final
+from typing import IO, TYPE_CHECKING, Any, final
 
+from ._typevars import DeserializedPacketT_co, SerializedPacketT_contra
 from .base_stream import FileBasedPacketSerializer
 
 if TYPE_CHECKING:
     import datetime
-
-_ST_contra = TypeVar("_ST_contra", contravariant=True)
-_DT_co = TypeVar("_DT_co", covariant=True)
 
 
 @dataclass(kw_only=True)
@@ -54,7 +52,7 @@ class CBORDecoderConfig:
     str_errors: str = "strict"
 
 
-class CBORSerializer(FileBasedPacketSerializer[_ST_contra, _DT_co]):
+class CBORSerializer(FileBasedPacketSerializer[SerializedPacketT_contra, DeserializedPacketT_co]):
     __slots__ = ("__encoder_cls", "__decoder_cls")
 
     def __init__(
@@ -85,9 +83,9 @@ class CBORSerializer(FileBasedPacketSerializer[_ST_contra, _DT_co]):
         self.__decoder_cls = partial(cbor2.CBORDecoder, **dataclass_asdict(decoder_config))
 
     @final
-    def dump_to_file(self, packet: _ST_contra, file: IO[bytes]) -> None:
+    def dump_to_file(self, packet: SerializedPacketT_contra, file: IO[bytes]) -> None:
         self.__encoder_cls(file).encode(packet)
 
     @final
-    def load_from_file(self, file: IO[bytes]) -> _DT_co:
+    def load_from_file(self, file: IO[bytes]) -> DeserializedPacketT_co:
         return self.__decoder_cls(file).decode()
