@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""json-based network packet serializer module"""
+"""json-based packet serializer module"""
 
 from __future__ import annotations
 
@@ -48,13 +48,13 @@ class JSONEncoderConfig:
     See :class:`json.JSONEncoder` for more information.
     """
 
-    skipkeys: bool = False
-    check_circular: bool = True
-    ensure_ascii: bool = True
-    allow_nan: bool = True
-    indent: int | None = None
-    separators: tuple[str, str] | None = (",", ":")  # Compact JSON (w/o whitespaces)
-    default: Callable[..., Any] | None = None
+    skipkeys: bool = False  #: :meta hide-value:
+    check_circular: bool = True  #: :meta hide-value:
+    ensure_ascii: bool = True  #: :meta hide-value:
+    allow_nan: bool = True  #: :meta hide-value:
+    indent: int | None = None  #: :meta hide-value:
+    separators: tuple[str, str] | None = (",", ":")  #: :meta hide-value:  # Compact JSON (w/o whitespaces)
+    default: Callable[..., Any] | None = None  #: :meta hide-value:
 
 
 @dataclass(kw_only=True)
@@ -65,12 +65,12 @@ class JSONDecoderConfig:
     See :class:`json.JSONDecoder` for more information.
     """
 
-    object_hook: Callable[..., Any] | None = None
-    parse_int: Callable[[str], Any] | None = None
-    parse_float: Callable[[str], Any] | None = None
-    parse_constant: Callable[[str], Any] | None = None
-    object_pairs_hook: Callable[[list[tuple[str, Any]]], Any] | None = None
-    strict: bool = True
+    object_hook: Callable[..., Any] | None = None  #: :meta hide-value:
+    parse_int: Callable[[str], Any] | None = None  #: :meta hide-value:
+    parse_float: Callable[[str], Any] | None = None  #: :meta hide-value:
+    parse_constant: Callable[[str], Any] | None = None  #: :meta hide-value:
+    object_pairs_hook: Callable[[list[tuple[str, Any]]], Any] | None = None  #: :meta hide-value:
+    strict: bool = True  #: :meta hide-value:
 
 
 class _JSONParser:
@@ -154,7 +154,7 @@ class _JSONParser:
 
 class JSONSerializer(AbstractIncrementalPacketSerializer[SerializedPacketT_contra, DeserializedPacketT_co]):
     """
-    A serializer built on top of the :mod:`json` module.
+    A :term:`serializer` built on top of the :mod:`json` module.
     """
 
     __slots__ = ("__encoder", "__decoder", "__decoder_error_cls", "__encoding", "__unicode_errors")

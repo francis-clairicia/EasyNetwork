@@ -50,7 +50,8 @@ autodoc_default_options = {
 autodoc_typehints = "description"
 autodoc_typehints_description_target = "documented_params"
 autodoc_type_aliases = {
-    "ProtocolParseErrorType": "ProtocolParseErrorType",
+    "_Pickler": "pickle.Pickler",
+    "_Unpickler": "pickle.Unpickler",
     "SocketAddress": "SocketAddress",
 }
 autodoc_inherit_docstrings = False

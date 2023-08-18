@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""pickle-based network packet serializer module"""
+"""pickle-based packet serializer module"""
 
 from __future__ import annotations
 
@@ -44,18 +44,34 @@ def _get_default_pickler_protocol() -> int:
 
 @dataclass(kw_only=True)
 class PicklerConfig:
-    protocol: int = field(default_factory=_get_default_pickler_protocol)
-    fix_imports: bool = False
+    """
+    A dataclass with the Pickler options.
+
+    See :class:`pickle.Pickler` for more information.
+    """
+
+    protocol: int = field(default_factory=_get_default_pickler_protocol)  #: :meta hide-value:
+    fix_imports: bool = False  #: :meta hide-value:
 
 
 @dataclass(kw_only=True)
 class UnpicklerConfig:
-    fix_imports: bool = False
-    encoding: str = "utf-8"
-    errors: str = "strict"
+    """
+    A dataclass with the Unpickler options.
+
+    See :class:`pickle.Unpickler` for more information.
+    """
+
+    fix_imports: bool = False  #: :meta hide-value:
+    encoding: str = "utf-8"  #: :meta hide-value:
+    errors: str = "strict"  #: :meta hide-value:
 
 
 class PickleSerializer(AbstractPacketSerializer[SerializedPacketT_contra, DeserializedPacketT_co]):
+    """
+    A :term:`one-shot serializer` built on top of the :mod:`pickle` module.
+    """
+
     __slots__ = ("__optimize", "__pickler_cls", "__unpickler_cls")
 
     def __init__(
@@ -67,6 +83,13 @@ class PickleSerializer(AbstractPacketSerializer[SerializedPacketT_contra, Deseri
         unpickler_cls: type[_Unpickler] | None = None,
         pickler_optimize: bool = False,
     ) -> None:
+        """
+        :param pickler_config: Parameter object to configure the :class:`~pickle.Pickler`.
+        :param unpickler_config: Parameter object to configure the :class:`~pickle.Unpickler`.
+        :param pickler_cls: The :class:`~pickle.Pickler` class to use (see :ref:`pickle-inst`).
+        :param unpickler_cls: The :class:`~pickle.Unpickler` class to use (see :ref:`pickle-restrict`).
+        :param pickler_optimize: If `True`, :func:`pickletools.optimize` will be applied to :meth:`pickle.Pickler.dump` output.
+        """
         super().__init__()
 
         import pickle
@@ -96,6 +119,17 @@ class PickleSerializer(AbstractPacketSerializer[SerializedPacketT_contra, Deseri
 
     @final
     def serialize(self, packet: SerializedPacketT_contra) -> bytes:
+        """
+        Returns the pickle representation of the Python object `packet`.
+
+        Roughly equivalent to::
+
+            def serialize(packet):
+                return pickle.dumps(packet)
+
+        :param packet: The Python object to serialize.
+        :returns: A byte sequence.
+        """
         with BytesIO() as buffer:
             self.__pickler_cls(buffer).dump(packet)
             pickle: bytes = buffer.getvalue()
@@ -105,6 +139,19 @@ class PickleSerializer(AbstractPacketSerializer[SerializedPacketT_contra, Deseri
 
     @final
     def deserialize(self, data: bytes) -> DeserializedPacketT_co:
+        """
+        Creates a Python object representing the raw pickle :term:`packet` from `data`.
+
+        Roughly equivalent to::
+
+            def deserialize(data):
+                return pickle.loads(data)
+
+        :param data: The byte sequence to deserialize.
+        :raises DeserializeError: Too little or too much data to parse.
+        :raises DeserializeError: An unrelated deserialization error occurred.
+        :returns: The deserialized Python object.
+        """
         with BytesIO(data) as buffer:
             try:
                 packet: DeserializedPacketT_co = self.__unpickler_cls(buffer).load()
