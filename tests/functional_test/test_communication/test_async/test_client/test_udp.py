@@ -15,6 +15,7 @@ from easynetwork_asyncio.datagram.endpoint import DatagramEndpoint, create_datag
 import pytest
 import pytest_asyncio
 
+from .....tools import PlatformMarkers
 from .._utils import delay
 from ..conftest import use_asyncio_transport_xfail_uvloop
 
@@ -113,7 +114,9 @@ class TestAsyncUDPNetworkClient:
         async with asyncio.timeout(3):
             assert await server.recvfrom() == (b"ABCDEF", client.get_local_address())
 
-    @pytest.mark.platform_linux  # Windows and MacOS do not raise error
+    # Windows and MacOS do not raise error
+    @PlatformMarkers.skipif_platform_win32
+    @PlatformMarkers.skipif_platform_macOS
     async def test____send_packet____connection_refused(
         self,
         client: AsyncUDPNetworkClient[str, str],
@@ -123,7 +126,9 @@ class TestAsyncUDPNetworkClient:
         with pytest.raises(ConnectionRefusedError):
             await client.send_packet("ABCDEF")
 
-    @pytest.mark.platform_linux  # Windows and MacOS do not raise error
+    # Windows and MacOS do not raise error
+    @PlatformMarkers.skipif_platform_win32
+    @PlatformMarkers.skipif_platform_macOS
     async def test____send_packet____connection_refused____after_previous_successful_try(
         self,
         client: AsyncUDPNetworkClient[str, str],
@@ -563,7 +568,9 @@ class TestAsyncUDPNetworkEndpoint:
                 with pytest.raises(ValueError):
                     await client.send_packet_to("ABCDEF", other_client_address)
 
-    @pytest.mark.platform_linux  # Windows and MacOS do not raise error
+    # Windows and MacOS do not raise error
+    @PlatformMarkers.skipif_platform_win32
+    @PlatformMarkers.skipif_platform_macOS
     @pytest.mark.parametrize("client", ["WITH_REMOTE"], indirect=True)
     async def test____send_packet_to____connection_refused(
         self,
@@ -575,7 +582,9 @@ class TestAsyncUDPNetworkEndpoint:
             with pytest.raises(ConnectionRefusedError):
                 await client.send_packet_to("ABCDEF", None)
 
-    @pytest.mark.platform_linux  # Windows and MacOS do not raise error
+    # Windows and MacOS do not raise error
+    @PlatformMarkers.skipif_platform_win32
+    @PlatformMarkers.skipif_platform_macOS
     @pytest.mark.parametrize("client", ["WITH_REMOTE"], indirect=True)
     async def test____send_packet_to____connection_refused____after_previous_successful_try(
         self,
