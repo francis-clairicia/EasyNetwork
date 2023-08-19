@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 import time
 from collections.abc import Generator
 from typing import Any, TypeVar, final
@@ -8,6 +9,17 @@ import pytest
 
 _T_contra = TypeVar("_T_contra", contravariant=True)
 _V_co = TypeVar("_V_co", covariant=True)
+
+
+def _make_skipif_platform(platform: str) -> pytest.MarkDecorator:
+    return pytest.mark.skipif(sys.platform.startswith(platform), reason=f"cannot run on platform {platform!r}")
+
+
+@final
+class PlatformMarkers:
+    skipif_platform_win32 = _make_skipif_platform("win32")
+    skipif_platform_macOS = _make_skipif_platform("darwin")
+    skipif_platform_linux = _make_skipif_platform("linux")
 
 
 def send_return(gen: Generator[Any, _T_contra, _V_co], value: _T_contra, /) -> _V_co:
