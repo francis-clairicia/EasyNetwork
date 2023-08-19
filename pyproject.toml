@@ -183,10 +183,6 @@ markers = [
     "functional: marks tests as functional tests",
     "unit: marks tests as unit tests",
     "serializer: marks serializers tests",
-    # Platform-specific tests
-    "platform_win32: marks tests as runnable on win32 (Windows)",
-    "platform_darwin: marks tests as runnable on darwin (macOS)",
-    "platform_linux: marks tests as runnable on linux",
 ]
 
 [tool.coverage.run]
@@ -196,6 +192,9 @@ source_pkgs = [
     "easynetwork_asyncio",
 ]
 relative_files = true
+disable_warnings = [
+    "module-not-measured",  # Happening when using pytest-xdist.
+]
 
 [tool.coverage.paths]
 source = [

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pathlib
 from collections.abc import Callable
 from socket import AF_INET, IPPROTO_TCP, IPPROTO_UDP, SOCK_DGRAM, SOCK_STREAM, socket as Socket
 from ssl import SSLContext, SSLSocket
@@ -17,13 +16,6 @@ if TYPE_CHECKING:
     from unittest.mock import MagicMock
 
     from pytest_mock import MockerFixture
-
-
-def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
-    directory = pathlib.PurePath(__file__).parent
-    for item in items:
-        if pathlib.PurePath(item.fspath).is_relative_to(directory):
-            item.add_marker(pytest.mark.unit)
 
 
 @pytest.fixture

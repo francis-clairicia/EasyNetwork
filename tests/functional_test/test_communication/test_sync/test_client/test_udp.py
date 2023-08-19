@@ -11,6 +11,8 @@ from easynetwork.tools.socket import IPv4SocketAddress, IPv6SocketAddress, new_s
 
 import pytest
 
+from .....tools import PlatformMarkers
+
 
 @pytest.fixture
 def udp_socket_factory(request: pytest.FixtureRequest, localhost_ip: str) -> Callable[[], Socket]:
@@ -52,13 +54,17 @@ class TestUDPNetworkClient:
         client.send_packet("ABCDEF")
         assert server.recvfrom(1024) == (b"ABCDEF", client.get_local_address())
 
-    @pytest.mark.platform_linux  # Windows and MacOS do not raise error
+    # Windows and MacOS do not raise error
+    @PlatformMarkers.skipif_platform_win32
+    @PlatformMarkers.skipif_platform_macOS
     def test____send_packet____connection_refused(self, client: UDPNetworkClient[str, str], server: Socket) -> None:
         server.close()
         with pytest.raises(ConnectionRefusedError):
             client.send_packet("ABCDEF")
 
-    @pytest.mark.platform_linux  # Windows and MacOS do not raise error
+    # Windows and MacOS do not raise error
+    @PlatformMarkers.skipif_platform_win32
+    @PlatformMarkers.skipif_platform_macOS
     def test____send_packet____connection_refused____after_previous_successful_try(
         self,
         client: UDPNetworkClient[str, str],
@@ -236,7 +242,9 @@ class TestUDPNetworkEndpoint:
             with pytest.raises(ValueError):
                 client.send_packet_to("ABCDEF", other_client_address)
 
-    @pytest.mark.platform_linux  # Windows and MacOS do not raise error
+    # Windows and MacOS do not raise error
+    @PlatformMarkers.skipif_platform_win32
+    @PlatformMarkers.skipif_platform_macOS
     @pytest.mark.parametrize("client", ["WITH_REMOTE"], indirect=True)
     def test____send_packet_to____connection_refused(self, client: UDPNetworkEndpoint[str, str], server: Socket) -> None:
         address = server.getsockname()
@@ -244,7 +252,9 @@ class TestUDPNetworkEndpoint:
         with pytest.raises(ConnectionRefusedError):
             client.send_packet_to("ABCDEF", address)
 
-    @pytest.mark.platform_linux  # Windows and MacOS do not raise error
+    # Windows and MacOS do not raise error
+    @PlatformMarkers.skipif_platform_win32
+    @PlatformMarkers.skipif_platform_macOS
     @pytest.mark.parametrize("client", ["WITH_REMOTE"], indirect=True)
     def test____send_packet____connection_refused____after_previous_successful_try(
         self,
