@@ -27,8 +27,9 @@ import os
 import weakref
 from collections import deque
 from collections.abc import AsyncGenerator, AsyncIterator, Callable, Coroutine, Iterator, Mapping, Sequence
-from typing import TYPE_CHECKING, Any, Generic, TypeVar, assert_never, final
+from typing import TYPE_CHECKING, Any, Generic, assert_never, final
 
+from ..._typevars import _RequestT, _ResponseT
 from ...exceptions import ClientClosedError, ServerAlreadyRunning, ServerClosedError, StreamProtocolParseError
 from ...protocol import StreamProtocol
 from ...tools._stream import StreamDataConsumer, StreamDataProducer
@@ -73,10 +74,6 @@ if TYPE_CHECKING:
         AbstractTaskGroup,
         IEvent,
     )
-
-
-_RequestT = TypeVar("_RequestT")
-_ResponseT = TypeVar("_ResponseT")
 
 
 class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _ResponseT]):

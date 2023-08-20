@@ -27,16 +27,14 @@ __all__ = [
 
 from abc import ABCMeta, abstractmethod
 from collections.abc import AsyncGenerator, Callable, Coroutine
-from typing import TYPE_CHECKING, Any, Generic, TypeVar, final
+from typing import TYPE_CHECKING, Any, Generic, final
+
+from ..._typevars import _RequestT, _ResponseT
 
 if TYPE_CHECKING:
     from ...exceptions import DatagramProtocolParseError, StreamProtocolParseError
     from ...tools.socket import SocketAddress, SocketProxy
     from ..backend.abc import AbstractAsyncBackend
-
-
-_RequestT = TypeVar("_RequestT")
-_ResponseT = TypeVar("_ResponseT")
 
 
 class AsyncBaseClientInterface(Generic[_ResponseT], metaclass=ABCMeta):

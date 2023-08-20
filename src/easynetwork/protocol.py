@@ -22,8 +22,9 @@ __all__ = [
 ]
 
 from collections.abc import Generator
-from typing import Any, Generic, TypeVar, overload
+from typing import Any, Generic, overload
 
+from ._typevars import _ReceivedDTOPacketT, _ReceivedPacketT, _SentDTOPacketT, _SentPacketT
 from .converter import AbstractPacketConverterComposite
 from .exceptions import (
     DatagramProtocolParseError,
@@ -33,12 +34,6 @@ from .exceptions import (
     StreamProtocolParseError,
 )
 from .serializers.abc import AbstractIncrementalPacketSerializer, AbstractPacketSerializer
-
-_SentDTOPacketT = TypeVar("_SentDTOPacketT")
-_ReceivedDTOPacketT = TypeVar("_ReceivedDTOPacketT")
-
-_SentPacketT = TypeVar("_SentPacketT")
-_ReceivedPacketT = TypeVar("_ReceivedPacketT")
 
 
 class DatagramProtocol(Generic[_SentPacketT, _ReceivedPacketT]):

@@ -21,15 +21,13 @@ __all__ = ["AbstractNetworkClient"]
 import time
 from abc import ABCMeta, abstractmethod
 from collections.abc import Iterator
-from typing import TYPE_CHECKING, Any, Generic, Self, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, Self
 
+from ..._typevars import _ReceivedPacketT, _SentPacketT
 from ...tools.socket import SocketAddress
 
 if TYPE_CHECKING:
     from types import TracebackType
-
-_ReceivedPacketT = TypeVar("_ReceivedPacketT")
-_SentPacketT = TypeVar("_SentPacketT")
 
 
 class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=ABCMeta):

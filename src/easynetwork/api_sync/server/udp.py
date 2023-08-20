@@ -22,8 +22,9 @@ __all__ = [
 
 import contextlib as _contextlib
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, Generic
 
+from ..._typevars import _RequestT, _ResponseT
 from ...api_async.server.udp import AsyncUDPNetworkServer
 from ...tools.socket import SocketAddress, SocketProxy
 from . import _base
@@ -34,9 +35,6 @@ if TYPE_CHECKING:
     from ...api_async.backend.abc import AbstractAsyncBackend
     from ...api_async.server.handler import AsyncDatagramRequestHandler
     from ...protocol import DatagramProtocol
-
-_RequestT = TypeVar("_RequestT")
-_ResponseT = TypeVar("_ResponseT")
 
 
 class StandaloneUDPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[_RequestT, _ResponseT]):

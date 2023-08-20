@@ -22,8 +22,9 @@ __all__ = [
 
 import contextlib as _contextlib
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, Any, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, Generic
 
+from ..._typevars import _RequestT, _ResponseT
 from ...api_async.server.tcp import AsyncTCPNetworkServer
 from ...tools.socket import SocketAddress, SocketProxy
 from . import _base
@@ -35,9 +36,6 @@ if TYPE_CHECKING:
     from ...api_async.backend.abc import AbstractAsyncBackend
     from ...api_async.server.handler import AsyncStreamRequestHandler
     from ...protocol import StreamProtocol
-
-_RequestT = TypeVar("_RequestT")
-_ResponseT = TypeVar("_ResponseT")
 
 
 class StandaloneTCPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[_RequestT, _ResponseT]):

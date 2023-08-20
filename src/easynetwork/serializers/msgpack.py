@@ -27,8 +27,8 @@ from dataclasses import asdict as dataclass_asdict, dataclass, field
 from functools import partial
 from typing import Any, final
 
+from .._typevars import _DeserializedPacketT_co, _SerializedPacketT_contra
 from ..exceptions import DeserializeError
-from ._typevars import DeserializedPacketT_co, SerializedPacketT_contra
 from .abc import AbstractPacketSerializer
 
 
@@ -74,7 +74,7 @@ class MessageUnpackerConfig:
     ext_hook: Callable[[int, bytes], Any] = field(default_factory=_get_default_ext_hook)
 
 
-class MessagePackSerializer(AbstractPacketSerializer[SerializedPacketT_contra, DeserializedPacketT_co]):
+class MessagePackSerializer(AbstractPacketSerializer[_SerializedPacketT_contra, _DeserializedPacketT_co]):
     """
     A :term:`one-shot serializer` built on top of the :mod:`msgpack` module.
 
@@ -99,8 +99,8 @@ class MessagePackSerializer(AbstractPacketSerializer[SerializedPacketT_contra, D
             raise ModuleNotFoundError("message-pack dependencies are missing. Consider adding 'msgpack' extra") from exc
 
         super().__init__()
-        self.__packb: Callable[[SerializedPacketT_contra], bytes]
-        self.__unpackb: Callable[[bytes], DeserializedPacketT_co]
+        self.__packb: Callable[[_SerializedPacketT_contra], bytes]
+        self.__unpackb: Callable[[bytes], _DeserializedPacketT_co]
 
         if packer_config is None:
             packer_config = MessagePackerConfig()
@@ -120,7 +120,7 @@ class MessagePackSerializer(AbstractPacketSerializer[SerializedPacketT_contra, D
         self.__unpack_extra_data_cls = msgpack.ExtraData
 
     @final
-    def serialize(self, packet: SerializedPacketT_contra) -> bytes:
+    def serialize(self, packet: _SerializedPacketT_contra) -> bytes:
         """
         Returns the MessagePack representation of the Python object `packet`.
 
@@ -138,7 +138,7 @@ class MessagePackSerializer(AbstractPacketSerializer[SerializedPacketT_contra, D
         return self.__packb(packet)
 
     @final
-    def deserialize(self, data: bytes) -> DeserializedPacketT_co:
+    def deserialize(self, data: bytes) -> _DeserializedPacketT_co:
         """
         Creates a Python object representing the raw MessagePack :term:`packet` from `data`.
 

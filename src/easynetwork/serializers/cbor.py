@@ -27,7 +27,7 @@ from dataclasses import asdict as dataclass_asdict, dataclass
 from functools import partial
 from typing import IO, TYPE_CHECKING, Any, final
 
-from ._typevars import DeserializedPacketT_co, SerializedPacketT_contra
+from .._typevars import _DeserializedPacketT_co, _SerializedPacketT_contra
 from .base_stream import FileBasedPacketSerializer
 
 if TYPE_CHECKING:
@@ -64,7 +64,7 @@ class CBORDecoderConfig:
     str_errors: str = "strict"
 
 
-class CBORSerializer(FileBasedPacketSerializer[SerializedPacketT_contra, DeserializedPacketT_co]):
+class CBORSerializer(FileBasedPacketSerializer[_SerializedPacketT_contra, _DeserializedPacketT_co]):
     """
     A :term:`serializer` built on top of the :mod:`cbor2` module.
 
@@ -106,7 +106,7 @@ class CBORSerializer(FileBasedPacketSerializer[SerializedPacketT_contra, Deseria
         self.__decoder_cls = partial(cbor2.CBORDecoder, **dataclass_asdict(decoder_config))
 
     @final
-    def dump_to_file(self, packet: SerializedPacketT_contra, file: IO[bytes]) -> None:
+    def dump_to_file(self, packet: _SerializedPacketT_contra, file: IO[bytes]) -> None:
         """
         Write the CBOR representation of `packet` to `file`.
 
@@ -122,7 +122,7 @@ class CBORSerializer(FileBasedPacketSerializer[SerializedPacketT_contra, Deseria
         self.__encoder_cls(file).encode(packet)
 
     @final
-    def load_from_file(self, file: IO[bytes]) -> DeserializedPacketT_co:
+    def load_from_file(self, file: IO[bytes]) -> _DeserializedPacketT_co:
         """
         Read from `file` to deserialize the raw CBOR :term:`packet`.
 

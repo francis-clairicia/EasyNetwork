@@ -29,6 +29,7 @@ from collections.abc import AsyncGenerator, AsyncIterator, Callable, Coroutine, 
 from typing import TYPE_CHECKING, Any, Generic, TypeVar, assert_never, final
 from weakref import WeakValueDictionary
 
+from ..._typevars import _RequestT, _ResponseT
 from ...exceptions import ClientClosedError, DatagramProtocolParseError, ServerAlreadyRunning, ServerClosedError
 from ...protocol import DatagramProtocol
 from ...tools._utils import (
@@ -55,10 +56,6 @@ if TYPE_CHECKING:
         IEvent,
         ILock,
     )
-
-
-_RequestT = TypeVar("_RequestT")
-_ResponseT = TypeVar("_ResponseT")
 
 _KT = TypeVar("_KT")
 _VT = TypeVar("_VT")

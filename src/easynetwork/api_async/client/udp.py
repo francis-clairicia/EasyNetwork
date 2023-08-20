@@ -21,8 +21,9 @@ __all__ = ["AsyncUDPNetworkClient", "AsyncUDPNetworkEndpoint"]
 import errno as _errno
 import socket as _socket
 from collections.abc import AsyncIterator, Mapping
-from typing import TYPE_CHECKING, Any, Generic, Self, TypedDict, TypeVar, final, overload
+from typing import TYPE_CHECKING, Any, Generic, Self, TypedDict, final, overload
 
+from ..._typevars import _ReceivedPacketT, _SentPacketT
 from ...exceptions import ClientClosedError, DatagramProtocolParseError
 from ...protocol import DatagramProtocol
 from ...tools._utils import (
@@ -41,9 +42,6 @@ from .abc import AbstractAsyncNetworkClient
 
 if TYPE_CHECKING:
     from types import TracebackType
-
-_ReceivedPacketT = TypeVar("_ReceivedPacketT")
-_SentPacketT = TypeVar("_SentPacketT")
 
 
 class _EndpointInfo(TypedDict):

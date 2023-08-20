@@ -29,9 +29,9 @@ from collections.abc import Callable, Generator
 from dataclasses import asdict as dataclass_asdict, dataclass
 from typing import Any, final
 
+from .._typevars import _DeserializedPacketT_co, _SerializedPacketT_contra
 from ..exceptions import DeserializeError, IncrementalDeserializeError
 from ..tools._utils import iter_bytes
-from ._typevars import DeserializedPacketT_co, SerializedPacketT_contra
 from .abc import AbstractIncrementalPacketSerializer
 
 _JSON_VALUE_BYTES: frozenset[int] = frozenset(bytes(string.digits + string.ascii_letters + string.punctuation, "ascii"))
@@ -152,7 +152,7 @@ class _JSONParser:
         return partial_document[:index], partial_document[index:]
 
 
-class JSONSerializer(AbstractIncrementalPacketSerializer[SerializedPacketT_contra, DeserializedPacketT_co]):
+class JSONSerializer(AbstractIncrementalPacketSerializer[_SerializedPacketT_contra, _DeserializedPacketT_co]):
     """
     A :term:`serializer` built on top of the :mod:`json` module.
     """
@@ -202,7 +202,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[SerializedPacketT_contr
         self.__unicode_errors: str = unicode_errors
 
     @final
-    def serialize(self, packet: SerializedPacketT_contra) -> bytes:
+    def serialize(self, packet: _SerializedPacketT_contra) -> bytes:
         """
         Returns the JSON representation of the Python object `packet`.
 
@@ -226,7 +226,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[SerializedPacketT_contr
         return self.__encoder.encode(packet).encode(self.__encoding, self.__unicode_errors)
 
     @final
-    def incremental_serialize(self, packet: SerializedPacketT_contra) -> Generator[bytes, None, None]:
+    def incremental_serialize(self, packet: _SerializedPacketT_contra) -> Generator[bytes, None, None]:
         r"""
         Returns the JSON representation of the Python object `packet`.
 
@@ -246,7 +246,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[SerializedPacketT_contr
         yield b"\n"
 
     @final
-    def deserialize(self, data: bytes) -> DeserializedPacketT_co:
+    def deserialize(self, data: bytes) -> _DeserializedPacketT_co:
         """
         Creates a Python object representing the raw JSON :term:`packet` from `data`.
 
@@ -277,7 +277,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[SerializedPacketT_contr
         finally:
             del data
         try:
-            packet: DeserializedPacketT_co = self.__decoder.decode(document)
+            packet: _DeserializedPacketT_co = self.__decoder.decode(document)
         except self.__decoder_error_cls as exc:
             raise DeserializeError(
                 f"JSON decode error: {exc}",
@@ -291,7 +291,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[SerializedPacketT_contr
         return packet
 
     @final
-    def incremental_deserialize(self) -> Generator[None, bytes, tuple[DeserializedPacketT_co, bytes]]:
+    def incremental_deserialize(self) -> Generator[None, bytes, tuple[_DeserializedPacketT_co, bytes]]:
         """
         Creates a Python object representing the raw JSON :term:`packet`.
 
@@ -322,7 +322,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[SerializedPacketT_contr
             complete_document = remaining_data
             remaining_data = b""
 
-        packet: DeserializedPacketT_co
+        packet: _DeserializedPacketT_co
         try:
             document: str = complete_document.decode(self.__encoding, self.__unicode_errors)
         except UnicodeError as exc:

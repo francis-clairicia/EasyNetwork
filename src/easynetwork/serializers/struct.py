@@ -22,8 +22,8 @@ from abc import abstractmethod
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, Generic, NamedTuple, TypeVar, final
 
+from .._typevars import _DeserializedPacketT_co, _SerializedPacketT_contra
 from ..exceptions import DeserializeError
-from ._typevars import DeserializedPacketT_co, SerializedPacketT_contra
 from .base_stream import FixedSizePacketSerializer
 
 if TYPE_CHECKING:
@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 _ENDIANNESS_CHARACTERS: frozenset[str] = frozenset({"@", "=", "<", ">", "!"})
 
 
-class AbstractStructSerializer(FixedSizePacketSerializer[SerializedPacketT_contra, DeserializedPacketT_co]):
+class AbstractStructSerializer(FixedSizePacketSerializer[_SerializedPacketT_contra, _DeserializedPacketT_co]):
     r"""
     A base class for structured data.
 
@@ -86,7 +86,7 @@ class AbstractStructSerializer(FixedSizePacketSerializer[SerializedPacketT_contr
         self.__error_cls = error
 
     @abstractmethod
-    def iter_values(self, packet: SerializedPacketT_contra, /) -> Iterable[Any]:
+    def iter_values(self, packet: _SerializedPacketT_contra, /) -> Iterable[Any]:
         """
         Returns an object suitable for :meth:`struct.Struct.pack`.
 
@@ -101,7 +101,7 @@ class AbstractStructSerializer(FixedSizePacketSerializer[SerializedPacketT_contr
         raise NotImplementedError
 
     @abstractmethod
-    def from_tuple(self, t: tuple[Any, ...], /) -> DeserializedPacketT_co:
+    def from_tuple(self, t: tuple[Any, ...], /) -> _DeserializedPacketT_co:
         """
         Finishes the packet deserialization by parsing the tuple obtained by :meth:`struct.Struct.unpack`.
 
@@ -116,7 +116,7 @@ class AbstractStructSerializer(FixedSizePacketSerializer[SerializedPacketT_contr
         raise NotImplementedError
 
     @final
-    def serialize(self, packet: SerializedPacketT_contra) -> bytes:
+    def serialize(self, packet: _SerializedPacketT_contra) -> bytes:
         """
         Returns the structured data representation of the Python object `packet`.
 
@@ -135,7 +135,7 @@ class AbstractStructSerializer(FixedSizePacketSerializer[SerializedPacketT_contr
         return self.__s.pack(*self.iter_values(packet))
 
     @final
-    def deserialize(self, data: bytes) -> DeserializedPacketT_co:
+    def deserialize(self, data: bytes) -> _DeserializedPacketT_co:
         """
         Creates a Python object representing the structure from `data`.
 

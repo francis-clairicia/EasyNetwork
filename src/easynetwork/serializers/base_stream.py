@@ -27,12 +27,12 @@ from collections.abc import Generator
 from io import BytesIO
 from typing import IO, Any, final
 
+from .._typevars import _DeserializedPacketT_co, _SerializedPacketT_contra
 from ..exceptions import DeserializeError, IncrementalDeserializeError
-from ._typevars import DeserializedPacketT_co, SerializedPacketT_contra
 from .abc import AbstractIncrementalPacketSerializer, AbstractPacketSerializer
 
 
-class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[SerializedPacketT_contra, DeserializedPacketT_co]):
+class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_SerializedPacketT_contra, _DeserializedPacketT_co]):
     """
     Base class for stream protocols that separates sent information by a byte sequence.
     """
@@ -62,14 +62,14 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[Serializ
         self.__incremental_serialize_check_separator = bool(incremental_serialize_check_separator)
 
     @abstractmethod
-    def serialize(self, packet: SerializedPacketT_contra, /) -> bytes:
+    def serialize(self, packet: _SerializedPacketT_contra, /) -> bytes:
         """
         See :meth:`AbstractPacketSerializer.serialize` documentation.
         """
         raise NotImplementedError
 
     @final
-    def incremental_serialize(self, packet: SerializedPacketT_contra, /) -> Generator[bytes, None, None]:
+    def incremental_serialize(self, packet: _SerializedPacketT_contra, /) -> Generator[bytes, None, None]:
         """
         Yields the data returned by :meth:`.serialize` and appends `separator`.
 
@@ -91,14 +91,14 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[Serializ
         yield separator
 
     @abstractmethod
-    def deserialize(self, data: bytes, /) -> DeserializedPacketT_co:
+    def deserialize(self, data: bytes, /) -> _DeserializedPacketT_co:
         """
         See :meth:`AbstractPacketSerializer.deserialize` documentation.
         """
         raise NotImplementedError
 
     @final
-    def incremental_deserialize(self) -> Generator[None, bytes, tuple[DeserializedPacketT_co, bytes]]:
+    def incremental_deserialize(self) -> Generator[None, bytes, tuple[_DeserializedPacketT_co, bytes]]:
         """
         Yields until `separator` is found and calls :meth:`.deserialize` **without** `separator`.
 
@@ -143,7 +143,7 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[Serializ
         return self.__separator
 
 
-class FixedSizePacketSerializer(AbstractIncrementalPacketSerializer[SerializedPacketT_contra, DeserializedPacketT_co]):
+class FixedSizePacketSerializer(AbstractIncrementalPacketSerializer[_SerializedPacketT_contra, _DeserializedPacketT_co]):
     """
     A base class for stream protocols in which the packets are of a fixed size.
     """
@@ -169,14 +169,14 @@ class FixedSizePacketSerializer(AbstractIncrementalPacketSerializer[SerializedPa
         self.__size: int = size
 
     @abstractmethod
-    def serialize(self, packet: SerializedPacketT_contra, /) -> bytes:
+    def serialize(self, packet: _SerializedPacketT_contra, /) -> bytes:
         """
         See :meth:`AbstractPacketSerializer.serialize` documentation.
         """
         raise NotImplementedError
 
     @final
-    def incremental_serialize(self, packet: SerializedPacketT_contra, /) -> Generator[bytes, None, None]:
+    def incremental_serialize(self, packet: _SerializedPacketT_contra, /) -> Generator[bytes, None, None]:
         """
         Yields the data returned by :meth:`.serialize`.
 
@@ -192,14 +192,14 @@ class FixedSizePacketSerializer(AbstractIncrementalPacketSerializer[SerializedPa
         yield data
 
     @abstractmethod
-    def deserialize(self, data: bytes, /) -> DeserializedPacketT_co:
+    def deserialize(self, data: bytes, /) -> _DeserializedPacketT_co:
         """
         See :meth:`AbstractPacketSerializer.deserialize` documentation.
         """
         raise NotImplementedError
 
     @final
-    def incremental_deserialize(self) -> Generator[None, bytes, tuple[DeserializedPacketT_co, bytes]]:
+    def incremental_deserialize(self) -> Generator[None, bytes, tuple[_DeserializedPacketT_co, bytes]]:
         """
         Yields until there is enough data and calls :meth:`.deserialize`.
 
@@ -242,7 +242,7 @@ class FixedSizePacketSerializer(AbstractIncrementalPacketSerializer[SerializedPa
         return self.__size
 
 
-class FileBasedPacketSerializer(AbstractPacketSerializer[SerializedPacketT_contra, DeserializedPacketT_co]):
+class FileBasedPacketSerializer(AbstractPacketSerializer[_SerializedPacketT_contra, _DeserializedPacketT_co]):
     """
     Base class for APIs requiring a :std:term:`file object` for serialization/deserialization.
     """
@@ -265,7 +265,7 @@ class FileBasedPacketSerializer(AbstractPacketSerializer[SerializedPacketT_contr
         self.__expected_errors: tuple[type[Exception], ...] = expected_load_error
 
     @abstractmethod
-    def dump_to_file(self, packet: SerializedPacketT_contra, file: IO[bytes], /) -> None:
+    def dump_to_file(self, packet: _SerializedPacketT_contra, file: IO[bytes], /) -> None:
         """
         Write the serialized `packet` to `file`.
 
@@ -276,7 +276,7 @@ class FileBasedPacketSerializer(AbstractPacketSerializer[SerializedPacketT_contr
         raise NotImplementedError
 
     @abstractmethod
-    def load_from_file(self, file: IO[bytes], /) -> DeserializedPacketT_co:
+    def load_from_file(self, file: IO[bytes], /) -> _DeserializedPacketT_co:
         """
         Read from `file` to deserialize the raw :term:`packet`.
 
@@ -293,7 +293,7 @@ class FileBasedPacketSerializer(AbstractPacketSerializer[SerializedPacketT_contr
         raise NotImplementedError
 
     @final
-    def serialize(self, packet: SerializedPacketT_contra, /) -> bytes:
+    def serialize(self, packet: _SerializedPacketT_contra, /) -> bytes:
         """
         Calls :meth:`.dump_to_file` and returns the result.
 
@@ -307,7 +307,7 @@ class FileBasedPacketSerializer(AbstractPacketSerializer[SerializedPacketT_contr
             return buffer.getvalue()
 
     @final
-    def deserialize(self, data: bytes, /) -> DeserializedPacketT_co:
+    def deserialize(self, data: bytes, /) -> _DeserializedPacketT_co:
         """
         Calls :meth:`.load_from_file` and returns the result.
 
@@ -321,7 +321,7 @@ class FileBasedPacketSerializer(AbstractPacketSerializer[SerializedPacketT_contr
         """
         with BytesIO(data) as buffer:
             try:
-                packet: DeserializedPacketT_co = self.load_from_file(buffer)
+                packet: _DeserializedPacketT_co = self.load_from_file(buffer)
             except EOFError as exc:
                 raise DeserializeError("Missing data to create packet", error_info={"data": data}) from exc
             except self.__expected_errors as exc:
@@ -333,7 +333,7 @@ class FileBasedPacketSerializer(AbstractPacketSerializer[SerializedPacketT_contr
         return packet
 
     @final
-    def incremental_serialize(self, packet: SerializedPacketT_contra, /) -> Generator[bytes, None, None]:
+    def incremental_serialize(self, packet: _SerializedPacketT_contra, /) -> Generator[bytes, None, None]:
         """
         Calls :meth:`.dump_to_file` and yields the result.
 
@@ -350,7 +350,7 @@ class FileBasedPacketSerializer(AbstractPacketSerializer[SerializedPacketT_contr
         yield data
 
     @final
-    def incremental_deserialize(self) -> Generator[None, bytes, tuple[DeserializedPacketT_co, bytes]]:
+    def incremental_deserialize(self) -> Generator[None, bytes, tuple[_DeserializedPacketT_co, bytes]]:
         """
         Calls :meth:`.load_from_file` and returns the result.
 
@@ -370,7 +370,7 @@ class FileBasedPacketSerializer(AbstractPacketSerializer[SerializedPacketT_contr
                     buffer.write((yield))
                     buffer.seek(0)
                 try:
-                    packet: DeserializedPacketT_co = self.load_from_file(buffer)
+                    packet: _DeserializedPacketT_co = self.load_from_file(buffer)
                 except EOFError:
                     continue
                 except self.__expected_errors as exc:

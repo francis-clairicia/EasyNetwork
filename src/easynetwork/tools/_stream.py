@@ -23,13 +23,11 @@ __all__ = [
 
 from collections import deque
 from collections.abc import Generator, Iterator
-from typing import Any, Generic, TypeVar, final
+from typing import Any, Generic, final
 
+from .._typevars import _ReceivedPacketT, _SentPacketT
 from ..exceptions import StreamProtocolParseError
 from ..protocol import StreamProtocol
-
-_SentPacketT = TypeVar("_SentPacketT")
-_ReceivedPacketT = TypeVar("_ReceivedPacketT")
 
 
 @final

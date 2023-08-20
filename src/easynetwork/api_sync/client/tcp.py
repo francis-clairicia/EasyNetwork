@@ -25,7 +25,7 @@ import socket as _socket
 import threading
 import time
 from collections.abc import Callable, Iterator
-from typing import TYPE_CHECKING, Any, Generic, NoReturn, TypeGuard, TypeVar, cast, final, overload
+from typing import TYPE_CHECKING, Any, Generic, NoReturn, TypeGuard, cast, final, overload
 
 try:
     import ssl
@@ -35,6 +35,7 @@ else:
     _ssl_module = ssl
     del ssl
 
+from ..._typevars import _ReceivedPacketT, _SentPacketT
 from ...exceptions import ClientClosedError
 from ...protocol import StreamProtocol
 from ...tools._lock import ForkSafeLock
@@ -57,9 +58,6 @@ from .abc import AbstractNetworkClient
 
 if TYPE_CHECKING:
     from ssl import SSLContext as _SSLContext, SSLSocket as _SSLSocket
-
-_ReceivedPacketT = TypeVar("_ReceivedPacketT")
-_SentPacketT = TypeVar("_SentPacketT")
 
 
 class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Generic[_SentPacketT, _ReceivedPacketT]):

@@ -26,8 +26,9 @@ import threading
 import time
 from collections.abc import Iterator
 from operator import itemgetter as _itemgetter
-from typing import TYPE_CHECKING, Any, Generic, Self, TypeVar, final, overload
+from typing import TYPE_CHECKING, Any, Generic, Self, final, overload
 
+from ..._typevars import _ReceivedPacketT, _SentPacketT
 from ...exceptions import ClientClosedError, DatagramProtocolParseError
 from ...protocol import DatagramProtocol
 from ...tools._lock import ForkSafeLock
@@ -48,9 +49,6 @@ from .abc import AbstractNetworkClient
 
 if TYPE_CHECKING:
     from types import TracebackType
-
-_ReceivedPacketT = TypeVar("_ReceivedPacketT")
-_SentPacketT = TypeVar("_SentPacketT")
 
 
 class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):

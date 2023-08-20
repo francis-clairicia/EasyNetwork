@@ -25,15 +25,9 @@ __all__ = [
 
 from abc import ABCMeta, abstractmethod
 from collections.abc import Callable
-from typing import Any, Generic, TypeVar, final
+from typing import Any, Generic, final
 
-_SentDTOPacketT = TypeVar("_SentDTOPacketT")
-_ReceivedDTOPacketT = TypeVar("_ReceivedDTOPacketT")
-_DTOPacketT = TypeVar("_DTOPacketT")
-
-_SentPacketT = TypeVar("_SentPacketT")
-_ReceivedPacketT = TypeVar("_ReceivedPacketT")
-_PacketT = TypeVar("_PacketT")
+from ._typevars import _DTOPacketT, _PacketT, _ReceivedDTOPacketT, _ReceivedPacketT, _SentDTOPacketT, _SentPacketT
 
 
 class AbstractPacketConverterComposite(

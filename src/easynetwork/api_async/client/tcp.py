@@ -22,7 +22,7 @@ import contextlib as _contextlib
 import errno as _errno
 import socket as _socket
 from collections.abc import Callable, Iterator, Mapping
-from typing import TYPE_CHECKING, Any, Generic, NoReturn, TypedDict, TypeVar, cast, final, overload
+from typing import TYPE_CHECKING, Any, Generic, NoReturn, TypedDict, cast, final, overload
 
 try:
     import ssl as _ssl
@@ -32,6 +32,7 @@ else:
     _ssl_module = _ssl
     del _ssl
 
+from ..._typevars import _ReceivedPacketT, _SentPacketT
 from ...exceptions import ClientClosedError
 from ...protocol import StreamProtocol
 from ...tools._stream import StreamDataConsumer
@@ -55,9 +56,6 @@ from .abc import AbstractAsyncNetworkClient
 
 if TYPE_CHECKING:
     from ssl import SSLContext as _SSLContext
-
-_ReceivedPacketT = TypeVar("_ReceivedPacketT")
-_SentPacketT = TypeVar("_SentPacketT")
 
 
 class _ClientInfo(TypedDict):
