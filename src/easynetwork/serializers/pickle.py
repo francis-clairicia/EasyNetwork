@@ -33,7 +33,7 @@ from ._typevars import DeserializedPacketT_co, SerializedPacketT_contra
 from .abc import AbstractPacketSerializer
 
 if TYPE_CHECKING:
-    from pickle import Pickler as _Pickler, Unpickler as _Unpickler
+    import pickle as _typing_pickle
 
 
 def _get_default_pickler_protocol() -> int:
@@ -47,7 +47,7 @@ class PicklerConfig:
     """
     A dataclass with the Pickler options.
 
-    See :class:`pickle.Pickler` for more information.
+    See :class:`pickle.Pickler` for details.
     """
 
     protocol: int = field(default_factory=_get_default_pickler_protocol)
@@ -59,7 +59,7 @@ class UnpicklerConfig:
     """
     A dataclass with the Unpickler options.
 
-    See :class:`pickle.Unpickler` for more information.
+    See :class:`pickle.Unpickler` for details.
     """
 
     fix_imports: bool = False
@@ -79,8 +79,8 @@ class PickleSerializer(AbstractPacketSerializer[SerializedPacketT_contra, Deseri
         pickler_config: PicklerConfig | None = None,
         unpickler_config: UnpicklerConfig | None = None,
         *,
-        pickler_cls: type[_Pickler] | None = None,
-        unpickler_cls: type[_Unpickler] | None = None,
+        pickler_cls: type[_typing_pickle.Pickler] | None = None,
+        unpickler_cls: type[_typing_pickle.Unpickler] | None = None,
         pickler_optimize: bool = False,
     ) -> None:
         """
@@ -100,8 +100,8 @@ class PickleSerializer(AbstractPacketSerializer[SerializedPacketT_contra, Deseri
             import pickletools
 
             self.__optimize = pickletools.optimize
-        self.__pickler_cls: Callable[[IO[bytes]], _Pickler]
-        self.__unpickler_cls: Callable[[IO[bytes]], _Unpickler]
+        self.__pickler_cls: Callable[[IO[bytes]], _typing_pickle.Pickler]
+        self.__unpickler_cls: Callable[[IO[bytes]], _typing_pickle.Unpickler]
 
         if pickler_config is None:
             pickler_config = PicklerConfig()

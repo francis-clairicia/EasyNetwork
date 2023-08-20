@@ -499,7 +499,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 except* OSError as excgrp:
                     if self.__have_errno(excgrp, {_errno.ENOTCONN, _errno.EINVAL}):
                         # The remote host closed the connection before starting the task.
-                        # See this test for more information:
+                        # See this test for details:
                         # test____serve_forever____accept_client____client_sent_RST_packet_right_after_accept
 
                         self.__logger.warning("A client connection was interrupted just after listener.accept()")

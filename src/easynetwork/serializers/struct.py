@@ -27,7 +27,7 @@ from ._typevars import DeserializedPacketT_co, SerializedPacketT_contra
 from .base_stream import FixedSizePacketSerializer
 
 if TYPE_CHECKING:
-    from struct import Struct as _Struct
+    import struct as _typing_struct
 
     from _typeshed import SupportsKeysAndGetItem
 
@@ -41,21 +41,20 @@ class AbstractStructSerializer(FixedSizePacketSerializer[SerializedPacketT_contr
 
     To use the serializer directly without additional layers, it is possible to create a subclass with the minimal requirements::
 
-        class StructSerializer(AbstractStructSerializer):
-            __slots__ = ()
-
-            def iter_values(self, packet):
-                return packet
-
-            def from_tuple(self, t):
-                return t
+        >>> class StructSerializer(AbstractStructSerializer):
+        ...     __slots__ = ()
+        ...     def iter_values(self, packet):
+        ...         return packet
+        ...     def from_tuple(self, t):
+        ...         return t
 
     And then::
 
         >>> s = StructSerializer(">ii")
-        >>> s.serialize((10, 20))
+        >>> data = s.serialize((10, 20))
+        >>> data
         b'\x00\x00\x00\n\x00\x00\x00\x14'
-        >>> s.deserialize(_)
+        >>> s.deserialize(data)
         (10, 20)
 
     This is an abstract class in order to allow you to include fancy structures like :class:`ctypes.Structure` subclasses.
@@ -74,8 +73,7 @@ class AbstractStructSerializer(FixedSizePacketSerializer[SerializedPacketT_contr
         Note:
             If the endianness is not specified, the network byte-order is used::
 
-                >>> s = StructSerializer("qq")
-                >>> s.struct.format
+                >>> StructSerializer("qq").struct.format  # doctest: +SKIP
                 '!qq'
         """
         from struct import Struct, error
@@ -84,7 +82,7 @@ class AbstractStructSerializer(FixedSizePacketSerializer[SerializedPacketT_contr
             format = f"!{format}"  # network byte order
         struct = Struct(format)
         super().__init__(struct.size)
-        self.__s: _Struct = struct
+        self.__s: _typing_struct.Struct = struct
         self.__error_cls = error
 
     @abstractmethod
@@ -171,7 +169,7 @@ class AbstractStructSerializer(FixedSizePacketSerializer[SerializedPacketT_contr
 
     @property
     @final
-    def struct(self) -> _Struct:
+    def struct(self) -> _typing_struct.Struct:
         """The underlying :class:`struct.Struct` instance. Read-only attribute."""
         return self.__s
 
@@ -185,22 +183,26 @@ class NamedTupleStructSerializer(AbstractStructSerializer[NamedTupleVar, NamedTu
 
     Accepts classes created directly from :func:`collections.namedtuple` factory::
 
+        >>> import collections
         >>> Point = collections.namedtuple("Point", ("x", "y"))
 
     ...or declared with :class:`typing.NamedTuple`::
 
-        >>> class Point(NamedTuple):
-        ...     x: int
-        ...     y: int
+        from typing import NamedTuple
+
+        class Point(NamedTuple):
+            x: int
+            y: int
 
     They are used like this::
 
         >>> s = NamedTupleStructSerializer(Point, {"x": "i", "y": "i"}, format_endianness=">")
         >>> s.struct.format
         '>ii'
-        >>> s.serialize(Point(x=10, y=20))
+        >>> data = s.serialize(Point(x=10, y=20))
+        >>> data
         b'\x00\x00\x00\n\x00\x00\x00\x14'
-        >>> s.deserialize(_)
+        >>> s.deserialize(data)
         Point(x=10, y=20)
     """
 
@@ -263,9 +265,10 @@ class NamedTupleStructSerializer(AbstractStructSerializer[NamedTupleVar, NamedTu
         Example:
             The named tuple::
 
-                class Person(NamedTuple):
-                    name: str
-                    age: int
+                >>> from typing import NamedTuple
+                >>> class Person(NamedTuple):
+                ...     name: str
+                ...     age: int
 
             In application::
 
@@ -301,16 +304,18 @@ class NamedTupleStructSerializer(AbstractStructSerializer[NamedTupleVar, NamedTu
         Example:
             The named tuple::
 
-                class Person(NamedTuple):
-                    name: str
-                    age: int
+                >>> from typing import NamedTuple
+                >>> class Person(NamedTuple):
+                ...     name: str
+                ...     age: int
 
             In application::
 
                 >>> s = NamedTupleStructSerializer(Person, {"name": "10s", "age": "I"})
-                >>> s.struct.unpack(b'John\x00\x00\x00\x00\x00\x00\x00\x00\x00\x14')
+                >>> t = s.struct.unpack(b'John\x00\x00\x00\x00\x00\x00\x00\x00\x00\x14')
+                >>> t
                 (b'John\x00\x00\x00\x00\x00\x00', 20)
-                >>> s.from_tuple(_)
+                >>> s.from_tuple(t)
                 Person(name='John', age=20)
 
         Arguments:

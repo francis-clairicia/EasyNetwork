@@ -57,3 +57,16 @@ Glossary
 
         During deserialization, they have the ability **to know when the** :term:`packet` **is complete** (and wait if incomplete)
         and which bytes are not part of the initial :term:`packet`.
+
+   serializer wrapper
+      A :term:`serializer` that transforms data coming from another :term:`serializer`.
+
+      Example:
+
+      >>> from easynetwork.serializers import Base64EncoderSerializer, JSONSerializer
+      >>> s = Base64EncoderSerializer(JSONSerializer())
+      >>> data = s.serialize({"data": 42})
+      >>> data
+      b'eyJkYXRhIjo0Mn0='
+      >>> s.deserialize(data)
+      {'data': 42}

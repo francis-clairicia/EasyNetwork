@@ -105,7 +105,7 @@ class AbstractIncrementalPacketSerializer(AbstractPacketSerializer[SerializedPac
             IncrementalDeserializeError: An unrelated deserialization error occurred.
 
         Yields:
-            until the whole :term:`packet` has been deserialized.
+            :data:`None` until the whole :term:`packet` has been deserialized.
 
         Returns:
             a tuple with the deserialized Python object and the unused trailing data.

@@ -25,11 +25,15 @@ __all__ = [
 import abc
 from collections import deque
 from collections.abc import Generator
-from typing import Protocol, final
+from typing import TYPE_CHECKING, Protocol, final
 
 from ...exceptions import DeserializeError, IncrementalDeserializeError
 from .._typevars import DeserializedPacketT_co, SerializedPacketT_contra
 from ..abc import AbstractIncrementalPacketSerializer, AbstractPacketSerializer
+
+if TYPE_CHECKING:
+    import bz2 as _typing_bz2
+    import zlib as _typing_zlib
 
 
 class CompressorInterface(Protocol, metaclass=abc.ABCMeta):
@@ -59,6 +63,10 @@ class DecompressorInterface(Protocol, metaclass=abc.ABCMeta):
 
 
 class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[SerializedPacketT_contra, DeserializedPacketT_co]):
+    """
+    A :term:`serializer wrapper` base class for compressors.
+    """
+
     __slots__ = ("__serializer", "__expected_error")
 
     def __init__(
@@ -66,6 +74,12 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[Serialize
         serializer: AbstractPacketSerializer[SerializedPacketT_contra, DeserializedPacketT_co],
         expected_decompress_error: type[Exception] | tuple[type[Exception], ...],
     ) -> None:
+        """
+        Arguments:
+            serializer: The serializer to wrap.
+            expected_decompress_error: Errors that can be raised by :meth:`.DecompressorInterface.decompress` implementation,
+                                       which must be considered as deserialization errors.
+        """
         super().__init__()
         if not isinstance(serializer, AbstractPacketSerializer):
             raise TypeError(f"Expected a serializer instance, got {serializer!r}")
@@ -77,25 +91,53 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[Serialize
 
     @abc.abstractmethod
     def new_compressor_stream(self) -> CompressorInterface:
+        """
+        Returns:
+            an object suitable for data compression.
+        """
         raise NotImplementedError
 
     @abc.abstractmethod
     def new_decompressor_stream(self) -> DecompressorInterface:
+        """
+        Returns:
+            an object suitable for data decompression.
+        """
         raise NotImplementedError
 
     @final
     def serialize(self, packet: SerializedPacketT_contra) -> bytes:
+        """
+        Serializes `packet` and returns the compressed data parts.
+
+        See :meth:`AbstractPacketSerializer.serialize` documentation for details.
+        """
         compressor: CompressorInterface = self.new_compressor_stream()
         return compressor.compress(self.__serializer.serialize(packet)) + compressor.flush()
 
     @final
     def incremental_serialize(self, packet: SerializedPacketT_contra) -> Generator[bytes, None, None]:
+        """
+        Serializes `packet` and yields the compressed data parts.
+
+        See :meth:`AbstractIncrementalPacketSerializer.incremental_serialize` documentation for details.
+        """
         compressor: CompressorInterface = self.new_compressor_stream()
         yield compressor.compress(self.__serializer.serialize(packet))
         yield compressor.flush()
 
     @final
     def deserialize(self, data: bytes) -> DeserializedPacketT_co:
+        """
+        Decompresses `data` and returns the deserialized packet.
+
+        See :meth:`AbstractPacketSerializer.deserialize` documentation for details.
+
+        Raises:
+            DeserializeError: :meth:`.DecompressorInterface.decompress` does not read until EOF (unused trailing data).
+            DeserializeError: :meth:`.DecompressorInterface.decompress` raised an error that matches `expected_decompress_error`.
+            Exception: Any other error raised by :meth:`.DecompressorInterface.decompress` or the underlying serializer.
+        """
         decompressor: DecompressorInterface = self.new_decompressor_stream()
         try:
             data = decompressor.decompress(data)
@@ -116,6 +158,16 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[Serialize
 
     @final
     def incremental_deserialize(self) -> Generator[None, bytes, tuple[DeserializedPacketT_co, bytes]]:
+        """
+        Yields until data decompression is finished and deserializes the decompressed data using the underlying serializer.
+
+        See :meth:`AbstractIncrementalPacketSerializer.incremental_deserialize` documentation for details.
+
+        Raises:
+            IncrementalDeserializeError: :meth:`.DecompressorInterface.decompress` raised an error
+                                         that matches `expected_decompress_error`.
+            Exception: Any other error raised by :meth:`.DecompressorInterface.decompress` or the underlying serializer.
+        """
         results: deque[bytes] = deque()
         decompressor: DecompressorInterface = self.new_decompressor_stream()
         while not decompressor.eof:
@@ -152,6 +204,10 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[Serialize
 
 
 class BZ2CompressorSerializer(AbstractCompressorSerializer[SerializedPacketT_contra, DeserializedPacketT_co]):
+    """
+    A :term:`serializer wrapper` to handle bzip2 compressed data, built on top of :mod:`bz2` module.
+    """
+
     __slots__ = ("__compresslevel", "__compressor_factory", "__decompressor_factory")
 
     def __init__(
@@ -160,6 +216,11 @@ class BZ2CompressorSerializer(AbstractCompressorSerializer[SerializedPacketT_con
         *,
         compress_level: int | None = None,
     ) -> None:
+        """
+        Arguments:
+            serializer: The serializer to wrap.
+            compress_level: bzip2 compression level. Defaults to ``9``.
+        """
         import bz2
 
         super().__init__(serializer=serializer, expected_decompress_error=OSError)
@@ -168,15 +229,25 @@ class BZ2CompressorSerializer(AbstractCompressorSerializer[SerializedPacketT_con
         self.__decompressor_factory = bz2.BZ2Decompressor
 
     @final
-    def new_compressor_stream(self) -> CompressorInterface:
+    def new_compressor_stream(self) -> _typing_bz2.BZ2Compressor:
+        """
+        See :meth:`AbstractCompressorSerializer.new_compressor_stream` documentation for details.
+        """
         return self.__compressor_factory(self.__compresslevel)
 
     @final
-    def new_decompressor_stream(self) -> DecompressorInterface:
+    def new_decompressor_stream(self) -> _typing_bz2.BZ2Decompressor:
+        """
+        See :meth:`AbstractCompressorSerializer.new_decompressor_stream` documentation for details.
+        """
         return self.__decompressor_factory()
 
 
 class ZlibCompressorSerializer(AbstractCompressorSerializer[SerializedPacketT_contra, DeserializedPacketT_co]):
+    """
+    A :term:`serializer wrapper` to handle zlib compressed data, built on top of :mod:`zlib` module.
+    """
+
     __slots__ = ("__compresslevel", "__compressor_factory", "__decompressor_factory")
 
     def __init__(
@@ -185,6 +256,11 @@ class ZlibCompressorSerializer(AbstractCompressorSerializer[SerializedPacketT_co
         *,
         compress_level: int | None = None,
     ) -> None:
+        """
+        Arguments:
+            serializer: The serializer to wrap.
+            compress_level: bzip2 compression level. Defaults to :data:`zlib.Z_BEST_COMPRESSION`.
+        """
         import zlib
 
         super().__init__(serializer=serializer, expected_decompress_error=zlib.error)
@@ -193,9 +269,15 @@ class ZlibCompressorSerializer(AbstractCompressorSerializer[SerializedPacketT_co
         self.__decompressor_factory = zlib.decompressobj
 
     @final
-    def new_compressor_stream(self) -> CompressorInterface:
+    def new_compressor_stream(self) -> _typing_zlib._Compress:
+        """
+        See :meth:`AbstractCompressorSerializer.new_compressor_stream` documentation for details.
+        """
         return self.__compressor_factory(self.__compresslevel)
 
     @final
-    def new_decompressor_stream(self) -> DecompressorInterface:
+    def new_decompressor_stream(self) -> _typing_zlib._Decompress:
+        """
+        See :meth:`AbstractCompressorSerializer.new_decompressor_stream` documentation for details.
+        """
         return self.__decompressor_factory()

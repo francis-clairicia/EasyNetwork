@@ -26,7 +26,6 @@ extensions = [
     "sphinx_tabs.tabs",
     "sphinx_toolbox.github",
     "sphinx_toolbox.sidebar_links",
-    "sphinx_toolbox.more_autodoc.autoprotocol",
 ]
 
 highlight_language = "python3"
@@ -51,9 +50,13 @@ autodoc_default_options = {
 autodoc_typehints = "description"
 autodoc_typehints_description_target = "documented_params"
 autodoc_type_aliases = {
-    "_Pickler": "pickle.Pickler",
-    "_Unpickler": "pickle.Unpickler",
-    "_Struct": "struct.Struct",
+    "_typing_bz2.BZ2Compressor": "bz2.BZ2Compressor",
+    "_typing_bz2.BZ2Decompressor": "bz2.BZ2Decompressor",
+    "_typing_zlib._Compress": "zlib.Compress",
+    "_typing_zlib._Decompress": "zlib.Decompress",
+    "_typing_pickle.Pickler": "pickle.Pickler",
+    "_typing_pickle.Unpickler": "pickle.Unpickler",
+    "_typing_struct.Struct": "struct.Struct",
     "SocketAddress": "SocketAddress",
 }
 autodoc_inherit_docstrings = False
@@ -65,6 +68,7 @@ autodoc_inherit_docstrings = False
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
     "cbor2": ("https://cbor2.readthedocs.io/en/latest", None),
+    "cryptography": ("https://cryptography.io/en/latest", None),
     "msgpack": ("https://msgpack-python.readthedocs.io/en/latest", None),
 }
 

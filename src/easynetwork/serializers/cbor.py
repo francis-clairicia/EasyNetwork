@@ -39,7 +39,7 @@ class CBOREncoderConfig:
     """
     A dataclass with the CBOR encoder options.
 
-    See :class:`cbor2.encoder.CBOREncoder` for more information.
+    See :class:`cbor2.encoder.CBOREncoder` for details.
     """
 
     datetime_as_timestamp: bool = False
@@ -56,7 +56,7 @@ class CBORDecoderConfig:
     """
     A dataclass with the CBOR decoder options.
 
-    See :class:`cbor2.decoder.CBORDecoder` for more information.
+    See :class:`cbor2.decoder.CBORDecoder` for details.
     """
 
     object_hook: Callable[..., Any] | None = None
@@ -66,7 +66,7 @@ class CBORDecoderConfig:
 
 class CBORSerializer(FileBasedPacketSerializer[SerializedPacketT_contra, DeserializedPacketT_co]):
     """
-    A :term:`serializer` built on top of the :external+cbor2:doc:`cbor2 <index>` module.
+    A :term:`serializer` built on top of the :mod:`cbor2` module.
 
     Needs ``cbor`` extra dependencies.
     """

@@ -186,7 +186,7 @@ class StreamProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
             RuntimeError: The :term:`serializer` raised :class:`.DeserializeError` instead of :class:`.IncrementalDeserializeError`.
 
         Yields:
-            until the whole :term:`packet` has been deserialized.
+            :data:`None` until the whole :term:`packet` has been deserialized.
 
         Returns:
             a tuple with the deserialized Python object and the unused trailing data.

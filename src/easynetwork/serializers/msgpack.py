@@ -45,7 +45,7 @@ class MessagePackerConfig:
     """
     A dataclass with the Packer options.
 
-    See :class:`msgpack.Packer` for more information.
+    See :class:`msgpack.Packer` for details.
     """
 
     default: Callable[[Any], Any] | None = None
@@ -61,7 +61,7 @@ class MessageUnpackerConfig:
     """
     A dataclass with the Unpacker options.
 
-    See :class:`msgpack.Unpacker` for more information.
+    See :class:`msgpack.Unpacker` for details.
     """
 
     raw: bool = False

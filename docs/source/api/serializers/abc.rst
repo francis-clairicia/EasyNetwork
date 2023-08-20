@@ -2,6 +2,8 @@
 Abstract base classes
 *********************
 
+.. currentmodule:: easynetwork.serializers
+
 .. contents:: Table of Contents
    :local:
 
@@ -10,10 +12,10 @@ Abstract base classes
 Top-level base classes
 ======================
 
-.. autoclass:: easynetwork.serializers.AbstractPacketSerializer
+.. autoclass:: AbstractPacketSerializer
    :members:
 
-.. autoclass:: easynetwork.serializers.AbstractIncrementalPacketSerializer
+.. autoclass:: AbstractIncrementalPacketSerializer
    :members:
 
 
@@ -25,11 +27,11 @@ Stream base classes
 
 Here are abstract classes that implement common stream protocol patterns.
 
-.. autoclass:: easynetwork.serializers.AutoSeparatedPacketSerializer
+.. autoclass:: AutoSeparatedPacketSerializer
    :members:
 
-.. autoclass:: easynetwork.serializers.FixedSizePacketSerializer
+.. autoclass:: FixedSizePacketSerializer
    :members:
 
-.. autoclass:: easynetwork.serializers.FileBasedPacketSerializer
+.. autoclass:: FileBasedPacketSerializer
    :members:

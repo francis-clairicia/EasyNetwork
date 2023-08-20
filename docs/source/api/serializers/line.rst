@@ -1,5 +1,7 @@
 String serializer
 =================
 
-.. autoclass:: easynetwork.serializers.StringLineSerializer
+.. currentmodule:: easynetwork.serializers
+
+.. autoclass:: StringLineSerializer
    :members:

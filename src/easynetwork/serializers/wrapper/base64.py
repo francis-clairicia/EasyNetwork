@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""base64 encoding serializer module"""
+"""base64 encoder serializer module"""
 
 from __future__ import annotations
 
@@ -31,6 +31,10 @@ from ..base_stream import AutoSeparatedPacketSerializer
 
 
 class Base64EncoderSerializer(AutoSeparatedPacketSerializer[SerializedPacketT_contra, DeserializedPacketT_co]):
+    """
+    A :term:`serializer wrapper` to handle base64 encoded data, built on top of :mod:`base64` module.
+    """
+
     __slots__ = ("__serializer", "__encode", "__decode", "__compare_digest", "__decode_error_cls", "__checksum")
 
     def __init__(
@@ -41,10 +45,23 @@ class Base64EncoderSerializer(AutoSeparatedPacketSerializer[SerializedPacketT_co
         checksum: bool | str | bytes = False,
         separator: bytes = b"\r\n",
     ) -> None:
+        """
+        Arguments:
+            serializer: The serializer to wrap.
+            alphabet: The base64 alphabet to use. Possible values are:
+
+                      - ``"standard"``: Use standard alphabet.
+
+                      - ``"urlsafe"``: Use URL- and filesystem-safe alphabet.
+
+                      Defaults to ``"urlsafe"``.
+            checksum: If `True`, appends a sha256 checksum to the serialized data.
+                      `checksum` can also be a URL-safe base64-encoded 32-byte key for a signed checksum.
+            separator: Token for :class:`AutoSeparatedPacketSerializer`. Used in incremental serialization context.
+        """
         import base64
         import binascii
-        from hashlib import sha256 as hashlib_sha256
-        from hmac import compare_digest, digest as hmac_digest
+        from hmac import compare_digest
 
         super().__init__(separator=separator, incremental_serialize_check_separator=not separator.isspace())
         if not isinstance(serializer, AbstractPacketSerializer):
@@ -55,8 +72,12 @@ class Base64EncoderSerializer(AutoSeparatedPacketSerializer[SerializedPacketT_co
             case False:
                 self.__checksum = None
             case True:
+                from hashlib import sha256 as hashlib_sha256
+
                 self.__checksum = lambda data: hashlib_sha256(data).digest()
             case str() | bytes():
+                from hmac import digest as hmac_digest
+
                 try:
                     key: bytes = base64.urlsafe_b64decode(checksum)
                 except binascii.Error as exc:
@@ -82,12 +103,26 @@ class Base64EncoderSerializer(AutoSeparatedPacketSerializer[SerializedPacketT_co
 
     @classmethod
     def generate_key(cls) -> bytes:
+        """
+        Generates a fresh key suitable for signed checksums.
+
+        Keep this some place safe!
+        """
         import base64
 
         return base64.urlsafe_b64encode(os.urandom(32))
 
     @final
     def serialize(self, packet: SerializedPacketT_contra) -> bytes:
+        """
+        Serializes `packet` and encodes the result in base64.
+
+        Arguments:
+            packet: The Python object to serialize.
+
+        Returns:
+            a byte sequence.
+        """
         data = self.__serializer.serialize(packet)
         if (checksum := self.__checksum) is not None:
             data += checksum(data)
@@ -95,6 +130,19 @@ class Base64EncoderSerializer(AutoSeparatedPacketSerializer[SerializedPacketT_co
 
     @final
     def deserialize(self, data: bytes) -> DeserializedPacketT_co:
+        """
+        Decodes base64 token `data` and deserializes the result.
+
+        Arguments:
+            data: The byte sequence to deserialize.
+
+        Raises:
+            DeserializeError: Invalid base64 token.
+            Exception: The underlying serializer raised an exception.
+
+        Returns:
+            the deserialized Python object.
+        """
         try:
             data = self.__decode(data)
         except self.__decode_error_cls:

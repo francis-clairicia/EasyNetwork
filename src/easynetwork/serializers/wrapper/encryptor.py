@@ -29,6 +29,12 @@ from ..base_stream import AutoSeparatedPacketSerializer
 
 
 class EncryptorSerializer(AutoSeparatedPacketSerializer[SerializedPacketT_contra, DeserializedPacketT_co]):
+    """
+    A :term:`serializer wrapper` to handle encrypted data, built on top of :mod:`cryptography.fernet` module.
+
+    Needs ``encryption`` extra dependencies.
+    """
+
     __slots__ = ("__serializer", "__fernet", "__token_ttl", "__invalid_token_cls")
 
     def __init__(
@@ -39,6 +45,13 @@ class EncryptorSerializer(AutoSeparatedPacketSerializer[SerializedPacketT_contra
         token_ttl: int | None = None,
         separator: bytes = b"\r\n",
     ) -> None:
+        """
+        Arguments:
+            serializer: The serializer to wrap.
+            key: A URL-safe base64-encoded 32-byte key.
+            token_ttl: Token time-to-live. See :meth:`cryptography.fernet.Fernet.decrypt` for details.
+            separator: Token for :class:`AutoSeparatedPacketSerializer`. Used in incremental serialization context.
+        """
         try:
             import cryptography.fernet
         except ModuleNotFoundError as exc:  # pragma: no cover
@@ -54,6 +67,13 @@ class EncryptorSerializer(AutoSeparatedPacketSerializer[SerializedPacketT_contra
 
     @classmethod
     def generate_key(cls) -> bytes:
+        """
+        Generates a fresh key suitable for encryption.
+
+        Keep this some place safe!
+
+        **Implementation details:** Delegates to :meth:`cryptography.fernet.Fernet.generate_key`.
+        """
         try:
             import cryptography.fernet
         except ModuleNotFoundError as exc:  # pragma: no cover
@@ -63,11 +83,33 @@ class EncryptorSerializer(AutoSeparatedPacketSerializer[SerializedPacketT_contra
 
     @final
     def serialize(self, packet: SerializedPacketT_contra) -> bytes:
+        """
+        Serializes `packet` and encrypt the result.
+
+        Arguments:
+            packet: The Python object to serialize.
+
+        Returns:
+            a byte sequence.
+        """
         data = self.__serializer.serialize(packet)
         return self.__fernet.encrypt(data)
 
     @final
     def deserialize(self, data: bytes) -> DeserializedPacketT_co:
+        """
+        Decrypts token `data` and deserializes the result.
+
+        Arguments:
+            data: The byte sequence to deserialize.
+
+        Raises:
+            DeserializeError: Invalid base64 token.
+            Exception: The underlying serializer raised an exception.
+
+        Returns:
+            the deserialized Python object.
+        """
         try:
             data = self.__fernet.decrypt(data, ttl=self.__token_ttl)
         except self.__invalid_token_cls:

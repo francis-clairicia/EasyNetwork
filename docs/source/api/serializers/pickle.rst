@@ -1,6 +1,8 @@
 Pickle serializer
 =================
 
+.. currentmodule:: easynetwork.serializers
+
 .. warning::
 
    Read the security considerations for using :mod:`pickle` module.
@@ -9,14 +11,14 @@ Pickle serializer
 
    Add examples of how to use PickleSerializer with EncryptorSerializer or Base64EncoderSerializer with checksum.
 
-.. autoclass:: easynetwork.serializers.PickleSerializer
+.. autoclass:: PickleSerializer
    :members:
 
 Configuration
 -------------
 
-.. autoclass:: easynetwork.serializers.PicklerConfig
+.. autoclass:: PicklerConfig
    :members:
 
-.. autoclass:: easynetwork.serializers.UnpicklerConfig
+.. autoclass:: UnpicklerConfig
    :members:

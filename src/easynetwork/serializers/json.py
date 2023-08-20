@@ -45,7 +45,7 @@ class JSONEncoderConfig:
     """
     A dataclass with the JSON encoder options.
 
-    See :class:`json.JSONEncoder` for more information.
+    See :class:`json.JSONEncoder` for details.
     """
 
     skipkeys: bool = False
@@ -62,7 +62,7 @@ class JSONDecoderConfig:
     """
     A dataclass with the JSON decoder options.
 
-    See :class:`json.JSONDecoder` for more information.
+    See :class:`json.JSONDecoder` for details.
     """
 
     object_hook: Callable[..., Any] | None = None
@@ -299,7 +299,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[SerializedPacketT_contr
             IncrementalDeserializeError: A :class:`UnicodeError` or :class:`~json.JSONDecodeError` have been raised.
 
         Yields:
-            until the whole :term:`packet` has been deserialized.
+            :data:`None` until the whole :term:`packet` has been deserialized.
 
         Returns:
             a tuple with the deserialized Python object and the unused trailing data.
