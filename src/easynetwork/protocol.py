@@ -80,7 +80,7 @@ class DatagramProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
         Serializes a Python object to a raw datagram :term:`packet`.
 
         Arguments:
-            :param packet: The :term:`packet` as a Python object to serialize.
+            packet: The :term:`packet` as a Python object to serialize.
 
         Returns:
             the serialized :term:`packet`.
@@ -95,7 +95,7 @@ class DatagramProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
         Creates a Python object representing the raw datagram :term:`packet`.
 
         Arguments:
-            :param datagram: The datagram :term:`packet` to deserialize.
+            datagram: The datagram :term:`packet` to deserialize.
 
         Raises:
             DatagramProtocolParseError: in case of deserialization error.

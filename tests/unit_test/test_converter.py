@@ -30,7 +30,7 @@ class TestPacketConverterComposite:
         create_from_dto_stub: MagicMock,
         convert_to_dto_stub: MagicMock,
     ) -> PacketConverterComposite[Any, Any, Any, Any]:
-        return PacketConverterComposite(convert_to_dto_stub, create_from_dto_stub)
+        return PacketConverterComposite(convert_to_dto=convert_to_dto_stub, create_from_dto=create_from_dto_stub)
 
     def test____create_from_dto_packet____callback(
         self,

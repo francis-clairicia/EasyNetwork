@@ -47,6 +47,7 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_SerializedPacketT_cont
         ...         return packet
         ...     def from_tuple(self, t):
         ...         return t
+        ...
 
     And then::
 
@@ -73,7 +74,8 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_SerializedPacketT_cont
         Note:
             If the endianness is not specified, the network byte-order is used::
 
-                >>> StructSerializer("qq").struct.format  # doctest: +SKIP
+                >>> s = StructSerializer("qq")  # doctest: +SKIP
+                >>> s.struct.format  # doctest: +SKIP
                 '!qq'
         """
         from struct import Struct, error

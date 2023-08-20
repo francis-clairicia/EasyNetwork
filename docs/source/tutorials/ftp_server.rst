@@ -111,7 +111,7 @@ Now that we have our business objects, we can create our :term:`protocol object`
       :emphasize-lines: 3-6
       :dedent:
 
-   This will create a composite object with our two converters.
+   It will create a :term:`composite converter` with our two converters.
 
 
 The server

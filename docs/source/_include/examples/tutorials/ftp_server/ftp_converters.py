@@ -15,9 +15,6 @@ class FTPRequestConverter(AbstractPacketConverter[FTPRequest, str]):
         """Creates the string representation of the FTPRequest object
 
         Not implemented.
-
-        :param obj: The FTPRequest object
-        :returns: The string representation of the request
         """
 
         raise NotImplementedError("Not needed in server side")
@@ -37,8 +34,11 @@ class FTPRequestConverter(AbstractPacketConverter[FTPRequest, str]):
         ...
         easynetwork.exceptions.PacketConversionError: Command unrecognized: 'INVALID'
 
-        :param packet: The string representation of the request
-        :returns: The FTP request
+        Arguments:
+            packet: The string representation of the request
+
+        Returns:
+            the FTP request
         """
         command, *args = packet.split(" ")
         command = command.upper()
@@ -61,8 +61,11 @@ class FTPReplyConverter(AbstractPacketConverter[FTPReply, str]):
         >>> c.convert_to_dto_packet(FTPReply(10, "Does not exist but why not."))
         '010 Does not exist but why not.'
 
-        :param obj: The FTPReply object
-        :returns: The string representation of the reply
+        Arguments:
+            obj: The FTPReply object
+
+        Returns:
+            the string representation of the reply
         """
 
         code: int = obj.code
@@ -80,8 +83,5 @@ class FTPReplyConverter(AbstractPacketConverter[FTPReply, str]):
         """Builds an FTPReply object from a raw string
 
         Not implemented.
-
-        :param packet: The string representation of the reply
-        :returns: The FTP reply
         """
         raise NotImplementedError("Not needed in server side")

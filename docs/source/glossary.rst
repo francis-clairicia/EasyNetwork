@@ -6,15 +6,29 @@ Glossary
    :sorted:
 
    communication protocol
-      A communication protocol is a set of formal rules describing how to transmit or exchange data, especially across a network.
+      A set of formal rules describing how to transmit or exchange data, especially across a network.
 
       In EasyNetwork, it is up to the developer to define his communication protocol using a :term:`protocol object`.
 
+   composite converter
+      A :term:`converter` that processes different objects in input and output.
+
+      .. seealso:: :class:`.RequestResponseConverterBuilder` class.
+
    converter
-      An object responsible for bridging the gap between the Python objects manipulated by the application/software
-      and the objects handled by the :term:`serializer`.
+      An interface responsible for bridging the gap between the Python objects manipulated by the application/software
+      and the :term:`data transfer objects <data transfer object>` handled by the :term:`serializer`.
 
       It must also ensure that deserialized objects are valid and usable by the application/software without post-processing.
+
+   data transfer object
+      An object that carry data between processes in order to reduce the number of methods calls. It is a flat data structure
+      that contain no business logic.
+
+      In EasyNetwork, the DTOs are manipulated by the :term:`serializer` and transformed into business objects by a :term:`converter`.
+
+   DTO
+      See :term:`data transfer object`.
 
    incremental serializer
       See :term:`serializer`.
@@ -23,13 +37,13 @@ Glossary
       See :term:`serializer`.
 
    packet
-      A packet is a unit of data routed between an origin and a destination on a network.
+      A unit of data routed between an origin and a destination on a network.
 
    protocol object
       An object representing a :term:`communication protocol`. It consists of a :term:`serializer` and, optionally, a :term:`converter`.
 
    serializer
-      A serializer is the lowest layer for passing from a Python object to raw data (:class:`bytes`) and vice versa.
+      The lowest layer for passing from a Python object ( a :term:`DTO` ) to raw data (:class:`bytes`) and vice versa.
 
       It must have no knowledge of the object's validity with regard to the application/software logic,
       nor the meaning of data with regard to the :term:`communication protocol`.
