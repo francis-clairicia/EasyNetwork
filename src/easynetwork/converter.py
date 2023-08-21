@@ -89,8 +89,8 @@ class PacketConverterComposite(
     ) -> None:
         """
         Arguments:
-            convert_to_dto: Function called by :meth:`.convert_to_dto_packet`.
-            create_from_dto: Function called by :meth:`.create_from_dto_packet`.
+            convert_to_dto: Function called by :meth:`convert_to_dto_packet`.
+            create_from_dto: Function called by :meth:`create_from_dto_packet`.
         """
         super().__init__()
         self.__create_from_dto: Callable[[_ReceivedDTOPacketT], _ReceivedPacketT] = create_from_dto

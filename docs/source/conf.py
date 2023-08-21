@@ -64,6 +64,7 @@ autodoc_type_aliases = {
     "_typing_pickle.Pickler": "pickle.Pickler",
     "_typing_pickle.Unpickler": "pickle.Unpickler",
     "_typing_struct.Struct": "struct.Struct",
+    "_typing_ssl.SSLContext": "ssl.SSLContext",
     "_socket._RetAddress": "typing.Any",
     "_socket.socket": "socket.socket",
 }
@@ -84,6 +85,14 @@ intersphinx_mapping = {
 # https://www.sphinx-doc.org/en/master/usage/extensions/napoleon.html
 
 napoleon_numpy_docstring = False
+napoleon_preprocess_types = True
+napoleon_use_param = True
+napoleon_use_keyword = True
+napoleon_custom_sections = [
+    ("Common Parameters", "params_style"),
+    ("Socket Parameters", "params_style"),
+    ("Connection Parameters", "params_style"),
+]
 
 
 # -- sphinx.ext.todo configuration -------------------------------------------

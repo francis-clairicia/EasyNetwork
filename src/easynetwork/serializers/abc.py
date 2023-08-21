@@ -85,8 +85,8 @@ class AbstractIncrementalPacketSerializer(AbstractPacketSerializer[_SerializedPa
 
         The generator should :keyword:`yield` non-empty byte sequences.
 
-        The main purpose of this method is to add metadata that could not be included in the output of :meth:`.serialize`,
-        such as headers, separators, and so on. It is used in the :meth:`.incremental_deserialize` method.
+        The main purpose of this method is to add metadata that could not be included in the output of :meth:`serialize`,
+        such as headers, separators, and so on. It is used in the :meth:`incremental_deserialize` method.
 
         Arguments:
             packet: The Python object to serialize.
@@ -116,7 +116,7 @@ class AbstractIncrementalPacketSerializer(AbstractPacketSerializer[_SerializedPa
         """
         Returns the byte representation of the Python object `packet`.
 
-        The default implementation concatenates and returns the parts sent by :meth:`.incremental_serialize`.
+        The default implementation concatenates and returns the parts sent by :meth:`incremental_serialize`.
 
         Arguments:
             packet: The Python object to serialize.
@@ -130,7 +130,7 @@ class AbstractIncrementalPacketSerializer(AbstractPacketSerializer[_SerializedPa
         """
         Creates a Python object representing the raw :term:`packet` from `data`.
 
-        The default implementation uses :meth:`.incremental_deserialize` and expects it to deserialize ``data`` at once.
+        The default implementation uses :meth:`incremental_deserialize` and expects it to deserialize ``data`` at once.
 
         Arguments:
             data: The byte sequence to deserialize.

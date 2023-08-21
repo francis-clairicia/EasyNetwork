@@ -127,7 +127,7 @@ class _JSONParser:
                     # partial_document not complete
                     start = partial_document_view.nbytes
 
-                # yield out of view scope
+                # yield outside view scope
                 partial_document += yield
 
         except _JSONParser._PlainValueError:

@@ -395,7 +395,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
     @final
     def socket(self) -> SocketProxy:
         if self.__info is None:
-            raise _error_from_errno(_errno.ENOTSOCK)
+            raise AttributeError("Socket not connected")
         return self.__info["proxy"]
 
     @property

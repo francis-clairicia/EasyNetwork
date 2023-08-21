@@ -1,5 +1,6 @@
+***********
 Serializers
-===========
+***********
 
 .. automodule:: easynetwork.serializers
 

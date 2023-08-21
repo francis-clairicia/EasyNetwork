@@ -178,7 +178,7 @@ class StreamProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
         Raises:
             StreamProtocolParseError: in case of deserialization error.
             StreamProtocolParseError: in case of conversion error (if there is a :term:`converter`).
-            RuntimeError: The :term:`serializer` raised :class:`.DeserializeError` instead of :class:`.IncrementalDeserializeError`.
+            RuntimeError: The :term:`serializer` raised :exc:`.DeserializeError` instead of :exc:`.IncrementalDeserializeError`.
 
         Yields:
             :data:`None` until the whole :term:`packet` has been deserialized.

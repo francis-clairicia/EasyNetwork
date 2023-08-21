@@ -1,5 +1,6 @@
+**************
 Internal tools
-==============
+**************
 
 .. automodule:: easynetwork.tools
 

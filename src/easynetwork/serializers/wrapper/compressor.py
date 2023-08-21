@@ -77,7 +77,7 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_Serializ
         """
         Arguments:
             serializer: The serializer to wrap.
-            expected_decompress_error: Errors that can be raised by :meth:`.DecompressorInterface.decompress` implementation,
+            expected_decompress_error: Errors that can be raised by :meth:`DecompressorInterface.decompress` implementation,
                                        which must be considered as deserialization errors.
         """
         super().__init__()
@@ -134,9 +134,9 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_Serializ
         See :meth:`AbstractPacketSerializer.deserialize` documentation for details.
 
         Raises:
-            DeserializeError: :meth:`.DecompressorInterface.decompress` does not read until EOF (unused trailing data).
-            DeserializeError: :meth:`.DecompressorInterface.decompress` raised an error that matches `expected_decompress_error`.
-            Exception: Any other error raised by :meth:`.DecompressorInterface.decompress` or the underlying serializer.
+            DeserializeError: :meth:`DecompressorInterface.decompress` does not read until EOF (unused trailing data).
+            DeserializeError: :meth:`DecompressorInterface.decompress` raised an error that matches `expected_decompress_error`.
+            Exception: Any other error raised by :meth:`DecompressorInterface.decompress` or the underlying serializer.
         """
         decompressor: DecompressorInterface = self.new_decompressor_stream()
         try:
@@ -164,9 +164,9 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_Serializ
         See :meth:`AbstractIncrementalPacketSerializer.incremental_deserialize` documentation for details.
 
         Raises:
-            IncrementalDeserializeError: :meth:`.DecompressorInterface.decompress` raised an error
+            IncrementalDeserializeError: :meth:`DecompressorInterface.decompress` raised an error
                                          that matches `expected_decompress_error`.
-            Exception: Any other error raised by :meth:`.DecompressorInterface.decompress` or the underlying serializer.
+            Exception: Any other error raised by :meth:`DecompressorInterface.decompress` or the underlying serializer.
         """
         results: deque[bytes] = deque()
         decompressor: DecompressorInterface = self.new_decompressor_stream()

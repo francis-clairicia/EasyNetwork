@@ -142,7 +142,7 @@ class AsyncSocket:
             if did_shutdown_SHUT_WR:
                 self.__shutdown_write = True
 
-        # Yield out of the conflict detections scopes
+        # Yield outside the conflict detections scopes
         await asyncio.sleep(0)
 
     @contextlib.contextmanager

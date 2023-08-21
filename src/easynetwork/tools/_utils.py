@@ -345,12 +345,15 @@ def lock_with_timeout(
             yield None
         return
     timeout = validate_timeout_delay(timeout, positive_check=False)
-    _start = time.perf_counter()
-    if not lock.acquire(True, timeout if timeout > 0 else 0.0):
-        raise TimeoutError(error_message)
-    try:
-        _end = time.perf_counter()
-        timeout -= _end - _start
+    with contextlib.ExitStack() as stack:
+        # Try to acquire without blocking first
+        if lock.acquire(blocking=False):
+            stack.push(lock)
+        else:
+            _start = time.perf_counter()
+            if timeout <= 0 or not lock.acquire(True, timeout):
+                raise TimeoutError(error_message)
+            stack.push(lock)
+            _end = time.perf_counter()
+            timeout -= _end - _start
         yield timeout if timeout > 0 else 0.0
-    finally:
-        lock.release()

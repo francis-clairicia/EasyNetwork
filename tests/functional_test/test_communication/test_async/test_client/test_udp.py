@@ -353,7 +353,7 @@ class TestAsyncUDPNetworkClientConnection:
                 backend_kwargs=backend_kwargs,
             )
         ) as client:
-            with pytest.raises(OSError):
+            with pytest.raises(AttributeError):
                 _ = client.socket
 
             await client.wait_connected()

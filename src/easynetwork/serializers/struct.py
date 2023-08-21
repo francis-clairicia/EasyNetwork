@@ -92,7 +92,7 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_SerializedPacketT_cont
         """
         Returns an object suitable for :meth:`struct.Struct.pack`.
 
-        See :meth:`.serialize` for details.
+        See :meth:`serialize` for details.
 
         Arguments:
             packet: The Python object to serialize.
@@ -107,7 +107,7 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_SerializedPacketT_cont
         """
         Finishes the packet deserialization by parsing the tuple obtained by :meth:`struct.Struct.unpack`.
 
-        See :meth:`.deserialize` for details.
+        See :meth:`deserialize` for details.
 
         Arguments:
             t: A tuple of each elements extracted from the structure.
@@ -261,7 +261,7 @@ class NamedTupleStructSerializer(AbstractStructSerializer[_NamedTupleVar, _Named
 
         In most case, this method will directly return `packet`.
 
-        If there are string fields and `encoding` is a non-:data:`None` value, this method will return a shallow copy of
+        If there are string fields and `encoding` is not :data:`None`, this method will return a shallow copy of
         the named tuple with the encoded strings.
 
         Example:
@@ -298,7 +298,7 @@ class NamedTupleStructSerializer(AbstractStructSerializer[_NamedTupleVar, _Named
         r"""
         Constructs the named tuple from the given tuple.
 
-        If there are string fields and `encoding` is a non-:data:`None` value, their values will be decoded.
+        If there are string fields and `encoding` is not :data:`None`, their values will be decoded.
 
         If `strip_string_trailing_nul_bytes` was set to :data:`True`, the ``"\0"`` characters at the end of the string fields,
         added for padding, will be removed.
