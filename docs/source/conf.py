@@ -39,7 +39,7 @@ exclude_patterns = ["_include"]
 # -- sphinx.ext.autodoc configuration -------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/extensions/autodoc.html
 
-autodoc_class_signature = "separated"
+autoclass_content = "both"
 autodoc_member_order = "bysource"
 autodoc_default_options = {
     "undoc-members": True,
