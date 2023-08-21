@@ -58,7 +58,7 @@ Receiver:
       .. code-block:: console
 
          (.venv) $ python endpoint.py receiver
-         Receiver available on port ('127.0.0.1', 58456)
+         Receiver available on ('127.0.0.1', 58456)
          From ('127.0.0.1', 35985): {'command-line arguments': ['Hello', 'world!']}
 
    .. group-tab:: IPv6 connection
@@ -66,7 +66,7 @@ Receiver:
       .. code-block:: console
 
          (.venv) $ python endpoint.py receiver
-         Receiver available on port ('::1', 58456)
+         Receiver available on ('::1', 58456)
          From ('::1', 35985): {'command-line arguments': ['Hello', 'world!']}
 
 
