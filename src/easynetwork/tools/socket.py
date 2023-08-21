@@ -35,14 +35,23 @@ import contextlib
 import functools
 import os
 import socket as _socket
+import threading
 from collections.abc import Callable
 from enum import IntEnum, unique
 from struct import Struct
-from typing import TYPE_CHECKING, Any, Literal, NamedTuple, ParamSpec, Protocol, TypeAlias, TypeVar, assert_never, final, overload
-
-if TYPE_CHECKING:
-    import threading as _threading
-
+from typing import (
+    Any,
+    Literal,
+    NamedTuple,
+    ParamSpec,
+    Protocol,
+    TypeAlias,
+    TypeVar,
+    assert_never,
+    final,
+    overload,
+    runtime_checkable,
+)
 
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
@@ -50,6 +59,10 @@ _R = TypeVar("_R")
 
 @unique
 class AddressFamily(IntEnum):
+    """
+    Enumeration of supported socket address families.
+    """
+
     AF_INET = _socket.AF_INET
     AF_INET6 = _socket.AF_INET6
 
@@ -68,6 +81,10 @@ class IPv4SocketAddress(NamedTuple):
         return f"({self.host!r}, {self.port:d})"
 
     def for_connection(self) -> tuple[str, int]:
+        """
+        Returns:
+            A pair of (host, port)
+        """
         return self.host, self.port
 
 
@@ -81,6 +98,10 @@ class IPv6SocketAddress(NamedTuple):
         return f"({self.host!r}, {self.port:d})"
 
     def for_connection(self) -> tuple[str, int]:
+        """
+        Returns:
+            A pair of (host, port)
+        """
         return self.host, self.port
 
 
@@ -106,6 +127,33 @@ def new_socket_address(addr: tuple[Any, ...], family: int) -> SocketAddress:
 
 
 def new_socket_address(addr: tuple[Any, ...], family: int) -> SocketAddress:
+    """
+    Factory to create a :data:`SocketAddress` from `addr`.
+
+    Example:
+        >>> import socket
+        >>> new_socket_address(("127.0.0.1", 12345), socket.AF_INET)
+        IPv4SocketAddress(host='127.0.0.1', port=12345)
+        >>> new_socket_address(("::1", 12345), socket.AF_INET6)
+        IPv6SocketAddress(host='::1', port=12345, flowinfo=0, scope_id=0)
+        >>> new_socket_address(("::1", 12345, 12, 345), socket.AF_INET6)
+        IPv6SocketAddress(host='::1', port=12345, flowinfo=12, scope_id=345)
+        >>> new_socket_address(("127.0.0.1", 12345), socket.AF_APPLETALK)
+        Traceback (most recent call last):
+        ...
+        ValueError: <AddressFamily.AF_APPLETALK: 5> is not a valid AddressFamily
+
+    Arguments:
+        addr: The address in the form ``(host, port)`` or ``(host, port, flow, scope_id)``.
+        family: The socket family.
+
+    Raises:
+        ValueError: Invalid `family`.
+        TypeError: Invalid `addr`.
+
+    Returns:
+        a :data:`SocketAddress` named tuple.
+    """
     family = AddressFamily(family)
     match family:
         case AddressFamily.AF_INET:
@@ -116,6 +164,7 @@ def new_socket_address(addr: tuple[Any, ...], family: int) -> SocketAddress:
             assert_never(family)
 
 
+@runtime_checkable
 class SupportsSocketOptions(Protocol):
     @overload
     def getsockopt(self, level: int, optname: int, /) -> int:
@@ -123,6 +172,9 @@ class SupportsSocketOptions(Protocol):
 
     @overload
     def getsockopt(self, level: int, optname: int, buflen: int, /) -> bytes:
+        ...
+
+    def getsockopt(self, *args: Any) -> int | bytes:  # pragma: no cover
         ...
 
     @overload
@@ -133,7 +185,11 @@ class SupportsSocketOptions(Protocol):
     def setsockopt(self, level: int, optname: int, value: None, optlen: int, /) -> None:
         ...
 
+    def setsockopt(self, *args: Any) -> None:  # pragma: no cover
+        ...
 
+
+@runtime_checkable
 class ISocket(SupportsSocketOptions, Protocol):
     def fileno(self) -> int:  # pragma: no cover
         ...
@@ -162,6 +218,14 @@ class ISocket(SupportsSocketOptions, Protocol):
 
 @final
 class SocketProxy:
+    """
+    A socket-like wrapper for exposing real transport sockets.
+
+    These objects can be safely returned by APIs like
+    `client.socket`.  All potentially disruptive
+    operations (like :meth:`socket.close <socket.socket.close>`) are banned.
+    """
+
     __slots__ = ("__socket", "__lock_ctx", "__runner", "__weakref__")
 
     def __init_subclass__(cls) -> None:  # pragma: no cover
@@ -171,11 +235,43 @@ class SocketProxy:
         self,
         socket: ISocket,
         *,
-        lock: Callable[[], _threading.Lock | _threading.RLock] | None = None,
+        lock: Callable[[], threading.Lock | threading.RLock] | None = None,
         runner: Callable[[Callable[[], Any]], Any] | None = None,
     ) -> None:
+        """
+        Arguments:
+            socket: The socket-like object to wrap.
+            lock: A callback function to use when a lock is required to gain access to the wrapped socket.
+            runner: A callback function to use to execute the socket method.
+
+        Caution:
+            If `lock` is ommitted, the proxy object is *not* thread-safe.
+
+            `runner` can be used for concurrent call management.
+
+        Example:
+            Examples of how :meth:`ISocket.fileno` would be called according to `lock` and `runner` values.
+
+            Neither `lock` nor `runner`::
+
+                return socket.fileno()
+
+            `lock` but no `runner`::
+
+                with lock():
+                    return socket.fileno()
+
+            `runner` but no `lock`::
+
+                return runner(socket.fileno)
+
+            Both `lock` and `runner`::
+
+                with lock():
+                    return runner(socket.fileno)
+        """
         self.__socket: ISocket = socket
-        self.__lock_ctx: Callable[[], _threading.Lock | _threading.RLock] | None = lock
+        self.__lock_ctx: Callable[[], threading.Lock | threading.RLock] | None = lock
         self.__runner: Callable[[Callable[[], Any]], Any] | None = runner
 
     def __repr__(self) -> str:
@@ -210,14 +306,15 @@ class SocketProxy:
             return func(*args, **kwargs)
 
     def fileno(self) -> int:
+        """
+        Calls :meth:`ISocket.fileno`.
+        """
         return self.__execute(self.__socket.fileno)
 
-    def dup(self) -> _socket.socket:
-        new_socket = _socket.fromfd(self.fileno(), self.family, self.type, self.proto)
-        new_socket.setblocking(False)
-        return new_socket
-
     def get_inheritable(self) -> bool:
+        """
+        Calls :meth:`ISocket.get_inheritable`.
+        """
         return self.__execute(self.__socket.get_inheritable)
 
     @overload
@@ -229,6 +326,9 @@ class SocketProxy:
         ...
 
     def getsockopt(self, *args: Any) -> int | bytes:
+        """
+        Calls :meth:`ISocket.getsockopt <SupportsSocketOptions.getsockopt>`.
+        """
         return self.__execute(self.__socket.getsockopt, *args)
 
     @overload
@@ -240,36 +340,86 @@ class SocketProxy:
         ...
 
     def setsockopt(self, *args: Any) -> None:
+        """
+        Calls :meth:`ISocket.setsockopt <SupportsSocketOptions.setsockopt>`.
+        """
         return self.__execute(self.__socket.setsockopt, *args)
 
-    def getpeername(self) -> SocketAddress:
-        socket = self.__socket
-        return new_socket_address(self.__execute(socket.getpeername), socket.family)
+    def getpeername(self) -> _socket._RetAddress:
+        """
+        Calls :meth:`ISocket.getpeername`.
+        """
+        return self.__execute(self.__socket.getpeername)
 
-    def getsockname(self) -> SocketAddress:
-        socket = self.__socket
-        return new_socket_address(self.__execute(socket.getsockname), socket.family)
+    def getsockname(self) -> _socket._RetAddress:
+        """
+        Calls :meth:`ISocket.getsockname`.
+        """
+        return self.__execute(self.__socket.getsockname)
 
     @property
-    def family(self) -> _socket.AddressFamily:
-        return _socket.AddressFamily(self.__socket.family)
+    def family(self) -> int:
+        """The socket family."""
+        family: int = self.__socket.family
+        try:
+            return _socket.AddressFamily(family)
+        except ValueError:
+            return family
 
     @property
-    def type(self) -> _socket.SocketKind:
-        return _socket.SocketKind(self.__socket.type)
+    def type(self) -> int:
+        """The socket type."""
+        socket_type = self.__socket.type
+        try:
+            return _socket.SocketKind(socket_type)
+        except ValueError:
+            return socket_type
 
     @property
     def proto(self) -> int:
+        """The socket protocol."""
         return self.__socket.proto
 
 
 def set_tcp_nodelay(sock: SupportsSocketOptions, state: bool) -> None:
+    """
+    Enables/Disable Nagle's algorithm on a TCP socket.
+
+    This is equivalent to::
+
+        sock.setsockopt(IPPROTO_TCP, TCP_NODELAY, state)
+
+    *except* that if :data:`socket.TCP_NODELAY` is not defined, it is silently ignored.
+
+    Arguments:
+        sock: The socket.
+        state: :data:`True` to disable, :data:`False` to enable.
+
+    Note:
+        Modern operating systems enable it by default.
+    """
     state = bool(state)
     with contextlib.suppress(AttributeError):
         sock.setsockopt(_socket.IPPROTO_TCP, _socket.TCP_NODELAY, state)
 
 
 def set_tcp_keepalive(sock: SupportsSocketOptions, state: bool) -> None:
+    """
+    Enables/Disable keep-alive protocol on a TCP socket.
+
+    This is equivalent to::
+
+        sock.setsockopt(SOL_SOCKET, SO_KEEPALIVE, state)
+
+    *except* that if :data:`socket.SO_KEEPALIVE` is not defined, it is silently ignored.
+
+    Arguments:
+        sock: The socket.
+        state: :data:`True` to enable, :data:`False` to disable.
+
+    Note:
+        Modern operating systems enable it by default.
+    """
     state = bool(state)
     with contextlib.suppress(AttributeError):
         sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_KEEPALIVE, state)
@@ -286,12 +436,56 @@ else:  # Unix/macOS
 
 
 def get_socket_linger_struct() -> Struct:
+    """
+    Returns a :class:`~struct.Struct` representation of the SO_LINGER structure. See :manpage:`socket(7)` for details.
+
+    The format of the returned struct may vary depending on the operating system.
+    """
     return _linger_struct
 
 
 def enable_socket_linger(sock: SupportsSocketOptions, timeout: int) -> None:
+    """
+    Enables socket linger.
+
+    This is equivalent to::
+
+        sock.setsockopt(SOL_SOCKET, SO_LINGER, linger_struct)
+
+    ``linger_struct`` is determined by the operating system. See :func:`get_socket_linger_struct` for details.
+
+    See the Unix manual page :manpage:`socket(7)` for the meaning of the argument `timeout`.
+
+    Arguments:
+        sock: The socket.
+        timeout: The linger timeout.
+
+    Note:
+        Modern operating systems disable it by default.
+
+    See Also:
+        :func:`disable_socket_linger`
+    """
     sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_LINGER, _linger_struct.pack(True, timeout))
 
 
 def disable_socket_linger(sock: SupportsSocketOptions) -> None:
+    """
+    Disables socket linger.
+
+    This is equivalent to::
+
+        sock.setsockopt(SOL_SOCKET, SO_LINGER, linger_struct)
+
+    ``linger_struct`` is determined by the operating system. See :func:`get_socket_linger_struct` for details.
+
+    Arguments:
+        sock: The socket.
+
+    Note:
+        Modern operating systems disable it by default.
+
+    See Also:
+        :func:`enable_socket_linger`
+    """
     sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_LINGER, _linger_struct.pack(False, 0))

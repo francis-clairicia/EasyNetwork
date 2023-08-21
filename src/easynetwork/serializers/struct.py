@@ -176,10 +176,10 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_SerializedPacketT_cont
         return self.__s
 
 
-NamedTupleVar = TypeVar("NamedTupleVar", bound=NamedTuple)
+_NamedTupleVar = TypeVar("_NamedTupleVar", bound=NamedTuple)
 
 
-class NamedTupleStructSerializer(AbstractStructSerializer[NamedTupleVar, NamedTupleVar], Generic[NamedTupleVar]):
+class NamedTupleStructSerializer(AbstractStructSerializer[_NamedTupleVar, _NamedTupleVar], Generic[_NamedTupleVar]):
     r"""
     Generic class to handle a :term:`named tuple` with a :class:`struct.Struct` object.
 
@@ -212,7 +212,7 @@ class NamedTupleStructSerializer(AbstractStructSerializer[NamedTupleVar, NamedTu
 
     def __init__(
         self,
-        namedtuple_cls: type[NamedTupleVar],
+        namedtuple_cls: type[_NamedTupleVar],
         field_formats: SupportsKeysAndGetItem[str, str],
         format_endianness: str = "",
         encoding: str | None = "utf-8",
@@ -248,14 +248,14 @@ class NamedTupleStructSerializer(AbstractStructSerializer[NamedTupleVar, NamedTu
             elif len(field_fmt) != 1 or not field_fmt.isalpha():
                 raise ValueError(f"{field!r}: Invalid field format")
         super().__init__(f"{format_endianness}{''.join(map(field_formats.__getitem__, namedtuple_cls._fields))}")
-        self.__namedtuple_cls: type[NamedTupleVar] = namedtuple_cls
+        self.__namedtuple_cls: type[_NamedTupleVar] = namedtuple_cls
         self.__string_fields: frozenset[str] = frozenset(string_fields)
         self.__encoding: str | None = encoding
         self.__unicode_errors: str = unicode_errors
         self.__strip_trailing_nul = bool(strip_string_trailing_nul_bytes)
 
     @final
-    def iter_values(self, packet: NamedTupleVar) -> NamedTupleVar:
+    def iter_values(self, packet: _NamedTupleVar) -> _NamedTupleVar:
         """
         Returns the named tuple to pack using :meth:`struct.Struct.pack`.
 
@@ -294,7 +294,7 @@ class NamedTupleStructSerializer(AbstractStructSerializer[NamedTupleVar, NamedTu
         return packet
 
     @final
-    def from_tuple(self, t: tuple[Any, ...]) -> NamedTupleVar:
+    def from_tuple(self, t: tuple[Any, ...]) -> _NamedTupleVar:
         r"""
         Constructs the named tuple from the given tuple.
 

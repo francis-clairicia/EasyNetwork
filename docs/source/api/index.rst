@@ -8,3 +8,5 @@ API Reference
    converter
    protocol
    exceptions
+   tools/index
+   typevars

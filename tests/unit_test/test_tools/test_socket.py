@@ -75,11 +75,6 @@ class TestSocketAddress:
 
 
 class TestSocketProxy:
-    @pytest.fixture
-    @staticmethod
-    def mock_new_socket_address(mocker: MockerFixture) -> MagicMock:
-        return mocker.patch("easynetwork.tools.socket.new_socket_address", autospec=True)
-
     @pytest.fixture(
         params=[
             pytest.param(False, id="without_runner"),
@@ -116,6 +111,54 @@ class TestSocketProxy:
         if runner_stub is not None:
             runner_stub.assert_not_called()
 
+    @pytest.mark.parametrize("family", [int(socket.AF_INET), int(9999999)])
+    def test____family____cast(
+        self,
+        family: int,
+        mock_tcp_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        assert type(family) is int
+        mock_tcp_socket.family = family
+
+        # Act
+        socket_proxy = SocketProxy(mock_tcp_socket)
+        socket_proxy_family = socket_proxy.family
+
+        # Assert
+        try:
+            family = socket.AddressFamily(family)
+        except ValueError:
+            assert type(socket_proxy_family) is int
+            assert socket_proxy_family == family
+        else:
+            assert isinstance(socket_proxy_family, socket.AddressFamily)
+            assert socket_proxy_family is family
+
+    @pytest.mark.parametrize("sock_type", [int(socket.SOCK_STREAM), int(9999999)])
+    def test____type____cast(
+        self,
+        sock_type: int,
+        mock_tcp_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        assert type(sock_type) is int
+        mock_tcp_socket.type = sock_type
+
+        # Act
+        socket_proxy = SocketProxy(mock_tcp_socket)
+        socket_proxy_type = socket_proxy.type
+
+        # Assert
+        try:
+            sock_type = socket.SocketKind(sock_type)
+        except ValueError:
+            assert type(socket_proxy_type) is int
+            assert socket_proxy_type == sock_type
+        else:
+            assert isinstance(socket_proxy_type, socket.SocketKind)
+            assert socket_proxy_type is sock_type
+
     def test____fileno____sub_call(
         self,
         mock_tcp_socket: MagicMock,
@@ -132,37 +175,6 @@ class TestSocketProxy:
         # Assert
         mock_tcp_socket.fileno.assert_called_once_with()
         assert fd is mocker.sentinel.fd
-        if runner_stub is not None:
-            runner_stub.assert_called_once_with(mock_tcp_socket.fileno)
-
-    def test____dup____sub_call(
-        self,
-        mock_tcp_socket: MagicMock,
-        mocker: MockerFixture,
-        runner_stub: MagicMock | None,
-        mock_tcp_socket_factory: Callable[[], MagicMock],
-    ) -> None:
-        # Arrange
-        mock_tcp_socket.fileno.return_value = mocker.sentinel.fd
-        mock_new_socket = mock_tcp_socket_factory()
-        mock_socket_fromfd = mocker.patch("socket.fromfd", autospec=True, return_value=mock_new_socket)
-        socket_proxy = SocketProxy(mock_tcp_socket, runner=runner_stub)
-
-        # Act
-        socket = socket_proxy.dup()
-
-        # Assert
-        mock_tcp_socket.dup.assert_not_called()
-        mock_tcp_socket.fileno.assert_called_once_with()
-        mock_socket_fromfd.assert_called_once_with(
-            mocker.sentinel.fd,
-            mock_tcp_socket.family,
-            mock_tcp_socket.type,
-            mock_tcp_socket.proto,
-        )
-        mock_new_socket.setblocking.assert_called_once_with(False)
-        mock_new_socket.settimeout.assert_not_called()
-        assert socket is mock_new_socket
         if runner_stub is not None:
             runner_stub.assert_called_once_with(mock_tcp_socket.fileno)
 
@@ -236,22 +248,19 @@ class TestSocketProxy:
         self,
         method: str,
         mock_tcp_socket: MagicMock,
-        mock_new_socket_address: MagicMock,
         mocker: MockerFixture,
         runner_stub: MagicMock | None,
     ) -> None:
         # Arrange
         socket_proxy = SocketProxy(mock_tcp_socket, runner=runner_stub)
-        getattr(mock_tcp_socket, method).return_value = mocker.sentinel.address_to_convert
-        mock_new_socket_address.return_value = mocker.sentinel.converted_address
+        getattr(mock_tcp_socket, method).return_value = mocker.sentinel.address
 
         # Act
         address = getattr(socket_proxy, method)()
 
         # Assert
         getattr(mock_tcp_socket, method).assert_called_once_with()
-        mock_new_socket_address.assert_called_once_with(mocker.sentinel.address_to_convert, mock_tcp_socket.family)
-        assert address is mocker.sentinel.converted_address
+        assert address is mocker.sentinel.address
         if runner_stub is not None:
             runner_stub.assert_called_once_with(getattr(mock_tcp_socket, method))
 

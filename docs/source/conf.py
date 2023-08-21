@@ -17,15 +17,22 @@ release = "1.0.0rc4"
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 extensions = [
+    # Built-in
     "sphinx.ext.autodoc",
     "sphinx.ext.duration",
     "sphinx.ext.intersphinx",
     "sphinx.ext.napoleon",
     "sphinx.ext.todo",
+    # Dependencies
+    "enum_tools.autoenum",
     "sphinx_rtd_theme",
     "sphinx_tabs.tabs",
     "sphinx_toolbox.github",
     "sphinx_toolbox.sidebar_links",
+    "sphinx_toolbox.more_autodoc.genericalias",
+    "sphinx_toolbox.more_autodoc.autonamedtuple",
+    "sphinx_toolbox.more_autodoc.autoprotocol",
+    "sphinx_toolbox.more_autodoc.typevars",
 ]
 
 highlight_language = "python3"
@@ -42,10 +49,10 @@ exclude_patterns = ["_include"]
 autoclass_content = "both"
 autodoc_member_order = "bysource"
 autodoc_default_options = {
-    "undoc-members": True,
+    "undoc-members": None,
     "member-order": "bysource",
-    "no-value": True,
-    "show-inheritance": True,
+    "no-value": None,
+    "show-inheritance": None,
 }
 autodoc_typehints = "description"
 autodoc_typehints_description_target = "documented_params"
@@ -57,10 +64,10 @@ autodoc_type_aliases = {
     "_typing_pickle.Pickler": "pickle.Pickler",
     "_typing_pickle.Unpickler": "pickle.Unpickler",
     "_typing_struct.Struct": "struct.Struct",
-    "SocketAddress": "SocketAddress",
+    "_socket._RetAddress": "typing.Any",
+    "_socket.socket": "socket.socket",
 }
 autodoc_inherit_docstrings = False
-# autodoc_preserve_defaults = True
 
 # -- sphinx.ext.intersphinx configuration ------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/extensions/intersphinx.html

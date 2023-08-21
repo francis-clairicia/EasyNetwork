@@ -10,5 +10,8 @@ There is a base class :class:`AbstractStructSerializer` to easily manipulate str
 .. autoclass:: AbstractStructSerializer
    :members:
 
+.. autotypevar:: easynetwork.serializers.struct::_NamedTupleVar
+   :noindex:
+
 .. autoclass:: NamedTupleStructSerializer
    :members:

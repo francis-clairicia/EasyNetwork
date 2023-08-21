@@ -78,6 +78,12 @@ class StringLineSerializer(AutoSeparatedPacketSerializer[str, str]):
             def serialize(self, packet):
                 return packet.encode()
 
+        Example:
+            >>> from easynetwork.serializers import StringLineSerializer
+            >>> s = StringLineSerializer()
+            >>> s.serialize("character string")
+            b'character string'
+
         Arguments:
             packet: The string to encode.
 
@@ -91,12 +97,6 @@ class StringLineSerializer(AutoSeparatedPacketSerializer[str, str]):
 
         Important:
             The output **does not** contain `newline`.
-
-        Example:
-            >>> from easynetwork.serializers import StringLineSerializer
-            >>> s = StringLineSerializer()
-            >>> s.serialize("character string")
-            b'character string'
         """
         if not isinstance(packet, str):
             raise TypeError(f"Expected a string, got {packet!r}")
@@ -115,6 +115,12 @@ class StringLineSerializer(AutoSeparatedPacketSerializer[str, str]):
             def deserialize(self, data):
                 return data.decode()
 
+        Example:
+            >>> from easynetwork.serializers import StringLineSerializer
+            >>> s = StringLineSerializer()
+            >>> s.deserialize(b"character string")
+            'character string'
+
         Arguments:
             packet: The data to decode.
 
@@ -126,12 +132,6 @@ class StringLineSerializer(AutoSeparatedPacketSerializer[str, str]):
 
         Important:
             Trailing `newline` sequences are **removed**.
-
-        Example:
-            >>> from easynetwork.serializers import StringLineSerializer
-            >>> s = StringLineSerializer()
-            >>> s.deserialize(b"character string")
-            'character string'
         """
         separator: bytes = self.separator
         while data.endswith(separator):

@@ -211,17 +211,17 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_SerializedPacketT_cont
             def serialize(self, packet):
                 return json.dumps(packet)
 
-        Arguments:
-            packet: The Python object to serialize.
-
-        Returns:
-            a byte sequence.
-
         Example:
             >>> from easynetwork.serializers import JSONSerializer
             >>> s = JSONSerializer()
             >>> s.serialize({"key": [1, 2, 3], "data": None})
             b'{"key":[1,2,3],"data":null}'
+
+        Arguments:
+            packet: The Python object to serialize.
+
+        Returns:
+            a byte sequence.
         """
         return self.__encoder.encode(packet).encode(self.__encoding, self.__unicode_errors)
 
@@ -230,17 +230,17 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_SerializedPacketT_cont
         r"""
         Returns the JSON representation of the Python object `packet`.
 
-        Arguments:
-            packet: The Python object to serialize.
-
-        Yields:
-            all the parts of the JSON :term:`packet`.
-
         Example:
             >>> from easynetwork.serializers import JSONSerializer
             >>> s = JSONSerializer()
             >>> b"".join(s.incremental_serialize({"key": [1, 2, 3], "data": None}))
             b'{"key":[1,2,3],"data":null}\n'
+
+        Arguments:
+            packet: The Python object to serialize.
+
+        Yields:
+            all the parts of the JSON :term:`packet`.
         """
         yield self.__encoder.encode(packet).encode(self.__encoding, self.__unicode_errors)
         yield b"\n"
@@ -255,6 +255,12 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_SerializedPacketT_cont
             def deserialize(self, data):
                 return json.loads(data)
 
+        Example:
+            >>> from easynetwork.serializers import JSONSerializer
+            >>> s = JSONSerializer()
+            >>> s.deserialize(b'{"key":[1,2,3],"data":null}')
+            {'key': [1, 2, 3], 'data': None}
+
         Arguments:
             data: The byte sequence to deserialize.
 
@@ -263,12 +269,6 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_SerializedPacketT_cont
 
         Returns:
             the deserialized Python object.
-
-        Example:
-            >>> from easynetwork.serializers import JSONSerializer
-            >>> s = JSONSerializer()
-            >>> s.deserialize(b'{"key":[1,2,3],"data":null}')
-            {'key': [1, 2, 3], 'data': None}
         """
         try:
             document: str = data.decode(self.__encoding, self.__unicode_errors)
@@ -298,12 +298,6 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_SerializedPacketT_cont
         Raises:
             IncrementalDeserializeError: A :class:`UnicodeError` or :class:`~json.JSONDecodeError` have been raised.
 
-        Yields:
-            :data:`None` until the whole :term:`packet` has been deserialized.
-
-        Returns:
-            a tuple with the deserialized Python object and the unused trailing data.
-
         Example:
             >>> from easynetwork.serializers import JSONSerializer
             >>> s = JSONSerializer()
@@ -314,6 +308,12 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_SerializedPacketT_cont
             Traceback (most recent call last):
             ...
             StopIteration: ({'key': [1, 2, 3], 'data': None}, b'{"something":"remaining"}')
+
+        Yields:
+            :data:`None` until the whole :term:`packet` has been deserialized.
+
+        Returns:
+            a tuple with the deserialized Python object and the unused trailing data.
         """
         complete_document, remaining_data = yield from _JSONParser.raw_parse()
 

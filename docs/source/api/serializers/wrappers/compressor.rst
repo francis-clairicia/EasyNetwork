@@ -16,10 +16,6 @@ Abstract compressor interface
 .. autoclass:: AbstractCompressorSerializer
    :members:
 
-.. autoclass:: easynetwork.serializers.wrapper.compressor::CompressorInterface
-   :members:
-   :exclude-members: __init__
+.. autoprotocol:: easynetwork.serializers.wrapper.compressor::CompressorInterface
 
-.. autoclass:: easynetwork.serializers.wrapper.compressor::DecompressorInterface
-   :members:
-   :exclude-members: __init__
+.. autoprotocol:: easynetwork.serializers.wrapper.compressor::DecompressorInterface
