@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""Network client module"""
+"""TCP Network client implementation module"""
 
 from __future__ import annotations
 
@@ -140,7 +140,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
             protocol: The :term:`protocol object` to use.
 
         Connection Parameters:
-            address: A pair of ``(host, port)``.
+            address: A pair of ``(host, port)`` for connection.
             connect_timeout: The connection timeout (in seconds).
             local_address: If given, is a ``(local_host, local_port)`` tuple used to bind the socket locally.
 
@@ -321,7 +321,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
             return f"<{type(self).__name__} closed>"
         return f"<{type(self).__name__} socket={socket!r}>"
 
-    @final
     def is_closed(self) -> bool:
         """
         Checks if the client is in a closed state. Thread-safe.
@@ -455,7 +454,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
 
     def recv_packet(self, *, timeout: float | None = None) -> _ReceivedPacketT:
         """
-        Waits for a new packet from the remote endpoint. Thread-safe.
+        Waits for a new packet to arrive from the remote endpoint. Thread-safe.
 
         If `timeout` is not :data:`None`, the entire receive operation will take at most `timeout` seconds.
 
@@ -471,7 +470,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
             ClientClosedError: the client object is closed.
             ConnectionError: connection unexpectedly closed during operation.
                              You should not attempt any further operation and close the client object.
-            TimeoutError: the send operation does not end up after `timeout` seconds.
+            TimeoutError: the receive operation does not end up after `timeout` seconds.
             OSError: Unrelated OS error happen. You should check :attr:`OSError.errno`.
 
         Returns:
@@ -571,7 +570,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
 
     def get_local_address(self) -> SocketAddress:
         """
-        Gets the local socket IP address. Thread-safe.
+        Returns the local socket IP address. Thread-safe.
 
         Raises:
             ClientClosedError: the client object is closed.
@@ -584,7 +583,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
 
     def get_remote_address(self) -> SocketAddress:
         """
-        Gets the remote socket IP address. Thread-safe.
+        Returns the remote socket IP address. Thread-safe.
 
         Raises:
             ClientClosedError: the client object is closed.
@@ -615,9 +614,11 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
     @property
     @final
     def socket(self) -> SocketProxy:
+        """A view to the underlying socket instance. Read-only attribute."""
         return self.__socket_proxy
 
     @property
     @final
     def max_recv_size(self) -> int:
+        """Read buffer size. Read-only attribute."""
         return self.__max_recv_size

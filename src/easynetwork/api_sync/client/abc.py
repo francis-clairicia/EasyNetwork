@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""Network client module"""
+"""Network client interfaces definition module"""
 
 from __future__ import annotations
 
@@ -79,7 +79,7 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
     @abstractmethod
     def get_local_address(self) -> SocketAddress:
         """
-        Gets the local socket IP address.
+        Returns the local socket IP address.
 
         Raises:
             ClientClosedError: the client object is closed.
@@ -93,7 +93,7 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
     @abstractmethod
     def get_remote_address(self) -> SocketAddress:
         """
-        Gets the remote socket IP address.
+        Returns the remote socket IP address.
 
         Raises:
             ClientClosedError: the client object is closed.
@@ -134,7 +134,7 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
     @abstractmethod
     def recv_packet(self, *, timeout: float | None = None) -> _ReceivedPacketT:
         """
-        Waits for a new packet from the remote endpoint.
+        Waits for a new packet to arrive from the remote endpoint.
 
         If `timeout` is not :data:`None`, the entire receive operation will take at most `timeout` seconds.
 
@@ -145,7 +145,7 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
             ClientClosedError: the client object is closed.
             ConnectionError: connection unexpectedly closed during operation.
                              You should not attempt any further operation and close the client object.
-            TimeoutError: the send operation does not end up after `timeout` seconds.
+            TimeoutError: the receive operation does not end up after `timeout` seconds.
             OSError: Unrelated OS error happen. You should check :attr:`OSError.errno`.
 
         Returns:
@@ -155,7 +155,7 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
 
     def iter_received_packets(self, *, timeout: float | None = 0) -> Iterator[_ReceivedPacketT]:
         """
-        Returns an iterator that waits for a new packet from the remote endpoint.
+        Returns an iterator that waits for a new packet to arrive from the remote endpoint.
 
         If `timeout` is not :data:`None`, the entire receive operation will take at most `timeout` seconds; it defaults to zero.
 

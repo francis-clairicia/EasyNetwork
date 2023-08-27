@@ -223,7 +223,7 @@ class SocketProxy:
 
     These objects can be safely returned by APIs like
     `client.socket`.  All potentially disruptive
-    operations (like :meth:`socket.close <socket.socket.close>`) are banned.
+    operations (like :meth:`socket.socket.close`) are banned.
     """
 
     __slots__ = ("__socket", "__lock_ctx", "__runner", "__weakref__")
