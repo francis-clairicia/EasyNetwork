@@ -194,13 +194,6 @@ class TestAsyncUDPNetworkClient:
         finally:
             close_task.cancel()
 
-    async def test____fileno____consistency(self, client: AsyncUDPNetworkClient[str, str]) -> None:
-        assert client.fileno() == client.socket.fileno()
-
-    async def test____fileno____closed_client(self, client: AsyncUDPNetworkClient[str, str]) -> None:
-        await client.aclose()
-        assert client.fileno() == -1
-
     async def test____get_local_address____consistency(self, socket_family: int, client: AsyncUDPNetworkClient[str, str]) -> None:
         address = client.get_local_address()
         if socket_family == AF_INET:
@@ -399,25 +392,6 @@ class TestAsyncUDPNetworkClientConnection:
             await client.wait_connected()
 
             assert client.get_remote_address()[:2] == remote_address
-
-    async def test____fileno____connection_not_performed_yet(
-        self,
-        remote_address: tuple[str, int],
-        datagram_protocol: DatagramProtocol[str, str],
-        backend_kwargs: dict[str, Any],
-    ) -> None:
-        async with contextlib.aclosing(
-            AsyncUDPNetworkClient(
-                remote_address,
-                datagram_protocol,
-                backend_kwargs=backend_kwargs,
-            )
-        ) as client:
-            assert client.fileno() == -1
-
-            await client.wait_connected()
-
-            assert client.fileno() > -1
 
     @use_asyncio_transport_xfail_uvloop
     async def test____send_packet____recv_packet____implicit_connection(
@@ -703,13 +677,6 @@ class TestAsyncUDPNetworkEndpoint:
                 }
             finally:
                 close_task.cancel()
-
-    async def test____fileno____consistency(self, client: AsyncUDPNetworkEndpoint[str, str]) -> None:
-        assert client.fileno() == client.socket.fileno()
-
-    async def test____fileno____closed_client(self, client: AsyncUDPNetworkEndpoint[str, str]) -> None:
-        await client.aclose()
-        assert client.fileno() == -1
 
     async def test____get_local_address____consistency(
         self,

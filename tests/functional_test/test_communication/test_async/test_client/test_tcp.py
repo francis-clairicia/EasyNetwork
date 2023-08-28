@@ -220,13 +220,6 @@ class TestAsyncTCPNetworkClient:
         event_loop.call_soon(server.close)
         assert [p async for p in client.iter_received_packets()] == ["A", "B", "C", "D", "E"]
 
-    async def test____fileno____consistency(self, client: AsyncTCPNetworkClient[str, str]) -> None:
-        assert client.fileno() == client.socket.fileno()
-
-    async def test____fileno____closed_client(self, client: AsyncTCPNetworkClient[str, str]) -> None:
-        await client.aclose()
-        assert client.fileno() == -1
-
     async def test____get_local_address____consistency(self, socket_family: int, client: AsyncTCPNetworkClient[str, str]) -> None:
         address = client.get_local_address()
         if socket_family == AF_INET:
@@ -439,25 +432,6 @@ class TestAsyncTCPNetworkClientConnection:
             await client.wait_connected()
 
             assert client.get_remote_address()[:2] == remote_address
-
-    async def test____fileno____connection_not_performed_yet(
-        self,
-        remote_address: tuple[str, int],
-        stream_protocol: StreamProtocol[str, str],
-        backend_kwargs: dict[str, Any],
-    ) -> None:
-        async with contextlib.aclosing(
-            AsyncTCPNetworkClient(
-                remote_address,
-                stream_protocol,
-                backend_kwargs=backend_kwargs,
-            )
-        ) as client:
-            assert client.fileno() == -1
-
-            await client.wait_connected()
-
-            assert client.fileno() > -1
 
     async def test____send_packet____recv_packet____implicit_connection(
         self,

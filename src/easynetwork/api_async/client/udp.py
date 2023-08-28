@@ -247,12 +247,6 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             raise _error_from_errno(_errno.ENOTSOCK)
         return self.__info["remote_address"]
 
-    def fileno(self) -> int:
-        socket = self.__socket
-        if socket is None:
-            return -1
-        return socket.socket().fileno()
-
     def get_backend(self) -> AbstractAsyncBackend:
         return self.__backend
 
@@ -364,9 +358,6 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
     def get_remote_address(self) -> SocketAddress:
         remote_address: SocketAddress = self.__check_remote_address()
         return remote_address
-
-    def fileno(self) -> int:
-        return self.__endpoint.fileno()
 
     def get_backend(self) -> AbstractAsyncBackend:
         return self.__endpoint.get_backend()

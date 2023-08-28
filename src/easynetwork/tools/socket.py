@@ -244,7 +244,7 @@ class SocketProxy:
             lock: A callback function to use when a lock is required to gain access to the wrapped socket.
             runner: A callback function to use to execute the socket method.
 
-        Caution:
+        Warning:
             If `lock` is ommitted, the proxy object is *not* thread-safe.
 
             `runner` can be used for concurrent call management.

@@ -542,52 +542,6 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         # Assert
         mock_datagram_socket_adapter.get_remote_address.assert_not_called()
 
-    async def test____fileno____default(
-        self,
-        client_bound: AsyncUDPNetworkClient[Any, Any],
-        mock_udp_socket: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        mock_udp_socket.fileno.return_value = mocker.sentinel.fileno
-
-        # Act
-        fd = client_bound.fileno()
-
-        # Assert
-        mock_udp_socket.fileno.assert_called_once_with()
-        assert fd is mocker.sentinel.fileno
-
-    async def test____fileno____connection_not_performed(
-        self,
-        client_not_bound: AsyncUDPNetworkEndpoint[Any, Any],
-        mock_udp_socket: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act
-        fd = client_not_bound.fileno()
-
-        # Assert
-        mock_udp_socket.fileno.assert_not_called()
-        assert fd == -1
-
-    async def test____fileno____closed_client(
-        self,
-        client_bound: AsyncUDPNetworkClient[Any, Any],
-        mock_udp_socket: MagicMock,
-    ) -> None:
-        # Arrange
-        await client_bound.aclose()
-        assert client_bound.is_closing()
-
-        # Act
-        fd = client_bound.fileno()
-
-        # Assert
-        mock_udp_socket.fileno.assert_not_called()
-        assert fd == -1
-
     @pytest.mark.parametrize("remote_address", [False], indirect=True)
     @pytest.mark.usefixtures("setup_protocol_mock")
     async def test____send_packet_to____send_bytes_to_socket____without_remote____default(
@@ -1187,22 +1141,6 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
         # Assert
         mock_udp_endpoint.iter_received_packets_from.assert_called_once_with()
         assert packets == [mocker.sentinel.packet_1, mocker.sentinel.packet_2, mocker.sentinel.packet_3]
-
-    async def test____fileno____default(
-        self,
-        client: AsyncUDPNetworkClient[Any, Any],
-        mock_udp_endpoint: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        mock_udp_endpoint.fileno.return_value = mocker.sentinel.fd
-
-        # Act
-        fd = client.fileno()
-
-        # Assert
-        mock_udp_endpoint.fileno.assert_called_once_with()
-        assert fd is mocker.sentinel.fd
 
     async def test____get_backend____default(
         self,

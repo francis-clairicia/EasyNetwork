@@ -45,9 +45,6 @@ class MockAsyncClient(AbstractAsyncNetworkClient[Any, Any]):
     async def recv_packet(self) -> Any:
         return await self.mock_recv_packet()
 
-    def fileno(self) -> int:
-        raise NotImplementedError
-
     def get_backend(self) -> AbstractAsyncBackend:
         raise NotImplementedError
 

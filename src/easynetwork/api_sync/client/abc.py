@@ -111,7 +111,7 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
 
         If `timeout` is not :data:`None`, the entire send operation will take at most `timeout` seconds.
 
-        Caution:
+        Warning:
             A timeout on a send operation is unusual unless the implementation is using a lower-level
             communication protocol (such as SSL/TLS).
 
@@ -155,7 +155,7 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
 
     def iter_received_packets(self, *, timeout: float | None = 0) -> Iterator[_ReceivedPacketT]:
         """
-        Returns an iterator that waits for a new packet to arrive from the remote endpoint.
+        Returns an :term:`iterator` that waits for a new packet to arrive from the remote endpoint.
 
         If `timeout` is not :data:`None`, the entire receive operation will take at most `timeout` seconds; it defaults to zero.
 

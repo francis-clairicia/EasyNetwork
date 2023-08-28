@@ -22,7 +22,7 @@ import contextlib as _contextlib
 import errno as _errno
 import socket as _socket
 from collections.abc import Callable, Iterator, Mapping
-from typing import TYPE_CHECKING, Any, Generic, NoReturn, TypedDict, cast, final, overload
+from typing import TYPE_CHECKING, Any, NoReturn, TypedDict, cast, final, overload
 
 try:
     import ssl as _ssl
@@ -64,7 +64,11 @@ class _ClientInfo(TypedDict):
     remote_address: SocketAddress
 
 
-class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPacketT], Generic[_SentPacketT, _ReceivedPacketT]):
+class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPacketT]):
+    """
+    An asynchronous network client interface for TCP connections.
+    """
+
     __slots__ = (
         "__socket",
         "__backend",
@@ -135,6 +139,45 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         backend_kwargs: Mapping[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
+        """
+        Common Parameters:
+            protocol: The :term:`protocol object` to use.
+
+        Connection Parameters:
+            address: A pair of ``(host, port)`` for connection.
+            happy_eyeballs_delay: the "Connection Attempt Delay" as defined in :rfc:`8305`.
+                                  A sensible default value recommended by the RFC is 0.25 (250 milliseconds).
+            local_address: If given, is a ``(local_host, local_port)`` tuple used to bind the socket locally.
+
+        Socket Parameters:
+            socket: An already connected TCP :class:`socket.socket`. If `socket` is given,
+                    none of `happy_eyeballs_delay` and `local_address` should be specified.
+
+        Keyword Arguments:
+            ssl: If given and not false, a SSL/TLS transport is created (by default a plain TCP transport is created).
+                 If ssl is a :class:`ssl.SSLContext` object, this context is used to create the transport;
+                 if ssl is :data:`True`, a default context returned from :func:`ssl.create_default_context` is used.
+            server_hostname: sets or overrides the hostname that the target server's certificate will be matched against.
+                             Should only be passed if `ssl` is not :data:`None`. By default the value of the host in `address`
+                             argument is used. If `socket` is provided instead, there is no default and you must pass a value
+                             for `server_hostname`. If `server_hostname` is an empty string, hostname matching is disabled
+                             (which is a serious security risk, allowing for potential man-in-the-middle attacks).
+            ssl_handshake_timeout: (for a TLS connection) the time in seconds to wait for the TLS handshake to complete
+                                   before aborting the connection. ``60.0`` seconds if :data:`None` (default).
+            ssl_shutdown_timeout: the time in seconds to wait for the SSL shutdown to complete before aborting the connection.
+                                  ``30.0`` seconds if :data:`None` (default).
+            ssl_shared_lock: If :data:`True` (the default), :meth:`send_packet` and :meth:`recv_packet` uses
+                             the same lock instance.
+            max_recv_size: Read buffer size. If not given, a default reasonable value is used.
+
+        Backend Parameters:
+            backend: the backend to use. Automatically determined otherwise.
+            backend_kwargs: Keyword arguments for backend instanciation.
+                            Ignored if `backend` is already an :class:`AbstractAsyncBackend` isntance.
+
+        See Also:
+            :ref:`SSL/TLS security considerations <ssl-security>`
+        """
         super().__init__()
 
         if not isinstance(protocol, StreamProtocol):
@@ -237,7 +280,42 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
             return f"<{type(self).__name__} (partially initialized)>"
         return f"<{type(self).__name__} socket={socket!r}>"
 
+    def is_connected(self) -> bool:
+        """
+        Checks if the client initialization is finished.
+
+        See Also:
+            :meth:`wait_connected` method.
+
+        Returns:
+            the client connection state.
+        """
+        return self.__socket is not None and self.__info is not None
+
     async def wait_connected(self) -> None:
+        """
+        Finishes initializing the client, doing the asynchronous operations that could not be done in the constructor.
+        Does not require task synchronization.
+
+        It is not needed to call it directly if the client is used as an :term:`asynchronous context manager`::
+
+            async with client:  # wait_connected() has been called.
+                ...
+
+        Can be safely called multiple times.
+
+        Warning:
+            Due to limitations of the underlying operating system APIs,
+            it is not always possible to properly cancel a connection attempt once it has begun.
+
+            If :meth:`wait_connected` is cancelled, and is unable to abort the connection attempt, then it will forcibly
+            close the socket to prevent accidental re-use.
+
+        Raises:
+            ClientClosedError: the client object is closed.
+            ConnectionError: could not connect to remote.
+            OSError: Unrelated OS error happen. You should check :attr:`OSError.errno`.
+        """
         if self.__socket is None:
             socket_connector = self.__socket_connector
             if socket_connector is None:
@@ -266,17 +344,37 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
             "remote_address": remote_address,
         }
 
-    def is_connected(self) -> bool:
-        return self.__socket is not None and self.__info is not None
-
-    @final
     def is_closing(self) -> bool:
+        """
+        Checks if the client is closed or in the process of being closed.
+
+        If :data:`True`, all future operations on the client object will raise a :exc:`.ClientClosedError`.
+
+        See Also:
+            :meth:`aclose` method.
+
+        Returns:
+            the client state.
+        """
         if self.__socket_connector is not None:
             return False
         socket = self.__socket
         return socket is None or socket.is_closing()
 
     async def aclose(self) -> None:
+        """
+        Close the client. Does not require task synchronization.
+
+        Once that happens, all future operations on the client object will raise a :exc:`.ClientClosedError`.
+        The remote end will receive no more data (after queued data is flushed).
+
+        Warning:
+            :meth:`aclose` performs a graceful close, waiting for the connection to close.
+
+            If :meth:`aclose` is cancelled, the client is closed abruptly.
+
+        Can be safely called multiple times.
+        """
         if self.__socket_connector is not None:
             self.__socket_connector.cancel()
             self.__socket_connector = None
@@ -292,6 +390,25 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
                 pass
 
     async def send_packet(self, packet: _SentPacketT) -> None:
+        """
+        Sends `packet` to the remote endpoint. Does not require task synchronization.
+
+        Calls :meth:`wait_connected`.
+
+        Warning:
+            In the case of a cancellation, it is impossible to know if all the packet data has been sent.
+            This would leave the connection in an inconsistent state.
+
+        Arguments:
+            packet: the Python object to send.
+
+        Raises:
+            ClientClosedError: the client object is closed.
+            ConnectionError: connection unexpectedly closed during operation.
+                             You should not attempt any further operation and close the client object.
+            OSError: Unrelated OS error happen. You should check :attr:`OSError.errno`.
+            RuntimeError: :meth:`send_eof` has been called earlier.
+        """
         async with self.__send_lock:
             socket = await self.__ensure_connected(check_socket_is_closing=True)
             if self.__eof_sent:
@@ -301,6 +418,16 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
                 _check_real_socket_state(self.socket)
 
     async def send_eof(self) -> None:
+        """
+        Close the write end of the stream after the buffered write data is flushed. Does not require task synchronization.
+
+        Can be safely called multiple times.
+
+        Raises:
+            ClientClosedError: the client object is closed.
+            OSError: Unrelated OS error happen. You should check :attr:`OSError.errno`.
+            NotImplementedError: SSL/TLS API does not support sending EOF.
+        """
         try:
             socket = await self.__ensure_connected(check_socket_is_closing=False)
         except ConnectionError:
@@ -316,6 +443,20 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
                 await socket.send_eof()
 
     async def recv_packet(self) -> _ReceivedPacketT:
+        """
+        Waits for a new packet to arrive from the remote endpoint. Does not require task synchronization.
+
+        Calls :meth:`wait_connected`.
+
+        Raises:
+            ClientClosedError: the client object is closed.
+            ConnectionError: connection unexpectedly closed during operation.
+                             You should not attempt any further operation and close the client object.
+            OSError: Unrelated OS error happen. You should check :attr:`OSError.errno`.
+
+        Returns:
+            the received packet.
+        """
         async with self.__receive_lock:
             consumer = self.__consumer
             try:
@@ -348,23 +489,43 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
                 await backend.coro_yield()
 
     def get_local_address(self) -> SocketAddress:
+        """
+        Returns the local socket IP address.
+
+        If :meth:`wait_connected` was not called, an :exc:`OSError` may occurr.
+
+        Raises:
+            ClientClosedError: the client object is closed.
+            OSError: Unrelated OS error happen. You should check :attr:`OSError.errno`.
+
+        Returns:
+            the client's local address.
+        """
         if self.__info is None:
             raise _error_from_errno(_errno.ENOTSOCK)
         return self.__info["local_address"]
 
     def get_remote_address(self) -> SocketAddress:
+        """
+        Returns the remote socket IP address.
+
+        If :meth:`wait_connected` was not called, an :exc:`OSError` may occurr.
+
+        Raises:
+            ClientClosedError: the client object is closed.
+            OSError: Unrelated OS error happen. You should check :attr:`OSError.errno`.
+
+        Returns:
+            the client's remote address.
+        """
         if self.__info is None:
             raise _error_from_errno(_errno.ENOTSOCK)
         return self.__info["remote_address"]
 
-    def fileno(self) -> int:
-        socket = self.__socket
-        if socket is None:
-            return -1
-        return socket.socket().fileno()
-
     def get_backend(self) -> AbstractAsyncBackend:
         return self.__backend
+
+    get_backend.__doc__ = AbstractAsyncNetworkClient.get_backend.__doc__
 
     async def __ensure_connected(self, *, check_socket_is_closing: bool) -> AbstractAsyncStreamSocketAdapter:
         await self.wait_connected()
@@ -394,6 +555,10 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
     @property
     @final
     def socket(self) -> SocketProxy:
+        """A view to the underlying socket instance. Read-only attribute.
+
+        May raise :exc:`AttributeError` if :meth:`wait_connected` was not called.
+        """
         if self.__info is None:
             raise AttributeError("Socket not connected")
         return self.__info["proxy"]
@@ -401,4 +566,5 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
     @property
     @final
     def max_recv_size(self) -> int:
+        """Read buffer size. Read-only attribute."""
         return self.__max_recv_size

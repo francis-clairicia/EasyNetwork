@@ -243,7 +243,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
 
         If `timeout` is not :data:`None`, the entire send operation will take at most `timeout` seconds.
 
-        Caution:
+        Warning:
             A timeout on a send operation is unusual.
 
             In the case of a timeout, it is impossible to know if all the packet data has been sent.
@@ -573,7 +573,7 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
 
         If `timeout` is not :data:`None`, the entire send operation will take at most `timeout` seconds.
 
-        Caution:
+        Warning:
             A timeout on a send operation is unusual.
 
             In the case of a timeout, it is impossible to know if all the packet data has been sent.
