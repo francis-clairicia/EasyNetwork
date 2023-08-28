@@ -83,7 +83,7 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
 
         Raises:
             ClientClosedError: the client object is closed.
-            OSError: Unrelated OS error happen. You should check :attr:`OSError.errno`.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
 
         Returns:
             the client's local address.
@@ -97,7 +97,7 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
 
         Raises:
             ClientClosedError: the client object is closed.
-            OSError: Unrelated OS error happen. You should check :attr:`OSError.errno`.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
 
         Returns:
             the client's remote address.
@@ -127,7 +127,7 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
             ConnectionError: connection unexpectedly closed during operation.
                              You should not attempt any further operation and close the client object.
             TimeoutError: the send operation does not end up after `timeout` seconds.
-            OSError: Unrelated OS error happen. You should check :attr:`OSError.errno`.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
         """
         raise NotImplementedError
 
@@ -146,7 +146,8 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
             ConnectionError: connection unexpectedly closed during operation.
                              You should not attempt any further operation and close the client object.
             TimeoutError: the receive operation does not end up after `timeout` seconds.
-            OSError: Unrelated OS error happen. You should check :attr:`OSError.errno`.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
+            BaseProtocolParseError: invalid data received.
 
         Returns:
             the received packet.

@@ -200,27 +200,26 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
 
     def is_closed(self) -> bool:
         """
-        Checks if the client is in a closed state. Thread-safe.
+        Checks if the endpoint is in a closed state. Thread-safe.
 
-        If :data:`True`, all future operations on the client object will raise a :exc:`.ClientClosedError`.
+        If :data:`True`, all future operations on the endpoint object will raise a :exc:`.ClientClosedError`.
 
         Returns:
-            the client state.
+            the endpoint state.
         """
         with self.__socket_lock.get():
             return self.__socket is None
 
     def close(self) -> None:
         """
-        Close the client. Thread-safe.
+        Close the endpoint. Thread-safe.
 
-        Once that happens, all future operations on the client object will raise a :exc:`.ClientClosedError`.
-        The remote end will receive no more data (after queued data is flushed).
+        Once that happens, all future operations on the endpoint object will raise a :exc:`.ClientClosedError`.
 
         Can be safely called multiple times.
 
         Raises:
-            OSError: Unrelated OS error happen. You should check :attr:`OSError.errno`.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
         """
         with self.__send_lock.get(), self.__socket_lock.get():
             if (socket := self.__socket) is None:
@@ -258,9 +257,9 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             timeout: the allowed time (in seconds) for blocking operations.
 
         Raises:
-            ClientClosedError: the client object is closed.
+            ClientClosedError: the endpoint object is closed.
             TimeoutError: the send operation does not end up after `timeout` seconds.
-            OSError: Unrelated OS error happen. You should check :attr:`OSError.errno`.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
             ValueError: Invalid `address` value.
         """
         with (
@@ -304,9 +303,10 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             timeout: the allowed time (in seconds) for blocking operations.
 
         Raises:
-            ClientClosedError: the client object is closed.
+            ClientClosedError: the endpoint object is closed.
             TimeoutError: the receive operation does not end up after `timeout` seconds.
-            OSError: Unrelated OS error happen. You should check :attr:`OSError.errno`.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
+            DatagramProtocolParseError: invalid data received.
 
         Returns:
             A ``(packet, address)`` tuple, where `address` is the endpoint that delivered this packet.
@@ -334,7 +334,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
 
     def iter_received_packets_from(self, *, timeout: float | None = 0) -> Iterator[tuple[_ReceivedPacketT, SocketAddress]]:
         """
-        Returns an iterator that waits for a new packet to arrive from another endpoint.
+        Returns an :term:`iterator` that waits for a new packet to arrive from another endpoint.
 
         If `timeout` is not :data:`None`, the entire receive operation will take at most `timeout` seconds; it defaults to zero.
 
@@ -383,11 +383,11 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         Returns the local socket IP address. Thread-safe.
 
         Raises:
-            ClientClosedError: the client object is closed.
-            OSError: Unrelated OS error happen. You should check :attr:`OSError.errno`.
+            ClientClosedError: the endpoint object is closed.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
 
         Returns:
-            the client's local address.
+            the endpoint's local address.
         """
         return self.__addr
 
@@ -396,17 +396,17 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         Returns the remote socket IP address. Thread-safe.
 
         Raises:
-            ClientClosedError: the client object is closed.
-            OSError: Unrelated OS error happen. You should check :attr:`OSError.errno`.
+            ClientClosedError: the endpoint object is closed.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
 
         Returns:
-            the client's remote address if configured, :data:`None` otherwise.
+            the endpoint's remote address if configured, :data:`None` otherwise.
         """
         return self.__peer
 
     def fileno(self) -> int:
         """
-        Returns the socket's file descriptor, or ``-1`` if the client (or the socket) is closed. Thread-safe.
+        Returns the socket's file descriptor, or ``-1`` if the endpoint (or the socket) is closed. Thread-safe.
 
         Returns:
             the opened file descriptor.
@@ -533,7 +533,7 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
         Can be safely called multiple times.
 
         Raises:
-            OSError: Unrelated OS error happen. You should check :attr:`OSError.errno`.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
         """
         try:
             endpoint = self.__endpoint
@@ -547,7 +547,7 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
 
         Raises:
             ClientClosedError: the client object is closed.
-            OSError: Unrelated OS error happen. You should check :attr:`OSError.errno`.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
 
         Returns:
             the client's local address.
@@ -560,7 +560,7 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
 
         Raises:
             ClientClosedError: the client object is closed.
-            OSError: Unrelated OS error happen. You should check :attr:`OSError.errno`.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
 
         Returns:
             the client's remote address.
@@ -590,7 +590,7 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
         Raises:
             ClientClosedError: the client object is closed.
             TimeoutError: the send operation does not end up after `timeout` seconds.
-            OSError: Unrelated OS error happen. You should check :attr:`OSError.errno`.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
         """
         return self.__endpoint.send_packet_to(packet, None, timeout=timeout)
 
@@ -611,7 +611,8 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
         Raises:
             ClientClosedError: the client object is closed.
             TimeoutError: the receive operation does not end up after `timeout` seconds.
-            OSError: Unrelated OS error happen. You should check :attr:`OSError.errno`.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
+            DatagramProtocolParseError: invalid data received.
 
         Returns:
             the received packet.

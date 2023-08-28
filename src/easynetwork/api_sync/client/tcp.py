@@ -343,7 +343,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
         Can be safely called multiple times.
 
         Raises:
-            OSError: Unrelated OS error happen. You should check :attr:`OSError.errno`.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
         """
         with self.__send_lock.get(), self.__socket_lock.get():
             self.__last_ssl_eof_error = None
@@ -394,7 +394,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
             ConnectionError: connection unexpectedly closed during operation.
                              You should not attempt any further operation and close the client object.
             TimeoutError: the send operation does not end up after `timeout` seconds.
-            OSError: Unrelated OS error happen. You should check :attr:`OSError.errno`.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
             RuntimeError: :meth:`send_eof` has been called earlier.
         """
         with _lock_with_timeout(self.__send_lock.get(), timeout, error_message="send_packet() timed out") as timeout:
@@ -438,7 +438,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
 
         Raises:
             ClientClosedError: the client object is closed.
-            OSError: Unrelated OS error happen. You should check :attr:`OSError.errno`.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
             NotImplementedError: SSL/TLS API does not support sending EOF.
         """
         if self.__over_ssl:
@@ -471,7 +471,8 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
             ConnectionError: connection unexpectedly closed during operation.
                              You should not attempt any further operation and close the client object.
             TimeoutError: the receive operation does not end up after `timeout` seconds.
-            OSError: Unrelated OS error happen. You should check :attr:`OSError.errno`.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
+            StreamProtocolParseError: invalid data received.
 
         Returns:
             the received packet.
@@ -574,7 +575,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
 
         Raises:
             ClientClosedError: the client object is closed.
-            OSError: Unrelated OS error happen. You should check :attr:`OSError.errno`.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
 
         Returns:
             the client's local address.
@@ -587,7 +588,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
 
         Raises:
             ClientClosedError: the client object is closed.
-            OSError: Unrelated OS error happen. You should check :attr:`OSError.errno`.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
 
         Returns:
             the client's remote address.

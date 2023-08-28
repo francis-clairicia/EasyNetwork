@@ -82,6 +82,8 @@ class AbstractAsyncNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metacl
             In the case of a cancellation, this would leave the client in an inconsistent state.
 
             It is recommended to close the client in this case.
+
+        Can be safely called multiple times.
         """
         raise NotImplementedError
 
@@ -126,7 +128,7 @@ class AbstractAsyncNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metacl
 
         Raises:
             ClientClosedError: the client object is closed.
-            OSError: Unrelated OS error happen. You should check :attr:`OSError.errno`.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
 
         Returns:
             the client's local address.
@@ -142,7 +144,7 @@ class AbstractAsyncNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metacl
 
         Raises:
             ClientClosedError: the client object is closed.
-            OSError: Unrelated OS error happen. You should check :attr:`OSError.errno`.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
 
         Returns:
             the client's remote address.
@@ -165,7 +167,7 @@ class AbstractAsyncNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metacl
             ClientClosedError: the client object is closed.
             ConnectionError: connection unexpectedly closed during operation.
                              You should not attempt any further operation and close the client object.
-            OSError: Unrelated OS error happen. You should check :attr:`OSError.errno`.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
         """
         raise NotImplementedError
 
@@ -178,7 +180,8 @@ class AbstractAsyncNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metacl
             ClientClosedError: the client object is closed.
             ConnectionError: connection unexpectedly closed during operation.
                              You should not attempt any further operation and close the client object.
-            OSError: Unrelated OS error happen. You should check :attr:`OSError.errno`.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
+            BaseProtocolParseError: invalid data received.
 
         Returns:
             the received packet.

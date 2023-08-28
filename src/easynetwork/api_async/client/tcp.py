@@ -310,7 +310,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         Raises:
             ClientClosedError: the client object is closed.
             ConnectionError: could not connect to remote.
-            OSError: Unrelated OS error happen. You should check :attr:`OSError.errno`.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
         """
         if self.__socket is None:
             socket_connector = self.__socket_connector
@@ -402,7 +402,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
             ClientClosedError: the client object is closed.
             ConnectionError: connection unexpectedly closed during operation.
                              You should not attempt any further operation and close the client object.
-            OSError: Unrelated OS error happen. You should check :attr:`OSError.errno`.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
             RuntimeError: :meth:`send_eof` has been called earlier.
         """
         async with self.__send_lock:
@@ -421,7 +421,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
 
         Raises:
             ClientClosedError: the client object is closed.
-            OSError: Unrelated OS error happen. You should check :attr:`OSError.errno`.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
             NotImplementedError: SSL/TLS API does not support sending EOF.
         """
         try:
@@ -448,7 +448,8 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
             ClientClosedError: the client object is closed.
             ConnectionError: connection unexpectedly closed during operation.
                              You should not attempt any further operation and close the client object.
-            OSError: Unrelated OS error happen. You should check :attr:`OSError.errno`.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
+            StreamProtocolParseError: invalid data received.
 
         Returns:
             the received packet.
@@ -492,7 +493,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
 
         Raises:
             ClientClosedError: the client object is closed.
-            OSError: Unrelated OS error happen. You should check :attr:`OSError.errno`.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
 
         Returns:
             the client's local address.
@@ -509,7 +510,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
 
         Raises:
             ClientClosedError: the client object is closed.
-            OSError: Unrelated OS error happen. You should check :attr:`OSError.errno`.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
 
         Returns:
             the client's remote address.
