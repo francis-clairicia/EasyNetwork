@@ -12,9 +12,7 @@
 # limitations under the License.
 #
 #
-"""
-Asynchronous client/server module
-"""
+"""Asynchronous backend engine interfaces module"""
 
 from __future__ import annotations
 
@@ -45,7 +43,7 @@ from typing import TYPE_CHECKING, Any, Generic, NoReturn, ParamSpec, Protocol, S
 if TYPE_CHECKING:
     import concurrent.futures
     import socket as _socket
-    import ssl as _ssl
+    import ssl as _typing_ssl
     from types import TracebackType
 
     from ...tools.socket import ISocket
@@ -405,7 +403,7 @@ class AsyncBackend(metaclass=ABCMeta):
         self,
         host: str,
         port: int,
-        ssl_context: _ssl.SSLContext,
+        ssl_context: _typing_ssl.SSLContext,
         *,
         server_hostname: str | None,
         ssl_handshake_timeout: float,
@@ -422,7 +420,7 @@ class AsyncBackend(metaclass=ABCMeta):
     async def wrap_ssl_over_tcp_client_socket(
         self,
         socket: _socket.socket,
-        ssl_context: _ssl.SSLContext,
+        ssl_context: _typing_ssl.SSLContext,
         *,
         server_hostname: str,
         ssl_handshake_timeout: float,
@@ -446,7 +444,7 @@ class AsyncBackend(metaclass=ABCMeta):
         host: str | Sequence[str] | None,
         port: int,
         backlog: int,
-        ssl_context: _ssl.SSLContext,
+        ssl_context: _typing_ssl.SSLContext,
         *,
         ssl_handshake_timeout: float,
         ssl_shutdown_timeout: float,

@@ -12,9 +12,7 @@
 # limitations under the License.
 #
 #
-"""
-Asynchronous client/server module
-"""
+"""Asynchronous backend engine bindings with concurrent.futures module"""
 
 from __future__ import annotations
 

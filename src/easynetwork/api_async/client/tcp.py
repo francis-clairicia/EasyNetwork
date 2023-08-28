@@ -168,7 +168,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         Backend Parameters:
             backend: the backend to use. Automatically determined otherwise.
             backend_kwargs: Keyword arguments for backend instanciation.
-                            Ignored if `backend` is already an :class:`AsyncBackend` instance.
+                            Ignored if `backend` is already an :class:`.AsyncBackend` instance.
 
         See Also:
             :ref:`SSL/TLS security considerations <ssl-security>`

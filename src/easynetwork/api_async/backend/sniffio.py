@@ -12,9 +12,7 @@
 # limitations under the License.
 #
 #
-"""
-Asynchronous client/server module
-"""
+"""Helper module for sniffio integration"""
 
 from __future__ import annotations
 

@@ -116,7 +116,7 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         Backend Parameters:
             backend: the backend to use. Automatically determined otherwise.
             backend_kwargs: Keyword arguments for backend instanciation.
-                            Ignored if `backend` is already an :class:`AsyncBackend` instance.
+                            Ignored if `backend` is already an :class:`.AsyncBackend` instance.
         """
         super().__init__()
         backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
@@ -466,7 +466,7 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         Backend Parameters:
             backend: the backend to use. Automatically determined otherwise.
             backend_kwargs: Keyword arguments for backend instanciation.
-                            Ignored if `backend` is already an :class:`AsyncBackend` instance.
+                            Ignored if `backend` is already an :class:`.AsyncBackend` instance.
         """
         super().__init__()
 

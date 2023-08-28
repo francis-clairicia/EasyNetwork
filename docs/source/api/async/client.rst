@@ -1,6 +1,6 @@
-************************
-Asynchronous clients API
-************************
+***********
+Clients API
+***********
 
 .. automodule:: easynetwork.api_async.client
 

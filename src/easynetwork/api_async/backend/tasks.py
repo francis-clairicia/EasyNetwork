@@ -12,9 +12,7 @@
 # limitations under the License.
 #
 #
-"""
-Asynchronous client/server module
-"""
+"""Task utilities module"""
 
 from __future__ import annotations
 

@@ -33,6 +33,7 @@ extensions = [
     "sphinx_toolbox.more_autodoc.autonamedtuple",
     "sphinx_toolbox.more_autodoc.autoprotocol",
     "sphinx_toolbox.more_autodoc.typevars",
+    "sphinx_toolbox.more_autodoc.no_docstring",
 ]
 
 highlight_language = "python3"
@@ -54,6 +55,7 @@ autodoc_default_options = {
     "no-value": None,
     "show-inheritance": None,
 }
+autodoc_preserve_defaults = True
 autodoc_typehints = "description"
 autodoc_typehints_description_target = "documented_params"
 autodoc_type_aliases = {
