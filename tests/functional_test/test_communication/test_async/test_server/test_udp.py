@@ -8,7 +8,7 @@ import math
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from typing import Any
 
-from easynetwork.api_async.backend.abc import AbstractAsyncBackend
+from easynetwork.api_async.backend.abc import AsyncBackend
 from easynetwork.api_async.server.handler import AsyncDatagramClient, AsyncDatagramRequestHandler
 from easynetwork.api_async.server.udp import AsyncUDPNetworkServer
 from easynetwork.exceptions import BaseProtocolParseError, ClientClosedError, DatagramProtocolParseError, DeserializeError
@@ -30,11 +30,11 @@ class MyAsyncUDPRequestHandler(AsyncDatagramRequestHandler[str, str]):
     request_received: collections.defaultdict[tuple[Any, ...], list[str]]
     bad_request_received: collections.defaultdict[tuple[Any, ...], list[BaseProtocolParseError]]
     created_clients: set[AsyncDatagramClient[str]]
-    backend: AbstractAsyncBackend
+    backend: AsyncBackend
     service_actions_count: int
     crash_service_actions: bool = False
 
-    def set_async_backend(self, backend: AbstractAsyncBackend) -> None:
+    def set_async_backend(self, backend: AsyncBackend) -> None:
         self.backend = backend
 
     async def service_init(self) -> None:
@@ -299,7 +299,7 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
             case True:
                 pass
             case False:
-                from easynetwork.api_async.backend.abc import AbstractTaskGroup
+                from easynetwork.api_async.backend.abc import TaskGroup as AbstractTaskGroup
                 from easynetwork_asyncio.tasks import TaskGroup
 
                 monkeypatch.setattr(TaskGroup, "start_soon_with_context", AbstractTaskGroup.start_soon_with_context)

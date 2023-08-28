@@ -44,12 +44,7 @@ from ...tools._utils import (
 )
 from ...tools.constants import CLOSED_SOCKET_ERRNOS, MAX_STREAM_BUFSIZE, SSL_HANDSHAKE_TIMEOUT, SSL_SHUTDOWN_TIMEOUT
 from ...tools.socket import SocketAddress, SocketProxy, new_socket_address, set_tcp_keepalive, set_tcp_nodelay
-from ..backend.abc import (
-    AbstractAsyncBackend,
-    AbstractAsyncHalfCloseableStreamSocketAdapter,
-    AbstractAsyncStreamSocketAdapter,
-    ILock,
-)
+from ..backend.abc import AsyncBackend, AsyncHalfCloseableStreamSocketAdapter, AsyncStreamSocketAdapter, ILock
 from ..backend.factory import AsyncBackendFactory
 from ..backend.tasks import SingleTaskRunner
 from .abc import AbstractAsyncNetworkClient
@@ -100,7 +95,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         ssl_shutdown_timeout: float | None = ...,
         ssl_shared_lock: bool | None = ...,
         max_recv_size: int | None = ...,
-        backend: str | AbstractAsyncBackend | None = ...,
+        backend: str | AsyncBackend | None = ...,
         backend_kwargs: Mapping[str, Any] | None = ...,
     ) -> None:
         ...
@@ -118,7 +113,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         ssl_shutdown_timeout: float | None = ...,
         ssl_shared_lock: bool | None = ...,
         max_recv_size: int | None = ...,
-        backend: str | AbstractAsyncBackend | None = ...,
+        backend: str | AsyncBackend | None = ...,
         backend_kwargs: Mapping[str, Any] | None = ...,
     ) -> None:
         ...
@@ -135,7 +130,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         ssl_shutdown_timeout: float | None = None,
         ssl_shared_lock: bool | None = None,
         max_recv_size: int | None = None,
-        backend: str | AbstractAsyncBackend | None = None,
+        backend: str | AsyncBackend | None = None,
         backend_kwargs: Mapping[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
@@ -173,7 +168,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         Backend Parameters:
             backend: the backend to use. Automatically determined otherwise.
             backend_kwargs: Keyword arguments for backend instanciation.
-                            Ignored if `backend` is already an :class:`AbstractAsyncBackend` isntance.
+                            Ignored if `backend` is already an :class:`AsyncBackend` isntance.
 
         See Also:
             :ref:`SSL/TLS security considerations <ssl-security>`
@@ -191,8 +186,8 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         if not isinstance(max_recv_size, int) or max_recv_size <= 0:
             raise ValueError("'max_recv_size' must be a strictly positive integer")
 
-        self.__socket: AbstractAsyncStreamSocketAdapter | None = None
-        self.__backend: AbstractAsyncBackend = backend
+        self.__socket: AsyncStreamSocketAdapter | None = None
+        self.__backend: AsyncBackend = backend
         self.__info: _ClientInfo | None = None
 
         if ssl:
@@ -221,7 +216,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         def _value_or_default(value: float | None, default: float) -> float:
             return value if value is not None else default
 
-        self.__socket_connector: SingleTaskRunner[AbstractAsyncStreamSocketAdapter] | None = None
+        self.__socket_connector: SingleTaskRunner[AsyncStreamSocketAdapter] | None = None
         match __arg:
             case _socket.socket() as socket:
                 _check_socket_family(socket.family)
@@ -334,7 +329,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
                 set_tcp_keepalive(socket_proxy, True)
 
     @staticmethod
-    def __build_info_dict(socket: AbstractAsyncStreamSocketAdapter) -> _ClientInfo:
+    def __build_info_dict(socket: AsyncStreamSocketAdapter) -> _ClientInfo:
         socket_proxy = SocketProxy(socket.socket())
         local_address: SocketAddress = new_socket_address(socket.get_local_address(), socket_proxy.family)
         remote_address: SocketAddress = new_socket_address(socket.get_remote_address(), socket_proxy.family)
@@ -432,7 +427,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
             socket = await self.__ensure_connected(check_socket_is_closing=False)
         except ConnectionError:
             return
-        if not isinstance(socket, AbstractAsyncHalfCloseableStreamSocketAdapter):
+        if not isinstance(socket, AsyncHalfCloseableStreamSocketAdapter):
             raise NotImplementedError
 
         async with self.__send_lock:
@@ -522,12 +517,12 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
             raise _error_from_errno(_errno.ENOTSOCK)
         return self.__info["remote_address"]
 
-    def get_backend(self) -> AbstractAsyncBackend:
+    def get_backend(self) -> AsyncBackend:
         return self.__backend
 
     get_backend.__doc__ = AbstractAsyncNetworkClient.get_backend.__doc__
 
-    async def __ensure_connected(self, *, check_socket_is_closing: bool) -> AbstractAsyncStreamSocketAdapter:
+    async def __ensure_connected(self, *, check_socket_is_closing: bool) -> AsyncStreamSocketAdapter:
         await self.wait_connected()
         assert self.__socket is not None  # nosec assert_used
         socket = self.__socket

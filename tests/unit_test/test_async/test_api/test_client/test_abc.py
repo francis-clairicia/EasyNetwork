@@ -8,7 +8,7 @@ from easynetwork.tools.socket import SocketAddress
 import pytest
 
 if TYPE_CHECKING:
-    from easynetwork.api_async.backend.abc import AbstractAsyncBackend
+    from easynetwork.api_async.backend.abc import AsyncBackend
 
     from pytest_mock import MockerFixture
 
@@ -45,7 +45,7 @@ class MockAsyncClient(AbstractAsyncNetworkClient[Any, Any]):
     async def recv_packet(self) -> Any:
         return await self.mock_recv_packet()
 
-    def get_backend(self) -> AbstractAsyncBackend:
+    def get_backend(self) -> AsyncBackend:
         raise NotImplementedError
 
 

@@ -5,7 +5,7 @@ import concurrent.futures
 import time
 from collections.abc import AsyncIterator
 
-from easynetwork.api_async.backend.abc import AbstractAsyncBackend
+from easynetwork.api_async.backend.abc import AsyncBackend
 from easynetwork.api_async.backend.factory import AsyncBackendFactory
 from easynetwork.api_async.backend.futures import AsyncThreadPoolExecutor
 
@@ -17,7 +17,7 @@ import pytest_asyncio
 class TestAsyncThreadPoolExecutor:
     @pytest.fixture
     @staticmethod
-    def backend() -> AbstractAsyncBackend:
+    def backend() -> AsyncBackend:
         return AsyncBackendFactory.new("asyncio")
 
     @pytest.fixture
@@ -27,7 +27,7 @@ class TestAsyncThreadPoolExecutor:
 
     @pytest_asyncio.fixture
     @staticmethod
-    async def executor(backend: AbstractAsyncBackend, max_workers: int | None) -> AsyncIterator[AsyncThreadPoolExecutor]:
+    async def executor(backend: AsyncBackend, max_workers: int | None) -> AsyncIterator[AsyncThreadPoolExecutor]:
         async with AsyncThreadPoolExecutor(backend, max_workers=max_workers) as executor:
             yield executor
 

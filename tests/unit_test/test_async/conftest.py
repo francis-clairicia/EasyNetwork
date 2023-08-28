@@ -5,10 +5,10 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from easynetwork.api_async.backend.abc import (
-    AbstractAsyncBackend,
-    AbstractAsyncDatagramSocketAdapter,
-    AbstractAsyncHalfCloseableStreamSocketAdapter,
-    AbstractAsyncStreamSocketAdapter,
+    AsyncBackend,
+    AsyncDatagramSocketAdapter,
+    AsyncHalfCloseableStreamSocketAdapter,
+    AsyncStreamSocketAdapter,
 )
 
 import pytest
@@ -41,7 +41,7 @@ def mock_backend(fake_cancellation_cls: type[BaseException], mocker: MockerFixtu
 
     from .._utils import AsyncDummyLock
 
-    mock_backend = mocker.NonCallableMagicMock(spec=AbstractAsyncBackend)
+    mock_backend = mocker.NonCallableMagicMock(spec=AsyncBackend)
 
     mock_backend.get_cancelled_exc_class.return_value = fake_cancellation_cls
     mock_backend.spawn_task = lambda coro_func, *args, **kwargs: SystemTask(coro_func(*args, **kwargs))
@@ -61,9 +61,9 @@ def mock_stream_socket_adapter_factory(request: pytest.FixtureRequest, mocker: M
 
     def factory() -> MagicMock:
         if eof_support:
-            mock = mocker.NonCallableMagicMock(spec=AbstractAsyncHalfCloseableStreamSocketAdapter)
+            mock = mocker.NonCallableMagicMock(spec=AsyncHalfCloseableStreamSocketAdapter)
         else:
-            mock = mocker.NonCallableMagicMock(spec=AbstractAsyncStreamSocketAdapter)
+            mock = mocker.NonCallableMagicMock(spec=AsyncStreamSocketAdapter)
         mock.sendall_fromiter = mocker.MagicMock(side_effect=lambda iterable_of_data: mock.sendall(b"".join(iterable_of_data)))
         mock.is_closing.return_value = False
         return mock
@@ -79,7 +79,7 @@ def mock_stream_socket_adapter(mock_stream_socket_adapter_factory: Callable[[], 
 @pytest.fixture
 def mock_datagram_socket_adapter_factory(mocker: MockerFixture) -> Callable[[], MagicMock]:
     def factory() -> MagicMock:
-        mock = mocker.NonCallableMagicMock(spec=AbstractAsyncDatagramSocketAdapter)
+        mock = mocker.NonCallableMagicMock(spec=AsyncDatagramSocketAdapter)
         mock.is_closing.return_value = False
         return mock
 

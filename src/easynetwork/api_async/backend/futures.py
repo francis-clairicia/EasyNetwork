@@ -30,7 +30,7 @@ from .sniffio import current_async_library_cvar as _sniffio_current_async_librar
 if TYPE_CHECKING:
     from types import TracebackType
 
-    from .abc import AbstractAsyncBackend
+    from .abc import AsyncBackend
 
 _P = ParamSpec("_P")
 _T = TypeVar("_T")
@@ -39,8 +39,8 @@ _T = TypeVar("_T")
 class AsyncExecutor:
     __slots__ = ("__backend", "__executor", "__weakref__")
 
-    def __init__(self, backend: AbstractAsyncBackend, executor: concurrent.futures.Executor) -> None:
-        self.__backend: AbstractAsyncBackend = backend
+    def __init__(self, backend: AsyncBackend, executor: concurrent.futures.Executor) -> None:
+        self.__backend: AsyncBackend = backend
         self.__executor: concurrent.futures.Executor = executor
 
     async def __aenter__(self) -> Self:
@@ -71,13 +71,13 @@ class AsyncThreadPoolExecutor(AsyncExecutor):
     __slots__ = ()
 
     @overload
-    def __init__(self, backend: AbstractAsyncBackend) -> None:
+    def __init__(self, backend: AsyncBackend) -> None:
         ...
 
     @overload
     def __init__(
         self,
-        backend: AbstractAsyncBackend,
+        backend: AsyncBackend,
         *,
         max_workers: int | None = ...,
         thread_name_prefix: str = ...,
@@ -87,7 +87,7 @@ class AsyncThreadPoolExecutor(AsyncExecutor):
     ) -> None:
         ...
 
-    def __init__(self, backend: AbstractAsyncBackend, **kwargs: Any) -> None:
+    def __init__(self, backend: AsyncBackend, **kwargs: Any) -> None:
         super().__init__(backend, concurrent.futures.ThreadPoolExecutor(**kwargs))
 
     async def run(self, func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:

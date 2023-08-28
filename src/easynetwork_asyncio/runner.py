@@ -24,7 +24,7 @@ import contextlib
 from collections.abc import Callable, Coroutine
 from typing import Any, Self, TypeVar
 
-from easynetwork.api_async.backend.abc import AbstractRunner
+from easynetwork.api_async.backend.abc import Runner as AbstractRunner
 
 _T = TypeVar("_T")
 

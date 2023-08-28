@@ -25,7 +25,7 @@ import contextvars
 from collections.abc import Callable, Coroutine
 from typing import Any, ParamSpec, TypeVar, final
 
-from easynetwork.api_async.backend.abc import AbstractThreadsPortal
+from easynetwork.api_async.backend.abc import ThreadsPortal as AbstractThreadsPortal
 from easynetwork.api_async.backend.sniffio import current_async_library_cvar as _sniffio_current_async_library_cvar
 from easynetwork.tools._utils import transform_future_exception as _transform_future_exception
 

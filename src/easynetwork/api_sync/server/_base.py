@@ -24,14 +24,14 @@ import time
 from collections.abc import Callable, Coroutine, Iterator
 from typing import TYPE_CHECKING, Any, ParamSpec, Self, TypeVar, final
 
-from ...api_async.backend.abc import AbstractThreadsPortal
+from ...api_async.backend.abc import ThreadsPortal
 from ...api_async.server.abc import SupportsEventSet
 from ...exceptions import ServerAlreadyRunning, ServerClosedError
 from ...tools._lock import ForkSafeLock
 from .abc import AbstractStandaloneNetworkServer
 
 if TYPE_CHECKING:
-    from ...api_async.backend.abc import AbstractAsyncBackend, AbstractRunner
+    from ...api_async.backend.abc import AsyncBackend, Runner
     from ...api_async.server.abc import AbstractAsyncNetworkServer
 
 
@@ -55,7 +55,7 @@ class BaseStandaloneNetworkServerImpl(AbstractStandaloneNetworkServer):
         self.__threads_portal: _ServerThreadsPortal | None = None
         self.__is_shutdown = _threading.Event()
         self.__is_shutdown.set()
-        self.__runner: AbstractRunner | None = self.__server.get_backend().new_runner()
+        self.__runner: Runner | None = self.__server.get_backend().new_runner()
         self.__close_lock = ForkSafeLock()
         self.__bootstrap_lock = ForkSafeLock()
 
@@ -127,7 +127,7 @@ class BaseStandaloneNetworkServerImpl(AbstractStandaloneNetworkServer):
             self.__is_shutdown.clear()
             server_exit_stack.callback(self.__is_shutdown.set)
 
-            async def serve_forever(runner: AbstractRunner) -> None:
+            async def serve_forever(runner: Runner) -> None:
                 try:
                     self.__threads_portal = _ServerThreadsPortal(backend, runner)
                     server_exit_stack.callback(self.__threads_portal._wait_for_all_requests)
@@ -150,20 +150,20 @@ class BaseStandaloneNetworkServerImpl(AbstractStandaloneNetworkServer):
         return self.__server
 
     @property
-    def _portal(self) -> AbstractThreadsPortal | None:
+    def _portal(self) -> ThreadsPortal | None:
         with self.__bootstrap_lock.get():
             return self.__threads_portal
 
 
 @final
-class _ServerThreadsPortal(AbstractThreadsPortal):
+class _ServerThreadsPortal(ThreadsPortal):
     __slots__ = ("__backend", "__runner", "__portal", "__request_count", "__request_count_lock")
 
-    def __init__(self, backend: AbstractAsyncBackend, runner: AbstractRunner) -> None:
+    def __init__(self, backend: AsyncBackend, runner: Runner) -> None:
         super().__init__()
-        self.__backend: AbstractAsyncBackend = backend
-        self.__runner: AbstractRunner = runner
-        self.__portal: AbstractThreadsPortal = backend.create_threads_portal()
+        self.__backend: AsyncBackend = backend
+        self.__runner: Runner = runner
+        self.__portal: ThreadsPortal = backend.create_threads_portal()
         self.__request_count: int = 0
         self.__request_count_lock = ForkSafeLock()
 

@@ -11,7 +11,7 @@ from socket import IPPROTO_TCP, TCP_NODELAY
 from typing import Any
 from weakref import WeakValueDictionary
 
-from easynetwork.api_async.backend.abc import AbstractAsyncBackend
+from easynetwork.api_async.backend.abc import AsyncBackend
 from easynetwork.api_async.server.handler import AsyncStreamClient, AsyncStreamRequestHandler
 from easynetwork.api_async.server.tcp import AsyncTCPNetworkServer
 from easynetwork.exceptions import (
@@ -68,7 +68,7 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
     request_received: collections.defaultdict[tuple[Any, ...], list[str]]
     request_count: collections.Counter[tuple[Any, ...]]
     bad_request_received: collections.defaultdict[tuple[Any, ...], list[BaseProtocolParseError]]
-    backend: AbstractAsyncBackend
+    backend: AsyncBackend
     service_actions_count: int
     close_all_clients_on_service_actions: bool = False
     close_all_clients_on_connection: bool = False
@@ -76,7 +76,7 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
     crash_service_actions: bool = False
     stop_listening: Callable[[], None]
 
-    def set_async_backend(self, backend: AbstractAsyncBackend) -> None:
+    def set_async_backend(self, backend: AsyncBackend) -> None:
         self.backend = backend
 
     async def service_init(self) -> None:
@@ -167,7 +167,7 @@ class TimeoutRequestHandler(AsyncStreamRequestHandler[str, str]):
     request_timeout: float = 1.0
     timeout_on_second_yield: bool = False
 
-    def set_async_backend(self, backend: AbstractAsyncBackend) -> None:
+    def set_async_backend(self, backend: AsyncBackend) -> None:
         self.backend = backend
 
     async def on_connection(self, client: AsyncStreamClient[str]) -> None:
@@ -202,10 +202,10 @@ class CancellationRequestHandler(AsyncStreamRequestHandler[str, str]):
 
 
 class InitialHandshakeRequestHandler(AsyncStreamRequestHandler[str, str]):
-    backend: AbstractAsyncBackend
+    backend: AsyncBackend
     bypass_handshake: bool = False
 
-    def set_async_backend(self, backend: AbstractAsyncBackend) -> None:
+    def set_async_backend(self, backend: AsyncBackend) -> None:
         self.backend = backend
 
     async def on_connection(self, client: AsyncStreamClient[str]) -> AsyncGenerator[None, str]:

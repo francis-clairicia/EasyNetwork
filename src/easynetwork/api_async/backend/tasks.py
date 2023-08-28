@@ -24,7 +24,7 @@ from collections.abc import Callable, Coroutine
 from typing import TYPE_CHECKING, Any, Generic, ParamSpec, TypeVar
 
 if TYPE_CHECKING:
-    from .abc import AbstractAsyncBackend, AbstractSystemTask
+    from .abc import AsyncBackend, SystemTask
 
 
 _P = ParamSpec("_P")
@@ -41,7 +41,7 @@ class SingleTaskRunner(Generic[_T_co]):
 
     def __init__(
         self,
-        backend: AbstractAsyncBackend,
+        backend: AsyncBackend,
         coro_func: Callable[_P, Coroutine[Any, Any, _T_co]],
         /,
         *args: _P.args,
@@ -49,13 +49,13 @@ class SingleTaskRunner(Generic[_T_co]):
     ) -> None:
         super().__init__()
 
-        self.__backend: AbstractAsyncBackend = backend
+        self.__backend: AsyncBackend = backend
         self.__coro_func: tuple[Callable[..., Coroutine[Any, Any, _T_co]], tuple[Any, ...], dict[str, Any]] | None = (
             coro_func,
             args,
             kwargs,
         )
-        self.__task: AbstractSystemTask[_T_co] | None = None
+        self.__task: SystemTask[_T_co] | None = None
 
     def cancel(self) -> bool:
         self.__coro_func = None

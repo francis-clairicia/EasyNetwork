@@ -27,7 +27,12 @@ from collections.abc import Callable, Coroutine
 from typing import TYPE_CHECKING, Any, ParamSpec, Self, TypeVar, final
 from weakref import WeakKeyDictionary
 
-from easynetwork.api_async.backend.abc import AbstractSystemTask, AbstractTask, AbstractTaskGroup, AbstractTimeoutHandle
+from easynetwork.api_async.backend.abc import (
+    SystemTask as AbstractSystemTask,
+    Task as AbstractTask,
+    TaskGroup as AbstractTaskGroup,
+    TimeoutHandle as AbstractTimeoutHandle,
+)
 
 if TYPE_CHECKING:
     from types import TracebackType

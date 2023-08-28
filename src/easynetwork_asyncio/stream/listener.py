@@ -26,9 +26,9 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, final
 
 from easynetwork.api_async.backend.abc import (
-    AbstractAcceptedSocket,
-    AbstractAsyncListenerSocketAdapter,
-    AbstractAsyncStreamSocketAdapter,
+    AcceptedSocket as AbstractAcceptedSocket,
+    AsyncListenerSocketAdapter as AbstractAsyncListenerSocketAdapter,
+    AsyncStreamSocketAdapter as AbstractAsyncStreamSocketAdapter,
 )
 
 from ..socket import AsyncSocket

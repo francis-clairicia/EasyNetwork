@@ -19,27 +19,27 @@ Asynchronous client/server module
 from __future__ import annotations
 
 __all__ = [
-    "AbstractAcceptedSocket",
-    "AbstractAsyncBackend",
-    "AbstractAsyncBaseSocketAdapter",
-    "AbstractAsyncDatagramSocketAdapter",
-    "AbstractAsyncHalfCloseableStreamSocketAdapter",
-    "AbstractAsyncListenerSocketAdapter",
-    "AbstractAsyncStreamSocketAdapter",
-    "AbstractTask",
-    "AbstractTaskGroup",
-    "AbstractThreadsPortal",
-    "AbstractTimeoutHandle",
+    "AcceptedSocket",
+    "AsyncBackend",
+    "AsyncBaseSocketAdapter",
+    "AsyncDatagramSocketAdapter",
+    "AsyncHalfCloseableStreamSocketAdapter",
+    "AsyncListenerSocketAdapter",
+    "AsyncStreamSocketAdapter",
     "ICondition",
     "IEvent",
     "ILock",
+    "Task",
+    "TaskGroup",
+    "ThreadsPortal",
+    "TimeoutHandle",
 ]
 
 import contextvars
 import math
 from abc import ABCMeta, abstractmethod
 from collections.abc import Callable, Coroutine, Iterable, Sequence
-from contextlib import AbstractAsyncContextManager as AsyncContextManager
+from contextlib import AbstractAsyncContextManager
 from typing import TYPE_CHECKING, Any, Generic, NoReturn, ParamSpec, Protocol, Self, TypeVar
 
 if TYPE_CHECKING:
@@ -101,7 +101,7 @@ class ICondition(ILock, Protocol):
         ...
 
 
-class AbstractRunner(metaclass=ABCMeta):
+class Runner(metaclass=ABCMeta):
     __slots__ = ("__weakref__",)
 
     def __enter__(self) -> Self:
@@ -119,7 +119,7 @@ class AbstractRunner(metaclass=ABCMeta):
         raise NotImplementedError
 
 
-class AbstractTask(Generic[_T_co], metaclass=ABCMeta):
+class Task(Generic[_T_co], metaclass=ABCMeta):
     __slots__ = ("__weakref__",)
 
     @abstractmethod
@@ -143,7 +143,7 @@ class AbstractTask(Generic[_T_co], metaclass=ABCMeta):
         raise NotImplementedError
 
 
-class AbstractSystemTask(AbstractTask[_T_co]):
+class SystemTask(Task[_T_co]):
     __slots__ = ()
 
     @abstractmethod
@@ -151,7 +151,7 @@ class AbstractSystemTask(AbstractTask[_T_co]):
         raise NotImplementedError
 
 
-class AbstractTaskGroup(metaclass=ABCMeta):
+class TaskGroup(metaclass=ABCMeta):
     __slots__ = ("__weakref__",)
 
     @abstractmethod
@@ -174,7 +174,7 @@ class AbstractTaskGroup(metaclass=ABCMeta):
         /,
         *args: _P.args,
         **kwargs: _P.kwargs,
-    ) -> AbstractTask[_T]:
+    ) -> Task[_T]:
         raise NotImplementedError
 
     def start_soon_with_context(
@@ -184,11 +184,11 @@ class AbstractTaskGroup(metaclass=ABCMeta):
         /,
         *args: _P.args,
         **kwargs: _P.kwargs,
-    ) -> AbstractTask[_T]:
+    ) -> Task[_T]:
         raise NotImplementedError("contextvars.Context management not supported by this backend")
 
 
-class AbstractThreadsPortal(metaclass=ABCMeta):
+class ThreadsPortal(metaclass=ABCMeta):
     __slots__ = ("__weakref__",)
 
     @abstractmethod
@@ -200,7 +200,7 @@ class AbstractThreadsPortal(metaclass=ABCMeta):
         raise NotImplementedError
 
 
-class AbstractAsyncBaseSocketAdapter(metaclass=ABCMeta):
+class AsyncBaseSocketAdapter(metaclass=ABCMeta):
     __slots__ = ("__weakref__",)
 
     async def __aenter__(self) -> Self:
@@ -231,7 +231,7 @@ class AbstractAsyncBaseSocketAdapter(metaclass=ABCMeta):
         raise NotImplementedError
 
 
-class AbstractAsyncStreamSocketAdapter(AbstractAsyncBaseSocketAdapter):
+class AsyncStreamSocketAdapter(AsyncBaseSocketAdapter):
     __slots__ = ()
 
     @abstractmethod
@@ -250,7 +250,7 @@ class AbstractAsyncStreamSocketAdapter(AbstractAsyncBaseSocketAdapter):
         await self.sendall(b"".join(iterable_of_data))
 
 
-class AbstractAsyncHalfCloseableStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
+class AsyncHalfCloseableStreamSocketAdapter(AsyncStreamSocketAdapter):
     __slots__ = ()
 
     @abstractmethod
@@ -258,7 +258,7 @@ class AbstractAsyncHalfCloseableStreamSocketAdapter(AbstractAsyncStreamSocketAda
         raise NotImplementedError
 
 
-class AbstractAsyncDatagramSocketAdapter(AbstractAsyncBaseSocketAdapter):
+class AsyncDatagramSocketAdapter(AsyncBaseSocketAdapter):
     __slots__ = ()
 
     @abstractmethod
@@ -274,23 +274,23 @@ class AbstractAsyncDatagramSocketAdapter(AbstractAsyncBaseSocketAdapter):
         raise NotImplementedError
 
 
-class AbstractAsyncListenerSocketAdapter(AbstractAsyncBaseSocketAdapter):
+class AsyncListenerSocketAdapter(AsyncBaseSocketAdapter):
     __slots__ = ()
 
     @abstractmethod
-    async def accept(self) -> AbstractAcceptedSocket:
+    async def accept(self) -> AcceptedSocket:
         raise NotImplementedError
 
 
-class AbstractAcceptedSocket(metaclass=ABCMeta):
+class AcceptedSocket(metaclass=ABCMeta):
     __slots__ = ()
 
     @abstractmethod
-    async def connect(self) -> AbstractAsyncStreamSocketAdapter:
+    async def connect(self) -> AsyncStreamSocketAdapter:
         raise NotImplementedError
 
 
-class AbstractTimeoutHandle(metaclass=ABCMeta):
+class TimeoutHandle(metaclass=ABCMeta):
     __slots__ = ()
 
     @abstractmethod
@@ -318,11 +318,11 @@ class AbstractTimeoutHandle(metaclass=ABCMeta):
         self.reschedule(math.inf)
 
 
-class AbstractAsyncBackend(metaclass=ABCMeta):
+class AsyncBackend(metaclass=ABCMeta):
     __slots__ = ("__weakref__",)
 
     @abstractmethod
-    def new_runner(self) -> AbstractRunner:
+    def new_runner(self) -> Runner:
         raise NotImplementedError
 
     def bootstrap(self, coro_func: Callable[..., Coroutine[Any, Any, _T]], *args: Any) -> _T:
@@ -346,19 +346,19 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    def timeout(self, delay: float) -> AsyncContextManager[AbstractTimeoutHandle]:
+    def timeout(self, delay: float) -> AbstractAsyncContextManager[TimeoutHandle]:
         raise NotImplementedError
 
     @abstractmethod
-    def timeout_at(self, deadline: float) -> AsyncContextManager[AbstractTimeoutHandle]:
+    def timeout_at(self, deadline: float) -> AbstractAsyncContextManager[TimeoutHandle]:
         raise NotImplementedError
 
     @abstractmethod
-    def move_on_after(self, delay: float) -> AsyncContextManager[AbstractTimeoutHandle]:
+    def move_on_after(self, delay: float) -> AbstractAsyncContextManager[TimeoutHandle]:
         raise NotImplementedError
 
     @abstractmethod
-    def move_on_at(self, deadline: float) -> AsyncContextManager[AbstractTimeoutHandle]:
+    def move_on_at(self, deadline: float) -> AbstractAsyncContextManager[TimeoutHandle]:
         raise NotImplementedError
 
     @abstractmethod
@@ -383,11 +383,11 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         /,
         *args: _P.args,
         **kwargs: _P.kwargs,
-    ) -> AbstractSystemTask[_T]:
+    ) -> SystemTask[_T]:
         raise NotImplementedError
 
     @abstractmethod
-    def create_task_group(self) -> AbstractTaskGroup:
+    def create_task_group(self) -> TaskGroup:
         raise NotImplementedError
 
     @abstractmethod
@@ -398,7 +398,7 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         *,
         local_address: tuple[str, int] | None = ...,
         happy_eyeballs_delay: float | None = ...,
-    ) -> AbstractAsyncStreamSocketAdapter:
+    ) -> AsyncStreamSocketAdapter:
         raise NotImplementedError
 
     async def create_ssl_over_tcp_connection(
@@ -412,11 +412,11 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         ssl_shutdown_timeout: float,
         local_address: tuple[str, int] | None = ...,
         happy_eyeballs_delay: float | None = ...,
-    ) -> AbstractAsyncStreamSocketAdapter:
+    ) -> AsyncStreamSocketAdapter:
         raise NotImplementedError("SSL/TLS is not supported by this backend")
 
     @abstractmethod
-    async def wrap_tcp_client_socket(self, socket: _socket.socket) -> AbstractAsyncStreamSocketAdapter:
+    async def wrap_tcp_client_socket(self, socket: _socket.socket) -> AsyncStreamSocketAdapter:
         raise NotImplementedError
 
     async def wrap_ssl_over_tcp_client_socket(
@@ -427,7 +427,7 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         server_hostname: str,
         ssl_handshake_timeout: float,
         ssl_shutdown_timeout: float,
-    ) -> AbstractAsyncStreamSocketAdapter:
+    ) -> AsyncStreamSocketAdapter:
         raise NotImplementedError("SSL/TLS is not supported by this backend")
 
     @abstractmethod
@@ -438,7 +438,7 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         backlog: int,
         *,
         reuse_port: bool = ...,
-    ) -> Sequence[AbstractAsyncListenerSocketAdapter]:
+    ) -> Sequence[AsyncListenerSocketAdapter]:
         raise NotImplementedError
 
     async def create_ssl_over_tcp_listeners(
@@ -451,7 +451,7 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         ssl_handshake_timeout: float,
         ssl_shutdown_timeout: float,
         reuse_port: bool = ...,
-    ) -> Sequence[AbstractAsyncListenerSocketAdapter]:
+    ) -> Sequence[AsyncListenerSocketAdapter]:
         raise NotImplementedError("SSL/TLS is not supported by this backend")
 
     @abstractmethod
@@ -461,11 +461,11 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         local_address: tuple[str, int] | None = ...,
         remote_address: tuple[str, int] | None = ...,
         reuse_port: bool = ...,
-    ) -> AbstractAsyncDatagramSocketAdapter:
+    ) -> AsyncDatagramSocketAdapter:
         raise NotImplementedError
 
     @abstractmethod
-    async def wrap_udp_socket(self, socket: _socket.socket) -> AbstractAsyncDatagramSocketAdapter:
+    async def wrap_udp_socket(self, socket: _socket.socket) -> AsyncDatagramSocketAdapter:
         raise NotImplementedError
 
     @abstractmethod
@@ -485,7 +485,7 @@ class AbstractAsyncBackend(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    def create_threads_portal(self) -> AbstractThreadsPortal:
+    def create_threads_portal(self) -> ThreadsPortal:
         raise NotImplementedError
 
     @abstractmethod

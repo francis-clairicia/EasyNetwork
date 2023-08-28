@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Any, Protocol, Self
 if TYPE_CHECKING:
     from types import TracebackType
 
-    from ..backend.abc import AbstractAsyncBackend
+    from ..backend.abc import AsyncBackend
 
 
 class SupportsEventSet(Protocol):
@@ -69,5 +69,5 @@ class AbstractAsyncNetworkServer(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    def get_backend(self) -> AbstractAsyncBackend:
+    def get_backend(self) -> AsyncBackend:
         raise NotImplementedError

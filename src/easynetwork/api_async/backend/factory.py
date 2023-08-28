@@ -27,7 +27,7 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Final, final
 
-from .abc import AbstractAsyncBackend
+from .abc import AsyncBackend
 from .sniffio import current_async_library as _sniffio_current_async_library
 
 if TYPE_CHECKING:
@@ -37,12 +37,12 @@ if TYPE_CHECKING:
 @final
 class AsyncBackendFactory:
     GROUP_NAME: Final[str] = "easynetwork.async.backends"
-    __BACKEND: str | type[AbstractAsyncBackend] | None = None
-    __BACKEND_EXTENSIONS: Final[dict[str, type[AbstractAsyncBackend]]] = {}
+    __BACKEND: str | type[AsyncBackend] | None = None
+    __BACKEND_EXTENSIONS: Final[dict[str, type[AsyncBackend]]] = {}
 
     @staticmethod
-    def get_default_backend(guess_current_async_library: bool = True) -> type[AbstractAsyncBackend]:
-        backend: str | type[AbstractAsyncBackend] | None = AsyncBackendFactory.__BACKEND
+    def get_default_backend(guess_current_async_library: bool = True) -> type[AsyncBackend]:
+        backend: str | type[AsyncBackend] | None = AsyncBackendFactory.__BACKEND
         if isinstance(backend, type):
             return backend
         if backend is None:
@@ -57,9 +57,9 @@ class AsyncBackendFactory:
         )
 
     @staticmethod
-    def set_default_backend(backend: str | type[AbstractAsyncBackend] | None) -> None:
+    def set_default_backend(backend: str | type[AsyncBackend] | None) -> None:
         match backend:
-            case type() if not issubclass(backend, AbstractAsyncBackend) or inspect.isabstract(backend):
+            case type() if not issubclass(backend, AsyncBackend) or inspect.isabstract(backend):
                 raise TypeError(f"Invalid backend class: {backend!r}")
             case type() | None:
                 pass
@@ -71,7 +71,7 @@ class AsyncBackendFactory:
         AsyncBackendFactory.__BACKEND = backend
 
     @staticmethod
-    def extend(backend_name: str, backend_cls: type[AbstractAsyncBackend] | None) -> None:
+    def extend(backend_name: str, backend_cls: type[AsyncBackend] | None) -> None:
         default_backend_cls = AsyncBackendFactory.__get_backend_cls(backend_name, extended=False)
         if backend_cls is None or backend_cls is default_backend_cls:
             AsyncBackendFactory.__BACKEND_EXTENSIONS.pop(backend_name, None)
@@ -81,8 +81,8 @@ class AsyncBackendFactory:
         AsyncBackendFactory.__BACKEND_EXTENSIONS[backend_name] = backend_cls
 
     @staticmethod
-    def new(backend: str | None = None, /, **kwargs: Any) -> AbstractAsyncBackend:
-        backend_cls: type[AbstractAsyncBackend]
+    def new(backend: str | None = None, /, **kwargs: Any) -> AsyncBackend:
+        backend_cls: type[AsyncBackend]
         if backend is None:
             backend_cls = AsyncBackendFactory.get_default_backend(guess_current_async_library=True)
         else:
@@ -90,15 +90,15 @@ class AsyncBackendFactory:
         return backend_cls(**kwargs)
 
     @staticmethod
-    def ensure(backend: str | AbstractAsyncBackend | None, kwargs: Mapping[str, Any] | None = None) -> AbstractAsyncBackend:
-        if not isinstance(backend, AbstractAsyncBackend):
+    def ensure(backend: str | AsyncBackend | None, kwargs: Mapping[str, Any] | None = None) -> AsyncBackend:
+        if not isinstance(backend, AsyncBackend):
             if kwargs is None:
                 kwargs = {}
             backend = AsyncBackendFactory.new(backend, **kwargs)
         return backend
 
     @staticmethod
-    def get_all_backends(*, extended: bool = True) -> MappingProxyType[str, type[AbstractAsyncBackend]]:
+    def get_all_backends(*, extended: bool = True) -> MappingProxyType[str, type[AsyncBackend]]:
         backends = {
             name: AsyncBackendFactory.__get_backend_cls(name, extended=extended)
             for name in AsyncBackendFactory.__get_available_backends()
@@ -125,7 +125,7 @@ class AsyncBackendFactory:
         error_msg_format: str = "Unknown backend {name!r}",
         *,
         extended: bool,
-    ) -> type[AbstractAsyncBackend]:
+    ) -> type[AsyncBackend]:
         if extended:
             try:
                 return AsyncBackendFactory.__BACKEND_EXTENSIONS[name]
@@ -138,13 +138,13 @@ class AsyncBackendFactory:
 
     @staticmethod
     @functools.cache
-    def __load_backend_cls_from_entry_point(name: str) -> type[AbstractAsyncBackend]:
+    def __load_backend_cls_from_entry_point(name: str) -> type[AsyncBackend]:
         entry_point: EntryPoint = AsyncBackendFactory.__get_available_backends()[name]
 
         entry_point_cls: Any = entry_point.load()
         if (
             not isinstance(entry_point_cls, type)
-            or not issubclass(entry_point_cls, AbstractAsyncBackend)
+            or not issubclass(entry_point_cls, AsyncBackend)
             or inspect.isabstract(entry_point_cls)
         ):
             raise TypeError(f"Invalid backend entry point (name={name!r}): {entry_point_cls!r}")

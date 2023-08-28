@@ -25,7 +25,10 @@ import socket as _socket
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, Self, cast, final
 
-from easynetwork.api_async.backend.abc import AbstractAsyncHalfCloseableStreamSocketAdapter, AbstractAsyncStreamSocketAdapter
+from easynetwork.api_async.backend.abc import (
+    AsyncHalfCloseableStreamSocketAdapter as AbstractAsyncHalfCloseableStreamSocketAdapter,
+    AsyncStreamSocketAdapter as AbstractAsyncStreamSocketAdapter,
+)
 from easynetwork.tools._utils import error_from_errno as _error_from_errno
 
 from ..socket import AsyncSocket

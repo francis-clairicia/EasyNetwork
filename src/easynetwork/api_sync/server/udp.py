@@ -32,7 +32,7 @@ from . import _base
 if TYPE_CHECKING:
     import logging as _logging
 
-    from ...api_async.backend.abc import AbstractAsyncBackend
+    from ...api_async.backend.abc import AsyncBackend
     from ...api_async.server.handler import AsyncDatagramRequestHandler
     from ...protocol import DatagramProtocol
 
@@ -46,7 +46,7 @@ class StandaloneUDPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
         port: int,
         protocol: DatagramProtocol[_ResponseT, _RequestT],
         request_handler: AsyncDatagramRequestHandler[_RequestT, _ResponseT],
-        backend: str | AbstractAsyncBackend = "asyncio",
+        backend: str | AsyncBackend = "asyncio",
         *,
         reuse_port: bool = False,
         backend_kwargs: Mapping[str, Any] | None = None,

@@ -34,7 +34,7 @@ from ..._typevars import _RequestT, _ResponseT
 if TYPE_CHECKING:
     from ...exceptions import DatagramProtocolParseError, StreamProtocolParseError
     from ...tools.socket import SocketAddress, SocketProxy
-    from ..backend.abc import AbstractAsyncBackend
+    from ..backend.abc import AsyncBackend
 
 
 class AsyncBaseClientInterface(Generic[_ResponseT], metaclass=ABCMeta):
@@ -92,7 +92,7 @@ class AsyncDatagramClient(AsyncBaseClientInterface[_ResponseT]):
 class AsyncBaseRequestHandler(metaclass=ABCMeta):
     __slots__ = ("__weakref__",)
 
-    def set_async_backend(self, backend: AbstractAsyncBackend, /) -> None:
+    def set_async_backend(self, backend: AsyncBackend, /) -> None:
         pass
 
     async def service_init(self) -> None:

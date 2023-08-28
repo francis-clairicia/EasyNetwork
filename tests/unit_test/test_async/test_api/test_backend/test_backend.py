@@ -6,7 +6,7 @@ from socket import socket as Socket
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, assert_never, final
 
-from easynetwork.api_async.backend.abc import AbstractAsyncBackend
+from easynetwork.api_async.backend.abc import AsyncBackend
 from easynetwork.api_async.backend.factory import AsyncBackendFactory
 
 import pytest
@@ -48,7 +48,7 @@ class MockBackend(BaseFakeBackend):
 
 
 @pytest.mark.asyncio
-class TestAbstractAsyncBackend:
+class TestAsyncBackend:
     @pytest.fixture
     @staticmethod
     def backend(mocker: MockerFixture) -> MockBackend:
@@ -85,7 +85,7 @@ class TestAbstractAsyncBackend:
 
 
 class TestAsyncBackendFactory:
-    BACKENDS: MappingProxyType[str, type[AbstractAsyncBackend]] = MappingProxyType(
+    BACKENDS: MappingProxyType[str, type[AsyncBackend]] = MappingProxyType(
         {
             "asyncio": FakeAsyncioBackend,
             "trio": FakeTrioBackend,
@@ -93,7 +93,7 @@ class TestAsyncBackendFactory:
         }
     )
 
-    BACKEND_CLS_TO_NAME: MappingProxyType[type[AbstractAsyncBackend], str] = MappingProxyType({v: k for k, v in BACKENDS.items()})
+    BACKEND_CLS_TO_NAME: MappingProxyType[type[AsyncBackend], str] = MappingProxyType({v: k for k, v in BACKENDS.items()})
 
     @pytest.fixture(scope="class", autouse=True)
     @staticmethod
@@ -178,7 +178,7 @@ class TestAsyncBackendFactory:
     ) -> None:
         # Arrange
         mock_importlib_metadata_entry_points.return_value = [
-            self.build_entry_point("asyncio", "easynetwork.api_async.backend.abc:AbstractAsyncBackend"),
+            self.build_entry_point("asyncio", "easynetwork.api_async.backend.abc:AsyncBackend"),
         ]
 
         # Act & Assert
@@ -260,7 +260,7 @@ class TestAsyncBackendFactory:
 
     @pytest.mark.parametrize("backend_cls", [*BACKENDS.values(), MockBackend])
     @pytest.mark.parametrize("extended", [False, True], ids=lambda extended: f"extended=={extended}")
-    def test____set_default_backend____from_class(self, backend_cls: type[AbstractAsyncBackend], extended: bool) -> None:
+    def test____set_default_backend____from_class(self, backend_cls: type[AsyncBackend], extended: bool) -> None:
         # Arrange
         if extended:
             try:
@@ -279,8 +279,8 @@ class TestAsyncBackendFactory:
         # Assert
         assert AsyncBackendFactory.get_default_backend(guess_current_async_library=False) is backend_cls
 
-    @pytest.mark.parametrize("invalid_cls", [int, Socket, TestAbstractAsyncBackend])
-    def test____set_default_backend____from_class____error_do_not_derive_from_AbstractAsyncBackend(
+    @pytest.mark.parametrize("invalid_cls", [int, Socket, TestAsyncBackend])
+    def test____set_default_backend____from_class____error_do_not_derive_from_AsyncBackend(
         self,
         invalid_cls: type[Any],
     ) -> None:
@@ -294,8 +294,8 @@ class TestAsyncBackendFactory:
         # Arrange
 
         # Act & Assert
-        with pytest.raises(TypeError, match=rf"^Invalid backend class: {AbstractAsyncBackend!r}$"):
-            AsyncBackendFactory.set_default_backend(AbstractAsyncBackend)
+        with pytest.raises(TypeError, match=rf"^Invalid backend class: {AsyncBackend!r}$"):
+            AsyncBackendFactory.set_default_backend(AsyncBackend)
 
     @pytest.mark.parametrize("backend_name", list(BACKENDS))
     def test____extend____replace_by_a_subclass(self, backend_name: str) -> None:
