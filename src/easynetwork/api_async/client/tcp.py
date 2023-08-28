@@ -22,7 +22,7 @@ import contextlib as _contextlib
 import errno as _errno
 import socket as _socket
 from collections.abc import Callable, Iterator, Mapping
-from typing import TYPE_CHECKING, Any, NoReturn, TypedDict, cast, final, overload
+from typing import TYPE_CHECKING, Any, NoReturn, TypedDict, final, overload
 
 try:
     import ssl as _ssl
@@ -50,7 +50,7 @@ from ..backend.tasks import SingleTaskRunner
 from .abc import AbstractAsyncNetworkClient
 
 if TYPE_CHECKING:
-    from ssl import SSLContext as _SSLContext
+    import ssl as _typing_ssl
 
 
 class _ClientInfo(TypedDict):
@@ -89,7 +89,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         *,
         local_address: tuple[str, int] | None = ...,
         happy_eyeballs_delay: float | None = ...,
-        ssl: _SSLContext | bool | None = ...,
+        ssl: _typing_ssl.SSLContext | bool | None = ...,
         server_hostname: str | None = ...,
         ssl_handshake_timeout: float | None = ...,
         ssl_shutdown_timeout: float | None = ...,
@@ -107,7 +107,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         /,
         protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
         *,
-        ssl: _SSLContext | bool | None = ...,
+        ssl: _typing_ssl.SSLContext | bool | None = ...,
         server_hostname: str | None = ...,
         ssl_handshake_timeout: float | None = ...,
         ssl_shutdown_timeout: float | None = ...,
@@ -124,7 +124,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         /,
         protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
         *,
-        ssl: _SSLContext | bool | None = None,
+        ssl: _typing_ssl.SSLContext | bool | None = None,
         server_hostname: str | None = None,
         ssl_handshake_timeout: float | None = None,
         ssl_shutdown_timeout: float | None = None,
@@ -168,7 +168,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         Backend Parameters:
             backend: the backend to use. Automatically determined otherwise.
             backend_kwargs: Keyword arguments for backend instanciation.
-                            Ignored if `backend` is already an :class:`AsyncBackend` isntance.
+                            Ignored if `backend` is already an :class:`AsyncBackend` instance.
 
         See Also:
             :ref:`SSL/TLS security considerations <ssl-security>`
@@ -194,7 +194,8 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
             if _ssl_module is None:
                 raise RuntimeError("stdlib ssl module not available")
             if isinstance(ssl, bool):
-                ssl = cast("_SSLContext", _ssl_module.create_default_context())
+                ssl = _ssl_module.create_default_context()
+                assert isinstance(ssl, _ssl_module.SSLContext)  # nosec assert_used
                 if server_hostname is not None and not server_hostname:
                     ssl.check_hostname = False
         else:
