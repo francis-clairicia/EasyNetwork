@@ -69,6 +69,7 @@ autodoc_type_aliases = {
     "_typing_ssl.SSLContext": "ssl.SSLContext",
     "_socket._RetAddress": "typing.Any",
     "_socket.socket": "socket.socket",
+    "contextvars.Context": "contextvars.Context",
 }
 autodoc_inherit_docstrings = False
 

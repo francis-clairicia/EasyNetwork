@@ -72,7 +72,8 @@ class EncryptorSerializer(AutoSeparatedPacketSerializer[_SerializedPacketT_contr
 
         Keep this some place safe!
 
-        **Implementation details:** Delegates to :meth:`cryptography.fernet.Fernet.generate_key`.
+        Implementation details:
+            Delegates to :meth:`cryptography.fernet.Fernet.generate_key`.
         """
         try:
             import cryptography.fernet

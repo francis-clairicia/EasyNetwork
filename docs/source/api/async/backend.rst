@@ -48,6 +48,8 @@ Sleeping
 
 .. automethod:: AsyncBackend.sleep_until
 
+.. automethod:: AsyncBackend.current_time
+
 Task cancellation
 ^^^^^^^^^^^^^^^^^
 
@@ -82,8 +84,6 @@ Spawning system tasks
 
 Timeouts
 ^^^^^^^^
-
-.. automethod:: AsyncBackend.current_time
 
 .. automethod:: AsyncBackend.move_on_after
 

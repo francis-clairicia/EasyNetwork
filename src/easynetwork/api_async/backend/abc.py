@@ -149,38 +149,127 @@ class Runner(metaclass=ABCMeta):
 
 
 class Task(Generic[_T_co], metaclass=ABCMeta):
+    """
+    A :class:`Task` object represents a concurrent "thread" of execution.
+    """
+
     __slots__ = ("__weakref__",)
 
     @abstractmethod
     def done(self) -> bool:
+        """
+        Returns :data:`True` if the Task is done.
+
+        A Task is *done* when the wrapped coroutine either returned a value, raised an exception, or the Task was cancelled.
+
+        Returns:
+            The Task state.
+        """
         raise NotImplementedError
 
     @abstractmethod
     def cancel(self) -> bool:
+        """
+        Request the Task to be cancelled.
+
+        This arranges for a ``backend.get_cancelled_exc_class()`` exception to be thrown into the wrapped coroutine
+        on the next cycle of the event loop.
+
+        :meth:`Task.cancel` does not guarantee that the Task will be cancelled,
+        although suppressing cancellation completely is not common and is actively discouraged.
+
+        Returns:
+            :data:`True` if the cancellation request have been taken into account.
+            :data:`False` if the task is already *done*.
+        """
         raise NotImplementedError
 
     @abstractmethod
     def cancelled(self) -> bool:
+        """
+        Returns :data:`True` if the Task is *cancelled*.
+
+        The Task is *cancelled* when the cancellation was requested with :meth:`cancel` and the wrapped coroutine propagated
+        the ``backend.get_cancelled_exc_class()`` exception thrown into it.
+
+        Returns:
+            the cancellation state.
+        """
         raise NotImplementedError
 
     @abstractmethod
     async def wait(self) -> None:
+        """
+        Blocks until the task has been completed, but *does not* unwrap the result.
+
+        See the :meth:`join` method to get the actual task state.
+
+        Important:
+            Cancelling :meth:`Task.wait` *does not* cancel the task.
+        """
         raise NotImplementedError
 
     @abstractmethod
     async def join(self) -> _T_co:
+        """
+        Blocks until the task has been completed, and returns the result.
+
+        Important:
+            Cancelling :meth:`Task.join` *does not* cancel the task.
+
+        Raises:
+            backend.get_cancelled_exc_class(): The task was cancelled.
+            BaseException: Any exception raised by the task.
+
+        Returns:
+            the task result.
+        """
         raise NotImplementedError
 
 
 class SystemTask(Task[_T_co]):
+    """
+    A :class:`SystemTask` is a :class:`Task` that runs concurrently with the current root task.
+    """
+
     __slots__ = ()
 
     @abstractmethod
     async def join_or_cancel(self) -> _T_co:
+        """
+        Similar to :meth:`Task.join` except that if the coroutine is cancelled, the cancellation is propagated to this task.
+
+        Roughly equivalent to::
+
+            try:
+                await task.wait()
+            except backend.get_cancelled_exc_class():
+                task.cancel()
+                await backend.ignore_cancellation(task.wait())
+            assert task.done()
+            return await task.join()
+        """
         raise NotImplementedError
 
 
 class TaskGroup(metaclass=ABCMeta):
+    """
+    Groups several asynchronous tasks together.
+
+    Example::
+
+        async def main():
+            async with backend.create_task_group() as tg:
+                task1 = tg.start_soon(some_coro)
+                task2 = tg.start_soon(another_coro)
+            print("Both tasks have completed now.")
+
+    The :keyword:`async with` statement will wait for all tasks in the group to finish.
+    While waiting, new tasks may still be added to the group
+    (for example, by passing ``tg`` into one of the coroutines and calling ``tg.start_soon()`` in that coroutine).
+    Once the last task has finished and the :keyword:`async with` block is exited, no new tasks may be added to the group.
+    """
+
     __slots__ = ("__weakref__",)
 
     @abstractmethod
@@ -204,6 +293,19 @@ class TaskGroup(metaclass=ABCMeta):
         *args: Any,
         context: contextvars.Context | None = ...,
     ) -> Task[_T]:
+        """
+        Starts a new task in this task group.
+
+        Parameters:
+            coro_func: An async function.
+            args: Positional arguments to be passed to `coro_func`. If you need to pass keyword arguments,
+                  then use :func:`functools.partial`.
+            context: If given, it must be a :class:`contextvars.Context` instance in which the coroutine should be executed.
+                     If the framework does not support contexts (or does not use them), it must simply ignore this parameter.
+
+        Returns:
+            the created task.
+        """
         raise NotImplementedError
 
 
@@ -380,18 +482,57 @@ class AsyncBackend(metaclass=ABCMeta):
 
     @abstractmethod
     async def coro_yield(self) -> None:
+        """
+        Explicitly introduce a breakpoint to suspend a task.
+
+        This checks for cancellation and allows other tasks to be scheduled, without otherwise blocking.
+
+        Note:
+            The scheduler has the option of ignoring this and continuing to run the current task
+            if it decides this is appropriate (e.g. for increased efficiency).
+        """
         raise NotImplementedError
 
     @abstractmethod
     async def cancel_shielded_coro_yield(self) -> None:
+        """
+        Introduce a schedule point, but not a cancel point.
+
+        Equivalent to (but probably more efficient than)::
+
+            await backend.ignore_cancellation(backend.coro_yield())
+        """
         raise NotImplementedError
 
     @abstractmethod
     def get_cancelled_exc_class(self) -> type[BaseException]:
+        """
+        Returns the current async library's cancellation exception class.
+
+        Returns:
+            An exception class.
+        """
         raise NotImplementedError
 
     @abstractmethod
     async def ignore_cancellation(self, coroutine: Coroutine[Any, Any, _T_co]) -> _T_co:
+        """
+        Protect a :term:`coroutine` from being cancelled.
+
+        The statement::
+
+            res = await backend.ignore_cancellation(something())
+
+        is equivalent to::
+
+            res = await something()
+
+        `except` that if the coroutine containing it is cancelled, the Task running in ``something()`` is not cancelled.
+
+        Important:
+            Depending on the implementation, the coroutine may or may not be executed in the same :class:`contextvars.Context`.
+
+        """
         raise NotImplementedError
 
     @abstractmethod
@@ -412,31 +553,89 @@ class AsyncBackend(metaclass=ABCMeta):
 
     @abstractmethod
     def current_time(self) -> float:
+        """
+        Returns the current time according to the scheduler clock.
+
+        Returns:
+            The current time.
+        """
         raise NotImplementedError
 
     @abstractmethod
     async def sleep(self, delay: float) -> None:
+        """
+        Pause execution of the current task for the given number of seconds.
+
+        Parameters:
+            delay: The number of seconds to sleep. May be zero to insert a checkpoint without actually blocking.
+
+        Raises:
+            ValueError: if `delay` is negative or NaN.
+        """
         raise NotImplementedError
 
     @abstractmethod
     async def sleep_forever(self) -> NoReturn:
+        """
+        Pause execution of the current task forever (or until cancelled).
+
+        Equivalent to (but probably more efficient than)::
+
+            await backend.sleep(math.inf)
+        """
         raise NotImplementedError
 
     async def sleep_until(self, deadline: float) -> None:
+        """
+        Pause execution of the current task until the given time.
+
+        The difference between :meth:`sleep` and :meth:`sleep_until` is that the former takes a relative time and the latter
+        takes an absolute time (as returned by :meth:`current_time`).
+
+        Parameters:
+            deadline: The time at which we should wake up again. May be in the past, in which case this function
+                      executes a checkpoint but does not block.
+        """
         return await self.sleep(max(deadline - self.current_time(), 0))
 
     @abstractmethod
     def spawn_task(
         self,
-        coro_func: Callable[_P, Coroutine[Any, Any, _T]],
+        coro_func: Callable[..., Coroutine[Any, Any, _T]],
         /,
-        *args: _P.args,
-        **kwargs: _P.kwargs,
+        *args: Any,
+        context: contextvars.Context | None = ...,
     ) -> SystemTask[_T]:
+        """
+        Starts a new "system" task.
+
+        It is a background task that runs concurrently with the current root task.
+
+        Parameters:
+            coro_func: An async function.
+            args: Positional arguments to be passed to `coro_func`.  If you need to pass keyword arguments,
+                  then use :func:`functools.partial`.
+            context: If given, it must be a :class:`contextvars.Context` instance in which the coroutine should be executed.
+                     If the framework does not support contexts (or does not use them), it must simply ignore this parameter.
+
+        Returns:
+            the created task.
+        """
         raise NotImplementedError
 
     @abstractmethod
     def create_task_group(self) -> TaskGroup:
+        """
+        Creates a task group.
+
+        The most common use is as an :term:`asynchronous context manager`::
+
+            async with backend.create_task_group() as task_group:
+                ...
+
+        Returns:
+            A new task group.
+        """
         raise NotImplementedError
 
     @abstractmethod

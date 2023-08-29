@@ -176,12 +176,12 @@ class AsyncioBackend(AbstractAsyncBackend):
 
     def spawn_task(
         self,
-        coro_func: Callable[_P, Coroutine[Any, Any, _T]],
+        coro_func: Callable[..., Coroutine[Any, Any, _T]],
         /,
-        *args: _P.args,
-        **kwargs: _P.kwargs,
+        *args: Any,
+        context: contextvars.Context | None = None,
     ) -> SystemTask[_T]:
-        return SystemTask(coro_func(*args, **kwargs))
+        return SystemTask(coro_func(*args), context=context)
 
     def create_task_group(self) -> TaskGroup:
         return TaskGroup()

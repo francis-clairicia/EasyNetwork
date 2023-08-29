@@ -98,8 +98,13 @@ class Task(AbstractTask[_T_co]):
 class SystemTask(Task[_T_co], AbstractSystemTask[_T_co]):
     __slots__ = ()
 
-    def __init__(self, coroutine: Coroutine[Any, Any, _T_co]) -> None:
-        super().__init__(asyncio.create_task(coroutine))
+    def __init__(
+        self,
+        coroutine: Coroutine[Any, Any, _T_co],
+        *,
+        context: contextvars.Context | None = None,
+    ) -> None:
+        super().__init__(asyncio.create_task(coroutine, context=context))
 
     async def join_or_cancel(self) -> _T_co:
         task = self._asyncio_task

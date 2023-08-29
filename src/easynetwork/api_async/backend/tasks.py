@@ -18,6 +18,7 @@ from __future__ import annotations
 
 __all__ = ["SingleTaskRunner"]
 
+import functools
 from collections.abc import Callable, Coroutine
 from typing import TYPE_CHECKING, Any, Generic, ParamSpec, TypeVar
 
@@ -48,10 +49,10 @@ class SingleTaskRunner(Generic[_T_co]):
         super().__init__()
 
         self.__backend: AsyncBackend = backend
-        self.__coro_func: tuple[Callable[..., Coroutine[Any, Any, _T_co]], tuple[Any, ...], dict[str, Any]] | None = (
+        self.__coro_func: Callable[[], Coroutine[Any, Any, _T_co]] | None = functools.partial(
             coro_func,
-            args,
-            kwargs,
+            *args,
+            **kwargs,
         )
         self.__task: SystemTask[_T_co] | None = None
 
@@ -68,10 +69,10 @@ class SingleTaskRunner(Generic[_T_co]):
                 self.__task = self.__backend.spawn_task(self.__backend.sleep_forever)
                 self.__task.cancel()
             else:
-                coro_func, args, kwargs = self.__coro_func
+                coro_func = self.__coro_func
                 self.__coro_func = None
-                self.__task = self.__backend.spawn_task(coro_func, *args, **kwargs)
-                del coro_func, args, kwargs
+                self.__task = self.__backend.spawn_task(coro_func)
+                del coro_func
                 must_cancel_inner_task = True
 
         try:
