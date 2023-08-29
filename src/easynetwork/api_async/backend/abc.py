@@ -55,6 +55,31 @@ _T_co = TypeVar("_T_co", covariant=True)
 
 
 class ILock(Protocol):
+    """
+    A mutex lock for asynchronous tasks. Not thread-safe.
+
+    A lock can be used to guarantee exclusive access to a shared resource.
+
+    The preferred way to use a Lock is an :keyword:`async with` statement::
+
+        lock = backend.create_lock()
+
+        # ... later
+        async with lock:
+            # access shared state
+
+    which is equivalent to::
+
+        lock = backend.create_lock()
+
+        # ... later
+        await lock.acquire()
+        try:
+            # access shared state
+        finally:
+            lock.release()
+    """
+
     async def __aenter__(self) -> Any:  # pragma: no cover
         ...
 
@@ -68,34 +93,97 @@ class ILock(Protocol):
         ...
 
     async def acquire(self) -> Any:  # pragma: no cover
+        """
+        Acquires the lock.
+
+        This method waits until the lock is *unlocked*, sets it to *locked*.
+
+        When more than one coroutine is blocked in :meth:`acquire` waiting for the lock to be unlocked,
+        only one coroutine eventually proceeds.
+        """
         ...
 
     def release(self) -> None:  # pragma: no cover
+        """
+        Releases the lock.
+
+        When the lock is locked, reset it to unlocked and return.
+
+        Raises:
+            RuntimeError: the lock is *unlocked* or the task does not have the lock ownership.
+        """
         ...
 
     def locked(self) -> bool:  # pragma: no cover
+        """
+        Returns True if the lock is locked.
+
+        Returns:
+            the lock state.
+        """
         ...
 
 
 class IEvent(Protocol):
+    """
+    A waitable boolean value useful for inter-task synchronization. Not thread-safe.
+
+    An event object has an internal boolean flag, representing whether the event has happened yet.
+    The flag is initially :data:`False`, and the :meth:`wait` method waits until the flag is :data:`True`.
+    If the flag is already :data:`True`, then :meth:`wait` returns immediately. (If the event has already happened,
+    there's nothing to wait for.) The :meth:`set` method sets the flag to :data:`True`, and wakes up any waiters.
+
+    This behavior is useful because it helps avoid race conditions and lost wakeups: it doesn't matter whether :meth:`set`
+    gets called just before or after :meth:`wait`.
+    """
+
     async def wait(self) -> Any:  # pragma: no cover
+        """
+        Block until the internal flag value becomes :data:`True`.
+
+        If it is already :data:`True`, then this method returns immediately.
+        """
         ...
 
     def set(self) -> None:  # pragma: no cover
+        """
+        Set the internal flag value to :data:`True`, and wake any waiting tasks.
+        """
         ...
 
     def is_set(self) -> bool:  # pragma: no cover
+        """
+        Returns:
+            the current value of the internal flag.
+        """
         ...
 
 
 class ICondition(ILock, Protocol):
+    """
+    A classic condition variable, similar to :class:`threading.Condition`.
+
+    """
+
     def notify(self, n: int = ..., /) -> None:  # pragma: no cover
+        """
+        Wake one or more tasks that are blocked in :meth:`wait`.
+        """
         ...
 
     def notify_all(self) -> None:  # pragma: no cover
+        """
+        Wake all tasks that are blocked in :meth:`wait`.
+        """
         ...
 
     async def wait(self) -> Any:  # pragma: no cover
+        """
+        Wait until notified.
+
+        Raises:
+            RuntimeError: The underlying lock is not held by this task.
+        """
         ...
 
 
@@ -837,14 +925,35 @@ class AsyncBackend(metaclass=ABCMeta):
 
     @abstractmethod
     def create_lock(self) -> ILock:
+        """
+        Creates a Lock object for inter-task synchronization.
+
+        Returns:
+            A new Lock.
+        """
         raise NotImplementedError
 
     @abstractmethod
     def create_event(self) -> IEvent:
+        """
+        Creates an Event object for inter-task synchronization.
+
+        Returns:
+            A new Event.
+        """
         raise NotImplementedError
 
     @abstractmethod
     def create_condition_var(self, lock: ILock | None = ...) -> ICondition:
+        """
+        Creates a Condition variable object for inter-task synchronization.
+
+        Parameters:
+            lock: If given, it must be a lock created by :meth:`create_lock`. Otherwise a new Lock object is created automatically.
+
+        Returns:
+            A new Condition.
+        """
         raise NotImplementedError
 
     @abstractmethod
