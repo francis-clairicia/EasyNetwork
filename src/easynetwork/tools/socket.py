@@ -175,6 +175,9 @@ class SupportsSocketOptions(Protocol):
         ...
 
     def getsockopt(self, *args: Any) -> int | bytes:  # pragma: no cover
+        """
+        Similar to :meth:`socket.socket.getsockopt`.
+        """
         ...
 
     @overload
@@ -186,33 +189,57 @@ class SupportsSocketOptions(Protocol):
         ...
 
     def setsockopt(self, *args: Any) -> None:  # pragma: no cover
+        """
+        Similar to :meth:`socket.socket.setsockopt`.
+        """
         ...
 
 
 @runtime_checkable
 class ISocket(SupportsSocketOptions, Protocol):
     def fileno(self) -> int:  # pragma: no cover
+        """
+        Similar to :meth:`socket.socket.fileno`.
+        """
         ...
 
     def get_inheritable(self) -> bool:  # pragma: no cover
+        """
+        Similar to :meth:`socket.socket.get_inheritable`.
+        """
         ...
 
     def getpeername(self) -> _socket._RetAddress:  # pragma: no cover
+        """
+        Similar to :meth:`socket.socket.getpeername`.
+        """
         ...
 
     def getsockname(self) -> _socket._RetAddress:  # pragma: no cover
+        """
+        Similar to :meth:`socket.socket.getsockname`.
+        """
         ...
 
     @property  # pragma: no cover
     def family(self) -> int:
+        """
+        Similar to :attr:`socket.socket.family`.
+        """
         ...
 
     @property  # pragma: no cover
     def type(self) -> int:
+        """
+        Similar to :attr:`socket.socket.type`.
+        """
         ...
 
     @property  # pragma: no cover
     def proto(self) -> int:
+        """
+        Similar to :attr:`socket.socket.proto`.
+        """
         ...
 
 
