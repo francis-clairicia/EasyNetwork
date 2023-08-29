@@ -419,10 +419,12 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             yield
         finally:
             if datagram_queue:
-                try:
-                    task_group.start_soon_with_context(default_context, self.__datagram_received_coroutine, client, task_group)
-                except NotImplementedError:
-                    default_context.run(task_group.start_soon, self.__datagram_received_coroutine, client, task_group)  # type: ignore[arg-type]
+                task_group.start_soon(
+                    self.__datagram_received_coroutine,
+                    client,
+                    task_group,
+                    context=default_context,
+                )
 
     @_contextlib.contextmanager
     def __client_task_running_context(self, client: _ClientAPI[_ResponseT]) -> Iterator[None]:

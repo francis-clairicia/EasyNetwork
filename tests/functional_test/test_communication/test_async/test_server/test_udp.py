@@ -287,25 +287,6 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
 
             yield factory
 
-    @pytest.fixture(
-        params=[
-            pytest.param(True, id="TaskGroup.start_soon_with_context available"),
-            pytest.param(False, id="TaskGroup.start_soon_with_context unavailable"),
-        ]
-    )
-    @staticmethod
-    def start_task_with_context(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
-        match getattr(request, "param"):
-            case True:
-                pass
-            case False:
-                from easynetwork.api_async.backend.abc import TaskGroup as AbstractTaskGroup
-                from easynetwork_asyncio.tasks import TaskGroup
-
-                monkeypatch.setattr(TaskGroup, "start_soon_with_context", AbstractTaskGroup.start_soon_with_context)
-            case invalid_param:
-                pytest.fail(f"Invalid param: {invalid_param!r}")
-
     @pytest.mark.usefixtures("run_server_and_wait")
     async def test____serve_forever____backend_assignment(
         self,
@@ -622,7 +603,6 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         await endpoint.sendto(b"hello world", None)
         assert (await endpoint.recvfrom())[0] == b"hello world"
 
-    @pytest.mark.usefixtures("start_task_with_context")
     @pytest.mark.parametrize("request_handler", [ConcurrencyTestRequestHandler], indirect=True)
     async def test____serve_forever____datagram_while_request_handle_is_performed(
         self,
@@ -637,7 +617,6 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         async with asyncio.timeout(5):
             assert (await endpoint.recvfrom())[0] == b"After wait: hello, world."
 
-    @pytest.mark.usefixtures("start_task_with_context")
     @pytest.mark.parametrize("request_handler", [ConcurrencyTestRequestHandler], indirect=True)
     async def test____serve_forever____too_many_datagrams_while_request_handle_is_performed(
         self,

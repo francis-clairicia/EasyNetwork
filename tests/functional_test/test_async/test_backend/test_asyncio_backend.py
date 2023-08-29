@@ -399,7 +399,7 @@ class TestAsyncioBackend:
         async with backend.create_task_group() as task_group:
             cvar_for_test.set("something")
             ctx = contextvars.copy_context()
-            task = task_group.start_soon_with_context(ctx, coroutine, value="other")
+            task = task_group.start_soon(coroutine, "other", context=ctx)
             await task.wait()
             assert cvar_for_test.get() == "something"
             assert ctx.run(cvar_for_test.get) == "other"

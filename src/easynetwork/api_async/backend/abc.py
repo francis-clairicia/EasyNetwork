@@ -100,20 +100,51 @@ class ICondition(ILock, Protocol):
 
 
 class Runner(metaclass=ABCMeta):
+    """
+    A :term:`context manager` that simplifies `multiple` async function calls in the same context.
+
+    Sometimes several top-level async functions should be called in the same event loop and :class:`contextvars.Context`.
+    """
+
     __slots__ = ("__weakref__",)
 
     def __enter__(self) -> Self:
         return self
 
     def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None) -> None:
+        """Calls :meth:`close`."""
         self.close()
 
     @abstractmethod
     def close(self) -> None:
+        """
+        Closes the runner.
+        """
         raise NotImplementedError
 
     @abstractmethod
     def run(self, coro_func: Callable[..., Coroutine[Any, Any, _T]], *args: Any) -> _T:
+        """
+        Runs an async function, and returns the result.
+
+        Calling::
+
+            runner.run(coro_func, *args)
+
+        is equivalent to::
+
+            await coro_func(*args)
+
+        except that :meth:`run` can (and must) be called from a synchronous context.
+
+        Parameters:
+            coro_func: An async function.
+            args: Positional arguments to be passed to `coro_func`. If you need to pass keyword arguments,
+                  then use :func:`functools.partial`.
+
+        Returns:
+            Whatever `coro_func` returns.
+        """
         raise NotImplementedError
 
 
@@ -168,22 +199,12 @@ class TaskGroup(metaclass=ABCMeta):
     @abstractmethod
     def start_soon(
         self,
-        coro_func: Callable[_P, Coroutine[Any, Any, _T]],
+        coro_func: Callable[..., Coroutine[Any, Any, _T]],
         /,
-        *args: _P.args,
-        **kwargs: _P.kwargs,
+        *args: Any,
+        context: contextvars.Context | None = ...,
     ) -> Task[_T]:
         raise NotImplementedError
-
-    def start_soon_with_context(
-        self,
-        context: contextvars.Context,
-        coro_func: Callable[_P, Coroutine[Any, Any, _T]],
-        /,
-        *args: _P.args,
-        **kwargs: _P.kwargs,
-    ) -> Task[_T]:
-        raise NotImplementedError("contextvars.Context management not supported by this backend")
 
 
 class ThreadsPortal(metaclass=ABCMeta):
@@ -317,13 +338,43 @@ class TimeoutHandle(metaclass=ABCMeta):
 
 
 class AsyncBackend(metaclass=ABCMeta):
+    """
+    Asynchronous backend interface.
+
+    It bridges the gap between asynchronous frameworks  (``asyncio``, ``trio``, or whatever) and EasyNetwork.
+    """
+
     __slots__ = ("__weakref__",)
 
     @abstractmethod
     def new_runner(self) -> Runner:
+        """
+        Returns an asynchronous function runner.
+
+        Returns:
+            A :class:`Runner` context.
+        """
         raise NotImplementedError
 
     def bootstrap(self, coro_func: Callable[..., Coroutine[Any, Any, _T]], *args: Any) -> _T:
+        """
+        Runs an async function, and returns the result.
+
+        Equivalent to::
+
+            with backend.new_runner() as runner:
+                return runner.run(coro_func, *args)
+
+        See :meth:`Runner.run` documentation for details.
+
+        Parameters:
+            coro_func: An async function.
+            args: Positional arguments to be passed to `coro_func`. If you need to pass keyword arguments,
+                  then use :func:`functools.partial`.
+
+        Returns:
+            Whatever `coro_func` returns.
+        """
         with self.new_runner() as runner:
             return runner.run(coro_func, *args)
 
