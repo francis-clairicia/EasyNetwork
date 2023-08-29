@@ -139,7 +139,7 @@ class IEvent(Protocol):
 
     async def wait(self) -> Any:  # pragma: no cover
         """
-        Block until the internal flag value becomes :data:`True`.
+        Blocks until the internal flag value becomes :data:`True`.
 
         If it is already :data:`True`, then this method returns immediately.
         """
@@ -147,7 +147,7 @@ class IEvent(Protocol):
 
     def set(self) -> None:  # pragma: no cover
         """
-        Set the internal flag value to :data:`True`, and wake any waiting tasks.
+        Sets the internal flag value to :data:`True`, and wake any waiting tasks.
         """
         ...
 
@@ -334,6 +334,8 @@ class SystemTask(Task[_T_co]):
             except backend.get_cancelled_exc_class():
                 task.cancel()
                 await backend.ignore_cancellation(task.wait())
+                if task.cancelled():
+                    raise
             assert task.done()
             return await task.join()
         """
@@ -398,14 +400,52 @@ class TaskGroup(metaclass=ABCMeta):
 
 
 class ThreadsPortal(metaclass=ABCMeta):
+    """
+    An object that lets external threads run code in an asynchronous event loop.
+    """
+
     __slots__ = ("__weakref__",)
 
     @abstractmethod
     def run_coroutine(self, coro_func: Callable[_P, Coroutine[Any, Any, _T]], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+        """
+        Run the given async function in the bound event loop thread, blocking until it is complete. Thread-safe.
+
+        Parameters:
+            coro_func: An async function.
+            args: Positional arguments to be passed to `coro_func`.
+            kwargs: Keyword arguments to be passed to `coro_func`.
+
+        Raises:
+            backend.get_cancelled_exc_class(): The scheduler was shut down while ``coro_func()`` was running
+                                               and cancelled the task.
+            RuntimeError: if the scheduler is shut down.
+            RuntimeError: if you try calling this from inside the event loop thread, which would otherwise cause a deadlock.
+            Exception: Whatever raises ``coro_func(*args, **kwargs)``
+
+        Returns:
+            Whatever returns ``coro_func(*args, **kwargs)``
+        """
         raise NotImplementedError
 
     @abstractmethod
     def run_sync(self, func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+        """
+        Executes a function in the event loop thread from a worker thread. Thread-safe.
+
+        Parameters:
+            func: A synchronous function.
+            args: Positional arguments to be passed to `func`.
+            kwargs: Keyword arguments to be passed to `func`.
+
+        Raises:
+            RuntimeError: if the scheduler is shut down.
+            RuntimeError: if you try calling this from inside the event loop thread, which would otherwise cause a deadlock.
+            Exception: Whatever raises ``func(*args, **kwargs)``
+
+        Returns:
+            Whatever returns ``func(*args, **kwargs)``
+        """
         raise NotImplementedError
 
 
@@ -958,12 +998,74 @@ class AsyncBackend(metaclass=ABCMeta):
 
     @abstractmethod
     async def run_in_thread(self, func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+        """
+        Executes a synchronous function in a worker thread.
+
+        This is useful to perform a long-running (or temporarily blocking) function and let other tasks run.
+
+        From inside the worker thread, you can get back into the scheduler loop using a :class:`ThreadsPortal`.
+        See :meth:`create_threads_portal` for details.
+
+        Parameters:
+            func: A synchronous function.
+            args: Positional arguments to be passed to `func`.
+            kwargs: Keyword arguments to be passed to `func`.
+
+        Cancellation handling:
+            Because there is no way to "cancel" an arbitrary function call in an OS thread,
+            once the job is started, any cancellation requests will be discarded.
+
+        Raises:
+            Exception: Whatever ``func(*args, **kwargs)`` raises.
+
+        Returns:
+            Whatever ``func(*args, **kwargs)`` returns.
+        """
         raise NotImplementedError
 
     @abstractmethod
     def create_threads_portal(self) -> ThreadsPortal:
+        """
+        Creates a portal for running functions in the event loop thread from external threads.
+
+        Use this function in asynchronous code when you need to allow external threads access to the event loop
+        where your asynchronous code is currently running.
+
+        Raises:
+            RuntimeError: not called in the event loop thread.
+
+        Returns:
+            a new thread portal.
+        """
         raise NotImplementedError
 
     @abstractmethod
     async def wait_future(self, future: concurrent.futures.Future[_T_co]) -> _T_co:
+        """
+        Blocks until the future is done, and returns the result.
+
+        Cancellation handling:
+            In the case of cancellation, the rules follows what :class:`concurrent.futures.Future` defines:
+
+            * :meth:`wait_future` tries to cancel the given `future` (using :meth:`concurrent.futures.Future.cancel`)
+
+            * If the future has been effectively cancelled, the cancellation request is "accepted" and propagated.
+
+            * Otherwise, the cancellation request is "rejected" and discarded.
+              :meth:`wait_future` will block until `future` is done, and will ignore any further cancellation request.
+
+            * A coroutine awaiting a `future` in ``running`` state (:meth:`concurrent.futures.Future.running` returns :data:`True`)
+              cannot be cancelled.
+
+        Parameters:
+            future: The :class:`~concurrent.futures.Future` object to wait for.
+
+        Raises:
+            concurrent.futures.CancelledError: the future has been unexpectedly cancelled by an external code
+                                               (typically :meth:`concurrent.futures.Executor.shutdown`).
+            Exception: If ``future.exception()`` does not return :data:`None`, this exception is raised.
+
+        Returns:
+            Whatever returns ``future.result()``
+        """
         raise NotImplementedError
