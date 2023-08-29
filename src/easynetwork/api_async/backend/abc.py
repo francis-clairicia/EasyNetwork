@@ -412,22 +412,62 @@ class AcceptedSocket(metaclass=ABCMeta):
 
 
 class TimeoutHandle(metaclass=ABCMeta):
+    """
+    Interface to deal with an actual timeout scope.
+
+    See :meth:`AsyncBackend.move_on_after` for details.
+    """
+
     __slots__ = ()
 
     @abstractmethod
     def when(self) -> float:
+        """
+        Returns the current deadline.
+
+        Returns:
+            the absolute time in seconds. :data:`math.inf` if the current deadline is not set.
+            A negative value can be returned.
+        """
         raise NotImplementedError
 
     @abstractmethod
-    def reschedule(self, when: float) -> None:
+    def reschedule(self, when: float, /) -> None:
+        """
+        Reschedules the timeout.
+
+        Parameters:
+            when: The new deadline.
+        """
         raise NotImplementedError
 
     @abstractmethod
     def expired(self) -> bool:
+        """
+        Returns whether the context manager has exceeded its deadline (expired).
+
+        Returns:
+            the timeout state.
+        """
         raise NotImplementedError
 
     @property
     def deadline(self) -> float:
+        """
+        A read-write attribute to simplify the timeout management.
+
+        For example, this statement::
+
+            handle.deadline += 30
+
+        is equivalent to::
+
+            handle.reschedule(handle.when() + 30)
+
+        It is also possible to remove the timeout by deleting the attribute::
+
+            del handle.deadline
+        """
         return self.when()
 
     @deadline.setter
@@ -537,18 +577,97 @@ class AsyncBackend(metaclass=ABCMeta):
 
     @abstractmethod
     def timeout(self, delay: float) -> AbstractAsyncContextManager[TimeoutHandle]:
+        """
+        Returns an :term:`asynchronous context manager` that can be used to limit the amount of time spent waiting on something.
+
+        This function and :meth:`move_on_after` are similar in that both create a context manager with a given timeout,
+        and if the timeout expires then both will cause ``backend.get_cancelled_exc_class()`` to be raised within the scope.
+        The difference is that when the exception reaches :meth:`move_on_after`, it is caught and discarded. When it reaches
+        :meth:`timeout`, then it is caught and :exc:`TimeoutError` is raised in its place.
+
+        Parameters:
+            delay: number of seconds to wait.
+
+        Returns:
+            an :term:`asynchronous context manager`
+        """
         raise NotImplementedError
 
     @abstractmethod
     def timeout_at(self, deadline: float) -> AbstractAsyncContextManager[TimeoutHandle]:
+        """
+        Returns an :term:`asynchronous context manager` that can be used to limit the amount of time spent waiting on something.
+
+        This function and :meth:`move_on_at` are similar in that both create a context manager with a given timeout,
+        and if the timeout expires then both will cause ``backend.get_cancelled_exc_class()`` to be raised within the scope.
+        The difference is that when the exception reaches :meth:`move_on_at`, it is caught and discarded. When it reaches
+        :meth:`timeout_at`, then it is caught and :exc:`TimeoutError` is raised in its place.
+
+        Parameters:
+            deadline: absolute time to stop waiting.
+
+        Returns:
+            an :term:`asynchronous context manager`
+        """
         raise NotImplementedError
 
     @abstractmethod
     def move_on_after(self, delay: float) -> AbstractAsyncContextManager[TimeoutHandle]:
+        """
+        Returns an :term:`asynchronous context manager` that can be used to limit the amount of time spent waiting on something.
+        The deadline is set to now + `delay`.
+
+        Example::
+
+            async def long_running_operation(backend):
+                await backend.sleep(3600)  # 1 hour
+
+            async def main():
+                ...
+
+                async with backend.move_on_after(10):
+                    await long_running_operation(backend)
+
+                print("After at most 10 seconds.")
+
+        If ``long_running_operation`` takes more than 10 seconds to complete, the context manager will cancel the current task
+        and handle the resulting ``backend.get_cancelled_exc_class()`` exception internally.
+
+        Parameters:
+            delay: number of seconds to wait. If `delay` is :data:`math.inf`,
+                   no time limit will be applied; this can be useful if the delay is unknown when the context manager is created.
+                   In either case, the context manager can be rescheduled after creation using :meth:`TimeoutHandle.reschedule`.
+
+        Returns:
+            an :term:`asynchronous context manager`
+        """
         raise NotImplementedError
 
     @abstractmethod
     def move_on_at(self, deadline: float) -> AbstractAsyncContextManager[TimeoutHandle]:
+        """
+        Similar to :meth:`move_on_after`, except `deadline` is the absolute time to stop waiting, or :data:`math.inf`.
+
+        Example::
+
+            async def long_running_operation(backend):
+                await backend.sleep(3600)  # 1 hour
+
+            async def main():
+                ...
+
+                deadline = backend.current_time() + 10
+                async with backend.move_on_at(deadline):
+                    await long_running_operation(backend)
+
+                print("After at most 10 seconds.")
+
+        Parameters:
+            deadline: absolute time to stop waiting.
+
+        Returns:
+            an :term:`asynchronous context manager`
+        """
         raise NotImplementedError
 
     @abstractmethod
