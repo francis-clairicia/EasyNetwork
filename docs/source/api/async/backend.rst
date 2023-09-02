@@ -204,8 +204,13 @@ Backend factory
 .. automodule:: easynetwork.api_async.backend.factory
    :no-docstring:
 
+.. todo::
+
+   Document backend factory usage.
+
 .. autoclass:: AsyncBackendFactory
    :members:
+   :exclude-members: GROUP_NAME
 
 
 Tasks utilities

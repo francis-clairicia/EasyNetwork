@@ -78,9 +78,9 @@ autodoc_inherit_docstrings = False
 
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
-    "cbor2": ("https://cbor2.readthedocs.io/en/latest", None),
-    "cryptography": ("https://cryptography.io/en/latest", None),
-    "msgpack": ("https://msgpack-python.readthedocs.io/en/latest", None),
+    "cbor2": ("https://cbor2.readthedocs.io/en/stable", None),
+    "cryptography": ("https://cryptography.io/en/stable", None),
+    "msgpack": ("https://msgpack-python.readthedocs.io/en/stable", None),
 }
 
 
