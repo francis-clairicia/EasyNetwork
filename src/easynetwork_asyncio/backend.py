@@ -467,7 +467,7 @@ class AsyncioBackend(AbstractAsyncBackend):
             if future.cancelled():
                 # Task cancellation prevails over future cancellation
                 await asyncio.sleep(0)
-            return future.result()
+            return future.result(timeout=0)
         finally:
             del future
 

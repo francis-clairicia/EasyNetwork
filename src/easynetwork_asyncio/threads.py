@@ -45,12 +45,7 @@ class ThreadsPortal(AbstractThreadsPortal):
 
     def run_coroutine(self, coro_func: Callable[_P, Coroutine[Any, Any, _T]], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
         self.__check_running_loop()
-        future = self.__run_coroutine_soon(coro_func, *args, **kwargs)
-        del coro_func, args, kwargs
-        try:
-            return self.__get_result(future)
-        finally:
-            del future
+        return self.__get_result(self.__run_coroutine_soon(coro_func, *args, **kwargs))
 
     def __run_coroutine_soon(
         self,
@@ -69,12 +64,7 @@ class ThreadsPortal(AbstractThreadsPortal):
 
     def run_sync(self, func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
         self.__check_running_loop()
-        future = self.__run_sync_soon(func, *args, **kwargs)
-        del func, args, kwargs
-        try:
-            return self.__get_result(future)
-        finally:
-            del future
+        return self.__get_result(self.__run_sync_soon(func, *args, **kwargs))
 
     def __run_sync_soon(self, func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> concurrent.futures.Future[_T]:
         def callback(future: concurrent.futures.Future[_T]) -> None:
