@@ -1269,14 +1269,14 @@ class AsyncBackend(metaclass=ABCMeta):
         From inside the worker thread, you can get back into the scheduler loop using a :class:`ThreadsPortal`.
         See :meth:`create_threads_portal` for details.
 
+        Cancellation handling:
+            Because there is no way to "cancel" an arbitrary function call in an OS thread,
+            once the job is started, any cancellation requests will be discarded.
+
         Parameters:
             func: A synchronous function.
             args: Positional arguments to be passed to `func`.
             kwargs: Keyword arguments to be passed to `func`.
-
-        Cancellation handling:
-            Because there is no way to "cancel" an arbitrary function call in an OS thread,
-            once the job is started, any cancellation requests will be discarded.
 
         Raises:
             Exception: Whatever ``func(*args, **kwargs)`` raises.
