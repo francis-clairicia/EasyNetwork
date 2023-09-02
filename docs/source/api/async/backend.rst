@@ -4,6 +4,7 @@ Asynchronous backend engine API
 
 .. contents:: Table of Contents
    :local:
+   :depth: 1
 
 ------
 
@@ -22,6 +23,9 @@ Backend interface
    :no-docstring:
 
 .. autoclass:: AsyncBackend
+
+.. contents:: :class:`AsyncBackend`'s methods
+   :local:
 
 Runners
 -------
