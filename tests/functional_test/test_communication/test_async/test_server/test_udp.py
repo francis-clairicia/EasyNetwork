@@ -4,7 +4,6 @@ import asyncio
 import collections
 import contextlib
 import logging
-import math
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from typing import Any
 
@@ -31,24 +30,17 @@ class MyAsyncUDPRequestHandler(AsyncDatagramRequestHandler[str, str]):
     bad_request_received: collections.defaultdict[tuple[Any, ...], list[BaseProtocolParseError]]
     created_clients: set[AsyncDatagramClient[str]]
     backend: AsyncBackend
-    service_actions_count: int
-    crash_service_actions: bool = False
 
     def set_async_backend(self, backend: AsyncBackend) -> None:
         self.backend = backend
 
-    async def service_init(self) -> None:
-        await super().service_init()
-        self.service_actions_count = 0
+    async def service_init(self, exit_stack: contextlib.AsyncExitStack) -> None:
+        await super().service_init(exit_stack)
         self.request_received = collections.defaultdict(list)
         self.bad_request_received = collections.defaultdict(list)
         self.created_clients = set()
 
-    async def service_actions(self) -> None:
-        if self.crash_service_actions:
-            raise Exception("CRASH")
-        await super().service_actions()
-        self.service_actions_count += 1
+        exit_stack.push_async_callback(self.service_quit)
 
     async def service_quit(self) -> None:
         # At this point, ALL clients should be closed (since the UDP socket is closed)
@@ -58,12 +50,10 @@ class MyAsyncUDPRequestHandler(AsyncDatagramRequestHandler[str, str]):
                 await client.send_packet("something")
 
         del (
-            self.service_actions_count,
             self.request_received,
             self.bad_request_received,
             self.created_clients,
         )
-        await super().service_quit()
 
     async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[None, str]:
         self.created_clients.add(client)
@@ -142,7 +132,8 @@ class RequestRefusedHandler(AsyncDatagramRequestHandler[str, str]):
     refuse_after: int = 2**64
     bypass_refusal: bool = False
 
-    async def service_init(self) -> None:
+    async def service_init(self, exit_stack: contextlib.AsyncExitStack) -> None:
+        await super().service_init(exit_stack)
         self.request_count: collections.Counter[AsyncDatagramClient[str]] = collections.Counter()
 
     async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[None, str]:
@@ -224,18 +215,12 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         request_handler_cls: type[AsyncDatagramRequestHandler[str, str]] = getattr(request, "param", MyAsyncUDPRequestHandler)
         return request_handler_cls()
 
-    @pytest.fixture
-    @staticmethod
-    def service_actions_interval(request: Any) -> float | None:
-        return getattr(request, "param", None)
-
     @pytest_asyncio.fixture
     @staticmethod
     async def server(
         request_handler: AsyncDatagramRequestHandler[str, str],
         localhost_ip: str,
         datagram_protocol: DatagramProtocol[str, str],
-        service_actions_interval: float | None,
         backend_kwargs: dict[str, Any],
     ) -> AsyncIterator[MyAsyncUDPServer]:
         async with MyAsyncUDPServer(
@@ -243,7 +228,6 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
             0,
             datagram_protocol,
             request_handler,
-            service_actions_interval=service_actions_interval,
             backend_kwargs=backend_kwargs,
         ) as server:
             assert server.socket is None
@@ -294,32 +278,6 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         request_handler: MyAsyncUDPRequestHandler,
     ) -> None:
         assert request_handler.backend is server.get_backend()
-
-    @pytest.mark.usefixtures("run_server_and_wait")
-    @pytest.mark.parametrize("service_actions_interval", [0.1], indirect=True)
-    async def test____serve_forever____service_actions(self, request_handler: MyAsyncUDPRequestHandler) -> None:
-        await asyncio.sleep(0.2)
-        assert request_handler.service_actions_count >= 1
-
-    @pytest.mark.usefixtures("run_server_and_wait")
-    @pytest.mark.parametrize("service_actions_interval", [math.inf], indirect=True)
-    async def test____serve_forever____service_actions____disabled(self, request_handler: MyAsyncUDPRequestHandler) -> None:
-        await asyncio.sleep(1)
-        assert request_handler.service_actions_count == 0
-
-    @pytest.mark.usefixtures("run_server_and_wait")
-    @pytest.mark.parametrize("service_actions_interval", [0.1], indirect=True)
-    async def test____serve_forever____service_actions____crash(
-        self,
-        request_handler: MyAsyncUDPRequestHandler,
-        caplog: pytest.LogCaptureFixture,
-        server: MyAsyncUDPServer,
-    ) -> None:
-        caplog.set_level(logging.ERROR, server.logger.name)
-        request_handler.crash_service_actions = True
-        await asyncio.sleep(0.5)
-        assert request_handler.service_actions_count == 0
-        assert "Error occurred in request_handler.service_actions()" in [rec.message for rec in caplog.records]
 
     async def test____serve_forever____handle_request(
         self,

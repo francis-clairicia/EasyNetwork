@@ -13,7 +13,7 @@ from ftp_request import FTPRequest
 
 
 class FTPRequestHandler(AsyncStreamRequestHandler[FTPRequest, FTPReply]):
-    async def service_init(self) -> None:
+    async def service_init(self, exit_stack: contextlib.AsyncExitStack) -> None:
         self.logger = logging.getLogger(self.__class__.__name__)
 
     async def on_connection(self, client: AsyncStreamClient[FTPReply]) -> None:

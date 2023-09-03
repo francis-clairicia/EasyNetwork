@@ -25,6 +25,7 @@ __all__ = [
     "AsyncStreamRequestHandler",
 ]
 
+import contextlib
 from abc import ABCMeta, abstractmethod
 from collections.abc import AsyncGenerator, Callable, Coroutine
 from typing import TYPE_CHECKING, Any, Generic, final
@@ -95,13 +96,7 @@ class AsyncBaseRequestHandler(metaclass=ABCMeta):
     def set_async_backend(self, backend: AsyncBackend, /) -> None:
         pass
 
-    async def service_init(self) -> None:
-        pass
-
-    async def service_quit(self) -> None:
-        pass
-
-    async def service_actions(self) -> None:
+    async def service_init(self, exit_stack: contextlib.AsyncExitStack, /) -> None:
         pass
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import inspect
 from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Any
@@ -59,25 +60,7 @@ class BaseCommonTestsForRequestHandler:
         # Arrange
 
         # Act & Assert
-        assert (await request_handler.service_init()) is None
-
-    async def test____service_quit____return_None(
-        self,
-        request_handler: AsyncBaseRequestHandler,
-    ) -> None:
-        # Arrange
-
-        # Act & Assert
-        assert (await request_handler.service_quit()) is None
-
-    async def test____service_actions____return_None(
-        self,
-        request_handler: AsyncBaseRequestHandler,
-    ) -> None:
-        # Arrange
-
-        # Act & Assert
-        assert (await request_handler.service_actions()) is None
+        assert (await request_handler.service_init(contextlib.AsyncExitStack())) is None
 
 
 class TestAsyncDatagramRequestHandler(BaseCommonTestsForRequestHandler):

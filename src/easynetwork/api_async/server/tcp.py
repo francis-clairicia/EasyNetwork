@@ -21,8 +21,7 @@ __all__ = ["AsyncTCPNetworkServer"]
 import contextlib as _contextlib
 import errno as _errno
 import inspect
-import logging as _logging
-import math
+import logging
 import os
 import weakref
 from collections import deque
@@ -89,7 +88,6 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         "__max_recv_size",
         "__listener_tasks",
         "__mainloop_task",
-        "__service_actions_interval",
         "__client_connection_log_level",
         "__logger",
     )
@@ -107,11 +105,10 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         backlog: int | None = None,
         reuse_port: bool = False,
         max_recv_size: int | None = None,
-        service_actions_interval: float | None = None,
         backend: str | AsyncBackend | None = None,
         backend_kwargs: Mapping[str, Any] | None = None,
         log_client_connection: bool | None = None,
-        logger: _logging.Logger | None = None,
+        logger: logging.Logger | None = None,
     ) -> None:
         super().__init__()
 
@@ -164,10 +161,6 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             )
         self.__listeners_factory_runner: SingleTaskRunner[Sequence[AsyncListenerSocketAdapter]] | None = None
 
-        if service_actions_interval is None:
-            service_actions_interval = 1.0
-
-        self.__service_actions_interval: float = max(service_actions_interval, 0)
         self.__backend: AsyncBackend = backend
         self.__listeners: tuple[AsyncListenerSocketAdapter, ...] | None = None
         self.__protocol: StreamProtocol[_ResponseT, _RequestT] = protocol
@@ -178,12 +171,12 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         self.__max_recv_size: int = max_recv_size
         self.__listener_tasks: deque[Task[None]] = deque()
         self.__mainloop_task: Task[None] | None = None
-        self.__logger: _logging.Logger = logger or _logging.getLogger(__name__)
+        self.__logger: logging.Logger = logger or logging.getLogger(__name__)
         self.__client_connection_log_level: int
         if log_client_connection:
-            self.__client_connection_log_level = _logging.INFO
+            self.__client_connection_log_level = logging.INFO
         else:
-            self.__client_connection_log_level = _logging.DEBUG
+            self.__client_connection_log_level = logging.DEBUG
 
     def is_serving(self) -> bool:
         return self.__listeners is not None and all(not listener.is_closing() for listener in self.__listeners)
@@ -238,9 +231,10 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
     async def serve_forever(self, *, is_up_event: SupportsEventSet | None = None) -> None:
         async with _contextlib.AsyncExitStack() as server_exit_stack:
+            is_up_callback = server_exit_stack.enter_context(_contextlib.ExitStack())
             if is_up_event is not None:
                 # Force is_up_event to be set, in order not to stuck the waiting task
-                server_exit_stack.callback(is_up_event.set)
+                is_up_callback.callback(is_up_event.set)
 
             # Wake up server
             if not self.__is_shutdown.is_set():
@@ -271,8 +265,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
             # Initialize request handler
             self.__request_handler.set_async_backend(self.__backend)
-            await self.__request_handler.service_init()
-            server_exit_stack.push_async_callback(self.__request_handler.service_quit)
+            await self.__request_handler.service_init(await server_exit_stack.enter_async_context(_contextlib.AsyncExitStack()))
             self.__request_handler.set_stop_listening_callback(self.__make_stop_listening_callback())
             ############################
 
@@ -290,9 +283,8 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             #################
 
             # Server is up
-            if is_up_event is not None:
-                is_up_event.set()
-            task_group.start_soon(self.__service_actions_task)
+            is_up_callback.close()
+            del is_up_callback
             ##############
 
             # Main loop
@@ -312,19 +304,6 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             return self.stop_listening() if self is not None else None
 
         return stop_listening
-
-    async def __service_actions_task(self) -> None:
-        request_handler = self.__request_handler
-        backend = self.__backend
-        service_actions_interval = self.__service_actions_interval
-        if math.isinf(service_actions_interval):
-            return
-        while True:
-            await backend.sleep(service_actions_interval)
-            try:
-                await request_handler.service_actions()
-            except Exception:
-                self.__logger.exception("Error occurred in request_handler.service_actions()")
 
     async def __listener_accept(self, listener: AsyncListenerSocketAdapter, task_group: TaskGroup) -> None:
         backend = self.__backend
@@ -365,7 +344,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             # tell the OS to immediately abort the connection when calling socket.socket.close()
             client_exit_stack.callback(self.__set_socket_linger_if_not_closed, socket.socket())
 
-            logger: _logging.Logger = self.__logger
+            logger: logging.Logger = self.__logger
             backend = self.__backend
             producer = StreamDataProducer(self.__protocol)
             consumer = StreamDataConsumer(self.__protocol)
@@ -545,7 +524,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         return tuple(SocketProxy(listener.socket()) for listener in listeners)
 
     @property
-    def logger(self) -> _logging.Logger:
+    def logger(self) -> logging.Logger:
         return self.__logger
 
 
@@ -558,14 +537,14 @@ class _RequestReceiver(Generic[_RequestT]):
         socket: AsyncStreamSocketAdapter,
         max_recv_size: int,
         api: _ConnectedClientAPI[Any],
-        logger: _logging.Logger,
+        logger: logging.Logger,
     ) -> None:
         assert max_recv_size > 0, f"{max_recv_size=}"  # nosec assert_used
         self.__consumer: StreamDataConsumer[_RequestT] = consumer
         self.__socket: AsyncStreamSocketAdapter = socket
         self.__max_recv_size: int = max_recv_size
         self.__api: _ConnectedClientAPI[Any] = api
-        self.__logger: _logging.Logger = logger
+        self.__logger: logging.Logger = logger
 
     def __aiter__(self) -> AsyncIterator[_RequestAction[_RequestT] | _ErrorAction]:
         return self
@@ -574,7 +553,7 @@ class _RequestReceiver(Generic[_RequestT]):
         consumer: StreamDataConsumer[_RequestT] = self.__consumer
         socket: AsyncStreamSocketAdapter = self.__socket
         client: _ConnectedClientAPI[Any] = self.__api
-        logger: _logging.Logger = self.__logger
+        logger: logging.Logger = self.__logger
         bufsize: int = self.__max_recv_size
         try:
             while not socket.is_closing():
@@ -614,7 +593,7 @@ class _ConnectedClientAPI(AsyncStreamClient[_ResponseT]):
         backend: AsyncBackend,
         socket: AsyncStreamSocketAdapter,
         producer: StreamDataProducer[_ResponseT],
-        logger: _logging.Logger,
+        logger: logging.Logger,
     ) -> None:
         super().__init__(new_socket_address(socket.get_remote_address(), socket.socket().family))
 
@@ -623,7 +602,7 @@ class _ConnectedClientAPI(AsyncStreamClient[_ResponseT]):
         self.__producer: StreamDataProducer[_ResponseT] = producer
         self.__send_lock = backend.create_lock()
         self.__proxy: SocketProxy = SocketProxy(socket.socket())
-        self.__logger: _logging.Logger = logger
+        self.__logger: logging.Logger = logger
 
     def is_closing(self) -> bool:
         return self.__closed or self.__socket.is_closing()

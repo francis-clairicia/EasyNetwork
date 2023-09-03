@@ -50,7 +50,6 @@ class StandaloneUDPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
         *,
         reuse_port: bool = False,
         backend_kwargs: Mapping[str, Any] | None = None,
-        service_actions_interval: float | None = None,
         logger: _logging.Logger | None = None,
         **kwargs: Any,
     ) -> None:
@@ -65,7 +64,6 @@ class StandaloneUDPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
                 reuse_port=reuse_port,
                 backend=backend,
                 backend_kwargs=backend_kwargs,
-                service_actions_interval=service_actions_interval,
                 logger=logger,
                 **kwargs,
             )

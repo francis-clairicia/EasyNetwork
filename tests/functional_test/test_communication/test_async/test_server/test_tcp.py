@@ -4,7 +4,6 @@ import asyncio
 import collections
 import contextlib
 import logging
-import math
 import ssl
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Sequence
 from socket import IPPROTO_TCP, TCP_NODELAY
@@ -69,46 +68,32 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
     request_count: collections.Counter[tuple[Any, ...]]
     bad_request_received: collections.defaultdict[tuple[Any, ...], list[BaseProtocolParseError]]
     backend: AsyncBackend
-    service_actions_count: int
-    close_all_clients_on_service_actions: bool = False
     close_all_clients_on_connection: bool = False
     close_client_after_n_request: int = -1
-    crash_service_actions: bool = False
     stop_listening: Callable[[], None]
 
     def set_async_backend(self, backend: AsyncBackend) -> None:
         self.backend = backend
 
-    async def service_init(self) -> None:
-        await super().service_init()
+    async def service_init(self, exit_stack: contextlib.AsyncExitStack) -> None:
+        await super().service_init(exit_stack)
         assert hasattr(self, "backend")
         assert not hasattr(self, "stop_listening")
         self.connected_clients = WeakValueDictionary()
-        self.service_actions_count = 0
         self.request_received = collections.defaultdict(list)
         self.request_count = collections.Counter()
         self.bad_request_received = collections.defaultdict(list)
-
-    async def service_actions(self) -> None:
-        if self.crash_service_actions:
-            raise Exception("CRASH")
-        await super().service_actions()
-        self.service_actions_count += 1
-        if self.close_all_clients_on_service_actions:
-            for client in list(self.connected_clients.values()):
-                await client.aclose()
+        exit_stack.push_async_callback(self.service_quit)
 
     async def service_quit(self) -> None:
         del (
             self.backend,
             self.connected_clients,
-            self.service_actions_count,
             self.request_received,
             self.request_count,
             self.bad_request_received,
             self.stop_listening,
         )
-        await super().service_quit()
 
     async def on_connection(self, client: AsyncStreamClient[str]) -> None:
         assert client.address not in self.connected_clients
@@ -236,7 +221,7 @@ class InitialHandshakeRequestHandler(AsyncStreamRequestHandler[str, str]):
 class RequestRefusedHandler(AsyncStreamRequestHandler[str, str]):
     refuse_after: int = 2**64
 
-    async def service_init(self) -> None:
+    async def service_init(self, exit_stack: contextlib.AsyncExitStack) -> None:
         self.request_count: collections.Counter[AsyncStreamClient[str]] = collections.Counter()
 
     async def on_connection(self, client: AsyncStreamClient[str]) -> None:
@@ -342,11 +327,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
 
     @pytest.fixture
     @staticmethod
-    def service_actions_interval(request: Any) -> float | None:
-        return getattr(request, "param", None)
-
-    @pytest.fixture
-    @staticmethod
     def ssl_handshake_timeout(request: Any) -> float | None:
         return getattr(request, "param", None)
 
@@ -358,7 +338,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         stream_protocol: StreamProtocol[str, str],
         use_ssl: bool,
         server_ssl_context: ssl.SSLContext,
-        service_actions_interval: float | None,
         ssl_handshake_timeout: float | None,
         backend_kwargs: dict[str, Any],
     ) -> AsyncIterator[MyAsyncTCPServer]:
@@ -370,7 +349,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
             backlog=1,
             ssl=server_ssl_context if use_ssl else None,
             ssl_handshake_timeout=ssl_handshake_timeout,
-            service_actions_interval=service_actions_interval,
             backend_kwargs=backend_kwargs,
         ) as server:
             assert not server.sockets
@@ -572,32 +550,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         assert caplog.records[0].levelno == logging.WARNING
         assert caplog.records[0].message == "A client connection was interrupted just after listener.accept()"
 
-    @pytest.mark.usefixtures("run_server_and_wait")
-    @pytest.mark.parametrize("service_actions_interval", [0.1], indirect=True)
-    async def test____serve_forever____service_actions(self, request_handler: MyAsyncTCPRequestHandler) -> None:
-        await asyncio.sleep(0.2)
-        assert request_handler.service_actions_count >= 1
-
-    @pytest.mark.usefixtures("run_server_and_wait")
-    @pytest.mark.parametrize("service_actions_interval", [math.inf], indirect=True)
-    async def test____serve_forever____service_actions____disabled(self, request_handler: MyAsyncTCPRequestHandler) -> None:
-        await asyncio.sleep(1)
-        assert request_handler.service_actions_count == 0
-
-    @pytest.mark.usefixtures("run_server_and_wait")
-    @pytest.mark.parametrize("service_actions_interval", [0.1], indirect=True)
-    async def test____serve_forever____service_actions____crash(
-        self,
-        request_handler: MyAsyncTCPRequestHandler,
-        caplog: pytest.LogCaptureFixture,
-        server: MyAsyncTCPServer,
-    ) -> None:
-        caplog.set_level(logging.ERROR, server.logger.name)
-        request_handler.crash_service_actions = True
-        await asyncio.sleep(0.5)
-        assert request_handler.service_actions_count == 0
-        assert "Error occurred in request_handler.service_actions()" in [rec.message for rec in caplog.records]
-
     async def test____serve_forever____disable_nagle_algorithm(
         self,
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
@@ -776,6 +728,29 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         assert await reader.readline() == b"wrong encoding man.\n"
         assert "Recursion depth reached when clearing exception's traceback frames" in [rec.message for rec in caplog.records]
 
+    @pytest.mark.parametrize("socket_family", ["AF_INET"], indirect=True)
+    @pytest.mark.parametrize("use_ssl", ["NO_SSL"], indirect=True)
+    async def test____serve_forever____connection_reset_error(
+        self,
+        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        caplog: pytest.LogCaptureFixture,
+        server: MyAsyncTCPServer,
+        request_handler: MyAsyncTCPRequestHandler,
+    ) -> None:
+        caplog.set_level(logging.WARNING, server.logger.name)
+        _, writer = await client_factory()
+
+        enable_socket_linger(writer.get_extra_info("socket"), timeout=0)
+
+        writer.close()
+        await writer.wait_closed()
+        async with asyncio.timeout(1):
+            while request_handler.connected_clients:
+                await asyncio.sleep(0.1)
+
+        # ECONNRESET not logged
+        assert len(caplog.records) == 0
+
     @pytest.mark.parametrize("mute_thrown_exception", [False, True])
     @pytest.mark.parametrize("request_handler", [ErrorInRequestHandler], indirect=True)
     @pytest.mark.parametrize("serializer", [pytest.param("invalid", id="serializer_crash")], indirect=True)
@@ -878,18 +853,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
 
         writer.write(b"__close__\n")
         await asyncio.sleep(0.1)
-
-        assert await reader.read() == b""
-
-    async def test____serve_forever____explicitly_closed_by_service_actions(
-        self,
-        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
-        request_handler: MyAsyncTCPRequestHandler,
-    ) -> None:
-        reader, _ = await client_factory()
-
-        request_handler.close_all_clients_on_service_actions = True
-        await asyncio.sleep(0.2)
 
         assert await reader.read() == b""
 
