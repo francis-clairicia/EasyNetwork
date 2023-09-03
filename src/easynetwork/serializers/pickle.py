@@ -84,7 +84,7 @@ class PickleSerializer(AbstractPacketSerializer[_SerializedPacketT_contra, _Dese
         pickler_optimize: bool = False,
     ) -> None:
         """
-        Arguments:
+        Parameters:
             pickler_config: Parameter object to configure the :class:`~pickle.Pickler`.
             unpickler_config: Parameter object to configure the :class:`~pickle.Unpickler`.
             pickler_cls: The :class:`~pickle.Pickler` class to use (see :ref:`pickle-inst`).
@@ -128,7 +128,7 @@ class PickleSerializer(AbstractPacketSerializer[_SerializedPacketT_contra, _Dese
             def serialize(self, packet):
                 return pickle.dumps(packet)
 
-        Arguments:
+        Parameters:
             packet: The Python object to serialize.
 
         Returns:
@@ -151,7 +151,7 @@ class PickleSerializer(AbstractPacketSerializer[_SerializedPacketT_contra, _Dese
             def deserialize(self, data):
                 return pickle.loads(data)
 
-        Arguments:
+        Parameters:
             data: The byte sequence to deserialize.
 
         Raises:

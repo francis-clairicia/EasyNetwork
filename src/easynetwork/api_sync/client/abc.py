@@ -118,7 +118,7 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
             In the case of a timeout, it is impossible to know if all the packet data has been sent.
             This would leave the connection in an inconsistent state.
 
-        Arguments:
+        Parameters:
             packet: the Python object to send.
             timeout: the allowed time (in seconds) for blocking operations.
 
@@ -138,7 +138,7 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
 
         If `timeout` is not :data:`None`, the entire receive operation will take at most `timeout` seconds.
 
-        Arguments:
+        Parameters:
             timeout: the allowed time (in seconds) for blocking operations.
 
         Raises:
@@ -173,7 +173,7 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
 
             The time taken outside the iterator object is not decremented to the timeout parameter.
 
-        Arguments:
+        Parameters:
             timeout: the allowed time (in seconds) for all the receive operations.
 
         Yields:

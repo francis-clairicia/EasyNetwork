@@ -385,7 +385,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
 
             This means that you may get a :exc:`TimeoutError` because it took too long to get the lock.
 
-        Arguments:
+        Parameters:
             packet: the Python object to send.
             timeout: the allowed time (in seconds) for blocking operations.
 
@@ -463,7 +463,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
 
             This means that you may get a :exc:`TimeoutError` because it took too long to get the lock.
 
-        Arguments:
+        Parameters:
             timeout: the allowed time (in seconds) for blocking operations.
 
         Raises:

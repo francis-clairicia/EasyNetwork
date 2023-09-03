@@ -143,7 +143,7 @@ def new_socket_address(addr: tuple[Any, ...], family: int) -> SocketAddress:
         ...
         ValueError: <AddressFamily.AF_APPLETALK: 5> is not a valid AddressFamily
 
-    Arguments:
+    Parameters:
         addr: The address in the form ``(host, port)`` or ``(host, port, flow, scope_id)``.
         family: The socket family.
 
@@ -266,7 +266,7 @@ class SocketProxy:
         runner: Callable[[Callable[[], Any]], Any] | None = None,
     ) -> None:
         """
-        Arguments:
+        Parameters:
             socket: The socket-like object to wrap.
             lock: A callback function to use when a lock is required to gain access to the wrapped socket.
             runner: A callback function to use to execute the socket method.
@@ -418,7 +418,7 @@ def set_tcp_nodelay(sock: SupportsSocketOptions, state: bool) -> None:
 
     *except* that if :data:`socket.TCP_NODELAY` is not defined, it is silently ignored.
 
-    Arguments:
+    Parameters:
         sock: The socket.
         state: :data:`True` to disable, :data:`False` to enable.
 
@@ -440,7 +440,7 @@ def set_tcp_keepalive(sock: SupportsSocketOptions, state: bool) -> None:
 
     *except* that if :data:`socket.SO_KEEPALIVE` is not defined, it is silently ignored.
 
-    Arguments:
+    Parameters:
         sock: The socket.
         state: :data:`True` to enable, :data:`False` to disable.
 
@@ -483,7 +483,7 @@ def enable_socket_linger(sock: SupportsSocketOptions, timeout: int) -> None:
 
     See the Unix manual page :manpage:`socket(7)` for the meaning of the argument `timeout`.
 
-    Arguments:
+    Parameters:
         sock: The socket.
         timeout: The linger timeout.
 
@@ -506,7 +506,7 @@ def disable_socket_linger(sock: SupportsSocketOptions) -> None:
 
     ``linger_struct`` is determined by the operating system. See :func:`get_socket_linger_struct` for details.
 
-    Arguments:
+    Parameters:
         sock: The socket.
 
     Note:

@@ -54,7 +54,7 @@ class DeserializeError(Exception):
 
     def __init__(self, message: str, error_info: Any = None) -> None:
         """
-        Arguments:
+        Parameters:
             message: Error message.
             error_info: Additional error data.
         """
@@ -70,7 +70,7 @@ class IncrementalDeserializeError(DeserializeError):
 
     def __init__(self, message: str, remaining_data: bytes, error_info: Any = None) -> None:
         """
-        Arguments:
+        Parameters:
             message: Error message.
             remaining_data: Unused trailing data.
             error_info: Additional error data.
@@ -87,7 +87,7 @@ class PacketConversionError(Exception):
 
     def __init__(self, message: str, error_info: Any = None) -> None:
         """
-        Arguments:
+        Parameters:
             message: Error message.
             error_info: Additional error data.
         """
@@ -103,7 +103,7 @@ class BaseProtocolParseError(Exception):
 
     def __init__(self, error: DeserializeError | PacketConversionError) -> None:
         """
-        Arguments:
+        Parameters:
             error: Error instance.
         """
 
@@ -125,7 +125,7 @@ class StreamProtocolParseError(BaseProtocolParseError):
 
     def __init__(self, remaining_data: bytes, error: IncrementalDeserializeError | PacketConversionError) -> None:
         """
-        Arguments:
+        Parameters:
             remaining_data: Unused trailing data.
             error: Error instance.
         """

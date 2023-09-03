@@ -298,7 +298,7 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         Warning:
             In the case of a cancellation, it is impossible to know if all the packet data has been sent.
 
-        Arguments:
+        Parameters:
             packet: the Python object to send.
 
         Raises:
@@ -566,7 +566,7 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         Warning:
             In the case of a cancellation, it is impossible to know if all the packet data has been sent.
 
-        Arguments:
+        Parameters:
             packet: the Python object to send.
 
         Raises:

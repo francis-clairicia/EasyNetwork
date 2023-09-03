@@ -47,7 +47,7 @@ class AbstractPacketConverterComposite(
         """
         Constructs the business object from the :term:`DTO` `packet`.
 
-        Arguments:
+        Parameters:
             packet: The :term:`data transfer object`.
 
         Raises:
@@ -63,7 +63,7 @@ class AbstractPacketConverterComposite(
         """
         Creates the :term:`DTO` packet from the business object `obj`.
 
-        Arguments:
+        Parameters:
             obj: The business object.
 
         Returns:
@@ -88,7 +88,7 @@ class PacketConverterComposite(
         create_from_dto: Callable[[_ReceivedDTOPacketT], _ReceivedPacketT],
     ) -> None:
         """
-        Arguments:
+        Parameters:
             convert_to_dto: Function called by :meth:`convert_to_dto_packet`.
             create_from_dto: Function called by :meth:`create_from_dto_packet`.
         """
@@ -101,7 +101,7 @@ class PacketConverterComposite(
         """
         Calls `create_from_dto` with `packet`.
 
-        Arguments:
+        Parameters:
             packet: The :term:`data transfer object`.
 
         Raises:
@@ -118,7 +118,7 @@ class PacketConverterComposite(
         """
         Calls `convert_to_dto` with `obj`.
 
-        Arguments:
+        Parameters:
             obj: The business object.
 
         Returns:
@@ -220,7 +220,7 @@ class RequestResponseConverterBuilder:
 
         See :class:`RequestResponseConverterBuilder`'s docstring for examples.
 
-        Arguments:
+        Parameters:
             request_converter: The request :term:`converter`.
             response_converter: The response :term:`converter`.
 
@@ -242,7 +242,7 @@ class RequestResponseConverterBuilder:
 
         See :class:`RequestResponseConverterBuilder`'s docstring for examples.
 
-        Arguments:
+        Parameters:
             request_converter: The request :term:`converter`.
             response_converter: The response :term:`converter`.
 

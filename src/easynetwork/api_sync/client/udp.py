@@ -252,7 +252,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
 
             This means that you may get a :exc:`TimeoutError` because it took too long to get the lock.
 
-        Arguments:
+        Parameters:
             packet: the Python object to send.
             timeout: the allowed time (in seconds) for blocking operations.
 
@@ -299,7 +299,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
 
             This means that you may get a :exc:`TimeoutError` because it took too long to get the lock.
 
-        Arguments:
+        Parameters:
             timeout: the allowed time (in seconds) for blocking operations.
 
         Raises:
@@ -351,7 +351,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
 
             The time taken outside the iterator object is not decremented to the timeout parameter.
 
-        Arguments:
+        Parameters:
             timeout: the allowed time (in seconds) for all the receive operations.
 
         Yields:
@@ -583,7 +583,7 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
 
             This means that you may get a :exc:`TimeoutError` because it took too long to get the lock.
 
-        Arguments:
+        Parameters:
             packet: the Python object to send.
             timeout: the allowed time (in seconds) for blocking operations.
 
@@ -605,7 +605,7 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
 
             This means that you may get a :exc:`TimeoutError` because it took too long to get the lock.
 
-        Arguments:
+        Parameters:
             timeout: the allowed time (in seconds) for blocking operations.
 
         Raises:

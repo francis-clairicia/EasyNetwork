@@ -46,7 +46,7 @@ class Base64EncoderSerializer(AutoSeparatedPacketSerializer[_SerializedPacketT_c
         separator: bytes = b"\r\n",
     ) -> None:
         """
-        Arguments:
+        Parameters:
             serializer: The serializer to wrap.
             alphabet: The base64 alphabet to use. Possible values are:
 
@@ -117,7 +117,7 @@ class Base64EncoderSerializer(AutoSeparatedPacketSerializer[_SerializedPacketT_c
         """
         Serializes `packet` and encodes the result in base64.
 
-        Arguments:
+        Parameters:
             packet: The Python object to serialize.
 
         Returns:
@@ -133,7 +133,7 @@ class Base64EncoderSerializer(AutoSeparatedPacketSerializer[_SerializedPacketT_c
         """
         Decodes base64 token `data` and deserializes the result.
 
-        Arguments:
+        Parameters:
             data: The byte sequence to deserialize.
 
         Raises:

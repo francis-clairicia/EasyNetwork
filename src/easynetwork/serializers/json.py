@@ -168,7 +168,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_SerializedPacketT_cont
         unicode_errors: str = "strict",
     ) -> None:
         """
-        Arguments:
+        Parameters:
             encoder_config: Parameter object to configure the :class:`~json.JSONEncoder`.
             decoder_config: Parameter object to configure the :class:`~json.JSONDecoder`.
             encoding: String encoding.
@@ -217,7 +217,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_SerializedPacketT_cont
             >>> s.serialize({"key": [1, 2, 3], "data": None})
             b'{"key":[1,2,3],"data":null}'
 
-        Arguments:
+        Parameters:
             packet: The Python object to serialize.
 
         Returns:
@@ -236,7 +236,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_SerializedPacketT_cont
             >>> b"".join(s.incremental_serialize({"key": [1, 2, 3], "data": None}))
             b'{"key":[1,2,3],"data":null}\n'
 
-        Arguments:
+        Parameters:
             packet: The Python object to serialize.
 
         Yields:
@@ -261,7 +261,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_SerializedPacketT_cont
             >>> s.deserialize(b'{"key":[1,2,3],"data":null}')
             {'key': [1, 2, 3], 'data': None}
 
-        Arguments:
+        Parameters:
             data: The byte sequence to deserialize.
 
         Raises:

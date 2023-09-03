@@ -39,7 +39,7 @@ class StringLineSerializer(AutoSeparatedPacketSerializer[str, str]):
         unicode_errors: str = "strict",
     ) -> None:
         r"""
-        Arguments:
+        Parameters:
             newline: Magic string indicating the newline character sequence.
                      Possible values are:
 
@@ -84,7 +84,7 @@ class StringLineSerializer(AutoSeparatedPacketSerializer[str, str]):
             >>> s.serialize("character string")
             b'character string'
 
-        Arguments:
+        Parameters:
             packet: The string to encode.
 
         Raises:
@@ -121,7 +121,7 @@ class StringLineSerializer(AutoSeparatedPacketSerializer[str, str]):
             >>> s.deserialize(b"character string")
             'character string'
 
-        Arguments:
+        Parameters:
             packet: The data to decode.
 
         Raises:

@@ -46,7 +46,7 @@ class AbstractPacketSerializer(Generic[_SerializedPacketT_contra, _DeserializedP
         """
         Returns the byte representation of the Python object `packet`.
 
-        Arguments:
+        Parameters:
             packet: The Python object to serialize.
 
         Returns:
@@ -59,7 +59,7 @@ class AbstractPacketSerializer(Generic[_SerializedPacketT_contra, _DeserializedP
         """
         Creates a Python object representing the raw :term:`packet` from `data`.
 
-        Arguments:
+        Parameters:
             data: The byte sequence to deserialize.
 
         Raises:
@@ -88,7 +88,7 @@ class AbstractIncrementalPacketSerializer(AbstractPacketSerializer[_SerializedPa
         The main purpose of this method is to add metadata that could not be included in the output of :meth:`serialize`,
         such as headers, separators, and so on. It is used in the :meth:`incremental_deserialize` method.
 
-        Arguments:
+        Parameters:
             packet: The Python object to serialize.
 
         Yields:
@@ -118,7 +118,7 @@ class AbstractIncrementalPacketSerializer(AbstractPacketSerializer[_SerializedPa
 
         The default implementation concatenates and returns the parts sent by :meth:`incremental_serialize`.
 
-        Arguments:
+        Parameters:
             packet: The Python object to serialize.
 
         Returns:
@@ -132,7 +132,7 @@ class AbstractIncrementalPacketSerializer(AbstractPacketSerializer[_SerializedPa
 
         The default implementation uses :meth:`incremental_deserialize` and expects it to deserialize ``data`` at once.
 
-        Arguments:
+        Parameters:
             data: The byte sequence to deserialize.
 
         Raises:

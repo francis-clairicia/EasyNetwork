@@ -75,7 +75,7 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_Serializ
         expected_decompress_error: type[Exception] | tuple[type[Exception], ...],
     ) -> None:
         """
-        Arguments:
+        Parameters:
             serializer: The serializer to wrap.
             expected_decompress_error: Errors that can be raised by :meth:`DecompressorInterface.decompress` implementation,
                                        which must be considered as deserialization errors.
@@ -217,7 +217,7 @@ class BZ2CompressorSerializer(AbstractCompressorSerializer[_SerializedPacketT_co
         compress_level: int | None = None,
     ) -> None:
         """
-        Arguments:
+        Parameters:
             serializer: The serializer to wrap.
             compress_level: bzip2 compression level. Defaults to ``9``.
         """
@@ -257,7 +257,7 @@ class ZlibCompressorSerializer(AbstractCompressorSerializer[_SerializedPacketT_c
         compress_level: int | None = None,
     ) -> None:
         """
-        Arguments:
+        Parameters:
             serializer: The serializer to wrap.
             compress_level: bzip2 compression level. Defaults to :data:`zlib.Z_BEST_COMPRESSION`.
         """

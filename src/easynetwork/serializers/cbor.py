@@ -79,7 +79,7 @@ class CBORSerializer(FileBasedPacketSerializer[_SerializedPacketT_contra, _Deser
         decoder_config: CBORDecoderConfig | None = None,
     ) -> None:
         """
-        Arguments:
+        Parameters:
             encoder_config: Parameter object to configure the :class:`~cbor.encoder.CBOREncoder`.
             decoder_config: Parameter object to configure the :class:`~cbor.decoder.CBORDecoder`.
         """
@@ -115,7 +115,7 @@ class CBORSerializer(FileBasedPacketSerializer[_SerializedPacketT_contra, _Deser
             def dump_to_file(self, packet, file):
                 cbor2.dump(packet, file)
 
-        Arguments:
+        Parameters:
             packet: The Python object to serialize.
             file: The :std:term:`binary file` to write to.
         """
@@ -131,7 +131,7 @@ class CBORSerializer(FileBasedPacketSerializer[_SerializedPacketT_contra, _Deser
             def load_from_file(self, file):
                 return cbor2.load(file)
 
-        Arguments:
+        Parameters:
             file: The :std:term:`binary file` to read from.
 
         Returns:

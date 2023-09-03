@@ -41,13 +41,11 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_Seriali
 
     def __init__(self, separator: bytes, *, incremental_serialize_check_separator: bool = True, **kwargs: Any) -> None:
         """
-        Arguments:
+        Parameters:
             separator: Byte sequence that indicates the end of the token.
             incremental_serialize_check_separator: If `True` (the default), checks that the data returned by
                                                    :meth:`serialize` does not contain `separator`,
                                                    and removes superfluous `separator` added at the end.
-
-        Keyword Arguments:
             kwargs: Extra options given to ``super().__init__()``.
 
         Raises:
@@ -152,10 +150,8 @@ class FixedSizePacketSerializer(AbstractIncrementalPacketSerializer[_SerializedP
 
     def __init__(self, size: int, **kwargs: Any) -> None:
         """
-        Arguments:
+        Parameters:
             size: The expected data size.
-
-        Keyword Arguments:
             kwargs: Extra options given to ``super().__init__()``.
 
         Raises:
@@ -251,11 +247,9 @@ class FileBasedPacketSerializer(AbstractPacketSerializer[_SerializedPacketT_cont
 
     def __init__(self, expected_load_error: type[Exception] | tuple[type[Exception], ...], **kwargs: Any) -> None:
         """
-        Arguments:
+        Parameters:
             expected_load_error: Errors that can be raised by :meth:`load_from_file` implementation,
                                  which must be considered as deserialization errors.
-
-        Keyword Arguments:
             kwargs: Extra options given to ``super().__init__()``.
         """
         super().__init__(**kwargs)
@@ -269,7 +263,7 @@ class FileBasedPacketSerializer(AbstractPacketSerializer[_SerializedPacketT_cont
         """
         Write the serialized `packet` to `file`.
 
-        Arguments:
+        Parameters:
             packet: The Python object to serialize.
             file: The :std:term:`binary file` to write to.
         """
@@ -280,7 +274,7 @@ class FileBasedPacketSerializer(AbstractPacketSerializer[_SerializedPacketT_cont
         """
         Read from `file` to deserialize the raw :term:`packet`.
 
-        Arguments:
+        Parameters:
             file: The :std:term:`binary file` to read from.
 
         Raises:

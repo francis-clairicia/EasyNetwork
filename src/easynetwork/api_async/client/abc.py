@@ -164,7 +164,7 @@ class AbstractAsyncNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metacl
             In the case of a cancellation, it is impossible to know if all the packet data has been sent.
             This would leave the connection in an inconsistent state.
 
-        Arguments:
+        Parameters:
             packet: the Python object to send.
 
         Raises:

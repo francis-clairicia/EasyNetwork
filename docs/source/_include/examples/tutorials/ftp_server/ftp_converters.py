@@ -34,7 +34,7 @@ class FTPRequestConverter(AbstractPacketConverter[FTPRequest, str]):
         ...
         easynetwork.exceptions.PacketConversionError: Command unrecognized: 'INVALID'
 
-        Arguments:
+        Parameters:
             packet: The string representation of the request
 
         Returns:
@@ -61,7 +61,7 @@ class FTPReplyConverter(AbstractPacketConverter[FTPReply, str]):
         >>> c.convert_to_dto_packet(FTPReply(10, "Does not exist but why not."))
         '010 Does not exist but why not.'
 
-        Arguments:
+        Parameters:
             obj: The FTPReply object
 
         Returns:

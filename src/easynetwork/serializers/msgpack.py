@@ -89,7 +89,7 @@ class MessagePackSerializer(AbstractPacketSerializer[_SerializedPacketT_contra, 
         unpacker_config: MessageUnpackerConfig | None = None,
     ) -> None:
         """
-        Arguments:
+        Parameters:
             packer_config: Parameter object to configure the :class:`~msgpack.Packer`.
             unpacker_config: Parameter object to configure the :class:`~msgpack.Unpacker`.
         """
@@ -129,7 +129,7 @@ class MessagePackSerializer(AbstractPacketSerializer[_SerializedPacketT_contra, 
             def serialize(self, packet):
                 return msgpack.packb(packet)
 
-        Arguments:
+        Parameters:
             packet: The Python object to serialize.
 
         Returns:
@@ -147,7 +147,7 @@ class MessagePackSerializer(AbstractPacketSerializer[_SerializedPacketT_contra, 
             def deserialize(self, data):
                 return msgpack.unpackb(data)
 
-        Arguments:
+        Parameters:
             data: The byte sequence to deserialize.
 
         Raises:

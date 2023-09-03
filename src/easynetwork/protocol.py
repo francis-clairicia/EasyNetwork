@@ -63,7 +63,7 @@ class DatagramProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
         converter: AbstractPacketConverterComposite[_SentPacketT, Any, _ReceivedPacketT, Any] | None = None,
     ) -> None:
         """
-        Arguments:
+        Parameters:
             serializer: The :term:`serializer` to use.
             converter: The :term:`converter` to use.
         """
@@ -79,7 +79,7 @@ class DatagramProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
         """
         Serializes a Python object to a raw datagram :term:`packet`.
 
-        Arguments:
+        Parameters:
             packet: The :term:`packet` as a Python object to serialize.
 
         Returns:
@@ -94,7 +94,7 @@ class DatagramProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
         """
         Creates a Python object representing the raw datagram :term:`packet`.
 
-        Arguments:
+        Parameters:
             datagram: The datagram :term:`packet` to deserialize.
 
         Raises:
@@ -144,7 +144,7 @@ class StreamProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
         converter: AbstractPacketConverterComposite[_SentPacketT, Any, _ReceivedPacketT, Any] | None = None,
     ) -> None:
         """
-        Arguments:
+        Parameters:
             serializer: The :term:`incremental serializer` to use.
             converter: The :term:`converter` to use.
         """
@@ -160,7 +160,7 @@ class StreamProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
         """
         Serializes a Python object to a raw :term:`packet` part by part.
 
-        Arguments:
+        Parameters:
             packet: The :term:`packet` as a Python object to serialize.
 
         Yields:

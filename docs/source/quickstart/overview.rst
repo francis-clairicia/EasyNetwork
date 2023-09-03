@@ -9,8 +9,4 @@ The communication protocol can be whatever you want, be it JSON, pickle, ASCII, 
 or any other format not part of the standard library.
 You choose the data format, and the library takes care of the rest.
 
-Works with TCP and UDP, for Internet sockets (:data:`~socket.AF_INET` and :data:`~socket.AF_INET6` families).
-
-.. warning::
-
-   Unix sockets (:data:`~socket.AF_UNIX` family) are expressly *not* supported.
+Works with TCP and UDP.

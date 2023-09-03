@@ -46,7 +46,7 @@ class EncryptorSerializer(AutoSeparatedPacketSerializer[_SerializedPacketT_contr
         separator: bytes = b"\r\n",
     ) -> None:
         """
-        Arguments:
+        Parameters:
             serializer: The serializer to wrap.
             key: A URL-safe base64-encoded 32-byte key.
             token_ttl: Token time-to-live. See :meth:`cryptography.fernet.Fernet.decrypt` for details.
@@ -87,7 +87,7 @@ class EncryptorSerializer(AutoSeparatedPacketSerializer[_SerializedPacketT_contr
         """
         Serializes `packet` and encrypt the result.
 
-        Arguments:
+        Parameters:
             packet: The Python object to serialize.
 
         Returns:
@@ -101,7 +101,7 @@ class EncryptorSerializer(AutoSeparatedPacketSerializer[_SerializedPacketT_contr
         """
         Decrypts token `data` and deserializes the result.
 
-        Arguments:
+        Parameters:
             data: The byte sequence to deserialize.
 
         Raises:

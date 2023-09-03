@@ -68,7 +68,7 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_SerializedPacketT_cont
 
     def __init__(self, format: str) -> None:
         """
-        Arguments:
+        Parameters:
             format: The :class:`struct.Struct` format definition string.
 
         Note:
@@ -94,7 +94,7 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_SerializedPacketT_cont
 
         See :meth:`serialize` for details.
 
-        Arguments:
+        Parameters:
             packet: The Python object to serialize.
 
         Returns:
@@ -109,7 +109,7 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_SerializedPacketT_cont
 
         See :meth:`deserialize` for details.
 
-        Arguments:
+        Parameters:
             t: A tuple of each elements extracted from the structure.
 
         Returns:
@@ -128,7 +128,7 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_SerializedPacketT_cont
                 to_pack = self.iter_values(packet)
                 return self.struct.pack(*to_pack)
 
-        Arguments:
+        Parameters:
             packet: The Python object to serialize.
 
         Returns:
@@ -147,7 +147,7 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_SerializedPacketT_cont
                 unpacked_data = self.struct.unpack(data)
                 return self.from_tuple(unpacked_data)
 
-        Arguments:
+        Parameters:
             data: The byte sequence to deserialize.
 
         Raises:
@@ -220,7 +220,7 @@ class NamedTupleStructSerializer(AbstractStructSerializer[_NamedTupleVar, _Named
         strip_string_trailing_nul_bytes: bool = True,
     ) -> None:
         r"""
-        Arguments:
+        Parameters:
             namedtuple_cls: A :term:`named tuple` type.
             field_formats: A mapping of string format for the `namedtuple_cls` fields.
             format_endianness: The endianness character. Defaults to empty string.
@@ -278,7 +278,7 @@ class NamedTupleStructSerializer(AbstractStructSerializer[_NamedTupleVar, _Named
                 >>> s.iter_values(Person(name="John", age=20))
                 Person(name=b'John', age=20)
 
-        Arguments:
+        Parameters:
             packet: The `namedtuple_cls` instance.
 
         Returns:
@@ -320,7 +320,7 @@ class NamedTupleStructSerializer(AbstractStructSerializer[_NamedTupleVar, _Named
                 >>> s.from_tuple(t)
                 Person(name='John', age=20)
 
-        Arguments:
+        Parameters:
             t: A tuple of each elements extracted from the structure.
 
         Returns:
