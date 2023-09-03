@@ -20,9 +20,10 @@ __all__ = ["AsyncExecutor", "AsyncThreadPoolExecutor"]
 
 import concurrent.futures
 import contextvars
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any, ParamSpec, Self, TypeVar, overload
 
+from .factory import AsyncBackendFactory
 from .sniffio import current_async_library_cvar as _sniffio_current_async_library_cvar
 
 if TYPE_CHECKING:
@@ -56,7 +57,7 @@ class AsyncExecutor:
         async def main() -> None:
             ...
 
-            async with AsyncExecutor(backend, ProcessPoolExecutor()) as executor:
+            async with AsyncExecutor(ProcessPoolExecutor()) as executor:
                 async with backend.create_task_group() as task_group:
                     tasks = [task_group.start_soon(executor.run, pow, a, b) for a, b in [(3, 4), (12, 2), (6, 8)]]
                 results = [await t.join() for t in tasks]
@@ -64,13 +65,22 @@ class AsyncExecutor:
 
     __slots__ = ("__backend", "__executor", "__weakref__")
 
-    def __init__(self, backend: AsyncBackend, executor: concurrent.futures.Executor) -> None:
+    def __init__(
+        self,
+        executor: concurrent.futures.Executor,
+        backend: str | AsyncBackend | None = None,
+        backend_kwargs: Mapping[str, Any] | None = None,
+    ) -> None:
         """
         Parameters:
-            backend: The asynchronous backend interface.
             executor: The executor instance to wrap.
+
+        Backend Parameters:
+            backend: the backend to use. Automatically determined otherwise.
+            backend_kwargs: Keyword arguments for backend instanciation.
+                            Ignored if `backend` is already an :class:`.AsyncBackend` instance.
         """
-        self.__backend: AsyncBackend = backend
+        self.__backend: AsyncBackend = AsyncBackendFactory.ensure(backend, backend_kwargs)
         self.__executor: concurrent.futures.Executor = executor
 
     async def __aenter__(self) -> Self:
@@ -91,7 +101,7 @@ class AsyncExecutor:
 
         Example::
 
-            async with AsyncExecutor(backend, ThreadPoolExecutor(max_workers=1)) as executor:
+            async with AsyncExecutor(ThreadPoolExecutor(max_workers=1)) as executor:
                 result = await executor.run(pow, 323, 1235)
 
         Parameters:
@@ -151,13 +161,18 @@ class AsyncThreadPoolExecutor(AsyncExecutor):
     __slots__ = ()
 
     @overload
-    def __init__(self, backend: AsyncBackend) -> None:
+    def __init__(
+        self,
+        backend: str | AsyncBackend | None = ...,
+        backend_kwargs: Mapping[str, Any] | None = ...,
+    ) -> None:
         ...
 
     @overload
     def __init__(
         self,
-        backend: AsyncBackend,
+        backend: str | AsyncBackend | None = ...,
+        backend_kwargs: Mapping[str, Any] | None = ...,
         *,
         max_workers: int | None = ...,
         thread_name_prefix: str = ...,
@@ -167,13 +182,22 @@ class AsyncThreadPoolExecutor(AsyncExecutor):
     ) -> None:
         ...
 
-    def __init__(self, backend: AsyncBackend, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        backend: str | AsyncBackend | None = None,
+        backend_kwargs: Mapping[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> None:
         """
+        Backend Parameters:
+            backend: the backend to use. Automatically determined otherwise.
+            backend_kwargs: Keyword arguments for backend instanciation.
+                            Ignored if `backend` is already an :class:`.AsyncBackend` instance.
+
         Parameters:
-            backend: The asynchronous backend interface.
             kwargs: see :class:`concurrent.futures.ThreadPoolExecutor` documentation.
         """
-        super().__init__(backend, concurrent.futures.ThreadPoolExecutor(**kwargs))
+        super().__init__(concurrent.futures.ThreadPoolExecutor(**kwargs), backend=backend, backend_kwargs=backend_kwargs)
 
     async def run(self, func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
         """

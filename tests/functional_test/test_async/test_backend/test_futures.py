@@ -5,8 +5,6 @@ import concurrent.futures
 import time
 from collections.abc import AsyncIterator
 
-from easynetwork.api_async.backend.abc import AsyncBackend
-from easynetwork.api_async.backend.factory import AsyncBackendFactory
 from easynetwork.api_async.backend.futures import AsyncThreadPoolExecutor
 
 import pytest
@@ -17,18 +15,13 @@ import pytest_asyncio
 class TestAsyncThreadPoolExecutor:
     @pytest.fixture
     @staticmethod
-    def backend() -> AsyncBackend:
-        return AsyncBackendFactory.new("asyncio")
-
-    @pytest.fixture
-    @staticmethod
     def max_workers(request: pytest.FixtureRequest) -> int | None:
         return getattr(request, "param", None)
 
     @pytest_asyncio.fixture
     @staticmethod
-    async def executor(backend: AsyncBackend, max_workers: int | None) -> AsyncIterator[AsyncThreadPoolExecutor]:
-        async with AsyncThreadPoolExecutor(backend, max_workers=max_workers) as executor:
+    async def executor(max_workers: int | None) -> AsyncIterator[AsyncThreadPoolExecutor]:
+        async with AsyncThreadPoolExecutor(max_workers=max_workers) as executor:
             yield executor
 
     async def test____run____submit_and_wait(

@@ -27,7 +27,7 @@ class TestAsyncExecutor:
     @pytest.fixture
     @staticmethod
     def executor(mock_backend: MagicMock, mock_stdlib_executor: MagicMock) -> AsyncExecutor:
-        return AsyncExecutor(mock_backend, mock_stdlib_executor)
+        return AsyncExecutor(mock_stdlib_executor, mock_backend)
 
     async def test____run____submit_to_executor_and_wait(
         self,
