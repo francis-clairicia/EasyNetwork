@@ -17,26 +17,26 @@
 from __future__ import annotations
 
 __all__ = [
-    "StandaloneNetworkServerThread",
+    "NetworkServerThread",
 ]
 
 import threading as _threading
 import time
 
-from .abc import AbstractStandaloneNetworkServer
+from .abc import AbstractNetworkServer
 
 
-class StandaloneNetworkServerThread(_threading.Thread):
+class NetworkServerThread(_threading.Thread):
     def __init__(
         self,
-        server: AbstractStandaloneNetworkServer,
+        server: AbstractNetworkServer,
         group: None = None,
         name: str | None = None,
         *,
         daemon: bool | None = None,
     ) -> None:
         super().__init__(group=group, target=None, name=name, daemon=daemon)
-        self.__server: AbstractStandaloneNetworkServer | None = server
+        self.__server: AbstractNetworkServer | None = server
         self.__is_up_event: _threading.Event = _threading.Event()
 
     def start(self) -> None:

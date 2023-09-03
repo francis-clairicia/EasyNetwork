@@ -76,6 +76,10 @@ if TYPE_CHECKING:
 
 
 class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _ResponseT]):
+    """
+    An asynchronous network server for TCP connections.
+    """
+
     __slots__ = (
         "__backend",
         "__listeners",
@@ -105,11 +109,50 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         backlog: int | None = None,
         reuse_port: bool = False,
         max_recv_size: int | None = None,
-        backend: str | AsyncBackend | None = None,
-        backend_kwargs: Mapping[str, Any] | None = None,
         log_client_connection: bool | None = None,
         logger: logging.Logger | None = None,
+        backend: str | AsyncBackend | None = None,
+        backend_kwargs: Mapping[str, Any] | None = None,
     ) -> None:
+        """
+        Parameters:
+            host: Can be set to several types which determine where the server would be listening:
+
+                  * If `host` is a string, the TCP server is bound to a single network interface specified by `host`.
+
+                  * If `host` is a sequence of strings, the TCP server is bound to all network interfaces specified by the sequence.
+
+                  * If `host` is :data:`None`, all interfaces are assumed and a list of multiple sockets will be returned
+                    (most likely one for IPv4 and another one for IPv6).
+            port: specify which port the server should listen on. If the value is ``0``, a random unused port will be selected
+                  (note that if `host` resolves to multiple network interfaces, a different random port will be selected
+                  for each interface).
+            protocol: The :term:`protocol object` to use.
+            request_handler: The request handler to use.
+
+        Keyword Arguments:
+            ssl: can be set to an :class:`ssl.SSLContext` instance to enable TLS over the accepted connections.
+            ssl_handshake_timeout: (for a TLS connection) the time in seconds to wait for the TLS handshake to complete
+                                   before aborting the connection. ``60.0`` seconds if :data:`None` (default).
+            ssl_shutdown_timeout: the time in seconds to wait for the SSL shutdown to complete before aborting the connection.
+                                  ``30.0`` seconds if :data:`None` (default).
+            backlog: is the maximum number of queued connections passed to :class:`~socket.socket.listen` (defaults to ``100``).
+            reuse_port: tells the kernel to allow this endpoint to be bound to the same port as other existing endpoints
+                        are bound to, so long as they all set this flag when being created.
+                        This option is not supported on Windows.
+            max_recv_size: Read buffer size. If not given, a default reasonable value is used.
+            log_client_connection: If :data:`True`, log clients connection/disconnection in :data:`logging.INFO` level.
+                                   (This log will always be available in :data:`logging.DEBUG` level.)
+            logger: If given, the logger instance to use.
+
+        Backend Parameters:
+            backend: the backend to use. Automatically determined otherwise.
+            backend_kwargs: Keyword arguments for backend instanciation.
+                            Ignored if `backend` is already an :class:`.AsyncBackend` instance.
+
+        See Also:
+            :ref:`SSL/TLS security considerations <ssl-security>`
+        """
         super().__init__()
 
         if not isinstance(protocol, StreamProtocol):
@@ -181,7 +224,17 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
     def is_serving(self) -> bool:
         return self.__listeners is not None and all(not listener.is_closing() for listener in self.__listeners)
 
+    is_serving.__doc__ = AbstractAsyncNetworkServer.is_serving.__doc__
+
     def stop_listening(self) -> None:
+        """
+        Schedules the shutdown of all listener sockets.
+
+        After that, all new connections will be refused, but the server will continue to run and handle
+        previously accepted connections.
+
+        Further calls to :meth:`is_serving` will return :data:`False`.
+        """
         with _contextlib.ExitStack() as exit_stack:
             for listener_task in self.__listener_tasks:
                 exit_stack.callback(listener_task.cancel)
@@ -191,6 +244,8 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         self.__kill_listener_factory_runner()
         self.__listeners_factory = None
         await self.__close_listeners()
+
+    server_close.__doc__ = AbstractAsyncNetworkServer.server_close.__doc__
 
     async def __close_listeners(self) -> None:
         async with _contextlib.AsyncExitStack() as exit_stack:
@@ -224,6 +279,8 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             await self.__is_shutdown.wait()
         finally:
             self.__shutdown_asked = False
+
+    shutdown.__doc__ = AbstractAsyncNetworkServer.shutdown.__doc__
 
     def __kill_listener_factory_runner(self) -> None:
         if self.__listeners_factory_runner is not None:
@@ -295,6 +352,8 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 await self.__mainloop_task.join()
             finally:
                 self.__mainloop_task = None
+
+    serve_forever.__doc__ = AbstractAsyncNetworkServer.serve_forever.__doc__
 
     def __make_stop_listening_callback(self) -> Callable[[], None]:
         selfref = weakref.ref(self)
@@ -506,6 +565,13 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             self.__logger.error("-" * 40)
 
     def get_addresses(self) -> Sequence[SocketAddress]:
+        """
+        Returns all interfaces to which the listeners are bound.
+
+        Returns:
+            A sequence of network socket address.
+            If the server is not serving (:meth:`is_serving` returns :data:`False`), an empty sequence is returned.
+        """
         if (listeners := self.__listeners) is None:
             return ()
         return tuple(
@@ -517,14 +583,18 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
     def get_backend(self) -> AsyncBackend:
         return self.__backend
 
+    get_backend.__doc__ = AbstractAsyncNetworkServer.get_backend.__doc__
+
     @property
     def sockets(self) -> Sequence[SocketProxy]:
+        """The listeners sockets. Read-only attribute."""
         if (listeners := self.__listeners) is None:
             return ()
         return tuple(SocketProxy(listener.socket()) for listener in listeners)
 
     @property
     def logger(self) -> logging.Logger:
+        """The server's logger."""
         return self.__logger
 
 

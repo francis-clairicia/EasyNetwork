@@ -30,7 +30,7 @@ from ...tools.socket import SocketAddress, SocketProxy
 from . import _base
 
 if TYPE_CHECKING:
-    import logging as _logging
+    import logging
     from ssl import SSLContext as _SSLContext
 
     from ...api_async.backend.abc import AsyncBackend
@@ -39,6 +39,12 @@ if TYPE_CHECKING:
 
 
 class StandaloneTCPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[_RequestT, _ResponseT]):
+    """
+    A network server for TCP connections.
+
+    It embeds an :class:`.AsyncTCPNetworkServer` instance.
+    """
+
     __slots__ = ()
 
     def __init__(
@@ -55,11 +61,19 @@ class StandaloneTCPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
         backlog: int | None = None,
         reuse_port: bool = False,
         max_recv_size: int | None = None,
-        backend_kwargs: Mapping[str, Any] | None = None,
         log_client_connection: bool | None = None,
-        logger: _logging.Logger | None = None,
+        logger: logging.Logger | None = None,
+        backend_kwargs: Mapping[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
+        """
+        For the arguments, see :class:`.AsyncTCPNetworkServer` documentation.
+
+        Note:
+            The backend interface must be explicitly given. It defaults to ``asyncio``.
+
+            :exc:`ValueError` is raised if :data:`None` is given.
+        """
         if backend is None:
             raise ValueError("You must explicitly give a backend name or instance")
         super().__init__(
@@ -74,20 +88,35 @@ class StandaloneTCPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
                 backlog=backlog,
                 reuse_port=reuse_port,
                 max_recv_size=max_recv_size,
-                backend=backend,
-                backend_kwargs=backend_kwargs,
                 log_client_connection=log_client_connection,
                 logger=logger,
+                backend=backend,
+                backend_kwargs=backend_kwargs,
                 **kwargs,
             )
         )
 
     def stop_listening(self) -> None:
+        """
+        Schedules the shutdown of all listener sockets. Thread-safe.
+
+        After that, all new connections will be refused, but the server will continue to run and handle
+        previously accepted connections.
+
+        Further calls to :meth:`is_serving` will return :data:`False`.
+        """
         if (portal := self._portal) is not None:
             with _contextlib.suppress(RuntimeError):
                 portal.run_sync(self._server.stop_listening)
 
     def get_addresses(self) -> Sequence[SocketAddress]:
+        """
+        Returns all interfaces to which the listeners are bound. Thread-safe.
+
+        Returns:
+            A sequence of network socket address.
+            If the server is not serving (:meth:`is_serving` returns :data:`False`), an empty sequence is returned.
+        """
         if (portal := self._portal) is not None:
             with _contextlib.suppress(RuntimeError):
                 return portal.run_sync(self._server.get_addresses)
@@ -95,6 +124,7 @@ class StandaloneTCPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
 
     @property
     def sockets(self) -> Sequence[SocketProxy]:
+        """The listeners sockets. Read-only attribute."""
         if (portal := self._portal) is not None:
             with _contextlib.suppress(RuntimeError):
                 sockets = portal.run_sync(lambda: self._server.sockets)
@@ -102,7 +132,8 @@ class StandaloneTCPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
         return ()
 
     @property
-    def logger(self) -> _logging.Logger:
+    def logger(self) -> logging.Logger:
+        """The server's logger."""
         return self._server.logger
 
     if TYPE_CHECKING:

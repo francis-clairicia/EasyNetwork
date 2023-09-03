@@ -11,9 +11,9 @@ from easynetwork.api_async.server.handler import (
     AsyncStreamClient,
     AsyncStreamRequestHandler,
 )
-from easynetwork.api_sync.server.abc import AbstractStandaloneNetworkServer
+from easynetwork.api_sync.server.abc import AbstractNetworkServer
 from easynetwork.api_sync.server.tcp import StandaloneTCPNetworkServer
-from easynetwork.api_sync.server.thread import StandaloneNetworkServerThread
+from easynetwork.api_sync.server.thread import NetworkServerThread
 from easynetwork.api_sync.server.udp import StandaloneUDPNetworkServer
 from easynetwork.exceptions import BaseProtocolParseError, ServerAlreadyRunning, ServerClosedError
 from easynetwork.protocol import DatagramProtocol, StreamProtocol
@@ -35,52 +35,52 @@ class BaseTestStandaloneNetworkServer:
     @pytest.fixture
     @staticmethod
     def start_server(
-        server: AbstractStandaloneNetworkServer,
-    ) -> Iterator[StandaloneNetworkServerThread]:
+        server: AbstractNetworkServer,
+    ) -> Iterator[NetworkServerThread]:
         with server:
-            server_thread = StandaloneNetworkServerThread(server, daemon=True)
+            server_thread = NetworkServerThread(server, daemon=True)
             server_thread.start()
 
             yield server_thread
 
             server_thread.join(timeout=1)
 
-    def test____is_serving____default_to_False(self, server: AbstractStandaloneNetworkServer) -> None:
+    def test____is_serving____default_to_False(self, server: AbstractNetworkServer) -> None:
         with server:
             assert not server.is_serving()
 
-    def test____shutdown____default_to_noop(self, server: AbstractStandaloneNetworkServer) -> None:
+    def test____shutdown____default_to_noop(self, server: AbstractNetworkServer) -> None:
         with server:
             server.shutdown()
 
     @pytest.mark.usefixtures("start_server")
-    def test____shutdown____while_server_is_running(self, server: AbstractStandaloneNetworkServer) -> None:
+    def test____shutdown____while_server_is_running(self, server: AbstractNetworkServer) -> None:
         assert server.is_serving()
 
         server.shutdown()
         assert not server.is_serving()
 
-    def test____server_close____idempotent(self, server: AbstractStandaloneNetworkServer) -> None:
+    def test____server_close____idempotent(self, server: AbstractNetworkServer) -> None:
         server.server_close()
         server.server_close()
         server.server_close()
 
     @pytest.mark.usefixtures("start_server")
-    def test____server_close____while_server_is_running(self, server: AbstractStandaloneNetworkServer) -> None:
+    def test____server_close____while_server_is_running(self, server: AbstractNetworkServer) -> None:
         server.server_close()
 
     @pytest.mark.usefixtures("start_server")
-    def test____serve_forever____error_server_already_running(self, server: AbstractStandaloneNetworkServer) -> None:
+    def test____serve_forever____error_server_already_running(self, server: AbstractNetworkServer) -> None:
         with pytest.raises(ServerAlreadyRunning):
             server.serve_forever()
 
-    def test____serve_forever____error_server_closed(self, server: AbstractStandaloneNetworkServer) -> None:
+    def test____serve_forever____error_server_closed(self, server: AbstractNetworkServer) -> None:
         server.server_close()
 
         with pytest.raises(ServerClosedError):
             server.serve_forever()
 
-    def test____serve_forever____without_is_up_event(self, server: AbstractStandaloneNetworkServer) -> None:
+    def test____serve_forever____without_is_up_event(self, server: AbstractNetworkServer) -> None:
         with server:
             t = threading.Thread(target=server.serve_forever, daemon=True)
             t.start()
@@ -95,7 +95,7 @@ class BaseTestStandaloneNetworkServer:
 
     def test____server_thread____several_join(
         self,
-        start_server: StandaloneNetworkServerThread,
+        start_server: NetworkServerThread,
     ) -> None:
         start_server.join()
         start_server.join()
@@ -142,7 +142,7 @@ class TestStandaloneTCPNetworkServer(BaseTestStandaloneNetworkServer):
                 assert not server.is_serving()
                 assert not server.get_addresses()
 
-                server_thread = StandaloneNetworkServerThread(server, daemon=True)
+                server_thread = NetworkServerThread(server, daemon=True)
                 server_thread.start()
                 try:
                     assert server.is_serving()
@@ -209,7 +209,7 @@ class TestStandaloneUDPNetworkServer(BaseTestStandaloneNetworkServer):
                 assert not server.is_serving()
                 assert server.get_address() is None
 
-                server_thread = StandaloneNetworkServerThread(server, daemon=True)
+                server_thread = NetworkServerThread(server, daemon=True)
                 server_thread.start()
                 try:
                     assert server.is_serving()

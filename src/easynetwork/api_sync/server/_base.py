@@ -28,7 +28,7 @@ from ...api_async.backend.abc import ThreadsPortal
 from ...api_async.server.abc import SupportsEventSet
 from ...exceptions import ServerAlreadyRunning, ServerClosedError
 from ...tools._lock import ForkSafeLock
-from .abc import AbstractStandaloneNetworkServer
+from .abc import AbstractNetworkServer
 
 if TYPE_CHECKING:
     from ...api_async.backend.abc import AsyncBackend, Runner
@@ -39,7 +39,7 @@ _P = ParamSpec("_P")
 _T = TypeVar("_T")
 
 
-class BaseStandaloneNetworkServerImpl(AbstractStandaloneNetworkServer):
+class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
     __slots__ = (
         "__server",
         "__runner",
@@ -70,6 +70,8 @@ class BaseStandaloneNetworkServerImpl(AbstractStandaloneNetworkServer):
                 return portal.run_sync(self.__server.is_serving)
         return False
 
+    is_serving.__doc__ = AbstractNetworkServer.is_serving.__doc__
+
     def server_close(self) -> None:
         with self.__close_lock.get(), _contextlib.ExitStack() as stack, _contextlib.suppress(RuntimeError):
             if (portal := self._portal) is not None:
@@ -83,6 +85,8 @@ class BaseStandaloneNetworkServerImpl(AbstractStandaloneNetworkServer):
                 stack.push(runner)
                 self.__is_shutdown.wait()  # Ensure we are not in the interval between the server shutdown and the scheduler shutdown
                 runner.run(self.__server.server_close)
+
+    server_close.__doc__ = AbstractNetworkServer.server_close.__doc__
 
     def shutdown(self, timeout: float | None = None) -> None:
         if (portal := self._portal) is not None:
@@ -98,6 +102,8 @@ class BaseStandaloneNetworkServerImpl(AbstractStandaloneNetworkServer):
                     finally:
                         timeout -= time.perf_counter() - _start
         self.__is_shutdown.wait(timeout)
+
+    shutdown.__doc__ = AbstractNetworkServer.shutdown.__doc__
 
     async def __do_shutdown_with_timeout(self, timeout_delay: float) -> None:
         backend = self.__server.get_backend()
@@ -144,6 +150,8 @@ class BaseStandaloneNetworkServerImpl(AbstractStandaloneNetworkServer):
             finally:
                 # Acquire the bootstrap lock at teardown, before calling is_shutdown.set().
                 locks_stack.enter_context(self.__bootstrap_lock.get())
+
+    serve_forever.__doc__ = AbstractNetworkServer.serve_forever.__doc__
 
     @property
     def _server(self) -> AbstractAsyncNetworkServer:

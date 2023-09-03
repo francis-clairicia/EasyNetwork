@@ -31,11 +31,24 @@ if TYPE_CHECKING:
 
 
 class SupportsEventSet(Protocol):
+    """
+    A :class:`threading.Event`-like object.
+    """
+
     def set(self) -> None:  # pragma: no cover
+        """
+        Notifies that the event has happened.
+
+        This method MUST be idempotent.
+        """
         ...
 
 
 class AbstractAsyncNetworkServer(metaclass=ABCMeta):
+    """
+    The base class for an asynchronous network server.
+    """
+
     __slots__ = ("__weakref__",)
 
     async def __aenter__(self) -> Self:
@@ -47,6 +60,7 @@ class AbstractAsyncNetworkServer(metaclass=ABCMeta):
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
+        """Calls :meth:`server_close`."""
         await self.server_close()
 
     def __getstate__(self) -> Any:  # pragma: no cover
@@ -54,18 +68,42 @@ class AbstractAsyncNetworkServer(metaclass=ABCMeta):
 
     @abstractmethod
     def is_serving(self) -> bool:
+        """
+        Checks whether the server is up and accepting new clients.
+        """
         raise NotImplementedError
 
     @abstractmethod
     async def serve_forever(self, *, is_up_event: SupportsEventSet | None = ...) -> None:
+        """
+        Starts the server's main loop.
+
+        Parameters:
+            is_up_event: If given, will be triggered when the server is ready to accept new clients.
+
+        Raises:
+            ServerClosedError: The server is closed.
+            ServerAlreadyRunning: Another task already called :meth:`serve_forever`.
+        """
         raise NotImplementedError
 
     @abstractmethod
     async def server_close(self) -> None:
+        """
+        Closes the server.
+        """
         raise NotImplementedError
 
     @abstractmethod
     async def shutdown(self) -> None:
+        """
+        Asks for the server to stop.
+
+        All active client tasks will be cancelled.
+
+        Warning:
+            Do not call this method in the :meth:`serve_forever` task; it will cause a deadlock.
+        """
         raise NotImplementedError
 
     @abstractmethod

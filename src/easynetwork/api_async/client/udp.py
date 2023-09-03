@@ -52,7 +52,12 @@ class _EndpointInfo(TypedDict):
 
 
 class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
-    """Asynchronous generic UDP endpoint interface."""
+    """Asynchronous generic UDP endpoint interface.
+
+    See Also:
+        :class:`.AsyncUDPNetworkServer`
+            An advanced API for handling datagrams.
+    """
 
     __slots__ = (
         "__socket",

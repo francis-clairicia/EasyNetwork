@@ -10,3 +10,4 @@ Synchronous API
    :maxdepth: 2
 
    client
+   server

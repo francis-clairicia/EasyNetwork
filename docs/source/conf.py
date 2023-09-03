@@ -6,6 +6,9 @@
 
 from __future__ import annotations
 
+import os.path
+import sys
+
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 project = "EasyNetwork"
@@ -15,6 +18,8 @@ release = "1.0.0rc4"
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
+
+sys.path.append(os.path.abspath("./_extensions"))
 
 extensions = [
     # Built-in
@@ -34,6 +39,8 @@ extensions = [
     "sphinx_toolbox.more_autodoc.autoprotocol",
     "sphinx_toolbox.more_autodoc.typevars",
     "sphinx_toolbox.more_autodoc.no_docstring",
+    # Custom
+    "sphinx_easynetwork",
 ]
 
 highlight_language = "python3"
@@ -41,7 +48,7 @@ highlight_language = "python3"
 manpages_url = "https://manpages.debian.org/{path}"
 
 templates_path = []
-exclude_patterns = ["_include"]
+exclude_patterns = ["_include", "_extensions"]
 
 
 # -- sphinx.ext.autodoc configuration -------------------------------------------

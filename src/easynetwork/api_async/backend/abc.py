@@ -568,7 +568,7 @@ class AsyncHalfCloseableStreamSocketAdapter(AsyncStreamSocketAdapter):
     @abstractmethod
     async def send_eof(self) -> None:
         """
-        Send an end-of-file indication on this stream, if possible. Similar to `socket.socket.shutdown`.
+        Send an end-of-file indication on this stream, if possible. Similar to :meth:`socket.socket.shutdown`.
         """
         raise NotImplementedError
 
@@ -1159,8 +1159,30 @@ class AsyncBackend(metaclass=ABCMeta):
         reuse_port: bool = ...,
     ) -> Sequence[AsyncListenerSocketAdapter]:
         """
-        Todo:
-            Add doc
+        Opens listener sockets for TCP connections.
+
+        Parameters:
+            host: Can be set to several types which determine where the server would be listening:
+
+                  * If `host` is a string, the TCP server is bound to a single network interface specified by `host`.
+
+                  * If `host` is a sequence of strings, the TCP server is bound to all network interfaces specified by the sequence.
+
+                  * If `host` is :data:`None`, all interfaces are assumed and a list of multiple sockets will be returned
+                    (most likely one for IPv4 and another one for IPv6).
+            port: specify which port the server should listen on. If the value is ``0``, a random unused port will be selected
+                  (note that if `host` resolves to multiple network interfaces, a different random port will be selected
+                  for each interface).
+            backlog: is the maximum number of queued connections passed to :class:`~socket.socket.listen` (defaults to ``100``).
+            reuse_port: tells the kernel to allow this endpoint to be bound to the same port as other existing endpoints
+                        are bound to, so long as they all set this flag when being created.
+                        This option is not supported on Windows.
+
+        Raises:
+            OSError: unrelated OS error occurred.
+
+        Returns:
+            A sequence of listener sockets.
         """
         raise NotImplementedError
 
@@ -1176,8 +1198,36 @@ class AsyncBackend(metaclass=ABCMeta):
         reuse_port: bool = ...,
     ) -> Sequence[AsyncListenerSocketAdapter]:
         """
-        Todo:
-            Add doc
+        Opens listener sockets for TCP connections.
+
+        Parameters:
+            host: Can be set to several types which determine where the server would be listening:
+
+                  * If `host` is a string, the TCP server is bound to a single network interface specified by `host`.
+
+                  * If `host` is a sequence of strings, the TCP server is bound to all network interfaces specified by the sequence.
+
+                  * If `host` is :data:`None`, all interfaces are assumed and a list of multiple sockets will be returned
+                    (most likely one for IPv4 and another one for IPv6).
+            port: specify which port the server should listen on. If the value is ``0``, a random unused port will be selected
+                  (note that if `host` resolves to multiple network interfaces, a different random port will be selected
+                  for each interface).
+            backlog: is the maximum number of queued connections passed to :class:`~socket.socket.listen` (defaults to ``100``).
+            ssl: can be set to an :class:`ssl.SSLContext` instance to enable TLS over the accepted connections.
+            ssl_handshake_timeout: (for a TLS connection) the time in seconds to wait for the TLS handshake to complete
+                                   before aborting the connection. ``60.0`` seconds if :data:`None` (default).
+            ssl_shutdown_timeout: the time in seconds to wait for the SSL shutdown to complete before aborting the connection.
+                                  ``30.0`` seconds if :data:`None` (default).
+            reuse_port: tells the kernel to allow this endpoint to be bound to the same port as other existing endpoints
+                        are bound to, so long as they all set this flag when being created.
+                        This option is not supported on Windows.
+
+        Raises:
+            OSError: unrelated OS error occurred.
+            NotImplementedError: SSL/TLS is not supported by this backend.
+
+        Returns:
+            A sequence of listener sockets.
         """
         raise NotImplementedError("SSL/TLS is not supported by this backend")
 

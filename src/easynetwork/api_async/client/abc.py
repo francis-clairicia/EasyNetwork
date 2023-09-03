@@ -32,6 +32,10 @@ if TYPE_CHECKING:
 
 
 class AbstractAsyncNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=ABCMeta):
+    """
+    The base class for an asynchronous network client interface.
+    """
+
     __slots__ = ("__weakref__",)
 
     async def __aenter__(self) -> Self:

@@ -53,6 +53,10 @@ _VT = TypeVar("_VT")
 
 
 class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _ResponseT]):
+    """
+    An asynchronous network server for UDP communication.
+    """
+
     __slots__ = (
         "__backend",
         "__socket",
@@ -78,10 +82,30 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         request_handler: AsyncDatagramRequestHandler[_RequestT, _ResponseT],
         *,
         reuse_port: bool = False,
+        logger: logging.Logger | None = None,
         backend: str | AsyncBackend | None = None,
         backend_kwargs: Mapping[str, Any] | None = None,
-        logger: logging.Logger | None = None,
     ) -> None:
+        """
+        Parameters:
+            host: specify which network interface to which the server should bind.
+            port: specify which port the server should listen on. If the value is ``0``, a random unused port will be selected
+                  (note that if `host` resolves to multiple network interfaces, a different random port will be selected
+                  for each interface).
+            protocol: The :term:`protocol object` to use.
+            request_handler: The request handler to use.
+
+        Keyword Arguments:
+            reuse_port: tells the kernel to allow this endpoint to be bound to the same port as other existing endpoints
+                        are bound to, so long as they all set this flag when being created.
+                        This option is not supported on Windows.
+            logger: If given, the logger instance to use.
+
+        Backend Parameters:
+            backend: the backend to use. Automatically determined otherwise.
+            backend_kwargs: Keyword arguments for backend instanciation.
+                            Ignored if `backend` is already an :class:`.AsyncBackend` instance.
+        """
         super().__init__()
 
         if not isinstance(protocol, DatagramProtocol):
@@ -122,10 +146,14 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
     def is_serving(self) -> bool:
         return (socket := self.__socket) is not None and not socket.is_closing()
 
+    is_serving.__doc__ = AbstractAsyncNetworkServer.is_serving.__doc__
+
     async def server_close(self) -> None:
         self.__kill_socket_factory_runner()
         self.__socket_factory = None
         await self.__close_socket()
+
+    server_close.__doc__ = AbstractAsyncNetworkServer.server_close.__doc__
 
     async def __close_socket(self) -> None:
         async with _contextlib.AsyncExitStack() as exit_stack:
@@ -154,6 +182,8 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             await self.__is_shutdown.wait()
         finally:
             self.__shutdown_asked = False
+
+    shutdown.__doc__ = AbstractAsyncNetworkServer.shutdown.__doc__
 
     def __kill_socket_factory_runner(self) -> None:
         if self.__socket_factory_runner is not None:
@@ -219,6 +249,8 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 await self.__mainloop_task.join()
             finally:
                 self.__mainloop_task = None
+
+    serve_forever.__doc__ = AbstractAsyncNetworkServer.serve_forever.__doc__
 
     async def __receive_datagrams(
         self,
@@ -416,6 +448,13 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             del client
 
     def get_address(self) -> SocketAddress | None:
+        """
+        Returns the interface to which the datagram socket is bound.
+
+        Returns:
+            A network socket address.
+            If the server is not serving (:meth:`is_serving` returns :data:`False`), :data:`None` is returned.
+        """
         if (socket := self.__socket) is None or socket.is_closing():
             return None
         return new_socket_address(socket.get_local_address(), socket.socket().family)
@@ -423,14 +462,18 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
     def get_backend(self) -> AsyncBackend:
         return self.__backend
 
+    get_backend.__doc__ = AbstractAsyncNetworkServer.get_backend.__doc__
+
     @property
     def socket(self) -> SocketProxy | None:
+        """The server socket. Read-only attribute."""
         if (socket := self.__socket) is None:
             return None
         return SocketProxy(socket.socket())
 
     @property
     def logger(self) -> logging.Logger:
+        """The server's logger."""
         return self.__logger
 
 

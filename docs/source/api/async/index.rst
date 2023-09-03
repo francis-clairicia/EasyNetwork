@@ -10,4 +10,5 @@ Asynchronous API (``async def``)
    :maxdepth: 2
 
    client
+   server
    backend

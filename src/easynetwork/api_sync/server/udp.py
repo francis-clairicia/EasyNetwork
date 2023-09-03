@@ -30,7 +30,7 @@ from ...tools.socket import SocketAddress, SocketProxy
 from . import _base
 
 if TYPE_CHECKING:
-    import logging as _logging
+    import logging
 
     from ...api_async.backend.abc import AsyncBackend
     from ...api_async.server.handler import AsyncDatagramRequestHandler
@@ -38,6 +38,12 @@ if TYPE_CHECKING:
 
 
 class StandaloneUDPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[_RequestT, _ResponseT]):
+    """
+    A network server for UDP communication.
+
+    It embeds an :class:`.AsyncUDPNetworkServer` instance.
+    """
+
     __slots__ = ()
 
     def __init__(
@@ -49,10 +55,18 @@ class StandaloneUDPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
         backend: str | AsyncBackend = "asyncio",
         *,
         reuse_port: bool = False,
+        logger: logging.Logger | None = None,
         backend_kwargs: Mapping[str, Any] | None = None,
-        logger: _logging.Logger | None = None,
         **kwargs: Any,
     ) -> None:
+        """
+        For the arguments, see :class:`.AsyncUDPNetworkServer` documentation.
+
+        Note:
+            The backend interface must be explicitly given. It defaults to ``asyncio``.
+
+            :exc:`ValueError` is raised if :data:`None` is given.
+        """
         if backend is None:
             raise ValueError("You must explicitly give a backend name or instance")
         super().__init__(
@@ -62,14 +76,21 @@ class StandaloneUDPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
                 protocol=protocol,
                 request_handler=request_handler,
                 reuse_port=reuse_port,
+                logger=logger,
                 backend=backend,
                 backend_kwargs=backend_kwargs,
-                logger=logger,
                 **kwargs,
             )
         )
 
     def get_address(self) -> SocketAddress | None:
+        """
+        Returns the interface to which the datagram socket is bound. Thread-safe.
+
+        Returns:
+            A network socket address.
+            If the server is not serving (:meth:`is_serving` returns :data:`False`), :data:`None` is returned.
+        """
         if (portal := self._portal) is not None:
             with _contextlib.suppress(RuntimeError):
                 return portal.run_sync(self._server.get_address)
@@ -77,6 +98,7 @@ class StandaloneUDPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
 
     @property
     def socket(self) -> SocketProxy | None:
+        """The server socket. Read-only attribute."""
         if (portal := self._portal) is not None:
             with _contextlib.suppress(RuntimeError):
                 socket = portal.run_sync(lambda: self._server.socket)
@@ -84,7 +106,8 @@ class StandaloneUDPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
         return None
 
     @property
-    def logger(self) -> _logging.Logger:
+    def logger(self) -> logging.Logger:
+        """The server's logger."""
         return self._server.logger
 
     if TYPE_CHECKING:

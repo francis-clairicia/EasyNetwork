@@ -17,8 +17,8 @@
 from __future__ import annotations
 
 __all__ = [
-    "AbstractStandaloneNetworkServer",
-    "StandaloneNetworkServerThread",
+    "AbstractNetworkServer",
+    "NetworkServerThread",
     "StandaloneTCPNetworkServer",
     "StandaloneUDPNetworkServer",
 ]

@@ -10,7 +10,7 @@ from easynetwork.api_async.server.handler import (
     AsyncStreamClient,
     AsyncStreamRequestHandler,
 )
-from easynetwork.api_sync.server.abc import AbstractStandaloneNetworkServer
+from easynetwork.api_sync.server.abc import AbstractNetworkServer
 from easynetwork.api_sync.server.tcp import StandaloneTCPNetworkServer
 from easynetwork.api_sync.server.udp import StandaloneUDPNetworkServer
 from easynetwork.exceptions import BaseProtocolParseError
@@ -35,7 +35,7 @@ def ipproto(request: pytest.FixtureRequest) -> Literal["TCP", "UDP"]:
     return getattr(request, "param").upper()
 
 
-def _build_server(ipproto: Literal["TCP", "UDP"]) -> AbstractStandaloneNetworkServer:
+def _build_server(ipproto: Literal["TCP", "UDP"]) -> AbstractNetworkServer:
     serializer = StringLineSerializer()
     request_handler = EchoRequestHandler()
     match ipproto:
@@ -47,7 +47,7 @@ def _build_server(ipproto: Literal["TCP", "UDP"]) -> AbstractStandaloneNetworkSe
             pytest.fail("Invalid ipproto")
 
 
-def _run_server(server: AbstractStandaloneNetworkServer) -> None:
+def _run_server(server: AbstractNetworkServer) -> None:
     is_up_event = threading.Event()
     t = threading.Thread(target=server.serve_forever, kwargs={"is_up_event": is_up_event}, daemon=True)
     t.start()
@@ -57,7 +57,7 @@ def _run_server(server: AbstractStandaloneNetworkServer) -> None:
     assert server.is_serving()
 
 
-def _retrieve_server_port(server: AbstractStandaloneNetworkServer) -> int:
+def _retrieve_server_port(server: AbstractNetworkServer) -> int:
     match server:
         case StandaloneTCPNetworkServer():
             addresses = server.get_addresses()
