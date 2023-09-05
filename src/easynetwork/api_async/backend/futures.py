@@ -16,12 +16,13 @@
 
 from __future__ import annotations
 
-__all__ = ["AsyncExecutor", "AsyncThreadPoolExecutor"]
+__all__ = ["AsyncExecutor"]
 
 import concurrent.futures
 import contextvars
+import functools
 from collections.abc import Callable, Mapping
-from typing import TYPE_CHECKING, Any, ParamSpec, Self, TypeVar, overload
+from typing import TYPE_CHECKING, Any, ParamSpec, Self, TypeVar
 
 from .factory import AsyncBackendFactory
 from .sniffio import current_async_library_cvar as _sniffio_current_async_library_cvar
@@ -63,25 +64,32 @@ class AsyncExecutor:
                 results = [await t.join() for t in tasks]
     """
 
-    __slots__ = ("__backend", "__executor", "__weakref__")
+    __slots__ = ("__backend", "__executor", "__handle_contexts", "__weakref__")
 
     def __init__(
         self,
         executor: concurrent.futures.Executor,
         backend: str | AsyncBackend | None = None,
         backend_kwargs: Mapping[str, Any] | None = None,
+        *,
+        handle_contexts: bool = False,
     ) -> None:
         """
         Parameters:
             executor: The executor instance to wrap.
-
-        Backend Parameters:
             backend: the backend to use. Automatically determined otherwise.
             backend_kwargs: Keyword arguments for backend instanciation.
                             Ignored if `backend` is already an :class:`.AsyncBackend` instance.
+            handle_contexts: If :data:`True`, contexts (:class:`contextvars.Context`) are properly propagated to workers.
+                             Defaults to :data:`False` because not all executors support the use of contexts
+                             (e.g. :class:`concurrent.futures.ProcessPoolExecutor`).
         """
+        if not isinstance(executor, concurrent.futures.Executor):
+            raise TypeError("Invalid executor type")
+
         self.__backend: AsyncBackend = AsyncBackendFactory.ensure(backend, backend_kwargs)
         self.__executor: concurrent.futures.Executor = executor
+        self.__handle_contexts: bool = bool(handle_contexts)
 
     async def __aenter__(self) -> Self:
         return self
@@ -104,6 +112,10 @@ class AsyncExecutor:
             async with AsyncExecutor(ThreadPoolExecutor(max_workers=1)) as executor:
                 result = await executor.run(pow, 323, 1235)
 
+        Warning:
+            Due to the current coroutine implementation, `func` should not raise a :exc:`StopIteration`.
+            This can lead to unexpected (and unwanted) behavior.
+
         Parameters:
             func: A synchronous function.
             args: Positional arguments to be passed to `func`.
@@ -116,10 +128,10 @@ class AsyncExecutor:
         Returns:
             Whatever returns ``func(*args, **kwargs)``
         """
-        try:
-            return await self.__backend.wait_future(self.__executor.submit(func, *args, **kwargs))
-        finally:
-            del func, args, kwargs
+        func = self._setup_func(func)
+        executor = self.__executor
+        backend = self.__backend
+        return await backend.wait_future(executor.submit(func, *args, **kwargs))
 
     def shutdown_nowait(self, *, cancel_futures: bool = False) -> None:
         """
@@ -152,64 +164,12 @@ class AsyncExecutor:
         """
         await self.__backend.run_in_thread(self.__executor.shutdown, wait=True, cancel_futures=cancel_futures)
 
+    def _setup_func(self, func: Callable[_P, _T]) -> Callable[_P, _T]:
+        if self.__handle_contexts:
+            ctx = contextvars.copy_context()
 
-class AsyncThreadPoolExecutor(AsyncExecutor):
-    """
-    :class:`AsyncExecutor` specialization for thread pools that also handle :class:`contextvars.Context`.
-    """
+            if _sniffio_current_async_library_cvar is not None:
+                ctx.run(_sniffio_current_async_library_cvar.set, None)
 
-    __slots__ = ()
-
-    @overload
-    def __init__(
-        self,
-        backend: str | AsyncBackend | None = ...,
-        backend_kwargs: Mapping[str, Any] | None = ...,
-    ) -> None:
-        ...
-
-    @overload
-    def __init__(
-        self,
-        backend: str | AsyncBackend | None = ...,
-        backend_kwargs: Mapping[str, Any] | None = ...,
-        *,
-        max_workers: int | None = ...,
-        thread_name_prefix: str = ...,
-        initializer: Callable[..., object] | None = ...,
-        initargs: tuple[Any, ...] = ...,
-        **kwargs: Any,
-    ) -> None:
-        ...
-
-    def __init__(
-        self,
-        backend: str | AsyncBackend | None = None,
-        backend_kwargs: Mapping[str, Any] | None = None,
-        **kwargs: Any,
-    ) -> None:
-        """
-        Backend Parameters:
-            backend: the backend to use. Automatically determined otherwise.
-            backend_kwargs: Keyword arguments for backend instanciation.
-                            Ignored if `backend` is already an :class:`.AsyncBackend` instance.
-
-        Parameters:
-            kwargs: see :class:`concurrent.futures.ThreadPoolExecutor` documentation.
-        """
-        super().__init__(concurrent.futures.ThreadPoolExecutor(**kwargs), backend=backend, backend_kwargs=backend_kwargs)
-
-    async def run(self, func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
-        """
-        Similar to :meth:`AsyncExecutor.run`, except that contexts (:class:`contextvars.Context`) are properly propagated
-        to worker threads.
-        """
-        ctx = contextvars.copy_context()
-
-        if _sniffio_current_async_library_cvar is not None:
-            ctx.run(_sniffio_current_async_library_cvar.set, None)
-
-        try:
-            return await super().run(ctx.run, func, *args, **kwargs)  # type: ignore[arg-type]
-        finally:
-            del func, args, kwargs
+            func = functools.partial(ctx.run, func)  # type: ignore[assignment]
+        return func

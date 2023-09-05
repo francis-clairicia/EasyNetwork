@@ -232,6 +232,3 @@ Concurrency and Multithreading (``concurrent.futures`` integration)
 .. autoclass:: AsyncExecutor
    :members:
    :special-members: __aenter__, __aexit__
-
-.. autoclass:: AsyncThreadPoolExecutor(backend, *, max_workers=..., thread_name_prefix=..., initializer=..., initargs=..., **kwargs)
-   :members:
