@@ -77,7 +77,8 @@ Glossary
 
       Example:
 
-      >>> from easynetwork.serializers import Base64EncoderSerializer, JSONSerializer
+      >>> from easynetwork.serializers import JSONSerializer
+      >>> from easynetwork.serializers.wrapper import Base64EncoderSerializer
       >>> s = Base64EncoderSerializer(JSONSerializer())
       >>> data = s.serialize({"data": 42})
       >>> data

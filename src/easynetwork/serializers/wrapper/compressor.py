@@ -17,7 +17,6 @@
 from __future__ import annotations
 
 __all__ = [
-    "AbstractCompressorSerializer",
     "BZ2CompressorSerializer",
     "ZlibCompressorSerializer",
 ]
@@ -110,7 +109,7 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_Serializ
         """
         Serializes `packet` and returns the compressed data parts.
 
-        See :meth:`AbstractPacketSerializer.serialize` documentation for details.
+        See :meth:`.AbstractPacketSerializer.serialize` documentation for details.
         """
         compressor: CompressorInterface = self.new_compressor_stream()
         return compressor.compress(self.__serializer.serialize(packet)) + compressor.flush()
@@ -120,7 +119,7 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_Serializ
         """
         Serializes `packet` and yields the compressed data parts.
 
-        See :meth:`AbstractIncrementalPacketSerializer.incremental_serialize` documentation for details.
+        See :meth:`.AbstractIncrementalPacketSerializer.incremental_serialize` documentation for details.
         """
         compressor: CompressorInterface = self.new_compressor_stream()
         yield compressor.compress(self.__serializer.serialize(packet))
@@ -131,7 +130,7 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_Serializ
         """
         Decompresses `data` and returns the deserialized packet.
 
-        See :meth:`AbstractPacketSerializer.deserialize` documentation for details.
+        See :meth:`.AbstractPacketSerializer.deserialize` documentation for details.
 
         Raises:
             DeserializeError: :meth:`DecompressorInterface.decompress` does not read until EOF (unused trailing data).
@@ -161,7 +160,7 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_Serializ
         """
         Yields until data decompression is finished and deserializes the decompressed data using the underlying serializer.
 
-        See :meth:`AbstractIncrementalPacketSerializer.incremental_deserialize` documentation for details.
+        See :meth:`.AbstractIncrementalPacketSerializer.incremental_deserialize` documentation for details.
 
         Raises:
             IncrementalDeserializeError: :meth:`DecompressorInterface.decompress` raised an error
@@ -231,14 +230,14 @@ class BZ2CompressorSerializer(AbstractCompressorSerializer[_SerializedPacketT_co
     @final
     def new_compressor_stream(self) -> _typing_bz2.BZ2Compressor:
         """
-        See :meth:`AbstractCompressorSerializer.new_compressor_stream` documentation for details.
+        See :meth:`.AbstractCompressorSerializer.new_compressor_stream` documentation for details.
         """
         return self.__compressor_factory(self.__compresslevel)
 
     @final
     def new_decompressor_stream(self) -> _typing_bz2.BZ2Decompressor:
         """
-        See :meth:`AbstractCompressorSerializer.new_decompressor_stream` documentation for details.
+        See :meth:`.AbstractCompressorSerializer.new_decompressor_stream` documentation for details.
         """
         return self.__decompressor_factory()
 
@@ -271,13 +270,13 @@ class ZlibCompressorSerializer(AbstractCompressorSerializer[_SerializedPacketT_c
     @final
     def new_compressor_stream(self) -> _typing_zlib._Compress:
         """
-        See :meth:`AbstractCompressorSerializer.new_compressor_stream` documentation for details.
+        See :meth:`.AbstractCompressorSerializer.new_compressor_stream` documentation for details.
         """
         return self.__compressor_factory(self.__compresslevel)
 
     @final
     def new_decompressor_stream(self) -> _typing_zlib._Decompress:
         """
-        See :meth:`AbstractCompressorSerializer.new_decompressor_stream` documentation for details.
+        See :meth:`.AbstractCompressorSerializer.new_decompressor_stream` documentation for details.
         """
         return self.__decompressor_factory()

@@ -100,6 +100,11 @@ Its :meth:`~.AsyncStreamRequestHandler.bad_request` method must also be overridd
 
       await client.aclose()
 
+.. seealso::
+
+   :pep:`525` — Asynchronous Generators
+      The proposal that expanded on :pep:`492` by adding generator capabilities to coroutine functions.
+
 
 Start the server
 ----------------

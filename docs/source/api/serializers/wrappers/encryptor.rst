@@ -1,7 +1,7 @@
 Encryptor serializer
 ====================
 
-.. currentmodule:: easynetwork.serializers
+.. currentmodule:: easynetwork.serializers.wrapper
 
 .. include:: ../../../_include/see-also-optional-dependencies.rst
 

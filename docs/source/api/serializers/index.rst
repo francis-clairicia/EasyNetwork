@@ -20,6 +20,9 @@ Serializers
 
 -----
 
+.. automodule:: easynetwork.serializers.wrapper
+   :no-docstring:
+
 .. toctree::
    :caption: Serializer wrappers
    :maxdepth: 2
@@ -27,5 +30,3 @@ Serializers
    wrappers/base64
    wrappers/compressor
    wrappers/encryptor
-
-.. seealso:: :term:`Serializer wrapper <serializer wrapper>` term.

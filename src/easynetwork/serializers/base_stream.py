@@ -62,7 +62,7 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_Seriali
     @abstractmethod
     def serialize(self, packet: _SerializedPacketT_contra, /) -> bytes:
         """
-        See :meth:`AbstractPacketSerializer.serialize` documentation.
+        See :meth:`.AbstractPacketSerializer.serialize` documentation.
         """
         raise NotImplementedError
 
@@ -71,7 +71,7 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_Seriali
         """
         Yields the data returned by :meth:`serialize` and appends `separator`.
 
-        See :meth:`AbstractIncrementalPacketSerializer.incremental_serialize` documentation for details.
+        See :meth:`.AbstractIncrementalPacketSerializer.incremental_serialize` documentation for details.
 
         Raises:
             ValueError: If `incremental_serialize_check_separator` is `True` and `separator` is in the returned data.
@@ -91,7 +91,7 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_Seriali
     @abstractmethod
     def deserialize(self, data: bytes, /) -> _DeserializedPacketT_co:
         """
-        See :meth:`AbstractPacketSerializer.deserialize` documentation.
+        See :meth:`.AbstractPacketSerializer.deserialize` documentation.
         """
         raise NotImplementedError
 
@@ -100,7 +100,7 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_Seriali
         """
         Yields until `separator` is found and calls :meth:`deserialize` **without** `separator`.
 
-        See :meth:`AbstractIncrementalPacketSerializer.incremental_deserialize` documentation for details.
+        See :meth:`.AbstractIncrementalPacketSerializer.incremental_deserialize` documentation for details.
 
         Raises:
             IncrementalDeserializeError: :meth:`deserialize` raised :exc:`.DeserializeError`.
@@ -167,7 +167,7 @@ class FixedSizePacketSerializer(AbstractIncrementalPacketSerializer[_SerializedP
     @abstractmethod
     def serialize(self, packet: _SerializedPacketT_contra, /) -> bytes:
         """
-        See :meth:`AbstractPacketSerializer.serialize` documentation.
+        See :meth:`.AbstractPacketSerializer.serialize` documentation.
         """
         raise NotImplementedError
 
@@ -176,7 +176,7 @@ class FixedSizePacketSerializer(AbstractIncrementalPacketSerializer[_SerializedP
         """
         Yields the data returned by :meth:`serialize`.
 
-        See :meth:`AbstractIncrementalPacketSerializer.incremental_serialize` documentation for details.
+        See :meth:`.AbstractIncrementalPacketSerializer.incremental_serialize` documentation for details.
 
         Raises:
             ValueError: If the returned data size is not equal to `packet_size`.
@@ -190,7 +190,7 @@ class FixedSizePacketSerializer(AbstractIncrementalPacketSerializer[_SerializedP
     @abstractmethod
     def deserialize(self, data: bytes, /) -> _DeserializedPacketT_co:
         """
-        See :meth:`AbstractPacketSerializer.deserialize` documentation.
+        See :meth:`.AbstractPacketSerializer.deserialize` documentation.
         """
         raise NotImplementedError
 
@@ -199,7 +199,7 @@ class FixedSizePacketSerializer(AbstractIncrementalPacketSerializer[_SerializedP
         """
         Yields until there is enough data and calls :meth:`deserialize`.
 
-        See :meth:`AbstractIncrementalPacketSerializer.incremental_deserialize` documentation for details.
+        See :meth:`.AbstractIncrementalPacketSerializer.incremental_deserialize` documentation for details.
 
         Raises:
             IncrementalDeserializeError: :meth:`deserialize` raised :exc:`.DeserializeError`.
@@ -291,7 +291,7 @@ class FileBasedPacketSerializer(AbstractPacketSerializer[_SerializedPacketT_cont
         """
         Calls :meth:`dump_to_file` and returns the result.
 
-        See :meth:`AbstractPacketSerializer.serialize` documentation for details.
+        See :meth:`.AbstractPacketSerializer.serialize` documentation for details.
 
         Raises:
             Exception: Any error raised by :meth:`dump_to_file`.
@@ -305,7 +305,7 @@ class FileBasedPacketSerializer(AbstractPacketSerializer[_SerializedPacketT_cont
         """
         Calls :meth:`load_from_file` and returns the result.
 
-        See :meth:`AbstractPacketSerializer.deserialize` documentation for details.
+        See :meth:`.AbstractPacketSerializer.deserialize` documentation for details.
 
         Raises:
             DeserializeError: :meth:`load_from_file` raised :class:`EOFError`.
@@ -331,7 +331,7 @@ class FileBasedPacketSerializer(AbstractPacketSerializer[_SerializedPacketT_cont
         """
         Calls :meth:`dump_to_file` and yields the result.
 
-        See :meth:`AbstractIncrementalPacketSerializer.incremental_serialize` documentation for details.
+        See :meth:`.AbstractIncrementalPacketSerializer.incremental_serialize` documentation for details.
 
         Raises:
             Exception: Any error raised by :meth:`dump_to_file`.
@@ -348,7 +348,7 @@ class FileBasedPacketSerializer(AbstractPacketSerializer[_SerializedPacketT_cont
         """
         Calls :meth:`load_from_file` and returns the result.
 
-        See :meth:`AbstractIncrementalPacketSerializer.incremental_deserialize` documentation for details.
+        See :meth:`.AbstractIncrementalPacketSerializer.incremental_deserialize` documentation for details.
 
         Note:
             The generator will always :keyword:`yield` if :meth:`load_from_file` raises :class:`EOFError`.

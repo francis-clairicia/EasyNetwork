@@ -129,3 +129,10 @@ github_repository = "EasyNetwork"
 
 html_theme = "sphinx_rtd_theme"
 html_static_path = []
+
+# -- sphinx-rtd-theme configuration -------------------------------------
+# https://sphinx-rtd-theme.readthedocs.io/en/stable/configuring.html
+
+html_theme_options = {
+    "navigation_depth": -1,  # Unlimited
+}

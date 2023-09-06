@@ -1,7 +1,7 @@
 Compressor serializers
 ======================
 
-.. currentmodule:: easynetwork.serializers
+.. currentmodule:: easynetwork.serializers.wrapper
 
 .. autoclass:: BZ2CompressorSerializer
    :members:
@@ -13,9 +13,11 @@ Compressor serializers
 Abstract compressor interface
 -----------------------------
 
+.. currentmodule:: easynetwork.serializers.wrapper.compressor
+
 .. autoclass:: AbstractCompressorSerializer
    :members:
 
-.. autoprotocol:: easynetwork.serializers.wrapper.compressor::CompressorInterface
+.. autoprotocol:: CompressorInterface
 
-.. autoprotocol:: easynetwork.serializers.wrapper.compressor::DecompressorInterface
+.. autoprotocol:: DecompressorInterface
