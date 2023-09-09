@@ -122,9 +122,7 @@ have a default implementation that uses the incremental serialization methods.
 Option 1: Using common patterns
 -------------------------------
 
-Chances are that the communication protocol uses a simple principle to determine the end of a packet.
-
-The most common cases are:
+Chances are that the communication protocol uses a simple principle to determine the end of a packet. The most common cases are:
 
 * All your packet frames use a precise byte sequence (most likely a newline).
 
@@ -157,9 +155,7 @@ Let's see how we can get by without using the :class:`.AutoSeparatedPacketSerial
 .. literalinclude:: ../_include/examples/howto/serializers/incremental_serializer/example2.py
    :linenos:
 
-This adds a lot of code!
-
-Let's take a closer look at the implementation.
+This adds a lot of code! Let's take a closer look at the implementation.
 
 Code mutualization
 ^^^^^^^^^^^^^^^^^^
@@ -187,6 +183,7 @@ The purpose of ``incremental_serialize()``
 
 :meth:`~.AbstractIncrementalPacketSerializer.incremental_serialize` must be a :term:`generator` function
 (or at least return a :term:`generator iterator`) that yields all the parts of the serialized packet.
+It must also add any useful metadata to help :meth:`~.AbstractIncrementalPacketSerializer.incremental_deserialize` find the end of the packet.
 
 .. literalinclude:: ../_include/examples/howto/serializers/incremental_serializer/example2.py
    :pyobject: MyJSONSerializer.incremental_serialize
