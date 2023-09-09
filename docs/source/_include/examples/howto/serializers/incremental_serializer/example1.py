@@ -7,7 +7,7 @@ from easynetwork.exceptions import DeserializeError
 from easynetwork.serializers.base_stream import AutoSeparatedPacketSerializer
 
 
-class MyJSONSerializer(AutoSeparatedPacketSerializer[Any, Any]):
+class MyJSONSerializer(AutoSeparatedPacketSerializer[Any]):
     def __init__(self, *, ensure_ascii: bool = True) -> None:
         super().__init__(separator=b"\r\n")
 

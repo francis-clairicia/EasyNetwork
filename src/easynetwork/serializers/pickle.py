@@ -26,9 +26,8 @@ from collections.abc import Callable
 from dataclasses import asdict as dataclass_asdict, dataclass, field
 from functools import partial
 from io import BytesIO
-from typing import IO, TYPE_CHECKING, final
+from typing import IO, TYPE_CHECKING, Any, final
 
-from .._typevars import _DeserializedPacketT_co, _SerializedPacketT_contra
 from ..exceptions import DeserializeError
 from .abc import AbstractPacketSerializer
 
@@ -67,7 +66,7 @@ class UnpicklerConfig:
     errors: str = "strict"
 
 
-class PickleSerializer(AbstractPacketSerializer[_SerializedPacketT_contra, _DeserializedPacketT_co]):
+class PickleSerializer(AbstractPacketSerializer[Any]):
     """
     A :term:`one-shot serializer` built on top of the :mod:`pickle` module.
     """
@@ -119,7 +118,7 @@ class PickleSerializer(AbstractPacketSerializer[_SerializedPacketT_contra, _Dese
         self.__unpickler_cls = partial(unpickler_cls or pickle.Unpickler, **dataclass_asdict(unpickler_config), buffers=None)
 
     @final
-    def serialize(self, packet: _SerializedPacketT_contra) -> bytes:
+    def serialize(self, packet: Any) -> bytes:
         """
         Returns the pickle representation of the Python object `packet`.
 
@@ -142,7 +141,7 @@ class PickleSerializer(AbstractPacketSerializer[_SerializedPacketT_contra, _Dese
         return pickle
 
     @final
-    def deserialize(self, data: bytes) -> _DeserializedPacketT_co:
+    def deserialize(self, data: bytes) -> Any:
         """
         Creates a Python object representing the raw pickle :term:`packet` from `data`.
 
@@ -163,7 +162,7 @@ class PickleSerializer(AbstractPacketSerializer[_SerializedPacketT_contra, _Dese
         """
         with BytesIO(data) as buffer:
             try:
-                packet: _DeserializedPacketT_co = self.__unpickler_cls(buffer).load()
+                packet: Any = self.__unpickler_cls(buffer).load()
             except Exception as exc:
                 raise DeserializeError(str(exc) or "Invalid token", error_info={"data": data}) from exc
             finally:

@@ -8,7 +8,7 @@ from easynetwork.exceptions import DeserializeError, IncrementalDeserializeError
 from easynetwork.serializers.abc import AbstractIncrementalPacketSerializer
 
 
-class MyJSONSerializer(AbstractIncrementalPacketSerializer[Any, Any]):
+class MyJSONSerializer(AbstractIncrementalPacketSerializer[Any]):
     def __init__(self, *, ensure_ascii: bool = True) -> None:
         self._ensure_ascii: bool = ensure_ascii
 

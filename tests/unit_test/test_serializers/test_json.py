@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
     @pytest.fixture(scope="class")
     @staticmethod
-    def serializer_cls() -> type[JSONSerializer[Any, Any]]:
+    def serializer_cls() -> type[JSONSerializer]:
         return JSONSerializer
 
     @pytest.fixture(params=["encoder", "decoder"])
@@ -140,7 +140,7 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer: JSONSerializer[Any, Any] = JSONSerializer(
+        serializer: JSONSerializer = JSONSerializer(
             encoding=mocker.sentinel.encoding,
             unicode_errors=mocker.sentinel.str_errors,
         )
@@ -161,7 +161,7 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer: JSONSerializer[Any, Any] = JSONSerializer(
+        serializer: JSONSerializer = JSONSerializer(
             encoding=mocker.sentinel.encoding,
             unicode_errors=mocker.sentinel.str_errors,
         )
@@ -182,7 +182,7 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer: JSONSerializer[Any, Any] = JSONSerializer(
+        serializer: JSONSerializer = JSONSerializer(
             encoding=mocker.sentinel.encoding,
             unicode_errors=mocker.sentinel.str_errors,
         )
@@ -204,7 +204,7 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer: JSONSerializer[Any, Any] = JSONSerializer()
+        serializer: JSONSerializer = JSONSerializer()
         mock_bytes = mocker.NonCallableMagicMock()
         mock_bytes.decode.side_effect = UnicodeDecodeError("some encoding", b"invalid data", 0, 2, "Bad encoding ?")
 
@@ -227,7 +227,7 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         # Arrange
         from json import JSONDecodeError
 
-        serializer: JSONSerializer[Any, Any] = JSONSerializer()
+        serializer: JSONSerializer = JSONSerializer()
         mock_bytes = mocker.NonCallableMagicMock()
         mock_decoder.decode.side_effect = JSONDecodeError("Invalid payload", "invalid\ndocument", 8)
 
@@ -259,7 +259,7 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
             assert data is mocker.sentinel.data
             return mock_bytes, b"Hello World !"
 
-        serializer: JSONSerializer[Any, Any] = JSONSerializer(
+        serializer: JSONSerializer = JSONSerializer(
             encoding=mocker.sentinel.encoding,
             unicode_errors=mocker.sentinel.str_errors,
         )
@@ -292,7 +292,7 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
             assert data is mocker.sentinel.data
             return mock_bytes, mocker.sentinel.remaining_data
 
-        serializer: JSONSerializer[Any, Any] = JSONSerializer(
+        serializer: JSONSerializer = JSONSerializer(
             encoding=mocker.sentinel.encoding,
             unicode_errors=mocker.sentinel.str_errors,
         )
@@ -328,7 +328,7 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
             assert data is mocker.sentinel.data
             return mock_bytes, mocker.sentinel.remaining_data
 
-        serializer: JSONSerializer[Any, Any] = JSONSerializer(
+        serializer: JSONSerializer = JSONSerializer(
             encoding=mocker.sentinel.encoding,
             unicode_errors=mocker.sentinel.str_errors,
         )

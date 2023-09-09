@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
 
-class _CompressorSerializerForTest(AbstractCompressorSerializer[Any, Any]):
+class _CompressorSerializerForTest(AbstractCompressorSerializer[Any]):
     def new_compressor_stream(self) -> Any:
         raise NotImplementedError
 
@@ -366,7 +366,7 @@ class BaseTestCompressorSerializerImplementation:
     @pytest.mark.parametrize("method", ["serialize", "incremental_serialize", "deserialize", "incremental_deserialize"])
     def test____base_class____implements_default_methods(
         self,
-        serializer_cls: type[AbstractCompressorSerializer[Any, Any]],
+        serializer_cls: type[AbstractCompressorSerializer[Any]],
         method: str,
     ) -> None:
         # Arrange
@@ -378,7 +378,7 @@ class BaseTestCompressorSerializerImplementation:
 class TestBZ2CompressorSerializer(BaseTestCompressorSerializerImplementation):
     @pytest.fixture(scope="class")
     @staticmethod
-    def serializer_cls() -> type[BZ2CompressorSerializer[Any, Any]]:
+    def serializer_cls() -> type[BZ2CompressorSerializer[Any]]:
         return BZ2CompressorSerializer
 
     @pytest.fixture(autouse=True)
@@ -406,7 +406,7 @@ class TestBZ2CompressorSerializer(BaseTestCompressorSerializerImplementation):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer: BZ2CompressorSerializer[Any, Any]
+        serializer: BZ2CompressorSerializer[Any]
         if with_compress_level:
             serializer = BZ2CompressorSerializer(mock_serializer, compress_level=mocker.sentinel.compresslevel)
         else:
@@ -430,7 +430,7 @@ class TestBZ2CompressorSerializer(BaseTestCompressorSerializerImplementation):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer: BZ2CompressorSerializer[Any, Any] = BZ2CompressorSerializer(mock_serializer)
+        serializer: BZ2CompressorSerializer[Any] = BZ2CompressorSerializer(mock_serializer)
         mock_bz2_decompressor_cls.return_value = mocker.sentinel.stream
 
         # Act
@@ -444,7 +444,7 @@ class TestBZ2CompressorSerializer(BaseTestCompressorSerializerImplementation):
 class TestZlibCompressorSerializer(BaseTestCompressorSerializerImplementation):
     @pytest.fixture(scope="class")
     @staticmethod
-    def serializer_cls() -> type[ZlibCompressorSerializer[Any, Any]]:
+    def serializer_cls() -> type[ZlibCompressorSerializer[Any]]:
         return ZlibCompressorSerializer
 
     @pytest.fixture
@@ -472,7 +472,7 @@ class TestZlibCompressorSerializer(BaseTestCompressorSerializerImplementation):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer: ZlibCompressorSerializer[Any, Any]
+        serializer: ZlibCompressorSerializer[Any]
         if with_compress_level:
             serializer = ZlibCompressorSerializer(mock_serializer, compress_level=mocker.sentinel.compresslevel)
         else:
@@ -496,7 +496,7 @@ class TestZlibCompressorSerializer(BaseTestCompressorSerializerImplementation):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer: ZlibCompressorSerializer[Any, Any] = ZlibCompressorSerializer(mock_serializer)
+        serializer: ZlibCompressorSerializer[Any] = ZlibCompressorSerializer(mock_serializer)
         mock_zlib_decompressor_cls.return_value = mocker.sentinel.stream
 
         # Act

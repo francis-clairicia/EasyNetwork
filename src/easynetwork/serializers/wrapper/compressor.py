@@ -26,7 +26,7 @@ from collections import deque
 from collections.abc import Generator
 from typing import TYPE_CHECKING, Protocol, final
 
-from ..._typevars import _DeserializedPacketT_co, _SerializedPacketT_contra
+from ..._typevars import _DTOPacketT
 from ...exceptions import DeserializeError, IncrementalDeserializeError
 from ..abc import AbstractIncrementalPacketSerializer, AbstractPacketSerializer
 
@@ -61,7 +61,7 @@ class DecompressorInterface(Protocol, metaclass=abc.ABCMeta):
         raise NotImplementedError
 
 
-class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_SerializedPacketT_contra, _DeserializedPacketT_co]):
+class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_DTOPacketT]):
     """
     A :term:`serializer wrapper` base class for compressors.
     """
@@ -70,7 +70,7 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_Serializ
 
     def __init__(
         self,
-        serializer: AbstractPacketSerializer[_SerializedPacketT_contra, _DeserializedPacketT_co],
+        serializer: AbstractPacketSerializer[_DTOPacketT],
         expected_decompress_error: type[Exception] | tuple[type[Exception], ...],
     ) -> None:
         """
@@ -85,7 +85,7 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_Serializ
         if not isinstance(expected_decompress_error, tuple):
             expected_decompress_error = (expected_decompress_error,)
         assert all(issubclass(e, Exception) for e in expected_decompress_error)  # nosec assert_used
-        self.__serializer: AbstractPacketSerializer[_SerializedPacketT_contra, _DeserializedPacketT_co] = serializer
+        self.__serializer: AbstractPacketSerializer[_DTOPacketT] = serializer
         self.__expected_error: tuple[type[Exception], ...] = expected_decompress_error
 
     @abc.abstractmethod
@@ -105,7 +105,7 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_Serializ
         raise NotImplementedError
 
     @final
-    def serialize(self, packet: _SerializedPacketT_contra) -> bytes:
+    def serialize(self, packet: _DTOPacketT) -> bytes:
         """
         Serializes `packet` and returns the compressed data parts.
 
@@ -115,7 +115,7 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_Serializ
         return compressor.compress(self.__serializer.serialize(packet)) + compressor.flush()
 
     @final
-    def incremental_serialize(self, packet: _SerializedPacketT_contra) -> Generator[bytes, None, None]:
+    def incremental_serialize(self, packet: _DTOPacketT) -> Generator[bytes, None, None]:
         """
         Serializes `packet` and yields the compressed data parts.
 
@@ -126,7 +126,7 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_Serializ
         yield compressor.flush()
 
     @final
-    def deserialize(self, data: bytes) -> _DeserializedPacketT_co:
+    def deserialize(self, data: bytes) -> _DTOPacketT:
         """
         Decompresses `data` and returns the deserialized packet.
 
@@ -156,7 +156,7 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_Serializ
         return self.__serializer.deserialize(data)
 
     @final
-    def incremental_deserialize(self) -> Generator[None, bytes, tuple[_DeserializedPacketT_co, bytes]]:
+    def incremental_deserialize(self) -> Generator[None, bytes, tuple[_DTOPacketT, bytes]]:
         """
         Yields until data decompression is finished and deserializes the decompressed data using the underlying serializer.
 
@@ -191,7 +191,7 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_Serializ
         del results, decompressor
 
         try:
-            packet: _DeserializedPacketT_co = self.__serializer.deserialize(data)
+            packet: _DTOPacketT = self.__serializer.deserialize(data)
         except DeserializeError as exc:
             raise IncrementalDeserializeError(
                 f"Error while deserializing decompressed data: {exc}",
@@ -202,7 +202,7 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_Serializ
         return packet, unused_data
 
 
-class BZ2CompressorSerializer(AbstractCompressorSerializer[_SerializedPacketT_contra, _DeserializedPacketT_co]):
+class BZ2CompressorSerializer(AbstractCompressorSerializer[_DTOPacketT]):
     """
     A :term:`serializer wrapper` to handle bzip2 compressed data, built on top of :mod:`bz2` module.
     """
@@ -211,7 +211,7 @@ class BZ2CompressorSerializer(AbstractCompressorSerializer[_SerializedPacketT_co
 
     def __init__(
         self,
-        serializer: AbstractPacketSerializer[_SerializedPacketT_contra, _DeserializedPacketT_co],
+        serializer: AbstractPacketSerializer[_DTOPacketT],
         *,
         compress_level: int | None = None,
     ) -> None:
@@ -242,7 +242,7 @@ class BZ2CompressorSerializer(AbstractCompressorSerializer[_SerializedPacketT_co
         return self.__decompressor_factory()
 
 
-class ZlibCompressorSerializer(AbstractCompressorSerializer[_SerializedPacketT_contra, _DeserializedPacketT_co]):
+class ZlibCompressorSerializer(AbstractCompressorSerializer[_DTOPacketT]):
     """
     A :term:`serializer wrapper` to handle zlib compressed data, built on top of :mod:`zlib` module.
     """
@@ -251,7 +251,7 @@ class ZlibCompressorSerializer(AbstractCompressorSerializer[_SerializedPacketT_c
 
     def __init__(
         self,
-        serializer: AbstractPacketSerializer[_SerializedPacketT_contra, _DeserializedPacketT_co],
+        serializer: AbstractPacketSerializer[_DTOPacketT],
         *,
         compress_level: int | None = None,
     ) -> None:

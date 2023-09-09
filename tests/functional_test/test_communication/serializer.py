@@ -6,7 +6,7 @@ from easynetwork.exceptions import DeserializeError, IncrementalDeserializeError
 from easynetwork.serializers.abc import AbstractIncrementalPacketSerializer
 
 
-class StringSerializer(AbstractIncrementalPacketSerializer[str, str]):
+class StringSerializer(AbstractIncrementalPacketSerializer[str]):
     """
     Serializer to use in order to test clients and servers
     """

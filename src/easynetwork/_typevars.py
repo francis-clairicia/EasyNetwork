@@ -18,24 +18,15 @@ from __future__ import annotations
 
 __all__ = [
     "_DTOPacketT",
-    "_DeserializedPacketT_co",
     "_PacketT",
-    "_ReceivedDTOPacketT",
     "_ReceivedPacketT",
     "_RequestT",
     "_ResponseT",
-    "_SentDTOPacketT",
     "_SentPacketT",
-    "_SerializedPacketT_contra",
 ]
 
 import typing
 
-_SerializedPacketT_contra = typing.TypeVar("_SerializedPacketT_contra", contravariant=True)
-_DeserializedPacketT_co = typing.TypeVar("_DeserializedPacketT_co", covariant=True)
-
-_SentDTOPacketT = typing.TypeVar("_SentDTOPacketT")
-_ReceivedDTOPacketT = typing.TypeVar("_ReceivedDTOPacketT")
 _DTOPacketT = typing.TypeVar("_DTOPacketT")
 
 _SentPacketT = typing.TypeVar("_SentPacketT")

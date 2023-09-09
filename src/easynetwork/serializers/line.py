@@ -24,7 +24,7 @@ from ..exceptions import DeserializeError
 from .base_stream import AutoSeparatedPacketSerializer
 
 
-class StringLineSerializer(AutoSeparatedPacketSerializer[str, str]):
+class StringLineSerializer(AutoSeparatedPacketSerializer[str]):
     """
     A :term:`serializer` to handle ASCII-based protocols.
     """

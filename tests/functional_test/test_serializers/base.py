@@ -29,23 +29,23 @@ class BaseTestSerializer(metaclass=ABCMeta):
 
     def test____fixture____consistency(
         self,
-        serializer_for_serialization: AbstractPacketSerializer[Any, Any],
-        serializer_for_deserialization: AbstractPacketSerializer[Any, Any],
+        serializer_for_serialization: AbstractPacketSerializer[Any],
+        serializer_for_deserialization: AbstractPacketSerializer[Any],
     ) -> None:
         assert type(serializer_for_serialization) is type(serializer_for_deserialization)
 
     def test____slots____no_dict(
         self,
-        serializer_for_serialization: AbstractPacketSerializer[Any, Any],
-        serializer_for_deserialization: AbstractPacketSerializer[Any, Any],
+        serializer_for_serialization: AbstractPacketSerializer[Any],
+        serializer_for_deserialization: AbstractPacketSerializer[Any],
     ) -> None:
         assert not hasattr(serializer_for_serialization, "__dict__")
         assert not hasattr(serializer_for_deserialization, "__dict__")
 
     def test____slots____weakref(
         self,
-        serializer_for_serialization: AbstractPacketSerializer[Any, Any],
-        serializer_for_deserialization: AbstractPacketSerializer[Any, Any],
+        serializer_for_serialization: AbstractPacketSerializer[Any],
+        serializer_for_deserialization: AbstractPacketSerializer[Any],
     ) -> None:
         import weakref
 
@@ -54,7 +54,7 @@ class BaseTestSerializer(metaclass=ABCMeta):
 
     def test____serialize____sample(
         self,
-        serializer_for_serialization: AbstractPacketSerializer[Any, Any],
+        serializer_for_serialization: AbstractPacketSerializer[Any],
         packet_to_serialize: Any,
         expected_complete_data: bytes | Callable[[bytes], None],
     ) -> None:
@@ -72,7 +72,7 @@ class BaseTestSerializer(metaclass=ABCMeta):
 
     def test____deserialize____sample(
         self,
-        serializer_for_deserialization: AbstractPacketSerializer[Any, Any],
+        serializer_for_deserialization: AbstractPacketSerializer[Any],
         complete_data: bytes,
         packet_to_serialize: Any,
     ) -> None:
@@ -87,7 +87,7 @@ class BaseTestSerializer(metaclass=ABCMeta):
 
     def test____deserialize____invalid_data(
         self,
-        serializer_for_deserialization: AbstractPacketSerializer[Any, Any],
+        serializer_for_deserialization: AbstractPacketSerializer[Any],
         invalid_complete_data: bytes,
     ) -> None:
         # Arrange
@@ -98,7 +98,7 @@ class BaseTestSerializer(metaclass=ABCMeta):
 
     def test____deserialize____extra_data(
         self,
-        serializer_for_deserialization: AbstractPacketSerializer[Any, Any],
+        serializer_for_deserialization: AbstractPacketSerializer[Any],
         complete_data: bytes,
         oneshot_extra_data: bytes,
     ) -> None:
@@ -128,7 +128,7 @@ class BaseTestIncrementalSerializer(BaseTestSerializer):
 
     def test____incremental_serialize____concatenated_chunks(
         self,
-        serializer_for_serialization: AbstractIncrementalPacketSerializer[Any, Any],
+        serializer_for_serialization: AbstractIncrementalPacketSerializer[Any],
         packet_to_serialize: Any,
         expected_joined_data: bytes | Callable[[bytes], None],
     ) -> None:
@@ -145,7 +145,7 @@ class BaseTestIncrementalSerializer(BaseTestSerializer):
 
     def test____incremental_deserialize____one_shot_chunk(
         self,
-        serializer_for_deserialization: AbstractIncrementalPacketSerializer[Any, Any],
+        serializer_for_deserialization: AbstractIncrementalPacketSerializer[Any],
         complete_data_for_incremental_deserialize: bytes,
         packet_to_serialize: Any,
     ) -> None:
@@ -164,7 +164,7 @@ class BaseTestIncrementalSerializer(BaseTestSerializer):
 
     def test____incremental_deserialize____with_remaining_data(
         self,
-        serializer_for_deserialization: AbstractIncrementalPacketSerializer[Any, Any],
+        serializer_for_deserialization: AbstractIncrementalPacketSerializer[Any],
         complete_data_for_incremental_deserialize: bytes,
         packet_to_serialize: Any,
         incremental_extra_data: bytes,
@@ -185,7 +185,7 @@ class BaseTestIncrementalSerializer(BaseTestSerializer):
 
     def test____incremental_deserialize____give_chunk_byte_per_byte(
         self,
-        serializer_for_deserialization: AbstractIncrementalPacketSerializer[Any, Any],
+        serializer_for_deserialization: AbstractIncrementalPacketSerializer[Any],
         complete_data_for_incremental_deserialize: bytes,
         packet_to_serialize: Any,
     ) -> None:
@@ -212,7 +212,7 @@ class BaseTestIncrementalSerializer(BaseTestSerializer):
 
     def test____incremental_deserialize____invalid_data(
         self,
-        serializer_for_deserialization: AbstractIncrementalPacketSerializer[Any, Any],
+        serializer_for_deserialization: AbstractIncrementalPacketSerializer[Any],
         invalid_partial_data: bytes,
         invalid_partial_data_extra_data: bytes | None,
     ) -> None:
@@ -236,7 +236,7 @@ class BaseTestIncrementalSerializer(BaseTestSerializer):
 
 
 @final
-class NoSerialization(AbstractPacketSerializer[bytes, bytes]):
+class NoSerialization(AbstractPacketSerializer[bytes]):
     """Helper for serializer wrapper"""
 
     def serialize(self, packet: bytes) -> bytes:

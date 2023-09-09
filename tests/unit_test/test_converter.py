@@ -29,12 +29,12 @@ class TestPacketConverterComposite:
     def converter(
         create_from_dto_stub: MagicMock,
         convert_to_dto_stub: MagicMock,
-    ) -> PacketConverterComposite[Any, Any, Any, Any]:
+    ) -> PacketConverterComposite[Any, Any, Any]:
         return PacketConverterComposite(convert_to_dto=convert_to_dto_stub, create_from_dto=create_from_dto_stub)
 
     def test____create_from_dto_packet____callback(
         self,
-        converter: PacketConverterComposite[Any, Any, Any, Any],
+        converter: PacketConverterComposite[Any, Any, Any],
         create_from_dto_stub: MagicMock,
         mocker: MockerFixture,
     ) -> None:
@@ -50,7 +50,7 @@ class TestPacketConverterComposite:
 
     def test____convert_to_dto_packet____callback(
         self,
-        converter: PacketConverterComposite[Any, Any, Any, Any],
+        converter: PacketConverterComposite[Any, Any, Any],
         convert_to_dto_stub: MagicMock,
         mocker: MockerFixture,
     ) -> None:
@@ -87,7 +87,7 @@ class TestRequestResponseConverterBuilder:
         mock_response_converter.create_from_dto_packet.return_value = mocker.sentinel.response
 
         # Act
-        converter: AbstractPacketConverterComposite[Any, Any, Any, Any]
+        converter: AbstractPacketConverterComposite[Any, Any, Any]
         converter = RequestResponseConverterBuilder.build_for_client(mock_request_converter, mock_response_converter)
         dto_request = converter.convert_to_dto_packet(mocker.sentinel.request)
         response = converter.create_from_dto_packet(mocker.sentinel.dto_response)
@@ -111,7 +111,7 @@ class TestRequestResponseConverterBuilder:
         mock_response_converter.convert_to_dto_packet.return_value = mocker.sentinel.dto_response
 
         # Act
-        converter: AbstractPacketConverterComposite[Any, Any, Any, Any]
+        converter: AbstractPacketConverterComposite[Any, Any, Any]
         converter = RequestResponseConverterBuilder.build_for_server(mock_request_converter, mock_response_converter)
         request = converter.create_from_dto_packet(mocker.sentinel.dto_request)
         dto_response = converter.convert_to_dto_packet(mocker.sentinel.response)

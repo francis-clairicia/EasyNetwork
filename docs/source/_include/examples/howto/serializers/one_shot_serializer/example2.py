@@ -7,7 +7,7 @@ from easynetwork.exceptions import DeserializeError
 from easynetwork.serializers.abc import AbstractPacketSerializer
 
 
-class MyJSONSerializer(AbstractPacketSerializer[Any, Any]):
+class MyJSONSerializer(AbstractPacketSerializer[Any]):
     def serialize(self, packet: Any) -> bytes:
         document = json.dumps(packet)
         return document.encode()

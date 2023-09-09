@@ -24,13 +24,13 @@ import os
 from collections.abc import Callable
 from typing import Literal, assert_never, final
 
-from ..._typevars import _DeserializedPacketT_co, _SerializedPacketT_contra
+from ..._typevars import _DTOPacketT
 from ...exceptions import DeserializeError
 from ..abc import AbstractPacketSerializer
 from ..base_stream import AutoSeparatedPacketSerializer
 
 
-class Base64EncoderSerializer(AutoSeparatedPacketSerializer[_SerializedPacketT_contra, _DeserializedPacketT_co]):
+class Base64EncoderSerializer(AutoSeparatedPacketSerializer[_DTOPacketT]):
     """
     A :term:`serializer wrapper` to handle base64 encoded data, built on top of :mod:`base64` module.
     """
@@ -39,7 +39,7 @@ class Base64EncoderSerializer(AutoSeparatedPacketSerializer[_SerializedPacketT_c
 
     def __init__(
         self,
-        serializer: AbstractPacketSerializer[_SerializedPacketT_contra, _DeserializedPacketT_co],
+        serializer: AbstractPacketSerializer[_DTOPacketT],
         *,
         alphabet: Literal["standard", "urlsafe"] = "urlsafe",
         checksum: bool | str | bytes = False,
@@ -66,7 +66,7 @@ class Base64EncoderSerializer(AutoSeparatedPacketSerializer[_SerializedPacketT_c
         super().__init__(separator=separator, incremental_serialize_check_separator=not separator.isspace())
         if not isinstance(serializer, AbstractPacketSerializer):
             raise TypeError(f"Expected a serializer instance, got {serializer!r}")
-        self.__serializer: AbstractPacketSerializer[_SerializedPacketT_contra, _DeserializedPacketT_co] = serializer
+        self.__serializer: AbstractPacketSerializer[_DTOPacketT] = serializer
         self.__checksum: Callable[[bytes], bytes] | None
         match checksum:
             case False:
@@ -113,7 +113,7 @@ class Base64EncoderSerializer(AutoSeparatedPacketSerializer[_SerializedPacketT_c
         return base64.urlsafe_b64encode(os.urandom(32))
 
     @final
-    def serialize(self, packet: _SerializedPacketT_contra) -> bytes:
+    def serialize(self, packet: _DTOPacketT) -> bytes:
         """
         Serializes `packet` and encodes the result in base64.
 
@@ -129,7 +129,7 @@ class Base64EncoderSerializer(AutoSeparatedPacketSerializer[_SerializedPacketT_c
         return self.__encode(data)
 
     @final
-    def deserialize(self, data: bytes) -> _DeserializedPacketT_co:
+    def deserialize(self, data: bytes) -> _DTOPacketT:
         """
         Decodes base64 token `data` and deserializes the result.
 

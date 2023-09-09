@@ -7,7 +7,7 @@ from easynetwork.exceptions import DeserializeError
 from easynetwork.serializers.abc import AbstractPacketSerializer
 
 
-class MyJSONSerializer(AbstractPacketSerializer[Any, Any]):
+class MyJSONSerializer(AbstractPacketSerializer[Any]):
     def __init__(self, *, ensure_ascii: bool = True) -> None:
         self._ensure_ascii: bool = ensure_ascii
 

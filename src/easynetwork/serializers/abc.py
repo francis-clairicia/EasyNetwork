@@ -25,11 +25,11 @@ from abc import ABCMeta, abstractmethod
 from collections.abc import Generator
 from typing import Any, Generic
 
-from .._typevars import _DeserializedPacketT_co, _SerializedPacketT_contra
+from .._typevars import _DTOPacketT
 from ..exceptions import DeserializeError
 
 
-class AbstractPacketSerializer(Generic[_SerializedPacketT_contra, _DeserializedPacketT_co], metaclass=ABCMeta):
+class AbstractPacketSerializer(Generic[_DTOPacketT], metaclass=ABCMeta):
     """
     The base class for implementing a :term:`serializer`.
 
@@ -42,7 +42,7 @@ class AbstractPacketSerializer(Generic[_SerializedPacketT_contra, _DeserializedP
         raise TypeError(f"cannot pickle {self.__class__.__name__!r} object")
 
     @abstractmethod
-    def serialize(self, packet: _SerializedPacketT_contra, /) -> bytes:
+    def serialize(self, packet: _DTOPacketT, /) -> bytes:
         """
         Returns the byte representation of the Python object `packet`.
 
@@ -55,7 +55,7 @@ class AbstractPacketSerializer(Generic[_SerializedPacketT_contra, _DeserializedP
         raise NotImplementedError
 
     @abstractmethod
-    def deserialize(self, data: bytes, /) -> _DeserializedPacketT_co:
+    def deserialize(self, data: bytes, /) -> _DTOPacketT:
         """
         Creates a Python object representing the raw :term:`packet` from `data`.
 
@@ -71,7 +71,7 @@ class AbstractPacketSerializer(Generic[_SerializedPacketT_contra, _DeserializedP
         raise NotImplementedError
 
 
-class AbstractIncrementalPacketSerializer(AbstractPacketSerializer[_SerializedPacketT_contra, _DeserializedPacketT_co]):
+class AbstractIncrementalPacketSerializer(AbstractPacketSerializer[_DTOPacketT]):
     """
     The base class for implementing an :term:`incremental serializer`.
     """
@@ -79,7 +79,7 @@ class AbstractIncrementalPacketSerializer(AbstractPacketSerializer[_SerializedPa
     __slots__ = ()
 
     @abstractmethod
-    def incremental_serialize(self, packet: _SerializedPacketT_contra, /) -> Generator[bytes, None, None]:
+    def incremental_serialize(self, packet: _DTOPacketT, /) -> Generator[bytes, None, None]:
         """
         Returns the byte representation of the Python object `packet`.
 
@@ -97,7 +97,7 @@ class AbstractIncrementalPacketSerializer(AbstractPacketSerializer[_SerializedPa
         raise NotImplementedError
 
     @abstractmethod
-    def incremental_deserialize(self) -> Generator[None, bytes, tuple[_DeserializedPacketT_co, bytes]]:
+    def incremental_deserialize(self) -> Generator[None, bytes, tuple[_DTOPacketT, bytes]]:
         """
         Creates a Python object representing the raw :term:`packet`.
 
@@ -112,7 +112,7 @@ class AbstractIncrementalPacketSerializer(AbstractPacketSerializer[_SerializedPa
         """
         raise NotImplementedError
 
-    def serialize(self, packet: _SerializedPacketT_contra, /) -> bytes:
+    def serialize(self, packet: _DTOPacketT, /) -> bytes:
         """
         Returns the byte representation of the Python object `packet`.
 
@@ -126,7 +126,7 @@ class AbstractIncrementalPacketSerializer(AbstractPacketSerializer[_SerializedPa
         """
         return b"".join(self.incremental_serialize(packet))
 
-    def deserialize(self, data: bytes, /) -> _DeserializedPacketT_co:
+    def deserialize(self, data: bytes, /) -> _DTOPacketT:
         """
         Creates a Python object representing the raw :term:`packet` from `data`.
 
@@ -142,12 +142,12 @@ class AbstractIncrementalPacketSerializer(AbstractPacketSerializer[_SerializedPa
         Returns:
             the deserialized Python object.
         """
-        consumer: Generator[None, bytes, tuple[_DeserializedPacketT_co, bytes]] = self.incremental_deserialize()
+        consumer: Generator[None, bytes, tuple[_DTOPacketT, bytes]] = self.incremental_deserialize()
         try:
             next(consumer)
         except StopIteration:
             raise RuntimeError("self.incremental_deserialize() generator did not yield") from None
-        packet: _DeserializedPacketT_co
+        packet: _DTOPacketT
         remaining: bytes
         try:
             consumer.send(data)

@@ -24,7 +24,7 @@ __all__ = [
 from collections.abc import Generator
 from typing import Any, Generic, overload
 
-from ._typevars import _ReceivedDTOPacketT, _ReceivedPacketT, _SentDTOPacketT, _SentPacketT
+from ._typevars import _DTOPacketT, _ReceivedPacketT, _SentPacketT
 from .converter import AbstractPacketConverterComposite
 from .exceptions import (
     DatagramProtocolParseError,
@@ -44,7 +44,7 @@ class DatagramProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
     @overload
     def __init__(
         self,
-        serializer: AbstractPacketSerializer[_SentPacketT, _ReceivedPacketT],
+        serializer: AbstractPacketSerializer[_SentPacketT | _ReceivedPacketT],
         converter: None = ...,
     ) -> None:
         ...
@@ -52,15 +52,15 @@ class DatagramProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
     @overload
     def __init__(
         self,
-        serializer: AbstractPacketSerializer[_SentDTOPacketT, _ReceivedDTOPacketT],
-        converter: AbstractPacketConverterComposite[_SentPacketT, _SentDTOPacketT, _ReceivedPacketT, _ReceivedDTOPacketT],
+        serializer: AbstractPacketSerializer[_DTOPacketT],
+        converter: AbstractPacketConverterComposite[_SentPacketT, _ReceivedPacketT, _DTOPacketT],
     ) -> None:
         ...
 
     def __init__(
         self,
-        serializer: AbstractPacketSerializer[Any, Any],
-        converter: AbstractPacketConverterComposite[_SentPacketT, Any, _ReceivedPacketT, Any] | None = None,
+        serializer: AbstractPacketSerializer[Any],
+        converter: AbstractPacketConverterComposite[_SentPacketT, _ReceivedPacketT, Any] | None = None,
     ) -> None:
         """
         Parameters:
@@ -72,8 +72,8 @@ class DatagramProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
             raise TypeError(f"Expected a serializer instance, got {serializer!r}")
         if converter is not None and not isinstance(converter, AbstractPacketConverterComposite):
             raise TypeError(f"Expected a converter instance, got {converter!r}")
-        self.__serializer: AbstractPacketSerializer[Any, Any] = serializer
-        self.__converter: AbstractPacketConverterComposite[_SentPacketT, Any, _ReceivedPacketT, Any] | None = converter
+        self.__serializer: AbstractPacketSerializer[Any] = serializer
+        self.__converter: AbstractPacketConverterComposite[_SentPacketT, _ReceivedPacketT, Any] | None = converter
 
     def make_datagram(self, packet: _SentPacketT) -> bytes:
         """
@@ -125,7 +125,7 @@ class StreamProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
     @overload
     def __init__(
         self,
-        serializer: AbstractIncrementalPacketSerializer[_SentPacketT, _ReceivedPacketT],
+        serializer: AbstractIncrementalPacketSerializer[_SentPacketT | _ReceivedPacketT],
         converter: None = ...,
     ) -> None:
         ...
@@ -133,15 +133,15 @@ class StreamProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
     @overload
     def __init__(
         self,
-        serializer: AbstractIncrementalPacketSerializer[_SentDTOPacketT, _ReceivedDTOPacketT],
-        converter: AbstractPacketConverterComposite[_SentPacketT, _SentDTOPacketT, _ReceivedPacketT, _ReceivedDTOPacketT],
+        serializer: AbstractIncrementalPacketSerializer[_DTOPacketT],
+        converter: AbstractPacketConverterComposite[_SentPacketT, _ReceivedPacketT, _DTOPacketT],
     ) -> None:
         ...
 
     def __init__(
         self,
-        serializer: AbstractIncrementalPacketSerializer[Any, Any],
-        converter: AbstractPacketConverterComposite[_SentPacketT, Any, _ReceivedPacketT, Any] | None = None,
+        serializer: AbstractIncrementalPacketSerializer[Any],
+        converter: AbstractPacketConverterComposite[_SentPacketT, _ReceivedPacketT, Any] | None = None,
     ) -> None:
         """
         Parameters:
@@ -153,8 +153,8 @@ class StreamProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
             raise TypeError(f"Expected an incremental serializer instance, got {serializer!r}")
         if converter is not None and not isinstance(converter, AbstractPacketConverterComposite):
             raise TypeError(f"Expected a converter instance, got {converter!r}")
-        self.__serializer: AbstractIncrementalPacketSerializer[Any, Any] = serializer
-        self.__converter: AbstractPacketConverterComposite[_SentPacketT, Any, _ReceivedPacketT, Any] | None = converter
+        self.__serializer: AbstractIncrementalPacketSerializer[Any] = serializer
+        self.__converter: AbstractPacketConverterComposite[_SentPacketT, _ReceivedPacketT, Any] | None = converter
 
     def generate_chunks(self, packet: _SentPacketT) -> Generator[bytes, None, None]:
         """

@@ -22,12 +22,12 @@ class TestCBORSerializer(BaseTestIncrementalSerializer):
 
     @pytest.fixture(scope="class")
     @classmethod
-    def serializer_for_serialization(cls) -> CBORSerializer[Any, Any]:
+    def serializer_for_serialization(cls) -> CBORSerializer:
         return CBORSerializer(encoder_config=cls.ENCODER_CONFIG)
 
     @pytest.fixture(scope="class")
     @staticmethod
-    def serializer_for_deserialization() -> CBORSerializer[Any, Any]:
+    def serializer_for_deserialization() -> CBORSerializer:
         return CBORSerializer()
 
     #### Packets to test
