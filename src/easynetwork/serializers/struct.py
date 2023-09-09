@@ -60,6 +60,13 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_DTOPacketT]):
 
     This is an abstract class in order to allow you to include fancy structures like :class:`ctypes.Structure` subclasses.
 
+    Note:
+        If the endianness is not specified, the network byte-order is used::
+
+            >>> s = StructSerializer("qq")
+            >>> s.struct.format
+            '!qq'
+
     See Also:
         The :class:`.NamedTupleStructSerializer` class.
     """
@@ -70,13 +77,6 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_DTOPacketT]):
         """
         Parameters:
             format: The :class:`struct.Struct` format definition string.
-
-        Note:
-            If the endianness is not specified, the network byte-order is used::
-
-                >>> s = StructSerializer("qq")  # doctest: +SKIP
-                >>> s.struct.format  # doctest: +SKIP
-                '!qq'
         """
         from struct import Struct, error
 
@@ -241,13 +241,13 @@ class NamedTupleStructSerializer(AbstractStructSerializer[_NamedTupleVar]):
             field_fmt = field_formats[field]
             if any(c in _ENDIANNESS_CHARACTERS for c in field_fmt):
                 raise ValueError(f"{field!r}: Invalid field format")
-            if field_fmt and field_fmt[-1] == "s":
+            if field_fmt[-1:] == "s":
                 if len(field_fmt) > 1 and not field_fmt[:-1].isdecimal():
                     raise ValueError(f"{field!r}: Invalid field format")
                 string_fields.add(field)
             elif len(field_fmt) != 1 or not field_fmt.isalpha():
                 raise ValueError(f"{field!r}: Invalid field format")
-        super().__init__(f"{format_endianness}{''.join(map(field_formats.__getitem__, namedtuple_cls._fields))}")
+        super().__init__(f"{format_endianness}{''.join(field_formats[field] for field in namedtuple_cls._fields)}")
         self.__namedtuple_cls: type[_NamedTupleVar] = namedtuple_cls
         self.__string_fields: frozenset[str] = frozenset(string_fields)
         self.__encoding: str | None = encoding
