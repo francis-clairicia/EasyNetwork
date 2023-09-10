@@ -79,7 +79,6 @@ class StringLineSerializer(AutoSeparatedPacketSerializer[str]):
                 return packet.encode()
 
         Example:
-            >>> from easynetwork.serializers import StringLineSerializer
             >>> s = StringLineSerializer()
             >>> s.serialize("character string")
             b'character string'
@@ -116,7 +115,6 @@ class StringLineSerializer(AutoSeparatedPacketSerializer[str]):
                 return data.decode()
 
         Example:
-            >>> from easynetwork.serializers import StringLineSerializer
             >>> s = StringLineSerializer()
             >>> s.deserialize(b"character string")
             'character string'

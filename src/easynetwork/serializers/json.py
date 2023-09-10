@@ -211,7 +211,6 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[Any]):
                 return json.dumps(packet)
 
         Example:
-            >>> from easynetwork.serializers import JSONSerializer
             >>> s = JSONSerializer()
             >>> s.serialize({"key": [1, 2, 3], "data": None})
             b'{"key":[1,2,3],"data":null}'
@@ -230,7 +229,6 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[Any]):
         Returns the JSON representation of the Python object `packet`.
 
         Example:
-            >>> from easynetwork.serializers import JSONSerializer
             >>> s = JSONSerializer()
             >>> b"".join(s.incremental_serialize({"key": [1, 2, 3], "data": None}))
             b'{"key":[1,2,3],"data":null}\n'
@@ -255,7 +253,6 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[Any]):
                 return json.loads(data)
 
         Example:
-            >>> from easynetwork.serializers import JSONSerializer
             >>> s = JSONSerializer()
             >>> s.deserialize(b'{"key":[1,2,3],"data":null}')
             {'key': [1, 2, 3], 'data': None}
@@ -298,7 +295,6 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[Any]):
             IncrementalDeserializeError: A :class:`UnicodeError` or :class:`~json.JSONDecodeError` have been raised.
 
         Example:
-            >>> from easynetwork.serializers import JSONSerializer
             >>> s = JSONSerializer()
             >>> consumer = s.incremental_deserialize()
             >>> next(consumer)
