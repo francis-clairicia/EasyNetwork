@@ -67,7 +67,7 @@ class ThreadsPortal(AbstractThreadsPortal):
         return self.__get_result(self.__run_sync_soon(func, *args, **kwargs))
 
     def __run_sync_soon(self, func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> concurrent.futures.Future[_T]:
-        def callback(future: concurrent.futures.Future[_T]) -> None:
+        def callback() -> None:
             try:
                 result = func(*args, **kwargs)
             except BaseException as exc:
@@ -76,8 +76,6 @@ class ThreadsPortal(AbstractThreadsPortal):
                     raise
             else:
                 future.set_result(result)
-            finally:
-                del future
 
         ctx = contextvars.copy_context()
 
@@ -87,7 +85,7 @@ class ThreadsPortal(AbstractThreadsPortal):
         future: concurrent.futures.Future[_T] = concurrent.futures.Future()
         future.set_running_or_notify_cancel()
 
-        self.__loop.call_soon_threadsafe(callback, future, context=ctx)
+        self.__loop.call_soon_threadsafe(callback, context=ctx)
         return future
 
     @staticmethod
