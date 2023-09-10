@@ -291,9 +291,6 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[Any]):
         """
         Creates a Python object representing the raw JSON :term:`packet`.
 
-        Raises:
-            IncrementalDeserializeError: A :class:`UnicodeError` or :class:`~json.JSONDecodeError` have been raised.
-
         Example:
             >>> s = JSONSerializer()
             >>> consumer = s.incremental_deserialize()
@@ -306,6 +303,9 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[Any]):
 
         Yields:
             :data:`None` until the whole :term:`packet` has been deserialized.
+
+        Raises:
+            IncrementalDeserializeError: A :class:`UnicodeError` or :class:`~json.JSONDecodeError` have been raised.
 
         Returns:
             a tuple with the deserialized Python object and the unused trailing data.
