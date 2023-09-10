@@ -305,6 +305,4 @@ Client:
 
 .. Links
 
-.. _File Transfer Protocol: https://en.wikipedia.org/wiki/File_Transfer_Protocol
-
-.. _Telnet Protocol: https://en.wikipedia.org/wiki/Telnet
+.. include:: ../_include/link-labels.rst

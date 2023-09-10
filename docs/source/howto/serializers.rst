@@ -13,7 +13,7 @@ The basics
 Where are they used?
 --------------------
 
-A :term:`serializer` is used by a :term:`protocol object`. Currently there are two implementations:
+A :term:`serializer` is used by a :term:`protocol object`:
 
 * :class:`.DatagramProtocol`: accepts any :term:`serializer` object.
 

@@ -48,12 +48,7 @@ For communication via TCP, a :class:`.StreamProtocol` :term:`protocol object` mu
 
 .. note::
 
-   Of course, you are under no obligation to create a subclass.
-
-   The main advantage of this model is to declaratively define the :term:`communication protocol`
-   (the name of the class being that of the protocol, the types of objects sent and received, etc.).
-
-   Another advantage is that the :term:`serializer` (and :term:`converter`, if any) can be configured in a single place in the project.
+   Of course, you are under no obligation to write a subclass. But see :ref:`this note <why-write-a-protocol-subclass>` for details.
 
 
 The server
@@ -68,7 +63,6 @@ Create your request handler
 
 First, you must create a request handler class by subclassing the :class:`.AsyncStreamRequestHandler` class and overriding
 its :meth:`~.AsyncStreamRequestHandler.handle` method; this method will process incoming requests.
-
 Its :meth:`~.AsyncStreamRequestHandler.bad_request` method must also be overridden to handle parsing errors.
 
 .. literalinclude:: ../_include/examples/tutorials/echo_client_server_tcp/echo_request_handler.py
@@ -93,7 +87,6 @@ Its :meth:`~.AsyncStreamRequestHandler.bad_request` method must also be overridd
 .. warning::
 
    Leaving the generator will *not* close the connection, a new generator will be created afterwards.
-
    The same applies to :meth:`~.AsyncStreamRequestHandler.bad_request`.
 
    You may, however, explicitly close the connection if you want to::
@@ -129,7 +122,6 @@ and the request handler instance.
 .. note::
 
    Setting ``host`` to :data:`None` will bind the server to all interfaces.
-
    This means the server is ready to accept connections with IPv4 and IPv6 addresses (if available).
 
 
@@ -189,6 +181,5 @@ Client:
    Sent:     {'command-line arguments': ['Python', 'is', 'nice']}
    Received: {'command-line arguments': ['Python', 'is', 'nice']}
 
-.. Links
 
-.. _FTP: https://en.wikipedia.org/wiki/File_Transfer_Protocol
+.. include:: ../_include/link-labels.rst

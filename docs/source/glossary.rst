@@ -85,3 +85,6 @@ Glossary
       b'eyJkYXRhIjo0Mn0='
       >>> s.deserialize(data)
       {'data': 42}
+
+      Most of the time, a serializer wrapper is an :term:`incremental serializer` to allow a :term:`one-shot serializer`
+      to be used in a stream context.
