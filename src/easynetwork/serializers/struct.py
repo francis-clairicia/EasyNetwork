@@ -45,8 +45,8 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_DTOPacketT]):
         ...     __slots__ = ()
         ...     def iter_values(self, packet):
         ...         return packet
-        ...     def from_tuple(self, t):
-        ...         return t
+        ...     def from_tuple(self, packet_tuple):
+        ...         return packet_tuple
         ...
 
     And then::
@@ -103,14 +103,14 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_DTOPacketT]):
         raise NotImplementedError
 
     @abstractmethod
-    def from_tuple(self, t: tuple[Any, ...], /) -> _DTOPacketT:
+    def from_tuple(self, packet_tuple: tuple[Any, ...], /) -> _DTOPacketT:
         """
         Finishes the packet deserialization by parsing the tuple obtained by :meth:`struct.Struct.unpack`.
 
         See :meth:`deserialize` for details.
 
         Parameters:
-            t: A tuple of each elements extracted from the structure.
+            packet_tuple: A tuple of each elements extracted from the structure.
 
         Returns:
             the deserialized Python object.
@@ -294,7 +294,7 @@ class NamedTupleStructSerializer(AbstractStructSerializer[_NamedTupleVar]):
         return packet
 
     @final
-    def from_tuple(self, t: tuple[Any, ...]) -> _NamedTupleVar:
+    def from_tuple(self, packet_tuple: tuple[Any, ...], /) -> _NamedTupleVar:
         r"""
         Constructs the named tuple from the given tuple.
 
@@ -321,12 +321,12 @@ class NamedTupleStructSerializer(AbstractStructSerializer[_NamedTupleVar]):
                 Person(name='John', age=20)
 
         Parameters:
-            t: A tuple of each elements extracted from the structure.
+            packet_tuple: A tuple of each elements extracted from the structure.
 
         Returns:
             a `namedtuple_cls` instance.
         """
-        p = self.__namedtuple_cls._make(t)
+        p = self.__namedtuple_cls._make(packet_tuple)
         string_fields: dict[str, bytes] = {field: getattr(p, field) for field in self.__string_fields}
         if string_fields:
             to_replace: dict[str, Any] | None = None
