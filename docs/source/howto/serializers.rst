@@ -57,7 +57,9 @@ was "expected" so that the received data is considered invalid.
    :linenos:
    :emphasize-lines: 6,16,19-20
 
-Otherwise, any other error is considered a serializer crash.
+.. warning::
+
+   Otherwise, any other error is considered a serializer crash.
 
 
 The use of ``self``
@@ -108,8 +110,8 @@ You must pass the :term:`serializer` to the appropriate :term:`protocol object` 
    If this is important to you, don't choose one of them lightly.
 
 
-Write an incremental serializer
-===============================
+Writing an incremental serializer
+=================================
 
 :term:`Incremental serializers <incremental serializer>` are a bit trickier to implement. They can be used directly on both
 :class:`.StreamProtocol` and :class:`.DatagramProtocol` instances.
@@ -224,6 +226,7 @@ At each :keyword:`yield` checkpoint, the endpoint implementation sends the data 
    :pyobject: MyJSONSerializer.incremental_deserialize
    :dedent:
    :lineno-match:
+   :emphasize-lines: 2,5
 
 .. note::
 
@@ -256,12 +259,13 @@ to indicate that a parsing error was "expected" so that the received data is con
    :lineno-match:
    :emphasize-lines: 12-13
 
-Otherwise, any other error is considered a serializer crash.
-
-:exc:`.IncrementalDeserializeError` needs the possible valid remainder, that is not the root cause of the error.
-In the example, even if ``data`` is an invalid JSON object, all bytes after the ``\r\n`` token (in ``remainder``) are not lost.
-
-
 .. warning::
 
+   Otherwise, any other error is considered a serializer crash.
+
    If :exc:`.DeserializeError` is raised instead, this is converted to a :exc:`RuntimeError`.
+
+.. note::
+
+   :exc:`.IncrementalDeserializeError` needs the possible valid remainder, that is not the root cause of the error.
+   In the example, even if ``data`` is an invalid JSON object, all bytes after the ``\r\n`` token (in ``remainder``) are not lost.

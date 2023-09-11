@@ -67,18 +67,52 @@ The :term:`protocol objects <protocol object>` are requested by endpoint and ser
 
       .. literalinclude:: ../_include/examples/howto/protocols/usage/datagram_protocol.py
          :pyobject: main
+         :end-at: ...
          :linenos:
 
    .. group-tab:: StreamProtocol
 
       .. literalinclude:: ../_include/examples/howto/protocols/usage/stream_protocol.py
          :pyobject: main
+         :end-at: ...
          :linenos:
 
 .. warning::
 
    A :term:`protocol object` is intended to be shared by multiple endpoints. Do not store sensitive data in these objects.
    You might see some magic.
+
+
+Parsing error
+-------------
+
+The :term:`protocol objects <protocol object>` raise a :exc:`.BaseProtocolParseError` subclass when the received data is invalid:
+
+.. tabs::
+
+   .. group-tab:: DatagramProtocol
+
+      The raised exception is :exc:`.DatagramProtocolParseError`.
+
+      .. literalinclude:: ../_include/examples/howto/protocols/usage/datagram_protocol.py
+         :pyobject: main
+         :start-at: try:
+         :dedent:
+         :linenos:
+
+   .. group-tab:: StreamProtocol
+
+      The raised exception is :exc:`.StreamProtocolParseError`.
+
+      .. literalinclude:: ../_include/examples/howto/protocols/usage/stream_protocol.py
+         :pyobject: main
+         :start-at: try:
+         :dedent:
+         :linenos:
+
+.. tip::
+
+   The underlying :exc:`.DeserializeError` instance is available with the :attr:`~.BaseProtocolParseError.error` attribute.
 
 
 The converters
@@ -95,8 +129,8 @@ However, you just want to be able to manipulate your business objects without ha
 This is what a :term:`converter` can do for you. It creates a :term:`DTO` suitable for the underlying :term:`serializer` and validates the received
 :term:`DTO` to recreate the business object.
 
-Write a converter
------------------
+Writing a converter
+-------------------
 
 To write a :term:`converter`, you must create a subclass of :class:`~.AbstractPacketConverter` and override
 its :meth:`~.AbstractPacketConverter.convert_to_dto_packet` and :meth:`~.AbstractPacketConverter.create_from_dto_packet` methods.
