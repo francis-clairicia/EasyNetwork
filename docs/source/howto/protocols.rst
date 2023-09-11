@@ -32,7 +32,7 @@ You can either directly create an instance:
       .. literalinclude:: ../_include/examples/howto/protocols/basics/stream_protocol_instance.py
          :linenos:
 
-or do a subclass:
+or create a subclass:
 
 .. tabs::
 
@@ -161,6 +161,33 @@ In the application, you can now safely handle an object with real meaning:
 
 .. literalinclude:: ../_include/examples/howto/protocols/simple_converter/example2.py
    :pyobject: main
+   :linenos:
+
+
+Writing a composite converter
+-----------------------------
+
+Most of the time, the packets sent and received are different (the request/response system). To deal with this, a :term:`protocol object`
+accepts a :term:`composite converter`.
+
+To write a :term:`composite converter`, there are two ways described below.
+
+.. note::
+
+   Do what you think is best, there is no recommended method.
+
+Option 1: Using ``StapledPacketConverter``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. literalinclude:: ../_include/examples/howto/protocols/composite_converter/stapled_packet_converter.py
+   :start-at: from __future__ import
+   :linenos:
+
+Option 2: By subclassing ``AbstractPacketConverterComposite``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. literalinclude:: ../_include/examples/howto/protocols/composite_converter/packet_converter_subclass.py
+   :start-at: from __future__ import
    :linenos:
 
 

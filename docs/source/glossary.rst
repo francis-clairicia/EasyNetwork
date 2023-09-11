@@ -13,7 +13,7 @@ Glossary
    composite converter
       A :term:`converter` that processes different objects in input and output.
 
-      .. seealso:: :class:`.RequestResponseConverterBuilder` class.
+      .. seealso:: :class:`.StapledPacketConverter` class.
 
    converter
       An interface responsible for bridging the gap between the Python objects manipulated by the application/software
@@ -86,5 +86,5 @@ Glossary
       >>> s.deserialize(data)
       {'data': 42}
 
-      Most of the time, a serializer wrapper is an :term:`incremental serializer` to allow a :term:`one-shot serializer`
+      Most of the time, a serializer wrapper is an :term:`incremental serializer` in order to allow a :term:`one-shot serializer`
       to be used in a stream context.
