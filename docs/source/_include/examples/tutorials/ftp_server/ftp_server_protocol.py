@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from easynetwork.converter import RequestResponseConverterBuilder
+from easynetwork.converter import StapledPacketConverter
 from easynetwork.protocol import StreamProtocol
 from easynetwork.serializers import StringLineSerializer
 
@@ -16,8 +16,8 @@ class FTPServerProtocol(StreamProtocol[FTPReply, FTPRequest]):
 
         super().__init__(
             serializer=StringLineSerializer(newline="CRLF", encoding="ascii"),
-            converter=RequestResponseConverterBuilder.build_for_server(
-                request_converter,
-                response_converter,
+            converter=StapledPacketConverter(
+                sent_packet_converter=response_converter,
+                received_packet_converter=request_converter,
             ),
         )

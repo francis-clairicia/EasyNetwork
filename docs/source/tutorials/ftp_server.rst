@@ -102,7 +102,7 @@ Now that we have our business objects, we can create our :term:`protocol object`
 
 .. note::
 
-   Note the use of :meth:`.RequestResponseConverterBuilder.build_for_server`:
+   Note the use of :class:`.StapledPacketConverter`:
 
    .. literalinclude:: ../_include/examples/tutorials/ftp_server/ftp_server_protocol.py
       :pyobject: FTPServerProtocol.__init__
