@@ -1323,6 +1323,10 @@ class AsyncBackend(metaclass=ABCMeta):
             Because there is no way to "cancel" an arbitrary function call in an OS thread,
             once the job is started, any cancellation requests will be discarded.
 
+        Warning:
+            Due to the current coroutine implementation, `func` should not raise a :exc:`StopIteration`.
+            This can lead to unexpected (and unwanted) behavior.
+
         Parameters:
             func: A synchronous function.
             args: Positional arguments to be passed to `func`.

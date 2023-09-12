@@ -123,10 +123,11 @@ class AsyncExecutor:
 
         Raises:
             RuntimeError: if the executor is closed.
-            Exception: Whatever raises ``func(*args, **kwargs)``
+            concurrent.futures.CancelledError: if the executor is shutting down and pending task has been cancelled.
+            Exception: Whatever raises ``func(*args, **kwargs)``.
 
         Returns:
-            Whatever returns ``func(*args, **kwargs)``
+            Whatever returns ``func(*args, **kwargs)``.
         """
         func = self._setup_func(func)
         executor = self.__executor
