@@ -1025,6 +1025,40 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         with pytest.raises(StopIteration):
             _ = next(iterator)
 
+    def test____iter_received_packets____timeout_decrement(
+        self,
+        client: UDPNetworkEndpoint[Any, Any],
+        sender_address: tuple[str, int],
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_recvfrom = mocker.patch.object(UDPNetworkEndpoint, "recv_packet_from", return_value=(b"packet", sender_address))
+        iterator = client.iter_received_packets_from(timeout=10)
+        now: float = 798546132
+        mocker.patch(
+            "time.perf_counter",
+            side_effect=[
+                now,
+                now + 6,
+                now + 7,
+                now + 12,
+                now + 12,
+                now + 12,
+            ],
+        )
+
+        # Act
+        next(iterator)
+        next(iterator)
+        next(iterator)
+
+        # Assert
+        assert mock_recvfrom.call_args_list == [
+            mocker.call(timeout=10),
+            mocker.call(timeout=4),
+            mocker.call(timeout=0),
+        ]
+
 
 class TestUDPNetworkClient:
     @pytest.fixture

@@ -466,7 +466,6 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
                 self.__abort(None)
 
             bufsize: int = self.__max_recv_size
-            backend = self.__backend
 
             while True:
                 with self.__convert_socket_error():
@@ -482,8 +481,6 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
                     return next(consumer)
                 except StopIteration:
                     pass
-                # Attempt failed, wait for one iteration
-                await backend.coro_yield()
 
     def get_local_address(self) -> SocketAddress:
         """

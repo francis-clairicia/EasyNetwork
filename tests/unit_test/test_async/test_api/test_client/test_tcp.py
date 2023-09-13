@@ -1238,7 +1238,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         packet: Any = await client_connected_or_not.recv_packet()
 
         # Assert
-        mock_backend.coro_yield.assert_awaited_once()
+        mock_backend.coro_yield.assert_not_awaited()
         assert mock_stream_socket_adapter.recv.mock_calls == [mocker.call(MAX_STREAM_BUFSIZE) for _ in range(2)]
         assert mock_stream_data_consumer.feed.mock_calls == [mocker.call(b"pac"), mocker.call(b"ket\n")]
         assert packet is mocker.sentinel.packet

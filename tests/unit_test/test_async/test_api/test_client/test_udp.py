@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import math
 from socket import AF_INET6
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from easynetwork.api_async.client.udp import AsyncUDPNetworkClient, AsyncUDPNetworkEndpoint
 from easynetwork.exceptions import ClientClosedError, DeserializeError
@@ -862,6 +863,80 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
         with pytest.raises(StopAsyncIteration):
             _ = await anext(iterator)
 
+    @pytest.mark.usefixtures("setup_protocol_mock")
+    async def test____iter_received_packets____timeout_decrement(
+        self,
+        client_bound_or_not: AsyncUDPNetworkEndpoint[Any, Any],
+        sender_address: tuple[str, int],
+        mock_backend: MagicMock,
+        mock_datagram_socket_adapter: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_datagram_socket_adapter.recvfrom.return_value = (b"packet_1", sender_address)
+        async_iterator = client_bound_or_not.iter_received_packets_from(timeout=10)
+        now = 798546132
+        mocker.patch(
+            "time.perf_counter",
+            side_effect=[
+                now,
+                now + 6,
+                now + 7,
+                now + 12,
+                now + 12,
+                now + 12,
+            ],
+        )
+
+        # Act
+        await anext(async_iterator)
+        await anext(async_iterator)
+        await anext(async_iterator)
+
+        # Assert
+        assert mock_backend.timeout.call_args_list == [
+            mocker.call(10),
+            mocker.call(4),
+            mocker.call(0),
+        ]
+
+    @pytest.mark.usefixtures("setup_protocol_mock")
+    async def test____iter_received_packets____infinite_timeout(
+        self,
+        client_bound_or_not: AsyncUDPNetworkEndpoint[Any, Any],
+        sender_address: tuple[str, int],
+        mock_backend: MagicMock,
+        mock_datagram_socket_adapter: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_datagram_socket_adapter.recvfrom.return_value = (b"packet_1", sender_address)
+        async_iterator = client_bound_or_not.iter_received_packets_from(timeout=None)
+        now = 798546132
+        mocker.patch(
+            "time.perf_counter",
+            side_effect=[
+                now,
+                now + 6,
+                now + 7,
+                now + 12,
+                now + 12,
+                now + 12,
+            ],
+        )
+
+        # Act
+        await anext(async_iterator)
+        await anext(async_iterator)
+        await anext(async_iterator)
+
+        # Assert
+        assert mock_backend.timeout.call_args_list == [
+            mocker.call(math.inf),
+            mocker.call(math.inf),
+            mocker.call(math.inf),
+        ]
+
     async def test____get_backend____default(
         self,
         client_bound_or_not: AsyncUDPNetworkEndpoint[Any, Any],
@@ -1121,14 +1196,16 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
         mock_udp_endpoint.recv_packet_from.assert_awaited_once_with()
         assert packet is mocker.sentinel.packet
 
+    @pytest.mark.parametrize("timeout", ["default", 0, 123456.789, None])
     async def test____iter_received_packets____default(
         self,
+        timeout: float | None | Literal["default"],
         client: AsyncUDPNetworkClient[Any, Any],
         mock_udp_endpoint: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        async def side_effect() -> Any:
+        async def side_effect(*, timeout: float | None = 0) -> Any:
             yield (mocker.sentinel.packet_1, ("remote_address", 5000))
             yield (mocker.sentinel.packet_2, ("remote_address", 5000))
             yield (mocker.sentinel.packet_3, ("remote_address", 5000))
@@ -1136,10 +1213,16 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
         mock_udp_endpoint.iter_received_packets_from.side_effect = side_effect
 
         # Act
-        packets = [p async for p in client.iter_received_packets()]
+        if timeout == "default":
+            packets = [p async for p in client.iter_received_packets()]
+        else:
+            packets = [p async for p in client.iter_received_packets(timeout=timeout)]
 
         # Assert
-        mock_udp_endpoint.iter_received_packets_from.assert_called_once_with()
+        if timeout == "default":
+            mock_udp_endpoint.iter_received_packets_from.assert_called_once_with(timeout=0)
+        else:
+            mock_udp_endpoint.iter_received_packets_from.assert_called_once_with(timeout=timeout)
         assert packets == [mocker.sentinel.packet_1, mocker.sentinel.packet_2, mocker.sentinel.packet_3]
 
     async def test____get_backend____default(

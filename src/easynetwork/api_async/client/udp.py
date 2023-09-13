@@ -20,7 +20,9 @@ __all__ = ["AsyncUDPNetworkClient", "AsyncUDPNetworkEndpoint"]
 
 import contextlib
 import errno as _errno
+import math
 import socket as _socket
+import time
 from collections.abc import AsyncGenerator, AsyncIterator, Mapping
 from typing import TYPE_CHECKING, Any, Generic, Self, TypedDict, final, overload
 
@@ -346,19 +348,53 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             finally:
                 del data
 
-    async def iter_received_packets_from(self) -> AsyncGenerator[tuple[_ReceivedPacketT, SocketAddress], None]:
+    async def iter_received_packets_from(
+        self,
+        *,
+        timeout: float | None = 0,
+    ) -> AsyncGenerator[tuple[_ReceivedPacketT, SocketAddress], None]:
         """
         Returns an :term:`asynchronous iterator` that waits for a new packet to arrive from another endpoint.
+
+        If `timeout` is not :data:`None`, the entire receive operation will take at most `timeout` seconds; it defaults to zero.
+
+        Important:
+            The `timeout` is for the entire iterator::
+
+                async_iterator = endpoint.iter_received_packets_from(timeout=10)
+
+                # Let's say that this call took 6 seconds...
+                first_packet = await anext(async_iterator)
+
+                # ...then this call has a maximum of 4 seconds, not 10.
+                second_packet = await anext(async_iterator)
+
+            The time taken outside the iterator object is not decremented to the timeout parameter.
+
+        Parameters:
+            timeout: the allowed time (in seconds) for all the receive operations.
 
         Yields:
             A ``(packet, address)`` tuple, where `address` is the endpoint that delivered this packet.
         """
+
+        if timeout is None:
+            timeout = math.inf
+
+        perf_counter = time.perf_counter
+        timeout_after = self.get_backend().timeout
+
         while True:
             try:
-                packet_tuple = await self.recv_packet_from()
+                async with timeout_after(timeout):
+                    _start = perf_counter()
+                    packet_tuple = await self.recv_packet_from()
+                    _end = perf_counter()
             except OSError:
                 return
             yield packet_tuple
+            timeout -= _end - _start
+            timeout = max(timeout, 0)
 
     def get_local_address(self) -> SocketAddress:
         """
@@ -594,9 +630,9 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         packet, _ = await self.__endpoint.recv_packet_from()
         return packet
 
-    async def iter_received_packets(self) -> AsyncIterator[_ReceivedPacketT]:
+    async def iter_received_packets(self, *, timeout: float | None = 0) -> AsyncIterator[_ReceivedPacketT]:
         await self.wait_connected()
-        async with contextlib.aclosing(self.__endpoint.iter_received_packets_from()) as generator:
+        async with contextlib.aclosing(self.__endpoint.iter_received_packets_from(timeout=timeout)) as generator:
             async for packet, _ in generator:
                 yield packet
 

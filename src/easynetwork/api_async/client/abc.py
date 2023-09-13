@@ -18,6 +18,8 @@ from __future__ import annotations
 
 __all__ = ["AbstractAsyncNetworkClient"]
 
+import math
+import time
 from abc import ABCMeta, abstractmethod
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any, Generic, Self
@@ -192,19 +194,49 @@ class AbstractAsyncNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metacl
         """
         raise NotImplementedError
 
-    async def iter_received_packets(self) -> AsyncIterator[_ReceivedPacketT]:
+    async def iter_received_packets(self, *, timeout: float | None = 0) -> AsyncIterator[_ReceivedPacketT]:
         """
         Returns an :term:`asynchronous iterator` that waits for a new packet to arrive from the remote endpoint.
+
+        If `timeout` is not :data:`None`, the entire receive operation will take at most `timeout` seconds; it defaults to zero.
+
+        Important:
+            The `timeout` is for the entire iterator::
+
+                async_iterator = client.iter_received_packets(timeout=10)
+
+                # Let's say that this call took 6 seconds...
+                first_packet = await anext(async_iterator)
+
+                # ...then this call has a maximum of 4 seconds, not 10.
+                second_packet = await anext(async_iterator)
+
+            The time taken outside the iterator object is not decremented to the timeout parameter.
+
+        Parameters:
+            timeout: the allowed time (in seconds) for all the receive operations.
 
         Yields:
             the received packet.
         """
+
+        if timeout is None:
+            timeout = math.inf
+
+        perf_counter = time.perf_counter
+        timeout_after = self.get_backend().timeout
+
         while True:
             try:
-                packet = await self.recv_packet()
+                async with timeout_after(timeout):
+                    _start = perf_counter()
+                    packet = await self.recv_packet()
+                    _end = perf_counter()
             except OSError:
                 return
             yield packet
+            timeout -= _end - _start
+            timeout = max(timeout, 0)
 
     @abstractmethod
     def get_backend(self) -> AsyncBackend:

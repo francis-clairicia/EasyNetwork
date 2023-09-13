@@ -191,6 +191,7 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
             yield packet
             if timeout is not None:
                 timeout -= _end - _start
+                timeout = max(timeout, 0)
 
     @abstractmethod
     def fileno(self) -> int:

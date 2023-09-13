@@ -368,6 +368,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             yield packet_tuple
             if timeout is not None:
                 timeout -= _end - _start
+                timeout = max(timeout, 0)
 
     @_contextlib.contextmanager
     def __convert_socket_error(self) -> Iterator[None]:
