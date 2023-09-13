@@ -7,3 +7,4 @@ How-to guide
 
    protocols
    serializers
+   tcp_clients

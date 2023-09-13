@@ -1,0 +1,367 @@
+*****************************
+How-to — TCP client endpoints
+*****************************
+
+.. include:: ../_include/sync-async-variants.rst
+
+.. contents:: Table of Contents
+   :local:
+
+------
+
+The basics
+==========
+
+The protocol object
+-------------------
+
+The TCP clients expect a :class:`.StreamProtocol` instance to communicate with the remote endpoint.
+
+.. seealso::
+
+   :doc:`protocols`
+      Explains what a :class:`.StreamProtocol` is and how to use it.
+
+
+Connecting to the remote host
+-----------------------------
+
+You need the host address (domain name or IP) and the port of connection in order to connect to the remote host:
+
+.. tabs::
+
+   .. group-tab:: Synchronous
+
+      .. literalinclude:: ../_include/examples/howto/tcp_clients/basics/api_sync/connection_example1.py
+         :linenos:
+
+      You can control the connection timeout with the ``connect_timeout`` parameter:
+
+      .. literalinclude:: ../_include/examples/howto/tcp_clients/basics/api_sync/connection_example2.py
+         :pyobject: main
+         :lineno-match:
+         :emphasize-lines: 5-11
+
+      .. note::
+
+         The client does nothing when it enters the :keyword:`with` context. Everything is done on object creation.
+
+   .. group-tab:: Asynchronous
+
+      .. literalinclude:: ../_include/examples/howto/tcp_clients/basics/api_async/connection_example1.py
+         :linenos:
+
+      You can control the connection timeout by adding a timeout scope using the asynchronous framework:
+
+      .. literalinclude:: ../_include/examples/howto/tcp_clients/basics/api_async/connection_example2.py
+         :pyobject: main
+         :lineno-match:
+         :emphasize-lines: 5-13
+
+      .. note::
+
+         The call to ``wait_connected()`` is required to actually initialize the client, since we cannot perform asynchronous operations
+         at object creation. This is what the client does when it enters the the :keyword:`async with` context.
+
+         Once completed, ``wait_connected()`` is a no-op.
+
+
+Using an already connected socket
+---------------------------------
+
+If you have your own way to obtain a connected :class:`socket.socket` instance, you can pass it to the client.
+
+If the socket is not connected, an :exc:`OSError` is raised.
+
+.. important::
+
+   It *must* be a :data:`~socket.SOCK_STREAM` socket with :data:`~socket.AF_INET` or :data:`~socket.AF_INET6` family.
+
+.. warning::
+
+   The resource ownership is given to the client. You must close the client to close the socket.
+
+.. tabs::
+
+   .. group-tab:: Synchronous
+
+      .. literalinclude:: ../_include/examples/howto/tcp_clients/basics/api_sync/socket_example1.py
+         :linenos:
+
+   .. group-tab:: Asynchronous
+
+      .. literalinclude:: ../_include/examples/howto/tcp_clients/basics/api_async/socket_example1.py
+         :linenos:
+
+      .. note::
+
+         Even with a ready-to-use socket, the call to ``wait_connected()`` is still required.
+
+
+Basic usage
+===========
+
+Sending packets
+---------------
+
+There's not much to say, except that objects passed as arguments are automatically converted to bytes to send to the remote host
+thanks to the :term:`protocol object`.
+
+.. tabs::
+
+   .. group-tab:: Synchronous
+
+      .. literalinclude:: ../_include/examples/howto/tcp_clients/usage/api_sync.py
+         :pyobject: send_packet_example1
+         :start-after: [start]
+         :dedent:
+         :linenos:
+
+   .. group-tab:: Asynchronous
+
+      .. literalinclude:: ../_include/examples/howto/tcp_clients/usage/api_async.py
+         :pyobject: send_packet_example1
+         :start-after: [start]
+         :dedent:
+         :linenos:
+
+
+Receiving packets
+-----------------
+
+You get the next available packet, already parsed. Extraneous data is kept for the next call.
+
+.. tabs::
+
+   .. group-tab:: Synchronous
+
+      .. literalinclude:: ../_include/examples/howto/tcp_clients/usage/api_sync.py
+         :pyobject: recv_packet_example1
+         :start-after: [start]
+         :dedent:
+         :linenos:
+
+      You can control the receive timeout with the ``timeout`` parameter:
+
+      .. literalinclude:: ../_include/examples/howto/tcp_clients/usage/api_sync.py
+         :pyobject: recv_packet_example2
+         :start-after: [start]
+         :dedent:
+         :linenos:
+
+   .. group-tab:: Asynchronous
+
+      .. literalinclude:: ../_include/examples/howto/tcp_clients/usage/api_async.py
+         :pyobject: recv_packet_example1
+         :start-after: [start]
+         :dedent:
+         :linenos:
+
+      You can control the receive timeout by adding a timeout scope using the asynchronous framework:
+
+      .. literalinclude:: ../_include/examples/howto/tcp_clients/usage/api_async.py
+         :pyobject: recv_packet_example2
+         :start-after: [start]
+         :dedent:
+         :linenos:
+
+
+.. note::
+
+   Remember to catch invalid data parsing errors.
+
+   .. tabs::
+
+      .. group-tab:: Synchronous
+
+         .. literalinclude:: ../_include/examples/howto/tcp_clients/usage/api_sync.py
+            :pyobject: recv_packet_example3
+            :start-after: [start]
+            :dedent:
+            :linenos:
+            :emphasize-lines: 3-4
+
+      .. group-tab:: Asynchronous
+
+         .. literalinclude:: ../_include/examples/howto/tcp_clients/usage/api_async.py
+            :pyobject: recv_packet_example3
+            :start-after: [start]
+            :dedent:
+            :linenos:
+            :emphasize-lines: 4-5
+
+
+Receiving multiple packets at once
+----------------------------------
+
+You can use ``iter_received_packets()`` to get all the received packets in a sequence or a set.
+
+.. tabs::
+
+   .. group-tab:: Synchronous
+
+      .. literalinclude:: ../_include/examples/howto/tcp_clients/usage/api_sync.py
+         :pyobject: recv_packet_example4
+         :start-after: [start]
+         :dedent:
+         :linenos:
+
+   .. group-tab:: Asynchronous
+
+      .. literalinclude:: ../_include/examples/howto/tcp_clients/usage/api_async.py
+         :pyobject: recv_packet_example4
+         :start-after: [start]
+         :dedent:
+         :linenos:
+
+The ``timeout`` parameter defaults to zero to get only the data already in the buffer, but you can change it.
+
+.. tabs::
+
+   .. group-tab:: Synchronous
+
+      .. literalinclude:: ../_include/examples/howto/tcp_clients/usage/api_sync.py
+         :pyobject: recv_packet_example5
+         :start-after: [start]
+         :dedent:
+         :linenos:
+
+      .. seealso::
+
+         :meth:`TCPNetworkClient.iter_received_packets() <.AbstractNetworkClient.iter_received_packets>`
+            The method description and usage (especially for the ``timeout`` parameter).
+
+   .. group-tab:: Asynchronous
+
+      .. literalinclude:: ../_include/examples/howto/tcp_clients/usage/api_async.py
+         :pyobject: recv_packet_example5
+         :start-after: [start]
+         :dedent:
+         :linenos:
+
+      .. seealso::
+
+         :meth:`AsyncTCPNetworkClient.iter_received_packets() <.AbstractAsyncNetworkClient.iter_received_packets>`
+            The method description and usage (especially for the ``timeout`` parameter).
+
+
+Advanced usage
+==============
+
+.. note::
+
+   This section is for people who know what they're doing and are looking for something specific.
+
+
+Close the write-end stream
+--------------------------
+
+If you are sure you will never reuse ``send_packet()``, you can call ``send_eof()`` to shut down the write-end stream.
+
+.. tabs::
+
+   .. group-tab:: Synchronous
+
+      .. literalinclude:: ../_include/examples/howto/tcp_clients/usage/api_sync.py
+         :pyobject: send_eof_example
+         :start-after: [start]
+         :dedent:
+         :linenos:
+
+   .. group-tab:: Asynchronous
+
+      .. literalinclude:: ../_include/examples/howto/tcp_clients/usage/api_async.py
+         :pyobject: send_eof_example
+         :start-after: [start]
+         :dedent:
+         :linenos:
+
+.. note::
+
+   ``send_eof()`` will block until all unsent data has been flushed before closing the stream.
+
+
+Low-level socket operations
+---------------------------
+
+For low-level operations such as :meth:`~socket.socket.setsockopt`, the client object exposes the socket through a :class:`.SocketProxy`:
+
+.. tabs::
+
+   .. group-tab:: Synchronous
+
+      .. literalinclude:: ../_include/examples/howto/tcp_clients/usage/api_sync.py
+         :pyobject: socket_proxy_example
+         :start-after: [start]
+         :dedent:
+         :linenos:
+
+   .. group-tab:: Asynchronous
+
+      .. literalinclude:: ../_include/examples/howto/tcp_clients/usage/api_async.py
+         :pyobject: socket_proxy_example
+         :start-after: [start]
+         :dedent:
+         :linenos:
+
+      .. warning::
+
+         Make sure that ``wait_connected()`` has been called before.
+
+
+``socket.recv()`` buffer size
+-----------------------------
+
+By default, the client uses a reasonable buffer size when calling ``recv_packet()``.
+You can control this value by setting the ``max_recv_size`` parameter:
+
+.. tabs::
+
+   .. group-tab:: Synchronous
+
+      .. literalinclude:: ../_include/examples/howto/tcp_clients/usage/api_sync.py
+         :pyobject: max_recv_size_example
+         :start-after: [start]
+         :dedent:
+         :linenos:
+
+   .. group-tab:: Asynchronous
+
+      .. literalinclude:: ../_include/examples/howto/tcp_clients/usage/api_async.py
+         :pyobject: max_recv_size_example
+         :start-after: [start]
+         :dedent:
+         :linenos:
+
+
+SSL/TLS connection
+------------------
+
+If you want to use SSL to communicate with the remote, the easiest way is to pass ``ssl=True``:
+
+.. tabs::
+
+   .. group-tab:: Synchronous
+
+      .. literalinclude:: ../_include/examples/howto/tcp_clients/usage/api_sync.py
+         :pyobject: ssl_default_context_example
+         :start-after: [start]
+         :dedent:
+         :linenos:
+
+   .. group-tab:: Asynchronous
+
+      .. literalinclude:: ../_include/examples/howto/tcp_clients/usage/api_async.py
+         :pyobject: ssl_default_context_example
+         :start-after: [start]
+         :dedent:
+         :linenos:
+
+.. note::
+
+   Since this is a *client* object, :meth:`ssl.SSLContext.wrap_socket` and :meth:`ssl.SSLContext.wrap_bio` are always called
+   with ``server_side=False``.
+
+.. danger::
+
+   You can pass an :class:`~ssl.SSLContext` instead, but at this point I expect you to *really* know what you are doing.
