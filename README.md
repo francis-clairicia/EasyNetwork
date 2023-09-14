@@ -2,19 +2,17 @@
 
 The easiest way to use sockets in Python!
 
-[![Build](https://github.com/francis-clairicia/EasyNetwork/actions/workflows/build.yml/badge.svg)](https://github.com/francis-clairicia/EasyNetwork/actions/workflows/build.yml)
-[![Lint](https://github.com/francis-clairicia/EasyNetwork/actions/workflows/lint.yml/badge.svg)](https://github.com/francis-clairicia/EasyNetwork/actions/workflows/lint.yml)
-[![Test](https://github.com/francis-clairicia/EasyNetwork/actions/workflows/test.yml/badge.svg)](https://github.com/francis-clairicia/EasyNetwork/actions/workflows/test.yml)
-[![codecov](https://codecov.io/gh/francis-clairicia/EasyNetwork/branch/main/graph/badge.svg?token=3EGAHE4LZY)](https://codecov.io/gh/francis-clairicia/EasyNetwork)
-
-[![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit)](https://github.com/pre-commit/pre-commit)
-[![pre-commit.ci status](https://results.pre-commit.ci/badge/github/francis-clairicia/EasyNetwork/main.svg)](https://results.pre-commit.ci/latest/github/francis-clairicia/EasyNetwork/main)
-
 [![PyPI](https://img.shields.io/pypi/v/easynetwork)](https://pypi.org/project/easynetwork/)
 [![PyPI - License](https://img.shields.io/pypi/l/easynetwork)](https://github.com/francis-clairicia/EasyNetwork/blob/main/LICENSE)
 ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/easynetwork)
 
-[![CodeFactor](https://www.codefactor.io/repository/github/francis-clairicia/easynetwork/badge)](https://www.codefactor.io/repository/github/francis-clairicia/easynetwork)
+[![Test](https://github.com/francis-clairicia/EasyNetwork/actions/workflows/test.yml/badge.svg)](https://github.com/francis-clairicia/EasyNetwork/actions/workflows/test.yml)
+[![Codecov](https://img.shields.io/codecov/c/github/francis-clairicia/EasyNetwork)](https://codecov.io/gh/francis-clairicia/EasyNetwork)
+[![CodeFactor Grade](https://img.shields.io/codefactor/grade/github/francis-clairicia/EasyNetwork)](https://www.codefactor.io/repository/github/francis-clairicia/easynetwork)
+
+[![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit)](https://github.com/pre-commit/pre-commit)
+[![pre-commit.ci status](https://results.pre-commit.ci/badge/github/francis-clairicia/EasyNetwork/main.svg)](https://results.pre-commit.ci/latest/github/francis-clairicia/EasyNetwork/main)
+
 [![Checked with mypy](http://www.mypy-lang.org/static/mypy_badge.svg)](http://mypy-lang.org/)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![Imports: isort](https://img.shields.io/badge/%20imports-isort-%231674b1?style=flat&labelColor=ef8336)](https://pycqa.github.io/isort/)
