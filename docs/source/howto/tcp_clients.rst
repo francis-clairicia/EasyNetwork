@@ -166,7 +166,7 @@ You get the next available packet, already parsed. Extraneous data is kept for t
          :linenos:
 
 
-.. note::
+.. tip::
 
    Remember to catch invalid data parsing errors.
 
@@ -337,7 +337,7 @@ You can control this value by setting the ``max_recv_size`` parameter:
 SSL/TLS connection
 ------------------
 
-If you want to use SSL to communicate with the remote, the easiest way is to pass ``ssl=True``:
+If you want to use SSL to communicate with the remote host, the easiest way is to pass ``ssl=True``:
 
 .. tabs::
 
@@ -365,3 +365,70 @@ If you want to use SSL to communicate with the remote, the easiest way is to pas
 .. danger::
 
    You can pass an :class:`~ssl.SSLContext` instead, but at this point I expect you to *really* know what you are doing.
+
+
+Concurrency and Multithreading
+------------------------------
+
+.. tabs::
+
+   .. group-tab:: Synchronous
+
+      All client methods are thread-safe. Synchronization follows these rules:
+
+      * :meth:`~.TCPNetworkClient.send_packet` and :meth:`~.TCPNetworkClient.recv_packet` do not share the same
+        :class:`threading.Lock` instance.
+
+      * :meth:`~.TCPNetworkClient.close` will not wait for :meth:`~.TCPNetworkClient.recv_packet`.
+
+      * The :attr:`client.socket <.TCPNetworkClient.socket>` methods are also thread-safe. This means that you cannot access
+        the underlying socket methods (e.g. :meth:`~socket.socket.getsockopt`) during a write operation.
+
+      This allows you to do something like this:
+
+      .. literalinclude:: ../_include/examples/howto/tcp_clients/concurrency/api_sync.py
+         :linenos:
+
+   .. group-tab:: Asynchronous
+
+      All client methods do not require external task synchronization. Synchronization follows these rules:
+
+      * :meth:`~.AsyncTCPNetworkClient.send_packet` and :meth:`~.AsyncTCPNetworkClient.recv_packet` do not share the same lock instance.
+
+      * :meth:`~.AsyncTCPNetworkClient.close` will not wait for :meth:`~.AsyncTCPNetworkClient.recv_packet`.
+
+      This allows you to do something like this:
+
+      .. literalinclude:: ../_include/examples/howto/tcp_clients/concurrency/api_async.py
+         :linenos:
+
+
+SSL/TLS considerations
+^^^^^^^^^^^^^^^^^^^^^^
+
+For safety, concurrent calls to ``send_packet()`` and ``recv_packet()`` are "disabled" by default when using SSL.
+In fact, they share the same synchronization lock.
+
+If you need this feature after all, you can pass ``ssl_shared_lock=False`` at object creation.
+
+.. danger::
+
+   But you don't need it, do you?
+
+.. tabs::
+
+   .. group-tab:: Synchronous
+
+      .. literalinclude:: ../_include/examples/howto/tcp_clients/concurrency/ssl_shared_lock.py
+         :pyobject: ssl_shared_lock_for_sync_client
+         :start-after: [start]
+         :dedent:
+         :linenos:
+
+   .. group-tab:: Asynchronous
+
+      .. literalinclude:: ../_include/examples/howto/tcp_clients/concurrency/ssl_shared_lock.py
+         :pyobject: ssl_shared_lock_for_async_client
+         :start-after: [start]
+         :dedent:
+         :linenos:
