@@ -1,5 +1,6 @@
-String serializer
-=================
+*****************
+String Serializer
+*****************
 
 .. currentmodule:: easynetwork.serializers
 

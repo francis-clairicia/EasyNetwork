@@ -1,5 +1,6 @@
-MessagePack serializer
-======================
+**********************
+MessagePack Serializer
+**********************
 
 .. currentmodule:: easynetwork.serializers
 
@@ -11,7 +12,7 @@ The `MessagePack <https://msgpack.org/>`_ is an alternative representation of th
    :members:
 
 Configuration
--------------
+=============
 
 .. autoclass:: MessagePackerConfig
    :members:

@@ -23,14 +23,14 @@ We are not going to implement all the requests (that is not the point). The tuto
 and exploit all (or most) of the EasyNetwork library's features.
 
 
-The communication protocol
+The Communication Protocol
 ==========================
 
 FTP requests and responses are transmitted as ASCII strings separated by a carriage return (``\r\n``).
 
 Let's say we want to have two classes ``FTPRequest`` and ``FTPReply`` to manage them in our request handler.
 
-``FTPRequest`` object
+``FTPRequest`` Object
 ---------------------
 
 An FTP client request consists of a command and, optionally, arguments separated by a space character.
@@ -52,7 +52,7 @@ Second, we define the ``FTPRequest`` class that will be used:
    :caption: ftp_request.py
 
 
-``FTPReply`` object
+``FTPReply`` Object
 -------------------
 
 An FTP reply consists of a three-digit number (transmitted as three alphanumeric characters) followed by some text.
@@ -63,7 +63,7 @@ An FTP reply consists of a three-digit number (transmitted as three alphanumeric
    :end-before: @staticmethod
 
 
-Use converters to handle character strings
+Use Converters To Handle Character Strings
 ------------------------------------------
 
 The client will send a character string and expect a character string in return. :class:`.StringLineSerializer` will handle this part,
@@ -90,7 +90,7 @@ To remedy this, we will use :term:`converters <converter>` to switch between our
    An improvement would be to process them here and not leave the job to the request handler.
    But since we are not building a real (complete and fully featured) FTP server, we will leave the code as is.
 
-The protocol object
+The Protocol Object
 -------------------
 
 Now that we have our business objects, we can create our :term:`protocol object`.
@@ -114,10 +114,10 @@ Now that we have our business objects, we can create our :term:`protocol object`
    It will create a :term:`composite converter` with our two converters.
 
 
-The server
+The Server
 ==========
 
-``FTPReply``: Define default replies
+``FTPReply``: Define Default Replies
 ------------------------------------
 
 A good way to reply to the client with default replies is to define them in methods.
@@ -130,12 +130,12 @@ Here are just a few that will be used in this tutorial.
    :lineno-match:
 
 
-The request handler
+The Request Handler
 -------------------
 
 Let's create this request handler.
 
-Service initialization
+Service Initialization
 ^^^^^^^^^^^^^^^^^^^^^^
 
 A feature we could have used for the :ref:`echo client/server over TCP tutorial <echo-client-server-tcp-request-handler>`
@@ -151,7 +151,7 @@ Here, we'll only initialize the logger, but we could also use it to prepare the 
    :dedent:
 
 
-Control connection hooks
+Control Connection Hooks
 ^^^^^^^^^^^^^^^^^^^^^^^^
 
 Here are the features brought by :class:`.AsyncStreamRequestHandler`: It is possible to perform actions when connecting/disconnecting the client.
@@ -164,7 +164,7 @@ Here are the features brought by :class:`.AsyncStreamRequestHandler`: It is poss
    :dedent:
 
 
-The :meth:`~handle` method
+The :meth:`~handle` Method
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Only ``NOOP`` and ``QUIT`` commands will be implemented for this tutorial. All parse errors are considered syntax errors.
@@ -175,7 +175,7 @@ Only ``NOOP`` and ``QUIT`` commands will be implemented for this tutorial. All p
    :dedent:
 
 
-Full code
+Full Code
 ^^^^^^^^^
 
 .. literalinclude:: ../_include/examples/tutorials/ftp_server/ftp_server_request_handler.py
@@ -183,7 +183,7 @@ Full code
    :linenos:
 
 
-Start the server
+Start The Server
 ----------------
 
 .. tabs::

@@ -9,7 +9,7 @@ Servers API
 
 ------
 
-Abstract base class
+Abstract Base Class
 ===================
 
 .. autoclass:: AbstractAsyncNetworkServer
@@ -19,20 +19,20 @@ Abstract base class
 .. autoprotocol:: easynetwork.api_async.server.abc::SupportsEventSet
 
 
-TCP implementation
+TCP Implementation
 ==================
 
 .. autoclass:: AsyncTCPNetworkServer
    :members:
 
-UDP implementation
+UDP Implementation
 ==================
 
 .. autoclass:: AsyncUDPNetworkServer
    :members:
 
 
-Request handler interface
+Request Handler Interface
 =========================
 
 .. autoclass:: AsyncBaseRequestHandler

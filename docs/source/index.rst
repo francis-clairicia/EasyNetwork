@@ -18,15 +18,15 @@ Welcome to EasyNetwork's documentation!
    api/index
    glossary
 
-.. sidebar-links::
-   :caption: Links
-   :github:
-   :pypi: easynetwork
-
-   genindex
-   modindex
-
 .. only:: html
+
+   .. sidebar-links::
+      :caption: Links
+      :github:
+      :pypi: easynetwork
+
+      genindex
+      modindex
 
    Useful links
    ------------

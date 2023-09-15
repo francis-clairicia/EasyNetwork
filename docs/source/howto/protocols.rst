@@ -1,5 +1,5 @@
 ********************************
-How-to — Communication protocols
+How-to — Communication Protocols
 ********************************
 
 .. contents:: Table of Contents
@@ -7,7 +7,7 @@ How-to — Communication protocols
 
 ------
 
-The basics
+The Basics
 ==========
 
 To define your :term:`communication protocol`, you must instantiate one of the following :term:`protocol objects <protocol object>`:
@@ -83,7 +83,7 @@ The :term:`protocol objects <protocol object>` are requested by endpoint and ser
    You might see some magic.
 
 
-Parsing error
+Parsing Error
 -------------
 
 The :term:`protocol objects <protocol object>` raise a :exc:`.BaseProtocolParseError` subclass when the received data is invalid:
@@ -115,7 +115,7 @@ The :term:`protocol objects <protocol object>` raise a :exc:`.BaseProtocolParseE
    The underlying :exc:`.DeserializeError` instance is available with the :attr:`~.BaseProtocolParseError.error` attribute.
 
 
-The converters
+The Converters
 ==============
 
 TL;DR: Why should you always have a converter in your protocol object?
@@ -129,7 +129,7 @@ However, you just want to be able to manipulate your business objects without ha
 This is what a :term:`converter` can do for you. It creates a :term:`DTO` suitable for the underlying :term:`serializer` and validates the received
 :term:`DTO` to recreate the business object.
 
-Writing a converter
+Writing A Converter
 -------------------
 
 To write a :term:`converter`, you must create a subclass of :class:`~.AbstractPacketConverter` and override
@@ -164,7 +164,7 @@ In the application, you can now safely handle an object with real meaning:
    :linenos:
 
 
-Writing a composite converter
+Writing A Composite Converter
 -----------------------------
 
 Most of the time, the packets sent and received are different (the request/response system). To deal with this, a :term:`protocol object`
@@ -183,7 +183,7 @@ Option 1: Using ``StapledPacketConverter``
    :start-at: from __future__ import
    :linenos:
 
-Option 2: By subclassing ``AbstractPacketConverterComposite``
+Option 2: By Subclassing ``AbstractPacketConverterComposite``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. literalinclude:: ../_include/examples/howto/protocols/composite_converter/packet_converter_subclass.py

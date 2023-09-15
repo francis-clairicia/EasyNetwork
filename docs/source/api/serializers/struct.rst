@@ -1,5 +1,6 @@
-Structure serializer
-====================
+********************
+Structure Serializer
+********************
 
 .. currentmodule:: easynetwork.serializers
 

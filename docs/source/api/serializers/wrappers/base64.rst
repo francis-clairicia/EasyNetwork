@@ -1,5 +1,6 @@
-Base64 encoder serializer
-=========================
+*************************
+Base64 Encoder Serializer
+*************************
 
 .. currentmodule:: easynetwork.serializers.wrapper
 

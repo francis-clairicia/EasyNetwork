@@ -1,5 +1,6 @@
-Compressor serializers
-======================
+**********************
+Compressor Serializers
+**********************
 
 .. currentmodule:: easynetwork.serializers.wrapper
 
@@ -10,8 +11,8 @@ Compressor serializers
    :members:
 
 
-Abstract compressor interface
------------------------------
+Abstract Compressor Interface
+=============================
 
 .. currentmodule:: easynetwork.serializers.wrapper.compressor
 

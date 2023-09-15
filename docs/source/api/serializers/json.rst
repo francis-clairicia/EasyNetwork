@@ -1,5 +1,6 @@
-JSON serializer
-===============
+***************
+JSON Serializer
+***************
 
 .. currentmodule:: easynetwork.serializers
 
@@ -7,7 +8,7 @@ JSON serializer
    :members:
 
 Configuration
--------------
+=============
 
 .. autoclass:: JSONEncoderConfig
    :members:

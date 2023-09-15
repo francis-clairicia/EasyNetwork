@@ -1,5 +1,6 @@
-Pickle serializer
-=================
+*****************
+Pickle Serializer
+*****************
 
 .. currentmodule:: easynetwork.serializers
 
@@ -15,7 +16,7 @@ Pickle serializer
    :members:
 
 Configuration
--------------
+=============
 
 .. autoclass:: PicklerConfig
    :members:

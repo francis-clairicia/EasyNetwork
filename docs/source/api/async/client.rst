@@ -9,7 +9,7 @@ Clients API
 
 ------
 
-Abstract base class
+Abstract Base Class
 ===================
 
 .. autoclass:: AbstractAsyncNetworkClient
@@ -17,13 +17,13 @@ Abstract base class
    :special-members: __aenter__, __aexit__
 
 
-TCP implementation
+TCP Implementation
 ==================
 
 .. autoclass:: AsyncTCPNetworkClient
    :members:
 
-UDP implementation
+UDP Implementation
 ==================
 
 .. autoclass:: AsyncUDPNetworkClient
@@ -31,7 +31,7 @@ UDP implementation
    :exclude-members: iter_received_packets
 
 
-Generic UDP endpoint
+Generic UDP Endpoint
 --------------------
 
 .. autoclass:: AsyncUDPNetworkEndpoint

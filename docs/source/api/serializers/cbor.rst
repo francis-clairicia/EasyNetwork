@@ -1,5 +1,6 @@
-CBOR serializer
-===============
+***************
+CBOR Serializer
+***************
 
 .. currentmodule:: easynetwork.serializers
 
@@ -11,7 +12,7 @@ The `CBOR <https://cbor.io>`_ is an alternative representation of the ``JSON`` d
    :members:
 
 Configuration
--------------
+=============
 
 .. autoclass:: CBOREncoderConfig
    :members:

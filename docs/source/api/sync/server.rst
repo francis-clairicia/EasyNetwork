@@ -9,21 +9,21 @@ Servers API
 
 ------
 
-Abstract base class
+Abstract Base Class
 ===================
 
 .. autoclass:: AbstractNetworkServer
    :members:
    :special-members: __enter__, __exit__
 
-TCP implementation
+TCP Implementation
 ==================
 
 .. autoclass:: StandaloneTCPNetworkServer
    :inherited-members:
    :members:
 
-UDP implementation
+UDP Implementation
 ==================
 
 .. autoclass:: StandaloneUDPNetworkServer

@@ -8,7 +8,7 @@ Serializers
 
 .. toctree::
    :maxdepth: 2
-   :caption: Built-in serializers
+   :caption: Built-In Serializers
 
    abc
    json
@@ -24,7 +24,7 @@ Serializers
    :no-docstring:
 
 .. toctree::
-   :caption: Serializer wrappers
+   :caption: Serializer Wrappers
    :maxdepth: 2
 
    wrappers/base64

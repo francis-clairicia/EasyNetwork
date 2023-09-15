@@ -1,5 +1,5 @@
 *****************************
-How-to — TCP client endpoints
+How-to — TCP Client Endpoints
 *****************************
 
 .. include:: ../_include/sync-async-variants.rst
@@ -9,10 +9,10 @@ How-to — TCP client endpoints
 
 ------
 
-The basics
+The Basics
 ==========
 
-The protocol object
+The Protocol Object
 -------------------
 
 The TCP clients expect a :class:`.StreamProtocol` instance to communicate with the remote endpoint.
@@ -23,7 +23,7 @@ The TCP clients expect a :class:`.StreamProtocol` instance to communicate with t
       Explains what a :class:`.StreamProtocol` is and how to use it.
 
 
-Connecting to the remote host
+Connecting To The Remote Host
 -----------------------------
 
 You need the host address (domain name or IP) and the port of connection in order to connect to the remote host:
@@ -66,7 +66,7 @@ You need the host address (domain name or IP) and the port of connection in orde
          Once completed, ``wait_connected()`` is a no-op.
 
 
-Using an already connected socket
+Using An Already Connected Socket
 ---------------------------------
 
 If you have your own way to obtain a connected :class:`socket.socket` instance, you can pass it to the client.
@@ -98,10 +98,10 @@ If the socket is not connected, an :exc:`OSError` is raised.
          Even with a ready-to-use socket, the call to ``wait_connected()`` is still required.
 
 
-Basic usage
+Basic Usage
 ===========
 
-Sending packets
+Sending Packets
 ---------------
 
 There's not much to say, except that objects passed as arguments are automatically converted to bytes to send to the remote host
@@ -126,7 +126,7 @@ thanks to the :term:`protocol object`.
          :linenos:
 
 
-Receiving packets
+Receiving Packets
 -----------------
 
 You get the next available packet, already parsed. Extraneous data is kept for the next call.
@@ -191,7 +191,7 @@ You get the next available packet, already parsed. Extraneous data is kept for t
             :emphasize-lines: 4-5
 
 
-Receiving multiple packets at once
+Receiving Multiple Packets At Once
 ----------------------------------
 
 You can use ``iter_received_packets()`` to get all the received packets in a sequence or a set.
@@ -245,7 +245,7 @@ The ``timeout`` parameter defaults to zero to get only the data already in the b
             The method description and usage (especially for the ``timeout`` parameter).
 
 
-Advanced usage
+Advanced Usage
 ==============
 
 .. note::
@@ -253,7 +253,7 @@ Advanced usage
    This section is for people who know what they're doing and are looking for something specific.
 
 
-Close the write-end stream
+Close The Write-End Stream
 --------------------------
 
 If you are sure you will never reuse ``send_packet()``, you can call ``send_eof()`` to shut down the write-end stream.
@@ -281,7 +281,7 @@ If you are sure you will never reuse ``send_packet()``, you can call ``send_eof(
    ``send_eof()`` will block until all unsent data has been flushed before closing the stream.
 
 
-Low-level socket operations
+Low-Level Socket Operations
 ---------------------------
 
 For low-level operations such as :meth:`~socket.socket.setsockopt`, the client object exposes the socket through a :class:`.SocketProxy`:
@@ -309,7 +309,7 @@ For low-level operations such as :meth:`~socket.socket.setsockopt`, the client o
          Make sure that ``wait_connected()`` has been called before.
 
 
-``socket.recv()`` buffer size
+``socket.recv()`` Buffer Size
 -----------------------------
 
 By default, the client uses a reasonable buffer size when calling ``recv_packet()``.
@@ -334,7 +334,7 @@ You can control this value by setting the ``max_recv_size`` parameter:
          :linenos:
 
 
-SSL/TLS connection
+SSL/TLS Connection
 ------------------
 
 If you want to use SSL to communicate with the remote host, the easiest way is to pass ``ssl=True``:
@@ -367,7 +367,7 @@ If you want to use SSL to communicate with the remote host, the easiest way is t
    You can pass an :class:`~ssl.SSLContext` instead, but at this point I expect you to *really* know what you are doing.
 
 
-Concurrency and Multithreading
+Concurrency And Multithreading
 ------------------------------
 
 .. tabs::
@@ -403,7 +403,7 @@ Concurrency and Multithreading
          :linenos:
 
 
-SSL/TLS considerations
+SSL/TLS Considerations
 ^^^^^^^^^^^^^^^^^^^^^^
 
 For safety, concurrent calls to ``send_packet()`` and ``recv_packet()`` are "disabled" by default when using SSL.

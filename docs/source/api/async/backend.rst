@@ -1,5 +1,5 @@
 *******************************
-Asynchronous backend engine API
+Asynchronous Backend Engine API
 *******************************
 
 .. contents:: Table of Contents
@@ -16,7 +16,7 @@ Introduction
    Explain this big thing.
 
 
-Backend interface
+Backend Interface
 =================
 
 .. automodule:: easynetwork.api_async.backend.abc
@@ -38,7 +38,7 @@ Runners
    :members:
    :special-members: __enter__, __exit__
 
-Coroutines and Tasks
+Coroutines And Tasks
 --------------------
 
 Sleeping
@@ -54,19 +54,19 @@ Sleeping
 
 .. automethod:: AsyncBackend.current_time
 
-Task cancellation
+Task Cancellation
 ^^^^^^^^^^^^^^^^^
 
 .. automethod:: AsyncBackend.get_cancelled_exc_class
 
-Shielding from task cancellation
+Shielding From Task Cancellation
 """"""""""""""""""""""""""""""""
 
 .. automethod:: AsyncBackend.cancel_shielded_coro_yield
 
 .. automethod:: AsyncBackend.ignore_cancellation
 
-Creating concurrent tasks
+Creating Concurrent Tasks
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. automethod:: AsyncBackend.create_task_group
@@ -78,7 +78,7 @@ Creating concurrent tasks
 .. autoclass:: Task
    :members:
 
-Spawning system tasks
+Spawning System Tasks
 """""""""""""""""""""
 
 .. automethod:: AsyncBackend.spawn_task
@@ -103,7 +103,7 @@ Timeouts
 Networking
 ----------
 
-Opening network connections
+Opening Network Connections
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. automethod:: AsyncBackend.create_tcp_connection
@@ -118,14 +118,14 @@ Opening network connections
 
 .. automethod:: AsyncBackend.wrap_udp_socket
 
-Creating network servers
+Creating Network Servers
 ^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. automethod:: AsyncBackend.create_tcp_listeners
 
 .. automethod:: AsyncBackend.create_ssl_over_tcp_listeners
 
-Socket adapter classes
+Socket Adapter Classes
 ^^^^^^^^^^^^^^^^^^^^^^
 
 .. autoclass:: AsyncBaseSocketAdapter
@@ -165,22 +165,22 @@ Events
 
 .. autoprotocol:: IEvent
 
-Condition variables
+Condition Variables
 ^^^^^^^^^^^^^^^^^^^
 
 .. automethod:: AsyncBackend.create_condition_var
 
 .. autoprotocol:: ICondition
 
-Concurrency and Multithreading
+Concurrency And Multithreading
 ------------------------------
 
-Running blocking code
+Running Blocking Code
 ^^^^^^^^^^^^^^^^^^^^^
 
 .. automethod:: AsyncBackend.run_in_thread
 
-Scheduling from other threads
+Scheduling From Other Threads
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. automethod:: AsyncBackend.create_threads_portal
@@ -188,7 +188,7 @@ Scheduling from other threads
 .. autoclass:: ThreadsPortal
    :members:
 
-``concurrent.futures`` integration
+``concurrent.futures`` Integration
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. automethod:: AsyncBackend.wait_future
@@ -198,7 +198,7 @@ Scheduling from other threads
    :class:`.AsyncExecutor` class.
 
 
-Backend factory
+Backend Factory
 ===============
 
 .. automodule:: easynetwork.api_async.backend.factory
@@ -213,7 +213,7 @@ Backend factory
    :exclude-members: GROUP_NAME
 
 
-Tasks utilities
+Tasks Utilities
 ===============
 
 .. automodule:: easynetwork.api_async.backend.tasks
@@ -223,7 +223,7 @@ Tasks utilities
    :members:
 
 
-Concurrency and Multithreading (``concurrent.futures`` integration)
+Concurrency And Multithreading (``concurrent.futures`` Integration)
 ===================================================================
 
 .. automodule:: easynetwork.api_async.backend.futures

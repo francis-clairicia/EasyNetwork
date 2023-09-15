@@ -1,10 +1,10 @@
 **************
-Socket helpers
+Socket Helpers
 **************
 
 .. automodule:: easynetwork.tools.socket
 
-Data structures and constants
+Data Structures And Constants
 =============================
 
 .. autoenum:: AddressFamily
@@ -40,7 +40,7 @@ Functions
 
 .. autofunction:: set_tcp_keepalive
 
-Socket lingering
+Socket Lingering
 ----------------
 
 .. autofunction:: get_socket_linger_struct

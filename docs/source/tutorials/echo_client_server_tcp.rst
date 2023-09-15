@@ -1,5 +1,5 @@
 ******************************
-An echo client/server over TCP
+An Echo Client/Server Over TCP
 ******************************
 
 To see how to create a server and a client with the minimum requirements,
@@ -16,12 +16,12 @@ let's create a server that will return everything sent by a connected client.
 
 .. _echo-client-server-tcp-protocol:
 
-The communication protocol
+The Communication Protocol
 ==========================
 
 Before doing all this networking stuff, you need to know what you want to transmit and in what format. It is your :term:`communication protocol`.
 
-Choose the serializer
+Choose The Serializer
 ---------------------
 
 There is a bunch of serializers available in :mod:`easynetwork.serializers` for everyone to enjoy:
@@ -37,7 +37,7 @@ There is a bunch of serializers available in :mod:`easynetwork.serializers` for 
 For the tutorial, :class:`.JSONSerializer` will be used.
 
 
-Build your protocol object
+Build Your Protocol Object
 --------------------------
 
 For communication via TCP, a :class:`.StreamProtocol` :term:`protocol object` must be created.
@@ -51,14 +51,14 @@ For communication via TCP, a :class:`.StreamProtocol` :term:`protocol object` mu
    Of course, you are under no obligation to write a subclass. But see :ref:`this note <why-write-a-protocol-subclass>` for details.
 
 
-The server
+The Server
 ==========
 
 Now that we have established the :term:`communication protocol`, we can create our server.
 
 .. _echo-client-server-tcp-request-handler:
 
-Create your request handler
+Create Your Request Handler
 ---------------------------
 
 First, you must create a request handler class by subclassing the :class:`.AsyncStreamRequestHandler` class and overriding
@@ -95,7 +95,7 @@ its :meth:`~.AsyncStreamRequestHandler.handle` method; this method will process 
       The proposal that expanded on :pep:`492` by adding generator capabilities to coroutine functions.
 
 
-Start the server
+Start The Server
 ----------------
 
 Second, you must instantiate the TCP server class, passing it the server's address, the :term:`protocol object` instance,
@@ -121,7 +121,7 @@ and the request handler instance.
    This means the server is ready to accept connections with IPv4 and IPv6 addresses (if available).
 
 
-The client
+The Client
 ==========
 
 This is the client side:

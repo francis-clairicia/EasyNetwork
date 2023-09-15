@@ -1,5 +1,5 @@
 ************
-How-to guide
+How-to Guide
 ************
 
 .. toctree::

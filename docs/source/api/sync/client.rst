@@ -9,20 +9,20 @@ Clients API
 
 ------
 
-Abstract base class
+Abstract Base Class
 ===================
 
 .. autoclass:: AbstractNetworkClient
    :members:
    :special-members: __enter__, __exit__
 
-TCP implementation
+TCP Implementation
 ==================
 
 .. autoclass:: TCPNetworkClient
    :members:
 
-UDP implementation
+UDP Implementation
 ==================
 
 .. autoclass:: UDPNetworkClient
@@ -30,7 +30,7 @@ UDP implementation
    :exclude-members: iter_received_packets
 
 
-Generic UDP endpoint
+Generic UDP Endpoint
 --------------------
 
 .. autoclass:: UDPNetworkEndpoint

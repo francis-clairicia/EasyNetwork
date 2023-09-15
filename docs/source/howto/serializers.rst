@@ -7,10 +7,10 @@ How-to — Serializers
 
 ------
 
-The basics
+The Basics
 ==========
 
-Where are they used?
+Where Are They Used?
 --------------------
 
 A :term:`serializer` is used by a :term:`protocol object`:
@@ -19,7 +19,7 @@ A :term:`serializer` is used by a :term:`protocol object`:
 
 * :class:`.StreamProtocol`: accepts :term:`incremental serializer` objects only.
 
-Which ones are already available?
+Which Ones Are Already Available?
 ---------------------------------
 
 Several serializers are provided in the :mod:`easynetwork.serializers` module. Do not hesitate to use them.
@@ -27,7 +27,7 @@ Several serializers are provided in the :mod:`easynetwork.serializers` module. D
 If nothing fits your needs, you can implement your own serializer.
 
 
-Writing a one-shot serializer
+Writing A One-Shot Serializer
 =============================
 
 :term:`One-shot serializers <one-shot serializer>` are the easiest piece of code to write. They can be used directly on
@@ -47,7 +47,7 @@ A naive implementation of :class:`.JSONSerializer` should look something like th
    :linenos:
 
 
-Parsing error
+Parsing Error
 -------------
 
 The :meth:`~.AbstractPacketSerializer.deserialize` function must raise a :exc:`.DeserializeError` to indicate that a parsing error
@@ -62,7 +62,7 @@ was "expected" so that the received data is considered invalid.
    Otherwise, any other error is considered a serializer crash.
 
 
-The use of ``self``
+The Use Of ``self``
 -------------------
 
 A :term:`serializer` is intended to be shared by multiple :term:`protocols <protocol object>` (and :term:`protocols <protocol object>` are intended
@@ -84,7 +84,7 @@ For example:
    Seriously, don't do that.
 
 
-Using a one-shot serializer
+Using A One-Shot Serializer
 ===========================
 
 You must pass the :term:`serializer` to the appropriate :term:`protocol object` that is expected by the endpoint class:
@@ -110,7 +110,7 @@ You must pass the :term:`serializer` to the appropriate :term:`protocol object` 
    If this is important to you, don't choose one of them lightly.
 
 
-Writing an incremental serializer
+Writing An Incremental Serializer
 =================================
 
 :term:`Incremental serializers <incremental serializer>` are a bit trickier to implement. They can be used directly on both
@@ -121,7 +121,7 @@ its :meth:`~.AbstractIncrementalPacketSerializer.incremental_serialize` and :met
 methods. The :meth:`~.AbstractIncrementalPacketSerializer.serialize` and :meth:`~.AbstractIncrementalPacketSerializer.deserialize` methods
 have a default implementation that uses the incremental serialization methods.
 
-Option 1: Using common patterns
+Option 1: Using Common Patterns
 -------------------------------
 
 Chances are that the communication protocol uses a simple principle to determine the end of a packet. The most common cases are:
@@ -149,7 +149,7 @@ Let's say that for the incremental part, we consider each line received to be a 
    Take a look at other available base classes in :mod:`easynetwork.serializers` before rewriting something that already exists.
 
 
-Option 2: From scratch
+Option 2: From Scratch
 ----------------------
 
 Let's see how we can get by without using the :class:`.AutoSeparatedPacketSerializer`:
@@ -159,7 +159,7 @@ Let's see how we can get by without using the :class:`.AutoSeparatedPacketSerial
 
 This adds a lot of code! Let's take a closer look at the implementation.
 
-Code mutualization
+Code Mutualization
 ^^^^^^^^^^^^^^^^^^
 
 To avoid duplication of code between the one-shot part and the incremental part,
@@ -180,7 +180,7 @@ And now ``serialize()`` and ``deserialize()`` use them instead:
    :lineno-match:
    :emphasize-lines: 2,6
 
-The purpose of ``incremental_serialize()``
+The Purpose Of ``incremental_serialize()``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 :meth:`~.AbstractIncrementalPacketSerializer.incremental_serialize` must be a :term:`generator` function
@@ -211,7 +211,7 @@ Most of the time, you will have a single :keyword:`yield`. The goal is: each :ke
    :meth:`~.AbstractIncrementalPacketSerializer.incremental_serialize` is here to give endpoints this freedom.
 
 
-The purpose of ``incremental_deserialize()``
+The Purpose Of ``incremental_deserialize()``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 :meth:`~.AbstractIncrementalPacketSerializer.incremental_deserialize` must be a :term:`generator` function
@@ -247,7 +247,7 @@ At each :keyword:`yield` checkpoint, the endpoint implementation sends the data 
       The proposal to introduce the ``yield_from`` syntax, making delegation to subgenerators easy.
 
 
-Parsing error
+Parsing Error
 ^^^^^^^^^^^^^
 
 The :meth:`~.AbstractIncrementalPacketSerializer.incremental_deserialize` function must raise an :exc:`.IncrementalDeserializeError`

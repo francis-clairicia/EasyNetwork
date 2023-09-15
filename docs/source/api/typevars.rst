@@ -1,5 +1,5 @@
 *******************************
-For type hints — Type variables
+For type hints — Type Variables
 *******************************
 
 .. automodule:: easynetwork._typevars

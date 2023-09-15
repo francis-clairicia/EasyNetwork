@@ -11,7 +11,7 @@ To use EasyNetwork, first install it using :program:`pip`:
 
 .. _optional-dependencies:
 
-Optional dependencies
+Optional Dependencies
 =====================
 
 EasyNetwork has no required dependencies, but the library comes with a bunch of optional dependencies to meet specific needs.

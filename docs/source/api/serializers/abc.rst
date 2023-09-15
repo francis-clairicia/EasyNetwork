@@ -1,5 +1,5 @@
 *********************
-Abstract base classes
+Abstract Base Classes
 *********************
 
 .. contents:: Table of Contents
@@ -7,7 +7,7 @@ Abstract base classes
 
 ------
 
-Top-level base classes
+Top-Level Base Classes
 ======================
 
 .. automodule:: easynetwork.serializers.abc
@@ -22,8 +22,7 @@ Top-level base classes
 
 ------
 
-
-Stream base classes
+Stream Base Classes
 ===================
 
 .. automodule:: easynetwork.serializers.base_stream

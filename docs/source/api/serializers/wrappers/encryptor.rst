@@ -1,5 +1,6 @@
-Encryptor serializer
-====================
+********************
+Encryptor Serializer
+********************
 
 .. currentmodule:: easynetwork.serializers.wrapper
 
