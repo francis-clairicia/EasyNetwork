@@ -167,21 +167,10 @@ Here are the features brought by :class:`.AsyncStreamRequestHandler`: It is poss
 The :meth:`~handle` method
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Only ``NOOP`` and ``QUIT`` commands will be implemented for this tutorial.
+Only ``NOOP`` and ``QUIT`` commands will be implemented for this tutorial. All parse errors are considered syntax errors.
 
 .. literalinclude:: ../_include/examples/tutorials/ftp_server/ftp_server_request_handler.py
    :pyobject: FTPRequestHandler.handle
-   :lineno-match:
-   :dedent:
-
-
-The :meth:`~bad_request` method
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-All parse errors are considered syntax errors.
-
-.. literalinclude:: ../_include/examples/tutorials/ftp_server/ftp_server_request_handler.py
-   :pyobject: FTPRequestHandler.bad_request
    :lineno-match:
    :dedent:
 

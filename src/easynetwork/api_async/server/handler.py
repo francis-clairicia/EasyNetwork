@@ -34,7 +34,6 @@ from ..._typevars import _RequestT, _ResponseT
 from ...tools.socket import SocketAddress, SocketProxy
 
 if TYPE_CHECKING:
-    from ...exceptions import DatagramProtocolParseError, StreamProtocolParseError
     from ..backend.abc import AsyncBackend
 
 
@@ -209,23 +208,6 @@ class AsyncStreamRequestHandler(AsyncBaseRequestHandler, Generic[_RequestT, _Res
         """
         raise NotImplementedError
 
-    @abstractmethod
-    async def bad_request(self, client: AsyncStreamClient[_ResponseT], exc: StreamProtocolParseError, /) -> bool | None:
-        """
-        A request sent by the `client` is invalid.
-
-        Parameters:
-            client: An interface to communicate with the remote endpoint.
-            exc: The error raised by the :class:`.StreamProtocol`.
-
-        Returns:
-            whether the :meth:`handle` generator should be closed or not.
-
-            If a false value is returned, the current :meth:`handle` generator is closed and a new one is created.
-            Otherwise the resources are not freed.
-        """
-        raise NotImplementedError
-
     def on_connection(
         self,
         client: AsyncStreamClient[_ResponseT],
@@ -347,22 +329,5 @@ class AsyncDatagramRequestHandler(AsyncBaseRequestHandler, Generic[_RequestT, _R
 
         Parameters:
             client: An interface to communicate with the remote endpoint.
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    async def bad_request(self, client: AsyncDatagramClient[_ResponseT], exc: DatagramProtocolParseError, /) -> bool | None:
-        """
-        A request sent by the `client` is invalid.
-
-        Parameters:
-            client: An interface to communicate with the remote endpoint.
-            exc: The error raised by the :class:`.DatagramProtocol`.
-
-        Returns:
-            whether the :meth:`handle` generator should be closed or not.
-
-            If a false value is returned, the current :meth:`handle` generator is closed and a new one is created.
-            Otherwise the resources are not freed.
         """
         raise NotImplementedError

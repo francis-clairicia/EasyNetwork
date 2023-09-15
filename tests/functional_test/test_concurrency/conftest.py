@@ -4,16 +4,10 @@ import threading
 from collections.abc import AsyncGenerator, Iterator
 from typing import Literal
 
-from easynetwork.api_async.server.handler import (
-    AsyncBaseClientInterface,
-    AsyncDatagramRequestHandler,
-    AsyncStreamClient,
-    AsyncStreamRequestHandler,
-)
+from easynetwork.api_async.server.handler import AsyncBaseClientInterface, AsyncDatagramRequestHandler, AsyncStreamRequestHandler
 from easynetwork.api_sync.server.abc import AbstractNetworkServer
 from easynetwork.api_sync.server.tcp import StandaloneTCPNetworkServer
 from easynetwork.api_sync.server.udp import StandaloneUDPNetworkServer
-from easynetwork.exceptions import BaseProtocolParseError
 from easynetwork.protocol import DatagramProtocol, StreamProtocol
 from easynetwork.serializers.line import StringLineSerializer
 
@@ -24,10 +18,6 @@ class EchoRequestHandler(AsyncStreamRequestHandler[str, str], AsyncDatagramReque
     async def handle(self, client: AsyncBaseClientInterface[str]) -> AsyncGenerator[None, str]:
         request = yield
         await client.send_packet(request)
-
-    async def bad_request(self, client: AsyncBaseClientInterface[str], exc: BaseProtocolParseError, /) -> None:
-        if isinstance(client, AsyncStreamClient):
-            await client.aclose()
 
 
 @pytest.fixture(params=["TCP", "UDP"])

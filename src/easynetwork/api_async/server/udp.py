@@ -25,7 +25,7 @@ import operator
 import weakref
 from collections import Counter, deque
 from collections.abc import AsyncGenerator, AsyncIterator, Callable, Coroutine, Iterator, Mapping
-from typing import TYPE_CHECKING, Any, Generic, TypeVar, assert_never, final
+from typing import TYPE_CHECKING, Any, Generic, TypeVar, final
 from weakref import WeakValueDictionary
 
 from ..._typevars import _RequestT, _ResponseT
@@ -34,7 +34,6 @@ from ...protocol import DatagramProtocol
 from ...tools._utils import (
     check_real_socket_state as _check_real_socket_state,
     make_callback as _make_callback,
-    recursively_clear_exception_traceback_frames as _recursively_clear_exception_traceback_frames,
     remove_traceback_frames_in_place as _remove_traceback_frames_in_place,
 )
 from ...tools.constants import MAX_DATAGRAM_BUFSIZE
@@ -300,7 +299,6 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 condition.notify()
                 return
             request_handler_generator: AsyncGenerator[None, _RequestT] | None = None
-            logger: logging.Logger = self.__logger
             with (
                 self.__suppress_and_log_remaining_exception(client.address),
                 self.__client_manager.datagram_queue(client) as datagram_queue,
@@ -331,56 +329,24 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                             datagram = datagram_queue.popleft()
                             try:
                                 action = _RequestAction(self.__protocol.build_packet_from_datagram(datagram))
+                            except DatagramProtocolParseError as exc:
+                                exc.sender_address = client.address
+                                raise
                             finally:
                                 del datagram
                         except BaseException as exc:
                             action = _ErrorAction(exc)
 
                         try:
-                            match action:
-                                case _RequestAction(request):
-                                    logger.debug("Processing request sent by %s", client.address)
-                                    try:
-                                        await request_handler_generator.asend(request)
-                                    except StopAsyncIteration:
-                                        request_handler_generator = None
-                                        return
-                                    finally:
-                                        del request
-                                case _ErrorAction(DatagramProtocolParseError() as exception):
-                                    exception.sender_address = client.address
-                                    logger.debug("Malformed request sent by %s", client.address)
-                                    try:
-                                        try:
-                                            _recursively_clear_exception_traceback_frames(exception)
-                                        except RecursionError:
-                                            logger.warning("Recursion depth reached when clearing exception's traceback frames")
-                                        should_close_handle = not (await self.__request_handler.bad_request(client, exception))
-                                        if should_close_handle:
-                                            try:
-                                                await request_handler_generator.aclose()
-                                            finally:
-                                                request_handler_generator = None
-                                            return
-                                    finally:
-                                        del exception
-                                case _ErrorAction(exception):
-                                    try:
-                                        await request_handler_generator.athrow(exception)
-                                    except StopAsyncIteration:
-                                        request_handler_generator = None
-                                        return
-                                    finally:
-                                        del exception
-                                case _:  # pragma: no cover
-                                    assert_never(action)
+                            await action.asend(request_handler_generator)
+                        except StopAsyncIteration:
+                            return
                         finally:
                             del action
 
                         await backend.cancel_shielded_coro_yield()
                 finally:
-                    if request_handler_generator is not None:
-                        await request_handler_generator.aclose()
+                    await request_handler_generator.aclose()
 
     async def __new_request_handler(self, client: _ClientAPI[_ResponseT]) -> AsyncGenerator[None, _RequestT] | None:
         request_handler_generator = self.__request_handler.handle(client)

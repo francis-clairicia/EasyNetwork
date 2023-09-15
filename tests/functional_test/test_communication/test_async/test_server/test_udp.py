@@ -57,7 +57,11 @@ class MyAsyncUDPRequestHandler(AsyncDatagramRequestHandler[str, str]):
 
     async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[None, str]:
         self.created_clients.add(client)
-        match (yield):
+        while True:
+            async with self.handle_bad_requests(client):
+                request = yield
+                break
+        match request:
             case "__error__":
                 raise RandomError("Sorry man!")
             case "__os_error__":
@@ -69,18 +73,24 @@ class MyAsyncUDPRequestHandler(AsyncDatagramRequestHandler[str, str]):
                 assert object() not in list(self.created_clients)
                 await client.send_packet("True")
             case "__wait__":
-                request = yield
+                while True:
+                    async with self.handle_bad_requests(client):
+                        request = yield
+                        break
                 self.request_received[client.address].append(request)
                 await client.send_packet(f"After wait: {request}")
-            case request:
+            case _:
                 self.request_received[client.address].append(request)
                 await client.send_packet(request.upper())
 
-    async def bad_request(self, client: AsyncDatagramClient[str], exc: BaseProtocolParseError) -> None:
-        assert isinstance(exc, DatagramProtocolParseError)
-        assert exc.sender_address == client.address
-        self.bad_request_received[client.address].append(exc)
-        await client.send_packet("wrong encoding man.")
+    @contextlib.asynccontextmanager
+    async def handle_bad_requests(self, client: AsyncDatagramClient[str]) -> AsyncIterator[None]:
+        try:
+            yield
+        except DatagramProtocolParseError as exc:
+            assert exc.sender_address == client.address
+            self.bad_request_received[client.address].append(exc)
+            await client.send_packet("wrong encoding man.")
 
 
 class TimeoutRequestHandler(AsyncDatagramRequestHandler[str, str]):
@@ -99,9 +109,6 @@ class TimeoutRequestHandler(AsyncDatagramRequestHandler[str, str]):
         finally:
             self.request_timeout = 1.0  # Force reset to 1 second in order not to overload the server
 
-    async def bad_request(self, client: AsyncDatagramClient[str], exc: BaseProtocolParseError, /) -> None:
-        pass
-
 
 class ConcurrencyTestRequestHandler(AsyncDatagramRequestHandler[str, str]):
     sleep_time_before_second_yield: float = 0.0
@@ -114,18 +121,12 @@ class ConcurrencyTestRequestHandler(AsyncDatagramRequestHandler[str, str]):
         await asyncio.sleep(self.sleep_time_before_response)
         await client.send_packet(f"After wait: {request}")
 
-    async def bad_request(self, client: AsyncDatagramClient[str], exc: BaseProtocolParseError, /) -> None:
-        pass
-
 
 class CancellationRequestHandler(AsyncDatagramRequestHandler[str, str]):
     async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[None, str]:
         yield
         await client.send_packet("response")
         raise asyncio.CancelledError()
-
-    async def bad_request(self, client: AsyncDatagramClient[str], exc: BaseProtocolParseError, /) -> None:
-        pass
 
 
 class RequestRefusedHandler(AsyncDatagramRequestHandler[str, str]):
@@ -143,9 +144,6 @@ class RequestRefusedHandler(AsyncDatagramRequestHandler[str, str]):
         self.request_count[client] += 1
         await client.send_packet(request)
 
-    async def bad_request(self, client: AsyncDatagramClient[str], exc: BaseProtocolParseError, /) -> None:
-        pass
-
 
 class ErrorInRequestHandler(AsyncDatagramRequestHandler[str, str]):
     mute_thrown_exception: bool = False
@@ -160,9 +158,6 @@ class ErrorInRequestHandler(AsyncDatagramRequestHandler[str, str]):
         else:
             await client.send_packet(request)
 
-    async def bad_request(self, client: AsyncDatagramClient[str], exc: BaseProtocolParseError, /) -> None:
-        raise RandomError("An error occurred")
-
 
 class ErrorBeforeYieldHandler(AsyncDatagramRequestHandler[str, str]):
     raise_error: bool = False
@@ -175,24 +170,6 @@ class ErrorBeforeYieldHandler(AsyncDatagramRequestHandler[str, str]):
 
     async def bad_request(self, client: AsyncDatagramClient[str], exc: BaseProtocolParseError, /) -> None:
         pass
-
-
-class CloseHandleAfterBadRequest(AsyncDatagramRequestHandler[str, str]):
-    bad_request_return_value: bool | None = None
-
-    async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[None, str]:
-        await client.send_packet("new handle")
-        try:
-            request = yield
-        except GeneratorExit:
-            await client.send_packet("GeneratorExit")
-            raise
-        else:
-            await client.send_packet(request)
-
-    async def bad_request(self, client: AsyncDatagramClient[str], exc: BaseProtocolParseError) -> bool | None:
-        await client.send_packet("wrong encoding")
-        return self.bad_request_return_value
 
 
 class MyAsyncUDPServer(AsyncUDPNetworkServer[str, str]):
@@ -346,74 +323,6 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         assert request_handler.request_received[client_address] == []
         assert isinstance(request_handler.bad_request_received[client_address][0], DatagramProtocolParseError)
         assert isinstance(request_handler.bad_request_received[client_address][0].error, DeserializeError)
-
-    @pytest.mark.parametrize("request_handler", [CloseHandleAfterBadRequest], indirect=True)
-    @pytest.mark.parametrize("bad_request_return_value", [None, False, True])
-    async def test____serve_forever____bad_request____return_value(
-        self,
-        bad_request_return_value: bool | None,
-        request_handler: CloseHandleAfterBadRequest,
-        client_factory: Callable[[], Awaitable[DatagramEndpoint]],
-    ) -> None:
-        request_handler.bad_request_return_value = bad_request_return_value
-        endpoint = await client_factory()
-
-        await endpoint.sendto("\u00E9".encode("latin-1"), None)  # StringSerializer does not accept unicode
-        await asyncio.sleep(0.1)
-        assert (await endpoint.recvfrom())[0] == b"new handle"
-
-        assert (await endpoint.recvfrom())[0] == b"wrong encoding"
-        await endpoint.sendto(b"something valid", None)
-        await asyncio.sleep(0.1)
-
-        if bad_request_return_value in (None, False):
-            assert (await endpoint.recvfrom())[0] == b"GeneratorExit"
-            assert (await endpoint.recvfrom())[0] == b"new handle"
-
-        assert (await endpoint.recvfrom())[0] == b"something valid"
-
-    @pytest.mark.parametrize("request_handler", [ErrorInRequestHandler], indirect=True)
-    async def test____serve_forever____bad_request____unexpected_error(
-        self,
-        client_factory: Callable[[], Awaitable[DatagramEndpoint]],
-        caplog: pytest.LogCaptureFixture,
-        server: MyAsyncUDPServer,
-    ) -> None:
-        caplog.set_level(logging.ERROR, server.logger.name)
-        endpoint = await client_factory()
-
-        await endpoint.sendto("\u00E9".encode("latin-1"), None)  # StringSerializer does not accept unicode
-        await asyncio.sleep(0.2)
-
-        with pytest.raises(TimeoutError):
-            async with asyncio.timeout(1):
-                await endpoint.recvfrom()
-                pytest.fail("Should not arrive here")
-        assert len(caplog.records) == 3
-
-    async def test____serve_forever____bad_request____recursive_traceback_frame_clear_error(
-        self,
-        client_factory: Callable[[], Awaitable[DatagramEndpoint]],
-        caplog: pytest.LogCaptureFixture,
-        server: MyAsyncUDPServer,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        caplog.set_level(logging.WARNING, server.logger.name)
-        endpoint = await client_factory()
-
-        def infinite_recursion(exc: BaseException) -> None:
-            infinite_recursion(exc)
-
-        monkeypatch.setattr(
-            f"{AsyncUDPNetworkServer.__module__}._recursively_clear_exception_traceback_frames",
-            infinite_recursion,
-        )
-
-        await endpoint.sendto("\u00E9".encode("latin-1"), None)  # StringSerializer does not accept unicode
-        await asyncio.sleep(0.1)
-
-        assert (await endpoint.recvfrom())[0] == b"wrong encoding man."
-        assert "Recursion depth reached when clearing exception's traceback frames" in [rec.message for rec in caplog.records]
 
     @pytest.mark.parametrize("mute_thrown_exception", [False, True])
     @pytest.mark.parametrize("request_handler", [ErrorInRequestHandler], indirect=True)

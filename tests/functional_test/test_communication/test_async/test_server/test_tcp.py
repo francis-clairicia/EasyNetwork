@@ -114,7 +114,10 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
     async def handle(self, client: AsyncStreamClient[str]) -> AsyncGenerator[None, str]:
         if self.close_client_after_n_request >= 0 and self.request_count[client.address] >= self.close_client_after_n_request:
             await client.aclose()
-        request = yield
+        while True:
+            async with self.handle_bad_requests(client):
+                request = yield
+                break
         self.request_count[client.address] += 1
         match request:
             case "__error__":
@@ -135,17 +138,23 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
                 self.stop_listening()
                 await client.send_packet("successfully stop listening")
             case "__wait__":
-                request = yield
+                while True:
+                    async with self.handle_bad_requests(client):
+                        request = yield
+                        break
                 self.request_received[client.address].append(request)
                 await client.send_packet(f"After wait: {request}")
             case _:
                 self.request_received[client.address].append(request)
                 await client.send_packet(request.upper())
 
-    async def bad_request(self, client: AsyncStreamClient[str], exc: BaseProtocolParseError) -> None:
-        assert isinstance(exc, StreamProtocolParseError)
-        self.bad_request_received[client.address].append(exc)
-        await client.send_packet("wrong encoding man.")
+    @contextlib.asynccontextmanager
+    async def handle_bad_requests(self, client: AsyncStreamClient[str]) -> AsyncIterator[None]:
+        try:
+            yield
+        except StreamProtocolParseError as exc:
+            self.bad_request_received[client.address].append(exc)
+            await client.send_packet("wrong encoding man.")
 
 
 class TimeoutRequestHandler(AsyncStreamRequestHandler[str, str]):
@@ -170,9 +179,6 @@ class TimeoutRequestHandler(AsyncStreamRequestHandler[str, str]):
         finally:
             self.request_timeout = 1.0  # Force reset to 1 second in order not to overload the server
 
-    async def bad_request(self, client: AsyncStreamClient[str], exc: BaseProtocolParseError, /) -> None:
-        pass
-
 
 class CancellationRequestHandler(AsyncStreamRequestHandler[str, str]):
     async def on_connection(self, client: AsyncStreamClient[str]) -> None:
@@ -181,9 +187,6 @@ class CancellationRequestHandler(AsyncStreamRequestHandler[str, str]):
     async def handle(self, client: AsyncStreamClient[str]) -> AsyncGenerator[None, str]:
         yield
         raise asyncio.CancelledError()
-
-    async def bad_request(self, client: AsyncStreamClient[str], exc: BaseProtocolParseError, /) -> None:
-        pass
 
 
 class InitialHandshakeRequestHandler(AsyncStreamRequestHandler[str, str]):
@@ -214,9 +217,6 @@ class InitialHandshakeRequestHandler(AsyncStreamRequestHandler[str, str]):
         request = yield
         await client.send_packet(request)
 
-    async def bad_request(self, client: AsyncStreamClient[str], exc: BaseProtocolParseError, /) -> None:
-        pass
-
 
 class RequestRefusedHandler(AsyncStreamRequestHandler[str, str]):
     refuse_after: int = 2**64
@@ -237,9 +237,6 @@ class RequestRefusedHandler(AsyncStreamRequestHandler[str, str]):
         self.request_count[client] += 1
         await client.send_packet(request)
 
-    async def bad_request(self, client: AsyncStreamClient[str], exc: BaseProtocolParseError, /) -> None:
-        pass
-
 
 class ErrorInRequestHandler(AsyncStreamRequestHandler[str, str]):
     mute_thrown_exception: bool = False
@@ -257,9 +254,6 @@ class ErrorInRequestHandler(AsyncStreamRequestHandler[str, str]):
         else:
             await client.send_packet(request)
 
-    async def bad_request(self, client: AsyncStreamClient[str], exc: BaseProtocolParseError, /) -> None:
-        raise RandomError("An error occurred")
-
 
 class ErrorBeforeYieldHandler(AsyncStreamRequestHandler[str, str]):
     async def on_connection(self, client: AsyncStreamClient[str]) -> None:
@@ -269,30 +263,6 @@ class ErrorBeforeYieldHandler(AsyncStreamRequestHandler[str, str]):
         raise RandomError("An error occurred")
         request = yield  # type: ignore[unreachable]
         await client.send_packet(request)
-
-    async def bad_request(self, client: AsyncStreamClient[str], exc: BaseProtocolParseError, /) -> None:
-        pass
-
-
-class CloseHandleAfterBadRequest(AsyncStreamRequestHandler[str, str]):
-    bad_request_return_value: bool | None = None
-
-    async def on_connection(self, client: AsyncStreamClient[str]) -> None:
-        await client.send_packet("milk")
-
-    async def handle(self, client: AsyncStreamClient[str]) -> AsyncGenerator[None, str]:
-        await client.send_packet("new handle")
-        try:
-            request = yield
-        except GeneratorExit:
-            await client.send_packet("GeneratorExit")
-            raise
-        else:
-            await client.send_packet(request)
-
-    async def bad_request(self, client: AsyncStreamClient[str], exc: BaseProtocolParseError) -> bool | None:
-        await client.send_packet("wrong encoding")
-        return self.bad_request_return_value
 
 
 class MyAsyncTCPServer(AsyncTCPNetworkServer[str, str]):
@@ -660,73 +630,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         assert request_handler.request_received[client_address] == []
         assert isinstance(request_handler.bad_request_received[client_address][0], StreamProtocolParseError)
         assert isinstance(request_handler.bad_request_received[client_address][0].error, IncrementalDeserializeError)
-
-    @pytest.mark.parametrize("request_handler", [CloseHandleAfterBadRequest], indirect=True)
-    @pytest.mark.parametrize("bad_request_return_value", [None, False, True])
-    async def test____serve_forever____bad_request____return_value(
-        self,
-        bad_request_return_value: bool | None,
-        request_handler: CloseHandleAfterBadRequest,
-        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
-    ) -> None:
-        request_handler.bad_request_return_value = bad_request_return_value
-        reader, writer = await client_factory()
-
-        assert await reader.readline() == b"new handle\n"
-        writer.write("\u00E9\n".encode("latin-1"))  # StringSerializer does not accept unicode
-        await asyncio.sleep(0.1)
-
-        assert await reader.readline() == b"wrong encoding\n"
-        writer.write(b"something valid\n")
-        await asyncio.sleep(0.1)
-
-        if bad_request_return_value in (None, False):
-            assert await reader.readline() == b"GeneratorExit\n"
-            assert await reader.readline() == b"new handle\n"
-
-        assert await reader.readline() == b"something valid\n"
-
-    @pytest.mark.parametrize("request_handler", [ErrorInRequestHandler], indirect=True)
-    async def test____serve_forever____bad_request____unexpected_error(
-        self,
-        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
-        caplog: pytest.LogCaptureFixture,
-        server: MyAsyncTCPServer,
-    ) -> None:
-        caplog.set_level(logging.ERROR, server.logger.name)
-        reader, writer = await client_factory()
-
-        writer.write("\u00E9\n".encode("latin-1"))  # StringSerializer does not accept unicode
-        await asyncio.sleep(0.1)
-
-        with pytest.raises(ConnectionResetError):
-            assert await reader.read() == b""
-            raise ConnectionResetError
-        assert len(caplog.records) == 3
-
-    async def test____serve_forever____bad_request____recursive_traceback_frame_clear_error(
-        self,
-        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
-        caplog: pytest.LogCaptureFixture,
-        server: MyAsyncTCPServer,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        caplog.set_level(logging.WARNING, server.logger.name)
-        reader, writer = await client_factory()
-
-        def infinite_recursion(exc: BaseException) -> None:
-            infinite_recursion(exc)
-
-        monkeypatch.setattr(
-            f"{AsyncTCPNetworkServer.__module__}._recursively_clear_exception_traceback_frames",
-            infinite_recursion,
-        )
-
-        writer.write("\u00E9\n".encode("latin-1"))  # StringSerializer does not accept unicode
-        await asyncio.sleep(0.1)
-
-        assert await reader.readline() == b"wrong encoding man.\n"
-        assert "Recursion depth reached when clearing exception's traceback frames" in [rec.message for rec in caplog.records]
 
     @pytest.mark.parametrize("socket_family", ["AF_INET"], indirect=True)
     @pytest.mark.parametrize("use_ssl", ["NO_SSL"], indirect=True)

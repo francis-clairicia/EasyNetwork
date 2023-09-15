@@ -19,16 +19,26 @@ from __future__ import annotations
 __all__ = []  # type: list[str]
 
 import dataclasses
-from typing import Generic, TypeVar
+from collections.abc import AsyncGenerator
+from typing import Any, Generic, TypeVar
 
 _T = TypeVar("_T")
 
 
-@dataclasses.dataclass(match_args=True, slots=True)
+@dataclasses.dataclass(slots=True)
 class RequestAction(Generic[_T]):
     request: _T
 
+    async def asend(self, generator: AsyncGenerator[None, _T]) -> None:
+        await generator.asend(self.request)
 
-@dataclasses.dataclass(match_args=True, slots=True)
+
+@dataclasses.dataclass(slots=True)
 class ErrorAction:
     exception: BaseException
+
+    async def asend(self, generator: AsyncGenerator[None, Any]) -> None:
+        try:
+            await generator.athrow(self.exception)
+        finally:
+            del self  # Needed to avoid circular reference with raised exception

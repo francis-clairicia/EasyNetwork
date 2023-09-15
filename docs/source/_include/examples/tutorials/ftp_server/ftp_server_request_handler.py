@@ -28,7 +28,18 @@ class FTPRequestHandler(AsyncStreamRequestHandler[FTPRequest, FTPReply]):
         self,
         client: AsyncStreamClient[FTPReply],
     ) -> AsyncGenerator[None, FTPRequest]:
-        request: FTPRequest = yield
+        try:
+            request: FTPRequest = yield
+        except StreamProtocolParseError as exc:
+            self.logger.warning(
+                "%s: %s: %s",
+                client.address,
+                type(exc.error).__name__,
+                exc.error,
+            )
+            await client.send_packet(FTPReply.syntax_error())
+            return
+
         self.logger.info("Sent by client %s: %s", client.address, request)
         match request:
             case FTPRequest(FTPCommand.NOOP):
@@ -40,16 +51,3 @@ class FTPRequestHandler(AsyncStreamRequestHandler[FTPRequest, FTPReply]):
 
             case _:
                 await client.send_packet(FTPReply.not_implemented_error())
-
-    async def bad_request(
-        self,
-        client: AsyncStreamClient[FTPReply],
-        exc: StreamProtocolParseError,
-    ) -> None:
-        self.logger.warning(
-            "%s: %s: %s",
-            client.address,
-            type(exc.error).__name__,
-            exc.error,
-        )
-        await client.send_packet(FTPReply.syntax_error())

@@ -26,16 +26,15 @@ import os
 import weakref
 from collections import deque
 from collections.abc import AsyncGenerator, AsyncIterator, Callable, Coroutine, Iterator, Mapping, Sequence
-from typing import TYPE_CHECKING, Any, Generic, assert_never, final
+from typing import TYPE_CHECKING, Any, Generic, final
 
 from ..._typevars import _RequestT, _ResponseT
-from ...exceptions import ClientClosedError, ServerAlreadyRunning, ServerClosedError, StreamProtocolParseError
+from ...exceptions import ClientClosedError, ServerAlreadyRunning, ServerClosedError
 from ...protocol import StreamProtocol
 from ...tools._stream import StreamDataConsumer, StreamDataProducer
 from ...tools._utils import (
     check_real_socket_state as _check_real_socket_state,
     make_callback as _make_callback,
-    recursively_clear_exception_traceback_frames as _recursively_clear_exception_traceback_frames,
     remove_traceback_frames_in_place as _remove_traceback_frames_in_place,
 )
 from ...tools.constants import (
@@ -455,39 +454,9 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                         return
                 async for action in request_receiver:
                     try:
-                        match action:
-                            case _RequestAction(request):
-                                logger.debug("Processing request sent by %s", client.address)
-                                try:
-                                    await request_handler_generator.asend(request)
-                                except StopAsyncIteration:
-                                    request_handler_generator = None
-                                finally:
-                                    del request
-                            case _ErrorAction(StreamProtocolParseError() as exception):
-                                logger.debug("Malformed request sent by %s", client.address)
-                                try:
-                                    try:
-                                        _recursively_clear_exception_traceback_frames(exception)
-                                    except RecursionError:
-                                        logger.warning("Recursion depth reached when clearing exception's traceback frames")
-                                    should_close_handle = not (await self.__request_handler.bad_request(client, exception))
-                                    if should_close_handle:
-                                        try:
-                                            await request_handler_generator.aclose()
-                                        finally:
-                                            request_handler_generator = None
-                                finally:
-                                    del exception
-                            case _ErrorAction(exception):
-                                try:
-                                    await request_handler_generator.athrow(exception)
-                                except StopAsyncIteration:
-                                    request_handler_generator = None
-                                finally:
-                                    del exception
-                            case _:  # pragma: no cover
-                                assert_never(action)
+                        await action.asend(request_handler_generator)
+                    except StopAsyncIteration:
+                        request_handler_generator = None
                     finally:
                         del action
                     await backend.cancel_shielded_coro_yield()

@@ -8,7 +8,6 @@ from easynetwork.api_async.server.handler import AsyncBaseClientInterface, Async
 from easynetwork.api_sync.server.abc import AbstractNetworkServer
 from easynetwork.api_sync.server.tcp import StandaloneTCPNetworkServer
 from easynetwork.api_sync.server.udp import StandaloneUDPNetworkServer
-from easynetwork.exceptions import BaseProtocolParseError
 from easynetwork.protocol import DatagramProtocol, StreamProtocol
 from easynetwork.serializers.line import StringLineSerializer
 
@@ -24,9 +23,6 @@ class MyAsyncRequestHandler(AsyncStreamRequestHandler[str, str], AsyncDatagramRe
         if request == "wait:":
             request = (yield) + " after wait"
         await client.send_packet(request.upper())
-
-    async def bad_request(self, client: AsyncBaseClientInterface[str], exc: BaseProtocolParseError) -> None:
-        pass
 
 
 def create_tcp_server() -> StandaloneTCPNetworkServer[str, str]:

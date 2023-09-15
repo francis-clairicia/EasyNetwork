@@ -13,7 +13,6 @@ from easynetwork.api_async.server.handler import (
     AsyncDatagramRequestHandler,
     AsyncStreamRequestHandler,
 )
-from easynetwork.exceptions import BaseProtocolParseError
 
 import pytest
 
@@ -28,9 +27,6 @@ class BaseFakeHandler(AsyncBaseRequestHandler):
 
     def handle(self, client: AsyncBaseClientInterface[Any]) -> AsyncGenerator[None, Any]:
         raise NotImplementedError
-
-    async def bad_request(self, client: AsyncBaseClientInterface[Any], exc: BaseProtocolParseError, /) -> None:
-        pass
 
 
 class FakeStreamHandler(BaseFakeHandler, AsyncStreamRequestHandler[Any, Any]):

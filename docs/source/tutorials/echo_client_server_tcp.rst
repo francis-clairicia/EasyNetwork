@@ -63,7 +63,6 @@ Create your request handler
 
 First, you must create a request handler class by subclassing the :class:`.AsyncStreamRequestHandler` class and overriding
 its :meth:`~.AsyncStreamRequestHandler.handle` method; this method will process incoming requests.
-Its :meth:`~.AsyncStreamRequestHandler.bad_request` method must also be overridden to handle parsing errors.
 
 .. literalinclude:: ../_include/examples/tutorials/echo_client_server_tcp/echo_request_handler.py
    :linenos:
@@ -72,14 +71,13 @@ Its :meth:`~.AsyncStreamRequestHandler.bad_request` method must also be overridd
 .. note::
 
    Pay attention to :meth:`~.AsyncStreamRequestHandler.handle`, it is an :std:term:`asynchronous generator` function.
-
    All requests sent by the client are literally injected into the generator via the :keyword:`yield` statement.
 
    .. literalinclude:: ../_include/examples/tutorials/echo_client_server_tcp/echo_request_handler.py
       :start-at: async def handle
-      :end-at: yield
+      :end-at: return
       :lineno-match:
-      :emphasize-lines: 5
+      :emphasize-lines: 6
       :dedent:
 
    You can :keyword:`yield` several times if you want to wait for a new packet from the client in the same context.
@@ -87,8 +85,6 @@ Its :meth:`~.AsyncStreamRequestHandler.bad_request` method must also be overridd
 .. warning::
 
    Leaving the generator will *not* close the connection, a new generator will be created afterwards.
-   The same applies to :meth:`~.AsyncStreamRequestHandler.bad_request`.
-
    You may, however, explicitly close the connection if you want to::
 
       await client.aclose()
