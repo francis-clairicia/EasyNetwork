@@ -118,12 +118,12 @@ class AsyncStreamClient(AsyncBaseClientInterface[_ResponseT]):
         Once that happens, all future operations on the client object will raise a :exc:`.ClientClosedError`.
         The remote end will receive no more data (after queued data is flushed).
 
+        Can be safely called multiple times.
+
         Warning:
             :meth:`aclose` performs a graceful close, waiting for the connection to close.
 
             If :meth:`aclose` is cancelled, the client is closed abruptly.
-
-        Can be safely called multiple times.
         """
         raise NotImplementedError
 
@@ -194,8 +194,8 @@ class AsyncStreamRequestHandler(AsyncBaseRequestHandler, Generic[_RequestT, _Res
 
         :meth:`handle` can :keyword:`yield` whenever a request from the `client` is needed.
 
-        The generator is started right after :meth:`on_connection` is done.
-        When the generator returns, a new generator is created and started right after.
+        The generator is started immediately after :meth:`on_connection`.
+        When the generator returns, a new generator is created and started immediately after.
 
         The generator **does not** represent the client life time, ``await client.aclose()`` must be called explicitly.
 
@@ -259,7 +259,6 @@ class AsyncStreamRequestHandler(AsyncBaseRequestHandler, Generic[_RequestT, _Res
 
         Important:
             :meth:`AsyncStreamClient.is_closing` should return :data:`True` when this function is called.
-
             However, if :meth:`handle` raises an exception, the client task is shut down and the connection is forcibly closed
             *after* :meth:`on_disconnection` is called.
 
@@ -306,8 +305,6 @@ class AsyncDatagramRequestHandler(AsyncBaseRequestHandler, Generic[_RequestT, _R
         :meth:`handle` can :keyword:`yield` whenever a request from the `client` is needed.
 
         Warning:
-            Even if this is possible, multiple :keyword:`yield` is not recommended.
-
             UDP does not guarantee ordered delivery. Packets are typically "sent" in order, but they may be received out of order.
             In large networks, it is reasonably common for some packets to arrive out of sequence (or not at all).
 
@@ -316,7 +313,6 @@ class AsyncDatagramRequestHandler(AsyncBaseRequestHandler, Generic[_RequestT, _R
 
         Important:
             There will always be only one active generator per client.
-
             All the pending datagrams received while the generator is running are queued.
 
             This behavior is designed to act like a stream request handler.

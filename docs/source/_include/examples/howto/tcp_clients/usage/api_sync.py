@@ -49,13 +49,11 @@ def recv_packet_example3(client: TCPNetworkClient[Any, Any]) -> None:
 def recv_packet_example4(client: TCPNetworkClient[Any, Any]) -> None:
     # [start]
     all_packets = [p for p in client.iter_received_packets()]
-    print(f"Received packets: {all_packets!r}")
 
 
 def recv_packet_example5(client: TCPNetworkClient[Any, Any]) -> None:
     # [start]
     all_packets = [p for p in client.iter_received_packets(timeout=1)]
-    print(f"Received packets: {all_packets!r}")
 
 
 ##################
@@ -81,7 +79,6 @@ def max_recv_size_example() -> None:
     with TCPNetworkClient(address, protocol, max_recv_size=1024) as client:
         # Only do socket.recv(1024) calls
         packet = client.recv_packet()
-        print(f"Received packet: {packet!r}")
 
 
 def ssl_default_context_example() -> None:
@@ -93,4 +90,3 @@ def ssl_default_context_example() -> None:
         client.send_packet({"data": 42})
 
         packet = client.recv_packet()
-        print(f"Received packet: {packet!r}")

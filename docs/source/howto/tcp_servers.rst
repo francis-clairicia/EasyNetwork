@@ -1,0 +1,152 @@
+********************
+How-to — TCP Servers
+********************
+
+.. include:: ../_include/sync-async-variants.rst
+
+.. contents:: Table of Contents
+   :local:
+
+------
+
+Introduction
+============
+
+The :mod:`easynetwork.api_async.server` module simplifies the task of writing network servers. The service creation model is inspired by
+the standard :mod:`socketserver` library, but is an enhanced version with even more abstraction.
+
+Creating a server requires several steps:
+
+#. Derive a class from :class:`.AsyncStreamRequestHandler` and redefine its :meth:`~.AsyncStreamRequestHandler.handle` method;
+   this method will process incoming requests.
+
+#. Instantiate the :class:`.AsyncTCPNetworkServer` class passing it the server's address, the :term:`protocol object`
+   and the request handler instance.
+
+#. Call :meth:`~.AsyncTCPNetworkServer.serve_forever` to process requests.
+
+Writing :term:`coroutine functions <coroutine function>` is mandatory to use this server.
+
+.. seealso::
+
+   :pep:`492` — Coroutines with async and await syntax
+      The proposal to introduce native coroutines in Python with :keyword:`async` and :keyword:`await` syntax.
+
+   :external+python:doc:`library/asyncio`
+      If you are not familiar with async/await syntax, you can use the standard library to get started with coroutines.
+
+
+Request Handler Objects
+=======================
+
+.. note::
+
+   Unlike :class:`socketserver.BaseRequestHandler`, there is only one request handler instance for the entire service.
+
+
+Here is a simple example:
+
+.. literalinclude:: ../_include/examples/howto/tcp_servers/simple_request_handler.py
+   :linenos:
+
+
+Using ``handle()`` Generator
+----------------------------
+
+.. seealso::
+
+   :pep:`525` — Asynchronous Generators
+      The proposal that expanded on :pep:`492` by adding generator capabilities to coroutine functions.
+
+
+Minimum Requirements
+^^^^^^^^^^^^^^^^^^^^
+
+.. literalinclude:: ../_include/examples/howto/tcp_servers/request_handler_explanation.py
+   :pyobject: MinimumRequestHandler.handle
+   :dedent:
+   :linenos:
+
+
+Closing the connection
+^^^^^^^^^^^^^^^^^^^^^^
+
+.. literalinclude:: ../_include/examples/howto/tcp_servers/request_handler_explanation.py
+   :pyobject: ConnectionCloseRequestHandler.handle
+   :dedent:
+   :linenos:
+   :emphasize-lines: 11
+
+.. tip::
+
+   You can use :func:`contextlib.aclosing` to close the client at the generator exit.
+
+   .. literalinclude:: ../_include/examples/howto/tcp_servers/request_handler_explanation.py
+      :pyobject: ConnectionCloseWithContextRequestHandler.handle
+      :dedent:
+      :linenos:
+      :emphasize-lines: 5
+
+.. important::
+
+   The connection is forcibly closed under the following conditions:
+
+   * ``handle()`` raises an exception.
+
+   * ``handle()`` returns *before* the first :keyword:`yield` statement.
+
+      .. literalinclude:: ../_include/examples/howto/tcp_servers/request_handler_explanation.py
+         :pyobject: ConnectionCloseBeforeYieldRequestHandler.handle
+         :dedent:
+         :linenos:
+         :emphasize-lines: 5-6
+
+
+Error Handling
+^^^^^^^^^^^^^^
+
+.. literalinclude:: ../_include/examples/howto/tcp_servers/request_handler_explanation.py
+   :pyobject: ErrorHandlingInRequestHandler.handle
+   :dedent:
+   :linenos:
+   :emphasize-lines: 8
+
+.. note::
+
+   ``handle()`` will never get a :exc:`ConnectionError` subclass. In case of an unexpected disconnect, the generator is closed,
+   so you should handle :exc:`GeneratorExit` instead.
+
+
+Having Multiple ``yield`` Statements
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. literalinclude:: ../_include/examples/howto/tcp_servers/request_handler_explanation.py
+   :pyobject: MultipleYieldInRequestHandler.handle
+   :dedent:
+   :linenos:
+   :emphasize-lines: 5,12
+
+
+.. tip::
+
+   The number of :keyword:`yield` allowed is... infinite!
+
+   You can take advantage of this by having an internal main loop inside the generator:
+
+   .. literalinclude:: ../_include/examples/howto/tcp_servers/request_handler_explanation.py
+      :pyobject: ClientLoopInRequestHandler.handle
+      :dedent:
+      :linenos:
+
+
+Cancellation And Timeouts
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Since all :exc:`BaseException` subclasses are thrown into the generator, you can apply a timeout to the read stream
+using the asynchronous framework (the cancellation exception is retrieved in the generator):
+
+.. literalinclude:: ../_include/examples/howto/tcp_servers/request_handler_explanation.py
+   :pyobject: TimeoutRequestHandler.handle
+   :dedent:
+   :linenos:
+   :emphasize-lines: 6,9-10

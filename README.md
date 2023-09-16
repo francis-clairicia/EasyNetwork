@@ -44,6 +44,9 @@ You choose the data format, and the library takes care of the rest.
 
 Works with TCP and UDP.
 
+### Documentation
+Coming soon.
+
 ## Usage
 ### TCP Echo server with JSON data
 ```py
@@ -167,9 +170,6 @@ if __name__ == "__main__":
 ```
 
 </details>
-
-### Documentation
-Coming soon.
 
 ## License
 This project is licensed under the terms of the [Apache Software License 2.0](https://github.com/francis-clairicia/EasyNetwork/blob/main/LICENSE).

@@ -89,11 +89,6 @@ its :meth:`~.AsyncStreamRequestHandler.handle` method; this method will process 
 
       await client.aclose()
 
-.. seealso::
-
-   :pep:`525` — Asynchronous Generators
-      The proposal that expanded on :pep:`492` by adding generator capabilities to coroutine functions.
-
 
 Start The Server
 ----------------

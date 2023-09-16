@@ -256,7 +256,7 @@ Advanced Usage
 Close The Write-End Stream
 --------------------------
 
-If you are sure you will never reuse ``send_packet()``, you can call ``send_eof()`` to shut down the write-end stream.
+If you are sure you will never reuse ``send_packet()``, you can call ``send_eof()`` to shut down the write stream.
 
 .. tabs::
 

@@ -23,9 +23,10 @@ per-file-ignores =
     # F401: 'module' imported but unused
     # F403: 'from module import *' used; unable to detect undefined names
     # F405: 'name' may be undefined, or defined from star imports: 'module'
+    # F841: local variable 'name' is assigned to but never used
     # DALL001: There is no __all__ defined
     src/easynetwork/__init__.py:F401,F403,F405
     src/easynetwork/*/__init__.py:F401,F403,F405
     tests/*.py:DALL001
     docs/*.py:DALL001
-    examples/*.py:DALL001
+    docs/source/_include/*.py:F841,DALL001

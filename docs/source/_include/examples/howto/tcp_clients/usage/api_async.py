@@ -52,13 +52,11 @@ async def recv_packet_example3(client: AsyncTCPNetworkClient[Any, Any]) -> None:
 async def recv_packet_example4(client: AsyncTCPNetworkClient[Any, Any]) -> None:
     # [start]
     all_packets = [p async for p in client.iter_received_packets()]
-    print(f"Received packets: {all_packets!r}")
 
 
 async def recv_packet_example5(client: AsyncTCPNetworkClient[Any, Any]) -> None:
     # [start]
     all_packets = [p async for p in client.iter_received_packets(timeout=1)]
-    print(f"Received packets: {all_packets!r}")
 
 
 ##################
@@ -84,7 +82,6 @@ async def max_recv_size_example() -> None:
     async with AsyncTCPNetworkClient(address, protocol, max_recv_size=1024) as client:
         # Only do socket.recv(1024) calls
         packet = await client.recv_packet()
-        print(f"Received packet: {packet!r}")
 
 
 async def ssl_default_context_example() -> None:
@@ -96,4 +93,3 @@ async def ssl_default_context_example() -> None:
         await client.send_packet({"data": 42})
 
         packet = await client.recv_packet()
-        print(f"Received packet: {packet!r}")
