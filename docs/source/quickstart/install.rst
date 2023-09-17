@@ -28,10 +28,6 @@ Here is the full list:
 
 * Asynchronous I/O extensions:
 
-   .. todo::
-
-      Reference backend customization section
-
    * ``sniffio``: Installs the version supported and tested of :github:repo:`sniffio <python-trio/sniffio>`.
 
    * ``uvloop``: Installs the version supported and tested of :github:repo:`uvloop <MagicStack/uvloop>`.
@@ -46,3 +42,9 @@ Example where the ``cbor`` and ``msgpack`` extensions are installed:
 .. code-block:: console
 
    (.venv) $ pip install "easynetwork[cbor,msgpack]"
+
+
+.. seealso::
+
+   :doc:`/api/async/backend`
+      See how ``sniffio`` is used.

@@ -641,7 +641,7 @@ class AsyncListenerSocketAdapter(AsyncBaseSocketAdapter):
             async def serve(listener, task_group):
 
                 # Coroutine that waits for the connection to be fully etablished
-                # (e.g. Perform SSL/TLS handshake if needed.)
+                # (e.g. Perform SSL/TLS handshake if necessary.)
                 async def connect_and_run(accepted_socket):
                     stream_socket = await accepted_socket.connect()
                     # The connection is up; call the real handler
@@ -672,7 +672,7 @@ class AcceptedSocket(metaclass=ABCMeta):
     @abstractmethod
     async def connect(self) -> AsyncStreamSocketAdapter:
         """
-        Wraps the accepted socket into an asynchronous stream socket, and perform connection initialization if needed.
+        Wraps the accepted socket into an asynchronous stream socket, and perform connection initialization if necessary.
 
         For example, an SSL/TLS stream would perform a TLS handshake.
 
