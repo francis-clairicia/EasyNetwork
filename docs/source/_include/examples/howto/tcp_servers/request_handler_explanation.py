@@ -166,9 +166,6 @@ class ClientLoopInRequestHandler(AsyncStreamRequestHandler[Request, Response]):
 
                 await client.send_packet(Response())
 
-    def need_something_else(self, request: Request, client: AsyncStreamClient[Response]) -> bool:
-        return True
-
 
 class TimeoutRequestHandler(AsyncStreamRequestHandler[Request, Response]):
     async def handle(
@@ -183,3 +180,74 @@ class TimeoutRequestHandler(AsyncStreamRequestHandler[Request, Response]):
             await client.send_packet(TimedOut())
         else:
             await client.send_packet(Response())
+
+
+class ClientConnectionHooksRequestHandler(AsyncStreamRequestHandler[Request, Response]):
+    async def on_connection(self, client: AsyncStreamClient[Response]) -> None:
+        print(f"{client.address} is connected")
+
+        # Notify the client that the service is ready.
+        await client.send_packet(Response())
+
+    async def on_disconnection(self, client: AsyncStreamClient[Response]) -> None:
+        # Perfom service shutdown clean-up
+        ...
+
+        print(f"{client.address} is disconnected")
+
+    async def handle(
+        self,
+        client: AsyncStreamClient[Response],
+    ) -> AsyncGenerator[None, Request]:
+        request: Request = yield
+
+        ...
+
+        await client.send_packet(Response())
+
+
+class ClientConnectionAsyncGenRequestHandler(AsyncStreamRequestHandler[Request, Response]):
+    async def on_connection(
+        self,
+        client: AsyncStreamClient[Response],
+    ) -> AsyncGenerator[None, Request]:
+        # Ask the user to log in
+        initial_user_info: Request = yield
+
+        ...
+
+        # Sucessfully logged in
+        await client.send_packet(Response())
+
+    async def on_disconnection(self, client: AsyncStreamClient[Response]) -> None:
+        # Perfom log out clean-up
+        ...
+
+    async def handle(
+        self,
+        client: AsyncStreamClient[Response],
+    ) -> AsyncGenerator[None, Request]:
+        request: Request = yield
+
+        ...
+
+        await client.send_packet(Response())
+
+
+class ServiceInitializationHookRequestHandler(AsyncStreamRequestHandler[Request, Response]):
+    async def service_init(self, exit_stack: contextlib.AsyncExitStack) -> None:
+        exit_stack.callback(self._service_quit)
+
+        self.background_tasks = await exit_stack.enter_async_context(asyncio.TaskGroup())
+
+        _ = self.background_tasks.create_task(self._service_actions())
+
+    async def _service_actions(self) -> None:
+        while True:
+            await asyncio.sleep(1)
+
+            # Do some stuff each second in background
+            ...
+
+    def _service_quit(self) -> None:
+        print("Service stopped")

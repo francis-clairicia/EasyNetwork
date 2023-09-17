@@ -41,7 +41,7 @@ Request Handler Objects
 
 .. note::
 
-   Unlike :class:`socketserver.BaseRequestHandler`, there is only one request handler instance for the entire service.
+   Unlike :class:`socketserver.BaseRequestHandler`, there is **only one** :class:`.AsyncStreamRequestHandler` instance for the entire service.
 
 
 Here is a simple example:
@@ -150,3 +150,50 @@ using the asynchronous framework (the cancellation exception is retrieved in the
    :dedent:
    :linenos:
    :emphasize-lines: 6,9-10
+
+
+Connecting/Disconnecting Hooks
+------------------------------
+
+You can override :meth:`~.AsyncStreamRequestHandler.on_connection` and :meth:`~.AsyncStreamRequestHandler.on_disconnection` methods:
+
+* :meth:`~.AsyncStreamRequestHandler.on_connection` is called on client task startup.
+
+* :meth:`~.AsyncStreamRequestHandler.on_disconnection` is called on client task teardown.
+
+.. literalinclude:: ../_include/examples/howto/tcp_servers/request_handler_explanation.py
+   :pyobject: ClientConnectionHooksRequestHandler
+   :start-after: ClientConnectionHooksRequestHandler
+   :dedent:
+   :linenos:
+   :emphasize-lines: 1,7
+
+
+Wait For Client Data On Connection
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+If you need to use the read stream, :meth:`~.AsyncStreamRequestHandler.on_connection` can be an asynchronous generator instead of
+a coroutine function:
+
+.. literalinclude:: ../_include/examples/howto/tcp_servers/request_handler_explanation.py
+   :pyobject: ClientConnectionAsyncGenRequestHandler
+   :start-after: ClientConnectionAsyncGenRequestHandler
+   :dedent:
+   :linenos:
+   :emphasize-lines: 6
+
+
+Service Initialization
+----------------------
+
+The server will call :meth:`~.AsyncBaseRequestHandler.service_init` and pass it an :class:`~contextlib.AsyncExitStack`
+at the beginning of the :meth:`~.AsyncTCPNetworkServer.serve_forever` task to set up the global service.
+
+This allows you to do something like this:
+
+.. literalinclude:: ../_include/examples/howto/tcp_servers/request_handler_explanation.py
+   :pyobject: ServiceInitializationHookRequestHandler
+   :start-after: ServiceInitializationHookRequestHandler
+   :dedent:
+   :linenos:
+   :emphasize-lines: 1
