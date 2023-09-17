@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import logging
 from collections.abc import AsyncGenerator, Callable
 
+from easynetwork.api_async.server.abc import AbstractAsyncNetworkServer
 from easynetwork.api_async.server.handler import AsyncBaseClientInterface, AsyncDatagramRequestHandler, AsyncStreamRequestHandler
 from easynetwork.api_sync.server.abc import AbstractNetworkServer
 from easynetwork.api_sync.server.tcp import StandaloneTCPNetworkServer
@@ -17,6 +19,9 @@ logger = logging.getLogger("app")
 
 
 class MyAsyncRequestHandler(AsyncStreamRequestHandler[str, str], AsyncDatagramRequestHandler[str, str]):
+    async def service_init(self, exit_stack: contextlib.AsyncExitStack, server: AbstractAsyncNetworkServer) -> None:
+        pass
+
     async def handle(self, client: AsyncBaseClientInterface[str]) -> AsyncGenerator[None, str]:
         request: str = yield
         logger.debug(f"Received {request!r}")

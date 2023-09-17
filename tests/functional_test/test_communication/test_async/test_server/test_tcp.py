@@ -5,6 +5,7 @@ import collections
 import contextlib
 import logging
 import ssl
+import weakref
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Sequence
 from socket import IPPROTO_TCP, TCP_NODELAY
 from typing import Any
@@ -67,18 +68,13 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
     request_received: collections.defaultdict[tuple[Any, ...], list[str]]
     request_count: collections.Counter[tuple[Any, ...]]
     bad_request_received: collections.defaultdict[tuple[Any, ...], list[BaseProtocolParseError]]
-    backend: AsyncBackend
     close_all_clients_on_connection: bool = False
     close_client_after_n_request: int = -1
-    stop_listening: Callable[[], None]
+    server: AsyncTCPNetworkServer[str, str]
 
-    def set_async_backend(self, backend: AsyncBackend) -> None:
-        self.backend = backend
-
-    async def service_init(self, exit_stack: contextlib.AsyncExitStack) -> None:
-        await super().service_init(exit_stack)
-        assert hasattr(self, "backend")
-        assert not hasattr(self, "stop_listening")
+    async def service_init(self, exit_stack: contextlib.AsyncExitStack, server: AsyncTCPNetworkServer[str, str]) -> None:
+        await super().service_init(exit_stack, server)
+        self.server = server
         self.connected_clients = WeakValueDictionary()
         self.request_received = collections.defaultdict(list)
         self.request_count = collections.Counter()
@@ -87,12 +83,10 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
 
     async def service_quit(self) -> None:
         del (
-            self.backend,
             self.connected_clients,
             self.request_received,
             self.request_count,
             self.bad_request_received,
-            self.stop_listening,
         )
 
     async def on_connection(self, client: AsyncStreamClient[str]) -> None:
@@ -106,10 +100,6 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
     async def on_disconnection(self, client: AsyncStreamClient[str]) -> None:
         del self.connected_clients[client.address]
         del self.request_count[client.address]
-
-    def set_stop_listening_callback(self, stop_listening_callback: Callable[[], None]) -> None:
-        super().set_stop_listening_callback(stop_listening_callback)
-        self.stop_listening = stop_listening_callback
 
     async def handle(self, client: AsyncStreamClient[str]) -> AsyncGenerator[None, str]:
         if self.close_client_after_n_request >= 0 and self.request_count[client.address] >= self.close_client_after_n_request:
@@ -135,7 +125,7 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
             case "__os_error__":
                 raise OSError("Server issue.")
             case "__stop_listening__":
-                self.stop_listening()
+                self.server.stop_listening()
                 await client.send_packet("successfully stop listening")
             case "__wait__":
                 while True:
@@ -156,13 +146,17 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
             self.bad_request_received[client.address].append(exc)
             await client.send_packet("wrong encoding man.")
 
+    @property
+    def backend(self) -> AsyncBackend:
+        return self.server.get_backend()
+
 
 class TimeoutRequestHandler(AsyncStreamRequestHandler[str, str]):
     request_timeout: float = 1.0
     timeout_on_second_yield: bool = False
 
-    def set_async_backend(self, backend: AsyncBackend) -> None:
-        self.backend = backend
+    async def service_init(self, exit_stack: contextlib.AsyncExitStack, server: AsyncTCPNetworkServer[str, str]) -> None:
+        self.backend = server.get_backend()
 
     async def on_connection(self, client: AsyncStreamClient[str]) -> None:
         await client.send_packet("milk")
@@ -193,8 +187,8 @@ class InitialHandshakeRequestHandler(AsyncStreamRequestHandler[str, str]):
     backend: AsyncBackend
     bypass_handshake: bool = False
 
-    def set_async_backend(self, backend: AsyncBackend) -> None:
-        self.backend = backend
+    async def service_init(self, exit_stack: contextlib.AsyncExitStack, server: AsyncTCPNetworkServer[str, str]) -> None:
+        self.backend = server.get_backend()
 
     async def on_connection(self, client: AsyncStreamClient[str]) -> AsyncGenerator[None, str]:
         await client.send_packet("milk")
@@ -221,7 +215,7 @@ class InitialHandshakeRequestHandler(AsyncStreamRequestHandler[str, str]):
 class RequestRefusedHandler(AsyncStreamRequestHandler[str, str]):
     refuse_after: int = 2**64
 
-    async def service_init(self, exit_stack: contextlib.AsyncExitStack) -> None:
+    async def service_init(self, exit_stack: contextlib.AsyncExitStack, server: AsyncTCPNetworkServer[str, str]) -> None:
         self.request_count: collections.Counter[AsyncStreamClient[str]] = collections.Counter()
 
     async def on_connection(self, client: AsyncStreamClient[str]) -> None:
@@ -461,12 +455,14 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
             assert not s.sockets
 
     @pytest.mark.usefixtures("run_server_and_wait")
-    async def test____serve_forever____backend_assignment(
+    async def test____serve_forever____server_assignment(
         self,
         server: MyAsyncTCPServer,
         request_handler: MyAsyncTCPRequestHandler,
     ) -> None:
-        assert request_handler.backend is server.get_backend()
+        assert request_handler.server == server
+        assert isinstance(request_handler.server, AsyncTCPNetworkServer)
+        assert isinstance(request_handler.server, weakref.ProxyType)
 
     async def test____serve_forever____accept_client(
         self,

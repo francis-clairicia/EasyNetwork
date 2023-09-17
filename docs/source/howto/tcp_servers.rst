@@ -186,7 +186,7 @@ a coroutine function:
 Service Initialization
 ----------------------
 
-The server will call :meth:`~.AsyncBaseRequestHandler.service_init` and pass it an :class:`~contextlib.AsyncExitStack`
+The server will call :meth:`~.AsyncStreamRequestHandler.service_init` and pass it an :class:`~contextlib.AsyncExitStack`
 at the beginning of the :meth:`~.AsyncTCPNetworkServer.serve_forever` task to set up the global service.
 
 This allows you to do something like this:

@@ -220,9 +220,11 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             ################
 
             # Initialize request handler
-            self.__request_handler.set_async_backend(self.__backend)
             server_exit_stack.callback(self.__client_manager.clear)
-            await self.__request_handler.service_init(await server_exit_stack.enter_async_context(_contextlib.AsyncExitStack()))
+            await self.__request_handler.service_init(
+                await server_exit_stack.enter_async_context(_contextlib.AsyncExitStack()),
+                weakref.proxy(self),
+            )
             server_exit_stack.push_async_callback(self.__close_socket)
             ############################
 

@@ -320,9 +320,10 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             ################
 
             # Initialize request handler
-            self.__request_handler.set_async_backend(self.__backend)
-            await self.__request_handler.service_init(await server_exit_stack.enter_async_context(_contextlib.AsyncExitStack()))
-            self.__request_handler.set_stop_listening_callback(self.__make_stop_listening_callback())
+            await self.__request_handler.service_init(
+                await server_exit_stack.enter_async_context(_contextlib.AsyncExitStack()),
+                weakref.proxy(self),
+            )
             ############################
 
             # Setup task group
@@ -353,15 +354,6 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 self.__mainloop_task = None
 
     serve_forever.__doc__ = AbstractAsyncNetworkServer.serve_forever.__doc__
-
-    def __make_stop_listening_callback(self) -> Callable[[], None]:
-        selfref = weakref.ref(self)
-
-        def stop_listening() -> None:
-            self = selfref()
-            return self.stop_listening() if self is not None else None
-
-        return stop_listening
 
     async def __listener_accept(self, listener: AsyncListenerSocketAdapter, task_group: TaskGroup) -> None:
         backend = self.__backend

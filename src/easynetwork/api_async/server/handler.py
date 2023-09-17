@@ -18,7 +18,6 @@ from __future__ import annotations
 
 __all__ = [
     "AsyncBaseClientInterface",
-    "AsyncBaseRequestHandler",
     "AsyncDatagramClient",
     "AsyncDatagramRequestHandler",
     "AsyncStreamClient",
@@ -27,14 +26,15 @@ __all__ = [
 
 import contextlib
 from abc import ABCMeta, abstractmethod
-from collections.abc import AsyncGenerator, Callable, Coroutine
+from collections.abc import AsyncGenerator, Coroutine
 from typing import TYPE_CHECKING, Any, Generic, final
 
 from ..._typevars import _RequestT, _ResponseT
 from ...tools.socket import SocketAddress, SocketProxy
 
 if TYPE_CHECKING:
-    from ..backend.abc import AsyncBackend
+    from ..server.tcp import AsyncTCPNetworkServer
+    from ..server.udp import AsyncUDPNetworkServer
 
 
 class AsyncBaseClientInterface(Generic[_ResponseT], metaclass=ABCMeta):
@@ -144,38 +144,27 @@ class AsyncDatagramClient(AsyncBaseClientInterface[_ResponseT]):
         raise NotImplementedError
 
 
-class AsyncBaseRequestHandler(metaclass=ABCMeta):
+class AsyncStreamRequestHandler(Generic[_RequestT, _ResponseT], metaclass=ABCMeta):
     """
-    The base class for a request handler, used by network servers.
+    The base class for a stream request handler, used by TCP network servers.
     """
 
     __slots__ = ("__weakref__",)
 
-    def set_async_backend(self, backend: AsyncBackend, /) -> None:
-        """
-        A hook to get the asynchronous backend that is used by the server. The default implementation does nothing.
-
-        Parameters:
-            backend: The asynchronous backend interface.
-        """
-        pass
-
-    async def service_init(self, exit_stack: contextlib.AsyncExitStack, /) -> None:
+    async def service_init(
+        self,
+        exit_stack: contextlib.AsyncExitStack,
+        server: AsyncTCPNetworkServer[_RequestT, _ResponseT],
+        /,
+    ) -> None:
         """
         Called at the server startup. The default implementation does nothing.
 
         Parameters:
             exit_stack: An :class:`~contextlib.AsyncExitStack` that can be used to add actions on server's tear down.
+            server: A :func:`weakref.proxy` to the server instance.
         """
         pass
-
-
-class AsyncStreamRequestHandler(AsyncBaseRequestHandler, Generic[_RequestT, _ResponseT]):
-    """
-    The base class for a stream request handler, used by TCP network servers.
-    """
-
-    __slots__ = ()
 
     @abstractmethod
     def handle(self, client: AsyncStreamClient[_ResponseT], /) -> AsyncGenerator[None, _RequestT]:
@@ -269,23 +258,28 @@ class AsyncStreamRequestHandler(AsyncBaseRequestHandler, Generic[_RequestT, _Res
         """
         pass
 
-    def set_stop_listening_callback(self, stop_listening_callback: Callable[[], None], /) -> None:
-        """
-        A hook to get a function to call when the server should stop accepting new connections.
-        The default implementation does nothing.
 
-        Parameters:
-            stop_listening_callback: A callable object. Not thread-safe.
-        """
-        pass
-
-
-class AsyncDatagramRequestHandler(AsyncBaseRequestHandler, Generic[_RequestT, _ResponseT]):
+class AsyncDatagramRequestHandler(Generic[_RequestT, _ResponseT], metaclass=ABCMeta):
     """
     The base class for a datagram request handler, used by UDP network servers.
     """
 
-    __slots__ = ()
+    __slots__ = ("__weakref__",)
+
+    async def service_init(
+        self,
+        exit_stack: contextlib.AsyncExitStack,
+        server: AsyncUDPNetworkServer[_RequestT, _ResponseT],
+        /,
+    ) -> None:
+        """
+        Called at the server startup. The default implementation does nothing.
+
+        Parameters:
+            exit_stack: An :class:`~contextlib.AsyncExitStack` that can be used to add actions on server's tear down.
+            server: A :func:`weakref.proxy` to the server instance.
+        """
+        pass
 
     @abstractmethod
     def handle(self, client: AsyncDatagramClient[_ResponseT], /) -> AsyncGenerator[None, _RequestT]:

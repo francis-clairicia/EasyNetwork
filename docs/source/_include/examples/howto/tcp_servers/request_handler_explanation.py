@@ -4,7 +4,7 @@ import asyncio
 import contextlib
 from collections.abc import AsyncGenerator
 
-from easynetwork.api_async.server import AsyncStreamClient, AsyncStreamRequestHandler
+from easynetwork.api_async.server import AsyncStreamClient, AsyncStreamRequestHandler, AsyncTCPNetworkServer
 from easynetwork.exceptions import StreamProtocolParseError
 
 
@@ -235,7 +235,11 @@ class ClientConnectionAsyncGenRequestHandler(AsyncStreamRequestHandler[Request, 
 
 
 class ServiceInitializationHookRequestHandler(AsyncStreamRequestHandler[Request, Response]):
-    async def service_init(self, exit_stack: contextlib.AsyncExitStack) -> None:
+    async def service_init(
+        self,
+        exit_stack: contextlib.AsyncExitStack,
+        server: AsyncTCPNetworkServer[Request, Response],
+    ) -> None:
         exit_stack.callback(self._service_quit)
 
         self.background_tasks = await exit_stack.enter_async_context(asyncio.TaskGroup())

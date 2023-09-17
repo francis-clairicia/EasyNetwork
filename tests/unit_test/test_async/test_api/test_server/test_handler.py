@@ -7,12 +7,9 @@ import inspect
 from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Any
 
-from easynetwork.api_async.server.handler import (
-    AsyncBaseClientInterface,
-    AsyncBaseRequestHandler,
-    AsyncDatagramRequestHandler,
-    AsyncStreamRequestHandler,
-)
+from easynetwork.api_async.server.handler import AsyncBaseClientInterface, AsyncDatagramRequestHandler, AsyncStreamRequestHandler
+from easynetwork.api_async.server.tcp import AsyncTCPNetworkServer
+from easynetwork.api_async.server.udp import AsyncUDPNetworkServer
 
 import pytest
 
@@ -22,7 +19,7 @@ if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
 
-class BaseFakeHandler(AsyncBaseRequestHandler):
+class BaseFakeHandler:
     __slots__ = ()
 
     def handle(self, client: AsyncBaseClientInterface[Any]) -> AsyncGenerator[None, Any]:
@@ -38,49 +35,49 @@ class FakeDatagramHandler(BaseFakeHandler, AsyncDatagramRequestHandler[Any, Any]
 
 
 @pytest.mark.asyncio
-class BaseCommonTestsForRequestHandler:
-    async def test____set_async_backend____return_None(
-        self,
-        mock_backend: MagicMock,
-        request_handler: AsyncBaseRequestHandler,
-    ) -> None:
-        # Arrange
-
-        # Act & Assert
-        assert request_handler.set_async_backend(mock_backend) is None
-
-    async def test____service_init____return_None(
-        self,
-        request_handler: AsyncBaseRequestHandler,
-    ) -> None:
-        # Arrange
-
-        # Act & Assert
-        assert (await request_handler.service_init(contextlib.AsyncExitStack())) is None
-
-
-class TestAsyncDatagramRequestHandler(BaseCommonTestsForRequestHandler):
+class TestAsyncDatagramRequestHandler:
     @pytest.fixture
     @staticmethod
     def request_handler() -> AsyncDatagramRequestHandler[Any, Any]:
         return FakeDatagramHandler()
 
+    @pytest.fixture
+    @staticmethod
+    def mock_server(mocker: MockerFixture) -> MagicMock:
+        return mocker.NonCallableMagicMock(spec=AsyncUDPNetworkServer)
 
-class TestAsyncStreamRequestHandler(BaseCommonTestsForRequestHandler):
+    async def test____service_init____return_None(
+        self,
+        request_handler: AsyncDatagramRequestHandler[Any, Any],
+        mock_server: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        assert (await request_handler.service_init(contextlib.AsyncExitStack(), mock_server)) is None
+
+
+@pytest.mark.asyncio
+class TestAsyncStreamRequestHandler:
     @pytest.fixture
     @staticmethod
     def request_handler() -> AsyncStreamRequestHandler[Any, Any]:
         return FakeStreamHandler()
 
-    async def test____set_stop_listening_callback____return_None(
+    @pytest.fixture
+    @staticmethod
+    def mock_server(mocker: MockerFixture) -> MagicMock:
+        return mocker.NonCallableMagicMock(spec=AsyncTCPNetworkServer)
+
+    async def test____service_init____return_None(
         self,
         request_handler: AsyncStreamRequestHandler[Any, Any],
-        mocker: MockerFixture,
+        mock_server: MagicMock,
     ) -> None:
         # Arrange
 
         # Act & Assert
-        assert request_handler.set_stop_listening_callback(mocker.stub()) is None
+        assert (await request_handler.service_init(contextlib.AsyncExitStack(), mock_server)) is None
 
     async def test____on_connection____return_None(
         self,

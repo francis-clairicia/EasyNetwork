@@ -4,10 +4,10 @@ import asyncio
 import collections
 import contextlib
 import logging
+import weakref
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from typing import Any
 
-from easynetwork.api_async.backend.abc import AsyncBackend
 from easynetwork.api_async.server.handler import AsyncDatagramClient, AsyncDatagramRequestHandler
 from easynetwork.api_async.server.udp import AsyncUDPNetworkServer
 from easynetwork.exceptions import BaseProtocolParseError, ClientClosedError, DatagramProtocolParseError, DeserializeError
@@ -29,13 +29,11 @@ class MyAsyncUDPRequestHandler(AsyncDatagramRequestHandler[str, str]):
     request_received: collections.defaultdict[tuple[Any, ...], list[str]]
     bad_request_received: collections.defaultdict[tuple[Any, ...], list[BaseProtocolParseError]]
     created_clients: set[AsyncDatagramClient[str]]
-    backend: AsyncBackend
+    server: AsyncUDPNetworkServer[str, str]
 
-    def set_async_backend(self, backend: AsyncBackend) -> None:
-        self.backend = backend
-
-    async def service_init(self, exit_stack: contextlib.AsyncExitStack) -> None:
-        await super().service_init(exit_stack)
+    async def service_init(self, exit_stack: contextlib.AsyncExitStack, server: AsyncUDPNetworkServer[str, str]) -> None:
+        await super().service_init(exit_stack, server)
+        self.server = server
         self.request_received = collections.defaultdict(list)
         self.bad_request_received = collections.defaultdict(list)
         self.created_clients = set()
@@ -133,8 +131,7 @@ class RequestRefusedHandler(AsyncDatagramRequestHandler[str, str]):
     refuse_after: int = 2**64
     bypass_refusal: bool = False
 
-    async def service_init(self, exit_stack: contextlib.AsyncExitStack) -> None:
-        await super().service_init(exit_stack)
+    async def service_init(self, exit_stack: contextlib.AsyncExitStack, server: AsyncUDPNetworkServer[str, str]) -> None:
         self.request_count: collections.Counter[AsyncDatagramClient[str]] = collections.Counter()
 
     async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[None, str]:
@@ -249,12 +246,14 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
             yield factory
 
     @pytest.mark.usefixtures("run_server_and_wait")
-    async def test____serve_forever____backend_assignment(
+    async def test____serve_forever____server_assignment(
         self,
         server: MyAsyncUDPServer,
         request_handler: MyAsyncUDPRequestHandler,
     ) -> None:
-        assert request_handler.backend is server.get_backend()
+        assert request_handler.server == server
+        assert isinstance(request_handler.server, AsyncUDPNetworkServer)
+        assert isinstance(request_handler.server, weakref.ProxyType)
 
     async def test____serve_forever____handle_request(
         self,

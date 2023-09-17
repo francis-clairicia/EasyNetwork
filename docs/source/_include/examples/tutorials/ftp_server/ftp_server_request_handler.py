@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import logging
 from collections.abc import AsyncGenerator
+from typing import Any
 
 from easynetwork.api_async.server import AsyncStreamClient, AsyncStreamRequestHandler
 from easynetwork.exceptions import StreamProtocolParseError
@@ -13,7 +14,11 @@ from ftp_request import FTPRequest
 
 
 class FTPRequestHandler(AsyncStreamRequestHandler[FTPRequest, FTPReply]):
-    async def service_init(self, exit_stack: contextlib.AsyncExitStack) -> None:
+    async def service_init(
+        self,
+        exit_stack: contextlib.AsyncExitStack,
+        server: Any,
+    ) -> None:
         self.logger = logging.getLogger(self.__class__.__name__)
 
     async def on_connection(self, client: AsyncStreamClient[FTPReply]) -> None:

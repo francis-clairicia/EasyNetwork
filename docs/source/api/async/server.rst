@@ -35,9 +35,6 @@ UDP Implementation
 Request Handler Interface
 =========================
 
-.. autoclass:: AsyncBaseRequestHandler
-   :members:
-
 .. autoclass:: AsyncStreamRequestHandler
    :members:
 
