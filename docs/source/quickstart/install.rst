@@ -30,12 +30,6 @@ Here is the full list:
 
    * ``sniffio``: Installs the version supported and tested of :github:repo:`sniffio <python-trio/sniffio>`.
 
-   * ``uvloop``: Installs the version supported and tested of :github:repo:`uvloop <MagicStack/uvloop>`.
-
-      .. todo::
-
-         Document uvloop known issues and caveats
-
 
 Example where the ``cbor`` and ``msgpack`` extensions are installed:
 

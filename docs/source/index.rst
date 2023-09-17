@@ -20,6 +20,13 @@ Welcome to EasyNetwork's documentation!
 
 .. only:: html
 
+   Useful links
+   ------------
+
+   * :github:repo:`Source code <francis-clairicia/EasyNetwork>`
+   * :ref:`genindex`
+   * :ref:`modindex`
+
    .. sidebar-links::
       :caption: Links
       :github:
@@ -27,10 +34,3 @@ Welcome to EasyNetwork's documentation!
 
       genindex
       modindex
-
-   Useful links
-   ------------
-
-   * :github:repo:`Source code <francis-clairicia/EasyNetwork>`
-   * :ref:`genindex`
-   * :ref:`modindex`
