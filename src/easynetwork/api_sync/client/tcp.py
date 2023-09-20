@@ -439,7 +439,6 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
         Raises:
             ClientClosedError: the client object is closed.
             OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
-            NotImplementedError: SSL/TLS API does not support sending EOF.
         """
         if self.__over_ssl:
             # ssl.SSLSocket.shutdown() would shutdown both read and write streams

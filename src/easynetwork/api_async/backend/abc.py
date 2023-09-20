@@ -967,7 +967,7 @@ class AsyncBackend(metaclass=ABCMeta):
     @abstractmethod
     async def sleep_forever(self) -> NoReturn:
         """
-        Pause execution of the current task forever (or until cancelled).
+        Pause execution of the current task forever (or at least until cancelled).
 
         Equivalent to (but probably more efficient than)::
 
@@ -1085,7 +1085,6 @@ class AsyncBackend(metaclass=ABCMeta):
             ConnectionError: Cannot connect to `host` with the given `port`.
             ssl.SSLError: Error in the TLS handshake (invalid certificate, ciphers, etc.).
             OSError: unrelated OS error occurred.
-            NotImplementedError: SSL/TLS is not supported by this backend.
 
         Returns:
             A stream socket.
@@ -1141,7 +1140,6 @@ class AsyncBackend(metaclass=ABCMeta):
             ConnectionError: TLS handshake failed to connect to the remote.
             ssl.SSLError: Error in the TLS handshake (invalid certificate, ciphers, etc.).
             OSError: unrelated OS error occurred.
-            NotImplementedError: SSL/TLS is not supported by this backend.
             ValueError: Invalid socket type or family.
 
         Returns:
@@ -1224,7 +1222,6 @@ class AsyncBackend(metaclass=ABCMeta):
 
         Raises:
             OSError: unrelated OS error occurred.
-            NotImplementedError: SSL/TLS is not supported by this backend.
 
         Returns:
             A sequence of listener sockets.

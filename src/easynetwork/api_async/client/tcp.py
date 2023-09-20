@@ -422,7 +422,6 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         Raises:
             ClientClosedError: the client object is closed.
             OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
-            NotImplementedError: SSL/TLS API does not support sending EOF.
         """
         try:
             socket = await self.__ensure_connected(check_socket_is_closing=False)
