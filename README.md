@@ -101,7 +101,6 @@ class EchoRequestHandler(AsyncStreamRequestHandler[RequestType, ResponseType]):
 
 def main() -> None:
     host = None  # Bind on all interfaces
-    # host = "" works too
     port = 9000
 
     logging.basicConfig(level=logging.INFO, format="[ %(levelname)s ] [ %(name)s ] %(message)s")
