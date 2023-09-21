@@ -104,12 +104,18 @@ class DatagramEndpoint:
     async def recvfrom(self) -> tuple[bytes, tuple[Any, ...]]:
         self.__check_exceptions()
         if self.__transport.is_closing():
-            raise _error_from_errno(_errno.ECONNABORTED)
-        data_and_address = await self.__recv_queue.get()
-        if data_and_address is None:
-            self.__check_exceptions()  # Woken up because an error occurred ?
-            assert self.__transport.is_closing()  # nosec assert_used
-            raise _error_from_errno(_errno.ECONNABORTED)  # Connection lost otherwise
+            try:
+                data_and_address = self.__recv_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                data_and_address = None
+            if data_and_address is None:
+                raise _error_from_errno(_errno.ECONNABORTED)
+        else:
+            data_and_address = await self.__recv_queue.get()
+            if data_and_address is None:
+                self.__check_exceptions()  # Woken up because an error occurred ?
+                assert self.__transport.is_closing()  # nosec assert_used
+                raise _error_from_errno(_errno.ECONNABORTED)  # Connection lost otherwise
         return data_and_address
 
     async def sendto(self, data: bytes | bytearray | memoryview, address: tuple[Any, ...] | None = None, /) -> None:

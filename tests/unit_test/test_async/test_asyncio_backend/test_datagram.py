@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
+from errno import ECONNABORTED
 from socket import AI_PASSIVE
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from easynetwork_asyncio.datagram.endpoint import DatagramEndpoint, DatagramEndpointProtocol, create_datagram_endpoint
 from easynetwork_asyncio.datagram.socket import AsyncioTransportDatagramSocketAdapter, RawDatagramSocketAdapter
@@ -215,10 +216,11 @@ class TestDatagramEndpoint:
 
         # Assert
         mock_asyncio_recv_queue.get.assert_awaited_once_with()
+        mock_asyncio_recv_queue.get_nowait.assert_not_called()
         assert data == b"some data"
         assert address == ("an_address", 12345)
 
-    async def test____recvfrom____connection_lost____transport_already_closed(
+    async def test____recvfrom____connection_lost____transport_already_closed____data_in_queue(
         self,
         endpoint: DatagramEndpoint,
         mock_asyncio_transport: MagicMock,
@@ -226,10 +228,40 @@ class TestDatagramEndpoint:
         mock_asyncio_exception_queue: MagicMock,
     ) -> None:
         # Arrange
-        from errno import ECONNABORTED
-
         mock_asyncio_exception_queue.get_nowait.side_effect = asyncio.QueueEmpty
         mock_asyncio_transport.is_closing.return_value = True
+        mock_asyncio_recv_queue.get_nowait.return_value = (b"some data", ("an_address", 12345))
+
+        # Act
+        data, address = await endpoint.recvfrom()
+
+        # Assert
+        mock_asyncio_exception_queue.get_nowait.assert_called_once()
+        mock_asyncio_recv_queue.get.assert_not_awaited()
+        mock_asyncio_recv_queue.get_nowait.assert_called_once()
+        assert data == b"some data"
+        assert address == ("an_address", 12345)
+
+    @pytest.mark.parametrize("condition", ["empty_queue", "None_pushed"])
+    async def test____recvfrom____connection_lost____transport_already_closed____no_more_data(
+        self,
+        endpoint: DatagramEndpoint,
+        condition: Literal["empty_queue", "None_pushed"],
+        mock_asyncio_transport: MagicMock,
+        mock_asyncio_recv_queue: MagicMock,
+        mock_asyncio_exception_queue: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_asyncio_exception_queue.get_nowait.side_effect = asyncio.QueueEmpty
+        mock_asyncio_transport.is_closing.return_value = True
+
+        match condition:
+            case "empty_queue":
+                mock_asyncio_recv_queue.get_nowait.side_effect = asyncio.QueueEmpty
+            case "None_pushed":
+                mock_asyncio_recv_queue.get_nowait.side_effect = [None]
+            case _:
+                pytest.fail("Invalid condition")
 
         # Act
         with pytest.raises(OSError) as exc_info:
@@ -239,6 +271,7 @@ class TestDatagramEndpoint:
         assert exc_info.value.errno == ECONNABORTED
         mock_asyncio_exception_queue.get_nowait.assert_called_once()
         mock_asyncio_recv_queue.get.assert_not_awaited()
+        mock_asyncio_recv_queue.get_nowait.assert_called_once()
 
     async def test____recvfrom____connection_lost____transport_closed_by_protocol_while_waiting(
         self,
