@@ -962,52 +962,6 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         # Assert
         mock_stream_socket_adapter.get_remote_address.assert_not_called()
 
-    async def test____fileno____default(
-        self,
-        client_connected: AsyncTCPNetworkClient[Any, Any],
-        mock_tcp_socket: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        mock_tcp_socket.fileno.return_value = mocker.sentinel.fileno
-
-        # Act
-        fd = client_connected.fileno()
-
-        # Assert
-        mock_tcp_socket.fileno.assert_called_once_with()
-        assert fd is mocker.sentinel.fileno
-
-    async def test____fileno____connection_not_performed(
-        self,
-        client_not_connected: AsyncTCPNetworkClient[Any, Any],
-        mock_tcp_socket: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act
-        fd = client_not_connected.fileno()
-
-        # Assert
-        mock_tcp_socket.fileno.assert_not_called()
-        assert fd == -1
-
-    async def test____fileno____closed_client(
-        self,
-        client_connected_or_not: AsyncTCPNetworkClient[Any, Any],
-        mock_tcp_socket: MagicMock,
-    ) -> None:
-        # Arrange
-        await client_connected_or_not.aclose()
-        assert client_connected_or_not.is_closing()
-
-        # Act
-        fd = client_connected_or_not.fileno()
-
-        # Assert
-        mock_tcp_socket.fileno.assert_not_called()
-        assert fd == -1
-
     @pytest.mark.usefixtures("setup_producer_mock")
     async def test____send_packet____send_bytes_to_socket(
         self,
@@ -1284,7 +1238,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         packet: Any = await client_connected_or_not.recv_packet()
 
         # Assert
-        mock_backend.coro_yield.assert_awaited_once()
+        mock_backend.coro_yield.assert_not_awaited()
         assert mock_stream_socket_adapter.recv.mock_calls == [mocker.call(MAX_STREAM_BUFSIZE) for _ in range(2)]
         assert mock_stream_data_consumer.feed.mock_calls == [mocker.call(b"pac"), mocker.call(b"ket\n")]
         assert packet is mocker.sentinel.packet

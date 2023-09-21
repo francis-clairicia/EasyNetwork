@@ -7,10 +7,10 @@ class Dummy:
     def __init__(self) -> None:
         self.attr = "attr"
 
-    def __eq__(self, __o: object) -> bool:
-        if not isinstance(__o, Dummy):
+    def __eq__(self, other: object, /) -> bool:
+        if not isinstance(other, Dummy):
             return NotImplemented
-        return self.attr == __o.attr
+        return self.attr == other.attr
 
 
 class BigDummy:
@@ -37,10 +37,10 @@ class BigDummy:
                 ],
             }
 
-    def __eq__(self, __o: object) -> bool:
-        if not isinstance(__o, BigDummy):
+    def __eq__(self, other: object, /) -> bool:
+        if not isinstance(other, BigDummy):
             return NotImplemented
-        return self.dummy == __o.dummy
+        return self.dummy == other.dummy
 
 
 SAMPLES = [

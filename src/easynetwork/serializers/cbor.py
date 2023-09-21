@@ -1,4 +1,15 @@
-# Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
+# Copyright 2021-2023, Francis Clairicia-Rose-Claire-Josephine
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 #
 #
 """cbor-based network packet serializer module"""
@@ -14,19 +25,22 @@ __all__ = [
 from collections.abc import Callable
 from dataclasses import asdict as dataclass_asdict, dataclass
 from functools import partial
-from typing import IO, TYPE_CHECKING, Any, TypeVar, final
+from typing import IO, TYPE_CHECKING, Any, final
 
 from .base_stream import FileBasedPacketSerializer
 
 if TYPE_CHECKING:
     import datetime
 
-_ST_contra = TypeVar("_ST_contra", contravariant=True)
-_DT_co = TypeVar("_DT_co", covariant=True)
-
 
 @dataclass(kw_only=True)
 class CBOREncoderConfig:
+    """
+    A dataclass with the CBOR encoder options.
+
+    See :class:`cbor2.encoder.CBOREncoder` for details.
+    """
+
     datetime_as_timestamp: bool = False
     timezone: datetime.tzinfo | None = None
     value_sharing: bool = False
@@ -38,12 +52,24 @@ class CBOREncoderConfig:
 
 @dataclass(kw_only=True)
 class CBORDecoderConfig:
+    """
+    A dataclass with the CBOR decoder options.
+
+    See :class:`cbor2.decoder.CBORDecoder` for details.
+    """
+
     object_hook: Callable[..., Any] | None = None
     tag_hook: Callable[..., Any] | None = None
     str_errors: str = "strict"
 
 
-class CBORSerializer(FileBasedPacketSerializer[_ST_contra, _DT_co]):
+class CBORSerializer(FileBasedPacketSerializer[Any]):
+    """
+    A :term:`serializer` built on top of the :mod:`cbor2` module.
+
+    Needs ``cbor`` extra dependencies.
+    """
+
     __slots__ = ("__encoder_cls", "__decoder_cls")
 
     def __init__(
@@ -51,6 +77,11 @@ class CBORSerializer(FileBasedPacketSerializer[_ST_contra, _DT_co]):
         encoder_config: CBOREncoderConfig | None = None,
         decoder_config: CBORDecoderConfig | None = None,
     ) -> None:
+        """
+        Parameters:
+            encoder_config: Parameter object to configure the :class:`~cbor.encoder.CBOREncoder`.
+            decoder_config: Parameter object to configure the :class:`~cbor.decoder.CBORDecoder`.
+        """
         try:
             import cbor2
         except ModuleNotFoundError as exc:  # pragma: no cover
@@ -74,9 +105,35 @@ class CBORSerializer(FileBasedPacketSerializer[_ST_contra, _DT_co]):
         self.__decoder_cls = partial(cbor2.CBORDecoder, **dataclass_asdict(decoder_config))
 
     @final
-    def dump_to_file(self, packet: _ST_contra, file: IO[bytes]) -> None:
+    def dump_to_file(self, packet: Any, file: IO[bytes]) -> None:
+        """
+        Write the CBOR representation of `packet` to `file`.
+
+        Roughly equivalent to::
+
+            def dump_to_file(self, packet, file):
+                cbor2.dump(packet, file)
+
+        Parameters:
+            packet: The Python object to serialize.
+            file: The :std:term:`binary file` to write to.
+        """
         self.__encoder_cls(file).encode(packet)
 
     @final
-    def load_from_file(self, file: IO[bytes]) -> _DT_co:
+    def load_from_file(self, file: IO[bytes]) -> Any:
+        """
+        Read from `file` to deserialize the raw CBOR :term:`packet`.
+
+        Roughly equivalent to::
+
+            def load_from_file(self, file):
+                return cbor2.load(file)
+
+        Parameters:
+            file: The :std:term:`binary file` to read from.
+
+        Returns:
+            the deserialized Python object.
+        """
         return self.__decoder_cls(file).decode()

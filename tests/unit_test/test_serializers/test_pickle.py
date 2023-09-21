@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 class TestPickleSerializer(BaseSerializerConfigInstanceCheck):
     @pytest.fixture(scope="class")
     @staticmethod
-    def serializer_cls() -> type[PickleSerializer[Any, Any]]:
+    def serializer_cls() -> type[PickleSerializer]:
         return PickleSerializer
 
     @pytest.fixture(params=["pickler", "unpickler"])
@@ -123,7 +123,7 @@ class TestPickleSerializer(BaseSerializerConfigInstanceCheck):
     ) -> None:
         # Arrange
         mock_pickletools_optimize.return_value = b"optimized pickle"
-        serializer: PickleSerializer[Any, Any] = PickleSerializer(
+        serializer: PickleSerializer = PickleSerializer(
             pickler_config=pickler_config,
             pickler_optimize=pickler_optimize,
         )
@@ -159,7 +159,7 @@ class TestPickleSerializer(BaseSerializerConfigInstanceCheck):
         # Arrange
         mock_other_pickler_cls: MagicMock = mocker.stub()
         mock_other_pickler: MagicMock = mock_other_pickler_cls.return_value
-        serializer: PickleSerializer[Any, Any] = PickleSerializer(
+        serializer: PickleSerializer = PickleSerializer(
             pickler_cls=mock_other_pickler_cls,
             pickler_optimize=pickler_optimize,
         )
@@ -187,7 +187,7 @@ class TestPickleSerializer(BaseSerializerConfigInstanceCheck):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer: PickleSerializer[Any, Any] = PickleSerializer(unpickler_config=unpickler_config)
+        serializer: PickleSerializer = PickleSerializer(unpickler_config=unpickler_config)
         mock_unpickler.load.return_value = mocker.sentinel.packet
 
         # Act
@@ -213,7 +213,7 @@ class TestPickleSerializer(BaseSerializerConfigInstanceCheck):
         # Arrange
         mock_other_unpickler_cls: MagicMock = mocker.stub()
         mock_other_unpickler: MagicMock = mock_other_unpickler_cls.return_value
-        serializer: PickleSerializer[Any, Any] = PickleSerializer(unpickler_cls=mock_other_unpickler_cls)
+        serializer: PickleSerializer = PickleSerializer(unpickler_cls=mock_other_unpickler_cls)
         mock_other_unpickler.load.return_value = mocker.sentinel.packet
         del mock_unpickler.load
 
@@ -241,7 +241,7 @@ class TestPickleSerializer(BaseSerializerConfigInstanceCheck):
         mock_unpickler: MagicMock,
     ) -> None:
         # Arrange
-        serializer: PickleSerializer[Any, Any] = PickleSerializer(unpickler_config=unpickler_config)
+        serializer: PickleSerializer = PickleSerializer(unpickler_config=unpickler_config)
         mock_unpickler.load.side_effect = exception()
 
         # Act
@@ -261,7 +261,7 @@ class TestPickleSerializer(BaseSerializerConfigInstanceCheck):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer: PickleSerializer[Any, Any] = PickleSerializer(unpickler_config=unpickler_config)
+        serializer: PickleSerializer = PickleSerializer(unpickler_config=unpickler_config)
 
         def unpickler_load() -> Any:
             assert bytes_io.read(2) == b"da"

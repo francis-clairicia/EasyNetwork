@@ -1,4 +1,15 @@
-# Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
+# Copyright 2021-2023, Francis Clairicia-Rose-Claire-Josephine
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 #
 #
 """Stream network packet serializer handler module"""
@@ -12,13 +23,11 @@ __all__ = [
 
 from collections import deque
 from collections.abc import Generator, Iterator
-from typing import Any, Generic, TypeVar, final
+from typing import Any, Generic, final
 
+from .._typevars import _ReceivedPacketT, _SentPacketT
 from ..exceptions import StreamProtocolParseError
 from ..protocol import StreamProtocol
-
-_SentPacketT = TypeVar("_SentPacketT")
-_ReceivedPacketT = TypeVar("_ReceivedPacketT")
 
 
 @final

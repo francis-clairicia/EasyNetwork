@@ -45,12 +45,12 @@ class TestPickleSerializer(BaseTestSerializer):
 
     @pytest.fixture(scope="class")
     @staticmethod
-    def serializer_for_serialization(pickler_config: PicklerConfig, pickler_optimize: bool) -> PickleSerializer[Any, Any]:
+    def serializer_for_serialization(pickler_config: PicklerConfig, pickler_optimize: bool) -> PickleSerializer:
         return PickleSerializer(pickler_config=pickler_config, pickler_optimize=pickler_optimize)
 
     @pytest.fixture(scope="class")
     @staticmethod
-    def serializer_for_deserialization(unpickler_config: UnpicklerConfig) -> PickleSerializer[Any, Any]:
+    def serializer_for_deserialization(unpickler_config: UnpicklerConfig) -> PickleSerializer:
         return PickleSerializer(unpickler_config=unpickler_config)
 
     #### Packets to test

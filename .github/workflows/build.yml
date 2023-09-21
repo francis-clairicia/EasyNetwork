@@ -17,6 +17,7 @@ on:
       - '.github/**'
       - '!.github/actions/setup-tox/**'
       - '!.github/workflows/build.yml'
+      - 'docs/**'
   push:
     branches:
       - main
@@ -32,6 +33,7 @@ on:
       - '.github/**'
       - '!.github/actions/setup-tox/**'
       - '!.github/workflows/build.yml'
+      - 'docs/**'
   workflow_dispatch:
     inputs:
       SOURCE_DATE_EPOCH:

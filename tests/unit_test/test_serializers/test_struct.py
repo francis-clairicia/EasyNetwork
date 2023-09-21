@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 
 @final
-class _StructSerializerForTest(AbstractStructSerializer[Any, Any]):
+class _StructSerializerForTest(AbstractStructSerializer[Any]):
     def iter_values(self, packet: Any) -> Iterable[Any]:
         raise NotImplementedError
 
@@ -210,6 +210,22 @@ class TestNamedTupleStructSerializer(BaseTestStructBasedSerializer):
 
         # Assert
         mock_struct_cls.assert_called_once_with(expected_format)
+
+    @pytest.mark.parametrize("endianness", ["z", "word"], ids=repr)
+    def test____dunder_init____invalid_endianness_character(
+        self,
+        endianness: str,
+        mock_struct_cls: MagicMock,
+    ) -> None:
+        # Arrange
+        namedtuple_cls = collections.namedtuple("namedtuple_cls", ["x", "y"])
+        field_formats: dict[str, str] = {"x": "Q", "y": "I"}
+
+        # Act & Assert
+        with pytest.raises(ValueError, match=r"^Invalid endianness character$"):
+            _ = NamedTupleStructSerializer(namedtuple_cls, field_formats, format_endianness=endianness)
+
+        mock_struct_cls.assert_not_called()
 
     @pytest.mark.parametrize("endianness", sorted(_ENDIANNESS_CHARACTERS), ids=repr)
     @pytest.mark.parametrize("field", ["x", "y"], ids=repr)

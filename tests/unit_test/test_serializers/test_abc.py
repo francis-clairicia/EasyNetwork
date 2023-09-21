@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
 
 @final
-class _IncrementalPacketSerializerForTest(AbstractIncrementalPacketSerializer[Any, Any]):
+class _IncrementalPacketSerializerForTest(AbstractIncrementalPacketSerializer[Any]):
     def incremental_serialize(self, packet: Any) -> Generator[bytes, None, None]:
         raise NotImplementedError
 
@@ -116,13 +116,14 @@ class TestAbstractIncrementalPacketSerializer:
         mock_consumer_generator.send.side_effect = StopIteration((mocker.sentinel.packet, b"extra"))
 
         # Act
-        with pytest.raises(DeserializeError, match=r"^Extra data caught$"):
+        with pytest.raises(DeserializeError, match=r"^Extra data caught$") as exc_info:
             _ = serializer.deserialize(mocker.sentinel.data)
 
         # Assert
         mock_incremental_deserialize_func.assert_called_once_with()
         mock_consumer_generator.__next__.assert_called_once_with()
         mock_consumer_generator.send.assert_called_once_with(mocker.sentinel.data)
+        assert exc_info.value.error_info == {"packet": mocker.sentinel.packet, "extra": b"extra"}
 
     def test____deserialize____consumer_did_not_yield(
         self,
@@ -144,7 +145,7 @@ class TestAbstractIncrementalPacketSerializer:
         mock_consumer_generator.send.assert_not_called()
 
 
-class _AutoSeparatedPacketSerializerForTest(AutoSeparatedPacketSerializer[Any, Any]):
+class _AutoSeparatedPacketSerializerForTest(AutoSeparatedPacketSerializer[Any]):
     def serialize(self, packet: Any) -> bytes:
         raise NotImplementedError
 
@@ -387,7 +388,7 @@ class TestAutoSeparatedPacketSerializer:
         assert exception.error_info is mocker.sentinel.error_info
 
 
-class _FixedSizePacketSerializerForTest(FixedSizePacketSerializer[Any, Any]):
+class _FixedSizePacketSerializerForTest(FixedSizePacketSerializer[Any]):
     def serialize(self, packet: Any) -> bytes:
         raise NotImplementedError
 
@@ -565,7 +566,7 @@ class TestFixedSizePacketSerializer:
         assert exception.error_info is mocker.sentinel.error_info
 
 
-class _FileBasedPacketSerializerForTest(FileBasedPacketSerializer[Any, Any]):
+class _FileBasedPacketSerializerForTest(FileBasedPacketSerializer[Any]):
     def dump_to_file(self, packet: Any, file: IO[bytes]) -> None:
         raise NotImplementedError
 

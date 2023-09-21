@@ -1,7 +1,18 @@
-# Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
+# Copyright 2021-2023, Francis Clairicia-Rose-Claire-Josephine
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 #
 #
-"""Network client module"""
+"""UDP Network client implementation module"""
 
 from __future__ import annotations
 
@@ -15,8 +26,9 @@ import threading
 import time
 from collections.abc import Iterator
 from operator import itemgetter as _itemgetter
-from typing import TYPE_CHECKING, Any, Generic, Self, TypeVar, final, overload
+from typing import TYPE_CHECKING, Any, Generic, Self, final, overload
 
+from ..._typevars import _ReceivedPacketT, _SentPacketT
 from ...exceptions import ClientClosedError, DatagramProtocolParseError
 from ...protocol import DatagramProtocol
 from ...tools._lock import ForkSafeLock
@@ -38,11 +50,10 @@ from .abc import AbstractNetworkClient
 if TYPE_CHECKING:
     from types import TracebackType
 
-_ReceivedPacketT = TypeVar("_ReceivedPacketT")
-_SentPacketT = TypeVar("_SentPacketT")
-
 
 class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
+    """Generic UDP endpoint interface."""
+
     __slots__ = (
         "__socket",
         "__socket_proxy",
@@ -59,7 +70,6 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
     @overload
     def __init__(
         self,
-        /,
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
         *,
         local_address: tuple[str, int] | None = ...,
@@ -72,7 +82,6 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
     @overload
     def __init__(
         self,
-        /,
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
         *,
         socket: _socket.socket,
@@ -82,11 +91,31 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
 
     def __init__(
         self,
-        /,
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
+        *,
         retry_interval: float = 1.0,
         **kwargs: Any,
     ) -> None:
+        """
+        Common Parameters:
+            protocol: The :term:`protocol object` to use.
+
+        Connection Parameters:
+            remote_address: If given, is a ``(host, port)`` tuple used to connect the socket.
+            local_address: If given, is a ``(local_host, local_port)`` tuple used to bind the socket locally.
+            reuse_port: Tells the kernel to allow this endpoint to be bound to the same port as other existing
+                        endpoints are bound to, so long as they all set this flag when being created.
+                        This option is not supported on Windows and some Unixes.
+                        If the SO_REUSEPORT constant is not defined then this capability is unsupported.
+
+        Socket Parameters:
+            socket: An already connected UDP :class:`socket.socket`. If `socket` is given,
+                    none of and `local_address`, `remote_address` and `reuse_port` should be specified.
+
+        Keyword Arguments:
+            retry_interval: The maximum wait time to wait for a blocking operation before retrying.
+                            Set it to :data:`math.inf` to disable this feature.
+        """
         self.__socket: _socket.socket | None = None  # If any exception occurs, the client will already be in a closed state
         super().__init__()
 
@@ -161,17 +190,37 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         return self
 
     def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None) -> None:
+        """
+        Calls :meth:`close`.
+        """
         self.close()
 
     def __getstate__(self) -> Any:  # pragma: no cover
         raise TypeError(f"cannot pickle {self.__class__.__name__!r} object")
 
-    @final
     def is_closed(self) -> bool:
+        """
+        Checks if the endpoint is in a closed state. Thread-safe.
+
+        If :data:`True`, all future operations on the endpoint object will raise a :exc:`.ClientClosedError`.
+
+        Returns:
+            the endpoint state.
+        """
         with self.__socket_lock.get():
             return self.__socket is None
 
     def close(self) -> None:
+        """
+        Close the endpoint. Thread-safe.
+
+        Once that happens, all future operations on the endpoint object will raise a :exc:`.ClientClosedError`.
+
+        Can be safely called multiple times.
+
+        Raises:
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
+        """
         with self.__send_lock.get(), self.__socket_lock.get():
             if (socket := self.__socket) is None:
                 return
@@ -185,6 +234,34 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         *,
         timeout: float | None = None,
     ) -> None:
+        """
+        Sends `packet` to the remote endpoint `address`. Thread-safe.
+
+        If a remote address is configured, `address` must be :data:`None` or the same as the remote address,
+        otherwise `address` must not be :data:`None`.
+
+        If `timeout` is not :data:`None`, the entire send operation will take at most `timeout` seconds.
+
+        Warning:
+            A timeout on a send operation is unusual.
+
+            In the case of a timeout, it is impossible to know if all the packet data has been sent.
+
+        Important:
+            The lock acquisition time is included in the `timeout`.
+
+            This means that you may get a :exc:`TimeoutError` because it took too long to get the lock.
+
+        Parameters:
+            packet: the Python object to send.
+            timeout: the allowed time (in seconds) for blocking operations.
+
+        Raises:
+            ClientClosedError: the endpoint object is closed.
+            TimeoutError: the send operation does not end up after `timeout` seconds.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
+            ValueError: Invalid `address` value.
+        """
         with (
             _lock_with_timeout(self.__send_lock.get(), timeout, error_message="send_packet() timed out") as timeout,
             self.__convert_socket_error(),
@@ -212,6 +289,28 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
                 del data
 
     def recv_packet_from(self, *, timeout: float | None = None) -> tuple[_ReceivedPacketT, SocketAddress]:
+        """
+        Waits for a new packet to arrive from another endpoint. Thread-safe.
+
+        If `timeout` is not :data:`None`, the entire receive operation will take at most `timeout` seconds.
+
+        Important:
+            The lock acquisition time is included in the `timeout`.
+
+            This means that you may get a :exc:`TimeoutError` because it took too long to get the lock.
+
+        Parameters:
+            timeout: the allowed time (in seconds) for blocking operations.
+
+        Raises:
+            ClientClosedError: the endpoint object is closed.
+            TimeoutError: the receive operation does not end up after `timeout` seconds.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
+            DatagramProtocolParseError: invalid data received.
+
+        Returns:
+            A ``(packet, address)`` tuple, where `address` is the endpoint that delivered this packet.
+        """
         with (
             _lock_with_timeout(self.__receive_lock.get(), timeout, error_message="recv_packet() timed out") as timeout,
             self.__convert_socket_error(),
@@ -234,6 +333,30 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
                 del data
 
     def iter_received_packets_from(self, *, timeout: float | None = 0) -> Iterator[tuple[_ReceivedPacketT, SocketAddress]]:
+        """
+        Returns an :term:`iterator` that waits for a new packet to arrive from another endpoint.
+
+        If `timeout` is not :data:`None`, the entire receive operation will take at most `timeout` seconds; it defaults to zero.
+
+        Important:
+            The `timeout` is for the entire iterator::
+
+                iterator = endpoint.iter_received_packets_from(timeout=10)
+
+                # Let's say that this call took 6 seconds...
+                first_packet = next(iterator)
+
+                # ...then this call has a maximum of 4 seconds, not 10.
+                second_packet = next(iterator)
+
+            The time taken outside the iterator object is not decremented to the timeout parameter.
+
+        Parameters:
+            timeout: the allowed time (in seconds) for all the receive operations.
+
+        Yields:
+            A ``(packet, address)`` tuple, where `address` is the endpoint that delivered this packet.
+        """
         perf_counter = time.perf_counter
         while True:
             try:
@@ -245,6 +368,7 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             yield packet_tuple
             if timeout is not None:
                 timeout -= _end - _start
+                timeout = max(timeout, 0)
 
     @_contextlib.contextmanager
     def __convert_socket_error(self) -> Iterator[None]:
@@ -256,12 +380,38 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             raise
 
     def get_local_address(self) -> SocketAddress:
+        """
+        Returns the local socket IP address. Thread-safe.
+
+        Raises:
+            ClientClosedError: the endpoint object is closed.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
+
+        Returns:
+            the endpoint's local address.
+        """
         return self.__addr
 
     def get_remote_address(self) -> SocketAddress | None:
+        """
+        Returns the remote socket IP address. Thread-safe.
+
+        Raises:
+            ClientClosedError: the endpoint object is closed.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
+
+        Returns:
+            the endpoint's remote address if configured, :data:`None` otherwise.
+        """
         return self.__peer
 
     def fileno(self) -> int:
+        """
+        Returns the socket's file descriptor, or ``-1`` if the endpoint (or the socket) is closed. Thread-safe.
+
+        Returns:
+            the opened file descriptor.
+        """
         with self.__socket_lock.get():
             if (socket := self.__socket) is None:
                 return -1
@@ -270,10 +420,15 @@ class UDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
     @property
     @final
     def socket(self) -> SocketProxy:
+        """A view to the underlying socket instance. Read-only attribute."""
         return self.__socket_proxy
 
 
-class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Generic[_SentPacketT, _ReceivedPacketT]):
+class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
+    """
+    A network client interface for UDP communication.
+    """
+
     __slots__ = ("__endpoint", "__peer")
 
     @overload
@@ -307,6 +462,26 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
         **kwargs: Any,
     ) -> None:
+        """
+        Common Parameters:
+            protocol: The :term:`protocol object` to use.
+
+        Connection Parameters:
+            address: A pair of ``(host, port)`` for connection.
+            local_address: If given, is a ``(local_host, local_port)`` tuple used to bind the socket locally.
+            reuse_port: Tells the kernel to allow this endpoint to be bound to the same port as other existing
+                        endpoints are bound to, so long as they all set this flag when being created.
+                        This option is not supported on Windows and some Unixes.
+                        If the SO_REUSEPORT constant is not defined then this capability is unsupported.
+
+        Socket Parameters:
+            socket: An already connected UDP :class:`socket.socket`. If `socket` is given,
+                    none of and `local_address` and `reuse_port` should be specified.
+
+        Keyword Arguments:
+            retry_interval: The maximum wait time to wait for a blocking operation before retrying.
+                            Set it to :data:`math.inf` to disable this feature.
+        """
         super().__init__()
 
         endpoint: UDPNetworkEndpoint[_SentPacketT, _ReceivedPacketT]
@@ -334,8 +509,15 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         except AttributeError:
             return f"<{type(self).__name__} (partially initialized)>"
 
-    @final
     def is_closed(self) -> bool:
+        """
+        Checks if the client is in a closed state. Thread-safe.
+
+        If :data:`True`, all future operations on the client object will raise a :exc:`.ClientClosedError`.
+
+        Returns:
+            the client state.
+        """
         try:
             endpoint = self.__endpoint
         except AttributeError:  # pragma: no cover
@@ -343,6 +525,17 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         return endpoint.is_closed()
 
     def close(self) -> None:
+        """
+        Close the client. Thread-safe.
+
+        Once that happens, all future operations on the client object will raise a :exc:`.ClientClosedError`.
+        The remote end will receive no more data (after queued data is flushed).
+
+        Can be safely called multiple times.
+
+        Raises:
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
+        """
         try:
             endpoint = self.__endpoint
         except AttributeError:  # pragma: no cover
@@ -350,27 +543,102 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         return endpoint.close()
 
     def get_local_address(self) -> SocketAddress:
+        """
+        Returns the local socket IP address. Thread-safe.
+
+        Raises:
+            ClientClosedError: the client object is closed.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
+
+        Returns:
+            the client's local address.
+        """
         return self.__endpoint.get_local_address()
 
     def get_remote_address(self) -> SocketAddress:
+        """
+        Returns the remote socket IP address. Thread-safe.
+
+        Raises:
+            ClientClosedError: the client object is closed.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
+
+        Returns:
+            the client's remote address.
+        """
         return self.__peer
 
     def send_packet(self, packet: _SentPacketT, *, timeout: float | None = None) -> None:
+        """
+        Sends `packet` to the remote endpoint. Thread-safe.
+
+        If `timeout` is not :data:`None`, the entire send operation will take at most `timeout` seconds.
+
+        Warning:
+            A timeout on a send operation is unusual.
+
+            In the case of a timeout, it is impossible to know if all the packet data has been sent.
+
+        Important:
+            The lock acquisition time is included in the `timeout`.
+
+            This means that you may get a :exc:`TimeoutError` because it took too long to get the lock.
+
+        Parameters:
+            packet: the Python object to send.
+            timeout: the allowed time (in seconds) for blocking operations.
+
+        Raises:
+            ClientClosedError: the client object is closed.
+            TimeoutError: the send operation does not end up after `timeout` seconds.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
+        """
         return self.__endpoint.send_packet_to(packet, None, timeout=timeout)
 
     def recv_packet(self, *, timeout: float | None = None) -> _ReceivedPacketT:
+        """
+        Waits for a new packet from the remote endpoint. Thread-safe.
+
+        If `timeout` is not :data:`None`, the entire receive operation will take at most `timeout` seconds.
+
+        Important:
+            The lock acquisition time is included in the `timeout`.
+
+            This means that you may get a :exc:`TimeoutError` because it took too long to get the lock.
+
+        Parameters:
+            timeout: the allowed time (in seconds) for blocking operations.
+
+        Raises:
+            ClientClosedError: the client object is closed.
+            TimeoutError: the receive operation does not end up after `timeout` seconds.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
+            DatagramProtocolParseError: invalid data received.
+
+        Returns:
+            the received packet.
+        """
         packet, _ = self.__endpoint.recv_packet_from(timeout=timeout)
         return packet
 
     def iter_received_packets(self, *, timeout: float | None = 0) -> Iterator[_ReceivedPacketT]:
         return map(_itemgetter(0), self.__endpoint.iter_received_packets_from(timeout=timeout))
 
+    iter_received_packets.__doc__ = AbstractNetworkClient.iter_received_packets.__doc__
+
     def fileno(self) -> int:
+        """
+        Returns the socket's file descriptor, or ``-1`` if the client (or the socket) is closed. Thread-safe.
+
+        Returns:
+            the opened file descriptor.
+        """
         return self.__endpoint.fileno()
 
     @property
     @final
     def socket(self) -> SocketProxy:
+        """A view to the underlying socket instance. Read-only attribute."""
         return self.__endpoint.socket
 
 

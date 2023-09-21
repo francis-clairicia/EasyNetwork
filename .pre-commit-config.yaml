@@ -9,7 +9,7 @@ ci:
 
 repos:
   - repo: https://github.com/asottile/pyupgrade
-    rev: v3.10.1
+    rev: v3.11.0
     hooks:
       - id: pyupgrade
         args: ['--py311-plus']
@@ -31,13 +31,22 @@ repos:
         types_or: [python, pyi]
         require_serial: true
         pass_filenames: false
+      - id: mypy
+        name: mypy (docs)
+        files: ^((src|docs/source)/)
+        exclude: ^(docs/source/conf.py)$
+        entry: tox run -q -e mypy-docs
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+        pass_filenames: false
   - repo: https://github.com/PyCQA/isort
     rev: '5.12.0'
     hooks:
       - id: isort
         args: ['--filter-files', '--settings-file', 'pyproject.toml']
   - repo: https://github.com/psf/black
-    rev: '23.7.0'
+    rev: '23.9.1'
     hooks:
       - id: black
         args: ['--config', 'pyproject.toml']
@@ -64,9 +73,17 @@ repos:
         types: []  # Overwrite with empty in order to fallback to types_or
         types_or: [python, pyi]
   - repo: https://github.com/pdm-project/pdm
-    rev: '2.8.2'
+    rev: '2.9.2'
     hooks:
       - id: pdm-lock-check
+  - repo: https://github.com/pre-commit/pygrep-hooks
+    rev: 'v1.10.0'
+    hooks:
+      - id: python-check-blanket-noqa
+      - id: python-no-log-warn
+      - id: rst-backticks
+      - id: rst-directive-colons
+      - id: rst-inline-touching-normal
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: 'v4.4.0'
     hooks:

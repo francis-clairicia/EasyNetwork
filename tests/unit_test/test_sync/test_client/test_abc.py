@@ -99,3 +99,36 @@ class TestAbstractNetworkClient:
         # Assert
         assert client.mock_recv_packet.mock_calls == [mocker.call(timeout) for _ in range(2)]
         assert packets == [mocker.sentinel.packet_a]
+
+    def test____iter_received_packets____timeout_decrement(
+        self,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        client = MockClient(mocker)
+        client.mock_recv_packet.return_value = mocker.sentinel.packet
+        iterator = client.iter_received_packets(timeout=10)
+        now: float = 798546132
+        mocker.patch(
+            "time.perf_counter",
+            side_effect=[
+                now,
+                now + 6,
+                now + 7,
+                now + 12,
+                now + 12,
+                now + 12,
+            ],
+        )
+
+        # Act
+        next(iterator)
+        next(iterator)
+        next(iterator)
+
+        # Assert
+        assert client.mock_recv_packet.call_args_list == [
+            mocker.call(10),
+            mocker.call(4),
+            mocker.call(0),
+        ]

@@ -1,4 +1,15 @@
-# Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
+# Copyright 2021-2023, Francis Clairicia-Rose-Claire-Josephine
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 #
 #
 """Stream network packet serializer handler module"""
@@ -14,19 +25,33 @@ __all__ = [
 from abc import abstractmethod
 from collections.abc import Generator
 from io import BytesIO
-from typing import IO, Any, TypeVar, final
+from typing import IO, Any, final
 
+from .._typevars import _DTOPacketT
 from ..exceptions import DeserializeError, IncrementalDeserializeError
 from .abc import AbstractIncrementalPacketSerializer, AbstractPacketSerializer
 
-_ST_contra = TypeVar("_ST_contra", contravariant=True)
-_DT_co = TypeVar("_DT_co", covariant=True)
 
+class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_DTOPacketT]):
+    """
+    Base class for stream protocols that separates sent information by a byte sequence.
+    """
 
-class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
     __slots__ = ("__separator", "__incremental_serialize_check_separator")
 
     def __init__(self, separator: bytes, *, incremental_serialize_check_separator: bool = True, **kwargs: Any) -> None:
+        """
+        Parameters:
+            separator: Byte sequence that indicates the end of the token.
+            incremental_serialize_check_separator: If `True` (the default), checks that the data returned by
+                                                   :meth:`serialize` does not contain `separator`,
+                                                   and removes superfluous `separator` added at the end.
+            kwargs: Extra options given to ``super().__init__()``.
+
+        Raises:
+            TypeError: Invalid arguments.
+            ValueError: Empty separator sequence.
+        """
         super().__init__(**kwargs)
         separator = bytes(separator)
         if len(separator) < 1:
@@ -35,11 +60,23 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_ST_cont
         self.__incremental_serialize_check_separator = bool(incremental_serialize_check_separator)
 
     @abstractmethod
-    def serialize(self, packet: _ST_contra) -> bytes:
+    def serialize(self, packet: _DTOPacketT, /) -> bytes:
+        """
+        See :meth:`.AbstractPacketSerializer.serialize` documentation.
+        """
         raise NotImplementedError
 
     @final
-    def incremental_serialize(self, packet: _ST_contra) -> Generator[bytes, None, None]:
+    def incremental_serialize(self, packet: _DTOPacketT, /) -> Generator[bytes, None, None]:
+        """
+        Yields the data returned by :meth:`serialize` and appends `separator`.
+
+        See :meth:`.AbstractIncrementalPacketSerializer.incremental_serialize` documentation for details.
+
+        Raises:
+            ValueError: If `incremental_serialize_check_separator` is `True` and `separator` is in the returned data.
+            Exception: Any error raised by :meth:`serialize`.
+        """
         data: bytes = self.serialize(packet)
         separator: bytes = self.__separator
         if self.__incremental_serialize_check_separator:
@@ -52,11 +89,23 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_ST_cont
         yield separator
 
     @abstractmethod
-    def deserialize(self, data: bytes) -> _DT_co:
+    def deserialize(self, data: bytes, /) -> _DTOPacketT:
+        """
+        See :meth:`.AbstractPacketSerializer.deserialize` documentation.
+        """
         raise NotImplementedError
 
     @final
-    def incremental_deserialize(self) -> Generator[None, bytes, tuple[_DT_co, bytes]]:
+    def incremental_deserialize(self) -> Generator[None, bytes, tuple[_DTOPacketT, bytes]]:
+        """
+        Yields until `separator` is found and calls :meth:`deserialize` **without** `separator`.
+
+        See :meth:`.AbstractIncrementalPacketSerializer.incremental_deserialize` documentation for details.
+
+        Raises:
+            IncrementalDeserializeError: :meth:`deserialize` raised :exc:`.DeserializeError`.
+            Exception: Any error raised by :meth:`deserialize`.
+        """
         buffer: bytes = yield
         separator: bytes = self.__separator
         separator_length: int = len(separator)
@@ -86,13 +135,29 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_ST_cont
     @property
     @final
     def separator(self) -> bytes:
+        """
+        Byte sequence that indicates the end of the token. Read-only attribute.
+        """
         return self.__separator
 
 
-class FixedSizePacketSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
+class FixedSizePacketSerializer(AbstractIncrementalPacketSerializer[_DTOPacketT]):
+    """
+    A base class for stream protocols in which the packets are of a fixed size.
+    """
+
     __slots__ = ("__size",)
 
     def __init__(self, size: int, **kwargs: Any) -> None:
+        """
+        Parameters:
+            size: The expected data size.
+            kwargs: Extra options given to ``super().__init__()``.
+
+        Raises:
+            TypeError: Invalid integer.
+            ValueError: `size` is negative or null.
+        """
         super().__init__(**kwargs)
         size = int(size)
         if size <= 0:
@@ -100,22 +165,46 @@ class FixedSizePacketSerializer(AbstractIncrementalPacketSerializer[_ST_contra, 
         self.__size: int = size
 
     @abstractmethod
-    def serialize(self, packet: _ST_contra) -> bytes:
+    def serialize(self, packet: _DTOPacketT, /) -> bytes:
+        """
+        See :meth:`.AbstractPacketSerializer.serialize` documentation.
+        """
         raise NotImplementedError
 
     @final
-    def incremental_serialize(self, packet: _ST_contra) -> Generator[bytes, None, None]:
+    def incremental_serialize(self, packet: _DTOPacketT, /) -> Generator[bytes, None, None]:
+        """
+        Yields the data returned by :meth:`serialize`.
+
+        See :meth:`.AbstractIncrementalPacketSerializer.incremental_serialize` documentation for details.
+
+        Raises:
+            ValueError: If the returned data size is not equal to `packet_size`.
+            Exception: Any error raised by :meth:`serialize`.
+        """
         data = self.serialize(packet)
         if len(data) != self.__size:
             raise ValueError("serialized data size does not meet expectation")
         yield data
 
     @abstractmethod
-    def deserialize(self, data: bytes) -> _DT_co:
+    def deserialize(self, data: bytes, /) -> _DTOPacketT:
+        """
+        See :meth:`.AbstractPacketSerializer.deserialize` documentation.
+        """
         raise NotImplementedError
 
     @final
-    def incremental_deserialize(self) -> Generator[None, bytes, tuple[_DT_co, bytes]]:
+    def incremental_deserialize(self) -> Generator[None, bytes, tuple[_DTOPacketT, bytes]]:
+        """
+        Yields until there is enough data and calls :meth:`deserialize`.
+
+        See :meth:`.AbstractIncrementalPacketSerializer.incremental_deserialize` documentation for details.
+
+        Raises:
+            IncrementalDeserializeError: :meth:`deserialize` raised :exc:`.DeserializeError`.
+            Exception: Any error raised by :meth:`deserialize`.
+        """
         buffer: bytes = yield
         packet_size: int = self.__size
         while (buffer_size := len(buffer)) < packet_size:
@@ -143,13 +232,26 @@ class FixedSizePacketSerializer(AbstractIncrementalPacketSerializer[_ST_contra, 
     @property
     @final
     def packet_size(self) -> int:
+        """
+        The expected data size. Read-only attribute.
+        """
         return self.__size
 
 
-class FileBasedPacketSerializer(AbstractPacketSerializer[_ST_contra, _DT_co]):
+class FileBasedPacketSerializer(AbstractPacketSerializer[_DTOPacketT]):
+    """
+    Base class for APIs requiring a :std:term:`file object` for serialization/deserialization.
+    """
+
     __slots__ = ("__expected_errors",)
 
     def __init__(self, expected_load_error: type[Exception] | tuple[type[Exception], ...], **kwargs: Any) -> None:
+        """
+        Parameters:
+            expected_load_error: Errors that can be raised by :meth:`load_from_file` implementation,
+                                 which must be considered as deserialization errors.
+            kwargs: Extra options given to ``super().__init__()``.
+        """
         super().__init__(**kwargs)
         if not isinstance(expected_load_error, tuple):
             expected_load_error = (expected_load_error,)
@@ -157,24 +259,63 @@ class FileBasedPacketSerializer(AbstractPacketSerializer[_ST_contra, _DT_co]):
         self.__expected_errors: tuple[type[Exception], ...] = expected_load_error
 
     @abstractmethod
-    def dump_to_file(self, packet: _ST_contra, file: IO[bytes]) -> None:
+    def dump_to_file(self, packet: _DTOPacketT, file: IO[bytes], /) -> None:
+        """
+        Write the serialized `packet` to `file`.
+
+        Parameters:
+            packet: The Python object to serialize.
+            file: The :std:term:`binary file` to write to.
+        """
         raise NotImplementedError
 
     @abstractmethod
-    def load_from_file(self, file: IO[bytes]) -> _DT_co:
+    def load_from_file(self, file: IO[bytes], /) -> _DTOPacketT:
+        """
+        Read from `file` to deserialize the raw :term:`packet`.
+
+        Parameters:
+            file: The :std:term:`binary file` to read from.
+
+        Raises:
+            EOFError: Missing data to create the :term:`packet`.
+            Exception: Any error from the underlying API that is interpreted with the `expected_load_error` value.
+
+        Returns:
+            the deserialized Python object.
+        """
         raise NotImplementedError
 
     @final
-    def serialize(self, packet: _ST_contra) -> bytes:
+    def serialize(self, packet: _DTOPacketT, /) -> bytes:
+        """
+        Calls :meth:`dump_to_file` and returns the result.
+
+        See :meth:`.AbstractPacketSerializer.serialize` documentation for details.
+
+        Raises:
+            Exception: Any error raised by :meth:`dump_to_file`.
+        """
         with BytesIO() as buffer:
             self.dump_to_file(packet, buffer)
             return buffer.getvalue()
 
     @final
-    def deserialize(self, data: bytes) -> _DT_co:
+    def deserialize(self, data: bytes, /) -> _DTOPacketT:
+        """
+        Calls :meth:`load_from_file` and returns the result.
+
+        See :meth:`.AbstractPacketSerializer.deserialize` documentation for details.
+
+        Raises:
+            DeserializeError: :meth:`load_from_file` raised :class:`EOFError`.
+            DeserializeError: :meth:`load_from_file` does not read until EOF (unused trailing data).
+            DeserializeError: :meth:`load_from_file` raised an error that matches `expected_load_error`.
+            Exception: Any other error raised by :meth:`load_from_file`.
+        """
         with BytesIO(data) as buffer:
             try:
-                packet: _DT_co = self.load_from_file(buffer)
+                packet: _DTOPacketT = self.load_from_file(buffer)
             except EOFError as exc:
                 raise DeserializeError("Missing data to create packet", error_info={"data": data}) from exc
             except self.__expected_errors as exc:
@@ -186,7 +327,15 @@ class FileBasedPacketSerializer(AbstractPacketSerializer[_ST_contra, _DT_co]):
         return packet
 
     @final
-    def incremental_serialize(self, packet: _ST_contra) -> Generator[bytes, None, None]:
+    def incremental_serialize(self, packet: _DTOPacketT, /) -> Generator[bytes, None, None]:
+        """
+        Calls :meth:`dump_to_file` and yields the result.
+
+        See :meth:`.AbstractIncrementalPacketSerializer.incremental_serialize` documentation for details.
+
+        Raises:
+            Exception: Any error raised by :meth:`dump_to_file`.
+        """
         with BytesIO() as buffer:
             self.dump_to_file(packet, buffer)
             if buffer.getbuffer().nbytes == 0:
@@ -195,7 +344,19 @@ class FileBasedPacketSerializer(AbstractPacketSerializer[_ST_contra, _DT_co]):
         yield data
 
     @final
-    def incremental_deserialize(self) -> Generator[None, bytes, tuple[_DT_co, bytes]]:
+    def incremental_deserialize(self) -> Generator[None, bytes, tuple[_DTOPacketT, bytes]]:
+        """
+        Calls :meth:`load_from_file` and returns the result.
+
+        See :meth:`.AbstractIncrementalPacketSerializer.incremental_deserialize` documentation for details.
+
+        Note:
+            The generator will always :keyword:`yield` if :meth:`load_from_file` raises :class:`EOFError`.
+
+        Raises:
+            IncrementalDeserializeError: :meth:`load_from_file` raised an error that matches `expected_load_error`.
+            Exception: Any other error raised by :meth:`load_from_file`.
+        """
         with BytesIO((yield)) as buffer:
             initial: bool = True
             while True:
@@ -203,7 +364,7 @@ class FileBasedPacketSerializer(AbstractPacketSerializer[_ST_contra, _DT_co]):
                     buffer.write((yield))
                     buffer.seek(0)
                 try:
-                    packet: _DT_co = self.load_from_file(buffer)
+                    packet: _DTOPacketT = self.load_from_file(buffer)
                 except EOFError:
                     continue
                 except self.__expected_errors as exc:

@@ -1,7 +1,18 @@
-# Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
+# Copyright 2021-2023, Francis Clairicia-Rose-Claire-Josephine
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 #
 #
-"""Network client module"""
+"""TCP Network client implementation module"""
 
 from __future__ import annotations
 
@@ -14,7 +25,7 @@ import socket as _socket
 import threading
 import time
 from collections.abc import Callable, Iterator
-from typing import TYPE_CHECKING, Any, Generic, NoReturn, TypeGuard, TypeVar, cast, final, overload
+from typing import TYPE_CHECKING, Any, NoReturn, TypeGuard, final, overload
 
 try:
     import ssl
@@ -24,6 +35,7 @@ else:
     _ssl_module = ssl
     del ssl
 
+from ..._typevars import _ReceivedPacketT, _SentPacketT
 from ...exceptions import ClientClosedError
 from ...protocol import StreamProtocol
 from ...tools._lock import ForkSafeLock
@@ -45,13 +57,14 @@ from ...tools.socket import SocketAddress, SocketProxy, new_socket_address, set_
 from .abc import AbstractNetworkClient
 
 if TYPE_CHECKING:
-    from ssl import SSLContext as _SSLContext, SSLSocket as _SSLSocket
-
-_ReceivedPacketT = TypeVar("_ReceivedPacketT")
-_SentPacketT = TypeVar("_SentPacketT")
+    import ssl as _typing_ssl
 
 
-class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Generic[_SentPacketT, _ReceivedPacketT]):
+class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
+    """
+    A network client interface for TCP connections.
+    """
+
     __slots__ = (
         "__socket",
         "__over_ssl",
@@ -80,7 +93,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         *,
         connect_timeout: float | None = ...,
         local_address: tuple[str, int] | None = ...,
-        ssl: _SSLContext | bool | None = ...,
+        ssl: _typing_ssl.SSLContext | bool | None = ...,
         server_hostname: str | None = ...,
         ssl_handshake_timeout: float | None = ...,
         ssl_shutdown_timeout: float | None = ...,
@@ -97,7 +110,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         /,
         protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
         *,
-        ssl: _SSLContext | bool | None = ...,
+        ssl: _typing_ssl.SSLContext | bool | None = ...,
         server_hostname: str | None = ...,
         ssl_handshake_timeout: float | None = ...,
         ssl_shutdown_timeout: float | None = ...,
@@ -113,7 +126,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         /,
         protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
         *,
-        ssl: _SSLContext | bool | None = None,
+        ssl: _typing_ssl.SSLContext | bool | None = None,
         server_hostname: str | None = None,
         ssl_handshake_timeout: float | None = None,
         ssl_shutdown_timeout: float | None = None,
@@ -122,6 +135,41 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
         retry_interval: float = 1.0,
         **kwargs: Any,
     ) -> None:
+        """
+        Common Parameters:
+            protocol: The :term:`protocol object` to use.
+
+        Connection Parameters:
+            address: A pair of ``(host, port)`` for connection.
+            connect_timeout: The connection timeout (in seconds).
+            local_address: If given, is a ``(local_host, local_port)`` tuple used to bind the socket locally.
+
+        Socket Parameters:
+            socket: An already connected TCP :class:`socket.socket`. If `socket` is given,
+                    none of `connect_timeout` and `local_address` should be specified.
+
+        Keyword Arguments:
+            ssl: If given and not false, a SSL/TLS transport is created (by default a plain TCP transport is created).
+                 If ssl is a :class:`ssl.SSLContext` object, this context is used to create the transport;
+                 if ssl is :data:`True`, a default context returned from :func:`ssl.create_default_context` is used.
+            server_hostname: sets or overrides the hostname that the target server's certificate will be matched against.
+                             Should only be passed if `ssl` is not :data:`None`. By default the value of the host in `address`
+                             argument is used. If `socket` is provided instead, there is no default and you must pass a value
+                             for `server_hostname`. If `server_hostname` is an empty string, hostname matching is disabled
+                             (which is a serious security risk, allowing for potential man-in-the-middle attacks).
+            ssl_handshake_timeout: (for a TLS connection) the time in seconds to wait for the TLS handshake to complete
+                                   before aborting the connection. ``60.0`` seconds if :data:`None` (default).
+            ssl_shutdown_timeout: the time in seconds to wait for the SSL shutdown to complete before aborting the connection.
+                                  ``30.0`` seconds if :data:`None` (default).
+            ssl_shared_lock: If :data:`True` (the default), :meth:`send_packet` and :meth:`recv_packet` uses
+                             the same lock instance.
+            max_recv_size: Read buffer size. If not given, a default reasonable value is used.
+            retry_interval: The maximum wait time to wait for a blocking operation before retrying.
+                            Set it to :data:`math.inf` to disable this feature.
+
+        See Also:
+            :ref:`SSL/TLS security considerations <ssl-security>`
+        """
         self.__socket: _socket.socket | None = None  # If any exception occurs, the client will already be in a closed state
         super().__init__()
 
@@ -206,9 +254,9 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 if _ssl_module is None:
                     raise RuntimeError("stdlib ssl module not available")
 
-                ssl_context: _SSLContext
+                ssl_context: _typing_ssl.SSLContext
                 if isinstance(ssl, bool):
-                    ssl_context = cast("_SSLContext", _ssl_module.create_default_context())
+                    ssl_context = _ssl_module.create_default_context()
                     if not server_hostname:
                         ssl_context.check_hostname = False
                     if hasattr(_ssl_module, "OP_IGNORE_UNEXPECTED_EOF"):
@@ -273,12 +321,30 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             return f"<{type(self).__name__} closed>"
         return f"<{type(self).__name__} socket={socket!r}>"
 
-    @final
     def is_closed(self) -> bool:
+        """
+        Checks if the client is in a closed state. Thread-safe.
+
+        If :data:`True`, all future operations on the client object will raise a :exc:`.ClientClosedError`.
+
+        Returns:
+            the client state.
+        """
         with self.__socket_lock.get():
             return self.__socket is None
 
     def close(self) -> None:
+        """
+        Close the client. Thread-safe.
+
+        Once that happens, all future operations on the client object will raise a :exc:`.ClientClosedError`.
+        The remote end will receive no more data (after queued data is flushed).
+
+        Can be safely called multiple times.
+
+        Raises:
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
+        """
         with self.__send_lock.get(), self.__socket_lock.get():
             self.__last_ssl_eof_error = None
             if (socket := self.__socket) is None:
@@ -303,6 +369,34 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                     socket.close()
 
     def send_packet(self, packet: _SentPacketT, *, timeout: float | None = None) -> None:
+        """
+        Sends `packet` to the remote endpoint. Thread-safe.
+
+        If `timeout` is not :data:`None`, the entire send operation will take at most `timeout` seconds.
+
+        Warning:
+            A timeout on a send operation is unusual unless you have a SSL/TLS context.
+
+            In the case of a timeout, it is impossible to know if all the packet data has been sent.
+            This would leave the connection in an inconsistent state.
+
+        Important:
+            The lock acquisition time is included in the `timeout`.
+
+            This means that you may get a :exc:`TimeoutError` because it took too long to get the lock.
+
+        Parameters:
+            packet: the Python object to send.
+            timeout: the allowed time (in seconds) for blocking operations.
+
+        Raises:
+            ClientClosedError: the client object is closed.
+            ConnectionError: connection unexpectedly closed during operation.
+                             You should not attempt any further operation and close the client object.
+            TimeoutError: the send operation does not end up after `timeout` seconds.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
+            RuntimeError: :meth:`send_eof` has been called earlier.
+        """
         with _lock_with_timeout(self.__send_lock.get(), timeout, error_message="send_packet() timed out") as timeout:
             socket = self.__ensure_connected()
             if self.__eof_sent:
@@ -337,9 +431,18 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 del buffer, data
 
     def send_eof(self) -> None:
+        """
+        Close the write end of the stream after the buffered write data is flushed. Thread-safe.
+
+        Can be safely called multiple times.
+
+        Raises:
+            ClientClosedError: the client object is closed.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
+        """
         if self.__over_ssl:
             # ssl.SSLSocket.shutdown() would shutdown both read and write streams
-            raise NotImplementedError
+            raise NotImplementedError("SSL/TLS API does not support sending EOF.")
 
         with self.__send_lock.get(), self.__socket_lock.get():
             if self.__eof_sent:
@@ -349,6 +452,30 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
                 socket.shutdown(_socket.SHUT_WR)
 
     def recv_packet(self, *, timeout: float | None = None) -> _ReceivedPacketT:
+        """
+        Waits for a new packet to arrive from the remote endpoint. Thread-safe.
+
+        If `timeout` is not :data:`None`, the entire receive operation will take at most `timeout` seconds.
+
+        Important:
+            The lock acquisition time is included in the `timeout`.
+
+            This means that you may get a :exc:`TimeoutError` because it took too long to get the lock.
+
+        Parameters:
+            timeout: the allowed time (in seconds) for blocking operations.
+
+        Raises:
+            ClientClosedError: the client object is closed.
+            ConnectionError: connection unexpectedly closed during operation.
+                             You should not attempt any further operation and close the client object.
+            TimeoutError: the receive operation does not end up after `timeout` seconds.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
+            StreamProtocolParseError: invalid data received.
+
+        Returns:
+            the received packet.
+        """
         with _lock_with_timeout(self.__receive_lock.get(), timeout, error_message="recv_packet() timed out") as timeout:
             consumer = self.__consumer
             try:
@@ -442,18 +569,44 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
             self.__abort(None)
 
     def get_local_address(self) -> SocketAddress:
+        """
+        Returns the local socket IP address. Thread-safe.
+
+        Raises:
+            ClientClosedError: the client object is closed.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
+
+        Returns:
+            the client's local address.
+        """
         return self.__addr
 
     def get_remote_address(self) -> SocketAddress:
+        """
+        Returns the remote socket IP address. Thread-safe.
+
+        Raises:
+            ClientClosedError: the client object is closed.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
+
+        Returns:
+            the client's remote address.
+        """
         return self.__peer
 
     def fileno(self) -> int:
+        """
+        Returns the socket's file descriptor, or ``-1`` if the client (or the socket) is closed. Thread-safe.
+
+        Returns:
+            the opened file descriptor.
+        """
         with self.__socket_lock.get():
             if (socket := self.__socket) is None:
                 return -1
             return socket.fileno()
 
-    def __is_ssl_socket(self, socket: _socket.socket) -> TypeGuard[_SSLSocket]:
+    def __is_ssl_socket(self, socket: _socket.socket) -> TypeGuard[_typing_ssl.SSLSocket]:
         # Optimization: Instead of always do a isinstance(), do it once then use the TypeGuard to cast the socket type
         # for static type checkers
         return self.__over_ssl
@@ -461,9 +614,11 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT], Ge
     @property
     @final
     def socket(self) -> SocketProxy:
+        """A view to the underlying socket instance. Read-only attribute."""
         return self.__socket_proxy
 
     @property
     @final
     def max_recv_size(self) -> int:
+        """Read buffer size. Read-only attribute."""
         return self.__max_recv_size

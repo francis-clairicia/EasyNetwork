@@ -25,12 +25,12 @@ class TestMessagePackSerializer(BaseTestSerializer):
 
     @pytest.fixture(scope="class")
     @staticmethod
-    def serializer_for_serialization(packer_config: MessagePackerConfig) -> MessagePackSerializer[Any, Any]:
+    def serializer_for_serialization(packer_config: MessagePackerConfig) -> MessagePackSerializer:
         return MessagePackSerializer(packer_config=packer_config)
 
     @pytest.fixture(scope="class")
     @staticmethod
-    def serializer_for_deserialization() -> MessagePackSerializer[Any, Any]:
+    def serializer_for_deserialization() -> MessagePackSerializer:
         return MessagePackSerializer()
 
     #### Packets to test

@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import logging
 from collections.abc import AsyncGenerator, Callable
 
+from easynetwork.api_async.server.abc import AbstractAsyncNetworkServer
 from easynetwork.api_async.server.handler import AsyncBaseClientInterface, AsyncDatagramRequestHandler, AsyncStreamRequestHandler
-from easynetwork.api_sync.server.abc import AbstractStandaloneNetworkServer
+from easynetwork.api_sync.server.abc import AbstractNetworkServer
 from easynetwork.api_sync.server.tcp import StandaloneTCPNetworkServer
 from easynetwork.api_sync.server.udp import StandaloneUDPNetworkServer
-from easynetwork.exceptions import BaseProtocolParseError
 from easynetwork.protocol import DatagramProtocol, StreamProtocol
 from easynetwork.serializers.line import StringLineSerializer
 
@@ -18,15 +19,15 @@ logger = logging.getLogger("app")
 
 
 class MyAsyncRequestHandler(AsyncStreamRequestHandler[str, str], AsyncDatagramRequestHandler[str, str]):
+    async def service_init(self, exit_stack: contextlib.AsyncExitStack, server: AbstractAsyncNetworkServer) -> None:
+        pass
+
     async def handle(self, client: AsyncBaseClientInterface[str]) -> AsyncGenerator[None, str]:
         request: str = yield
         logger.debug(f"Received {request!r}")
         if request == "wait:":
             request = (yield) + " after wait"
         await client.send_packet(request.upper())
-
-    async def bad_request(self, client: AsyncBaseClientInterface[str], exc: BaseProtocolParseError) -> None:
-        pass
 
 
 def create_tcp_server() -> StandaloneTCPNetworkServer[str, str]:
@@ -71,7 +72,7 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    server_factory: Callable[[], AbstractStandaloneNetworkServer] = args.server_factory
+    server_factory: Callable[[], AbstractNetworkServer] = args.server_factory
 
     logging.basicConfig(level=getattr(logging, args.log_level), format="[ %(levelname)s ] [ %(name)s ] %(message)s")
 

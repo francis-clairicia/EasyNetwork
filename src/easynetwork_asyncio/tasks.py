@@ -1,4 +1,15 @@
-# Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
+# Copyright 2021-2023, Francis Clairicia-Rose-Claire-Josephine
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 #
 #
 """asyncio engine for easynetwork.api_async
@@ -16,7 +27,12 @@ from collections.abc import Callable, Coroutine
 from typing import TYPE_CHECKING, Any, ParamSpec, Self, TypeVar, final
 from weakref import WeakKeyDictionary
 
-from easynetwork.api_async.backend.abc import AbstractSystemTask, AbstractTask, AbstractTaskGroup, AbstractTimeoutHandle
+from easynetwork.api_async.backend.abc import (
+    SystemTask as AbstractSystemTask,
+    Task as AbstractTask,
+    TaskGroup as AbstractTaskGroup,
+    TimeoutHandle as AbstractTimeoutHandle,
+)
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -82,8 +98,13 @@ class Task(AbstractTask[_T_co]):
 class SystemTask(Task[_T_co], AbstractSystemTask[_T_co]):
     __slots__ = ()
 
-    def __init__(self, coroutine: Coroutine[Any, Any, _T_co]) -> None:
-        super().__init__(asyncio.create_task(coroutine))
+    def __init__(
+        self,
+        coroutine: Coroutine[Any, Any, _T_co],
+        *,
+        context: contextvars.Context | None = None,
+    ) -> None:
+        super().__init__(asyncio.create_task(coroutine, context=context))
 
     async def join_or_cancel(self) -> _T_co:
         task = self._asyncio_task
@@ -120,22 +141,12 @@ class TaskGroup(AbstractTaskGroup):
 
     def start_soon(
         self,
-        __coro_func: Callable[_P, Coroutine[Any, Any, _T]],
-        /,
-        *args: _P.args,
-        **kwargs: _P.kwargs,
-    ) -> AbstractTask[_T]:
-        return Task(self.__asyncio_tg.create_task(__coro_func(*args, **kwargs)))
-
-    def start_soon_with_context(
-        self,
-        context: contextvars.Context,
         coro_func: Callable[_P, Coroutine[Any, Any, _T]],
         /,
-        *args: _P.args,
-        **kwargs: _P.kwargs,
+        *args: Any,
+        context: contextvars.Context | None = None,
     ) -> AbstractTask[_T]:
-        return Task(self.__asyncio_tg.create_task(coro_func(*args, **kwargs), context=context))
+        return Task(self.__asyncio_tg.create_task(coro_func(*args), context=context))
 
 
 @final

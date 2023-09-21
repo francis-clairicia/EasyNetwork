@@ -14,7 +14,7 @@ runs:
       shell: bash
     - uses: pdm-project/setup-pdm@v3
       with:
-        version: '2.8.2'
+        version: '2.9.2'
         python-version: ${{ inputs.python-version }}
         cache: true
         cache-dependency-path: './pdm.lock'

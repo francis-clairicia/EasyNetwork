@@ -1,4 +1,15 @@
-# Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
+# Copyright 2021-2023, Francis Clairicia-Rose-Claire-Josephine
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 #
 #
 """Asynchronous network server module"""
@@ -11,24 +22,28 @@ __all__ = [
 
 import contextlib as _contextlib
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, Generic
 
+from ..._typevars import _RequestT, _ResponseT
 from ...api_async.server.udp import AsyncUDPNetworkServer
 from ...tools.socket import SocketAddress, SocketProxy
 from . import _base
 
 if TYPE_CHECKING:
-    import logging as _logging
+    import logging
 
-    from ...api_async.backend.abc import AbstractAsyncBackend
+    from ...api_async.backend.abc import AsyncBackend
     from ...api_async.server.handler import AsyncDatagramRequestHandler
     from ...protocol import DatagramProtocol
 
-_RequestT = TypeVar("_RequestT")
-_ResponseT = TypeVar("_ResponseT")
-
 
 class StandaloneUDPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[_RequestT, _ResponseT]):
+    """
+    A network server for UDP communication.
+
+    It embeds an :class:`.AsyncUDPNetworkServer` instance.
+    """
+
     __slots__ = ()
 
     def __init__(
@@ -37,14 +52,21 @@ class StandaloneUDPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
         port: int,
         protocol: DatagramProtocol[_ResponseT, _RequestT],
         request_handler: AsyncDatagramRequestHandler[_RequestT, _ResponseT],
-        backend: str | AbstractAsyncBackend = "asyncio",
+        backend: str | AsyncBackend = "asyncio",
         *,
         reuse_port: bool = False,
+        logger: logging.Logger | None = None,
         backend_kwargs: Mapping[str, Any] | None = None,
-        service_actions_interval: float | None = None,
-        logger: _logging.Logger | None = None,
         **kwargs: Any,
     ) -> None:
+        """
+        For the arguments, see :class:`.AsyncUDPNetworkServer` documentation.
+
+        Note:
+            The backend interface must be explicitly given. It defaults to ``asyncio``.
+
+            :exc:`ValueError` is raised if :data:`None` is given.
+        """
         if backend is None:
             raise ValueError("You must explicitly give a backend name or instance")
         super().__init__(
@@ -54,15 +76,21 @@ class StandaloneUDPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
                 protocol=protocol,
                 request_handler=request_handler,
                 reuse_port=reuse_port,
+                logger=logger,
                 backend=backend,
                 backend_kwargs=backend_kwargs,
-                service_actions_interval=service_actions_interval,
-                logger=logger,
                 **kwargs,
             )
         )
 
     def get_address(self) -> SocketAddress | None:
+        """
+        Returns the interface to which the datagram socket is bound. Thread-safe.
+
+        Returns:
+            A network socket address.
+            If the server is not serving (:meth:`is_serving` returns :data:`False`), :data:`None` is returned.
+        """
         if (portal := self._portal) is not None:
             with _contextlib.suppress(RuntimeError):
                 return portal.run_sync(self._server.get_address)
@@ -70,6 +98,7 @@ class StandaloneUDPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
 
     @property
     def socket(self) -> SocketProxy | None:
+        """The server socket. Read-only attribute."""
         if (portal := self._portal) is not None:
             with _contextlib.suppress(RuntimeError):
                 socket = portal.run_sync(lambda: self._server.socket)
@@ -77,7 +106,8 @@ class StandaloneUDPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
         return None
 
     @property
-    def logger(self) -> _logging.Logger:
+    def logger(self) -> logging.Logger:
+        """The server's logger."""
         return self._server.logger
 
     if TYPE_CHECKING:

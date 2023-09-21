@@ -99,7 +99,7 @@ def socket_pair(localhost_ip: str, tcp_socket_factory: Callable[[], Socket]) -> 
                 pass
             csock.setblocking(True)
             ssock, _ = lsock.accept()
-        except:  # noqa
+        except:  # noqa: E722
             csock.close()
             raise
     finally:

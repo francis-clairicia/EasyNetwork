@@ -218,14 +218,31 @@ class TestAsyncTCPNetworkClient:
         await event_loop.sock_sendall(server, b"A\nB\nC\nD\nE\nF")
         event_loop.call_soon(server.shutdown, SHUT_WR)
         event_loop.call_soon(server.close)
-        assert [p async for p in client.iter_received_packets()] == ["A", "B", "C", "D", "E"]
+        assert [p async for p in client.iter_received_packets(timeout=None)] == ["A", "B", "C", "D", "E"]
 
-    async def test____fileno____consistency(self, client: AsyncTCPNetworkClient[str, str]) -> None:
-        assert client.fileno() == client.socket.fileno()
+    async def test____iter_received_packets____yields_available_packets_within_timeout(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        client: AsyncTCPNetworkClient[str, str],
+        server: Socket,
+    ) -> None:
+        async def send_coro() -> None:
+            await event_loop.sock_sendall(server, b"A\n")
+            await asyncio.sleep(0.1)
+            await event_loop.sock_sendall(server, b"B\n")
+            await asyncio.sleep(0.4)
+            await event_loop.sock_sendall(server, b"C\n")
+            await asyncio.sleep(0.2)
+            await event_loop.sock_sendall(server, b"D\n")
+            await asyncio.sleep(0.5)
+            await event_loop.sock_sendall(server, b"E\n")
 
-    async def test____fileno____closed_client(self, client: AsyncTCPNetworkClient[str, str]) -> None:
-        await client.aclose()
-        assert client.fileno() == -1
+        send_task = event_loop.create_task(send_coro())
+        try:
+            assert [p async for p in client.iter_received_packets(timeout=1)] == ["A", "B", "C", "D"]
+        finally:
+            send_task.cancel()
+            await asyncio.wait({send_task})
 
     async def test____get_local_address____consistency(self, socket_family: int, client: AsyncTCPNetworkClient[str, str]) -> None:
         address = client.get_local_address()
@@ -393,7 +410,7 @@ class TestAsyncTCPNetworkClientConnection:
                 backend_kwargs=backend_kwargs,
             )
         ) as client:
-            with pytest.raises(OSError):
+            with pytest.raises(AttributeError):
                 _ = client.socket
 
             await client.wait_connected()
@@ -439,25 +456,6 @@ class TestAsyncTCPNetworkClientConnection:
             await client.wait_connected()
 
             assert client.get_remote_address()[:2] == remote_address
-
-    async def test____fileno____connection_not_performed_yet(
-        self,
-        remote_address: tuple[str, int],
-        stream_protocol: StreamProtocol[str, str],
-        backend_kwargs: dict[str, Any],
-    ) -> None:
-        async with contextlib.aclosing(
-            AsyncTCPNetworkClient(
-                remote_address,
-                stream_protocol,
-                backend_kwargs=backend_kwargs,
-            )
-        ) as client:
-            assert client.fileno() == -1
-
-            await client.wait_connected()
-
-            assert client.fileno() > -1
 
     async def test____send_packet____recv_packet____implicit_connection(
         self,

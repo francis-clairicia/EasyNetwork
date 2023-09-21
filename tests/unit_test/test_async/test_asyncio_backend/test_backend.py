@@ -7,7 +7,7 @@ from collections.abc import Callable, Sequence
 from socket import AF_INET
 from typing import TYPE_CHECKING, Any, cast
 
-from easynetwork.api_async.backend.abc import AbstractAsyncStreamSocketAdapter
+from easynetwork.api_async.backend.abc import AsyncStreamSocketAdapter
 from easynetwork_asyncio import AsyncioBackend
 
 import pytest
@@ -156,7 +156,7 @@ class TestAsyncIOBackend:
             }
 
         # Act
-        socket: AbstractAsyncStreamSocketAdapter
+        socket: AsyncStreamSocketAdapter
         if ssl:
             socket = await backend.create_ssl_over_tcp_connection(
                 *remote_address,

@@ -1,4 +1,15 @@
-# Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
+# Copyright 2021-2023, Francis Clairicia-Rose-Claire-Josephine
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 #
 #
 """msgpack-based network packet serializer module"""
@@ -14,13 +25,10 @@ __all__ = [
 from collections.abc import Callable
 from dataclasses import asdict as dataclass_asdict, dataclass, field
 from functools import partial
-from typing import Any, TypeVar, final
+from typing import Any, final
 
 from ..exceptions import DeserializeError
 from .abc import AbstractPacketSerializer
-
-_ST_contra = TypeVar("_ST_contra", contravariant=True)
-_DT_co = TypeVar("_DT_co", covariant=True)
 
 
 def _get_default_ext_hook() -> Callable[[int, bytes], Any]:
@@ -33,6 +41,12 @@ def _get_default_ext_hook() -> Callable[[int, bytes], Any]:
 
 @dataclass(kw_only=True)
 class MessagePackerConfig:
+    """
+    A dataclass with the Packer options.
+
+    See :class:`msgpack.Packer` for details.
+    """
+
     default: Callable[[Any], Any] | None = None
     use_single_float: bool = False
     use_bin_type: bool = True
@@ -43,6 +57,12 @@ class MessagePackerConfig:
 
 @dataclass(kw_only=True)
 class MessageUnpackerConfig:
+    """
+    A dataclass with the Unpacker options.
+
+    See :class:`msgpack.Unpacker` for details.
+    """
+
     raw: bool = False
     use_list: bool = True
     timestamp: int = 0
@@ -53,7 +73,13 @@ class MessageUnpackerConfig:
     ext_hook: Callable[[int, bytes], Any] = field(default_factory=_get_default_ext_hook)
 
 
-class MessagePackSerializer(AbstractPacketSerializer[_ST_contra, _DT_co]):
+class MessagePackSerializer(AbstractPacketSerializer[Any]):
+    """
+    A :term:`one-shot serializer` built on top of the :mod:`msgpack` module.
+
+    Needs ``msgpack`` extra dependencies.
+    """
+
     __slots__ = ("__packb", "__unpackb", "__unpack_out_of_data_cls", "__unpack_extra_data_cls")
 
     def __init__(
@@ -61,14 +87,19 @@ class MessagePackSerializer(AbstractPacketSerializer[_ST_contra, _DT_co]):
         packer_config: MessagePackerConfig | None = None,
         unpacker_config: MessageUnpackerConfig | None = None,
     ) -> None:
+        """
+        Parameters:
+            packer_config: Parameter object to configure the :class:`~msgpack.Packer`.
+            unpacker_config: Parameter object to configure the :class:`~msgpack.Unpacker`.
+        """
         try:
             import msgpack
         except ModuleNotFoundError as exc:  # pragma: no cover
             raise ModuleNotFoundError("message-pack dependencies are missing. Consider adding 'msgpack' extra") from exc
 
         super().__init__()
-        self.__packb: Callable[[_ST_contra], bytes]
-        self.__unpackb: Callable[[bytes], _DT_co]
+        self.__packb: Callable[[Any], bytes]
+        self.__unpackb: Callable[[bytes], Any]
 
         if packer_config is None:
             packer_config = MessagePackerConfig()
@@ -88,11 +119,43 @@ class MessagePackSerializer(AbstractPacketSerializer[_ST_contra, _DT_co]):
         self.__unpack_extra_data_cls = msgpack.ExtraData
 
     @final
-    def serialize(self, packet: _ST_contra) -> bytes:
+    def serialize(self, packet: Any) -> bytes:
+        """
+        Returns the MessagePack representation of the Python object `packet`.
+
+        Roughly equivalent to::
+
+            def serialize(self, packet):
+                return msgpack.packb(packet)
+
+        Parameters:
+            packet: The Python object to serialize.
+
+        Returns:
+            a byte sequence.
+        """
         return self.__packb(packet)
 
     @final
-    def deserialize(self, data: bytes) -> _DT_co:
+    def deserialize(self, data: bytes) -> Any:
+        """
+        Creates a Python object representing the raw MessagePack :term:`packet` from `data`.
+
+        Roughly equivalent to::
+
+            def deserialize(self, data):
+                return msgpack.unpackb(data)
+
+        Parameters:
+            data: The byte sequence to deserialize.
+
+        Raises:
+            DeserializeError: Too little or too much data to parse.
+            DeserializeError: An unrelated deserialization error occurred.
+
+        Returns:
+            the deserialized Python object.
+        """
         try:
             return self.__unpackb(data)
         except self.__unpack_out_of_data_cls as exc:

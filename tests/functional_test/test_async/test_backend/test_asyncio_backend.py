@@ -309,6 +309,20 @@ class TestAsyncioBackend:
         with pytest.raises(ZeroDivisionError):
             await task.join()
 
+    async def test____spawn_task____with_context(
+        self,
+        backend: AsyncioBackend,
+    ) -> None:
+        async def coroutine(value: str) -> None:
+            cvar_for_test.set(value)
+
+        cvar_for_test.set("something")
+        ctx = contextvars.copy_context()
+        task = backend.spawn_task(coroutine, "other", context=ctx)
+        await task.wait()
+        assert cvar_for_test.get() == "something"
+        assert ctx.run(cvar_for_test.get) == "other"
+
     async def test____create_task_group____task_pool(
         self,
         backend: AsyncioBackend,
@@ -399,7 +413,7 @@ class TestAsyncioBackend:
         async with backend.create_task_group() as task_group:
             cvar_for_test.set("something")
             ctx = contextvars.copy_context()
-            task = task_group.start_soon_with_context(ctx, coroutine, value="other")
+            task = task_group.start_soon(coroutine, "other", context=ctx)
             await task.wait()
             assert cvar_for_test.get() == "something"
             assert ctx.run(cvar_for_test.get) == "other"

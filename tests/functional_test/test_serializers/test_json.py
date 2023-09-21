@@ -21,12 +21,12 @@ class TestJSONSerializer(BaseTestIncrementalSerializer):
 
     @pytest.fixture(scope="class")
     @classmethod
-    def serializer_for_serialization(cls) -> JSONSerializer[Any, Any]:
+    def serializer_for_serialization(cls) -> JSONSerializer:
         return JSONSerializer(encoder_config=cls.ENCODER_CONFIG)
 
     @pytest.fixture(scope="class")
     @staticmethod
-    def serializer_for_deserialization() -> JSONSerializer[Any, Any]:
+    def serializer_for_deserialization() -> JSONSerializer:
         return JSONSerializer()
 
     #### Packets to test

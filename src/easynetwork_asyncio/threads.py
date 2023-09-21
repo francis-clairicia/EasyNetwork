@@ -1,4 +1,15 @@
-# Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
+# Copyright 2021-2023, Francis Clairicia-Rose-Claire-Josephine
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 #
 #
 """asyncio engine for easynetwork.api_async
@@ -14,7 +25,7 @@ import contextvars
 from collections.abc import Callable, Coroutine
 from typing import Any, ParamSpec, TypeVar, final
 
-from easynetwork.api_async.backend.abc import AbstractThreadsPortal
+from easynetwork.api_async.backend.abc import ThreadsPortal as AbstractThreadsPortal
 from easynetwork.api_async.backend.sniffio import current_async_library_cvar as _sniffio_current_async_library_cvar
 from easynetwork.tools._utils import transform_future_exception as _transform_future_exception
 
@@ -34,12 +45,7 @@ class ThreadsPortal(AbstractThreadsPortal):
 
     def run_coroutine(self, coro_func: Callable[_P, Coroutine[Any, Any, _T]], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
         self.__check_running_loop()
-        future = self.__run_coroutine_soon(coro_func, *args, **kwargs)
-        del coro_func, args, kwargs
-        try:
-            return self.__get_result(future)
-        finally:
-            del future
+        return self.__get_result(self.__run_coroutine_soon(coro_func, *args, **kwargs))
 
     def __run_coroutine_soon(
         self,
@@ -58,15 +64,10 @@ class ThreadsPortal(AbstractThreadsPortal):
 
     def run_sync(self, func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
         self.__check_running_loop()
-        future = self.__run_sync_soon(func, *args, **kwargs)
-        del func, args, kwargs
-        try:
-            return self.__get_result(future)
-        finally:
-            del future
+        return self.__get_result(self.__run_sync_soon(func, *args, **kwargs))
 
     def __run_sync_soon(self, func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> concurrent.futures.Future[_T]:
-        def callback(future: concurrent.futures.Future[_T]) -> None:
+        def callback() -> None:
             try:
                 result = func(*args, **kwargs)
             except BaseException as exc:
@@ -75,8 +76,6 @@ class ThreadsPortal(AbstractThreadsPortal):
                     raise
             else:
                 future.set_result(result)
-            finally:
-                del future
 
         ctx = contextvars.copy_context()
 
@@ -86,7 +85,7 @@ class ThreadsPortal(AbstractThreadsPortal):
         future: concurrent.futures.Future[_T] = concurrent.futures.Future()
         future.set_running_or_notify_cancel()
 
-        self.__loop.call_soon_threadsafe(callback, future, context=ctx)
+        self.__loop.call_soon_threadsafe(callback, context=ctx)
         return future
 
     @staticmethod

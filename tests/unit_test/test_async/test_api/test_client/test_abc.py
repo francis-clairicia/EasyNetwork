@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING, Any, final
 
 from easynetwork.api_async.client.abc import AbstractAsyncNetworkClient
@@ -8,15 +9,18 @@ from easynetwork.tools.socket import SocketAddress
 import pytest
 
 if TYPE_CHECKING:
-    from easynetwork.api_async.backend.abc import AbstractAsyncBackend
+    from unittest.mock import MagicMock
+
+    from easynetwork.api_async.backend.abc import AsyncBackend
 
     from pytest_mock import MockerFixture
 
 
 @final
 class MockAsyncClient(AbstractAsyncNetworkClient[Any, Any]):
-    def __init__(self, mocker: MockerFixture) -> None:
+    def __init__(self, mock_backend: MagicMock, mocker: MockerFixture) -> None:
         super().__init__()
+        self.mock_backend = mock_backend
         self.mock_wait_connected = mocker.AsyncMock(return_value=None)
         self.mock_close = mocker.AsyncMock(return_value=None)
         self.mock_recv_packet = mocker.AsyncMock()
@@ -45,19 +49,16 @@ class MockAsyncClient(AbstractAsyncNetworkClient[Any, Any]):
     async def recv_packet(self) -> Any:
         return await self.mock_recv_packet()
 
-    def fileno(self) -> int:
-        raise NotImplementedError
-
-    def get_backend(self) -> AbstractAsyncBackend:
-        raise NotImplementedError
+    def get_backend(self) -> AsyncBackend:
+        return self.mock_backend
 
 
 @pytest.mark.asyncio
 class TestAbstractAsyncNetworkClient:
     @pytest.fixture
     @staticmethod
-    def client(mocker: MockerFixture) -> MockAsyncClient:
-        return MockAsyncClient(mocker)
+    def client(mock_backend: MagicMock, mocker: MockerFixture) -> MockAsyncClient:
+        return MockAsyncClient(mock_backend, mocker)
 
     async def test____context____close_client_at_end(self, client: MockAsyncClient) -> None:
         # Arrange
@@ -71,9 +72,11 @@ class TestAbstractAsyncNetworkClient:
         client.mock_wait_connected.assert_awaited_once_with()
         client.mock_close.assert_awaited_once_with()
 
+    @pytest.mark.parametrize("timeout", [0, 123456.789, None])
     @pytest.mark.parametrize("error", [OSError])
     async def test____iter_received_packets____stop_if_an_error_occurs(
         self,
+        timeout: float | None,
         client: MockAsyncClient,
         error: type[BaseException],
         mocker: MockerFixture,
@@ -82,8 +85,78 @@ class TestAbstractAsyncNetworkClient:
         client.mock_recv_packet.side_effect = [mocker.sentinel.packet_a, error]
 
         # Act
-        packets = [p async for p in client.iter_received_packets()]
+        packets = [p async for p in client.iter_received_packets(timeout=timeout)]
 
         # Assert
         assert client.mock_recv_packet.mock_calls == [mocker.call() for _ in range(2)]
         assert packets == [mocker.sentinel.packet_a]
+
+    async def test____iter_received_packets____timeout_decrement(
+        self,
+        client: MockAsyncClient,
+        mock_backend: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        client.mock_recv_packet.return_value = mocker.sentinel.packet
+        async_iterator = client.iter_received_packets(timeout=10)
+        now = 798546132
+        mocker.patch(
+            "time.perf_counter",
+            side_effect=[
+                now,
+                now + 6,
+                now + 7,
+                now + 12,
+                now + 12,
+                now + 12,
+            ],
+        )
+
+        # Act
+        await anext(async_iterator)
+        await anext(async_iterator)
+        await anext(async_iterator)
+
+        # Assert
+        assert client.mock_recv_packet.call_args_list == [mocker.call() for _ in range(3)]
+        assert mock_backend.timeout.call_args_list == [
+            mocker.call(10),
+            mocker.call(4),
+            mocker.call(0),
+        ]
+
+    async def test____iter_received_packets____infinite_timeout(
+        self,
+        client: MockAsyncClient,
+        mock_backend: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        client.mock_recv_packet.return_value = mocker.sentinel.packet
+        async_iterator = client.iter_received_packets(timeout=None)
+        now = 798546132
+        mocker.patch(
+            "time.perf_counter",
+            side_effect=[
+                now,
+                now + 6,
+                now + 7,
+                now + 12,
+                now + 12,
+                now + 12,
+            ],
+        )
+
+        # Act
+        await anext(async_iterator)
+        await anext(async_iterator)
+        await anext(async_iterator)
+
+        # Assert
+        assert client.mock_recv_packet.call_args_list == [mocker.call() for _ in range(3)]
+        assert mock_backend.timeout.call_args_list == [
+            mocker.call(math.inf),
+            mocker.call(math.inf),
+            mocker.call(math.inf),
+        ]

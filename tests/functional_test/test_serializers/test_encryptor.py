@@ -22,17 +22,17 @@ class TestEncryptorSerializer(BaseTestIncrementalSerializer):
 
     @pytest.fixture(scope="class")
     @classmethod
-    def serializer(cls) -> EncryptorSerializer[bytes, bytes]:
+    def serializer(cls) -> EncryptorSerializer[bytes]:
         return EncryptorSerializer(NoSerialization(), key=cls.KEY)
 
     @pytest.fixture(scope="class")
     @staticmethod
-    def serializer_for_serialization(serializer: EncryptorSerializer[bytes, bytes]) -> EncryptorSerializer[bytes, bytes]:
+    def serializer_for_serialization(serializer: EncryptorSerializer[bytes]) -> EncryptorSerializer[bytes]:
         return serializer
 
     @pytest.fixture(scope="class")
     @staticmethod
-    def serializer_for_deserialization(serializer: EncryptorSerializer[bytes, bytes]) -> EncryptorSerializer[bytes, bytes]:
+    def serializer_for_deserialization(serializer: EncryptorSerializer[bytes]) -> EncryptorSerializer[bytes]:
         return serializer
 
     #### Packets to test

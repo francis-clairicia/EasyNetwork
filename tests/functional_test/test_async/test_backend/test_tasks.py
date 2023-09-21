@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, Any
 
-from easynetwork.api_async.backend.abc import AbstractAsyncBackend
+from easynetwork.api_async.backend.abc import AsyncBackend
 from easynetwork.api_async.backend.factory import AsyncBackendFactory
 from easynetwork.api_async.backend.tasks import SingleTaskRunner
 
@@ -17,12 +17,12 @@ if TYPE_CHECKING:
 class TestSingleTaskRunner:
     @pytest.fixture
     @staticmethod
-    def backend() -> AbstractAsyncBackend:
+    def backend() -> AsyncBackend:
         return AsyncBackendFactory.new("asyncio")
 
     async def test____run____run_task_once(
         self,
-        backend: AbstractAsyncBackend,
+        backend: AsyncBackend,
         mocker: MockerFixture,
     ) -> None:
         coro_func = mocker.AsyncMock(spec=lambda *args, **kwargs: None, return_value=mocker.sentinel.task_result)
@@ -37,7 +37,7 @@ class TestSingleTaskRunner:
 
     async def test____run____early_cancel(
         self,
-        backend: AbstractAsyncBackend,
+        backend: AsyncBackend,
         mocker: MockerFixture,
     ) -> None:
         coro_func = mocker.AsyncMock(spec=lambda *args, **kwargs: None, return_value=mocker.sentinel.task_result)
@@ -52,7 +52,7 @@ class TestSingleTaskRunner:
         coro_func.assert_not_awaited()
         coro_func.assert_not_called()
 
-    async def test____run____cancel_while_running(self, backend: AbstractAsyncBackend) -> None:
+    async def test____run____cancel_while_running(self, backend: AsyncBackend) -> None:
         async def coro_func(value: int) -> int:
             return await asyncio.sleep(3600, value)
 
@@ -72,7 +72,7 @@ class TestSingleTaskRunner:
 
     async def test____run____unhandled_exceptions(
         self,
-        backend: AbstractAsyncBackend,
+        backend: AsyncBackend,
         mocker: MockerFixture,
     ) -> None:
         my_exc = OSError()
@@ -87,7 +87,7 @@ class TestSingleTaskRunner:
         assert exc_info_run_1.value is my_exc
         assert exc_info_run_2.value is my_exc
 
-    async def test____run____waiting_task_is_cancelled(self, backend: AbstractAsyncBackend) -> None:
+    async def test____run____waiting_task_is_cancelled(self, backend: AsyncBackend) -> None:
         inner_task: list[asyncio.Task[int] | None] = []
 
         async def coro_func(value: int) -> int:
@@ -106,7 +106,7 @@ class TestSingleTaskRunner:
 
         assert inner_task[0] is not None and inner_task[0].cancelled()
 
-    async def test____run____waiting_task_is_cancelled____not_the_first_runner(self, backend: AbstractAsyncBackend) -> None:
+    async def test____run____waiting_task_is_cancelled____not_the_first_runner(self, backend: AsyncBackend) -> None:
         async def coro_func(value: int) -> int:
             return await asyncio.sleep(0.5, value)
 

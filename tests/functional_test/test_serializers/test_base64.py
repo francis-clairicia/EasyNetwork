@@ -41,19 +41,17 @@ class BaseTestBase64EncoderSerializer(BaseTestIncrementalSerializer):
         cls,
         checksum: bool | bytes,
         alphabet: Literal["standard", "urlsafe"],
-    ) -> Base64EncoderSerializer[bytes, bytes]:
+    ) -> Base64EncoderSerializer[bytes]:
         return Base64EncoderSerializer(NoSerialization(), alphabet=alphabet, checksum=checksum)
 
     @pytest.fixture(scope="class")
     @staticmethod
-    def serializer_for_serialization(serializer: Base64EncoderSerializer[bytes, bytes]) -> Base64EncoderSerializer[bytes, bytes]:
+    def serializer_for_serialization(serializer: Base64EncoderSerializer[bytes]) -> Base64EncoderSerializer[bytes]:
         return serializer
 
     @pytest.fixture(scope="class")
     @staticmethod
-    def serializer_for_deserialization(
-        serializer: Base64EncoderSerializer[bytes, bytes]
-    ) -> Base64EncoderSerializer[bytes, bytes]:
+    def serializer_for_deserialization(serializer: Base64EncoderSerializer[bytes]) -> Base64EncoderSerializer[bytes]:
         return serializer
 
     #### Packets to test
@@ -191,7 +189,7 @@ class TestBase64EncoderSerializerWithKey(BaseTestBase64EncoderSerializer):
 
     def test____deserialize____invalid_signature(
         self,
-        serializer: Base64EncoderSerializer[bytes, bytes],
+        serializer: Base64EncoderSerializer[bytes],
         packet_to_serialize: bytes,
         expected_complete_data: bytes,
     ) -> None:

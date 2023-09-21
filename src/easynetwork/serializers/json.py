@@ -1,7 +1,18 @@
-# Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
+# Copyright 2021-2023, Francis Clairicia-Rose-Claire-Josephine
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 #
 #
-"""json-based network packet serializer module"""
+"""json-based packet serializer module"""
 
 from __future__ import annotations
 
@@ -16,15 +27,11 @@ import string
 from collections import Counter
 from collections.abc import Callable, Generator
 from dataclasses import asdict as dataclass_asdict, dataclass
-from typing import Any, TypeVar, final
+from typing import Any, final
 
 from ..exceptions import DeserializeError, IncrementalDeserializeError
 from ..tools._utils import iter_bytes
 from .abc import AbstractIncrementalPacketSerializer
-
-_ST_contra = TypeVar("_ST_contra", contravariant=True)
-_DT_co = TypeVar("_DT_co", covariant=True)
-
 
 _JSON_VALUE_BYTES: frozenset[int] = frozenset(bytes(string.digits + string.ascii_letters + string.punctuation, "ascii"))
 _ESCAPE_BYTE: int = b"\\"[0]
@@ -34,6 +41,12 @@ _whitespaces_match: Callable[[bytes, int], re.Match[bytes]] = re.compile(rb"[ \t
 
 @dataclass(kw_only=True)
 class JSONEncoderConfig:
+    """
+    A dataclass with the JSON encoder options.
+
+    See :class:`json.JSONEncoder` for details.
+    """
+
     skipkeys: bool = False
     check_circular: bool = True
     ensure_ascii: bool = True
@@ -45,6 +58,12 @@ class JSONEncoderConfig:
 
 @dataclass(kw_only=True)
 class JSONDecoderConfig:
+    """
+    A dataclass with the JSON decoder options.
+
+    See :class:`json.JSONDecoder` for details.
+    """
+
     object_hook: Callable[..., Any] | None = None
     parse_int: Callable[[str], Any] | None = None
     parse_float: Callable[[str], Any] | None = None
@@ -107,7 +126,7 @@ class _JSONParser:
                     # partial_document not complete
                     start = partial_document_view.nbytes
 
-                # yield out of view scope
+                # yield outside view scope
                 partial_document += yield
 
         except _JSONParser._PlainValueError:
@@ -132,7 +151,11 @@ class _JSONParser:
         return partial_document[:index], partial_document[index:]
 
 
-class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
+class JSONSerializer(AbstractIncrementalPacketSerializer[Any]):
+    """
+    A :term:`serializer` built on top of the :mod:`json` module.
+    """
+
     __slots__ = ("__encoder", "__decoder", "__decoder_error_cls", "__encoding", "__unicode_errors")
 
     def __init__(
@@ -143,6 +166,17 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
         encoding: str = "utf-8",
         unicode_errors: str = "strict",
     ) -> None:
+        """
+        Parameters:
+            encoder_config: Parameter object to configure the :class:`~json.JSONEncoder`.
+            decoder_config: Parameter object to configure the :class:`~json.JSONDecoder`.
+            encoding: String encoding.
+            unicode_errors: Controls how encoding errors are handled.
+
+        See Also:
+            :ref:`standard-encodings` and :ref:`error-handlers`.
+
+        """
         from json import JSONDecodeError, JSONDecoder, JSONEncoder
 
         super().__init__()
@@ -167,16 +201,71 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
         self.__unicode_errors: str = unicode_errors
 
     @final
-    def serialize(self, packet: _ST_contra) -> bytes:
+    def serialize(self, packet: Any) -> bytes:
+        """
+        Returns the JSON representation of the Python object `packet`.
+
+        Roughly equivalent to::
+
+            def serialize(self, packet):
+                return json.dumps(packet)
+
+        Example:
+            >>> s = JSONSerializer()
+            >>> s.serialize({"key": [1, 2, 3], "data": None})
+            b'{"key":[1,2,3],"data":null}'
+
+        Parameters:
+            packet: The Python object to serialize.
+
+        Returns:
+            a byte sequence.
+        """
         return self.__encoder.encode(packet).encode(self.__encoding, self.__unicode_errors)
 
     @final
-    def incremental_serialize(self, packet: _ST_contra) -> Generator[bytes, None, None]:
+    def incremental_serialize(self, packet: Any) -> Generator[bytes, None, None]:
+        r"""
+        Returns the JSON representation of the Python object `packet`.
+
+        Example:
+            >>> s = JSONSerializer()
+            >>> b"".join(s.incremental_serialize({"key": [1, 2, 3], "data": None}))
+            b'{"key":[1,2,3],"data":null}\n'
+
+        Parameters:
+            packet: The Python object to serialize.
+
+        Yields:
+            all the parts of the JSON :term:`packet`.
+        """
         yield self.__encoder.encode(packet).encode(self.__encoding, self.__unicode_errors)
         yield b"\n"
 
     @final
-    def deserialize(self, data: bytes) -> _DT_co:
+    def deserialize(self, data: bytes) -> Any:
+        """
+        Creates a Python object representing the raw JSON :term:`packet` from `data`.
+
+        Roughly equivalent to::
+
+            def deserialize(self, data):
+                return json.loads(data)
+
+        Example:
+            >>> s = JSONSerializer()
+            >>> s.deserialize(b'{"key":[1,2,3],"data":null}')
+            {'key': [1, 2, 3], 'data': None}
+
+        Parameters:
+            data: The byte sequence to deserialize.
+
+        Raises:
+            DeserializeError: A :class:`UnicodeError` or :class:`~json.JSONDecodeError` have been raised.
+
+        Returns:
+            the deserialized Python object.
+        """
         try:
             document: str = data.decode(self.__encoding, self.__unicode_errors)
         except UnicodeError as exc:
@@ -184,7 +273,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
         finally:
             del data
         try:
-            packet: _DT_co = self.__decoder.decode(document)
+            packet: Any = self.__decoder.decode(document)
         except self.__decoder_error_cls as exc:
             raise DeserializeError(
                 f"JSON decode error: {exc}",
@@ -198,7 +287,29 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
         return packet
 
     @final
-    def incremental_deserialize(self) -> Generator[None, bytes, tuple[_DT_co, bytes]]:
+    def incremental_deserialize(self) -> Generator[None, bytes, tuple[Any, bytes]]:
+        """
+        Creates a Python object representing the raw JSON :term:`packet`.
+
+        Example:
+            >>> s = JSONSerializer()
+            >>> consumer = s.incremental_deserialize()
+            >>> next(consumer)
+            >>> consumer.send(b'{"key":[1,2,3]')
+            >>> consumer.send(b',"data":null}{"something":"remaining"}')
+            Traceback (most recent call last):
+            ...
+            StopIteration: ({'key': [1, 2, 3], 'data': None}, b'{"something":"remaining"}')
+
+        Yields:
+            :data:`None` until the whole :term:`packet` has been deserialized.
+
+        Raises:
+            IncrementalDeserializeError: A :class:`UnicodeError` or :class:`~json.JSONDecodeError` have been raised.
+
+        Returns:
+            a tuple with the deserialized Python object and the unused trailing data.
+        """
         complete_document, remaining_data = yield from _JSONParser.raw_parse()
 
         if not complete_document:
@@ -206,7 +317,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[_ST_contra, _DT_co]):
             complete_document = remaining_data
             remaining_data = b""
 
-        packet: _DT_co
+        packet: Any
         try:
             document: str = complete_document.decode(self.__encoding, self.__unicode_errors)
         except UnicodeError as exc:

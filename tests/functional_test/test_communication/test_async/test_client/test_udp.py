@@ -190,16 +190,34 @@ class TestAsyncUDPNetworkClient:
         await asyncio.sleep(0)
         try:
             # NOTE: Comparison using set because equality check does not verify order
-            assert {p async for p in client.iter_received_packets()} == {"A", "B", "C", "D", "E", "F"}
+            assert {p async for p in client.iter_received_packets(timeout=None)} == {"A", "B", "C", "D", "E", "F"}
         finally:
             close_task.cancel()
+            await asyncio.wait({close_task})
 
-    async def test____fileno____consistency(self, client: AsyncUDPNetworkClient[str, str]) -> None:
-        assert client.fileno() == client.socket.fileno()
+    @use_asyncio_transport_xfail_uvloop
+    async def test____iter_received_packets____yields_available_packets_within_given_timeout(
+        self,
+        client: AsyncUDPNetworkClient[str, str],
+        server: DatagramEndpoint,
+    ) -> None:
+        async def send_coro() -> None:
+            await server.sendto(b"A", client.get_local_address())
+            await asyncio.sleep(0.1)
+            await server.sendto(b"B", client.get_local_address())
+            await asyncio.sleep(0.4)
+            await server.sendto(b"C", client.get_local_address())
+            await asyncio.sleep(0.2)
+            await server.sendto(b"D", client.get_local_address())
+            await asyncio.sleep(0.5)
+            await server.sendto(b"E", client.get_local_address())
 
-    async def test____fileno____closed_client(self, client: AsyncUDPNetworkClient[str, str]) -> None:
-        await client.aclose()
-        assert client.fileno() == -1
+        send_task = asyncio.create_task(send_coro())
+        try:
+            assert [p async for p in client.iter_received_packets(timeout=1)] == ["A", "B", "C", "D"]
+        finally:
+            send_task.cancel()
+            await asyncio.wait({send_task})
 
     async def test____get_local_address____consistency(self, socket_family: int, client: AsyncUDPNetworkClient[str, str]) -> None:
         address = client.get_local_address()
@@ -353,7 +371,7 @@ class TestAsyncUDPNetworkClientConnection:
                 backend_kwargs=backend_kwargs,
             )
         ) as client:
-            with pytest.raises(OSError):
+            with pytest.raises(AttributeError):
                 _ = client.socket
 
             await client.wait_connected()
@@ -399,25 +417,6 @@ class TestAsyncUDPNetworkClientConnection:
             await client.wait_connected()
 
             assert client.get_remote_address()[:2] == remote_address
-
-    async def test____fileno____connection_not_performed_yet(
-        self,
-        remote_address: tuple[str, int],
-        datagram_protocol: DatagramProtocol[str, str],
-        backend_kwargs: dict[str, Any],
-    ) -> None:
-        async with contextlib.aclosing(
-            AsyncUDPNetworkClient(
-                remote_address,
-                datagram_protocol,
-                backend_kwargs=backend_kwargs,
-            )
-        ) as client:
-            assert client.fileno() == -1
-
-            await client.wait_connected()
-
-            assert client.fileno() > -1
 
     @use_asyncio_transport_xfail_uvloop
     async def test____send_packet____recv_packet____implicit_connection(
@@ -693,7 +692,7 @@ class TestAsyncUDPNetworkEndpoint:
             await asyncio.sleep(0)
             try:
                 # NOTE: Comparison using set because equality check does not verify order
-                assert {(p, addr) async for p, addr in client.iter_received_packets_from()} == {
+                assert {(p, addr) async for p, addr in client.iter_received_packets_from(timeout=None)} == {
                     ("A", expected_server_address),
                     ("B", expected_server_address),
                     ("C", expected_server_address),
@@ -703,13 +702,31 @@ class TestAsyncUDPNetworkEndpoint:
                 }
             finally:
                 close_task.cancel()
+                await asyncio.wait({close_task})
 
-    async def test____fileno____consistency(self, client: AsyncUDPNetworkEndpoint[str, str]) -> None:
-        assert client.fileno() == client.socket.fileno()
+    @use_asyncio_transport_xfail_uvloop
+    async def test____iter_received_packets____yields_available_packets_within_given_timeout(
+        self,
+        client: AsyncUDPNetworkEndpoint[str, str],
+        server: DatagramEndpoint,
+    ) -> None:
+        async def send_coro() -> None:
+            await server.sendto(b"A", client.get_local_address())
+            await asyncio.sleep(0.1)
+            await server.sendto(b"B", client.get_local_address())
+            await asyncio.sleep(0.4)
+            await server.sendto(b"C", client.get_local_address())
+            await asyncio.sleep(0.2)
+            await server.sendto(b"D", client.get_local_address())
+            await asyncio.sleep(0.5)
+            await server.sendto(b"E", client.get_local_address())
 
-    async def test____fileno____closed_client(self, client: AsyncUDPNetworkEndpoint[str, str]) -> None:
-        await client.aclose()
-        assert client.fileno() == -1
+        send_task = asyncio.create_task(send_coro())
+        try:
+            assert [p async for p, _ in client.iter_received_packets_from(timeout=1)] == ["A", "B", "C", "D"]
+        finally:
+            send_task.cancel()
+            await asyncio.wait({send_task})
 
     async def test____get_local_address____consistency(
         self,

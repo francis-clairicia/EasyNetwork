@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 class TestCBORSerializer(BaseSerializerConfigInstanceCheck):
     @pytest.fixture(scope="class")
     @staticmethod
-    def serializer_cls() -> type[CBORSerializer[Any, Any]]:
+    def serializer_cls() -> type[CBORSerializer]:
         return CBORSerializer
 
     @pytest.fixture(params=["encoder", "decoder"])
@@ -104,7 +104,7 @@ class TestCBORSerializer(BaseSerializerConfigInstanceCheck):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer: CBORSerializer[Any, Any] = CBORSerializer(encoder_config=encoder_config)
+        serializer: CBORSerializer = CBORSerializer(encoder_config=encoder_config)
         mock_encoder.encode.return_value = None
 
         # Act
@@ -132,7 +132,7 @@ class TestCBORSerializer(BaseSerializerConfigInstanceCheck):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer: CBORSerializer[Any, Any] = CBORSerializer(decoder_config=decoder_config)
+        serializer: CBORSerializer = CBORSerializer(decoder_config=decoder_config)
         mock_decoder.decode.return_value = mocker.sentinel.packet
 
         # Act

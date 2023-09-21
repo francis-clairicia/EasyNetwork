@@ -1,3 +1,17 @@
+# Copyright 2021-2023, Francis Clairicia-Rose-Claire-Josephine
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+#
 from __future__ import annotations
 
 __all__ = [
@@ -29,7 +43,6 @@ import selectors as _selectors
 import socket as _socket
 import threading
 import time
-import traceback
 from collections.abc import Callable, Iterator
 from math import isinf, isnan
 from typing import TYPE_CHECKING, Any, Literal, ParamSpec, TypeGuard, TypeVar, assert_never
@@ -295,21 +308,6 @@ def transform_future_exception(exc: BaseException) -> BaseException:
     return exc
 
 
-def recursively_clear_exception_traceback_frames(exc: BaseException) -> None:
-    _recursively_clear_exception_traceback_frames_with_memo(exc, set())
-
-
-def _recursively_clear_exception_traceback_frames_with_memo(exc: BaseException, memo: set[int]) -> None:
-    if id(exc) in memo:
-        return
-    memo.add(id(exc))
-    traceback.clear_frames(exc.__traceback__)
-    if exc.__context__ is not None:
-        _recursively_clear_exception_traceback_frames_with_memo(exc.__context__, memo)
-    if exc.__cause__ is not exc.__context__ and exc.__cause__ is not None:
-        _recursively_clear_exception_traceback_frames_with_memo(exc.__cause__, memo)
-
-
 def remove_traceback_frames_in_place(exc: _ExcType, n: int) -> _ExcType:
     tb = exc.__traceback__
     for _ in range(n):
@@ -331,12 +329,15 @@ def lock_with_timeout(
             yield None
         return
     timeout = validate_timeout_delay(timeout, positive_check=False)
-    _start = time.perf_counter()
-    if not lock.acquire(True, timeout if timeout > 0 else 0.0):
-        raise TimeoutError(error_message)
-    try:
-        _end = time.perf_counter()
-        timeout -= _end - _start
+    with contextlib.ExitStack() as stack:
+        # Try to acquire without blocking first
+        if lock.acquire(blocking=False):
+            stack.push(lock)
+        else:
+            _start = time.perf_counter()
+            if timeout <= 0 or not lock.acquire(True, timeout):
+                raise TimeoutError(error_message)
+            stack.push(lock)
+            _end = time.perf_counter()
+            timeout -= _end - _start
         yield timeout if timeout > 0 else 0.0
-    finally:
-        lock.release()

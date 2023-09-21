@@ -1,7 +1,18 @@
-# Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
+# Copyright 2021-2023, Francis Clairicia-Rose-Claire-Josephine
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 #
 #
-"""pickle-based network packet serializer module"""
+"""pickle-based packet serializer module"""
 
 from __future__ import annotations
 
@@ -15,16 +26,13 @@ from collections.abc import Callable
 from dataclasses import asdict as dataclass_asdict, dataclass, field
 from functools import partial
 from io import BytesIO
-from typing import IO, TYPE_CHECKING, TypeVar, final
+from typing import IO, TYPE_CHECKING, Any, final
 
 from ..exceptions import DeserializeError
 from .abc import AbstractPacketSerializer
 
 if TYPE_CHECKING:
-    from pickle import Pickler as _Pickler, Unpickler as _Unpickler
-
-_ST_contra = TypeVar("_ST_contra", contravariant=True)
-_DT_co = TypeVar("_DT_co", covariant=True)
+    import pickle as _typing_pickle
 
 
 def _get_default_pickler_protocol() -> int:
@@ -35,18 +43,34 @@ def _get_default_pickler_protocol() -> int:
 
 @dataclass(kw_only=True)
 class PicklerConfig:
+    """
+    A dataclass with the Pickler options.
+
+    See :class:`pickle.Pickler` for details.
+    """
+
     protocol: int = field(default_factory=_get_default_pickler_protocol)
     fix_imports: bool = False
 
 
 @dataclass(kw_only=True)
 class UnpicklerConfig:
+    """
+    A dataclass with the Unpickler options.
+
+    See :class:`pickle.Unpickler` for details.
+    """
+
     fix_imports: bool = False
     encoding: str = "utf-8"
     errors: str = "strict"
 
 
-class PickleSerializer(AbstractPacketSerializer[_ST_contra, _DT_co]):
+class PickleSerializer(AbstractPacketSerializer[Any]):
+    """
+    A :term:`one-shot serializer` built on top of the :mod:`pickle` module.
+    """
+
     __slots__ = ("__optimize", "__pickler_cls", "__unpickler_cls")
 
     def __init__(
@@ -54,10 +78,18 @@ class PickleSerializer(AbstractPacketSerializer[_ST_contra, _DT_co]):
         pickler_config: PicklerConfig | None = None,
         unpickler_config: UnpicklerConfig | None = None,
         *,
-        pickler_cls: type[_Pickler] | None = None,
-        unpickler_cls: type[_Unpickler] | None = None,
+        pickler_cls: type[_typing_pickle.Pickler] | None = None,
+        unpickler_cls: type[_typing_pickle.Unpickler] | None = None,
         pickler_optimize: bool = False,
     ) -> None:
+        """
+        Parameters:
+            pickler_config: Parameter object to configure the :class:`~pickle.Pickler`.
+            unpickler_config: Parameter object to configure the :class:`~pickle.Unpickler`.
+            pickler_cls: The :class:`~pickle.Pickler` class to use (see :ref:`pickle-inst`).
+            unpickler_cls: The :class:`~pickle.Unpickler` class to use (see :ref:`pickle-restrict`).
+            pickler_optimize: If `True`, :func:`pickletools.optimize` will be applied to :meth:`pickle.Pickler.dump` output.
+        """
         super().__init__()
 
         import pickle
@@ -67,8 +99,8 @@ class PickleSerializer(AbstractPacketSerializer[_ST_contra, _DT_co]):
             import pickletools
 
             self.__optimize = pickletools.optimize
-        self.__pickler_cls: Callable[[IO[bytes]], _Pickler]
-        self.__unpickler_cls: Callable[[IO[bytes]], _Unpickler]
+        self.__pickler_cls: Callable[[IO[bytes]], _typing_pickle.Pickler]
+        self.__unpickler_cls: Callable[[IO[bytes]], _typing_pickle.Unpickler]
 
         if pickler_config is None:
             pickler_config = PicklerConfig()
@@ -86,7 +118,21 @@ class PickleSerializer(AbstractPacketSerializer[_ST_contra, _DT_co]):
         self.__unpickler_cls = partial(unpickler_cls or pickle.Unpickler, **dataclass_asdict(unpickler_config), buffers=None)
 
     @final
-    def serialize(self, packet: _ST_contra) -> bytes:
+    def serialize(self, packet: Any) -> bytes:
+        """
+        Returns the pickle representation of the Python object `packet`.
+
+        Roughly equivalent to::
+
+            def serialize(self, packet):
+                return pickle.dumps(packet)
+
+        Parameters:
+            packet: The Python object to serialize.
+
+        Returns:
+            a byte sequence.
+        """
         with BytesIO() as buffer:
             self.__pickler_cls(buffer).dump(packet)
             pickle: bytes = buffer.getvalue()
@@ -95,10 +141,28 @@ class PickleSerializer(AbstractPacketSerializer[_ST_contra, _DT_co]):
         return pickle
 
     @final
-    def deserialize(self, data: bytes) -> _DT_co:
+    def deserialize(self, data: bytes) -> Any:
+        """
+        Creates a Python object representing the raw pickle :term:`packet` from `data`.
+
+        Roughly equivalent to::
+
+            def deserialize(self, data):
+                return pickle.loads(data)
+
+        Parameters:
+            data: The byte sequence to deserialize.
+
+        Raises:
+            DeserializeError: Too little or too much data to parse.
+            DeserializeError: An unrelated deserialization error occurred.
+
+        Returns:
+            the deserialized Python object.
+        """
         with BytesIO(data) as buffer:
             try:
-                packet: _DT_co = self.__unpickler_cls(buffer).load()
+                packet: Any = self.__unpickler_cls(buffer).load()
             except Exception as exc:
                 raise DeserializeError(str(exc) or "Invalid token", error_info={"data": data}) from exc
             finally:

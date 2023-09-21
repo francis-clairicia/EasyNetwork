@@ -1,4 +1,15 @@
-# Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
+# Copyright 2021-2023, Francis Clairicia-Rose-Claire-Josephine
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 #
 #
 """asyncio engine for easynetwork.api_async
@@ -28,7 +39,7 @@ else:
     ssl = _ssl
     del _ssl
 
-from easynetwork.api_async.backend.abc import AbstractAsyncBackend
+from easynetwork.api_async.backend.abc import AsyncBackend as AbstractAsyncBackend
 from easynetwork.api_async.backend.sniffio import current_async_library_cvar as _sniffio_current_async_library_cvar
 
 from ._utils import create_connection, create_datagram_socket, ensure_resolved, open_listener_sockets_from_getaddrinfo_result
@@ -44,7 +55,7 @@ if TYPE_CHECKING:
     import concurrent.futures
     from ssl import SSLContext as _SSLContext
 
-    from easynetwork.api_async.backend.abc import AbstractAcceptedSocket, ILock
+    from easynetwork.api_async.backend.abc import AcceptedSocket as AbstractAcceptedSocket, ILock
 
 _P = ParamSpec("_P")
 _T = TypeVar("_T")
@@ -165,12 +176,12 @@ class AsyncioBackend(AbstractAsyncBackend):
 
     def spawn_task(
         self,
-        coro_func: Callable[_P, Coroutine[Any, Any, _T]],
+        coro_func: Callable[..., Coroutine[Any, Any, _T]],
         /,
-        *args: _P.args,
-        **kwargs: _P.kwargs,
+        *args: Any,
+        context: contextvars.Context | None = None,
     ) -> SystemTask[_T]:
-        return SystemTask(coro_func(*args, **kwargs))
+        return SystemTask(coro_func(*args), context=context)
 
     def create_task_group(self) -> TaskGroup:
         return TaskGroup()
@@ -456,7 +467,7 @@ class AsyncioBackend(AbstractAsyncBackend):
             if future.cancelled():
                 # Task cancellation prevails over future cancellation
                 await asyncio.sleep(0)
-            return future.result()
+            return future.result(timeout=0)
         finally:
             del future
 

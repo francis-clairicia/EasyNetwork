@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 class TestMessagePackSerializer(BaseSerializerConfigInstanceCheck):
     @pytest.fixture(scope="class")
     @staticmethod
-    def serializer_cls() -> type[MessagePackSerializer[Any, Any]]:
+    def serializer_cls() -> type[MessagePackSerializer]:
         return MessagePackSerializer
 
     @pytest.fixture(params=["packer", "unpacker"])
@@ -78,7 +78,7 @@ class TestMessagePackSerializer(BaseSerializerConfigInstanceCheck):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer: MessagePackSerializer[Any, Any] = MessagePackSerializer(packer_config=packer_config)
+        serializer: MessagePackSerializer = MessagePackSerializer(packer_config=packer_config)
         mock_packb.return_value = mocker.sentinel.result
 
         # Act
@@ -106,7 +106,7 @@ class TestMessagePackSerializer(BaseSerializerConfigInstanceCheck):
         # Arrange
         import msgpack
 
-        serializer: MessagePackSerializer[Any, Any] = MessagePackSerializer(unpacker_config=unpacker_config)
+        serializer: MessagePackSerializer = MessagePackSerializer(unpacker_config=unpacker_config)
         mock_unpackb.return_value = mocker.sentinel.packet
 
         # Act
@@ -134,7 +134,7 @@ class TestMessagePackSerializer(BaseSerializerConfigInstanceCheck):
         # Arrange
         import msgpack
 
-        serializer: MessagePackSerializer[Any, Any] = MessagePackSerializer()
+        serializer: MessagePackSerializer = MessagePackSerializer()
         mock_unpackb.side_effect = msgpack.OutOfData
 
         # Act & Assert
@@ -153,7 +153,7 @@ class TestMessagePackSerializer(BaseSerializerConfigInstanceCheck):
         # Arrange
         import msgpack
 
-        serializer: MessagePackSerializer[Any, Any] = MessagePackSerializer()
+        serializer: MessagePackSerializer = MessagePackSerializer()
         mock_unpackb.side_effect = msgpack.ExtraData(mocker.sentinel.packet, b"extra")
 
         # Act & Assert
@@ -170,7 +170,7 @@ class TestMessagePackSerializer(BaseSerializerConfigInstanceCheck):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer: MessagePackSerializer[Any, Any] = MessagePackSerializer()
+        serializer: MessagePackSerializer = MessagePackSerializer()
         mock_unpackb.side_effect = Exception
 
         # Act & Assert

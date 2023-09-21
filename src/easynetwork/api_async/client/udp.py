@@ -1,4 +1,15 @@
-# Copyright (c) 2021-2023, Francis Clairicia-Rose-Claire-Josephine
+# Copyright 2021-2023, Francis Clairicia-Rose-Claire-Josephine
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 #
 #
 """Asynchronous network client module"""
@@ -7,11 +18,15 @@ from __future__ import annotations
 
 __all__ = ["AsyncUDPNetworkClient", "AsyncUDPNetworkEndpoint"]
 
+import contextlib
 import errno as _errno
+import math
 import socket as _socket
-from collections.abc import AsyncIterator, Mapping
-from typing import TYPE_CHECKING, Any, Generic, Self, TypedDict, TypeVar, final, overload
+import time
+from collections.abc import AsyncGenerator, AsyncIterator, Mapping
+from typing import TYPE_CHECKING, Any, Generic, Self, TypedDict, final, overload
 
+from ..._typevars import _ReceivedPacketT, _SentPacketT
 from ...exceptions import ClientClosedError, DatagramProtocolParseError
 from ...protocol import DatagramProtocol
 from ...tools._utils import (
@@ -23,16 +38,13 @@ from ...tools._utils import (
 )
 from ...tools.constants import MAX_DATAGRAM_BUFSIZE
 from ...tools.socket import SocketAddress, SocketProxy, new_socket_address
-from ..backend.abc import AbstractAsyncBackend, AbstractAsyncDatagramSocketAdapter, ILock
+from ..backend.abc import AsyncBackend, AsyncDatagramSocketAdapter, ILock
 from ..backend.factory import AsyncBackendFactory
 from ..backend.tasks import SingleTaskRunner
 from .abc import AbstractAsyncNetworkClient
 
 if TYPE_CHECKING:
     from types import TracebackType
-
-_ReceivedPacketT = TypeVar("_ReceivedPacketT")
-_SentPacketT = TypeVar("_SentPacketT")
 
 
 class _EndpointInfo(TypedDict):
@@ -42,6 +54,13 @@ class _EndpointInfo(TypedDict):
 
 
 class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
+    """Asynchronous generic UDP endpoint interface.
+
+    See Also:
+        :class:`.AsyncUDPNetworkServer`
+            An advanced API for handling datagrams.
+    """
+
     __slots__ = (
         "__socket",
         "__backend",
@@ -61,7 +80,7 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         local_address: tuple[str | None, int] | None = ...,
         remote_address: tuple[str, int] | None = ...,
         reuse_port: bool = ...,
-        backend: str | AbstractAsyncBackend | None = ...,
+        backend: str | AsyncBackend | None = ...,
         backend_kwargs: Mapping[str, Any] | None = ...,
     ) -> None:
         ...
@@ -72,7 +91,7 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
         *,
         socket: _socket.socket,
-        backend: str | AbstractAsyncBackend | None = ...,
+        backend: str | AsyncBackend | None = ...,
         backend_kwargs: Mapping[str, Any] | None = ...,
     ) -> None:
         ...
@@ -81,10 +100,31 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         self,
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
         *,
-        backend: str | AbstractAsyncBackend | None = None,
+        backend: str | AsyncBackend | None = None,
         backend_kwargs: Mapping[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
+        """
+        Common Parameters:
+            protocol: The :term:`protocol object` to use.
+
+        Connection Parameters:
+            remote_address: If given, is a ``(host, port)`` tuple used to connect the socket.
+            local_address: If given, is a ``(local_host, local_port)`` tuple used to bind the socket locally.
+            reuse_port: Tells the kernel to allow this endpoint to be bound to the same port as other existing
+                        endpoints are bound to, so long as they all set this flag when being created.
+                        This option is not supported on Windows and some Unixes.
+                        If the SO_REUSEPORT constant is not defined then this capability is unsupported.
+
+        Socket Parameters:
+            socket: An already connected UDP :class:`socket.socket`. If `socket` is given,
+                    none of and `local_address`, `remote_address` and `reuse_port` should be specified.
+
+        Backend Parameters:
+            backend: the backend to use. Automatically determined otherwise.
+            backend_kwargs: Keyword arguments for backend instanciation.
+                            Ignored if `backend` is already an :class:`.AsyncBackend` instance.
+        """
         super().__init__()
         backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
 
@@ -92,11 +132,11 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             raise TypeError(f"Expected a DatagramProtocol object, got {protocol!r}")
 
         self.__protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT] = protocol
-        self.__socket: AbstractAsyncDatagramSocketAdapter | None = None
-        self.__backend: AbstractAsyncBackend = backend
+        self.__socket: AsyncDatagramSocketAdapter | None = None
+        self.__backend: AsyncBackend = backend
         self.__info: _EndpointInfo | None = None
 
-        self.__socket_builder: SingleTaskRunner[AbstractAsyncDatagramSocketAdapter] | None = None
+        self.__socket_builder: SingleTaskRunner[AsyncDatagramSocketAdapter] | None = None
         match kwargs:
             case {"socket": _socket.socket() as socket, **kwargs}:
                 _check_socket_family(socket.family)
@@ -119,6 +159,9 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         return f"<{type(self).__name__} socket={socket!r}>"
 
     async def __aenter__(self) -> Self:
+        """
+        Calls :meth:`wait_bound`.
+        """
         await self.wait_bound()
         return self
 
@@ -128,15 +171,46 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
+        """
+        Calls :meth:`aclose`.
+        """
         await self.aclose()
 
     def __getstate__(self) -> Any:  # pragma: no cover
         raise TypeError(f"cannot pickle {self.__class__.__name__!r} object")
 
     def is_bound(self) -> bool:
+        """
+        Checks if the endpoint initialization is finished.
+
+        See Also:
+            :meth:`wait_bound` method.
+
+        Returns:
+            the endpoint connection state.
+        """
         return self.__socket is not None and self.__info is not None
 
     async def wait_bound(self) -> None:
+        """
+        Finishes initializing the endpoint, doing the asynchronous operations that could not be done in the constructor.
+
+        It is not needed to call it directly if the endpoint is used as an :term:`asynchronous context manager`::
+
+            async with endpoint:  # wait_bound() has been called.
+                ...
+
+        Can be safely called multiple times.
+
+        Warning:
+            In the case of a cancellation, this would leave the endpoint in an inconsistent state.
+
+            It is recommended to close the endpoint in this case.
+
+        Raises:
+            ClientClosedError: the client object is closed.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
+        """
         if self.__socket is None:
             socket_builder = self.__socket_builder
             if socket_builder is None:
@@ -150,7 +224,7 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             self.__info = self.__build_info_dict(self.__socket)
 
     @staticmethod
-    def __build_info_dict(socket: AbstractAsyncDatagramSocketAdapter) -> _EndpointInfo:
+    def __build_info_dict(socket: AsyncDatagramSocketAdapter) -> _EndpointInfo:
         socket_proxy = SocketProxy(socket.socket())
         local_address: SocketAddress = new_socket_address(socket.get_local_address(), socket_proxy.family)
         if local_address.port == 0:
@@ -166,14 +240,36 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             "remote_address": remote_address,
         }
 
-    @final
     def is_closing(self) -> bool:
+        """
+        Checks if the endpoint is closed or in the process of being closed.
+
+        If :data:`True`, all future operations on the endpoint object will raise a :exc:`.ClientClosedError`.
+
+        See Also:
+            :meth:`aclose` method.
+
+        Returns:
+            the endpoint state.
+        """
         if self.__socket_builder is not None:
             return False
         socket = self.__socket
         return socket is None or socket.is_closing()
 
     async def aclose(self) -> None:
+        """
+        Close the endpoint.
+
+        Once that happens, all future operations on the endpoint object will raise a :exc:`.ClientClosedError`.
+
+        Warning:
+            :meth:`aclose` performs a graceful close, waiting for the connection to close.
+
+            If :meth:`aclose` is cancelled, the client is closed abruptly.
+
+        Can be safely called multiple times.
+        """
         if self.__socket_builder is not None:
             self.__socket_builder.cancel()
             self.__socket_builder = None
@@ -193,6 +289,25 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         packet: _SentPacketT,
         address: tuple[str, int] | tuple[str, int, int, int] | None,
     ) -> None:
+        """
+        Sends `packet` to the remote endpoint `address`. Does not require task synchronization.
+
+        Calls :meth:`wait_bound`.
+
+        If a remote address is configured, `address` must be :data:`None` or the same as the remote address,
+        otherwise `address` must not be :data:`None`.
+
+        Warning:
+            In the case of a cancellation, it is impossible to know if all the packet data has been sent.
+
+        Parameters:
+            packet: the Python object to send.
+
+        Raises:
+            ClientClosedError: the endpoint object is closed.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
+            ValueError: Invalid `address` value.
+        """
         async with self.__send_lock:
             socket = await self.__ensure_opened()
             assert self.__info is not None  # nosec assert_used
@@ -208,6 +323,19 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             _check_real_socket_state(self.socket)
 
     async def recv_packet_from(self) -> tuple[_ReceivedPacketT, SocketAddress]:
+        """
+        Waits for a new packet to arrive from another endpoint. Does not require task synchronization.
+
+        Calls :meth:`wait_bound`.
+
+        Raises:
+            ClientClosedError: the endpoint object is closed.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
+            DatagramProtocolParseError: invalid data received.
+
+        Returns:
+            A ``(packet, address)`` tuple, where `address` is the endpoint that delivered this packet.
+        """
         async with self.__receive_lock:
             socket = await self.__ensure_opened()
             data, sender = await socket.recvfrom(MAX_DATAGRAM_BUFSIZE)
@@ -220,34 +348,88 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             finally:
                 del data
 
-    async def iter_received_packets_from(self) -> AsyncIterator[tuple[_ReceivedPacketT, SocketAddress]]:
+    async def iter_received_packets_from(
+        self,
+        *,
+        timeout: float | None = 0,
+    ) -> AsyncGenerator[tuple[_ReceivedPacketT, SocketAddress], None]:
+        """
+        Returns an :term:`asynchronous iterator` that waits for a new packet to arrive from another endpoint.
+
+        If `timeout` is not :data:`None`, the entire receive operation will take at most `timeout` seconds; it defaults to zero.
+
+        Important:
+            The `timeout` is for the entire iterator::
+
+                async_iterator = endpoint.iter_received_packets_from(timeout=10)
+
+                # Let's say that this call took 6 seconds...
+                first_packet = await anext(async_iterator)
+
+                # ...then this call has a maximum of 4 seconds, not 10.
+                second_packet = await anext(async_iterator)
+
+            The time taken outside the iterator object is not decremented to the timeout parameter.
+
+        Parameters:
+            timeout: the allowed time (in seconds) for all the receive operations.
+
+        Yields:
+            A ``(packet, address)`` tuple, where `address` is the endpoint that delivered this packet.
+        """
+
+        if timeout is None:
+            timeout = math.inf
+
+        perf_counter = time.perf_counter
+        timeout_after = self.get_backend().timeout
+
         while True:
             try:
-                packet_tuple = await self.recv_packet_from()
+                async with timeout_after(timeout):
+                    _start = perf_counter()
+                    packet_tuple = await self.recv_packet_from()
+                    _end = perf_counter()
             except OSError:
                 return
             yield packet_tuple
+            timeout -= _end - _start
+            timeout = max(timeout, 0)
 
     def get_local_address(self) -> SocketAddress:
+        """
+        Returns the local socket IP address.
+
+        Raises:
+            ClientClosedError: the endpoint object is closed.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
+
+        Returns:
+            the endpoint's local address.
+        """
         if self.__info is None:
             raise _error_from_errno(_errno.ENOTSOCK)
         return self.__info["local_address"]
 
     def get_remote_address(self) -> SocketAddress | None:
+        """
+        Returns the remote socket IP address.
+
+        Raises:
+            ClientClosedError: the endpoint object is closed.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
+
+        Returns:
+            the endpoint's remote address if configured, :data:`None` otherwise.
+        """
         if self.__info is None:
             raise _error_from_errno(_errno.ENOTSOCK)
         return self.__info["remote_address"]
 
-    def fileno(self) -> int:
-        socket = self.__socket
-        if socket is None:
-            return -1
-        return socket.socket().fileno()
-
-    def get_backend(self) -> AbstractAsyncBackend:
+    def get_backend(self) -> AsyncBackend:
         return self.__backend
 
-    async def __ensure_opened(self) -> AbstractAsyncDatagramSocketAdapter:
+    async def __ensure_opened(self) -> AsyncDatagramSocketAdapter:
         await self.wait_bound()
         assert self.__socket is not None  # nosec assert_used
         if self.__socket.is_closing():
@@ -257,12 +439,20 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
     @property
     @final
     def socket(self) -> SocketProxy:
+        """A view to the underlying socket instance. Read-only attribute.
+
+        May raise :exc:`AttributeError` if :meth:`wait_bound` was not called.
+        """
         if self.__info is None:
-            raise _error_from_errno(_errno.ENOTSOCK)
+            raise AttributeError("Socket not connected")
         return self.__info["proxy"]
 
 
 class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPacketT], Generic[_SentPacketT, _ReceivedPacketT]):
+    """
+    An asynchronous network client interface for UDP communication.
+    """
+
     __slots__ = ("__endpoint",)
 
     @overload
@@ -274,7 +464,7 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         *,
         local_address: tuple[str, int] | None = ...,
         reuse_port: bool = ...,
-        backend: str | AbstractAsyncBackend | None = ...,
+        backend: str | AsyncBackend | None = ...,
         backend_kwargs: Mapping[str, Any] | None = ...,
     ) -> None:
         ...
@@ -286,7 +476,7 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         /,
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
         *,
-        backend: str | AbstractAsyncBackend | None = ...,
+        backend: str | AsyncBackend | None = ...,
         backend_kwargs: Mapping[str, Any] | None = ...,
     ) -> None:
         ...
@@ -298,6 +488,27 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
         **kwargs: Any,
     ) -> None:
+        """
+        Common Parameters:
+            protocol: The :term:`protocol object` to use.
+
+        Connection Parameters:
+            address: A pair of ``(host, port)`` for connection.
+            local_address: If given, is a ``(local_host, local_port)`` tuple used to bind the socket locally.
+            reuse_port: Tells the kernel to allow this endpoint to be bound to the same port as other existing
+                        endpoints are bound to, so long as they all set this flag when being created.
+                        This option is not supported on Windows and some Unixes.
+                        If the SO_REUSEPORT constant is not defined then this capability is unsupported.
+
+        Socket Parameters:
+            socket: An already connected UDP :class:`socket.socket`. If `socket` is given,
+                    none of and `local_address` and `reuse_port` should be specified.
+
+        Backend Parameters:
+            backend: the backend to use. Automatically determined otherwise.
+            backend_kwargs: Keyword arguments for backend instanciation.
+                            Ignored if `backend` is already an :class:`.AsyncBackend` instance.
+        """
         super().__init__()
 
         endpoint: AsyncUDPNetworkEndpoint[_SentPacketT, _ReceivedPacketT]
@@ -322,45 +533,142 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
             return f"<{type(self).__name__} (partially initialized)>"
 
     def is_connected(self) -> bool:
+        """
+        Checks if the client initialization is finished.
+
+        See Also:
+            :meth:`wait_connected` method.
+
+        Returns:
+            the client connection state.
+        """
         return self.__endpoint.is_bound() and self.__endpoint.get_remote_address() is not None
 
     async def wait_connected(self) -> None:
+        """
+        Finishes initializing the client, doing the asynchronous operations that could not be done in the constructor.
+        Does not require task synchronization.
+
+        It is not needed to call it directly if the client is used as an :term:`asynchronous context manager`::
+
+            async with client:  # wait_connected() has been called.
+                ...
+
+        Can be safely called multiple times.
+
+        Raises:
+            ClientClosedError: the client object is closed.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
+        """
         await self.__endpoint.wait_bound()
         self.__check_remote_address()
 
-    @final
     def is_closing(self) -> bool:
+        """
+        Checks if the client is closed or in the process of being closed.
+
+        If :data:`True`, all future operations on the client object will raise a :exc:`.ClientClosedError`.
+
+        See Also:
+            :meth:`aclose` method.
+
+        Returns:
+            the client state.
+        """
         return self.__endpoint.is_closing()
 
     async def aclose(self) -> None:
+        """
+        Close the client. Does not require task synchronization.
+
+        Once that happens, all future operations on the client object will raise a :exc:`.ClientClosedError`.
+        The remote end will receive no more data (after queued data is flushed).
+
+        Warning:
+            :meth:`aclose` performs a graceful close, waiting for the connection to close.
+
+            If :meth:`aclose` is cancelled, the client is closed abruptly.
+
+        Can be safely called multiple times.
+        """
         return await self.__endpoint.aclose()
 
     async def send_packet(self, packet: _SentPacketT) -> None:
+        """
+        Sends `packet` to the remote endpoint. Does not require task synchronization.
+
+        Calls :meth:`wait_connected`.
+
+        Warning:
+            In the case of a cancellation, it is impossible to know if all the packet data has been sent.
+
+        Parameters:
+            packet: the Python object to send.
+
+        Raises:
+            ClientClosedError: the client object is closed.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
+        """
         await self.wait_connected()
         return await self.__endpoint.send_packet_to(packet, None)
 
     async def recv_packet(self) -> _ReceivedPacketT:
+        """
+        Waits for a new packet to arrive from the remote endpoint. Does not require task synchronization.
+
+        Calls :meth:`wait_connected`.
+
+        Raises:
+            ClientClosedError: the client object is closed.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
+            DatagramProtocolParseError: invalid data received.
+
+        Returns:
+            the received packet.
+        """
         await self.wait_connected()
         packet, _ = await self.__endpoint.recv_packet_from()
         return packet
 
-    async def iter_received_packets(self) -> AsyncIterator[_ReceivedPacketT]:
+    async def iter_received_packets(self, *, timeout: float | None = 0) -> AsyncIterator[_ReceivedPacketT]:
         await self.wait_connected()
-        async for packet, _ in self.__endpoint.iter_received_packets_from():
-            yield packet
+        async with contextlib.aclosing(self.__endpoint.iter_received_packets_from(timeout=timeout)) as generator:
+            async for packet, _ in generator:
+                yield packet
+
+    iter_received_packets.__doc__ = AbstractAsyncNetworkClient.iter_received_packets.__doc__
 
     def get_local_address(self) -> SocketAddress:
+        """
+        Returns the local socket IP address.
+
+        Raises:
+            ClientClosedError: the client object is closed.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
+
+        Returns:
+            the client's local address.
+        """
         return self.__endpoint.get_local_address()
 
     def get_remote_address(self) -> SocketAddress:
+        """
+        Returns the remote socket IP address.
+
+        Raises:
+            ClientClosedError: the client object is closed.
+            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
+
+        Returns:
+            the client's remote address.
+        """
         remote_address: SocketAddress = self.__check_remote_address()
         return remote_address
 
-    def fileno(self) -> int:
-        return self.__endpoint.fileno()
-
-    def get_backend(self) -> AbstractAsyncBackend:
+    def get_backend(self) -> AsyncBackend:
         return self.__endpoint.get_backend()
+
+    get_backend.__doc__ = AbstractAsyncNetworkClient.get_backend.__doc__
 
     def __check_remote_address(self) -> SocketAddress:
         remote_address: SocketAddress | None = self.__endpoint.get_remote_address()
@@ -371,4 +679,8 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
     @property
     @final
     def socket(self) -> SocketProxy:
+        """A view to the underlying socket instance. Read-only attribute.
+
+        May raise :exc:`AttributeError` if :meth:`wait_connected` was not called.
+        """
         return self.__endpoint.socket

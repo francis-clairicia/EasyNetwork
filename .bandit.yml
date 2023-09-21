@@ -2,3 +2,6 @@ exclude_dirs: ['tests']
 skips: [
   'B403',  # Imports of "pickle"
 ]
+
+assert_used:
+  skips: ['docs/**/*.py']
