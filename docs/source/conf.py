@@ -15,6 +15,7 @@ project = "EasyNetwork"
 copyright = "2023, Francis Clairicia-Rose-Claire-Josephine"
 author = "FrankySnow9"
 release = "1.0.0rc4"
+version = release
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
