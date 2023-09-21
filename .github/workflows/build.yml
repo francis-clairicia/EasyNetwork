@@ -65,7 +65,7 @@ jobs:
     env:
       SOURCE_DATE_EPOCH: ${{ inputs.SOURCE_DATE_EPOCH }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Setup tox
         uses: ./.github/actions/setup-tox
         with:
