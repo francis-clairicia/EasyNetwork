@@ -425,7 +425,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         """
         if (socket := self.__socket) is None or socket.is_closing():
             return None
-        return new_socket_address(socket.get_local_address(), socket.socket().family)
+        return new_socket_address(socket.socket().getsockname(), socket.socket().family)
 
     def get_backend(self) -> AsyncBackend:
         return self.__backend

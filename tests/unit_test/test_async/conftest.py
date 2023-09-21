@@ -4,12 +4,7 @@ import asyncio
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from easynetwork.api_async.backend.abc import (
-    AsyncBackend,
-    AsyncDatagramSocketAdapter,
-    AsyncHalfCloseableStreamSocketAdapter,
-    AsyncStreamSocketAdapter,
-)
+from easynetwork.api_async.backend.abc import AsyncBackend, AsyncDatagramSocketAdapter, AsyncStreamSocketAdapter
 
 import pytest
 
@@ -53,17 +48,9 @@ def mock_backend(fake_cancellation_cls: type[BaseException], mocker: MockerFixtu
 
 
 @pytest.fixture
-def mock_stream_socket_adapter_factory(request: pytest.FixtureRequest, mocker: MockerFixture) -> Callable[[], MagicMock]:
-    param = getattr(request, "param", None)
-    assert param in ("eof_support", None)
-
-    eof_support: bool = param == "eof_support"
-
+def mock_stream_socket_adapter_factory(mocker: MockerFixture) -> Callable[[], MagicMock]:
     def factory() -> MagicMock:
-        if eof_support:
-            mock = mocker.NonCallableMagicMock(spec=AsyncHalfCloseableStreamSocketAdapter)
-        else:
-            mock = mocker.NonCallableMagicMock(spec=AsyncStreamSocketAdapter)
+        mock = mocker.NonCallableMagicMock(spec=AsyncStreamSocketAdapter)
         mock.sendall_fromiter = mocker.MagicMock(side_effect=lambda iterable_of_data: mock.sendall(b"".join(iterable_of_data)))
         mock.is_closing.return_value = False
         return mock

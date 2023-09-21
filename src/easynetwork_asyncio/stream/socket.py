@@ -20,16 +20,11 @@ from __future__ import annotations
 __all__ = ["AsyncioTransportStreamSocketAdapter", "RawStreamSocketAdapter"]
 
 import asyncio
-import errno
 import socket as _socket
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, Any, Self, cast, final
+from typing import TYPE_CHECKING, final
 
-from easynetwork.api_async.backend.abc import (
-    AsyncHalfCloseableStreamSocketAdapter as AbstractAsyncHalfCloseableStreamSocketAdapter,
-    AsyncStreamSocketAdapter as AbstractAsyncStreamSocketAdapter,
-)
-from easynetwork.tools._utils import error_from_errno as _error_from_errno
+from easynetwork.api_async.backend.abc import AsyncStreamSocketAdapter as AbstractAsyncStreamSocketAdapter
 
 from ..socket import AsyncSocket
 
@@ -37,21 +32,13 @@ if TYPE_CHECKING:
     import asyncio.trsock
 
 
+@final
 class AsyncioTransportStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
     __slots__ = (
         "__reader",
         "__writer",
         "__socket",
     )
-
-    def __new__(
-        cls,
-        reader: asyncio.StreamReader,
-        writer: asyncio.StreamWriter,
-    ) -> Self:
-        if cls is AsyncioTransportStreamSocketAdapter and writer.can_write_eof():
-            return cast(Self, super().__new__(AsyncioTransportHalfCloseableStreamSocketAdapter))
-        return super().__new__(cls)
 
     def __init__(
         self,
@@ -78,18 +65,6 @@ class AsyncioTransportStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
     def is_closing(self) -> bool:
         return self.__writer.is_closing()
 
-    def get_local_address(self) -> tuple[Any, ...]:
-        local_address: tuple[Any, ...] | None = self.__writer.get_extra_info("sockname")
-        if local_address is None:
-            raise _error_from_errno(errno.ENOTSOCK)
-        return local_address
-
-    def get_remote_address(self) -> tuple[Any, ...]:
-        remote_address: tuple[Any, ...] | None = self.__writer.get_extra_info("peername")
-        if remote_address is None:
-            raise _error_from_errno(errno.ENOTCONN)
-        return remote_address
-
     async def recv(self, bufsize: int, /) -> bytes:
         if bufsize < 0:
             raise ValueError("'bufsize' must be a positive or null integer")
@@ -103,8 +78,7 @@ class AsyncioTransportStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
         self.__writer.writelines(iterable_of_data)
         await self.__writer.drain()
 
-    async def _send_eof_impl(self) -> None:
-        assert self.__writer.can_write_eof()  # nosec assert_used
+    async def send_eof(self) -> None:
         self.__writer.write_eof()
         await asyncio.sleep(0)
 
@@ -113,22 +87,7 @@ class AsyncioTransportStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
 
 
 @final
-class AsyncioTransportHalfCloseableStreamSocketAdapter(
-    AsyncioTransportStreamSocketAdapter,
-    AbstractAsyncHalfCloseableStreamSocketAdapter,
-):
-    __slots__ = ()
-
-    def __new__(cls, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> Self:
-        if not writer.can_write_eof():
-            raise ValueError(f"{writer!r} cannot write eof")
-        return super().__new__(cls, reader, writer)
-
-    send_eof = AsyncioTransportStreamSocketAdapter._send_eof_impl
-
-
-@final
-class RawStreamSocketAdapter(AbstractAsyncHalfCloseableStreamSocketAdapter):
+class RawStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
     __slots__ = ("__socket",)
 
     def __init__(
@@ -148,12 +107,6 @@ class RawStreamSocketAdapter(AbstractAsyncHalfCloseableStreamSocketAdapter):
 
     def is_closing(self) -> bool:
         return self.__socket.is_closing()
-
-    def get_local_address(self) -> tuple[Any, ...]:
-        return self.__socket.socket.getsockname()
-
-    def get_remote_address(self) -> tuple[Any, ...]:
-        return self.__socket.socket.getpeername()
 
     async def recv(self, bufsize: int, /) -> bytes:
         return await self.__socket.recv(bufsize)

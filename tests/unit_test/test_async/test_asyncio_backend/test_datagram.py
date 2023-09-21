@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
-from errno import ENOTSOCK
 from socket import AI_PASSIVE
 from typing import TYPE_CHECKING, Any, cast
 
@@ -820,50 +819,6 @@ class TestAsyncioTransportDatagramSocketAdapter:
         # Assert
         mock_endpoint.sendto.assert_awaited_once_with(b"data to send", address)
 
-    async def test____getsockname____return_sockname_extra_info(
-        self,
-        socket: AsyncioTransportDatagramSocketAdapter,
-        endpoint_extra_info: dict[str, Any],
-    ) -> None:
-        # Arrange
-
-        # Act
-        laddr = socket.get_local_address()
-
-        # Assert
-        assert laddr == endpoint_extra_info["sockname"]
-
-    async def test____getsockname____transport_closed(
-        self,
-        socket: AsyncioTransportDatagramSocketAdapter,
-        endpoint_extra_info: dict[str, Any],
-    ) -> None:
-        # Arrange
-        ### asyncio.DatagramTransport implementations will clear the extra dict on close()
-        endpoint_extra_info.clear()
-
-        # Act & Assert
-        with pytest.raises(OSError) as exc_info:
-            socket.get_local_address()
-
-        assert exc_info.value.errno == ENOTSOCK
-
-    @pytest.mark.parametrize("peername", [("127.0.0.1", 9999), None])
-    async def test____getpeername____return_peername_extra_info(
-        self,
-        peername: tuple[Any, ...] | None,
-        socket: AsyncioTransportDatagramSocketAdapter,
-        endpoint_extra_info: dict[str, Any],
-    ) -> None:
-        # Arrange
-        endpoint_extra_info["peername"] = peername
-
-        # Act
-        raddr = socket.get_remote_address()
-
-        # Assert
-        assert raddr == peername
-
     async def test____socket____returns_transport_socket(
         self,
         socket: AsyncioTransportDatagramSocketAdapter,
@@ -928,49 +883,6 @@ class TestRawDatagramSocketAdapter(BaseTestSocket):
         # Act & Assert
         with pytest.raises(ValueError, match=r"^A 'SOCK_DGRAM' socket is expected$"):
             _ = RawDatagramSocketAdapter(mock_tcp_socket, event_loop)
-
-    async def test____get_local_address____returns_socket_address(
-        self,
-        socket: RawDatagramSocketAdapter,
-        mock_udp_socket: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act
-        local_address = socket.get_local_address()
-
-        # Assert
-        mock_udp_socket.getsockname.assert_called_once_with()
-        assert local_address == ("127.0.0.1", 11111)
-
-    async def test____get_remote_address____returns_peer_address(
-        self,
-        socket: RawDatagramSocketAdapter,
-        mock_udp_socket: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act
-        remote_address = socket.get_remote_address()
-
-        # Assert
-        mock_udp_socket.getpeername.assert_called_once_with()
-        assert remote_address == ("127.0.0.1", 12345)
-
-    async def test____get_remote_address____no_peer_address(
-        self,
-        socket: RawDatagramSocketAdapter,
-        mock_udp_socket: MagicMock,
-    ) -> None:
-        # Arrange
-        self.configure_socket_mock_to_raise_ENOTCONN(mock_udp_socket)
-
-        # Act
-        remote_address = socket.get_remote_address()
-
-        # Assert
-        mock_udp_socket.getpeername.assert_called_once_with()
-        assert remote_address is None
 
     async def test____is_closing____default(
         self,

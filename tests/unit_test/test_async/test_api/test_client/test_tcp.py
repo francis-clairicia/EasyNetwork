@@ -69,12 +69,12 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
     @classmethod
     def local_address(
         cls,
-        mock_stream_socket_adapter: MagicMock,
+        mock_tcp_socket: MagicMock,
         socket_family: int,
         global_local_address: tuple[str, int],
     ) -> tuple[str, int]:
-        cls.set_local_address_to_async_socket_adapter_mock(
-            mock_stream_socket_adapter,
+        cls.set_local_address_to_socket_mock(
+            mock_tcp_socket,
             socket_family,
             global_local_address,
         )
@@ -84,12 +84,12 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
     @classmethod
     def remote_address(
         cls,
-        mock_stream_socket_adapter: MagicMock,
+        mock_tcp_socket: MagicMock,
         socket_family: int,
         global_remote_address: tuple[str, int],
     ) -> tuple[str, int]:
-        cls.set_remote_address_to_async_socket_adapter_mock(
-            mock_stream_socket_adapter,
+        cls.set_remote_address_to_socket_mock(
+            mock_tcp_socket,
             socket_family,
             global_remote_address,
         )
@@ -105,8 +105,6 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
     ) -> None:
         mock_tcp_socket.family = socket_family
         mock_tcp_socket.getsockopt.return_value = 0  # Needed for tests dealing with send_packet()
-        del mock_tcp_socket.getsockname
-        del mock_tcp_socket.getpeername
         del mock_tcp_socket.sendall
         del mock_tcp_socket.recv
 
@@ -208,8 +206,8 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             happy_eyeballs_delay=mocker.sentinel.happy_eyeballs_delay,
         )
         mock_stream_socket_adapter.socket.assert_called_once_with()
-        mock_stream_socket_adapter.get_local_address.assert_called_once_with()
-        mock_stream_socket_adapter.get_remote_address.assert_called_once_with()
+        mock_tcp_socket.getsockname.assert_called_once_with()
+        mock_tcp_socket.getpeername.assert_called_once_with()
         assert mock_tcp_socket.setsockopt.mock_calls == [
             mocker.call(IPPROTO_TCP, TCP_NODELAY, True),
             mocker.call(SOL_SOCKET, SO_KEEPALIVE, True),
@@ -275,8 +273,8 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_stream_data_consumer_cls.assert_called_once_with(mock_stream_protocol)
         mock_backend.wrap_tcp_client_socket.assert_awaited_once_with(mock_tcp_socket)
         mock_stream_socket_adapter.socket.assert_called_once_with()
-        mock_stream_socket_adapter.get_local_address.assert_called_once_with()
-        mock_stream_socket_adapter.get_remote_address.assert_called_once_with()
+        mock_tcp_socket.getsockname.assert_called_once_with()
+        mock_tcp_socket.getpeername.assert_called_once_with()
         assert mock_tcp_socket.setsockopt.mock_calls == [
             mocker.call(IPPROTO_TCP, TCP_NODELAY, True),
             mocker.call(SOL_SOCKET, SO_KEEPALIVE, True),
@@ -451,8 +449,8 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
                 happy_eyeballs_delay=mocker.sentinel.happy_eyeballs_delay,
             )
         mock_stream_socket_adapter.socket.assert_called_once_with()
-        mock_stream_socket_adapter.get_local_address.assert_called_once_with()
-        mock_stream_socket_adapter.get_remote_address.assert_called_once_with()
+        mock_tcp_socket.getsockname.assert_called_once_with()
+        mock_tcp_socket.getpeername.assert_called_once_with()
         assert mock_tcp_socket.setsockopt.mock_calls == [
             mocker.call(IPPROTO_TCP, TCP_NODELAY, True),
             mocker.call(SOL_SOCKET, SO_KEEPALIVE, True),
@@ -886,10 +884,10 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         client_closed: bool,
         socket_family: int,
         local_address: tuple[str, int],
-        mock_stream_socket_adapter: MagicMock,
+        mock_tcp_socket: MagicMock,
     ) -> None:
         # Arrange
-        mock_stream_socket_adapter.get_local_address.reset_mock()
+        mock_tcp_socket.getsockname.reset_mock()
         if client_closed:
             await client_connected.aclose()
             assert client_connected.is_closing()
@@ -902,14 +900,14 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             assert isinstance(address, IPv6SocketAddress)
         else:
             assert isinstance(address, IPv4SocketAddress)
-        mock_stream_socket_adapter.get_local_address.assert_not_called()
+        mock_tcp_socket.getsockname.assert_not_called()
         assert address.host == local_address[0]
         assert address.port == local_address[1]
 
     async def test____get_local_address____error_connection_not_performed(
         self,
         client_not_connected: AsyncTCPNetworkClient[Any, Any],
-        mock_stream_socket_adapter: MagicMock,
+        mock_tcp_socket: MagicMock,
     ) -> None:
         # Arrange
 
@@ -918,7 +916,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             client_not_connected.get_local_address()
 
         # Assert
-        mock_stream_socket_adapter.get_local_address.assert_not_called()
+        mock_tcp_socket.getsockname.assert_not_called()
 
     @pytest.mark.parametrize("client_closed", [False, True], ids=lambda p: f"client_closed=={p}")
     async def test____get_remote_address____return_saved_address(
@@ -927,11 +925,10 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         client_closed: bool,
         remote_address: tuple[str, int],
         socket_family: int,
-        mock_stream_socket_adapter: MagicMock,
+        mock_tcp_socket: MagicMock,
     ) -> None:
         # Arrange
-        ## NOTE: The client should have the remote address saved. Therefore this test check if there is no new call.
-        mock_stream_socket_adapter.get_remote_address.assert_called_once()
+        mock_tcp_socket.getpeername.reset_mock()
         if client_closed:
             await client_connected.aclose()
             assert client_connected.is_closing()
@@ -944,14 +941,14 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             assert isinstance(address, IPv6SocketAddress)
         else:
             assert isinstance(address, IPv4SocketAddress)
-        mock_stream_socket_adapter.get_remote_address.assert_called_once()
+        mock_tcp_socket.getpeername.assert_not_called()
         assert address.host == remote_address[0]
         assert address.port == remote_address[1]
 
     async def test____get_remote_address____error_connection_not_performed(
         self,
         client_not_connected: AsyncTCPNetworkClient[Any, Any],
-        mock_stream_socket_adapter: MagicMock,
+        mock_tcp_socket: MagicMock,
     ) -> None:
         # Arrange
 
@@ -960,7 +957,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             client_not_connected.get_remote_address()
 
         # Assert
-        mock_stream_socket_adapter.get_remote_address.assert_not_called()
+        mock_tcp_socket.getpeername.assert_not_called()
 
     @pytest.mark.usefixtures("setup_producer_mock")
     async def test____send_packet____send_bytes_to_socket(
@@ -1101,25 +1098,18 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_tcp_socket.getsockopt.assert_not_called()
 
     @pytest.mark.usefixtures("setup_producer_mock")
-    @pytest.mark.parametrize("error", [OSError, None])
-    @pytest.mark.parametrize("mock_stream_socket_adapter_factory", ["eof_support"], indirect=True)
     async def test____send_eof____socket_send_eof(
         self,
         client_connected_or_not: AsyncTCPNetworkClient[Any, Any],
-        error: type[BaseException] | None,
         mock_stream_socket_adapter: MagicMock,
         mock_stream_protocol: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        if error is None:
-            mock_stream_socket_adapter.send_eof.return_value = None
-        else:
-            mock_stream_socket_adapter.send_eof.side_effect = error
+        mock_stream_socket_adapter.send_eof.return_value = None
 
         # Act
-        with pytest.raises(error) if error is not None else contextlib.nullcontext():
-            await client_connected_or_not.send_eof()
+        await client_connected_or_not.send_eof()
 
         # Assert
         mock_stream_socket_adapter.send_eof.assert_awaited_once_with()
@@ -1130,26 +1120,22 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_stream_socket_adapter.sendall.assert_not_awaited()
 
     @pytest.mark.usefixtures("setup_producer_mock")
-    @pytest.mark.parametrize("mock_stream_socket_adapter_factory", ["eof_support", None], indirect=True)
     async def test____send_eof____closed_client(
         self,
         client_connected_or_not: AsyncTCPNetworkClient[Any, Any],
         mock_stream_socket_adapter: MagicMock,
     ) -> None:
         # Arrange
-        if hasattr(mock_stream_socket_adapter, "send_eof"):
-            mock_stream_socket_adapter.send_eof.return_value = None
+        mock_stream_socket_adapter.send_eof.return_value = None
         await client_connected_or_not.aclose()
 
         # Act
         await client_connected_or_not.send_eof()
 
         # Assert
-        if hasattr(mock_stream_socket_adapter, "send_eof"):
-            mock_stream_socket_adapter.send_eof.assert_not_awaited()
+        mock_stream_socket_adapter.send_eof.assert_not_awaited()
 
     @pytest.mark.usefixtures("setup_producer_mock")
-    @pytest.mark.parametrize("mock_stream_socket_adapter_factory", ["eof_support"], indirect=True)
     async def test____send_eof____unexpected_socket_close(
         self,
         client_connected_or_not: AsyncTCPNetworkClient[Any, Any],
@@ -1166,7 +1152,6 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_stream_socket_adapter.send_eof.assert_not_awaited()
 
     @pytest.mark.usefixtures("setup_producer_mock")
-    @pytest.mark.parametrize("mock_stream_socket_adapter_factory", ["eof_support"], indirect=True)
     async def test____send_eof____idempotent(
         self,
         client_connected_or_not: AsyncTCPNetworkClient[Any, Any],
@@ -1181,27 +1166,6 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
 
         # Assert
         mock_stream_socket_adapter.send_eof.assert_awaited_once()
-
-    @pytest.mark.usefixtures("setup_producer_mock")
-    async def test____send_eof____not_supported(
-        self,
-        client_connected_or_not: AsyncTCPNetworkClient[Any, Any],
-        mock_stream_socket_adapter: MagicMock,
-        mock_stream_protocol: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        assert not hasattr(mock_stream_socket_adapter, "send_eof")
-
-        # Act
-        with pytest.raises(NotImplementedError):
-            await client_connected_or_not.send_eof()
-
-        # Assert
-        await client_connected_or_not.send_packet(mocker.sentinel.packet)
-        mock_stream_protocol.generate_chunks.assert_called()
-        mock_stream_socket_adapter.sendall_fromiter.assert_called()
-        mock_stream_socket_adapter.sendall.assert_awaited()
 
     @pytest.mark.usefixtures("setup_consumer_mock")
     async def test____recv_packet____receive_bytes_from_socket(

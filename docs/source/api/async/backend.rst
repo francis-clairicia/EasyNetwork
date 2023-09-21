@@ -135,9 +135,6 @@ Socket Adapter Classes
 .. autoclass:: AsyncStreamSocketAdapter
    :members:
 
-.. autoclass:: AsyncHalfCloseableStreamSocketAdapter
-   :members:
-
 .. autoclass:: AsyncDatagramSocketAdapter
    :members:
 

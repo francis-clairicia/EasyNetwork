@@ -44,7 +44,7 @@ from ...tools._utils import (
 )
 from ...tools.constants import CLOSED_SOCKET_ERRNOS, MAX_STREAM_BUFSIZE, SSL_HANDSHAKE_TIMEOUT, SSL_SHUTDOWN_TIMEOUT
 from ...tools.socket import SocketAddress, SocketProxy, new_socket_address, set_tcp_keepalive, set_tcp_nodelay
-from ..backend.abc import AsyncBackend, AsyncHalfCloseableStreamSocketAdapter, AsyncStreamSocketAdapter, ILock
+from ..backend.abc import AsyncBackend, AsyncStreamSocketAdapter, ILock
 from ..backend.factory import AsyncBackendFactory
 from ..backend.tasks import SingleTaskRunner
 from .abc import AbstractAsyncNetworkClient
@@ -332,8 +332,8 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
     @staticmethod
     def __build_info_dict(socket: AsyncStreamSocketAdapter) -> _ClientInfo:
         socket_proxy = SocketProxy(socket.socket())
-        local_address: SocketAddress = new_socket_address(socket.get_local_address(), socket_proxy.family)
-        remote_address: SocketAddress = new_socket_address(socket.get_remote_address(), socket_proxy.family)
+        local_address: SocketAddress = new_socket_address(socket_proxy.getsockname(), socket_proxy.family)
+        remote_address: SocketAddress = new_socket_address(socket_proxy.getpeername(), socket_proxy.family)
         return {
             "proxy": socket_proxy,
             "local_address": local_address,
@@ -406,7 +406,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
             RuntimeError: :meth:`send_eof` has been called earlier.
         """
         async with self.__send_lock:
-            socket = await self.__ensure_connected(check_socket_is_closing=True)
+            socket = await self.__ensure_connected()
             if self.__eof_sent:
                 raise RuntimeError("send_eof() has been called earlier")
             with self.__convert_socket_error():
@@ -423,19 +423,15 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
             ClientClosedError: the client object is closed.
             OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
         """
-        try:
-            socket = await self.__ensure_connected(check_socket_is_closing=False)
-        except ConnectionError:
-            return
-        if not isinstance(socket, AsyncHalfCloseableStreamSocketAdapter):
-            raise NotImplementedError
-
         async with self.__send_lock:
             if self.__eof_sent:
                 return
+            try:
+                socket = await self.__ensure_connected()
+            except ConnectionError:
+                return
+            await socket.send_eof()
             self.__eof_sent = True
-            if not socket.is_closing():
-                await socket.send_eof()
 
     async def recv_packet(self) -> _ReceivedPacketT:
         """
@@ -460,7 +456,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
             except StopIteration:
                 pass
 
-            socket = await self.__ensure_connected(check_socket_is_closing=True)
+            socket = await self.__ensure_connected()
             if self.__eof_reached:
                 self.__abort(None)
 
@@ -520,11 +516,11 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
 
     get_backend.__doc__ = AbstractAsyncNetworkClient.get_backend.__doc__
 
-    async def __ensure_connected(self, *, check_socket_is_closing: bool) -> AsyncStreamSocketAdapter:
+    async def __ensure_connected(self) -> AsyncStreamSocketAdapter:
         await self.wait_connected()
         assert self.__socket is not None  # nosec assert_used
         socket = self.__socket
-        if check_socket_is_closing and socket.is_closing():
+        if socket.is_closing():
             self.__abort(None)
         return socket
 

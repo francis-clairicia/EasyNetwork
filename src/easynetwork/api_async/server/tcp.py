@@ -53,7 +53,6 @@ from ...tools.socket import (
     set_tcp_keepalive,
     set_tcp_nodelay,
 )
-from ..backend.abc import AsyncHalfCloseableStreamSocketAdapter
 from ..backend.factory import AsyncBackendFactory
 from ..backend.tasks import SingleTaskRunner
 from ._tools.actions import ErrorAction as _ErrorAction, RequestAction as _RequestAction
@@ -472,7 +471,8 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
     async def __force_close_stream_socket(self, socket: AsyncStreamSocketAdapter) -> None:
         with _contextlib.suppress(OSError):
-            await self.__backend.ignore_cancellation(socket.aclose())
+            async with self.__backend.move_on_after(0):
+                await socket.aclose()
 
     @classmethod
     def __have_errno(cls, exc: OSError | BaseExceptionGroup[OSError], errnos: set[int]) -> bool:
@@ -536,7 +536,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         if (listeners := self.__listeners) is None:
             return ()
         return tuple(
-            new_socket_address(listener.get_local_address(), listener.socket().family)
+            new_socket_address(listener.socket().getsockname(), listener.socket().family)
             for listener in listeners
             if not listener.is_closing()
         )
@@ -626,7 +626,7 @@ class _ConnectedClientAPI(AsyncStreamClient[_ResponseT]):
         producer: StreamDataProducer[_ResponseT],
         logger: logging.Logger,
     ) -> None:
-        super().__init__(new_socket_address(socket.get_remote_address(), socket.socket().family))
+        super().__init__(new_socket_address(socket.socket().getpeername(), socket.socket().family))
 
         self.__socket: AsyncStreamSocketAdapter = socket
         self.__closed: bool = False
@@ -641,18 +641,14 @@ class _ConnectedClientAPI(AsyncStreamClient[_ResponseT]):
     async def _force_close(self) -> None:
         self.__closed = True
         async with self.__send_lock:  # If self.aclose() took the lock, wait for it to finish
-            socket = self.__socket
-            await self.__shutdown_socket(socket)
+            pass
 
     async def aclose(self) -> None:
         async with self.__send_lock:
             socket = self.__socket
             self.__closed = True
-            try:
-                await self.__shutdown_socket(socket)
-            finally:
-                with _contextlib.suppress(OSError):
-                    await socket.aclose()
+            with _contextlib.suppress(OSError):
+                await socket.aclose()
 
     async def send_packet(self, packet: _ResponseT, /) -> None:
         self.__check_closed()
@@ -674,14 +670,6 @@ class _ConnectedClientAPI(AsyncStreamClient[_ResponseT]):
         if self.__closed:
             raise ClientClosedError("Closed client")
         return socket
-
-    @staticmethod
-    async def __shutdown_socket(socket: AsyncStreamSocketAdapter) -> None:
-        if not isinstance(socket, AsyncHalfCloseableStreamSocketAdapter):
-            return
-        with _contextlib.suppress(OSError):
-            if not socket.is_closing():
-                await socket.send_eof()
 
     @property
     def socket(self) -> SocketProxy:

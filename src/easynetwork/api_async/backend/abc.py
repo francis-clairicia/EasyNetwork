@@ -21,7 +21,6 @@ __all__ = [
     "AsyncBackend",
     "AsyncBaseSocketAdapter",
     "AsyncDatagramSocketAdapter",
-    "AsyncHalfCloseableStreamSocketAdapter",
     "AsyncListenerSocketAdapter",
     "AsyncStreamSocketAdapter",
     "ICondition",
@@ -488,16 +487,6 @@ class AsyncBaseSocketAdapter(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    def get_local_address(self) -> tuple[Any, ...]:
-        """
-        Returns the local socket address. Roughly similar to :meth:`socket.socket.getsockname`.
-
-        Returns:
-            The socket address.
-        """
-        raise NotImplementedError
-
-    @abstractmethod
     def socket(self) -> ISocket:
         """
         Returns the socket instance for low-level operations (such as ``socket.setsockopt()``).
@@ -514,16 +503,6 @@ class AsyncStreamSocketAdapter(AsyncBaseSocketAdapter):
     """
 
     __slots__ = ()
-
-    @abstractmethod
-    def get_remote_address(self) -> tuple[Any, ...]:
-        """
-        Returns the remote endpoint's address. Roughly similar to :meth:`socket.socket.getpeername`.
-
-        Returns:
-            The remote address.
-        """
-        raise NotImplementedError
 
     @abstractmethod
     async def recv(self, bufsize: int, /) -> bytes:
@@ -557,14 +536,6 @@ class AsyncStreamSocketAdapter(AsyncBaseSocketAdapter):
         """
         await self.sendall(b"".join(iterable_of_data))
 
-
-class AsyncHalfCloseableStreamSocketAdapter(AsyncStreamSocketAdapter):
-    """
-    A stream-oriented socket interface that also supports closing only the write end of the stream.
-    """
-
-    __slots__ = ()
-
     @abstractmethod
     async def send_eof(self) -> None:
         """
@@ -579,16 +550,6 @@ class AsyncDatagramSocketAdapter(AsyncBaseSocketAdapter):
     """
 
     __slots__ = ()
-
-    @abstractmethod
-    def get_remote_address(self) -> tuple[Any, ...] | None:
-        """
-        Returns the remote endpoint's address. Roughly similar to :meth:`socket.socket.getpeername`.
-
-        Returns:
-            The remote address if configured, :data:`None` otherwise.
-        """
-        raise NotImplementedError
 
     @abstractmethod
     async def recvfrom(self, bufsize: int, /) -> tuple[bytes, tuple[Any, ...]]:

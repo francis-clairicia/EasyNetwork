@@ -226,14 +226,14 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
     @staticmethod
     def __build_info_dict(socket: AsyncDatagramSocketAdapter) -> _EndpointInfo:
         socket_proxy = SocketProxy(socket.socket())
-        local_address: SocketAddress = new_socket_address(socket.get_local_address(), socket_proxy.family)
+        local_address: SocketAddress = new_socket_address(socket_proxy.getsockname(), socket_proxy.family)
         if local_address.port == 0:
             raise AssertionError(f"{socket} is not bound to a local address")
         remote_address: SocketAddress | None
-        if (peername := socket.get_remote_address()) is None:
+        try:
+            remote_address = new_socket_address(socket_proxy.getpeername(), socket_proxy.family)
+        except OSError:
             remote_address = None
-        else:
-            remote_address = new_socket_address(peername, socket_proxy.family)
         return {
             "proxy": socket_proxy,
             "local_address": local_address,

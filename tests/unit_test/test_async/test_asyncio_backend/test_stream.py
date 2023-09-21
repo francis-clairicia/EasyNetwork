@@ -4,19 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import asyncio.trsock
-import contextlib
 from collections.abc import Callable
-from errno import ENOTCONN, ENOTSOCK
 from socket import SHUT_WR
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.api_async.backend.abc import AcceptedSocket as AbstractAcceptedSocket
 from easynetwork_asyncio.stream.listener import AcceptedSocket, AcceptedSSLSocket, ListenerSocketAdapter
-from easynetwork_asyncio.stream.socket import (
-    AsyncioTransportHalfCloseableStreamSocketAdapter,
-    AsyncioTransportStreamSocketAdapter,
-    RawStreamSocketAdapter,
-)
+from easynetwork_asyncio.stream.socket import AsyncioTransportStreamSocketAdapter, RawStreamSocketAdapter
 
 import pytest
 
@@ -66,7 +60,13 @@ class BaseTestTransportStreamSocket:
 
 
 @pytest.mark.asyncio
-class BaseTestAsyncioTransportBasedStreamSocket(BaseTestTransportStreamSocket):
+class TestAsyncioTransportStreamSocketAdapter(BaseTestTransportStreamSocket):
+    @pytest.fixture
+    @staticmethod
+    def socket(mock_asyncio_reader: MagicMock, mock_asyncio_writer: MagicMock) -> AsyncioTransportStreamSocketAdapter:
+        mock_asyncio_writer.can_write_eof.return_value = True
+        return AsyncioTransportStreamSocketAdapter(mock_asyncio_reader, mock_asyncio_writer)
+
     async def test____aclose____close_transport_and_wait(
         self,
         socket: AsyncioTransportStreamSocketAdapter,
@@ -224,62 +224,19 @@ class BaseTestAsyncioTransportBasedStreamSocket(BaseTestTransportStreamSocket):
         mock_asyncio_writer.drain.assert_awaited_once_with()
         assert written_chunks == [b"data", b"to", b"send"]
 
-    async def test____getsockname____return_sockname_extra_info(
+    async def test____send_eof____write_eof(
         self,
         socket: AsyncioTransportStreamSocketAdapter,
-        asyncio_writer_extra_info: dict[str, Any],
+        mock_asyncio_writer: MagicMock,
     ) -> None:
         # Arrange
+        mock_asyncio_writer.write_eof.return_value = None
 
         # Act
-        laddr = socket.get_local_address()
+        await socket.send_eof()
 
         # Assert
-        assert laddr == asyncio_writer_extra_info["sockname"]
-
-    async def test____getsockname____transport_closed(
-        self,
-        socket: AsyncioTransportStreamSocketAdapter,
-        asyncio_writer_extra_info: dict[str, Any],
-    ) -> None:
-        # Arrange
-        ### asyncio.Transport implementations will clear the extra dict on close()
-        asyncio_writer_extra_info.clear()
-
-        # Act
-        # Act & Assert
-        with pytest.raises(OSError) as exc_info:
-            socket.get_local_address()
-
-        assert exc_info.value.errno == ENOTSOCK
-
-    async def test____getpeername____return_peername_extra_info(
-        self,
-        socket: AsyncioTransportStreamSocketAdapter,
-        asyncio_writer_extra_info: dict[str, Any],
-    ) -> None:
-        # Arrange
-
-        # Act
-        raddr = socket.get_remote_address()
-
-        # Assert
-        assert raddr == asyncio_writer_extra_info["peername"]
-
-    async def test____getpeername____transport_not_connected(
-        self,
-        socket: AsyncioTransportStreamSocketAdapter,
-        asyncio_writer_extra_info: dict[str, Any],
-    ) -> None:
-        # Arrange
-        ### asyncio.Transport implementations explicitly set peername to None if the socket is not connected
-        asyncio_writer_extra_info["peername"] = None
-
-        # Act & Assert
-        with pytest.raises(OSError) as exc_info:
-            socket.get_remote_address()
-
-        assert exc_info.value.errno == ENOTCONN
+        mock_asyncio_writer.write_eof.assert_called_once_with()
 
     async def test____socket____returns_transport_socket(
         self,
@@ -293,74 +250,6 @@ class BaseTestAsyncioTransportBasedStreamSocket(BaseTestTransportStreamSocket):
 
         # Assert
         assert transport_socket is mock_tcp_socket
-
-
-@pytest.mark.asyncio
-class TestAsyncioTransportStreamSocketAdapter(BaseTestAsyncioTransportBasedStreamSocket):
-    @pytest.fixture
-    @staticmethod
-    def socket(mock_asyncio_reader: MagicMock, mock_asyncio_writer: MagicMock) -> AsyncioTransportStreamSocketAdapter:
-        mock_asyncio_writer.can_write_eof.return_value = False
-        return AsyncioTransportStreamSocketAdapter(mock_asyncio_reader, mock_asyncio_writer)
-
-    @pytest.mark.parametrize("can_write_eof", [False, True], ids=lambda p: f"can_write_eof=={p}")
-    async def test____dunder_new____instanciate_subclass(
-        self,
-        can_write_eof: bool,
-        mock_asyncio_reader: MagicMock,
-        mock_asyncio_writer: MagicMock,
-    ) -> None:
-        # Arrange
-        mock_asyncio_writer.can_write_eof.return_value = can_write_eof
-
-        # Act
-        socket = AsyncioTransportStreamSocketAdapter(mock_asyncio_reader, mock_asyncio_writer)
-
-        # Assert
-        if can_write_eof:
-            assert type(socket) is AsyncioTransportHalfCloseableStreamSocketAdapter
-        else:
-            assert type(socket) is AsyncioTransportStreamSocketAdapter
-
-
-@pytest.mark.asyncio
-class TestAsyncioTransportHalfCloseableStreamSocketAdapter(BaseTestAsyncioTransportBasedStreamSocket):
-    @pytest.fixture
-    @staticmethod
-    def socket(
-        mock_asyncio_reader: MagicMock,
-        mock_asyncio_writer: MagicMock,
-    ) -> AsyncioTransportHalfCloseableStreamSocketAdapter:
-        mock_asyncio_writer.can_write_eof.return_value = True
-        return AsyncioTransportHalfCloseableStreamSocketAdapter(mock_asyncio_reader, mock_asyncio_writer)
-
-    @pytest.mark.parametrize("can_write_eof", [False, True], ids=lambda p: f"can_write_eof=={p}")
-    async def test____dunder_new____check_write_eof_possibility(
-        self,
-        can_write_eof: bool,
-        mock_asyncio_reader: MagicMock,
-        mock_asyncio_writer: MagicMock,
-    ) -> None:
-        # Arrange
-        mock_asyncio_writer.can_write_eof.return_value = can_write_eof
-
-        # Act & Assert
-        with pytest.raises(ValueError) if not can_write_eof else contextlib.nullcontext():
-            _ = AsyncioTransportHalfCloseableStreamSocketAdapter(mock_asyncio_reader, mock_asyncio_writer)
-
-    async def test____send_eof____write_eof(
-        self,
-        socket: AsyncioTransportHalfCloseableStreamSocketAdapter,
-        mock_asyncio_writer: MagicMock,
-    ) -> None:
-        # Arrange
-        mock_asyncio_writer.write_eof.return_value = None
-
-        # Act
-        await socket.send_eof()
-
-        # Assert
-        mock_asyncio_writer.write_eof.assert_called_once_with()
 
 
 @pytest.mark.asyncio
@@ -416,20 +305,6 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestSocket):
 
         # Assert
         assert listener.socket() is mock_tcp_listener_socket
-
-    async def test____get_local_address____returns_socket_address(
-        self,
-        listener: ListenerSocketAdapter,
-        mock_tcp_listener_socket: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act
-        local_address = listener.get_local_address()
-
-        # Assert
-        mock_tcp_listener_socket.getsockname.assert_called_once_with()
-        assert local_address == ("127.0.0.1", 11111)
 
     async def test____is_closing____default(
         self,
@@ -511,12 +386,6 @@ class TestAcceptedSocket(BaseTestTransportStreamSocket, BaseTestSocket):
             f"{ListenerSocketAdapter.__module__}.RawStreamSocketAdapter",
             return_value=mock_stream_socket_adapter,
         )
-
-    @pytest.fixture
-    @staticmethod
-    def mock_stream_socket_adapter(mock_stream_socket_adapter: MagicMock) -> MagicMock:
-        mock_stream_socket_adapter.get_remote_address.return_value = ("127.0.0.1", 12345)
-        return mock_stream_socket_adapter
 
     @pytest.fixture
     @staticmethod
@@ -641,12 +510,6 @@ class TestAcceptedSSLSocket(BaseTestTransportStreamSocket):
             f"{ListenerSocketAdapter.__module__}.AsyncioTransportStreamSocketAdapter",
             return_value=mock_stream_socket_adapter,
         )
-
-    @pytest.fixture
-    @staticmethod
-    def mock_stream_socket_adapter(mock_stream_socket_adapter: MagicMock) -> MagicMock:
-        mock_stream_socket_adapter.get_remote_address.return_value = ("127.0.0.1", 12345)
-        return mock_stream_socket_adapter
 
     @pytest.fixture
     @staticmethod
@@ -803,34 +666,6 @@ class TestRawStreamSocketAdapter(BaseTestSocket):
         # Act & Assert
         with pytest.raises(ValueError, match=r"^A 'SOCK_STREAM' socket is expected$"):
             _ = RawStreamSocketAdapter(mock_udp_socket, event_loop)
-
-    async def test____get_local_address____returns_socket_address(
-        self,
-        socket: RawStreamSocketAdapter,
-        mock_tcp_socket: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act
-        local_address = socket.get_local_address()
-
-        # Assert
-        mock_tcp_socket.getsockname.assert_called_once_with()
-        assert local_address == ("127.0.0.1", 11111)
-
-    async def test____get_remote_address____returns_peer_address(
-        self,
-        socket: RawStreamSocketAdapter,
-        mock_tcp_socket: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act
-        remote_address = socket.get_remote_address()
-
-        # Assert
-        mock_tcp_socket.getpeername.assert_called_once_with()
-        assert remote_address == ("127.0.0.1", 12345)
 
     async def test____is_closing____default(
         self,
