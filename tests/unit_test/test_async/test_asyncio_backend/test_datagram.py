@@ -90,10 +90,11 @@ async def test____create_datagram_endpoint____return_DatagramEndpoint_instance(
 class TestDatagramEndpoint:
     @pytest.fixture
     @staticmethod
-    def mock_asyncio_protocol(mocker: MockerFixture) -> MagicMock:
+    def mock_asyncio_protocol(mocker: MockerFixture, event_loop: asyncio.AbstractEventLoop) -> MagicMock:
         mock = mocker.NonCallableMagicMock(spec=DatagramEndpointProtocol)
         # Currently, _get_close_waiter() is a synchronous function returning a Future, but it will be awaited so this works
         mock._get_close_waiter = mocker.AsyncMock()
+        mock._get_loop.return_value = event_loop
         return mock
 
     @pytest.fixture
@@ -101,6 +102,10 @@ class TestDatagramEndpoint:
     def mock_asyncio_transport(mocker: MockerFixture) -> MagicMock:
         mock = mocker.NonCallableMagicMock(spec=asyncio.DatagramTransport)
         mock.is_closing.return_value = False
+
+        # Tell connection_made() not to try to monkeypatch this mock object
+        del mock._address
+
         return mock
 
     @staticmethod
@@ -406,22 +411,6 @@ class TestDatagramEndpoint:
         mock_asyncio_transport.get_extra_info.assert_called_once_with(mocker.sentinel.name, mocker.sentinel.default)
         assert value is mocker.sentinel.extra_info
 
-    async def test____get_loop____get_protocol_bound_loop(
-        self,
-        endpoint: DatagramEndpoint,
-        mock_asyncio_protocol: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        mock_asyncio_protocol._get_loop.return_value = mocker.sentinel.event_loop
-
-        # Act
-        loop = endpoint.get_loop()
-
-        # Assert
-        mock_asyncio_protocol._get_loop.assert_called_once_with()
-        assert loop is mocker.sentinel.event_loop
-
 
 class TestDatagramEndpointProtocol:
     @pytest.fixture
@@ -429,10 +418,6 @@ class TestDatagramEndpointProtocol:
     def mock_asyncio_transport(mocker: MockerFixture) -> MagicMock:
         mock = mocker.NonCallableMagicMock(spec=asyncio.DatagramTransport)
         mock.is_closing.return_value = False
-
-        # Tell connection_made() not to try to monkeypatch this mock object
-        del mock._address
-
         return mock
 
     @staticmethod

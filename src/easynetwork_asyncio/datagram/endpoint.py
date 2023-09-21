@@ -88,6 +88,8 @@ class DatagramEndpoint:
         self.__transport: asyncio.DatagramTransport = transport
         self.__protocol: DatagramEndpointProtocol = protocol
 
+        _monkeypatch_transport(transport, protocol._get_loop())
+
     def close(self) -> None:
         self.__transport.close()
 
@@ -127,9 +129,6 @@ class DatagramEndpoint:
 
     def get_extra_info(self, name: str, default: Any = None) -> Any:
         return self.__transport.get_extra_info(name, default)
-
-    def get_loop(self) -> asyncio.AbstractEventLoop:
-        return self.__protocol._get_loop()
 
     def __check_exceptions(self) -> None:
         try:
@@ -193,16 +192,6 @@ class DatagramEndpointProtocol(asyncio.DatagramProtocol):
         assert self.__transport is None, "Transport already set"  # nosec assert_used
         self.__transport = transport
         self.__connection_lost = False
-
-        peername: tuple[Any, ...] | None = transport.get_extra_info("peername", None)
-        if peername is not None and isinstance(self.__loop, asyncio.base_events.BaseEventLoop):
-            # There is an asyncio issue where the private address attribute is not updated with the actual remote address
-            # if the transport is instanciated with an external socket:
-            #     await loop.create_datagram_endpoint(sock=my_socket)
-            #
-            # This is a monkeypatch to force update the internal address attribute
-            if hasattr(transport, "_address") and getattr(transport, "_address") != peername:
-                setattr(transport, "_address", peername)
 
     def connection_lost(self, exc: Exception | None) -> None:
         self.__connection_lost = True
@@ -275,3 +264,15 @@ class DatagramEndpointProtocol(asyncio.DatagramProtocol):
 
     def _writing_paused(self) -> bool:
         return self.__write_paused
+
+
+def _monkeypatch_transport(transport: asyncio.DatagramTransport, loop: asyncio.AbstractEventLoop) -> None:
+    if isinstance(loop, asyncio.base_events.BaseEventLoop) and hasattr(transport, "_address"):
+        # There is an asyncio issue where the private address attribute is not updated with the actual remote address
+        # if the transport is instanciated with an external socket:
+        #     await loop.create_datagram_endpoint(sock=my_socket)
+        #
+        # This is a monkeypatch to force update the internal address attribute
+        peername: tuple[Any, ...] | None = transport.get_extra_info("peername", None)
+        if peername is not None and getattr(transport, "_address") != peername:
+            setattr(transport, "_address", peername)
