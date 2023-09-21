@@ -21,7 +21,8 @@ __all__ = ["AsyncExecutor"]
 import concurrent.futures
 import contextvars
 import functools
-from collections.abc import Callable, Mapping
+from collections import deque
+from collections.abc import AsyncGenerator, Callable, Iterable, Mapping
 from typing import TYPE_CHECKING, Any, ParamSpec, Self, TypeVar
 
 from .factory import AsyncBackendFactory
@@ -132,7 +133,44 @@ class AsyncExecutor:
         func = self._setup_func(func)
         executor = self.__executor
         backend = self.__backend
-        return await backend.wait_future(executor.submit(func, *args, **kwargs))
+        return await _result_or_cancel(backend, executor.submit(func, *args, **kwargs))
+
+    def map(self, func: Callable[..., _T], *iterables: Iterable[Any]) -> AsyncGenerator[_T, None]:
+        """
+        Returns an asynchronous iterator equivalent to ``map(fn, iter)``.
+
+        Example::
+
+            def pow_50(x):
+                return x**50
+
+            async with AsyncExecutor(ProcessPoolExecutor()) as executor:
+                results = [result async for result in executor.map(pow_50, (1, 4, 12))]
+
+        Parameters:
+            func: A callable that will take as many arguments as there are passed `iterables`.
+            iterables: iterables yielding arguments for `func`.
+
+        Raises:
+            Exception: If ``fn(*args)`` raises for any values.
+
+        Returns:
+            An asynchronous iterator equivalent to ``map(func, *iterables)`` but the calls may be evaluated out-of-order.
+        """
+
+        backend = self.__backend
+        executor = self.__executor
+        fs = deque(executor.submit(self._setup_func(func), *args) for args in zip(*iterables))
+
+        async def result_iterator() -> AsyncGenerator[_T, None]:
+            try:
+                while fs:
+                    yield await _result_or_cancel(backend, fs.popleft())
+            finally:
+                for future in fs:
+                    future.cancel()
+
+        return result_iterator()
 
     def shutdown_nowait(self, *, cancel_futures: bool = False) -> None:
         """
@@ -174,3 +212,14 @@ class AsyncExecutor:
 
             func = functools.partial(ctx.run, func)  # type: ignore[assignment]
         return func
+
+
+async def _result_or_cancel(backend: AsyncBackend, future: concurrent.futures.Future[_T]) -> _T:
+    try:
+        try:
+            return await backend.wait_future(future)
+        finally:
+            future.cancel()
+    finally:
+        # Break a reference cycle with the exception in future._exception
+        del future

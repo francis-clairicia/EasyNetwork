@@ -4,6 +4,7 @@ import asyncio
 import concurrent.futures
 import time
 from collections.abc import AsyncIterator
+from typing import Any
 
 from easynetwork.api_async.backend.futures import AsyncExecutor
 
@@ -66,6 +67,53 @@ class TestAsyncExecutor:
         cvar_outer = sniffio.current_async_library_cvar.get()
 
         assert cvar_inner is None
+        assert cvar_outer == "asyncio"
+
+    async def test____map____schedule_many_calls(
+        self,
+        executor: AsyncExecutor,
+    ) -> None:
+        def thread_fn(a: int, b: int, c: int) -> tuple[int, int, int]:
+            return a, b, c
+
+        results = [v async for v in executor.map(thread_fn, (1, 2, 3), (4, 5, 6), (7, 8, 9))]
+
+        assert results == [(1, 4, 7), (2, 5, 8), (3, 6, 9)]
+
+    async def test____map____early_schedule(
+        self,
+        executor: AsyncExecutor,
+    ) -> None:
+        def thread_fn(delay: float) -> int:
+            time.sleep(delay)
+            return 42
+
+        iterator = executor.map(thread_fn, (0.5, 0.75, 0.25))
+
+        executor.shutdown_nowait()
+        await asyncio.sleep(1)
+
+        async with asyncio.timeout(0):
+            results = [v async for v in iterator]
+
+        assert results == [42, 42, 42]
+
+    @pytest.mark.feature_sniffio
+    async def test____map____sniffio_contextvar_reset(
+        self,
+        executor: AsyncExecutor,
+    ) -> None:
+        import sniffio
+
+        sniffio.current_async_library_cvar.set("asyncio")
+
+        def callback(*args: Any) -> str | None:
+            return sniffio.current_async_library_cvar.get()
+
+        cvars_inner = [v async for v in executor.map(callback, (1, 2, 3))]
+        cvar_outer = sniffio.current_async_library_cvar.get()
+
+        assert cvars_inner == [None, None, None]
         assert cvar_outer == "asyncio"
 
     async def test____shutdown____idempotent(

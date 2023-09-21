@@ -454,9 +454,10 @@ class AsyncioBackend(AbstractAsyncBackend):
                 # and set future in RUNNING state.
                 # This future cannot be cancelled anymore, therefore it must be awaited.
                 await self._cancel_shielded_wait_asyncio_future(future_wrapper, future.cancel)
+
+                # Unwrap "future_wrapper" to prevent reports about unhandled exceptions.
                 if not future_wrapper.cancelled():
                     del future
-                    # Unwrap "future_wrapper" instead to prevent reports about unhandled exceptions.
                     assert future_wrapper.done()  # nosec assert_used
                     return future_wrapper.result()
             finally:
