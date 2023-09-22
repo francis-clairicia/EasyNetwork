@@ -5,7 +5,7 @@ import math
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from easynetwork_asyncio.tasks import Task, TimeoutHandle, move_on_after, move_on_at, timeout, timeout_at
+from easynetwork_asyncio.tasks import Task, TaskUtils, TimeoutHandle
 
 import pytest
 
@@ -164,7 +164,7 @@ class TestTimeout:
         return TimeoutHandle(mock_asyncio_timeout_handle)
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("timeout", [timeout, move_on_after])
+    @pytest.mark.parametrize("timeout", [TaskUtils.timeout_after, TaskUtils.move_on_after])
     async def test____timeout____schedule_timeout(
         self,
         timeout: Callable[[float], TimeoutHandle],
@@ -183,7 +183,7 @@ class TestTimeout:
         mock_asyncio_timeout_handle.__aenter__.assert_called_once()
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("timeout", [timeout, move_on_after])
+    @pytest.mark.parametrize("timeout", [TaskUtils.timeout_after, TaskUtils.move_on_after])
     async def test____timeout____handle_infinite(
         self,
         timeout: Callable[[float], TimeoutHandle],
@@ -202,7 +202,7 @@ class TestTimeout:
         mock_asyncio_timeout_handle.__aenter__.assert_called_once()
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("timeout_at", [timeout_at, move_on_at])
+    @pytest.mark.parametrize("timeout_at", [TaskUtils.timeout_at, TaskUtils.move_on_at])
     async def test____timeout_at____schedule_timeout(
         self,
         timeout_at: Callable[[float], TimeoutHandle],
@@ -221,7 +221,7 @@ class TestTimeout:
         mock_asyncio_timeout_handle.__aenter__.assert_called_once()
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("timeout_at", [timeout_at, move_on_at])
+    @pytest.mark.parametrize("timeout_at", [TaskUtils.timeout_at, TaskUtils.move_on_at])
     async def test____timeout_at____handle_infinite(
         self,
         timeout_at: Callable[[float], TimeoutHandle],
@@ -338,3 +338,36 @@ class TestTimeout:
         # Assert
         mock_asyncio_timeout_handle.when.assert_not_called()
         mock_asyncio_timeout_handle.reschedule.assert_called_once_with(None)
+
+
+class TestTaskUtils:
+    def test____current_asyncio_task____return_current_task(self) -> None:
+        # Arrange
+        async def main() -> None:
+            assert TaskUtils.current_asyncio_task() is asyncio.current_task()
+
+        # Act & Assert
+        asyncio.run(main())
+
+    def test____current_asyncio_task____called_from_callback(self) -> None:
+        # Arrange
+        async def main() -> None:
+            loop = asyncio.get_running_loop()
+            future: asyncio.Future[None] = loop.create_future()
+
+            def callback() -> None:
+                try:
+                    _ = TaskUtils.current_asyncio_task()
+                    future.set_result(None)
+                except BaseException as exc:
+                    future.set_exception(exc)
+                finally:
+                    future.cancel()
+
+            loop.call_soon(callback)
+
+            with pytest.raises(RuntimeError, match=r"This function should be called within a task\."):
+                await future
+
+        # Act & Assert
+        asyncio.run(main())

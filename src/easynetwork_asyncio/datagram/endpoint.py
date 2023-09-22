@@ -32,6 +32,8 @@ from typing import TYPE_CHECKING, Any, final
 
 from easynetwork.tools._utils import error_from_errno as _error_from_errno
 
+from ..tasks import TaskUtils
+
 if TYPE_CHECKING:
     import asyncio.trsock
 
@@ -112,6 +114,7 @@ class DatagramEndpoint:
                 data_and_address = None
             if data_and_address is None:
                 raise _error_from_errno(_errno.ECONNABORTED)
+            await TaskUtils.cancel_shielded_coro_yield()
         else:
             data_and_address = await self.__recv_queue.get()
             if data_and_address is None:

@@ -17,7 +17,7 @@
 
 from __future__ import annotations
 
-__all__ = ["Task", "TaskGroup", "TimeoutHandle", "timeout", "timeout_at"]
+__all__ = ["Task", "TaskGroup", "TaskUtils", "TimeoutHandle"]
 
 import asyncio
 import contextvars
@@ -165,14 +165,16 @@ class TimeoutHandle(AbstractTimeoutHandle):
     async def __aenter__(self) -> Self:
         timeout_handle: asyncio.Timeout = self.__handle
         await type(timeout_handle).__aenter__(timeout_handle)
-        current_task = asyncio.current_task()
-        assert current_task is not None  # nosec assert_used
+        current_task = TaskUtils.current_asyncio_task()
         current_handle_dict = self.__current_handle_dict
         if current_task not in current_handle_dict:
             current_handle_dict[current_task] = deque()
             current_task.add_done_callback(current_handle_dict.pop)
         current_handle_dict[current_task].appendleft(self)
-        self.__already_delayed_cancellation = current_task in self.__delayed_task_cancel_dict
+        try:
+            self.__already_delayed_cancellation = not self.__delayed_task_cancel_dict[current_task].cancelled()
+        except KeyError:
+            self.__already_delayed_cancellation = False
         return self
 
     async def __aexit__(
@@ -182,8 +184,7 @@ class TimeoutHandle(AbstractTimeoutHandle):
         exc_tb: TracebackType | None,
     ) -> bool | None:
         timeout_handle: asyncio.Timeout = self.__handle
-        current_task = asyncio.current_task()
-        assert current_task is not None  # nosec assert_used
+        current_task = TaskUtils.current_asyncio_task()
         try:
             await type(timeout_handle).__aexit__(timeout_handle, exc_type, exc_val, exc_tb)
         except TimeoutError:
@@ -222,7 +223,7 @@ class TimeoutHandle(AbstractTimeoutHandle):
         return time_value if time_value != math.inf else None
 
     @classmethod
-    def _reschedule_delayed_task_cancel(cls, task: asyncio.Task[Any], cancel_msg: str | None) -> None:
+    def _reschedule_delayed_task_cancel(cls, task: asyncio.Task[Any], cancel_msg: str | None) -> asyncio.Handle:
         task_cancel_handle = task.get_loop().call_soon(cls.__cancel_task_unless_done, task, cancel_msg)
         if cls.__current_handle_dict.get(task):
             if task in cls.__delayed_task_cancel_dict:
@@ -232,6 +233,7 @@ class TimeoutHandle(AbstractTimeoutHandle):
             assert task not in cls.__delayed_task_cancel_dict  # nosec assert_used
             cls.__delayed_task_cancel_dict[task] = task_cancel_handle
             task.get_loop().call_soon(cls.__delayed_task_cancel_dict.pop, task, None)
+        return task_cancel_handle
 
     @staticmethod
     def __cancel_task_unless_done(task: asyncio.Task[Any], cancel_msg: str | None) -> None:
@@ -241,17 +243,93 @@ class TimeoutHandle(AbstractTimeoutHandle):
         task.cancel(cancel_msg)
 
 
-def timeout(delay: float) -> TimeoutHandle:
-    return TimeoutHandle(asyncio.timeout(TimeoutHandle._cast_time(delay)))
+@final
+class TaskUtils:
+    @staticmethod
+    def current_asyncio_task(loop: asyncio.AbstractEventLoop | None = None) -> asyncio.Task[Any]:
+        t: asyncio.Task[Any] | None = asyncio.current_task(loop=loop)
+        if t is None:
+            raise RuntimeError("This function should be called within a task.")
+        return t
+
+    @classmethod
+    async def cancel_shielded_wait_asyncio_future(
+        cls,
+        future: asyncio.Future[Any],
+        *,
+        abort_func: Callable[[], bool] | None = None,
+    ) -> asyncio.Handle | None:
+        current_task: asyncio.Task[Any] = cls.current_asyncio_task()
+        abort: bool | None = None
+        task_cancelled: bool = False
+        task_cancel_msg: str | None = None
+
+        try:
+            while not future.done():
+                try:
+                    await asyncio.wait({future})
+                except asyncio.CancelledError as exc:
+                    if abort is None:
+                        if abort_func is None:
+                            abort = False
+                        else:
+                            abort = bool(abort_func())
+                    if abort:
+                        raise
+                    task_cancelled = True
+                    task_cancel_msg = _get_cancelled_error_message(exc)
+
+            if task_cancelled:
+                return TimeoutHandle._reschedule_delayed_task_cancel(current_task, task_cancel_msg)
+            return None
+        finally:
+            del current_task, future, abort_func
+            task_cancel_msg = None
+
+    @classmethod
+    async def cancel_shielded_coro_yield(cls) -> None:
+        current_task: asyncio.Task[Any] = cls.current_asyncio_task()
+        try:
+            await asyncio.sleep(0)
+        except asyncio.CancelledError as exc:
+            TimeoutHandle._reschedule_delayed_task_cancel(current_task, _get_cancelled_error_message(exc))
+        finally:
+            del current_task
+
+    @classmethod
+    async def cancel_shielded_await_task(cls, task: asyncio.Task[_T_co]) -> _T_co:
+        # This task must be unregistered in order not to be cancelled by runner at event loop shutdown
+        asyncio._unregister_task(task)
+
+        try:
+            current_task_cancel_handle = await cls.cancel_shielded_wait_asyncio_future(task)
+            if current_task_cancel_handle is not None and task.cancelled():
+                current_task_cancel_handle.cancel()
+            return task.result()
+        finally:
+            del task
+
+    @classmethod
+    def timeout_after(cls, delay: float) -> TimeoutHandle:
+        return TimeoutHandle(asyncio.timeout(TimeoutHandle._cast_time(delay)))
+
+    @classmethod
+    def timeout_at(cls, deadline: float) -> TimeoutHandle:
+        return TimeoutHandle(asyncio.timeout_at(TimeoutHandle._cast_time(deadline)))
+
+    @classmethod
+    def move_on_after(cls, delay: float) -> TimeoutHandle:
+        return TimeoutHandle(asyncio.timeout(TimeoutHandle._cast_time(delay)), only_move_on=True)
+
+    @classmethod
+    def move_on_at(cls, deadline: float) -> TimeoutHandle:
+        return TimeoutHandle(asyncio.timeout_at(TimeoutHandle._cast_time(deadline)), only_move_on=True)
 
 
-def timeout_at(deadline: float) -> TimeoutHandle:
-    return TimeoutHandle(asyncio.timeout_at(TimeoutHandle._cast_time(deadline)))
-
-
-def move_on_after(delay: float) -> TimeoutHandle:
-    return TimeoutHandle(asyncio.timeout(TimeoutHandle._cast_time(delay)), only_move_on=True)
-
-
-def move_on_at(deadline: float) -> TimeoutHandle:
-    return TimeoutHandle(asyncio.timeout_at(TimeoutHandle._cast_time(deadline)), only_move_on=True)
+def _get_cancelled_error_message(exc: asyncio.CancelledError) -> str | None:
+    msg: str | None
+    if exc.args:
+        msg = exc.args[0]
+    else:
+        msg = None
+    return msg
