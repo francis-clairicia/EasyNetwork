@@ -17,7 +17,7 @@
 
 from __future__ import annotations
 
-__all__ = ["AsyncioBackend"]
+__all__ = ["AsyncIOBackend"]
 
 import asyncio
 import asyncio.base_events
@@ -61,7 +61,7 @@ _T = TypeVar("_T")
 _T_co = TypeVar("_T_co", covariant=True)
 
 
-class AsyncioBackend(AbstractAsyncBackend):
+class AsyncIOBackend(AbstractAsyncBackend):
     __slots__ = ("__use_asyncio_transport",)
 
     def __init__(self, *, transport: bool = True) -> None:

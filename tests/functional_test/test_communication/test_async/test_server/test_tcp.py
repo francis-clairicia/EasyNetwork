@@ -23,7 +23,7 @@ from easynetwork.exceptions import (
 from easynetwork.protocol import StreamProtocol
 from easynetwork.tools.socket import SocketAddress, enable_socket_linger
 from easynetwork_asyncio._utils import create_connection
-from easynetwork_asyncio.backend import AsyncioBackend
+from easynetwork_asyncio.backend import AsyncIOBackend
 from easynetwork_asyncio.stream.listener import ListenerSocketAdapter
 
 import pytest
@@ -32,7 +32,7 @@ import pytest_asyncio
 from .base import BaseTestAsyncServer
 
 
-class NoListenerErrorBackend(AsyncioBackend):
+class NoListenerErrorBackend(AsyncIOBackend):
     async def create_tcp_listeners(
         self,
         host: str | Sequence[str] | None,
