@@ -33,6 +33,7 @@ from ...exceptions import ClientClosedError, DatagramProtocolParseError, ServerA
 from ...protocol import DatagramProtocol
 from ...tools._utils import (
     check_real_socket_state as _check_real_socket_state,
+    exception_with_notes as _exception_with_notes,
     make_callback as _make_callback,
     remove_traceback_frames_in_place as _remove_traceback_frames_in_place,
 )
@@ -362,11 +363,8 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
     def __check_datagram_queue_not_empty(datagram_queue: deque[bytes]) -> None:
         if len(datagram_queue) == 0:  # pragma: no cover
             msg = "The server has created too many tasks and ends up in an inconsistent state."
-            try:
-                raise RuntimeError(msg)
-            except RuntimeError as exc:
-                exc.add_note("Please fill an issue (https://github.com/francis-clairicia/EasyNetwork/issues)")
-                raise
+            note = "Please fill an issue (https://github.com/francis-clairicia/EasyNetwork/issues)"
+            raise _exception_with_notes(RuntimeError(msg), note)
 
     @_contextlib.contextmanager
     def __suppress_and_log_remaining_exception(self, client_address: SocketAddress) -> Iterator[None]:

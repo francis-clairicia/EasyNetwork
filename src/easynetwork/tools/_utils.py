@@ -20,6 +20,7 @@ __all__ = [
     "check_socket_no_ssl",
     "ensure_datagram_socket_bound",
     "error_from_errno",
+    "exception_with_notes",
     "is_ssl_eof_error",
     "is_ssl_socket",
     "lock_with_timeout",
@@ -29,12 +30,10 @@ __all__ = [
     "retry_socket_method",
     "retry_ssl_socket_method",
     "set_reuseport",
-    "transform_future_exception",
     "validate_timeout_delay",
     "wait_socket_available",
 ]
 
-import concurrent.futures
 import contextlib
 import errno as _errno
 import functools
@@ -43,7 +42,7 @@ import selectors as _selectors
 import socket as _socket
 import threading
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from math import isinf, isnan
 from typing import TYPE_CHECKING, Any, Literal, ParamSpec, TypeGuard, TypeVar, assert_never
 
@@ -294,17 +293,11 @@ def set_reuseport(sock: SupportsSocketOptions) -> None:
             raise ValueError("reuse_port not supported by socket module, SO_REUSEPORT defined but not implemented.") from None
 
 
-def transform_future_exception(exc: BaseException) -> BaseException:
-    match exc:
-        case SystemExit() | KeyboardInterrupt():
-            cancel_exc = concurrent.futures.CancelledError().with_traceback(exc.__traceback__)
-            try:
-                cancel_exc.__cause__ = cancel_exc.__context__ = exc
-                exc = cancel_exc
-            finally:
-                del cancel_exc
-        case _:
-            pass
+def exception_with_notes(exc: _ExcType, notes: str | Iterable[str]) -> _ExcType:
+    if isinstance(notes, str):
+        notes = (notes,)
+    for note in notes:
+        exc.add_note(note)
     return exc
 
 

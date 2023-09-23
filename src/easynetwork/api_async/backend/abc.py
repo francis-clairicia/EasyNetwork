@@ -35,7 +35,7 @@ __all__ = [
 import contextvars
 import math
 from abc import ABCMeta, abstractmethod
-from collections.abc import Callable, Coroutine, Iterable, Sequence
+from collections.abc import Awaitable, Callable, Coroutine, Iterable, Sequence
 from contextlib import AbstractAsyncContextManager
 from typing import TYPE_CHECKING, Any, Generic, NoReturn, ParamSpec, Protocol, Self, TypeVar
 
@@ -401,14 +401,40 @@ class TaskGroup(metaclass=ABCMeta):
 class ThreadsPortal(metaclass=ABCMeta):
     """
     An object that lets external threads run code in an asynchronous event loop.
+
+    You must use it as a context manager *within* the event loop to start the portal::
+
+        async with threads_portal:
+            ...
+
+    If the portal is not entered or exited, then all of the operations would throw a :exc:`RuntimeError` for the threads.
     """
 
     __slots__ = ("__weakref__",)
 
     @abstractmethod
-    def run_coroutine(self, coro_func: Callable[_P, Coroutine[Any, Any, _T]], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+    async def __aenter__(self) -> Self:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def run_coroutine_soon(
+        self,
+        coro_func: Callable[_P, Awaitable[_T]],
+        /,
+        *args: _P.args,
+        **kwargs: _P.kwargs,
+    ) -> concurrent.futures.Future[_T]:
         """
-        Run the given async function in the bound event loop thread, blocking until it is complete. Thread-safe.
+        Run the given async function in the bound event loop thread. Thread-safe.
 
         Parameters:
             coro_func: An async function.
@@ -416,19 +442,41 @@ class ThreadsPortal(metaclass=ABCMeta):
             kwargs: Keyword arguments to be passed to `coro_func`.
 
         Raises:
-            backend.get_cancelled_exc_class(): The scheduler was shut down while ``coro_func()`` was running
-                                               and cancelled the task.
-            RuntimeError: if the scheduler is shut down.
-            RuntimeError: if you try calling this from inside the event loop thread, which would otherwise cause a deadlock.
-            Exception: Whatever raises ``coro_func(*args, **kwargs)``
+            RuntimeError: if the portal is shut down.
+            RuntimeError: if you try calling this from inside the event loop thread, to avoid potential deadlocks.
 
         Returns:
-            Whatever returns ``coro_func(*args, **kwargs)``
+            A future filled with the result of ``await coro_func(*args, **kwargs)``.
         """
         raise NotImplementedError
 
+    def run_coroutine(self, coro_func: Callable[_P, Awaitable[_T]], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+        """
+        Run the given async function in the bound event loop thread, blocking until it is complete. Thread-safe.
+
+        The default implementation is equivalent to::
+
+            portal.run_coroutine_soon(coro_func, *args, **kwargs).result()
+
+        Parameters:
+            coro_func: An async function.
+            args: Positional arguments to be passed to `coro_func`.
+            kwargs: Keyword arguments to be passed to `coro_func`.
+
+        Raises:
+            concurrent.futures.CancelledError: The portal has been shut down while ``coro_func()`` was running
+                                               and cancelled the task.
+            RuntimeError: if the portal is shut down.
+            RuntimeError: if you try calling this from inside the event loop thread, which would otherwise cause a deadlock.
+            Exception: Whatever raises ``await coro_func(*args, **kwargs)``.
+
+        Returns:
+            Whatever returns ``await coro_func(*args, **kwargs)``.
+        """
+        return self.run_coroutine_soon(coro_func, *args, **kwargs).result()
+
     @abstractmethod
-    def run_sync(self, func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+    def run_sync_soon(self, func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> concurrent.futures.Future[_T]:
         """
         Executes a function in the event loop thread from a worker thread. Thread-safe.
 
@@ -438,14 +486,36 @@ class ThreadsPortal(metaclass=ABCMeta):
             kwargs: Keyword arguments to be passed to `func`.
 
         Raises:
-            RuntimeError: if the scheduler is shut down.
-            RuntimeError: if you try calling this from inside the event loop thread, which would otherwise cause a deadlock.
-            Exception: Whatever raises ``func(*args, **kwargs)``
+            RuntimeError: if the portal is shut down.
+            RuntimeError: if you try calling this from inside the event loop thread, to avoid potential deadlocks.
 
         Returns:
-            Whatever returns ``func(*args, **kwargs)``
+            A future filled with the result of ``func(*args, **kwargs)``.
         """
         raise NotImplementedError
+
+    def run_sync(self, func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+        """
+        Executes a function in the event loop thread from a worker thread. Thread-safe.
+
+        The default implementation is equivalent to::
+
+            portal.run_sync_soon(func, *args, **kwargs).result()
+
+        Parameters:
+            func: A synchronous function.
+            args: Positional arguments to be passed to `func`.
+            kwargs: Keyword arguments to be passed to `func`.
+
+        Raises:
+            RuntimeError: if the portal is shut down.
+            RuntimeError: if you try calling this from inside the event loop thread, which would otherwise cause a deadlock.
+            Exception: Whatever raises ``func(*args, **kwargs)``.
+
+        Returns:
+            Whatever returns ``func(*args, **kwargs)``.
+        """
+        return self.run_sync_soon(func, *args, **kwargs).result()
 
 
 class AsyncBaseSocketAdapter(metaclass=ABCMeta):

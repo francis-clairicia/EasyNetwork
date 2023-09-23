@@ -1339,4 +1339,3 @@ class TestAsyncIOBackend:
 
         # Assert
         assert isinstance(threads_portal, ThreadsPortal)
-        assert threads_portal.loop is event_loop

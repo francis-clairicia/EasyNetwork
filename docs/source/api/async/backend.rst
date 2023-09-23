@@ -184,6 +184,7 @@ Scheduling From Other Threads
 
 .. autoclass:: ThreadsPortal
    :members:
+   :special-members: __aenter__, __aexit__
 
 ``concurrent.futures`` Integration
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

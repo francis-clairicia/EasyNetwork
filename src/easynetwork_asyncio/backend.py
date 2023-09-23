@@ -373,7 +373,7 @@ class AsyncioBackend(AbstractAsyncBackend):
         future = loop.run_in_executor(None, func_call)
         del func_call, func, args, kwargs
         try:
-            await TaskUtils.cancel_shielded_wait_asyncio_future(future)
+            await TaskUtils.cancel_shielded_wait_asyncio_futures({future})
             return future.result()
         finally:
             del future
@@ -388,7 +388,7 @@ class AsyncioBackend(AbstractAsyncBackend):
                 # If future.cancel() failed, that means future.set_running_or_notify_cancel() has been called
                 # and set future in RUNNING state.
                 # This future cannot be cancelled anymore, therefore it must be awaited.
-                await TaskUtils.cancel_shielded_wait_asyncio_future(future_wrapper, abort_func=future.cancel)
+                await TaskUtils.cancel_shielded_wait_asyncio_futures({future_wrapper}, abort_func=future.cancel)
 
                 # Unwrap "future_wrapper" to prevent reports about unhandled exceptions.
                 if not future_wrapper.cancelled():

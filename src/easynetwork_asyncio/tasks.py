@@ -23,7 +23,7 @@ import asyncio
 import contextvars
 import math
 from collections import deque
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable, Coroutine, Iterable
 from typing import TYPE_CHECKING, Any, ParamSpec, Self, TypeVar, final
 from weakref import WeakKeyDictionary
 
@@ -253,21 +253,23 @@ class TaskUtils:
         return t
 
     @classmethod
-    async def cancel_shielded_wait_asyncio_future(
+    async def cancel_shielded_wait_asyncio_futures(
         cls,
-        future: asyncio.Future[Any],
+        fs: Iterable[asyncio.Future[Any]],
         *,
         abort_func: Callable[[], bool] | None = None,
     ) -> asyncio.Handle | None:
+        fs = set(fs)
         current_task: asyncio.Task[Any] = cls.current_asyncio_task()
         abort: bool | None = None
         task_cancelled: bool = False
         task_cancel_msg: str | None = None
 
         try:
-            while not future.done():
+            _schedule_task_discard(fs)
+            while fs:
                 try:
-                    await asyncio.wait({future})
+                    await asyncio.wait(fs)
                 except asyncio.CancelledError as exc:
                     if abort is None:
                         if abort_func is None:
@@ -283,7 +285,7 @@ class TaskUtils:
                 return TimeoutHandle._reschedule_delayed_task_cancel(current_task, task_cancel_msg)
             return None
         finally:
-            del current_task, future, abort_func
+            del current_task, fs, abort_func
             task_cancel_msg = None
 
     @classmethod
@@ -302,7 +304,7 @@ class TaskUtils:
         asyncio._unregister_task(task)
 
         try:
-            current_task_cancel_handle = await cls.cancel_shielded_wait_asyncio_future(task)
+            current_task_cancel_handle = await cls.cancel_shielded_wait_asyncio_futures({task})
             if current_task_cancel_handle is not None and task.cancelled():
                 current_task_cancel_handle.cancel()
             return task.result()
@@ -333,3 +335,8 @@ def _get_cancelled_error_message(exc: asyncio.CancelledError) -> str | None:
     else:
         msg = None
     return msg
+
+
+def _schedule_task_discard(fs: set[asyncio.Future[Any]]) -> None:
+    for f in fs:
+        f.add_done_callback(fs.discard)
