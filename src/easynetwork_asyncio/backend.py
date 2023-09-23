@@ -27,8 +27,8 @@ import itertools
 import os
 import socket as _socket
 import sys
-from collections.abc import Callable, Coroutine, Sequence
-from contextlib import AbstractAsyncContextManager as AsyncContextManager
+from collections.abc import Callable, Coroutine, Mapping, Sequence
+from contextlib import AbstractAsyncContextManager as AsyncContextManager, closing
 from typing import TYPE_CHECKING, Any, NoReturn, ParamSpec, TypeVar
 
 try:
@@ -45,7 +45,6 @@ from easynetwork.api_async.backend.sniffio import current_async_library_cvar as 
 from ._utils import create_connection, create_datagram_socket, ensure_resolved, open_listener_sockets_from_getaddrinfo_result
 from .datagram.endpoint import create_datagram_endpoint
 from .datagram.socket import AsyncioTransportDatagramSocketAdapter, RawDatagramSocketAdapter
-from .runner import AsyncioRunner
 from .stream.listener import AcceptedSocket, AcceptedSSLSocket, ListenerSocketAdapter
 from .stream.socket import AsyncioTransportStreamSocketAdapter, RawStreamSocketAdapter
 from .tasks import SystemTask, TaskGroup, TaskUtils, TimeoutHandle
@@ -63,14 +62,20 @@ _T_co = TypeVar("_T_co", covariant=True)
 
 
 class AsyncioBackend(AbstractAsyncBackend):
-    __slots__ = ("__use_asyncio_transport", "__asyncio_runner_factory")
+    __slots__ = ("__use_asyncio_transport",)
 
-    def __init__(self, *, transport: bool = True, runner_factory: Callable[[], asyncio.Runner] | None = None) -> None:
+    def __init__(self, *, transport: bool = True) -> None:
         self.__use_asyncio_transport: bool = bool(transport)
-        self.__asyncio_runner_factory: Callable[[], asyncio.Runner] = runner_factory or asyncio.Runner
 
-    def new_runner(self) -> AsyncioRunner:
-        return AsyncioRunner(self.__asyncio_runner_factory())
+    def bootstrap(
+        self,
+        coro_func: Callable[..., Coroutine[Any, Any, _T]],
+        *args: Any,
+        runner_options: Mapping[str, Any] | None = None,
+    ) -> _T:
+        # Avoid ResourceWarning by always closing the coroutine
+        with asyncio.Runner(**(runner_options or {})) as runner, closing(coro_func(*args)) as coro:
+            return runner.run(coro)
 
     async def coro_yield(self) -> None:
         await asyncio.sleep(0)

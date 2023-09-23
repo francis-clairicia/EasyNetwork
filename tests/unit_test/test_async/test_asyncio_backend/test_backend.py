@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import contextvars
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Coroutine, Sequence
 from socket import AF_INET
 from typing import TYPE_CHECKING, Any, cast
 
@@ -18,6 +18,56 @@ if TYPE_CHECKING:
     from unittest.mock import AsyncMock, MagicMock
 
     from pytest_mock import MockerFixture
+
+
+class TestAsyncIOBackendSync:
+    @pytest.fixture
+    @staticmethod
+    def backend() -> AsyncioBackend:
+        return AsyncioBackend()
+
+    @pytest.mark.parametrize("runner_options", [{"loop_factory": 42}, None])
+    def test____bootstrap____start_new_runner(
+        self,
+        runner_options: dict[str, Any] | None,
+        backend: AsyncioBackend,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_asyncio_runner: MagicMock = mocker.NonCallableMagicMock(
+            spec=asyncio.Runner,
+            **{"run.return_value": mocker.sentinel.Runner_ret_val},
+        )
+        mock_asyncio_runner.__enter__.return_value = mock_asyncio_runner
+        mock_asyncio_runner_cls = mocker.patch("asyncio.Runner", side_effect=[mock_asyncio_runner])
+        mock_coroutine = mocker.NonCallableMagicMock(spec=Coroutine)
+        coro_stub = mocker.stub()
+        coro_stub.return_value = mock_coroutine
+
+        # Act
+        ret_val = backend.bootstrap(
+            coro_stub,
+            mocker.sentinel.arg1,
+            mocker.sentinel.arg2,
+            mocker.sentinel.arg3,
+            runner_options=runner_options,
+        )
+
+        # Assert
+        if runner_options is None:
+            mock_asyncio_runner_cls.assert_called_once_with()
+        else:
+            mock_asyncio_runner_cls.assert_called_once_with(**runner_options)
+
+        coro_stub.assert_called_once_with(
+            mocker.sentinel.arg1,
+            mocker.sentinel.arg2,
+            mocker.sentinel.arg3,
+        )
+
+        mock_asyncio_runner.run.assert_called_once_with(mock_coroutine)
+        mock_coroutine.close.assert_called_once_with()
+        assert ret_val is mocker.sentinel.Runner_ret_val
 
 
 @pytest.mark.asyncio
@@ -1328,7 +1378,6 @@ class TestAsyncIOBackend:
 
     async def test____create_threads_portal____returns_asyncio_portal(
         self,
-        event_loop: asyncio.AbstractEventLoop,
         backend: AsyncioBackend,
     ) -> None:
         # Arrange

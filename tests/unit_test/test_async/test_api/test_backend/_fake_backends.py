@@ -12,7 +12,6 @@ from easynetwork.api_async.backend.abc import (
     ICondition,
     IEvent,
     ILock,
-    Runner,
     SystemTask,
     TaskGroup,
     ThreadsPortal,
@@ -21,7 +20,7 @@ from easynetwork.api_async.backend.abc import (
 
 
 class BaseFakeBackend(AsyncBackend):
-    def new_runner(self) -> Runner:
+    def bootstrap(self, *args: Any, **kwargs: Any) -> Any:
         raise NotImplementedError
 
     async def sleep(self, delay: float) -> None:

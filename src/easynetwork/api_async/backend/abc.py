@@ -35,7 +35,7 @@ __all__ = [
 import contextvars
 import math
 from abc import ABCMeta, abstractmethod
-from collections.abc import Awaitable, Callable, Coroutine, Iterable, Sequence
+from collections.abc import Awaitable, Callable, Coroutine, Iterable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from typing import TYPE_CHECKING, Any, Generic, NoReturn, ParamSpec, Protocol, Self, TypeVar
 
@@ -184,55 +184,6 @@ class ICondition(ILock, Protocol):
             RuntimeError: The underlying lock is not held by this task.
         """
         ...
-
-
-class Runner(metaclass=ABCMeta):
-    """
-    A :term:`context manager` that simplifies `multiple` async function calls in the same context.
-
-    Sometimes several top-level async functions should be called in the same event loop and :class:`contextvars.Context`.
-    """
-
-    __slots__ = ("__weakref__",)
-
-    def __enter__(self) -> Self:
-        return self
-
-    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None) -> None:
-        """Calls :meth:`close`."""
-        self.close()
-
-    @abstractmethod
-    def close(self) -> None:
-        """
-        Closes the runner.
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    def run(self, coro_func: Callable[..., Coroutine[Any, Any, _T]], *args: Any) -> _T:
-        """
-        Runs an async function, and returns the result.
-
-        Calling::
-
-            runner.run(coro_func, *args)
-
-        is equivalent to::
-
-            await coro_func(*args)
-
-        except that :meth:`run` can (and must) be called from a synchronous context.
-
-        Parameters:
-            coro_func: An async function.
-            args: Positional arguments to be passed to `coro_func`. If you need to pass keyword arguments,
-                  then use :func:`functools.partial`.
-
-        Returns:
-            Whatever `coro_func` returns.
-        """
-        raise NotImplementedError
 
 
 class Task(Generic[_T_co], metaclass=ABCMeta):
@@ -791,36 +742,44 @@ class AsyncBackend(metaclass=ABCMeta):
     __slots__ = ("__weakref__",)
 
     @abstractmethod
-    def new_runner(self) -> Runner:
-        """
-        Returns an asynchronous function runner.
-
-        Returns:
-            A :class:`Runner` context.
-        """
-        raise NotImplementedError
-
-    def bootstrap(self, coro_func: Callable[..., Coroutine[Any, Any, _T]], *args: Any) -> _T:
+    def bootstrap(
+        self,
+        coro_func: Callable[..., Coroutine[Any, Any, _T]],
+        *args: Any,
+        runner_options: Mapping[str, Any] | None = ...,
+    ) -> _T:
         """
         Runs an async function, and returns the result.
 
-        Equivalent to::
+        Calling::
 
-            with backend.new_runner() as runner:
-                return runner.run(coro_func, *args)
+            backend.bootstrap(coro_func, *args)
 
-        See :meth:`Runner.run` documentation for details.
+        is equivalent to::
+
+            await coro_func(*args)
+
+        except that :meth:`bootstrap` can (and must) be called from a synchronous context.
+
+        `runner_options` can be used to give additional parameters to the backend runner. For example::
+
+            backend.bootstrap(coro_func, *args, runner_options={"loop_factory": uvloop.new_event_loop})
+
+        would act as the following for :mod:`asyncio`::
+
+            with asyncio.Runner(loop_factory=uvloop.new_event_loop):
+                runner.run(coro_func(*args))
 
         Parameters:
             coro_func: An async function.
             args: Positional arguments to be passed to `coro_func`. If you need to pass keyword arguments,
                   then use :func:`functools.partial`.
+            runner_options: Options for backend's runner.
 
         Returns:
-            Whatever `coro_func` returns.
+            Whatever ``await coro_func(*args)`` returns.
         """
-        with self.new_runner() as runner:
-            return runner.run(coro_func, *args)
+        raise NotImplementedError
 
     @abstractmethod
     async def coro_yield(self) -> None:

@@ -32,12 +32,6 @@ Runners
 
 .. automethod:: AsyncBackend.bootstrap
 
-.. automethod:: AsyncBackend.new_runner
-
-.. autoclass:: Runner
-   :members:
-   :special-members: __enter__, __exit__
-
 Coroutines And Tasks
 --------------------
 

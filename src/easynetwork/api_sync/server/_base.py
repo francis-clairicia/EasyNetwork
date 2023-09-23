@@ -22,7 +22,8 @@ import concurrent.futures
 import contextlib as _contextlib
 import threading as _threading
 import time
-from typing import TYPE_CHECKING, Self
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any
 
 from ...api_async.backend.abc import ThreadsPortal
 from ...api_async.server.abc import SupportsEventSet
@@ -31,18 +32,17 @@ from ...tools._lock import ForkSafeLock
 from .abc import AbstractNetworkServer
 
 if TYPE_CHECKING:
-    from ...api_async.backend.abc import Runner
     from ...api_async.server.abc import AbstractAsyncNetworkServer
 
 
 class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
     __slots__ = (
         "__server",
-        "__runner",
         "__close_lock",
         "__bootstrap_lock",
         "__threads_portal",
         "__is_shutdown",
+        "__is_closed",
     )
 
     def __init__(self, server: AbstractAsyncNetworkServer) -> None:
@@ -51,14 +51,9 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
         self.__threads_portal: ThreadsPortal | None = None
         self.__is_shutdown = _threading.Event()
         self.__is_shutdown.set()
-        self.__runner: Runner | None = self.__server.get_backend().new_runner()
+        self.__is_closed = _threading.Event()
         self.__close_lock = ForkSafeLock()
         self.__bootstrap_lock = ForkSafeLock()
-
-    def __enter__(self) -> Self:
-        assert self.__runner is not None, "Server is entered twice"  # nosec assert_used
-        self.__runner.__enter__()
-        return super().__enter__()
 
     def is_serving(self) -> bool:
         if (portal := self._portal) is not None:
@@ -74,12 +69,10 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
                 with _contextlib.suppress(concurrent.futures.CancelledError):
                     portal.run_coroutine(self.__server.server_close)
             else:
-                runner, self.__runner = self.__runner, None
-                if runner is None:
-                    return
-                stack.push(runner)
+                stack.callback(self.__is_closed.set)
                 self.__is_shutdown.wait()  # Ensure we are not in the interval between the server shutdown and the scheduler shutdown
-                runner.run(self.__server.server_close)
+                backend = self.__server.get_backend()
+                backend.bootstrap(self.__server.server_close)
 
     server_close.__doc__ = AbstractNetworkServer.server_close.__doc__
 
@@ -106,7 +99,24 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
         async with backend.move_on_after(timeout_delay):
             await self.__server.shutdown()
 
-    def serve_forever(self, *, is_up_event: SupportsEventSet | None = None) -> None:
+    def serve_forever(
+        self,
+        *,
+        is_up_event: SupportsEventSet | None = None,
+        runner_options: Mapping[str, Any] | None = None,
+    ) -> None:
+        """
+        Starts the server's main loop.
+
+        Parameters:
+            is_up_event: If given, will be triggered when the server is ready to accept new clients.
+            runner_options: Options to pass to the :meth:`~AsyncBackend.bootstrap` method.
+
+        Raises:
+            ServerClosedError: The server is closed.
+            ServerAlreadyRunning: Another task already called :meth:`serve_forever`.
+        """
+
         backend = self.__server.get_backend()
         with _contextlib.ExitStack() as server_exit_stack, _contextlib.suppress(backend.get_cancelled_exc_class()):
             if is_up_event is not None:
@@ -119,8 +129,7 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
             locks_stack.enter_context(self.__close_lock.get())
             locks_stack.enter_context(self.__bootstrap_lock.get())
 
-            runner = self.__runner
-            if runner is None:
+            if self.__is_closed.is_set():
                 raise ServerClosedError("Closed server")
 
             if not self.__is_shutdown.is_set():
@@ -145,9 +154,7 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
 
                     await self.__server.serve_forever(is_up_event=is_up_event)
 
-            runner.run(serve_forever)
-
-    serve_forever.__doc__ = AbstractNetworkServer.serve_forever.__doc__
+            backend.bootstrap(serve_forever, runner_options=runner_options)
 
     @property
     def _server(self) -> AbstractAsyncNetworkServer:
