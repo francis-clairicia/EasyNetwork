@@ -102,10 +102,6 @@ class TestDatagramEndpoint:
     def mock_asyncio_transport(mocker: MockerFixture) -> MagicMock:
         mock = mocker.NonCallableMagicMock(spec=asyncio.DatagramTransport)
         mock.is_closing.return_value = False
-
-        # Tell connection_made() not to try to monkeypatch this mock object
-        del mock._address
-
         return mock
 
     @staticmethod
@@ -418,6 +414,10 @@ class TestDatagramEndpointProtocol:
     def mock_asyncio_transport(mocker: MockerFixture) -> MagicMock:
         mock = mocker.NonCallableMagicMock(spec=asyncio.DatagramTransport)
         mock.is_closing.return_value = False
+
+        # Tell connection_made() not to try to monkeypatch this mock object
+        del mock._address
+
         return mock
 
     @staticmethod

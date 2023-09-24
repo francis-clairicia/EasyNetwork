@@ -90,8 +90,6 @@ class DatagramEndpoint:
         self.__transport: asyncio.DatagramTransport = transport
         self.__protocol: DatagramEndpointProtocol = protocol
 
-        _monkeypatch_transport(transport, protocol._get_loop())
-
     def close(self) -> None:
         self.__transport.close()
 
@@ -175,7 +173,7 @@ class DatagramEndpointProtocol(asyncio.DatagramProtocol):
         self.__loop: asyncio.AbstractEventLoop = loop
         self.__recv_queue: asyncio.Queue[tuple[bytes, tuple[Any, ...]] | None] = recv_queue
         self.__exception_queue: asyncio.Queue[Exception] = exception_queue
-        self.__transport: asyncio.BaseTransport | None = None
+        self.__transport: asyncio.DatagramTransport | None = None
         self.__closed: asyncio.Future[None] = loop.create_future()
         self.__drain_waiters: collections.deque[asyncio.Future[None]] = collections.deque()
         self.__write_paused: bool = False
@@ -191,10 +189,11 @@ class DatagramEndpointProtocol(asyncio.DatagramProtocol):
             if closed.done() and not closed.cancelled():
                 closed.exception()
 
-    def connection_made(self, transport: asyncio.BaseTransport) -> None:
+    def connection_made(self, transport: asyncio.DatagramTransport) -> None:  # type: ignore[override]
         assert self.__transport is None, "Transport already set"  # nosec assert_used
         self.__transport = transport
         self.__connection_lost = False
+        _monkeypatch_transport(transport, self.__loop)
 
     def connection_lost(self, exc: Exception | None) -> None:
         self.__connection_lost = True
