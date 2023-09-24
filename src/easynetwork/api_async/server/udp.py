@@ -40,13 +40,12 @@ from ...tools._utils import (
 from ...tools.constants import MAX_DATAGRAM_BUFSIZE
 from ...tools.socket import SocketAddress, SocketProxy, new_socket_address
 from ..backend.factory import AsyncBackendFactory
-from ..backend.tasks import SingleTaskRunner
 from ._tools.actions import ErrorAction as _ErrorAction, RequestAction as _RequestAction
 from .abc import AbstractAsyncNetworkServer, SupportsEventSet
 from .handler import AsyncDatagramClient, AsyncDatagramRequestHandler
 
 if TYPE_CHECKING:
-    from ..backend.abc import AsyncBackend, AsyncDatagramSocketAdapter, ICondition, IEvent, ILock, Task, TaskGroup
+    from ..backend.abc import AsyncBackend, AsyncDatagramSocketAdapter, CancelScope, ICondition, IEvent, ILock, Task, TaskGroup
 
 _KT = TypeVar("_KT")
 _VT = TypeVar("_VT")
@@ -61,7 +60,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         "__backend",
         "__socket",
         "__socket_factory",
-        "__socket_factory_runner",
+        "__socket_factory_scope",
         "__protocol",
         "__request_handler",
         "__is_shutdown",
@@ -122,7 +121,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             remote_address=None,
             reuse_port=reuse_port,
         )
-        self.__socket_factory_runner: SingleTaskRunner[AsyncDatagramSocketAdapter] | None = None
+        self.__socket_factory_scope: CancelScope | None = None
 
         self.__backend: AsyncBackend = backend
         self.__socket: AsyncDatagramSocketAdapter | None = None
@@ -149,7 +148,8 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
     is_serving.__doc__ = AbstractAsyncNetworkServer.is_serving.__doc__
 
     async def server_close(self) -> None:
-        self.__kill_socket_factory_runner()
+        if self.__socket_factory_scope is not None:
+            self.__socket_factory_scope.cancel()
         self.__socket_factory = None
         await self.__close_socket()
 
@@ -171,7 +171,6 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 exit_stack.push_async_callback(self.__mainloop_task.wait)
 
     async def shutdown(self) -> None:
-        self.__kill_socket_factory_runner()
         if self.__mainloop_task is not None:
             self.__mainloop_task.cancel()
         if self.__shutdown_asked:
@@ -184,10 +183,6 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             self.__shutdown_asked = False
 
     shutdown.__doc__ = AbstractAsyncNetworkServer.shutdown.__doc__
-
-    def __kill_socket_factory_runner(self) -> None:
-        if self.__socket_factory_runner is not None:
-            self.__socket_factory_runner.cancel()
 
     async def serve_forever(self, *, is_up_event: SupportsEventSet | None = None) -> None:
         async with _contextlib.AsyncExitStack() as server_exit_stack:
@@ -205,14 +200,17 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
             # Bind and activate
             assert self.__socket is None  # nosec assert_used
-            assert self.__socket_factory_runner is None  # nosec assert_used
+            assert self.__socket_factory_scope is None  # nosec assert_used
             if self.__socket_factory is None:
                 raise ServerClosedError("Closed server")
             try:
-                self.__socket_factory_runner = SingleTaskRunner(self.__backend, self.__socket_factory)
-                self.__socket = await self.__socket_factory_runner.run()
+                with self.__backend.open_cancel_scope() as self.__socket_factory_scope:
+                    await self.__backend.coro_yield()
+                    self.__socket = await self.__socket_factory()
+                if self.__socket_factory_scope.cancelled_caught() or self.__socket is None:
+                    raise ServerClosedError("Closed server")
             finally:
-                self.__socket_factory_runner = None
+                self.__socket_factory_scope = None
             ###################
 
             # Final teardown

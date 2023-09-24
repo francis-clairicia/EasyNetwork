@@ -228,7 +228,7 @@ class AbstractAsyncNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metacl
 
         while True:
             try:
-                async with timeout_after(timeout):
+                with timeout_after(timeout):
                     _start = perf_counter()
                     packet = await self.recv_packet()
                     _end = perf_counter()

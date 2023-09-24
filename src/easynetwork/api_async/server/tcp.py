@@ -54,7 +54,6 @@ from ...tools.socket import (
     set_tcp_nodelay,
 )
 from ..backend.factory import AsyncBackendFactory
-from ..backend.tasks import SingleTaskRunner
 from ._tools.actions import ErrorAction as _ErrorAction, RequestAction as _RequestAction
 from .abc import AbstractAsyncNetworkServer, SupportsEventSet
 from .handler import AsyncStreamClient, AsyncStreamRequestHandler
@@ -67,6 +66,7 @@ if TYPE_CHECKING:
         AsyncBackend,
         AsyncListenerSocketAdapter,
         AsyncStreamSocketAdapter,
+        CancelScope,
         IEvent,
         Task,
         TaskGroup,
@@ -82,7 +82,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         "__backend",
         "__listeners",
         "__listeners_factory",
-        "__listeners_factory_runner",
+        "__listeners_factory_scope",
         "__protocol",
         "__request_handler",
         "__is_shutdown",
@@ -200,7 +200,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 backlog=backlog,
                 reuse_port=reuse_port,
             )
-        self.__listeners_factory_runner: SingleTaskRunner[Sequence[AsyncListenerSocketAdapter]] | None = None
+        self.__listeners_factory_scope: CancelScope | None = None
 
         self.__backend: AsyncBackend = backend
         self.__listeners: tuple[AsyncListenerSocketAdapter, ...] | None = None
@@ -239,7 +239,8 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 del listener_task
 
     async def server_close(self) -> None:
-        self.__kill_listener_factory_runner()
+        if self.__listeners_factory_scope is not None:
+            self.__listeners_factory_scope.cancel()
         self.__listeners_factory = None
         await self.__close_listeners()
 
@@ -266,7 +267,6 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             await self.__backend.cancel_shielded_coro_yield()
 
     async def shutdown(self) -> None:
-        self.__kill_listener_factory_runner()
         if self.__mainloop_task is not None:
             self.__mainloop_task.cancel()
         if self.__shutdown_asked:
@@ -279,10 +279,6 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             self.__shutdown_asked = False
 
     shutdown.__doc__ = AbstractAsyncNetworkServer.shutdown.__doc__
-
-    def __kill_listener_factory_runner(self) -> None:
-        if self.__listeners_factory_runner is not None:
-            self.__listeners_factory_runner.cancel()
 
     async def serve_forever(self, *, is_up_event: SupportsEventSet | None = None) -> None:
         async with _contextlib.AsyncExitStack() as server_exit_stack:
@@ -300,14 +296,17 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
             # Bind and activate
             assert self.__listeners is None  # nosec assert_used
-            assert self.__listeners_factory_runner is None  # nosec assert_used
+            assert self.__listeners_factory_scope is None  # nosec assert_used
             if self.__listeners_factory is None:
                 raise ServerClosedError("Closed server")
             try:
-                self.__listeners_factory_runner = SingleTaskRunner(self.__backend, self.__listeners_factory)
-                self.__listeners = tuple(await self.__listeners_factory_runner.run())
+                with self.__backend.open_cancel_scope() as self.__listeners_factory_scope:
+                    await self.__backend.coro_yield()
+                    self.__listeners = tuple(await self.__listeners_factory())
+                if self.__listeners_factory_scope.cancelled_caught():
+                    raise ServerClosedError("Closed server")
             finally:
-                self.__listeners_factory_runner = None
+                self.__listeners_factory_scope = None
             if not self.__listeners:
                 self.__listeners = None
                 raise OSError("empty listeners list")
@@ -470,9 +469,8 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         return request_handler_generator
 
     async def __force_close_stream_socket(self, socket: AsyncStreamSocketAdapter) -> None:
-        with _contextlib.suppress(OSError):
-            async with self.__backend.move_on_after(0):
-                await socket.aclose()
+        with self.__backend.move_on_after(0), _contextlib.suppress(OSError):
+            await socket.aclose()
 
     @classmethod
     def __have_errno(cls, exc: OSError | BaseExceptionGroup[OSError], errnos: set[int]) -> bool:

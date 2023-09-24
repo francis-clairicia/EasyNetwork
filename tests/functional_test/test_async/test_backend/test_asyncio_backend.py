@@ -5,7 +5,8 @@ import contextvars
 import time
 from collections.abc import Awaitable, Callable
 from concurrent.futures import CancelledError as FutureCancelledError, Future, wait as wait_concurrent_futures
-from typing import TYPE_CHECKING, Any
+from contextlib import ExitStack
+from typing import TYPE_CHECKING, Any, Literal
 
 from easynetwork.api_async.backend.factory import AsyncBackendFactory
 from easynetwork_asyncio.backend import AsyncIOBackend
@@ -149,7 +150,7 @@ class TestAsyncioBackend:
         self,
         backend: AsyncIOBackend,
     ) -> None:
-        async with backend.timeout(1):
+        with backend.timeout(1):
             assert await asyncio.sleep(0.5, 42) == 42
 
     async def test____timeout____timeout_error(
@@ -157,7 +158,7 @@ class TestAsyncioBackend:
         backend: AsyncIOBackend,
     ) -> None:
         with pytest.raises(TimeoutError):
-            async with backend.timeout(0.25):
+            with backend.timeout(0.25):
                 await asyncio.sleep(0.5, 42)
 
     async def test____timeout____cancellation(
@@ -166,7 +167,7 @@ class TestAsyncioBackend:
         backend: AsyncIOBackend,
     ) -> None:
         async def coroutine() -> None:
-            async with backend.timeout(0.25):
+            with backend.timeout(0.25):
                 await asyncio.sleep(0.5, 42)
 
         task = event_loop.create_task(coroutine())
@@ -180,7 +181,7 @@ class TestAsyncioBackend:
         event_loop: asyncio.AbstractEventLoop,
         backend: AsyncIOBackend,
     ) -> None:
-        async with backend.timeout_at(event_loop.time() + 1):
+        with backend.timeout_at(event_loop.time() + 1):
             assert await asyncio.sleep(0.5, 42) == 42
 
     async def test____timeout_at____timeout_error(
@@ -189,7 +190,7 @@ class TestAsyncioBackend:
         backend: AsyncIOBackend,
     ) -> None:
         with pytest.raises(TimeoutError):
-            async with backend.timeout_at(event_loop.time() + 0.25):
+            with backend.timeout_at(event_loop.time() + 0.25):
                 await asyncio.sleep(0.5, 42)
 
     async def test____timeout_at____cancellation(
@@ -198,7 +199,7 @@ class TestAsyncioBackend:
         backend: AsyncIOBackend,
     ) -> None:
         async def coroutine() -> None:
-            async with backend.timeout_at(event_loop.time() + 0.25):
+            with backend.timeout_at(event_loop.time() + 0.25):
                 await asyncio.sleep(0.5, 42)
 
         task = event_loop.create_task(coroutine())
@@ -211,19 +212,19 @@ class TestAsyncioBackend:
         self,
         backend: AsyncIOBackend,
     ) -> None:
-        async with backend.move_on_after(1) as handle:
+        with backend.move_on_after(1) as scope:
             assert await asyncio.sleep(0.5, 42) == 42
 
-        assert not handle.expired()
+        assert not scope.cancelled_caught()
 
     async def test____move_on_after____timeout_error(
         self,
         backend: AsyncIOBackend,
     ) -> None:
-        async with backend.move_on_after(0.25) as handle:
+        with backend.move_on_after(0.25) as scope:
             await asyncio.sleep(0.5, 42)
 
-        assert handle.expired()
+        assert scope.cancelled_caught()
 
     async def test____move_on_after____cancellation(
         self,
@@ -231,7 +232,7 @@ class TestAsyncioBackend:
         backend: AsyncIOBackend,
     ) -> None:
         async def coroutine() -> None:
-            async with backend.move_on_after(0.25):
+            with backend.move_on_after(0.25):
                 await asyncio.sleep(0.5, 42)
 
         task = event_loop.create_task(coroutine())
@@ -245,20 +246,20 @@ class TestAsyncioBackend:
         event_loop: asyncio.AbstractEventLoop,
         backend: AsyncIOBackend,
     ) -> None:
-        async with backend.move_on_at(event_loop.time() + 1) as handle:
+        with backend.move_on_at(event_loop.time() + 1) as scope:
             assert await asyncio.sleep(0.5, 42) == 42
 
-        assert not handle.expired()
+        assert not scope.cancelled_caught()
 
     async def test____move_on_at____timeout_error(
         self,
         event_loop: asyncio.AbstractEventLoop,
         backend: AsyncIOBackend,
     ) -> None:
-        async with backend.move_on_at(event_loop.time() + 0.25) as handle:
+        with backend.move_on_at(event_loop.time() + 0.25) as scope:
             await asyncio.sleep(0.5, 42)
 
-        assert handle.expired()
+        assert scope.cancelled_caught()
 
     async def test____move_on_at____cancellation(
         self,
@@ -266,7 +267,7 @@ class TestAsyncioBackend:
         backend: AsyncIOBackend,
     ) -> None:
         async def coroutine() -> None:
-            async with backend.move_on_at(event_loop.time() + 0.25):
+            with backend.move_on_at(event_loop.time() + 0.25):
                 await asyncio.sleep(0.5, 42)
 
         task = event_loop.create_task(coroutine())
@@ -287,61 +288,130 @@ class TestAsyncioBackend:
         with pytest.raises(asyncio.CancelledError):
             await sleep_task
 
-    async def test____spawn_task____run_coroutine_in_background(
-        self,
-        backend: AsyncIOBackend,
-    ) -> None:
-        async def coroutine(value: int) -> int:
-            return await asyncio.sleep(0.5, value)
-
-        task = backend.spawn_task(coroutine, 42)
-        await asyncio.sleep(1)
-        assert task.done()
-        assert await task.join() == 42
-
-    async def test____spawn_task____task_cancellation(
+    async def test____open_cancel_scope____unbound_cancel_scope____cancel_when_entering(
         self,
         event_loop: asyncio.AbstractEventLoop,
         backend: AsyncIOBackend,
     ) -> None:
-        async def coroutine(value: int) -> int:
-            return await asyncio.sleep(0.5, value)
+        async def coroutine() -> None:
+            current_task = asyncio.current_task()
+            assert current_task is not None
 
-        task = backend.spawn_task(coroutine, 42)
+            scope = backend.open_cancel_scope()
+            scope.cancel()
+            assert scope.cancel_called()
 
-        event_loop.call_later(0.2, task.cancel)
-
-        with pytest.raises(asyncio.CancelledError):
-            await task.join()
-
-        assert task.cancelled()
-
-    async def test____spawn_task____exception(
-        self,
-        backend: AsyncIOBackend,
-    ) -> None:
-        async def coroutine(value: int) -> int:
+            assert current_task.cancelling() == 0
             await asyncio.sleep(0.1)
-            raise ZeroDivisionError
 
-        task = backend.spawn_task(coroutine, 42)
+            with scope:
+                assert current_task.cancelling() == 1
+                scope.cancel()
+                assert current_task.cancelling() == 1
+                await backend.coro_yield()
 
-        with pytest.raises(ZeroDivisionError):
-            await task.join()
+            assert current_task.cancelling() == 0
+            assert scope.cancelled_caught()
 
-    async def test____spawn_task____with_context(
+        await event_loop.create_task(coroutine())
+
+    async def test____open_cancel_scope____unbound_cancel_scope____deadline_scheduled_when_entering(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        backend: AsyncIOBackend,
+    ) -> None:
+        async def coroutine() -> None:
+            current_task = asyncio.current_task()
+            assert current_task is not None
+
+            scope = backend.open_cancel_scope()
+            scope.reschedule(event_loop.time() + 1)
+
+            assert current_task.cancelling() == 0
+            await asyncio.sleep(0.5)
+
+            with backend.timeout(0.6):
+                with scope:
+                    assert current_task.cancelling() == 0
+                    await backend.sleep_forever()
+
+            assert scope.cancelled_caught()
+
+        await event_loop.create_task(coroutine())
+
+    async def test____open_cancel_scope____overwrite_defined_deadline(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        backend: AsyncIOBackend,
+    ) -> None:
+        async def coroutine() -> None:
+            current_task = asyncio.current_task()
+            assert current_task is not None
+
+            with backend.move_on_after(1) as scope:
+                await backend.sleep(0.5)
+                scope.deadline += 1
+                await backend.sleep(1)
+                del scope.deadline
+                assert scope.deadline == float("+inf")
+                await backend.sleep(1)
+
+            assert not scope.cancelled_caught()
+
+        await event_loop.create_task(coroutine())
+
+    async def test____open_cancel_scope____invalid_deadline(
         self,
         backend: AsyncIOBackend,
     ) -> None:
-        async def coroutine(value: str) -> None:
-            cvar_for_test.set(value)
+        with pytest.raises(ValueError):
+            _ = backend.open_cancel_scope(deadline=float("nan"))
 
-        cvar_for_test.set("something")
-        ctx = contextvars.copy_context()
-        task = backend.spawn_task(coroutine, "other", context=ctx)
-        await task.wait()
-        assert cvar_for_test.get() == "something"
-        assert ctx.run(cvar_for_test.get) == "other"
+    async def test____open_cancel_scope____context_reuse(
+        self,
+        backend: AsyncIOBackend,
+    ) -> None:
+        with backend.open_cancel_scope() as scope:
+            with pytest.raises(RuntimeError, match=r"^CancelScope entered twice$"):
+                with scope:
+                    ...
+
+        with pytest.raises(RuntimeError, match=r"^CancelScope entered twice$"):
+            with scope:
+                ...
+
+    async def test____open_cancel_scope____context_exit_before_enter(
+        self,
+        backend: AsyncIOBackend,
+    ) -> None:
+        with pytest.raises(RuntimeError, match=r"^This cancel scope is not active$"), ExitStack() as stack:
+            stack.push(backend.open_cancel_scope())
+
+    async def test____open_cancel_scope____task_misnesting(
+        self,
+        backend: AsyncIOBackend,
+    ) -> None:
+        async def coroutine() -> ExitStack:
+            stack = ExitStack()
+            stack.enter_context(backend.open_cancel_scope())
+            return stack
+
+        stack = await asyncio.create_task(coroutine())
+        with pytest.raises(RuntimeError, match=r"^Attempted to exit cancel scope in a different task than it was entered in$"):
+            stack.close()
+
+    async def test____open_cancel_scope____scope_misnesting(
+        self,
+        backend: AsyncIOBackend,
+    ) -> None:
+        stack = ExitStack()
+        stack.enter_context(backend.open_cancel_scope())
+        with backend.open_cancel_scope():
+            with pytest.raises(
+                RuntimeError, match=r"^Attempted to exit a cancel scope that isn't the current tasks's current cancel scope$"
+            ):
+                stack.close()
+            stack.pop_all()
 
     async def test____create_task_group____task_pool(
         self,
@@ -402,8 +472,10 @@ class TestAsyncioBackend:
         # Tasks cannot be cancelled twice
         assert not task_42.cancel()
 
+    @pytest.mark.parametrize("join_method", ["join", "join_or_cancel"])
     async def test____create_task_group____task_join_cancel_shielding(
         self,
+        join_method: Literal["join", "join_or_cancel"],
         event_loop: asyncio.AbstractEventLoop,
         backend: AsyncIOBackend,
     ) -> None:
@@ -413,15 +485,24 @@ class TestAsyncioBackend:
         async with backend.create_task_group() as task_group:
             inner_task = task_group.start_soon(coroutine, 42)
 
-            outer_task = event_loop.create_task(inner_task.join())
+            match join_method:
+                case "join":
+                    outer_task = event_loop.create_task(inner_task.join())
+                case "join_or_cancel":
+                    outer_task = event_loop.create_task(inner_task.join_or_cancel())
+                case _:
+                    pytest.fail("invalid argument")
             event_loop.call_later(0.2, outer_task.cancel)
 
             with pytest.raises(asyncio.CancelledError):
                 await outer_task
 
             assert outer_task.cancelled()
-            assert not inner_task.cancelled()
-            assert await inner_task.join() == 42
+            if join_method == "join_or_cancel":
+                assert inner_task.cancelled()
+            else:
+                assert not inner_task.cancelled()
+                assert await inner_task.join() == 42
 
     async def test____create_task_group____start_soon_with_context(
         self,
@@ -987,11 +1068,12 @@ class TestAsyncioBackendShieldedCancellation:
         checkpoints: list[str] = []
 
         async def coroutine(value: int) -> int:
-            async with backend.timeout(0) as handle:
+            with backend.timeout(0) as scope:
                 await cancel_shielded_coroutine()
                 checkpoints.append("cancel_shielded_coroutine")
 
-            assert handle.expired()  # Context manager did not raise but effectively tried to cancel the task
+            assert scope.cancel_called()
+            assert not scope.cancelled_caught()
             await backend.coro_yield()
             checkpoints.append("coro_yield")
             return value
@@ -1013,9 +1095,9 @@ class TestAsyncioBackendShieldedCancellation:
             current_task = asyncio.current_task()
             assert current_task is not None
 
-            async with backend.move_on_after(0) as handle:
-                async with backend.timeout(0):
-                    async with backend.timeout(0):
+            with backend.move_on_after(0) as scope:
+                with backend.timeout(0):
+                    with backend.timeout(0):
                         await cancel_shielded_coroutine()
                         checkpoints.append("inner_cancel_shielded_coroutine")
                         assert current_task.cancelling() == 3
@@ -1031,7 +1113,8 @@ class TestAsyncioBackendShieldedCancellation:
 
             assert current_task.cancelling() == 0
 
-            assert handle.expired()
+            assert scope.cancel_called()
+            assert scope.cancelled_caught()
             await backend.coro_yield()
             checkpoints.append("coro_yield")
             return value
@@ -1056,7 +1139,7 @@ class TestAsyncioBackendShieldedCancellation:
             await cancel_shielded_coroutine()
             checkpoints.append("cancel_shielded_coroutine")
 
-            async with backend.timeout(0):
+            with backend.timeout(0):
                 await cancel_shielded_coroutine()
                 checkpoints.append("inner_cancel_shielded_coroutine")
                 assert current_task.cancelling() == 2
@@ -1072,6 +1155,89 @@ class TestAsyncioBackendShieldedCancellation:
         with pytest.raises(asyncio.CancelledError):
             await task
         assert checkpoints == ["cancel_shielded_coroutine", "inner_cancel_shielded_coroutine"]
+
+    async def test____cancel_shielded_coroutine____cancel_at_timeout_end_if_task_cancellation_does_not_come_from_scope(
+        self,
+        cancel_shielded_coroutine: Callable[[], Awaitable[Any]],
+        event_loop: asyncio.AbstractEventLoop,
+        backend: AsyncIOBackend,
+    ) -> None:
+        checkpoints: list[str] = []
+
+        async def coroutine(value: int) -> int:
+            current_task = asyncio.current_task()
+            assert current_task is not None
+
+            with backend.open_cancel_scope():
+                with backend.open_cancel_scope():
+                    await cancel_shielded_coroutine()
+                    checkpoints.append("cancel_shielded_coroutine")
+                    assert current_task.cancelling() == 1
+
+            assert current_task.cancelling() == 1
+            await backend.coro_yield()
+            checkpoints.append("should_not_be_here")
+            return value
+
+        task = event_loop.create_task(coroutine(42))
+        event_loop.call_soon(task.cancel)
+
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert checkpoints == ["cancel_shielded_coroutine"]
+
+    async def test____cancel_shielded_coroutine____scope_cancellation_edge_case_1(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        backend: AsyncIOBackend,
+    ) -> None:
+        async def coroutine() -> None:
+            current_task = asyncio.current_task()
+            assert current_task is not None
+
+            inner_scope = backend.open_cancel_scope()
+            with backend.move_on_after(0.5) as outer_scope:
+                with inner_scope:
+                    await backend.ignore_cancellation(backend.sleep(1))
+                    inner_scope.cancel()
+                    await backend.coro_yield()
+
+            assert outer_scope.cancel_called()
+            assert inner_scope.cancel_called()
+
+            assert not outer_scope.cancelled_caught()
+            assert inner_scope.cancelled_caught()
+
+        await event_loop.create_task(coroutine())
+
+    async def test____cancel_shielded_coroutine____scope_cancellation_edge_case_2(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        backend: AsyncIOBackend,
+    ) -> None:
+        async def coroutine() -> None:
+            current_task = asyncio.current_task()
+            assert current_task is not None
+
+            outer_scope = backend.move_on_after(1.5)
+            inner_scope = backend.move_on_after(0.5)
+            with outer_scope:
+                with inner_scope:
+                    await backend.ignore_cancellation(backend.sleep(1))
+                assert not inner_scope.cancelled_caught()
+                try:
+                    await backend.coro_yield()
+                except asyncio.CancelledError:
+                    pytest.fail("Cancelled")
+                await backend.sleep(1)
+
+            assert outer_scope.cancel_called()
+            assert inner_scope.cancel_called()
+
+            assert outer_scope.cancelled_caught()
+            assert not inner_scope.cancelled_caught()
+
+        await event_loop.create_task(coroutine())
 
     async def test____ignore_cancellation____do_not_reschedule_if_inner_task_cancelled_itself(
         self,

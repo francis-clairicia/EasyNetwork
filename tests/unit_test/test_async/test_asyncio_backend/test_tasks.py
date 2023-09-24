@@ -1,16 +1,14 @@
 from __future__ import annotations
 
 import asyncio
-import math
-from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from easynetwork_asyncio.tasks import Task, TaskUtils, TimeoutHandle
+from easynetwork_asyncio.tasks import Task, TaskUtils
 
 import pytest
 
 if TYPE_CHECKING:
-    from unittest.mock import AsyncMock, MagicMock
+    from unittest.mock import AsyncMock
 
     from pytest_mock import MockerFixture
 
@@ -123,7 +121,7 @@ class TestTask:
         await task.wait()
 
         # Assert
-        mock_asyncio_wait.assert_not_called()
+        mock_asyncio_wait.assert_awaited_once_with({mock_asyncio_task})
 
     @pytest.mark.asyncio
     async def test____join____await_task(
@@ -145,199 +143,6 @@ class TestTask:
         # Assert
         mock_asyncio_shield.assert_awaited_once_with(mock_asyncio_task)
         assert result is mocker.sentinel.task_result
-
-
-class TestTimeout:
-    @pytest.fixture
-    @staticmethod
-    def mock_asyncio_timeout_handle(mocker: MockerFixture) -> MagicMock:
-        mock = mocker.NonCallableMagicMock(spec=asyncio.Timeout)
-        mock.__aenter__.return_value = mock
-        mock.when.return_value = None
-        mock.reschedule.return_value = None
-        mock.expired.return_value = False
-        return mock
-
-    @pytest.fixture
-    @staticmethod
-    def timeout_handle(mock_asyncio_timeout_handle: MagicMock) -> TimeoutHandle:
-        return TimeoutHandle(mock_asyncio_timeout_handle)
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize("timeout", [TaskUtils.timeout_after, TaskUtils.move_on_after])
-    async def test____timeout____schedule_timeout(
-        self,
-        timeout: Callable[[float], TimeoutHandle],
-        mocker: MockerFixture,
-        mock_asyncio_timeout_handle: MagicMock,
-    ) -> None:
-        # Arrange
-        mock_timeout = mocker.patch("asyncio.timeout", return_value=mock_asyncio_timeout_handle)
-
-        # Act
-        async with timeout(123456789):
-            pass
-
-        # Assert
-        mock_timeout.assert_called_once_with(123456789.0)
-        mock_asyncio_timeout_handle.__aenter__.assert_called_once()
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize("timeout", [TaskUtils.timeout_after, TaskUtils.move_on_after])
-    async def test____timeout____handle_infinite(
-        self,
-        timeout: Callable[[float], TimeoutHandle],
-        mocker: MockerFixture,
-        mock_asyncio_timeout_handle: MagicMock,
-    ) -> None:
-        # Arrange
-        mock_timeout = mocker.patch("asyncio.timeout", return_value=mock_asyncio_timeout_handle)
-
-        # Act
-        async with timeout(math.inf):
-            pass
-
-        # Assert
-        mock_timeout.assert_called_once_with(None)
-        mock_asyncio_timeout_handle.__aenter__.assert_called_once()
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize("timeout_at", [TaskUtils.timeout_at, TaskUtils.move_on_at])
-    async def test____timeout_at____schedule_timeout(
-        self,
-        timeout_at: Callable[[float], TimeoutHandle],
-        mocker: MockerFixture,
-        mock_asyncio_timeout_handle: MagicMock,
-    ) -> None:
-        # Arrange
-        mock_timeout_at = mocker.patch("asyncio.timeout_at", return_value=mock_asyncio_timeout_handle)
-
-        # Act
-        async with timeout_at(123456789):
-            pass
-
-        # Assert
-        mock_timeout_at.assert_called_once_with(123456789.0)
-        mock_asyncio_timeout_handle.__aenter__.assert_called_once()
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize("timeout_at", [TaskUtils.timeout_at, TaskUtils.move_on_at])
-    async def test____timeout_at____handle_infinite(
-        self,
-        timeout_at: Callable[[float], TimeoutHandle],
-        mocker: MockerFixture,
-        mock_asyncio_timeout_handle: MagicMock,
-    ) -> None:
-        # Arrange
-        mock_timeout_at = mocker.patch("asyncio.timeout_at", return_value=mock_asyncio_timeout_handle)
-
-        # Act
-        async with timeout_at(math.inf):
-            pass
-
-        # Assert
-        mock_timeout_at.assert_called_once_with(None)
-        mock_asyncio_timeout_handle.__aenter__.assert_called_once()
-
-    def test____timeout_handle____when____return_deadline(
-        self,
-        timeout_handle: TimeoutHandle,
-        mock_asyncio_timeout_handle: MagicMock,
-    ) -> None:
-        # Arrange
-        mock_asyncio_timeout_handle.when.return_value = 123456.789
-
-        # Act
-        deadline: float = timeout_handle.when()
-
-        # Assert
-        assert deadline == 123456.789
-
-    def test____timeout_handle____when____infinite_deadline(
-        self,
-        timeout_handle: TimeoutHandle,
-        mock_asyncio_timeout_handle: MagicMock,
-    ) -> None:
-        # Arrange
-        mock_asyncio_timeout_handle.when.return_value = None
-
-        # Act
-        deadline: float = timeout_handle.when()
-
-        # Assert
-        assert deadline == math.inf
-
-    def test____timeout_handle____reschedule____set_deadline(
-        self,
-        timeout_handle: TimeoutHandle,
-        mock_asyncio_timeout_handle: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act
-        timeout_handle.reschedule(123456.789)
-
-        # Assert
-        mock_asyncio_timeout_handle.reschedule.assert_called_once_with(123456.789)
-
-    def test____timeout_handle____reschedule____infinite_deadline(
-        self,
-        timeout_handle: TimeoutHandle,
-        mock_asyncio_timeout_handle: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act
-        timeout_handle.reschedule(math.inf)
-
-        # Assert
-        mock_asyncio_timeout_handle.reschedule.assert_called_once_with(None)
-
-    @pytest.mark.parametrize("expected_retval", [False, True])
-    def test____expired____expected_return_value(
-        self,
-        expected_retval: bool,
-        timeout_handle: TimeoutHandle,
-        mock_asyncio_timeout_handle: MagicMock,
-    ) -> None:
-        # Arrange
-        mock_asyncio_timeout_handle.expired.return_value = expected_retval
-
-        # Act
-        expired: bool = timeout_handle.expired()
-
-        # Assert
-        assert expired is expected_retval
-
-    def test____deadline_property____set(
-        self,
-        timeout_handle: TimeoutHandle,
-        mock_asyncio_timeout_handle: MagicMock,
-    ) -> None:
-        # Arrange
-        mock_asyncio_timeout_handle.when.return_value = 4
-
-        # Act
-        timeout_handle.deadline += 12
-
-        # Assert
-        mock_asyncio_timeout_handle.when.assert_called_once_with()
-        mock_asyncio_timeout_handle.reschedule.assert_called_once_with(16)
-
-    def test____deadline_property____delete(
-        self,
-        timeout_handle: TimeoutHandle,
-        mock_asyncio_timeout_handle: MagicMock,
-    ) -> None:
-        # Arrange
-        mock_asyncio_timeout_handle.when.return_value = 4
-
-        # Act
-        del timeout_handle.deadline
-
-        # Assert
-        mock_asyncio_timeout_handle.when.assert_not_called()
-        mock_asyncio_timeout_handle.reschedule.assert_called_once_with(None)
 
 
 class TestTaskUtils:

@@ -24,11 +24,12 @@ import asyncio.base_events
 import contextvars
 import functools
 import itertools
+import math
 import os
 import socket as _socket
 import sys
 from collections.abc import Callable, Coroutine, Mapping, Sequence
-from contextlib import AbstractAsyncContextManager as AsyncContextManager, closing
+from contextlib import closing
 from typing import TYPE_CHECKING, Any, NoReturn, ParamSpec, TypeVar
 
 try:
@@ -47,7 +48,7 @@ from .datagram.endpoint import create_datagram_endpoint
 from .datagram.socket import AsyncioTransportDatagramSocketAdapter, RawDatagramSocketAdapter
 from .stream.listener import AcceptedSocket, AcceptedSSLSocket, ListenerSocketAdapter
 from .stream.socket import AsyncioTransportStreamSocketAdapter, RawStreamSocketAdapter
-from .tasks import SystemTask, TaskGroup, TaskUtils, TimeoutHandle
+from .tasks import CancelScope, TaskGroup, TaskUtils
 from .threads import ThreadsPortal
 
 if TYPE_CHECKING:
@@ -91,17 +92,8 @@ class AsyncIOBackend(AbstractAsyncBackend):
             raise TypeError("Expected a coroutine object")
         return await TaskUtils.cancel_shielded_await_task(asyncio.create_task(coroutine))
 
-    def timeout(self, delay: float) -> AsyncContextManager[TimeoutHandle]:
-        return TaskUtils.timeout_after(delay)
-
-    def timeout_at(self, deadline: float) -> AsyncContextManager[TimeoutHandle]:
-        return TaskUtils.timeout_at(deadline)
-
-    def move_on_after(self, delay: float) -> AsyncContextManager[TimeoutHandle]:
-        return TaskUtils.move_on_after(delay)
-
-    def move_on_at(self, deadline: float) -> AsyncContextManager[TimeoutHandle]:
-        return TaskUtils.move_on_at(deadline)
+    def open_cancel_scope(self, *, deadline: float = math.inf) -> CancelScope:
+        return CancelScope(deadline=deadline)
 
     def current_time(self) -> float:
         loop = asyncio.get_running_loop()
@@ -114,15 +106,6 @@ class AsyncIOBackend(AbstractAsyncBackend):
         loop = asyncio.get_running_loop()
         await loop.create_future()
         raise AssertionError("await an unused future cannot end in any other way than by cancellation")
-
-    def spawn_task(
-        self,
-        coro_func: Callable[..., Coroutine[Any, Any, _T]],
-        /,
-        *args: Any,
-        context: contextvars.Context | None = None,
-    ) -> SystemTask[_T]:
-        return SystemTask(coro_func(*args), context=context)
 
     def create_task_group(self) -> TaskGroup:
         return TaskGroup()

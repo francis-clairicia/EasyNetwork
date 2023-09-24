@@ -167,7 +167,7 @@ class TimeoutRequestHandler(AsyncStreamRequestHandler[str, str]):
             await client.send_packet(request)
         try:
             with pytest.raises(TimeoutError):
-                async with self.backend.timeout(self.request_timeout):
+                with self.backend.timeout(self.request_timeout):
                     yield
             await client.send_packet("successfully timed out")
         finally:
@@ -195,7 +195,7 @@ class InitialHandshakeRequestHandler(AsyncStreamRequestHandler[str, str]):
         if self.bypass_handshake:
             return
         try:
-            async with self.backend.timeout(1):
+            with self.backend.timeout(1):
                 password = yield
         except TimeoutError:
             await client.send_packet("timeout error")

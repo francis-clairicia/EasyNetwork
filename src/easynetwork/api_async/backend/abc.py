@@ -23,20 +23,21 @@ __all__ = [
     "AsyncDatagramSocketAdapter",
     "AsyncListenerSocketAdapter",
     "AsyncStreamSocketAdapter",
+    "CancelScope",
     "ICondition",
     "IEvent",
     "ILock",
     "Task",
     "TaskGroup",
     "ThreadsPortal",
-    "TimeoutHandle",
 ]
 
+import contextlib
 import contextvars
 import math
 from abc import ABCMeta, abstractmethod
-from collections.abc import Awaitable, Callable, Coroutine, Iterable, Mapping, Sequence
-from contextlib import AbstractAsyncContextManager
+from collections.abc import Awaitable, Callable, Coroutine, Iterable, Iterator, Mapping, Sequence
+from contextlib import AbstractContextManager
 from typing import TYPE_CHECKING, Any, Generic, NoReturn, ParamSpec, Protocol, Self, TypeVar
 
 if TYPE_CHECKING:
@@ -196,12 +197,12 @@ class Task(Generic[_T_co], metaclass=ABCMeta):
     @abstractmethod
     def done(self) -> bool:
         """
-        Returns :data:`True` if the Task is done.
+        Returns the Task state.
 
         A Task is *done* when the wrapped coroutine either returned a value, raised an exception, or the Task was cancelled.
 
         Returns:
-            The Task state.
+            :data:`True` if the Task is done.
         """
         raise NotImplementedError
 
@@ -225,13 +226,13 @@ class Task(Generic[_T_co], metaclass=ABCMeta):
     @abstractmethod
     def cancelled(self) -> bool:
         """
-        Returns :data:`True` if the Task is *cancelled*.
+        Returns the cancellation state.
 
         The Task is *cancelled* when the cancellation was requested with :meth:`cancel` and the wrapped coroutine propagated
         the ``backend.get_cancelled_exc_class()`` exception thrown into it.
 
         Returns:
-            the cancellation state.
+            :data:`True` if the Task is *cancelled*
         """
         raise NotImplementedError
 
@@ -264,14 +265,6 @@ class Task(Generic[_T_co], metaclass=ABCMeta):
         """
         raise NotImplementedError
 
-
-class SystemTask(Task[_T_co]):
-    """
-    A :class:`SystemTask` is a :class:`Task` that runs concurrently with the current root task.
-    """
-
-    __slots__ = ()
-
     @abstractmethod
     async def join_or_cancel(self) -> _T_co:
         """
@@ -290,6 +283,104 @@ class SystemTask(Task[_T_co]):
             return await task.join()
         """
         raise NotImplementedError
+
+
+class CancelScope(metaclass=ABCMeta):
+    """
+    A temporary scope opened by a task that can be used by other tasks to control its execution time.
+
+    Unlike trio's CancelScope, there is no "shielded" scopes; you must use :meth:`AsyncBackend.ignore_cancellation`.
+    """
+
+    __slots__ = ("__weakref__",)
+
+    @abstractmethod
+    def __enter__(self) -> Self:
+        raise NotImplementedError
+
+    @abstractmethod
+    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None) -> bool:
+        raise NotImplementedError
+
+    @abstractmethod
+    def cancel(self) -> None:
+        """
+        Request the Task to be cancelled.
+
+        This arranges for a ``backend.get_cancelled_exc_class()`` exception to be thrown into the wrapped coroutine
+        on the next cycle of the event loop.
+
+        :meth:`CancelScope.cancel` does not guarantee that the Task will be cancelled,
+        although suppressing cancellation completely is not common and is actively discouraged.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def cancel_called(self) -> bool:
+        """
+        Checks if :meth:`cancel` has been called.
+
+        Returns:
+            :data:`True` if :meth:`cancel` has been called.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def cancelled_caught(self) -> bool:
+        """
+        Returns the scope cancellation state.
+
+        Returns:
+            :data:`True` if the scope has been is *cancelled*.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def when(self) -> float:
+        """
+        Returns the current deadline.
+
+        Returns:
+            the absolute time in seconds. :data:`math.inf` if the current deadline is not set.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def reschedule(self, when: float, /) -> None:
+        """
+        Reschedules the timeout.
+
+        Parameters:
+            when: The new deadline.
+        """
+        raise NotImplementedError
+
+    @property
+    def deadline(self) -> float:
+        """
+        A read-write attribute to simplify the timeout management.
+
+        For example, this statement::
+
+            scope.deadline += 30
+
+        is equivalent to::
+
+            scope.reschedule(scope.when() + 30)
+
+        It is also possible to remove the timeout by deleting the attribute::
+
+            del scope.deadline
+        """
+        return self.when()
+
+    @deadline.setter
+    def deadline(self, value: float) -> None:
+        self.reschedule(value)
+
+    @deadline.deleter
+    def deadline(self) -> None:
+        self.reschedule(math.inf)
 
 
 class TaskGroup(metaclass=ABCMeta):
@@ -664,74 +755,6 @@ class AcceptedSocket(metaclass=ABCMeta):
         raise NotImplementedError
 
 
-class TimeoutHandle(metaclass=ABCMeta):
-    """
-    Interface to deal with an actual timeout scope.
-
-    See :meth:`AsyncBackend.move_on_after` for details.
-    """
-
-    __slots__ = ()
-
-    @abstractmethod
-    def when(self) -> float:
-        """
-        Returns the current deadline.
-
-        Returns:
-            the absolute time in seconds. :data:`math.inf` if the current deadline is not set.
-            A negative value can be returned.
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    def reschedule(self, when: float, /) -> None:
-        """
-        Reschedules the timeout.
-
-        Parameters:
-            when: The new deadline.
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    def expired(self) -> bool:
-        """
-        Returns whether the context manager has exceeded its deadline (expired).
-
-        Returns:
-            the timeout state.
-        """
-        raise NotImplementedError
-
-    @property
-    def deadline(self) -> float:
-        """
-        A read-write attribute to simplify the timeout management.
-
-        For example, this statement::
-
-            handle.deadline += 30
-
-        is equivalent to::
-
-            handle.reschedule(handle.when() + 30)
-
-        It is also possible to remove the timeout by deleting the attribute::
-
-            del handle.deadline
-        """
-        return self.when()
-
-    @deadline.setter
-    def deadline(self, value: float) -> None:
-        self.reschedule(value)
-
-    @deadline.deleter
-    def deadline(self) -> None:
-        self.reschedule(math.inf)
-
-
 class AsyncBackend(metaclass=ABCMeta):
     """
     Asynchronous backend interface.
@@ -837,9 +860,21 @@ class AsyncBackend(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    def timeout(self, delay: float) -> AbstractAsyncContextManager[TimeoutHandle]:
+    def open_cancel_scope(self, *, deadline: float = ...) -> CancelScope:
         """
-        Returns an :term:`asynchronous context manager` that can be used to limit the amount of time spent waiting on something.
+        Open a new cancel scope. See :meth:`move_on_after` for details.
+
+        Parameters:
+            deadline: absolute time to stop waiting. Defaults to :data:`math.inf`.
+
+        Returns:
+            a new cancel scope.
+        """
+        raise NotImplementedError
+
+    def timeout(self, delay: float) -> AbstractContextManager[CancelScope]:
+        """
+        Returns a :term:`context manager` that can be used to limit the amount of time spent waiting on something.
 
         This function and :meth:`move_on_after` are similar in that both create a context manager with a given timeout,
         and if the timeout expires then both will cause ``backend.get_cancelled_exc_class()`` to be raised within the scope.
@@ -850,14 +885,13 @@ class AsyncBackend(metaclass=ABCMeta):
             delay: number of seconds to wait.
 
         Returns:
-            an :term:`asynchronous context manager`
+            a :term:`context manager`
         """
-        raise NotImplementedError
+        return _timeout_after(self, delay)
 
-    @abstractmethod
-    def timeout_at(self, deadline: float) -> AbstractAsyncContextManager[TimeoutHandle]:
+    def timeout_at(self, deadline: float) -> AbstractContextManager[CancelScope]:
         """
-        Returns an :term:`asynchronous context manager` that can be used to limit the amount of time spent waiting on something.
+        Returns a :term:`context manager` that can be used to limit the amount of time spent waiting on something.
 
         This function and :meth:`move_on_at` are similar in that both create a context manager with a given timeout,
         and if the timeout expires then both will cause ``backend.get_cancelled_exc_class()`` to be raised within the scope.
@@ -868,14 +902,13 @@ class AsyncBackend(metaclass=ABCMeta):
             deadline: absolute time to stop waiting.
 
         Returns:
-            an :term:`asynchronous context manager`
+            a :term:`context manager`
         """
-        raise NotImplementedError
+        return _timeout_at(self, deadline)
 
-    @abstractmethod
-    def move_on_after(self, delay: float) -> AbstractAsyncContextManager[TimeoutHandle]:
+    def move_on_after(self, delay: float) -> CancelScope:
         """
-        Returns an :term:`asynchronous context manager` that can be used to limit the amount of time spent waiting on something.
+        Returns a new :class:`CancelScope` that can be used to limit the amount of time spent waiting on something.
         The deadline is set to now + `delay`.
 
         Example::
@@ -886,7 +919,7 @@ class AsyncBackend(metaclass=ABCMeta):
             async def main():
                 ...
 
-                async with backend.move_on_after(10):
+                with backend.move_on_after(10):
                     await long_running_operation(backend)
 
                 print("After at most 10 seconds.")
@@ -897,15 +930,14 @@ class AsyncBackend(metaclass=ABCMeta):
         Parameters:
             delay: number of seconds to wait. If `delay` is :data:`math.inf`,
                    no time limit will be applied; this can be useful if the delay is unknown when the context manager is created.
-                   In either case, the context manager can be rescheduled after creation using :meth:`TimeoutHandle.reschedule`.
+                   In either case, the context manager can be rescheduled after creation using :meth:`CancelScope.reschedule`.
 
         Returns:
-            an :term:`asynchronous context manager`
+            a new cancel scope.
         """
-        raise NotImplementedError
+        return self.open_cancel_scope(deadline=self.current_time() + delay)
 
-    @abstractmethod
-    def move_on_at(self, deadline: float) -> AbstractAsyncContextManager[TimeoutHandle]:
+    def move_on_at(self, deadline: float) -> CancelScope:
         """
         Similar to :meth:`move_on_after`, except `deadline` is the absolute time to stop waiting, or :data:`math.inf`.
 
@@ -918,7 +950,7 @@ class AsyncBackend(metaclass=ABCMeta):
                 ...
 
                 deadline = backend.current_time() + 10
-                async with backend.move_on_at(deadline):
+                with backend.move_on_at(deadline):
                     await long_running_operation(backend)
 
                 print("After at most 10 seconds.")
@@ -927,9 +959,9 @@ class AsyncBackend(metaclass=ABCMeta):
             deadline: absolute time to stop waiting.
 
         Returns:
-            an :term:`asynchronous context manager`
+            a new cancel scope.
         """
-        raise NotImplementedError
+        return self.open_cancel_scope(deadline=deadline)
 
     @abstractmethod
     def current_time(self) -> float:
@@ -977,31 +1009,6 @@ class AsyncBackend(metaclass=ABCMeta):
                       executes a checkpoint but does not block.
         """
         return await self.sleep(max(deadline - self.current_time(), 0))
-
-    @abstractmethod
-    def spawn_task(
-        self,
-        coro_func: Callable[..., Coroutine[Any, Any, _T]],
-        /,
-        *args: Any,
-        context: contextvars.Context | None = ...,
-    ) -> SystemTask[_T]:
-        """
-        Starts a new "system" task.
-
-        It is a background task that runs concurrently with the current root task.
-
-        Parameters:
-            coro_func: An async function.
-            args: Positional arguments to be passed to `coro_func`.  If you need to pass keyword arguments,
-                  then use :func:`functools.partial`.
-            context: If given, it must be a :class:`contextvars.Context` instance in which the coroutine should be executed.
-                     If the framework does not support contexts (or does not use them), it must simply ignore this parameter.
-
-        Returns:
-            the created task.
-        """
-        raise NotImplementedError
 
     @abstractmethod
     def create_task_group(self) -> TaskGroup:
@@ -1373,3 +1380,16 @@ class AsyncBackend(metaclass=ABCMeta):
             Whatever returns ``future.result()``
         """
         raise NotImplementedError
+
+
+def _timeout_after(backend: AsyncBackend, delay: float) -> contextlib._GeneratorContextManager[CancelScope]:
+    return _timeout_at(backend, backend.current_time() + delay)
+
+
+@contextlib.contextmanager
+def _timeout_at(backend: AsyncBackend, deadline: float) -> Iterator[CancelScope]:
+    with backend.move_on_at(deadline) as scope:
+        yield scope
+
+    if scope.cancelled_caught():
+        raise TimeoutError("timed out")

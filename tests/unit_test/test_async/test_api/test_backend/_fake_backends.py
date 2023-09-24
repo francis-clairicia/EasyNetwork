@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Coroutine, Sequence
 from socket import socket as Socket
-from typing import Any, AsyncContextManager, NoReturn, final
+from typing import Any, NoReturn, final
 
 from easynetwork.api_async.backend.abc import (
     AsyncBackend,
@@ -12,10 +12,8 @@ from easynetwork.api_async.backend.abc import (
     ICondition,
     IEvent,
     ILock,
-    SystemTask,
     TaskGroup,
     ThreadsPortal,
-    TimeoutHandle,
 )
 
 
@@ -41,22 +39,22 @@ class BaseFakeBackend(AsyncBackend):
     async def ignore_cancellation(self, coroutine: Coroutine[Any, Any, Any]) -> Any:
         raise NotImplementedError
 
-    def timeout(self, delay: Any) -> AsyncContextManager[TimeoutHandle]:
+    def timeout(self, delay: Any) -> Any:
         raise NotImplementedError
 
-    def timeout_at(self, deadline: Any) -> AsyncContextManager[TimeoutHandle]:
+    def timeout_at(self, deadline: Any) -> Any:
         raise NotImplementedError
 
-    def move_on_after(self, delay: Any) -> AsyncContextManager[TimeoutHandle]:
+    def move_on_after(self, delay: Any) -> Any:
         raise NotImplementedError
 
-    def move_on_at(self, deadline: Any) -> AsyncContextManager[TimeoutHandle]:
+    def move_on_at(self, deadline: Any) -> Any:
+        raise NotImplementedError
+
+    def open_cancel_scope(self, *args: Any, **kwargs: Any) -> Any:
         raise NotImplementedError
 
     def get_cancelled_exc_class(self) -> type[BaseException]:
-        raise NotImplementedError
-
-    def spawn_task(self, *args: Any, **kwargs: Any) -> SystemTask[Any]:
         raise NotImplementedError
 
     def create_task_group(self) -> TaskGroup:

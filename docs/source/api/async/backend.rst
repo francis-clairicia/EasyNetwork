@@ -72,16 +72,10 @@ Creating Concurrent Tasks
 .. autoclass:: Task
    :members:
 
-Spawning System Tasks
-"""""""""""""""""""""
-
-.. automethod:: AsyncBackend.spawn_task
-
-.. autoclass:: SystemTask
-   :members:
-
 Timeouts
 ^^^^^^^^
+
+.. automethod:: AsyncBackend.open_cancel_scope
 
 .. automethod:: AsyncBackend.move_on_after
 
@@ -91,7 +85,7 @@ Timeouts
 
 .. automethod:: AsyncBackend.timeout_at
 
-.. autoclass:: TimeoutHandle
+.. autoclass:: CancelScope
    :members:
 
 Networking
@@ -203,16 +197,6 @@ Backend Factory
 .. autoclass:: AsyncBackendFactory
    :members:
    :exclude-members: GROUP_NAME
-
-
-Tasks Utilities
-===============
-
-.. automodule:: easynetwork.api_async.backend.tasks
-   :no-docstring:
-
-.. autoclass:: SingleTaskRunner
-   :members:
 
 
 Concurrency And Multithreading (``concurrent.futures`` Integration)

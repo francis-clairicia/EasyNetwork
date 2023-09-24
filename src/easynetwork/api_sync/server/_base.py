@@ -96,7 +96,7 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
 
     async def __do_shutdown_with_timeout(self, timeout_delay: float) -> None:
         backend = self.__server.get_backend()
-        async with backend.move_on_after(timeout_delay):
+        with backend.move_on_after(timeout_delay):
             await self.__server.shutdown()
 
     def serve_forever(

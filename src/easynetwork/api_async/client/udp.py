@@ -19,12 +19,13 @@ from __future__ import annotations
 __all__ = ["AsyncUDPNetworkClient", "AsyncUDPNetworkEndpoint"]
 
 import contextlib
+import dataclasses as _dataclasses
 import errno as _errno
 import math
 import socket as _socket
 import time
-from collections.abc import AsyncGenerator, AsyncIterator, Mapping
-from typing import TYPE_CHECKING, Any, Generic, Self, TypedDict, final, overload
+from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
+from typing import TYPE_CHECKING, Any, Generic, Self, final, overload
 
 from ..._typevars import _ReceivedPacketT, _SentPacketT
 from ...exceptions import ClientClosedError, DatagramProtocolParseError
@@ -35,22 +36,39 @@ from ...tools._utils import (
     check_socket_no_ssl as _check_socket_no_ssl,
     ensure_datagram_socket_bound as _ensure_datagram_socket_bound,
     error_from_errno as _error_from_errno,
+    make_callback as _make_callback,
 )
 from ...tools.constants import MAX_DATAGRAM_BUFSIZE
 from ...tools.socket import SocketAddress, SocketProxy, new_socket_address
-from ..backend.abc import AsyncBackend, AsyncDatagramSocketAdapter, ILock
+from ..backend.abc import AsyncBackend, AsyncDatagramSocketAdapter, CancelScope, ILock
 from ..backend.factory import AsyncBackendFactory
-from ..backend.tasks import SingleTaskRunner
 from .abc import AbstractAsyncNetworkClient
 
 if TYPE_CHECKING:
     from types import TracebackType
 
 
-class _EndpointInfo(TypedDict):
+@_dataclasses.dataclass(kw_only=True, frozen=True, slots=True)
+class _EndpointInfo:
     proxy: SocketProxy
     local_address: SocketAddress
     remote_address: SocketAddress | None
+
+
+@_dataclasses.dataclass(kw_only=True, slots=True)
+class _SocketConnector:
+    lock: ILock
+    factory: Callable[[], Awaitable[tuple[AsyncDatagramSocketAdapter, _EndpointInfo]]] | None
+    scope: CancelScope
+    _result: tuple[AsyncDatagramSocketAdapter, _EndpointInfo] | None = _dataclasses.field(init=False, default=None)
+
+    async def get(self) -> tuple[AsyncDatagramSocketAdapter, _EndpointInfo] | None:
+        async with self.lock:
+            factory, self.factory = self.factory, None
+            if factory is not None:
+                with self.scope:
+                    self._result = await factory()
+        return self._result
 
 
 class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
@@ -64,7 +82,7 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
     __slots__ = (
         "__socket",
         "__backend",
-        "__socket_builder",
+        "__socket_connector",
         "__info",
         "__receive_lock",
         "__send_lock",
@@ -136,18 +154,23 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         self.__backend: AsyncBackend = backend
         self.__info: _EndpointInfo | None = None
 
-        self.__socket_builder: SingleTaskRunner[AsyncDatagramSocketAdapter] | None = None
+        socket_factory: Callable[[], Awaitable[AsyncDatagramSocketAdapter]]
         match kwargs:
             case {"socket": _socket.socket() as socket, **kwargs}:
                 _check_socket_family(socket.family)
                 _check_socket_no_ssl(socket)
                 _ensure_datagram_socket_bound(socket)
-                self.__socket_builder = SingleTaskRunner(backend, backend.wrap_udp_socket, socket, **kwargs)
+                socket_factory = _make_callback(backend.wrap_udp_socket, socket, **kwargs)
             case _:
                 if kwargs.get("local_address") is None:
                     kwargs["local_address"] = ("localhost", 0)
-                self.__socket_builder = SingleTaskRunner(backend, backend.create_udp_endpoint, **kwargs)
+                socket_factory = _make_callback(backend.create_udp_endpoint, **kwargs)
 
+        self.__socket_connector: _SocketConnector | None = _SocketConnector(
+            lock=self.__backend.create_lock(),
+            factory=_make_callback(self.__create_socket, socket_factory),
+            scope=self.__backend.open_cancel_scope(),
+        )
         self.__receive_lock: ILock = backend.create_lock()
         self.__send_lock: ILock = backend.create_lock()
 
@@ -211,20 +234,13 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             ClientClosedError: the client object is closed.
             OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
         """
-        if self.__socket is None:
-            socket_builder = self.__socket_builder
-            if socket_builder is None:
-                raise ClientClosedError("Client is closing, or is already closed")
-            socket = await socket_builder.run()
-            if self.__socket_builder is None:  # wait_bound() or aclose() called in concurrency
-                return await self.__backend.cancel_shielded_coro_yield()
-            self.__socket = socket
-            self.__socket_builder = None
-        if self.__info is None:
-            self.__info = self.__build_info_dict(self.__socket)
+        await self.__ensure_opened()
 
     @staticmethod
-    def __build_info_dict(socket: AsyncDatagramSocketAdapter) -> _EndpointInfo:
+    async def __create_socket(
+        socket_factory: Callable[[], Awaitable[AsyncDatagramSocketAdapter]],
+    ) -> tuple[AsyncDatagramSocketAdapter, _EndpointInfo]:
+        socket = await socket_factory()
         socket_proxy = SocketProxy(socket.socket())
         local_address: SocketAddress = new_socket_address(socket_proxy.getsockname(), socket_proxy.family)
         if local_address.port == 0:
@@ -234,11 +250,12 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
             remote_address = new_socket_address(socket_proxy.getpeername(), socket_proxy.family)
         except OSError:
             remote_address = None
-        return {
-            "proxy": socket_proxy,
-            "local_address": local_address,
-            "remote_address": remote_address,
-        }
+        info = _EndpointInfo(
+            proxy=socket_proxy,
+            local_address=local_address,
+            remote_address=remote_address,
+        )
+        return socket, info
 
     def is_closing(self) -> bool:
         """
@@ -252,7 +269,7 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         Returns:
             the endpoint state.
         """
-        if self.__socket_builder is not None:
+        if self.__socket_connector is not None:
             return False
         socket = self.__socket
         return socket is None or socket.is_closing()
@@ -270,9 +287,9 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
 
         Can be safely called multiple times.
         """
-        if self.__socket_builder is not None:
-            self.__socket_builder.cancel()
-            self.__socket_builder = None
+        if self.__socket_connector is not None:
+            self.__socket_connector.scope.cancel()
+            self.__socket_connector = None
         async with self.__send_lock:
             socket, self.__socket = self.__socket, None
             if socket is None:
@@ -292,8 +309,6 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         """
         Sends `packet` to the remote endpoint `address`. Does not require task synchronization.
 
-        Calls :meth:`wait_bound`.
-
         If a remote address is configured, `address` must be :data:`None` or the same as the remote address,
         otherwise `address` must not be :data:`None`.
 
@@ -311,7 +326,7 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         async with self.__send_lock:
             socket = await self.__ensure_opened()
             assert self.__info is not None  # nosec assert_used
-            if (remote_addr := self.__info["remote_address"]) is not None:
+            if (remote_addr := self.__info.remote_address) is not None:
                 if address is not None:
                     if new_socket_address(address, self.socket.family) != remote_addr:
                         raise ValueError(f"Invalid address: must be None or {remote_addr}")
@@ -325,8 +340,6 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
     async def recv_packet_from(self) -> tuple[_ReceivedPacketT, SocketAddress]:
         """
         Waits for a new packet to arrive from another endpoint. Does not require task synchronization.
-
-        Calls :meth:`wait_bound`.
 
         Raises:
             ClientClosedError: the endpoint object is closed.
@@ -386,7 +399,7 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
 
         while True:
             try:
-                async with timeout_after(timeout):
+                with timeout_after(timeout):
                     _start = perf_counter()
                     packet_tuple = await self.recv_packet_from()
                     _end = perf_counter()
@@ -409,7 +422,7 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         """
         if self.__info is None:
             raise _error_from_errno(_errno.ENOTSOCK)
-        return self.__info["local_address"]
+        return self.__info.local_address
 
     def get_remote_address(self) -> SocketAddress | None:
         """
@@ -424,14 +437,20 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         """
         if self.__info is None:
             raise _error_from_errno(_errno.ENOTSOCK)
-        return self.__info["remote_address"]
+        return self.__info.remote_address
 
     def get_backend(self) -> AsyncBackend:
         return self.__backend
 
     async def __ensure_opened(self) -> AsyncDatagramSocketAdapter:
-        await self.wait_bound()
-        assert self.__socket is not None  # nosec assert_used
+        if self.__socket is None or self.__info is None:
+            socket_and_info = None
+            if (socket_connector := self.__socket_connector) is not None:
+                socket_and_info = await socket_connector.get()
+            self.__socket_connector = None
+            if socket_and_info is None:
+                raise ClientClosedError("Client is closing, or is already closed")
+            self.__socket, self.__info = socket_and_info
         if self.__socket.is_closing():
             raise _error_from_errno(_errno.ECONNABORTED)
         return self.__socket
@@ -445,7 +464,7 @@ class AsyncUDPNetworkEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         """
         if self.__info is None:
             raise AttributeError("Socket not connected")
-        return self.__info["proxy"]
+        return self.__info.proxy
 
 
 class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPacketT], Generic[_SentPacketT, _ReceivedPacketT]):
@@ -597,8 +616,6 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         """
         Sends `packet` to the remote endpoint. Does not require task synchronization.
 
-        Calls :meth:`wait_connected`.
-
         Warning:
             In the case of a cancellation, it is impossible to know if all the packet data has been sent.
 
@@ -609,7 +626,6 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
             ClientClosedError: the client object is closed.
             OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
         """
-        await self.wait_connected()
         return await self.__endpoint.send_packet_to(packet, None)
 
     async def recv_packet(self) -> _ReceivedPacketT:
@@ -626,12 +642,10 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         Returns:
             the received packet.
         """
-        await self.wait_connected()
         packet, _ = await self.__endpoint.recv_packet_from()
         return packet
 
-    async def iter_received_packets(self, *, timeout: float | None = 0) -> AsyncIterator[_ReceivedPacketT]:
-        await self.wait_connected()
+    async def iter_received_packets(self, *, timeout: float | None = 0) -> AsyncGenerator[_ReceivedPacketT, None]:
         async with contextlib.aclosing(self.__endpoint.iter_received_packets_from(timeout=timeout)) as generator:
             async for packet, _ in generator:
                 yield packet
