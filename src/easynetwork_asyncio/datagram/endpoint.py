@@ -32,6 +32,8 @@ from typing import TYPE_CHECKING, Any, final
 
 from easynetwork.tools._utils import error_from_errno as _error_from_errno
 
+from ..tasks import TaskUtils
+
 if TYPE_CHECKING:
     import asyncio.trsock
 
@@ -104,12 +106,19 @@ class DatagramEndpoint:
     async def recvfrom(self) -> tuple[bytes, tuple[Any, ...]]:
         self.__check_exceptions()
         if self.__transport.is_closing():
-            raise _error_from_errno(_errno.ECONNABORTED)
-        data_and_address = await self.__recv_queue.get()
-        if data_and_address is None:
-            self.__check_exceptions()  # Woken up because an error occurred ?
-            assert self.__transport.is_closing()  # nosec assert_used
-            raise _error_from_errno(_errno.ECONNABORTED)  # Connection lost otherwise
+            try:
+                data_and_address = self.__recv_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                data_and_address = None
+            if data_and_address is None:
+                raise _error_from_errno(_errno.ECONNABORTED)
+            await TaskUtils.cancel_shielded_coro_yield()
+        else:
+            data_and_address = await self.__recv_queue.get()
+            if data_and_address is None:
+                self.__check_exceptions()  # Woken up because an error occurred ?
+                assert self.__transport.is_closing()  # nosec assert_used
+                raise _error_from_errno(_errno.ECONNABORTED)  # Connection lost otherwise
         return data_and_address
 
     async def sendto(self, data: bytes | bytearray | memoryview, address: tuple[Any, ...] | None = None, /) -> None:
@@ -121,9 +130,6 @@ class DatagramEndpoint:
 
     def get_extra_info(self, name: str, default: Any = None) -> Any:
         return self.__transport.get_extra_info(name, default)
-
-    def get_loop(self) -> asyncio.AbstractEventLoop:
-        return self.__protocol._get_loop()
 
     def __check_exceptions(self) -> None:
         try:
@@ -167,7 +173,7 @@ class DatagramEndpointProtocol(asyncio.DatagramProtocol):
         self.__loop: asyncio.AbstractEventLoop = loop
         self.__recv_queue: asyncio.Queue[tuple[bytes, tuple[Any, ...]] | None] = recv_queue
         self.__exception_queue: asyncio.Queue[Exception] = exception_queue
-        self.__transport: asyncio.BaseTransport | None = None
+        self.__transport: asyncio.DatagramTransport | None = None
         self.__closed: asyncio.Future[None] = loop.create_future()
         self.__drain_waiters: collections.deque[asyncio.Future[None]] = collections.deque()
         self.__write_paused: bool = False
@@ -183,20 +189,11 @@ class DatagramEndpointProtocol(asyncio.DatagramProtocol):
             if closed.done() and not closed.cancelled():
                 closed.exception()
 
-    def connection_made(self, transport: asyncio.BaseTransport) -> None:
+    def connection_made(self, transport: asyncio.DatagramTransport) -> None:  # type: ignore[override]
         assert self.__transport is None, "Transport already set"  # nosec assert_used
         self.__transport = transport
         self.__connection_lost = False
-
-        peername: tuple[Any, ...] | None = transport.get_extra_info("peername", None)
-        if peername is not None and isinstance(self.__loop, asyncio.base_events.BaseEventLoop):
-            # There is an asyncio issue where the private address attribute is not updated with the actual remote address
-            # if the transport is instanciated with an external socket:
-            #     await loop.create_datagram_endpoint(sock=my_socket)
-            #
-            # This is a monkeypatch to force update the internal address attribute
-            if hasattr(transport, "_address") and getattr(transport, "_address") != peername:
-                setattr(transport, "_address", peername)
+        _monkeypatch_transport(transport, self.__loop)
 
     def connection_lost(self, exc: Exception | None) -> None:
         self.__connection_lost = True
@@ -269,3 +266,15 @@ class DatagramEndpointProtocol(asyncio.DatagramProtocol):
 
     def _writing_paused(self) -> bool:
         return self.__write_paused
+
+
+def _monkeypatch_transport(transport: asyncio.DatagramTransport, loop: asyncio.AbstractEventLoop) -> None:
+    if isinstance(loop, asyncio.base_events.BaseEventLoop) and hasattr(transport, "_address"):
+        # There is an asyncio issue where the private address attribute is not updated with the actual remote address
+        # if the transport is instanciated with an external socket:
+        #     await loop.create_datagram_endpoint(sock=my_socket)
+        #
+        # This is a monkeypatch to force update the internal address attribute
+        peername: tuple[Any, ...] | None = transport.get_extra_info("peername", None)
+        if peername is not None and getattr(transport, "_address") != peername:
+            setattr(transport, "_address", peername)

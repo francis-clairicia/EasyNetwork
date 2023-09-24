@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from ...base import BaseTestAsyncSocketAdapter
+from ....base import BaseTestSocket
 
 
-class BaseTestClient(BaseTestAsyncSocketAdapter):
+class BaseTestClient(BaseTestSocket):
     pass

@@ -3,12 +3,12 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import contextvars
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Coroutine, Sequence
 from socket import AF_INET
 from typing import TYPE_CHECKING, Any, cast
 
 from easynetwork.api_async.backend.abc import AsyncStreamSocketAdapter
-from easynetwork_asyncio import AsyncioBackend
+from easynetwork_asyncio import AsyncIOBackend
 
 import pytest
 
@@ -20,6 +20,56 @@ if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
 
+class TestAsyncIOBackendSync:
+    @pytest.fixture
+    @staticmethod
+    def backend() -> AsyncIOBackend:
+        return AsyncIOBackend()
+
+    @pytest.mark.parametrize("runner_options", [{"loop_factory": 42}, None])
+    def test____bootstrap____start_new_runner(
+        self,
+        runner_options: dict[str, Any] | None,
+        backend: AsyncIOBackend,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_asyncio_runner: MagicMock = mocker.NonCallableMagicMock(
+            spec=asyncio.Runner,
+            **{"run.return_value": mocker.sentinel.Runner_ret_val},
+        )
+        mock_asyncio_runner.__enter__.return_value = mock_asyncio_runner
+        mock_asyncio_runner_cls = mocker.patch("asyncio.Runner", side_effect=[mock_asyncio_runner])
+        mock_coroutine = mocker.NonCallableMagicMock(spec=Coroutine)
+        coro_stub = mocker.stub()
+        coro_stub.return_value = mock_coroutine
+
+        # Act
+        ret_val = backend.bootstrap(
+            coro_stub,
+            mocker.sentinel.arg1,
+            mocker.sentinel.arg2,
+            mocker.sentinel.arg3,
+            runner_options=runner_options,
+        )
+
+        # Assert
+        if runner_options is None:
+            mock_asyncio_runner_cls.assert_called_once_with()
+        else:
+            mock_asyncio_runner_cls.assert_called_once_with(**runner_options)
+
+        coro_stub.assert_called_once_with(
+            mocker.sentinel.arg1,
+            mocker.sentinel.arg2,
+            mocker.sentinel.arg3,
+        )
+
+        mock_asyncio_runner.run.assert_called_once_with(mock_coroutine)
+        mock_coroutine.close.assert_called_once_with()
+        assert ret_val is mocker.sentinel.Runner_ret_val
+
+
 @pytest.mark.asyncio
 class TestAsyncIOBackend:
     @pytest.fixture(params=[False, True], ids=lambda boolean: f"use_asyncio_transport=={boolean}")
@@ -29,8 +79,8 @@ class TestAsyncIOBackend:
 
     @pytest.fixture
     @staticmethod
-    def backend(use_asyncio_transport: bool) -> AsyncioBackend:
-        return AsyncioBackend(transport=use_asyncio_transport)
+    def backend(use_asyncio_transport: bool) -> AsyncIOBackend:
+        return AsyncIOBackend(transport=use_asyncio_transport)
 
     @pytest.fixture(params=[("local_address", 12345), None], ids=lambda addr: f"local_address=={addr}")
     @staticmethod
@@ -44,7 +94,7 @@ class TestAsyncIOBackend:
 
     async def test____use_asyncio_transport____follows_option(
         self,
-        backend: AsyncioBackend,
+        backend: AsyncIOBackend,
         use_asyncio_transport: bool,
     ) -> None:
         assert backend.using_asyncio_transport() == use_asyncio_transport
@@ -53,7 +103,7 @@ class TestAsyncIOBackend:
     async def test____coro_yield____use_asyncio_sleep(
         self,
         cancel_shielded: bool,
-        backend: AsyncioBackend,
+        backend: AsyncIOBackend,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -70,7 +120,7 @@ class TestAsyncIOBackend:
 
     async def test____get_cancelled_exc_class____returns_asyncio_CancelledError(
         self,
-        backend: AsyncioBackend,
+        backend: AsyncIOBackend,
     ) -> None:
         # Arrange
 
@@ -80,7 +130,7 @@ class TestAsyncIOBackend:
     async def test____current_time____use_event_loop_time(
         self,
         event_loop: asyncio.AbstractEventLoop,
-        backend: AsyncioBackend,
+        backend: AsyncIOBackend,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -95,7 +145,7 @@ class TestAsyncIOBackend:
 
     async def test____sleep____use_asyncio_sleep(
         self,
-        backend: AsyncioBackend,
+        backend: AsyncIOBackend,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -109,7 +159,7 @@ class TestAsyncIOBackend:
 
     async def test____ignore_cancellation____not_a_coroutine(
         self,
-        backend: AsyncioBackend,
+        backend: AsyncIOBackend,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -128,7 +178,7 @@ class TestAsyncIOBackend:
         ssl: bool,
         local_address: tuple[str, int] | None,
         remote_address: tuple[str, int],
-        backend: AsyncioBackend,
+        backend: AsyncIOBackend,
         mock_asyncio_stream_reader_factory: Callable[[], MagicMock],
         mock_asyncio_stream_writer_factory: Callable[[], MagicMock],
         mock_ssl_context: MagicMock,
@@ -191,7 +241,7 @@ class TestAsyncIOBackend:
         ssl: bool,
         local_address: tuple[str, int] | None,
         remote_address: tuple[str, int],
-        backend: AsyncioBackend,
+        backend: AsyncIOBackend,
         mock_asyncio_stream_reader_factory: Callable[[], MagicMock],
         mock_asyncio_stream_writer_factory: Callable[[], MagicMock],
         mock_ssl_context: MagicMock,
@@ -246,7 +296,7 @@ class TestAsyncIOBackend:
         ssl: bool,
         local_address: tuple[str, int] | None,
         remote_address: tuple[str, int],
-        backend: AsyncioBackend,
+        backend: AsyncIOBackend,
         mock_asyncio_stream_reader_factory: Callable[[], MagicMock],
         mock_asyncio_stream_writer_factory: Callable[[], MagicMock],
         mock_ssl_context: MagicMock,
@@ -301,7 +351,7 @@ class TestAsyncIOBackend:
         event_loop: asyncio.AbstractEventLoop,
         local_address: tuple[str, int] | None,
         remote_address: tuple[str, int],
-        backend: AsyncioBackend,
+        backend: AsyncIOBackend,
         mock_tcp_socket: Callable[[], MagicMock],
         mocker: MockerFixture,
     ) -> None:
@@ -341,7 +391,7 @@ class TestAsyncIOBackend:
         self,
         local_address: tuple[str, int] | None,
         remote_address: tuple[str, int],
-        backend: AsyncioBackend,
+        backend: AsyncIOBackend,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -377,7 +427,7 @@ class TestAsyncIOBackend:
         self,
         local_address: tuple[str, int] | None,
         remote_address: tuple[str, int],
-        backend: AsyncioBackend,
+        backend: AsyncIOBackend,
         mock_ssl_context: MagicMock,
         mocker: MockerFixture,
     ) -> None:
@@ -422,7 +472,7 @@ class TestAsyncIOBackend:
         self,
         local_address: tuple[str, int] | None,
         remote_address: tuple[str, int],
-        backend: AsyncioBackend,
+        backend: AsyncIOBackend,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -457,7 +507,7 @@ class TestAsyncIOBackend:
         self,
         local_address: tuple[str, int] | None,
         remote_address: tuple[str, int],
-        backend: AsyncioBackend,
+        backend: AsyncIOBackend,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -489,7 +539,7 @@ class TestAsyncIOBackend:
     async def test____wrap_tcp_client_socket____use_asyncio_open_connection(
         self,
         event_loop: asyncio.AbstractEventLoop,
-        backend: AsyncioBackend,
+        backend: AsyncIOBackend,
         use_asyncio_transport: bool,
         mock_tcp_socket: MagicMock,
         mock_asyncio_stream_reader_factory: Callable[[], MagicMock],
@@ -530,7 +580,7 @@ class TestAsyncIOBackend:
 
     async def test____wrap_ssl_over_tcp_client_socket____use_asyncio_open_connection(
         self,
-        backend: AsyncioBackend,
+        backend: AsyncIOBackend,
         use_asyncio_transport: bool,
         mock_tcp_socket: MagicMock,
         mock_asyncio_stream_reader_factory: Callable[[], MagicMock],
@@ -586,7 +636,7 @@ class TestAsyncIOBackend:
     async def test____wrap_ssl_over_tcp_client_socket____ssl_not_supported(
         self,
         mock_tcp_socket: MagicMock,
-        backend: AsyncioBackend,
+        backend: AsyncIOBackend,
         mock_ssl_context: MagicMock,
         mocker: MockerFixture,
     ) -> None:
@@ -628,7 +678,7 @@ class TestAsyncIOBackend:
     async def test____wrap_ssl_over_tcp_client_socket____invalid_ssl_context_value(
         self,
         mock_tcp_socket: MagicMock,
-        backend: AsyncioBackend,
+        backend: AsyncIOBackend,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -660,7 +710,7 @@ class TestAsyncIOBackend:
     async def test____wrap_ssl_over_tcp_client_socket____no_ssl_module(
         self,
         mock_tcp_socket: MagicMock,
-        backend: AsyncioBackend,
+        backend: AsyncIOBackend,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -699,7 +749,7 @@ class TestAsyncIOBackend:
     async def test____create_tcp_listeners____open_listener_sockets(
         self,
         event_loop: asyncio.AbstractEventLoop,
-        backend: AsyncioBackend,
+        backend: AsyncIOBackend,
         use_asyncio_transport: bool,
         mock_tcp_socket: MagicMock,
         use_ssl: bool,
@@ -803,7 +853,7 @@ class TestAsyncIOBackend:
         self,
         remote_host: str,
         event_loop: asyncio.AbstractEventLoop,
-        backend: AsyncioBackend,
+        backend: AsyncIOBackend,
         use_asyncio_transport: bool,
         mock_tcp_socket: MagicMock,
         use_ssl: bool,
@@ -915,7 +965,7 @@ class TestAsyncIOBackend:
     async def test____create_tcp_listeners____bind_to_several_hosts(
         self,
         event_loop: asyncio.AbstractEventLoop,
-        backend: AsyncioBackend,
+        backend: AsyncIOBackend,
         use_asyncio_transport: bool,
         mock_tcp_socket: MagicMock,
         use_ssl: bool,
@@ -1031,7 +1081,7 @@ class TestAsyncIOBackend:
     async def test____create_tcp_listeners____error_getaddrinfo_returns_empty_list(
         self,
         event_loop: asyncio.AbstractEventLoop,
-        backend: AsyncioBackend,
+        backend: AsyncIOBackend,
         use_ssl: bool,
         mock_ssl_context: MagicMock,
         mocker: MockerFixture,
@@ -1095,7 +1145,7 @@ class TestAsyncIOBackend:
     async def test____create_ssl_over_tcp_listeners____ssl_not_supported(
         self,
         event_loop: asyncio.AbstractEventLoop,
-        backend: AsyncioBackend,
+        backend: AsyncIOBackend,
         mock_ssl_context: MagicMock,
         mocker: MockerFixture,
     ) -> None:
@@ -1143,7 +1193,7 @@ class TestAsyncIOBackend:
         event_loop: asyncio.AbstractEventLoop,
         local_address: tuple[str, int] | None,
         remote_address: tuple[str, int] | None,
-        backend: AsyncioBackend,
+        backend: AsyncIOBackend,
         mock_datagram_endpoint_factory: Callable[[], MagicMock],
         use_asyncio_transport: bool,
         mock_udp_socket: MagicMock,
@@ -1201,7 +1251,7 @@ class TestAsyncIOBackend:
     async def test____wrap_udp_socket____use_loop_create_datagram_endpoint(
         self,
         event_loop: asyncio.AbstractEventLoop,
-        backend: AsyncioBackend,
+        backend: AsyncIOBackend,
         use_asyncio_transport: bool,
         mock_udp_socket: MagicMock,
         mock_datagram_endpoint_factory: Callable[[], MagicMock],
@@ -1241,7 +1291,7 @@ class TestAsyncIOBackend:
 
     async def test____create_lock____use_asyncio_Lock_class(
         self,
-        backend: AsyncioBackend,
+        backend: AsyncIOBackend,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -1256,7 +1306,7 @@ class TestAsyncIOBackend:
 
     async def test____create_event____use_asyncio_Event_class(
         self,
-        backend: AsyncioBackend,
+        backend: AsyncIOBackend,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -1273,7 +1323,7 @@ class TestAsyncIOBackend:
     async def test____create_condition_var____use_asyncio_Condition_class(
         self,
         use_lock: type[asyncio.Lock] | None,
-        backend: AsyncioBackend,
+        backend: AsyncIOBackend,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -1290,7 +1340,7 @@ class TestAsyncIOBackend:
     async def test____run_in_thread____use_loop_run_in_executor(
         self,
         event_loop: asyncio.AbstractEventLoop,
-        backend: AsyncioBackend,
+        backend: AsyncIOBackend,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -1328,8 +1378,7 @@ class TestAsyncIOBackend:
 
     async def test____create_threads_portal____returns_asyncio_portal(
         self,
-        event_loop: asyncio.AbstractEventLoop,
-        backend: AsyncioBackend,
+        backend: AsyncIOBackend,
     ) -> None:
         # Arrange
         from easynetwork_asyncio.threads import ThreadsPortal
@@ -1339,4 +1388,3 @@ class TestAsyncIOBackend:
 
         # Assert
         assert isinstance(threads_portal, ThreadsPortal)
-        assert threads_portal.loop is event_loop

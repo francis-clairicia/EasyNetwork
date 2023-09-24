@@ -32,12 +32,6 @@ Runners
 
 .. automethod:: AsyncBackend.bootstrap
 
-.. automethod:: AsyncBackend.new_runner
-
-.. autoclass:: Runner
-   :members:
-   :special-members: __enter__, __exit__
-
 Coroutines And Tasks
 --------------------
 
@@ -78,16 +72,10 @@ Creating Concurrent Tasks
 .. autoclass:: Task
    :members:
 
-Spawning System Tasks
-"""""""""""""""""""""
-
-.. automethod:: AsyncBackend.spawn_task
-
-.. autoclass:: SystemTask
-   :members:
-
 Timeouts
 ^^^^^^^^
+
+.. automethod:: AsyncBackend.open_cancel_scope
 
 .. automethod:: AsyncBackend.move_on_after
 
@@ -97,7 +85,7 @@ Timeouts
 
 .. automethod:: AsyncBackend.timeout_at
 
-.. autoclass:: TimeoutHandle
+.. autoclass:: CancelScope
    :members:
 
 Networking
@@ -133,9 +121,6 @@ Socket Adapter Classes
    :special-members: __aenter__, __aexit__
 
 .. autoclass:: AsyncStreamSocketAdapter
-   :members:
-
-.. autoclass:: AsyncHalfCloseableStreamSocketAdapter
    :members:
 
 .. autoclass:: AsyncDatagramSocketAdapter
@@ -187,6 +172,7 @@ Scheduling From Other Threads
 
 .. autoclass:: ThreadsPortal
    :members:
+   :special-members: __aenter__, __aexit__
 
 ``concurrent.futures`` Integration
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -211,16 +197,6 @@ Backend Factory
 .. autoclass:: AsyncBackendFactory
    :members:
    :exclude-members: GROUP_NAME
-
-
-Tasks Utilities
-===============
-
-.. automodule:: easynetwork.api_async.backend.tasks
-   :no-docstring:
-
-.. autoclass:: SingleTaskRunner
-   :members:
 
 
 Concurrency And Multithreading (``concurrent.futures`` Integration)

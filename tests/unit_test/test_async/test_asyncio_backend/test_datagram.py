@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
-from errno import ENOTSOCK
+from errno import ECONNABORTED
 from socket import AI_PASSIVE
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from easynetwork_asyncio.datagram.endpoint import DatagramEndpoint, DatagramEndpointProtocol, create_datagram_endpoint
 from easynetwork_asyncio.datagram.socket import AsyncioTransportDatagramSocketAdapter, RawDatagramSocketAdapter
@@ -90,10 +90,11 @@ async def test____create_datagram_endpoint____return_DatagramEndpoint_instance(
 class TestDatagramEndpoint:
     @pytest.fixture
     @staticmethod
-    def mock_asyncio_protocol(mocker: MockerFixture) -> MagicMock:
+    def mock_asyncio_protocol(mocker: MockerFixture, event_loop: asyncio.AbstractEventLoop) -> MagicMock:
         mock = mocker.NonCallableMagicMock(spec=DatagramEndpointProtocol)
         # Currently, _get_close_waiter() is a synchronous function returning a Future, but it will be awaited so this works
         mock._get_close_waiter = mocker.AsyncMock()
+        mock._get_loop.return_value = event_loop
         return mock
 
     @pytest.fixture
@@ -216,10 +217,11 @@ class TestDatagramEndpoint:
 
         # Assert
         mock_asyncio_recv_queue.get.assert_awaited_once_with()
+        mock_asyncio_recv_queue.get_nowait.assert_not_called()
         assert data == b"some data"
         assert address == ("an_address", 12345)
 
-    async def test____recvfrom____connection_lost____transport_already_closed(
+    async def test____recvfrom____connection_lost____transport_already_closed____data_in_queue(
         self,
         endpoint: DatagramEndpoint,
         mock_asyncio_transport: MagicMock,
@@ -227,10 +229,40 @@ class TestDatagramEndpoint:
         mock_asyncio_exception_queue: MagicMock,
     ) -> None:
         # Arrange
-        from errno import ECONNABORTED
-
         mock_asyncio_exception_queue.get_nowait.side_effect = asyncio.QueueEmpty
         mock_asyncio_transport.is_closing.return_value = True
+        mock_asyncio_recv_queue.get_nowait.return_value = (b"some data", ("an_address", 12345))
+
+        # Act
+        data, address = await endpoint.recvfrom()
+
+        # Assert
+        mock_asyncio_exception_queue.get_nowait.assert_called_once()
+        mock_asyncio_recv_queue.get.assert_not_awaited()
+        mock_asyncio_recv_queue.get_nowait.assert_called_once()
+        assert data == b"some data"
+        assert address == ("an_address", 12345)
+
+    @pytest.mark.parametrize("condition", ["empty_queue", "None_pushed"])
+    async def test____recvfrom____connection_lost____transport_already_closed____no_more_data(
+        self,
+        endpoint: DatagramEndpoint,
+        condition: Literal["empty_queue", "None_pushed"],
+        mock_asyncio_transport: MagicMock,
+        mock_asyncio_recv_queue: MagicMock,
+        mock_asyncio_exception_queue: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_asyncio_exception_queue.get_nowait.side_effect = asyncio.QueueEmpty
+        mock_asyncio_transport.is_closing.return_value = True
+
+        match condition:
+            case "empty_queue":
+                mock_asyncio_recv_queue.get_nowait.side_effect = asyncio.QueueEmpty
+            case "None_pushed":
+                mock_asyncio_recv_queue.get_nowait.side_effect = [None]
+            case _:
+                pytest.fail("Invalid condition")
 
         # Act
         with pytest.raises(OSError) as exc_info:
@@ -240,6 +272,7 @@ class TestDatagramEndpoint:
         assert exc_info.value.errno == ECONNABORTED
         mock_asyncio_exception_queue.get_nowait.assert_called_once()
         mock_asyncio_recv_queue.get.assert_not_awaited()
+        mock_asyncio_recv_queue.get_nowait.assert_called_once()
 
     async def test____recvfrom____connection_lost____transport_closed_by_protocol_while_waiting(
         self,
@@ -373,22 +406,6 @@ class TestDatagramEndpoint:
         # Assert
         mock_asyncio_transport.get_extra_info.assert_called_once_with(mocker.sentinel.name, mocker.sentinel.default)
         assert value is mocker.sentinel.extra_info
-
-    async def test____get_loop____get_protocol_bound_loop(
-        self,
-        endpoint: DatagramEndpoint,
-        mock_asyncio_protocol: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        mock_asyncio_protocol._get_loop.return_value = mocker.sentinel.event_loop
-
-        # Act
-        loop = endpoint.get_loop()
-
-        # Assert
-        mock_asyncio_protocol._get_loop.assert_called_once_with()
-        assert loop is mocker.sentinel.event_loop
 
 
 class TestDatagramEndpointProtocol:
@@ -820,50 +837,6 @@ class TestAsyncioTransportDatagramSocketAdapter:
         # Assert
         mock_endpoint.sendto.assert_awaited_once_with(b"data to send", address)
 
-    async def test____getsockname____return_sockname_extra_info(
-        self,
-        socket: AsyncioTransportDatagramSocketAdapter,
-        endpoint_extra_info: dict[str, Any],
-    ) -> None:
-        # Arrange
-
-        # Act
-        laddr = socket.get_local_address()
-
-        # Assert
-        assert laddr == endpoint_extra_info["sockname"]
-
-    async def test____getsockname____transport_closed(
-        self,
-        socket: AsyncioTransportDatagramSocketAdapter,
-        endpoint_extra_info: dict[str, Any],
-    ) -> None:
-        # Arrange
-        ### asyncio.DatagramTransport implementations will clear the extra dict on close()
-        endpoint_extra_info.clear()
-
-        # Act & Assert
-        with pytest.raises(OSError) as exc_info:
-            socket.get_local_address()
-
-        assert exc_info.value.errno == ENOTSOCK
-
-    @pytest.mark.parametrize("peername", [("127.0.0.1", 9999), None])
-    async def test____getpeername____return_peername_extra_info(
-        self,
-        peername: tuple[Any, ...] | None,
-        socket: AsyncioTransportDatagramSocketAdapter,
-        endpoint_extra_info: dict[str, Any],
-    ) -> None:
-        # Arrange
-        endpoint_extra_info["peername"] = peername
-
-        # Act
-        raddr = socket.get_remote_address()
-
-        # Assert
-        assert raddr == peername
-
     async def test____socket____returns_transport_socket(
         self,
         socket: AsyncioTransportDatagramSocketAdapter,
@@ -928,49 +901,6 @@ class TestRawDatagramSocketAdapter(BaseTestSocket):
         # Act & Assert
         with pytest.raises(ValueError, match=r"^A 'SOCK_DGRAM' socket is expected$"):
             _ = RawDatagramSocketAdapter(mock_tcp_socket, event_loop)
-
-    async def test____get_local_address____returns_socket_address(
-        self,
-        socket: RawDatagramSocketAdapter,
-        mock_udp_socket: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act
-        local_address = socket.get_local_address()
-
-        # Assert
-        mock_udp_socket.getsockname.assert_called_once_with()
-        assert local_address == ("127.0.0.1", 11111)
-
-    async def test____get_remote_address____returns_peer_address(
-        self,
-        socket: RawDatagramSocketAdapter,
-        mock_udp_socket: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act
-        remote_address = socket.get_remote_address()
-
-        # Assert
-        mock_udp_socket.getpeername.assert_called_once_with()
-        assert remote_address == ("127.0.0.1", 12345)
-
-    async def test____get_remote_address____no_peer_address(
-        self,
-        socket: RawDatagramSocketAdapter,
-        mock_udp_socket: MagicMock,
-    ) -> None:
-        # Arrange
-        self.configure_socket_mock_to_raise_ENOTCONN(mock_udp_socket)
-
-        # Act
-        remote_address = socket.get_remote_address()
-
-        # Assert
-        mock_udp_socket.getpeername.assert_called_once_with()
-        assert remote_address is None
 
     async def test____is_closing____default(
         self,

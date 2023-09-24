@@ -17,18 +17,19 @@
 
 from __future__ import annotations
 
-__all__ = ["AsyncioBackend"]
+__all__ = ["AsyncIOBackend"]
 
 import asyncio
 import asyncio.base_events
 import contextvars
 import functools
 import itertools
+import math
 import os
 import socket as _socket
 import sys
-from collections.abc import Callable, Coroutine, Sequence
-from contextlib import AbstractAsyncContextManager as AsyncContextManager
+from collections.abc import Callable, Coroutine, Mapping, Sequence
+from contextlib import closing
 from typing import TYPE_CHECKING, Any, NoReturn, ParamSpec, TypeVar
 
 try:
@@ -45,10 +46,9 @@ from easynetwork.api_async.backend.sniffio import current_async_library_cvar as 
 from ._utils import create_connection, create_datagram_socket, ensure_resolved, open_listener_sockets_from_getaddrinfo_result
 from .datagram.endpoint import create_datagram_endpoint
 from .datagram.socket import AsyncioTransportDatagramSocketAdapter, RawDatagramSocketAdapter
-from .runner import AsyncioRunner
 from .stream.listener import AcceptedSocket, AcceptedSSLSocket, ListenerSocketAdapter
 from .stream.socket import AsyncioTransportStreamSocketAdapter, RawStreamSocketAdapter
-from .tasks import SystemTask, TaskGroup, TimeoutHandle, move_on_after, move_on_at, timeout, timeout_at
+from .tasks import CancelScope, TaskGroup, TaskUtils
 from .threads import ThreadsPortal
 
 if TYPE_CHECKING:
@@ -62,34 +62,27 @@ _T = TypeVar("_T")
 _T_co = TypeVar("_T_co", covariant=True)
 
 
-class AsyncioBackend(AbstractAsyncBackend):
-    __slots__ = ("__use_asyncio_transport", "__asyncio_runner_factory")
+class AsyncIOBackend(AbstractAsyncBackend):
+    __slots__ = ("__use_asyncio_transport",)
 
-    def __init__(self, *, transport: bool = True, runner_factory: Callable[[], asyncio.Runner] | None = None) -> None:
+    def __init__(self, *, transport: bool = True) -> None:
         self.__use_asyncio_transport: bool = bool(transport)
-        self.__asyncio_runner_factory: Callable[[], asyncio.Runner] = runner_factory or asyncio.Runner
 
-    def new_runner(self) -> AsyncioRunner:
-        return AsyncioRunner(self.__asyncio_runner_factory())
-
-    @staticmethod
-    def _current_asyncio_task() -> asyncio.Task[Any]:
-        t: asyncio.Task[Any] | None = asyncio.current_task()
-        if t is None:  # pragma: no cover
-            raise RuntimeError("This function should be called within a task.")
-        return t
+    def bootstrap(
+        self,
+        coro_func: Callable[..., Coroutine[Any, Any, _T]],
+        *args: Any,
+        runner_options: Mapping[str, Any] | None = None,
+    ) -> _T:
+        # Avoid ResourceWarning by always closing the coroutine
+        with asyncio.Runner(**(runner_options or {})) as runner, closing(coro_func(*args)) as coro:
+            return runner.run(coro)
 
     async def coro_yield(self) -> None:
         await asyncio.sleep(0)
 
     async def cancel_shielded_coro_yield(self) -> None:
-        current_task: asyncio.Task[Any] = self._current_asyncio_task()
-        try:
-            await asyncio.sleep(0)
-        except asyncio.CancelledError as exc:
-            TimeoutHandle._reschedule_delayed_task_cancel(current_task, self._get_cancelled_error_message(exc))
-        finally:
-            del current_task
+        await TaskUtils.cancel_shielded_coro_yield()
 
     def get_cancelled_exc_class(self) -> type[BaseException]:
         return asyncio.CancelledError
@@ -97,70 +90,10 @@ class AsyncioBackend(AbstractAsyncBackend):
     async def ignore_cancellation(self, coroutine: Coroutine[Any, Any, _T_co]) -> _T_co:
         if not asyncio.iscoroutine(coroutine):
             raise TypeError("Expected a coroutine object")
-        task: asyncio.Task[_T_co] = asyncio.create_task(coroutine)
+        return await TaskUtils.cancel_shielded_await_task(asyncio.create_task(coroutine))
 
-        # This task must be unregistered in order not to be cancelled by runner at event loop shutdown
-        asyncio._unregister_task(task)
-
-        try:
-            await self._cancel_shielded_wait_asyncio_future(task, None)
-            assert task.done()  # nosec assert_used
-            return task.result()
-        finally:
-            del task
-
-    def timeout(self, delay: float) -> AsyncContextManager[TimeoutHandle]:
-        return timeout(delay)
-
-    def timeout_at(self, deadline: float) -> AsyncContextManager[TimeoutHandle]:
-        return timeout_at(deadline)
-
-    def move_on_after(self, delay: float) -> AsyncContextManager[TimeoutHandle]:
-        return move_on_after(delay)
-
-    def move_on_at(self, deadline: float) -> AsyncContextManager[TimeoutHandle]:
-        return move_on_at(deadline)
-
-    @classmethod
-    async def _cancel_shielded_wait_asyncio_future(
-        cls,
-        future: asyncio.Future[Any],
-        abort_func: Callable[[], bool] | None,
-    ) -> None:
-        current_task: asyncio.Task[Any] = cls._current_asyncio_task()
-        abort: bool | None = None
-        task_cancelled: bool = False
-        task_cancel_msg: str | None = None
-
-        try:
-            while not future.done():
-                try:
-                    await asyncio.wait({future})
-                except asyncio.CancelledError as exc:
-                    if abort is None:
-                        if abort_func is None:
-                            abort = False
-                        else:
-                            abort = bool(abort_func())
-                    if abort:
-                        raise
-                    task_cancelled = True
-                    task_cancel_msg = cls._get_cancelled_error_message(exc)
-
-            if task_cancelled and not future.cancelled():
-                TimeoutHandle._reschedule_delayed_task_cancel(current_task, task_cancel_msg)
-        finally:
-            task_cancel_msg = None
-            del current_task, future, abort_func
-
-    @staticmethod
-    def _get_cancelled_error_message(exc: asyncio.CancelledError) -> str | None:
-        msg: str | None
-        if exc.args:
-            msg = exc.args[0]
-        else:
-            msg = None
-        return msg
+    def open_cancel_scope(self, *, deadline: float = math.inf) -> CancelScope:
+        return CancelScope(deadline=deadline)
 
     def current_time(self) -> float:
         loop = asyncio.get_running_loop()
@@ -173,15 +106,6 @@ class AsyncioBackend(AbstractAsyncBackend):
         loop = asyncio.get_running_loop()
         await loop.create_future()
         raise AssertionError("await an unused future cannot end in any other way than by cancellation")
-
-    def spawn_task(
-        self,
-        coro_func: Callable[..., Coroutine[Any, Any, _T]],
-        /,
-        *args: Any,
-        context: contextvars.Context | None = None,
-    ) -> SystemTask[_T]:
-        return SystemTask(coro_func(*args), context=context)
 
     def create_task_group(self) -> TaskGroup:
         return TaskGroup()
@@ -437,8 +361,7 @@ class AsyncioBackend(AbstractAsyncBackend):
         future = loop.run_in_executor(None, func_call)
         del func_call, func, args, kwargs
         try:
-            await self._cancel_shielded_wait_asyncio_future(future, None)
-            assert future.done()  # nosec assert_used
+            await TaskUtils.cancel_shielded_wait_asyncio_futures({future})
             return future.result()
         finally:
             del future
@@ -453,15 +376,14 @@ class AsyncioBackend(AbstractAsyncBackend):
                 # If future.cancel() failed, that means future.set_running_or_notify_cancel() has been called
                 # and set future in RUNNING state.
                 # This future cannot be cancelled anymore, therefore it must be awaited.
-                await self._cancel_shielded_wait_asyncio_future(future_wrapper, future.cancel)
+                await TaskUtils.cancel_shielded_wait_asyncio_futures({future_wrapper}, abort_func=future.cancel)
+
+                # Unwrap "future_wrapper" to prevent reports about unhandled exceptions.
                 if not future_wrapper.cancelled():
                     del future
-                    # Unwrap "future_wrapper" instead to prevent reports about unhandled exceptions.
-                    assert future_wrapper.done()  # nosec assert_used
                     return future_wrapper.result()
             finally:
                 del future_wrapper
-            assert future.done()  # nosec assert_used
 
         try:
             if future.cancelled():

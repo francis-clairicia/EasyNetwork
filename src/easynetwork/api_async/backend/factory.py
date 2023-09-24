@@ -151,7 +151,7 @@ class AsyncBackendFactory:
     @staticmethod
     @functools.cache
     def __get_available_backends() -> MappingProxyType[str, EntryPoint]:
-        from importlib.metadata import entry_points as get_all_entry_points
+        from importlib.metadata import EntryPoint, entry_points as get_all_entry_points
 
         entry_points = get_all_entry_points(group=AsyncBackendFactory.GROUP_NAME)
         duplicate_counter: Counter[str] = Counter([ep.name for ep in entry_points])
@@ -161,6 +161,11 @@ class AsyncBackendFactory:
 
         backends: dict[str, EntryPoint] = {ep.name: ep for ep in entry_points}
 
-        assert "asyncio" in backends, "SystemError: Missing 'asyncio' entry point."  # nosec assert_used
+        if "asyncio" not in backends:
+            backends["asyncio"] = EntryPoint(
+                name="asyncio",
+                value="easynetwork_asyncio:AsyncIOBackend",
+                group=AsyncBackendFactory.GROUP_NAME,
+            )
 
         return MappingProxyType(backends)

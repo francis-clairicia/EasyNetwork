@@ -15,6 +15,7 @@ from easynetwork.tools._utils import (
     check_socket_no_ssl,
     ensure_datagram_socket_bound,
     error_from_errno,
+    exception_with_notes,
     is_ssl_eof_error,
     is_ssl_socket,
     iter_bytes,
@@ -23,7 +24,6 @@ from easynetwork.tools._utils import (
     remove_traceback_frames_in_place,
     replace_kwargs,
     set_reuseport,
-    transform_future_exception,
     validate_timeout_delay,
     wait_socket_available,
 )
@@ -521,30 +521,30 @@ def test____set_reuseport____not_supported____defined_but_not_implemented(
     mock_tcp_socket.setsockopt.assert_called_once_with(SOL_SOCKET, SO_REUSEPORT, True)
 
 
-def test____transform_future_exception____keep_common_exception_as_is() -> None:
+def test____exception_with_notes____one_note() -> None:
     # Arrange
-    exception = BaseException()
+    exception = Exception()
+    note = "A note."
 
     # Act
-    new_exception = transform_future_exception(exception)
+    returned_exception = exception_with_notes(exception, note)
 
     # Assert
-    assert new_exception is exception
+    assert returned_exception is exception
+    assert exception.__notes__ == [note]
 
 
-@pytest.mark.parametrize("exception", [SystemExit(0), KeyboardInterrupt()], ids=lambda f: type(f).__name__)
-def test____transform_future_exception____make_cancelled_error_from_exception(exception: BaseException) -> None:
+def test____exception_with_notes____several_notes() -> None:
     # Arrange
-    from concurrent.futures import CancelledError
+    exception = Exception()
+    notes = ["A note.", "Another note.", "Third one."]
 
     # Act
-    new_exception = transform_future_exception(exception)
+    returned_exception = exception_with_notes(exception, notes)
 
     # Assert
-    assert type(new_exception) is CancelledError
-    assert new_exception.__cause__ is exception
-    assert new_exception.__context__ is exception
-    assert new_exception.__suppress_context__
+    assert returned_exception is exception
+    assert exception.__notes__ == list(notes)
 
 
 @pytest.mark.parametrize("n", [-1, 0, 2, 2000])

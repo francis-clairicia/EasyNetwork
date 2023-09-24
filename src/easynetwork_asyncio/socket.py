@@ -30,6 +30,8 @@ from weakref import WeakSet
 
 from easynetwork.tools._utils import check_socket_no_ssl as _check_socket_no_ssl, error_from_errno as _error_from_errno
 
+from .tasks import TaskUtils
+
 if TYPE_CHECKING:
     from types import TracebackType
 
@@ -152,9 +154,7 @@ class AsyncSocket:
         if task_id in self.__waiters:
             raise _error_from_errno(_errno.EBUSY)
 
-        task = asyncio.current_task(self.__loop)
-        if task is None:  # pragma: no cover
-            raise RuntimeError("This function will not be executed with the bound event loop.")
+        task = TaskUtils.current_asyncio_task(self.__loop)
 
         with contextlib.ExitStack() as stack:
             self.__tasks.add(task)
@@ -179,7 +179,7 @@ class AsyncSocket:
             except asyncio.CancelledError:
                 if self.__socket is not None:
                     raise
-                if (not task.cancelling() > task_cancelling) or task.uncancel() > task_cancelling:
+                if task.cancelling() <= task_cancelling or task.uncancel() > task_cancelling:
                     raise
                 raise _error_from_errno(abort_errno) from None
             finally:

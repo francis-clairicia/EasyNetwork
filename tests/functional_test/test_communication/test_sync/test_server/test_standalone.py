@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import asyncio
 import contextlib
 import threading
 import time
-from collections.abc import AsyncGenerator, Callable, Iterator
+from collections.abc import AsyncGenerator, Iterator
 
 from easynetwork.api_async.server.abc import AbstractAsyncNetworkServer
 from easynetwork.api_async.server.handler import AsyncBaseClientInterface, AsyncDatagramRequestHandler, AsyncStreamRequestHandler
@@ -97,29 +96,11 @@ class BaseTestStandaloneNetworkServer:
         start_server.join()
 
 
-def custom_asyncio_runner() -> asyncio.Runner:
-    return asyncio.Runner(loop_factory=asyncio.new_event_loop)
-
-
 class TestStandaloneTCPNetworkServer(BaseTestStandaloneNetworkServer):
-    @pytest.fixture(params=[None, custom_asyncio_runner])
-    @staticmethod
-    def runner_factory(request: pytest.FixtureRequest) -> Callable[[], asyncio.Runner] | None:
-        return getattr(request, "param", None)
-
     @pytest.fixture
     @staticmethod
-    def server(
-        stream_protocol: StreamProtocol[str, str],
-        runner_factory: Callable[[], asyncio.Runner] | None,
-    ) -> StandaloneTCPNetworkServer[str, str]:
-        return StandaloneTCPNetworkServer(
-            None,
-            0,
-            stream_protocol,
-            EchoRequestHandler(),
-            backend_kwargs={"runner_factory": runner_factory},
-        )
+    def server(stream_protocol: StreamProtocol[str, str]) -> StandaloneTCPNetworkServer[str, str]:
+        return StandaloneTCPNetworkServer(None, 0, stream_protocol, EchoRequestHandler())
 
     def test____dunder_init____invalid_backend(self, stream_protocol: StreamProtocol[str, str]) -> None:
         with pytest.raises(ValueError, match=r"^You must explicitly give a backend name or instance$"):
@@ -131,7 +112,6 @@ class TestStandaloneTCPNetworkServer(BaseTestStandaloneNetworkServer):
                 backend=None,  # type: ignore[arg-type]
             )
 
-    @pytest.mark.parametrize("runner_factory", [None], indirect=True)
     def test____serve_forever____serve_several_times(self, server: StandaloneTCPNetworkServer[str, str]) -> None:
         with server:
             for _ in range(3):
@@ -169,24 +149,10 @@ class TestStandaloneTCPNetworkServer(BaseTestStandaloneNetworkServer):
 
 
 class TestStandaloneUDPNetworkServer(BaseTestStandaloneNetworkServer):
-    @pytest.fixture(params=[None, custom_asyncio_runner])
-    @staticmethod
-    def runner_factory(request: pytest.FixtureRequest) -> Callable[[], asyncio.Runner] | None:
-        return getattr(request, "param", None)
-
     @pytest.fixture
     @staticmethod
-    def server(
-        datagram_protocol: DatagramProtocol[str, str],
-        runner_factory: Callable[[], asyncio.Runner] | None,
-    ) -> StandaloneUDPNetworkServer[str, str]:
-        return StandaloneUDPNetworkServer(
-            "localhost",
-            0,
-            datagram_protocol,
-            EchoRequestHandler(),
-            backend_kwargs={"runner_factory": runner_factory},
-        )
+    def server(datagram_protocol: DatagramProtocol[str, str]) -> StandaloneUDPNetworkServer[str, str]:
+        return StandaloneUDPNetworkServer("localhost", 0, datagram_protocol, EchoRequestHandler())
 
     def test____dunder_init____invalid_backend(self, datagram_protocol: DatagramProtocol[str, str]) -> None:
         with pytest.raises(ValueError, match=r"^You must explicitly give a backend name or instance$"):
@@ -198,7 +164,6 @@ class TestStandaloneUDPNetworkServer(BaseTestStandaloneNetworkServer):
                 backend=None,  # type: ignore[arg-type]
             )
 
-    @pytest.mark.parametrize("runner_factory", [None], indirect=True)
     def test____serve_forever____serve_several_times(self, server: StandaloneUDPNetworkServer[str, str]) -> None:
         with server:
             for _ in range(3):

@@ -23,7 +23,7 @@ from easynetwork.exceptions import (
 from easynetwork.protocol import StreamProtocol
 from easynetwork.tools.socket import SocketAddress, enable_socket_linger
 from easynetwork_asyncio._utils import create_connection
-from easynetwork_asyncio.backend import AsyncioBackend
+from easynetwork_asyncio.backend import AsyncIOBackend
 from easynetwork_asyncio.stream.listener import ListenerSocketAdapter
 
 import pytest
@@ -32,7 +32,7 @@ import pytest_asyncio
 from .base import BaseTestAsyncServer
 
 
-class NoListenerErrorBackend(AsyncioBackend):
+class NoListenerErrorBackend(AsyncIOBackend):
     async def create_tcp_listeners(
         self,
         host: str | Sequence[str] | None,
@@ -167,7 +167,7 @@ class TimeoutRequestHandler(AsyncStreamRequestHandler[str, str]):
             await client.send_packet(request)
         try:
             with pytest.raises(TimeoutError):
-                async with self.backend.timeout(self.request_timeout):
+                with self.backend.timeout(self.request_timeout):
                     yield
             await client.send_packet("successfully timed out")
         finally:
@@ -195,7 +195,7 @@ class InitialHandshakeRequestHandler(AsyncStreamRequestHandler[str, str]):
         if self.bypass_handshake:
             return
         try:
-            async with self.backend.timeout(1):
+            with self.backend.timeout(1):
                 password = yield
         except TimeoutError:
             await client.send_packet("timeout error")

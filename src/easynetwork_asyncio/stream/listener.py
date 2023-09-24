@@ -23,7 +23,7 @@ import asyncio
 import asyncio.streams
 from abc import abstractmethod
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, final
+from typing import TYPE_CHECKING, final
 
 from easynetwork.api_async.backend.abc import (
     AcceptedSocket as AbstractAcceptedSocket,
@@ -64,9 +64,6 @@ class ListenerSocketAdapter(AbstractAsyncListenerSocketAdapter):
     async def accept(self) -> AbstractAcceptedSocket:
         client_socket, _ = await self.__socket.accept()
         return self.__accepted_socket_factory(client_socket, self.__socket.loop)
-
-    def get_local_address(self) -> tuple[Any, ...]:
-        return self.__socket.socket.getsockname()
 
     def socket(self) -> asyncio.trsock.TransportSocket:
         return self.__socket.socket

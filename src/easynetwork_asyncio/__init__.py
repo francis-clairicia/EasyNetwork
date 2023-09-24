@@ -17,8 +17,6 @@
 
 from __future__ import annotations
 
-__all__ = ["AsyncioBackend"]  # type: list[str]
+__all__ = ["AsyncIOBackend"]  # type: list[str]
 
-__version__ = "1.0.0"
-
-from .backend import AsyncioBackend
+from .backend import AsyncIOBackend

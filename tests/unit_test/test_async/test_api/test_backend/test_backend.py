@@ -102,9 +102,9 @@ class TestAsyncBackendFactory:
         yield
         AsyncBackendFactory.invalidate_backends_cache()
 
-        from easynetwork_asyncio import AsyncioBackend
+        from easynetwork_asyncio import AsyncIOBackend
 
-        assert AsyncBackendFactory.get_all_backends() == {"asyncio": AsyncioBackend}
+        assert AsyncBackendFactory.get_all_backends() == {"asyncio": AsyncIOBackend}
 
     @pytest.fixture(autouse=True)
     @staticmethod

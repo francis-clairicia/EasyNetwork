@@ -22,12 +22,19 @@ __all__ = ["ThreadsPortal"]
 import asyncio
 import concurrent.futures
 import contextvars
-from collections.abc import Callable, Coroutine
-from typing import Any, ParamSpec, TypeVar, final
+import inspect
+from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING, ParamSpec, Self, TypeVar, final
 
 from easynetwork.api_async.backend.abc import ThreadsPortal as AbstractThreadsPortal
 from easynetwork.api_async.backend.sniffio import current_async_library_cvar as _sniffio_current_async_library_cvar
-from easynetwork.tools._utils import transform_future_exception as _transform_future_exception
+from easynetwork.tools._lock import ForkSafeLock
+from easynetwork.tools._utils import exception_with_notes as _exception_with_notes
+
+from .tasks import TaskUtils
+
+if TYPE_CHECKING:
+    from types import TracebackType
 
 _P = ParamSpec("_P")
 _T = TypeVar("_T")
@@ -35,47 +42,106 @@ _T = TypeVar("_T")
 
 @final
 class ThreadsPortal(AbstractThreadsPortal):
-    __slots__ = ("__loop",)
+    __slots__ = ("__loop", "__lock", "__task_group", "__call_soon_waiters")
 
-    def __init__(self, *, loop: asyncio.AbstractEventLoop | None = None) -> None:
+    def __init__(self) -> None:
         super().__init__()
-        if loop is None:
-            loop = asyncio.get_running_loop()
-        self.__loop: asyncio.AbstractEventLoop = loop
+        self.__loop: asyncio.AbstractEventLoop | None = None
+        self.__lock = ForkSafeLock()
+        self.__task_group: asyncio.TaskGroup = asyncio.TaskGroup()
+        self.__call_soon_waiters: set[asyncio.Future[None]] = set()
 
-    def run_coroutine(self, coro_func: Callable[_P, Coroutine[Any, Any, _T]], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
-        self.__check_running_loop()
-        return self.__get_result(self.__run_coroutine_soon(coro_func, *args, **kwargs))
+    async def __aenter__(self) -> Self:
+        if self.__loop is not None:
+            raise RuntimeError("ThreadsPortal entered twice.")
+        await self.__task_group.__aenter__()
+        self.__loop = asyncio.get_running_loop()
+        return self
 
-    def __run_coroutine_soon(
+    async def __aexit__(
         self,
-        coro_func: Callable[_P, Coroutine[Any, Any, _T]],
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        try:
+            with self.__lock.get():
+                self.__loop = None
+
+            while self.__call_soon_waiters:
+                await TaskUtils.cancel_shielded_wait_asyncio_futures(self.__call_soon_waiters)
+            await self.__task_group.__aexit__(exc_type, exc_val, exc_tb)
+        finally:
+            del self, exc_val, exc_tb
+
+    def run_coroutine_soon(
+        self,
+        coro_func: Callable[_P, Awaitable[_T]],
         /,
         *args: _P.args,
         **kwargs: _P.kwargs,
     ) -> concurrent.futures.Future[_T]:
-        coroutine = coro_func(*args, **kwargs)
-        if _sniffio_current_async_library_cvar is not None:
-            ctx = contextvars.copy_context()
-            ctx.run(_sniffio_current_async_library_cvar.set, "asyncio")
-            return ctx.run(asyncio.run_coroutine_threadsafe, coroutine, self.__loop)  # type: ignore[arg-type]
+        def schedule_task() -> concurrent.futures.Future[_T]:
+            future: concurrent.futures.Future[_T] = concurrent.futures.Future()
 
-        return asyncio.run_coroutine_threadsafe(coroutine, self.__loop)
+            async def coroutine() -> None:
+                try:
+                    result = await coro_func(*args, **kwargs)
+                except asyncio.CancelledError:
+                    future.cancel()
+                    future.set_running_or_notify_cancel()
+                    raise
+                except BaseException as exc:
+                    if future.set_running_or_notify_cancel():
+                        future.set_exception(exc)
+                    if not isinstance(exc, Exception):
+                        raise  # pragma: no cover
+                else:
+                    if future.set_running_or_notify_cancel():
+                        future.set_result(result)
 
-    def run_sync(self, func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
-        self.__check_running_loop()
-        return self.__get_result(self.__run_sync_soon(func, *args, **kwargs))
+            task = self.__task_group.create_task(coroutine())
+            loop = task.get_loop()
+            with self.__lock.get():
+                loop.call_soon(self.__register_waiter(self.__call_soon_waiters, loop).set_result, None)
 
-    def __run_sync_soon(self, func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> concurrent.futures.Future[_T]:
+            def on_fut_done(future: concurrent.futures.Future[_T]) -> None:
+                if future.cancelled():
+                    try:
+                        self.run_sync(task.cancel)
+                    except RuntimeError:
+                        # on_fut_done() called from coroutine()
+                        # or the portal is already shut down
+                        pass
+
+            future.add_done_callback(on_fut_done)
+
+            return future
+
+        return self.run_sync(schedule_task)
+
+    def run_sync_soon(self, func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> concurrent.futures.Future[_T]:
         def callback() -> None:
+            waiter.set_result(None)
+            if not future.set_running_or_notify_cancel():
+                return
             try:
                 result = func(*args, **kwargs)
+                if inspect.iscoroutine(result):
+                    result.close()  # Prevent ResourceWarnings
+                    msg = "func is a coroutine function."
+                    note = "You should use run_coroutine() or run_coroutine_soon() instead."
+                    raise _exception_with_notes(TypeError(msg), note)
             except BaseException as exc:
-                future.set_exception(_transform_future_exception(exc))
+                future.set_exception(exc)
                 if isinstance(exc, (SystemExit, KeyboardInterrupt)):  # pragma: no cover
                     raise
             else:
                 future.set_result(result)
+
+        with self.__lock.get():
+            loop = self.__check_loop()
+            waiter = self.__register_waiter(self.__call_soon_waiters, loop)
 
         ctx = contextvars.copy_context()
 
@@ -83,30 +149,25 @@ class ThreadsPortal(AbstractThreadsPortal):
             ctx.run(_sniffio_current_async_library_cvar.set, "asyncio")
 
         future: concurrent.futures.Future[_T] = concurrent.futures.Future()
-        future.set_running_or_notify_cancel()
 
-        self.__loop.call_soon_threadsafe(callback, context=ctx)
+        loop.call_soon_threadsafe(callback, context=ctx)
         return future
 
-    @staticmethod
-    def __get_result(future: concurrent.futures.Future[_T]) -> _T:
-        try:
-            return future.result()
-        except concurrent.futures.CancelledError:
-            if not future.cancelled():  # raised from future.exception()
-                raise
-            raise asyncio.CancelledError() from None
-        finally:
-            del future
-
-    def __check_running_loop(self) -> None:
+    def __check_loop(self) -> asyncio.AbstractEventLoop:
+        loop = self.__loop
+        if loop is None:
+            raise RuntimeError("ThreadsPortal not running.")
         try:
             running_loop = asyncio.get_running_loop()
         except RuntimeError:
-            return
-        if running_loop is self.__loop:
-            raise RuntimeError("must be called in a different OS thread")
+            return loop
+        if running_loop is loop:
+            raise RuntimeError("This function must be called in a different OS thread")
+        return loop
 
-    @property
-    def loop(self) -> asyncio.AbstractEventLoop:
-        return self.__loop
+    @staticmethod
+    def __register_waiter(waiters: set[asyncio.Future[None]], loop: asyncio.AbstractEventLoop) -> asyncio.Future[None]:
+        waiter: asyncio.Future[None] = loop.create_future()
+        waiters.add(waiter)
+        waiter.add_done_callback(waiters.discard)
+        return waiter

@@ -53,9 +53,7 @@ from ...tools.socket import (
     set_tcp_keepalive,
     set_tcp_nodelay,
 )
-from ..backend.abc import AsyncHalfCloseableStreamSocketAdapter
 from ..backend.factory import AsyncBackendFactory
-from ..backend.tasks import SingleTaskRunner
 from ._tools.actions import ErrorAction as _ErrorAction, RequestAction as _RequestAction
 from .abc import AbstractAsyncNetworkServer, SupportsEventSet
 from .handler import AsyncStreamClient, AsyncStreamRequestHandler
@@ -68,6 +66,7 @@ if TYPE_CHECKING:
         AsyncBackend,
         AsyncListenerSocketAdapter,
         AsyncStreamSocketAdapter,
+        CancelScope,
         IEvent,
         Task,
         TaskGroup,
@@ -83,7 +82,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         "__backend",
         "__listeners",
         "__listeners_factory",
-        "__listeners_factory_runner",
+        "__listeners_factory_scope",
         "__protocol",
         "__request_handler",
         "__is_shutdown",
@@ -201,7 +200,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 backlog=backlog,
                 reuse_port=reuse_port,
             )
-        self.__listeners_factory_runner: SingleTaskRunner[Sequence[AsyncListenerSocketAdapter]] | None = None
+        self.__listeners_factory_scope: CancelScope | None = None
 
         self.__backend: AsyncBackend = backend
         self.__listeners: tuple[AsyncListenerSocketAdapter, ...] | None = None
@@ -240,7 +239,8 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 del listener_task
 
     async def server_close(self) -> None:
-        self.__kill_listener_factory_runner()
+        if self.__listeners_factory_scope is not None:
+            self.__listeners_factory_scope.cancel()
         self.__listeners_factory = None
         await self.__close_listeners()
 
@@ -267,7 +267,6 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             await self.__backend.cancel_shielded_coro_yield()
 
     async def shutdown(self) -> None:
-        self.__kill_listener_factory_runner()
         if self.__mainloop_task is not None:
             self.__mainloop_task.cancel()
         if self.__shutdown_asked:
@@ -280,10 +279,6 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             self.__shutdown_asked = False
 
     shutdown.__doc__ = AbstractAsyncNetworkServer.shutdown.__doc__
-
-    def __kill_listener_factory_runner(self) -> None:
-        if self.__listeners_factory_runner is not None:
-            self.__listeners_factory_runner.cancel()
 
     async def serve_forever(self, *, is_up_event: SupportsEventSet | None = None) -> None:
         async with _contextlib.AsyncExitStack() as server_exit_stack:
@@ -301,14 +296,17 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
             # Bind and activate
             assert self.__listeners is None  # nosec assert_used
-            assert self.__listeners_factory_runner is None  # nosec assert_used
+            assert self.__listeners_factory_scope is None  # nosec assert_used
             if self.__listeners_factory is None:
                 raise ServerClosedError("Closed server")
             try:
-                self.__listeners_factory_runner = SingleTaskRunner(self.__backend, self.__listeners_factory)
-                self.__listeners = tuple(await self.__listeners_factory_runner.run())
+                with self.__backend.open_cancel_scope() as self.__listeners_factory_scope:
+                    await self.__backend.coro_yield()
+                    self.__listeners = tuple(await self.__listeners_factory())
+                if self.__listeners_factory_scope.cancelled_caught():
+                    raise ServerClosedError("Closed server")
             finally:
-                self.__listeners_factory_runner = None
+                self.__listeners_factory_scope = None
             if not self.__listeners:
                 self.__listeners = None
                 raise OSError("empty listeners list")
@@ -471,8 +469,8 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         return request_handler_generator
 
     async def __force_close_stream_socket(self, socket: AsyncStreamSocketAdapter) -> None:
-        with _contextlib.suppress(OSError):
-            await self.__backend.ignore_cancellation(socket.aclose())
+        with self.__backend.move_on_after(0), _contextlib.suppress(OSError):
+            await socket.aclose()
 
     @classmethod
     def __have_errno(cls, exc: OSError | BaseExceptionGroup[OSError], errnos: set[int]) -> bool:
@@ -536,7 +534,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         if (listeners := self.__listeners) is None:
             return ()
         return tuple(
-            new_socket_address(listener.get_local_address(), listener.socket().family)
+            new_socket_address(listener.socket().getsockname(), listener.socket().family)
             for listener in listeners
             if not listener.is_closing()
         )
@@ -626,7 +624,7 @@ class _ConnectedClientAPI(AsyncStreamClient[_ResponseT]):
         producer: StreamDataProducer[_ResponseT],
         logger: logging.Logger,
     ) -> None:
-        super().__init__(new_socket_address(socket.get_remote_address(), socket.socket().family))
+        super().__init__(new_socket_address(socket.socket().getpeername(), socket.socket().family))
 
         self.__socket: AsyncStreamSocketAdapter = socket
         self.__closed: bool = False
@@ -641,18 +639,14 @@ class _ConnectedClientAPI(AsyncStreamClient[_ResponseT]):
     async def _force_close(self) -> None:
         self.__closed = True
         async with self.__send_lock:  # If self.aclose() took the lock, wait for it to finish
-            socket = self.__socket
-            await self.__shutdown_socket(socket)
+            pass
 
     async def aclose(self) -> None:
         async with self.__send_lock:
             socket = self.__socket
             self.__closed = True
-            try:
-                await self.__shutdown_socket(socket)
-            finally:
-                with _contextlib.suppress(OSError):
-                    await socket.aclose()
+            with _contextlib.suppress(OSError):
+                await socket.aclose()
 
     async def send_packet(self, packet: _ResponseT, /) -> None:
         self.__check_closed()
@@ -674,14 +668,6 @@ class _ConnectedClientAPI(AsyncStreamClient[_ResponseT]):
         if self.__closed:
             raise ClientClosedError("Closed client")
         return socket
-
-    @staticmethod
-    async def __shutdown_socket(socket: AsyncStreamSocketAdapter) -> None:
-        if not isinstance(socket, AsyncHalfCloseableStreamSocketAdapter):
-            return
-        with _contextlib.suppress(OSError):
-            if not socket.is_closing():
-                await socket.send_eof()
 
     @property
     def socket(self) -> SocketProxy:

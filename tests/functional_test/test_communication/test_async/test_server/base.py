@@ -67,6 +67,22 @@ class BaseTestAsyncServer:
             await server.shutdown()
             assert event.is_set()
 
+    async def test____serve_forever____server_close_during_setup(
+        self,
+        server: AbstractAsyncNetworkServer,
+    ) -> None:
+        event = asyncio.Event()
+        server_task = None
+        with pytest.raises(ExceptionGroup):
+            async with asyncio.TaskGroup() as tg:
+                server_task = tg.create_task(server.serve_forever(is_up_event=event))
+                await asyncio.sleep(0)
+                assert not event.is_set()
+                await server.server_close()
+                assert not event.is_set()
+        assert server_task is not None
+        assert isinstance(server_task.exception(), ServerClosedError)
+
     async def test____serve_forever____without_is_up_event(
         self,
         server: AbstractAsyncNetworkServer,

@@ -21,23 +21,23 @@ __all__ = [
     "AsyncBackend",
     "AsyncBaseSocketAdapter",
     "AsyncDatagramSocketAdapter",
-    "AsyncHalfCloseableStreamSocketAdapter",
     "AsyncListenerSocketAdapter",
     "AsyncStreamSocketAdapter",
+    "CancelScope",
     "ICondition",
     "IEvent",
     "ILock",
     "Task",
     "TaskGroup",
     "ThreadsPortal",
-    "TimeoutHandle",
 ]
 
+import contextlib
 import contextvars
 import math
 from abc import ABCMeta, abstractmethod
-from collections.abc import Callable, Coroutine, Iterable, Sequence
-from contextlib import AbstractAsyncContextManager
+from collections.abc import Awaitable, Callable, Coroutine, Iterable, Iterator, Mapping, Sequence
+from contextlib import AbstractContextManager
 from typing import TYPE_CHECKING, Any, Generic, NoReturn, ParamSpec, Protocol, Self, TypeVar
 
 if TYPE_CHECKING:
@@ -187,55 +187,6 @@ class ICondition(ILock, Protocol):
         ...
 
 
-class Runner(metaclass=ABCMeta):
-    """
-    A :term:`context manager` that simplifies `multiple` async function calls in the same context.
-
-    Sometimes several top-level async functions should be called in the same event loop and :class:`contextvars.Context`.
-    """
-
-    __slots__ = ("__weakref__",)
-
-    def __enter__(self) -> Self:
-        return self
-
-    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None) -> None:
-        """Calls :meth:`close`."""
-        self.close()
-
-    @abstractmethod
-    def close(self) -> None:
-        """
-        Closes the runner.
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    def run(self, coro_func: Callable[..., Coroutine[Any, Any, _T]], *args: Any) -> _T:
-        """
-        Runs an async function, and returns the result.
-
-        Calling::
-
-            runner.run(coro_func, *args)
-
-        is equivalent to::
-
-            await coro_func(*args)
-
-        except that :meth:`run` can (and must) be called from a synchronous context.
-
-        Parameters:
-            coro_func: An async function.
-            args: Positional arguments to be passed to `coro_func`. If you need to pass keyword arguments,
-                  then use :func:`functools.partial`.
-
-        Returns:
-            Whatever `coro_func` returns.
-        """
-        raise NotImplementedError
-
-
 class Task(Generic[_T_co], metaclass=ABCMeta):
     """
     A :class:`Task` object represents a concurrent "thread" of execution.
@@ -246,12 +197,12 @@ class Task(Generic[_T_co], metaclass=ABCMeta):
     @abstractmethod
     def done(self) -> bool:
         """
-        Returns :data:`True` if the Task is done.
+        Returns the Task state.
 
         A Task is *done* when the wrapped coroutine either returned a value, raised an exception, or the Task was cancelled.
 
         Returns:
-            The Task state.
+            :data:`True` if the Task is done.
         """
         raise NotImplementedError
 
@@ -275,13 +226,13 @@ class Task(Generic[_T_co], metaclass=ABCMeta):
     @abstractmethod
     def cancelled(self) -> bool:
         """
-        Returns :data:`True` if the Task is *cancelled*.
+        Returns the cancellation state.
 
         The Task is *cancelled* when the cancellation was requested with :meth:`cancel` and the wrapped coroutine propagated
         the ``backend.get_cancelled_exc_class()`` exception thrown into it.
 
         Returns:
-            the cancellation state.
+            :data:`True` if the Task is *cancelled*
         """
         raise NotImplementedError
 
@@ -314,14 +265,6 @@ class Task(Generic[_T_co], metaclass=ABCMeta):
         """
         raise NotImplementedError
 
-
-class SystemTask(Task[_T_co]):
-    """
-    A :class:`SystemTask` is a :class:`Task` that runs concurrently with the current root task.
-    """
-
-    __slots__ = ()
-
     @abstractmethod
     async def join_or_cancel(self) -> _T_co:
         """
@@ -340,6 +283,104 @@ class SystemTask(Task[_T_co]):
             return await task.join()
         """
         raise NotImplementedError
+
+
+class CancelScope(metaclass=ABCMeta):
+    """
+    A temporary scope opened by a task that can be used by other tasks to control its execution time.
+
+    Unlike trio's CancelScope, there is no "shielded" scopes; you must use :meth:`AsyncBackend.ignore_cancellation`.
+    """
+
+    __slots__ = ("__weakref__",)
+
+    @abstractmethod
+    def __enter__(self) -> Self:
+        raise NotImplementedError
+
+    @abstractmethod
+    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None) -> bool:
+        raise NotImplementedError
+
+    @abstractmethod
+    def cancel(self) -> None:
+        """
+        Request the Task to be cancelled.
+
+        This arranges for a ``backend.get_cancelled_exc_class()`` exception to be thrown into the wrapped coroutine
+        on the next cycle of the event loop.
+
+        :meth:`CancelScope.cancel` does not guarantee that the Task will be cancelled,
+        although suppressing cancellation completely is not common and is actively discouraged.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def cancel_called(self) -> bool:
+        """
+        Checks if :meth:`cancel` has been called.
+
+        Returns:
+            :data:`True` if :meth:`cancel` has been called.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def cancelled_caught(self) -> bool:
+        """
+        Returns the scope cancellation state.
+
+        Returns:
+            :data:`True` if the scope has been is *cancelled*.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def when(self) -> float:
+        """
+        Returns the current deadline.
+
+        Returns:
+            the absolute time in seconds. :data:`math.inf` if the current deadline is not set.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def reschedule(self, when: float, /) -> None:
+        """
+        Reschedules the timeout.
+
+        Parameters:
+            when: The new deadline.
+        """
+        raise NotImplementedError
+
+    @property
+    def deadline(self) -> float:
+        """
+        A read-write attribute to simplify the timeout management.
+
+        For example, this statement::
+
+            scope.deadline += 30
+
+        is equivalent to::
+
+            scope.reschedule(scope.when() + 30)
+
+        It is also possible to remove the timeout by deleting the attribute::
+
+            del scope.deadline
+        """
+        return self.when()
+
+    @deadline.setter
+    def deadline(self, value: float) -> None:
+        self.reschedule(value)
+
+    @deadline.deleter
+    def deadline(self) -> None:
+        self.reschedule(math.inf)
 
 
 class TaskGroup(metaclass=ABCMeta):
@@ -402,14 +443,40 @@ class TaskGroup(metaclass=ABCMeta):
 class ThreadsPortal(metaclass=ABCMeta):
     """
     An object that lets external threads run code in an asynchronous event loop.
+
+    You must use it as a context manager *within* the event loop to start the portal::
+
+        async with threads_portal:
+            ...
+
+    If the portal is not entered or exited, then all of the operations would throw a :exc:`RuntimeError` for the threads.
     """
 
     __slots__ = ("__weakref__",)
 
     @abstractmethod
-    def run_coroutine(self, coro_func: Callable[_P, Coroutine[Any, Any, _T]], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+    async def __aenter__(self) -> Self:
+        raise NotImplementedError
+
+    @abstractmethod
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def run_coroutine_soon(
+        self,
+        coro_func: Callable[_P, Awaitable[_T]],
+        /,
+        *args: _P.args,
+        **kwargs: _P.kwargs,
+    ) -> concurrent.futures.Future[_T]:
         """
-        Run the given async function in the bound event loop thread, blocking until it is complete. Thread-safe.
+        Run the given async function in the bound event loop thread. Thread-safe.
 
         Parameters:
             coro_func: An async function.
@@ -417,19 +484,41 @@ class ThreadsPortal(metaclass=ABCMeta):
             kwargs: Keyword arguments to be passed to `coro_func`.
 
         Raises:
-            backend.get_cancelled_exc_class(): The scheduler was shut down while ``coro_func()`` was running
-                                               and cancelled the task.
-            RuntimeError: if the scheduler is shut down.
-            RuntimeError: if you try calling this from inside the event loop thread, which would otherwise cause a deadlock.
-            Exception: Whatever raises ``coro_func(*args, **kwargs)``
+            RuntimeError: if the portal is shut down.
+            RuntimeError: if you try calling this from inside the event loop thread, to avoid potential deadlocks.
 
         Returns:
-            Whatever returns ``coro_func(*args, **kwargs)``
+            A future filled with the result of ``await coro_func(*args, **kwargs)``.
         """
         raise NotImplementedError
 
+    def run_coroutine(self, coro_func: Callable[_P, Awaitable[_T]], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+        """
+        Run the given async function in the bound event loop thread, blocking until it is complete. Thread-safe.
+
+        The default implementation is equivalent to::
+
+            portal.run_coroutine_soon(coro_func, *args, **kwargs).result()
+
+        Parameters:
+            coro_func: An async function.
+            args: Positional arguments to be passed to `coro_func`.
+            kwargs: Keyword arguments to be passed to `coro_func`.
+
+        Raises:
+            concurrent.futures.CancelledError: The portal has been shut down while ``coro_func()`` was running
+                                               and cancelled the task.
+            RuntimeError: if the portal is shut down.
+            RuntimeError: if you try calling this from inside the event loop thread, which would otherwise cause a deadlock.
+            Exception: Whatever raises ``await coro_func(*args, **kwargs)``.
+
+        Returns:
+            Whatever returns ``await coro_func(*args, **kwargs)``.
+        """
+        return self.run_coroutine_soon(coro_func, *args, **kwargs).result()
+
     @abstractmethod
-    def run_sync(self, func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+    def run_sync_soon(self, func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> concurrent.futures.Future[_T]:
         """
         Executes a function in the event loop thread from a worker thread. Thread-safe.
 
@@ -439,14 +528,36 @@ class ThreadsPortal(metaclass=ABCMeta):
             kwargs: Keyword arguments to be passed to `func`.
 
         Raises:
-            RuntimeError: if the scheduler is shut down.
-            RuntimeError: if you try calling this from inside the event loop thread, which would otherwise cause a deadlock.
-            Exception: Whatever raises ``func(*args, **kwargs)``
+            RuntimeError: if the portal is shut down.
+            RuntimeError: if you try calling this from inside the event loop thread, to avoid potential deadlocks.
 
         Returns:
-            Whatever returns ``func(*args, **kwargs)``
+            A future filled with the result of ``func(*args, **kwargs)``.
         """
         raise NotImplementedError
+
+    def run_sync(self, func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+        """
+        Executes a function in the event loop thread from a worker thread. Thread-safe.
+
+        The default implementation is equivalent to::
+
+            portal.run_sync_soon(func, *args, **kwargs).result()
+
+        Parameters:
+            func: A synchronous function.
+            args: Positional arguments to be passed to `func`.
+            kwargs: Keyword arguments to be passed to `func`.
+
+        Raises:
+            RuntimeError: if the portal is shut down.
+            RuntimeError: if you try calling this from inside the event loop thread, which would otherwise cause a deadlock.
+            Exception: Whatever raises ``func(*args, **kwargs)``.
+
+        Returns:
+            Whatever returns ``func(*args, **kwargs)``.
+        """
+        return self.run_sync_soon(func, *args, **kwargs).result()
 
 
 class AsyncBaseSocketAdapter(metaclass=ABCMeta):
@@ -488,16 +599,6 @@ class AsyncBaseSocketAdapter(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    def get_local_address(self) -> tuple[Any, ...]:
-        """
-        Returns the local socket address. Roughly similar to :meth:`socket.socket.getsockname`.
-
-        Returns:
-            The socket address.
-        """
-        raise NotImplementedError
-
-    @abstractmethod
     def socket(self) -> ISocket:
         """
         Returns the socket instance for low-level operations (such as ``socket.setsockopt()``).
@@ -514,16 +615,6 @@ class AsyncStreamSocketAdapter(AsyncBaseSocketAdapter):
     """
 
     __slots__ = ()
-
-    @abstractmethod
-    def get_remote_address(self) -> tuple[Any, ...]:
-        """
-        Returns the remote endpoint's address. Roughly similar to :meth:`socket.socket.getpeername`.
-
-        Returns:
-            The remote address.
-        """
-        raise NotImplementedError
 
     @abstractmethod
     async def recv(self, bufsize: int, /) -> bytes:
@@ -557,14 +648,6 @@ class AsyncStreamSocketAdapter(AsyncBaseSocketAdapter):
         """
         await self.sendall(b"".join(iterable_of_data))
 
-
-class AsyncHalfCloseableStreamSocketAdapter(AsyncStreamSocketAdapter):
-    """
-    A stream-oriented socket interface that also supports closing only the write end of the stream.
-    """
-
-    __slots__ = ()
-
     @abstractmethod
     async def send_eof(self) -> None:
         """
@@ -579,16 +662,6 @@ class AsyncDatagramSocketAdapter(AsyncBaseSocketAdapter):
     """
 
     __slots__ = ()
-
-    @abstractmethod
-    def get_remote_address(self) -> tuple[Any, ...] | None:
-        """
-        Returns the remote endpoint's address. Roughly similar to :meth:`socket.socket.getpeername`.
-
-        Returns:
-            The remote address if configured, :data:`None` otherwise.
-        """
-        raise NotImplementedError
 
     @abstractmethod
     async def recvfrom(self, bufsize: int, /) -> tuple[bytes, tuple[Any, ...]]:
@@ -682,74 +755,6 @@ class AcceptedSocket(metaclass=ABCMeta):
         raise NotImplementedError
 
 
-class TimeoutHandle(metaclass=ABCMeta):
-    """
-    Interface to deal with an actual timeout scope.
-
-    See :meth:`AsyncBackend.move_on_after` for details.
-    """
-
-    __slots__ = ()
-
-    @abstractmethod
-    def when(self) -> float:
-        """
-        Returns the current deadline.
-
-        Returns:
-            the absolute time in seconds. :data:`math.inf` if the current deadline is not set.
-            A negative value can be returned.
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    def reschedule(self, when: float, /) -> None:
-        """
-        Reschedules the timeout.
-
-        Parameters:
-            when: The new deadline.
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    def expired(self) -> bool:
-        """
-        Returns whether the context manager has exceeded its deadline (expired).
-
-        Returns:
-            the timeout state.
-        """
-        raise NotImplementedError
-
-    @property
-    def deadline(self) -> float:
-        """
-        A read-write attribute to simplify the timeout management.
-
-        For example, this statement::
-
-            handle.deadline += 30
-
-        is equivalent to::
-
-            handle.reschedule(handle.when() + 30)
-
-        It is also possible to remove the timeout by deleting the attribute::
-
-            del handle.deadline
-        """
-        return self.when()
-
-    @deadline.setter
-    def deadline(self, value: float) -> None:
-        self.reschedule(value)
-
-    @deadline.deleter
-    def deadline(self) -> None:
-        self.reschedule(math.inf)
-
-
 class AsyncBackend(metaclass=ABCMeta):
     """
     Asynchronous backend interface.
@@ -760,36 +765,44 @@ class AsyncBackend(metaclass=ABCMeta):
     __slots__ = ("__weakref__",)
 
     @abstractmethod
-    def new_runner(self) -> Runner:
-        """
-        Returns an asynchronous function runner.
-
-        Returns:
-            A :class:`Runner` context.
-        """
-        raise NotImplementedError
-
-    def bootstrap(self, coro_func: Callable[..., Coroutine[Any, Any, _T]], *args: Any) -> _T:
+    def bootstrap(
+        self,
+        coro_func: Callable[..., Coroutine[Any, Any, _T]],
+        *args: Any,
+        runner_options: Mapping[str, Any] | None = ...,
+    ) -> _T:
         """
         Runs an async function, and returns the result.
 
-        Equivalent to::
+        Calling::
 
-            with backend.new_runner() as runner:
-                return runner.run(coro_func, *args)
+            backend.bootstrap(coro_func, *args)
 
-        See :meth:`Runner.run` documentation for details.
+        is equivalent to::
+
+            await coro_func(*args)
+
+        except that :meth:`bootstrap` can (and must) be called from a synchronous context.
+
+        `runner_options` can be used to give additional parameters to the backend runner. For example::
+
+            backend.bootstrap(coro_func, *args, runner_options={"loop_factory": uvloop.new_event_loop})
+
+        would act as the following for :mod:`asyncio`::
+
+            with asyncio.Runner(loop_factory=uvloop.new_event_loop):
+                runner.run(coro_func(*args))
 
         Parameters:
             coro_func: An async function.
             args: Positional arguments to be passed to `coro_func`. If you need to pass keyword arguments,
                   then use :func:`functools.partial`.
+            runner_options: Options for backend's runner.
 
         Returns:
-            Whatever `coro_func` returns.
+            Whatever ``await coro_func(*args)`` returns.
         """
-        with self.new_runner() as runner:
-            return runner.run(coro_func, *args)
+        raise NotImplementedError
 
     @abstractmethod
     async def coro_yield(self) -> None:
@@ -847,9 +860,21 @@ class AsyncBackend(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    def timeout(self, delay: float) -> AbstractAsyncContextManager[TimeoutHandle]:
+    def open_cancel_scope(self, *, deadline: float = ...) -> CancelScope:
         """
-        Returns an :term:`asynchronous context manager` that can be used to limit the amount of time spent waiting on something.
+        Open a new cancel scope. See :meth:`move_on_after` for details.
+
+        Parameters:
+            deadline: absolute time to stop waiting. Defaults to :data:`math.inf`.
+
+        Returns:
+            a new cancel scope.
+        """
+        raise NotImplementedError
+
+    def timeout(self, delay: float) -> AbstractContextManager[CancelScope]:
+        """
+        Returns a :term:`context manager` that can be used to limit the amount of time spent waiting on something.
 
         This function and :meth:`move_on_after` are similar in that both create a context manager with a given timeout,
         and if the timeout expires then both will cause ``backend.get_cancelled_exc_class()`` to be raised within the scope.
@@ -860,14 +885,13 @@ class AsyncBackend(metaclass=ABCMeta):
             delay: number of seconds to wait.
 
         Returns:
-            an :term:`asynchronous context manager`
+            a :term:`context manager`
         """
-        raise NotImplementedError
+        return _timeout_after(self, delay)
 
-    @abstractmethod
-    def timeout_at(self, deadline: float) -> AbstractAsyncContextManager[TimeoutHandle]:
+    def timeout_at(self, deadline: float) -> AbstractContextManager[CancelScope]:
         """
-        Returns an :term:`asynchronous context manager` that can be used to limit the amount of time spent waiting on something.
+        Returns a :term:`context manager` that can be used to limit the amount of time spent waiting on something.
 
         This function and :meth:`move_on_at` are similar in that both create a context manager with a given timeout,
         and if the timeout expires then both will cause ``backend.get_cancelled_exc_class()`` to be raised within the scope.
@@ -878,14 +902,13 @@ class AsyncBackend(metaclass=ABCMeta):
             deadline: absolute time to stop waiting.
 
         Returns:
-            an :term:`asynchronous context manager`
+            a :term:`context manager`
         """
-        raise NotImplementedError
+        return _timeout_at(self, deadline)
 
-    @abstractmethod
-    def move_on_after(self, delay: float) -> AbstractAsyncContextManager[TimeoutHandle]:
+    def move_on_after(self, delay: float) -> CancelScope:
         """
-        Returns an :term:`asynchronous context manager` that can be used to limit the amount of time spent waiting on something.
+        Returns a new :class:`CancelScope` that can be used to limit the amount of time spent waiting on something.
         The deadline is set to now + `delay`.
 
         Example::
@@ -896,7 +919,7 @@ class AsyncBackend(metaclass=ABCMeta):
             async def main():
                 ...
 
-                async with backend.move_on_after(10):
+                with backend.move_on_after(10):
                     await long_running_operation(backend)
 
                 print("After at most 10 seconds.")
@@ -907,15 +930,14 @@ class AsyncBackend(metaclass=ABCMeta):
         Parameters:
             delay: number of seconds to wait. If `delay` is :data:`math.inf`,
                    no time limit will be applied; this can be useful if the delay is unknown when the context manager is created.
-                   In either case, the context manager can be rescheduled after creation using :meth:`TimeoutHandle.reschedule`.
+                   In either case, the context manager can be rescheduled after creation using :meth:`CancelScope.reschedule`.
 
         Returns:
-            an :term:`asynchronous context manager`
+            a new cancel scope.
         """
-        raise NotImplementedError
+        return self.open_cancel_scope(deadline=self.current_time() + delay)
 
-    @abstractmethod
-    def move_on_at(self, deadline: float) -> AbstractAsyncContextManager[TimeoutHandle]:
+    def move_on_at(self, deadline: float) -> CancelScope:
         """
         Similar to :meth:`move_on_after`, except `deadline` is the absolute time to stop waiting, or :data:`math.inf`.
 
@@ -928,7 +950,7 @@ class AsyncBackend(metaclass=ABCMeta):
                 ...
 
                 deadline = backend.current_time() + 10
-                async with backend.move_on_at(deadline):
+                with backend.move_on_at(deadline):
                     await long_running_operation(backend)
 
                 print("After at most 10 seconds.")
@@ -937,9 +959,9 @@ class AsyncBackend(metaclass=ABCMeta):
             deadline: absolute time to stop waiting.
 
         Returns:
-            an :term:`asynchronous context manager`
+            a new cancel scope.
         """
-        raise NotImplementedError
+        return self.open_cancel_scope(deadline=deadline)
 
     @abstractmethod
     def current_time(self) -> float:
@@ -987,31 +1009,6 @@ class AsyncBackend(metaclass=ABCMeta):
                       executes a checkpoint but does not block.
         """
         return await self.sleep(max(deadline - self.current_time(), 0))
-
-    @abstractmethod
-    def spawn_task(
-        self,
-        coro_func: Callable[..., Coroutine[Any, Any, _T]],
-        /,
-        *args: Any,
-        context: contextvars.Context | None = ...,
-    ) -> SystemTask[_T]:
-        """
-        Starts a new "system" task.
-
-        It is a background task that runs concurrently with the current root task.
-
-        Parameters:
-            coro_func: An async function.
-            args: Positional arguments to be passed to `coro_func`.  If you need to pass keyword arguments,
-                  then use :func:`functools.partial`.
-            context: If given, it must be a :class:`contextvars.Context` instance in which the coroutine should be executed.
-                     If the framework does not support contexts (or does not use them), it must simply ignore this parameter.
-
-        Returns:
-            the created task.
-        """
-        raise NotImplementedError
 
     @abstractmethod
     def create_task_group(self) -> TaskGroup:
@@ -1383,3 +1380,16 @@ class AsyncBackend(metaclass=ABCMeta):
             Whatever returns ``future.result()``
         """
         raise NotImplementedError
+
+
+def _timeout_after(backend: AsyncBackend, delay: float) -> contextlib._GeneratorContextManager[CancelScope]:
+    return _timeout_at(backend, backend.current_time() + delay)
+
+
+@contextlib.contextmanager
+def _timeout_at(backend: AsyncBackend, deadline: float) -> Iterator[CancelScope]:
+    with backend.move_on_at(deadline) as scope:
+        yield scope
+
+    if scope.cancelled_caught():
+        raise TimeoutError("timed out")
