@@ -186,11 +186,6 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
     async def serve_forever(self, *, is_up_event: SupportsEventSet | None = None) -> None:
         async with _contextlib.AsyncExitStack() as server_exit_stack:
-            is_up_callback = server_exit_stack.enter_context(_contextlib.ExitStack())
-            if is_up_event is not None:
-                # Force is_up_event to be set, in order not to stuck the waiting task
-                is_up_callback.callback(is_up_event.set)
-
             # Wake up server
             if not self.__is_shutdown.is_set():
                 raise ServerAlreadyRunning("Server is already running")
@@ -237,8 +232,8 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             #################
 
             # Server is up
-            is_up_callback.close()
-            del is_up_callback
+            if is_up_event is not None and not self.__shutdown_asked:
+                is_up_event.set()
             ##############
 
             # Main loop

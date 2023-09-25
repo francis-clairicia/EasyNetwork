@@ -1139,7 +1139,7 @@ class TestAsyncioBackendShieldedCancellation:
             await cancel_shielded_coroutine()
             checkpoints.append("cancel_shielded_coroutine")
 
-            with backend.timeout(0):
+            with backend.timeout(0), backend.open_cancel_scope():
                 await cancel_shielded_coroutine()
                 checkpoints.append("inner_cancel_shielded_coroutine")
                 assert current_task.cancelling() == 2
@@ -1222,8 +1222,9 @@ class TestAsyncioBackendShieldedCancellation:
             outer_scope = backend.move_on_after(1.5)
             inner_scope = backend.move_on_after(0.5)
             with outer_scope:
-                with inner_scope:
-                    await backend.ignore_cancellation(backend.sleep(1))
+                with backend.open_cancel_scope(), backend.open_cancel_scope():
+                    with inner_scope:
+                        await backend.ignore_cancellation(backend.sleep(1))
                 assert not inner_scope.cancelled_caught()
                 try:
                     await backend.coro_yield()

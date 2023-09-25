@@ -24,7 +24,7 @@ import contextvars
 import enum
 import math
 from collections import deque
-from collections.abc import Callable, Coroutine, Iterable
+from collections.abc import Callable, Coroutine, Iterable, Iterator
 from typing import TYPE_CHECKING, Any, NamedTuple, ParamSpec, Self, TypeVar, final
 from weakref import WeakKeyDictionary
 
@@ -225,13 +225,13 @@ class CancelScope(AbstractCancelScope):
                 del self.__delayed_task_cancel_dict[host_task]
                 delayed_task_cancel.handle.cancel()
 
-                current_task_scope = self._current_task_scope(host_task)
-                if current_task_scope is None:
+                for cancel_scope in self._inner_to_outer_task_scopes(host_task):
+                    if cancel_scope.__cancel_called:
+                        self._reschedule_delayed_task_cancel(host_task, cancel_scope.__cancellation_id())
+                        break
+                else:
                     if task_cancelling > 0:
                         self._reschedule_delayed_task_cancel(host_task, None)
-                else:
-                    if current_task_scope.__cancel_called:
-                        self._reschedule_delayed_task_cancel(host_task, current_task_scope.__cancellation_id())
 
         return self.__cancelled_caught
 
@@ -289,6 +289,12 @@ class CancelScope(AbstractCancelScope):
             return cls.__current_task_scope_dict[task][0]
         except LookupError:
             return None
+
+    @classmethod
+    def _inner_to_outer_task_scopes(cls, task: asyncio.Task[Any]) -> Iterator[CancelScope]:
+        if cls._current_task_scope(task) is None:
+            return iter(())
+        return iter(cls.__current_task_scope_dict[task])
 
     @classmethod
     def _reschedule_delayed_task_cancel(cls, task: asyncio.Task[Any], cancel_msg: str | None) -> asyncio.Handle:
