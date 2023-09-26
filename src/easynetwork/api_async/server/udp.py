@@ -25,7 +25,7 @@ import operator
 import weakref
 from collections import Counter, deque
 from collections.abc import AsyncGenerator, AsyncIterator, Callable, Coroutine, Iterator, Mapping
-from typing import TYPE_CHECKING, Any, Generic, TypeVar, final
+from typing import TYPE_CHECKING, Any, Generic, NoReturn, TypeVar, final
 from weakref import WeakValueDictionary
 
 from ..._typevars import _RequestT, _ResponseT
@@ -131,7 +131,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         self.__is_shutdown.set()
         self.__shutdown_asked: bool = False
         self.__sendto_lock: ILock = backend.create_lock()
-        self.__mainloop_task: Task[None] | None = None
+        self.__mainloop_task: Task[NoReturn] | None = None
         self.__logger: logging.Logger = logger or logging.getLogger(__name__)
         self.__client_manager: _ClientAPIManager[_ResponseT] = _ClientAPIManager(
             self.__backend,
@@ -184,13 +184,8 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
     shutdown.__doc__ = AbstractAsyncNetworkServer.shutdown.__doc__
 
-    async def serve_forever(self, *, is_up_event: SupportsEventSet | None = None) -> None:
+    async def serve_forever(self, *, is_up_event: SupportsEventSet | None = None) -> NoReturn:
         async with _contextlib.AsyncExitStack() as server_exit_stack:
-            is_up_callback = server_exit_stack.enter_context(_contextlib.ExitStack())
-            if is_up_event is not None:
-                # Force is_up_event to be set, in order not to stuck the waiting task
-                is_up_callback.callback(is_up_event.set)
-
             # Wake up server
             if not self.__is_shutdown.is_set():
                 raise ServerAlreadyRunning("Server is already running")
@@ -237,8 +232,8 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             #################
 
             # Server is up
-            is_up_callback.close()
-            del is_up_callback
+            if is_up_event is not None and not self.__shutdown_asked:
+                is_up_event.set()
             ##############
 
             # Main loop
@@ -250,13 +245,15 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             finally:
                 self.__mainloop_task = None
 
+        raise AssertionError("received_datagrams() does not return")
+
     serve_forever.__doc__ = AbstractAsyncNetworkServer.serve_forever.__doc__
 
     async def __receive_datagrams(
         self,
         socket: AsyncDatagramSocketAdapter,
         task_group: TaskGroup,
-    ) -> None:
+    ) -> NoReturn:
         backend = self.__backend
         socket_family: int = socket.socket().family
         datagram_received_task_method = self.__datagram_received_coroutine
@@ -374,12 +371,12 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 self.__logger.warning(
                     "There have been attempts to do operation on closed client %s",
                     client_address,
-                    exc_info=True,
+                    exc_info=excgrp,
                 )
         except Exception as exc:
             _remove_traceback_frames_in_place(exc, 1)  # Removes the 'yield' frame just above
             self.__logger.error("-" * 40)
-            self.__logger.exception("Exception occurred during processing of request from %s", client_address)
+            self.__logger.error("Exception occurred during processing of request from %s", client_address, exc_info=exc)
             self.__logger.error("-" * 40)
 
     @_contextlib.contextmanager

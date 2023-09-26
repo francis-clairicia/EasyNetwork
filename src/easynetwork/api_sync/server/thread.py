@@ -36,7 +36,7 @@ class NetworkServerThread(_threading.Thread):
         daemon: bool | None = None,
     ) -> None:
         super().__init__(group=group, target=None, name=name, daemon=daemon)
-        self.__server: AbstractNetworkServer | None = server
+        self.__server: AbstractNetworkServer = server
         self.__is_up_event: _threading.Event = _threading.Event()
 
     def start(self) -> None:
@@ -44,23 +44,15 @@ class NetworkServerThread(_threading.Thread):
         self.__is_up_event.wait()
 
     def run(self) -> None:
-        assert self.__server is not None, f"{self.__server=}"  # nosec assert_used
         try:
-            return self.__server.serve_forever(is_up_event=self.__is_up_event)
+            self.__server.serve_forever(is_up_event=self.__is_up_event)
         finally:
-            self.__server = None
             self.__is_up_event.set()
 
     def join(self, timeout: float | None = None) -> None:
-        server = self.__server
-        if server is not None:
-            _start = time.perf_counter()
-            try:
-                server.shutdown(timeout=timeout)
-            finally:
-                _end = time.perf_counter()
-                if timeout is not None:
-                    timeout -= _end - _start
-                super().join(timeout=timeout)
-        else:
-            super().join(timeout=timeout)
+        _start = time.perf_counter()
+        self.__server.shutdown(timeout=timeout)
+        _end = time.perf_counter()
+        if timeout is not None:
+            timeout -= _end - _start
+        super().join(timeout=timeout)

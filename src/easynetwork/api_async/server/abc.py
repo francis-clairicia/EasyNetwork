@@ -22,7 +22,7 @@ __all__ = [
 ]
 
 from abc import ABCMeta, abstractmethod
-from typing import TYPE_CHECKING, Any, Protocol, Self
+from typing import TYPE_CHECKING, Any, NoReturn, Protocol, Self
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -74,7 +74,7 @@ class AbstractAsyncNetworkServer(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    async def serve_forever(self, *, is_up_event: SupportsEventSet | None = ...) -> None:
+    async def serve_forever(self, *, is_up_event: SupportsEventSet | None = ...) -> NoReturn:
         """
         Starts the server's main loop.
 

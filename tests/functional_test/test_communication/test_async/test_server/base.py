@@ -65,7 +65,7 @@ class BaseTestAsyncServer:
             await asyncio.sleep(0)
             assert not event.is_set()
             await server.shutdown()
-            assert event.is_set()
+            assert not event.is_set()
 
     async def test____serve_forever____server_close_during_setup(
         self,

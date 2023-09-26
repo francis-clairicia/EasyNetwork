@@ -23,7 +23,7 @@ import contextlib as _contextlib
 import threading as _threading
 import time
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NoReturn
 
 from ...api_async.backend.abc import ThreadsPortal
 from ...api_async.server.abc import SupportsEventSet
@@ -78,7 +78,7 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
 
     def shutdown(self, timeout: float | None = None) -> None:
         if (portal := self._portal) is not None:
-            try:
+            with _contextlib.suppress(RuntimeError, concurrent.futures.CancelledError):
                 # If shutdown() have been cancelled, that means the scheduler itself is shutting down, and this is what we want
                 if timeout is None:
                     portal.run_coroutine(self.__server.shutdown)
@@ -88,8 +88,6 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
                         portal.run_coroutine(self.__do_shutdown_with_timeout, timeout)
                     finally:
                         timeout -= time.perf_counter() - _start
-            except (RuntimeError, concurrent.futures.CancelledError):
-                pass
         self.__is_shutdown.wait(timeout)
 
     shutdown.__doc__ = AbstractNetworkServer.shutdown.__doc__
@@ -119,10 +117,6 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
 
         backend = self.__server.get_backend()
         with _contextlib.ExitStack() as server_exit_stack, _contextlib.suppress(backend.get_cancelled_exc_class()):
-            if is_up_event is not None:
-                # Force is_up_event to be set, in order not to stuck the waiting thread
-                server_exit_stack.callback(is_up_event.set)
-
             # locks_stack is used to acquire locks until
             # serve_forever() coroutine creates the thread portal
             locks_stack = server_exit_stack.enter_context(_contextlib.ExitStack())
@@ -138,16 +132,16 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
             self.__is_shutdown.clear()
             server_exit_stack.callback(self.__is_shutdown.set)
 
-            async def serve_forever() -> None:
-                def reset_threads_portal() -> None:
-                    self.__threads_portal = None
+            def reset_threads_portal() -> None:
+                self.__threads_portal = None
 
-                def acquire_bootstrap_lock() -> None:
-                    locks_stack.enter_context(self.__bootstrap_lock.get())
+            def acquire_bootstrap_lock() -> None:
+                locks_stack.enter_context(self.__bootstrap_lock.get())
 
-                server_exit_stack.callback(reset_threads_portal)
-                server_exit_stack.callback(acquire_bootstrap_lock)
+            server_exit_stack.callback(reset_threads_portal)
+            server_exit_stack.callback(acquire_bootstrap_lock)
 
+            async def serve_forever() -> NoReturn:
                 async with backend.create_threads_portal() as self.__threads_portal:
                     # Initialization finished; release the locks
                     locks_stack.close()
