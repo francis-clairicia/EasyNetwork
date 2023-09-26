@@ -71,6 +71,7 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
     close_all_clients_on_connection: bool = False
     close_client_after_n_request: int = -1
     server: AsyncTCPNetworkServer[str, str]
+    fail_on_disconnection: bool = False
 
     async def service_init(self, exit_stack: contextlib.AsyncExitStack, server: AsyncTCPNetworkServer[str, str]) -> None:
         await super().service_init(exit_stack, server)
@@ -100,6 +101,8 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
     async def on_disconnection(self, client: AsyncStreamClient[str]) -> None:
         del self.connected_clients[client.address]
         del self.request_count[client.address]
+        if self.fail_on_disconnection:
+            raise ConnectionError("Trying to use the client in a disconnected state")
 
     async def handle(self, client: AsyncStreamClient[str]) -> AsyncGenerator[None, str]:
         if self.close_client_after_n_request >= 0 and self.request_count[client.address] >= self.close_client_after_n_request:
@@ -361,6 +364,14 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
 
             yield factory
 
+    @staticmethod
+    async def _wait_client_disconnected(writer: asyncio.StreamWriter, request_handler: MyAsyncTCPRequestHandler) -> None:
+        writer.close()
+        await writer.wait_closed()
+        async with asyncio.timeout(1):
+            while request_handler.connected_clients:
+                await asyncio.sleep(0.1)
+
     @pytest.mark.parametrize("host", [None, ""], ids=repr)
     @pytest.mark.parametrize("log_client_connection", [True, False], ids=lambda p: f"log_client_connection=={p}")
     @pytest.mark.parametrize("use_ssl", ["NO_SSL"], indirect=True)
@@ -479,12 +490,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
 
         assert request_handler.request_received[client_address] == ["hello, world."]
 
-        writer.close()
-        await writer.wait_closed()
-
-        async with asyncio.timeout(1):
-            while client_address in request_handler.connected_clients:
-                await asyncio.sleep(0.1)
+        await self._wait_client_disconnected(writer, request_handler)
 
     # skip Windows for this test, the ECONNRESET will happen on socket.send() or socket.recv()
     @pytest.mark.xfail('sys.platform == "win32"', reason="socket.getpeername() works by some magic")
@@ -641,11 +647,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
 
         enable_socket_linger(writer.get_extra_info("socket"), timeout=0)
 
-        writer.close()
-        await writer.wait_closed()
-        async with asyncio.timeout(1):
-            while request_handler.connected_clients:
-                await asyncio.sleep(0.1)
+        await self._wait_client_disconnected(writer, request_handler)
 
         # ECONNRESET not logged
         assert len(caplog.records) == 0
@@ -743,6 +745,24 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
 
         assert await reader.read() == b""
         assert len(caplog.records) == 0
+
+    async def test____serve_forever____connection_error_in_disconnect_hook(
+        self,
+        client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        request_handler: MyAsyncTCPRequestHandler,
+        caplog: pytest.LogCaptureFixture,
+        server: MyAsyncTCPServer,
+    ) -> None:
+        caplog.set_level(logging.WARNING, server.logger.name)
+        _, writer = await client_factory()
+        request_handler.fail_on_disconnection = True
+
+        await self._wait_client_disconnected(writer, request_handler)
+
+        # ECONNRESET not logged
+        assert len(caplog.records) == 1
+        assert caplog.records[0].levelno == logging.WARNING
+        assert caplog.records[0].message == "ConnectionError raised in request_handler.on_disconnection()"
 
     async def test____serve_forever____explicitly_closed_by_request_handler(
         self,

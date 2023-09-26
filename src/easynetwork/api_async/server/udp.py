@@ -371,12 +371,12 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 self.__logger.warning(
                     "There have been attempts to do operation on closed client %s",
                     client_address,
-                    exc_info=True,
+                    exc_info=excgrp,
                 )
         except Exception as exc:
             _remove_traceback_frames_in_place(exc, 1)  # Removes the 'yield' frame just above
             self.__logger.error("-" * 40)
-            self.__logger.exception("Exception occurred during processing of request from %s", client_address)
+            self.__logger.error("Exception occurred during processing of request from %s", client_address, exc_info=exc)
             self.__logger.error("-" * 40)
 
     @_contextlib.contextmanager

@@ -364,7 +364,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                             _errno.errorcode[exc.errno],
                             os.strerror(exc.errno),
                             ACCEPT_CAPACITY_ERROR_SLEEP_TIME,
-                            exc_info=True,
+                            exc_info=exc,
                         )
                         await backend.sleep(ACCEPT_CAPACITY_ERROR_SLEEP_TIME)
                     else:
@@ -428,7 +428,14 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 assert inspect.isawaitable(_on_connection_hook)  # nosec assert_used
                 await _on_connection_hook
             del _on_connection_hook
-            client_exit_stack.push_async_callback(self.__request_handler.on_disconnection, client)
+
+            async def disconnect_client() -> None:
+                try:
+                    await self.__request_handler.on_disconnection(client)
+                except* ConnectionError:
+                    self.__logger.warning("ConnectionError raised in request_handler.on_disconnection()")
+
+            client_exit_stack.push_async_callback(disconnect_client)
 
             del client_exit_stack
 
@@ -504,7 +511,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                     self.__logger.warning(
                         "There have been attempts to do operation on closed client %s",
                         client_address,
-                        exc_info=True,
+                        exc_info=excgrp,
                     )
                 except* ConnectionError:
                     # This exception come from the request handler ( most likely due to client.send_packet() )
@@ -515,9 +522,9 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             _remove_traceback_frames_in_place(exc, 1)  # Removes the 'yield' frame just above
             self.__logger.error("-" * 40)
             if client_address is None:
-                self.__logger.exception("Error in client task")
+                self.__logger.error("Error in client task", exc_info=exc)
             else:
-                self.__logger.exception("Exception occurred during processing of request from %s", client_address)
+                self.__logger.error("Exception occurred during processing of request from %s", client_address, exc_info=exc)
             self.__logger.error("-" * 40)
 
     def get_addresses(self) -> Sequence[SocketAddress]:
