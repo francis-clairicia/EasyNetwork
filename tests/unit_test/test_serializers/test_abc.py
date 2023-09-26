@@ -810,7 +810,7 @@ class TestFileBasedPacketSerializer:
         packet, remaining_data = exc_info.value.value
 
         # Assert
-        assert len(mock_load_from_file_func.mock_calls) == 4
+        assert len(mock_load_from_file_func.call_args_list) == 4
         assert packet is mocker.sentinel.packet
         assert remaining_data == b""
 

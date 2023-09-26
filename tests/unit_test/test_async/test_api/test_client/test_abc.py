@@ -88,7 +88,7 @@ class TestAbstractAsyncNetworkClient:
         packets = [p async for p in client.iter_received_packets(timeout=timeout)]
 
         # Assert
-        assert client.mock_recv_packet.mock_calls == [mocker.call() for _ in range(2)]
+        assert client.mock_recv_packet.call_args_list == [mocker.call() for _ in range(2)]
         assert packets == [mocker.sentinel.packet_a]
 
     async def test____iter_received_packets____timeout_decrement(

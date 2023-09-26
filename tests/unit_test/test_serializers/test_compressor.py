@@ -275,8 +275,8 @@ class TestAbstractCompressorSerializer:
 
         # Assert
         mock_serializer_new_decompressor_stream.assert_called_once_with()
-        assert mock_decompressor_stream.decompress.mock_calls == [mocker.call(b"chunk 1"), mocker.call(b"chunk 2")]
-        assert len(mock_decompressor_stream_eof.mock_calls) == 3
+        assert mock_decompressor_stream.decompress.call_args_list == [mocker.call(b"chunk 1"), mocker.call(b"chunk 2")]
+        assert len(mock_decompressor_stream_eof.call_args_list) == 3
         mock_decompressor_stream_unused_data.assert_called_once()
         mock_serializer.deserialize.assert_called_once_with(b"decompressed chunk 1 decompressed chunk 2")
         assert packet is mocker.sentinel.packet
@@ -354,7 +354,7 @@ class TestAbstractCompressorSerializer:
         # Assert
         mock_serializer_new_decompressor_stream.assert_called_once_with()
         mock_decompressor_stream.decompress.assert_called_once_with(b"chunk")
-        assert len(mock_decompressor_stream_eof.mock_calls) == 2
+        assert len(mock_decompressor_stream_eof.call_args_list) == 2
         mock_decompressor_stream_unused_data.assert_called_once()
         mock_serializer.deserialize.assert_called_once_with(b"decompressed chunk")
         assert exception.__cause__ is mock_serializer.deserialize.side_effect

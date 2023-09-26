@@ -208,7 +208,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_stream_socket_adapter.socket.assert_called_once_with()
         mock_tcp_socket.getsockname.assert_called_once_with()
         mock_tcp_socket.getpeername.assert_called_once_with()
-        assert mock_tcp_socket.setsockopt.mock_calls == [
+        assert mock_tcp_socket.setsockopt.call_args_list == [
             mocker.call(IPPROTO_TCP, TCP_NODELAY, True),
             mocker.call(SOL_SOCKET, SO_KEEPALIVE, True),
         ]
@@ -275,7 +275,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_stream_socket_adapter.socket.assert_called_once_with()
         mock_tcp_socket.getsockname.assert_called_once_with()
         mock_tcp_socket.getpeername.assert_called_once_with()
-        assert mock_tcp_socket.setsockopt.mock_calls == [
+        assert mock_tcp_socket.setsockopt.call_args_list == [
             mocker.call(IPPROTO_TCP, TCP_NODELAY, True),
             mocker.call(SOL_SOCKET, SO_KEEPALIVE, True),
         ]
@@ -451,7 +451,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_stream_socket_adapter.socket.assert_called_once_with()
         mock_tcp_socket.getsockname.assert_called_once_with()
         mock_tcp_socket.getpeername.assert_called_once_with()
-        assert mock_tcp_socket.setsockopt.mock_calls == [
+        assert mock_tcp_socket.setsockopt.call_args_list == [
             mocker.call(IPPROTO_TCP, TCP_NODELAY, True),
             mocker.call(SOL_SOCKET, SO_KEEPALIVE, True),
         ]
@@ -1203,8 +1203,8 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
 
         # Assert
         mock_backend.coro_yield.assert_not_awaited()
-        assert mock_stream_socket_adapter.recv.mock_calls == [mocker.call(MAX_STREAM_BUFSIZE) for _ in range(2)]
-        assert mock_stream_data_consumer.feed.mock_calls == [mocker.call(b"pac"), mocker.call(b"ket\n")]
+        assert mock_stream_socket_adapter.recv.call_args_list == [mocker.call(MAX_STREAM_BUFSIZE) for _ in range(2)]
+        assert mock_stream_data_consumer.feed.call_args_list == [mocker.call(b"pac"), mocker.call(b"ket\n")]
         assert packet is mocker.sentinel.packet
 
     @pytest.mark.usefixtures("setup_consumer_mock")

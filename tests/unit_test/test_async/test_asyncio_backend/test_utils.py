@@ -285,7 +285,7 @@ async def test____create_connection____first_failed(
     socket = await create_connection(remote_host, remote_port, event_loop, local_address=local_address)
 
     # Assert
-    assert mock_socket_cls.mock_calls == [
+    assert mock_socket_cls.call_args_list == [
         mocker.call(AF_INET, SOCK_STREAM, IPPROTO_TCP),
         mocker.call(AF_INET6, SOCK_STREAM, IPPROTO_TCP),
     ]
@@ -359,7 +359,7 @@ async def test____create_connection____all_failed(
     assert all(isinstance(exc, OSError) for exc in os_errors.exceptions)
     del os_errors
 
-    assert mock_socket_cls.mock_calls == [
+    assert mock_socket_cls.call_args_list == [
         mocker.call(AF_INET, SOCK_STREAM, IPPROTO_TCP),
         mocker.call(AF_INET6, SOCK_STREAM, IPPROTO_TCP),
     ]
@@ -595,7 +595,7 @@ async def test____create_datagram_socket____first_failed(
     )
 
     # Assert
-    assert mock_socket_cls.mock_calls == [
+    assert mock_socket_cls.call_args_list == [
         mocker.call(AF_INET, SOCK_DGRAM, IPPROTO_UDP),
         mocker.call(AF_INET6, SOCK_DGRAM, IPPROTO_UDP),
     ]
@@ -668,7 +668,7 @@ async def test____create_datagram_socket____all_failed(
     assert all(isinstance(exc, OSError) for exc in os_errors.exceptions)
     del os_errors
 
-    assert mock_socket_cls.mock_calls == [
+    assert mock_socket_cls.call_args_list == [
         mocker.call(AF_INET, SOCK_DGRAM, IPPROTO_UDP),
         mocker.call(AF_INET6, SOCK_DGRAM, IPPROTO_UDP),
     ]
@@ -888,7 +888,7 @@ def test____open_listener_sockets_from_getaddrinfo_result____create_listener_soc
 
     # Assert
     assert len(sockets) == len(addrinfo_list)
-    assert mock_socket_cls.mock_calls == [mocker.call(f, t, p) for f, t, p, _, _ in addrinfo_list]
+    assert mock_socket_cls.call_args_list == [mocker.call(f, t, p) for f, t, p, _, _ in addrinfo_list]
     for socket, (sock_family, _, _, _, sock_addr) in zip(sockets, addrinfo_list, strict=True):
         if reuse_address and SO_REUSEADDR_available:
             socket.setsockopt.assert_any_call(SOL_SOCKET, SO_REUSEADDR, True)

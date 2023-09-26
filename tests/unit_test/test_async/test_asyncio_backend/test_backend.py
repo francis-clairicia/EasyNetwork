@@ -948,7 +948,7 @@ class TestAsyncIOBackend:
             reuse_address=mocker.ANY,  # Determined according to OS
             reuse_port=mocker.sentinel.reuse_port,
         )
-        assert mock_ListenerSocketAdapter.mock_calls == [
+        assert mock_ListenerSocketAdapter.call_args_list == [
             mocker.call(mock_tcp_socket, event_loop, expected_factory) for _ in range(2)
         ]
         assert listener_sockets == [mocker.sentinel.listener_socket, mocker.sentinel.listener_socket]
@@ -1064,7 +1064,7 @@ class TestAsyncIOBackend:
             reuse_address=mocker.ANY,  # Determined according to OS
             reuse_port=mocker.sentinel.reuse_port,
         )
-        assert mock_ListenerSocketAdapter.mock_calls == [
+        assert mock_ListenerSocketAdapter.call_args_list == [
             mocker.call(mock_tcp_socket, event_loop, expected_factory) for _ in range(2)
         ]
         assert listener_sockets == [mocker.sentinel.listener_socket, mocker.sentinel.listener_socket]
