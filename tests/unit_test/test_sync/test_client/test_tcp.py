@@ -337,7 +337,7 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_ssl_socket.getsockname.assert_not_called()
         mock_ssl_socket.getpeername.assert_not_called()
 
-        assert used_socket.setsockopt.mock_calls == [
+        assert used_socket.setsockopt.call_args_list == [
             mocker.call(IPPROTO_TCP, TCP_NODELAY, True),
             mocker.call(SOL_SOCKET, SO_KEEPALIVE, True),
         ]
@@ -402,7 +402,7 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_ssl_socket.getsockname.assert_not_called()
         mock_ssl_socket.getpeername.assert_not_called()
 
-        assert used_socket.setsockopt.mock_calls == [
+        assert used_socket.setsockopt.call_args_list == [
             mocker.call(IPPROTO_TCP, TCP_NODELAY, True),
             mocker.call(SOL_SOCKET, SO_KEEPALIVE, True),
         ]
@@ -942,11 +942,11 @@ class TestTCPNetworkClient(BaseTestClient):
 
         # Assert
         if expected_timeout == 0:
-            assert len(mock_ssl_socket.do_handshake.mock_calls) == 1
+            assert len(mock_ssl_socket.do_handshake.call_args_list) == 1
             mock_selector_register.assert_not_called()
             mock_selector_select.assert_not_called()
         else:
-            assert len(mock_ssl_socket.do_handshake.mock_calls) == 2
+            assert len(mock_ssl_socket.do_handshake.call_args_list) == 2
             mock_selector_register.assert_called_once_with(mock_ssl_socket, would_block_event)
             mock_selector_select.assert_called_once_with(expected_timeout)
 
@@ -1240,7 +1240,7 @@ class TestTCPNetworkClient(BaseTestClient):
         if send_timeout != 0:
             mock_selector_register.assert_called_with(mock_used_socket, EVENT_WRITE)
             mock_selector_select.assert_called()
-            assert mock_used_socket.send.mock_calls == [
+            assert mock_used_socket.send.call_args_list == [
                 mocker.call(b"packet\n"),
                 mocker.call(b"packet\n"),
                 mocker.call(b"et\n"),
@@ -1249,7 +1249,7 @@ class TestTCPNetworkClient(BaseTestClient):
         else:
             mock_selector_register.assert_not_called()
             mock_selector_select.assert_not_called()
-            assert mock_used_socket.send.mock_calls == [mocker.call(b"packet\n")]
+            assert mock_used_socket.send.call_args_list == [mocker.call(b"packet\n")]
             mock_used_socket.getsockopt.assert_not_called()
 
     @pytest.mark.usefixtures("setup_producer_mock")
@@ -1514,8 +1514,8 @@ class TestTCPNetworkClient(BaseTestClient):
         # Assert
         mock_used_socket.settimeout.assert_not_called()
         mock_used_socket.setblocking.assert_not_called()
-        assert mock_used_socket.recv.mock_calls == [mocker.call(MAX_STREAM_BUFSIZE) for _ in range(2)]
-        assert mock_stream_data_consumer.feed.mock_calls == [mocker.call(b"pac"), mocker.call(b"ket\n")]
+        assert mock_used_socket.recv.call_args_list == [mocker.call(MAX_STREAM_BUFSIZE) for _ in range(2)]
+        assert mock_stream_data_consumer.feed.call_args_list == [mocker.call(b"pac"), mocker.call(b"ket\n")]
         assert packet is mocker.sentinel.packet
 
     @pytest.mark.parametrize("recv_timeout", [0], indirect=True)  # Only test with timeout==0
@@ -1544,8 +1544,8 @@ class TestTCPNetworkClient(BaseTestClient):
         if max_recv_size == 3:
             packet: Any = client.recv_packet(timeout=recv_timeout)
 
-            assert mock_used_socket.recv.mock_calls == [mocker.call(max_recv_size) for _ in range(3)]
-            assert mock_stream_data_consumer.feed.mock_calls == [mocker.call(b"pac"), mocker.call(b"ket"), mocker.call(b"\n")]
+            assert mock_used_socket.recv.call_args_list == [mocker.call(max_recv_size) for _ in range(3)]
+            assert mock_stream_data_consumer.feed.call_args_list == [mocker.call(b"pac"), mocker.call(b"ket"), mocker.call(b"\n")]
             assert packet is mocker.sentinel.packet
         else:
             with pytest.raises(TimeoutError, match=r"^recv_packet\(\) timed out$"):
@@ -1751,11 +1751,11 @@ class TestTCPNetworkClient(BaseTestClient):
             _ = client.recv_packet(timeout=recv_timeout)
 
         if recv_timeout == 0:
-            assert len(mock_used_socket.recv.mock_calls) == 1
+            assert len(mock_used_socket.recv.call_args_list) == 1
             mock_selector_register.assert_not_called()
             mock_selector_select.assert_not_called()
         else:
-            assert len(mock_used_socket.recv.mock_calls) == 2
+            assert len(mock_used_socket.recv.call_args_list) == 2
             mock_selector_register.assert_called_with(mock_used_socket, EVENT_READ)
             mock_selector_select.assert_any_call(recv_timeout)
         mock_stream_data_consumer.feed.assert_not_called()
@@ -1796,8 +1796,8 @@ class TestTCPNetworkClient(BaseTestClient):
         packets = list(client.iter_received_packets(timeout=recv_timeout))
 
         # Assert
-        assert mock_used_socket.recv.mock_calls == [mocker.call(max_recv_size) for _ in range(7)]
-        assert mock_stream_data_consumer.feed.mock_calls == [
+        assert mock_used_socket.recv.call_args_list == [mocker.call(max_recv_size) for _ in range(7)]
+        assert mock_stream_data_consumer.feed.call_args_list == [
             mocker.call(b"pac"),
             mocker.call(b"ket"),
             mocker.call(b"_1\np"),
@@ -1825,8 +1825,8 @@ class TestTCPNetworkClient(BaseTestClient):
         packets = list(client.iter_received_packets(timeout=recv_timeout))
 
         # Assert
-        assert mock_used_socket.recv.mock_calls == [mocker.call(max_recv_size) for _ in range(7)]
-        assert mock_stream_data_consumer.feed.mock_calls == [
+        assert mock_used_socket.recv.call_args_list == [mocker.call(max_recv_size) for _ in range(7)]
+        assert mock_stream_data_consumer.feed.call_args_list == [
             mocker.call(b"pac"),
             mocker.call(b"ket"),
             mocker.call(b"_1\np"),
@@ -1854,8 +1854,8 @@ class TestTCPNetworkClient(BaseTestClient):
         packets = list(client.iter_received_packets(timeout=recv_timeout))
 
         # Assert
-        assert mock_used_socket.recv.mock_calls == [mocker.call(max_recv_size) for _ in range(7)]
-        assert mock_stream_data_consumer.feed.mock_calls == [
+        assert mock_used_socket.recv.call_args_list == [mocker.call(max_recv_size) for _ in range(7)]
+        assert mock_stream_data_consumer.feed.call_args_list == [
             mocker.call(b"pac"),
             mocker.call(b"ket"),
             mocker.call(b"_1\np"),

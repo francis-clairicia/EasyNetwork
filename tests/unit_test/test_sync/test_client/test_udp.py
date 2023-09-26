@@ -545,13 +545,13 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         if send_timeout != 0:
             mock_selector_register.assert_called_once_with(mock_udp_socket, EVENT_WRITE)
             mock_selector_select.assert_called_once_with(None if send_timeout in (None, float("+inf")) else send_timeout)
-            assert mock_udp_socket.sendto.mock_calls == [mocker.call(b"packet", target_address) for _ in range(2)]
+            assert mock_udp_socket.sendto.call_args_list == [mocker.call(b"packet", target_address) for _ in range(2)]
             mock_datagram_protocol.make_datagram.assert_called_once_with(mocker.sentinel.packet)
             mock_udp_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_ERROR)
         else:
             mock_selector_register.assert_not_called()
             mock_selector_select.assert_not_called()
-            assert mock_udp_socket.sendto.mock_calls == [mocker.call(b"packet", target_address)]
+            assert mock_udp_socket.sendto.call_args_list == [mocker.call(b"packet", target_address)]
             mock_datagram_protocol.make_datagram.assert_called_once_with(mocker.sentinel.packet)
             mock_udp_socket.getsockopt.assert_not_called()
 
@@ -636,13 +636,13 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         if send_timeout != 0:
             mock_selector_register.assert_called_once_with(mock_udp_socket, EVENT_WRITE)
             mock_selector_select.assert_called_once_with(None if send_timeout in (None, float("+inf")) else send_timeout)
-            assert mock_udp_socket.send.mock_calls == [mocker.call(b"packet") for _ in range(2)]
+            assert mock_udp_socket.send.call_args_list == [mocker.call(b"packet") for _ in range(2)]
             mock_datagram_protocol.make_datagram.assert_called_once_with(mocker.sentinel.packet)
             mock_udp_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_ERROR)
         else:
             mock_selector_register.assert_not_called()
             mock_selector_select.assert_not_called()
-            assert mock_udp_socket.send.mock_calls == [mocker.call(b"packet")]
+            assert mock_udp_socket.send.call_args_list == [mocker.call(b"packet")]
             mock_datagram_protocol.make_datagram.assert_called_once_with(mocker.sentinel.packet)
             mock_udp_socket.getsockopt.assert_not_called()
 
@@ -899,11 +899,11 @@ class TestUDPNetworkEndpoint(BaseTestClient):
             _ = client.recv_packet_from(timeout=recv_timeout)
 
         if recv_timeout == 0:
-            assert len(mock_udp_socket.recvfrom.mock_calls) == 1
+            assert len(mock_udp_socket.recvfrom.call_args_list) == 1
             mock_selector_register.assert_not_called()
             mock_selector_select.assert_not_called()
         else:
-            assert len(mock_udp_socket.recvfrom.mock_calls) == 2
+            assert len(mock_udp_socket.recvfrom.call_args_list) == 2
             mock_selector_register.assert_called_with(mock_udp_socket, EVENT_READ)
             mock_selector_select.assert_any_call(recv_timeout)
         mock_datagram_protocol.build_packet_from_datagram.assert_not_called()
@@ -938,8 +938,8 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         packets = [(p, (s.host, s.port)) for p, s in client.iter_received_packets_from(timeout=recv_timeout)]
 
         # Assert
-        assert mock_udp_socket.recvfrom.mock_calls == [mocker.call(MAX_DATAGRAM_BUFSIZE) for _ in range(3)]
-        assert mock_datagram_protocol.build_packet_from_datagram.mock_calls == [
+        assert mock_udp_socket.recvfrom.call_args_list == [mocker.call(MAX_DATAGRAM_BUFSIZE) for _ in range(3)]
+        assert mock_datagram_protocol.build_packet_from_datagram.call_args_list == [
             mocker.call(b"packet_1"),
             mocker.call(b"packet_2"),
         ]
@@ -969,8 +969,8 @@ class TestUDPNetworkEndpoint(BaseTestClient):
         packets = [(p, (s.host, s.port)) for p, s in client.iter_received_packets_from(timeout=recv_timeout)]
 
         # Assert
-        assert mock_udp_socket.recvfrom.mock_calls == [mocker.call(MAX_DATAGRAM_BUFSIZE) for _ in range(3)]
-        assert mock_datagram_protocol.build_packet_from_datagram.mock_calls == [
+        assert mock_udp_socket.recvfrom.call_args_list == [mocker.call(MAX_DATAGRAM_BUFSIZE) for _ in range(3)]
+        assert mock_datagram_protocol.build_packet_from_datagram.call_args_list == [
             mocker.call(b"packet_1"),
             mocker.call(b"packet_2"),
         ]
@@ -1509,7 +1509,7 @@ class TestUDPSocketFactory:
 
         # Assert
         assert udp_socket is mock_socket_ipv6
-        assert mock_socket_cls.mock_calls == [
+        assert mock_socket_cls.call_args_list == [
             mocker.call(AF_INET, SOCK_DGRAM, IPPROTO_UDP),
             mocker.call(AF_INET6, SOCK_DGRAM, IPPROTO_UDP),
         ]
@@ -1580,7 +1580,7 @@ class TestUDPSocketFactory:
         assert all(isinstance(exc, OSError) for exc in os_errors.exceptions)
         del os_errors
 
-        assert mock_socket_cls.mock_calls == [
+        assert mock_socket_cls.call_args_list == [
             mocker.call(AF_INET, SOCK_DGRAM, IPPROTO_UDP),
             mocker.call(AF_INET6, SOCK_DGRAM, IPPROTO_UDP),
         ]

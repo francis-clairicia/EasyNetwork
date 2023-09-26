@@ -799,7 +799,7 @@ class TestAsyncUDPNetworkEndpoint(BaseTestClient):
 
         # Assert
         assert mock_datagram_socket_adapter.recvfrom.await_args_list == [mocker.call(MAX_DATAGRAM_BUFSIZE) for _ in range(3)]
-        assert mock_datagram_protocol.build_packet_from_datagram.mock_calls == [
+        assert mock_datagram_protocol.build_packet_from_datagram.call_args_list == [
             mocker.call(b"packet_1"),
             mocker.call(b"packet_2"),
         ]

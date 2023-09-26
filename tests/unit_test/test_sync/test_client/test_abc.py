@@ -76,7 +76,7 @@ class TestAbstractNetworkClient:
         packets = list(client.iter_received_packets(timeout=123456789))
 
         # Assert
-        assert client.mock_recv_packet.mock_calls == [mocker.call(123456789) for _ in range(4)]
+        assert client.mock_recv_packet.call_args_list == [mocker.call(123456789) for _ in range(4)]
         assert packets == [mocker.sentinel.packet_a, mocker.sentinel.packet_b, mocker.sentinel.packet_c]
 
     @pytest.mark.parametrize("timeout", [123456789, None])
@@ -97,7 +97,7 @@ class TestAbstractNetworkClient:
         packets = list(client.iter_received_packets(timeout=timeout))
 
         # Assert
-        assert client.mock_recv_packet.mock_calls == [mocker.call(timeout) for _ in range(2)]
+        assert client.mock_recv_packet.call_args_list == [mocker.call(timeout) for _ in range(2)]
         assert packets == [mocker.sentinel.packet_a]
 
     def test____iter_received_packets____timeout_decrement(

@@ -294,7 +294,7 @@ class TestDatagramEndpoint:
 
         # Assert
         assert exc_info.value.errno == ECONNABORTED
-        assert len(mock_asyncio_exception_queue.get_nowait.mock_calls) == 2
+        assert len(mock_asyncio_exception_queue.get_nowait.call_args_list) == 2
         mock_asyncio_recv_queue.get.assert_awaited_once_with()
 
     async def test____recvfrom____raise_exception____protocol_already_sent_exception_in_queue(
@@ -343,7 +343,7 @@ class TestDatagramEndpoint:
             await endpoint.recvfrom()
 
         # Assert
-        assert len(mock_asyncio_exception_queue.get_nowait.mock_calls) == 2
+        assert len(mock_asyncio_exception_queue.get_nowait.call_args_list) == 2
         mock_asyncio_recv_queue.get.assert_awaited_once_with()
 
     @pytest.mark.parametrize("address", [("127.0.0.1", 12345), None], ids=repr)
