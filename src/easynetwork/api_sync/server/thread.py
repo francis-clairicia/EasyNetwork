@@ -45,7 +45,7 @@ class NetworkServerThread(_threading.Thread):
 
     def run(self) -> None:
         try:
-            return self.__server.serve_forever(is_up_event=self.__is_up_event)
+            self.__server.serve_forever(is_up_event=self.__is_up_event)
         finally:
             self.__is_up_event.set()
 

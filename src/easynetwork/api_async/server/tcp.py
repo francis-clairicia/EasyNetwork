@@ -26,7 +26,7 @@ import os
 import weakref
 from collections import deque
 from collections.abc import AsyncGenerator, AsyncIterator, Callable, Coroutine, Iterator, Mapping, Sequence
-from typing import TYPE_CHECKING, Any, Generic, final
+from typing import TYPE_CHECKING, Any, Generic, NoReturn, final
 
 from ..._typevars import _RequestT, _ResponseT
 from ...exceptions import ClientClosedError, ServerAlreadyRunning, ServerClosedError
@@ -210,8 +210,8 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         self.__is_shutdown.set()
         self.__shutdown_asked: bool = False
         self.__max_recv_size: int = max_recv_size
-        self.__listener_tasks: deque[Task[None]] = deque()
-        self.__mainloop_task: Task[None] | None = None
+        self.__listener_tasks: deque[Task[NoReturn]] = deque()  # type: ignore[assignment]
+        self.__mainloop_task: Task[NoReturn] | None = None
         self.__logger: logging.Logger = logger or logging.getLogger(__name__)
         self.__client_connection_log_level: int
         if log_client_connection:
@@ -280,7 +280,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
     shutdown.__doc__ = AbstractAsyncNetworkServer.shutdown.__doc__
 
-    async def serve_forever(self, *, is_up_event: SupportsEventSet | None = None) -> None:
+    async def serve_forever(self, *, is_up_event: SupportsEventSet | None = None) -> NoReturn:
         async with _contextlib.AsyncExitStack() as server_exit_stack:
             # Wake up server
             if not self.__is_shutdown.is_set():
@@ -346,9 +346,11 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             finally:
                 self.__mainloop_task = None
 
+        raise AssertionError("sleep_forever() does not return")
+
     serve_forever.__doc__ = AbstractAsyncNetworkServer.serve_forever.__doc__
 
-    async def __listener_accept(self, listener: AsyncListenerSocketAdapter, task_group: TaskGroup) -> None:
+    async def __listener_accept(self, listener: AsyncListenerSocketAdapter, task_group: TaskGroup) -> NoReturn:
         backend = self.__backend
         client_task = self.__client_coroutine
         async with listener:

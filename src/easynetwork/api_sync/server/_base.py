@@ -23,7 +23,7 @@ import contextlib as _contextlib
 import threading as _threading
 import time
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NoReturn
 
 from ...api_async.backend.abc import ThreadsPortal
 from ...api_async.server.abc import SupportsEventSet
@@ -84,8 +84,10 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
                     portal.run_coroutine(self.__server.shutdown)
                 else:
                     _start = time.perf_counter()
-                    portal.run_coroutine(self.__do_shutdown_with_timeout, timeout)
-                    timeout -= time.perf_counter() - _start
+                    try:
+                        portal.run_coroutine(self.__do_shutdown_with_timeout, timeout)
+                    finally:
+                        timeout -= time.perf_counter() - _start
         self.__is_shutdown.wait(timeout)
 
     shutdown.__doc__ = AbstractNetworkServer.shutdown.__doc__
@@ -139,7 +141,7 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
             server_exit_stack.callback(reset_threads_portal)
             server_exit_stack.callback(acquire_bootstrap_lock)
 
-            async def serve_forever() -> None:
+            async def serve_forever() -> NoReturn:
                 async with backend.create_threads_portal() as self.__threads_portal:
                     # Initialization finished; release the locks
                     locks_stack.close()

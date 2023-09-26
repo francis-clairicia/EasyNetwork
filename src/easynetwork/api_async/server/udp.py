@@ -25,7 +25,7 @@ import operator
 import weakref
 from collections import Counter, deque
 from collections.abc import AsyncGenerator, AsyncIterator, Callable, Coroutine, Iterator, Mapping
-from typing import TYPE_CHECKING, Any, Generic, TypeVar, final
+from typing import TYPE_CHECKING, Any, Generic, NoReturn, TypeVar, final
 from weakref import WeakValueDictionary
 
 from ..._typevars import _RequestT, _ResponseT
@@ -131,7 +131,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         self.__is_shutdown.set()
         self.__shutdown_asked: bool = False
         self.__sendto_lock: ILock = backend.create_lock()
-        self.__mainloop_task: Task[None] | None = None
+        self.__mainloop_task: Task[NoReturn] | None = None
         self.__logger: logging.Logger = logger or logging.getLogger(__name__)
         self.__client_manager: _ClientAPIManager[_ResponseT] = _ClientAPIManager(
             self.__backend,
@@ -184,7 +184,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
     shutdown.__doc__ = AbstractAsyncNetworkServer.shutdown.__doc__
 
-    async def serve_forever(self, *, is_up_event: SupportsEventSet | None = None) -> None:
+    async def serve_forever(self, *, is_up_event: SupportsEventSet | None = None) -> NoReturn:
         async with _contextlib.AsyncExitStack() as server_exit_stack:
             # Wake up server
             if not self.__is_shutdown.is_set():
@@ -245,13 +245,15 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             finally:
                 self.__mainloop_task = None
 
+        raise AssertionError("received_datagrams() does not return")
+
     serve_forever.__doc__ = AbstractAsyncNetworkServer.serve_forever.__doc__
 
     async def __receive_datagrams(
         self,
         socket: AsyncDatagramSocketAdapter,
         task_group: TaskGroup,
-    ) -> None:
+    ) -> NoReturn:
         backend = self.__backend
         socket_family: int = socket.socket().family
         datagram_received_task_method = self.__datagram_received_coroutine
