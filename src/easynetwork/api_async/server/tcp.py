@@ -656,7 +656,7 @@ class _ConnectedClientAPI(AsyncStreamClient[_ResponseT]):
         self.__check_closed()
         self.__logger.debug("A response will be sent to %s", self.address)
         producer = self.__producer
-        producer.queue(packet)
+        producer.enqueue(packet)
         del packet
         async with self.__send_lock:
             socket = self.__check_closed()

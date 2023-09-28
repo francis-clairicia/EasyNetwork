@@ -65,7 +65,7 @@ class TestStreamDataProducer:
 
         mock_generate_chunks_func: MagicMock = mock_stream_protocol.generate_chunks
         mock_generate_chunks_func.side_effect = side_effect
-        producer.queue(mocker.sentinel.packet)
+        producer.enqueue(mocker.sentinel.packet)
 
         # Act
         chunk: bytes = next(producer)
@@ -87,7 +87,7 @@ class TestStreamDataProducer:
 
         mock_generate_chunks_func: MagicMock = mock_stream_protocol.generate_chunks
         mock_generate_chunks_func.side_effect = side_effect
-        producer.queue(mocker.sentinel.packet)
+        producer.enqueue(mocker.sentinel.packet)
 
         # Act
         chunk: bytes = next(producer)
@@ -111,7 +111,7 @@ class TestStreamDataProducer:
 
         mock_generate_chunks_func: MagicMock = mock_stream_protocol.generate_chunks
         mock_generate_chunks_func.side_effect = side_effect
-        producer.queue(mocker.sentinel.packet)
+        producer.enqueue(mocker.sentinel.packet)
 
         # Act
         chunk: bytes = next(producer)
@@ -132,7 +132,7 @@ class TestStreamDataProducer:
 
         mock_generate_chunks_func: MagicMock = mock_stream_protocol.generate_chunks
         mock_generate_chunks_func.side_effect = side_effect
-        producer.queue(mocker.sentinel.packet_for_test_arrange, mocker.sentinel.second_packet)
+        producer.enqueue(mocker.sentinel.packet_for_test_arrange, mocker.sentinel.second_packet)
         next(producer)
         mock_generate_chunks_func.reset_mock()  # Needed to call assert_called_once() later
 
@@ -155,7 +155,7 @@ class TestStreamDataProducer:
 
         mock_generate_chunks_func: MagicMock = mock_stream_protocol.generate_chunks
         mock_generate_chunks_func.side_effect = side_effect
-        producer.queue(mocker.sentinel.packet_for_test_arrange)
+        producer.enqueue(mocker.sentinel.packet_for_test_arrange)
         next(producer)
         mock_generate_chunks_func.reset_mock()  # Needed to call assert_not_called() later
 
@@ -165,6 +165,27 @@ class TestStreamDataProducer:
 
         # Assert
         mock_generate_chunks_func.assert_not_called()
+
+    def test____next____convert_bytearrays(
+        self,
+        producer: StreamDataProducer[Any],
+        mock_stream_protocol: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        def side_effect(_: Any) -> Generator[bytes, None, None]:
+            yield bytearray(b"chunk")
+
+        mock_generate_chunks_func: MagicMock = mock_stream_protocol.generate_chunks
+        mock_generate_chunks_func.side_effect = side_effect
+        producer.enqueue(mocker.sentinel.packet_for_test_arrange)
+
+        # Act
+        chunk = next(producer)
+
+        # Assert
+        assert isinstance(chunk, bytes)
+        assert chunk == b"chunk"
 
     def test____pending_packets____empty_producer(self, producer: StreamDataProducer[Any]) -> None:
         # Arrange
@@ -185,7 +206,7 @@ class TestStreamDataProducer:
 
         mock_generate_chunks_func: MagicMock = mock_stream_protocol.generate_chunks
         mock_generate_chunks_func.side_effect = side_effect
-        producer.queue(mocker.sentinel.packet)
+        producer.enqueue(mocker.sentinel.packet)
 
         # Act & Assert
         assert producer.pending_packets()
@@ -197,11 +218,11 @@ class TestStreamDataProducer:
             next(producer)
         assert not producer.pending_packets()
 
-    def test____queue____no_args(self, producer: StreamDataProducer[Any]) -> None:
+    def test____enqueue____no_args(self, producer: StreamDataProducer[Any]) -> None:
         # Arrange
 
         # Act
-        producer.queue()
+        producer.enqueue()
 
         # Assert
         ## There is no exceptions ? Nice !
@@ -212,7 +233,7 @@ class TestStreamDataProducer:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        producer.queue(mocker.sentinel.packet)
+        producer.enqueue(mocker.sentinel.packet)
         assert producer.pending_packets()
 
         # Act
@@ -237,7 +258,7 @@ class TestStreamDataProducer:
 
         mock_generate_chunks_func: MagicMock = mock_stream_protocol.generate_chunks
         mock_generate_chunks_func.side_effect = side_effect
-        producer.queue(mocker.sentinel.packet)
+        producer.enqueue(mocker.sentinel.packet)
         assert next(producer) == b"chunk"
         assert producer.pending_packets()
 
@@ -272,6 +293,29 @@ class TestStreamDataConsumer:
 
         # Assert
         assert iterator is consumer
+
+    def test____feed____convert_bytearrays(
+        self,
+        consumer: StreamDataConsumer[Any],
+        mock_stream_protocol: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        def side_effect() -> Generator[None, bytes, tuple[Any, bytes]]:
+            data = yield
+            assert isinstance(data, bytes)
+            assert data == b"Hello"
+            return mocker.sentinel.packet, bytearray(b"World")
+
+        mock_build_packet_from_chunks_func: MagicMock = mock_stream_protocol.build_packet_from_chunks
+        mock_build_packet_from_chunks_func.side_effect = side_effect
+        consumer.feed(bytearray(b"Hello"))  # 0 + 0 == 0
+
+        # Act
+        packet = next(consumer)
+
+        # Assert
+        assert packet is mocker.sentinel.packet
 
     def test____next____no_buffer(
         self,
