@@ -1240,6 +1240,91 @@ class TestAsyncioBackendShieldedCancellation:
 
         await event_loop.create_task(coroutine())
 
+    @pytest.mark.xfail(raises=asyncio.CancelledError, reason="Task.cancel() cannot be erased", strict=True)
+    async def test____cancel_shielded_coroutine____scope_cancellation_edge_case_3(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        backend: AsyncIOBackend,
+    ) -> None:
+        async def coroutine() -> None:
+            current_task = asyncio.current_task()
+            assert current_task is not None
+
+            with backend.move_on_after(0) as inner_scope:
+                pass
+
+            await backend.coro_yield()
+
+            assert inner_scope.cancel_called()
+
+            assert not inner_scope.cancelled_caught()
+
+        await event_loop.create_task(coroutine())
+
+    async def test____cancel_shielded_coroutine____scope_cancellation_edge_case_4(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        backend: AsyncIOBackend,
+    ) -> None:
+        async def coroutine() -> None:
+            current_task = asyncio.current_task()
+            assert current_task is not None
+
+            outer_scope = backend.open_cancel_scope()
+            inner_scope = backend.open_cancel_scope()
+            with outer_scope:
+                outer_scope.cancel()
+
+                await backend.ignore_cancellation(backend.sleep(0.1))
+
+                with inner_scope:
+                    inner_scope.cancel()
+
+                await backend.coro_yield()
+
+            await backend.coro_yield()
+
+            assert outer_scope.cancel_called()
+            assert inner_scope.cancel_called()
+
+            assert not inner_scope.cancelled_caught()
+            assert outer_scope.cancelled_caught()
+
+        await event_loop.create_task(coroutine())
+
+    async def test____cancel_shielded_coroutine____scope_cancellation_edge_case_5(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        backend: AsyncIOBackend,
+    ) -> None:
+        async def coroutine() -> None:
+            current_task = asyncio.current_task()
+            assert current_task is not None
+
+            outer_scope = backend.open_cancel_scope()
+            inner_scope = backend.open_cancel_scope()
+            with outer_scope:
+                with inner_scope:
+                    inner_scope.cancel()
+
+                    await backend.cancel_shielded_coro_yield()
+
+                    outer_scope.cancel()
+
+                    await backend.cancel_shielded_coro_yield()
+
+                await backend.coro_yield()
+
+            await backend.coro_yield()
+
+            assert outer_scope.cancel_called()
+            assert inner_scope.cancel_called()
+
+            assert not inner_scope.cancelled_caught()
+            assert outer_scope.cancelled_caught()
+
+        await event_loop.create_task(coroutine())
+
     async def test____ignore_cancellation____do_not_reschedule_if_inner_task_cancelled_itself(
         self,
         event_loop: asyncio.AbstractEventLoop,

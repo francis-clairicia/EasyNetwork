@@ -145,7 +145,6 @@ class CancelScope(AbstractCancelScope):
         "__state",
         "__cancel_called",
         "__cancelled_caught",
-        "__task_cancelling",
         "__deadline",
         "__timeout_handle",
         "__delayed_cancellation_on_enter",
@@ -160,7 +159,6 @@ class CancelScope(AbstractCancelScope):
         self.__state: _ScopeState = _ScopeState.CREATED
         self.__cancel_called: bool = False
         self.__cancelled_caught: bool = False
-        self.__task_cancelling: int = 0
         self.__deadline: float = math.inf
         self.__timeout_handle: asyncio.TimerHandle | None = None
         self.reschedule(deadline)
@@ -180,7 +178,6 @@ class CancelScope(AbstractCancelScope):
             raise RuntimeError("CancelScope entered twice")
 
         self.__host_task = current_task = TaskUtils.current_asyncio_task()
-        self.__task_cancelling = current_task.cancelling()
 
         current_task_scope = self.__current_task_scope_dict
         if current_task not in current_task_scope:
@@ -218,13 +215,15 @@ class CancelScope(AbstractCancelScope):
         if self.__cancel_called:
             task_cancelling = host_task.uncancel()
             if isinstance(exc_val, asyncio.CancelledError):
-                self.__cancelled_caught = task_cancelling <= self.__task_cancelling or self.__cancellation_id() in exc_val.args
+                self.__cancelled_caught = self.__cancellation_id() in exc_val.args
 
             delayed_task_cancel = self.__delayed_task_cancel_dict.get(host_task, None)
             if delayed_task_cancel is not None and delayed_task_cancel.message == self.__cancellation_id():
                 del self.__delayed_task_cancel_dict[host_task]
                 delayed_task_cancel.handle.cancel()
+                delayed_task_cancel = None
 
+            if delayed_task_cancel is None:
                 for cancel_scope in self._inner_to_outer_task_scopes(host_task):
                     if cancel_scope.__cancel_called:
                         self._reschedule_delayed_task_cancel(host_task, cancel_scope.__cancellation_id())
