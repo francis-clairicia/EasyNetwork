@@ -28,7 +28,8 @@ from io import BytesIO
 from typing import IO, Any, final
 
 from .._typevars import _DTOPacketT
-from ..exceptions import DeserializeError, IncrementalDeserializeError
+from ..exceptions import DeserializeError, IncrementalDeserializeError, LimitOverrunError
+from ..tools.constants import _DEFAULT_LIMIT
 from .abc import AbstractIncrementalPacketSerializer, AbstractPacketSerializer
 
 
@@ -37,26 +38,38 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_DTOPack
     Base class for stream protocols that separates sent information by a byte sequence.
     """
 
-    __slots__ = ("__separator", "__incremental_serialize_check_separator")
+    __slots__ = ("__separator", "__limit", "__incremental_serialize_check_separator")
 
-    def __init__(self, separator: bytes, *, incremental_serialize_check_separator: bool = True, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        separator: bytes,
+        *,
+        incremental_serialize_check_separator: bool = True,
+        limit: int = _DEFAULT_LIMIT,
+        **kwargs: Any,
+    ) -> None:
         """
         Parameters:
             separator: Byte sequence that indicates the end of the token.
             incremental_serialize_check_separator: If `True` (the default), checks that the data returned by
                                                    :meth:`serialize` does not contain `separator`,
                                                    and removes superfluous `separator` added at the end.
+            limit: Maximum buffer size.
             kwargs: Extra options given to ``super().__init__()``.
 
         Raises:
             TypeError: Invalid arguments.
-            ValueError: Empty separator sequence.
+            ValueError: Empty `separator` sequence.
+            ValueError: `limit` must be a positive integer.
         """
         super().__init__(**kwargs)
         separator = bytes(separator)
         if len(separator) < 1:
             raise ValueError("Empty separator")
+        if limit <= 0:
+            raise ValueError("limit must be a positive integer")
         self.__separator: bytes = separator
+        self.__limit: int = limit
         self.__incremental_serialize_check_separator = bool(incremental_serialize_check_separator)
 
     @abstractmethod
@@ -84,9 +97,15 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_DTOPack
                 data = data.removesuffix(separator)
             if separator in data:
                 raise ValueError(f"{separator!r} separator found in serialized packet {packet!r} which was not at the end")
-        yield data
-        del data
-        yield separator
+        if not data:
+            return
+        if len(data) + len(separator) <= self.__limit // 2:
+            data += separator
+            yield data
+        else:
+            yield data
+            del data
+            yield separator
 
     @abstractmethod
     def deserialize(self, data: bytes, /) -> _DTOPacketT:
@@ -108,18 +127,32 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_DTOPack
         """
         buffer: bytes = yield
         separator: bytes = self.__separator
-        separator_length: int = len(separator)
+        seplen: int = len(separator)
+        limit: int = self.__limit
+        offset: int = 0
+        sepidx: int = -1
+
         while True:
-            data, found_separator, buffer = buffer.partition(separator)
-            if found_separator:
-                del found_separator
-                if not data:  # There was successive separators
-                    continue
-                break
-            assert not buffer  # nosec assert_used
-            buffer = data + (yield)
-        while buffer.startswith(separator):  # Remove successive separators which can already be eliminated
-            buffer = buffer[separator_length:]
+            buflen = len(buffer)
+
+            if buflen - offset >= seplen:
+                sepidx = buffer.find(separator, offset)
+
+                if sepidx != -1:
+                    break
+
+                offset = buflen + 1 - seplen
+                if offset > limit:
+                    raise LimitOverrunError("Separator is not found, and chunk exceed the limit", buffer, offset, separator)
+
+            buffer += yield
+
+        if sepidx > limit:
+            raise LimitOverrunError("Separator is found, but chunk is longer than limit", buffer, sepidx, separator)
+
+        data = buffer[:sepidx]
+        buffer = buffer[sepidx + seplen :]
+
         try:
             packet = self.deserialize(data)
         except DeserializeError as exc:

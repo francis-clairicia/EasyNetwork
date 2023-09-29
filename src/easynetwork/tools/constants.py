@@ -23,12 +23,16 @@ __all__ = [
     "MAX_STREAM_BUFSIZE",
     "SSL_HANDSHAKE_TIMEOUT",
     "SSL_SHUTDOWN_TIMEOUT",
+    "_DEFAULT_LIMIT",
 ]
 
 import errno as _errno
 from typing import Final
 
+# Buffer size for a recv(2) operation
 MAX_STREAM_BUFSIZE: Final[int] = 256 * 1024  # 256KiB
+
+# Buffer size for a recvfrom(2) operation
 MAX_DATAGRAM_BUFSIZE: Final[int] = 64 * 1024  # 64KiB
 
 # Errors that socket operations can return if the socket is closed
@@ -62,3 +66,6 @@ SSL_HANDSHAKE_TIMEOUT: Final[float] = 60.0
 # Number of seconds to wait for SSL shutdown to complete
 # The default timeout mimics lingering_time
 SSL_SHUTDOWN_TIMEOUT: Final[float] = 30.0
+
+# Buffer size limit when waiting for a byte sequence
+_DEFAULT_LIMIT: Final[int] = 64 * 1024  # 64 KiB

@@ -21,6 +21,7 @@ __all__ = ["StringLineSerializer"]
 from typing import Literal, assert_never, final
 
 from ..exceptions import DeserializeError
+from ..tools.constants import _DEFAULT_LIMIT
 from .base_stream import AutoSeparatedPacketSerializer
 
 
@@ -37,6 +38,7 @@ class StringLineSerializer(AutoSeparatedPacketSerializer[str]):
         *,
         encoding: str = "ascii",
         unicode_errors: str = "strict",
+        limit: int = _DEFAULT_LIMIT,
     ) -> None:
         r"""
         Parameters:
@@ -50,6 +52,7 @@ class StringLineSerializer(AutoSeparatedPacketSerializer[str]):
                      - ``"CRLF"``: Carriage return + line feed character sequence (``"\r\n"``).
             encoding: String encoding. Defaults to ``"ascii"``.
             unicode_errors: Controls how encoding errors are handled.
+            limit: Maximum buffer size. Used in incremental serialization context.
 
         See Also:
             :ref:`standard-encodings` and :ref:`error-handlers`.
@@ -64,7 +67,7 @@ class StringLineSerializer(AutoSeparatedPacketSerializer[str]):
                 separator = b"\r\n"
             case _:
                 assert_never(newline)
-        super().__init__(separator=separator, incremental_serialize_check_separator=False)
+        super().__init__(separator=separator, incremental_serialize_check_separator=False, limit=limit)
         self.__encoding: str = encoding
         self.__unicode_errors: str = unicode_errors
 

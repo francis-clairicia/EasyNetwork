@@ -5,7 +5,7 @@ import random
 from collections.abc import Generator
 from typing import IO, TYPE_CHECKING, Any, final
 
-from easynetwork.exceptions import DeserializeError, IncrementalDeserializeError
+from easynetwork.exceptions import DeserializeError, IncrementalDeserializeError, LimitOverrunError
 from easynetwork.serializers.abc import AbstractIncrementalPacketSerializer
 from easynetwork.serializers.base_stream import (
     AutoSeparatedPacketSerializer,
@@ -186,7 +186,15 @@ class TestAutoSeparatedPacketSerializer:
         with pytest.raises(ValueError, match=r"^Empty separator$"):
             _ = _AutoSeparatedPacketSerializerForTest(b"")
 
-    def test____incremental_serialize____append_separator(
+    @pytest.mark.parametrize("limit", [0, -42], ids=lambda p: f"limit=={p}")
+    def test____dunder_init____invalid_limit(self, limit: int) -> None:
+        # Arrange
+
+        # Act & Assert
+        with pytest.raises(ValueError, match=r"^limit must be a positive integer$"):
+            _ = _AutoSeparatedPacketSerializerForTest(b"\n", limit=limit)
+
+    def test____incremental_serialize____empty_bytes(
         self,
         check_separator: bool,
         mock_serialize_func: MagicMock,
@@ -197,6 +205,29 @@ class TestAutoSeparatedPacketSerializer:
             separator=b"\r\n",
             incremental_serialize_check_separator=check_separator,
         )
+        mock_serialize_func.return_value = b""
+
+        # Act
+        data = list(serializer.incremental_serialize(mocker.sentinel.packet))
+
+        # Assert
+        mock_serialize_func.assert_called_once_with(mocker.sentinel.packet)
+        assert data == []
+
+    @pytest.mark.parametrize("limit_reached", [False, True], ids=lambda p: f"limit_reached=={p}")
+    def test____incremental_serialize____append_separator(
+        self,
+        limit_reached: bool,
+        check_separator: bool,
+        mock_serialize_func: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        serializer = _AutoSeparatedPacketSerializerForTest(
+            separator=b"\r\n",
+            incremental_serialize_check_separator=check_separator,
+            limit=4 if limit_reached else 42,
+        )
         mock_serialize_func.return_value = b"data"
 
         # Act
@@ -204,7 +235,7 @@ class TestAutoSeparatedPacketSerializer:
 
         # Assert
         mock_serialize_func.assert_called_once_with(mocker.sentinel.packet)
-        assert data == [b"data", b"\r\n"]
+        assert data == ([b"data", b"\r\n"] if limit_reached else [b"data\r\n"])
 
     def test____incremental_serialize____keep_already_present_separator(
         self,
@@ -224,7 +255,7 @@ class TestAutoSeparatedPacketSerializer:
 
         # Assert
         mock_serialize_func.assert_called_once_with(mocker.sentinel.packet)
-        assert data == [b"data" if check_separator else b"data\r\n", b"\r\n"]
+        assert data == [b"data\r\n" if check_separator else b"data\r\n\r\n"]
 
     def test____incremental_serialize____remove_useless_trailing_separators(
         self,
@@ -244,7 +275,7 @@ class TestAutoSeparatedPacketSerializer:
 
         # Assert
         mock_serialize_func.assert_called_once_with(mocker.sentinel.packet)
-        assert data == [b"data" if check_separator else b"data\r\n\r\n\r\n\r\n", b"\r\n"]
+        assert data == [b"data\r\n" if check_separator else b"data\r\n\r\n\r\n\r\n\r\n"]
 
     def test____incremental_serialize____does_not_remove_partial_separator_at_end(
         self,
@@ -264,7 +295,7 @@ class TestAutoSeparatedPacketSerializer:
 
         # Assert
         mock_serialize_func.assert_called_once_with(mocker.sentinel.packet)
-        assert data == [b"data\r" if check_separator else b"data\r\r\n", b"\r\n"]
+        assert data == [b"data\r\r\n" if check_separator else b"data\r\r\n\r\n"]
 
     def test____incremental_serialize____error_if_separator_is_within_output(
         self,
@@ -294,13 +325,9 @@ class TestAutoSeparatedPacketSerializer:
             pytest.param(b"remaining\r\nother", id="with remaining data including separator"),
         ],
     )
-    @pytest.mark.parametrize("several_trailing_separators", [False, True], ids=lambda b: f"several_trailing_separators=={b}")
-    @pytest.mark.parametrize("several_leading_separators", [False, True], ids=lambda b: f"several_leading_separators=={b}")
     def test____incremental_deserialize____one_shot_chunk(
         self,
         expected_remaining_data: bytes,
-        several_trailing_separators: bool,
-        several_leading_separators: bool,
         mock_deserialize_func: MagicMock,
         mocker: MockerFixture,
     ) -> None:
@@ -308,10 +335,6 @@ class TestAutoSeparatedPacketSerializer:
         serializer = _AutoSeparatedPacketSerializerForTest(separator=b"\r\n")
         mock_deserialize_func.return_value = mocker.sentinel.packet
         data_to_test: bytes = b"data\r\n"
-        if several_trailing_separators:
-            data_to_test = data_to_test + b"\r\n\r\n\r\n"
-        if several_leading_separators:
-            data_to_test = b"\r\n\r\n\r\n" + data_to_test
 
         # Act
         consumer = serializer.incremental_deserialize()
@@ -386,6 +409,35 @@ class TestAutoSeparatedPacketSerializer:
         assert exception.__cause__ is mock_deserialize_func.side_effect
         assert exception.remaining_data == expected_remaining_data
         assert exception.error_info is mocker.sentinel.error_info
+
+    @pytest.mark.parametrize("separator_found", [False, True], ids=lambda p: f"separator_found=={p}")
+    def test____incremental_deserialize____reached_limit(
+        self,
+        separator_found: bytes,
+        mock_deserialize_func: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        serializer = _AutoSeparatedPacketSerializerForTest(separator=b"\r\n", limit=1)
+        mock_deserialize_func.return_value = mocker.sentinel.packet
+        data_to_test: bytes = b"data\r"
+        if separator_found:
+            data_to_test += b"\n"
+
+        # Act
+        consumer = serializer.incremental_deserialize()
+        next(consumer)
+        with pytest.raises(LimitOverrunError) as exc_info:
+            consumer.send(data_to_test)
+
+        # Assert
+        mock_deserialize_func.assert_not_called()
+        if separator_found:
+            assert str(exc_info.value) == "Separator is found, but chunk is longer than limit"
+            assert exc_info.value.remaining_data == b""
+        else:
+            assert str(exc_info.value) == "Separator is not found, and chunk exceed the limit"
+            assert exc_info.value.remaining_data == b"\r"
 
 
 class _FixedSizePacketSerializerForTest(FixedSizePacketSerializer[Any]):
