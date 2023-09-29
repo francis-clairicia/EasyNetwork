@@ -43,7 +43,7 @@ class TestJSONSerializer(BaseTestIncrementalSerializer):
     def expected_complete_data(cls, packet_to_serialize: Any) -> bytes:
         import json
 
-        return json.dumps(packet_to_serialize, **dataclasses.asdict(cls.ENCODER_CONFIG)).encode("utf-8")
+        return json.dumps(packet_to_serialize, **dataclasses.asdict(cls.ENCODER_CONFIG), separators=(",", ":")).encode("utf-8")
 
     #### Incremental Serialize
 

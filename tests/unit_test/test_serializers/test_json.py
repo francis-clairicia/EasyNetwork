@@ -66,8 +66,6 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
             check_circular=mocker.sentinel.check_circular,
             ensure_ascii=mocker.sentinel.ensure_ascii,
             allow_nan=mocker.sentinel.allow_nan,
-            indent=mocker.sentinel.indent,
-            separators=mocker.sentinel.separators,
             default=mocker.sentinel.object_default,
         )
 
@@ -108,8 +106,8 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
             check_circular=mocker.sentinel.check_circular if encoder_config is not None else True,
             ensure_ascii=mocker.sentinel.ensure_ascii if encoder_config is not None else True,
             allow_nan=mocker.sentinel.allow_nan if encoder_config is not None else True,
-            indent=mocker.sentinel.indent if encoder_config is not None else None,
-            separators=mocker.sentinel.separators if encoder_config is not None else (",", ":"),
+            indent=None,
+            separators=(",", ":"),
             default=mocker.sentinel.object_default if encoder_config is not None else None,
         )
 
