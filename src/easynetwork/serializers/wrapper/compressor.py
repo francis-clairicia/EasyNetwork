@@ -186,7 +186,10 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_DTOPacke
                 results.append(chunk)
             del chunk
 
-        data = b"".join(results)
+        if len(results) == 1:
+            data = results[0]
+        else:
+            data = b"".join(results)
         unused_data: bytes = decompressor.unused_data
         del results, decompressor
 
