@@ -24,6 +24,7 @@ from typing import final
 
 from ..._typevars import _DTOPacketT
 from ...exceptions import DeserializeError
+from ...tools.constants import _DEFAULT_LIMIT
 from ..abc import AbstractPacketSerializer
 from ..base_stream import AutoSeparatedPacketSerializer
 
@@ -44,6 +45,7 @@ class EncryptorSerializer(AutoSeparatedPacketSerializer[_DTOPacketT]):
         *,
         token_ttl: int | None = None,
         separator: bytes = b"\r\n",
+        limit: int = _DEFAULT_LIMIT,
     ) -> None:
         """
         Parameters:
@@ -51,13 +53,14 @@ class EncryptorSerializer(AutoSeparatedPacketSerializer[_DTOPacketT]):
             key: A URL-safe base64-encoded 32-byte key.
             token_ttl: Token time-to-live. See :meth:`cryptography.fernet.Fernet.decrypt` for details.
             separator: Token for :class:`AutoSeparatedPacketSerializer`. Used in incremental serialization context.
+            limit: Maximum buffer size. Used in incremental serialization context.
         """
         try:
             import cryptography.fernet
         except ModuleNotFoundError as exc:  # pragma: no cover
             raise ModuleNotFoundError("encryption dependencies are missing. Consider adding 'encryption' extra") from exc
 
-        super().__init__(separator=separator, incremental_serialize_check_separator=not separator.isspace())
+        super().__init__(separator=separator, incremental_serialize_check_separator=not separator.isspace(), limit=limit)
         if not isinstance(serializer, AbstractPacketSerializer):
             raise TypeError(f"Expected a serializer instance, got {serializer!r}")
         self.__serializer: AbstractPacketSerializer[_DTOPacketT] = serializer

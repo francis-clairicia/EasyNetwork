@@ -29,7 +29,9 @@ from typing import IO, Any, final
 
 from .._typevars import _DTOPacketT
 from ..exceptions import DeserializeError, IncrementalDeserializeError
+from ..tools.constants import _DEFAULT_LIMIT
 from .abc import AbstractIncrementalPacketSerializer, AbstractPacketSerializer
+from .tools import GeneratorStreamReader
 
 
 class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_DTOPacketT]):
@@ -37,26 +39,38 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_DTOPack
     Base class for stream protocols that separates sent information by a byte sequence.
     """
 
-    __slots__ = ("__separator", "__incremental_serialize_check_separator")
+    __slots__ = ("__separator", "__limit", "__incremental_serialize_check_separator")
 
-    def __init__(self, separator: bytes, *, incremental_serialize_check_separator: bool = True, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        separator: bytes,
+        *,
+        incremental_serialize_check_separator: bool = True,
+        limit: int = _DEFAULT_LIMIT,
+        **kwargs: Any,
+    ) -> None:
         """
         Parameters:
             separator: Byte sequence that indicates the end of the token.
             incremental_serialize_check_separator: If `True` (the default), checks that the data returned by
                                                    :meth:`serialize` does not contain `separator`,
                                                    and removes superfluous `separator` added at the end.
+            limit: Maximum buffer size.
             kwargs: Extra options given to ``super().__init__()``.
 
         Raises:
             TypeError: Invalid arguments.
-            ValueError: Empty separator sequence.
+            ValueError: Empty `separator` sequence.
+            ValueError: `limit` must be a positive integer.
         """
         super().__init__(**kwargs)
         separator = bytes(separator)
         if len(separator) < 1:
             raise ValueError("Empty separator")
+        if limit <= 0:
+            raise ValueError("limit must be a positive integer")
         self.__separator: bytes = separator
+        self.__limit: int = limit
         self.__incremental_serialize_check_separator = bool(incremental_serialize_check_separator)
 
     @abstractmethod
@@ -84,9 +98,15 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_DTOPack
                 data = data.removesuffix(separator)
             if separator in data:
                 raise ValueError(f"{separator!r} separator found in serialized packet {packet!r} which was not at the end")
-        yield data
-        del data
-        yield separator
+        if not data:
+            return
+        if len(data) + len(separator) <= self.__limit // 2:
+            data += separator
+            yield data
+        else:
+            yield data
+            del data
+            yield separator
 
     @abstractmethod
     def deserialize(self, data: bytes, /) -> _DTOPacketT:
@@ -103,23 +123,14 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_DTOPack
         See :meth:`.AbstractIncrementalPacketSerializer.incremental_deserialize` documentation for details.
 
         Raises:
+            LimitOverrunError: Reached buffer size limit.
             IncrementalDeserializeError: :meth:`deserialize` raised :exc:`.DeserializeError`.
             Exception: Any error raised by :meth:`deserialize`.
         """
-        buffer: bytes = yield
-        separator: bytes = self.__separator
-        separator_length: int = len(separator)
-        while True:
-            data, found_separator, buffer = buffer.partition(separator)
-            if found_separator:
-                del found_separator
-                if not data:  # There was successive separators
-                    continue
-                break
-            assert not buffer  # nosec assert_used
-            buffer = data + (yield)
-        while buffer.startswith(separator):  # Remove successive separators which can already be eliminated
-            buffer = buffer[separator_length:]
+        reader = GeneratorStreamReader()
+        data = yield from reader.read_until(self.__separator, limit=self.__limit, keep_end=False)
+        buffer = reader.read_all()
+
         try:
             packet = self.deserialize(data)
         except DeserializeError as exc:
@@ -205,18 +216,10 @@ class FixedSizePacketSerializer(AbstractIncrementalPacketSerializer[_DTOPacketT]
             IncrementalDeserializeError: :meth:`deserialize` raised :exc:`.DeserializeError`.
             Exception: Any error raised by :meth:`deserialize`.
         """
-        buffer: bytes = yield
-        packet_size: int = self.__size
-        while (buffer_size := len(buffer)) < packet_size:
-            buffer += yield
+        reader = GeneratorStreamReader()
+        data = yield from reader.read_exactly(self.__size)
+        buffer = reader.read_all()
 
-        # Do not copy if the size is *exactly* as expected
-        if buffer_size == packet_size:
-            data = buffer
-            buffer = b""
-        else:
-            data = buffer[:packet_size]
-            buffer = buffer[packet_size:]
         try:
             packet = self.deserialize(data)
         except DeserializeError as exc:

@@ -22,6 +22,7 @@ __all__ = [
     "JSONSerializer",
 ]
 
+
 import re
 import string
 from collections import Counter
@@ -29,14 +30,11 @@ from collections.abc import Callable, Generator
 from dataclasses import asdict as dataclass_asdict, dataclass
 from typing import Any, final
 
-from ..exceptions import DeserializeError, IncrementalDeserializeError
+from ..exceptions import DeserializeError, IncrementalDeserializeError, LimitOverrunError
 from ..tools._utils import iter_bytes
+from ..tools.constants import _DEFAULT_LIMIT
 from .abc import AbstractIncrementalPacketSerializer
-
-_JSON_VALUE_BYTES: frozenset[int] = frozenset(bytes(string.digits + string.ascii_letters + string.punctuation, "ascii"))
-_ESCAPE_BYTE: int = b"\\"[0]
-
-_whitespaces_match: Callable[[bytes, int], re.Match[bytes]] = re.compile(rb"[ \t\n\r]*", re.MULTILINE | re.DOTALL).match  # type: ignore[assignment]
+from .tools import GeneratorStreamReader
 
 
 @dataclass(kw_only=True)
@@ -51,8 +49,6 @@ class JSONEncoderConfig:
     check_circular: bool = True
     ensure_ascii: bool = True
     allow_nan: bool = True
-    indent: int | None = None
-    separators: tuple[str, str] | None = (",", ":")  # Compact JSON (w/o whitespaces)
     default: Callable[..., Any] | None = None
 
 
@@ -72,91 +68,20 @@ class JSONDecoderConfig:
     strict: bool = True
 
 
-class _JSONParser:
-    class _PlainValueError(Exception):
-        pass
-
-    @staticmethod
-    def _escaped(partial_document_view: memoryview) -> bool:
-        escaped = False
-        for byte in reversed(partial_document_view):
-            if byte == _ESCAPE_BYTE:
-                escaped = not escaped
-            else:
-                break
-        return escaped
-
-    @staticmethod
-    def raw_parse() -> Generator[None, bytes, tuple[bytes, bytes]]:
-        escaped = _JSONParser._escaped
-        split_partial_document = _JSONParser._split_partial_document
-        enclosure_counter: Counter[bytes] = Counter()
-        partial_document: bytes = yield
-        first_enclosure: bytes = b""
-        start: int = 0
-        try:
-            while True:
-                with memoryview(partial_document) as partial_document_view:
-                    for nb_chars, char in enumerate(iter_bytes(partial_document_view[start:]), start=start + 1):
-                        match char:
-                            case b'"' if not escaped(partial_document_view[: nb_chars - 1]):
-                                enclosure_counter[b'"'] = 0 if enclosure_counter[b'"'] == 1 else 1
-                            case _ if enclosure_counter[b'"'] > 0:  # We are within a JSON string, move on.
-                                continue
-                            case b"{" | b"[":
-                                enclosure_counter[char] += 1
-                            case b"}":
-                                enclosure_counter[b"{"] -= 1
-                            case b"]":
-                                enclosure_counter[b"["] -= 1
-                            case b" " | b"\t" | b"\n" | b"\r":  # Optimization: Skip spaces
-                                continue
-                            case _ if len(enclosure_counter) == 0:  # No enclosure, only value
-                                partial_document = partial_document[nb_chars - 1 :] if nb_chars > 1 else partial_document
-                                del char, nb_chars
-                                raise _JSONParser._PlainValueError
-                            case _:  # JSON character, quickly go to next character
-                                continue
-                        assert len(enclosure_counter) > 0  # nosec assert_used
-                        if not first_enclosure:
-                            first_enclosure = next(iter(enclosure_counter))
-                        if enclosure_counter[first_enclosure] <= 0:  # 1st found is closed
-                            return split_partial_document(partial_document, nb_chars)
-
-                    # partial_document not complete
-                    start = partial_document_view.nbytes
-
-                # yield outside view scope
-                partial_document += yield
-
-        except _JSONParser._PlainValueError:
-            pass
-
-        # The document is a plain value (null, true, false, or a number)
-
-        del enclosure_counter, first_enclosure
-
-        while (nprint_idx := next((idx for idx, byte in enumerate(partial_document) if byte not in _JSON_VALUE_BYTES), -1)) < 0:
-            partial_document += yield
-
-        return split_partial_document(partial_document, nprint_idx)
-
-    @staticmethod
-    def _split_partial_document(partial_document: bytes, index: int) -> tuple[bytes, bytes]:
-        index = _whitespaces_match(partial_document, index).end()
-        if index == len(partial_document):
-            # The following bytes are only spaces
-            # Do not slice the document, the trailing spaces will be ignored by JSONDecoder
-            return partial_document, b""
-        return partial_document[:index], partial_document[index:]
-
-
 class JSONSerializer(AbstractIncrementalPacketSerializer[Any]):
     """
     A :term:`serializer` built on top of the :mod:`json` module.
     """
 
-    __slots__ = ("__encoder", "__decoder", "__decoder_error_cls", "__encoding", "__unicode_errors")
+    __slots__ = (
+        "__encoder",
+        "__decoder",
+        "__decoder_error_cls",
+        "__encoding",
+        "__unicode_errors",
+        "__limit",
+        "__use_lines",
+    )
 
     def __init__(
         self,
@@ -165,6 +90,8 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[Any]):
         *,
         encoding: str = "utf-8",
         unicode_errors: str = "strict",
+        limit: int = _DEFAULT_LIMIT,
+        use_lines: bool = True,
     ) -> None:
         """
         Parameters:
@@ -172,6 +99,8 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[Any]):
             decoder_config: Parameter object to configure the :class:`~json.JSONDecoder`.
             encoding: String encoding.
             unicode_errors: Controls how encoding errors are handled.
+            limit: Maximum buffer size. Used in incremental serialization context.
+            use_lines: If :data:`True` (the default), each ASCII lines is considered a JSON object.
 
         See Also:
             :ref:`standard-encodings` and :ref:`error-handlers`.
@@ -193,12 +122,18 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[Any]):
         elif not isinstance(decoder_config, JSONDecoderConfig):
             raise TypeError(f"Invalid decoder config: expected {JSONDecoderConfig.__name__}, got {type(decoder_config).__name__}")
 
-        self.__encoder = JSONEncoder(**dataclass_asdict(encoder_config))
+        if limit <= 0:
+            raise ValueError("limit must be a positive integer")
+
+        self.__encoder = JSONEncoder(**dataclass_asdict(encoder_config), indent=None, separators=(",", ":"))
         self.__decoder = JSONDecoder(**dataclass_asdict(decoder_config))
         self.__decoder_error_cls = JSONDecodeError
 
         self.__encoding: str = encoding
         self.__unicode_errors: str = unicode_errors
+
+        self.__limit: int = limit
+        self.__use_lines: bool = bool(use_lines)
 
     @final
     def serialize(self, packet: Any) -> bytes:
@@ -239,8 +174,19 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[Any]):
         Yields:
             all the parts of the JSON :term:`packet`.
         """
-        yield self.__encoder.encode(packet).encode(self.__encoding, self.__unicode_errors)
-        yield b"\n"
+        data = self.__encoder.encode(packet).encode(self.__encoding, self.__unicode_errors)
+        if not data.startswith((b"{", b"[", b'"')):
+            data += b"\n"
+            yield data
+        elif not self.__use_lines:
+            yield data
+        elif len(data) + 1 <= self.__limit // 2:
+            data += b"\n"
+            yield data
+        else:
+            yield data
+            del data
+            yield b"\n"
 
     @final
     def deserialize(self, data: bytes) -> Any:
@@ -292,7 +238,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[Any]):
         Creates a Python object representing the raw JSON :term:`packet`.
 
         Example:
-            >>> s = JSONSerializer()
+            >>> s = JSONSerializer(use_lines=False)
             >>> consumer = s.incremental_deserialize()
             >>> next(consumer)
             >>> consumer.send(b'{"key":[1,2,3]')
@@ -305,17 +251,21 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[Any]):
             :data:`None` until the whole :term:`packet` has been deserialized.
 
         Raises:
+            LimitOverrunError: Reached buffer size limit.
             IncrementalDeserializeError: A :class:`UnicodeError` or :class:`~json.JSONDecodeError` have been raised.
 
         Returns:
             a tuple with the deserialized Python object and the unused trailing data.
         """
-        complete_document, remaining_data = yield from _JSONParser.raw_parse()
-
-        if not complete_document:
-            # If this condition is verified, decoder.decode() will most likely raise JSONDecodeError
-            complete_document = remaining_data
-            remaining_data = b""
+        complete_document: bytes
+        remaining_data: bytes
+        if self.__use_lines:
+            reader = GeneratorStreamReader()
+            complete_document = yield from reader.read_until(b"\n", limit=self.__limit)
+            remaining_data = reader.read_all()
+            del reader
+        else:
+            complete_document, remaining_data = yield from _JSONParser.raw_parse(limit=self.__limit)
 
         packet: Any
         try:
@@ -342,3 +292,115 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[Any]):
                 },
             ) from exc
         return packet, remaining_data
+
+
+class _JSONParser:
+    _JSON_VALUE_BYTES: frozenset[int] = frozenset(bytes(string.digits + string.ascii_letters + string.punctuation, "ascii"))
+    _ESCAPE_BYTE: int = ord(b"\\")
+
+    _whitespaces_match: Callable[[bytes, int], re.Match[bytes]] = re.compile(rb"[ \t\n\r]*", re.MULTILINE | re.DOTALL).match  # type: ignore[assignment]
+
+    class _PlainValueError(Exception):
+        pass
+
+    @staticmethod
+    def _escaped(partial_document_view: memoryview) -> bool:
+        escaped = False
+        _ESCAPE_BYTE = _JSONParser._ESCAPE_BYTE
+        for byte in reversed(partial_document_view):
+            if byte == _ESCAPE_BYTE:
+                escaped = not escaped
+            else:
+                break
+        return escaped
+
+    @staticmethod
+    def raw_parse(*, limit: int) -> Generator[None, bytes, tuple[bytes, bytes]]:
+        if limit <= 0:
+            raise ValueError("limit must be a positive integer")
+        escaped = _JSONParser._escaped
+        split_partial_document = _JSONParser._split_partial_document
+        enclosure_counter: Counter[bytes] = Counter()
+        partial_document: bytes = yield
+        first_enclosure: bytes = b""
+        try:
+            offset: int = 0
+            while True:
+                with memoryview(partial_document) as partial_document_view:
+                    for offset, char in enumerate(iter_bytes(partial_document_view[offset:]), start=offset):
+                        match char:
+                            case b'"' if not escaped(partial_document_view[:offset]):
+                                enclosure_counter[b'"'] = 0 if enclosure_counter[b'"'] == 1 else 1
+                            case _ if enclosure_counter[b'"'] > 0:  # We are within a JSON string, move on.
+                                continue
+                            case b"{" | b"[":
+                                enclosure_counter[char] += 1
+                            case b"}":
+                                enclosure_counter[b"{"] -= 1
+                            case b"]":
+                                enclosure_counter[b"["] -= 1
+                            case b" " | b"\t" | b"\n" | b"\r":  # Optimization: Skip spaces
+                                continue
+                            case _ if len(enclosure_counter) == 0:  # No enclosure, only value
+                                partial_document = partial_document[offset:] if offset > 0 else partial_document
+                                del char, offset
+                                raise _JSONParser._PlainValueError
+                            case _:  # JSON character, quickly go to next character
+                                continue
+                        assert len(enclosure_counter) > 0  # nosec assert_used
+                        if not first_enclosure:
+                            first_enclosure = next(iter(enclosure_counter))
+                        if enclosure_counter[first_enclosure] <= 0:  # 1st found is closed
+                            return split_partial_document(partial_document, offset + 1, limit)
+
+                    # partial_document not complete
+                    offset = partial_document_view.nbytes
+                    if offset > limit:
+                        raise LimitOverrunError(
+                            "JSON object's end frame is not found, and chunk exceed the limit",
+                            partial_document,
+                            offset,
+                        )
+
+                # yield outside view scope
+                partial_document += yield
+
+        except _JSONParser._PlainValueError:
+            pass
+
+        # The document is a plain value (null, true, false, or a number)
+
+        del enclosure_counter, first_enclosure
+
+        _JSON_VALUE_BYTES = _JSONParser._JSON_VALUE_BYTES
+
+        while (nprint_idx := next((idx for idx, byte in enumerate(partial_document) if byte not in _JSON_VALUE_BYTES), -1)) < 0:
+            if len(partial_document) > limit:
+                raise LimitOverrunError(
+                    "JSON object's end frame is not found, and chunk exceed the limit",
+                    partial_document,
+                    nprint_idx,
+                )
+            partial_document += yield
+
+        return split_partial_document(partial_document, nprint_idx, limit)
+
+    @staticmethod
+    def _split_partial_document(partial_document: bytes, consumed: int, limit: int) -> tuple[bytes, bytes]:
+        if consumed > limit:
+            raise LimitOverrunError(
+                "JSON object's end frame is found, but chunk is longer than limit",
+                partial_document,
+                consumed,
+            )
+        consumed = _JSONParser._whitespaces_match(partial_document, consumed).end()
+        if consumed == len(partial_document):
+            # The following bytes are only spaces
+            # Do not slice the document, the trailing spaces will be ignored by JSONDecoder
+            return partial_document, b""
+        complete_document, partial_document = partial_document[:consumed], partial_document[consumed:]
+        if not complete_document:
+            # If this condition is verified, decoder.decode() will most likely raise JSONDecodeError
+            complete_document = partial_document
+            partial_document = b""
+        return complete_document, partial_document

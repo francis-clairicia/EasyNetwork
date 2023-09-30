@@ -30,3 +30,11 @@ Serializers
    wrappers/base64
    wrappers/compressor
    wrappers/encryptor
+
+-----
+
+.. toctree::
+   :caption: Miscellaneous
+   :maxdepth: 2
+
+   tools

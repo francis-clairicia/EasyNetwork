@@ -25,6 +25,7 @@ __all__ = [
     "DatagramProtocolParseError",
     "DeserializeError",
     "IncrementalDeserializeError",
+    "LimitOverrunError",
     "PacketConversionError",
     "ServerAlreadyRunning",
     "ServerClosedError",
@@ -34,6 +35,8 @@ __all__ = [
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from _typeshed import ReadableBuffer
+
     from .tools.socket import SocketAddress
 
 
@@ -80,6 +83,28 @@ class IncrementalDeserializeError(DeserializeError):
 
         self.remaining_data: bytes = remaining_data
         """Unused trailing data."""
+
+
+class LimitOverrunError(IncrementalDeserializeError):
+    """Reached the buffer size limit while looking for a separator."""
+
+    def __init__(self, message: str, buffer: ReadableBuffer, consumed: int, separator: bytes = b"") -> None:
+        """
+        Parameters:
+            message: Error message.
+            buffer: Currently too big buffer.
+            consumed: Total number of to be consumed bytes.
+            separator: Searched separator.
+        """
+
+        remaining_data = memoryview(buffer)[consumed:].tobytes()
+        if separator and remaining_data.startswith(separator):
+            remaining_data = remaining_data.removeprefix(separator)
+
+        super().__init__(message, remaining_data, error_info=None)
+
+        self.consumed: int = consumed
+        """Total number of to be consumed bytes."""
 
 
 class PacketConversionError(Exception):

@@ -19,15 +19,20 @@ class TestJSONSerializer(BaseTestIncrementalSerializer):
 
     ENCODER_CONFIG = JSONEncoderConfig(ensure_ascii=False)
 
+    @pytest.fixture(scope="class", params=[False, True], ids=lambda p: f"use_lines=={p}")
+    @staticmethod
+    def use_lines(request: Any) -> bool:
+        return request.param
+
     @pytest.fixture(scope="class")
     @classmethod
-    def serializer_for_serialization(cls) -> JSONSerializer:
-        return JSONSerializer(encoder_config=cls.ENCODER_CONFIG)
+    def serializer_for_serialization(cls, use_lines: bool) -> JSONSerializer:
+        return JSONSerializer(encoder_config=cls.ENCODER_CONFIG, use_lines=use_lines)
 
     @pytest.fixture(scope="class")
     @staticmethod
-    def serializer_for_deserialization() -> JSONSerializer:
-        return JSONSerializer()
+    def serializer_for_deserialization(use_lines: bool) -> JSONSerializer:
+        return JSONSerializer(use_lines=use_lines)
 
     #### Packets to test
 
@@ -43,24 +48,30 @@ class TestJSONSerializer(BaseTestIncrementalSerializer):
     def expected_complete_data(cls, packet_to_serialize: Any) -> bytes:
         import json
 
-        return json.dumps(packet_to_serialize, **dataclasses.asdict(cls.ENCODER_CONFIG)).encode("utf-8")
+        return json.dumps(packet_to_serialize, **dataclasses.asdict(cls.ENCODER_CONFIG), separators=(",", ":")).encode("utf-8")
 
     #### Incremental Serialize
 
     @pytest.fixture(scope="class")
     @staticmethod
-    def expected_joined_data(expected_complete_data: bytes) -> bytes:
-        return expected_complete_data + b"\n"
+    def expected_joined_data(expected_complete_data: bytes, use_lines: bool) -> bytes:
+        if use_lines or not expected_complete_data.startswith((b"{", b"[", b'"')):
+            return expected_complete_data + b"\n"
+        return expected_complete_data
 
     #### One-shot Deserialize
 
     @pytest.fixture(scope="class")
     @staticmethod
-    def complete_data(packet_to_serialize: Any) -> bytes:
+    def complete_data(packet_to_serialize: Any, use_lines: bool) -> bytes:
         import json
 
-        # Test with indentation to see whitespace handling
-        return json.dumps(packet_to_serialize, ensure_ascii=False, indent=2).encode("utf-8")
+        indent: int | None = None
+        if not use_lines:
+            # Test with indentation to see whitespace handling
+            indent = 4
+
+        return json.dumps(packet_to_serialize, ensure_ascii=False, indent=indent).encode("utf-8")
 
     #### Incremental Deserialize
 
@@ -73,17 +84,23 @@ class TestJSONSerializer(BaseTestIncrementalSerializer):
 
     @pytest.fixture(scope="class", params=[b"invalid", b"\0"])
     @staticmethod
-    def invalid_complete_data(request: Any) -> bytes:
-        return getattr(request, "param")
+    def invalid_complete_data(request: Any, use_lines: bool) -> bytes:
+        data: bytes = getattr(request, "param")
+        if use_lines:
+            data += b"\n"
+        return data
 
     @pytest.fixture(scope="class", params=[b"[ invalid ]", b"\0"])
     @staticmethod
-    def invalid_partial_data(request: Any) -> bytes:
-        return getattr(request, "param")
+    def invalid_partial_data(request: Any, use_lines: bool) -> bytes:
+        data: bytes = getattr(request, "param")
+        if use_lines:
+            data += b"\n"
+        return data
 
     @pytest.fixture
     @staticmethod
     def invalid_partial_data_extra_data(invalid_partial_data: bytes) -> bytes:
-        if invalid_partial_data == b"\0":
+        if invalid_partial_data.startswith(b"\0"):
             return b""
         return b"remaining_data"
