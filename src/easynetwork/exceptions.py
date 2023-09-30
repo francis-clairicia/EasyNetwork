@@ -25,6 +25,7 @@ __all__ = [
     "DatagramProtocolParseError",
     "DeserializeError",
     "IncrementalDeserializeError",
+    "LimitOverrunError",
     "PacketConversionError",
     "ServerAlreadyRunning",
     "ServerClosedError",
@@ -101,6 +102,9 @@ class LimitOverrunError(IncrementalDeserializeError):
             remaining_data = remaining_data.removeprefix(separator)
 
         super().__init__(message, remaining_data, error_info=None)
+
+        self.consumed: int = consumed
+        """Total number of to be consumed bytes."""
 
 
 class PacketConversionError(Exception):

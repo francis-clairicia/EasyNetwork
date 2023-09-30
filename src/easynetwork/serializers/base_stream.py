@@ -28,9 +28,10 @@ from io import BytesIO
 from typing import IO, Any, final
 
 from .._typevars import _DTOPacketT
-from ..exceptions import DeserializeError, IncrementalDeserializeError, LimitOverrunError
+from ..exceptions import DeserializeError, IncrementalDeserializeError
 from ..tools.constants import _DEFAULT_LIMIT
 from .abc import AbstractIncrementalPacketSerializer, AbstractPacketSerializer
+from .tools import GeneratorStreamReader
 
 
 class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_DTOPacketT]):
@@ -122,36 +123,13 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_DTOPack
         See :meth:`.AbstractIncrementalPacketSerializer.incremental_deserialize` documentation for details.
 
         Raises:
+            LimitOverrunError: Reached buffer size limit.
             IncrementalDeserializeError: :meth:`deserialize` raised :exc:`.DeserializeError`.
             Exception: Any error raised by :meth:`deserialize`.
         """
-        buffer: bytes = yield
-        separator: bytes = self.__separator
-        seplen: int = len(separator)
-        limit: int = self.__limit
-        offset: int = 0
-        sepidx: int = -1
-
-        while True:
-            buflen = len(buffer)
-
-            if buflen - offset >= seplen:
-                sepidx = buffer.find(separator, offset)
-
-                if sepidx != -1:
-                    break
-
-                offset = buflen + 1 - seplen
-                if offset > limit:
-                    raise LimitOverrunError("Separator is not found, and chunk exceed the limit", buffer, offset, separator)
-
-            buffer += yield
-
-        if sepidx > limit:
-            raise LimitOverrunError("Separator is found, but chunk is longer than limit", buffer, sepidx, separator)
-
-        data = buffer[:sepidx]
-        buffer = buffer[sepidx + seplen :]
+        reader = GeneratorStreamReader()
+        data = yield from reader.read_until(self.__separator, limit=self.__limit, keep_end=False)
+        buffer = reader.read_all()
 
         try:
             packet = self.deserialize(data)
@@ -238,18 +216,10 @@ class FixedSizePacketSerializer(AbstractIncrementalPacketSerializer[_DTOPacketT]
             IncrementalDeserializeError: :meth:`deserialize` raised :exc:`.DeserializeError`.
             Exception: Any error raised by :meth:`deserialize`.
         """
-        buffer: bytes = yield
-        packet_size: int = self.__size
-        while (buffer_size := len(buffer)) < packet_size:
-            buffer += yield
+        reader = GeneratorStreamReader()
+        data = yield from reader.read_exactly(self.__size)
+        buffer = reader.read_all()
 
-        # Do not copy if the size is *exactly* as expected
-        if buffer_size == packet_size:
-            data = buffer
-            buffer = b""
-        else:
-            data = buffer[:packet_size]
-            buffer = buffer[packet_size:]
         try:
             packet = self.deserialize(data)
         except DeserializeError as exc:

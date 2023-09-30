@@ -28,6 +28,12 @@ def send_return(gen: Generator[Any, _T_contra, _V_co], value: _T_contra, /) -> _
     return exc_info.value.value
 
 
+def next_return(gen: Generator[Any, Any, _V_co], /) -> _V_co:
+    with pytest.raises(StopIteration) as exc_info:
+        gen.send(None)
+    return exc_info.value.value
+
+
 @final
 class TimeTest:
     def __init__(self, expected_time: float, approx: float | None = None) -> None:
