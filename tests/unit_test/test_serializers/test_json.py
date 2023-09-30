@@ -3,10 +3,10 @@ from __future__ import annotations
 from collections.abc import Generator
 from typing import TYPE_CHECKING, Any
 
-from easynetwork.exceptions import DeserializeError, IncrementalDeserializeError
+from easynetwork.exceptions import DeserializeError, IncrementalDeserializeError, LimitOverrunError
 from easynetwork.serializers.json import JSONDecoderConfig, JSONEncoderConfig, JSONSerializer, _JSONParser
 from easynetwork.serializers.tools import GeneratorStreamReader
-from easynetwork.tools.constants import _DEFAULT_LIMIT
+from easynetwork.tools.constants import _DEFAULT_LIMIT as DEFAULT_LIMIT
 
 import pytest
 
@@ -352,10 +352,10 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         if use_lines:
             mock_json_parser.assert_not_called()
             mock_generator_stream_reader_cls.assert_called_once_with()
-            mock_generator_stream_reader.read_until.assert_called_once_with(b"\n", limit=_DEFAULT_LIMIT)
+            mock_generator_stream_reader.read_until.assert_called_once_with(b"\n", limit=DEFAULT_LIMIT)
             mock_generator_stream_reader.read_all.assert_called_once_with()
         else:
-            mock_json_parser.assert_called_once_with(limit=_DEFAULT_LIMIT)
+            mock_json_parser.assert_called_once_with(limit=DEFAULT_LIMIT)
             mock_generator_stream_reader_cls.assert_not_called()
             mock_generator_stream_reader.read_until.assert_not_called()
             mock_generator_stream_reader.read_all.assert_not_called()
@@ -440,3 +440,190 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
             "lineno": 2,
             "colno": 1,
         }
+
+
+class TestJSONParser:
+    def test____raw_parse____object_frame(self) -> None:
+        # Arrange
+        consumer = _JSONParser.raw_parse(limit=DEFAULT_LIMIT)
+        next(consumer)
+
+        # Act
+        consumer.send(b'{"data"')
+        complete, remainder = send_return(consumer, b":42}remainder")
+
+        # Assert
+        assert complete == b'{"data":42}'
+        assert remainder == b"remainder"
+
+    def test____raw_parse____object_frame____skip_bracket_in_strings(self) -> None:
+        # Arrange
+        consumer = _JSONParser.raw_parse(limit=DEFAULT_LIMIT)
+        next(consumer)
+
+        # Act
+        complete, remainder = send_return(consumer, b'{"data}": "something}"}remainder')
+
+        # Assert
+        assert complete == b'{"data}": "something}"}'
+        assert remainder == b"remainder"
+
+    def test____raw_parse____object_frame____whitespaces(self) -> None:
+        # Arrange
+        consumer = _JSONParser.raw_parse(limit=DEFAULT_LIMIT)
+        next(consumer)
+
+        # Act
+        consumer.send(b'{"data": 42,\n')
+        consumer.send(b'"list": [true, false, null]\n')
+        complete, remainder = send_return(consumer, b"}\n")
+
+        # Assert
+        assert complete == b'{"data": 42,\n"list": [true, false, null]\n}\n'
+        assert remainder == b""
+
+    def test____raw_parse____list_frame(self) -> None:
+        # Arrange
+        consumer = _JSONParser.raw_parse(limit=DEFAULT_LIMIT)
+        next(consumer)
+
+        # Act
+        consumer.send(b'[{"data"')
+        consumer.send(b":42}")
+        complete, remainder = send_return(consumer, b"]remainder")
+
+        # Assert
+        assert complete == b'[{"data":42}]'
+        assert remainder == b"remainder"
+
+    def test____raw_parse___list_frame____skip_bracket_in_strings(self) -> None:
+        # Arrange
+        consumer = _JSONParser.raw_parse(limit=DEFAULT_LIMIT)
+        next(consumer)
+
+        # Act
+        complete, remainder = send_return(consumer, b'["string]", "second]"]remainder')
+
+        # Assert
+        assert complete == b'["string]", "second]"]'
+        assert remainder == b"remainder"
+
+    def test____raw_parse____list_frame____whitespaces(self) -> None:
+        # Arrange
+        consumer = _JSONParser.raw_parse(limit=DEFAULT_LIMIT)
+        next(consumer)
+
+        # Act
+        consumer.send(b'[{\n"data"')
+        consumer.send(b': 42,\n "test": true},\n')
+        consumer.send(b"null,\n")
+        consumer.send(b'"string"\n')
+        complete, remainder = send_return(consumer, b"]\n")
+
+        # Assert
+        assert complete == b'[{\n"data": 42,\n "test": true},\nnull,\n"string"\n]\n'
+        assert remainder == b""
+
+    def test____raw_parse____string_frame(self) -> None:
+        # Arrange
+        consumer = _JSONParser.raw_parse(limit=DEFAULT_LIMIT)
+        next(consumer)
+
+        # Act
+        consumer.send(b'"data{')
+        consumer.send(b"}")
+        complete, remainder = send_return(consumer, b'"remainder')
+
+        # Assert
+        assert complete == b'"data{}"'
+        assert remainder == b"remainder"
+
+    def test____raw_parse____string_frame____escaped_quote(self) -> None:
+        # Arrange
+        consumer = _JSONParser.raw_parse(limit=DEFAULT_LIMIT)
+        next(consumer)
+
+        # Act
+        consumer.send(b'"data')
+        consumer.send(b'\\"')
+        complete, remainder = send_return(consumer, b'"remainder')
+
+        # Assert
+        assert complete == b'"data\\""'
+        assert remainder == b"remainder"
+
+    def test____raw_parse____string_frame____escape_character(self) -> None:
+        # Arrange
+        consumer = _JSONParser.raw_parse(limit=DEFAULT_LIMIT)
+        next(consumer)
+
+        # Act
+        consumer.send(b'"data')
+        consumer.send(b"\\\\")
+        complete, remainder = send_return(consumer, b'"remainder')
+
+        # Assert
+        assert complete == b'"data\\\\"'
+        assert remainder == b"remainder"
+
+    def test____raw_parse____plain_value(self) -> None:
+        # Arrange
+        consumer = _JSONParser.raw_parse(limit=DEFAULT_LIMIT)
+        next(consumer)
+
+        # Act
+        consumer.send(b"tr")
+        complete, remainder = send_return(consumer, b"ue\nremainder")
+
+        # Assert
+        assert complete == b"true\n"
+        assert remainder == b"remainder"
+
+    def test____raw_parse____plain_value____first_character_is_invalid(self) -> None:
+        # Arrange
+        consumer = _JSONParser.raw_parse(limit=DEFAULT_LIMIT)
+        next(consumer)
+
+        # Act
+        complete, remainder = send_return(consumer, b"\0")
+
+        # Assert
+        assert complete == b"\0"
+        assert remainder == b""
+
+    @pytest.mark.parametrize("limit", [0, -42], ids=lambda p: f"limit=={p}")
+    def test____raw_parse____invalid_limit(self, limit: int) -> None:
+        # Arrange
+        consumer = _JSONParser.raw_parse(limit=limit)
+
+        # Act & Assert
+        with pytest.raises(ValueError, match=r"^limit must be a positive integer$"):
+            next(consumer)
+
+    @pytest.mark.parametrize(
+        ["start_frame", "end_frame"],
+        [
+            pytest.param(b'{"data":', b'"something"}', id="object frame"),
+            pytest.param(b'["data",', b'"something"]', id="list frame"),
+            pytest.param(b'"data', b' something"', id="string frame"),
+            pytest.param(b"123", b"45\n", id="plain value"),
+        ],
+    )
+    @pytest.mark.parametrize("end_frame_found", [False, True], ids=lambda p: f"end_frame_found=={p}")
+    def test____raw_parse____reached_limit(self, start_frame: bytes, end_frame: bytes, end_frame_found: bool) -> None:
+        # Arrange
+        consumer = _JSONParser.raw_parse(limit=2)
+        next(consumer)
+        data_to_test = start_frame
+        if end_frame_found:
+            data_to_test += end_frame
+
+        # Act
+        with pytest.raises(LimitOverrunError) as exc_info:
+            consumer.send(data_to_test)
+
+        # Assert
+        if end_frame_found:
+            assert str(exc_info.value) == "JSON object's end frame is found, but chunk is longer than limit"
+        else:
+            assert str(exc_info.value) == "JSON object's end frame is not found, and chunk exceed the limit"
