@@ -17,14 +17,14 @@
 from __future__ import annotations
 
 __all__ = [
-    "ConnectedUDPSocketTransport",
-    "SSLSocketTransport",
-    "TCPSocketTransport",
+    "SSLStreamTransport",
+    "SocketDatagramTransport",
+    "SocketStreamTransport",
 ]
 
 import selectors
 import socket
-from collections.abc import Callable
+from collections.abc import Callable, MutableMapping
 from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar
 
 try:
@@ -35,8 +35,12 @@ else:
     _ssl_module = ssl
     del ssl
 
-from ....tools._utils import check_socket_no_ssl as _check_socket_no_ssl, is_ssl_socket as _is_ssl_socket
-from ....tools.constants import MAX_DATAGRAM_BUFSIZE, SSL_HANDSHAKE_TIMEOUT, SSL_SHUTDOWN_TIMEOUT
+from ....tools._utils import (
+    check_socket_no_ssl as _check_socket_no_ssl,
+    is_ssl_socket as _is_ssl_socket,
+    validate_timeout_delay as _validate_timeout_delay,
+)
+from ....tools.constants import MAX_DATAGRAM_BUFSIZE
 from ....tools.socket import SocketProxy
 from .base_selector import SelectorDatagramTransport, SelectorStreamTransport, WouldBlockOnRead, WouldBlockOnWrite
 
@@ -47,12 +51,23 @@ _P = ParamSpec("_P")
 _R = TypeVar("_R")
 
 
-def _fill_extra_info(sock: socket.socket, extra: dict[str, Any]) -> None:
+def _fill_extra_info(sock: socket.socket, extra: MutableMapping[str, Any]) -> None:
     extra["socket"] = SocketProxy(sock)
-    extra["sockname"] = sock.getsockname()
-    extra["peername"] = sock.getpeername()
+    try:
+        extra["sockname"] = sock.getsockname()
+    except OSError:
+        extra["sockname"] = None
+    try:
+        extra["peername"] = sock.getpeername()
+    except OSError:
+        extra["peername"] = None
     if _is_ssl_socket(sock):
-        extra["sslcontext"] = sock.context
+        extra.update(
+            sslcontext=sock.context,
+            peercert=sock.getpeercert(),
+            cipher=sock.cipher(),
+            compression=sock.compression(),
+        )
 
 
 def _close_stream_socket(sock: socket.socket) -> None:
@@ -64,8 +79,8 @@ def _close_stream_socket(sock: socket.socket) -> None:
         sock.close()
 
 
-class TCPSocketTransport(SelectorStreamTransport):
-    __slots__ = ("__socket", "__extra")
+class SocketStreamTransport(SelectorStreamTransport):
+    __slots__ = ("__socket",)
 
     def __init__(
         self,
@@ -82,8 +97,7 @@ class TCPSocketTransport(SelectorStreamTransport):
         self.__socket: socket.socket = sock
         self.__socket.setblocking(False)
 
-        self.__extra: dict[str, Any] = {}
-        _fill_extra_info(self.__socket, self.__extra)
+        _fill_extra_info(self.__socket, self._extra)
 
     def is_closed(self) -> bool:
         return self.__socket.fileno() < 0
@@ -109,31 +123,27 @@ class TCPSocketTransport(SelectorStreamTransport):
     def fileno(self) -> int:
         return self.__socket.fileno()
 
-    def get_extra_info(self, name: str, default: Any = None) -> Any:
-        try:
-            return self.__extra[name]
-        except KeyError:
-            pass
-        return super().get_extra_info(name, default)
 
-
-class SSLSocketTransport(SelectorStreamTransport):
-    __slots__ = ("__socket", "__extra", "__ssl_shutdown_timeout")
+class SSLStreamTransport(SelectorStreamTransport):
+    __slots__ = ("__socket", "__ssl_shutdown_timeout")
 
     def __init__(
         self,
         sock: socket.socket,
         ssl_context: _typing_ssl.SSLContext,
+        ssl_handshake_timeout: float,
+        ssl_shutdown_timeout: float,
         retry_interval: float,
         *,
         server_side: bool | None = None,
         server_hostname: str | None = None,
-        ssl_handshake_timeout: float | None = None,
-        ssl_shutdown_timeout: float | None = None,
         standard_compatible: bool = True,
         selector_factory: Callable[[], selectors.BaseSelector] | None = None,
     ) -> None:
         super().__init__(retry_interval=retry_interval, selector_factory=selector_factory)
+
+        ssl_handshake_timeout = _validate_timeout_delay(ssl_handshake_timeout, positive_check=True)
+        ssl_shutdown_timeout = _validate_timeout_delay(ssl_shutdown_timeout, positive_check=True)
 
         _check_socket_no_ssl(sock)
         if sock.type != socket.SOCK_STREAM:
@@ -149,16 +159,9 @@ class SSLSocketTransport(SelectorStreamTransport):
         )
         self.__socket.setblocking(False)
 
-        if ssl_handshake_timeout is None:
-            ssl_handshake_timeout = SSL_HANDSHAKE_TIMEOUT
-
-        if ssl_shutdown_timeout is None:
-            ssl_shutdown_timeout = SSL_SHUTDOWN_TIMEOUT
-
         self._retry(lambda: self._try_ssl_method(self.__socket.do_handshake, block=False), ssl_handshake_timeout)
 
-        self.__extra: dict[str, Any] = {}
-        _fill_extra_info(self.__socket, self.__extra)
+        _fill_extra_info(self.__socket, self._extra)
 
         self.__ssl_shutdown_timeout: float = ssl_shutdown_timeout
 
@@ -180,18 +183,11 @@ class SSLSocketTransport(SelectorStreamTransport):
         return self._try_ssl_method(self.__socket.send, data)
 
     def send_eof(self) -> None:
-        # ssl.SSLSocket.shutdown() would shutdown both read and write streams
+        # ssl.SSLSocket.shutdown() would close both read and write streams
         raise NotImplementedError("SSL/TLS API does not support sending EOF.")
 
     def fileno(self) -> int:
         return self.__socket.fileno()
-
-    def get_extra_info(self, name: str, default: Any = None) -> Any:
-        try:
-            return self.__extra[name]
-        except KeyError:
-            pass
-        return super().get_extra_info(name, default)
 
     @staticmethod
     def _try_ssl_method(socket_method: Callable[_P, _R], /, *args: _P.args, **kwargs: _P.kwargs) -> _R:
@@ -204,17 +200,23 @@ class SSLSocketTransport(SelectorStreamTransport):
             raise WouldBlockOnWrite from None
 
 
-class ConnectedUDPSocketTransport(SelectorDatagramTransport):
-    __slots__ = ("__socket", "__extra")
+class SocketDatagramTransport(SelectorDatagramTransport):
+    __slots__ = ("__socket", "__max_datagram_size")
 
     def __init__(
         self,
         sock: socket.socket,
         retry_interval: float,
         *,
+        max_datagram_size: int = MAX_DATAGRAM_BUFSIZE,
         selector_factory: Callable[[], selectors.BaseSelector] | None = None,
     ) -> None:
         super().__init__(retry_interval=retry_interval, selector_factory=selector_factory)
+
+        if max_datagram_size <= 0:
+            raise ValueError("max_datagram_size must not be <= 0")
+
+        self.__max_datagram_size: int = max_datagram_size
 
         _check_socket_no_ssl(sock)
         if sock.type != socket.SOCK_DGRAM:
@@ -222,8 +224,7 @@ class ConnectedUDPSocketTransport(SelectorDatagramTransport):
         self.__socket: socket.socket = sock
         self.__socket.setblocking(False)
 
-        self.__extra: dict[str, Any] = {}
-        _fill_extra_info(self.__socket, self.__extra)
+        _fill_extra_info(self.__socket, self._extra)
 
     def is_closed(self) -> bool:
         return self.__socket.fileno() < 0
@@ -233,7 +234,7 @@ class ConnectedUDPSocketTransport(SelectorDatagramTransport):
 
     def recv_noblock(self) -> bytes:
         try:
-            return self.__socket.recv(MAX_DATAGRAM_BUFSIZE)
+            return self.__socket.recv(self.__max_datagram_size)
         except (BlockingIOError, InterruptedError):
             raise WouldBlockOnRead from None
 
@@ -245,10 +246,3 @@ class ConnectedUDPSocketTransport(SelectorDatagramTransport):
 
     def fileno(self) -> int:
         return self.__socket.fileno()
-
-    def get_extra_info(self, name: str, default: Any = None) -> Any:
-        try:
-            return self.__extra[name]
-        except KeyError:
-            pass
-        return super().get_extra_info(name, default)

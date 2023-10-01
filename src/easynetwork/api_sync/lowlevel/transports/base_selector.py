@@ -37,39 +37,54 @@ _R = TypeVar("_R")
 
 
 class WouldBlockOnRead(Exception):
-    pass
+    """The operation would block when reading the pipe."""
 
 
 class WouldBlockOnWrite(Exception):
-    pass
+    """The operation would block when writing on the pipe."""
 
 
 class SelectorBaseTransport(BaseTransport):
+    """
+    Base class for transports using the :mod:`selectors` module for blocking operations polling.
+    """
+
     __slots__ = (
-        "__retry_interval",
-        "__selector_factory",
+        "_retry_interval",
+        "_selector_factory",
     )
 
     def __init__(self, retry_interval: float, selector_factory: Callable[[], selectors.BaseSelector] | None = None) -> None:
+        """
+        Parameters:
+            retry_interval: The maximum wait time to wait for a blocking operation before retrying.
+                            Set it to :data:`math.inf` to disable this feature.
+            selector_factory: If given, the callable object to use to create a new :class:`selectors.BaseSelector` instance.
+                              Otherwise, the selector used by default is:
+
+                              * :class:`selectors.PollSelector` on Unix platforms
+
+                              * :class:`selectors.SelectSelector` on Windows.
+        """
         super().__init__()
 
         if selector_factory is None:
             selector_factory = getattr(selectors, "PollSelector", selectors.SelectSelector)
-        self.__selector_factory: Callable[[], selectors.BaseSelector] = selector_factory
+        self._selector_factory: Callable[[], selectors.BaseSelector] = selector_factory
 
-        self.__retry_interval: float = _validate_timeout_delay(retry_interval, positive_check=False)
-        if self.__retry_interval <= 0:
+        self._retry_interval: float = _validate_timeout_delay(retry_interval, positive_check=False)
+        if self._retry_interval <= 0:
             raise ValueError("retry_interval must be a strictly positive float")
 
     @abstractmethod
     def fileno(self) -> int:
+        """
+        Returns the transport's file descriptor, or ``-1`` if the transport is closed.
+
+        Returns:
+            the opened file descriptor.
+        """
         raise NotImplementedError
-
-    def wait_readable(self, timeout: float) -> bool:
-        return self.__poll(selectors.EVENT_READ, timeout)
-
-    def wait_writable(self, timeout: float) -> bool:
-        return self.__poll(selectors.EVENT_WRITE, timeout)
 
     def _retry(
         self,
@@ -78,9 +93,9 @@ class SelectorBaseTransport(BaseTransport):
     ) -> _R:
         perf_counter = time.perf_counter  # pull function to local namespace
         timeout = _validate_timeout_delay(timeout, positive_check=True)
-        retry_interval = self.__retry_interval
+        retry_interval = self._retry_interval
         event: int
-        with self.__selector_factory() as selector:
+        with self._selector_factory() as selector:
             while True:
                 try:
                     return callback()
@@ -115,68 +130,122 @@ class SelectorBaseTransport(BaseTransport):
                         finally:
                             _end = perf_counter()
                             timeout -= _end - _start
-                except (OSError, ValueError):
-                    # There will be a OSError when using this file descriptor afterward.
-                    available = True
-                else:
-                    available = bool(ready_list)
-                    del ready_list
                 finally:
                     selector.unregister(selector_key.fileobj)
                     del selector_key
+                available = bool(ready_list)
+                del ready_list
                 if not available:
                     if not is_retry_interval:
                         break
         raise _error_from_errno(_errno.ETIMEDOUT)
 
-    def __poll(self, events: int, timeout: float) -> bool:
-        with self.__selector_factory() as selector:
-            try:
-                selector.register(self.fileno(), events)
-            except ValueError as exc:
-                raise _error_from_errno(_errno.EBADF) from exc
-            try:
-                if timeout == math.inf:
-                    ready_list = selector.select()
-                else:
-                    ready_list = selector.select(timeout)
-            except (OSError, ValueError):
-                # There will be a OSError when using this file descriptor afterward.
-                return True
-            return bool(ready_list)
-
 
 class SelectorStreamTransport(SelectorBaseTransport, StreamTransport):
-    __slots__ = ()
+    """
+    A continous stream data transport using the :mod:`selectors` module for blocking operations polling.
+    """
 
-    @abstractmethod
-    def send_noblock(self, data: bytes | bytearray | memoryview) -> int:
-        raise NotImplementedError
+    __slots__ = ()
 
     @abstractmethod
     def recv_noblock(self, bufsize: int) -> bytes:
+        """
+        Read and return up to `bufsize` bytes.
+
+        Parameters:
+            bufsize: the maximum buffer size.
+
+        Raises:
+            WouldBlockOnRead: the operation would block when reading the pipe.
+            WouldBlockOnWrite: the operation would block when writing on the pipe.
+
+        Returns:
+            some :class:`bytes`.
+
+            If `bufsize` is greater than zero and an empty byte buffer is returned, this indicates an EOF.
+        """
         raise NotImplementedError
 
-    def send(self, data: bytes | bytearray | memoryview, timeout: float) -> int:
-        return self._retry(lambda: self.send_noblock(data), timeout)
+    @abstractmethod
+    def send_noblock(self, data: bytes | bytearray | memoryview) -> int:
+        """
+        Send the `data` bytes to the remote peer.
+
+        Parameters:
+            data: the bytes to send.
+
+        Raises:
+            WouldBlockOnRead: the operation would block when reading the pipe.
+            WouldBlockOnWrite: the operation would block when writing on the pipe.
+        """
+        raise NotImplementedError
 
     def recv(self, bufsize: int, timeout: float) -> bytes:
+        """
+        Read and return up to `bufsize` bytes.
+
+        The default implementation will retry to call :meth:`recv_noblock` until it succeeds under the given `timeout`.
+        """
         return self._retry(lambda: self.recv_noblock(bufsize), timeout)
+
+    def send(self, data: bytes | bytearray | memoryview, timeout: float) -> int:
+        """
+        Send the `data` bytes to the remote peer.
+
+        The default implementation will retry to call :meth:`send_noblock` until it succeeds under the given `timeout`.
+        """
+        return self._retry(lambda: self.send_noblock(data), timeout)
 
 
 class SelectorDatagramTransport(SelectorBaseTransport, DatagramTransport):
+    """
+    A transport of unreliable packets of data using the :mod:`selectors` module for blocking operations polling.
+    """
+
     __slots__ = ()
 
     @abstractmethod
-    def send_noblock(self, data: bytes | bytearray | memoryview) -> None:
+    def recv_noblock(self) -> bytes:
+        """
+        Read and return the next available packet.
+
+        Raises:
+            WouldBlockOnRead: the operation would block when reading the pipe.
+            WouldBlockOnWrite: the operation would block when writing on the pipe.
+
+        Returns:
+            some :class:`bytes`.
+        """
         raise NotImplementedError
 
     @abstractmethod
-    def recv_noblock(self) -> bytes:
+    def send_noblock(self, data: bytes | bytearray | memoryview) -> None:
+        """
+        Send the `data` bytes to the remote peer.
+
+        Parameters:
+            data: the bytes to send.
+            timeout: the allowed time (in seconds) for blocking operations. Can be set to :data:`math.inf`.
+
+        Raises:
+            WouldBlockOnRead: the operation would block when reading the pipe.
+            WouldBlockOnWrite: the operation would block when writing on the pipe.
+        """
         raise NotImplementedError
 
-    def send(self, data: bytes | bytearray | memoryview, timeout: float) -> None:
-        return self._retry(lambda: self.send_noblock(data), timeout)
-
     def recv(self, timeout: float) -> bytes:
+        """
+        Read and return the next available packet.
+
+        The default implementation will retry to call :meth:`recv_noblock` until it succeeds under the given `timeout`.
+        """
         return self._retry(self.recv_noblock, timeout)
+
+    def send(self, data: bytes | bytearray | memoryview, timeout: float) -> None:
+        """
+        Send the `data` bytes to the remote peer.
+
+        The default implementation will retry to call :meth:`send_noblock` until it succeeds under the given `timeout`.
+        """
+        return self._retry(lambda: self.send_noblock(data), timeout)
