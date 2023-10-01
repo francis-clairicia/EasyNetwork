@@ -10,6 +10,7 @@ import pytest
 ALL_MODULES_WHICH_USE_SSL_MODULE: tuple[tuple[str, str], ...] = (
     ("easynetwork.api_async.client.tcp", "_ssl_module"),
     ("easynetwork.api_sync.client.tcp", "_ssl_module"),
+    ("easynetwork.api_sync.lowlevel.transports.socket", "_ssl_module"),
     ("easynetwork.tools._utils", "ssl"),
     ("easynetwork_asyncio.backend", "ssl"),
 )
