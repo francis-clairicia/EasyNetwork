@@ -160,7 +160,7 @@ class CancelScope(AbstractCancelScope):
         self.__cancel_called: bool = False
         self.__cancelled_caught: bool = False
         self.__deadline: float = math.inf
-        self.__timeout_handle: asyncio.TimerHandle | None = None
+        self.__timeout_handle: asyncio.Handle | None = None
         self.reschedule(deadline)
 
     def __repr__(self) -> str:
@@ -278,9 +278,9 @@ class CancelScope(AbstractCancelScope):
         if self.__deadline != math.inf:
             loop = asyncio.get_running_loop()
             if loop.time() >= self.__deadline:
-                self.cancel()
+                self.__timeout_handle = loop.call_soon(self.cancel)
             else:
-                self.__timeout_handle = loop.call_at(self.__deadline, self.__timeout)
+                self.__timeout_handle = loop.call_at(self.__deadline, self.cancel)
 
     @classmethod
     def _current_task_scope(cls, task: asyncio.Task[Any]) -> CancelScope | None:
