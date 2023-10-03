@@ -156,7 +156,7 @@ class SSLStreamTransport(SelectorStreamTransport):
         )
         self.__socket.setblocking(False)
 
-        self._retry(lambda: self._try_ssl_method(self.__socket.do_handshake, block=False), ssl_handshake_timeout)
+        self._retry(lambda: self._try_ssl_method(self.__socket.do_handshake), ssl_handshake_timeout)
 
         _fill_extra_info(self.__socket, self._extra)
 
@@ -167,8 +167,8 @@ class SSLStreamTransport(SelectorStreamTransport):
 
     def close(self) -> None:
         try:
-            _close_stream_socket(self._retry(lambda: self._try_ssl_method(self.__socket.unwrap), self.__ssl_shutdown_timeout))
-        except OSError:
+            self._retry(lambda: self._try_ssl_method(self.__socket.unwrap), self.__ssl_shutdown_timeout)
+        except (OSError, ValueError):
             pass
         finally:
             _close_stream_socket(self.__socket)
