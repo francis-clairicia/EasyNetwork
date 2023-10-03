@@ -35,10 +35,8 @@ class BaseTransport(metaclass=ABCMeta):
 
     __slots__ = ("_extra", "__weakref__")
 
-    def __init__(self, extra: MutableMapping[str, Any] | None = None):
-        if extra is None:
-            extra = {}
-        self._extra: MutableMapping[str, Any] = extra
+    def __init__(self) -> None:
+        self._extra: MutableMapping[str, Any] = {}
 
     @abstractmethod
     def close(self) -> None:
@@ -163,21 +161,20 @@ class StreamTransport(BaseTransport):
         with memoryview(data) as data:
             nb_bytes_to_send = len(data)
             if nb_bytes_to_send == 0:
-                self.send(data, timeout)
+                sent = self.send(data, timeout)
+                if sent < 0:
+                    raise RuntimeError("transport.send() returned a negative value")
                 return
             while total_sent < nb_bytes_to_send:
                 with data[total_sent:] as buffer:
                     _start = perf_counter()
-                    sent: int = self.send(buffer, timeout)
+                    sent = self.send(buffer, timeout)
                     _end = perf_counter()
                 if sent < 0:
                     raise RuntimeError("transport.send() returned a negative value")
                 total_sent += sent
-                elapsed = _end - _start
-                if elapsed >= timeout:
-                    timeout = 0.0
-                else:
-                    timeout -= elapsed
+                timeout -= _end - _start
+                timeout = max(timeout, 0.0)
 
     def send_all_from_iterable(self, iterable_of_data: Iterable[bytes | bytearray | memoryview], timeout: float) -> None:
         """

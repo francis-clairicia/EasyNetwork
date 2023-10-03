@@ -39,9 +39,21 @@ _R = TypeVar("_R")
 class WouldBlockOnRead(Exception):
     """The operation would block when reading the pipe."""
 
+    def __init__(self, fileno: int) -> None:
+        super().__init__(fileno)
+
+        self.fileno: int = fileno
+        """The file descriptor to wait for."""
+
 
 class WouldBlockOnWrite(Exception):
     """The operation would block when writing on the pipe."""
+
+    def __init__(self, fileno: int) -> None:
+        super().__init__(fileno)
+
+        self.fileno: int = fileno
+        """The file descriptor to wait for."""
 
 
 class SelectorBaseTransport(BaseTransport):
@@ -62,7 +74,7 @@ class SelectorBaseTransport(BaseTransport):
             selector_factory: If given, the callable object to use to create a new :class:`selectors.BaseSelector` instance.
                               Otherwise, the selector used by default is:
 
-                              * :class:`selectors.PollSelector` on Unix platforms
+                              * :class:`selectors.PollSelector` on Unix platforms.
 
                               * :class:`selectors.SelectSelector` on Windows.
         """
@@ -76,16 +88,6 @@ class SelectorBaseTransport(BaseTransport):
         if self._retry_interval <= 0:
             raise ValueError("retry_interval must be a strictly positive float")
 
-    @abstractmethod
-    def fileno(self) -> int:
-        """
-        Returns the transport's file descriptor, or ``-1`` if the transport is closed.
-
-        Returns:
-            the opened file descriptor.
-        """
-        raise NotImplementedError
-
     def _retry(
         self,
         callback: Callable[[], _R],
@@ -95,49 +97,44 @@ class SelectorBaseTransport(BaseTransport):
         timeout = _validate_timeout_delay(timeout, positive_check=True)
         retry_interval = self._retry_interval
         event: int
-        with self._selector_factory() as selector:
-            while True:
-                try:
-                    return callback()
-                except WouldBlockOnRead:
-                    event = selectors.EVENT_READ
-                except WouldBlockOnWrite:
-                    event = selectors.EVENT_WRITE
-                if timeout <= 0:
-                    break
-                is_retry_interval: bool
-                wait_time: float
-                if timeout <= retry_interval:
-                    is_retry_interval = False
-                    wait_time = timeout
-                else:
-                    is_retry_interval = True
-                    wait_time = retry_interval
+        fileno: int
+        while True:
+            try:
+                return callback()
+            except WouldBlockOnRead as exc:
+                event = selectors.EVENT_READ
+                fileno = exc.fileno
+            except WouldBlockOnWrite as exc:
+                event = selectors.EVENT_WRITE
+                fileno = exc.fileno
+            if timeout <= 0:
+                break
+            is_retry_interval: bool
+            wait_time: float
+            if timeout <= retry_interval:
+                is_retry_interval = False
+                wait_time = timeout
+            else:
+                is_retry_interval = True
+                wait_time = retry_interval
                 available: bool
+            with self._selector_factory() as selector:
                 try:
-                    selector_key = selector.register(self.fileno(), event)
+                    selector.register(fileno, event)
                 except ValueError as exc:
                     raise _error_from_errno(_errno.EBADF) from exc
-                try:
-                    if wait_time == math.inf:
-                        ready_list = selector.select()
-                        if not ready_list:
-                            raise RuntimeError("timeout error with infinite timeout")
-                    else:
-                        _start = perf_counter()
-                        try:
-                            ready_list = selector.select(wait_time)
-                        finally:
-                            _end = perf_counter()
-                            timeout -= _end - _start
-                finally:
-                    selector.unregister(selector_key.fileobj)
-                    del selector_key
-                available = bool(ready_list)
-                del ready_list
-                if not available:
-                    if not is_retry_interval:
-                        break
+                if wait_time == math.inf:
+                    available = bool(selector.select())
+                    if not available:
+                        raise RuntimeError("timeout error with infinite timeout")
+                else:
+                    _start = perf_counter()
+                    available = bool(selector.select(wait_time))
+                    _end = perf_counter()
+                    timeout -= _end - _start
+                    if not available:
+                        if not is_retry_interval:
+                            break
         raise _error_from_errno(_errno.ETIMEDOUT)
 
 
@@ -240,7 +237,7 @@ class SelectorDatagramTransport(SelectorBaseTransport, DatagramTransport):
 
         The default implementation will retry to call :meth:`recv_noblock` until it succeeds under the given `timeout`.
         """
-        return self._retry(self.recv_noblock, timeout)
+        return self._retry(lambda: self.recv_noblock(), timeout)
 
     def send(self, data: bytes | bytearray | memoryview, timeout: float) -> None:
         """

@@ -109,19 +109,16 @@ class SocketStreamTransport(SelectorStreamTransport):
         try:
             return self.__socket.recv(bufsize)
         except (BlockingIOError, InterruptedError):
-            raise WouldBlockOnRead from None
+            raise WouldBlockOnRead(self.__socket.fileno()) from None
 
     def send_noblock(self, data: bytes | bytearray | memoryview) -> int:
         try:
             return self.__socket.send(data)
         except (BlockingIOError, InterruptedError):
-            raise WouldBlockOnWrite from None
+            raise WouldBlockOnWrite(self.__socket.fileno()) from None
 
     def send_eof(self) -> None:
         self.__socket.shutdown(socket.SHUT_WR)
-
-    def fileno(self) -> int:
-        return self.__socket.fileno()
 
 
 class SSLStreamTransport(SelectorStreamTransport):
@@ -186,18 +183,15 @@ class SSLStreamTransport(SelectorStreamTransport):
         # ssl.SSLSocket.shutdown() would close both read and write streams
         raise NotImplementedError("SSL/TLS API does not support sending EOF.")
 
-    def fileno(self) -> int:
-        return self.__socket.fileno()
-
-    @staticmethod
-    def _try_ssl_method(socket_method: Callable[_P, _R], /, *args: _P.args, **kwargs: _P.kwargs) -> _R:
-        assert _ssl_module is not None, "stdlib ssl module not available"  # nosec assert_used
+    def _try_ssl_method(self, socket_method: Callable[_P, _R], /, *args: _P.args, **kwargs: _P.kwargs) -> _R:
+        if _ssl_module is None:
+            raise RuntimeError("stdlib ssl module not available")
         try:
             return socket_method(*args, **kwargs)
         except (_ssl_module.SSLWantReadError, _ssl_module.SSLSyscallError):
-            raise WouldBlockOnRead from None
+            raise WouldBlockOnRead(self.__socket.fileno()) from None
         except _ssl_module.SSLWantWriteError:
-            raise WouldBlockOnWrite from None
+            raise WouldBlockOnWrite(self.__socket.fileno()) from None
 
 
 class SocketDatagramTransport(SelectorDatagramTransport):
@@ -236,13 +230,10 @@ class SocketDatagramTransport(SelectorDatagramTransport):
         try:
             return self.__socket.recv(self.__max_datagram_size)
         except (BlockingIOError, InterruptedError):
-            raise WouldBlockOnRead from None
+            raise WouldBlockOnRead(self.__socket.fileno()) from None
 
     def send_noblock(self, data: bytes | bytearray | memoryview) -> None:
         try:
             self.__socket.send(data)
         except (BlockingIOError, InterruptedError):
-            raise WouldBlockOnWrite from None
-
-    def fileno(self) -> int:
-        return self.__socket.fileno()
+            raise WouldBlockOnWrite(self.__socket.fileno()) from None
