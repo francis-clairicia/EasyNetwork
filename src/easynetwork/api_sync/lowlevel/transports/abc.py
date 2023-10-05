@@ -108,6 +108,7 @@ class StreamTransport(BaseTransport):
         Raises:
             ValueError: Negative `bufsize`.
             ValueError: Negative `timeout`.
+            TimeoutError: Operation timed out.
 
         Returns:
             some :class:`bytes`.
@@ -127,6 +128,7 @@ class StreamTransport(BaseTransport):
 
         Raises:
             ValueError: Negative `timeout`.
+            TimeoutError: Operation timed out.
 
         Returns:
             the number of sent bytes.
@@ -154,6 +156,7 @@ class StreamTransport(BaseTransport):
 
         Raises:
             ValueError: Negative `timeout`.
+            TimeoutError: Operation timed out.
         """
 
         perf_counter = time.perf_counter  # pull function to local namespace
@@ -186,6 +189,10 @@ class StreamTransport(BaseTransport):
         Parameters:
             iterable_of_data: An :term:`iterable` yielding the bytes to send.
             timeout: the allowed time (in seconds) for blocking operations. Can be set to :data:`math.inf`.
+
+        Raises:
+            ValueError: Negative `timeout`.
+            TimeoutError: Operation timed out.
         """
         data = b"".join(iterable_of_data)
         return self.send_all(data, timeout)
@@ -208,6 +215,7 @@ class DatagramTransport(BaseTransport):
 
         Raises:
             ValueError: Negative `timeout`.
+            TimeoutError: Operation timed out.
 
         Returns:
             some :class:`bytes`.
@@ -225,5 +233,6 @@ class DatagramTransport(BaseTransport):
 
         Raises:
             ValueError: Negative `timeout`.
+            TimeoutError: Operation timed out.
         """
         raise NotImplementedError

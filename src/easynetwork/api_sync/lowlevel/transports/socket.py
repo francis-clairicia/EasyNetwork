@@ -135,6 +135,7 @@ class SSLStreamTransport(SelectorStreamTransport):
         server_side: bool | None = None,
         server_hostname: str | None = None,
         standard_compatible: bool = True,
+        session: _typing_ssl.SSLSession | None = None,
         selector_factory: Callable[[], selectors.BaseSelector] | None = None,
     ) -> None:
         super().__init__(retry_interval=retry_interval, selector_factory=selector_factory)
@@ -153,10 +154,15 @@ class SSLStreamTransport(SelectorStreamTransport):
             server_hostname=server_hostname,
             suppress_ragged_eofs=not standard_compatible,
             do_handshake_on_connect=False,
+            session=session,
         )
         self.__socket.setblocking(False)
 
-        self._retry(lambda: self._try_ssl_method(self.__socket.do_handshake), ssl_handshake_timeout)
+        try:
+            self._retry(lambda: self._try_ssl_method(self.__socket.do_handshake), ssl_handshake_timeout)
+        except BaseException:
+            self.__socket.close()
+            raise
 
         _fill_extra_info(self.__socket, self._extra)
 
