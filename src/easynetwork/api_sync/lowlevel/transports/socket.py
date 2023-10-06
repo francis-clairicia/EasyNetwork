@@ -35,11 +35,7 @@ else:
     _ssl_module = ssl
     del ssl
 
-from ....tools._utils import (
-    check_socket_no_ssl as _check_socket_no_ssl,
-    is_ssl_socket as _is_ssl_socket,
-    validate_timeout_delay as _validate_timeout_delay,
-)
+from ....tools._utils import check_socket_no_ssl as _check_socket_no_ssl, validate_timeout_delay as _validate_timeout_delay
 from ....tools.constants import MAX_DATAGRAM_BUFSIZE
 from ....tools.socket import SocketProxy
 from .base_selector import SelectorDatagramTransport, SelectorStreamTransport, WouldBlockOnRead, WouldBlockOnWrite
@@ -51,23 +47,10 @@ _P = ParamSpec("_P")
 _R = TypeVar("_R")
 
 
-def _fill_extra_info(sock: socket.socket, extra: MutableMapping[str, Any]) -> None:
-    extra["socket"] = SocketProxy(sock)
-    try:
-        extra["sockname"] = sock.getsockname()
-    except OSError:
-        extra["sockname"] = None
-    try:
-        extra["peername"] = sock.getpeername()
-    except OSError:
-        extra["peername"] = None
-    if _is_ssl_socket(sock):
-        extra.update(
-            sslcontext=sock.context,
-            peercert=sock.getpeercert(),
-            cipher=sock.cipher(),
-            compression=sock.compression(),
-        )
+def _fill_extra_info(sock: socket.socket, extra: MutableMapping[str, Callable[[], Any]]) -> None:
+    extra["socket"] = lambda: SocketProxy(sock)
+    extra["sockname"] = sock.getsockname
+    extra["peername"] = sock.getpeername
 
 
 def _close_stream_socket(sock: socket.socket) -> None:
@@ -165,6 +148,12 @@ class SSLStreamTransport(SelectorStreamTransport):
             raise
 
         _fill_extra_info(self.__socket, self._extra)
+        self._extra.update(
+            sslcontext=lambda: self.__socket.context,
+            peercert=self.__socket.getpeercert,
+            cipher=self.__socket.cipher,
+            compression=self.__socket.compression,
+        )
 
         self.__ssl_shutdown_timeout: float = ssl_shutdown_timeout
 

@@ -24,7 +24,7 @@ __all__ = [
 
 import time
 from abc import ABCMeta, abstractmethod
-from collections.abc import Iterable, MutableMapping
+from collections.abc import Callable, Iterable, MutableMapping
 from typing import Any
 
 
@@ -36,7 +36,7 @@ class BaseTransport(metaclass=ABCMeta):
     __slots__ = ("_extra", "__weakref__")
 
     def __init__(self) -> None:
-        self._extra: MutableMapping[str, Any] = {}
+        self._extra: MutableMapping[str, Callable[[], Any]] = {}
 
     @abstractmethod
     def close(self) -> None:
@@ -86,7 +86,11 @@ class BaseTransport(metaclass=ABCMeta):
 
             * ``'sslcontext'``: :class:`ssl.SSLContext` instance
         """
-        return self._extra.get(name, default)
+        try:
+            extra = self._extra[name]
+        except KeyError:
+            return default
+        return extra()
 
 
 class StreamTransport(BaseTransport):

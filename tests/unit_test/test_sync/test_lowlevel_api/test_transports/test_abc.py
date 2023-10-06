@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import MutableMapping
 from typing import TYPE_CHECKING
 
 from easynetwork.api_sync.lowlevel.transports.abc import BaseTransport, StreamTransport
@@ -21,15 +20,17 @@ class TestBaseTransport:
 
     def test____get_extra_info____return_value_in_mapping(self, mock_transport: MagicMock, mocker: MockerFixture) -> None:
         # Arrange
-        mock_transport._extra = mocker.NonCallableMagicMock(spec=MutableMapping)
-        mock_transport._extra.get.return_value = mocker.sentinel.extra_value
+        callback = mocker.stub()
+        callback.return_value = mocker.sentinel.extra_value
+        mock_transport._extra = {"test": callback}
 
         # Act
         value = BaseTransport.get_extra_info(mock_transport, "test", mocker.sentinel.default_value)
+        missing = BaseTransport.get_extra_info(mock_transport, "missing", mocker.sentinel.default_value)
 
         # Assert
         assert value is mocker.sentinel.extra_value
-        mock_transport._extra.get.assert_called_once_with("test", mocker.sentinel.default_value)
+        assert missing is mocker.sentinel.default_value
 
 
 class TestStreamTransport:

@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import errno
 import math
-import os
 import ssl
 from collections.abc import Callable
 from socket import SHUT_RDWR, SHUT_WR
@@ -68,44 +66,6 @@ class TestSocketStreamTransport:
         assert isinstance(transport.get_extra_info("socket"), SocketProxy)
         assert transport.get_extra_info("sockname") == ("local_address", 11111)
         assert transport.get_extra_info("peername") == ("remote_address", 12345)
-        mock_tcp_socket.getsockname.assert_called_once_with()
-        mock_tcp_socket.getpeername.assert_called_once_with()
-        mock_tcp_socket.setblocking.assert_called_once_with(False)
-        mock_tcp_socket.settimeout.assert_not_called()
-
-    def test____dunder_init____getsockname_raises_OSError(
-        self,
-        mock_tcp_socket: MagicMock,
-    ) -> None:
-        # Arrange
-        mock_tcp_socket.getsockname.side_effect = OSError(errno.EINVAL, os.strerror(errno.EINVAL))
-
-        # Act
-        transport = SocketStreamTransport(mock_tcp_socket, math.inf)
-
-        # Assert
-        assert isinstance(transport.get_extra_info("socket"), SocketProxy)
-        assert transport.get_extra_info("sockname") is None
-        assert transport.get_extra_info("peername") == ("remote_address", 12345)
-        mock_tcp_socket.getsockname.assert_called_once_with()
-        mock_tcp_socket.getpeername.assert_called_once_with()
-        mock_tcp_socket.setblocking.assert_called_once_with(False)
-        mock_tcp_socket.settimeout.assert_not_called()
-
-    def test____dunder_init____getpeername_raises_OSError(
-        self,
-        mock_tcp_socket: MagicMock,
-    ) -> None:
-        # Arrange
-        mock_tcp_socket.getpeername.side_effect = OSError(errno.ENOTCONN, os.strerror(errno.ENOTCONN))
-
-        # Act
-        transport = SocketStreamTransport(mock_tcp_socket, math.inf)
-
-        # Assert
-        assert isinstance(transport.get_extra_info("socket"), SocketProxy)
-        assert transport.get_extra_info("sockname") == ("local_address", 11111)
-        assert transport.get_extra_info("peername") is None
         mock_tcp_socket.getsockname.assert_called_once_with()
         mock_tcp_socket.getpeername.assert_called_once_with()
         mock_tcp_socket.setblocking.assert_called_once_with(False)
@@ -406,27 +366,6 @@ class TestSSLStreamTransport:
             session=mocker.sentinel.ssl_session,
         )
 
-    def test____dunder_init____getsockname_raises_OSError(
-        self,
-        mock_tcp_socket: MagicMock,
-        mock_ssl_socket: MagicMock,
-        mock_ssl_context: MagicMock,
-    ) -> None:
-        # Arrange
-        mock_ssl_socket.getsockname.side_effect = OSError(errno.EINVAL, os.strerror(errno.EINVAL))
-
-        # Act
-        transport = SSLStreamTransport(mock_tcp_socket, mock_ssl_context, math.inf, 0, math.inf)
-
-        # Assert
-        assert isinstance(transport.get_extra_info("socket"), SocketProxy)
-        assert transport.get_extra_info("sockname") is None
-        assert transport.get_extra_info("peername") == ("remote_address", 12345)
-        mock_ssl_socket.getsockname.assert_called_once_with()
-        mock_ssl_socket.getpeername.assert_called_once_with()
-        mock_ssl_socket.setblocking.assert_called_once_with(False)
-        mock_ssl_socket.settimeout.assert_not_called()
-
     def test____dunder_init____forbid_ssl_sockets(
         self,
         mock_ssl_socket: MagicMock,
@@ -712,44 +651,6 @@ class TestSocketDatagramTransport:
         assert isinstance(transport.get_extra_info("socket"), SocketProxy)
         assert transport.get_extra_info("sockname") == ("local_address", 11111)
         assert transport.get_extra_info("peername") == ("remote_address", 12345)
-        mock_udp_socket.getsockname.assert_called_once_with()
-        mock_udp_socket.getpeername.assert_called_once_with()
-        mock_udp_socket.setblocking.assert_called_once_with(False)
-        mock_udp_socket.settimeout.assert_not_called()
-
-    def test____dunder_init____getsockname_raises_OSError(
-        self,
-        mock_udp_socket: MagicMock,
-    ) -> None:
-        # Arrange
-        mock_udp_socket.getsockname.side_effect = OSError(errno.EINVAL, os.strerror(errno.EINVAL))
-
-        # Act
-        transport = SocketDatagramTransport(mock_udp_socket, math.inf)
-
-        # Assert
-        assert isinstance(transport.get_extra_info("socket"), SocketProxy)
-        assert transport.get_extra_info("sockname") is None
-        assert transport.get_extra_info("peername") == ("remote_address", 12345)
-        mock_udp_socket.getsockname.assert_called_once_with()
-        mock_udp_socket.getpeername.assert_called_once_with()
-        mock_udp_socket.setblocking.assert_called_once_with(False)
-        mock_udp_socket.settimeout.assert_not_called()
-
-    def test____dunder_init____getpeername_raises_OSError(
-        self,
-        mock_udp_socket: MagicMock,
-    ) -> None:
-        # Arrange
-        mock_udp_socket.getpeername.side_effect = OSError(errno.ENOTCONN, os.strerror(errno.ENOTCONN))
-
-        # Act
-        transport = SocketDatagramTransport(mock_udp_socket, math.inf)
-
-        # Assert
-        assert isinstance(transport.get_extra_info("socket"), SocketProxy)
-        assert transport.get_extra_info("sockname") == ("local_address", 11111)
-        assert transport.get_extra_info("peername") is None
         mock_udp_socket.getsockname.assert_called_once_with()
         mock_udp_socket.getpeername.assert_called_once_with()
         mock_udp_socket.setblocking.assert_called_once_with(False)
