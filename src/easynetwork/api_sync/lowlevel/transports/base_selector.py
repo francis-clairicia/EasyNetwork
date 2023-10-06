@@ -117,7 +117,6 @@ class SelectorBaseTransport(BaseTransport):
             else:
                 is_retry_interval = True
                 wait_time = retry_interval
-                available: bool
             with self._selector_factory() as selector:
                 try:
                     selector.register(fileno, event)

@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Any
 from easynetwork.converter import AbstractPacketConverterComposite
 from easynetwork.protocol import DatagramProtocol, StreamProtocol
 from easynetwork.serializers.abc import AbstractIncrementalPacketSerializer, AbstractPacketSerializer
-from easynetwork.tools._stream import StreamDataConsumer, StreamDataProducer
 
 import pytest
 
@@ -166,23 +165,3 @@ def mock_stream_protocol_factory(mocker: MockerFixture) -> Callable[[], Any]:
 @pytest.fixture
 def mock_stream_protocol(mock_stream_protocol_factory: Callable[[], Any]) -> Any:
     return mock_stream_protocol_factory()
-
-
-@pytest.fixture
-def mock_stream_data_producer_factory(mocker: MockerFixture) -> Callable[[], Any]:
-    return lambda: mocker.NonCallableMagicMock(spec=StreamDataProducer)
-
-
-@pytest.fixture
-def mock_stream_data_producer(mock_stream_data_producer_factory: Callable[[], Any]) -> Any:
-    return mock_stream_data_producer_factory()
-
-
-@pytest.fixture
-def mock_stream_data_consumer_factory(mocker: MockerFixture) -> Callable[[], Any]:
-    return lambda: mocker.NonCallableMagicMock(spec=StreamDataConsumer)
-
-
-@pytest.fixture
-def mock_stream_data_consumer(mock_stream_data_consumer_factory: Callable[[], Any]) -> Any:
-    return mock_stream_data_consumer_factory()
