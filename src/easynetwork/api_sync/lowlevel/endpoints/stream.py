@@ -21,16 +21,18 @@ __all__ = ["StreamEndpoint"]
 import errno as _errno
 import math
 import time
+from collections.abc import Callable, Mapping
 from typing import Any, Generic
 
 from ...._typevars import _ReceivedPacketT, _SentPacketT
 from ....protocol import StreamProtocol
+from ....tools import typed_attr
 from ....tools._stream import StreamDataConsumer as _StreamDataConsumer, StreamDataProducer as _StreamDataProducer
 from ....tools._utils import error_from_errno as _error_from_errno
 from ..transports.abc import StreamTransport
 
 
-class StreamEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
+class StreamEndpoint(Generic[_SentPacketT, _ReceivedPacketT], typed_attr.TypedAttributeProvider):
     """
     A communication endpoint based on continuous stream data transport.
     """
@@ -94,14 +96,6 @@ class StreamEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         self.__transport.close()
         self.__consumer.clear()
         self.__producer.clear()
-
-    def get_extra_info(self, name: str, default: Any = None) -> Any:
-        """
-        Returns information about the transport or underlying resources it uses.
-
-        See :meth:`.BaseTransport.get_extra_info` for details.
-        """
-        return self.__transport.get_extra_info(name, default=default)
 
     def send_packet(self, packet: _SentPacketT, *, timeout: float | None = None) -> None:
         """
@@ -214,3 +208,7 @@ class StreamEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
     def max_recv_size(self) -> int:
         """Read buffer size. Read-only attribute."""
         return self.__max_recv_size
+
+    @property
+    def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
+        return self.__transport.extra_attributes

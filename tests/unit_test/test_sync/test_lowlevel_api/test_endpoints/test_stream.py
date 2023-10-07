@@ -199,13 +199,12 @@ class TestStreamEndpoint:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_stream_transport.get_extra_info.return_value = mocker.sentinel.extra_info
+        mock_stream_transport.extra_attributes = {mocker.sentinel.name: lambda: mocker.sentinel.extra_info}
 
         # Act
-        value = endpoint.get_extra_info(mocker.sentinel.name, default=mocker.sentinel.default)
+        value = endpoint.extra(mocker.sentinel.name)
 
         # Assert
-        mock_stream_transport.get_extra_info.assert_called_once_with(mocker.sentinel.name, default=mocker.sentinel.default)
         assert value is mocker.sentinel.extra_info
 
     def test____send_packet____send_bytes_to_transport(

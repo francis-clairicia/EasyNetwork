@@ -19,14 +19,16 @@ from __future__ import annotations
 __all__ = ["DatagramEndpoint"]
 
 import math
+from collections.abc import Callable, Mapping
 from typing import Any, Generic
 
 from ...._typevars import _ReceivedPacketT, _SentPacketT
 from ....protocol import DatagramProtocol
+from ....tools import typed_attr
 from ..transports.abc import DatagramTransport
 
 
-class DatagramEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
+class DatagramEndpoint(Generic[_SentPacketT, _ReceivedPacketT], typed_attr.TypedAttributeProvider):
     """
     A communication endpoint based on unreliable packets of data.
     """
@@ -74,14 +76,6 @@ class DatagramEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         Closes the endpoint.
         """
         self.__transport.close()
-
-    def get_extra_info(self, name: str, default: Any = None) -> Any:
-        """
-        Returns information about the transport or underlying resources it uses.
-
-        See :meth:`.BaseTransport.get_extra_info` for details.
-        """
-        return self.__transport.get_extra_info(name, default=default)
 
     def send_packet(self, packet: _SentPacketT, *, timeout: float | None = None) -> None:
         """
@@ -132,3 +126,7 @@ class DatagramEndpoint(Generic[_SentPacketT, _ReceivedPacketT]):
         protocol = self.__protocol
 
         return protocol.build_packet_from_datagram(transport.recv(timeout))
+
+    @property
+    def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
+        return self.__transport.extra_attributes

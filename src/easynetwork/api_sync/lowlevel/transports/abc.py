@@ -24,19 +24,17 @@ __all__ = [
 
 import time
 from abc import ABCMeta, abstractmethod
-from collections.abc import Callable, Iterable, MutableMapping
-from typing import Any
+from collections.abc import Iterable
+
+from ....tools import typed_attr
 
 
-class BaseTransport(metaclass=ABCMeta):
+class BaseTransport(typed_attr.TypedAttributeProvider, metaclass=ABCMeta):
     """
     Base class for a data transport.
     """
 
-    __slots__ = ("_extra", "__weakref__")
-
-    def __init__(self) -> None:
-        self._extra: MutableMapping[str, Callable[[], Any]] = {}
+    __slots__ = ("__weakref__",)
 
     @abstractmethod
     def close(self) -> None:
@@ -54,43 +52,6 @@ class BaseTransport(metaclass=ABCMeta):
             :data:`True` if the transport is closed.
         """
         raise NotImplementedError
-
-    def get_extra_info(self, name: str, default: Any = None) -> Any:
-        """
-        Returns information about the transport or underlying resources it uses.
-
-        Parameters:
-            name: a string representing the piece of transport-specific information to get.
-            default: the value to return if the information is not available, or if the transport does not support querying it
-                     on the current platform.
-
-        Categories of information that can be queried on some transports:
-        * socket:
-
-            * ``'peername'``: the remote address to which the socket is connected, result of :meth:`socket.socket.getpeername`
-              (:data:`None` on error)
-
-            * ``'socket'``: :class:`socket.socket` instance
-
-            * ``'sockname'``: the socket's own address, result of :meth:`socket.socket.getsockname`
-
-        * SSL socket:
-
-            * ``'compression'``: the compression algorithm being used as a string, or None if the connection isn't compressed;
-              result of :meth:`ssl.SSLSocket.compression`
-
-            * ``'cipher'``: a three-value tuple containing the name of the cipher being used, the version of the SSL protocol
-              that defines its use, and the number of secret bits being used; result of :meth:`ssl.SSLSocket.cipher`
-
-            * ``'peercert'``: peer certificate; result of :meth:`ssl.SSLSocket.getpeercert`
-
-            * ``'sslcontext'``: :class:`ssl.SSLContext` instance
-        """
-        try:
-            extra = self._extra[name]
-        except KeyError:
-            return default
-        return extra()
 
 
 class StreamTransport(BaseTransport):

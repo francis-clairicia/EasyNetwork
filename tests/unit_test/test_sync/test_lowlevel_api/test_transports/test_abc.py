@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from easynetwork.api_sync.lowlevel.transports.abc import BaseTransport, StreamTransport
+from easynetwork.api_sync.lowlevel.transports.abc import StreamTransport
 
 import pytest
 
@@ -10,27 +10,6 @@ if TYPE_CHECKING:
     from unittest.mock import MagicMock
 
     from pytest_mock import MockerFixture
-
-
-class TestBaseTransport:
-    @pytest.fixture
-    @staticmethod
-    def mock_transport(mocker: MockerFixture) -> MagicMock:
-        return mocker.NonCallableMagicMock(spec=BaseTransport)
-
-    def test____get_extra_info____return_value_in_mapping(self, mock_transport: MagicMock, mocker: MockerFixture) -> None:
-        # Arrange
-        callback = mocker.stub()
-        callback.return_value = mocker.sentinel.extra_value
-        mock_transport._extra = {"test": callback}
-
-        # Act
-        value = BaseTransport.get_extra_info(mock_transport, "test", mocker.sentinel.default_value)
-        missing = BaseTransport.get_extra_info(mock_transport, "missing", mocker.sentinel.default_value)
-
-        # Assert
-        assert value is mocker.sentinel.extra_value
-        assert missing is mocker.sentinel.default_value
 
 
 class TestStreamTransport:

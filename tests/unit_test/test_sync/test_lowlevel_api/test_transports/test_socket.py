@@ -9,7 +9,13 @@ from socket import SHUT_RDWR, SHUT_WR
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.api_sync.lowlevel.transports.base_selector import WouldBlockOnRead, WouldBlockOnWrite
-from easynetwork.api_sync.lowlevel.transports.socket import SocketDatagramTransport, SocketStreamTransport, SSLStreamTransport
+from easynetwork.api_sync.lowlevel.transports.socket import (
+    SocketAttribute,
+    SocketDatagramTransport,
+    SocketStreamTransport,
+    SSLStreamTransport,
+    TLSAttribute,
+)
 from easynetwork.tools.constants import MAX_DATAGRAM_BUFSIZE
 from easynetwork.tools.socket import SocketProxy
 
@@ -63,9 +69,9 @@ class TestSocketStreamTransport:
         # Assert
         assert transport._retry_interval is math.inf
         assert transport._selector_factory is mock_selector_factory
-        assert isinstance(transport.get_extra_info("socket"), SocketProxy)
-        assert transport.get_extra_info("sockname") == ("local_address", 11111)
-        assert transport.get_extra_info("peername") == ("remote_address", 12345)
+        assert isinstance(transport.extra(SocketAttribute.socket), SocketProxy)
+        assert transport.extra(SocketAttribute.sockname) == ("local_address", 11111)
+        assert transport.extra(SocketAttribute.peername) == ("remote_address", 12345)
         mock_tcp_socket.getsockname.assert_called_once_with()
         mock_tcp_socket.getpeername.assert_called_once_with()
         mock_tcp_socket.setblocking.assert_called_once_with(False)
@@ -266,17 +272,29 @@ class TestSSLStreamTransport:
         mock_ssl_socket.getpeercert.return_value = mocker.sentinel.peercert
         mock_ssl_socket.cipher.return_value = mocker.sentinel.cipher
         mock_ssl_socket.compression.return_value = mocker.sentinel.compression
+        mock_ssl_socket.version.return_value = mocker.sentinel.tls_version
         return mock_ssl_context
 
     @pytest.fixture
     @staticmethod
-    def transport(mock_tcp_socket: MagicMock, mock_ssl_socket: MagicMock, mock_ssl_context: MagicMock) -> SSLStreamTransport:
+    def standard_compatible(request: pytest.FixtureRequest) -> bool:
+        return getattr(request, "param", True)
+
+    @pytest.fixture
+    @staticmethod
+    def transport(
+        standard_compatible: bool,
+        mock_tcp_socket: MagicMock,
+        mock_ssl_socket: MagicMock,
+        mock_ssl_context: MagicMock,
+    ) -> SSLStreamTransport:
         transport = SSLStreamTransport(
             mock_tcp_socket,
             mock_ssl_context,
             ssl_handshake_timeout=123456789,
             ssl_shutdown_timeout=987654321,
             retry_interval=math.inf,
+            standard_compatible=standard_compatible,
         )
         mock_tcp_socket.reset_mock()
         mock_ssl_socket.reset_mock()
@@ -307,13 +325,15 @@ class TestSSLStreamTransport:
         # Assert
         assert transport._retry_interval is math.inf
         assert transport._selector_factory is mock_selector_factory
-        assert isinstance(transport.get_extra_info("socket"), SocketProxy)
-        assert transport.get_extra_info("sockname") == ("local_address", 11111)
-        assert transport.get_extra_info("peername") == ("remote_address", 12345)
-        assert transport.get_extra_info("sslcontext") is mock_ssl_context
-        assert transport.get_extra_info("peercert") is mocker.sentinel.peercert
-        assert transport.get_extra_info("cipher") is mocker.sentinel.cipher
-        assert transport.get_extra_info("compression") is mocker.sentinel.compression
+        assert isinstance(transport.extra(SocketAttribute.socket), SocketProxy)
+        assert transport.extra(SocketAttribute.sockname) == ("local_address", 11111)
+        assert transport.extra(SocketAttribute.peername) == ("remote_address", 12345)
+        assert transport.extra(TLSAttribute.sslcontext) is mock_ssl_context
+        assert transport.extra(TLSAttribute.peercert) is mocker.sentinel.peercert
+        assert transport.extra(TLSAttribute.cipher) is mocker.sentinel.cipher
+        assert transport.extra(TLSAttribute.compression) is mocker.sentinel.compression
+        assert transport.extra(TLSAttribute.tls_version) is mocker.sentinel.tls_version
+        assert transport.extra(TLSAttribute.standard_compatible) is True
         assert mock_tcp_socket.mock_calls == []
 
         mock_ssl_context.wrap_socket.assert_called_once_with(
@@ -332,7 +352,7 @@ class TestSSLStreamTransport:
         mock_transport_retry.assert_called_once_with(mocker.ANY, 123456789)
         assert mock_ssl_socket.do_handshake.call_args_list == [mocker.call() for _ in range(3)]
 
-    @pytest.mark.parametrize("standard_compatible", [False, True], ids=lambda p: f"standard_compatible=={p}")
+    @pytest.mark.parametrize("standard_compatible", [False, True], ids=lambda p: f"standard_compatible=={p}", indirect=True)
     def test____dunder_init____ssl_context_parameters(
         self,
         standard_compatible: bool,
@@ -343,7 +363,7 @@ class TestSSLStreamTransport:
         # Arrange
 
         # Act
-        _ = SSLStreamTransport(
+        transport = SSLStreamTransport(
             mock_tcp_socket,
             mock_ssl_context,
             ssl_handshake_timeout=123456789,
@@ -356,7 +376,6 @@ class TestSSLStreamTransport:
         )
 
         # Assert
-
         mock_ssl_context.wrap_socket.assert_called_once_with(
             mock_tcp_socket,
             server_side=mocker.sentinel.server_side,
@@ -365,6 +384,7 @@ class TestSSLStreamTransport:
             do_handshake_on_connect=False,
             session=mocker.sentinel.ssl_session,
         )
+        assert transport.extra(TLSAttribute.standard_compatible) is standard_compatible
 
     def test____dunder_init____forbid_ssl_sockets(
         self,
@@ -461,8 +481,10 @@ class TestSSLStreamTransport:
 
     @pytest.mark.parametrize("unwrap_error", [None, OSError])
     @pytest.mark.parametrize("shutdown_error", [None, OSError])
+    @pytest.mark.parametrize("standard_compatible", [False, True], ids=lambda p: f"standard_compatible=={p}", indirect=True)
     def test____close____default(
         self,
+        standard_compatible: bool,
         socket_fileno: int,
         unwrap_error: type[OSError] | None,
         shutdown_error: type[OSError] | None,
@@ -482,14 +504,21 @@ class TestSSLStreamTransport:
         transport.close()
 
         # Assert
-        assert mock_ssl_socket.mock_calls == [
-            mocker.call.unwrap(),
-            mocker.call.unwrap(),
-            mocker.call.unwrap(),
-            mocker.call.shutdown(SHUT_RDWR),
-            mocker.call.close(),
-        ]
-        mock_transport_retry.assert_called_once_with(mocker.ANY, 987654321)
+        if standard_compatible:
+            assert mock_ssl_socket.mock_calls == [
+                mocker.call.unwrap(),
+                mocker.call.unwrap(),
+                mocker.call.unwrap(),
+                mocker.call.shutdown(SHUT_RDWR),
+                mocker.call.close(),
+            ]
+            mock_transport_retry.assert_called_once_with(mocker.ANY, 987654321)
+        else:
+            assert mock_ssl_socket.mock_calls == [
+                mocker.call.shutdown(SHUT_RDWR),
+                mocker.call.close(),
+            ]
+            mock_transport_retry.assert_not_called()
 
     def test____recv_noblock____default(
         self,
@@ -648,9 +677,9 @@ class TestSocketDatagramTransport:
         # Assert
         assert transport._retry_interval is math.inf
         assert transport._selector_factory is mock_selector_factory
-        assert isinstance(transport.get_extra_info("socket"), SocketProxy)
-        assert transport.get_extra_info("sockname") == ("local_address", 11111)
-        assert transport.get_extra_info("peername") == ("remote_address", 12345)
+        assert isinstance(transport.extra(SocketAttribute.socket), SocketProxy)
+        assert transport.extra(SocketAttribute.sockname) == ("local_address", 11111)
+        assert transport.extra(SocketAttribute.peername) == ("remote_address", 12345)
         mock_udp_socket.getsockname.assert_called_once_with()
         mock_udp_socket.getpeername.assert_called_once_with()
         mock_udp_socket.setblocking.assert_called_once_with(False)
