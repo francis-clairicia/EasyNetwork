@@ -6,8 +6,8 @@ from typing import Any
 
 from easynetwork.api_sync.client.udp import UDPNetworkClient
 from easynetwork.exceptions import ClientClosedError, DatagramProtocolParseError
+from easynetwork.lowlevel.socket import IPv4SocketAddress, IPv6SocketAddress
 from easynetwork.protocol import DatagramProtocol
-from easynetwork.tools.socket import IPv4SocketAddress, IPv6SocketAddress
 
 import pytest
 

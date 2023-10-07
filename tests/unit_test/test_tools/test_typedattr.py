@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
-from easynetwork.tools.typed_attr import TypedAttributeProvider, TypedAttributeSet, typed_attribute
+from easynetwork.lowlevel.typed_attr import TypedAttributeProvider, TypedAttributeSet, typed_attribute
 
 import pytest
 

@@ -8,9 +8,9 @@ from typing import TYPE_CHECKING, Any
 
 from easynetwork.api_async.client.tcp import AsyncTCPNetworkClient
 from easynetwork.exceptions import ClientClosedError, IncrementalDeserializeError
-from easynetwork.tools._stream import StreamDataConsumer
-from easynetwork.tools.constants import CLOSED_SOCKET_ERRNOS, MAX_STREAM_BUFSIZE, SSL_HANDSHAKE_TIMEOUT, SSL_SHUTDOWN_TIMEOUT
-from easynetwork.tools.socket import IPv4SocketAddress, IPv6SocketAddress, SocketProxy
+from easynetwork.lowlevel._stream import StreamDataConsumer
+from easynetwork.lowlevel.constants import CLOSED_SOCKET_ERRNOS, MAX_STREAM_BUFSIZE, SSL_HANDSHAKE_TIMEOUT, SSL_SHUTDOWN_TIMEOUT
+from easynetwork.lowlevel.socket import IPv4SocketAddress, IPv6SocketAddress, SocketProxy
 
 import pytest
 import pytest_asyncio
@@ -67,7 +67,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
     @pytest.fixture(autouse=True)
     @staticmethod
     def mock_new_backend(mocker: MockerFixture, mock_backend: MagicMock) -> MagicMock:
-        from easynetwork.api_async.backend.factory import AsyncBackendFactory
+        from easynetwork.lowlevel.api_async.backend.factory import AsyncBackendFactory
 
         return mocker.patch.object(AsyncBackendFactory, "new", return_value=mock_backend)
 

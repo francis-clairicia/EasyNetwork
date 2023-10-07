@@ -4,7 +4,7 @@ from collections import deque
 from typing import TYPE_CHECKING, Any, final
 
 from easynetwork.api_sync.client.abc import AbstractNetworkClient
-from easynetwork.tools.socket import SocketAddress
+from easynetwork.lowlevel.socket import SocketAddress
 
 import pytest
 

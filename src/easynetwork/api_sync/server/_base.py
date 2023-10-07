@@ -25,10 +25,10 @@ import time
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, NoReturn
 
-from ...api_async.backend.abc import ThreadsPortal
 from ...api_async.server.abc import SupportsEventSet
 from ...exceptions import ServerAlreadyRunning, ServerClosedError
-from ...tools._lock import ForkSafeLock
+from ...lowlevel._lock import ForkSafeLock
+from ...lowlevel.api_async.backend.abc import ThreadsPortal
 from .abc import AbstractNetworkServer
 
 if TYPE_CHECKING:

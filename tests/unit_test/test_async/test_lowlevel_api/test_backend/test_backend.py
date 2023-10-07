@@ -6,8 +6,8 @@ from socket import socket as Socket
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, assert_never, final
 
-from easynetwork.api_async.backend.abc import AsyncBackend
-from easynetwork.api_async.backend.factory import AsyncBackendFactory
+from easynetwork.lowlevel.api_async.backend.abc import AsyncBackend
+from easynetwork.lowlevel.api_async.backend.factory import AsyncBackendFactory
 
 import pytest
 
@@ -178,7 +178,7 @@ class TestAsyncBackendFactory:
     ) -> None:
         # Arrange
         mock_importlib_metadata_entry_points.return_value = [
-            self.build_entry_point("asyncio", "easynetwork.api_async.backend.abc:AsyncBackend"),
+            self.build_entry_point("asyncio", "easynetwork.lowlevel.api_async.backend.abc:AsyncBackend"),
         ]
 
         # Act & Assert

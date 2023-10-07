@@ -24,7 +24,7 @@ from typing import Any, Generic
 
 from .... import protocol as protocol_module
 from ...._typevars import _ReceivedPacketT, _SentPacketT
-from ....tools import typed_attr
+from ... import typed_attr
 from ..transports import abc as base_transport
 
 

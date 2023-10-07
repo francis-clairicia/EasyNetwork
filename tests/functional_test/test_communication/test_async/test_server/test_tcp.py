@@ -11,7 +11,6 @@ from socket import IPPROTO_TCP, TCP_NODELAY
 from typing import Any
 from weakref import WeakValueDictionary
 
-from easynetwork.api_async.backend.abc import AsyncBackend
 from easynetwork.api_async.server.handler import AsyncStreamClient, AsyncStreamRequestHandler
 from easynetwork.api_async.server.tcp import AsyncTCPNetworkServer
 from easynetwork.exceptions import (
@@ -20,8 +19,9 @@ from easynetwork.exceptions import (
     IncrementalDeserializeError,
     StreamProtocolParseError,
 )
+from easynetwork.lowlevel.api_async.backend.abc import AsyncBackend
+from easynetwork.lowlevel.socket import SocketAddress, enable_socket_linger
 from easynetwork.protocol import StreamProtocol
-from easynetwork.tools.socket import SocketAddress, enable_socket_linger
 from easynetwork_asyncio._utils import create_connection
 from easynetwork_asyncio.backend import AsyncIOBackend
 from easynetwork_asyncio.stream.listener import ListenerSocketAdapter

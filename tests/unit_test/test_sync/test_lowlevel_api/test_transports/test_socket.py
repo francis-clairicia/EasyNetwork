@@ -8,16 +8,10 @@ from collections.abc import Callable
 from socket import SHUT_RDWR, SHUT_WR
 from typing import TYPE_CHECKING, Any
 
-from easynetwork.api_sync.lowlevel.transports.base_selector import WouldBlockOnRead, WouldBlockOnWrite
-from easynetwork.api_sync.lowlevel.transports.socket import (
-    SocketAttribute,
-    SocketDatagramTransport,
-    SocketStreamTransport,
-    SSLStreamTransport,
-    TLSAttribute,
-)
-from easynetwork.tools.constants import MAX_DATAGRAM_BUFSIZE, SSL_HANDSHAKE_TIMEOUT
-from easynetwork.tools.socket import SocketProxy
+from easynetwork.lowlevel.api_sync.transports.base_selector import WouldBlockOnRead, WouldBlockOnWrite
+from easynetwork.lowlevel.api_sync.transports.socket import SocketDatagramTransport, SocketStreamTransport, SSLStreamTransport
+from easynetwork.lowlevel.constants import MAX_DATAGRAM_BUFSIZE, SSL_HANDSHAKE_TIMEOUT
+from easynetwork.lowlevel.socket import SocketAttribute, SocketProxy, TLSAttribute
 
 import pytest
 

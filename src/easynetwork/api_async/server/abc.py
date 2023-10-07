@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Any, NoReturn, Protocol, Self
 if TYPE_CHECKING:
     from types import TracebackType
 
-    from ..backend.abc import AsyncBackend
+    from ...lowlevel.api_async.backend.abc import AsyncBackend
 
 
 class SupportsEventSet(Protocol):

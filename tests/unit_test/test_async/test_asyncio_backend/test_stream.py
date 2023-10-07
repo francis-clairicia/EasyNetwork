@@ -8,7 +8,7 @@ from collections.abc import Callable
 from socket import SHUT_WR
 from typing import TYPE_CHECKING, Any
 
-from easynetwork.api_async.backend.abc import AcceptedSocket as AbstractAcceptedSocket
+from easynetwork.lowlevel.api_async.backend.abc import AcceptedSocket as AbstractAcceptedSocket
 from easynetwork_asyncio.stream.listener import AcceptedSocket, AcceptedSSLSocket, ListenerSocketAdapter
 from easynetwork_asyncio.stream.socket import AsyncioTransportStreamSocketAdapter, RawStreamSocketAdapter
 

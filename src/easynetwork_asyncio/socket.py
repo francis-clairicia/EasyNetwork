@@ -28,7 +28,7 @@ from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any, Literal, Self, TypeAlias
 from weakref import WeakSet
 
-from easynetwork.tools._utils import check_socket_no_ssl as _check_socket_no_ssl, error_from_errno as _error_from_errno
+from easynetwork.lowlevel._utils import check_socket_no_ssl as _check_socket_no_ssl, error_from_errno as _error_from_errno
 
 from .tasks import TaskUtils
 

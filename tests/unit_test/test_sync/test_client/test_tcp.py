@@ -11,9 +11,9 @@ from typing import TYPE_CHECKING, Any
 
 from easynetwork.api_sync.client.tcp import TCPNetworkClient
 from easynetwork.exceptions import ClientClosedError, IncrementalDeserializeError
-from easynetwork.tools._stream import StreamDataConsumer
-from easynetwork.tools.constants import CLOSED_SOCKET_ERRNOS, MAX_STREAM_BUFSIZE, SSL_HANDSHAKE_TIMEOUT, SSL_SHUTDOWN_TIMEOUT
-from easynetwork.tools.socket import IPv4SocketAddress, IPv6SocketAddress
+from easynetwork.lowlevel._stream import StreamDataConsumer
+from easynetwork.lowlevel.constants import CLOSED_SOCKET_ERRNOS, MAX_STREAM_BUFSIZE, SSL_HANDSHAKE_TIMEOUT, SSL_SHUTDOWN_TIMEOUT
+from easynetwork.lowlevel.socket import IPv4SocketAddress, IPv6SocketAddress
 
 import pytest
 
@@ -143,7 +143,7 @@ class TestTCPNetworkClient(BaseTestClient):
     @staticmethod
     def mock_stream_data_consumer_cls(mocker: MockerFixture, mock_stream_data_consumer: MagicMock) -> MagicMock:
         return mocker.patch(
-            "easynetwork.tools._stream.StreamDataConsumer",
+            "easynetwork.lowlevel._stream.StreamDataConsumer",
             return_value=mock_stream_data_consumer,
         )
 

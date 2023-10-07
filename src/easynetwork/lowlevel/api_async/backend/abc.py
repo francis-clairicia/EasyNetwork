@@ -46,7 +46,7 @@ if TYPE_CHECKING:
     import ssl as _typing_ssl
     from types import TracebackType
 
-    from ...tools.socket import ISocket
+    from ....lowlevel.socket import ISocket
 
 
 _P = ParamSpec("_P")

@@ -4,8 +4,8 @@ import concurrent.futures
 import contextvars
 from typing import TYPE_CHECKING
 
-from easynetwork.api_async.backend.futures import AsyncExecutor
-from easynetwork.api_async.backend.sniffio import current_async_library_cvar
+from easynetwork.lowlevel.api_async.backend.futures import AsyncExecutor
+from easynetwork.lowlevel.api_async.backend.sniffio import current_async_library_cvar
 
 import pytest
 

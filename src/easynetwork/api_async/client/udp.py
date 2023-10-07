@@ -29,8 +29,7 @@ from typing import TYPE_CHECKING, Any, Generic, Self, final, overload
 
 from ..._typevars import _ReceivedPacketT, _SentPacketT
 from ...exceptions import ClientClosedError, DatagramProtocolParseError
-from ...protocol import DatagramProtocol
-from ...tools._utils import (
+from ...lowlevel._utils import (
     check_real_socket_state as _check_real_socket_state,
     check_socket_family as _check_socket_family,
     check_socket_no_ssl as _check_socket_no_ssl,
@@ -38,10 +37,11 @@ from ...tools._utils import (
     error_from_errno as _error_from_errno,
     make_callback as _make_callback,
 )
-from ...tools.constants import MAX_DATAGRAM_BUFSIZE
-from ...tools.socket import SocketAddress, SocketProxy, new_socket_address
-from ..backend.abc import AsyncBackend, AsyncDatagramSocketAdapter, CancelScope, ILock
-from ..backend.factory import AsyncBackendFactory
+from ...lowlevel.api_async.backend.abc import AsyncBackend, AsyncDatagramSocketAdapter, CancelScope, ILock
+from ...lowlevel.api_async.backend.factory import AsyncBackendFactory
+from ...lowlevel.constants import MAX_DATAGRAM_BUFSIZE
+from ...lowlevel.socket import SocketAddress, SocketProxy, new_socket_address
+from ...protocol import DatagramProtocol
 from .abc import AbstractAsyncNetworkClient
 
 if TYPE_CHECKING:

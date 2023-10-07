@@ -19,7 +19,7 @@ Introduction
 Backend Interface
 =================
 
-.. automodule:: easynetwork.api_async.backend.abc
+.. automodule:: easynetwork.lowlevel.api_async.backend.abc
    :no-docstring:
 
 .. autoclass:: AsyncBackend
@@ -187,7 +187,7 @@ Scheduling From Other Threads
 Backend Factory
 ===============
 
-.. automodule:: easynetwork.api_async.backend.factory
+.. automodule:: easynetwork.lowlevel.api_async.backend.factory
    :no-docstring:
 
 .. todo::
@@ -202,7 +202,7 @@ Backend Factory
 Concurrency And Multithreading (``concurrent.futures`` Integration)
 ===================================================================
 
-.. automodule:: easynetwork.api_async.backend.futures
+.. automodule:: easynetwork.lowlevel.api_async.backend.futures
    :no-docstring:
 
 .. autoclass:: AsyncExecutor

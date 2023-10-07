@@ -21,8 +21,10 @@ __all__ = [
     "IPv4SocketAddress",
     "IPv6SocketAddress",
     "ISocket",
+    "SocketAttribute",
     "SocketProxy",
     "SupportsSocketOptions",
+    "TLSAttribute",
     "disable_socket_linger",
     "enable_socket_linger",
     "get_socket_linger_struct",
@@ -40,6 +42,7 @@ from collections.abc import Callable
 from enum import IntEnum, unique
 from struct import Struct
 from typing import (
+    TYPE_CHECKING,
     Any,
     Literal,
     NamedTuple,
@@ -53,8 +56,50 @@ from typing import (
     runtime_checkable,
 )
 
+from . import typed_attr
+
+if TYPE_CHECKING:
+    import ssl as _typing_ssl
+
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
+
+
+class SocketAttribute(typed_attr.TypedAttributeSet):
+    __slots__ = ()
+
+    socket: ISocket = typed_attr.typed_attribute()
+    """:class:`socket.socket` instance."""
+
+    sockname: SocketAddress = typed_attr.typed_attribute()
+    """the socket's own address, result of :meth:`socket.socket.getsockname`."""
+
+    peername: SocketAddress = typed_attr.typed_attribute()
+    """the remote address to which the socket is connected, result of :meth:`socket.socket.getpeername`."""
+
+
+class TLSAttribute(typed_attr.TypedAttributeSet):
+    __slots__ = ()
+
+    sslcontext: _typing_ssl.SSLContext = typed_attr.typed_attribute()
+    """:class:`ssl.SSLContext` instance."""
+
+    peercert: _typing_ssl._PeerCertRetDictType | None = typed_attr.typed_attribute()
+    """peer certificate; result of :meth:`ssl.SSLSocket.getpeercert`."""
+
+    cipher: tuple[str, str, int] | None = typed_attr.typed_attribute()
+    """a three-value tuple containing the name of the cipher being used, the version of the SSL protocol
+    that defines its use, and the number of secret bits being used; result of :meth:`ssl.SSLSocket.cipher`."""
+
+    compression: str | None = typed_attr.typed_attribute()
+    """the compression algorithm being used as a string, or None if the connection isn't compressed;
+    result of :meth:`ssl.SSLSocket.compression`."""
+
+    standard_compatible: bool = typed_attr.typed_attribute()
+    """:data:`True` if this stream does (and expects) a closing TLS handshake when the stream is being closed."""
+
+    tls_version: str | None = typed_attr.typed_attribute()
+    """the TLS protocol version (e.g. TLSv1.2)"""
 
 
 @unique

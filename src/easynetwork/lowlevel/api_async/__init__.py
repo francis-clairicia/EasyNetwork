@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""EasyNetwork tools module"""
+"""Low-level asynchronous API module"""
 
 from __future__ import annotations
 

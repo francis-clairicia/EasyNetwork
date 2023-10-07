@@ -10,7 +10,7 @@ from errno import EINVAL, ENOTCONN, errorcode as errno_errorcode
 from socket import SO_ERROR, SOL_SOCKET
 from typing import TYPE_CHECKING, Any
 
-from easynetwork.tools._utils import (
+from easynetwork.lowlevel._utils import (
     check_real_socket_state,
     check_socket_family,
     check_socket_is_connected,
@@ -29,7 +29,7 @@ from easynetwork.tools._utils import (
     set_reuseport,
     validate_timeout_delay,
 )
-from easynetwork.tools.constants import NOT_CONNECTED_SOCKET_ERRNOS
+from easynetwork.lowlevel.constants import NOT_CONNECTED_SOCKET_ERRNOS
 
 import pytest
 

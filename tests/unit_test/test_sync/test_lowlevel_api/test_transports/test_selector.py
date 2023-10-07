@@ -7,7 +7,7 @@ from collections.abc import Callable
 from selectors import EVENT_READ, EVENT_WRITE, BaseSelector, SelectorKey
 from typing import TYPE_CHECKING, Any
 
-from easynetwork.api_sync.lowlevel.transports.base_selector import (
+from easynetwork.lowlevel.api_sync.transports.base_selector import (
     SelectorBaseTransport,
     SelectorDatagramTransport,
     SelectorStreamTransport,

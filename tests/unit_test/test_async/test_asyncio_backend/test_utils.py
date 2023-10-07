@@ -25,7 +25,7 @@ from socket import (
 )
 from typing import TYPE_CHECKING, Any, Literal, assert_never, cast
 
-from easynetwork.tools._utils import error_from_errno
+from easynetwork.lowlevel._utils import error_from_errno
 from easynetwork_asyncio._utils import (
     create_connection,
     create_datagram_socket,

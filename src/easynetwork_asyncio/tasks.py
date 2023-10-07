@@ -28,7 +28,7 @@ from collections.abc import Callable, Coroutine, Iterable, Iterator
 from typing import TYPE_CHECKING, Any, NamedTuple, ParamSpec, Self, TypeVar, final
 from weakref import WeakKeyDictionary
 
-from easynetwork.api_async.backend.abc import (
+from easynetwork.lowlevel.api_async.backend.abc import (
     CancelScope as AbstractCancelScope,
     Task as AbstractTask,
     TaskGroup as AbstractTaskGroup,

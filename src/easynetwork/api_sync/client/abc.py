@@ -24,7 +24,7 @@ from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any, Generic, Self
 
 from ..._typevars import _ReceivedPacketT, _SentPacketT
-from ...tools.socket import SocketAddress
+from ...lowlevel.socket import SocketAddress
 
 if TYPE_CHECKING:
     from types import TracebackType

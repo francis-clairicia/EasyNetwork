@@ -35,19 +35,19 @@ else:
 
 from ..._typevars import _ReceivedPacketT, _SentPacketT
 from ...exceptions import ClientClosedError
-from ...protocol import StreamProtocol
-from ...tools._stream import StreamDataConsumer
-from ...tools._utils import (
+from ...lowlevel._stream import StreamDataConsumer
+from ...lowlevel._utils import (
     check_real_socket_state as _check_real_socket_state,
     check_socket_family as _check_socket_family,
     check_socket_no_ssl as _check_socket_no_ssl,
     error_from_errno as _error_from_errno,
     make_callback as _make_callback,
 )
-from ...tools.constants import CLOSED_SOCKET_ERRNOS, MAX_STREAM_BUFSIZE, SSL_HANDSHAKE_TIMEOUT, SSL_SHUTDOWN_TIMEOUT
-from ...tools.socket import SocketAddress, SocketProxy, new_socket_address, set_tcp_keepalive, set_tcp_nodelay
-from ..backend.abc import AsyncBackend, AsyncStreamSocketAdapter, CancelScope, ILock
-from ..backend.factory import AsyncBackendFactory
+from ...lowlevel.api_async.backend.abc import AsyncBackend, AsyncStreamSocketAdapter, CancelScope, ILock
+from ...lowlevel.api_async.backend.factory import AsyncBackendFactory
+from ...lowlevel.constants import CLOSED_SOCKET_ERRNOS, MAX_STREAM_BUFSIZE, SSL_HANDSHAKE_TIMEOUT, SSL_SHUTDOWN_TIMEOUT
+from ...lowlevel.socket import SocketAddress, SocketProxy, new_socket_address, set_tcp_keepalive, set_tcp_nodelay
+from ...protocol import StreamProtocol
 from .abc import AbstractAsyncNetworkClient
 
 if TYPE_CHECKING:

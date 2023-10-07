@@ -26,10 +26,10 @@ import inspect
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, ParamSpec, Self, TypeVar, final
 
-from easynetwork.api_async.backend.abc import ThreadsPortal as AbstractThreadsPortal
-from easynetwork.api_async.backend.sniffio import current_async_library_cvar as _sniffio_current_async_library_cvar
-from easynetwork.tools._lock import ForkSafeLock
-from easynetwork.tools._utils import exception_with_notes as _exception_with_notes
+from easynetwork.lowlevel._lock import ForkSafeLock
+from easynetwork.lowlevel._utils import exception_with_notes as _exception_with_notes
+from easynetwork.lowlevel.api_async.backend.abc import ThreadsPortal as AbstractThreadsPortal
+from easynetwork.lowlevel.api_async.backend.sniffio import current_async_library_cvar as _sniffio_current_async_library_cvar
 
 from .tasks import TaskUtils
 

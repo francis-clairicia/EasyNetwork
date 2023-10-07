@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 
 from easynetwork.api_async.client.udp import AsyncUDPNetworkClient, AsyncUDPNetworkEndpoint
 from easynetwork.exceptions import ClientClosedError, DeserializeError
-from easynetwork.tools.constants import MAX_DATAGRAM_BUFSIZE
-from easynetwork.tools.socket import IPv4SocketAddress, IPv6SocketAddress, SocketProxy
+from easynetwork.lowlevel.constants import MAX_DATAGRAM_BUFSIZE
+from easynetwork.lowlevel.socket import IPv4SocketAddress, IPv6SocketAddress, SocketProxy
 
 import pytest
 import pytest_asyncio
@@ -23,7 +23,7 @@ from .base import BaseTestClient
 
 @pytest.fixture(autouse=True)
 def mock_new_backend(mocker: MockerFixture, mock_backend: MagicMock) -> MagicMock:
-    from easynetwork.api_async.backend.factory import AsyncBackendFactory
+    from easynetwork.lowlevel.api_async.backend.factory import AsyncBackendFactory
 
     return mocker.patch.object(AsyncBackendFactory, "new", return_value=mock_backend)
 

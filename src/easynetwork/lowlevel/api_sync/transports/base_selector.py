@@ -30,7 +30,7 @@ from abc import abstractmethod
 from collections.abc import Callable
 from typing import TypeVar
 
-from ....tools import _utils
+from ... import _utils
 from . import abc as base_transport
 
 _R = TypeVar("_R")

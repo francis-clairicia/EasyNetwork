@@ -4,9 +4,9 @@ from collections.abc import Generator
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.exceptions import DeserializeError, IncrementalDeserializeError, LimitOverrunError
+from easynetwork.lowlevel.constants import _DEFAULT_LIMIT as DEFAULT_LIMIT
 from easynetwork.serializers.json import JSONDecoderConfig, JSONEncoderConfig, JSONSerializer, _JSONParser
 from easynetwork.serializers.tools import GeneratorStreamReader
-from easynetwork.tools.constants import _DEFAULT_LIMIT as DEFAULT_LIMIT
 
 import pytest
 

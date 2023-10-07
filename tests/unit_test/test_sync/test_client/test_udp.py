@@ -10,9 +10,9 @@ from typing import TYPE_CHECKING, Any, Literal, assert_never
 
 from easynetwork.api_sync.client.udp import UDPNetworkClient, _create_udp_socket as create_udp_socket
 from easynetwork.exceptions import ClientClosedError, DatagramProtocolParseError, DeserializeError
-from easynetwork.tools._utils import error_from_errno
-from easynetwork.tools.constants import CLOSED_SOCKET_ERRNOS, MAX_DATAGRAM_BUFSIZE
-from easynetwork.tools.socket import IPv4SocketAddress, IPv6SocketAddress
+from easynetwork.lowlevel._utils import error_from_errno
+from easynetwork.lowlevel.constants import CLOSED_SOCKET_ERRNOS, MAX_DATAGRAM_BUFSIZE
+from easynetwork.lowlevel.socket import IPv4SocketAddress, IPv6SocketAddress
 
 import pytest
 

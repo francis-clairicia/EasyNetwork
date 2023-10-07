@@ -25,7 +25,7 @@ from abc import abstractmethod
 from collections.abc import Callable
 from typing import TYPE_CHECKING, final
 
-from easynetwork.api_async.backend.abc import (
+from easynetwork.lowlevel.api_async.backend.abc import (
     AcceptedSocket as AbstractAcceptedSocket,
     AsyncListenerSocketAdapter as AbstractAsyncListenerSocketAdapter,
     AsyncStreamSocketAdapter as AbstractAsyncStreamSocketAdapter,

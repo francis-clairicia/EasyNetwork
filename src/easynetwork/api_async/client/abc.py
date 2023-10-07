@@ -25,12 +25,12 @@ from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any, Generic, Self
 
 from ..._typevars import _ReceivedPacketT, _SentPacketT
-from ...tools.socket import SocketAddress
+from ...lowlevel.socket import SocketAddress
 
 if TYPE_CHECKING:
     from types import TracebackType
 
-    from ..backend.abc import AsyncBackend
+    from ...lowlevel.api_async.backend.abc import AsyncBackend
 
 
 class AbstractAsyncNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=ABCMeta):

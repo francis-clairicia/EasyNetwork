@@ -4,9 +4,9 @@ import math
 from collections.abc import Generator
 from typing import TYPE_CHECKING, Any
 
-from easynetwork.api_sync.lowlevel.endpoints.stream import StreamEndpoint
-from easynetwork.api_sync.lowlevel.transports.abc import StreamTransport
-from easynetwork.tools._stream import StreamDataConsumer
+from easynetwork.lowlevel._stream import StreamDataConsumer
+from easynetwork.lowlevel.api_sync.endpoints.stream import StreamEndpoint
+from easynetwork.lowlevel.api_sync.transports.abc import StreamTransport
 
 import pytest
 

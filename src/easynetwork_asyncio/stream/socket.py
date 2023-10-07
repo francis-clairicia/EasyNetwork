@@ -24,7 +24,7 @@ import socket as _socket
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, final
 
-from easynetwork.api_async.backend.abc import AsyncStreamSocketAdapter as AbstractAsyncStreamSocketAdapter
+from easynetwork.lowlevel.api_async.backend.abc import AsyncStreamSocketAdapter as AbstractAsyncStreamSocketAdapter
 
 from ..socket import AsyncSocket
 

@@ -31,8 +31,8 @@ from dataclasses import asdict as dataclass_asdict, dataclass
 from typing import Any, final
 
 from ..exceptions import DeserializeError, IncrementalDeserializeError, LimitOverrunError
-from ..tools._utils import iter_bytes
-from ..tools.constants import _DEFAULT_LIMIT
+from ..lowlevel._utils import iter_bytes
+from ..lowlevel.constants import _DEFAULT_LIMIT
 from .abc import AbstractIncrementalPacketSerializer
 from .tools import GeneratorStreamReader
 

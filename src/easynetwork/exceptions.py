@@ -37,7 +37,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from _typeshed import ReadableBuffer
 
-    from .tools.socket import SocketAddress
+    from .lowlevel.socket import SocketAddress
 
 
 class ClientClosedError(ConnectionError):

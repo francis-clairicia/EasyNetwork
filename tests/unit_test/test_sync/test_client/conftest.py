@@ -39,4 +39,4 @@ def mock_selector_select(mock_selector: MagicMock) -> MagicMock:
 def patch_lock_with_timeout(module_mocker: MockerFixture) -> None:
     from .base import dummy_lock_with_timeout
 
-    module_mocker.patch("easynetwork.tools._utils.lock_with_timeout", new=dummy_lock_with_timeout)
+    module_mocker.patch("easynetwork.lowlevel._utils.lock_with_timeout", new=dummy_lock_with_timeout)

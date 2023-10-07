@@ -34,11 +34,11 @@ else:
 
 from ..._typevars import _ReceivedPacketT, _SentPacketT
 from ...exceptions import ClientClosedError
+from ...lowlevel import _lock, _utils, constants
+from ...lowlevel.api_sync.endpoints.stream import StreamEndpoint
+from ...lowlevel.api_sync.transports.socket import SocketStreamTransport, SSLStreamTransport
+from ...lowlevel.socket import SocketAddress, SocketAttribute, SocketProxy, set_tcp_keepalive, set_tcp_nodelay
 from ...protocol import StreamProtocol
-from ...tools import _lock, _utils, constants
-from ...tools.socket import SocketAddress, SocketProxy, set_tcp_keepalive, set_tcp_nodelay
-from ..lowlevel.endpoints.stream import StreamEndpoint
-from ..lowlevel.transports.socket import SocketAttribute, SocketStreamTransport, SSLStreamTransport
 from .abc import AbstractNetworkClient
 
 if TYPE_CHECKING:

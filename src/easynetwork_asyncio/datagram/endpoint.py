@@ -30,7 +30,7 @@ import errno as _errno
 import socket as _socket
 from typing import TYPE_CHECKING, Any, final
 
-from easynetwork.tools._utils import error_from_errno as _error_from_errno
+from easynetwork.lowlevel._utils import error_from_errno as _error_from_errno
 
 from ..tasks import TaskUtils
 

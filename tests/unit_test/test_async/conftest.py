@@ -4,7 +4,7 @@ import asyncio
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from easynetwork.api_async.backend.abc import AsyncBackend, AsyncDatagramSocketAdapter, AsyncStreamSocketAdapter
+from easynetwork.lowlevel.api_async.backend.abc import AsyncBackend, AsyncDatagramSocketAdapter, AsyncStreamSocketAdapter
 
 import pytest
 

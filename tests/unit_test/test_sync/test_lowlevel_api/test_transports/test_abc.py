@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from easynetwork.api_sync.lowlevel.transports.abc import StreamTransport
+from easynetwork.lowlevel.api_sync.transports.abc import StreamTransport
 
 import pytest
 

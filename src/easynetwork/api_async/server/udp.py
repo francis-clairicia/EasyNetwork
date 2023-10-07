@@ -30,22 +30,31 @@ from weakref import WeakValueDictionary
 
 from ..._typevars import _RequestT, _ResponseT
 from ...exceptions import ClientClosedError, DatagramProtocolParseError, ServerAlreadyRunning, ServerClosedError
-from ...protocol import DatagramProtocol
-from ...tools._utils import (
+from ...lowlevel._utils import (
     check_real_socket_state as _check_real_socket_state,
     exception_with_notes as _exception_with_notes,
     make_callback as _make_callback,
     remove_traceback_frames_in_place as _remove_traceback_frames_in_place,
 )
-from ...tools.constants import MAX_DATAGRAM_BUFSIZE
-from ...tools.socket import SocketAddress, SocketProxy, new_socket_address
-from ..backend.factory import AsyncBackendFactory
+from ...lowlevel.api_async.backend.factory import AsyncBackendFactory
+from ...lowlevel.constants import MAX_DATAGRAM_BUFSIZE
+from ...lowlevel.socket import SocketAddress, SocketProxy, new_socket_address
+from ...protocol import DatagramProtocol
 from ._tools.actions import ErrorAction as _ErrorAction, RequestAction as _RequestAction
 from .abc import AbstractAsyncNetworkServer, SupportsEventSet
 from .handler import AsyncDatagramClient, AsyncDatagramRequestHandler
 
 if TYPE_CHECKING:
-    from ..backend.abc import AsyncBackend, AsyncDatagramSocketAdapter, CancelScope, ICondition, IEvent, ILock, Task, TaskGroup
+    from ...lowlevel.api_async.backend.abc import (
+        AsyncBackend,
+        AsyncDatagramSocketAdapter,
+        CancelScope,
+        ICondition,
+        IEvent,
+        ILock,
+        Task,
+        TaskGroup,
+    )
 
 _KT = TypeVar("_KT")
 _VT = TypeVar("_VT")

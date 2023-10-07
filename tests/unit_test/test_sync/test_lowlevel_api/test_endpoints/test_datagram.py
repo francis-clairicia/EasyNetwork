@@ -3,8 +3,8 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING, Any
 
-from easynetwork.api_sync.lowlevel.endpoints.datagram import DatagramEndpoint
-from easynetwork.api_sync.lowlevel.transports.abc import DatagramTransport
+from easynetwork.lowlevel.api_sync.endpoints.datagram import DatagramEndpoint
+from easynetwork.lowlevel.api_sync.transports.abc import DatagramTransport
 
 import pytest
 

@@ -25,11 +25,11 @@ from typing import Any, final, overload
 
 from ..._typevars import _ReceivedPacketT, _SentPacketT
 from ...exceptions import ClientClosedError
+from ...lowlevel import _lock, _utils, constants
+from ...lowlevel.api_sync.endpoints.datagram import DatagramEndpoint
+from ...lowlevel.api_sync.transports.socket import SocketDatagramTransport
+from ...lowlevel.socket import SocketAddress, SocketAttribute, SocketProxy
 from ...protocol import DatagramProtocol
-from ...tools import _lock, _utils, constants
-from ...tools.socket import SocketAddress, SocketProxy
-from ..lowlevel.endpoints.datagram import DatagramEndpoint
-from ..lowlevel.transports.socket import SocketAttribute, SocketDatagramTransport
 from .abc import AbstractNetworkClient
 
 

@@ -30,7 +30,7 @@ from collections.abc import AsyncGenerator, Coroutine
 from typing import TYPE_CHECKING, Any, Generic, final
 
 from ..._typevars import _RequestT, _ResponseT
-from ...tools.socket import SocketAddress, SocketProxy
+from ...lowlevel.socket import SocketAddress, SocketProxy
 
 if TYPE_CHECKING:
     from ..server.tcp import AsyncTCPNetworkServer

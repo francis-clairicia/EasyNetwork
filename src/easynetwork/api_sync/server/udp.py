@@ -26,14 +26,14 @@ from typing import TYPE_CHECKING, Any, Generic
 
 from ..._typevars import _RequestT, _ResponseT
 from ...api_async.server.udp import AsyncUDPNetworkServer
-from ...tools.socket import SocketAddress, SocketProxy
+from ...lowlevel.socket import SocketAddress, SocketProxy
 from . import _base
 
 if TYPE_CHECKING:
     import logging
 
-    from ...api_async.backend.abc import AsyncBackend
     from ...api_async.server.handler import AsyncDatagramRequestHandler
+    from ...lowlevel.api_async.backend.abc import AsyncBackend
     from ...protocol import DatagramProtocol
 
 

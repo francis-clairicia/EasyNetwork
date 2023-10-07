@@ -23,7 +23,7 @@ import asyncio
 import socket as _socket
 from typing import TYPE_CHECKING, Any, final
 
-from easynetwork.api_async.backend.abc import AsyncDatagramSocketAdapter as AbstractAsyncDatagramSocketAdapter
+from easynetwork.lowlevel.api_async.backend.abc import AsyncDatagramSocketAdapter as AbstractAsyncDatagramSocketAdapter
 
 from ..socket import AsyncSocket
 

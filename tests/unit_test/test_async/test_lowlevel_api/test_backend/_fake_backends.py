@@ -4,7 +4,7 @@ from collections.abc import Callable, Coroutine, Sequence
 from socket import socket as Socket
 from typing import Any, NoReturn, final
 
-from easynetwork.api_async.backend.abc import (
+from easynetwork.lowlevel.api_async.backend.abc import (
     AsyncBackend,
     AsyncDatagramSocketAdapter,
     AsyncListenerSocketAdapter,

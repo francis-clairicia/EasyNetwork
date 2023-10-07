@@ -25,7 +25,7 @@ import socket as _socket
 from collections.abc import Iterable, Sequence
 from typing import Any
 
-from easynetwork.tools._utils import set_reuseport as _set_reuseport
+from easynetwork.lowlevel._utils import set_reuseport as _set_reuseport
 
 
 async def ensure_resolved(

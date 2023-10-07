@@ -26,7 +26,7 @@ import time
 from abc import ABCMeta, abstractmethod
 from collections.abc import Iterable
 
-from ....tools import typed_attr
+from ... import typed_attr
 
 
 class BaseTransport(typed_attr.TypedAttributeProvider, metaclass=ABCMeta):

@@ -2,7 +2,7 @@
 Socket Helpers
 **************
 
-.. automodule:: easynetwork.tools.socket
+.. automodule:: easynetwork.lowlevel.socket
 
 Data Structures And Constants
 =============================
