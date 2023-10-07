@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from easynetwork.api_async.client.tcp import AsyncTCPNetworkClient
 from easynetwork.exceptions import ClientClosedError, IncrementalDeserializeError
+from easynetwork.tools._stream import StreamDataConsumer
 from easynetwork.tools.constants import CLOSED_SOCKET_ERRNOS, MAX_STREAM_BUFSIZE, SSL_HANDSHAKE_TIMEOUT, SSL_SHUTDOWN_TIMEOUT
 from easynetwork.tools.socket import IPv4SocketAddress, IPv6SocketAddress, SocketProxy
 
@@ -52,6 +53,11 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
     @staticmethod
     def mock_ssl_create_default_context(mock_ssl_context: MagicMock, mocker: MockerFixture) -> MagicMock:
         return mocker.patch("ssl.create_default_context", autospec=True, return_value=mock_ssl_context)
+
+    @pytest.fixture
+    @staticmethod
+    def mock_stream_data_consumer(mocker: MockerFixture) -> MagicMock:
+        return mocker.NonCallableMagicMock(spec=StreamDataConsumer)
 
     @pytest.fixture(autouse=True)
     @staticmethod

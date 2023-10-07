@@ -20,7 +20,6 @@ __all__ = [
     "AbstractNetworkClient",
     "TCPNetworkClient",
     "UDPNetworkClient",
-    "UDPNetworkEndpoint",
 ]
 
 from .abc import *

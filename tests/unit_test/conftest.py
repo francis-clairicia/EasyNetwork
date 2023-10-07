@@ -39,6 +39,16 @@ def mock_socket_factory(mocker: MockerFixture) -> Callable[[], MagicMock]:
         mock_socket.type = -1
         mock_socket.proto = 0
         mock_socket.fileno.return_value = 123
+
+        def close_side_effect() -> None:
+            mock_socket.fileno.return_value = -1
+
+        def detached_side_effect() -> int:
+            to_return, mock_socket.fileno.return_value = mock_socket.fileno.return_value, -1
+            return to_return
+
+        mock_socket.close.side_effect = close_side_effect
+        mock_socket.detach.side_effect = detached_side_effect
         return mock_socket
 
     return factory
@@ -91,6 +101,16 @@ def mock_ssl_socket_factory(mocker: MockerFixture) -> Callable[[], MagicMock]:
         mock_socket.fileno.return_value = 123
         mock_socket.do_handshake.return_value = None
         mock_socket.unwrap.return_value = None
+
+        def close_side_effect() -> None:
+            mock_socket.fileno.return_value = -1
+
+        def detached_side_effect() -> int:
+            to_return, mock_socket.fileno.return_value = mock_socket.fileno.return_value, -1
+            return to_return
+
+        mock_socket.close.side_effect = close_side_effect
+        mock_socket.detach.side_effect = detached_side_effect
         return mock_socket
 
     return factory

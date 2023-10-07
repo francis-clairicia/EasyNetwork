@@ -21,6 +21,7 @@ __all__ = [
     "ACCEPT_CAPACITY_ERROR_SLEEP_TIME",
     "MAX_DATAGRAM_BUFSIZE",
     "MAX_STREAM_BUFSIZE",
+    "NOT_CONNECTED_SOCKET_ERRNOS",
     "SSL_HANDSHAKE_TIMEOUT",
     "SSL_SHUTDOWN_TIMEOUT",
     "_DEFAULT_LIMIT",
@@ -42,6 +43,16 @@ CLOSED_SOCKET_ERRNOS: Final[frozenset[int]] = frozenset(
         _errno.EBADF,
         # Windows
         _errno.ENOTSOCK,
+    }
+)
+
+# Errors that socket operations can return if the socket is not connected
+NOT_CONNECTED_SOCKET_ERRNOS: Final[frozenset[int]] = frozenset(
+    {
+        # Most of the operating systems
+        _errno.ENOTCONN,
+        # macOS
+        _errno.EINVAL,
     }
 )
 

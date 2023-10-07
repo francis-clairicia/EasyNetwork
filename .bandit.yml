@@ -1,6 +1,7 @@
 exclude_dirs: ['tests']
 skips: [
   'B403',  # Imports of "pickle"
+  'B610',  # This project does not use Django :)
 ]
 
 assert_used:

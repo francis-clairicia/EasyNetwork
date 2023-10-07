@@ -60,11 +60,10 @@ class DatagramEndpoint(Generic[_SentPacketT, _ReceivedPacketT], typed_attr.Typed
 
     def __del__(self) -> None:  # pragma: no cover
         try:
-            transport = self.__transport
+            if not self.__transport.is_closed():
+                self.close()
         except AttributeError:
             return
-        if not transport.is_closed():
-            self.close()
 
     def is_closed(self) -> bool:
         """

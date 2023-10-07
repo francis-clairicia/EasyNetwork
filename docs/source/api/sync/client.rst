@@ -27,12 +27,3 @@ UDP Implementation
 
 .. autoclass:: UDPNetworkClient
    :members:
-   :exclude-members: iter_received_packets
-
-
-Generic UDP Endpoint
---------------------
-
-.. autoclass:: UDPNetworkEndpoint
-   :members:
-   :special-members: __enter__, __exit__

@@ -72,11 +72,10 @@ class StreamEndpoint(Generic[_SentPacketT, _ReceivedPacketT], typed_attr.TypedAt
 
     def __del__(self) -> None:  # pragma: no cover
         try:
-            transport = self.__transport
+            if not self.__transport.is_closed():
+                self.close()
         except AttributeError:
             return
-        if not transport.is_closed():
-            self.close()
 
     def is_closed(self) -> bool:
         """
@@ -130,6 +129,8 @@ class StreamEndpoint(Generic[_SentPacketT, _ReceivedPacketT], typed_attr.TypedAt
     def send_eof(self) -> None:
         """
         Close the write end of the stream after the buffered write data is flushed.
+
+        This method does nothing if the endpoint is closed.
 
         Can be safely called multiple times.
         """

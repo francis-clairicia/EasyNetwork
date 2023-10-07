@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import TypeAlias
 
 from easynetwork.api_sync.client.abc import AbstractNetworkClient
+from easynetwork.exceptions import ClientClosedError
 
 import pytest
 
@@ -41,7 +42,7 @@ def test____recv_packet____close_while_waiting(executor: ThreadPoolExecutor, cli
     time.sleep(1.1)
 
     client.close()
-    assert isinstance(recv_packet.exception(), ConnectionAbortedError)
+    assert isinstance(recv_packet.exception(timeout=30), ClientClosedError)
 
 
 @pytest.mark.slow
