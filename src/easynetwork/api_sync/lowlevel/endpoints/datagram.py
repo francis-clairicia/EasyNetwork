@@ -22,10 +22,10 @@ import math
 from collections.abc import Callable, Mapping
 from typing import Any, Generic
 
+from .... import protocol as protocol_module
 from ...._typevars import _ReceivedPacketT, _SentPacketT
-from ....protocol import DatagramProtocol
 from ....tools import typed_attr
-from ..transports.abc import DatagramTransport
+from ..transports import abc as base_transport
 
 
 class DatagramEndpoint(Generic[_SentPacketT, _ReceivedPacketT], typed_attr.TypedAttributeProvider):
@@ -39,20 +39,24 @@ class DatagramEndpoint(Generic[_SentPacketT, _ReceivedPacketT], typed_attr.Typed
         "__weakref__",
     )
 
-    def __init__(self, transport: DatagramTransport, protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT]) -> None:
+    def __init__(
+        self,
+        transport: base_transport.DatagramTransport,
+        protocol: protocol_module.DatagramProtocol[_SentPacketT, _ReceivedPacketT],
+    ) -> None:
         """
         Parameters:
             transport: The data transport to use.
             protocol: The :term:`protocol object` to use.
         """
 
-        if not isinstance(transport, DatagramTransport):
+        if not isinstance(transport, base_transport.DatagramTransport):
             raise TypeError(f"Expected a DatagramTransport object, got {transport!r}")
-        if not isinstance(protocol, DatagramProtocol):
+        if not isinstance(protocol, protocol_module.DatagramProtocol):
             raise TypeError(f"Expected a DatagramProtocol object, got {protocol!r}")
 
-        self.__transport: DatagramTransport = transport
-        self.__protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT] = protocol
+        self.__transport: base_transport.DatagramTransport = transport
+        self.__protocol: protocol_module.DatagramProtocol[_SentPacketT, _ReceivedPacketT] = protocol
 
     def __del__(self) -> None:  # pragma: no cover
         try:

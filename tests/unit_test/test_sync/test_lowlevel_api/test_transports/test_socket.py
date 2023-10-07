@@ -16,7 +16,7 @@ from easynetwork.api_sync.lowlevel.transports.socket import (
     SSLStreamTransport,
     TLSAttribute,
 )
-from easynetwork.tools.constants import MAX_DATAGRAM_BUFSIZE
+from easynetwork.tools.constants import MAX_DATAGRAM_BUFSIZE, SSL_HANDSHAKE_TIMEOUT
 from easynetwork.tools.socket import SocketProxy
 
 import pytest
@@ -291,8 +291,8 @@ class TestSSLStreamTransport:
         transport = SSLStreamTransport(
             mock_tcp_socket,
             mock_ssl_context,
-            ssl_handshake_timeout=123456789,
-            ssl_shutdown_timeout=987654321,
+            handshake_timeout=123456789,
+            shutdown_timeout=987654321,
             retry_interval=math.inf,
             standard_compatible=standard_compatible,
         )
@@ -315,8 +315,6 @@ class TestSSLStreamTransport:
         transport = SSLStreamTransport(
             mock_tcp_socket,
             mock_ssl_context,
-            ssl_handshake_timeout=123456789,
-            ssl_shutdown_timeout=987654321,
             retry_interval=math.inf,
             server_hostname=mocker.sentinel.server_hostname,
             selector_factory=mock_selector_factory,
@@ -349,7 +347,7 @@ class TestSSLStreamTransport:
         mock_ssl_socket.getpeername.assert_called_once_with()
         mock_ssl_socket.setblocking.assert_called_once_with(False)
         mock_ssl_socket.settimeout.assert_not_called()
-        mock_transport_retry.assert_called_once_with(mocker.ANY, 123456789)
+        mock_transport_retry.assert_called_once_with(mocker.ANY, SSL_HANDSHAKE_TIMEOUT)
         assert mock_ssl_socket.do_handshake.call_args_list == [mocker.call() for _ in range(3)]
 
     @pytest.mark.parametrize("standard_compatible", [False, True], ids=lambda p: f"standard_compatible=={p}", indirect=True)
@@ -366,8 +364,8 @@ class TestSSLStreamTransport:
         transport = SSLStreamTransport(
             mock_tcp_socket,
             mock_ssl_context,
-            ssl_handshake_timeout=123456789,
-            ssl_shutdown_timeout=987654321,
+            handshake_timeout=123456789,
+            shutdown_timeout=987654321,
             retry_interval=math.inf,
             server_side=mocker.sentinel.server_side,
             server_hostname=mocker.sentinel.server_hostname,
@@ -395,7 +393,7 @@ class TestSSLStreamTransport:
 
         # Act & Assert
         with pytest.raises(TypeError, match=r"^ssl\.SSLSocket instances are forbidden$"):
-            _ = SSLStreamTransport(mock_ssl_socket, mock_ssl_context, math.inf, 0, math.inf)
+            _ = SSLStreamTransport(mock_ssl_socket, mock_ssl_context, math.inf)
 
     def test____dunder_init____forbid_non_stream_sockets(
         self,
@@ -406,10 +404,10 @@ class TestSSLStreamTransport:
 
         # Act & Assert
         with pytest.raises(ValueError, match=r"^A 'SOCK_STREAM' socket is expected$"):
-            _ = SSLStreamTransport(mock_udp_socket, mock_ssl_context, math.inf, 0, math.inf)
+            _ = SSLStreamTransport(mock_udp_socket, mock_ssl_context, math.inf)
 
     @pytest.mark.parametrize("timeout", [math.nan, -4], ids=repr)
-    @pytest.mark.parametrize("parameter", ["ssl_handshake_timeout", "ssl_shutdown_timeout", "retry_interval"])
+    @pytest.mark.parametrize("parameter", ["handshake_timeout", "shutdown_timeout", "retry_interval"])
     def test____dunder_init____invalid_timeout(
         self,
         timeout: float,
@@ -419,8 +417,6 @@ class TestSSLStreamTransport:
     ) -> None:
         # Arrange
         kwargs: dict[str, Any] = {
-            "ssl_handshake_timeout": 123456789,
-            "ssl_shutdown_timeout": 987654321,
             "retry_interval": math.inf,
         }
         kwargs[parameter] = timeout
@@ -440,7 +436,7 @@ class TestSSLStreamTransport:
 
         # Act & Assert
         with pytest.raises(ConnectionError):
-            _ = SSLStreamTransport(mock_tcp_socket, mock_ssl_context, math.inf, 0, math.inf)
+            _ = SSLStreamTransport(mock_tcp_socket, mock_ssl_context, math.inf)
 
         mock_ssl_socket.close.assert_called_once_with()
 
@@ -454,7 +450,7 @@ class TestSSLStreamTransport:
 
         # Act & Assert
         with pytest.raises(RuntimeError, match=r"^stdlib ssl module not available$"):
-            _ = SSLStreamTransport(mock_tcp_socket, mock_ssl_context, math.inf, 0, math.inf)
+            _ = SSLStreamTransport(mock_tcp_socket, mock_ssl_context, math.inf)
 
     @pytest.mark.parametrize(
         ["socket_fileno", "expected_state"],

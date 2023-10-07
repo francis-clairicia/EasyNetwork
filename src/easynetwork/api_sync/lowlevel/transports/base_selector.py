@@ -30,8 +30,8 @@ from abc import abstractmethod
 from collections.abc import Callable
 from typing import TypeVar
 
-from ....tools._utils import error_from_errno as _error_from_errno, validate_timeout_delay as _validate_timeout_delay
-from .abc import BaseTransport, DatagramTransport, StreamTransport
+from ....tools import _utils
+from . import abc as base_transport
 
 _R = TypeVar("_R")
 
@@ -56,7 +56,7 @@ class WouldBlockOnWrite(Exception):
         """The file descriptor to wait for."""
 
 
-class SelectorBaseTransport(BaseTransport):
+class SelectorBaseTransport(base_transport.BaseTransport):
     """
     Base class for transports using the :mod:`selectors` module for blocking operations polling.
     """
@@ -84,7 +84,7 @@ class SelectorBaseTransport(BaseTransport):
             selector_factory = getattr(selectors, "PollSelector", selectors.SelectSelector)
         self._selector_factory: Callable[[], selectors.BaseSelector] = selector_factory
 
-        self._retry_interval: float = _validate_timeout_delay(retry_interval, positive_check=False)
+        self._retry_interval: float = _utils.validate_timeout_delay(retry_interval, positive_check=False)
         if self._retry_interval <= 0:
             raise ValueError("retry_interval must be a strictly positive float")
 
@@ -94,7 +94,7 @@ class SelectorBaseTransport(BaseTransport):
         timeout: float,
     ) -> _R:
         perf_counter = time.perf_counter  # pull function to local namespace
-        timeout = _validate_timeout_delay(timeout, positive_check=True)
+        timeout = _utils.validate_timeout_delay(timeout, positive_check=True)
         retry_interval = self._retry_interval
         event: int
         fileno: int
@@ -121,7 +121,7 @@ class SelectorBaseTransport(BaseTransport):
                 try:
                     selector.register(fileno, event)
                 except ValueError as exc:
-                    raise _error_from_errno(_errno.EBADF) from exc
+                    raise _utils.error_from_errno(_errno.EBADF) from exc
                 if wait_time == math.inf:
                     available = bool(selector.select())
                     if not available:
@@ -134,10 +134,10 @@ class SelectorBaseTransport(BaseTransport):
                     if not available:
                         if not is_retry_interval:
                             break
-        raise _error_from_errno(_errno.ETIMEDOUT)
+        raise _utils.error_from_errno(_errno.ETIMEDOUT)
 
 
-class SelectorStreamTransport(SelectorBaseTransport, StreamTransport):
+class SelectorStreamTransport(SelectorBaseTransport, base_transport.StreamTransport):
     """
     A continous stream data transport using the :mod:`selectors` module for blocking operations polling.
     """
@@ -194,7 +194,7 @@ class SelectorStreamTransport(SelectorBaseTransport, StreamTransport):
         return self._retry(lambda: self.send_noblock(data), timeout)
 
 
-class SelectorDatagramTransport(SelectorBaseTransport, DatagramTransport):
+class SelectorDatagramTransport(SelectorBaseTransport, base_transport.DatagramTransport):
     """
     A transport of unreliable packets of data using the :mod:`selectors` module for blocking operations polling.
     """

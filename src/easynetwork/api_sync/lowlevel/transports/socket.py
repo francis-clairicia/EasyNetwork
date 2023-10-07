@@ -37,11 +37,8 @@ else:
     _ssl_module = ssl
     del ssl
 
-from ....tools import typed_attr
-from ....tools._utils import check_socket_no_ssl as _check_socket_no_ssl, validate_timeout_delay as _validate_timeout_delay
-from ....tools.constants import MAX_DATAGRAM_BUFSIZE
-from ....tools.socket import ISocket, SocketAddress, SocketProxy, new_socket_address
-from .base_selector import SelectorDatagramTransport, SelectorStreamTransport, WouldBlockOnRead, WouldBlockOnWrite
+from ....tools import _utils, constants, socket as socket_tools, typed_attr
+from . import base_selector
 
 if TYPE_CHECKING:
     import ssl as _typing_ssl
@@ -53,13 +50,13 @@ _R = TypeVar("_R")
 class SocketAttribute(typed_attr.TypedAttributeSet):
     __slots__ = ()
 
-    socket: ISocket = typed_attr.typed_attribute()
+    socket: socket_tools.ISocket = typed_attr.typed_attribute()
     """:class:`socket.socket` instance."""
 
-    sockname: SocketAddress = typed_attr.typed_attribute()
+    sockname: socket_tools.SocketAddress = typed_attr.typed_attribute()
     """the socket's own address, result of :meth:`socket.socket.getsockname`."""
 
-    peername: SocketAddress = typed_attr.typed_attribute()
+    peername: socket_tools.SocketAddress = typed_attr.typed_attribute()
     """the remote address to which the socket is connected, result of :meth:`socket.socket.getpeername`."""
 
 
@@ -96,7 +93,7 @@ def _close_stream_socket(sock: socket.socket) -> None:
         sock.close()
 
 
-class SocketStreamTransport(SelectorStreamTransport):
+class SocketStreamTransport(base_selector.SelectorStreamTransport):
     __slots__ = ("__socket",)
 
     def __init__(
@@ -108,7 +105,7 @@ class SocketStreamTransport(SelectorStreamTransport):
     ) -> None:
         super().__init__(retry_interval=retry_interval, selector_factory=selector_factory)
 
-        _check_socket_no_ssl(sock)
+        _utils.check_socket_no_ssl(sock)
         if sock.type != socket.SOCK_STREAM:
             raise ValueError("A 'SOCK_STREAM' socket is expected")
         self.__socket: socket.socket = sock
@@ -124,13 +121,13 @@ class SocketStreamTransport(SelectorStreamTransport):
         try:
             return self.__socket.recv(bufsize)
         except (BlockingIOError, InterruptedError):
-            raise WouldBlockOnRead(self.__socket.fileno()) from None
+            raise base_selector.WouldBlockOnRead(self.__socket.fileno()) from None
 
     def send_noblock(self, data: bytes | bytearray | memoryview) -> int:
         try:
             return self.__socket.send(data)
         except (BlockingIOError, InterruptedError):
-            raise WouldBlockOnWrite(self.__socket.fileno()) from None
+            raise base_selector.WouldBlockOnWrite(self.__socket.fileno()) from None
 
     def send_eof(self) -> None:
         self.__socket.shutdown(socket.SHUT_WR)
@@ -140,23 +137,23 @@ class SocketStreamTransport(SelectorStreamTransport):
         socket_family: int = self.__socket.family
         return {
             **super().extra_attributes,
-            SocketAttribute.socket: lambda: SocketProxy(self.__socket),
-            SocketAttribute.sockname: lambda: new_socket_address(self.__socket.getsockname(), socket_family),
-            SocketAttribute.peername: lambda: new_socket_address(self.__socket.getpeername(), socket_family),
+            SocketAttribute.socket: lambda: socket_tools.SocketProxy(self.__socket),
+            SocketAttribute.sockname: lambda: socket_tools.new_socket_address(self.__socket.getsockname(), socket_family),
+            SocketAttribute.peername: lambda: socket_tools.new_socket_address(self.__socket.getpeername(), socket_family),
         }
 
 
-class SSLStreamTransport(SelectorStreamTransport):
+class SSLStreamTransport(base_selector.SelectorStreamTransport):
     __slots__ = ("__socket", "__ssl_shutdown_timeout", "__standard_compatible")
 
     def __init__(
         self,
         sock: socket.socket,
         ssl_context: _typing_ssl.SSLContext,
-        ssl_handshake_timeout: float,
-        ssl_shutdown_timeout: float,
         retry_interval: float,
         *,
+        handshake_timeout: float | None = None,
+        shutdown_timeout: float | None = None,
         server_side: bool | None = None,
         server_hostname: str | None = None,
         standard_compatible: bool = True,
@@ -165,11 +162,16 @@ class SSLStreamTransport(SelectorStreamTransport):
     ) -> None:
         super().__init__(retry_interval=retry_interval, selector_factory=selector_factory)
 
-        ssl_handshake_timeout = _validate_timeout_delay(ssl_handshake_timeout, positive_check=True)
-        ssl_shutdown_timeout = _validate_timeout_delay(ssl_shutdown_timeout, positive_check=True)
+        if handshake_timeout is None:
+            handshake_timeout = constants.SSL_HANDSHAKE_TIMEOUT
+        if shutdown_timeout is None:
+            shutdown_timeout = constants.SSL_SHUTDOWN_TIMEOUT
+
+        handshake_timeout = _utils.validate_timeout_delay(handshake_timeout, positive_check=True)
+        shutdown_timeout = _utils.validate_timeout_delay(shutdown_timeout, positive_check=True)
         standard_compatible = bool(standard_compatible)
 
-        _check_socket_no_ssl(sock)
+        _utils.check_socket_no_ssl(sock)
         if sock.type != socket.SOCK_STREAM:
             raise ValueError("A 'SOCK_STREAM' socket is expected")
         if server_side is None:
@@ -185,12 +187,12 @@ class SSLStreamTransport(SelectorStreamTransport):
         self.__socket.setblocking(False)
 
         try:
-            self._retry(lambda: self._try_ssl_method(self.__socket.do_handshake), ssl_handshake_timeout)
+            self._retry(lambda: self._try_ssl_method(self.__socket.do_handshake), handshake_timeout)
         except BaseException:
             self.__socket.close()
             raise
 
-        self.__ssl_shutdown_timeout: float = ssl_shutdown_timeout
+        self.__ssl_shutdown_timeout: float = shutdown_timeout
         self.__standard_compatible: bool = standard_compatible
 
     def is_closed(self) -> bool:
@@ -221,9 +223,9 @@ class SSLStreamTransport(SelectorStreamTransport):
         try:
             return socket_method(*args, **kwargs)
         except (_ssl_module.SSLWantReadError, _ssl_module.SSLSyscallError):
-            raise WouldBlockOnRead(self.__socket.fileno()) from None
+            raise base_selector.WouldBlockOnRead(self.__socket.fileno()) from None
         except _ssl_module.SSLWantWriteError:
-            raise WouldBlockOnWrite(self.__socket.fileno()) from None
+            raise base_selector.WouldBlockOnWrite(self.__socket.fileno()) from None
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
@@ -231,9 +233,9 @@ class SSLStreamTransport(SelectorStreamTransport):
         return {
             **super().extra_attributes,
             # Socket
-            SocketAttribute.socket: lambda: SocketProxy(self.__socket),
-            SocketAttribute.sockname: lambda: new_socket_address(self.__socket.getsockname(), socket_family),
-            SocketAttribute.peername: lambda: new_socket_address(self.__socket.getpeername(), socket_family),
+            SocketAttribute.socket: lambda: socket_tools.SocketProxy(self.__socket),
+            SocketAttribute.sockname: lambda: socket_tools.new_socket_address(self.__socket.getsockname(), socket_family),
+            SocketAttribute.peername: lambda: socket_tools.new_socket_address(self.__socket.getpeername(), socket_family),
             # SSL
             TLSAttribute.sslcontext: lambda: self.__socket.context,
             TLSAttribute.peercert: self.__socket.getpeercert,
@@ -244,7 +246,7 @@ class SSLStreamTransport(SelectorStreamTransport):
         }
 
 
-class SocketDatagramTransport(SelectorDatagramTransport):
+class SocketDatagramTransport(base_selector.SelectorDatagramTransport):
     __slots__ = ("__socket", "__max_datagram_size")
 
     def __init__(
@@ -252,7 +254,7 @@ class SocketDatagramTransport(SelectorDatagramTransport):
         sock: socket.socket,
         retry_interval: float,
         *,
-        max_datagram_size: int = MAX_DATAGRAM_BUFSIZE,
+        max_datagram_size: int = constants.MAX_DATAGRAM_BUFSIZE,
         selector_factory: Callable[[], selectors.BaseSelector] | None = None,
     ) -> None:
         super().__init__(retry_interval=retry_interval, selector_factory=selector_factory)
@@ -262,7 +264,7 @@ class SocketDatagramTransport(SelectorDatagramTransport):
 
         self.__max_datagram_size: int = max_datagram_size
 
-        _check_socket_no_ssl(sock)
+        _utils.check_socket_no_ssl(sock)
         if sock.type != socket.SOCK_DGRAM:
             raise ValueError("A 'SOCK_DGRAM' socket is expected")
         self.__socket: socket.socket = sock
@@ -278,20 +280,20 @@ class SocketDatagramTransport(SelectorDatagramTransport):
         try:
             return self.__socket.recv(self.__max_datagram_size)
         except (BlockingIOError, InterruptedError):
-            raise WouldBlockOnRead(self.__socket.fileno()) from None
+            raise base_selector.WouldBlockOnRead(self.__socket.fileno()) from None
 
     def send_noblock(self, data: bytes | bytearray | memoryview) -> None:
         try:
             self.__socket.send(data)
         except (BlockingIOError, InterruptedError):
-            raise WouldBlockOnWrite(self.__socket.fileno()) from None
+            raise base_selector.WouldBlockOnWrite(self.__socket.fileno()) from None
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         socket_family: int = self.__socket.family
         return {
             **super().extra_attributes,
-            SocketAttribute.socket: lambda: SocketProxy(self.__socket),
-            SocketAttribute.sockname: lambda: new_socket_address(self.__socket.getsockname(), socket_family),
-            SocketAttribute.peername: lambda: new_socket_address(self.__socket.getpeername(), socket_family),
+            SocketAttribute.socket: lambda: socket_tools.SocketProxy(self.__socket),
+            SocketAttribute.sockname: lambda: socket_tools.new_socket_address(self.__socket.getsockname(), socket_family),
+            SocketAttribute.peername: lambda: socket_tools.new_socket_address(self.__socket.getpeername(), socket_family),
         }

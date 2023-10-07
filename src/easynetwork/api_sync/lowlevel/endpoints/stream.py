@@ -24,12 +24,10 @@ import time
 from collections.abc import Callable, Mapping
 from typing import Any, Generic
 
+from .... import protocol as protocol_module
 from ...._typevars import _ReceivedPacketT, _SentPacketT
-from ....protocol import StreamProtocol
-from ....tools import typed_attr
-from ....tools._stream import StreamDataConsumer as _StreamDataConsumer, StreamDataProducer as _StreamDataProducer
-from ....tools._utils import error_from_errno as _error_from_errno
-from ..transports.abc import StreamTransport
+from ....tools import _stream, _utils, typed_attr
+from ..transports import abc as base_transport
 
 
 class StreamEndpoint(Generic[_SentPacketT, _ReceivedPacketT], typed_attr.TypedAttributeProvider):
@@ -49,8 +47,8 @@ class StreamEndpoint(Generic[_SentPacketT, _ReceivedPacketT], typed_attr.TypedAt
 
     def __init__(
         self,
-        transport: StreamTransport,
-        protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
+        transport: base_transport.StreamTransport,
+        protocol: protocol_module.StreamProtocol[_SentPacketT, _ReceivedPacketT],
         max_recv_size: int,
     ) -> None:
         """
@@ -60,14 +58,14 @@ class StreamEndpoint(Generic[_SentPacketT, _ReceivedPacketT], typed_attr.TypedAt
             max_recv_size: Read buffer size.
         """
 
-        if not isinstance(transport, StreamTransport):
+        if not isinstance(transport, base_transport.StreamTransport):
             raise TypeError(f"Expected a StreamTransport object, got {transport!r}")
         if not isinstance(max_recv_size, int) or max_recv_size <= 0:
             raise ValueError("'max_recv_size' must be a strictly positive integer")
 
-        self.__producer: _StreamDataProducer[_SentPacketT] = _StreamDataProducer(protocol)
-        self.__consumer: _StreamDataConsumer[_ReceivedPacketT] = _StreamDataConsumer(protocol)
-        self.__transport: StreamTransport = transport
+        self.__producer: _stream.StreamDataProducer[_SentPacketT] = _stream.StreamDataProducer(protocol)
+        self.__consumer: _stream.StreamDataConsumer[_ReceivedPacketT] = _stream.StreamDataConsumer(protocol)
+        self.__transport: base_transport.StreamTransport = transport
         self.__max_recv_size: int = max_recv_size
         self.__eof_sent: bool = False
         self.__eof_reached: bool = False
@@ -202,7 +200,7 @@ class StreamEndpoint(Generic[_SentPacketT, _ReceivedPacketT], typed_attr.TypedAt
                 elif buffer_not_full:
                     break
         # Loop break
-        raise _error_from_errno(_errno.ETIMEDOUT)
+        raise _utils.error_from_errno(_errno.ETIMEDOUT)
 
     @property
     def max_recv_size(self) -> int:
