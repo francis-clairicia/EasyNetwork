@@ -20,12 +20,12 @@ __all__ = ["DatagramEndpoint"]
 
 import math
 from collections.abc import Callable, Mapping
-from typing import Any, Generic
+from typing import Any, Generic, TypeGuard
 
 from .... import protocol as protocol_module
 from ...._typevars import _ReceivedPacketT, _SentPacketT
 from ... import typed_attr
-from ..transports import abc as base_transport
+from ..transports import abc as transports
 
 
 class DatagramEndpoint(Generic[_SentPacketT, _ReceivedPacketT], typed_attr.TypedAttributeProvider):
@@ -35,13 +35,15 @@ class DatagramEndpoint(Generic[_SentPacketT, _ReceivedPacketT], typed_attr.Typed
 
     __slots__ = (
         "__transport",
+        "__is_read_transport",
+        "__is_write_transport",
         "__protocol",
         "__weakref__",
     )
 
     def __init__(
         self,
-        transport: base_transport.DatagramTransport,
+        transport: transports.DatagramTransport | transports.DatagramReadTransport | transports.DatagramWriteTransport,
         protocol: protocol_module.DatagramProtocol[_SentPacketT, _ReceivedPacketT],
     ) -> None:
         """
@@ -50,12 +52,14 @@ class DatagramEndpoint(Generic[_SentPacketT, _ReceivedPacketT], typed_attr.Typed
             protocol: The :term:`protocol object` to use.
         """
 
-        if not isinstance(transport, base_transport.DatagramTransport):
+        if not isinstance(transport, (transports.DatagramReadTransport, transports.DatagramWriteTransport)):
             raise TypeError(f"Expected a DatagramTransport object, got {transport!r}")
         if not isinstance(protocol, protocol_module.DatagramProtocol):
             raise TypeError(f"Expected a DatagramProtocol object, got {protocol!r}")
 
-        self.__transport: base_transport.DatagramTransport = transport
+        self.__transport: transports.DatagramReadTransport | transports.DatagramWriteTransport = transport
+        self.__is_read_transport: bool = isinstance(transport, transports.DatagramReadTransport)
+        self.__is_write_transport: bool = isinstance(transport, transports.DatagramWriteTransport)
         self.__protocol: protocol_module.DatagramProtocol[_SentPacketT, _ReceivedPacketT] = protocol
 
     def __del__(self) -> None:  # pragma: no cover
@@ -104,6 +108,9 @@ class DatagramEndpoint(Generic[_SentPacketT, _ReceivedPacketT], typed_attr.Typed
         transport = self.__transport
         protocol = self.__protocol
 
+        if not self.__supports_write(transport):
+            raise NotImplementedError("transport does not support sending data")
+
         transport.send(protocol.make_datagram(packet), timeout)
 
     def recv_packet(self, *, timeout: float | None = None) -> _ReceivedPacketT:
@@ -128,7 +135,16 @@ class DatagramEndpoint(Generic[_SentPacketT, _ReceivedPacketT], typed_attr.Typed
         transport = self.__transport
         protocol = self.__protocol
 
+        if not self.__supports_read(transport):
+            raise NotImplementedError("transport does not support receiving data")
+
         return protocol.build_packet_from_datagram(transport.recv(timeout))
+
+    def __supports_read(self, transport: transports.BaseTransport) -> TypeGuard[transports.DatagramReadTransport]:
+        return self.__is_read_transport
+
+    def __supports_write(self, transport: transports.BaseTransport) -> TypeGuard[transports.DatagramWriteTransport]:
+        return self.__is_write_transport
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:

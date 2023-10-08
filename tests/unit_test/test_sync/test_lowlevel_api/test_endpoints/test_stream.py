@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import contextlib
 import math
 from collections.abc import Generator
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.lowlevel._stream import StreamDataConsumer
 from easynetwork.lowlevel.api_sync.endpoints.stream import StreamEndpoint
-from easynetwork.lowlevel.api_sync.transports.abc import StreamTransport
+from easynetwork.lowlevel.api_sync.transports.abc import StreamReadTransport, StreamTransport, StreamWriteTransport
 
 import pytest
 
@@ -27,10 +28,10 @@ class TestStreamEndpoint:
     def consumer_feed(mocker: MockerFixture) -> MagicMock:
         return mocker.patch.object(StreamDataConsumer, "feed", autospec=True, side_effect=StreamDataConsumer.feed)
 
-    @pytest.fixture
+    @pytest.fixture(params=[StreamReadTransport, StreamWriteTransport, StreamTransport])
     @staticmethod
-    def mock_stream_transport(mocker: MockerFixture) -> MagicMock:
-        mock_stream_transport = mocker.NonCallableMagicMock(spec=StreamTransport)
+    def mock_stream_transport(request: pytest.FixtureRequest, mocker: MockerFixture) -> MagicMock:
+        mock_stream_transport = mocker.NonCallableMagicMock(spec=request.param)
         mock_stream_transport.is_closed.return_value = False
 
         def close_side_effect() -> None:
@@ -218,15 +219,25 @@ class TestStreamEndpoint:
     ) -> None:
         # Arrange
         chunks: list[bytes] = []
-        mock_stream_transport.send_all_from_iterable.side_effect = lambda it, timeout: chunks.extend(it)
+        with contextlib.suppress(AttributeError):
+            mock_stream_transport.send_all_from_iterable.side_effect = lambda it, timeout: chunks.extend(it)
 
         # Act
-        endpoint.send_packet(mocker.sentinel.packet, timeout=send_timeout)
+        with (
+            pytest.raises(NotImplementedError, match=r"^transport does not support sending data$")
+            if mock_stream_transport.__class__ not in (StreamWriteTransport, StreamTransport)
+            else contextlib.nullcontext()
+        ):
+            endpoint.send_packet(mocker.sentinel.packet, timeout=send_timeout)
 
         # Assert
-        mock_stream_protocol.generate_chunks.assert_called_once_with(mocker.sentinel.packet)
-        mock_stream_transport.send_all_from_iterable.assert_called_once_with(mocker.ANY, expected_send_timeout)
-        assert chunks == [b"packet\n"]
+        if mock_stream_transport.__class__ in (StreamWriteTransport, StreamTransport):
+            mock_stream_protocol.generate_chunks.assert_called_once_with(mocker.sentinel.packet)
+            mock_stream_transport.send_all_from_iterable.assert_called_once_with(mocker.ANY, expected_send_timeout)
+            assert chunks == [b"packet\n"]
+        else:
+            mock_stream_protocol.generate_chunks.assert_not_called()
+            assert chunks == []
 
     @pytest.mark.parametrize("transport_closed", [False, True], ids=lambda p: f"transport_closed=={p}")
     def test____send_eof____default(
@@ -241,19 +252,26 @@ class TestStreamEndpoint:
         mock_stream_transport.is_closed.return_value = transport_closed
 
         # Act
-        endpoint.send_eof()
+        with (
+            pytest.raises(NotImplementedError, match=r"^transport does not support sending EOF$")
+            if mock_stream_transport.__class__ is not StreamTransport
+            else contextlib.nullcontext()
+        ):
+            endpoint.send_eof()
 
         # Assert
-        if transport_closed:
-            mock_stream_transport.send_eof.assert_not_called()
-        else:
-            mock_stream_transport.send_eof.assert_called_once_with()
-        with pytest.raises(RuntimeError, match=r"^send_eof\(\) has been called earlier$"):
-            endpoint.send_packet(mocker.sentinel.packet)
-        mock_stream_protocol.generate_chunks.assert_not_called()
-        mock_stream_transport.send_all_from_iterable.assert_not_called()
+        if mock_stream_transport.__class__ is StreamTransport:
+            if transport_closed:
+                mock_stream_transport.send_eof.assert_not_called()
+            else:
+                mock_stream_transport.send_eof.assert_called_once_with()
+            with pytest.raises(RuntimeError, match=r"^send_eof\(\) has been called earlier$"):
+                endpoint.send_packet(mocker.sentinel.packet)
+            mock_stream_protocol.generate_chunks.assert_not_called()
+            mock_stream_transport.send_all_from_iterable.assert_not_called()
 
     @pytest.mark.parametrize("transport_closed", [False, True], ids=lambda p: f"transport_closed=={p}")
+    @pytest.mark.parametrize("mock_stream_transport", [StreamTransport], indirect=True)
     def test____send_eof____idempotent(
         self,
         transport_closed: bool,
@@ -287,17 +305,29 @@ class TestStreamEndpoint:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_stream_transport.recv.side_effect = [b"packet\n"]
+        with contextlib.suppress(AttributeError):
+            mock_stream_transport.recv.side_effect = [b"packet\n"]
 
         # Act
-        packet: Any = endpoint.recv_packet(timeout=recv_timeout)
+        packet: Any = mocker.sentinel.packet_not_received
+        with (
+            pytest.raises(NotImplementedError, match=r"^transport does not support receiving data$")
+            if mock_stream_transport.__class__ not in (StreamReadTransport, StreamTransport)
+            else contextlib.nullcontext()
+        ):
+            packet = endpoint.recv_packet(timeout=recv_timeout)
 
         # Assert
-        mock_stream_transport.recv.assert_called_once_with(max_recv_size, expected_recv_timeout)
-        consumer_feed.assert_called_once_with(mocker.ANY, b"packet\n")
-        assert packet is mocker.sentinel.packet
+        if mock_stream_transport.__class__ in (StreamReadTransport, StreamTransport):
+            mock_stream_transport.recv.assert_called_once_with(max_recv_size, expected_recv_timeout)
+            consumer_feed.assert_called_once_with(mocker.ANY, b"packet\n")
+            assert packet is mocker.sentinel.packet
+        else:
+            consumer_feed.assert_not_called()
+            assert packet is mocker.sentinel.packet_not_received
 
     @pytest.mark.parametrize("recv_timeout", [None, math.inf, 123456789], indirect=True)  # Do not test with timeout==0
+    @pytest.mark.parametrize("mock_stream_transport", [StreamReadTransport], indirect=True)
     def test____recv_packet____blocking____partial_data(
         self,
         endpoint: StreamEndpoint[Any, Any],
@@ -331,6 +361,7 @@ class TestStreamEndpoint:
         ],
         indirect=True,
     )
+    @pytest.mark.parametrize("mock_stream_transport", [StreamReadTransport], indirect=True)
     def test____recv_packet_____non_blocking____partial_data(
         self,
         endpoint: StreamEndpoint[Any, Any],
@@ -364,6 +395,7 @@ class TestStreamEndpoint:
             mock_stream_transport.recv.assert_called_once_with(max_recv_size, expected_recv_timeout)
             consumer_feed.assert_called_once_with(mocker.ANY, b"pac")
 
+    @pytest.mark.parametrize("mock_stream_transport", [StreamReadTransport], indirect=True)
     def test____recv_packet____blocking_or_not____extra_data(
         self,
         endpoint: StreamEndpoint[Any, Any],
@@ -385,6 +417,7 @@ class TestStreamEndpoint:
         assert packet_1 is mocker.sentinel.packet_1
         assert packet_2 is mocker.sentinel.packet_2
 
+    @pytest.mark.parametrize("mock_stream_transport", [StreamReadTransport], indirect=True)
     def test____recv_packet____blocking_or_not____eof_error____default(
         self,
         endpoint: StreamEndpoint[Any, Any],
@@ -403,12 +436,12 @@ class TestStreamEndpoint:
         mock_stream_transport.recv.assert_called_once()
         consumer_feed.assert_not_called()
 
+    @pytest.mark.parametrize("mock_stream_transport", [StreamReadTransport], indirect=True)
     def test____special_case____recv_packet____blocking_or_not____eof_error____do_not_try_socket_recv_on_next_call(
         self,
         endpoint: StreamEndpoint[Any, Any],
         recv_timeout: float | None,
         mock_stream_transport: MagicMock,
-        consumer_feed: MagicMock,
     ) -> None:
         # Arrange
         mock_stream_transport.recv.side_effect = [b""]

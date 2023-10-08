@@ -18,8 +18,12 @@ from __future__ import annotations
 
 __all__ = [
     "SelectorBaseTransport",
+    "SelectorDatagramReadTransport",
     "SelectorDatagramTransport",
+    "SelectorDatagramWriteTransport",
+    "SelectorStreamReadTransport",
     "SelectorStreamTransport",
+    "SelectorStreamWriteTransport",
 ]
 
 import errno as _errno
@@ -31,7 +35,7 @@ from collections.abc import Callable
 from typing import TypeVar
 
 from ... import _utils
-from . import abc as base_transport
+from . import abc as transports
 
 _R = TypeVar("_R")
 
@@ -56,7 +60,7 @@ class WouldBlockOnWrite(Exception):
         """The file descriptor to wait for."""
 
 
-class SelectorBaseTransport(base_transport.BaseTransport):
+class SelectorBaseTransport(transports.BaseTransport):
     """
     Base class for transports using the :mod:`selectors` module for blocking operations polling.
     """
@@ -137,9 +141,9 @@ class SelectorBaseTransport(base_transport.BaseTransport):
         raise _utils.error_from_errno(_errno.ETIMEDOUT)
 
 
-class SelectorStreamTransport(SelectorBaseTransport, base_transport.StreamTransport):
+class SelectorStreamReadTransport(SelectorBaseTransport, transports.StreamReadTransport):
     """
-    A continous stream data transport using the :mod:`selectors` module for blocking operations polling.
+    A continous stream data reader transport using the :mod:`selectors` module for blocking operations polling.
     """
 
     __slots__ = ()
@@ -163,6 +167,22 @@ class SelectorStreamTransport(SelectorBaseTransport, base_transport.StreamTransp
         """
         raise NotImplementedError
 
+    def recv(self, bufsize: int, timeout: float) -> bytes:
+        """
+        Read and return up to `bufsize` bytes.
+
+        The default implementation will retry to call :meth:`recv_noblock` until it succeeds under the given `timeout`.
+        """
+        return self._retry(lambda: self.recv_noblock(bufsize), timeout)
+
+
+class SelectorStreamWriteTransport(SelectorBaseTransport, transports.StreamWriteTransport):
+    """
+    A continous stream data writer transport using the :mod:`selectors` module for blocking operations polling.
+    """
+
+    __slots__ = ()
+
     @abstractmethod
     def send_noblock(self, data: bytes | bytearray | memoryview) -> int:
         """
@@ -177,14 +197,6 @@ class SelectorStreamTransport(SelectorBaseTransport, base_transport.StreamTransp
         """
         raise NotImplementedError
 
-    def recv(self, bufsize: int, timeout: float) -> bytes:
-        """
-        Read and return up to `bufsize` bytes.
-
-        The default implementation will retry to call :meth:`recv_noblock` until it succeeds under the given `timeout`.
-        """
-        return self._retry(lambda: self.recv_noblock(bufsize), timeout)
-
     def send(self, data: bytes | bytearray | memoryview, timeout: float) -> int:
         """
         Send the `data` bytes to the remote peer.
@@ -194,9 +206,17 @@ class SelectorStreamTransport(SelectorBaseTransport, base_transport.StreamTransp
         return self._retry(lambda: self.send_noblock(data), timeout)
 
 
-class SelectorDatagramTransport(SelectorBaseTransport, base_transport.DatagramTransport):
+class SelectorStreamTransport(SelectorStreamWriteTransport, SelectorStreamReadTransport, transports.StreamTransport):
     """
-    A transport of unreliable packets of data using the :mod:`selectors` module for blocking operations polling.
+    A continous stream data transport using the :mod:`selectors` module for blocking operations polling.
+    """
+
+    __slots__ = ()
+
+
+class SelectorDatagramReadTransport(SelectorBaseTransport, transports.DatagramReadTransport):
+    """
+    A reader transport of unreliable packets of data using the :mod:`selectors` module for blocking operations polling.
     """
 
     __slots__ = ()
@@ -215,6 +235,22 @@ class SelectorDatagramTransport(SelectorBaseTransport, base_transport.DatagramTr
         """
         raise NotImplementedError
 
+    def recv(self, timeout: float) -> bytes:
+        """
+        Read and return the next available packet.
+
+        The default implementation will retry to call :meth:`recv_noblock` until it succeeds under the given `timeout`.
+        """
+        return self._retry(lambda: self.recv_noblock(), timeout)
+
+
+class SelectorDatagramWriteTransport(SelectorBaseTransport, transports.DatagramWriteTransport):
+    """
+    A writer transport of unreliable packets of data using the :mod:`selectors` module for blocking operations polling.
+    """
+
+    __slots__ = ()
+
     @abstractmethod
     def send_noblock(self, data: bytes | bytearray | memoryview) -> None:
         """
@@ -230,14 +266,6 @@ class SelectorDatagramTransport(SelectorBaseTransport, base_transport.DatagramTr
         """
         raise NotImplementedError
 
-    def recv(self, timeout: float) -> bytes:
-        """
-        Read and return the next available packet.
-
-        The default implementation will retry to call :meth:`recv_noblock` until it succeeds under the given `timeout`.
-        """
-        return self._retry(lambda: self.recv_noblock(), timeout)
-
     def send(self, data: bytes | bytearray | memoryview, timeout: float) -> None:
         """
         Send the `data` bytes to the remote peer.
@@ -245,3 +273,11 @@ class SelectorDatagramTransport(SelectorBaseTransport, base_transport.DatagramTr
         The default implementation will retry to call :meth:`send_noblock` until it succeeds under the given `timeout`.
         """
         return self._retry(lambda: self.send_noblock(data), timeout)
+
+
+class SelectorDatagramTransport(SelectorDatagramWriteTransport, SelectorDatagramReadTransport, transports.DatagramTransport):
+    """
+    A transport of unreliable packets of data using the :mod:`selectors` module for blocking operations polling.
+    """
+
+    __slots__ = ()

@@ -22,12 +22,12 @@ import errno as _errno
 import math
 import time
 from collections.abc import Callable, Mapping
-from typing import Any, Generic
+from typing import Any, Generic, TypeGuard
 
 from .... import protocol as protocol_module
 from ...._typevars import _ReceivedPacketT, _SentPacketT
 from ... import _stream, _utils, typed_attr
-from ..transports import abc as base_transport
+from ..transports import abc as transports
 
 
 class StreamEndpoint(Generic[_SentPacketT, _ReceivedPacketT], typed_attr.TypedAttributeProvider):
@@ -37,6 +37,9 @@ class StreamEndpoint(Generic[_SentPacketT, _ReceivedPacketT], typed_attr.TypedAt
 
     __slots__ = (
         "__transport",
+        "__is_read_transport",
+        "__is_write_transport",
+        "__is_bidirectional_transport",
         "__producer",
         "__consumer",
         "__max_recv_size",
@@ -47,7 +50,7 @@ class StreamEndpoint(Generic[_SentPacketT, _ReceivedPacketT], typed_attr.TypedAt
 
     def __init__(
         self,
-        transport: base_transport.StreamTransport,
+        transport: transports.StreamTransport | transports.StreamReadTransport | transports.StreamWriteTransport,
         protocol: protocol_module.StreamProtocol[_SentPacketT, _ReceivedPacketT],
         max_recv_size: int,
     ) -> None:
@@ -58,14 +61,17 @@ class StreamEndpoint(Generic[_SentPacketT, _ReceivedPacketT], typed_attr.TypedAt
             max_recv_size: Read buffer size.
         """
 
-        if not isinstance(transport, base_transport.StreamTransport):
+        if not isinstance(transport, (transports.StreamReadTransport, transports.StreamWriteTransport)):
             raise TypeError(f"Expected a StreamTransport object, got {transport!r}")
         if not isinstance(max_recv_size, int) or max_recv_size <= 0:
             raise ValueError("'max_recv_size' must be a strictly positive integer")
 
         self.__producer: _stream.StreamDataProducer[_SentPacketT] = _stream.StreamDataProducer(protocol)
         self.__consumer: _stream.StreamDataConsumer[_ReceivedPacketT] = _stream.StreamDataConsumer(protocol)
-        self.__transport: base_transport.StreamTransport = transport
+        self.__is_read_transport: bool = isinstance(transport, transports.StreamReadTransport)
+        self.__is_write_transport: bool = isinstance(transport, transports.StreamWriteTransport)
+        self.__is_bidirectional_transport: bool = isinstance(transport, transports.StreamTransport)
+        self.__transport: transports.StreamReadTransport | transports.StreamWriteTransport = transport
         self.__max_recv_size: int = max_recv_size
         self.__eof_sent: bool = False
         self.__eof_reached: bool = False
@@ -123,6 +129,9 @@ class StreamEndpoint(Generic[_SentPacketT, _ReceivedPacketT], typed_attr.TypedAt
         transport = self.__transport
         producer = self.__producer
 
+        if not self.__supports_write(transport):
+            raise NotImplementedError("transport does not support sending data")
+
         producer.enqueue(packet)
         transport.send_all_from_iterable(producer, timeout)
 
@@ -139,6 +148,9 @@ class StreamEndpoint(Generic[_SentPacketT, _ReceivedPacketT], typed_attr.TypedAt
 
         transport = self.__transport
         producer = self.__producer
+
+        if not self.__supports_sending_eof(transport):
+            raise NotImplementedError("transport does not support sending EOF")
 
         if not transport.is_closed():
             transport.send_eof()
@@ -167,6 +179,9 @@ class StreamEndpoint(Generic[_SentPacketT, _ReceivedPacketT], typed_attr.TypedAt
 
         transport = self.__transport
         consumer = self.__consumer
+
+        if not self.__supports_read(transport):
+            raise NotImplementedError("transport does not support receiving data")
 
         try:
             return next(consumer)  # If there is enough data from last call to create a packet, return immediately
@@ -202,6 +217,15 @@ class StreamEndpoint(Generic[_SentPacketT, _ReceivedPacketT], typed_attr.TypedAt
                     break
         # Loop break
         raise _utils.error_from_errno(_errno.ETIMEDOUT)
+
+    def __supports_read(self, transport: transports.BaseTransport) -> TypeGuard[transports.StreamReadTransport]:
+        return self.__is_read_transport
+
+    def __supports_write(self, transport: transports.BaseTransport) -> TypeGuard[transports.StreamWriteTransport]:
+        return self.__is_write_transport
+
+    def __supports_sending_eof(self, transport: transports.BaseTransport) -> TypeGuard[transports.StreamTransport]:
+        return self.__is_bidirectional_transport
 
     @property
     def max_recv_size(self) -> int:

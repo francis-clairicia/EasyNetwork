@@ -18,8 +18,12 @@ from __future__ import annotations
 
 __all__ = [
     "BaseTransport",
+    "DatagramReadTransport",
     "DatagramTransport",
+    "DatagramWriteTransport",
+    "StreamReadTransport",
     "StreamTransport",
+    "StreamWriteTransport",
 ]
 
 import time
@@ -54,9 +58,9 @@ class BaseTransport(typed_attr.TypedAttributeProvider, metaclass=ABCMeta):
         raise NotImplementedError
 
 
-class StreamTransport(BaseTransport):
+class StreamReadTransport(BaseTransport):
     """
-    A continous stream data transport.
+    A continous stream data reader transport.
     """
 
     __slots__ = ()
@@ -82,6 +86,14 @@ class StreamTransport(BaseTransport):
         """
         raise NotImplementedError
 
+
+class StreamWriteTransport(BaseTransport):
+    """
+    A continous stream data writer transport.
+    """
+
+    __slots__ = ()
+
     @abstractmethod
     def send(self, data: bytes | bytearray | memoryview, timeout: float) -> int:
         """
@@ -97,13 +109,6 @@ class StreamTransport(BaseTransport):
 
         Returns:
             the number of sent bytes.
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    def send_eof(self) -> None:
-        """
-        Closes the write end of the stream after the buffered write data is flushed.
         """
         raise NotImplementedError
 
@@ -160,12 +165,28 @@ class StreamTransport(BaseTransport):
             TimeoutError: Operation timed out.
         """
         data = b"".join(iterable_of_data)
+        del iterable_of_data
         return self.send_all(data, timeout)
 
 
-class DatagramTransport(BaseTransport):
+class StreamTransport(StreamWriteTransport, StreamReadTransport):
     """
-    A transport of unreliable packets of data.
+    A continous stream data transport.
+    """
+
+    __slots__ = ()
+
+    @abstractmethod
+    def send_eof(self) -> None:
+        """
+        Closes the write end of the stream after the buffered write data is flushed.
+        """
+        raise NotImplementedError
+
+
+class DatagramReadTransport(BaseTransport):
+    """
+    A reader transport of unreliable packets of data.
     """
 
     __slots__ = ()
@@ -187,6 +208,14 @@ class DatagramTransport(BaseTransport):
         """
         raise NotImplementedError
 
+
+class DatagramWriteTransport(BaseTransport):
+    """
+    A writer transport of unreliable packets of data.
+    """
+
+    __slots__ = ()
+
     @abstractmethod
     def send(self, data: bytes | bytearray | memoryview, timeout: float) -> None:
         """
@@ -201,3 +230,11 @@ class DatagramTransport(BaseTransport):
             TimeoutError: Operation timed out.
         """
         raise NotImplementedError
+
+
+class DatagramTransport(DatagramWriteTransport, DatagramReadTransport):
+    """
+    A transport of unreliable packets of data.
+    """
+
+    __slots__ = ()

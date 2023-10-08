@@ -1086,7 +1086,7 @@ class AsyncBackend(metaclass=ABCMeta):
         Returns:
             A stream socket.
         """
-        raise NotImplementedError("SSL/TLS is not supported by this backend")
+        raise NotImplementedError("SSL/TLS is not supported by this backend")  # pragma: no cover
 
     @abstractmethod
     async def wrap_tcp_client_socket(self, socket: _socket.socket) -> AsyncStreamSocketAdapter:
@@ -1142,7 +1142,7 @@ class AsyncBackend(metaclass=ABCMeta):
         Returns:
             A stream socket.
         """
-        raise NotImplementedError("SSL/TLS is not supported by this backend")
+        raise NotImplementedError("SSL/TLS is not supported by this backend")  # pragma: no cover
 
     @abstractmethod
     async def create_tcp_listeners(
@@ -1223,7 +1223,7 @@ class AsyncBackend(metaclass=ABCMeta):
         Returns:
             A sequence of listener sockets.
         """
-        raise NotImplementedError("SSL/TLS is not supported by this backend")
+        raise NotImplementedError("SSL/TLS is not supported by this backend")  # pragma: no cover
 
     @abstractmethod
     async def create_udp_endpoint(

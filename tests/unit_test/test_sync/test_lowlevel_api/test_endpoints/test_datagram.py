@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import contextlib
 import math
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.lowlevel.api_sync.endpoints.datagram import DatagramEndpoint
-from easynetwork.lowlevel.api_sync.transports.abc import DatagramTransport
+from easynetwork.lowlevel.api_sync.transports.abc import DatagramReadTransport, DatagramTransport, DatagramWriteTransport
 
 import pytest
 
@@ -15,10 +16,10 @@ if TYPE_CHECKING:
 
 
 class TestDatagramEndpoint:
-    @pytest.fixture
+    @pytest.fixture(params=[DatagramReadTransport, DatagramWriteTransport, DatagramTransport])
     @staticmethod
-    def mock_datagram_transport(mocker: MockerFixture) -> MagicMock:
-        mock_datagram_transport = mocker.NonCallableMagicMock(spec=DatagramTransport)
+    def mock_datagram_transport(request: pytest.FixtureRequest, mocker: MockerFixture) -> MagicMock:
+        mock_datagram_transport = mocker.NonCallableMagicMock(spec=request.param)
         mock_datagram_transport.is_closed.return_value = False
 
         def close_side_effect() -> None:
@@ -160,14 +161,23 @@ class TestDatagramEndpoint:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_datagram_transport.send.return_value = None
+        with contextlib.suppress(AttributeError):
+            mock_datagram_transport.send.return_value = None
 
         # Act
-        endpoint.send_packet(mocker.sentinel.packet, timeout=send_timeout)
+        with (
+            pytest.raises(NotImplementedError, match=r"^transport does not support sending data$")
+            if mock_datagram_transport.__class__ not in (DatagramWriteTransport, DatagramTransport)
+            else contextlib.nullcontext()
+        ):
+            endpoint.send_packet(mocker.sentinel.packet, timeout=send_timeout)
 
         # Assert
-        mock_datagram_protocol.make_datagram.assert_called_once_with(mocker.sentinel.packet)
-        mock_datagram_transport.send.assert_called_once_with(b"packet", expected_send_timeout)
+        if mock_datagram_transport.__class__ in (DatagramWriteTransport, DatagramTransport):
+            mock_datagram_protocol.make_datagram.assert_called_once_with(mocker.sentinel.packet)
+            mock_datagram_transport.send.assert_called_once_with(b"packet", expected_send_timeout)
+        else:
+            mock_datagram_protocol.make_datagram.assert_not_called()
 
     def test____recv_packet____receive_bytes_from_transport(
         self,
@@ -179,12 +189,23 @@ class TestDatagramEndpoint:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_datagram_transport.recv.side_effect = [b"packet"]
+        with contextlib.suppress(AttributeError):
+            mock_datagram_transport.recv.side_effect = [b"packet"]
 
         # Act
-        packet: Any = endpoint.recv_packet(timeout=recv_timeout)
+        packet: Any = mocker.sentinel.packet_not_received
+        with (
+            pytest.raises(NotImplementedError, match=r"^transport does not support receiving data$")
+            if mock_datagram_transport.__class__ not in (DatagramReadTransport, DatagramTransport)
+            else contextlib.nullcontext()
+        ):
+            packet = endpoint.recv_packet(timeout=recv_timeout)
 
         # Assert
-        mock_datagram_transport.recv.assert_called_once_with(expected_recv_timeout)
-        mock_datagram_protocol.build_packet_from_datagram.assert_called_once_with(b"packet")
-        assert packet is mocker.sentinel.packet
+        if mock_datagram_transport.__class__ in (DatagramReadTransport, DatagramTransport):
+            mock_datagram_transport.recv.assert_called_once_with(expected_recv_timeout)
+            mock_datagram_protocol.build_packet_from_datagram.assert_called_once_with(b"packet")
+            assert packet is mocker.sentinel.packet
+        else:
+            mock_datagram_protocol.build_packet_from_datagram.assert_not_called()
+            assert packet is mocker.sentinel.packet_not_received
