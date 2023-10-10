@@ -18,6 +18,7 @@ from __future__ import annotations
 
 __all__ = [
     "AddressFamily",
+    "INETSocketAttribute",
     "IPv4SocketAddress",
     "IPv6SocketAddress",
     "ISocket",
@@ -25,6 +26,8 @@ __all__ = [
     "SocketProxy",
     "SupportsSocketOptions",
     "TLSAttribute",
+    "_get_socket_extra",
+    "_get_tls_extra",
     "disable_socket_linger",
     "enable_socket_linger",
     "get_socket_linger_struct",
@@ -71,10 +74,20 @@ class SocketAttribute(typed_attr.TypedAttributeSet):
     socket: ISocket = typed_attr.typed_attribute()
     """:class:`socket.socket` instance."""
 
-    sockname: SocketAddress = typed_attr.typed_attribute()
+    sockname: _socket._RetAddress = typed_attr.typed_attribute()
     """the socket's own address, result of :meth:`socket.socket.getsockname`."""
 
-    peername: SocketAddress = typed_attr.typed_attribute()
+    peername: _socket._RetAddress = typed_attr.typed_attribute()
+    """the remote address to which the socket is connected, result of :meth:`socket.socket.getpeername`."""
+
+
+class INETSocketAttribute(SocketAttribute):
+    __slots__ = ()
+
+    sockname: tuple[str, int] | tuple[str, int, int, int]
+    """the socket's own address, result of :meth:`socket.socket.getsockname`."""
+
+    peername: tuple[str, int] | tuple[str, int, int, int]
     """the remote address to which the socket is connected, result of :meth:`socket.socket.getpeername`."""
 
 
@@ -84,21 +97,21 @@ class TLSAttribute(typed_attr.TypedAttributeSet):
     sslcontext: _typing_ssl.SSLContext = typed_attr.typed_attribute()
     """:class:`ssl.SSLContext` instance."""
 
-    peercert: _typing_ssl._PeerCertRetDictType | None = typed_attr.typed_attribute()
+    peercert: _typing_ssl._PeerCertRetDictType = typed_attr.typed_attribute()
     """peer certificate; result of :meth:`ssl.SSLSocket.getpeercert`."""
 
-    cipher: tuple[str, str, int] | None = typed_attr.typed_attribute()
+    cipher: tuple[str, str, int] = typed_attr.typed_attribute()
     """a three-value tuple containing the name of the cipher being used, the version of the SSL protocol
     that defines its use, and the number of secret bits being used; result of :meth:`ssl.SSLSocket.cipher`."""
 
-    compression: str | None = typed_attr.typed_attribute()
+    compression: str = typed_attr.typed_attribute()
     """the compression algorithm being used as a string, or None if the connection isn't compressed;
     result of :meth:`ssl.SSLSocket.compression`."""
 
     standard_compatible: bool = typed_attr.typed_attribute()
     """:data:`True` if this stream does (and expects) a closing TLS handshake when the stream is being closed."""
 
-    tls_version: str | None = typed_attr.typed_attribute()
+    tls_version: str = typed_attr.typed_attribute()
     """the TLS protocol version (e.g. TLSv1.2)"""
 
 
@@ -561,3 +574,42 @@ def disable_socket_linger(sock: SupportsSocketOptions) -> None:
         :func:`enable_socket_linger`
     """
     sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_LINGER, _linger_struct.pack(False, 0))
+
+
+# TODO: Add tests of potential "None" value for sock.getsockname()
+
+
+def _get_socket_extra(sock: _socket.socket) -> dict[Any, Callable[[], Any]]:
+    return {
+        SocketAttribute.socket: lambda: SocketProxy(sock),
+        SocketAttribute.sockname: lambda: _value_or_lookup_error(_address_or_none(sock.getsockname)),
+        SocketAttribute.peername: lambda: _value_or_lookup_error(_address_or_none(sock.getpeername)),
+    }
+
+
+# TODO: Add tests of potential "None" values in SSL object
+
+
+def _get_tls_extra(ssl_object: _typing_ssl.SSLObject | _typing_ssl.SSLSocket) -> dict[Any, Callable[[], Any]]:
+    return {
+        TLSAttribute.sslcontext: lambda: ssl_object.context,
+        TLSAttribute.peercert: lambda: _value_or_lookup_error(ssl_object.getpeercert()),
+        TLSAttribute.cipher: lambda: _value_or_lookup_error(ssl_object.cipher()),
+        TLSAttribute.compression: lambda: _value_or_lookup_error(ssl_object.compression()),
+        TLSAttribute.tls_version: lambda: _value_or_lookup_error(ssl_object.version()),
+    }
+
+
+def _address_or_none(getsockaddr: Callable[[], _socket._RetAddress]) -> _socket._RetAddress | None:
+    try:
+        return getsockaddr()
+    except OSError:
+        return None
+
+
+def _value_or_lookup_error(value: _R | None) -> _R:
+    if value is None:
+        from ..exceptions import TypedAttributeLookupError
+
+        raise TypedAttributeLookupError("value not available")
+    return value

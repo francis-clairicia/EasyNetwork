@@ -83,7 +83,6 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
 
         Raises:
             ClientClosedError: the client object is closed.
-            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
 
         Returns:
             the client's local address.
@@ -97,7 +96,6 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
 
         Raises:
             ClientClosedError: the client object is closed.
-            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
 
         Returns:
             the client's remote address.

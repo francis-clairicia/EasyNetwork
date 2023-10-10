@@ -28,7 +28,7 @@ from ...exceptions import ClientClosedError
 from ...lowlevel import _lock, _utils, constants
 from ...lowlevel.api_sync.endpoints.datagram import DatagramEndpoint
 from ...lowlevel.api_sync.transports.socket import SocketDatagramTransport
-from ...lowlevel.socket import SocketAddress, SocketAttribute, SocketProxy
+from ...lowlevel.socket import INETSocketAttribute, SocketAddress, SocketProxy, new_socket_address
 from ...protocol import DatagramProtocol
 from .abc import AbstractNetworkClient
 
@@ -126,7 +126,7 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
         self.__receive_lock = _lock.ForkSafeLock()
         try:
             self.__endpoint: DatagramEndpoint[_SentPacketT, _ReceivedPacketT] = DatagramEndpoint(transport, protocol)
-            self.__socket_proxy = SocketProxy(transport.extra(SocketAttribute.socket), lock=self.__send_lock.get)
+            self.__socket_proxy = SocketProxy(transport.extra(INETSocketAttribute.socket), lock=self.__send_lock.get)
         except BaseException:
             transport.close()
             raise
@@ -174,7 +174,10 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
         """
         with self.__send_lock.get():
             endpoint = self.__endpoint
-            return endpoint.extra(SocketAttribute.sockname)
+            if endpoint.is_closed():
+                raise ClientClosedError("Closed client")
+            local_address = endpoint.extra(INETSocketAttribute.sockname)
+            return new_socket_address(local_address, self.socket.family)
 
     def get_remote_address(self) -> SocketAddress:
         """
@@ -189,7 +192,10 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
         """
         with self.__send_lock.get():
             endpoint = self.__endpoint
-            return endpoint.extra(SocketAttribute.peername)
+            if endpoint.is_closed():
+                raise ClientClosedError("Closed client")
+            remote_address = endpoint.extra(INETSocketAttribute.peername)
+            return new_socket_address(remote_address, self.socket.family)
 
     def send_packet(self, packet: _SentPacketT, *, timeout: float | None = None) -> None:
         """
@@ -222,7 +228,7 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
                 raise ClientClosedError("Closed client")
             with self.__convert_socket_error():
                 endpoint.send_packet(packet, timeout=timeout)
-                _utils.check_real_socket_state(endpoint.extra(SocketAttribute.socket))
+                _utils.check_real_socket_state(endpoint.extra(INETSocketAttribute.socket))
 
     def recv_packet(self, *, timeout: float | None = None) -> _ReceivedPacketT:
         """

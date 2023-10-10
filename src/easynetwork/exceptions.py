@@ -30,6 +30,7 @@ __all__ = [
     "ServerAlreadyRunning",
     "ServerClosedError",
     "StreamProtocolParseError",
+    "TypedAttributeLookupError",
 ]
 
 from typing import TYPE_CHECKING, Any
@@ -162,3 +163,10 @@ class StreamProtocolParseError(BaseProtocolParseError):
 
         self.remaining_data: bytes = remaining_data
         """Unused trailing data."""
+
+
+class TypedAttributeLookupError(LookupError):
+    """
+    Raised by :meth:`~.TypedAttributeProvider.extra` when the given typed attribute
+    is not found and no default value has been given.
+    """

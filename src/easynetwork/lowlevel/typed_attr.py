@@ -21,6 +21,8 @@ __all__ = ["TypedAttributeProvider", "TypedAttributeSet"]
 from collections.abc import Callable, Mapping
 from typing import Any, TypeVar, final, overload
 
+from ..exceptions import TypedAttributeLookupError
+
 T_Attr = TypeVar("T_Attr")
 T_Default = TypeVar("T_Default")
 undefined = object()
@@ -42,7 +44,7 @@ class TypedAttributeSet:
 
     def __init_subclass__(cls) -> None:
         annotations: dict[str, Any] = getattr(cls, "__annotations__", {})
-        for attrname in dir(cls):
+        for attrname in vars(cls):
             if not attrname.startswith("_") and attrname not in annotations:
                 raise TypeError(f"Attribute {attrname!r} is missing its type annotation")
 
@@ -63,6 +65,8 @@ class TypedAttributeProvider:
         If the provider wraps another provider, the attributes from that wrapper should
         also be included in the returned mapping (but the wrapper may override the
         callables from the wrapped instance).
+
+        The callables should raise :exc:`TypedAttributeLookupError` if it is not possible to get the value.
         """
         return {}
 
@@ -84,13 +88,19 @@ class TypedAttributeProvider:
             default: the value that should be returned if no value is found for the attribute
 
         Raises:
-            LookupError: if the search failed and no default value was given
+            TypedAttributeLookupError: if the search failed and no default value was given
         """
         try:
             extra = self.extra_attributes[attribute]
         except KeyError:
             if default is undefined:
-                raise LookupError("Attribute not found") from None
+                raise TypedAttributeLookupError("Attribute not found") from None
             else:
                 return default
-        return extra()
+        try:
+            return extra()
+        except TypedAttributeLookupError:
+            if default is undefined:
+                raise
+            else:
+                return default

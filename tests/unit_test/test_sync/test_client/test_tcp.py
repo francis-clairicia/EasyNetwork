@@ -1107,6 +1107,24 @@ class TestTCPNetworkClient(BaseTestClient):
         assert address.host == remote_address[0]
         assert address.port == remote_address[1]
 
+    def test____get_local_or_remote_address____closed_client(
+        self,
+        client: TCPNetworkClient[Any, Any],
+        mock_used_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        client.close()
+        mock_used_socket.reset_mock()
+
+        # Act & Assert
+        with pytest.raises(ClientClosedError):
+            client.get_local_address()
+        with pytest.raises(ClientClosedError):
+            client.get_remote_address()
+
+        mock_used_socket.getsockname.assert_not_called()
+        mock_used_socket.getpeername.assert_not_called()
+
     def test____fileno____default(
         self,
         client: TCPNetworkClient[Any, Any],

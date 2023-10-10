@@ -24,6 +24,7 @@ __all__ = [
 
 import selectors
 import socket
+from collections import ChainMap
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar
 
@@ -36,7 +37,6 @@ else:
     del ssl
 
 from ... import _utils, constants, socket as socket_tools
-from ...socket import SocketAttribute, TLSAttribute
 from . import base_selector
 
 if TYPE_CHECKING:
@@ -96,13 +96,8 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport):
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
-        socket_family: int = self.__socket.family
-        return {
-            **super().extra_attributes,
-            SocketAttribute.socket: lambda: socket_tools.SocketProxy(self.__socket),
-            SocketAttribute.sockname: lambda: socket_tools.new_socket_address(self.__socket.getsockname(), socket_family),
-            SocketAttribute.peername: lambda: socket_tools.new_socket_address(self.__socket.getpeername(), socket_family),
-        }
+        socket = self.__socket
+        return socket_tools._get_socket_extra(socket)
 
 
 class SSLStreamTransport(base_selector.SelectorStreamTransport):
@@ -191,21 +186,14 @@ class SSLStreamTransport(base_selector.SelectorStreamTransport):
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
-        socket_family: int = self.__socket.family
-        return {
-            **super().extra_attributes,
-            # Socket
-            SocketAttribute.socket: lambda: socket_tools.SocketProxy(self.__socket),
-            SocketAttribute.sockname: lambda: socket_tools.new_socket_address(self.__socket.getsockname(), socket_family),
-            SocketAttribute.peername: lambda: socket_tools.new_socket_address(self.__socket.getpeername(), socket_family),
-            # SSL
-            TLSAttribute.sslcontext: lambda: self.__socket.context,
-            TLSAttribute.peercert: self.__socket.getpeercert,
-            TLSAttribute.cipher: self.__socket.cipher,
-            TLSAttribute.compression: self.__socket.compression,
-            TLSAttribute.standard_compatible: lambda: self.__standard_compatible,
-            TLSAttribute.tls_version: self.__socket.version,
-        }
+        socket = self.__socket
+        return ChainMap(
+            socket_tools._get_socket_extra(socket),
+            socket_tools._get_tls_extra(socket),
+            {
+                socket_tools.TLSAttribute.standard_compatible: lambda: self.__standard_compatible,
+            },
+        )
 
 
 class SocketDatagramTransport(base_selector.SelectorDatagramTransport):
@@ -239,8 +227,9 @@ class SocketDatagramTransport(base_selector.SelectorDatagramTransport):
         self.__socket.close()
 
     def recv_noblock(self) -> bytes:
+        max_datagram_size: int = self.__max_datagram_size
         try:
-            return self.__socket.recv(self.__max_datagram_size)
+            return self.__socket.recv(max_datagram_size)
         except (BlockingIOError, InterruptedError):
             raise base_selector.WouldBlockOnRead(self.__socket.fileno()) from None
 
@@ -252,10 +241,5 @@ class SocketDatagramTransport(base_selector.SelectorDatagramTransport):
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
-        socket_family: int = self.__socket.family
-        return {
-            **super().extra_attributes,
-            SocketAttribute.socket: lambda: socket_tools.SocketProxy(self.__socket),
-            SocketAttribute.sockname: lambda: socket_tools.new_socket_address(self.__socket.getsockname(), socket_family),
-            SocketAttribute.peername: lambda: socket_tools.new_socket_address(self.__socket.getpeername(), socket_family),
-        }
+        socket = self.__socket
+        return socket_tools._get_socket_extra(socket)

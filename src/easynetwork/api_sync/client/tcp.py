@@ -37,7 +37,14 @@ from ...exceptions import ClientClosedError
 from ...lowlevel import _lock, _utils, constants
 from ...lowlevel.api_sync.endpoints.stream import StreamEndpoint
 from ...lowlevel.api_sync.transports.socket import SocketStreamTransport, SSLStreamTransport
-from ...lowlevel.socket import SocketAddress, SocketAttribute, SocketProxy, set_tcp_keepalive, set_tcp_nodelay
+from ...lowlevel.socket import (
+    INETSocketAttribute,
+    SocketAddress,
+    SocketProxy,
+    new_socket_address,
+    set_tcp_keepalive,
+    set_tcp_nodelay,
+)
 from ...protocol import StreamProtocol
 from .abc import AbstractNetworkClient
 
@@ -240,7 +247,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
 
         try:
             self.__endpoint = StreamEndpoint(transport, protocol, max_recv_size=max_recv_size)
-            self.__socket_proxy = SocketProxy(transport.extra(SocketAttribute.socket), lock=self.__send_lock.get)
+            self.__socket_proxy = SocketProxy(transport.extra(INETSocketAttribute.socket), lock=self.__send_lock.get)
 
             with _contextlib.suppress(OSError):
                 set_tcp_nodelay(self.socket, True)
@@ -315,7 +322,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
                 raise ClientClosedError("Closed client")
             with self.__convert_socket_error():
                 endpoint.send_packet(packet, timeout=timeout)
-                _utils.check_real_socket_state(endpoint.extra(SocketAttribute.socket))
+                _utils.check_real_socket_state(endpoint.extra(INETSocketAttribute.socket))
 
     def send_eof(self) -> None:
         """
@@ -401,7 +408,10 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
         """
         with self.__send_lock.get():
             endpoint = self.__endpoint
-            return endpoint.extra(SocketAttribute.sockname)
+            if endpoint.is_closed():
+                raise ClientClosedError("Closed client")
+            local_address = endpoint.extra(INETSocketAttribute.sockname)
+            return new_socket_address(local_address, self.socket.family)
 
     def get_remote_address(self) -> SocketAddress:
         """
@@ -416,7 +426,10 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
         """
         with self.__send_lock.get():
             endpoint = self.__endpoint
-            return endpoint.extra(SocketAttribute.peername)
+            if endpoint.is_closed():
+                raise ClientClosedError("Closed client")
+            remote_address = endpoint.extra(INETSocketAttribute.peername)
+            return new_socket_address(remote_address, self.socket.family)
 
     def fileno(self) -> int:
         """
