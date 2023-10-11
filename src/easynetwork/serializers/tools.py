@@ -113,7 +113,7 @@ class GeneratorStreamReader:
         if n == 0:
             return b""
 
-        if not self.__buffer:
+        while not self.__buffer:
             self.__buffer = yield
         while (buflen := len(self.__buffer)) < n:
             self.__buffer += yield
@@ -166,7 +166,7 @@ class GeneratorStreamReader:
         if seplen < 1:
             raise ValueError("Empty separator")
 
-        if not self.__buffer:
+        while not self.__buffer:
             self.__buffer = yield
 
         offset: int = 0
@@ -191,10 +191,15 @@ class GeneratorStreamReader:
             msg = "Separator is found, but chunk is longer than limit"
             raise LimitOverrunError(msg, self.__buffer, sepidx, separator)
 
+        offset = sepidx + seplen
         if keep_end:
-            data = self.__buffer[: sepidx + seplen]
+            if offset == buflen:
+                data, self.__buffer = self.__buffer, b""
+            else:
+                data = self.__buffer[:offset]
+                self.__buffer = self.__buffer[offset:]
         else:
             data = self.__buffer[:sepidx]
-        self.__buffer = self.__buffer[sepidx + seplen :]
+            self.__buffer = self.__buffer[offset:]
 
         return data
