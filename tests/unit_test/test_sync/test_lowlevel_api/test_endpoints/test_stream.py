@@ -166,7 +166,7 @@ class TestStreamEndpoint:
             _ = StreamEndpoint(mock_stream_transport, mock_stream_protocol, max_recv_size)
 
     @pytest.mark.parametrize("transport_closed", [False, True])
-    def test___is_closed____default(
+    def test____is_closed____default(
         self,
         endpoint: StreamEndpoint[Any, Any],
         mock_stream_transport: MagicMock,
@@ -183,7 +183,7 @@ class TestStreamEndpoint:
         mock_stream_transport.is_closed.assert_called_once_with()
         assert state is transport_closed
 
-    def test___close____default(self, endpoint: StreamEndpoint[Any, Any], mock_stream_transport: MagicMock) -> None:
+    def test____close____default(self, endpoint: StreamEndpoint[Any, Any], mock_stream_transport: MagicMock) -> None:
         # Arrange
         mock_stream_transport.close.assert_not_called()
 
