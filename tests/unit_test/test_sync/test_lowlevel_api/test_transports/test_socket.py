@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 from easynetwork.exceptions import TypedAttributeLookupError
 from easynetwork.lowlevel.api_sync.transports.base_selector import WouldBlockOnRead, WouldBlockOnWrite
 from easynetwork.lowlevel.api_sync.transports.socket import SocketDatagramTransport, SocketStreamTransport, SSLStreamTransport
-from easynetwork.lowlevel.constants import MAX_DATAGRAM_BUFSIZE, SSL_HANDSHAKE_TIMEOUT
+from easynetwork.lowlevel.constants import MAX_DATAGRAM_BUFSIZE, NOT_CONNECTED_SOCKET_ERRNOS, SSL_HANDSHAKE_TIMEOUT
 from easynetwork.lowlevel.socket import SocketAttribute, SocketProxy, TLSAttribute
 
 import pytest
@@ -34,15 +34,8 @@ class TestSocketStreamTransport:
     @staticmethod
     def mock_tcp_socket(mock_tcp_socket: MagicMock, socket_fileno: int) -> MagicMock:
         mock_tcp_socket.fileno.return_value = socket_fileno
-
-        def close() -> None:
-            mock_tcp_socket.fileno.return_value = -1
-
-        mock_tcp_socket.close.side_effect = close
-
         mock_tcp_socket.getsockname.return_value = ("local_address", 11111)
         mock_tcp_socket.getpeername.return_value = ("remote_address", 12345)
-
         return mock_tcp_socket
 
     @pytest.fixture
@@ -69,26 +62,6 @@ class TestSocketStreamTransport:
         assert isinstance(transport.extra(SocketAttribute.socket), SocketProxy)
         assert transport.extra(SocketAttribute.sockname) == ("local_address", 11111)
         assert transport.extra(SocketAttribute.peername) == ("remote_address", 12345)
-        mock_tcp_socket.getsockname.assert_called_once_with()
-        mock_tcp_socket.getpeername.assert_called()
-        mock_tcp_socket.setblocking.assert_called_once_with(False)
-        mock_tcp_socket.settimeout.assert_not_called()
-
-    def test____dunder_init____getpeername_raises_OSError(
-        self,
-        mock_tcp_socket: MagicMock,
-    ) -> None:
-        # Arrange
-        mock_tcp_socket.getpeername.side_effect = OSError(errno.ENOTCONN, os.strerror(errno.ENOTCONN))
-
-        # Act
-        transport = SocketStreamTransport(mock_tcp_socket, math.inf)
-
-        # Assert
-        assert transport.extra(SocketAttribute.sockname) == ("local_address", 11111)
-        with pytest.raises(TypedAttributeLookupError):
-            transport.extra(SocketAttribute.peername)
-        assert transport.extra(SocketAttribute.peername, None) is None
         mock_tcp_socket.getsockname.assert_called_once_with()
         mock_tcp_socket.getpeername.assert_called()
         mock_tcp_socket.setblocking.assert_called_once_with(False)
@@ -229,18 +202,63 @@ class TestSocketStreamTransport:
         mock_tcp_socket.fileno.assert_called_once()
         assert exc_info.value.fileno is mock_tcp_socket.fileno.return_value
 
+    @pytest.mark.parametrize(
+        "os_error",
+        [pytest.param(None)] + list(map(pytest.param, sorted(NOT_CONNECTED_SOCKET_ERRNOS))),
+        ids=lambda p: errno.errorcode.get(p, repr(p)),
+    )
     def test____send_eof____default(
         self,
+        os_error: int | None,
         transport: SocketStreamTransport,
         mock_tcp_socket: MagicMock,
     ) -> None:
         # Arrange
+        if os_error is not None:
+            mock_tcp_socket.shutdown.side_effect = OSError(os_error, os.strerror(os_error))
 
         # Act
         transport.send_eof()
 
         # Assert
         mock_tcp_socket.shutdown.assert_called_once_with(SHUT_WR)
+
+    def test____send_eof____os_error(
+        self,
+        transport: SocketStreamTransport,
+        mock_tcp_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_tcp_socket.shutdown.side_effect = OSError(errno.EBADF, os.strerror(errno.EBADF))
+
+        # Act & Assert
+        with pytest.raises(OSError):
+            transport.send_eof()
+
+    @pytest.mark.parametrize(
+        ["extra_attribute", "called_socket_method", "os_error"],
+        [
+            pytest.param(SocketAttribute.sockname, "getsockname", errno.EINVAL, id="socket.getsockname()"),
+            pytest.param(SocketAttribute.peername, "getpeername", errno.ENOTCONN, id="socket.getpeername()"),
+        ],
+    )
+    def test____extra_attributes____address_lookup_raises_OSError(
+        self,
+        extra_attribute: Any,
+        called_socket_method: str,
+        os_error: int,
+        transport: SocketStreamTransport,
+        mock_tcp_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_get_address: MagicMock = getattr(mock_tcp_socket, called_socket_method)
+        mock_get_address.side_effect = OSError(os_error, os.strerror(os_error))
+
+        # Act & Assert
+        with pytest.raises(TypedAttributeLookupError):
+            transport.extra(extra_attribute)
+        assert transport.extra(extra_attribute, mocker.sentinel.default_value) is mocker.sentinel.default_value
 
 
 def _retry_side_effect(callback: Callable[[], Any], timeout: float) -> Any:
@@ -268,11 +286,6 @@ class TestSSLStreamTransport:
     @staticmethod
     def mock_ssl_socket(mock_ssl_socket: MagicMock, socket_fileno: int) -> MagicMock:
         mock_ssl_socket.fileno.return_value = socket_fileno
-
-        def close() -> None:
-            mock_ssl_socket.fileno.return_value = -1
-
-        mock_ssl_socket.close.side_effect = close
         mock_ssl_socket.do_handshake.side_effect = [WouldBlockOnRead(socket_fileno), WouldBlockOnWrite(socket_fileno), None]
         mock_ssl_socket.unwrap.side_effect = [WouldBlockOnRead(socket_fileno), WouldBlockOnWrite(socket_fileno), None]
 
@@ -366,28 +379,6 @@ class TestSSLStreamTransport:
         mock_ssl_socket.settimeout.assert_not_called()
         mock_transport_retry.assert_called_once_with(mocker.ANY, SSL_HANDSHAKE_TIMEOUT)
         assert mock_ssl_socket.do_handshake.call_args_list == [mocker.call() for _ in range(3)]
-
-    def test____dunder_init____getpeername_raises_OSError(
-        self,
-        mock_tcp_socket: MagicMock,
-        mock_ssl_socket: MagicMock,
-        mock_ssl_context: MagicMock,
-    ) -> None:
-        # Arrange
-        mock_ssl_socket.getpeername.side_effect = OSError(errno.ENOTCONN, os.strerror(errno.ENOTCONN))
-
-        # Act
-        transport = SSLStreamTransport(mock_tcp_socket, mock_ssl_context, retry_interval=math.inf)
-
-        # Assert
-        assert transport.extra(SocketAttribute.sockname) == ("local_address", 11111)
-        with pytest.raises(TypedAttributeLookupError):
-            transport.extra(SocketAttribute.peername)
-        assert transport.extra(SocketAttribute.peername, None) is None
-        mock_ssl_socket.getsockname.assert_called_once_with()
-        mock_ssl_socket.getpeername.assert_called()
-        mock_ssl_socket.setblocking.assert_called_once_with(False)
-        mock_ssl_socket.settimeout.assert_not_called()
 
     @pytest.mark.parametrize("standard_compatible", [False, True], ids=lambda p: f"standard_compatible=={p}", indirect=True)
     def test____dunder_init____ssl_context_parameters(
@@ -649,8 +640,8 @@ class TestSSLStreamTransport:
 
     def test____send_eof____default(
         self,
-        transport: SocketStreamTransport,
-        mock_tcp_socket: MagicMock,
+        transport: SSLStreamTransport,
+        mock_ssl_socket: MagicMock,
     ) -> None:
         # Arrange
 
@@ -659,7 +650,58 @@ class TestSSLStreamTransport:
             transport.send_eof()
 
         # Assert
-        mock_tcp_socket.shutdown.assert_not_called()
+        mock_ssl_socket.shutdown.assert_not_called()
+
+    @pytest.mark.parametrize(
+        ["extra_attribute", "called_socket_method", "os_error"],
+        [
+            pytest.param(SocketAttribute.sockname, "getsockname", errno.EINVAL, id="socket.getsockname()"),
+            pytest.param(SocketAttribute.peername, "getpeername", errno.ENOTCONN, id="socket.getpeername()"),
+        ],
+    )
+    def test____extra_attributes____address_lookup_raises_OSError(
+        self,
+        extra_attribute: Any,
+        called_socket_method: str,
+        os_error: int,
+        transport: SSLStreamTransport,
+        mock_ssl_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_get_address: MagicMock = getattr(mock_ssl_socket, called_socket_method)
+        mock_get_address.side_effect = OSError(os_error, os.strerror(os_error))
+
+        # Act & Assert
+        with pytest.raises(TypedAttributeLookupError):
+            transport.extra(extra_attribute)
+        assert transport.extra(extra_attribute, mocker.sentinel.default_value) is mocker.sentinel.default_value
+
+    @pytest.mark.parametrize(
+        ["extra_attribute", "called_socket_method"],
+        [
+            pytest.param(TLSAttribute.peercert, "getpeercert", id="socket.getpeercert()"),
+            pytest.param(TLSAttribute.cipher, "cipher", id="socket.cipher()"),
+            pytest.param(TLSAttribute.compression, "compression", id="socket.compression()"),
+            pytest.param(TLSAttribute.tls_version, "version", id="socket.version()"),
+        ],
+    )
+    def test____extra_attributes____ssl_object_values_not_available(
+        self,
+        extra_attribute: Any,
+        called_socket_method: str,
+        transport: SSLStreamTransport,
+        mock_ssl_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_get_value: MagicMock = getattr(mock_ssl_socket, called_socket_method)
+        mock_get_value.return_value = None
+
+        # Act & Assert
+        with pytest.raises(TypedAttributeLookupError):
+            transport.extra(extra_attribute)
+        assert transport.extra(extra_attribute, mocker.sentinel.default_value) is mocker.sentinel.default_value
 
 
 class TestSocketDatagramTransport:
@@ -672,15 +714,8 @@ class TestSocketDatagramTransport:
     @staticmethod
     def mock_udp_socket(mock_udp_socket: MagicMock, socket_fileno: int) -> MagicMock:
         mock_udp_socket.fileno.return_value = socket_fileno
-
-        def close() -> None:
-            mock_udp_socket.fileno.return_value = -1
-
-        mock_udp_socket.close.side_effect = close
-
         mock_udp_socket.getsockname.return_value = ("local_address", 11111)
         mock_udp_socket.getpeername.return_value = ("remote_address", 12345)
-
         return mock_udp_socket
 
     @pytest.fixture
@@ -891,3 +926,28 @@ class TestSocketDatagramTransport:
         mock_udp_socket.send.assert_called_once_with(mocker.sentinel.data)
         mock_udp_socket.fileno.assert_called_once()
         assert exc_info.value.fileno is mock_udp_socket.fileno.return_value
+
+    @pytest.mark.parametrize(
+        ["extra_attribute", "called_socket_method", "os_error"],
+        [
+            pytest.param(SocketAttribute.sockname, "getsockname", errno.EINVAL, id="socket.getsockname()"),
+            pytest.param(SocketAttribute.peername, "getpeername", errno.ENOTCONN, id="socket.getpeername()"),
+        ],
+    )
+    def test____extra_attributes____address_lookup_raises_OSError(
+        self,
+        extra_attribute: Any,
+        called_socket_method: str,
+        os_error: int,
+        transport: SocketDatagramTransport,
+        mock_udp_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_get_address: MagicMock = getattr(mock_udp_socket, called_socket_method)
+        mock_get_address.side_effect = OSError(os_error, os.strerror(os_error))
+
+        # Act & Assert
+        with pytest.raises(TypedAttributeLookupError):
+            transport.extra(extra_attribute)
+        assert transport.extra(extra_attribute, mocker.sentinel.default_value) is mocker.sentinel.default_value

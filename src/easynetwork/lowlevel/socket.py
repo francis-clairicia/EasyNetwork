@@ -576,18 +576,12 @@ def disable_socket_linger(sock: SupportsSocketOptions) -> None:
     sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_LINGER, _linger_struct.pack(False, 0))
 
 
-# TODO: Add tests of potential "None" value for sock.getsockname()
-
-
 def _get_socket_extra(sock: _socket.socket) -> dict[Any, Callable[[], Any]]:
     return {
         SocketAttribute.socket: lambda: SocketProxy(sock),
-        SocketAttribute.sockname: lambda: _value_or_lookup_error(_address_or_none(sock.getsockname)),
-        SocketAttribute.peername: lambda: _value_or_lookup_error(_address_or_none(sock.getpeername)),
+        SocketAttribute.sockname: lambda: _address_or_lookup_error(sock.getsockname),
+        SocketAttribute.peername: lambda: _address_or_lookup_error(sock.getpeername),
     }
-
-
-# TODO: Add tests of potential "None" values in SSL object
 
 
 def _get_tls_extra(ssl_object: _typing_ssl.SSLObject | _typing_ssl.SSLSocket) -> dict[Any, Callable[[], Any]]:
@@ -600,11 +594,13 @@ def _get_tls_extra(ssl_object: _typing_ssl.SSLObject | _typing_ssl.SSLSocket) ->
     }
 
 
-def _address_or_none(getsockaddr: Callable[[], _socket._RetAddress]) -> _socket._RetAddress | None:
+def _address_or_lookup_error(getsockaddr: Callable[[], _R]) -> _R:
     try:
         return getsockaddr()
-    except OSError:
-        return None
+    except OSError as exc:
+        from ..exceptions import TypedAttributeLookupError
+
+        raise TypedAttributeLookupError("address not available") from exc
 
 
 def _value_or_lookup_error(value: _R | None) -> _R:
