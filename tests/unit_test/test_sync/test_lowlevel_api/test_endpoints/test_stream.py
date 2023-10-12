@@ -261,10 +261,7 @@ class TestStreamEndpoint:
 
         # Assert
         if mock_stream_transport.__class__ is StreamTransport:
-            if transport_closed:
-                mock_stream_transport.send_eof.assert_not_called()
-            else:
-                mock_stream_transport.send_eof.assert_called_once_with()
+            mock_stream_transport.send_eof.assert_called_once_with()
             with pytest.raises(RuntimeError, match=r"^send_eof\(\) has been called earlier$"):
                 endpoint.send_packet(mocker.sentinel.packet)
             mock_stream_protocol.generate_chunks.assert_not_called()
@@ -287,10 +284,7 @@ class TestStreamEndpoint:
         endpoint.send_eof()
 
         # Assert
-        if transport_closed:
-            mock_stream_transport.send_eof.assert_not_called()
-        else:
-            mock_stream_transport.send_eof.assert_called_once_with()
+        mock_stream_transport.send_eof.assert_called_once_with()
         with pytest.raises(RuntimeError, match=r"^send_eof\(\) has been called earlier$"):
             endpoint.send_packet(mocker.sentinel.packet)
 

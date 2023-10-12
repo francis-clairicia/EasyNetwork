@@ -13,7 +13,12 @@ from typing import TYPE_CHECKING, Any
 from easynetwork.exceptions import TypedAttributeLookupError
 from easynetwork.lowlevel.api_sync.transports.base_selector import WouldBlockOnRead, WouldBlockOnWrite
 from easynetwork.lowlevel.api_sync.transports.socket import SocketDatagramTransport, SocketStreamTransport, SSLStreamTransport
-from easynetwork.lowlevel.constants import MAX_DATAGRAM_BUFSIZE, NOT_CONNECTED_SOCKET_ERRNOS, SSL_HANDSHAKE_TIMEOUT
+from easynetwork.lowlevel.constants import (
+    CLOSED_SOCKET_ERRNOS,
+    MAX_DATAGRAM_BUFSIZE,
+    NOT_CONNECTED_SOCKET_ERRNOS,
+    SSL_HANDSHAKE_TIMEOUT,
+)
 from easynetwork.lowlevel.socket import SocketAttribute, SocketProxy, TLSAttribute
 
 import pytest
@@ -204,7 +209,7 @@ class TestSocketStreamTransport:
 
     @pytest.mark.parametrize(
         "os_error",
-        [pytest.param(None)] + list(map(pytest.param, sorted(NOT_CONNECTED_SOCKET_ERRNOS))),
+        [pytest.param(None)] + list(map(pytest.param, sorted(NOT_CONNECTED_SOCKET_ERRNOS | CLOSED_SOCKET_ERRNOS))),
         ids=lambda p: errno.errorcode.get(p, repr(p)),
     )
     def test____send_eof____default(
@@ -229,11 +234,26 @@ class TestSocketStreamTransport:
         mock_tcp_socket: MagicMock,
     ) -> None:
         # Arrange
-        mock_tcp_socket.shutdown.side_effect = OSError(errno.EBADF, os.strerror(errno.EBADF))
+        mock_tcp_socket.shutdown.side_effect = OSError
 
         # Act & Assert
         with pytest.raises(OSError):
             transport.send_eof()
+
+    def test____send_eof____transport_closed(
+        self,
+        transport: SocketStreamTransport,
+        mock_tcp_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        transport.close()
+        mock_tcp_socket.reset_mock()
+
+        # Act
+        transport.send_eof()
+
+        # Assert
+        mock_tcp_socket.shutdown.assert_not_called()
 
     @pytest.mark.parametrize(
         ["extra_attribute", "called_socket_method", "os_error"],

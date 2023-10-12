@@ -180,6 +180,8 @@ class StreamTransport(StreamWriteTransport, StreamReadTransport):
     def send_eof(self) -> None:
         """
         Closes the write end of the stream after the buffered write data is flushed.
+
+        This method does nothing if the transport is closed.
         """
         raise NotImplementedError
 

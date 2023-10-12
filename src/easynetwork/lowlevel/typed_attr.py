@@ -91,13 +91,10 @@ class TypedAttributeProvider:
             TypedAttributeLookupError: if the search failed and no default value was given
         """
         try:
-            extra = self.extra_attributes[attribute]
-        except KeyError:
-            if default is undefined:
+            try:
+                extra = self.extra_attributes[attribute]
+            except KeyError:
                 raise TypedAttributeLookupError("Attribute not found") from None
-            else:
-                return default
-        try:
             return extra()
         except TypedAttributeLookupError:
             if default is undefined:

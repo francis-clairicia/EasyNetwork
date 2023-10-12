@@ -152,8 +152,7 @@ class StreamEndpoint(Generic[_SentPacketT, _ReceivedPacketT], typed_attr.TypedAt
         if not self.__supports_sending_eof(transport):
             raise NotImplementedError("transport does not support sending EOF")
 
-        if not transport.is_closed():
-            transport.send_eof()
+        transport.send_eof()
         self.__eof_sent = True
         producer.clear()
 

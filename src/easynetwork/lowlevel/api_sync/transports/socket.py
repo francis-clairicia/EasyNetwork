@@ -92,11 +92,15 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport):
             raise base_selector.WouldBlockOnWrite(self.__socket.fileno()) from None
 
     def send_eof(self) -> None:
+        if self.__socket.fileno() < 0:
+            return
         try:
             self.__socket.shutdown(socket.SHUT_WR)
         except OSError as exc:
             if exc.errno in constants.NOT_CONNECTED_SOCKET_ERRNOS:
                 # On some platforms (e.g. macOS), shutdown() raises if the socket is already disconnected.
+                pass
+            elif exc.errno in constants.CLOSED_SOCKET_ERRNOS:
                 pass
             else:
                 raise
