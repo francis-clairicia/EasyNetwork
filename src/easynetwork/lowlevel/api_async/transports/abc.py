@@ -27,9 +27,13 @@ __all__ = [
 ]
 
 from abc import ABCMeta, abstractmethod
-from collections.abc import Iterable
+from collections.abc import Awaitable, Callable, Iterable
+from typing import Generic, NoReturn, TypeVar
 
 from ... import typed_attr
+
+_T_co = TypeVar("_T_co", covariant=True)
+_T_Address = TypeVar("_T_Address")
 
 
 class AsyncBaseTransport(typed_attr.TypedAttributeProvider, metaclass=ABCMeta):
@@ -177,3 +181,50 @@ class AsyncDatagramTransport(AsyncDatagramWriteTransport, AsyncDatagramReadTrans
     """
 
     __slots__ = ()
+
+
+class AsyncListener(AsyncBaseTransport, Generic[_T_co]):
+    """
+    An interface for objects that let you accept incoming connections.
+    """
+
+    __slots__ = ()
+
+    @abstractmethod
+    async def serve(self, handler: Callable[[_T_co], Awaitable[None]]) -> NoReturn:
+        """
+        Accept incoming connections as they come in and start tasks to handle them.
+
+        Parameters:
+            handler: a callable that will be used to handle each accepted connection.
+        """
+        raise NotImplementedError
+
+
+class AsyncDatagramListener(AsyncBaseTransport, Generic[_T_Address]):
+    """
+    An interface specialized for objects that let you accept incoming datagrams.
+    """
+
+    __slots__ = ()
+
+    @abstractmethod
+    async def serve(self, handler: Callable[[bytes, _T_Address], Awaitable[None]]) -> NoReturn:
+        """
+        Receive incoming datagrams as they come in and start tasks to handle them.
+
+        Parameters:
+            handler: a callable that will be used to handle each recevied datagrams.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    async def send_to(self, data: bytes | bytearray | memoryview, address: _T_Address) -> None:
+        """
+        Send the `data` bytes to the remote peer `address`.
+
+        Parameters:
+            data: the bytes to send.
+            address: the remote peer.
+        """
+        raise NotImplementedError

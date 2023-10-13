@@ -25,6 +25,7 @@ __all__ = [
     "is_ssl_socket",
     "lock_with_timeout",
     "make_callback",
+    "prepend_argument",
     "remove_traceback_frames_in_place",
     "replace_kwargs",
     "set_reuseport",
@@ -40,7 +41,7 @@ import socket as _socket
 import threading
 import time
 from collections.abc import Callable, Iterable, Iterator
-from typing import TYPE_CHECKING, Any, ParamSpec, TypeGuard, TypeVar
+from typing import TYPE_CHECKING, Any, Concatenate, ParamSpec, TypeGuard, TypeVar
 
 try:
     import ssl as _ssl
@@ -60,6 +61,7 @@ if TYPE_CHECKING:
 
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
+_T_Arg = TypeVar("_T_Arg")
 
 _ExcType = TypeVar("_ExcType", bound=BaseException)
 
@@ -78,6 +80,13 @@ def replace_kwargs(kwargs: dict[str, Any], keys: dict[str, str]) -> None:
 
 def make_callback(func: Callable[_P, _R], /, *args: _P.args, **kwargs: _P.kwargs) -> Callable[[], _R]:
     return functools.partial(func, *args, **kwargs)
+
+
+def prepend_argument(arg: _T_Arg) -> Callable[[Callable[Concatenate[_T_Arg, _P], _R]], Callable[_P, _R]]:
+    def decorator(func: Callable[Concatenate[_T_Arg, _P], _R], /) -> Callable[_P, _R]:
+        return functools.partial(func, arg)
+
+    return decorator  # type: ignore[return-value]
 
 
 def error_from_errno(errno: int) -> OSError:

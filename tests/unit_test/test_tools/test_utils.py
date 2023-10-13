@@ -24,6 +24,7 @@ from easynetwork.lowlevel._utils import (
     iter_bytes,
     lock_with_timeout,
     make_callback,
+    prepend_argument,
     remove_traceback_frames_in_place,
     replace_kwargs,
     set_reuseport,
@@ -110,6 +111,40 @@ def test____make_callback____build_no_arg_callable(mocker: MockerFixture) -> Non
     # Assert
     assert cb() is mocker.sentinel.ret_val
     stub.assert_called_once_with(mocker.sentinel.arg1, mocker.sentinel.arg2, kw1=mocker.sentinel.kw1, kw2=mocker.sentinel.kw2)
+
+
+def test____prepend_argument____add_positional_argument(mocker: MockerFixture) -> None:
+    # Arrange
+    stub = mocker.stub()
+    stub.return_value = mocker.sentinel.ret_val
+
+    # Act
+    cb = prepend_argument(mocker.sentinel.first_arg)(stub)
+
+    # Assert
+    assert cb(mocker.sentinel.arg1, kw1=mocker.sentinel.kw1) is mocker.sentinel.ret_val
+    stub.assert_called_once_with(mocker.sentinel.first_arg, mocker.sentinel.arg1, kw1=mocker.sentinel.kw1)
+
+
+def test____prepend_argument____several_prepend(mocker: MockerFixture) -> None:
+    # Arrange
+    stub = mocker.stub()
+    stub.return_value = mocker.sentinel.ret_val
+
+    # Act
+    @prepend_argument(mocker.sentinel.second_arg)
+    @prepend_argument(mocker.sentinel.first_arg)
+    def cb(*args: Any, **kwargs: Any) -> Any:
+        return stub(*args, **kwargs)
+
+    # Assert
+    assert cb(mocker.sentinel.arg1, kw1=mocker.sentinel.kw1) is mocker.sentinel.ret_val
+    stub.assert_called_once_with(
+        mocker.sentinel.first_arg,
+        mocker.sentinel.second_arg,
+        mocker.sentinel.arg1,
+        kw1=mocker.sentinel.kw1,
+    )
 
 
 def test____error_from_errno____returns_OSError(mocker: MockerFixture) -> None:

@@ -82,8 +82,6 @@ class AsyncDatagramEndpoint(Generic[_SentPacketT, _ReceivedPacketT], typed_attr.
         """
         Sends `packet` to the remote endpoint.
 
-        If `timeout` is not :data:`None`, the entire send operation will take at most `timeout` seconds.
-
         Warning:
             In the case of a cancellation, it is impossible to know if all the packet data has been sent.
 
