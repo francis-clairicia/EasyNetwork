@@ -278,6 +278,7 @@ class TestSocketStreamTransport:
         # Act & Assert
         with pytest.raises(TypedAttributeLookupError):
             transport.extra(extra_attribute)
+        mock_get_address.assert_called_once()
         assert transport.extra(extra_attribute, mocker.sentinel.default_value) is mocker.sentinel.default_value
 
 
@@ -695,6 +696,7 @@ class TestSSLStreamTransport:
         # Act & Assert
         with pytest.raises(TypedAttributeLookupError):
             transport.extra(extra_attribute)
+        mock_get_address.assert_called_once()
         assert transport.extra(extra_attribute, mocker.sentinel.default_value) is mocker.sentinel.default_value
 
     @pytest.mark.parametrize(
@@ -721,6 +723,7 @@ class TestSSLStreamTransport:
         # Act & Assert
         with pytest.raises(TypedAttributeLookupError):
             transport.extra(extra_attribute)
+        mock_get_value.assert_called_once()
         assert transport.extra(extra_attribute, mocker.sentinel.default_value) is mocker.sentinel.default_value
 
 
@@ -970,4 +973,5 @@ class TestSocketDatagramTransport:
         # Act & Assert
         with pytest.raises(TypedAttributeLookupError):
             transport.extra(extra_attribute)
+        mock_get_address.assert_called_once()
         assert transport.extra(extra_attribute, mocker.sentinel.default_value) is mocker.sentinel.default_value
