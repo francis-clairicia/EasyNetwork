@@ -70,4 +70,6 @@ class ActionIterator(Generic[_T]):
             raise
         except BaseException as exc:
             return ErrorAction(exc)
+        finally:
+            del self
         return RequestAction(request)

@@ -24,6 +24,7 @@ import enum
 import operator
 from collections import Counter, deque
 from collections.abc import AsyncGenerator, AsyncIterator, Callable, Hashable, Iterator, Mapping
+from types import TracebackType
 from typing import Any, Generic, NoReturn, TypeVar, assert_never
 
 from .... import protocol as protocol_module
@@ -44,6 +45,7 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, 
         "__protocol",
         "__backend",
         "__client_manager",
+        "__weakref__",
     )
 
     def __init__(
@@ -97,7 +99,14 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, 
         listener = self.__listener
         protocol = self.__protocol
 
-        await listener.send_to(protocol.make_datagram(packet), address)
+        try:
+            datagram: bytes = protocol.make_datagram(packet)
+        finally:
+            del packet
+        try:
+            await listener.send_to(datagram, address)
+        finally:
+            del datagram
 
     async def serve(
         self,
@@ -124,8 +133,8 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, 
                 client_state = client_manager.client_state(address)
                 match client_state:
                     case None:
-                        # Spawn a new task
-                        task_group.start_soon(client_coroutine, datagram_received_cb, address, task_group)
+                        # Start a new task
+                        await client_coroutine(datagram_received_cb, address, task_group)
                     case _ClientState.TASK_WAITING:
                         # Wake up the idle task
                         async with client_manager.lock(address) as condition:
@@ -136,7 +145,7 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, 
                     case _:  # pragma: no cover
                         assert_never(client_state)
 
-            await self.__listener.serve(handler)
+            await self.__listener.serve(handler, task_group)
 
     def __ensure_task_group(self, task_group: TaskGroup | None) -> contextlib.AbstractAsyncContextManager[TaskGroup]:
         if task_group is None:
@@ -149,37 +158,30 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, 
         address: _T_Address,
         task_group: TaskGroup,
     ) -> None:
-        backend = self.__backend
         client_manager = self.__client_manager
 
         async with contextlib.AsyncExitStack() as client_exit_stack:
             condition = await client_exit_stack.enter_async_context(client_manager.lock(address))
-
-            def enqueue_task_at_end(
-                datagram_received_cb: Callable[[_T_Address], AsyncGenerator[None, _RequestT]],
-                datagram_queue: deque[bytes],
-                default_context: contextvars.Context,
-            ) -> None:
-                if datagram_queue:
-                    task_group.start_soon(
-                        self.__client_coroutine,
-                        datagram_received_cb,
-                        address,
-                        task_group,
-                        context=default_context,
-                    )
 
             datagram_queue: deque[bytes] = client_exit_stack.enter_context(client_manager.datagram_queue(address))
             self.__check_datagram_queue_not_empty(datagram_queue)
 
             # This block must not have any asynchronous function calls or add any asynchronous callbacks/contexts to the exit stack.
             client_exit_stack.enter_context(client_manager.set_client_state(address, _ClientState.TASK_RUNNING))
-            client_exit_stack.callback(enqueue_task_at_end, datagram_received_cb, datagram_queue, contextvars.copy_context())
+            client_exit_stack.callback(
+                self.__enqueue_task_at_end,
+                datagram_received_cb=datagram_received_cb,
+                address=address,
+                task_group=task_group,
+                datagram_queue=datagram_queue,
+                default_context=contextvars.copy_context(),
+            )
+            client_exit_stack.push(_utils.prepend_argument(datagram_queue)(self.__clear_queue_on_error))
             ########################################################################################################################
 
             request_handler_generator = datagram_received_cb(address)
 
-            del client_exit_stack, datagram_received_cb, enqueue_task_at_end
+            del client_exit_stack, datagram_received_cb
 
             async with contextlib.aclosing(request_handler_generator):
                 try:
@@ -203,7 +205,35 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, 
                         return
                     finally:
                         del action
-                    await backend.cancel_shielded_coro_yield()
+
+    def __enqueue_task_at_end(
+        self,
+        datagram_received_cb: Callable[[_T_Address], AsyncGenerator[None, _RequestT]],
+        address: _T_Address,
+        task_group: TaskGroup,
+        datagram_queue: deque[bytes],
+        default_context: contextvars.Context,
+    ) -> None:
+        if datagram_queue:
+            task_group.start_soon(
+                self.__client_coroutine,
+                datagram_received_cb,
+                address,
+                task_group,
+                context=default_context,
+            )
+
+    @classmethod
+    def __clear_queue_on_error(
+        cls,
+        datagram_queue: deque[bytes],
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+        /,
+    ) -> None:
+        if exc_type is not None:
+            datagram_queue.clear()
 
     @classmethod
     async def __request_factory(

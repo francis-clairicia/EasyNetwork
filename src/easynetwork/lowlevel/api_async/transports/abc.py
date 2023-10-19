@@ -28,9 +28,12 @@ __all__ = [
 
 from abc import ABCMeta, abstractmethod
 from collections.abc import Awaitable, Callable, Iterable
-from typing import Generic, NoReturn, TypeVar
+from typing import TYPE_CHECKING, Generic, NoReturn, TypeVar
 
 from ... import typed_attr
+
+if TYPE_CHECKING:
+    from ..backend.abc import TaskGroup
 
 _T_co = TypeVar("_T_co", covariant=True)
 _T_Address = TypeVar("_T_Address")
@@ -191,12 +194,14 @@ class AsyncListener(AsyncBaseTransport, Generic[_T_co]):
     __slots__ = ()
 
     @abstractmethod
-    async def serve(self, handler: Callable[[_T_co], Awaitable[None]]) -> NoReturn:
+    async def serve(self, handler: Callable[[_T_co], Awaitable[None]], task_group: TaskGroup | None = ...) -> NoReturn:
         """
         Accept incoming connections as they come in and start tasks to handle them.
 
         Parameters:
             handler: a callable that will be used to handle each accepted connection.
+            task_group: the task group that will be used to start tasks for handling each accepted connection.
+                        (If omitted, an ad-hoc task group will be created.)
         """
         raise NotImplementedError
 
@@ -209,12 +214,18 @@ class AsyncDatagramListener(AsyncBaseTransport, Generic[_T_Address]):
     __slots__ = ()
 
     @abstractmethod
-    async def serve(self, handler: Callable[[bytes, _T_Address], Awaitable[None]]) -> NoReturn:
+    async def serve(
+        self,
+        handler: Callable[[bytes, _T_Address], Awaitable[None]],
+        task_group: TaskGroup | None = ...,
+    ) -> NoReturn:
         """
         Receive incoming datagrams as they come in and start tasks to handle them.
 
         Parameters:
             handler: a callable that will be used to handle each recevied datagrams.
+            task_group: the task group that will be used to start tasks for handling each accepted connection.
+                        (If omitted, an ad-hoc task group will be created.)
         """
         raise NotImplementedError
 

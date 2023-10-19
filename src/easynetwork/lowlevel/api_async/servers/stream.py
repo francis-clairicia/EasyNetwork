@@ -34,7 +34,7 @@ class AsyncStreamClient(typed_attr.TypedAttributeProvider, Generic[_ResponseT]):
     __slots__ = (
         "__transport",
         "__producer",
-        "__logger",
+        "__weakref__",
     )
 
     def __init__(self, transport: transports.AsyncStreamWriteTransport, producer: _stream.StreamDataProducer[_ResponseT]) -> None:
@@ -74,6 +74,7 @@ class AsyncStreamClient(typed_attr.TypedAttributeProvider, Generic[_ResponseT]):
         producer = self.__producer
 
         producer.enqueue(packet)
+        del packet
         await transport.send_all_from_iterable(producer)
 
     @property
@@ -87,6 +88,7 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, _R
         "__protocol",
         "__max_recv_size",
         "__backend",
+        "__weakref__",
     )
 
     def __init__(
@@ -134,28 +136,19 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, _R
         client_connected_cb: Callable[[AsyncStreamClient[_ResponseT]], AsyncGenerator[None, _RequestT]],
         task_group: TaskGroup | None = None,
     ) -> NoReturn:
-        client_coroutine = self.__client_coroutine
-
-        async def handler(transport: transports.AsyncStreamTransport, /) -> None:
-            if not isinstance(transport, transports.AsyncStreamTransport):
-                raise TypeError(f"Expected an AsyncStreamTransport object, got {transport!r}")
-
-            if task_group is None:
-                await client_coroutine(client_connected_cb, transport)
-            else:
-                task_group.start_soon(client_coroutine, client_connected_cb, transport)
-
-        await self.__listener.serve(handler)
+        handler = _utils.prepend_argument(client_connected_cb)(self.__client_coroutine)
+        await self.__listener.serve(handler, task_group)
 
     async def __client_coroutine(
         self,
         client_connected_cb: Callable[[AsyncStreamClient[_ResponseT]], AsyncGenerator[None, _RequestT]],
         transport: transports.AsyncStreamTransport,
     ) -> None:
-        async with contextlib.AsyncExitStack() as client_exit_stack:
-            backend = self.__backend
+        if not isinstance(transport, transports.AsyncStreamTransport):
+            raise TypeError(f"Expected an AsyncStreamTransport object, got {transport!r}")
 
-            client_exit_stack.push_async_callback(transports_utils.aclose_forcefully, backend, transport)
+        async with contextlib.AsyncExitStack() as client_exit_stack:
+            client_exit_stack.push_async_callback(transports_utils.aclose_forcefully, self.__backend, transport)
 
             producer = _stream.StreamDataProducer(self.__protocol)
             consumer = _stream.StreamDataConsumer(self.__protocol)
@@ -182,7 +175,6 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, _R
                         return
                     finally:
                         del action
-                    await backend.cancel_shielded_coro_yield()
 
     @classmethod
     async def __request_factory(
