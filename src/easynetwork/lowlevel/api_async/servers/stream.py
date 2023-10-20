@@ -34,6 +34,7 @@ class AsyncStreamClient(typed_attr.TypedAttributeProvider, Generic[_ResponseT]):
     __slots__ = (
         "__transport",
         "__producer",
+        "__send_guard",
         "__weakref__",
     )
 
@@ -42,6 +43,7 @@ class AsyncStreamClient(typed_attr.TypedAttributeProvider, Generic[_ResponseT]):
 
         self.__transport: transports.AsyncStreamWriteTransport = transport
         self.__producer: _stream.StreamDataProducer[_ResponseT] = producer
+        self.__send_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently sending data on this endpoint")
 
     def is_closing(self) -> bool:
         """
@@ -70,12 +72,13 @@ class AsyncStreamClient(typed_attr.TypedAttributeProvider, Generic[_ResponseT]):
         Parameters:
             packet: the Python object to send.
         """
-        transport = self.__transport
-        producer = self.__producer
+        with self.__send_guard:
+            transport = self.__transport
+            producer = self.__producer
 
-        producer.enqueue(packet)
-        del packet
-        await transport.send_all_from_iterable(producer)
+            producer.enqueue(packet)
+            del packet
+            await transport.send_all_from_iterable(producer)
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
@@ -88,6 +91,7 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, _R
         "__protocol",
         "__max_recv_size",
         "__backend",
+        "__serve_guard",
         "__weakref__",
     )
 
@@ -115,6 +119,7 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, _R
         self.__protocol: protocol_module.StreamProtocol[_ResponseT, _RequestT] = protocol
         self.__max_recv_size: int = max_recv_size
         self.__backend: AsyncBackend = backend
+        self.__serve_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently accepting new connections")
 
     def is_closing(self) -> bool:
         """
@@ -136,8 +141,15 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, _R
         client_connected_cb: Callable[[AsyncStreamClient[_ResponseT]], AsyncGenerator[None, _RequestT]],
         task_group: TaskGroup | None = None,
     ) -> NoReturn:
-        handler = _utils.prepend_argument(client_connected_cb)(self.__client_coroutine)
-        await self.__listener.serve(handler, task_group)
+        with self.__serve_guard:
+            handler = _utils.prepend_argument(client_connected_cb)(self.__client_coroutine)
+            await self.__listener.serve(handler, task_group)
+
+    def get_backend(self) -> AsyncBackend:
+        """
+        Return the underlying backend interface.
+        """
+        return self.__backend
 
     async def __client_coroutine(
         self,
@@ -197,12 +209,6 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, _R
             finally:
                 del data
         raise StopAsyncIteration
-
-    def get_backend(self) -> AsyncBackend:
-        """
-        Return the underlying backend interface.
-        """
-        return self.__backend
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:

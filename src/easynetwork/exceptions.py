@@ -21,6 +21,7 @@ from __future__ import annotations
 
 __all__ = [
     "BaseProtocolParseError",
+    "BusyResourceError",
     "ClientClosedError",
     "DatagramProtocolParseError",
     "DeserializeError",
@@ -39,6 +40,14 @@ if TYPE_CHECKING:
     from _typeshed import ReadableBuffer
 
     from .lowlevel.socket import SocketAddress
+
+
+class BusyResourceError(RuntimeError):
+    """Error raised when a task attempts to use a resource that some other task is
+    already using, and this would lead to bugs and nonsense.
+
+    Mostly used in asynchronous functions.
+    """
 
 
 class ClientClosedError(ConnectionError):

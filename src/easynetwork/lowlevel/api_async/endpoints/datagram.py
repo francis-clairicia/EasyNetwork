@@ -23,7 +23,7 @@ from typing import Any, Generic, TypeGuard
 
 from .... import protocol as protocol_module
 from ...._typevars import _ReceivedPacketT, _SentPacketT
-from ... import typed_attr
+from ... import _utils, typed_attr
 from ..transports import abc as transports
 
 
@@ -37,6 +37,8 @@ class AsyncDatagramEndpoint(Generic[_SentPacketT, _ReceivedPacketT], typed_attr.
         "__is_read_transport",
         "__is_write_transport",
         "__protocol",
+        "__send_guard",
+        "__recv_guard",
         "__weakref__",
     )
 
@@ -62,6 +64,8 @@ class AsyncDatagramEndpoint(Generic[_SentPacketT, _ReceivedPacketT], typed_attr.
         self.__is_write_transport: bool = isinstance(transport, transports.AsyncDatagramWriteTransport)
         self.__transport: transports.AsyncDatagramReadTransport | transports.AsyncDatagramWriteTransport = transport
         self.__protocol: protocol_module.DatagramProtocol[_SentPacketT, _ReceivedPacketT] = protocol
+        self.__send_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently sending data on this endpoint")
+        self.__recv_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently receving data on this endpoint")
 
     def is_closing(self) -> bool:
         """
@@ -88,13 +92,14 @@ class AsyncDatagramEndpoint(Generic[_SentPacketT, _ReceivedPacketT], typed_attr.
         Parameters:
             packet: the Python object to send.
         """
-        transport = self.__transport
-        protocol = self.__protocol
+        with self.__send_guard:
+            transport = self.__transport
+            protocol = self.__protocol
 
-        if not self.__supports_write(transport):
-            raise NotImplementedError("transport does not support sending data")
+            if not self.__supports_write(transport):
+                raise NotImplementedError("transport does not support sending data")
 
-        await transport.send(protocol.make_datagram(packet))
+            await transport.send(protocol.make_datagram(packet))
 
     async def recv_packet(self) -> _ReceivedPacketT:
         """
@@ -106,13 +111,14 @@ class AsyncDatagramEndpoint(Generic[_SentPacketT, _ReceivedPacketT], typed_attr.
         Returns:
             the received packet.
         """
-        transport = self.__transport
-        protocol = self.__protocol
+        with self.__recv_guard:
+            transport = self.__transport
+            protocol = self.__protocol
 
-        if not self.__supports_read(transport):
-            raise NotImplementedError("transport does not support receiving data")
+            if not self.__supports_read(transport):
+                raise NotImplementedError("transport does not support receiving data")
 
-        return protocol.build_packet_from_datagram(await transport.recv())
+            return protocol.build_packet_from_datagram(await transport.recv())
 
     def __supports_read(self, transport: transports.AsyncBaseTransport) -> TypeGuard[transports.AsyncDatagramReadTransport]:
         return self.__is_read_transport

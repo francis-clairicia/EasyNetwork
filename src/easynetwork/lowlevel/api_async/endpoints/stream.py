@@ -23,7 +23,7 @@ from typing import Any, Generic, TypeGuard
 
 from .... import protocol as protocol_module
 from ...._typevars import _ReceivedPacketT, _SentPacketT
-from ... import _stream, typed_attr
+from ... import _stream, _utils, typed_attr
 from ..transports import abc as transports
 
 
@@ -39,6 +39,8 @@ class AsyncStreamEndpoint(Generic[_SentPacketT, _ReceivedPacketT], typed_attr.Ty
         "__is_bidirectional_transport",
         "__producer",
         "__consumer",
+        "__send_guard",
+        "__recv_guard",
         "__max_recv_size",
         "__eof_sent",
         "__eof_reached",
@@ -69,6 +71,8 @@ class AsyncStreamEndpoint(Generic[_SentPacketT, _ReceivedPacketT], typed_attr.Ty
         self.__is_write_transport: bool = isinstance(transport, transports.AsyncStreamWriteTransport)
         self.__is_bidirectional_transport: bool = isinstance(transport, transports.AsyncStreamTransport)
         self.__transport: transports.AsyncStreamReadTransport | transports.AsyncStreamWriteTransport = transport
+        self.__send_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently sending data on this endpoint")
+        self.__recv_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently receving data on this endpoint")
         self.__max_recv_size: int = max_recv_size
         self.__eof_sent: bool = False
         self.__eof_reached: bool = False
@@ -104,17 +108,18 @@ class AsyncStreamEndpoint(Generic[_SentPacketT, _ReceivedPacketT], typed_attr.Ty
         Raises:
             RuntimeError: :meth:`send_eof` has been called earlier.
         """
-        if self.__eof_sent:
-            raise RuntimeError("send_eof() has been called earlier")
+        with self.__send_guard:
+            if self.__eof_sent:
+                raise RuntimeError("send_eof() has been called earlier")
 
-        transport = self.__transport
-        producer = self.__producer
+            transport = self.__transport
+            producer = self.__producer
 
-        if not self.__supports_write(transport):
-            raise NotImplementedError("transport does not support sending data")
+            if not self.__supports_write(transport):
+                raise NotImplementedError("transport does not support sending data")
 
-        producer.enqueue(packet)
-        await transport.send_all_from_iterable(producer)
+            producer.enqueue(packet)
+            await transport.send_all_from_iterable(producer)
 
     async def send_eof(self) -> None:
         """
@@ -124,18 +129,19 @@ class AsyncStreamEndpoint(Generic[_SentPacketT, _ReceivedPacketT], typed_attr.Ty
 
         Can be safely called multiple times.
         """
-        if self.__eof_sent:
-            return
+        with self.__send_guard:
+            if self.__eof_sent:
+                return
 
-        transport = self.__transport
-        producer = self.__producer
+            transport = self.__transport
+            producer = self.__producer
 
-        if not self.__supports_sending_eof(transport):
-            raise NotImplementedError("transport does not support sending EOF")
+            if not self.__supports_sending_eof(transport):
+                raise NotImplementedError("transport does not support sending EOF")
 
-        await transport.send_eof()
-        self.__eof_sent = True
-        producer.clear()
+            await transport.send_eof()
+            self.__eof_sent = True
+            producer.clear()
 
     async def recv_packet(self) -> _ReceivedPacketT:
         """
@@ -148,36 +154,36 @@ class AsyncStreamEndpoint(Generic[_SentPacketT, _ReceivedPacketT], typed_attr.Ty
         Returns:
             the received packet.
         """
+        with self.__recv_guard:
+            transport = self.__transport
+            consumer = self.__consumer
 
-        transport = self.__transport
-        consumer = self.__consumer
+            if not self.__supports_read(transport):
+                raise NotImplementedError("transport does not support receiving data")
 
-        if not self.__supports_read(transport):
-            raise NotImplementedError("transport does not support receiving data")
-
-        try:
-            return next(consumer)  # If there is enough data from last call to create a packet, return immediately
-        except StopIteration:
-            pass
-
-        if self.__eof_reached:
-            raise EOFError("end-of-stream")
-
-        bufsize: int = self.__max_recv_size
-
-        while True:
-            chunk: bytes = await transport.recv(bufsize)
-            if not chunk:
-                self.__eof_reached = True
-                raise EOFError("end-of-stream")
             try:
-                consumer.feed(chunk)
-            finally:
-                del chunk
-            try:
-                return next(consumer)
+                return next(consumer)  # If there is enough data from last call to create a packet, return immediately
             except StopIteration:
                 pass
+
+            if self.__eof_reached:
+                raise EOFError("end-of-stream")
+
+            bufsize: int = self.__max_recv_size
+
+            while True:
+                chunk: bytes = await transport.recv(bufsize)
+                if not chunk:
+                    self.__eof_reached = True
+                    raise EOFError("end-of-stream")
+                try:
+                    consumer.feed(chunk)
+                finally:
+                    del chunk
+                try:
+                    return next(consumer)
+                except StopIteration:
+                    pass
 
     def __supports_read(self, transport: transports.AsyncBaseTransport) -> TypeGuard[transports.AsyncStreamReadTransport]:
         return self.__is_read_transport

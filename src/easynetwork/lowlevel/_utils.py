@@ -240,3 +240,26 @@ def lock_with_timeout(
             timeout -= _end - _start
             timeout = max(timeout, 0.0)
         yield timeout
+
+
+class ResourceGuard:
+    __slots__ = (
+        "__semaphore",
+        "__msg",
+        "__held",
+    )
+
+    def __init__(self, message: str) -> None:
+        # A semaphore is used to check consistency between __enter__ and __exit__ calls (misnesting contexts)
+        self.__semaphore = threading.BoundedSemaphore(value=1)
+        self.__msg = message
+
+    def __enter__(self) -> None:
+        if not self.__semaphore.acquire(blocking=False):
+            from ..exceptions import BusyResourceError
+
+            msg = self.__msg
+            raise BusyResourceError(msg)
+
+    def __exit__(self, *args: Any) -> None:
+        self.__semaphore.release()

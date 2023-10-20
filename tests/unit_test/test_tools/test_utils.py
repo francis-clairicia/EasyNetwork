@@ -10,7 +10,9 @@ from errno import EINVAL, ENOTCONN, errorcode as errno_errorcode
 from socket import SO_ERROR, SOL_SOCKET
 from typing import TYPE_CHECKING, Any
 
+from easynetwork.exceptions import BusyResourceError
 from easynetwork.lowlevel._utils import (
+    ResourceGuard,
     check_real_socket_state,
     check_socket_family,
     check_socket_is_connected,
@@ -601,3 +603,13 @@ def test____lock_with_timeout____acquire_and_release_with_timeout_value____null_
     with pytest.raises(TimeoutError):
         with lock_with_timeout(lock, 0):
             pytest.fail("This should timeout.")
+
+
+def test____ResourceGuard____forbid_nested_contexts() -> None:
+    # Arrange
+    guard = ResourceGuard("guard message")
+
+    # Act & Assert
+    with guard, pytest.raises(BusyResourceError, match=r"^guard message$"):
+        with guard:
+            pass
