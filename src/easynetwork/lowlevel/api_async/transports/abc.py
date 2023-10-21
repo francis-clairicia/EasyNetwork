@@ -122,7 +122,11 @@ class AsyncStreamWriteTransport(AsyncBaseTransport):
         Parameters:
             iterable_of_data: An :term:`iterable` yielding the bytes to send.
         """
-        data = b"".join(iterable_of_data)
+        iterable_of_data = list(iterable_of_data)
+        if len(iterable_of_data) == 1:
+            data = iterable_of_data[0]
+        else:
+            data = b"".join(iterable_of_data)
         del iterable_of_data
         return await self.send_all(data)
 
@@ -223,7 +227,7 @@ class AsyncDatagramListener(AsyncBaseTransport, Generic[_T_Address]):
         Receive incoming datagrams as they come in and start tasks to handle them.
 
         Parameters:
-            handler: a callable that will be used to handle each recevied datagrams.
+            handler: a callable that will be used to handle each received datagrams.
             task_group: the task group that will be used to start tasks for handling each accepted connection.
                         (If omitted, an ad-hoc task group will be created.)
         """

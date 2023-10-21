@@ -109,3 +109,18 @@ class TestStreamTransport:
 
         # Assert
         mock_transport.send_all.assert_called_once_with(b"abc", 123456789)
+
+    def test____send_all_from_iterable____single_yield____no_copy(
+        self,
+        mock_transport: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        chunk = mocker.sentinel.chunk
+        mock_transport.send_all.return_value = None
+
+        # Act
+        StreamTransport.send_all_from_iterable(mock_transport, iter([chunk]), 123456789)
+
+        # Assert
+        mock_transport.send_all.assert_called_once_with(chunk, 123456789)

@@ -32,3 +32,18 @@ class TestAsyncStreamTransport:
 
         # Assert
         mock_transport.send_all.assert_awaited_once_with(b"abc")
+
+    async def test____send_all_from_iterable____single_yield____no_copy(
+        self,
+        mock_transport: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        chunk = mocker.sentinel.chunk
+        mock_transport.send_all.return_value = None
+
+        # Act
+        await AsyncStreamTransport.send_all_from_iterable(mock_transport, iter([chunk]))
+
+        # Assert
+        mock_transport.send_all.assert_awaited_once_with(chunk)

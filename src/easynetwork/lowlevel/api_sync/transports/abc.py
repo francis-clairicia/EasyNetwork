@@ -164,7 +164,11 @@ class StreamWriteTransport(BaseTransport):
             ValueError: Negative `timeout`.
             TimeoutError: Operation timed out.
         """
-        data = b"".join(iterable_of_data)
+        iterable_of_data = list(iterable_of_data)
+        if len(iterable_of_data) == 1:
+            data = iterable_of_data[0]
+        else:
+            data = b"".join(iterable_of_data)
         del iterable_of_data
         return self.send_all(data, timeout)
 
