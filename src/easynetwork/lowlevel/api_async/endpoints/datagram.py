@@ -27,7 +27,7 @@ from ... import _utils, typed_attr
 from ..transports import abc as transports
 
 
-class AsyncDatagramEndpoint(Generic[_SentPacketT, _ReceivedPacketT], typed_attr.TypedAttributeProvider):
+class AsyncDatagramEndpoint(typed_attr.TypedAttributeProvider, Generic[_SentPacketT, _ReceivedPacketT]):
     """
     A communication endpoint based on unreliable packets of data.
     """

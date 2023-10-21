@@ -30,7 +30,7 @@ from ... import _stream, _utils, typed_attr
 from ..transports import abc as transports
 
 
-class StreamEndpoint(Generic[_SentPacketT, _ReceivedPacketT], typed_attr.TypedAttributeProvider):
+class StreamEndpoint(typed_attr.TypedAttributeProvider, Generic[_SentPacketT, _ReceivedPacketT]):
     """
     A communication endpoint based on continuous stream data transport.
     """
