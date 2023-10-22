@@ -1240,7 +1240,6 @@ class TestAsyncioBackendShieldedCancellation:
 
         await event_loop.create_task(coroutine())
 
-    @pytest.mark.xfail(raises=asyncio.CancelledError, reason="Task.cancel() cannot be erased", strict=True)
     async def test____cancel_shielded_coroutine____scope_cancellation_edge_case_3(
         self,
         event_loop: asyncio.AbstractEventLoop,
@@ -1255,13 +1254,34 @@ class TestAsyncioBackendShieldedCancellation:
 
             await backend.coro_yield()
 
+            assert not inner_scope.cancel_called()
+
+            assert not inner_scope.cancelled_caught()
+
+        await event_loop.create_task(coroutine())
+
+    @pytest.mark.xfail(raises=asyncio.CancelledError, reason="Task.cancel() cannot be erased", strict=True)
+    async def test____cancel_shielded_coroutine____scope_cancellation_edge_case_4(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        backend: AsyncIOBackend,
+    ) -> None:
+        async def coroutine() -> None:
+            current_task = asyncio.current_task()
+            assert current_task is not None
+
+            with backend.open_cancel_scope() as inner_scope:
+                inner_scope.cancel()
+
+            await backend.coro_yield()
+
             assert inner_scope.cancel_called()
 
             assert not inner_scope.cancelled_caught()
 
         await event_loop.create_task(coroutine())
 
-    async def test____cancel_shielded_coroutine____scope_cancellation_edge_case_4(
+    async def test____cancel_shielded_coroutine____scope_cancellation_edge_case_5(
         self,
         event_loop: asyncio.AbstractEventLoop,
         backend: AsyncIOBackend,
@@ -1292,7 +1312,7 @@ class TestAsyncioBackendShieldedCancellation:
 
         await event_loop.create_task(coroutine())
 
-    async def test____cancel_shielded_coroutine____scope_cancellation_edge_case_5(
+    async def test____cancel_shielded_coroutine____scope_cancellation_edge_case_6(
         self,
         event_loop: asyncio.AbstractEventLoop,
         backend: AsyncIOBackend,
