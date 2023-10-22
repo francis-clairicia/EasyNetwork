@@ -319,6 +319,7 @@ class _ClientManager(Generic[_T_Address]):
         try:
             yield
         finally:
+            assert self.__client_state[address] is state  # nosec assert_used
             if old_state is None:
                 del self.__client_state[address]
             else:
@@ -337,8 +338,8 @@ class _ClientManager(Generic[_T_Address]):
 
     @contextlib.contextmanager
     def send_guard(self, address: _T_Address) -> Iterator[None]:
-        with self.__send_guard.get(address) as guard:
-            with guard:
+        with self.__send_guard.get(address) as send_guard:
+            with send_guard:
                 yield
 
     @staticmethod
@@ -360,6 +361,9 @@ class _TemporaryValue(Generic[_KT, _VT]):
         self.__values: defaultdict[_KT, _VT] = defaultdict(value_factory)
         self.__counter: Counter[_KT] = Counter()
         self.__must_delete_value: Callable[[_VT], bool] = must_delete_value
+
+    def __contains__(self, obj: _KT, /) -> bool:  # pragma: no cover  # This method exists for testing purposes
+        return obj in self.__values
 
     @contextlib.contextmanager
     def get(self, key: _KT) -> Iterator[_VT]:

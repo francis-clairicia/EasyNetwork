@@ -211,5 +211,10 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, _R
         raise StopAsyncIteration
 
     @property
+    def max_recv_size(self) -> int:
+        """Read buffer size. Read-only attribute."""
+        return self.__max_recv_size
+
+    @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         return self.__listener.extra_attributes

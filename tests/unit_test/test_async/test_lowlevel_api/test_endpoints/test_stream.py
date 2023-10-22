@@ -108,10 +108,10 @@ class TestAsyncStreamEndpoint:
         # Arrange
 
         # Act
-        transport: AsyncStreamEndpoint[Any, Any] = AsyncStreamEndpoint(mock_stream_transport, mock_stream_protocol, max_recv_size)
+        endpoint: AsyncStreamEndpoint[Any, Any] = AsyncStreamEndpoint(mock_stream_transport, mock_stream_protocol, max_recv_size)
 
         # Assert
-        assert transport.max_recv_size == max_recv_size
+        assert endpoint.max_recv_size == max_recv_size
 
     @pytest.mark.parametrize("max_recv_size", [0, -1, 10.4], ids=lambda p: f"max_recv_size=={p}")
     async def test____dunder_init____max_recv_size____invalid_value(

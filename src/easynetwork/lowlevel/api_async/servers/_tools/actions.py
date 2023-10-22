@@ -53,7 +53,7 @@ class ErrorAction(Action[Any]):
         try:
             await generator.athrow(self.exception)
         finally:
-            del self  # Needed to avoid circular reference with raised exception
+            del generator, self  # Needed to avoid circular reference with raised exception
 
 
 @dataclasses.dataclass(slots=True)
