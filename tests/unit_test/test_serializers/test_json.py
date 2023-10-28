@@ -496,7 +496,7 @@ class TestJSONParser:
         assert complete == b'[{"data":42}]'
         assert remainder == b"remainder"
 
-    def test____raw_parse___list_frame____skip_bracket_in_strings(self) -> None:
+    def test____raw_parse____list_frame____skip_bracket_in_strings(self) -> None:
         # Arrange
         consumer = _JSONParser.raw_parse(limit=DEFAULT_LIMIT)
         next(consumer)

@@ -41,7 +41,7 @@ class TestAsyncExecutor:
     def mock_contextvars_copy_context(mocker: MockerFixture) -> MagicMock:
         return mocker.patch("contextvars.copy_context", autospec=True)
 
-    async def test___dunder_init___invalid_executor(
+    async def test____dunder_init____invalid_executor(
         self,
         mock_backend: MagicMock,
         mocker: MockerFixture,

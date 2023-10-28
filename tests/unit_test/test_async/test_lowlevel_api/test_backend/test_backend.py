@@ -11,7 +11,7 @@ from easynetwork.lowlevel.api_async.backend.factory import AsyncBackendFactory
 
 import pytest
 
-from ._fake_backends import BaseFakeBackend, FakeAsyncioBackend, FakeCurioBackend, FakeTrioBackend
+from ._fake_backends import BaseFakeBackend, FakeAsyncIOBackend, FakeCurioBackend, FakeTrioBackend
 
 if TYPE_CHECKING:
     from importlib.metadata import EntryPoint
@@ -87,7 +87,7 @@ class TestAsyncBackend:
 class TestAsyncBackendFactory:
     BACKENDS: MappingProxyType[str, type[AsyncBackend]] = MappingProxyType(
         {
-            "asyncio": FakeAsyncioBackend,
+            "asyncio": FakeAsyncIOBackend,
             "trio": FakeTrioBackend,
             "curio": FakeCurioBackend,
         }
@@ -367,7 +367,7 @@ class TestAsyncBackendFactory:
         backend_cls = AsyncBackendFactory.get_default_backend(guess_current_async_library=False)
 
         # Assert
-        assert backend_cls is FakeAsyncioBackend
+        assert backend_cls is FakeAsyncIOBackend
 
     @pytest.mark.feature_sniffio
     @pytest.mark.parametrize("running_backend_name", list(BACKENDS))

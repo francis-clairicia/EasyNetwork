@@ -98,13 +98,13 @@ Opening Network Connections
 
 .. automethod:: AsyncBackend.create_ssl_over_tcp_connection
 
-.. automethod:: AsyncBackend.wrap_tcp_client_socket
+.. automethod:: AsyncBackend.wrap_stream_socket
 
-.. automethod:: AsyncBackend.wrap_ssl_over_tcp_client_socket
+.. automethod:: AsyncBackend.wrap_ssl_over_stream_socket_client_side
 
 .. automethod:: AsyncBackend.create_udp_endpoint
 
-.. automethod:: AsyncBackend.wrap_udp_socket
+.. automethod:: AsyncBackend.wrap_connected_datagram_socket
 
 Creating Network Servers
 ^^^^^^^^^^^^^^^^^^^^^^^^
@@ -113,24 +113,7 @@ Creating Network Servers
 
 .. automethod:: AsyncBackend.create_ssl_over_tcp_listeners
 
-Socket Adapter Classes
-^^^^^^^^^^^^^^^^^^^^^^
-
-.. autoclass:: AsyncBaseSocketAdapter
-   :members:
-   :special-members: __aenter__, __aexit__
-
-.. autoclass:: AsyncStreamSocketAdapter
-   :members:
-
-.. autoclass:: AsyncDatagramSocketAdapter
-   :members:
-
-.. autoclass:: AsyncListenerSocketAdapter
-   :members:
-
-.. autoclass:: AcceptedSocket
-   :members:
+.. automethod:: AsyncBackend.create_udp_listeners
 
 
 Synchronization Primitives

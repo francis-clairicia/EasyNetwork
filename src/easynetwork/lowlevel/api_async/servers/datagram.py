@@ -25,7 +25,7 @@ import operator
 from collections import Counter, defaultdict, deque
 from collections.abc import AsyncGenerator, AsyncIterator, Callable, Hashable, Iterator, Mapping
 from types import TracebackType
-from typing import Any, Generic, NoReturn, TypeVar, assert_never
+from typing import Any, Generic, NoReturn, Self, TypeVar, assert_never
 
 from .... import protocol as protocol_module
 from ...._typevars import _RequestT, _ResponseT
@@ -116,12 +116,13 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, 
 
     async def serve(
         self,
-        datagram_received_cb: Callable[[_T_Address], AsyncGenerator[None, _RequestT]],
+        datagram_received_cb: Callable[[_T_Address, Self], AsyncGenerator[None, _RequestT]],
         task_group: TaskGroup | None = None,
     ) -> NoReturn:
         with self.__serve_guard:
             client_coroutine = self.__client_coroutine
             client_manager = self.__client_manager
+            backend = self.__backend
 
             async with self.__ensure_task_group(task_group) as task_group:
 
@@ -152,7 +153,11 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, 
                         case _:  # pragma: no cover
                             assert_never(client_state)
 
-                await self.__listener.serve(handler, task_group)
+                while True:
+                    datagram, address = await self.__listener.recv_from()
+                    task_group.start_soon(handler, datagram, address)
+                    del datagram, address
+                    await backend.cancel_shielded_coro_yield()
 
     def get_backend(self) -> AsyncBackend:
         """
@@ -167,7 +172,7 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, 
 
     async def __client_coroutine(
         self,
-        datagram_received_cb: Callable[[_T_Address], AsyncGenerator[None, _RequestT]],
+        datagram_received_cb: Callable[[_T_Address, Self], AsyncGenerator[None, _RequestT]],
         address: _T_Address,
         task_group: TaskGroup,
     ) -> None:
@@ -192,7 +197,7 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, 
             client_exit_stack.push(_utils.prepend_argument(datagram_queue)(self.__clear_queue_on_error))
             ########################################################################################################################
 
-            request_handler_generator = datagram_received_cb(address)
+            request_handler_generator = datagram_received_cb(address, self)
 
             del client_exit_stack, datagram_received_cb
 
@@ -215,13 +220,13 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, 
                     try:
                         await action.asend(request_handler_generator)
                     except StopAsyncIteration:
-                        return
+                        break
                     finally:
                         del action
 
     def __enqueue_task_at_end(
         self,
-        datagram_received_cb: Callable[[_T_Address], AsyncGenerator[None, _RequestT]],
+        datagram_received_cb: Callable[[_T_Address, Self], AsyncGenerator[None, _RequestT]],
         address: _T_Address,
         task_group: TaskGroup,
         datagram_queue: deque[bytes],

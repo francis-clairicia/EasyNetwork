@@ -143,13 +143,19 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, _R
     ) -> NoReturn:
         with self.__serve_guard:
             handler = _utils.prepend_argument(client_connected_cb)(self.__client_coroutine)
-            await self.__listener.serve(handler, task_group)
+            async with self.__ensure_task_group(task_group) as task_group:
+                await self.__listener.serve(handler, task_group)
 
     def get_backend(self) -> AsyncBackend:
         """
         Return the underlying backend interface.
         """
         return self.__backend
+
+    def __ensure_task_group(self, task_group: TaskGroup | None) -> contextlib.AbstractAsyncContextManager[TaskGroup]:
+        if task_group is None:
+            return self.__backend.create_task_group()
+        return contextlib.nullcontext(task_group)
 
     async def __client_coroutine(
         self,

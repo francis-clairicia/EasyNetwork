@@ -1532,7 +1532,7 @@ class TestTCPNetworkClient(BaseTestClient):
         indirect=True,
     )
     @pytest.mark.usefixtures("setup_consumer_mock")
-    def test____recv_packet_____non_blocking____partial_data(
+    def test____recv_packet____non_blocking____partial_data(
         self,
         client: TCPNetworkClient[Any, Any],
         max_recv_size: int,

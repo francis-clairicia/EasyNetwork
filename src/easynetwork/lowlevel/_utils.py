@@ -157,7 +157,7 @@ def iter_bytes(b: bytes | bytearray | memoryview) -> Iterator[bytes]:
     return map(int.to_bytes, b)
 
 
-def is_socket_connected(sock: _socket.socket) -> bool:
+def is_socket_connected(sock: ISocket) -> bool:
     try:
         sock.getpeername()
     except OSError as exc:
@@ -169,7 +169,7 @@ def is_socket_connected(sock: _socket.socket) -> bool:
     return connected
 
 
-def check_socket_is_connected(sock: _socket.socket) -> None:
+def check_socket_is_connected(sock: ISocket) -> None:
     if not is_socket_connected(sock):
         raise error_from_errno(_errno.ENOTCONN)
 

@@ -35,7 +35,7 @@ def create_tcp_server() -> StandaloneTCPNetworkServer[str, str]:
 
 
 def create_udp_server() -> StandaloneUDPNetworkServer[str, str]:
-    return StandaloneUDPNetworkServer("127.0.0.1", PORT, DatagramProtocol(StringLineSerializer()), MyAsyncRequestHandler())
+    return StandaloneUDPNetworkServer(None, PORT, DatagramProtocol(StringLineSerializer()), MyAsyncRequestHandler())
 
 
 def main() -> None:

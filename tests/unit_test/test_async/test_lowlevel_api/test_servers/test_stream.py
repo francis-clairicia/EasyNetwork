@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 from easynetwork.lowlevel._stream import StreamDataProducer
 from easynetwork.lowlevel.api_async.servers.stream import AsyncStreamClient, AsyncStreamServer
 from easynetwork.lowlevel.api_async.transports.abc import AsyncListener, AsyncStreamWriteTransport
+from easynetwork_asyncio.tasks import TaskGroup
 
 import pytest
 
@@ -244,7 +245,7 @@ class TestAsyncStreamServer:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        async def serve_side_effect(handler: Callable[[Any], Awaitable[None]], task_group: Any | None = None) -> None:
+        async def serve_side_effect(handler: Callable[[Any], Awaitable[None]], task_group: Any) -> None:
             mock_invalid_transport = mocker.NonCallableMagicMock(spec=object)
             await handler(mock_invalid_transport)
             pytest.fail("handler() does not raise")
@@ -253,8 +254,9 @@ class TestAsyncStreamServer:
         client_connected_cb = mocker.stub()
 
         # Act & Assert
-        with pytest.raises(TypeError, match=r"^Expected an AsyncStreamTransport object, got .*$"):
-            await server.serve(client_connected_cb)
+        async with TaskGroup() as tg:
+            with pytest.raises(TypeError, match=r"^Expected an AsyncStreamTransport object, got .*$"):
+                await server.serve(client_connected_cb, tg)
         client_connected_cb.assert_not_called()
 
     async def test____get_backend____default(

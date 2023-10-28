@@ -74,6 +74,9 @@ class SocketAttribute(typed_attr.TypedAttributeSet):
     socket: ISocket = typed_attr.typed_attribute()
     """:class:`socket.socket` instance."""
 
+    family: int = typed_attr.typed_attribute()
+    """the socket's family, as returned by :attr:`socket.socket.family`."""
+
     sockname: _socket._RetAddress = typed_attr.typed_attribute()
     """the socket's own address, result of :meth:`socket.socket.getsockname`."""
 
@@ -83,6 +86,9 @@ class SocketAttribute(typed_attr.TypedAttributeSet):
 
 class INETSocketAttribute(SocketAttribute):
     __slots__ = ()
+
+    family: Literal[_socket.AddressFamily.AF_INET, _socket.AddressFamily.AF_INET6]
+    """the socket's family, as returned by :attr:`socket.socket.family`."""
 
     sockname: tuple[str, int] | tuple[str, int, int, int]
     """the socket's own address, result of :meth:`socket.socket.getsockname`."""
@@ -446,19 +452,13 @@ class SocketProxy:
     def family(self) -> int:
         """The socket family."""
         family: int = self.__socket.family
-        try:
-            return _socket.AddressFamily(family)
-        except ValueError:
-            return family
+        return _cast_socket_family(family)
 
     @property
     def type(self) -> int:
         """The socket type."""
         socket_type = self.__socket.type
-        try:
-            return _socket.SocketKind(socket_type)
-        except ValueError:
-            return socket_type
+        return _cast_socket_kind(socket_type)
 
     @property
     def proto(self) -> int:
@@ -576,9 +576,10 @@ def disable_socket_linger(sock: SupportsSocketOptions) -> None:
     sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_LINGER, _linger_struct.pack(False, 0))
 
 
-def _get_socket_extra(sock: _socket.socket) -> dict[Any, Callable[[], Any]]:
+def _get_socket_extra(sock: ISocket, *, wrap_in_proxy: bool = True) -> dict[Any, Callable[[], Any]]:
     return {
-        SocketAttribute.socket: lambda: SocketProxy(sock),
+        SocketAttribute.socket: (lambda: sock) if not wrap_in_proxy else (lambda: SocketProxy(sock)),
+        SocketAttribute.family: lambda: _cast_socket_family(sock.family),
         SocketAttribute.sockname: lambda: _address_or_lookup_error(sock.getsockname),
         SocketAttribute.peername: lambda: _address_or_lookup_error(sock.getpeername),
     }
@@ -592,6 +593,20 @@ def _get_tls_extra(ssl_object: _typing_ssl.SSLObject | _typing_ssl.SSLSocket) ->
         TLSAttribute.compression: lambda: _value_or_lookup_error(ssl_object.compression()),
         TLSAttribute.tls_version: lambda: _value_or_lookup_error(ssl_object.version()),
     }
+
+
+def _cast_socket_family(family: int) -> int:
+    try:
+        return _socket.AddressFamily(family)
+    except ValueError:
+        return family
+
+
+def _cast_socket_kind(kind: int) -> int:
+    try:
+        return _socket.SocketKind(kind)
+    except ValueError:
+        return kind
 
 
 def _address_or_lookup_error(getsockaddr: Callable[[], _R]) -> _R:

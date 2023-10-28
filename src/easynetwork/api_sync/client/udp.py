@@ -18,7 +18,7 @@ from __future__ import annotations
 
 __all__ = ["UDPNetworkClient"]
 
-import contextlib as _contextlib
+import contextlib
 import socket as _socket
 from collections.abc import Iterator
 from typing import Any, final, overload
@@ -177,7 +177,8 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
             if endpoint.is_closed():
                 raise ClientClosedError("Closed client")
             local_address = endpoint.extra(INETSocketAttribute.sockname)
-            return new_socket_address(local_address, self.socket.family)
+            address_family = endpoint.extra(INETSocketAttribute.family)
+            return new_socket_address(local_address, address_family)
 
     def get_remote_address(self) -> SocketAddress:
         """
@@ -195,7 +196,8 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
             if endpoint.is_closed():
                 raise ClientClosedError("Closed client")
             remote_address = endpoint.extra(INETSocketAttribute.peername)
-            return new_socket_address(remote_address, self.socket.family)
+            address_family = endpoint.extra(INETSocketAttribute.family)
+            return new_socket_address(remote_address, address_family)
 
     def send_packet(self, packet: _SentPacketT, *, timeout: float | None = None) -> None:
         """
@@ -260,7 +262,7 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
             with self.__convert_socket_error():
                 return endpoint.recv_packet(timeout=timeout)
 
-    @_contextlib.contextmanager
+    @contextlib.contextmanager
     def __convert_socket_error(self) -> Iterator[None]:
         try:
             yield

@@ -374,7 +374,7 @@ def test____is_socket_connected____getpeername_raises_OSError(mock_tcp_socket: M
 
 
 @pytest.mark.parametrize("connected", [True, False])
-def test___check_socket_is_connected____default(
+def test____check_socket_is_connected____default(
     connected: bool,
     mock_tcp_socket: MagicMock,
     mocker: MockerFixture,

@@ -168,26 +168,26 @@ class TestStandaloneUDPNetworkServer(BaseTestStandaloneNetworkServer):
         with server:
             for _ in range(3):
                 assert not server.is_serving()
-                assert server.get_address() is None
+                assert not server.get_addresses()
 
                 server_thread = NetworkServerThread(server, daemon=True)
                 server_thread.start()
                 try:
                     assert server.is_serving()
-                    assert server.get_address() is not None
+                    assert len(server.get_addresses()) > 0
                     time.sleep(0.5)
                 finally:
                     server_thread.join()
 
     def test____socket_property____server_is_not_running(self, server: StandaloneUDPNetworkServer[str, str]) -> None:
         with server:
-            assert server.socket is None
-            assert server.get_address() is None
+            assert len(server.sockets) == 0
+            assert len(server.get_addresses()) == 0
 
     @pytest.mark.usefixtures("start_server")
     def test____socket_property____server_is_running(self, server: StandaloneUDPNetworkServer[str, str]) -> None:
-        assert server.socket is not None
-        assert server.get_address() is not None
+        assert len(server.sockets) > 0
+        assert len(server.get_addresses()) > 0
 
     def test____logger_property____exposed(self, server: StandaloneUDPNetworkServer[str, str]) -> None:
         assert server.logger is server._server.logger

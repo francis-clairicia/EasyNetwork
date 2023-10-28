@@ -109,7 +109,7 @@ class TestDatagramEndpoint:
             _ = DatagramEndpoint(mock_datagram_transport, mock_invalid_protocol)
 
     @pytest.mark.parametrize("transport_closed", [False, True])
-    def test___is_closed____default(
+    def test____is_closed____default(
         self,
         endpoint: DatagramEndpoint[Any, Any],
         mock_datagram_transport: MagicMock,
@@ -126,7 +126,7 @@ class TestDatagramEndpoint:
         mock_datagram_transport.is_closed.assert_called_once_with()
         assert state is transport_closed
 
-    def test___close____default(self, endpoint: DatagramEndpoint[Any, Any], mock_datagram_transport: MagicMock) -> None:
+    def test____close____default(self, endpoint: DatagramEndpoint[Any, Any], mock_datagram_transport: MagicMock) -> None:
         # Arrange
         mock_datagram_transport.close.assert_not_called()
 

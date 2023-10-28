@@ -28,12 +28,3 @@ UDP Implementation
 
 .. autoclass:: AsyncUDPNetworkClient
    :members:
-   :exclude-members: iter_received_packets
-
-
-Generic UDP Endpoint
---------------------
-
-.. autoclass:: AsyncUDPNetworkEndpoint
-   :members:
-   :special-members: __aenter__, __aexit__

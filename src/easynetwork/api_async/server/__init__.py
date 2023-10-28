@@ -25,6 +25,7 @@ __all__ = [
     "AsyncStreamRequestHandler",
     "AsyncTCPNetworkServer",
     "AsyncUDPNetworkServer",
+    "INETClientAttribute",
     "SupportsEventSet",
 ]
 

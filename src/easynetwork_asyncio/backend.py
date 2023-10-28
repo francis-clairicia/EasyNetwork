@@ -43,10 +43,11 @@ else:
 from easynetwork.lowlevel.api_async.backend.abc import AsyncBackend as AbstractAsyncBackend
 from easynetwork.lowlevel.api_async.backend.sniffio import current_async_library_cvar as _sniffio_current_async_library_cvar
 
-from ._utils import create_connection, create_datagram_socket, ensure_resolved, open_listener_sockets_from_getaddrinfo_result
+from ._utils import create_connection, ensure_resolved, open_listener_sockets_from_getaddrinfo_result
 from .datagram.endpoint import create_datagram_endpoint
+from .datagram.listener import AsyncioTransportDatagramListenerSocketAdapter, RawDatagramListenerSocketAdapter
 from .datagram.socket import AsyncioTransportDatagramSocketAdapter, RawDatagramSocketAdapter
-from .stream.listener import AcceptedSocket, AcceptedSSLSocket, ListenerSocketAdapter
+from .stream.listener import AcceptedSocketFactory, AcceptedSSLSocketFactory, ListenerSocketAdapter
 from .stream.socket import AsyncioTransportStreamSocketAdapter, RawStreamSocketAdapter
 from .tasks import CancelScope, TaskGroup, TaskUtils
 from .threads import ThreadsPortal
@@ -55,7 +56,7 @@ if TYPE_CHECKING:
     import concurrent.futures
     from ssl import SSLContext as _SSLContext
 
-    from easynetwork.lowlevel.api_async.backend.abc import AcceptedSocket as AbstractAcceptedSocket, ILock
+    from easynetwork.lowlevel.api_async.backend.abc import ILock
 
 _P = ParamSpec("_P")
 _T = TypeVar("_T")
@@ -191,7 +192,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
                 happy_eyeballs_delay = 0.25  # Recommended value by the RFC 6555
         return happy_eyeballs_delay
 
-    async def wrap_tcp_client_socket(
+    async def wrap_stream_socket(
         self,
         socket: _socket.socket,
     ) -> AsyncioTransportStreamSocketAdapter | RawStreamSocketAdapter:
@@ -203,7 +204,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
         reader, writer = await asyncio.open_connection(sock=socket)
         return AsyncioTransportStreamSocketAdapter(reader, writer)
 
-    async def wrap_ssl_over_tcp_client_socket(
+    async def wrap_ssl_over_stream_socket_client_side(
         self,
         socket: _socket.socket,
         ssl_context: _SSLContext,
@@ -233,14 +234,12 @@ class AsyncIOBackend(AbstractAsyncBackend):
         backlog: int,
         *,
         reuse_port: bool = False,
-    ) -> Sequence[ListenerSocketAdapter]:
-        return await self._create_tcp_listeners(
-            host,
-            port,
-            backlog,
-            functools.partial(AcceptedSocket, use_asyncio_transport=self.__use_asyncio_transport),
-            reuse_port=reuse_port,
-        )
+    ) -> Sequence[ListenerSocketAdapter[AsyncioTransportStreamSocketAdapter | RawStreamSocketAdapter]]:
+        sockets = await self._create_tcp_socket_listeners(host, port, backlog, reuse_port=reuse_port)
+
+        loop = asyncio.get_running_loop()
+        factory = AcceptedSocketFactory(use_asyncio_transport=self.__use_asyncio_transport)
+        return [ListenerSocketAdapter(sock, loop, factory) for sock in sockets]
 
     async def create_ssl_over_tcp_listeners(
         self,
@@ -252,32 +251,30 @@ class AsyncIOBackend(AbstractAsyncBackend):
         ssl_shutdown_timeout: float,
         *,
         reuse_port: bool = False,
-    ) -> Sequence[ListenerSocketAdapter]:
+    ) -> Sequence[ListenerSocketAdapter[AsyncioTransportStreamSocketAdapter]]:
         self._check_ssl_support()
         self.__verify_ssl_context(ssl_context)
 
-        return await self._create_tcp_listeners(
-            host,
-            port,
-            backlog,
-            functools.partial(
-                AcceptedSSLSocket,
-                ssl_context=ssl_context,
-                ssl_handshake_timeout=float(ssl_handshake_timeout),
-                ssl_shutdown_timeout=float(ssl_shutdown_timeout),
-            ),
-            reuse_port=reuse_port,
-        )
+        sockets = await self._create_tcp_socket_listeners(host, port, backlog, reuse_port=reuse_port)
 
-    async def _create_tcp_listeners(
+        loop = asyncio.get_running_loop()
+        factory = AcceptedSSLSocketFactory(
+            ssl_context=ssl_context,
+            ssl_handshake_timeout=ssl_handshake_timeout,
+            ssl_shutdown_timeout=ssl_shutdown_timeout,
+        )
+        return [ListenerSocketAdapter(sock, loop, factory) for sock in sockets]
+
+    async def _create_tcp_socket_listeners(
         self,
         host: str | Sequence[str] | None,
         port: int,
         backlog: int,
-        accepted_socket_factory: Callable[[_socket.socket, asyncio.AbstractEventLoop], AbstractAcceptedSocket],
         *,
         reuse_port: bool,
-    ) -> Sequence[ListenerSocketAdapter]:
+    ) -> Sequence[_socket.socket]:
+        if not isinstance(backlog, int):
+            raise TypeError("backlog: Expected an integer")
         loop = asyncio.get_running_loop()
 
         reuse_address: bool = os.name not in ("nt", "cygwin") and sys.platform != "cygwin"
@@ -307,36 +304,72 @@ class AsyncIOBackend(AbstractAsyncBackend):
             reuse_port=reuse_port,
         )
 
-        return [ListenerSocketAdapter(sock, loop, accepted_socket_factory) for sock in sockets]
+        return sockets
 
     async def create_udp_endpoint(
         self,
+        remote_host: str,
+        remote_port: int,
         *,
         local_address: tuple[str, int] | None = None,
-        remote_address: tuple[str, int] | None = None,
-        reuse_port: bool = False,
     ) -> AsyncioTransportDatagramSocketAdapter | RawDatagramSocketAdapter:
-        family: int = 0
-        if local_address is None and remote_address is None:
-            family = _socket.AF_INET
-
-        socket = await create_datagram_socket(
-            loop=asyncio.get_running_loop(),
-            family=family,
+        loop = asyncio.get_running_loop()
+        socket = await create_connection(
+            remote_host,
+            remote_port,
+            loop,
             local_address=local_address,
-            remote_address=remote_address,
-            reuse_port=reuse_port,
+            socktype=_socket.SOCK_DGRAM,
         )
-        return await self.wrap_udp_socket(socket)
+        return await self.wrap_connected_datagram_socket(socket)
 
-    async def wrap_udp_socket(self, socket: _socket.socket) -> AsyncioTransportDatagramSocketAdapter | RawDatagramSocketAdapter:
+    async def wrap_connected_datagram_socket(
+        self,
+        socket: _socket.socket,
+    ) -> AsyncioTransportDatagramSocketAdapter | RawDatagramSocketAdapter:
         socket.setblocking(False)
 
         if not self.__use_asyncio_transport:
             return RawDatagramSocketAdapter(socket, asyncio.get_running_loop())
 
-        endpoint = await create_datagram_endpoint(socket=socket)
+        endpoint = await create_datagram_endpoint(sock=socket)
         return AsyncioTransportDatagramSocketAdapter(endpoint)
+
+    async def create_udp_listeners(
+        self,
+        host: str | Sequence[str] | None,
+        port: int,
+        *,
+        reuse_port: bool = False,
+    ) -> Sequence[AsyncioTransportDatagramListenerSocketAdapter] | Sequence[RawDatagramListenerSocketAdapter]:
+        loop = asyncio.get_running_loop()
+
+        hosts: Sequence[str | None]
+        if host == "" or host is None:
+            hosts = [None]
+        elif isinstance(host, str):
+            hosts = [host]
+        else:
+            hosts = host
+
+        infos: set[tuple[int, int, int, str, tuple[Any, ...]]] = set(
+            itertools.chain.from_iterable(
+                await asyncio.gather(
+                    *[ensure_resolved(host, port, _socket.AF_UNSPEC, _socket.SOCK_DGRAM, loop) for host in hosts]
+                )
+            )
+        )
+
+        sockets: list[_socket.socket] = open_listener_sockets_from_getaddrinfo_result(
+            infos,
+            backlog=None,
+            reuse_address=False,
+            reuse_port=reuse_port,
+        )
+
+        if not self.__use_asyncio_transport:
+            return [RawDatagramListenerSocketAdapter(sock, loop) for sock in sockets]
+        return [AsyncioTransportDatagramListenerSocketAdapter(await create_datagram_endpoint(sock=sock)) for sock in sockets]
 
     def create_lock(self) -> asyncio.Lock:
         return asyncio.Lock()

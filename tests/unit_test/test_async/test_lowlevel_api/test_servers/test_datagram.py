@@ -212,7 +212,7 @@ class TestClientManager:
                     pytest.fail("Should not arrive here")
 
     @pytest.mark.asyncio
-    async def test_____lock_____per_client_synchronization_condition(
+    async def test____lock____per_client_synchronization_condition(
         self,
         client_manager: _ClientManager[Any],
         mocker: MockerFixture,
@@ -228,7 +228,7 @@ class TestClientManager:
         async with client_manager.lock(address) as other_condition:
             assert other_condition is not condition
 
-    def test_____datagram_queue_____per_client_queue(
+    def test____datagram_queue____per_client_queue(
         self,
         client_manager: _ClientManager[Any],
         mocker: MockerFixture,
@@ -249,7 +249,7 @@ class TestClientManager:
         with client_manager.datagram_queue(address) as other_datagram_queue:
             assert other_datagram_queue is not datagram_queue  # datagram_queue was empty and therefore deleted
 
-    def test_____send_guard_____per_client_resource_guard(
+    def test____send_guard____per_client_resource_guard(
         self,
         client_manager: _ClientManager[Any],
         mocker: MockerFixture,

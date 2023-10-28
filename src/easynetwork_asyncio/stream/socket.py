@@ -21,19 +21,22 @@ __all__ = ["AsyncioTransportStreamSocketAdapter", "RawStreamSocketAdapter"]
 
 import asyncio
 import socket as _socket
-from collections.abc import Iterable
-from typing import TYPE_CHECKING, final
+from collections import ChainMap
+from collections.abc import Callable, Iterable, Mapping
+from typing import TYPE_CHECKING, Any, final
 
-from easynetwork.lowlevel.api_async.backend.abc import AsyncStreamSocketAdapter as AbstractAsyncStreamSocketAdapter
+from easynetwork.lowlevel.api_async.transports import abc as transports
+from easynetwork.lowlevel.socket import TLSAttribute, _get_socket_extra, _get_tls_extra
 
 from ..socket import AsyncSocket
 
 if TYPE_CHECKING:
     import asyncio.trsock
+    import ssl as _typing_ssl
 
 
 @final
-class AsyncioTransportStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
+class AsyncioTransportStreamSocketAdapter(transports.AsyncStreamTransport):
     __slots__ = (
         "__reader",
         "__writer",
@@ -54,10 +57,18 @@ class AsyncioTransportStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
         self.__socket: asyncio.trsock.TransportSocket = socket
 
     async def aclose(self) -> None:
-        try:
-            if not self.__writer.is_closing():
+        if not self.__writer.is_closing():
+            try:
+                if self.__writer.can_write_eof():
+                    self.__writer.write_eof()
+            except OSError:
+                pass
+            finally:
                 self.__writer.close()
+        try:
             await self.__writer.wait_closed()
+        except OSError:
+            pass
         except asyncio.CancelledError:
             self.__writer.transport.abort()
             raise
@@ -65,29 +76,41 @@ class AsyncioTransportStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
     def is_closing(self) -> bool:
         return self.__writer.is_closing()
 
-    async def recv(self, bufsize: int, /) -> bytes:
+    async def recv(self, bufsize: int) -> bytes:
         if bufsize < 0:
             raise ValueError("'bufsize' must be a positive or null integer")
         return await self.__reader.read(bufsize)
 
-    async def sendall(self, data: bytes, /) -> None:
+    async def send_all(self, data: bytes | bytearray | memoryview) -> None:
         self.__writer.write(data)
         await self.__writer.drain()
 
-    async def sendall_fromiter(self, iterable_of_data: Iterable[bytes], /) -> None:
-        self.__writer.writelines(iterable_of_data)
+    async def send_all_from_iterable(self, iterable_of_data: Iterable[bytes | bytearray | memoryview]) -> None:
+        iterable_of_data = list(iterable_of_data)
+        if len(iterable_of_data) == 1:
+            self.__writer.write(iterable_of_data[0])
+        else:
+            self.__writer.writelines(iterable_of_data)
+        del iterable_of_data
         await self.__writer.drain()
 
     async def send_eof(self) -> None:
         self.__writer.write_eof()
         await asyncio.sleep(0)
 
-    def socket(self) -> asyncio.trsock.TransportSocket:
-        return self.__socket
+    @property
+    def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
+        socket = self.__socket
+        socket_extra: dict[Any, Callable[[], Any]] = _get_socket_extra(socket, wrap_in_proxy=False)
+
+        ssl_obj: _typing_ssl.SSLObject | _typing_ssl.SSLSocket | None = self.__writer.get_extra_info("ssl_object")
+        if ssl_obj is None:
+            return socket_extra
+        return ChainMap(socket_extra, _get_tls_extra(ssl_obj), {TLSAttribute.standard_compatible: lambda: True})
 
 
 @final
-class RawStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
+class RawStreamSocketAdapter(transports.AsyncStreamTransport):
     __slots__ = ("__socket",)
 
     def __init__(
@@ -103,25 +126,26 @@ class RawStreamSocketAdapter(AbstractAsyncStreamSocketAdapter):
         self.__socket: AsyncSocket = AsyncSocket(socket, loop)
 
     async def aclose(self) -> None:
-        return await self.__socket.aclose()
+        try:
+            await self.__socket.shutdown(_socket.SHUT_RDWR)
+        except OSError:
+            pass
+        finally:
+            await self.__socket.aclose()
 
     def is_closing(self) -> bool:
         return self.__socket.is_closing()
 
-    async def recv(self, bufsize: int, /) -> bytes:
+    async def recv(self, bufsize: int) -> bytes:
         return await self.__socket.recv(bufsize)
 
-    async def sendall(self, data: bytes, /) -> None:
+    async def send_all(self, data: bytes | bytearray | memoryview) -> None:
         await self.__socket.sendall(data)
 
     async def send_eof(self) -> None:
-        socket = self.__socket
-        if socket.did_shutdown_SHUT_WR:
-            # On macOS, calling shutdown a second time raises ENOTCONN, but
-            # send_eof needs to be idempotent.
-            await asyncio.sleep(0)
-            return
-        await socket.shutdown(_socket.SHUT_WR)
+        await self.__socket.shutdown(_socket.SHUT_WR)
 
-    def socket(self) -> asyncio.trsock.TransportSocket:
-        return self.__socket.socket
+    @property
+    def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
+        socket = self.__socket.socket
+        return _get_socket_extra(socket, wrap_in_proxy=False)

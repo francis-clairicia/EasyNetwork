@@ -356,7 +356,7 @@ class TestStreamEndpoint:
         indirect=True,
     )
     @pytest.mark.parametrize("mock_stream_transport", [StreamReadTransport], indirect=True)
-    def test____recv_packet_____non_blocking____partial_data(
+    def test____recv_packet____non_blocking____partial_data(
         self,
         endpoint: StreamEndpoint[Any, Any],
         recv_timeout: float | None,

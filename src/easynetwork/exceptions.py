@@ -39,8 +39,6 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from _typeshed import ReadableBuffer
 
-    from .lowlevel.socket import SocketAddress
-
 
 class BusyResourceError(RuntimeError):
     """Error raised when a task attempts to use a resource that some other task is
@@ -150,9 +148,6 @@ class BaseProtocolParseError(Exception):
 
 class DatagramProtocolParseError(BaseProtocolParseError):
     """Parsing error raised by :class:`easynetwork.protocol.DatagramProtocol`."""
-
-    sender_address: SocketAddress
-    """Address of the sender."""
 
 
 class StreamProtocolParseError(BaseProtocolParseError):

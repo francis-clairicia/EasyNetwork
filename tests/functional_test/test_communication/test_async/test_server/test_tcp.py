@@ -11,7 +11,7 @@ from socket import IPPROTO_TCP, TCP_NODELAY
 from typing import Any
 from weakref import WeakValueDictionary
 
-from easynetwork.api_async.server.handler import AsyncStreamClient, AsyncStreamRequestHandler
+from easynetwork.api_async.server.handler import AsyncStreamClient, AsyncStreamRequestHandler, INETClientAttribute
 from easynetwork.api_async.server.tcp import AsyncTCPNetworkServer
 from easynetwork.exceptions import (
     BaseProtocolParseError,
@@ -25,6 +25,7 @@ from easynetwork.protocol import StreamProtocol
 from easynetwork_asyncio._utils import create_connection
 from easynetwork_asyncio.backend import AsyncIOBackend
 from easynetwork_asyncio.stream.listener import ListenerSocketAdapter
+from easynetwork_asyncio.stream.socket import AsyncioTransportStreamSocketAdapter, RawStreamSocketAdapter
 
 import pytest
 import pytest_asyncio
@@ -39,9 +40,8 @@ class NoListenerErrorBackend(AsyncIOBackend):
         port: int,
         backlog: int,
         *,
-        family: int = 0,
         reuse_port: bool = False,
-    ) -> Sequence[ListenerSocketAdapter]:
+    ) -> Sequence[ListenerSocketAdapter[AsyncioTransportStreamSocketAdapter | RawStreamSocketAdapter]]:
         return []
 
     async def create_ssl_over_tcp_listeners(
@@ -53,10 +53,13 @@ class NoListenerErrorBackend(AsyncIOBackend):
         ssl_handshake_timeout: float,
         ssl_shutdown_timeout: float,
         *,
-        family: int = 0,
         reuse_port: bool = False,
-    ) -> Sequence[ListenerSocketAdapter]:
+    ) -> Sequence[ListenerSocketAdapter[AsyncioTransportStreamSocketAdapter]]:
         return []
+
+
+def client_address(client: AsyncStreamClient[Any]) -> SocketAddress:
+    return client.extra(INETClientAttribute.remote_address)
 
 
 class RandomError(Exception):
@@ -91,27 +94,30 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
         )
 
     async def on_connection(self, client: AsyncStreamClient[str]) -> None:
-        assert client.address not in self.connected_clients
-        self.connected_clients[client.address] = client
+        assert client_address(client) not in self.connected_clients
+        self.connected_clients[client_address(client)] = client
         await client.send_packet("milk")
         if self.close_all_clients_on_connection:
             await self.backend.sleep(0.1)
             await client.aclose()
 
     async def on_disconnection(self, client: AsyncStreamClient[str]) -> None:
-        del self.connected_clients[client.address]
-        del self.request_count[client.address]
+        del self.connected_clients[client_address(client)]
+        del self.request_count[client_address(client)]
         if self.fail_on_disconnection:
             raise ConnectionError("Trying to use the client in a disconnected state")
 
     async def handle(self, client: AsyncStreamClient[str]) -> AsyncGenerator[None, str]:
-        if self.close_client_after_n_request >= 0 and self.request_count[client.address] >= self.close_client_after_n_request:
+        if (
+            self.close_client_after_n_request >= 0
+            and self.request_count[client_address(client)] >= self.close_client_after_n_request
+        ):
             await client.aclose()
         while True:
             async with self.handle_bad_requests(client):
                 request = yield
                 break
-        self.request_count[client.address] += 1
+        self.request_count[client_address(client)] += 1
         match request:
             case "__error__":
                 raise RandomError("Sorry man!")
@@ -135,10 +141,10 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
                     async with self.handle_bad_requests(client):
                         request = yield
                         break
-                self.request_received[client.address].append(request)
+                self.request_received[client_address(client)].append(request)
                 await client.send_packet(f"After wait: {request}")
             case _:
-                self.request_received[client.address].append(request)
+                self.request_received[client_address(client)].append(request)
                 await client.send_packet(request.upper())
 
     @contextlib.asynccontextmanager
@@ -146,7 +152,7 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
         try:
             yield
         except StreamProtocolParseError as exc:
-            self.bad_request_received[client.address].append(exc)
+            self.bad_request_received[client_address(client)].append(exc)
             await client.send_packet("wrong encoding man.")
 
     @property
@@ -531,7 +537,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
 
         connected_client: AsyncStreamClient[str] = list(request_handler.connected_clients.values())[0]
 
-        tcp_nodelay_state: int = connected_client.socket.getsockopt(IPPROTO_TCP, TCP_NODELAY)
+        tcp_nodelay_state: int = connected_client.extra(INETClientAttribute.socket).getsockopt(IPPROTO_TCP, TCP_NODELAY)
 
         # Do not test with '== 1', on MacOS it will return 4
         # (c.f. https://stackoverflow.com/a/31835137)
@@ -947,5 +953,5 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
             raise ConnectionAbortedError
 
         await asyncio.sleep(0.1)
-        assert len(caplog.records) == 3
-        assert caplog.records[1].message == "Error in client task"
+        assert len(caplog.records) == 1
+        assert caplog.records[0].message == "Error in client task (during TLS handshake)"

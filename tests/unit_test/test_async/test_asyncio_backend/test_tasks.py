@@ -28,7 +28,7 @@ class TestTask:
     def task(mock_asyncio_task: AsyncMock) -> Task[Any]:
         return Task(mock_asyncio_task)
 
-    def test_____equality____between_two_tasks_referencing_same_asyncio_task(self, mock_asyncio_task: AsyncMock) -> None:
+    def test____equality____between_two_tasks_referencing_same_asyncio_task(self, mock_asyncio_task: AsyncMock) -> None:
         # Arrange
         task1: Task[Any] = Task(mock_asyncio_task)
         task2: Task[Any] = Task(mock_asyncio_task)

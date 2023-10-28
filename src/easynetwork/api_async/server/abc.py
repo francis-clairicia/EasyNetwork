@@ -22,7 +22,10 @@ __all__ = [
 ]
 
 from abc import ABCMeta, abstractmethod
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, NoReturn, Protocol, Self
+
+from ...lowlevel.socket import SocketAddress
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -105,6 +108,16 @@ class AbstractAsyncNetworkServer(metaclass=ABCMeta):
             Do not call this method in the :meth:`serve_forever` task; it will cause a deadlock.
         """
         raise NotImplementedError
+
+    @abstractmethod
+    def get_addresses(self) -> Sequence[SocketAddress]:
+        """
+        Returns all interfaces to which the server is bound.
+
+        Returns:
+            A sequence of network socket address.
+            If the server is not serving (:meth:`is_serving` returns :data:`False`), an empty sequence is returned.
+        """
 
     @abstractmethod
     def get_backend(self) -> AsyncBackend:

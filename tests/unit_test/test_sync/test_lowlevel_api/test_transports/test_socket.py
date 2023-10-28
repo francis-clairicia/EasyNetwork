@@ -65,6 +65,7 @@ class TestSocketStreamTransport:
         assert transport._retry_interval is math.inf
         assert transport._selector_factory is mock_selector_factory
         assert isinstance(transport.extra(SocketAttribute.socket), SocketProxy)
+        assert transport.extra(SocketAttribute.family) == mock_tcp_socket.family
         assert transport.extra(SocketAttribute.sockname) == ("local_address", 11111)
         assert transport.extra(SocketAttribute.peername) == ("remote_address", 12345)
         mock_tcp_socket.getsockname.assert_called_once_with()
@@ -375,6 +376,7 @@ class TestSSLStreamTransport:
         assert transport._retry_interval is math.inf
         assert transport._selector_factory is mock_selector_factory
         assert isinstance(transport.extra(SocketAttribute.socket), SocketProxy)
+        assert transport.extra(SocketAttribute.family) == mock_tcp_socket.family
         assert transport.extra(SocketAttribute.sockname) == ("local_address", 11111)
         assert transport.extra(SocketAttribute.peername) == ("remote_address", 12345)
         assert transport.extra(TLSAttribute.sslcontext) is mock_ssl_context
@@ -771,6 +773,7 @@ class TestSocketDatagramTransport:
         assert transport._retry_interval is math.inf
         assert transport._selector_factory is mock_selector_factory
         assert isinstance(transport.extra(SocketAttribute.socket), SocketProxy)
+        assert transport.extra(SocketAttribute.family) == mock_udp_socket.family
         assert transport.extra(SocketAttribute.sockname) == ("local_address", 11111)
         assert transport.extra(SocketAttribute.peername) == ("remote_address", 12345)
         mock_udp_socket.getsockname.assert_called_once_with()

@@ -18,11 +18,11 @@ from __future__ import annotations
 
 __all__ = ["TCPNetworkClient"]
 
-import contextlib as _contextlib
+import contextlib
 import errno as _errno
 import socket as _socket
 from collections.abc import Iterator
-from typing import TYPE_CHECKING, Any, NoReturn, final, overload
+from typing import TYPE_CHECKING, Any, final, overload
 
 try:
     import ssl
@@ -249,9 +249,9 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
             self.__endpoint = StreamEndpoint(transport, protocol, max_recv_size=max_recv_size)
             self.__socket_proxy = SocketProxy(transport.extra(INETSocketAttribute.socket), lock=self.__send_lock.get)
 
-            with _contextlib.suppress(OSError):
+            with contextlib.suppress(OSError):
                 set_tcp_nodelay(self.socket, True)
-            with _contextlib.suppress(OSError):
+            with contextlib.suppress(OSError):
                 set_tcp_keepalive(self.socket, True)
         except BaseException:
             transport.close()
@@ -372,19 +372,19 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
                 with self.__convert_socket_error():
                     return endpoint.recv_packet(timeout=timeout)
             except EOFError:
-                self.__abort(None)
+                raise self.__abort() from None
 
-    @_contextlib.contextmanager
+    @contextlib.contextmanager
     def __convert_socket_error(self) -> Iterator[None]:
         try:
             yield
         except ConnectionError as exc:
-            self.__abort(exc)
+            raise self.__abort() from exc
         except _ssl_module.SSLZeroReturnError if _ssl_module else () as exc:
-            self.__abort(exc)
+            raise self.__abort() from exc
         except _ssl_module.SSLError if _ssl_module else () as exc:
             if _utils.is_ssl_eof_error(exc):
-                self.__abort(exc)
+                raise self.__abort() from exc
             raise
         except OSError as exc:
             if exc.errno in constants.CLOSED_SOCKET_ERRNOS:
@@ -392,8 +392,8 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
             raise
 
     @staticmethod
-    def __abort(cause: BaseException | None) -> NoReturn:
-        raise _utils.error_from_errno(_errno.ECONNABORTED) from cause
+    def __abort() -> OSError:
+        return _utils.error_from_errno(_errno.ECONNABORTED)
 
     def get_local_address(self) -> SocketAddress:
         """
@@ -411,7 +411,8 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
             if endpoint.is_closed():
                 raise ClientClosedError("Closed client")
             local_address = endpoint.extra(INETSocketAttribute.sockname)
-            return new_socket_address(local_address, self.socket.family)
+            address_family = endpoint.extra(INETSocketAttribute.family)
+            return new_socket_address(local_address, address_family)
 
     def get_remote_address(self) -> SocketAddress:
         """
@@ -429,7 +430,8 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
             if endpoint.is_closed():
                 raise ClientClosedError("Closed client")
             remote_address = endpoint.extra(INETSocketAttribute.peername)
-            return new_socket_address(remote_address, self.socket.family)
+            address_family = endpoint.extra(INETSocketAttribute.family)
+            return new_socket_address(remote_address, address_family)
 
     def fileno(self) -> int:
         """

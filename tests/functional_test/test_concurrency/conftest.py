@@ -37,7 +37,7 @@ def _build_server(ipproto: Literal["TCP", "UDP"]) -> AbstractNetworkServer:
         case "TCP":
             return StandaloneTCPNetworkServer(None, 0, StreamProtocol(serializer), request_handler)
         case "UDP":
-            return StandaloneUDPNetworkServer("localhost", 0, DatagramProtocol(serializer), request_handler)
+            return StandaloneUDPNetworkServer(None, 0, DatagramProtocol(serializer), request_handler)
         case _:
             pytest.fail("Invalid ipproto")
 
@@ -52,16 +52,16 @@ def _run_server(server: AbstractNetworkServer) -> None:
     assert server.is_serving()
 
 
-def _retrieve_server_port(server: AbstractNetworkServer) -> int:
+def _retrieve_server_address(server: AbstractNetworkServer) -> tuple[str, int]:
     match server:
         case StandaloneTCPNetworkServer():
             addresses = server.get_addresses()
             assert addresses
-            return addresses[0].port
+            return "localhost", addresses[0].port
         case StandaloneUDPNetworkServer():
-            address = server.get_address()
-            assert address
-            return address.port
+            addresses = server.get_addresses()
+            assert addresses
+            return addresses[0].for_connection()
         case _:
             pytest.fail("Cannot retrieve server port")
 
@@ -71,6 +71,6 @@ def server(ipproto: Literal["TCP", "UDP"]) -> Iterator[tuple[str, int]]:
     with _build_server(ipproto) as server:
         try:
             _run_server(server)
-            yield "localhost", _retrieve_server_port(server)
+            yield _retrieve_server_address(server)
         finally:
             server.shutdown()

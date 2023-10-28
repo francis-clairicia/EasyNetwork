@@ -17,12 +17,7 @@
 from __future__ import annotations
 
 __all__ = [
-    "AcceptedSocket",
     "AsyncBackend",
-    "AsyncBaseSocketAdapter",
-    "AsyncDatagramSocketAdapter",
-    "AsyncListenerSocketAdapter",
-    "AsyncStreamSocketAdapter",
     "CancelScope",
     "ICondition",
     "IEvent",
@@ -36,7 +31,7 @@ import contextlib
 import contextvars
 import math
 from abc import ABCMeta, abstractmethod
-from collections.abc import Awaitable, Callable, Coroutine, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Coroutine, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager
 from typing import TYPE_CHECKING, Any, Generic, NoReturn, ParamSpec, Protocol, Self, TypeVar
 
@@ -46,7 +41,7 @@ if TYPE_CHECKING:
     import ssl as _typing_ssl
     from types import TracebackType
 
-    from ....lowlevel.socket import ISocket
+    from ..transports import abc as transports
 
 
 _P = ParamSpec("_P")
@@ -560,201 +555,6 @@ class ThreadsPortal(metaclass=ABCMeta):
         return self.run_sync_soon(func, *args, **kwargs).result()
 
 
-class AsyncBaseSocketAdapter(metaclass=ABCMeta):
-    """
-    Base class for asynchronous socket adapters.
-    """
-
-    __slots__ = ("__weakref__",)
-
-    async def __aenter__(self) -> Self:
-        return self
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: TracebackType | None,
-    ) -> None:
-        """Calls :meth:`aclose`."""
-        await self.aclose()
-
-    @abstractmethod
-    def is_closing(self) -> bool:
-        """
-        Checks if the socket is closed or in the process of being closed.
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    async def aclose(self) -> None:
-        """
-        Closes the socket.
-
-        Warning:
-            :meth:`aclose` performs a graceful close.
-
-            If :meth:`aclose` is cancelled, the socket is closed abruptly.
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    def socket(self) -> ISocket:
-        """
-        Returns the socket instance for low-level operations (such as ``socket.setsockopt()``).
-
-        Returns:
-            An object implementing the :protocol:`.ISocket` interface.
-        """
-        raise NotImplementedError
-
-
-class AsyncStreamSocketAdapter(AsyncBaseSocketAdapter):
-    """
-    A stream-oriented socket interface.
-    """
-
-    __slots__ = ()
-
-    @abstractmethod
-    async def recv(self, bufsize: int, /) -> bytes:
-        """
-        Similar to :meth:`socket.socket.recv`, except asynchronous.
-
-        Parameters:
-            bufsize: The maximum amount of bytes to receive.
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    async def sendall(self, data: bytes, /) -> None:
-        """
-        Similar to :meth:`socket.socket.sendall`, except asynchronous.
-
-        Parameters:
-            data: The bytes to send.
-        """
-        raise NotImplementedError
-
-    async def sendall_fromiter(self, iterable_of_data: Iterable[bytes], /) -> None:
-        """
-        An efficient way to send a bunch of data via the socket.
-
-        Currently, the default implementation concatenates the arguments and
-        calls :meth:`sendall` on the result.
-
-        Parameters:
-            iterable_of_data: An :term:`iterable` yielding the bytes to send.
-        """
-        await self.sendall(b"".join(iterable_of_data))
-
-    @abstractmethod
-    async def send_eof(self) -> None:
-        """
-        Send an end-of-file indication on this stream, if possible. Similar to :meth:`socket.socket.shutdown`.
-        """
-        raise NotImplementedError
-
-
-class AsyncDatagramSocketAdapter(AsyncBaseSocketAdapter):
-    """
-    A datagram-oriented socket interface.
-    """
-
-    __slots__ = ()
-
-    @abstractmethod
-    async def recvfrom(self, bufsize: int, /) -> tuple[bytes, tuple[Any, ...]]:
-        """
-        Similar to :meth:`socket.socket.recvfrom`, except asynchronous.
-
-        Parameters:
-            bufsize: The maximum amount of bytes to receive.
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    async def sendto(self, data: bytes, address: tuple[Any, ...] | None, /) -> None:
-        """
-        Similar to :meth:`socket.socket.sendto`, except asynchronous.
-
-        Parameters:
-            data: The bytes to send.
-        """
-        raise NotImplementedError
-
-
-class AsyncListenerSocketAdapter(AsyncBaseSocketAdapter):
-    """
-    An interface for socket listeners.
-    """
-
-    __slots__ = ()
-
-    @abstractmethod
-    async def accept(self) -> AcceptedSocket:
-        """
-        Similar to :meth:`socket.socket.accept`, except asynchronous.
-
-        The returned object is not directly usable for stream operations. You must call :meth:`AcceptedSocket.connect` on it::
-
-            accepted_socket = await listener.accept()
-            stream_socket = await accepted_socket.connect()
-
-        This helps to improve interoperability between tasks::
-
-            async def echo_handler(stream_socket):
-                async with stream_socket:
-                    while True:
-                        data = await stream_socket.recv(1024)
-                        if not data:
-                            break
-                        await stream_socket.sendall(data)
-
-            async def serve(listener, task_group):
-
-                # Coroutine that waits for the connection to be fully etablished
-                # (e.g. Perform SSL/TLS handshake if necessary.)
-                async def connect_and_run(accepted_socket):
-                    stream_socket = await accepted_socket.connect()
-                    # The connection is up; call the real handler
-                    task_group.start_soon(echo_handler, stream_socket)
-
-                while True:
-                    accepted_socket = await listener.accept()
-
-                    # Run 'accepted_socket.connect()' in another task.
-                    task_group.start_soon(connect_and_run, accepted_socket)
-
-        In this case, ``listener.accept()`` will simply dequeue the pending connections without waiting for
-        a ready stream interface to become available.
-
-        Returns:
-            The accepted socket.
-        """
-        raise NotImplementedError
-
-
-class AcceptedSocket(metaclass=ABCMeta):
-    """
-    An object representing an accepted socket from an :class:`AsyncListenerSocketAdapter`.
-    """
-
-    __slots__ = ()
-
-    @abstractmethod
-    async def connect(self) -> AsyncStreamSocketAdapter:
-        """
-        Wraps the accepted socket into an asynchronous stream socket, and perform connection initialization if necessary.
-
-        For example, an SSL/TLS stream would perform a TLS handshake.
-
-        Returns:
-            A stream socket.
-        """
-        raise NotImplementedError
-
-
 class AsyncBackend(metaclass=ABCMeta):
     """
     Asynchronous backend interface.
@@ -1033,7 +833,7 @@ class AsyncBackend(metaclass=ABCMeta):
         *,
         local_address: tuple[str, int] | None = ...,
         happy_eyeballs_delay: float | None = ...,
-    ) -> AsyncStreamSocketAdapter:
+    ) -> transports.AsyncStreamTransport:
         """
         Opens a connection using the TCP/IP protocol.
 
@@ -1052,6 +852,7 @@ class AsyncBackend(metaclass=ABCMeta):
         """
         raise NotImplementedError
 
+    @abstractmethod
     async def create_ssl_over_tcp_connection(
         self,
         host: str,
@@ -1063,7 +864,7 @@ class AsyncBackend(metaclass=ABCMeta):
         ssl_shutdown_timeout: float,
         local_address: tuple[str, int] | None = ...,
         happy_eyeballs_delay: float | None = ...,
-    ) -> AsyncStreamSocketAdapter:
+    ) -> transports.AsyncStreamTransport:
         """
         Opens an SSL/TLS stream connection on top of the TCP/IP protocol.
 
@@ -1086,17 +887,17 @@ class AsyncBackend(metaclass=ABCMeta):
         Returns:
             A stream socket.
         """
-        raise NotImplementedError("SSL/TLS is not supported by this backend")  # pragma: no cover
+        raise NotImplementedError
 
     @abstractmethod
-    async def wrap_tcp_client_socket(self, socket: _socket.socket) -> AsyncStreamSocketAdapter:
+    async def wrap_stream_socket(self, socket: _socket.socket) -> transports.AsyncStreamTransport:
         """
-        Wraps an already connected over TCP/IP protocol socket into an asynchronous stream socket.
+        Wraps an already connected :data:`~socket.SOCK_STREAM` socket into an asynchronous stream socket.
 
         Important:
             The returned stream socket takes the ownership of `socket`.
 
-            You should use :meth:`AsyncStreamSocketAdapter.aclose` to close the socket.
+            You should use :meth:`.AsyncStreamTransport.aclose` to close the socket.
 
         Parameters:
             socket: The socket to wrap.
@@ -1109,7 +910,8 @@ class AsyncBackend(metaclass=ABCMeta):
         """
         raise NotImplementedError
 
-    async def wrap_ssl_over_tcp_client_socket(
+    @abstractmethod
+    async def wrap_ssl_over_stream_socket_client_side(
         self,
         socket: _socket.socket,
         ssl_context: _typing_ssl.SSLContext,
@@ -1117,14 +919,14 @@ class AsyncBackend(metaclass=ABCMeta):
         server_hostname: str,
         ssl_handshake_timeout: float,
         ssl_shutdown_timeout: float,
-    ) -> AsyncStreamSocketAdapter:
+    ) -> transports.AsyncStreamTransport:
         """
-        Wraps an already connected over TCP/IP protocol socket into an asynchronous stream socket in a SSL/TLS context.
+        Wraps an already connected :data:`~socket.SOCK_STREAM` socket into an asynchronous stream socket in a SSL/TLS context.
 
         Important:
             The returned stream socket takes the ownership of `socket`.
 
-            You should use :meth:`AsyncStreamSocketAdapter.aclose` to close the socket.
+            You should use :meth:`AsyncStreamTransport.aclose` to close the socket.
 
         Parameters:
             socket: The socket to wrap.
@@ -1142,7 +944,7 @@ class AsyncBackend(metaclass=ABCMeta):
         Returns:
             A stream socket.
         """
-        raise NotImplementedError("SSL/TLS is not supported by this backend")  # pragma: no cover
+        raise NotImplementedError
 
     @abstractmethod
     async def create_tcp_listeners(
@@ -1152,7 +954,7 @@ class AsyncBackend(metaclass=ABCMeta):
         backlog: int,
         *,
         reuse_port: bool = ...,
-    ) -> Sequence[AsyncListenerSocketAdapter]:
+    ) -> Sequence[transports.AsyncListener[transports.AsyncStreamTransport]]:
         """
         Opens listener sockets for TCP connections.
 
@@ -1168,7 +970,7 @@ class AsyncBackend(metaclass=ABCMeta):
             port: specify which port the server should listen on. If the value is ``0``, a random unused port will be selected
                   (note that if `host` resolves to multiple network interfaces, a different random port will be selected
                   for each interface).
-            backlog: is the maximum number of queued connections passed to :class:`~socket.socket.listen` (defaults to ``100``).
+            backlog: is the maximum number of queued connections passed to :class:`~socket.socket.listen`.
             reuse_port: tells the kernel to allow this endpoint to be bound to the same port as other existing endpoints
                         are bound to, so long as they all set this flag when being created.
                         This option is not supported on Windows.
@@ -1181,6 +983,7 @@ class AsyncBackend(metaclass=ABCMeta):
         """
         raise NotImplementedError
 
+    @abstractmethod
     async def create_ssl_over_tcp_listeners(
         self,
         host: str | Sequence[str] | None,
@@ -1191,9 +994,9 @@ class AsyncBackend(metaclass=ABCMeta):
         ssl_handshake_timeout: float,
         ssl_shutdown_timeout: float,
         reuse_port: bool = ...,
-    ) -> Sequence[AsyncListenerSocketAdapter]:
+    ) -> Sequence[transports.AsyncListener[transports.AsyncStreamTransport]]:
         """
-        Opens listener sockets for TCP connections.
+        Opens listener sockets for TCP connections in a SSL/TLS context.
 
         Parameters:
             host: Can be set to several types which determine where the server would be listening:
@@ -1207,7 +1010,7 @@ class AsyncBackend(metaclass=ABCMeta):
             port: specify which port the server should listen on. If the value is ``0``, a random unused port will be selected
                   (note that if `host` resolves to multiple network interfaces, a different random port will be selected
                   for each interface).
-            backlog: is the maximum number of queued connections passed to :class:`~socket.socket.listen` (defaults to ``100``).
+            backlog: is the maximum number of queued connections passed to :class:`~socket.socket.listen`.
             ssl: can be set to an :class:`ssl.SSLContext` instance to enable TLS over the accepted connections.
             ssl_handshake_timeout: (for a TLS connection) the time in seconds to wait for the TLS handshake to complete
                                    before aborting the connection. ``60.0`` seconds if :data:`None` (default).
@@ -1223,23 +1026,23 @@ class AsyncBackend(metaclass=ABCMeta):
         Returns:
             A sequence of listener sockets.
         """
-        raise NotImplementedError("SSL/TLS is not supported by this backend")  # pragma: no cover
+        raise NotImplementedError
 
     @abstractmethod
     async def create_udp_endpoint(
         self,
+        remote_host: str,
+        remote_port: int,
         *,
         local_address: tuple[str, int] | None = ...,
-        remote_address: tuple[str, int] | None = ...,
-        reuse_port: bool = ...,
-    ) -> AsyncDatagramSocketAdapter:
+    ) -> transports.AsyncDatagramTransport:
         """
         Opens an endpoint using the UDP protocol.
 
         Parameters:
-            remote_address: If given, is a ``(host, port)`` tuple used to connect the socket.
+            remote_host: The host IP/domain name.
+            remote_port: Port of connection.
             local_address: If given, is a ``(local_host, local_port)`` tuple used to bind the socket locally.
-            reuse_port: If :data:`True`, sets the :data:`~socket.SO_REUSEPORT` socket option if supported.
 
         Raises:
             OSError: unrelated OS error occurred.
@@ -1250,14 +1053,14 @@ class AsyncBackend(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    async def wrap_udp_socket(self, socket: _socket.socket) -> AsyncDatagramSocketAdapter:
+    async def wrap_connected_datagram_socket(self, socket: _socket.socket) -> transports.AsyncDatagramTransport:
         """
-        Wraps an already open UDP socket into an asynchronous datagram socket.
+        Wraps an already connected :data:`~socket.SOCK_DGRAM` socket into an asynchronous datagram socket.
 
         Important:
             The returned stream socket takes the ownership of `socket`.
 
-            You should use :meth:`AsyncDatagramSocketAdapter.aclose` to close the socket.
+            You should use :meth:`AsyncDatagramTransport.aclose` to close the socket.
 
         Parameters:
             socket: The socket to wrap.
@@ -1267,6 +1070,39 @@ class AsyncBackend(metaclass=ABCMeta):
 
         Returns:
             A datagram socket.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    async def create_udp_listeners(
+        self,
+        host: str | Sequence[str] | None,
+        port: int,
+        *,
+        reuse_port: bool = ...,
+    ) -> Sequence[transports.AsyncDatagramListener[tuple[Any, ...]]]:
+        """
+        Opens UDP endpoints.
+
+        Parameters:
+            host: Can be set to several types which determine where the server would be listening:
+
+                  * If `host` is a string, the UDP server is bound to a single network interface specified by `host`.
+
+                  * If `host` is a sequence of strings, the UDP server is bound to all network interfaces specified by the sequence.
+
+                  * If `host` is :data:`None`, all interfaces are assumed and a list of multiple sockets will be returned
+                    (most likely one for IPv4 and another one for IPv6).
+            port: specify which port the server should listen on. If the value is ``0``, a random unused port will be selected
+                  (note that if `host` resolves to multiple network interfaces, a different random port will be selected
+                  for each interface).
+            reuse_port: If :data:`True`, sets the :data:`~socket.SO_REUSEPORT` socket option if supported.
+
+        Raises:
+            OSError: unrelated OS error occurred.
+
+        Returns:
+            A sequence of datagram listener sockets.
         """
         raise NotImplementedError
 
