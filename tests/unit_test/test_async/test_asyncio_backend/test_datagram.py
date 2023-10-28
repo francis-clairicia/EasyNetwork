@@ -730,21 +730,25 @@ class BaseTestAsyncioTransportDatagramSocket(BaseTestSocket):
         mock_endpoint.wait_closed.assert_awaited_once_with()
         mock_endpoint.transport.abort.assert_called_once_with()
 
-    async def test____is_closing____return_endpoint_state(
+    @pytest.mark.parametrize("transport_closed", [False, True], ids=lambda p: f"transport_closed=={p}")
+    async def test____is_closing____return_internal_flag(
         self,
+        transport_closed: bool,
         socket: AsyncBaseTransport,
         mock_endpoint: MagicMock,
-        mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_endpoint.is_closing.return_value = mocker.sentinel.is_closing
+        if transport_closed:
+            await socket.aclose()
+            mock_endpoint.reset_mock()
+        mock_endpoint.is_closing.side_effect = AssertionError
 
         # Act
         state = socket.is_closing()
 
         # Assert
-        mock_endpoint.is_closing.assert_called_once_with()
-        assert state is mocker.sentinel.is_closing
+        mock_endpoint.is_closing.assert_not_called()
+        assert state is transport_closed
 
 
 @pytest.mark.asyncio

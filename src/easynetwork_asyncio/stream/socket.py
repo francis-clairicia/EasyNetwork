@@ -41,6 +41,7 @@ class AsyncioTransportStreamSocketAdapter(transports.AsyncStreamTransport):
         "__reader",
         "__writer",
         "__socket",
+        "__closing",
     )
 
     def __init__(
@@ -56,7 +57,13 @@ class AsyncioTransportStreamSocketAdapter(transports.AsyncStreamTransport):
         assert socket is not None, "Writer transport must be a socket transport"  # nosec assert_used
         self.__socket: asyncio.trsock.TransportSocket = socket
 
+        # asyncio.Transport.is_closing() can suddently become true if there is something wrong with the socket
+        # even if transport.close() was never called.
+        # To bypass this side effect, we use our own flag.
+        self.__closing: bool = False
+
     async def aclose(self) -> None:
+        self.__closing = True
         if not self.__writer.is_closing():
             try:
                 if self.__writer.can_write_eof():
@@ -74,7 +81,7 @@ class AsyncioTransportStreamSocketAdapter(transports.AsyncStreamTransport):
             raise
 
     def is_closing(self) -> bool:
-        return self.__writer.is_closing()
+        return self.__closing
 
     async def recv(self, bufsize: int) -> bytes:
         if bufsize < 0:

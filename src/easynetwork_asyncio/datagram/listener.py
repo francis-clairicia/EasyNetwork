@@ -42,6 +42,7 @@ class AsyncioTransportDatagramListenerSocketAdapter(transports.AsyncDatagramList
     __slots__ = (
         "__endpoint",
         "__socket",
+        "__closing",
     )
 
     def __init__(self, endpoint: DatagramEndpoint) -> None:
@@ -52,11 +53,16 @@ class AsyncioTransportDatagramListenerSocketAdapter(transports.AsyncDatagramList
         assert socket is not None, "transport must be a socket transport"  # nosec assert_used
 
         self.__socket: asyncio.trsock.TransportSocket = socket
+        # asyncio.DatagramTransport.is_closing() can suddently become true if there is something wrong with the socket
+        # even if transport.close() was never called.
+        # To bypass this side effect, we use our own flag.
+        self.__closing: bool = False
 
     def is_closing(self) -> bool:
-        return self.__endpoint.is_closing()
+        return self.__closing
 
     async def aclose(self) -> None:
+        self.__closing = True
         self.__endpoint.close()
         try:
             await self.__endpoint.wait_closed()

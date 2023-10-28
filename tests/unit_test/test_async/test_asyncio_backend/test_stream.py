@@ -149,21 +149,25 @@ class TestAsyncioTransportStreamSocketAdapter(BaseTestTransportStreamSocket):
         mock_asyncio_writer.wait_closed.assert_awaited_once_with()
         mock_asyncio_writer.transport.abort.assert_called_once_with()
 
-    async def test____is_closing____return_writer_state(
+    @pytest.mark.parametrize("transport_closed", [False, True], ids=lambda p: f"transport_closed=={p}")
+    async def test____is_closing____return_internal_flag(
         self,
+        transport_closed: bool,
         socket: AsyncioTransportStreamSocketAdapter,
         mock_asyncio_writer: MagicMock,
-        mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_asyncio_writer.is_closing.return_value = mocker.sentinel.is_closing
+        if transport_closed:
+            await socket.aclose()
+            mock_asyncio_writer.reset_mock()
+        mock_asyncio_writer.is_closing.side_effect = AssertionError
 
         # Act
         state = socket.is_closing()
 
         # Assert
-        mock_asyncio_writer.is_closing.assert_called_once_with()
-        assert state is mocker.sentinel.is_closing
+        mock_asyncio_writer.is_closing.assert_not_called()
+        assert state is transport_closed
 
     async def test____recv____read_from_reader(
         self,
