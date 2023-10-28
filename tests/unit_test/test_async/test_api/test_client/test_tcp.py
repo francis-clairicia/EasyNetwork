@@ -9,7 +9,12 @@ from typing import TYPE_CHECKING, Any
 from easynetwork.api_async.client.tcp import AsyncTCPNetworkClient
 from easynetwork.exceptions import ClientClosedError, IncrementalDeserializeError, StreamProtocolParseError
 from easynetwork.lowlevel._stream import StreamDataConsumer
-from easynetwork.lowlevel.constants import CLOSED_SOCKET_ERRNOS, MAX_STREAM_BUFSIZE, SSL_HANDSHAKE_TIMEOUT, SSL_SHUTDOWN_TIMEOUT
+from easynetwork.lowlevel.constants import (
+    CLOSED_SOCKET_ERRNOS,
+    DEFAULT_STREAM_BUFSIZE,
+    SSL_HANDSHAKE_TIMEOUT,
+    SSL_SHUTDOWN_TIMEOUT,
+)
 from easynetwork.lowlevel.socket import IPv4SocketAddress, IPv6SocketAddress, SocketProxy, _get_socket_extra
 from easynetwork.lowlevel.typed_attr import TypedAttributeProvider
 
@@ -348,7 +353,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_stream_protocol: MagicMock,
     ) -> None:
         # Arrange
-        expected_size: int = max_recv_size if max_recv_size is not None else MAX_STREAM_BUFSIZE
+        expected_size: int = max_recv_size if max_recv_size is not None else DEFAULT_STREAM_BUFSIZE
 
         # Act
         client: AsyncTCPNetworkClient[Any, Any]
@@ -1175,7 +1180,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         packet: Any = await client_connected_or_not.recv_packet()
 
         # Assert
-        mock_stream_socket_adapter.recv.assert_awaited_once_with(MAX_STREAM_BUFSIZE)
+        mock_stream_socket_adapter.recv.assert_awaited_once_with(DEFAULT_STREAM_BUFSIZE)
         mock_stream_data_consumer.feed.assert_called_once_with(b"packet\n")
         assert packet is mocker.sentinel.packet
 
@@ -1196,7 +1201,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
 
         # Assert
         mock_backend.coro_yield.assert_not_awaited()
-        assert mock_stream_socket_adapter.recv.call_args_list == [mocker.call(MAX_STREAM_BUFSIZE) for _ in range(2)]
+        assert mock_stream_socket_adapter.recv.call_args_list == [mocker.call(DEFAULT_STREAM_BUFSIZE) for _ in range(2)]
         assert mock_stream_data_consumer.feed.call_args_list == [mocker.call(b"pac"), mocker.call(b"ket\n")]
         assert packet is mocker.sentinel.packet
 
@@ -1239,7 +1244,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             _ = await client_connected_or_not.recv_packet()
 
         # Assert
-        mock_stream_socket_adapter.recv.assert_awaited_once_with(MAX_STREAM_BUFSIZE)
+        mock_stream_socket_adapter.recv.assert_awaited_once_with(DEFAULT_STREAM_BUFSIZE)
         mock_stream_data_consumer.feed.assert_not_called()
         mock_backend.coro_yield.assert_not_awaited()
 
@@ -1263,7 +1268,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         exception = exc_info.value
 
         # Assert
-        mock_stream_socket_adapter.recv.assert_awaited_once_with(MAX_STREAM_BUFSIZE)
+        mock_stream_socket_adapter.recv.assert_awaited_once_with(DEFAULT_STREAM_BUFSIZE)
         mock_stream_data_consumer.feed.assert_called_once_with(b"packet\n")
         mock_backend.coro_yield.assert_not_awaited()
         assert exception is expected_error
@@ -1325,7 +1330,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             _ = await client_connected_or_not.recv_packet()
 
         # Assert
-        mock_stream_socket_adapter.recv.assert_awaited_once_with(MAX_STREAM_BUFSIZE)
+        mock_stream_socket_adapter.recv.assert_awaited_once_with(DEFAULT_STREAM_BUFSIZE)
         mock_stream_data_consumer.feed.assert_not_called()
         mock_backend.coro_yield.assert_not_awaited()
 
@@ -1347,7 +1352,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             _ = await client_connected_or_not.recv_packet()
 
         # Assert
-        mock_stream_socket_adapter.recv.assert_awaited_once_with(MAX_STREAM_BUFSIZE)
+        mock_stream_socket_adapter.recv.assert_awaited_once_with(DEFAULT_STREAM_BUFSIZE)
         mock_stream_data_consumer.feed.assert_not_called()
         mock_backend.coro_yield.assert_not_awaited()
 

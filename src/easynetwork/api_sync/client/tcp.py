@@ -153,7 +153,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
         super().__init__()
 
         if max_recv_size is None:
-            max_recv_size = constants.MAX_STREAM_BUFSIZE
+            max_recv_size = constants.DEFAULT_STREAM_BUFSIZE
 
         if server_hostname is not None and not ssl:
             raise ValueError("server_hostname is only meaningful with ssl")

@@ -19,8 +19,8 @@ from __future__ import annotations
 __all__ = [
     "ACCEPT_CAPACITY_ERRNOS",
     "ACCEPT_CAPACITY_ERROR_SLEEP_TIME",
+    "DEFAULT_STREAM_BUFSIZE",
     "MAX_DATAGRAM_BUFSIZE",
-    "MAX_STREAM_BUFSIZE",
     "NOT_CONNECTED_SOCKET_ERRNOS",
     "SSL_HANDSHAKE_TIMEOUT",
     "SSL_SHUTDOWN_TIMEOUT",
@@ -31,7 +31,7 @@ import errno as _errno
 from typing import Final
 
 # Buffer size for a recv(2) operation
-MAX_STREAM_BUFSIZE: Final[int] = 256 * 1024  # 256KiB
+DEFAULT_STREAM_BUFSIZE: Final[int] = 16 * 1024  # 16KiB
 
 # Buffer size for a recvfrom(2) operation
 MAX_DATAGRAM_BUFSIZE: Final[int] = 64 * 1024  # 64KiB

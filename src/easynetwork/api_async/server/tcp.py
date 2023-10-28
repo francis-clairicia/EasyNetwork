@@ -146,7 +146,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             log_client_connection = True
 
         if max_recv_size is None:
-            max_recv_size = constants.MAX_STREAM_BUFSIZE
+            max_recv_size = constants.DEFAULT_STREAM_BUFSIZE
         if not isinstance(max_recv_size, int) or max_recv_size <= 0:
             raise ValueError("'max_recv_size' must be a strictly positive integer")
 

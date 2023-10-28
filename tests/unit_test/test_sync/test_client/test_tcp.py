@@ -12,7 +12,12 @@ from typing import TYPE_CHECKING, Any
 from easynetwork.api_sync.client.tcp import TCPNetworkClient
 from easynetwork.exceptions import ClientClosedError, IncrementalDeserializeError
 from easynetwork.lowlevel._stream import StreamDataConsumer
-from easynetwork.lowlevel.constants import CLOSED_SOCKET_ERRNOS, MAX_STREAM_BUFSIZE, SSL_HANDSHAKE_TIMEOUT, SSL_SHUTDOWN_TIMEOUT
+from easynetwork.lowlevel.constants import (
+    CLOSED_SOCKET_ERRNOS,
+    DEFAULT_STREAM_BUFSIZE,
+    SSL_HANDSHAKE_TIMEOUT,
+    SSL_SHUTDOWN_TIMEOUT,
+)
 from easynetwork.lowlevel.socket import IPv4SocketAddress, IPv6SocketAddress
 
 import pytest
@@ -562,7 +567,7 @@ class TestTCPNetworkClient(BaseTestClient):
         server_hostname: Any | None,
     ) -> None:
         # Arrange
-        expected_size: int = max_recv_size if max_recv_size is not None else MAX_STREAM_BUFSIZE
+        expected_size: int = max_recv_size if max_recv_size is not None else DEFAULT_STREAM_BUFSIZE
 
         # Act
         client: TCPNetworkClient[Any, Any]
@@ -1495,7 +1500,7 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_selector_register.assert_not_called()
         mock_selector_select.assert_not_called()
 
-        mock_used_socket.recv.assert_called_once_with(MAX_STREAM_BUFSIZE)
+        mock_used_socket.recv.assert_called_once_with(DEFAULT_STREAM_BUFSIZE)
         mock_stream_data_consumer.feed.assert_called_once_with(b"packet\n")
         assert packet is mocker.sentinel.packet
 
@@ -1518,7 +1523,7 @@ class TestTCPNetworkClient(BaseTestClient):
         # Assert
         mock_used_socket.settimeout.assert_not_called()
         mock_used_socket.setblocking.assert_not_called()
-        assert mock_used_socket.recv.call_args_list == [mocker.call(MAX_STREAM_BUFSIZE) for _ in range(2)]
+        assert mock_used_socket.recv.call_args_list == [mocker.call(DEFAULT_STREAM_BUFSIZE) for _ in range(2)]
         assert mock_stream_data_consumer.feed.call_args_list == [mocker.call(b"pac"), mocker.call(b"ket\n")]
         assert packet is mocker.sentinel.packet
 
@@ -1603,7 +1608,7 @@ class TestTCPNetworkClient(BaseTestClient):
         # Assert
         mock_used_socket.settimeout.assert_not_called()
         mock_used_socket.setblocking.assert_not_called()
-        mock_used_socket.recv.assert_called_once_with(MAX_STREAM_BUFSIZE)
+        mock_used_socket.recv.assert_called_once_with(DEFAULT_STREAM_BUFSIZE)
         mock_stream_data_consumer.feed.assert_not_called()
 
     @pytest.mark.usefixtures("setup_consumer_mock")
@@ -1624,7 +1629,7 @@ class TestTCPNetworkClient(BaseTestClient):
         # Assert
         mock_used_socket.settimeout.assert_not_called()
         mock_used_socket.setblocking.assert_not_called()
-        mock_used_socket.recv.assert_called_once_with(MAX_STREAM_BUFSIZE)
+        mock_used_socket.recv.assert_called_once_with(DEFAULT_STREAM_BUFSIZE)
         mock_stream_data_consumer.feed.assert_not_called()
 
     @pytest.mark.usefixtures("setup_consumer_mock")
@@ -1647,7 +1652,7 @@ class TestTCPNetworkClient(BaseTestClient):
         # Assert
         mock_used_socket.settimeout.assert_not_called()
         mock_used_socket.setblocking.assert_not_called()
-        mock_used_socket.recv.assert_called_once_with(MAX_STREAM_BUFSIZE)
+        mock_used_socket.recv.assert_called_once_with(DEFAULT_STREAM_BUFSIZE)
         mock_stream_data_consumer.feed.assert_not_called()
 
     @pytest.mark.usefixtures("setup_consumer_mock")
@@ -1673,7 +1678,7 @@ class TestTCPNetworkClient(BaseTestClient):
         # Assert
         mock_used_socket.settimeout.assert_not_called()
         mock_used_socket.setblocking.assert_not_called()
-        mock_used_socket.recv.assert_called_once_with(MAX_STREAM_BUFSIZE)
+        mock_used_socket.recv.assert_called_once_with(DEFAULT_STREAM_BUFSIZE)
         mock_stream_data_consumer.feed.assert_called_once_with(b"packet\n")
         assert exception is expected_error
 
@@ -1724,7 +1729,7 @@ class TestTCPNetworkClient(BaseTestClient):
         # Assert
         mock_used_socket.settimeout.assert_not_called()
         mock_used_socket.setblocking.assert_not_called()
-        mock_used_socket.recv.assert_called_once_with(MAX_STREAM_BUFSIZE)
+        mock_used_socket.recv.assert_called_once_with(DEFAULT_STREAM_BUFSIZE)
         mock_stream_data_consumer.feed.assert_not_called()
 
     @pytest.mark.usefixtures("setup_consumer_mock")
@@ -1747,7 +1752,7 @@ class TestTCPNetworkClient(BaseTestClient):
         assert exc_info.value is mock_used_socket.recv.side_effect
         mock_used_socket.settimeout.assert_not_called()
         mock_used_socket.setblocking.assert_not_called()
-        mock_used_socket.recv.assert_called_once_with(MAX_STREAM_BUFSIZE)
+        mock_used_socket.recv.assert_called_once_with(DEFAULT_STREAM_BUFSIZE)
         mock_stream_data_consumer.feed.assert_not_called()
 
     @pytest.mark.parametrize(
@@ -1937,7 +1942,7 @@ class TestTCPNetworkClient(BaseTestClient):
             packet_2 = next(iterator)
 
         # Assert
-        mock_used_socket.recv.assert_called_once_with(MAX_STREAM_BUFSIZE)
+        mock_used_socket.recv.assert_called_once_with(DEFAULT_STREAM_BUFSIZE)
         mock_stream_data_consumer.feed.assert_called_once_with(b"packet_1\npacket_2\n")
         assert packet_1 is mocker.sentinel.packet_1
         assert packet_2 is mocker.sentinel.packet_2
