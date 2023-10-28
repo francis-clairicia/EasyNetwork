@@ -30,7 +30,7 @@ import errno as _errno
 import socket as _socket
 from typing import TYPE_CHECKING, Any, final
 
-from easynetwork.tools._utils import error_from_errno as _error_from_errno
+from easynetwork.lowlevel._utils import error_from_errno as _error_from_errno
 
 from ..tasks import TaskUtils
 
@@ -44,7 +44,7 @@ async def create_datagram_endpoint(
     local_addr: tuple[str, int] | None = None,
     remote_addr: tuple[str, int] | None = None,
     reuse_port: bool = False,
-    socket: _socket.socket | None = None,
+    sock: _socket.socket | None = None,
 ) -> DatagramEndpoint:
     loop = asyncio.get_running_loop()
     recv_queue: asyncio.Queue[tuple[bytes, tuple[Any, ...]] | None] = asyncio.Queue()
@@ -59,7 +59,7 @@ async def create_datagram_endpoint(
         local_addr=local_addr,
         remote_addr=remote_addr,
         reuse_port=reuse_port,
-        sock=socket,
+        sock=sock,
         flags=flags,
     )
 
@@ -116,9 +116,12 @@ class DatagramEndpoint:
         else:
             data_and_address = await self.__recv_queue.get()
             if data_and_address is None:
-                self.__check_exceptions()  # Woken up because an error occurred ?
+                # Woken up because an error occurred ?
+                self.__check_exceptions()
+
+                # Connection lost otherwise
                 assert self.__transport.is_closing()  # nosec assert_used
-                raise _error_from_errno(_errno.ECONNABORTED)  # Connection lost otherwise
+                raise _error_from_errno(_errno.ECONNABORTED)
         return data_and_address
 
     async def sendto(self, data: bytes | bytearray | memoryview, address: tuple[Any, ...] | None = None, /) -> None:
@@ -199,10 +202,7 @@ class DatagramEndpointProtocol(asyncio.DatagramProtocol):
         self.__connection_lost = True
 
         if not self.__closed.done():
-            if exc is None:
-                self.__closed.set_result(None)
-            else:
-                self.__closed.set_exception(exc)
+            self.__closed.set_result(None)
 
         for waiter in self.__drain_waiters:
             if not waiter.done():

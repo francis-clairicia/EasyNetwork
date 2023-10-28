@@ -5,14 +5,17 @@ import collections
 import contextlib
 import logging
 import weakref
-from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Sequence
 from typing import Any
 
-from easynetwork.api_async.server.handler import AsyncDatagramClient, AsyncDatagramRequestHandler
+from easynetwork.api_async.server.handler import AsyncDatagramClient, AsyncDatagramRequestHandler, INETClientAttribute
 from easynetwork.api_async.server.udp import AsyncUDPNetworkServer
 from easynetwork.exceptions import BaseProtocolParseError, ClientClosedError, DatagramProtocolParseError, DeserializeError
+from easynetwork.lowlevel.socket import SocketAddress
 from easynetwork.protocol import DatagramProtocol
+from easynetwork_asyncio.backend import AsyncIOBackend
 from easynetwork_asyncio.datagram.endpoint import DatagramEndpoint, create_datagram_endpoint
+from easynetwork_asyncio.datagram.listener import AsyncioTransportDatagramListenerSocketAdapter, RawDatagramListenerSocketAdapter
 
 import pytest
 import pytest_asyncio
@@ -21,8 +24,23 @@ from .....pytest_plugins.asyncio_event_loop import EventLoop
 from .base import BaseTestAsyncServer
 
 
+class NoListenerErrorBackend(AsyncIOBackend):
+    async def create_udp_listeners(
+        self,
+        host: str | Sequence[str] | None,
+        port: int,
+        *,
+        reuse_port: bool = False,
+    ) -> Sequence[RawDatagramListenerSocketAdapter] | Sequence[AsyncioTransportDatagramListenerSocketAdapter]:
+        return []
+
+
 class RandomError(Exception):
     pass
+
+
+def client_address(client: AsyncDatagramClient[Any]) -> SocketAddress:
+    return client.extra(INETClientAttribute.remote_address)
 
 
 class MyAsyncUDPRequestHandler(AsyncDatagramRequestHandler[str, str]):
@@ -75,10 +93,10 @@ class MyAsyncUDPRequestHandler(AsyncDatagramRequestHandler[str, str]):
                     async with self.handle_bad_requests(client):
                         request = yield
                         break
-                self.request_received[client.address].append(request)
+                self.request_received[client_address(client)].append(request)
                 await client.send_packet(f"After wait: {request}")
             case _:
-                self.request_received[client.address].append(request)
+                self.request_received[client_address(client)].append(request)
                 await client.send_packet(request.upper())
 
     @contextlib.asynccontextmanager
@@ -86,8 +104,7 @@ class MyAsyncUDPRequestHandler(AsyncDatagramRequestHandler[str, str]):
         try:
             yield
         except DatagramProtocolParseError as exc:
-            assert exc.sender_address == client.address
-            self.bad_request_received[client.address].append(exc)
+            self.bad_request_received[client_address(client)].append(exc)
             await client.send_packet("wrong encoding man.")
 
 
@@ -204,8 +221,8 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
             request_handler,
             backend_kwargs=backend_kwargs,
         ) as server:
-            assert server.socket is None
-            assert server.get_address() is None
+            assert not server.sockets
+            assert not server.get_addresses()
             yield server
 
     @pytest_asyncio.fixture
@@ -214,10 +231,9 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         async with asyncio.timeout(1):
             await run_server.wait()
         assert server.is_serving()
-        assert server.socket is not None
-        server_address = server.get_address()
-        assert server_address is not None
-        return server_address.for_connection()
+        server_addresses = server.get_addresses()
+        assert len(server_addresses) == 1
+        return server_addresses[0].for_connection()
 
     @pytest.fixture
     @staticmethod
@@ -245,6 +261,17 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
 
             yield factory
 
+    async def test____serve_forever____empty_listener_list(
+        self,
+        request_handler: MyAsyncUDPRequestHandler,
+        datagram_protocol: DatagramProtocol[str, str],
+    ) -> None:
+        async with MyAsyncUDPServer(None, 0, datagram_protocol, request_handler, backend=NoListenerErrorBackend()) as s:
+            with pytest.raises(OSError, match=r"^empty listeners list$"):
+                await s.serve_forever()
+
+            assert not s.sockets
+
     @pytest.mark.usefixtures("run_server_and_wait")
     async def test____serve_forever____server_assignment(
         self,
@@ -264,7 +291,8 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         client_address: tuple[Any, ...] = endpoint.get_extra_info("sockname")
 
         await endpoint.sendto(b"hello, world.", None)
-        assert (await endpoint.recvfrom())[0] == b"HELLO, WORLD."
+        async with asyncio.timeout(3):
+            assert (await endpoint.recvfrom())[0] == b"HELLO, WORLD."
 
         assert request_handler.request_received[client_address] == ["hello, world."]
 

@@ -4,9 +4,9 @@ from collections.abc import Generator
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.exceptions import DeserializeError, IncrementalDeserializeError, LimitOverrunError
+from easynetwork.lowlevel.constants import _DEFAULT_LIMIT as DEFAULT_LIMIT
 from easynetwork.serializers.json import JSONDecoderConfig, JSONEncoderConfig, JSONSerializer, _JSONParser
 from easynetwork.serializers.tools import GeneratorStreamReader
-from easynetwork.tools.constants import _DEFAULT_LIMIT as DEFAULT_LIMIT
 
 import pytest
 
@@ -496,7 +496,7 @@ class TestJSONParser:
         assert complete == b'[{"data":42}]'
         assert remainder == b"remainder"
 
-    def test____raw_parse___list_frame____skip_bracket_in_strings(self) -> None:
+    def test____raw_parse____list_frame____skip_bracket_in_strings(self) -> None:
         # Arrange
         consumer = _JSONParser.raw_parse(limit=DEFAULT_LIMIT)
         next(consumer)

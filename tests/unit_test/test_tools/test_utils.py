@@ -1,32 +1,38 @@
 from __future__ import annotations
 
+import contextlib
 import math
 import os
-import selectors
 import ssl
 import threading
 from collections.abc import Callable
+from errno import EINVAL, ENOTCONN, errorcode as errno_errorcode
 from socket import SO_ERROR, SOL_SOCKET
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
-from easynetwork.tools._utils import (
+from easynetwork.exceptions import BusyResourceError
+from easynetwork.lowlevel._utils import (
+    ResourceGuard,
     check_real_socket_state,
     check_socket_family,
+    check_socket_is_connected,
     check_socket_no_ssl,
     ensure_datagram_socket_bound,
     error_from_errno,
     exception_with_notes,
+    is_socket_connected,
     is_ssl_eof_error,
     is_ssl_socket,
     iter_bytes,
     lock_with_timeout,
     make_callback,
+    prepend_argument,
     remove_traceback_frames_in_place,
     replace_kwargs,
     set_reuseport,
     validate_timeout_delay,
-    wait_socket_available,
 )
+from easynetwork.lowlevel.constants import NOT_CONNECTED_SOCKET_ERRNOS
 
 import pytest
 
@@ -107,6 +113,40 @@ def test____make_callback____build_no_arg_callable(mocker: MockerFixture) -> Non
     # Assert
     assert cb() is mocker.sentinel.ret_val
     stub.assert_called_once_with(mocker.sentinel.arg1, mocker.sentinel.arg2, kw1=mocker.sentinel.kw1, kw2=mocker.sentinel.kw2)
+
+
+def test____prepend_argument____add_positional_argument(mocker: MockerFixture) -> None:
+    # Arrange
+    stub = mocker.stub()
+    stub.return_value = mocker.sentinel.ret_val
+
+    # Act
+    cb = prepend_argument(mocker.sentinel.first_arg)(stub)
+
+    # Assert
+    assert cb(mocker.sentinel.arg1, kw1=mocker.sentinel.kw1) is mocker.sentinel.ret_val
+    stub.assert_called_once_with(mocker.sentinel.first_arg, mocker.sentinel.arg1, kw1=mocker.sentinel.kw1)
+
+
+def test____prepend_argument____several_prepend(mocker: MockerFixture) -> None:
+    # Arrange
+    stub = mocker.stub()
+    stub.return_value = mocker.sentinel.ret_val
+
+    # Act
+    @prepend_argument(mocker.sentinel.second_arg)
+    @prepend_argument(mocker.sentinel.first_arg)
+    def cb(*args: Any, **kwargs: Any) -> Any:
+        return stub(*args, **kwargs)
+
+    # Assert
+    assert cb(mocker.sentinel.arg1, kw1=mocker.sentinel.kw1) is mocker.sentinel.ret_val
+    stub.assert_called_once_with(
+        mocker.sentinel.first_arg,
+        mocker.sentinel.second_arg,
+        mocker.sentinel.arg1,
+        kw1=mocker.sentinel.kw1,
+    )
 
 
 def test____error_from_errno____returns_OSError(mocker: MockerFixture) -> None:
@@ -254,105 +294,6 @@ def test____is_ssl_eof_error____no_ssl_module() -> None:
     assert not is_ssl_eof_error(ssl.SSLEOFError())
 
 
-@pytest.mark.parametrize(["event", "selector_event"], [("read", "EVENT_READ"), ("write", "EVENT_WRITE")])
-@pytest.mark.parametrize("timeout", [10.2, 0, None], ids=lambda value: f"timeout=={value}")
-@pytest.mark.parametrize("available", [True, False], ids=lambda value: f"available=={value}")
-@pytest.mark.parametrize("use_PollSelector", [True, False], ids=lambda value: f"use_PollSelector=={value}")
-def test____wait_socket_available____returns_boolean_if_available_or_not(
-    mock_socket_factory: Callable[[], MagicMock],
-    event: Literal["read", "write"],
-    selector_event: str,
-    timeout: float | None,
-    available: bool,
-    use_PollSelector: bool,
-    mocker: MockerFixture,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # Arrange
-    SELECTOR_EVENT: int = getattr(selectors, selector_event)
-    mock_socket = mock_socket_factory()
-    mock_selector = mocker.NonCallableMagicMock(spec=selectors.BaseSelector)
-    mock_selector.__enter__.return_value = mock_selector
-    if use_PollSelector:
-        mock_selector_cls = mocker.patch("selectors.PollSelector", return_value=mock_selector, create=True)
-    else:
-        monkeypatch.delattr("selectors.PollSelector", raising=False)
-        mock_selector_cls = mocker.patch("selectors.SelectSelector", return_value=mock_selector)
-    mock_selector_register: MagicMock = mock_selector.register
-    mock_selector_select: MagicMock = mock_selector.select
-    if available:
-        mock_selector_select.return_value = [selectors.SelectorKey(mock_socket, 1, SELECTOR_EVENT, None)]
-    else:
-        mock_selector_select.return_value = []
-
-    # Act
-    status = wait_socket_available(mock_socket, timeout, event)
-
-    # Assert
-    mock_selector_cls.assert_called_once_with()
-    mock_selector_register.assert_called_once_with(mock_socket, SELECTOR_EVENT)
-    mock_selector_select.assert_called_once_with(timeout)
-    assert status == available
-
-
-@pytest.mark.parametrize(["event", "selector_event"], [("read", "EVENT_READ"), ("write", "EVENT_WRITE")])
-@pytest.mark.parametrize("timeout", [10.2, 0, None], ids=lambda value: f"timeout=={value}")
-def test____wait_socket_available____invalid_file_descriptor(
-    mock_socket_factory: Callable[[], MagicMock],
-    event: Literal["read", "write"],
-    selector_event: str,
-    timeout: float | None,
-    mocker: MockerFixture,
-) -> None:
-    # Arrange
-    SELECTOR_EVENT: int = getattr(selectors, selector_event)
-    mock_socket = mock_socket_factory()
-    mock_selector = mocker.NonCallableMagicMock(spec=selectors.BaseSelector)
-    mock_selector.__enter__.return_value = mock_selector
-    mock_selector_cls = mocker.patch("selectors.PollSelector", return_value=mock_selector, create=True)
-    mock_selector_register: MagicMock = mock_selector.register
-    mock_selector_select: MagicMock = mock_selector.select
-    mock_selector_register.side_effect = ValueError
-
-    # Act
-    status = wait_socket_available(mock_socket, timeout, event)
-
-    # Assert
-    mock_selector_cls.assert_called_once_with()
-    mock_selector_register.assert_called_once_with(mock_socket, SELECTOR_EVENT)
-    mock_selector_select.assert_not_called()
-    assert status is True
-
-
-@pytest.mark.parametrize(["event", "selector_event"], [("read", "EVENT_READ"), ("write", "EVENT_WRITE")])
-@pytest.mark.parametrize("timeout", [10.2, 0, None], ids=lambda value: f"timeout=={value}")
-def test____wait_socket_available____select_error(
-    mock_socket_factory: Callable[[], MagicMock],
-    event: Literal["read", "write"],
-    selector_event: str,
-    timeout: float | None,
-    mocker: MockerFixture,
-) -> None:
-    # Arrange
-    SELECTOR_EVENT: int = getattr(selectors, selector_event)
-    mock_socket = mock_socket_factory()
-    mock_selector = mocker.NonCallableMagicMock(spec=selectors.BaseSelector)
-    mock_selector.__enter__.return_value = mock_selector
-    mock_selector_cls = mocker.patch("selectors.PollSelector", return_value=mock_selector, create=True)
-    mock_selector_register: MagicMock = mock_selector.register
-    mock_selector_select: MagicMock = mock_selector.select
-    mock_selector_select.side_effect = OSError
-
-    # Act
-    status = wait_socket_available(mock_socket, timeout, event)
-
-    # Assert
-    mock_selector_cls.assert_called_once_with()
-    mock_selector_register.assert_called_once_with(mock_socket, SELECTOR_EVENT)
-    mock_selector_select.assert_called_once_with(timeout)
-    assert status is True
-
-
 @pytest.mark.parametrize("delay", [1, 3.14, math.inf])
 @pytest.mark.parametrize("positive_check", [False, True], ids=lambda positive_check: f"{positive_check=}")
 def test____validate_timeout_delay____positive_value(delay: float, positive_check: bool) -> None:
@@ -406,6 +347,51 @@ def test____iter_bytes____iterate_over_bytes_returning_one_byte() -> None:
     assert result == expected_result
 
 
+def test____is_socket_connected____getpeername_returns(mock_tcp_socket: MagicMock) -> None:
+    # Arrange
+    mock_tcp_socket.getpeername.return_value = ("127.0.0.1", 12345)
+
+    # Act & Assert
+    assert is_socket_connected(mock_tcp_socket)
+
+
+@pytest.mark.parametrize("errno", sorted(NOT_CONNECTED_SOCKET_ERRNOS), ids=errno_errorcode.__getitem__)
+def test____is_socket_connected____getpeername_raises(mock_tcp_socket: MagicMock, errno: int) -> None:
+    # Arrange
+    mock_tcp_socket.getpeername.side_effect = OSError(errno, os.strerror(errno))
+
+    # Act & Assert
+    assert not is_socket_connected(mock_tcp_socket)
+
+
+def test____is_socket_connected____getpeername_raises_OSError(mock_tcp_socket: MagicMock) -> None:
+    # Arrange
+    mock_tcp_socket.getpeername.side_effect = OSError("Error")
+
+    # Act & Assert
+    with pytest.raises(OSError):
+        is_socket_connected(mock_tcp_socket)
+
+
+@pytest.mark.parametrize("connected", [True, False])
+def test____check_socket_is_connected____default(
+    connected: bool,
+    mock_tcp_socket: MagicMock,
+    mocker: MockerFixture,
+) -> None:
+    # Arrange
+    mock_is_socket_connected = mocker.patch(f"{is_socket_connected.__module__}.is_socket_connected", return_value=connected)
+
+    # Act & Assert
+    with pytest.raises(OSError) if not connected else contextlib.nullcontext() as exc_info:
+        check_socket_is_connected(mock_tcp_socket)
+
+    # Assert
+    mock_is_socket_connected.assert_called_once_with(mock_tcp_socket)
+    if exc_info is not None:
+        assert exc_info.value.errno == ENOTCONN
+
+
 def test____ensure_datagram_socket_bound____socket_not_bound____null_port(
     mock_udp_socket: MagicMock,
 ) -> None:
@@ -423,8 +409,6 @@ def test____ensure_datagram_socket_bound____socket_not_bound____EINVAL_error_whe
     mock_udp_socket: MagicMock,
 ) -> None:
     # Arrange
-    from errno import EINVAL
-
     mock_udp_socket.getsockname.side_effect = OSError(EINVAL, os.strerror(EINVAL))
 
     # Act
@@ -467,7 +451,7 @@ def test____ensure_datagram_socket_bound____invalid_socket_type(
     # Arrange
 
     # Act
-    with pytest.raises(ValueError, match=r"^Invalid socket type\. Expected SOCK_DGRAM socket\.$"):
+    with pytest.raises(ValueError, match=r"^A 'SOCK_DGRAM' socket is expected$"):
         ensure_datagram_socket_bound(mock_tcp_socket)
 
     # Assert
@@ -619,3 +603,13 @@ def test____lock_with_timeout____acquire_and_release_with_timeout_value____null_
     with pytest.raises(TimeoutError):
         with lock_with_timeout(lock, 0):
             pytest.fail("This should timeout.")
+
+
+def test____ResourceGuard____forbid_nested_contexts() -> None:
+    # Arrange
+    guard = ResourceGuard("guard message")
+
+    # Act & Assert
+    with guard, pytest.raises(BusyResourceError, match=r"^guard message$"):
+        with guard:
+            pass

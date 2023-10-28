@@ -184,7 +184,7 @@ class TimeoutRequestHandler(AsyncStreamRequestHandler[Request, Response]):
 
 class ClientConnectionHooksRequestHandler(AsyncStreamRequestHandler[Request, Response]):
     async def on_connection(self, client: AsyncStreamClient[Response]) -> None:
-        print(f"{client.address} is connected")
+        print(f"{client!r} is connected")
 
         # Notify the client that the service is ready.
         await client.send_packet(Response())
@@ -193,7 +193,7 @@ class ClientConnectionHooksRequestHandler(AsyncStreamRequestHandler[Request, Res
         # Perfom service shutdown clean-up
         ...
 
-        print(f"{client.address} is disconnected")
+        print(f"{client!r} is disconnected")
 
     async def handle(
         self,

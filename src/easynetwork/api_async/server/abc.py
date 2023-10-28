@@ -22,12 +22,15 @@ __all__ = [
 ]
 
 from abc import ABCMeta, abstractmethod
-from typing import TYPE_CHECKING, Any, NoReturn, Protocol, Self
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, NoReturn, Protocol, Self
+
+from ...lowlevel.socket import SocketAddress
 
 if TYPE_CHECKING:
     from types import TracebackType
 
-    from ..backend.abc import AsyncBackend
+    from ...lowlevel.api_async.backend.abc import AsyncBackend
 
 
 class SupportsEventSet(Protocol):
@@ -35,7 +38,8 @@ class SupportsEventSet(Protocol):
     A :class:`threading.Event`-like object.
     """
 
-    def set(self) -> None:  # pragma: no cover
+    @abstractmethod
+    def set(self) -> None:
         """
         Notifies that the event has happened.
 
@@ -62,9 +66,6 @@ class AbstractAsyncNetworkServer(metaclass=ABCMeta):
     ) -> None:
         """Calls :meth:`server_close`."""
         await self.server_close()
-
-    def __getstate__(self) -> Any:  # pragma: no cover
-        raise TypeError(f"cannot pickle {self.__class__.__name__!r} object")
 
     @abstractmethod
     def is_serving(self) -> bool:
@@ -105,6 +106,16 @@ class AbstractAsyncNetworkServer(metaclass=ABCMeta):
             Do not call this method in the :meth:`serve_forever` task; it will cause a deadlock.
         """
         raise NotImplementedError
+
+    @abstractmethod
+    def get_addresses(self) -> Sequence[SocketAddress]:
+        """
+        Returns all interfaces to which the server is bound.
+
+        Returns:
+            A sequence of network socket address.
+            If the server is not serving (:meth:`is_serving` returns :data:`False`), an empty sequence is returned.
+        """
 
     @abstractmethod
     def get_backend(self) -> AsyncBackend:

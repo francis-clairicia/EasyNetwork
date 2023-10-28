@@ -9,8 +9,8 @@ from typing import Any
 
 from easynetwork.api_async.client.tcp import AsyncTCPNetworkClient
 from easynetwork.exceptions import ClientClosedError, StreamProtocolParseError
+from easynetwork.lowlevel.socket import IPv4SocketAddress, IPv6SocketAddress, SocketProxy
 from easynetwork.protocol import StreamProtocol
-from easynetwork.tools.socket import IPv4SocketAddress, IPv6SocketAddress, SocketProxy
 
 import pytest
 import pytest_asyncio

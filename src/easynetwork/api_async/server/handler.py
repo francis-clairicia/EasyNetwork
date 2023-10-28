@@ -22,41 +22,39 @@ __all__ = [
     "AsyncDatagramRequestHandler",
     "AsyncStreamClient",
     "AsyncStreamRequestHandler",
+    "INETClientAttribute",
 ]
 
 import contextlib
 from abc import ABCMeta, abstractmethod
 from collections.abc import AsyncGenerator, Coroutine
-from typing import TYPE_CHECKING, Any, Generic, final
+from typing import TYPE_CHECKING, Any, Generic
 
 from ..._typevars import _RequestT, _ResponseT
-from ...tools.socket import SocketAddress, SocketProxy
+from ...lowlevel import socket as socket_tools, typed_attr
 
 if TYPE_CHECKING:
     from ..server.tcp import AsyncTCPNetworkServer
     from ..server.udp import AsyncUDPNetworkServer
 
 
-class AsyncBaseClientInterface(Generic[_ResponseT], metaclass=ABCMeta):
+class INETClientAttribute(typed_attr.TypedAttributeSet):
+    socket: socket_tools.ISocket = socket_tools.SocketAttribute.socket
+    """:class:`socket.socket` instance."""
+
+    local_address: socket_tools.SocketAddress = socket_tools.SocketAttribute.sockname
+    """the socket's own address, result of :meth:`socket.socket.getsockname`."""
+
+    remote_address: socket_tools.SocketAddress = socket_tools.SocketAttribute.peername
+    """the remote address to which the socket is connected, result of :meth:`socket.socket.getpeername`."""
+
+
+class AsyncBaseClientInterface(typed_attr.TypedAttributeProvider, Generic[_ResponseT], metaclass=ABCMeta):
     """
     The base class for a client interface, used by request handlers.
     """
 
-    __slots__ = ("__addr", "__weakref__")
-
-    def __init__(self, address: SocketAddress) -> None:
-        """
-        Parameters:
-            address: The remote endpoint's address.
-        """
-        super().__init__()
-        self.__addr: SocketAddress = address
-
-    def __repr__(self) -> str:
-        return f"<client with address {self.address} at {id(self):#x}>"
-
-    def __getstate__(self) -> Any:  # pragma: no cover
-        raise TypeError(f"cannot pickle {self.__class__.__name__!r} object")
+    __slots__ = ("__weakref__",)
 
     @abstractmethod
     async def send_packet(self, packet: _ResponseT, /) -> None:
@@ -88,18 +86,6 @@ class AsyncBaseClientInterface(Generic[_ResponseT], metaclass=ABCMeta):
         Returns:
             the client state.
         """
-        raise NotImplementedError
-
-    @property
-    @final
-    def address(self) -> SocketAddress:
-        """The remote endpoint's address. Read-only attribute."""
-        return self.__addr
-
-    @property
-    @abstractmethod
-    def socket(self) -> SocketProxy:
-        """A view to the underlying socket instance. Read-only attribute."""
         raise NotImplementedError
 
 

@@ -4,14 +4,14 @@ import math
 from typing import TYPE_CHECKING, Any, final
 
 from easynetwork.api_async.client.abc import AbstractAsyncNetworkClient
-from easynetwork.tools.socket import SocketAddress
+from easynetwork.lowlevel.socket import SocketAddress
 
 import pytest
 
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
 
-    from easynetwork.api_async.backend.abc import AsyncBackend
+    from easynetwork.lowlevel.api_async.backend.abc import AsyncBackend
 
     from pytest_mock import MockerFixture
 

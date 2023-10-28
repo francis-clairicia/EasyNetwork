@@ -8,7 +8,7 @@ from concurrent.futures import CancelledError as FutureCancelledError, Future, w
 from contextlib import ExitStack
 from typing import TYPE_CHECKING, Any, Literal
 
-from easynetwork.api_async.backend.factory import AsyncBackendFactory
+from easynetwork.lowlevel.api_async.backend.factory import AsyncBackendFactory
 from easynetwork_asyncio.backend import AsyncIOBackend
 
 import pytest

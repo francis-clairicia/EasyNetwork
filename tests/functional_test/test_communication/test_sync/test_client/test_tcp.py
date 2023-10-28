@@ -10,8 +10,8 @@ from typing import Any
 
 from easynetwork.api_sync.client.tcp import TCPNetworkClient
 from easynetwork.exceptions import ClientClosedError, StreamProtocolParseError
+from easynetwork.lowlevel.socket import IPv4SocketAddress, IPv6SocketAddress
 from easynetwork.protocol import StreamProtocol
-from easynetwork.tools.socket import IPv4SocketAddress, IPv6SocketAddress
 
 import pytest
 

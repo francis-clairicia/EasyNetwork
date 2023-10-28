@@ -5,7 +5,7 @@ from collections.abc import Callable
 from socket import IPPROTO_TCP, SO_KEEPALIVE, SO_LINGER, SOL_SOCKET, TCP_NODELAY
 from typing import TYPE_CHECKING, Any
 
-from easynetwork.tools.socket import (
+from easynetwork.lowlevel.socket import (
     AddressFamily,
     IPv4SocketAddress,
     IPv6SocketAddress,

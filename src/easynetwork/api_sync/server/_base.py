@@ -19,16 +19,17 @@ from __future__ import annotations
 __all__ = ["BaseStandaloneNetworkServerImpl"]
 
 import concurrent.futures
-import contextlib as _contextlib
+import contextlib
 import threading as _threading
 import time
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, NoReturn
 
-from ...api_async.backend.abc import ThreadsPortal
 from ...api_async.server.abc import SupportsEventSet
 from ...exceptions import ServerAlreadyRunning, ServerClosedError
-from ...tools._lock import ForkSafeLock
+from ...lowlevel._lock import ForkSafeLock
+from ...lowlevel.api_async.backend.abc import ThreadsPortal
+from ...lowlevel.socket import SocketAddress
 from .abc import AbstractNetworkServer
 
 if TYPE_CHECKING:
@@ -57,16 +58,16 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
 
     def is_serving(self) -> bool:
         if (portal := self._portal) is not None:
-            with _contextlib.suppress(RuntimeError):
+            with contextlib.suppress(RuntimeError):
                 return portal.run_sync(self.__server.is_serving)
         return False
 
     is_serving.__doc__ = AbstractNetworkServer.is_serving.__doc__
 
     def server_close(self) -> None:
-        with self.__close_lock.get(), _contextlib.ExitStack() as stack, _contextlib.suppress(RuntimeError):
+        with self.__close_lock.get(), contextlib.ExitStack() as stack, contextlib.suppress(RuntimeError):
             if (portal := self._portal) is not None:
-                with _contextlib.suppress(concurrent.futures.CancelledError):
+                with contextlib.suppress(concurrent.futures.CancelledError):
                     portal.run_coroutine(self.__server.server_close)
             else:
                 stack.callback(self.__is_closed.set)
@@ -78,7 +79,7 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
 
     def shutdown(self, timeout: float | None = None) -> None:
         if (portal := self._portal) is not None:
-            with _contextlib.suppress(RuntimeError, concurrent.futures.CancelledError):
+            with contextlib.suppress(RuntimeError, concurrent.futures.CancelledError):
                 # If shutdown() have been cancelled, that means the scheduler itself is shutting down, and this is what we want
                 if timeout is None:
                     portal.run_coroutine(self.__server.shutdown)
@@ -116,10 +117,10 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
         """
 
         backend = self.__server.get_backend()
-        with _contextlib.ExitStack() as server_exit_stack, _contextlib.suppress(backend.get_cancelled_exc_class()):
+        with contextlib.ExitStack() as server_exit_stack, contextlib.suppress(backend.get_cancelled_exc_class()):
             # locks_stack is used to acquire locks until
             # serve_forever() coroutine creates the thread portal
-            locks_stack = server_exit_stack.enter_context(_contextlib.ExitStack())
+            locks_stack = server_exit_stack.enter_context(contextlib.ExitStack())
             locks_stack.enter_context(self.__close_lock.get())
             locks_stack.enter_context(self.__bootstrap_lock.get())
 
@@ -149,6 +150,21 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
                     await self.__server.serve_forever(is_up_event=is_up_event)
 
             backend.bootstrap(serve_forever, runner_options=runner_options)
+
+    def get_addresses(self) -> Sequence[SocketAddress]:
+        """
+        Returns all interfaces to which the listeners are bound. Thread-safe.
+
+        Returns:
+            A sequence of network socket address.
+            If the server is not serving (:meth:`is_serving` returns :data:`False`), an empty sequence is returned.
+        """
+        if (portal := self._portal) is not None:
+            with contextlib.suppress(RuntimeError):
+                return portal.run_sync(self.__server.get_addresses)
+        return ()
+
+    get_addresses.__doc__ = AbstractNetworkServer.get_addresses.__doc__
 
     @property
     def _server(self) -> AbstractAsyncNetworkServer:

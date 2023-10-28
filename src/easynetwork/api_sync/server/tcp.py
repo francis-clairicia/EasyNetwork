@@ -20,21 +20,21 @@ __all__ = [
     "StandaloneTCPNetworkServer",
 ]
 
-import contextlib as _contextlib
+import contextlib
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Generic
 
 from ..._typevars import _RequestT, _ResponseT
 from ...api_async.server.tcp import AsyncTCPNetworkServer
-from ...tools.socket import SocketAddress, SocketProxy
+from ...lowlevel.socket import SocketProxy
 from . import _base
 
 if TYPE_CHECKING:
     import logging
     from ssl import SSLContext as _SSLContext
 
-    from ...api_async.backend.abc import AsyncBackend
     from ...api_async.server.handler import AsyncStreamRequestHandler
+    from ...lowlevel.api_async.backend.abc import AsyncBackend
     from ...protocol import StreamProtocol
 
 
@@ -106,27 +106,14 @@ class StandaloneTCPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
         Further calls to :meth:`is_serving` will return :data:`False`.
         """
         if (portal := self._portal) is not None:
-            with _contextlib.suppress(RuntimeError):
+            with contextlib.suppress(RuntimeError):
                 portal.run_sync(self._server.stop_listening)
-
-    def get_addresses(self) -> Sequence[SocketAddress]:
-        """
-        Returns all interfaces to which the listeners are bound. Thread-safe.
-
-        Returns:
-            A sequence of network socket address.
-            If the server is not serving (:meth:`is_serving` returns :data:`False`), an empty sequence is returned.
-        """
-        if (portal := self._portal) is not None:
-            with _contextlib.suppress(RuntimeError):
-                return portal.run_sync(self._server.get_addresses)
-        return ()
 
     @property
     def sockets(self) -> Sequence[SocketProxy]:
         """The listeners sockets. Read-only attribute."""
         if (portal := self._portal) is not None:
-            with _contextlib.suppress(RuntimeError):
+            with contextlib.suppress(RuntimeError):
                 sockets = portal.run_sync(lambda: self._server.sockets)
                 return tuple(SocketProxy(sock, runner=portal.run_sync) for sock in sockets)
         return ()

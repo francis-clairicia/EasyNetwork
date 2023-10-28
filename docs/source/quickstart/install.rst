@@ -40,5 +40,5 @@ Example where the ``cbor`` and ``msgpack`` extensions are installed:
 
 .. seealso::
 
-   :doc:`/api/async/backend`
+   :doc:`/api/lowlevel/async/backend`
       See how ``sniffio`` is used.

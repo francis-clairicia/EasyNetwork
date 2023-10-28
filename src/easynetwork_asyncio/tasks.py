@@ -25,10 +25,10 @@ import enum
 import math
 from collections import deque
 from collections.abc import Callable, Coroutine, Iterable, Iterator
-from typing import TYPE_CHECKING, Any, NamedTuple, ParamSpec, Self, TypeVar, final
+from typing import TYPE_CHECKING, Any, NamedTuple, Self, TypeVar, final
 from weakref import WeakKeyDictionary
 
-from easynetwork.api_async.backend.abc import (
+from easynetwork.lowlevel.api_async.backend.abc import (
     CancelScope as AbstractCancelScope,
     Task as AbstractTask,
     TaskGroup as AbstractTaskGroup,
@@ -38,7 +38,6 @@ if TYPE_CHECKING:
     from types import TracebackType
 
 
-_P = ParamSpec("_P")
 _T = TypeVar("_T")
 _T_co = TypeVar("_T_co", covariant=True)
 
@@ -119,7 +118,7 @@ class TaskGroup(AbstractTaskGroup):
 
     def start_soon(
         self,
-        coro_func: Callable[_P, Coroutine[Any, Any, _T]],
+        coro_func: Callable[..., Coroutine[Any, Any, _T]],
         /,
         *args: Any,
         context: contextvars.Context | None = None,
@@ -276,7 +275,8 @@ class CancelScope(AbstractCancelScope):
 
     def __timeout(self) -> None:
         if self.__deadline != math.inf:
-            loop = asyncio.get_running_loop()
+            assert self.__host_task is not None  # nosec assert_used
+            loop = self.__host_task.get_loop()
             if loop.time() >= self.__deadline:
                 self.__timeout_handle = loop.call_soon(self.cancel)
             else:

@@ -29,7 +29,7 @@ from typing import IO, Any, final
 
 from .._typevars import _DTOPacketT
 from ..exceptions import DeserializeError, IncrementalDeserializeError
-from ..tools.constants import _DEFAULT_LIMIT
+from ..lowlevel.constants import _DEFAULT_LIMIT
 from .abc import AbstractIncrementalPacketSerializer, AbstractPacketSerializer
 from .tools import GeneratorStreamReader
 

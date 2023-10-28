@@ -4,7 +4,7 @@ import contextlib
 from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING, Any
 
-from easynetwork.tools._utils import validate_timeout_delay
+from easynetwork.lowlevel._utils import validate_timeout_delay
 
 from ...base import BaseTestSocket
 

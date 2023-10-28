@@ -21,10 +21,10 @@ __all__ = ["AbstractNetworkClient"]
 import time
 from abc import ABCMeta, abstractmethod
 from collections.abc import Iterator
-from typing import TYPE_CHECKING, Any, Generic, Self
+from typing import TYPE_CHECKING, Generic, Self
 
 from ..._typevars import _ReceivedPacketT, _SentPacketT
-from ...tools.socket import SocketAddress
+from ...lowlevel.socket import SocketAddress
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -45,9 +45,6 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
         Calls :meth:`close`.
         """
         self.close()
-
-    def __getstate__(self) -> Any:  # pragma: no cover
-        raise TypeError(f"cannot pickle {self.__class__.__name__!r} object")
 
     @abstractmethod
     def is_closed(self) -> bool:
@@ -83,7 +80,6 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
 
         Raises:
             ClientClosedError: the client object is closed.
-            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
 
         Returns:
             the client's local address.
@@ -97,7 +93,6 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
 
         Raises:
             ClientClosedError: the client object is closed.
-            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
 
         Returns:
             the client's remote address.

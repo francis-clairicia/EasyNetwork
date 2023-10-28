@@ -25,12 +25,12 @@ import contextlib
 import errno as _errno
 import socket as _socket
 from collections.abc import Iterator
-from typing import TYPE_CHECKING, Any, Literal, Self, TypeAlias
+from typing import TYPE_CHECKING, Literal, Self, TypeAlias
 from weakref import WeakSet
 
-from easynetwork.tools._utils import check_socket_no_ssl as _check_socket_no_ssl, error_from_errno as _error_from_errno
+from easynetwork.lowlevel._utils import check_socket_no_ssl as _check_socket_no_ssl, error_from_errno as _error_from_errno
 
-from .tasks import TaskUtils
+from .tasks import CancelScope, TaskUtils
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -46,10 +46,9 @@ class AsyncSocket:
         "__socket",
         "__trsock",
         "__loop",
-        "__tasks",
+        "__scopes",
         "__waiters",
         "__close_waiter",
-        "__shutdown_write",
         "__weakref__",
     )
 
@@ -62,10 +61,9 @@ class AsyncSocket:
         self.__socket: _socket.socket | None = socket
         self.__trsock: asyncio.trsock.TransportSocket = asyncio.trsock.TransportSocket(socket)
         self.__loop: asyncio.AbstractEventLoop = loop
-        self.__tasks: WeakSet[asyncio.Task[Any]] = WeakSet()
+        self.__scopes: WeakSet[CancelScope] = WeakSet()
         self.__waiters: dict[_SocketTaskId, asyncio.Future[None]] = {}
         self.__close_waiter: asyncio.Future[None] = loop.create_future()
-        self.__shutdown_write: bool = False
 
     def __del__(self) -> None:  # pragma: no cover
         try:
@@ -95,7 +93,7 @@ class AsyncSocket:
         if socket is None:
             await asyncio.shield(self.__close_waiter)
             return
-        async with contextlib.AsyncExitStack() as stack:
+        with contextlib.ExitStack() as stack:
             stack.callback(self.__close_waiter.set_result, None)
             stack.callback(socket.close)
 
@@ -103,62 +101,63 @@ class AsyncSocket:
 
             del stack
 
-            for task in list(self.__tasks):
-                task.cancel()
-                del task
+            for scope in list(self.__scopes):
+                scope.cancel()
+                del scope
             futures_to_wait_for_completion: set[asyncio.Future[None]] = set(self.__waiters.values())
             if futures_to_wait_for_completion:
                 await asyncio.wait(futures_to_wait_for_completion, return_when=asyncio.ALL_COMPLETED)
 
         await asyncio.sleep(0)
 
-    async def accept(self) -> tuple[_socket.socket, _socket._RetAddress]:
-        with self.__conflict_detection("accept", abort_errno=_errno.EINTR) as socket:
-            return await self.__loop.sock_accept(socket)
+    async def accept(self) -> _socket.socket:
+        with self.__conflict_detection("accept"):
+            listener_socket = self.__check_not_closed()
+            client_socket, _ = await self.__loop.sock_accept(listener_socket)
+            return client_socket
 
     async def sendall(self, data: ReadableBuffer, /) -> None:
-        with self.__conflict_detection("send", abort_errno=_errno.ECONNABORTED) as socket:
+        with self.__conflict_detection("send", abort_errno=_errno.ECONNABORTED):
+            socket = self.__check_not_closed()
             await self.__loop.sock_sendall(socket, data)
 
     async def sendto(self, data: ReadableBuffer, address: _socket._Address, /) -> None:
-        with self.__conflict_detection("send", abort_errno=_errno.ECONNABORTED) as socket:
+        with self.__conflict_detection("send", abort_errno=_errno.ECONNABORTED):
+            socket = self.__check_not_closed()
             await self.__loop.sock_sendto(socket, data, address)
 
     async def recv(self, bufsize: int, /) -> bytes:
-        with self.__conflict_detection("recv", abort_errno=_errno.ECONNABORTED) as socket:
+        with self.__conflict_detection("recv", abort_errno=_errno.ECONNABORTED):
+            socket = self.__check_not_closed()
             return await self.__loop.sock_recv(socket, bufsize)
 
     async def recvfrom(self, bufsize: int, /) -> tuple[bytes, _socket._RetAddress]:
-        with self.__conflict_detection("recv", abort_errno=_errno.ECONNABORTED) as socket:
+        with self.__conflict_detection("recv", abort_errno=_errno.ECONNABORTED):
+            socket = self.__check_not_closed()
             return await self.__loop.sock_recvfrom(socket, bufsize)
 
     async def shutdown(self, how: int, /) -> None:
-        with contextlib.ExitStack() as stack:
-            socket: _socket.socket = self.__check_not_closed()
-            did_shutdown_SHUT_WR: bool = False
-            if how in {_socket.SHUT_RDWR, _socket.SHUT_WR}:
-                stack.enter_context(self.__conflict_detection("send", abort_errno=None))
-                did_shutdown_SHUT_WR = True
+        socket: _socket.socket = self.__check_not_closed()
+        if how in {_socket.SHUT_RDWR, _socket.SHUT_WR}:
+            while (waiter := self.__waiters.get("send")) is not None:
+                try:
+                    await asyncio.shield(waiter)
+                finally:
+                    waiter = None  # Breack cyclic reference with raised exception
 
-            socket.shutdown(how)
-            if did_shutdown_SHUT_WR:
-                self.__shutdown_write = True
-
-        # Yield outside the conflict detections scopes
+        socket.shutdown(how)
         await asyncio.sleep(0)
 
     @contextlib.contextmanager
-    def __conflict_detection(self, task_id: _SocketTaskId, *, abort_errno: int | None) -> Iterator[_socket.socket]:
-        socket = self.__check_not_closed()
-
+    def __conflict_detection(self, task_id: _SocketTaskId, *, abort_errno: int = _errno.EINTR) -> Iterator[None]:
         if task_id in self.__waiters:
             raise _error_from_errno(_errno.EBUSY)
 
-        task = TaskUtils.current_asyncio_task(self.__loop)
+        _ = TaskUtils.current_asyncio_task(self.__loop)
 
-        with contextlib.ExitStack() as stack:
-            self.__tasks.add(task)
-            stack.callback(self.__tasks.discard, task)
+        with CancelScope() as scope, contextlib.ExitStack() as stack:
+            self.__scopes.add(scope)
+            stack.callback(self.__scopes.discard, scope)
 
             waiter: asyncio.Future[None] = self.__loop.create_future()
             stack.callback(waiter.set_result, None)
@@ -166,24 +165,10 @@ class AsyncSocket:
             stack.callback(self.__waiters.pop, task_id)
             del waiter
 
-            if abort_errno is None:
-                # Short circuit.
-                del task
-                yield socket
-                return
+            yield
 
-            task_cancelling = task.cancelling()
-
-            try:
-                yield socket
-            except asyncio.CancelledError:
-                if self.__socket is not None:
-                    raise
-                if task.cancelling() <= task_cancelling or task.uncancel() > task_cancelling:
-                    raise
-                raise _error_from_errno(abort_errno) from None
-            finally:
-                del task
+        if scope.cancelled_caught():
+            raise _error_from_errno(abort_errno)
 
     def __check_not_closed(self) -> _socket.socket:
         if (socket := self.__socket) is None:
@@ -197,7 +182,3 @@ class AsyncSocket:
     @property
     def socket(self) -> asyncio.trsock.TransportSocket:
         return self.__trsock
-
-    @property
-    def did_shutdown_SHUT_WR(self) -> bool:
-        return self.__shutdown_write

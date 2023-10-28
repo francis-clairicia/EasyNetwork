@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator
 from typing import Any, TypeAlias
 
-from easynetwork.api_async.server import AsyncStreamClient, AsyncStreamRequestHandler
+from easynetwork.api_async.server import AsyncStreamClient, AsyncStreamRequestHandler, INETClientAttribute
 from easynetwork.exceptions import StreamProtocolParseError
 
 # These TypeAliases are there to help you understand
@@ -25,7 +25,8 @@ class EchoRequestHandler(AsyncStreamRequestHandler[RequestType, ResponseType]):
             await client.send_packet({"error": "Invalid JSON", "code": "parse_error"})
             return
 
-        print(f"{client.address.host} sent {request}")
+        client_address = client.extra(INETClientAttribute.remote_address)
+        print(f"{client_address.host} sent {request}")
 
         # As a good echo handler, the request is sent back to the client
         response: ResponseType = request

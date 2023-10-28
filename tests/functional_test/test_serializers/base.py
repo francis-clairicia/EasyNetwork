@@ -6,8 +6,8 @@ from collections.abc import Callable
 from typing import Any, final
 
 from easynetwork.exceptions import DeserializeError, IncrementalDeserializeError
+from easynetwork.lowlevel._utils import iter_bytes
 from easynetwork.serializers.abc import AbstractIncrementalPacketSerializer, AbstractPacketSerializer
-from easynetwork.tools._utils import iter_bytes
 
 import pytest
 

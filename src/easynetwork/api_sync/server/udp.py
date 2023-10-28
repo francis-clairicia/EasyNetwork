@@ -20,20 +20,20 @@ __all__ = [
     "StandaloneUDPNetworkServer",
 ]
 
-import contextlib as _contextlib
-from collections.abc import Mapping
+import contextlib
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Generic
 
 from ..._typevars import _RequestT, _ResponseT
 from ...api_async.server.udp import AsyncUDPNetworkServer
-from ...tools.socket import SocketAddress, SocketProxy
+from ...lowlevel.socket import SocketProxy
 from . import _base
 
 if TYPE_CHECKING:
     import logging
 
-    from ...api_async.backend.abc import AsyncBackend
     from ...api_async.server.handler import AsyncDatagramRequestHandler
+    from ...lowlevel.api_async.backend.abc import AsyncBackend
     from ...protocol import DatagramProtocol
 
 
@@ -48,7 +48,7 @@ class StandaloneUDPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
 
     def __init__(
         self,
-        host: str,
+        host: str | None | Sequence[str],
         port: int,
         protocol: DatagramProtocol[_ResponseT, _RequestT],
         request_handler: AsyncDatagramRequestHandler[_RequestT, _ResponseT],
@@ -83,27 +83,14 @@ class StandaloneUDPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
             )
         )
 
-    def get_address(self) -> SocketAddress | None:
-        """
-        Returns the interface to which the datagram socket is bound. Thread-safe.
-
-        Returns:
-            A network socket address.
-            If the server is not serving (:meth:`is_serving` returns :data:`False`), :data:`None` is returned.
-        """
-        if (portal := self._portal) is not None:
-            with _contextlib.suppress(RuntimeError):
-                return portal.run_sync(self._server.get_address)
-        return None
-
     @property
-    def socket(self) -> SocketProxy | None:
-        """The server socket. Read-only attribute."""
+    def sockets(self) -> Sequence[SocketProxy]:
+        """The listeners sockets. Read-only attribute."""
         if (portal := self._portal) is not None:
-            with _contextlib.suppress(RuntimeError):
-                socket = portal.run_sync(lambda: self._server.socket)
-                return SocketProxy(socket, runner=portal.run_sync) if socket is not None else None
-        return None
+            with contextlib.suppress(RuntimeError):
+                sockets = portal.run_sync(lambda: self._server.sockets)
+                return tuple(SocketProxy(sock, runner=portal.run_sync) for sock in sockets)
+        return ()
 
     @property
     def logger(self) -> logging.Logger:

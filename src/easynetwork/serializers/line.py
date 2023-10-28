@@ -21,7 +21,7 @@ __all__ = ["StringLineSerializer"]
 from typing import Literal, assert_never, final
 
 from ..exceptions import DeserializeError
-from ..tools.constants import _DEFAULT_LIMIT
+from ..lowlevel.constants import _DEFAULT_LIMIT
 from .base_stream import AutoSeparatedPacketSerializer
 
 

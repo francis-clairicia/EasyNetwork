@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Any
 from easynetwork.converter import AbstractPacketConverterComposite
 from easynetwork.protocol import DatagramProtocol, StreamProtocol
 from easynetwork.serializers.abc import AbstractIncrementalPacketSerializer, AbstractPacketSerializer
-from easynetwork.tools._stream import StreamDataConsumer, StreamDataProducer
 
 import pytest
 
@@ -40,6 +39,16 @@ def mock_socket_factory(mocker: MockerFixture) -> Callable[[], MagicMock]:
         mock_socket.type = -1
         mock_socket.proto = 0
         mock_socket.fileno.return_value = 123
+
+        def close_side_effect() -> None:
+            mock_socket.fileno.return_value = -1
+
+        def detached_side_effect() -> int:
+            to_return, mock_socket.fileno.return_value = mock_socket.fileno.return_value, -1
+            return to_return
+
+        mock_socket.close.side_effect = close_side_effect
+        mock_socket.detach.side_effect = detached_side_effect
         return mock_socket
 
     return factory
@@ -91,6 +100,17 @@ def mock_ssl_socket_factory(mocker: MockerFixture) -> Callable[[], MagicMock]:
         mock_socket.proto = IPPROTO_TCP
         mock_socket.fileno.return_value = 123
         mock_socket.do_handshake.return_value = None
+        mock_socket.unwrap.return_value = None
+
+        def close_side_effect() -> None:
+            mock_socket.fileno.return_value = -1
+
+        def detached_side_effect() -> int:
+            to_return, mock_socket.fileno.return_value = mock_socket.fileno.return_value, -1
+            return to_return
+
+        mock_socket.close.side_effect = close_side_effect
+        mock_socket.detach.side_effect = detached_side_effect
         return mock_socket
 
     return factory
@@ -165,23 +185,3 @@ def mock_stream_protocol_factory(mocker: MockerFixture) -> Callable[[], Any]:
 @pytest.fixture
 def mock_stream_protocol(mock_stream_protocol_factory: Callable[[], Any]) -> Any:
     return mock_stream_protocol_factory()
-
-
-@pytest.fixture
-def mock_stream_data_producer_factory(mocker: MockerFixture) -> Callable[[], Any]:
-    return lambda: mocker.NonCallableMagicMock(spec=StreamDataProducer)
-
-
-@pytest.fixture
-def mock_stream_data_producer(mock_stream_data_producer_factory: Callable[[], Any]) -> Any:
-    return mock_stream_data_producer_factory()
-
-
-@pytest.fixture
-def mock_stream_data_consumer_factory(mocker: MockerFixture) -> Callable[[], Any]:
-    return lambda: mocker.NonCallableMagicMock(spec=StreamDataConsumer)
-
-
-@pytest.fixture
-def mock_stream_data_consumer(mock_stream_data_consumer_factory: Callable[[], Any]) -> Any:
-    return mock_stream_data_consumer_factory()

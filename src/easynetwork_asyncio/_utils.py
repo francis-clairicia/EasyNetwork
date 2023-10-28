@@ -17,7 +17,7 @@
 
 from __future__ import annotations
 
-__all__ = ["create_connection", "create_datagram_socket", "open_listener_sockets_from_getaddrinfo_result"]
+__all__ = ["create_connection", "open_listener_sockets_from_getaddrinfo_result"]
 
 import asyncio
 import contextlib
@@ -25,7 +25,7 @@ import socket as _socket
 from collections.abc import Iterable, Sequence
 from typing import Any
 
-from easynetwork.tools._utils import set_reuseport as _set_reuseport
+from easynetwork.lowlevel._utils import set_reuseport as _set_reuseport
 
 
 async def ensure_resolved(
@@ -55,12 +55,13 @@ async def create_connection(
     port: int,
     loop: asyncio.AbstractEventLoop,
     local_address: tuple[str, int] | None = None,
+    socktype: int = _socket.SOCK_STREAM,
 ) -> _socket.socket:
     remote_addrinfo: Sequence[tuple[int, int, int, str, tuple[Any, ...]]] = await ensure_resolved(
         host,
         port,
         family=_socket.AF_UNSPEC,
-        type=_socket.SOCK_STREAM,
+        type=socktype,
         loop=loop,
     )
     local_addrinfo: Sequence[tuple[int, int, int, str, tuple[Any, ...]]] | None = None
@@ -70,14 +71,14 @@ async def create_connection(
             local_host,
             local_port,
             family=_socket.AF_UNSPEC,
-            type=_socket.SOCK_STREAM,
+            type=socktype,
             loop=loop,
         )
 
     errors: list[OSError] = []
     for family, _, proto, _, remote_sockaddr in remote_addrinfo:
         try:
-            socket = _socket.socket(family, _socket.SOCK_STREAM, proto)
+            socket = _socket.socket(family, socktype, proto)
         except OSError as exc:
             errors.append(exc)
             continue
@@ -129,120 +130,10 @@ async def create_connection(
         errors.clear()
 
 
-async def create_datagram_socket(
-    loop: asyncio.AbstractEventLoop,
-    family: int = 0,
-    local_address: tuple[str, int] | None = None,
-    remote_address: tuple[str, int] | None = None,
-    reuse_port: bool = False,
-) -> _socket.socket:
-    local_addrinfo: Sequence[tuple[int, int, int, str, tuple[Any, ...]]] | None = None
-    if local_address is not None:
-        local_host, local_port = local_address
-        local_addrinfo = await ensure_resolved(
-            local_host,
-            local_port,
-            family=family,
-            type=_socket.SOCK_DGRAM,
-            loop=loop,
-            flags=_socket.AI_PASSIVE if remote_address is None else 0,
-        )
-    remote_addrinfo: Sequence[tuple[int, int, int, str, tuple[Any, ...]]] | None = None
-    if remote_address is not None:
-        remote_host, remote_port = remote_address
-        remote_addrinfo = await ensure_resolved(
-            remote_host,
-            remote_port,
-            family=family,
-            type=_socket.SOCK_DGRAM,
-            loop=loop,
-        )
-
-    errors: list[OSError] = []
-
-    del local_address, remote_address
-
-    for (family, proto), (local_sockaddr, remote_sockaddr) in _get_datagram_socket_addr_pairs_info(
-        family=family,
-        local_addrinfo=local_addrinfo,
-        remote_addrinfo=remote_addrinfo,
-    ):
-        try:
-            socket = _socket.socket(family, _socket.SOCK_DGRAM, proto)
-        except OSError as exc:
-            errors.append(exc)
-            continue
-        except BaseException:
-            errors.clear()
-            raise
-        try:
-            socket.setblocking(False)
-
-            if reuse_port:
-                _set_reuseport(socket)
-
-            if local_sockaddr is not None:
-                try:
-                    socket.bind(local_sockaddr)
-                except OSError as exc:
-                    msg = f"error while attempting to bind to address {local_sockaddr!r}: {exc.strerror.lower()}"
-                    raise OSError(exc.errno, msg).with_traceback(exc.__traceback__) from None
-
-            if remote_sockaddr is not None:
-                await loop.sock_connect(socket, remote_sockaddr)
-
-            errors.clear()
-            return socket
-        except OSError as exc:
-            errors.append(exc)
-            socket.close()
-            continue
-        except BaseException:
-            errors.clear()
-            socket.close()
-            raise
-
-    if errors:
-        try:
-            raise ExceptionGroup("Errors while attempting to create socket", errors)
-        finally:
-            errors.clear()
-
-    raise OSError("No matching local/remote pair according to family and proto found")
-
-
-## Taken from asyncio.base_events module
-## c.f. https://github.com/python/cpython/blob/v3.11.2/Lib/asyncio/base_events.py#L1325
-def _get_datagram_socket_addr_pairs_info(
-    family: int,
-    local_addrinfo: Sequence[tuple[int, int, int, str, tuple[Any, ...]]] | None,
-    remote_addrinfo: Sequence[tuple[int, int, int, str, tuple[Any, ...]]] | None,
-) -> list[tuple[tuple[int, int], Sequence[tuple[Any, ...] | None]]]:
-    if local_addrinfo is None and remote_addrinfo is None:
-        if family == 0:
-            raise ValueError("unexpected address family")
-        return [((family, _socket.IPPROTO_UDP), (None, None))]
-
-    addr_infos: dict[tuple[int, int], list[tuple[Any, ...] | None]] = {}
-    for idx, infos in ((0, local_addrinfo), (1, remote_addrinfo)):
-        if infos is not None:
-            for family, _, proto, _, address in infos:
-                key = (family, proto)
-                if key not in addr_infos:
-                    addr_infos[key] = [None, None]
-                addr_infos[key][idx] = address
-
-    return [
-        (key, addr_pair)
-        for key, addr_pair in addr_infos.items()
-        if not ((local_addrinfo and addr_pair[0] is None) or (remote_addrinfo and addr_pair[1] is None))
-    ]
-
-
 def open_listener_sockets_from_getaddrinfo_result(
     infos: Iterable[tuple[int, int, int, str, tuple[Any, ...]]],
     *,
-    backlog: int,
+    backlog: int | None,
     reuse_address: bool,
     reuse_port: bool,
 ) -> list[_socket.socket]:
@@ -254,9 +145,9 @@ def open_listener_sockets_from_getaddrinfo_result(
 
         socket_exit_stack = _whole_context_stack.enter_context(contextlib.ExitStack())
 
-        for af, _, proto, _, sa in infos:
+        for af, socktype, proto, _, sa in infos:
             try:
-                sock = socket_exit_stack.enter_context(contextlib.closing(_socket.socket(af, _socket.SOCK_STREAM, proto)))
+                sock = socket_exit_stack.enter_context(contextlib.closing(_socket.socket(af, socktype, proto)))
             except OSError:
                 # Assume it's a bad family/type/protocol combination.
                 continue
@@ -264,7 +155,7 @@ def open_listener_sockets_from_getaddrinfo_result(
             if reuse_address:
                 try:
                     sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, True)
-                except OSError:  # pragma: no cover
+                except OSError:
                     # Will fail later on bind()
                     pass
             if reuse_port:
@@ -283,7 +174,8 @@ def open_listener_sockets_from_getaddrinfo_result(
                     ).with_traceback(exc.__traceback__)
                 )
                 continue
-            sock.listen(backlog)
+            if backlog is not None:
+                sock.listen(backlog)
 
         if errors:
             # No need to call errors.clear(), this is done by exit stack

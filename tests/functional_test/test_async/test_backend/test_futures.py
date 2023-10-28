@@ -6,7 +6,7 @@ import time
 from collections.abc import AsyncIterator
 from typing import Any
 
-from easynetwork.api_async.backend.futures import AsyncExecutor
+from easynetwork.lowlevel.api_async.backend.futures import AsyncExecutor
 
 import pytest
 import pytest_asyncio

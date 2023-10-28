@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
-from easynetwork.api_async.backend.factory import AsyncBackendFactory
+from easynetwork.lowlevel.api_async.backend.factory import AsyncBackendFactory
 
 import pytest
 

@@ -26,7 +26,7 @@ from typing import Literal, assert_never, final
 
 from ..._typevars import _DTOPacketT
 from ...exceptions import DeserializeError
-from ...tools.constants import _DEFAULT_LIMIT
+from ...lowlevel.constants import _DEFAULT_LIMIT
 from ..abc import AbstractPacketSerializer
 from ..base_stream import AutoSeparatedPacketSerializer
 

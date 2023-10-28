@@ -11,4 +11,3 @@ Asynchronous API (``async def``)
 
    client
    server
-   backend

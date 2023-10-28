@@ -21,6 +21,7 @@ from __future__ import annotations
 
 __all__ = [
     "BaseProtocolParseError",
+    "BusyResourceError",
     "ClientClosedError",
     "DatagramProtocolParseError",
     "DeserializeError",
@@ -30,6 +31,7 @@ __all__ = [
     "ServerAlreadyRunning",
     "ServerClosedError",
     "StreamProtocolParseError",
+    "TypedAttributeLookupError",
 ]
 
 from typing import TYPE_CHECKING, Any
@@ -37,7 +39,13 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from _typeshed import ReadableBuffer
 
-    from .tools.socket import SocketAddress
+
+class BusyResourceError(RuntimeError):
+    """Error raised when a task attempts to use a resource that some other task is
+    already using, and this would lead to bugs and nonsense.
+
+    Mostly used in asynchronous functions.
+    """
 
 
 class ClientClosedError(ConnectionError):
@@ -141,9 +149,6 @@ class BaseProtocolParseError(Exception):
 class DatagramProtocolParseError(BaseProtocolParseError):
     """Parsing error raised by :class:`easynetwork.protocol.DatagramProtocol`."""
 
-    sender_address: SocketAddress
-    """Address of the sender."""
-
 
 class StreamProtocolParseError(BaseProtocolParseError):
     """Parsing error raised by :class:`easynetwork.protocol.StreamProtocol`."""
@@ -162,3 +167,10 @@ class StreamProtocolParseError(BaseProtocolParseError):
 
         self.remaining_data: bytes = remaining_data
         """Unused trailing data."""
+
+
+class TypedAttributeLookupError(LookupError):
+    """
+    Raised by :meth:`~.TypedAttributeProvider.extra` when the given typed attribute
+    is not found and no default value has been given.
+    """

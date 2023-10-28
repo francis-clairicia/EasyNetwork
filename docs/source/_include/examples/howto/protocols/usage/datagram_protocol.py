@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from easynetwork.api_sync.client import UDPNetworkEndpoint
+from easynetwork.api_sync.client import UDPNetworkClient
 from easynetwork.exceptions import DatagramProtocolParseError
 
 from ..basics.datagram_protocol_subclass import JSONDatagramProtocol
@@ -9,14 +9,14 @@ from ..basics.datagram_protocol_subclass import JSONDatagramProtocol
 def main() -> None:
     protocol = JSONDatagramProtocol()
 
-    with UDPNetworkEndpoint(protocol) as endpoint:
-        endpoint.send_packet_to({"data": 42}, ("remote_address", 12345))
+    with UDPNetworkClient(("remote_address", 12345), protocol) as endpoint:
+        endpoint.send_packet({"data": 42})
 
         ...
 
         try:
-            received_packet, sender_address = endpoint.recv_packet_from()
+            received_packet = endpoint.recv_packet()
         except DatagramProtocolParseError:
             print("The received data is invalid.")
         else:
-            print(f"Received {received_packet!r} from {sender_address}.")
+            print(f"Received {received_packet!r} from {endpoint.get_remote_address()}.")

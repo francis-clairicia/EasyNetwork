@@ -21,9 +21,12 @@ __all__ = ["AsyncioTransportDatagramSocketAdapter", "RawDatagramSocketAdapter"]
 
 import asyncio
 import socket as _socket
+from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any, final
 
-from easynetwork.api_async.backend.abc import AsyncDatagramSocketAdapter as AbstractAsyncDatagramSocketAdapter
+from easynetwork.lowlevel.api_async.transports import abc as transports
+from easynetwork.lowlevel.constants import MAX_DATAGRAM_BUFSIZE
+from easynetwork.lowlevel.socket import _get_socket_extra
 
 from ..socket import AsyncSocket
 
@@ -34,10 +37,11 @@ if TYPE_CHECKING:
 
 
 @final
-class AsyncioTransportDatagramSocketAdapter(AbstractAsyncDatagramSocketAdapter):
+class AsyncioTransportDatagramSocketAdapter(transports.AsyncDatagramTransport):
     __slots__ = (
         "__endpoint",
         "__socket",
+        "__closing",
     )
 
     def __init__(self, endpoint: DatagramEndpoint) -> None:
@@ -48,33 +52,38 @@ class AsyncioTransportDatagramSocketAdapter(AbstractAsyncDatagramSocketAdapter):
         assert socket is not None, "transport must be a socket transport"  # nosec assert_used
 
         self.__socket: asyncio.trsock.TransportSocket = socket
+        # asyncio.DatagramTransport.is_closing() can suddently become true if there is something wrong with the socket
+        # even if transport.close() was never called.
+        # To bypass this side effect, we use our own flag.
+        self.__closing: bool = False
 
     async def aclose(self) -> None:
+        self.__closing = True
+        self.__endpoint.close()
         try:
-            self.__endpoint.close()
             return await self.__endpoint.wait_closed()
         except asyncio.CancelledError:
             self.__endpoint.transport.abort()
             raise
 
     def is_closing(self) -> bool:
-        return self.__endpoint.is_closing()
+        return self.__closing
 
-    async def recvfrom(self, bufsize: int, /) -> tuple[bytes, tuple[Any, ...]]:
-        data, address = await self.__endpoint.recvfrom()
-        if len(data) > bufsize:
-            data = data[:bufsize]
-        return data, address
+    async def recv(self) -> bytes:
+        data, _ = await self.__endpoint.recvfrom()
+        return data
 
-    async def sendto(self, data: bytes, address: tuple[Any, ...] | None, /) -> None:
-        await self.__endpoint.sendto(data, address)
+    async def send(self, data: bytes | bytearray | memoryview) -> None:
+        await self.__endpoint.sendto(data, None)
 
-    def socket(self) -> asyncio.trsock.TransportSocket:
-        return self.__socket
+    @property
+    def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
+        socket = self.__socket
+        return _get_socket_extra(socket, wrap_in_proxy=False)
 
 
 @final
-class RawDatagramSocketAdapter(AbstractAsyncDatagramSocketAdapter):
+class RawDatagramSocketAdapter(transports.AsyncDatagramTransport):
     __slots__ = ("__socket",)
 
     def __init__(
@@ -95,14 +104,14 @@ class RawDatagramSocketAdapter(AbstractAsyncDatagramSocketAdapter):
     def is_closing(self) -> bool:
         return self.__socket.is_closing()
 
-    async def recvfrom(self, bufsize: int, /) -> tuple[bytes, tuple[Any, ...]]:
-        return await self.__socket.recvfrom(bufsize)
+    async def recv(self) -> bytes:
+        data, _ = await self.__socket.recvfrom(MAX_DATAGRAM_BUFSIZE)
+        return data
 
-    async def sendto(self, data: bytes, address: tuple[Any, ...] | None, /) -> None:
-        if address is None:
-            await self.__socket.sendall(data)
-        else:
-            await self.__socket.sendto(data, address)
+    async def send(self, data: bytes | bytearray | memoryview) -> None:
+        await self.__socket.sendall(data)
 
-    def socket(self) -> asyncio.trsock.TransportSocket:
-        return self.__socket.socket
+    @property
+    def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
+        socket = self.__socket.socket
+        return _get_socket_extra(socket, wrap_in_proxy=False)

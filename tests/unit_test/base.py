@@ -3,7 +3,7 @@ from __future__ import annotations
 from socket import AF_INET, AF_INET6
 from typing import TYPE_CHECKING
 
-from easynetwork.tools.socket import AddressFamily
+from easynetwork.lowlevel.socket import AddressFamily
 
 from ._utils import get_all_socket_families
 

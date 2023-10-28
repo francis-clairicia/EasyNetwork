@@ -5,7 +5,7 @@ import logging
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from easynetwork.api_async.server import AsyncStreamClient, AsyncStreamRequestHandler
+from easynetwork.api_async.server import AsyncStreamClient, AsyncStreamRequestHandler, INETClientAttribute
 from easynetwork.exceptions import StreamProtocolParseError
 
 from ftp_command import FTPCommand
@@ -33,19 +33,20 @@ class FTPRequestHandler(AsyncStreamRequestHandler[FTPRequest, FTPReply]):
         self,
         client: AsyncStreamClient[FTPReply],
     ) -> AsyncGenerator[None, FTPRequest]:
+        client_address = client.extra(INETClientAttribute.remote_address)
         try:
             request: FTPRequest = yield
         except StreamProtocolParseError as exc:
             self.logger.warning(
                 "%s: %s: %s",
-                client.address,
+                client_address,
                 type(exc.error).__name__,
                 exc.error,
             )
             await client.send_packet(FTPReply.syntax_error())
             return
 
-        self.logger.info("Sent by client %s: %s", client.address, request)
+        self.logger.info("Sent by client %s: %s", client_address, request)
         match request:
             case FTPRequest(FTPCommand.NOOP):
                 await client.send_packet(FTPReply.ok())

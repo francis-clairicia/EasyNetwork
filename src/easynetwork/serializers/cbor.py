@@ -88,8 +88,8 @@ class CBORSerializer(FileBasedPacketSerializer[Any]):
             raise ModuleNotFoundError("cbor dependencies are missing. Consider adding 'cbor' extra") from exc
 
         super().__init__(expected_load_error=(cbor2.CBORDecodeError, UnicodeError))
-        self.__encoder_cls: Callable[[IO[bytes]], cbor2.CBOREncoder]  # type: ignore[no-any-unimported]
-        self.__decoder_cls: Callable[[IO[bytes]], cbor2.CBORDecoder]  # type: ignore[no-any-unimported]
+        self.__encoder_cls: Callable[[IO[bytes]], cbor2.CBOREncoder]  # type: ignore[no-any-unimported,unused-ignore]
+        self.__decoder_cls: Callable[[IO[bytes]], cbor2.CBORDecoder]  # type: ignore[no-any-unimported,unused-ignore]
 
         if encoder_config is None:
             encoder_config = CBOREncoderConfig()

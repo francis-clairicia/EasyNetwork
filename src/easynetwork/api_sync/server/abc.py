@@ -21,9 +21,11 @@ __all__ = [
 ]
 
 from abc import ABCMeta, abstractmethod
-from typing import TYPE_CHECKING, Any, Self
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Self
 
 from ...api_async.server.abc import SupportsEventSet
+from ...lowlevel.socket import SocketAddress
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -47,9 +49,6 @@ class AbstractNetworkServer(metaclass=ABCMeta):
     ) -> None:
         """Calls :meth:`server_close`."""
         self.server_close()
-
-    def __getstate__(self) -> Any:  # pragma: no cover
-        raise TypeError(f"cannot pickle {self.__class__.__name__!r} object")
 
     @abstractmethod
     def is_serving(self) -> bool:
@@ -91,5 +90,16 @@ class AbstractNetworkServer(metaclass=ABCMeta):
 
         Parameters:
             timeout: The maximum amount of seconds to wait.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_addresses(self) -> Sequence[SocketAddress]:
+        """
+        Returns all interfaces to which the server is bound. Thread-safe.
+
+        Returns:
+            A sequence of network socket address.
+            If the server is not serving (:meth:`is_serving` returns :data:`False`), an empty sequence is returned.
         """
         raise NotImplementedError
