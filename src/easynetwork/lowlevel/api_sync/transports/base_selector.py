@@ -24,6 +24,8 @@ __all__ = [
     "SelectorStreamReadTransport",
     "SelectorStreamTransport",
     "SelectorStreamWriteTransport",
+    "WouldBlockOnRead",
+    "WouldBlockOnWrite",
 ]
 
 import errno as _errno

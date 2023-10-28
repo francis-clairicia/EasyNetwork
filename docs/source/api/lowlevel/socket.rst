@@ -7,6 +7,16 @@ Socket Helpers
 Data Structures And Constants
 =============================
 
+.. autoclass:: SocketAttribute
+   :members:
+
+.. autoclass:: INETSocketAttribute
+   :members:
+   :inherited-members:
+
+.. autoclass:: TLSAttribute
+   :members:
+
 .. autoenum:: AddressFamily
    :members:
 
