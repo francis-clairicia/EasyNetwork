@@ -31,7 +31,7 @@ from collections.abc import Callable, Coroutine, Mapping
 from typing import TYPE_CHECKING, Any, Generic, NoReturn, TypeVar, final
 
 from easynetwork.lowlevel.api_async.transports import abc as transports
-from easynetwork.lowlevel.constants import ACCEPT_CAPACITY_ERRNOS, ACCEPT_CAPACITY_ERROR_SLEEP_TIME
+from easynetwork.lowlevel.constants import ACCEPT_CAPACITY_ERRNOS, ACCEPT_CAPACITY_ERROR_SLEEP_TIME, NOT_CONNECTED_SOCKET_ERRNOS
 from easynetwork.lowlevel.socket import _get_socket_extra
 
 from ..socket import AsyncSocket
@@ -107,7 +107,13 @@ class ListenerSocketAdapter(transports.AsyncListener[_T_Stream]):
             except BaseException as exc:
                 client_socket.close()
 
-                self.__accepted_socket_factory.log_connection_error(logger, exc)
+                if isinstance(exc, OSError) and exc.errno in NOT_CONNECTED_SOCKET_ERRNOS:
+                    # The remote host closed the connection before starting the task.
+                    # See this test for details:
+                    # test____serve_forever____accept_client____client_sent_RST_packet_right_after_accept
+                    logger.warning("A client connection was interrupted just after listener.accept()")
+                else:
+                    self.__accepted_socket_factory.log_connection_error(logger, exc)
 
                 # Only reraise base exceptions
                 if not isinstance(exc, Exception):

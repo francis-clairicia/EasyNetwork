@@ -13,7 +13,7 @@ from errno import errorcode as errno_errorcode
 from socket import SHUT_RDWR, SHUT_WR
 from typing import TYPE_CHECKING, Any
 
-from easynetwork.lowlevel.constants import ACCEPT_CAPACITY_ERRNOS
+from easynetwork.lowlevel.constants import ACCEPT_CAPACITY_ERRNOS, NOT_CONNECTED_SOCKET_ERRNOS
 from easynetwork.lowlevel.socket import SocketAttribute, TLSAttribute
 from easynetwork_asyncio.stream.listener import (
     AbstractAcceptedSocketFactory,
@@ -426,10 +426,19 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestSocket):
         accepted_socket_factory.connect.assert_awaited_once_with(client_socket, event_loop)
         handler.assert_awaited_once_with(stream)
 
-    @pytest.mark.parametrize("exception_cls", [Exception, asyncio.CancelledError, BaseException])
+    @pytest.mark.parametrize(
+        "exc",
+        [
+            *(OSError(errno, os.strerror(errno)) for errno in sorted(NOT_CONNECTED_SOCKET_ERRNOS)),
+            Exception(),
+            asyncio.CancelledError(),
+            BaseException(),
+        ],
+        ids=repr,
+    )
     async def test____serve____connect____error_raised(
         self,
-        exception_cls: type[BaseException],
+        exc: BaseException,
         event_loop: asyncio.AbstractEventLoop,
         listener: ListenerSocketAdapter[Any],
         mock_async_socket: MagicMock,
@@ -437,16 +446,17 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestSocket):
         handler: AsyncMock,
         mock_tcp_socket_factory: Callable[[], MagicMock],
         fake_cancellation_cls: type[BaseException],
+        caplog: pytest.LogCaptureFixture,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
+        caplog.set_level(logging.DEBUG)
         client_socket = mock_tcp_socket_factory()
-        exc = exception_cls()
         accepted_socket_factory.connect.side_effect = exc
         mock_async_socket.accept.side_effect = [client_socket, fake_cancellation_cls]
 
         # Act
-        with pytest.raises(BaseExceptionGroup) if exception_cls is BaseException else contextlib.nullcontext():
+        with pytest.raises(BaseExceptionGroup) if type(exc) is BaseException else contextlib.nullcontext():
             async with AsyncIOTaskGroup() as task_group:
                 with pytest.raises(fake_cancellation_cls):
                     await listener.serve(handler, task_group)
@@ -458,8 +468,15 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestSocket):
 
         match exc:
             case asyncio.CancelledError():
+                assert len(caplog.records) == 0
                 accepted_socket_factory.log_connection_error.assert_not_called()
+            case OSError():
+                # ENOTCONN error should not create a big Traceback error but only a warning (at least)
+                assert len(caplog.records) == 1
+                assert caplog.records[0].levelno == logging.WARNING
+                assert caplog.records[0].message == "A client connection was interrupted just after listener.accept()"
             case _:
+                assert len(caplog.records) == 0
                 accepted_socket_factory.log_connection_error.assert_called_once_with(
                     mocker.ANY,  # logger
                     exc,
