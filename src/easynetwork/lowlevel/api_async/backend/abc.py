@@ -168,18 +168,21 @@ class ICondition(ILock, Protocol):
 
     """
 
+    @abstractmethod
     def notify(self, n: int = ..., /) -> None:
         """
         Wake one or more tasks that are blocked in :meth:`wait`.
         """
         ...
 
+    @abstractmethod
     def notify_all(self) -> None:
         """
         Wake all tasks that are blocked in :meth:`wait`.
         """
         ...
 
+    @abstractmethod
     async def wait(self) -> Any:
         """
         Wait until notified.
