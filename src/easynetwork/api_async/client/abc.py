@@ -22,7 +22,7 @@ import math
 import time
 from abc import ABCMeta, abstractmethod
 from collections.abc import AsyncIterator
-from typing import TYPE_CHECKING, Any, Generic, Self
+from typing import TYPE_CHECKING, Generic, Self
 
 from ..._typevars import _ReceivedPacketT, _SentPacketT
 from ...lowlevel.socket import SocketAddress
@@ -57,9 +57,6 @@ class AbstractAsyncNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metacl
         Calls :meth:`aclose`.
         """
         await self.aclose()
-
-    def __getstate__(self) -> Any:  # pragma: no cover
-        raise TypeError(f"cannot pickle {self.__class__.__name__!r} object")
 
     @abstractmethod
     def is_connected(self) -> bool:

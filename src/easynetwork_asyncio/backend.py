@@ -260,8 +260,8 @@ class AsyncIOBackend(AbstractAsyncBackend):
         loop = asyncio.get_running_loop()
         factory = AcceptedSSLSocketFactory(
             ssl_context=ssl_context,
-            ssl_handshake_timeout=ssl_handshake_timeout,
-            ssl_shutdown_timeout=ssl_shutdown_timeout,
+            ssl_handshake_timeout=float(ssl_handshake_timeout),
+            ssl_shutdown_timeout=float(ssl_shutdown_timeout),
         )
         return [ListenerSocketAdapter(sock, loop, factory) for sock in sockets]
 

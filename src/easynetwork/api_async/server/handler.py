@@ -56,9 +56,6 @@ class AsyncBaseClientInterface(typed_attr.TypedAttributeProvider, Generic[_Respo
 
     __slots__ = ("__weakref__",)
 
-    def __getstate__(self) -> Any:  # pragma: no cover
-        raise TypeError(f"cannot pickle {self.__class__.__name__!r} object")
-
     @abstractmethod
     async def send_packet(self, packet: _ResponseT, /) -> None:
         """

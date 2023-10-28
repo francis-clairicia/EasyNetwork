@@ -75,19 +75,22 @@ class ILock(Protocol):
             lock.release()
     """
 
-    async def __aenter__(self) -> Any:  # pragma: no cover
+    @abstractmethod
+    async def __aenter__(self) -> Any:
         ...
 
+    @abstractmethod
     async def __aexit__(
         self,
         exc_type: type[BaseException] | None,
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
         /,
-    ) -> bool | None:  # pragma: no cover
+    ) -> bool | None:
         ...
 
-    async def acquire(self) -> Any:  # pragma: no cover
+    @abstractmethod
+    async def acquire(self) -> Any:
         """
         Acquires the lock.
 
@@ -98,7 +101,8 @@ class ILock(Protocol):
         """
         ...
 
-    def release(self) -> None:  # pragma: no cover
+    @abstractmethod
+    def release(self) -> None:
         """
         Releases the lock.
 
@@ -109,7 +113,8 @@ class ILock(Protocol):
         """
         ...
 
-    def locked(self) -> bool:  # pragma: no cover
+    @abstractmethod
+    def locked(self) -> bool:
         """
         Returns True if the lock is locked.
 
@@ -132,7 +137,8 @@ class IEvent(Protocol):
     gets called just before or after :meth:`wait`.
     """
 
-    async def wait(self) -> Any:  # pragma: no cover
+    @abstractmethod
+    async def wait(self) -> Any:
         """
         Blocks until the internal flag value becomes :data:`True`.
 
@@ -140,13 +146,15 @@ class IEvent(Protocol):
         """
         ...
 
-    def set(self) -> None:  # pragma: no cover
+    @abstractmethod
+    def set(self) -> None:
         """
         Sets the internal flag value to :data:`True`, and wake any waiting tasks.
         """
         ...
 
-    def is_set(self) -> bool:  # pragma: no cover
+    @abstractmethod
+    def is_set(self) -> bool:
         """
         Returns:
             the current value of the internal flag.
@@ -160,19 +168,19 @@ class ICondition(ILock, Protocol):
 
     """
 
-    def notify(self, n: int = ..., /) -> None:  # pragma: no cover
+    def notify(self, n: int = ..., /) -> None:
         """
         Wake one or more tasks that are blocked in :meth:`wait`.
         """
         ...
 
-    def notify_all(self) -> None:  # pragma: no cover
+    def notify_all(self) -> None:
         """
         Wake all tasks that are blocked in :meth:`wait`.
         """
         ...
 
-    async def wait(self) -> Any:  # pragma: no cover
+    async def wait(self) -> Any:
         """
         Wait until notified.
 

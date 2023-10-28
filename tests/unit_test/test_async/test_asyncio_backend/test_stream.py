@@ -4,11 +4,16 @@ from __future__ import annotations
 
 import asyncio
 import asyncio.trsock
+import contextlib
+import logging
+import os
 import ssl
 from collections.abc import Callable
+from errno import errorcode as errno_errorcode
 from socket import SHUT_RDWR, SHUT_WR
 from typing import TYPE_CHECKING, Any
 
+from easynetwork.lowlevel.constants import ACCEPT_CAPACITY_ERRNOS
 from easynetwork.lowlevel.socket import SocketAttribute, TLSAttribute
 from easynetwork_asyncio.stream.listener import (
     AbstractAcceptedSocketFactory,
@@ -17,6 +22,7 @@ from easynetwork_asyncio.stream.listener import (
     ListenerSocketAdapter,
 )
 from easynetwork_asyncio.stream.socket import AsyncioTransportStreamSocketAdapter, RawStreamSocketAdapter
+from easynetwork_asyncio.tasks import CancelScope, TaskGroup as AsyncIOTaskGroup
 
 import pytest
 
@@ -335,6 +341,13 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestSocket):
 
     @pytest.fixture
     @staticmethod
+    def handler(mocker: MockerFixture) -> AsyncMock:
+        handler = mocker.async_stub("handler")
+        handler.return_value = None
+        return handler
+
+    @pytest.fixture
+    @staticmethod
     def listener(
         event_loop: asyncio.AbstractEventLoop,
         mock_tcp_listener_socket: MagicMock,
@@ -382,6 +395,130 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestSocket):
 
         # Assert
         mock_async_socket.aclose.assert_awaited_once_with()
+
+    async def test____serve____default(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        listener: ListenerSocketAdapter[Any],
+        mock_async_socket: MagicMock,
+        accepted_socket_factory: MagicMock,
+        handler: AsyncMock,
+        mock_tcp_socket_factory: Callable[[], MagicMock],
+        mock_stream_socket_adapter_factory: Callable[[], MagicMock],
+        fake_cancellation_cls: type[BaseException],
+    ) -> None:
+        # Arrange
+        stream = mock_stream_socket_adapter_factory()
+        client_socket = mock_tcp_socket_factory()
+        accepted_socket_factory.connect.return_value = stream
+        mock_async_socket.accept.side_effect = [client_socket, fake_cancellation_cls]
+
+        # Act
+        async with AsyncIOTaskGroup() as task_group:
+            with pytest.raises(fake_cancellation_cls):
+                await listener.serve(handler, task_group)
+
+        # Assert
+        accepted_socket_factory.connect.assert_awaited_once_with(client_socket, event_loop)
+        handler.assert_awaited_once_with(stream)
+
+    @pytest.mark.parametrize("exception_cls", [Exception, asyncio.CancelledError, BaseException])
+    async def test____serve____connect____error_raised(
+        self,
+        exception_cls: type[BaseException],
+        event_loop: asyncio.AbstractEventLoop,
+        listener: ListenerSocketAdapter[Any],
+        mock_async_socket: MagicMock,
+        accepted_socket_factory: MagicMock,
+        handler: AsyncMock,
+        mock_tcp_socket_factory: Callable[[], MagicMock],
+        fake_cancellation_cls: type[BaseException],
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        client_socket = mock_tcp_socket_factory()
+        exc = exception_cls()
+        accepted_socket_factory.connect.side_effect = exc
+        mock_async_socket.accept.side_effect = [client_socket, fake_cancellation_cls]
+
+        # Act
+        with pytest.raises(BaseExceptionGroup) if exception_cls is BaseException else contextlib.nullcontext():
+            async with AsyncIOTaskGroup() as task_group:
+                with pytest.raises(fake_cancellation_cls):
+                    await listener.serve(handler, task_group)
+
+        # Assert
+        accepted_socket_factory.connect.assert_awaited_once_with(client_socket, event_loop)
+        handler.assert_not_awaited()
+        client_socket.close.assert_called_once_with()
+
+        match exc:
+            case asyncio.CancelledError():
+                accepted_socket_factory.log_connection_error.assert_not_called()
+            case _:
+                accepted_socket_factory.log_connection_error.assert_called_once_with(
+                    mocker.ANY,  # logger
+                    exc,
+                )
+
+    @pytest.mark.parametrize("errno_value", sorted(ACCEPT_CAPACITY_ERRNOS), ids=errno_errorcode.__getitem__)
+    async def test____serve____accept_capacity_error(
+        self,
+        errno_value: int,
+        listener: ListenerSocketAdapter[Any],
+        mock_async_socket: MagicMock,
+        accepted_socket_factory: MagicMock,
+        handler: AsyncMock,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        # Arrange
+        caplog.set_level(logging.ERROR)
+        accepted_socket_factory.connect.side_effect = AssertionError
+        mock_async_socket.accept.side_effect = OSError(errno_value, os.strerror(errno_value))
+
+        # Act
+        async with AsyncIOTaskGroup() as task_group:
+            # It retries every 100 ms, so in 950 ms it will retry at 0, 100, ..., 900
+            # = 10 times total
+            with CancelScope(deadline=asyncio.get_running_loop().time() + 0.950):
+                await listener.serve(handler, task_group)
+
+        # Assert
+        accepted_socket_factory.connect.assert_not_awaited()
+        handler.assert_not_awaited()
+        assert len(caplog.records) == 10
+        for record in caplog.records:
+            assert "retrying" in record.message
+            assert (
+                record.exc_info is not None
+                and isinstance(record.exc_info[1], OSError)
+                and record.exc_info[1].errno == errno_value
+            )
+
+    async def test____serve____reraise_other_OSErrors(
+        self,
+        listener: ListenerSocketAdapter[Any],
+        mock_async_socket: MagicMock,
+        accepted_socket_factory: MagicMock,
+        handler: AsyncMock,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        # Arrange
+        caplog.set_level(logging.ERROR)
+        accepted_socket_factory.connect.side_effect = AssertionError
+        exc = OSError()
+        mock_async_socket.accept.side_effect = exc
+
+        # Act
+        async with AsyncIOTaskGroup() as task_group:
+            with pytest.raises(OSError) as exc_info:
+                await listener.serve(handler, task_group)
+
+        # Assert
+        accepted_socket_factory.connect.assert_not_awaited()
+        handler.assert_not_awaited()
+        assert len(caplog.records) == 0
+        assert exc_info.value is exc
 
     async def test____get_extra_info____returns_socket_info(
         self,
@@ -471,6 +608,25 @@ class TestAcceptedSocketFactory(BaseTestTransportStreamSocket, BaseTestSocket):
         use_asyncio_transport: bool,
     ) -> AcceptedSocketFactory:
         return AcceptedSocketFactory(use_asyncio_transport=use_asyncio_transport)
+
+    async def test____log_connection_error____error_log(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        accepted_socket: AcceptedSocketFactory,
+    ) -> None:
+        # Arrange
+        logger = logging.getLogger(__name__)
+        caplog.set_level(logging.ERROR, logger.name)
+        exc = BaseException()
+
+        # Act
+        accepted_socket.log_connection_error(logger, exc)
+
+        # Assert
+        assert len(caplog.records) == 1
+        assert caplog.records[0].levelno == logging.ERROR
+        assert caplog.records[0].message == "Error in client task"
+        assert caplog.records[0].exc_info is not None and caplog.records[0].exc_info[1] is exc
 
     async def test____connect____creates_new_stream_socket(
         self,
@@ -602,6 +758,25 @@ class TestAcceptedSSLSocketFactory(BaseTestTransportStreamSocket):
             ssl_handshake_timeout=ssl_handshake_timeout,
             ssl_shutdown_timeout=ssl_shutdown_timeout,
         )
+
+    async def test____log_connection_error____error_log(
+        self,
+        caplog: pytest.LogCaptureFixture,
+        accepted_socket: AcceptedSocketFactory,
+    ) -> None:
+        # Arrange
+        logger = logging.getLogger(__name__)
+        caplog.set_level(logging.ERROR, logger.name)
+        exc = BaseException()
+
+        # Act
+        accepted_socket.log_connection_error(logger, exc)
+
+        # Assert
+        assert len(caplog.records) == 1
+        assert caplog.records[0].levelno == logging.ERROR
+        assert caplog.records[0].message == "Error in client task (during TLS handshake)"
+        assert caplog.records[0].exc_info is not None and caplog.records[0].exc_info[1] is exc
 
     async def test____connect____creates_new_stream_socket(
         self,

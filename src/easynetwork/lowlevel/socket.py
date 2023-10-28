@@ -41,6 +41,7 @@ import functools
 import os
 import socket as _socket
 import threading
+from abc import abstractmethod
 from collections.abc import Callable
 from enum import IntEnum, unique
 from struct import Struct
@@ -231,28 +232,34 @@ def new_socket_address(addr: tuple[Any, ...], family: int) -> SocketAddress:
 @runtime_checkable
 class SupportsSocketOptions(Protocol):
     @overload
+    @abstractmethod
     def getsockopt(self, level: int, optname: int, /) -> int:
         ...
 
     @overload
+    @abstractmethod
     def getsockopt(self, level: int, optname: int, buflen: int, /) -> bytes:
         ...
 
-    def getsockopt(self, *args: Any) -> int | bytes:  # pragma: no cover
+    @abstractmethod
+    def getsockopt(self, *args: Any) -> int | bytes:
         """
         Similar to :meth:`socket.socket.getsockopt`.
         """
         ...
 
     @overload
+    @abstractmethod
     def setsockopt(self, level: int, optname: int, value: int | bytes, /) -> None:
         ...
 
     @overload
+    @abstractmethod
     def setsockopt(self, level: int, optname: int, value: None, optlen: int, /) -> None:
         ...
 
-    def setsockopt(self, *args: Any) -> None:  # pragma: no cover
+    @abstractmethod
+    def setsockopt(self, *args: Any) -> None:
         """
         Similar to :meth:`socket.socket.setsockopt`.
         """
@@ -261,45 +268,52 @@ class SupportsSocketOptions(Protocol):
 
 @runtime_checkable
 class ISocket(SupportsSocketOptions, Protocol):
-    def fileno(self) -> int:  # pragma: no cover
+    @abstractmethod
+    def fileno(self) -> int:
         """
         Similar to :meth:`socket.socket.fileno`.
         """
         ...
 
-    def get_inheritable(self) -> bool:  # pragma: no cover
+    @abstractmethod
+    def get_inheritable(self) -> bool:
         """
         Similar to :meth:`socket.socket.get_inheritable`.
         """
         ...
 
-    def getpeername(self) -> _socket._RetAddress:  # pragma: no cover
+    @abstractmethod
+    def getpeername(self) -> _socket._RetAddress:
         """
         Similar to :meth:`socket.socket.getpeername`.
         """
         ...
 
-    def getsockname(self) -> _socket._RetAddress:  # pragma: no cover
+    @abstractmethod
+    def getsockname(self) -> _socket._RetAddress:
         """
         Similar to :meth:`socket.socket.getsockname`.
         """
         ...
 
-    @property  # pragma: no cover
+    @property
+    @abstractmethod
     def family(self) -> int:
         """
         Similar to :attr:`socket.socket.family`.
         """
         ...
 
-    @property  # pragma: no cover
+    @property
+    @abstractmethod
     def type(self) -> int:
         """
         Similar to :attr:`socket.socket.type`.
         """
         ...
 
-    @property  # pragma: no cover
+    @property
+    @abstractmethod
     def proto(self) -> int:
         """
         Similar to :attr:`socket.socket.proto`.
@@ -384,9 +398,6 @@ class SocketProxy:
                 pass
 
         return f"{s}>"
-
-    def __getstate__(self) -> Any:  # pragma: no cover
-        raise TypeError(f"cannot pickle {self.__class__.__name__!r} object")
 
     def __execute(self, func: Callable[_P, _R], /, *args: _P.args, **kwargs: _P.kwargs) -> _R:
         with lock_ctx() if (lock_ctx := self.__lock_ctx) is not None else contextlib.nullcontext():

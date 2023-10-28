@@ -22,7 +22,7 @@ __all__ = [
 
 from abc import ABCMeta, abstractmethod
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, Self
+from typing import TYPE_CHECKING, Self
 
 from ...api_async.server.abc import SupportsEventSet
 from ...lowlevel.socket import SocketAddress
@@ -49,9 +49,6 @@ class AbstractNetworkServer(metaclass=ABCMeta):
     ) -> None:
         """Calls :meth:`server_close`."""
         self.server_close()
-
-    def __getstate__(self) -> Any:  # pragma: no cover
-        raise TypeError(f"cannot pickle {self.__class__.__name__!r} object")
 
     @abstractmethod
     def is_serving(self) -> bool:

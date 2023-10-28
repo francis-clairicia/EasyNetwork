@@ -134,8 +134,8 @@ class ThreadsPortal(AbstractThreadsPortal):
                     raise _exception_with_notes(TypeError(msg), note)
             except BaseException as exc:
                 future.set_exception(exc)
-                if isinstance(exc, (SystemExit, KeyboardInterrupt)):  # pragma: no cover
-                    raise
+                if isinstance(exc, (SystemExit, KeyboardInterrupt)):
+                    raise  # pragma: no cover
             else:
                 future.set_result(result)
 

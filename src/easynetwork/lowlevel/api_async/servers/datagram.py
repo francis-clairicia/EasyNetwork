@@ -117,58 +117,50 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, 
     async def serve(
         self,
         datagram_received_cb: Callable[[_T_Address, Self], AsyncGenerator[None, _RequestT]],
-        task_group: TaskGroup | None = None,
+        task_group: TaskGroup,
     ) -> NoReturn:
         with self.__serve_guard:
             client_coroutine = self.__client_coroutine
             client_manager = self.__client_manager
             backend = self.__backend
 
-            async with self.__ensure_task_group(task_group) as task_group:
+            async def handler(datagram: bytes, address: _T_Address, /) -> None:
+                with client_manager.datagram_queue(address) as datagram_queue:
+                    datagram_queue.append(datagram)
 
-                @_utils.prepend_argument(task_group)
-                async def handler(task_group: TaskGroup, datagram: bytes, address: _T_Address, /) -> None:
-                    with client_manager.datagram_queue(address) as datagram_queue:
-                        datagram_queue.append(datagram)
+                    # client_coroutine() is running (or will be run) if datagram_queue was not empty
+                    # Therefore, start a new task only if there was no previous datagrams
+                    if len(datagram_queue) > 1:
+                        return
 
-                        # client_coroutine() is running (or will be run) if datagram_queue was not empty
-                        # Therefore, start a new task only if there was no previous datagrams
-                        if len(datagram_queue) > 1:
-                            return
+                del datagram_queue, datagram
 
-                    del datagram_queue, datagram
+                client_state = client_manager.client_state(address)
+                match client_state:
+                    case None:
+                        # Start a new task
+                        await client_coroutine(datagram_received_cb, address, task_group)
+                    case _ClientState.TASK_WAITING:
+                        # Wake up the idle task
+                        async with client_manager.lock(address) as condition:
+                            condition.notify()
+                    case _ClientState.TASK_RUNNING:
+                        # Do nothing
+                        pass
+                    case _:  # pragma: no cover
+                        assert_never(client_state)
 
-                    client_state = client_manager.client_state(address)
-                    match client_state:
-                        case None:
-                            # Start a new task
-                            await client_coroutine(datagram_received_cb, address, task_group)
-                        case _ClientState.TASK_WAITING:
-                            # Wake up the idle task
-                            async with client_manager.lock(address) as condition:
-                                condition.notify()
-                        case _ClientState.TASK_RUNNING:
-                            # Do nothing
-                            pass
-                        case _:  # pragma: no cover
-                            assert_never(client_state)
-
-                while True:
-                    datagram, address = await self.__listener.recv_from()
-                    task_group.start_soon(handler, datagram, address)
-                    del datagram, address
-                    await backend.cancel_shielded_coro_yield()
+            while True:
+                datagram, address = await self.__listener.recv_from()
+                task_group.start_soon(handler, datagram, address)
+                del datagram, address
+                await backend.cancel_shielded_coro_yield()
 
     def get_backend(self) -> AsyncBackend:
         """
         Return the underlying backend interface.
         """
         return self.__backend
-
-    def __ensure_task_group(self, task_group: TaskGroup | None) -> contextlib.AbstractAsyncContextManager[TaskGroup]:
-        if task_group is None:
-            return self.__backend.create_task_group()
-        return contextlib.nullcontext(task_group)
 
     async def __client_coroutine(
         self,
@@ -250,7 +242,7 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, 
         /,
     ) -> None:
         if exc_type is not None and not issubclass(exc_type, self.__backend.get_cancelled_exc_class()):
-            datagram_queue.clear()
+            datagram_queue.clear()  # pragma: no cover
 
     @classmethod
     async def __request_factory(

@@ -23,7 +23,7 @@ __all__ = [
 
 from abc import ABCMeta, abstractmethod
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any, NoReturn, Protocol, Self
+from typing import TYPE_CHECKING, NoReturn, Protocol, Self
 
 from ...lowlevel.socket import SocketAddress
 
@@ -38,7 +38,8 @@ class SupportsEventSet(Protocol):
     A :class:`threading.Event`-like object.
     """
 
-    def set(self) -> None:  # pragma: no cover
+    @abstractmethod
+    def set(self) -> None:
         """
         Notifies that the event has happened.
 
@@ -65,9 +66,6 @@ class AbstractAsyncNetworkServer(metaclass=ABCMeta):
     ) -> None:
         """Calls :meth:`server_close`."""
         await self.server_close()
-
-    def __getstate__(self) -> Any:  # pragma: no cover
-        raise TypeError(f"cannot pickle {self.__class__.__name__!r} object")
 
     @abstractmethod
     def is_serving(self) -> bool:

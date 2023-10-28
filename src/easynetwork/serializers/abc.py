@@ -23,7 +23,7 @@ __all__ = [
 
 from abc import ABCMeta, abstractmethod
 from collections.abc import Generator
-from typing import Any, Generic
+from typing import Generic
 
 from .._typevars import _DTOPacketT
 from ..exceptions import DeserializeError
@@ -37,9 +37,6 @@ class AbstractPacketSerializer(Generic[_DTOPacketT], metaclass=ABCMeta):
     """
 
     __slots__ = ("__weakref__",)
-
-    def __getstate__(self) -> Any:  # pragma: no cover
-        raise TypeError(f"cannot pickle {self.__class__.__name__!r} object")
 
     @abstractmethod
     def serialize(self, packet: _DTOPacketT, /) -> bytes:

@@ -28,7 +28,7 @@ import os
 import socket as _socket
 from abc import abstractmethod
 from collections.abc import Callable, Coroutine, Mapping
-from typing import TYPE_CHECKING, Any, Final, Generic, NoReturn, TypeVar, final
+from typing import TYPE_CHECKING, Any, Generic, NoReturn, TypeVar, final
 
 from easynetwork.lowlevel.api_async.transports import abc as transports
 from easynetwork.lowlevel.constants import ACCEPT_CAPACITY_ERRNOS, ACCEPT_CAPACITY_ERROR_SLEEP_TIME
@@ -48,20 +48,15 @@ if TYPE_CHECKING:
 _T_Stream = TypeVar("_T_Stream", bound=AsyncioTransportStreamSocketAdapter | RawStreamSocketAdapter)
 
 
-logger: Final[logging.Logger] = logging.getLogger(__name__)
-
-
 async def connect_accepted_socket(
+    loop: asyncio.AbstractEventLoop,
     sock: _socket.socket,
     *,
     limit: int = 65536,
     ssl: _ssl.SSLContext | None = None,
     ssl_handshake_timeout: float | None = None,
     ssl_shutdown_timeout: float | None = None,
-    loop: asyncio.AbstractEventLoop | None = None,
 ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
-    if loop is None:
-        loop = asyncio.get_running_loop()
     reader = asyncio.streams.StreamReader(limit=limit, loop=loop)
     protocol = asyncio.streams.StreamReaderProtocol(reader, loop=loop)
     transport, _ = await loop.connect_accepted_socket(
@@ -101,18 +96,20 @@ class ListenerSocketAdapter(transports.AsyncListener[_T_Stream]):
     async def serve(self, handler: Callable[[_T_Stream], Coroutine[Any, Any, None]], task_group: AbstractTaskGroup) -> NoReturn:
         connect = self.__accepted_socket_factory.connect
         loop = self.__socket.loop
+        logger = logging.getLogger(__name__)
 
         async def client_task(client_socket: _socket.socket) -> None:
             try:
                 stream = await connect(client_socket, loop)
             except asyncio.CancelledError:
+                client_socket.close()
                 raise
             except BaseException as exc:
                 client_socket.close()
 
                 self.__accepted_socket_factory.log_connection_error(logger, exc)
 
-                # Only reraise base exceptions and cancellation exceptions
+                # Only reraise base exceptions
                 if not isinstance(exc, Exception):
                     raise
             else:
@@ -172,7 +169,7 @@ class AcceptedSocketFactory(AbstractAcceptedSocketFactory[AsyncioTransportStream
         if not self.use_asyncio_transport:
             return RawStreamSocketAdapter(socket, loop)
 
-        reader, writer = await connect_accepted_socket(socket, loop=loop)
+        reader, writer = await connect_accepted_socket(loop, socket)
         return AsyncioTransportStreamSocketAdapter(reader, writer)
 
 
@@ -192,10 +189,10 @@ class AcceptedSSLSocketFactory(AbstractAcceptedSocketFactory[AsyncioTransportStr
         loop: asyncio.AbstractEventLoop,
     ) -> AsyncioTransportStreamSocketAdapter:
         reader, writer = await connect_accepted_socket(
+            loop,
             socket,
             ssl=self.ssl_context,
             ssl_handshake_timeout=self.ssl_handshake_timeout,
             ssl_shutdown_timeout=self.ssl_shutdown_timeout,
-            loop=loop,
         )
         return AsyncioTransportStreamSocketAdapter(reader, writer)
