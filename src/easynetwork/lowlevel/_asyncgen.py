@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""Low-level asynchronous server module"""
+"""Async generators helper module"""
 
 from __future__ import annotations
 
@@ -20,56 +20,38 @@ __all__ = []  # type: list[str]
 
 import dataclasses
 from abc import ABCMeta, abstractmethod
-from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator
 from typing import Any, Generic, TypeVar
 
-_T = TypeVar("_T")
+_T_Send = TypeVar("_T_Send")
+_T_Yield = TypeVar("_T_Yield")
 
 
-class Action(Generic[_T], metaclass=ABCMeta):
+class AsyncGenAction(Generic[_T_Yield, _T_Send], metaclass=ABCMeta):
     __slots__ = ()
 
     @abstractmethod
-    async def asend(self, generator: AsyncGenerator[None, _T]) -> None:
+    async def asend(self, generator: AsyncGenerator[_T_Yield, _T_Send]) -> _T_Yield:
         raise NotImplementedError
 
 
 @dataclasses.dataclass(slots=True)
-class RequestAction(Action[_T]):
-    request: _T
+class SendAction(AsyncGenAction[_T_Yield, _T_Send]):
+    value: _T_Send
 
-    async def asend(self, generator: AsyncGenerator[None, _T]) -> None:
+    async def asend(self, generator: AsyncGenerator[_T_Yield, _T_Send]) -> _T_Yield:
         try:
-            await generator.asend(self.request)
+            return await generator.asend(self.value)
         finally:
             del self
 
 
 @dataclasses.dataclass(slots=True)
-class ErrorAction(Action[Any]):
+class ThrowAction(AsyncGenAction[_T_Yield, Any]):
     exception: BaseException
 
-    async def asend(self, generator: AsyncGenerator[None, Any]) -> None:
+    async def asend(self, generator: AsyncGenerator[_T_Yield, Any]) -> _T_Yield:
         try:
-            await generator.athrow(self.exception)
+            return await generator.athrow(self.exception)
         finally:
             del generator, self  # Needed to avoid circular reference with raised exception
-
-
-@dataclasses.dataclass(slots=True)
-class ActionIterator(Generic[_T]):
-    request_factory: Callable[[], Awaitable[_T]]
-
-    def __aiter__(self) -> AsyncIterator[Action[_T]]:
-        return self
-
-    async def __anext__(self) -> Action[_T]:
-        try:
-            request = await self.request_factory()
-        except StopAsyncIteration:
-            raise
-        except BaseException as exc:
-            return ErrorAction(exc)
-        finally:
-            del self
-        return RequestAction(request)

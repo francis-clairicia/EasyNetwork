@@ -24,10 +24,9 @@ from typing import Any, Generic, NoReturn
 
 from .... import protocol as protocol_module
 from ...._typevars import _RequestT, _ResponseT
-from ... import _stream, _utils, typed_attr
+from ... import _asyncgen, _stream, _utils, typed_attr
 from ..backend.abc import AsyncBackend, TaskGroup
 from ..transports import abc as transports, utils as transports_utils
-from ._tools.actions import ActionIterator as _ActionIterator
 
 
 class AsyncStreamClient(typed_attr.TypedAttributeProvider, Generic[_ResponseT]):
@@ -179,36 +178,30 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, _R
                 except StopAsyncIteration:
                     return
 
-                request_factory = _utils.make_callback(self.__request_factory, transport, consumer, self.__max_recv_size)
-                async for action in _ActionIterator(request_factory):
+                bufsize: int = self.__max_recv_size
+                action: _asyncgen.AsyncGenAction[None, _RequestT]
+                while not transport.is_closing():
+                    try:
+                        try:
+                            action = _asyncgen.SendAction(next(consumer))
+                        except StopIteration:
+                            data: bytes = await transport.recv(bufsize)
+                            if not data:  # Closed connection (EOF)
+                                break
+                            try:
+                                consumer.feed(data)
+                            finally:
+                                del data
+                            continue
+                    except BaseException as exc:
+                        action = _asyncgen.ThrowAction(exc)
+
                     try:
                         await action.asend(request_handler_generator)
                     except StopAsyncIteration:
                         break
                     finally:
                         del action
-
-    @classmethod
-    async def __request_factory(
-        cls,
-        transport: transports.AsyncStreamReadTransport,
-        consumer: _stream.StreamDataConsumer[_RequestT],
-        bufsize: int,
-        /,
-    ) -> _RequestT:
-        while not transport.is_closing():
-            try:
-                return next(consumer)
-            except StopIteration:
-                pass
-            data: bytes = await transport.recv(bufsize)
-            if not data:  # Closed connection (EOF)
-                break
-            try:
-                consumer.feed(data)
-            finally:
-                del data
-        raise StopAsyncIteration
 
     @property
     def max_recv_size(self) -> int:

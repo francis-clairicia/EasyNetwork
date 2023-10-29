@@ -21,13 +21,13 @@ __all__ = ["AsyncUDPNetworkServer"]
 import contextlib
 import logging
 import weakref
-from collections import deque
+from collections import defaultdict, deque
 from collections.abc import AsyncGenerator, Callable, Coroutine, Iterator, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Generic, NoReturn, final
 
 from ..._typevars import _RequestT, _ResponseT
 from ...exceptions import ClientClosedError, ServerAlreadyRunning, ServerClosedError
-from ...lowlevel import _utils
+from ...lowlevel import _asyncgen, _utils
 from ...lowlevel.api_async.backend.factory import AsyncBackendFactory
 from ...lowlevel.api_async.servers import datagram as lowlevel_datagram_server
 from ...lowlevel.api_async.transports.abc import AsyncDatagramListener
@@ -55,6 +55,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         "__is_shutdown",
         "__shutdown_asked",
         "__clients_cache",
+        "__send_locks_cache",
         "__servers_tasks",
         "__mainloop_task",
         "__logger",
@@ -121,7 +122,16 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         self.__servers_tasks: deque[Task[NoReturn]] = deque()  # type: ignore[assignment]
         self.__mainloop_task: Task[NoReturn] | None = None
         self.__logger: logging.Logger = logger or logging.getLogger(__name__)
-        self.__clients_cache: weakref.WeakValueDictionary[SocketAddress, _ClientAPI[_ResponseT]] = weakref.WeakValueDictionary()
+        self.__clients_cache: defaultdict[
+            lowlevel_datagram_server.AsyncDatagramServer[_RequestT, _ResponseT, tuple[Any, ...]],
+            weakref.WeakValueDictionary[SocketAddress, _ClientAPI[_ResponseT]],
+        ]
+        self.__send_locks_cache: defaultdict[
+            lowlevel_datagram_server.AsyncDatagramServer[_RequestT, _ResponseT, tuple[Any, ...]],
+            weakref.WeakValueDictionary[SocketAddress, ILock],
+        ]
+        self.__clients_cache = defaultdict(weakref.WeakValueDictionary)
+        self.__send_locks_cache = defaultdict(weakref.WeakValueDictionary)
 
     def is_serving(self) -> bool:
         return self.__servers is not None and all(not server.is_closing() for server in self.__servers)
@@ -210,6 +220,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             ################
 
             # Initialize request handler
+            server_exit_stack.callback(self.__send_locks_cache.clear)
             server_exit_stack.callback(self.__clients_cache.clear)
             await self.__request_handler.service_init(
                 await server_exit_stack.enter_async_context(contextlib.AsyncExitStack()),
@@ -243,7 +254,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             finally:
                 self.__mainloop_task = None
 
-        raise AssertionError("received_datagrams() does not return")
+        raise AssertionError("sleep_forever() does not return")
 
     serve_forever.__doc__ = AbstractAsyncNetworkServer.serve_forever.__doc__
 
@@ -262,26 +273,31 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
     ) -> AsyncGenerator[None, _RequestT]:
         address = new_socket_address(address, server.extra(INETSocketAttribute.family))
         with self.__suppress_and_log_remaining_exception(client_address=address):
+            send_locks_cache = self.__send_locks_cache[server]
             try:
-                client = self.__clients_cache[address]
+                send_lock = send_locks_cache[address]
             except KeyError:
-                self.__clients_cache[address] = client = _ClientAPI(address, server, self.__backend.create_lock(), self.__logger)
+                send_locks_cache[address] = send_lock = self.__backend.create_lock()
+
+            clients_cache = self.__clients_cache[server]
+            try:
+                client = clients_cache[address]
+            except KeyError:
+                clients_cache[address] = client = _ClientAPI(address, server, send_lock, self.__logger)
 
             async with contextlib.aclosing(self.__request_handler.handle(client)) as request_handler_generator:
-                del client
+                del client, send_lock
                 try:
                     await anext(request_handler_generator)
                 except StopAsyncIteration:
                     return
 
-                from ...lowlevel.api_async.servers._tools.actions import ErrorAction, RequestAction
-
-                action: RequestAction[_RequestT] | ErrorAction
+                action: _asyncgen.AsyncGenAction[None, _RequestT]
                 while True:
                     try:
-                        action = RequestAction((yield))
+                        action = _asyncgen.SendAction((yield))
                     except BaseException as exc:
-                        action = ErrorAction(exc)
+                        action = _asyncgen.ThrowAction(exc)
                     try:
                         await action.asend(request_handler_generator)
                     except StopAsyncIteration:

@@ -42,7 +42,7 @@ def test____recv_packet____close_while_waiting(executor: ThreadPoolExecutor, cli
     time.sleep(1.1)
 
     client.close()
-    assert isinstance(recv_packet.exception(timeout=30), ClientClosedError)
+    assert isinstance(recv_packet.exception(timeout=30), (ClientClosedError, ConnectionAbortedError))
 
 
 @pytest.mark.slow

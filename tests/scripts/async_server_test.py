@@ -24,7 +24,7 @@ class MyAsyncRequestHandler(AsyncStreamRequestHandler[str, str], AsyncDatagramRe
 
     async def handle(self, client: AsyncBaseClientInterface[str]) -> AsyncGenerator[None, str]:
         request: str = yield
-        logger.debug(f"Received {request!r}")
+        logger.debug(f"Received {request!r} from {client!r}")
         if request == "wait:":
             request = (yield) + " after wait"
         await client.send_packet(request.upper())

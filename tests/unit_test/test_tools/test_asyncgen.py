@@ -2,20 +2,20 @@ from __future__ import annotations
 
 import sys
 from collections.abc import AsyncGenerator
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from easynetwork.lowlevel.api_async.servers._tools.actions import ActionIterator, ErrorAction, RequestAction
+from easynetwork.lowlevel._asyncgen import SendAction, ThrowAction
 
 import pytest
 
 if TYPE_CHECKING:
-    from unittest.mock import AsyncMock, MagicMock
+    from unittest.mock import MagicMock
 
     from pytest_mock import MockerFixture
 
 
 @pytest.mark.asyncio
-class TestAction:
+class TestAsyncGenAction:
     @pytest.fixture
     @staticmethod
     def mock_generator(mocker: MockerFixture) -> MagicMock:
@@ -25,34 +25,38 @@ class TestAction:
         mock_generator.aclose.return_value = None
         return mock_generator
 
-    async def test____RequestAction____send_request(self, mock_generator: MagicMock, mocker: MockerFixture) -> None:
+    async def test____SendAction____send_value(self, mock_generator: MagicMock, mocker: MockerFixture) -> None:
         # Arrange
-        action = RequestAction(mocker.sentinel.request)
+        mock_generator.asend.return_value = mocker.sentinel.to_yield_from_send
+        action: SendAction[Any, Any] = SendAction(mocker.sentinel.value)
 
         # Act
-        await action.asend(mock_generator)
+        to_yield = await action.asend(mock_generator)
 
         # Assert
-        assert mock_generator.mock_calls == [mocker.call.asend(mocker.sentinel.request)]
-        mock_generator.asend.assert_awaited_once_with(mocker.sentinel.request)
+        assert mock_generator.mock_calls == [mocker.call.asend(mocker.sentinel.value)]
+        mock_generator.asend.assert_awaited_once_with(mocker.sentinel.value)
+        assert to_yield is mocker.sentinel.to_yield_from_send
 
-    async def test____ErrorAction____throw_exception(self, mock_generator: MagicMock, mocker: MockerFixture) -> None:
+    async def test____ThrowAction____throw_exception(self, mock_generator: MagicMock, mocker: MockerFixture) -> None:
         # Arrange
         exc = ValueError("abc")
-        action = ErrorAction(exc)
+        mock_generator.athrow.return_value = mocker.sentinel.to_yield_from_throw
+        action: ThrowAction[Any] = ThrowAction(exc)
 
         # Act
-        await action.asend(mock_generator)
+        to_yield = await action.asend(mock_generator)
 
         # Assert
         assert mock_generator.mock_calls == [mocker.call.athrow(exc)]
         mock_generator.athrow.assert_awaited_once_with(exc)
+        assert to_yield is mocker.sentinel.to_yield_from_throw
 
     # Test taken from "outcome" project (https://github.com/python-trio/outcome)
     async def test____ErrorAction____does_not_create_reference_cycles(self, mock_generator: MagicMock) -> None:
         # Arrange
         exc = ValueError("abc")
-        action = ErrorAction(exc)
+        action: ThrowAction[Any] = ThrowAction(exc)
         mock_generator.athrow.side_effect = exc
 
         # Act
@@ -71,30 +75,3 @@ class TestAction:
         unwrap_frame = exc.__traceback__.tb_next.tb_frame
         assert unwrap_frame.f_code.co_name == "asend"
         assert unwrap_frame.f_locals == {}
-
-
-@pytest.mark.asyncio
-class TestActionIterator:
-    @pytest.fixture
-    @staticmethod
-    def request_factory(mocker: MockerFixture) -> AsyncMock:
-        return mocker.AsyncMock(spec=lambda: None)
-
-    async def test____dunder_aiter____return_self(self, request_factory: AsyncMock) -> None:
-        # Arrange
-        action_iterator = ActionIterator(request_factory)
-
-        # Act & Assert
-        assert aiter(action_iterator) is action_iterator
-
-    async def test____dunder_anext____yield_actions(self, request_factory: AsyncMock, mocker: MockerFixture) -> None:
-        # Arrange
-        exc = BaseException()
-        request_factory.side_effect = [mocker.sentinel.request, exc, StopAsyncIteration]
-
-        # Act
-        actions = [action async for action in ActionIterator(request_factory)]
-
-        # Assert
-        assert request_factory.await_count == 3
-        assert actions == [RequestAction(mocker.sentinel.request), ErrorAction(exc)]
