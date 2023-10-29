@@ -132,7 +132,7 @@ class GeneratorStreamReader:
 
         On success, the data and separator will be removed from the internal buffer (consumed).
 
-        If the amount of data read exceeds `limit`, a :exc:`LimitOverrunError` exception is raised,
+        If the amount of data read exceeds `limit`, a :exc:`.LimitOverrunError` exception is raised,
         and the data is left in the internal buffer and can be read again.
 
         Example::
@@ -140,8 +140,8 @@ class GeneratorStreamReader:
             def incremental_deserialize(self) -> Generator[None, bytes, tuple[Packet, bytes]]:
                 reader = GeneratorStreamReader()
 
-                line: bytes = yield from reader.read_until(b"\n", limit=65535)
-                assert line.endswith(b"\n")
+                line: bytes = yield from reader.read_until(b"\r\n", limit=65535)
+                assert line.endswith(b"\r\n")
 
                 ...
 
