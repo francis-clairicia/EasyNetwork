@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING, Any, Generic, NoReturn, final
 
 from ..._typevars import _RequestT, _ResponseT
 from ...exceptions import ClientClosedError, ServerAlreadyRunning, ServerClosedError
-from ...lowlevel import _utils, constants
+from ...lowlevel import _asyncgen, _utils, constants
 from ...lowlevel.api_async.backend.factory import AsyncBackendFactory
 from ...lowlevel.api_async.servers import stream as lowlevel_stream_server
 from ...lowlevel.socket import (
@@ -393,23 +393,22 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
             del client_exit_stack
 
-            from ...lowlevel.api_async.servers._tools.actions import ErrorAction, RequestAction
-
             try:
-                if client.is_closing():
-                    return
-                if request_handler_generator is None:
-                    request_handler_generator = await self.__new_request_handler(client)
+                action: _asyncgen.AsyncGenAction[None, _RequestT]
+                while not client.is_closing():
                     if request_handler_generator is None:
-                        return
-                action: RequestAction[_RequestT] | ErrorAction
-                while True:
+                        request_handler_generator = self.__request_handler.handle(client)
+                        try:
+                            await anext(request_handler_generator)
+                        except StopAsyncIteration:
+                            request_handler_generator = None
+                            break
                     try:
-                        action = RequestAction((yield))
+                        action = _asyncgen.SendAction((yield))
                     except ConnectionError:
-                        return
+                        break
                     except BaseException as exc:
-                        action = ErrorAction(exc)
+                        action = _asyncgen.ThrowAction(exc)
                     try:
                         await action.asend(request_handler_generator)
                     except StopAsyncIteration:
@@ -417,23 +416,9 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                     finally:
                         del action
                     await backend.cancel_shielded_coro_yield()
-                    if client.is_closing():
-                        break
-                    if request_handler_generator is None:
-                        request_handler_generator = await self.__new_request_handler(client)
-                        if request_handler_generator is None:
-                            break
             finally:
                 if request_handler_generator is not None:
                     await request_handler_generator.aclose()
-
-    async def __new_request_handler(self, client: _ConnectedClientAPI[_ResponseT]) -> AsyncGenerator[None, _RequestT] | None:
-        request_handler_generator = self.__request_handler.handle(client)
-        try:
-            await anext(request_handler_generator)
-        except StopAsyncIteration:
-            return None
-        return request_handler_generator
 
     @staticmethod
     def __set_socket_linger_if_not_closed(socket: ISocket) -> None:

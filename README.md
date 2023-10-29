@@ -88,7 +88,7 @@ class EchoRequestHandler(AsyncStreamRequestHandler[RequestType, ResponseType]):
             await client.send_packet({"error": "Invalid JSON", "code": "parse_error"})
             return
 
-        self.logger.info(f"{client.address} sent {request!r}")
+        self.logger.info(f"{client!r} sent {request!r}")
 
         # As a good echo handler, the request is sent back to the client
         response: ResponseType = request

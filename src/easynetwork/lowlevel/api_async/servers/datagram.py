@@ -29,10 +29,9 @@ from typing import Any, Generic, NoReturn, Self, TypeVar, assert_never
 
 from .... import protocol as protocol_module
 from ...._typevars import _RequestT, _ResponseT
-from ... import _utils, typed_attr
+from ... import _asyncgen, _utils, typed_attr
 from ..backend.abc import AsyncBackend, ICondition, ILock, TaskGroup
 from ..transports import abc as transports
-from ._tools.actions import ActionIterator as _ActionIterator
 
 _T_Address = TypeVar("_T_Address", bound=Hashable)
 _KT = TypeVar("_KT")
@@ -123,6 +122,7 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, 
             client_coroutine = self.__client_coroutine
             client_manager = self.__client_manager
             backend = self.__backend
+            listener = self.__listener
 
             async def handler(datagram: bytes, address: _T_Address, /) -> None:
                 with client_manager.datagram_queue(address) as datagram_queue:
@@ -151,7 +151,7 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, 
                         assert_never(client_state)
 
             while True:
-                datagram, address = await self.__listener.recv_from()
+                datagram, address = await listener.recv_from()
                 task_group.start_soon(handler, datagram, address)
                 del datagram, address
                 await backend.cancel_shielded_coro_yield()
@@ -200,15 +200,17 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, 
                     del datagram_queue[0]
                     return
 
-                request_factory = _utils.make_callback(
-                    self.__request_factory,
-                    datagram_queue,
-                    address,
-                    client_manager,
-                    condition,
-                    self.__protocol,
-                )
-                async for action in _ActionIterator(request_factory):
+                protocol = self.__protocol
+                action: _asyncgen.AsyncGenAction[None, _RequestT]
+                while True:
+                    try:
+                        if not datagram_queue:
+                            with client_manager.set_client_state(address, _ClientState.TASK_WAITING):
+                                await condition.wait()
+                            self.__check_datagram_queue_not_empty(datagram_queue)
+                        action = _asyncgen.SendAction(protocol.build_packet_from_datagram(datagram_queue.popleft()))
+                    except BaseException as exc:
+                        action = _asyncgen.ThrowAction(exc)
                     try:
                         await action.asend(request_handler_generator)
                     except StopAsyncIteration:
@@ -241,24 +243,8 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, 
         exc_tb: TracebackType | None,
         /,
     ) -> None:
-        if exc_type is not None and not issubclass(exc_type, self.__backend.get_cancelled_exc_class()):
-            datagram_queue.clear()  # pragma: no cover
-
-    @classmethod
-    async def __request_factory(
-        cls,
-        datagram_queue: deque[bytes],
-        address: _T_Address,
-        client_manager: _ClientManager[_T_Address],
-        condition: ICondition,
-        protocol: protocol_module.DatagramProtocol[_ResponseT, _RequestT],
-        /,
-    ) -> _RequestT:
-        if not datagram_queue:
-            with client_manager.set_client_state(address, _ClientState.TASK_WAITING):
-                await condition.wait()
-            cls.__check_datagram_queue_not_empty(datagram_queue)
-        return protocol.build_packet_from_datagram(datagram_queue.popleft())
+        if exc_type is not None:
+            datagram_queue.clear()
 
     @staticmethod
     def __check_datagram_queue_not_empty(datagram_queue: deque[bytes]) -> None:
