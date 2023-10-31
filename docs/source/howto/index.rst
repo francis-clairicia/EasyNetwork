@@ -8,4 +8,6 @@ How-to Guide
    protocols
    serializers
    tcp_clients
+   udp_clients
    tcp_servers
+   udp_servers

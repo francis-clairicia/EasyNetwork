@@ -237,6 +237,9 @@ At each :keyword:`yield` checkpoint, the endpoint implementation sends the data 
 
 .. seealso::
 
+   :doc:`/api/serializers/tools`
+      Regroups helpers for (incremental) serializer implementations.
+
    :pep:`255` — Simple Generators
       The proposal for adding generators and the :keyword:`yield` statement to Python.
 

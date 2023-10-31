@@ -49,9 +49,9 @@ class MinimumRequestHandler(AsyncStreamRequestHandler[Request, Response]):
         #################
 
         ### On a 'return'
-        # When handle() returns, this means that the handling of ONE request
-        # has finished. There is no connection close or whatever.
-        # The server will immediately create a new generator.
+        # When handle() returns, it means that this request handler is finished.
+        # It does not close the connection or anything.
+        # The server immediately creates a new generator.
         #################
         return
 
