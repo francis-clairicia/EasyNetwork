@@ -116,6 +116,7 @@ exclude = [
   ".github/",
   ".vscode/",
   ".bumpversion.cfg",
+  ".readthedocs.yaml",
 ]
 
 [tool.hatch.build.targets.wheel]
