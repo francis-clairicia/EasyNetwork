@@ -42,18 +42,17 @@ keywords = [
 ]
 
 [project.urls]
-# TODO: "Homepage" will be the documentation URL
-Homepage = "https://github.com/francis-clairicia/EasyNetwork"
+Documentation = "https://easynetwork.readthedocs.io/en/latest/"
 "Issue Tracker" = "https://github.com/francis-clairicia/EasyNetwork/issues"
 "Release Notes" = "https://github.com/francis-clairicia/EasyNetwork/releases"
 "Source Code" = "https://github.com/francis-clairicia/EasyNetwork"
 
 [project.optional-dependencies]
 cbor = [
-    "cbor2>=5.4,<6",
+    "cbor2>=5.5,<6",
 ]
 msgpack = [
-    "msgpack>=1.0.5",
+    "msgpack>=1.0.7,<2",
 ]
 encryption = [
     "cryptography>=39",
@@ -80,7 +79,7 @@ format = [
     "black>=22.6.0",
 ]
 mypy = [
-    "mypy~=1.5.1",
+    "mypy~=1.6.0",
     "types-cryptography>=3.3.23.2",
     "msgpack-types>=0.2.0",
 ]

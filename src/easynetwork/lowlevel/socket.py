@@ -431,7 +431,7 @@ class SocketProxy:
         """
         Calls :meth:`ISocket.getsockopt <SupportsSocketOptions.getsockopt>`.
         """
-        return self.__execute(self.__socket.getsockopt, *args)
+        return self.__execute(self.__socket.getsockopt, *args)  # type: ignore[arg-type]
 
     @overload
     def setsockopt(self, level: int, optname: int, value: int | bytes, /) -> None:
@@ -445,7 +445,7 @@ class SocketProxy:
         """
         Calls :meth:`ISocket.setsockopt <SupportsSocketOptions.setsockopt>`.
         """
-        return self.__execute(self.__socket.setsockopt, *args)
+        return self.__execute(self.__socket.setsockopt, *args)  # type: ignore[arg-type]
 
     def getpeername(self) -> _socket._RetAddress:
         """

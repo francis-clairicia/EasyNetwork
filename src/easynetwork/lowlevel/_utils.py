@@ -86,7 +86,7 @@ def prepend_argument(arg: _T_Arg) -> Callable[[Callable[Concatenate[_T_Arg, _P],
     def decorator(func: Callable[Concatenate[_T_Arg, _P], _R], /) -> Callable[_P, _R]:
         return functools.partial(func, arg)
 
-    return decorator  # type: ignore[return-value]
+    return decorator
 
 
 def error_from_errno(errno: int) -> OSError:
