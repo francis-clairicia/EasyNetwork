@@ -1,5 +1,7 @@
 changelog:
   exclude:
+    labels:
+      - ignore-for-release
     authors:
       - pre-commit-ci  # autoupdate PRs: Only affects development
       - dependabot  # dependabot is configured to check github actions' pinned version in workflows
