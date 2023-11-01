@@ -52,7 +52,7 @@ templates_path = []
 exclude_patterns = ["_include", "_extensions"]
 
 
-# -- sphinx.ext.autodoc configuration -------------------------------------------
+# -- sphinx.ext.autodoc configuration ----------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/extensions/autodoc.html
 
 autoclass_content = "both"
@@ -92,7 +92,7 @@ intersphinx_mapping = {
 }
 
 
-# -- sphinx.ext.napoleon configuration -------------------------------------------
+# -- sphinx.ext.napoleon configuration ---------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/extensions/napoleon.html
 
 napoleon_numpy_docstring = False
@@ -131,9 +131,14 @@ github_repository = "EasyNetwork"
 html_theme = "sphinx_rtd_theme"
 html_static_path = []
 
-# -- sphinx-rtd-theme configuration -------------------------------------
+# -- sphinx-rtd-theme configuration ------------------------------------------
 # https://sphinx-rtd-theme.readthedocs.io/en/stable/configuring.html
 
 html_theme_options = {
     "navigation_depth": -1,  # Unlimited
 }
+
+# -- Options for the linkcheck builder ---------------------------------------
+# https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-the-linkcheck-builder
+
+linkcheck_timeout = 1
