@@ -371,9 +371,9 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
             request_handler_generator: AsyncGenerator[None, _RequestT] | None = None
             _on_connection_hook = self.__request_handler.on_connection(client)
-            if inspect.isasyncgen(_on_connection_hook):
+            if isinstance(_on_connection_hook, AsyncGenerator):
                 try:
-                    await _on_connection_hook.asend(None)
+                    await anext(_on_connection_hook)
                 except StopAsyncIteration:
                     pass
                 else:
