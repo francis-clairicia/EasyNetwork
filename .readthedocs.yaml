@@ -8,8 +8,9 @@ build:
     post_create_environment:
       - pip install --no-cache-dir pdm==2.9.2
       - pdm config check_update false
+      - pdm use -f $READTHEDOCS_VIRTUALENV_PATH
     post_install:
-      - pdm sync --no-self --dev --group=doc
+      - pdm sync --dev --group=doc
     pre_build:
       - python -m sphinx -b linkcheck docs/source/ $READTHEDOCS_OUTPUT/linkcheck
 
