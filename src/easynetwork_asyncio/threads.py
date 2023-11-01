@@ -85,7 +85,21 @@ class ThreadsPortal(AbstractThreadsPortal):
             future: concurrent.futures.Future[_T] = concurrent.futures.Future()
 
             async def coroutine() -> None:
+                def on_fut_done(future: concurrent.futures.Future[_T]) -> None:
+                    if future.cancelled():
+                        try:
+                            self.run_sync(task.cancel)
+                        except RuntimeError:
+                            # on_fut_done() called from coroutine()
+                            # or the portal is already shut down
+                            pass
+
+                task = TaskUtils.current_asyncio_task()
                 try:
+                    if future.cancelled():
+                        task.cancel()
+                    else:
+                        future.add_done_callback(on_fut_done)
                     result = await coro_func(*args, **kwargs)
                 except asyncio.CancelledError:
                     future.cancel()
@@ -102,20 +116,9 @@ class ThreadsPortal(AbstractThreadsPortal):
 
             task = self.__task_group.create_task(coroutine())
             loop = task.get_loop()
+            del task
             with self.__lock.get():
                 loop.call_soon(self.__register_waiter(self.__call_soon_waiters, loop).set_result, None)
-
-            def on_fut_done(future: concurrent.futures.Future[_T]) -> None:
-                if future.cancelled():
-                    try:
-                        self.run_sync(task.cancel)
-                    except RuntimeError:
-                        # on_fut_done() called from coroutine()
-                        # or the portal is already shut down
-                        pass
-
-            future.add_done_callback(on_fut_done)
-
             return future
 
         return self.run_sync(schedule_task)

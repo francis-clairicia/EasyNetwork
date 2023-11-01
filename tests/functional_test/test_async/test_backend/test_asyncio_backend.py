@@ -973,6 +973,43 @@ class TestAsyncioBackend:
 
         cancellation_ignored.assert_called_once()
 
+    async def test____create_threads_portal____run_coroutine_soon____future_cancelled_before_await(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        backend: AsyncIOBackend,
+    ) -> None:
+        checkpoints: list[str] = []
+
+        async def coroutine() -> None:
+            current_task = asyncio.current_task()
+            assert current_task is not None
+
+            checkpoints.append(f"{current_task.cancelling()=}")
+            await asyncio.sleep(0)
+            checkpoints.append("does-not-raise-CancelledError")
+
+        def thread() -> None:
+            future = threads_portal.run_coroutine_soon(coroutine)
+            future.cancel()
+
+            wait_concurrent_futures({future}, timeout=5)  # Test if future.set_running_or_notify_cancel() have been called
+            assert future.cancelled()
+
+        event_loop_slowdown_handle: asyncio.Handle
+
+        def event_loop_slowdown() -> None:  # Drastically slow down event loop
+            nonlocal event_loop_slowdown_handle
+
+            time.sleep(0.5)
+            event_loop_slowdown_handle = event_loop.call_soon(event_loop_slowdown)
+
+        event_loop_slowdown_handle = event_loop.call_soon(event_loop_slowdown)
+        async with backend.create_threads_portal() as threads_portal:
+            await backend.run_in_thread(thread)
+
+        event_loop_slowdown_handle.cancel()
+        assert checkpoints == ["current_task.cancelling()=1"]
+
     async def test____create_threads_portal____context_exit____wait_scheduled_call_soon(
         self,
         event_loop: asyncio.AbstractEventLoop,
