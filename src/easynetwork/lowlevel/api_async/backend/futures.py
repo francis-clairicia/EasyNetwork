@@ -210,7 +210,7 @@ class AsyncExecutor:
             if _sniffio_current_async_library_cvar is not None:
                 ctx.run(_sniffio_current_async_library_cvar.set, None)
 
-            func = functools.partial(ctx.run, func)  # type: ignore[assignment]
+            func = functools.partial(ctx.run, func)
         return func
 
 

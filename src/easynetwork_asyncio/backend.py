@@ -390,9 +390,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
         if _sniffio_current_async_library_cvar is not None:
             ctx.run(_sniffio_current_async_library_cvar.set, None)
 
-        func_call: Callable[..., _T] = functools.partial(ctx.run, func, *args, **kwargs)  # type: ignore[assignment]
-        future = loop.run_in_executor(None, func_call)
-        del func_call, func, args, kwargs
+        future = loop.run_in_executor(None, functools.partial(ctx.run, func, *args, **kwargs))
         try:
             await TaskUtils.cancel_shielded_wait_asyncio_futures({future})
             return future.result()
