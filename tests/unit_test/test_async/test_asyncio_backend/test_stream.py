@@ -499,9 +499,9 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestSocket):
 
         # Act
         async with AsyncIOTaskGroup() as task_group:
-            # It retries every 100 ms, so in 950 ms it will retry at 0, 100, ..., 900
+            # It retries every 100 ms, so in 975 ms it will retry at 0, 100, ..., 900
             # = 10 times total
-            with CancelScope(deadline=asyncio.get_running_loop().time() + 0.950):
+            with CancelScope(deadline=asyncio.get_running_loop().time() + 0.975):
                 await listener.serve(handler, task_group)
 
         # Assert

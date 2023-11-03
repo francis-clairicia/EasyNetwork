@@ -30,7 +30,7 @@ from typing import IO, Any, final
 from .._typevars import _DTOPacketT
 from ..exceptions import DeserializeError, IncrementalDeserializeError
 from ..lowlevel.constants import _DEFAULT_LIMIT
-from .abc import AbstractIncrementalPacketSerializer, AbstractPacketSerializer
+from .abc import AbstractIncrementalPacketSerializer
 from .tools import GeneratorStreamReader
 
 
@@ -241,7 +241,7 @@ class FixedSizePacketSerializer(AbstractIncrementalPacketSerializer[_DTOPacketT]
         return self.__size
 
 
-class FileBasedPacketSerializer(AbstractPacketSerializer[_DTOPacketT]):
+class FileBasedPacketSerializer(AbstractIncrementalPacketSerializer[_DTOPacketT]):
     """
     Base class for APIs requiring a :std:term:`file object` for serialization/deserialization.
     """
