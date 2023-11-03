@@ -32,6 +32,8 @@ class BaseTestSerializer(metaclass=ABCMeta):
         serializer_for_serialization: AbstractPacketSerializer[Any],
         serializer_for_deserialization: AbstractPacketSerializer[Any],
     ) -> None:
+        assert isinstance(serializer_for_serialization, AbstractPacketSerializer)
+        assert isinstance(serializer_for_deserialization, AbstractPacketSerializer)
         assert type(serializer_for_serialization) is type(serializer_for_deserialization)
 
     def test____slots____no_dict(
@@ -125,6 +127,14 @@ class BaseTestIncrementalSerializer(BaseTestSerializer):
     @staticmethod
     def invalid_partial_data_extra_data() -> bytes | None:
         return b"remaining_data"
+
+    def test____fixture____consistency____incremental_serializer(
+        self,
+        serializer_for_serialization: AbstractIncrementalPacketSerializer[Any],
+        serializer_for_deserialization: AbstractIncrementalPacketSerializer[Any],
+    ) -> None:
+        assert isinstance(serializer_for_serialization, AbstractIncrementalPacketSerializer)
+        assert isinstance(serializer_for_deserialization, AbstractIncrementalPacketSerializer)
 
     def test____incremental_serialize____concatenated_chunks(
         self,
