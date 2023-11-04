@@ -398,26 +398,25 @@ class AsyncIOBackend(AbstractAsyncBackend):
         return ThreadsPortal()
 
     async def wait_future(self, future: concurrent.futures.Future[_T_co]) -> _T_co:
-        if not future.done():
-            future_wrapper = asyncio.wrap_future(future)
-            try:
+        try:
+            loop = asyncio.get_running_loop()
+            while not future.done():
+                waiter: asyncio.Future[None] = loop.create_future()
+
+                def on_fut_done(future: concurrent.futures.Future[_T_co]) -> None:
+                    loop.call_soon_threadsafe(waiter.set_result, None)
+
+                future.add_done_callback(on_fut_done)
+
                 # If future.cancel() failed, that means future.set_running_or_notify_cancel() has been called
                 # and set future in RUNNING state.
                 # This future cannot be cancelled anymore, therefore it must be awaited.
-                await TaskUtils.cancel_shielded_wait_asyncio_futures({future_wrapper}, abort_func=future.cancel)
+                await TaskUtils.cancel_shielded_wait_asyncio_futures({waiter}, abort_func=future.cancel)
 
-                # Unwrap "future_wrapper" to prevent reports about unhandled exceptions.
-                if not future_wrapper.cancelled():
-                    del future
-                    return future_wrapper.result()
-            finally:
-                del future_wrapper
-
-        try:
             if future.cancelled():
                 # Task cancellation prevails over future cancellation
                 await asyncio.sleep(0)
-            return future.result(timeout=0)
+            return future.result()
         finally:
             del future
 
