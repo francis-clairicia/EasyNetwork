@@ -40,10 +40,9 @@ else:
     ssl = _ssl
     del _ssl
 
-from easynetwork.lowlevel.api_async.backend.abc import AsyncBackend as AbstractAsyncBackend
-from easynetwork.lowlevel.api_async.backend.sniffio import current_async_library_cvar as _sniffio_current_async_library_cvar
-
-from ._utils import create_connection, ensure_resolved, open_listener_sockets_from_getaddrinfo_result
+from ..api_async.backend.abc import AsyncBackend as AbstractAsyncBackend
+from ..api_async.backend.sniffio import current_async_library_cvar as _sniffio_current_async_library_cvar
+from ._asyncio_utils import create_connection, ensure_resolved, open_listener_sockets_from_getaddrinfo_result
 from .datagram.endpoint import create_datagram_endpoint
 from .datagram.listener import AsyncioTransportDatagramListenerSocketAdapter, RawDatagramListenerSocketAdapter
 from .datagram.socket import AsyncioTransportDatagramSocketAdapter, RawDatagramSocketAdapter
@@ -56,7 +55,7 @@ if TYPE_CHECKING:
     import concurrent.futures
     from ssl import SSLContext as _SSLContext
 
-    from easynetwork.lowlevel.api_async.backend.abc import ILock
+    from ..api_async.backend.abc import ILock
 
 _P = ParamSpec("_P")
 _T = TypeVar("_T")

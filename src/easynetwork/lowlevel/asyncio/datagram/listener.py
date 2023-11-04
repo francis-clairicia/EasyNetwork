@@ -25,10 +25,8 @@ import socket as _socket
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any, final
 
-from easynetwork.lowlevel.api_async.transports import abc as transports
-from easynetwork.lowlevel.constants import MAX_DATAGRAM_BUFSIZE
-from easynetwork.lowlevel.socket import _get_socket_extra
-
+from ... import constants, socket as socket_tools
+from ...api_async.transports import abc as transports
 from ..socket import AsyncSocket
 
 if TYPE_CHECKING:
@@ -79,7 +77,7 @@ class AsyncioTransportDatagramListenerSocketAdapter(transports.AsyncDatagramList
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         socket = self.__socket
-        return _get_socket_extra(socket, wrap_in_proxy=False)
+        return socket_tools._get_socket_extra(socket, wrap_in_proxy=False)
 
 
 @final
@@ -101,7 +99,7 @@ class RawDatagramListenerSocketAdapter(transports.AsyncDatagramListener[tuple[An
         return await self.__socket.aclose()
 
     async def recv_from(self) -> tuple[bytes, tuple[Any, ...]]:
-        return await self.__socket.recvfrom(MAX_DATAGRAM_BUFSIZE)
+        return await self.__socket.recvfrom(constants.MAX_DATAGRAM_BUFSIZE)
 
     async def send_to(self, data: bytes | bytearray | memoryview, address: tuple[Any, ...]) -> None:
         await self.__socket.sendto(data, address)
@@ -109,4 +107,4 @@ class RawDatagramListenerSocketAdapter(transports.AsyncDatagramListener[tuple[An
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         socket = self.__socket.socket
-        return _get_socket_extra(socket, wrap_in_proxy=False)
+        return socket_tools._get_socket_extra(socket, wrap_in_proxy=False)

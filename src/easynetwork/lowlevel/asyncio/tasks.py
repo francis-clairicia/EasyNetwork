@@ -28,11 +28,7 @@ from collections.abc import Callable, Coroutine, Iterable, Iterator
 from typing import TYPE_CHECKING, Any, NamedTuple, Self, TypeVar, final
 from weakref import WeakKeyDictionary
 
-from easynetwork.lowlevel.api_async.backend.abc import (
-    CancelScope as AbstractCancelScope,
-    Task as AbstractTask,
-    TaskGroup as AbstractTaskGroup,
-)
+from ..api_async.backend.abc import CancelScope as AbstractCancelScope, Task as AbstractTask, TaskGroup as AbstractTaskGroup
 
 if TYPE_CHECKING:
     from types import TracebackType

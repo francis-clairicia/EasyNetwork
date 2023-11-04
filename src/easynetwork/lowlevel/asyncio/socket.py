@@ -28,8 +28,7 @@ from collections.abc import Iterator
 from typing import TYPE_CHECKING, Literal, Self, TypeAlias
 from weakref import WeakSet
 
-from easynetwork.lowlevel._utils import check_socket_no_ssl as _check_socket_no_ssl, error_from_errno as _error_from_errno
-
+from .. import _utils
 from .tasks import CancelScope, TaskUtils
 
 if TYPE_CHECKING:
@@ -55,7 +54,7 @@ class AsyncSocket:
     def __init__(self, socket: _socket.socket, loop: asyncio.AbstractEventLoop) -> None:
         super().__init__()
 
-        _check_socket_no_ssl(socket)
+        _utils.check_socket_no_ssl(socket)
         socket.setblocking(False)
 
         self.__socket: _socket.socket | None = socket
@@ -151,7 +150,7 @@ class AsyncSocket:
     @contextlib.contextmanager
     def __conflict_detection(self, task_id: _SocketTaskId, *, abort_errno: int = _errno.EINTR) -> Iterator[None]:
         if task_id in self.__waiters:
-            raise _error_from_errno(_errno.EBUSY)
+            raise _utils.error_from_errno(_errno.EBUSY)
 
         _ = TaskUtils.current_asyncio_task(self.__loop)
 
@@ -168,11 +167,11 @@ class AsyncSocket:
             yield
 
         if scope.cancelled_caught():
-            raise _error_from_errno(abort_errno)
+            raise _utils.error_from_errno(abort_errno)
 
     def __check_not_closed(self) -> _socket.socket:
         if (socket := self.__socket) is None:
-            raise _error_from_errno(_errno.ENOTSOCK)
+            raise _utils.error_from_errno(_errno.ENOTSOCK)
         return socket
 
     @property

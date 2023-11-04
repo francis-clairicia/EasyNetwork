@@ -25,7 +25,7 @@ import socket as _socket
 from collections.abc import Iterable, Sequence
 from typing import Any
 
-from easynetwork.lowlevel._utils import set_reuseport as _set_reuseport
+from .. import _utils
 
 
 async def ensure_resolved(
@@ -159,7 +159,7 @@ def open_listener_sockets_from_getaddrinfo_result(
                     # Will fail later on bind()
                     pass
             if reuse_port:
-                _set_reuseport(sock)
+                _utils.set_reuseport(sock)
             # Disable IPv4/IPv6 dual stack support (enabled by
             # default on Linux) which makes a single socket
             # listen on both address families.
@@ -179,7 +179,7 @@ def open_listener_sockets_from_getaddrinfo_result(
 
         if errors:
             # No need to call errors.clear(), this is done by exit stack
-            raise ExceptionGroup("Error when trying to create TCP listeners", errors)
+            raise ExceptionGroup("Error when trying to create listeners", errors)
 
         # There were no errors, therefore do not close the sockets
         socket_exit_stack.pop_all()

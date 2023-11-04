@@ -26,11 +26,9 @@ import inspect
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, ParamSpec, Self, TypeVar, final
 
-from easynetwork.lowlevel._lock import ForkSafeLock
-from easynetwork.lowlevel._utils import exception_with_notes as _exception_with_notes
-from easynetwork.lowlevel.api_async.backend.abc import ThreadsPortal as AbstractThreadsPortal
-from easynetwork.lowlevel.api_async.backend.sniffio import current_async_library_cvar as _sniffio_current_async_library_cvar
-
+from .. import _lock, _utils
+from ..api_async.backend.abc import ThreadsPortal as AbstractThreadsPortal
+from ..api_async.backend.sniffio import current_async_library_cvar as _sniffio_current_async_library_cvar
 from .tasks import TaskUtils
 
 if TYPE_CHECKING:
@@ -47,7 +45,7 @@ class ThreadsPortal(AbstractThreadsPortal):
     def __init__(self) -> None:
         super().__init__()
         self.__loop: asyncio.AbstractEventLoop | None = None
-        self.__lock = ForkSafeLock()
+        self.__lock = _lock.ForkSafeLock()
         self.__task_group: asyncio.TaskGroup = asyncio.TaskGroup()
         self.__call_soon_waiters: set[asyncio.Future[None]] = set()
 
@@ -134,7 +132,7 @@ class ThreadsPortal(AbstractThreadsPortal):
                     result.close()  # Prevent ResourceWarnings
                     msg = "func is a coroutine function."
                     note = "You should use run_coroutine() or run_coroutine_soon() instead."
-                    raise _exception_with_notes(TypeError(msg), note)
+                    raise _utils.exception_with_notes(TypeError(msg), note)
             except BaseException as exc:
                 future.set_exception(exc)
                 if isinstance(exc, (SystemExit, KeyboardInterrupt)):

@@ -30,10 +30,8 @@ from abc import abstractmethod
 from collections.abc import Callable, Coroutine, Mapping
 from typing import TYPE_CHECKING, Any, Generic, NoReturn, TypeVar, final
 
-from easynetwork.lowlevel.api_async.transports import abc as transports
-from easynetwork.lowlevel.constants import ACCEPT_CAPACITY_ERRNOS, ACCEPT_CAPACITY_ERROR_SLEEP_TIME, NOT_CONNECTED_SOCKET_ERRNOS
-from easynetwork.lowlevel.socket import _get_socket_extra
-
+from ... import constants, socket as socket_tools
+from ...api_async.transports import abc as transports
 from ..socket import AsyncSocket
 from ..tasks import TaskUtils
 from .socket import AsyncioTransportStreamSocketAdapter, RawStreamSocketAdapter
@@ -42,7 +40,7 @@ if TYPE_CHECKING:
     import asyncio.trsock
     import ssl as _ssl
 
-    from easynetwork.lowlevel.api_async.backend.abc import TaskGroup as AbstractTaskGroup
+    from ...api_async.backend.abc import TaskGroup as AbstractTaskGroup
 
 
 _T_Stream = TypeVar("_T_Stream", bound=AsyncioTransportStreamSocketAdapter | RawStreamSocketAdapter)
@@ -107,7 +105,7 @@ class ListenerSocketAdapter(transports.AsyncListener[_T_Stream]):
             except BaseException as exc:
                 client_socket.close()
 
-                if isinstance(exc, OSError) and exc.errno in NOT_CONNECTED_SOCKET_ERRNOS:
+                if isinstance(exc, OSError) and exc.errno in constants.NOT_CONNECTED_SOCKET_ERRNOS:
                     # The remote host closed the connection before starting the task.
                     # See this test for details:
                     # test____serve_forever____accept_client____client_sent_RST_packet_right_after_accept
@@ -125,15 +123,15 @@ class ListenerSocketAdapter(transports.AsyncListener[_T_Stream]):
             try:
                 client_socket = await self.__socket.accept()
             except OSError as exc:
-                if exc.errno in ACCEPT_CAPACITY_ERRNOS:
+                if exc.errno in constants.ACCEPT_CAPACITY_ERRNOS:
                     logger.error(
                         "accept returned %s (%s); retrying in %s seconds",
                         _errno.errorcode[exc.errno],
                         os.strerror(exc.errno),
-                        ACCEPT_CAPACITY_ERROR_SLEEP_TIME,
+                        constants.ACCEPT_CAPACITY_ERROR_SLEEP_TIME,
                         exc_info=exc,
                     )
-                    await asyncio.sleep(ACCEPT_CAPACITY_ERROR_SLEEP_TIME)
+                    await asyncio.sleep(constants.ACCEPT_CAPACITY_ERROR_SLEEP_TIME)
                 else:
                     raise
             else:
@@ -144,7 +142,7 @@ class ListenerSocketAdapter(transports.AsyncListener[_T_Stream]):
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         socket = self.__socket.socket
-        return _get_socket_extra(socket, wrap_in_proxy=False)
+        return socket_tools._get_socket_extra(socket, wrap_in_proxy=False)
 
 
 class AbstractAcceptedSocketFactory(Generic[_T_Stream]):
