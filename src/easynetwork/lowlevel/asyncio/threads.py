@@ -87,17 +87,20 @@ class ThreadsPortal(AbstractThreadsPortal):
                 def on_fut_done(future: concurrent.futures.Future[_T]) -> None:
                     if future.cancelled():
                         if self.__is_in_this_loop_thread(loop):
-                            task.cancel()
+                            if not cancelling:
+                                task.cancel()
                             return
                         with contextlib.suppress(RuntimeError):
                             self.run_sync(task.cancel)
 
                 task = TaskUtils.current_asyncio_task()
                 loop = task.get_loop()
+                cancelling: bool = False
                 try:
                     future.add_done_callback(on_fut_done)
                     result = await coro_func(*args, **kwargs)
                 except asyncio.CancelledError:
+                    cancelling = True
                     future.cancel()
                     future.set_running_or_notify_cancel()
                     raise
