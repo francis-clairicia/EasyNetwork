@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, Any
 
-from easynetwork_asyncio.tasks import Task, TaskUtils
+from easynetwork.lowlevel.asyncio.tasks import Task, TaskUtils
 
 import pytest
 

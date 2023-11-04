@@ -119,7 +119,7 @@ exclude = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/easynetwork", "src/easynetwork_asyncio"]
+packages = ["src/easynetwork"]
 
 [tool.hatch.version]
 path = "src/easynetwork/__init__.py"
@@ -132,7 +132,7 @@ profile = "black"
 line_length = 130
 combine_as_imports = true
 sections = ["FUTURE", "STDLIB", "EASYNETWORK", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"]
-known_easynetwork = ["easynetwork", "easynetwork_asyncio"]
+known_easynetwork = ["easynetwork"]
 add_imports = ["from __future__ import annotations"]
 extend_skip = [
     "docs/source/conf.py"
@@ -187,7 +187,6 @@ markers = [
 branch = true
 source_pkgs = [
     "easynetwork",
-    "easynetwork_asyncio",
 ]
 relative_files = true
 disable_warnings = [

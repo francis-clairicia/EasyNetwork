@@ -162,9 +162,11 @@ class AsyncBackendFactory:
         backends: dict[str, EntryPoint] = {ep.name: ep for ep in entry_points}
 
         if "asyncio" not in backends:
+            from importlib.util import resolve_name
+
             backends["asyncio"] = EntryPoint(
                 name="asyncio",
-                value="easynetwork_asyncio:AsyncIOBackend",
+                value=f"{resolve_name('...asyncio', __package__)}:AsyncIOBackend",
                 group=AsyncBackendFactory.GROUP_NAME,
             )
 

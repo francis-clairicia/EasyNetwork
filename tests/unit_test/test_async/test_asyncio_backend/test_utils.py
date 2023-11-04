@@ -26,7 +26,7 @@ from socket import (
 from typing import TYPE_CHECKING, Any, Literal, assert_never, cast
 
 from easynetwork.lowlevel._utils import error_from_errno
-from easynetwork_asyncio._utils import create_connection, ensure_resolved, open_listener_sockets_from_getaddrinfo_result
+from easynetwork.lowlevel.asyncio._utils import create_connection, ensure_resolved, open_listener_sockets_from_getaddrinfo_result
 
 import pytest
 

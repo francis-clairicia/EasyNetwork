@@ -46,9 +46,6 @@ You choose the data format and the library takes care of the rest.
 
 Works with TCP and UDP.
 
-### Documentation
-Coming soon.
-
 ## Usage
 ### TCP Echo server with JSON data
 ```py

@@ -9,7 +9,7 @@ from errno import EBUSY, ECONNABORTED, EINTR, ENOTSOCK
 from socket import SHUT_RD, SHUT_RDWR, SHUT_WR, socket as Socket
 from typing import TYPE_CHECKING, Any, final
 
-from easynetwork_asyncio.socket import AsyncSocket
+from easynetwork.lowlevel.asyncio.socket import AsyncSocket
 
 import pytest
 

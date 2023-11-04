@@ -20,12 +20,12 @@ from easynetwork.exceptions import (
     StreamProtocolParseError,
 )
 from easynetwork.lowlevel.api_async.backend.abc import AsyncBackend
+from easynetwork.lowlevel.asyncio._utils import create_connection
+from easynetwork.lowlevel.asyncio.backend import AsyncIOBackend
+from easynetwork.lowlevel.asyncio.stream.listener import ListenerSocketAdapter
+from easynetwork.lowlevel.asyncio.stream.socket import AsyncioTransportStreamSocketAdapter, RawStreamSocketAdapter
 from easynetwork.lowlevel.socket import SocketAddress, enable_socket_linger
 from easynetwork.protocol import StreamProtocol
-from easynetwork_asyncio._utils import create_connection
-from easynetwork_asyncio.backend import AsyncIOBackend
-from easynetwork_asyncio.stream.listener import ListenerSocketAdapter
-from easynetwork_asyncio.stream.socket import AsyncioTransportStreamSocketAdapter, RawStreamSocketAdapter
 
 import pytest
 import pytest_asyncio

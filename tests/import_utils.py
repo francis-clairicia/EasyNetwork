@@ -14,7 +14,7 @@ def _catch_all_easynetwork_packages_and_modules() -> list[ModuleInfo]:
 
     result: list[ModuleInfo] = []
 
-    for module_name in ["easynetwork", "easynetwork_asyncio"]:
+    for module_name in ["easynetwork"]:
         module = import_module(module_name)
         module_spec = module.__spec__
 
