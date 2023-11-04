@@ -12,7 +12,7 @@ ALL_MODULES_WHICH_USE_SSL_MODULE: tuple[tuple[str, str], ...] = (
     ("easynetwork.api_sync.client.tcp", "_ssl_module"),
     ("easynetwork.lowlevel.api_sync.transports.socket", "_ssl_module"),
     ("easynetwork.lowlevel._utils", "ssl"),
-    ("easynetwork_asyncio.backend", "ssl"),
+    ("easynetwork.lowlevel.asyncio.backend", "ssl"),
 )
 
 

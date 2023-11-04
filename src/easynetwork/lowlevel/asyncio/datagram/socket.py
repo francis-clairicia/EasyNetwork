@@ -17,18 +17,15 @@
 
 from __future__ import annotations
 
-__all__ = ["AsyncioTransportDatagramListenerSocketAdapter", "RawDatagramListenerSocketAdapter"]
+__all__ = ["AsyncioTransportDatagramSocketAdapter", "RawDatagramSocketAdapter"]
 
 import asyncio
-import asyncio.streams
 import socket as _socket
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any, final
 
-from easynetwork.lowlevel.api_async.transports import abc as transports
-from easynetwork.lowlevel.constants import MAX_DATAGRAM_BUFSIZE
-from easynetwork.lowlevel.socket import _get_socket_extra
-
+from ... import constants, socket as socket_tools
+from ...api_async.transports import abc as transports
 from ..socket import AsyncSocket
 
 if TYPE_CHECKING:
@@ -38,7 +35,7 @@ if TYPE_CHECKING:
 
 
 @final
-class AsyncioTransportDatagramListenerSocketAdapter(transports.AsyncDatagramListener[tuple[Any, ...]]):
+class AsyncioTransportDatagramSocketAdapter(transports.AsyncDatagramTransport):
     __slots__ = (
         "__endpoint",
         "__socket",
@@ -58,35 +55,40 @@ class AsyncioTransportDatagramListenerSocketAdapter(transports.AsyncDatagramList
         # To bypass this side effect, we use our own flag.
         self.__closing: bool = False
 
-    def is_closing(self) -> bool:
-        return self.__closing
-
     async def aclose(self) -> None:
         self.__closing = True
         self.__endpoint.close()
         try:
-            await self.__endpoint.wait_closed()
+            return await self.__endpoint.wait_closed()
         except asyncio.CancelledError:
             self.__endpoint.transport.abort()
             raise
 
-    async def recv_from(self) -> tuple[bytes, tuple[Any, ...]]:
-        return await self.__endpoint.recvfrom()
+    def is_closing(self) -> bool:
+        return self.__closing
 
-    async def send_to(self, data: bytes | bytearray | memoryview, address: tuple[Any, ...]) -> None:
-        await self.__endpoint.sendto(data, address)
+    async def recv(self) -> bytes:
+        data, _ = await self.__endpoint.recvfrom()
+        return data
+
+    async def send(self, data: bytes | bytearray | memoryview) -> None:
+        await self.__endpoint.sendto(data, None)
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         socket = self.__socket
-        return _get_socket_extra(socket, wrap_in_proxy=False)
+        return socket_tools._get_socket_extra(socket, wrap_in_proxy=False)
 
 
 @final
-class RawDatagramListenerSocketAdapter(transports.AsyncDatagramListener[tuple[Any, ...]]):
+class RawDatagramSocketAdapter(transports.AsyncDatagramTransport):
     __slots__ = ("__socket",)
 
-    def __init__(self, socket: _socket.socket, loop: asyncio.AbstractEventLoop) -> None:
+    def __init__(
+        self,
+        socket: _socket.socket,
+        loop: asyncio.AbstractEventLoop,
+    ) -> None:
         super().__init__()
 
         if socket.type != _socket.SOCK_DGRAM:
@@ -94,19 +96,20 @@ class RawDatagramListenerSocketAdapter(transports.AsyncDatagramListener[tuple[An
 
         self.__socket: AsyncSocket = AsyncSocket(socket, loop)
 
-    def is_closing(self) -> bool:
-        return self.__socket.is_closing()
-
     async def aclose(self) -> None:
         return await self.__socket.aclose()
 
-    async def recv_from(self) -> tuple[bytes, tuple[Any, ...]]:
-        return await self.__socket.recvfrom(MAX_DATAGRAM_BUFSIZE)
+    def is_closing(self) -> bool:
+        return self.__socket.is_closing()
 
-    async def send_to(self, data: bytes | bytearray | memoryview, address: tuple[Any, ...]) -> None:
-        await self.__socket.sendto(data, address)
+    async def recv(self) -> bytes:
+        data, _ = await self.__socket.recvfrom(constants.MAX_DATAGRAM_BUFSIZE)
+        return data
+
+    async def send(self, data: bytes | bytearray | memoryview) -> None:
+        await self.__socket.sendall(data)
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         socket = self.__socket.socket
-        return _get_socket_extra(socket, wrap_in_proxy=False)
+        return socket_tools._get_socket_extra(socket, wrap_in_proxy=False)

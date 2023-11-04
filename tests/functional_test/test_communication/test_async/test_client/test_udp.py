@@ -8,9 +8,9 @@ from typing import Any
 
 from easynetwork.api_async.client.udp import AsyncUDPNetworkClient
 from easynetwork.exceptions import ClientClosedError, DatagramProtocolParseError
+from easynetwork.lowlevel.asyncio.datagram.endpoint import DatagramEndpoint, create_datagram_endpoint
 from easynetwork.lowlevel.socket import IPv4SocketAddress, IPv6SocketAddress, SocketProxy
 from easynetwork.protocol import DatagramProtocol
-from easynetwork_asyncio.datagram.endpoint import DatagramEndpoint, create_datagram_endpoint
 
 import pytest
 import pytest_asyncio

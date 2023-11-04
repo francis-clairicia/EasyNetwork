@@ -7,11 +7,14 @@ from socket import AI_PASSIVE
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 from easynetwork.lowlevel.api_async.transports.abc import AsyncBaseTransport
+from easynetwork.lowlevel.asyncio.datagram.endpoint import DatagramEndpoint, DatagramEndpointProtocol, create_datagram_endpoint
+from easynetwork.lowlevel.asyncio.datagram.listener import (
+    AsyncioTransportDatagramListenerSocketAdapter,
+    RawDatagramListenerSocketAdapter,
+)
+from easynetwork.lowlevel.asyncio.datagram.socket import AsyncioTransportDatagramSocketAdapter, RawDatagramSocketAdapter
 from easynetwork.lowlevel.constants import MAX_DATAGRAM_BUFSIZE
 from easynetwork.lowlevel.socket import SocketAttribute
-from easynetwork_asyncio.datagram.endpoint import DatagramEndpoint, DatagramEndpointProtocol, create_datagram_endpoint
-from easynetwork_asyncio.datagram.listener import AsyncioTransportDatagramListenerSocketAdapter, RawDatagramListenerSocketAdapter
-from easynetwork_asyncio.datagram.socket import AsyncioTransportDatagramSocketAdapter, RawDatagramSocketAdapter
 
 import pytest
 

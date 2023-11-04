@@ -26,7 +26,11 @@ from socket import (
 from typing import TYPE_CHECKING, Any, Literal, assert_never, cast
 
 from easynetwork.lowlevel._utils import error_from_errno
-from easynetwork_asyncio._utils import create_connection, ensure_resolved, open_listener_sockets_from_getaddrinfo_result
+from easynetwork.lowlevel.asyncio._asyncio_utils import (
+    create_connection,
+    ensure_resolved,
+    open_listener_sockets_from_getaddrinfo_result,
+)
 
 import pytest
 
@@ -592,7 +596,7 @@ def test____open_listener_sockets_from_getaddrinfo_result____bind_failed(
     s2.bind.side_effect = OSError(1234, "error message")
 
     # Act
-    with pytest.raises(ExceptionGroup) as exc_info:
+    with pytest.raises(ExceptionGroup, match=r"^Error when trying to create listeners \(1 sub-exception\)$") as exc_info:
         open_listener_sockets_from_getaddrinfo_result(addrinfo_list, backlog=10, reuse_address=True, reuse_port=False)
 
     # Assert

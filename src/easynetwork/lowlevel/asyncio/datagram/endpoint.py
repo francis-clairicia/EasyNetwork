@@ -30,8 +30,7 @@ import errno as _errno
 import socket as _socket
 from typing import TYPE_CHECKING, Any, final
 
-from easynetwork.lowlevel._utils import error_from_errno as _error_from_errno
-
+from ... import _utils
 from ..tasks import TaskUtils
 
 if TYPE_CHECKING:
@@ -111,7 +110,7 @@ class DatagramEndpoint:
             except asyncio.QueueEmpty:
                 data_and_address = None
             if data_and_address is None:
-                raise _error_from_errno(_errno.ECONNABORTED)
+                raise _utils.error_from_errno(_errno.ECONNABORTED)
             await TaskUtils.cancel_shielded_coro_yield()
         else:
             data_and_address = await self.__recv_queue.get()
@@ -121,13 +120,13 @@ class DatagramEndpoint:
 
                 # Connection lost otherwise
                 assert self.__transport.is_closing()  # nosec assert_used
-                raise _error_from_errno(_errno.ECONNABORTED)
+                raise _utils.error_from_errno(_errno.ECONNABORTED)
         return data_and_address
 
     async def sendto(self, data: bytes | bytearray | memoryview, address: tuple[Any, ...] | None = None, /) -> None:
         self.__check_exceptions()
         if self.__transport.is_closing():
-            raise _error_from_errno(_errno.ECONNABORTED)
+            raise _utils.error_from_errno(_errno.ECONNABORTED)
         self.__transport.sendto(data, address)
         await self.__protocol._drain_helper()
 
@@ -247,7 +246,7 @@ class DatagramEndpointProtocol(asyncio.DatagramProtocol):
 
     async def _drain_helper(self) -> None:
         if self.__connection_lost:
-            raise _error_from_errno(_errno.ECONNABORTED)
+            raise _utils.error_from_errno(_errno.ECONNABORTED)
         if not self.__write_paused:
             return
         waiter = self.__loop.create_future()

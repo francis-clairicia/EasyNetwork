@@ -33,7 +33,7 @@ def fake_cancellation_cls() -> type[BaseException]:
 
 @pytest.fixture
 def mock_backend(fake_cancellation_cls: type[BaseException], mocker: MockerFixture) -> MagicMock:
-    from easynetwork_asyncio.tasks import TaskGroup
+    from easynetwork.lowlevel.asyncio.tasks import TaskGroup
 
     from .._utils import AsyncDummyLock
 

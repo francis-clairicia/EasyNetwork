@@ -25,9 +25,8 @@ from collections import ChainMap
 from collections.abc import Callable, Iterable, Mapping
 from typing import TYPE_CHECKING, Any, final
 
-from easynetwork.lowlevel.api_async.transports import abc as transports
-from easynetwork.lowlevel.socket import TLSAttribute, _get_socket_extra, _get_tls_extra
-
+from ... import socket as socket_tools
+from ...api_async.transports import abc as transports
 from ..socket import AsyncSocket
 
 if TYPE_CHECKING:
@@ -108,12 +107,16 @@ class AsyncioTransportStreamSocketAdapter(transports.AsyncStreamTransport):
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         socket = self.__socket
-        socket_extra: dict[Any, Callable[[], Any]] = _get_socket_extra(socket, wrap_in_proxy=False)
+        socket_extra: dict[Any, Callable[[], Any]] = socket_tools._get_socket_extra(socket, wrap_in_proxy=False)
 
         ssl_obj: _typing_ssl.SSLObject | _typing_ssl.SSLSocket | None = self.__writer.get_extra_info("ssl_object")
         if ssl_obj is None:
             return socket_extra
-        return ChainMap(socket_extra, _get_tls_extra(ssl_obj), {TLSAttribute.standard_compatible: lambda: True})
+        return ChainMap(
+            socket_extra,
+            socket_tools._get_tls_extra(ssl_obj),
+            {socket_tools.TLSAttribute.standard_compatible: lambda: True},
+        )
 
 
 @final
@@ -155,4 +158,4 @@ class RawStreamSocketAdapter(transports.AsyncStreamTransport):
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         socket = self.__socket.socket
-        return _get_socket_extra(socket, wrap_in_proxy=False)
+        return socket_tools._get_socket_extra(socket, wrap_in_proxy=False)
