@@ -14,7 +14,7 @@ import sys
 project = "EasyNetwork"
 copyright = "2023, Francis Clairicia-Rose-Claire-Josephine"
 author = "FrankySnow9"
-release = "1.0.0rc5"
+release = "1.0.0rc6"
 version = release
 
 # -- General configuration ---------------------------------------------------
