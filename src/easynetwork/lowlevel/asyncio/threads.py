@@ -21,6 +21,7 @@ __all__ = ["ThreadsPortal"]
 
 import asyncio
 import concurrent.futures
+import contextlib
 import contextvars
 import inspect
 from collections.abc import Awaitable, Callable
@@ -85,19 +86,16 @@ class ThreadsPortal(AbstractThreadsPortal):
             async def coroutine() -> None:
                 def on_fut_done(future: concurrent.futures.Future[_T]) -> None:
                     if future.cancelled():
-                        try:
+                        if self.__is_in_this_loop_thread(loop):
+                            task.cancel()
+                            return
+                        with contextlib.suppress(RuntimeError):
                             self.run_sync(task.cancel)
-                        except RuntimeError:
-                            # on_fut_done() called from coroutine()
-                            # or the portal is already shut down
-                            pass
 
                 task = TaskUtils.current_asyncio_task()
+                loop = task.get_loop()
                 try:
-                    if future.cancelled():
-                        task.cancel()
-                    else:
-                        future.add_done_callback(on_fut_done)
+                    future.add_done_callback(on_fut_done)
                     result = await coro_func(*args, **kwargs)
                 except asyncio.CancelledError:
                     future.cancel()
@@ -158,13 +156,17 @@ class ThreadsPortal(AbstractThreadsPortal):
         loop = self.__loop
         if loop is None:
             raise RuntimeError("ThreadsPortal not running.")
+        if self.__is_in_this_loop_thread(loop):
+            raise RuntimeError("This function must be called in a different OS thread")
+        return loop
+
+    @staticmethod
+    def __is_in_this_loop_thread(loop: asyncio.AbstractEventLoop) -> bool:
         try:
             running_loop = asyncio.get_running_loop()
         except RuntimeError:
-            return loop
-        if running_loop is loop:
-            raise RuntimeError("This function must be called in a different OS thread")
-        return loop
+            return False
+        return running_loop is loop
 
     @staticmethod
     def __register_waiter(waiters: set[asyncio.Future[None]], loop: asyncio.AbstractEventLoop) -> asyncio.Future[None]:
