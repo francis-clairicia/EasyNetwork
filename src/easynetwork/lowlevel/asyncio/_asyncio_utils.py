@@ -21,6 +21,7 @@ __all__ = ["create_connection", "open_listener_sockets_from_getaddrinfo_result"]
 
 import asyncio
 import contextlib
+import itertools
 import socket as _socket
 from collections.abc import Iterable, Sequence
 from typing import Any
@@ -48,6 +49,32 @@ async def ensure_resolved(
     if not info:
         raise OSError(f"getaddrinfo({host!r}) returned empty list")
     return info
+
+
+async def resolve_local_addresses(
+    hosts: Sequence[str | None],
+    port: int,
+    socktype: int,
+    loop: asyncio.AbstractEventLoop,
+) -> Sequence[tuple[int, int, int, str, tuple[Any, ...]]]:
+    infos: set[tuple[int, int, int, str, tuple[Any, ...]]] = set(
+        itertools.chain.from_iterable(
+            await asyncio.gather(
+                *[
+                    ensure_resolved(
+                        host,
+                        port,
+                        _socket.AF_UNSPEC,
+                        socktype,
+                        loop,
+                        flags=_socket.AI_PASSIVE | _socket.AI_ADDRCONFIG,
+                    )
+                    for host in hosts
+                ]
+            )
+        )
+    )
+    return sorted(infos)
 
 
 async def create_connection(
@@ -163,8 +190,12 @@ def open_listener_sockets_from_getaddrinfo_result(
             # Disable IPv4/IPv6 dual stack support (enabled by
             # default on Linux) which makes a single socket
             # listen on both address families.
-            if _socket.has_ipv6 and af == _socket.AF_INET6 and hasattr(_socket, "IPPROTO_IPV6"):
-                sock.setsockopt(_socket.IPPROTO_IPV6, _socket.IPV6_V6ONLY, True)
+            if af == _socket.AF_INET6:
+                if hasattr(_socket, "IPPROTO_IPV6"):
+                    sock.setsockopt(_socket.IPPROTO_IPV6, _socket.IPV6_V6ONLY, True)
+                if "%" in sa[0]:
+                    addr, scope_id = sa[0].split("%", 1)
+                    sa = (addr, sa[1], 0, int(scope_id))
             try:
                 sock.bind(sa)
             except OSError as exc:

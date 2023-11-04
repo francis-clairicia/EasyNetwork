@@ -10,6 +10,7 @@ from easynetwork.api_async.server.handler import AsyncBaseClientInterface, Async
 from easynetwork.api_sync.server.abc import AbstractNetworkServer
 from easynetwork.api_sync.server.tcp import StandaloneTCPNetworkServer
 from easynetwork.api_sync.server.udp import StandaloneUDPNetworkServer
+from easynetwork.lowlevel.socket import IPv4SocketAddress
 from easynetwork.protocol import DatagramProtocol, StreamProtocol
 from easynetwork.serializers.line import StringLineSerializer
 
@@ -53,17 +54,10 @@ def _run_server(server: AbstractNetworkServer) -> None:
 
 
 def _retrieve_server_address(server: AbstractNetworkServer) -> tuple[str, int]:
-    match server:
-        case StandaloneTCPNetworkServer():
-            addresses = server.get_addresses()
-            assert addresses
-            return "localhost", addresses[0].port
-        case StandaloneUDPNetworkServer():
-            addresses = server.get_addresses()
-            assert addresses
-            return addresses[0].for_connection()
-        case _:
-            pytest.fail("Cannot retrieve server port")
+    address = server.get_addresses()[0]
+    if isinstance(address, IPv4SocketAddress):
+        return "127.0.0.1", address.port
+    return "::1", address.port
 
 
 @pytest.fixture

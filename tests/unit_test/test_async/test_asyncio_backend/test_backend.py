@@ -4,7 +4,7 @@ import asyncio
 import contextlib
 import contextvars
 from collections.abc import Callable, Coroutine, Sequence
-from socket import AF_INET, AF_INET6, AF_UNSPEC, AI_PASSIVE, IPPROTO_TCP, IPPROTO_UDP, SOCK_DGRAM, SOCK_STREAM
+from socket import AF_INET, AF_INET6, AF_UNSPEC, AI_ADDRCONFIG, AI_PASSIVE, IPPROTO_TCP, IPPROTO_UDP, SOCK_DGRAM, SOCK_STREAM
 from typing import TYPE_CHECKING, Any, cast
 
 from easynetwork.lowlevel.asyncio import AsyncIOBackend
@@ -829,10 +829,10 @@ class TestAsyncIOBackend:
             family=AF_UNSPEC,
             type=SOCK_STREAM,
             proto=0,
-            flags=AI_PASSIVE,
+            flags=AI_PASSIVE | AI_ADDRCONFIG,
         )
         mock_open_listeners.assert_called_once_with(
-            set(addrinfo_list),
+            sorted(set(addrinfo_list)),
             backlog=123456789,
             reuse_address=mocker.ANY,  # Determined according to OS
             reuse_port=mocker.sentinel.reuse_port,
@@ -933,10 +933,10 @@ class TestAsyncIOBackend:
             family=AF_UNSPEC,
             type=SOCK_STREAM,
             proto=0,
-            flags=AI_PASSIVE,
+            flags=AI_PASSIVE | AI_ADDRCONFIG,
         )
         mock_open_listeners.assert_called_once_with(
-            set(addrinfo_list),
+            sorted(set(addrinfo_list)),
             backlog=123456789,
             reuse_address=mocker.ANY,  # Determined according to OS
             reuse_port=mocker.sentinel.reuse_port,
@@ -1039,12 +1039,12 @@ class TestAsyncIOBackend:
                 family=AF_UNSPEC,
                 type=SOCK_STREAM,
                 proto=0,
-                flags=AI_PASSIVE,
+                flags=AI_PASSIVE | AI_ADDRCONFIG,
             )
             for host in remote_hosts
         ]
         mock_open_listeners.assert_called_once_with(
-            set(addrinfo_list),
+            sorted(set(addrinfo_list)),
             backlog=123456789,
             reuse_address=mocker.ANY,  # Determined according to OS
             reuse_port=mocker.sentinel.reuse_port,
@@ -1119,7 +1119,7 @@ class TestAsyncIOBackend:
             family=AF_UNSPEC,
             type=SOCK_STREAM,
             proto=0,
-            flags=AI_PASSIVE,
+            flags=AI_PASSIVE | AI_ADDRCONFIG,
         )
         mock_open_listeners.assert_not_called()
         mock_ListenerSocketAdapter.assert_not_called()
@@ -1367,10 +1367,10 @@ class TestAsyncIOBackend:
             family=AF_UNSPEC,
             type=SOCK_DGRAM,
             proto=0,
-            flags=0,
+            flags=AI_PASSIVE | AI_ADDRCONFIG,
         )
         mock_open_listeners.assert_called_once_with(
-            set(addrinfo_list),
+            sorted(set(addrinfo_list)),
             backlog=None,
             reuse_address=False,
             reuse_port=mocker.sentinel.reuse_port,
@@ -1456,10 +1456,10 @@ class TestAsyncIOBackend:
             family=AF_UNSPEC,
             type=SOCK_DGRAM,
             proto=0,
-            flags=0,
+            flags=AI_PASSIVE | AI_ADDRCONFIG,
         )
         mock_open_listeners.assert_called_once_with(
-            set(addrinfo_list),
+            sorted(set(addrinfo_list)),
             backlog=None,
             reuse_address=False,
             reuse_port=mocker.sentinel.reuse_port,
@@ -1549,12 +1549,12 @@ class TestAsyncIOBackend:
                 family=AF_UNSPEC,
                 type=SOCK_DGRAM,
                 proto=0,
-                flags=0,
+                flags=AI_PASSIVE | AI_ADDRCONFIG,
             )
             for host in remote_hosts
         ]
         mock_open_listeners.assert_called_once_with(
-            set(addrinfo_list),
+            sorted(set(addrinfo_list)),
             backlog=None,
             reuse_address=False,
             reuse_port=mocker.sentinel.reuse_port,
@@ -1624,7 +1624,7 @@ class TestAsyncIOBackend:
             family=AF_UNSPEC,
             type=SOCK_DGRAM,
             proto=0,
-            flags=0,
+            flags=AI_PASSIVE | AI_ADDRCONFIG,
         )
         mock_open_listeners.assert_not_called()
         mock_RawDatagramListenerSocketAdapter.assert_not_called()
