@@ -23,7 +23,6 @@ import asyncio
 import asyncio.base_events
 import contextvars
 import functools
-import itertools
 import math
 import os
 import socket as _socket
@@ -42,7 +41,7 @@ else:
 
 from ..api_async.backend.abc import AsyncBackend as AbstractAsyncBackend
 from ..api_async.backend.sniffio import current_async_library_cvar as _sniffio_current_async_library_cvar
-from ._asyncio_utils import create_connection, ensure_resolved, open_listener_sockets_from_getaddrinfo_result
+from ._asyncio_utils import create_connection, open_listener_sockets_from_getaddrinfo_result, resolve_local_addresses
 from .datagram.endpoint import create_datagram_endpoint
 from .datagram.listener import AsyncioTransportDatagramListenerSocketAdapter, RawDatagramListenerSocketAdapter
 from .datagram.socket import AsyncioTransportDatagramSocketAdapter, RawDatagramSocketAdapter
@@ -285,15 +284,13 @@ class AsyncIOBackend(AbstractAsyncBackend):
         else:
             hosts = host
 
-        infos: set[tuple[int, int, int, str, tuple[Any, ...]]] = set(
-            itertools.chain.from_iterable(
-                await asyncio.gather(
-                    *[
-                        ensure_resolved(host, port, _socket.AF_UNSPEC, _socket.SOCK_STREAM, loop, flags=_socket.AI_PASSIVE)
-                        for host in hosts
-                    ]
-                )
-            )
+        del host
+
+        infos: Sequence[tuple[int, int, int, str, tuple[Any, ...]]] = await resolve_local_addresses(
+            hosts,
+            port,
+            _socket.SOCK_STREAM,
+            loop,
         )
 
         sockets: list[_socket.socket] = open_listener_sockets_from_getaddrinfo_result(
@@ -351,12 +348,13 @@ class AsyncIOBackend(AbstractAsyncBackend):
         else:
             hosts = host
 
-        infos: set[tuple[int, int, int, str, tuple[Any, ...]]] = set(
-            itertools.chain.from_iterable(
-                await asyncio.gather(
-                    *[ensure_resolved(host, port, _socket.AF_UNSPEC, _socket.SOCK_DGRAM, loop) for host in hosts]
-                )
-            )
+        del host
+
+        infos: Sequence[tuple[int, int, int, str, tuple[Any, ...]]] = await resolve_local_addresses(
+            hosts,
+            port,
+            _socket.SOCK_DGRAM,
+            loop,
         )
 
         sockets: list[_socket.socket] = open_listener_sockets_from_getaddrinfo_result(
