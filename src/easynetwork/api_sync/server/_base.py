@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Any, NoReturn
 
 from ...api_async.server.abc import SupportsEventSet
 from ...exceptions import ServerAlreadyRunning, ServerClosedError
+from ...lowlevel import _utils
 from ...lowlevel._lock import ForkSafeLock
 from ...lowlevel.api_async.backend.abc import ThreadsPortal
 from ...lowlevel.socket import SocketAddress
@@ -56,14 +57,14 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
         self.__close_lock = ForkSafeLock()
         self.__bootstrap_lock = ForkSafeLock()
 
+    @_utils.inherit_doc(AbstractNetworkServer)
     def is_serving(self) -> bool:
         if (portal := self._portal) is not None:
             with contextlib.suppress(RuntimeError):
                 return portal.run_sync(self.__server.is_serving)
         return False
 
-    is_serving.__doc__ = AbstractNetworkServer.is_serving.__doc__
-
+    @_utils.inherit_doc(AbstractNetworkServer)
     def server_close(self) -> None:
         with self.__close_lock.get(), contextlib.ExitStack() as stack, contextlib.suppress(RuntimeError):
             if (portal := self._portal) is not None:
@@ -75,8 +76,7 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
                 backend = self.__server.get_backend()
                 backend.bootstrap(self.__server.server_close)
 
-    server_close.__doc__ = AbstractNetworkServer.server_close.__doc__
-
+    @_utils.inherit_doc(AbstractNetworkServer)
     def shutdown(self, timeout: float | None = None) -> None:
         if (portal := self._portal) is not None:
             with contextlib.suppress(RuntimeError, concurrent.futures.CancelledError):
@@ -90,8 +90,6 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
                     finally:
                         timeout -= time.perf_counter() - _start
         self.__is_shutdown.wait(timeout)
-
-    shutdown.__doc__ = AbstractNetworkServer.shutdown.__doc__
 
     async def __do_shutdown_with_timeout(self, timeout_delay: float) -> None:
         backend = self.__server.get_backend()
@@ -151,20 +149,12 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
 
             backend.bootstrap(serve_forever, runner_options=runner_options)
 
+    @_utils.inherit_doc(AbstractNetworkServer)
     def get_addresses(self) -> Sequence[SocketAddress]:
-        """
-        Returns all interfaces to which the listeners are bound. Thread-safe.
-
-        Returns:
-            A sequence of network socket address.
-            If the server is not serving (:meth:`is_serving` returns :data:`False`), an empty sequence is returned.
-        """
         if (portal := self._portal) is not None:
             with contextlib.suppress(RuntimeError):
                 return portal.run_sync(self.__server.get_addresses)
         return ()
-
-    get_addresses.__doc__ = AbstractNetworkServer.get_addresses.__doc__
 
     @property
     def _server(self) -> AbstractAsyncNetworkServer:

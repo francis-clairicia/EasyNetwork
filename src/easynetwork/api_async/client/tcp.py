@@ -477,10 +477,9 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         address_family = endpoint.extra(INETSocketAttribute.family)
         return new_socket_address(remote_address, address_family)
 
+    @_utils.inherit_doc(AbstractAsyncNetworkClient)
     def get_backend(self) -> AsyncBackend:
         return self.__backend
-
-    get_backend.__doc__ = AbstractAsyncNetworkClient.get_backend.__doc__
 
     async def __ensure_connected(self) -> AsyncStreamEndpoint[_SentPacketT, _ReceivedPacketT]:
         if self.__endpoint is None:

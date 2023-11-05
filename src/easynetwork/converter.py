@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from typing import Any, Generic, final
 
 from ._typevars import _DTOPacketT, _PacketT, _ReceivedPacketT, _SentPacketT
+from .lowlevel import _utils
 
 
 class AbstractPacketConverterComposite(Generic[_SentPacketT, _ReceivedPacketT, _DTOPacketT], metaclass=ABCMeta):
@@ -122,12 +123,11 @@ class AbstractPacketConverter(AbstractPacketConverterComposite[_PacketT, _Packet
     __slots__ = ()
 
     @abstractmethod
+    @_utils.inherit_doc(AbstractPacketConverterComposite)
     def create_from_dto_packet(self, packet: _DTOPacketT, /) -> _PacketT:
         raise NotImplementedError
 
     @abstractmethod
+    @_utils.inherit_doc(AbstractPacketConverterComposite)
     def convert_to_dto_packet(self, obj: _PacketT, /) -> _DTOPacketT:
         raise NotImplementedError
-
-    create_from_dto_packet.__doc__ = AbstractPacketConverterComposite.create_from_dto_packet.__doc__
-    convert_to_dto_packet.__doc__ = AbstractPacketConverterComposite.convert_to_dto_packet.__doc__
