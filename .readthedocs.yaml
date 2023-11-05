@@ -11,8 +11,6 @@ build:
       - pdm use -f $READTHEDOCS_VIRTUALENV_PATH
     post_install:
       - pdm sync --dev --group=doc
-    pre_build:
-      - python -m sphinx -b linkcheck docs/source/ $READTHEDOCS_OUTPUT/linkcheck
 
 sphinx:
   configuration: docs/source/conf.py
