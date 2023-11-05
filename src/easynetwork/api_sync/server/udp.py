@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Any, Generic
 
 from ..._typevars import _RequestT, _ResponseT
 from ...api_async.server.udp import AsyncUDPNetworkServer
+from ...lowlevel import _utils
 from ...lowlevel.socket import SocketProxy
 from . import _base
 
@@ -84,8 +85,8 @@ class StandaloneUDPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
         )
 
     @property
+    @_utils.inherit_doc(AsyncUDPNetworkServer)
     def sockets(self) -> Sequence[SocketProxy]:
-        """The listeners sockets. Read-only attribute."""
         if (portal := self._portal) is not None:
             with contextlib.suppress(RuntimeError):
                 sockets = portal.run_sync(lambda: self._server.sockets)
@@ -93,8 +94,8 @@ class StandaloneUDPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
         return ()
 
     @property
+    @_utils.inherit_doc(AsyncUDPNetworkServer)
     def logger(self) -> logging.Logger:
-        """The server's logger."""
         return self._server.logger
 
     if TYPE_CHECKING:

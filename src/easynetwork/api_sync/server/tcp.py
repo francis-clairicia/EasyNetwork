@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Any, Generic
 
 from ..._typevars import _RequestT, _ResponseT
 from ...api_async.server.tcp import AsyncTCPNetworkServer
+from ...lowlevel import _utils
 from ...lowlevel.socket import SocketProxy
 from . import _base
 
@@ -110,8 +111,8 @@ class StandaloneTCPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
                 portal.run_sync(self._server.stop_listening)
 
     @property
+    @_utils.inherit_doc(AsyncTCPNetworkServer)
     def sockets(self) -> Sequence[SocketProxy]:
-        """The listeners sockets. Read-only attribute."""
         if (portal := self._portal) is not None:
             with contextlib.suppress(RuntimeError):
                 sockets = portal.run_sync(lambda: self._server.sockets)
@@ -119,8 +120,8 @@ class StandaloneTCPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
         return ()
 
     @property
+    @_utils.inherit_doc(AsyncTCPNetworkServer)
     def logger(self) -> logging.Logger:
-        """The server's logger."""
         return self._server.logger
 
     if TYPE_CHECKING:

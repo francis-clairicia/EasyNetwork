@@ -64,6 +64,7 @@ _R = TypeVar("_R")
 _T_Arg = TypeVar("_T_Arg")
 
 _ExcType = TypeVar("_ExcType", bound=BaseException)
+_FuncType = TypeVar("_FuncType", bound=Callable[..., Any])
 
 
 def replace_kwargs(kwargs: dict[str, Any], keys: dict[str, str]) -> None:
@@ -85,6 +86,17 @@ def make_callback(func: Callable[_P, _R], /, *args: _P.args, **kwargs: _P.kwargs
 def prepend_argument(arg: _T_Arg) -> Callable[[Callable[Concatenate[_T_Arg, _P], _R]], Callable[_P, _R]]:
     def decorator(func: Callable[Concatenate[_T_Arg, _P], _R], /) -> Callable[_P, _R]:
         return functools.partial(func, arg)
+
+    return decorator
+
+
+def inherit_doc(base_cls: type[Any]) -> Callable[[_FuncType], _FuncType]:
+    assert isinstance(base_cls, type)  # nosec assert_used
+
+    def decorator(dest_func: _FuncType) -> _FuncType:
+        ref_func: Any = getattr(base_cls, dest_func.__name__)
+        dest_func.__doc__ = ref_func.__doc__
+        return dest_func
 
     return decorator
 

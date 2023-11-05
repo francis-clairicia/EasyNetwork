@@ -73,24 +73,29 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport):
         self.__socket: socket.socket = sock
         self.__socket.setblocking(False)
 
+    @_utils.inherit_doc(base_selector.SelectorStreamTransport)
     def is_closed(self) -> bool:
         return self.__socket.fileno() < 0
 
+    @_utils.inherit_doc(base_selector.SelectorStreamTransport)
     def close(self) -> None:
         _close_stream_socket(self.__socket)
 
+    @_utils.inherit_doc(base_selector.SelectorStreamTransport)
     def recv_noblock(self, bufsize: int) -> bytes:
         try:
             return self.__socket.recv(bufsize)
         except (BlockingIOError, InterruptedError):
             raise base_selector.WouldBlockOnRead(self.__socket.fileno()) from None
 
+    @_utils.inherit_doc(base_selector.SelectorStreamTransport)
     def send_noblock(self, data: bytes | bytearray | memoryview) -> int:
         try:
             return self.__socket.send(data)
         except (BlockingIOError, InterruptedError):
             raise base_selector.WouldBlockOnWrite(self.__socket.fileno()) from None
 
+    @_utils.inherit_doc(base_selector.SelectorStreamTransport)
     def send_eof(self) -> None:
         if self.__socket.fileno() < 0:
             return
@@ -106,6 +111,7 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport):
                 raise
 
     @property
+    @_utils.inherit_doc(base_selector.SelectorStreamTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         socket = self.__socket
         return socket_tools._get_socket_extra(socket)
@@ -163,9 +169,11 @@ class SSLStreamTransport(base_selector.SelectorStreamTransport):
         self.__ssl_shutdown_timeout: float = shutdown_timeout
         self.__standard_compatible: bool = standard_compatible
 
+    @_utils.inherit_doc(base_selector.SelectorStreamTransport)
     def is_closed(self) -> bool:
         return self.__socket.fileno() < 0
 
+    @_utils.inherit_doc(base_selector.SelectorStreamTransport)
     def close(self) -> None:
         try:
             if self.__standard_compatible:
@@ -175,12 +183,15 @@ class SSLStreamTransport(base_selector.SelectorStreamTransport):
         finally:
             _close_stream_socket(self.__socket)
 
+    @_utils.inherit_doc(base_selector.SelectorStreamTransport)
     def recv_noblock(self, bufsize: int) -> bytes:
         return self._try_ssl_method(self.__socket.recv, bufsize)
 
+    @_utils.inherit_doc(base_selector.SelectorStreamTransport)
     def send_noblock(self, data: bytes | bytearray | memoryview) -> int:
         return self._try_ssl_method(self.__socket.send, data)
 
+    @_utils.inherit_doc(base_selector.SelectorStreamTransport)
     def send_eof(self) -> None:
         # ssl.SSLSocket.shutdown() would close both read and write streams
         raise NotImplementedError("SSL/TLS API does not support sending EOF.")
@@ -196,6 +207,7 @@ class SSLStreamTransport(base_selector.SelectorStreamTransport):
             raise base_selector.WouldBlockOnWrite(self.__socket.fileno()) from None
 
     @property
+    @_utils.inherit_doc(base_selector.SelectorStreamTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         socket = self.__socket
         return ChainMap(
@@ -231,12 +243,15 @@ class SocketDatagramTransport(base_selector.SelectorDatagramTransport):
         self.__socket: socket.socket = sock
         self.__socket.setblocking(False)
 
+    @_utils.inherit_doc(base_selector.SelectorDatagramTransport)
     def is_closed(self) -> bool:
         return self.__socket.fileno() < 0
 
+    @_utils.inherit_doc(base_selector.SelectorDatagramTransport)
     def close(self) -> None:
         self.__socket.close()
 
+    @_utils.inherit_doc(base_selector.SelectorDatagramTransport)
     def recv_noblock(self) -> bytes:
         max_datagram_size: int = self.__max_datagram_size
         try:
@@ -244,6 +259,7 @@ class SocketDatagramTransport(base_selector.SelectorDatagramTransport):
         except (BlockingIOError, InterruptedError):
             raise base_selector.WouldBlockOnRead(self.__socket.fileno()) from None
 
+    @_utils.inherit_doc(base_selector.SelectorDatagramTransport)
     def send_noblock(self, data: bytes | bytearray | memoryview) -> None:
         try:
             self.__socket.send(data)
@@ -251,6 +267,7 @@ class SocketDatagramTransport(base_selector.SelectorDatagramTransport):
             raise base_selector.WouldBlockOnWrite(self.__socket.fileno()) from None
 
     @property
+    @_utils.inherit_doc(base_selector.SelectorDatagramTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         socket = self.__socket
         return socket_tools._get_socket_extra(socket)

@@ -133,18 +133,16 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         self.__clients_cache = defaultdict(weakref.WeakValueDictionary)
         self.__send_locks_cache = defaultdict(weakref.WeakValueDictionary)
 
+    @_utils.inherit_doc(AbstractAsyncNetworkServer)
     def is_serving(self) -> bool:
         return self.__servers is not None and all(not server.is_closing() for server in self.__servers)
 
-    is_serving.__doc__ = AbstractAsyncNetworkServer.is_serving.__doc__
-
+    @_utils.inherit_doc(AbstractAsyncNetworkServer)
     async def server_close(self) -> None:
         if self.__listeners_factory_scope is not None:
             self.__listeners_factory_scope.cancel()
         self.__listeners_factory = None
         await self.__close_servers()
-
-    server_close.__doc__ = AbstractAsyncNetworkServer.server_close.__doc__
 
     async def __close_servers(self) -> None:
         async with contextlib.AsyncExitStack() as exit_stack:
@@ -165,6 +163,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
             await self.__backend.cancel_shielded_coro_yield()
 
+    @_utils.inherit_doc(AbstractAsyncNetworkServer)
     async def shutdown(self) -> None:
         if self.__mainloop_task is not None:
             self.__mainloop_task.cancel()
@@ -177,8 +176,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         finally:
             self.__shutdown_asked = False
 
-    shutdown.__doc__ = AbstractAsyncNetworkServer.shutdown.__doc__
-
+    @_utils.inherit_doc(AbstractAsyncNetworkServer)
     async def serve_forever(self, *, is_up_event: SupportsEventSet | None = None) -> NoReturn:
         async with contextlib.AsyncExitStack() as server_exit_stack:
             # Wake up server
@@ -256,8 +254,6 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
         raise AssertionError("sleep_forever() does not return")
 
-    serve_forever.__doc__ = AbstractAsyncNetworkServer.serve_forever.__doc__
-
     async def __serve(
         self,
         server: lowlevel_datagram_server.AsyncDatagramServer[_RequestT, _ResponseT, tuple[Any, ...]],
@@ -323,6 +319,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             self.__logger.error("Exception occurred during processing of request from %s", client_address, exc_info=exc)
             self.__logger.error("-" * 40)
 
+    @_utils.inherit_doc(AbstractAsyncNetworkServer)
     def get_addresses(self) -> Sequence[SocketAddress]:
         if (servers := self.__servers) is None:
             return ()
@@ -332,12 +329,9 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             if not server.is_closing()
         )
 
-    get_addresses.__doc__ = AbstractAsyncNetworkServer.get_addresses.__doc__
-
+    @_utils.inherit_doc(AbstractAsyncNetworkServer)
     def get_backend(self) -> AsyncBackend:
         return self.__backend
-
-    get_backend.__doc__ = AbstractAsyncNetworkServer.get_backend.__doc__
 
     @property
     def sockets(self) -> Sequence[SocketProxy]:
