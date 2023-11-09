@@ -371,12 +371,9 @@ class FileBasedPacketSerializer(AbstractIncrementalPacketSerializer[_DTOPacketT]
                 except EOFError:
                     continue
                 except self.__expected_errors as exc:
-                    remaining_data: bytes = buffer.read()
-                    if not remaining_data:  # Possibly an EOF error, give it a chance
-                        continue
                     raise IncrementalDeserializeError(
                         f"Deserialize error: {exc}",
-                        remaining_data=remaining_data,
+                        remaining_data=buffer.read(),
                         error_info={"data": buffer.getvalue()},
                     ) from exc
                 else:

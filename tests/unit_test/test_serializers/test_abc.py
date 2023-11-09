@@ -901,12 +901,11 @@ class TestFileBasedPacketSerializer:
         consumer.send(b"d")
         consumer.send(b"a")
         consumer.send(b"t")
-        consumer.send(b"a")  # MyFileAPIValueError was raised but there is no remaining data, so it must continue
-        with pytest.raises(IncrementalDeserializeError) as exc_info:  # There is new data and error still here
-            consumer.send(b"other")
+        with pytest.raises(IncrementalDeserializeError) as exc_info:
+            consumer.send(b"a")
         exception = exc_info.value
 
         # Assert
-        assert exception.remaining_data == b"other"
+        assert exception.remaining_data == b""
         assert type(exception.__cause__) is MyFileAPIValueError
-        assert exception.error_info == {"data": b"dataother"}
+        assert exception.error_info == {"data": b"data"}
