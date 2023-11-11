@@ -89,6 +89,7 @@ jobs:
         with:
           python-version: ${{ matrix.python_version }}
       - name: Launch tests
+        timeout-minutes: 20  # Even if 10 minutes is already too big
         run: tox run -f py$(echo ${{ matrix.python_version }} | tr -d .)-functional -- -v
       - name: Generate coverage report
         if: hashFiles('.coverage.*') != ''  # Rudimentary `file.exists()`
