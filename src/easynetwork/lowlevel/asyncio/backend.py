@@ -39,6 +39,7 @@ else:
     ssl = _ssl
     del _ssl
 
+from ...exceptions import UnsupportedOperation
 from ..api_async.backend.abc import AsyncBackend as AbstractAsyncBackend
 from ..api_async.backend.sniffio import current_async_library_cvar as _sniffio_current_async_library_cvar
 from ._asyncio_utils import create_connection, open_listener_sockets_from_getaddrinfo_result, resolve_local_addresses
@@ -426,7 +427,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
     def _check_asyncio_transport(self, context: str) -> None:
         transport = self.__use_asyncio_transport
         if not transport:
-            raise ValueError(f"{context} not supported with {transport=}")
+            raise UnsupportedOperation(f"{context} not supported with {transport=}")
 
     def _check_ssl_support(self) -> None:
         self._check_asyncio_transport("SSL/TLS")

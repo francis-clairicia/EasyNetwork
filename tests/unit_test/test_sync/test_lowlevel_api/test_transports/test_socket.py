@@ -10,7 +10,7 @@ from collections.abc import Callable
 from socket import SHUT_RDWR, SHUT_WR
 from typing import TYPE_CHECKING, Any
 
-from easynetwork.exceptions import TypedAttributeLookupError
+from easynetwork.exceptions import TypedAttributeLookupError, UnsupportedOperation
 from easynetwork.lowlevel.api_sync.transports.base_selector import WouldBlockOnRead, WouldBlockOnWrite
 from easynetwork.lowlevel.api_sync.transports.socket import SocketDatagramTransport, SocketStreamTransport, SSLStreamTransport
 from easynetwork.lowlevel.constants import (
@@ -669,7 +669,7 @@ class TestSSLStreamTransport:
         # Arrange
 
         # Act
-        with pytest.raises(NotImplementedError):
+        with pytest.raises(UnsupportedOperation):
             transport.send_eof()
 
         # Assert

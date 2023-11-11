@@ -5,6 +5,7 @@ import math
 from collections.abc import Generator
 from typing import TYPE_CHECKING, Any
 
+from easynetwork.exceptions import UnsupportedOperation
 from easynetwork.lowlevel._stream import StreamDataConsumer
 from easynetwork.lowlevel.api_sync.endpoints.stream import StreamEndpoint
 from easynetwork.lowlevel.api_sync.transports.abc import StreamReadTransport, StreamTransport, StreamWriteTransport
@@ -224,7 +225,7 @@ class TestStreamEndpoint:
 
         # Act
         with (
-            pytest.raises(NotImplementedError, match=r"^transport does not support sending data$")
+            pytest.raises(UnsupportedOperation, match=r"^transport does not support sending data$")
             if mock_stream_transport.__class__ not in (StreamWriteTransport, StreamTransport)
             else contextlib.nullcontext()
         ):
@@ -253,7 +254,7 @@ class TestStreamEndpoint:
 
         # Act
         with (
-            pytest.raises(NotImplementedError, match=r"^transport does not support sending EOF$")
+            pytest.raises(UnsupportedOperation, match=r"^transport does not support sending EOF$")
             if mock_stream_transport.__class__ is not StreamTransport
             else contextlib.nullcontext()
         ):
@@ -305,7 +306,7 @@ class TestStreamEndpoint:
         # Act
         packet: Any = mocker.sentinel.packet_not_received
         with (
-            pytest.raises(NotImplementedError, match=r"^transport does not support receiving data$")
+            pytest.raises(UnsupportedOperation, match=r"^transport does not support receiving data$")
             if mock_stream_transport.__class__ not in (StreamReadTransport, StreamTransport)
             else contextlib.nullcontext()
         ):

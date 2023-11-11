@@ -10,7 +10,7 @@ from ssl import SSLEOFError, SSLError, SSLErrorNumber, SSLWantReadError, SSLWant
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.api_sync.client.tcp import TCPNetworkClient
-from easynetwork.exceptions import ClientClosedError, IncrementalDeserializeError
+from easynetwork.exceptions import ClientClosedError, IncrementalDeserializeError, UnsupportedOperation
 from easynetwork.lowlevel._stream import StreamDataConsumer
 from easynetwork.lowlevel.constants import (
     CLOSED_SOCKET_ERRNOS,
@@ -1467,7 +1467,7 @@ class TestTCPNetworkClient(BaseTestClient):
         mock_used_socket.shutdown.return_value = None
 
         # Act
-        with pytest.raises(NotImplementedError):
+        with pytest.raises(UnsupportedOperation):
             client.send_eof()
 
         # Assert

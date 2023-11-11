@@ -32,6 +32,7 @@ __all__ = [
     "ServerClosedError",
     "StreamProtocolParseError",
     "TypedAttributeLookupError",
+    "UnsupportedOperation",
 ]
 
 from typing import TYPE_CHECKING, Any
@@ -173,4 +174,10 @@ class TypedAttributeLookupError(LookupError):
     """
     Raised by :meth:`~.TypedAttributeProvider.extra` when the given typed attribute
     is not found and no default value has been given.
+    """
+
+
+class UnsupportedOperation(NotImplementedError):
+    """
+    The requested action is currently unavailable.
     """

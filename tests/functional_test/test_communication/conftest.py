@@ -39,7 +39,7 @@ def localhost_ip(socket_family: int) -> str:
 
 @pytest.fixture
 def socket_factory(socket_family: int) -> Iterator[Callable[[int], Socket]]:
-    if not HAS_IPV6:
+    if not HAS_IPV6 and socket_family == AF_INET6:
         pytest.skip("socket.has_ipv6 is False")
 
     socket_stack = ExitStack()

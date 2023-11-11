@@ -25,6 +25,7 @@ from collections import ChainMap
 from collections.abc import Callable, Iterable, Mapping
 from typing import TYPE_CHECKING, Any, final
 
+from ....exceptions import UnsupportedOperation
 from ... import socket as socket_tools
 from ...api_async.transports import abc as transports
 from ..socket import AsyncSocket
@@ -101,6 +102,8 @@ class AsyncioTransportStreamSocketAdapter(transports.AsyncStreamTransport):
         await self.__writer.drain()
 
     async def send_eof(self) -> None:
+        if not self.__writer.can_write_eof():
+            raise UnsupportedOperation("transport does not support sending EOF")
         self.__writer.write_eof()
         await asyncio.sleep(0)
 
