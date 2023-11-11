@@ -73,6 +73,15 @@ class TestAbstractCompressorSerializer:
         del type(mock).eof
         del type(mock).unused_data
 
+    def test____properties____right_values(self, mock_serializer: MagicMock, debug_mode: bool) -> None:
+        # Arrange
+
+        # Act
+        serializer = _CompressorSerializerForTest(mock_serializer, expected_decompress_error=(), debug=debug_mode)
+
+        # Assert
+        assert serializer.debug is debug_mode
+
     def test____dunder_init____invalid_serializer(self, mocker: MockerFixture) -> None:
         # Arrange
         mock_not_serializer = mocker.NonCallableMagicMock(spec=object)
@@ -163,6 +172,7 @@ class TestAbstractCompressorSerializer:
         mock_decompressor_stream: MagicMock,
         mock_decompressor_stream_eof: MagicMock,
         mock_decompressor_stream_unused_data: MagicMock,
+        debug_mode: bool,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -173,9 +183,17 @@ class TestAbstractCompressorSerializer:
             pass
 
         if give_as_tuple:
-            serializer = _CompressorSerializerForTest(mock_serializer, expected_decompress_error=(MyStreamAPIBaseException,))
+            serializer = _CompressorSerializerForTest(
+                mock_serializer,
+                expected_decompress_error=(MyStreamAPIBaseException,),
+                debug=debug_mode,
+            )
         else:
-            serializer = _CompressorSerializerForTest(mock_serializer, expected_decompress_error=MyStreamAPIBaseException)
+            serializer = _CompressorSerializerForTest(
+                mock_serializer,
+                expected_decompress_error=MyStreamAPIBaseException,
+                debug=debug_mode,
+            )
         mock_decompressor_stream.decompress.side_effect = MyStreamAPIValueError()
 
         # Act
@@ -190,7 +208,10 @@ class TestAbstractCompressorSerializer:
         mock_decompressor_stream_unused_data.assert_not_called()
         mock_serializer.deserialize.assert_not_called()
         assert exception.__cause__ is mock_decompressor_stream.decompress.side_effect
-        assert exception.error_info == {"data": mocker.sentinel.data}
+        if debug_mode:
+            assert exception.error_info == {"data": mocker.sentinel.data}
+        else:
+            assert exception.error_info is None
 
     def test____deserialize____missing_data(
         self,
@@ -199,10 +220,11 @@ class TestAbstractCompressorSerializer:
         mock_decompressor_stream: MagicMock,
         mock_decompressor_stream_eof: MagicMock,
         mock_decompressor_stream_unused_data: MagicMock,
+        debug_mode: bool,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer = _CompressorSerializerForTest(mock_serializer, ())
+        serializer = _CompressorSerializerForTest(mock_serializer, (), debug=debug_mode)
         mock_decompressor_stream.decompress.return_value = mocker.sentinel.decompressed_data
         mock_decompressor_stream_eof.return_value = False
 
@@ -219,7 +241,10 @@ class TestAbstractCompressorSerializer:
         mock_decompressor_stream_eof.assert_called_once()
         mock_decompressor_stream_unused_data.assert_not_called()
         mock_serializer.deserialize.assert_not_called()
-        assert exception.error_info == {"already_decompressed_data": mocker.sentinel.decompressed_data}
+        if debug_mode:
+            assert exception.error_info == {"already_decompressed_data": mocker.sentinel.decompressed_data}
+        else:
+            assert exception.error_info is None
 
     def test____deserialize____extra_data(
         self,
@@ -228,10 +253,11 @@ class TestAbstractCompressorSerializer:
         mock_decompressor_stream: MagicMock,
         mock_decompressor_stream_eof: MagicMock,
         mock_decompressor_stream_unused_data: MagicMock,
+        debug_mode: bool,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer = _CompressorSerializerForTest(mock_serializer, ())
+        serializer = _CompressorSerializerForTest(mock_serializer, (), debug=debug_mode)
         mock_decompressor_stream.decompress.return_value = mocker.sentinel.decompressed_data
         mock_decompressor_stream_eof.return_value = True
         mock_decompressor_stream_unused_data.return_value = b"some extra data"
@@ -245,9 +271,15 @@ class TestAbstractCompressorSerializer:
         mock_serializer_new_decompressor_stream.assert_called_once_with()
         mock_decompressor_stream.decompress.assert_called_once_with(mocker.sentinel.data)
         mock_decompressor_stream_eof.assert_called_once()
-        assert mock_decompressor_stream_unused_data.call_count == 2
+        if debug_mode:
+            assert mock_decompressor_stream_unused_data.call_count == 2
+        else:
+            assert mock_decompressor_stream_unused_data.call_count == 1
         mock_serializer.deserialize.assert_not_called()
-        assert exception.error_info == {"decompressed_data": mocker.sentinel.decompressed_data, "extra": b"some extra data"}
+        if debug_mode:
+            assert exception.error_info == {"decompressed_data": mocker.sentinel.decompressed_data, "extra": b"some extra data"}
+        else:
+            assert exception.error_info is None
 
     def test____incremental_deserialize____decompress_chunks(
         self,
@@ -291,6 +323,7 @@ class TestAbstractCompressorSerializer:
         mock_decompressor_stream: MagicMock,
         mock_decompressor_stream_eof: MagicMock,
         mock_decompressor_stream_unused_data: MagicMock,
+        debug_mode: bool,
     ) -> None:
         # Arrange
         from collections import deque
@@ -302,9 +335,17 @@ class TestAbstractCompressorSerializer:
             pass
 
         if give_as_tuple:
-            serializer = _CompressorSerializerForTest(mock_serializer, expected_decompress_error=(MyStreamAPIBaseException,))
+            serializer = _CompressorSerializerForTest(
+                mock_serializer,
+                expected_decompress_error=(MyStreamAPIBaseException,),
+                debug=debug_mode,
+            )
         else:
-            serializer = _CompressorSerializerForTest(mock_serializer, expected_decompress_error=MyStreamAPIBaseException)
+            serializer = _CompressorSerializerForTest(
+                mock_serializer,
+                expected_decompress_error=MyStreamAPIBaseException,
+                debug=debug_mode,
+            )
         mock_decompressor_stream_eof.side_effect = [False]
         mock_decompressor_stream.decompress.side_effect = MyStreamAPIValueError()
 
@@ -323,10 +364,13 @@ class TestAbstractCompressorSerializer:
         mock_serializer.deserialize.assert_not_called()
         assert exception.__cause__ is mock_decompressor_stream.decompress.side_effect
         assert exception.remaining_data == b""
-        assert exception.error_info == {
-            "already_decompressed_chunks": deque([]),
-            "invalid_chunk": b"chunk",
-        }
+        if debug_mode:
+            assert exception.error_info == {
+                "already_decompressed_chunks": deque([]),
+                "invalid_chunk": b"chunk",
+            }
+        else:
+            assert exception.error_info is None
 
     def test____incremental_deserialize____translate_deserialize_errors(
         self,
@@ -335,10 +379,11 @@ class TestAbstractCompressorSerializer:
         mock_decompressor_stream: MagicMock,
         mock_decompressor_stream_eof: MagicMock,
         mock_decompressor_stream_unused_data: MagicMock,
+        debug_mode: bool,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer = _CompressorSerializerForTest(mock_serializer, ())
+        serializer = _CompressorSerializerForTest(mock_serializer, (), debug=debug_mode)
         mock_decompressor_stream_eof.side_effect = [False, True]
         mock_decompressor_stream_unused_data.return_value = mocker.sentinel.unused_data
         mock_decompressor_stream.decompress.side_effect = [b"decompressed chunk"]
@@ -390,6 +435,15 @@ class TestBZ2CompressorSerializer(BaseTestCompressorSerializerImplementation):
     @staticmethod
     def mock_bz2_decompressor_cls(mocker: MockerFixture) -> MagicMock:
         return mocker.patch("bz2.BZ2Decompressor")
+
+    def test____properties____right_values(self, mock_serializer: MagicMock, debug_mode: bool) -> None:
+        # Arrange
+
+        # Act
+        serializer: BZ2CompressorSerializer[Any] = BZ2CompressorSerializer(mock_serializer, debug=debug_mode)
+
+        # Assert
+        assert serializer.debug is debug_mode
 
     @pytest.mark.parametrize(
         "with_compress_level",
@@ -456,6 +510,15 @@ class TestZlibCompressorSerializer(BaseTestCompressorSerializerImplementation):
     @staticmethod
     def mock_zlib_decompressor_cls(mocker: MockerFixture) -> MagicMock:
         return mocker.patch("zlib.decompressobj")
+
+    def test____properties____right_values(self, mock_serializer: MagicMock, debug_mode: bool) -> None:
+        # Arrange
+
+        # Act
+        serializer: ZlibCompressorSerializer[Any] = ZlibCompressorSerializer(mock_serializer, debug=debug_mode)
+
+        # Assert
+        assert serializer.debug is debug_mode
 
     @pytest.mark.parametrize(
         "with_compress_level",

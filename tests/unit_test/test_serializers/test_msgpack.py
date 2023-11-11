@@ -71,6 +71,15 @@ class TestMessagePackSerializer(BaseSerializerConfigInstanceCheck):
             ext_hook=mocker.sentinel.ext_hook,
         )
 
+    def test____properties____right_values(self, debug_mode: bool) -> None:
+        # Arrange
+
+        # Act
+        serializer = MessagePackSerializer(debug=debug_mode)
+
+        # Assert
+        assert serializer.debug is debug_mode
+
     def test____serialize____with_config(
         self,
         packer_config: MessagePackerConfig | None,
@@ -129,48 +138,57 @@ class TestMessagePackSerializer(BaseSerializerConfigInstanceCheck):
     def test____deserialize____missing_data(
         self,
         mock_unpackb: MagicMock,
+        debug_mode: bool,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
         import msgpack
 
-        serializer: MessagePackSerializer = MessagePackSerializer()
+        serializer: MessagePackSerializer = MessagePackSerializer(debug=debug_mode)
         mock_unpackb.side_effect = msgpack.OutOfData
 
         # Act & Assert
-        with pytest.raises(DeserializeError) as exc_info:
+        with pytest.raises(DeserializeError, match=r"^Missing data to create packet$") as exc_info:
             serializer.deserialize(mocker.sentinel.data)
 
         # Assert
         assert isinstance(exc_info.value.__cause__, msgpack.OutOfData)
-        assert exc_info.value.error_info == {"data": mocker.sentinel.data}
+        if debug_mode:
+            assert exc_info.value.error_info == {"data": mocker.sentinel.data}
+        else:
+            assert exc_info.value.error_info is None
 
     def test____deserialize____extra_data(
         self,
         mock_unpackb: MagicMock,
+        debug_mode: bool,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
         import msgpack
 
-        serializer: MessagePackSerializer = MessagePackSerializer()
+        serializer: MessagePackSerializer = MessagePackSerializer(debug=debug_mode)
         mock_unpackb.side_effect = msgpack.ExtraData(mocker.sentinel.packet, b"extra")
 
         # Act & Assert
-        with pytest.raises(DeserializeError) as exc_info:
+        with pytest.raises(DeserializeError, match=r"^Extra data caught$") as exc_info:
             serializer.deserialize(mocker.sentinel.data)
 
         # Assert
         assert isinstance(exc_info.value.__cause__, msgpack.ExtraData)
-        assert exc_info.value.error_info == {"packet": mocker.sentinel.packet, "extra": b"extra"}
+        if debug_mode:
+            assert exc_info.value.error_info == {"packet": mocker.sentinel.packet, "extra": b"extra"}
+        else:
+            assert exc_info.value.error_info is None
 
     def test____deserialize____any_exception_occurs(
         self,
         mock_unpackb: MagicMock,
+        debug_mode: bool,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer: MessagePackSerializer = MessagePackSerializer()
+        serializer: MessagePackSerializer = MessagePackSerializer(debug=debug_mode)
         mock_unpackb.side_effect = Exception
 
         # Act & Assert
@@ -179,4 +197,7 @@ class TestMessagePackSerializer(BaseSerializerConfigInstanceCheck):
 
         # Assert
         assert isinstance(exc_info.value.__cause__, Exception)
-        assert exc_info.value.error_info == {"data": mocker.sentinel.data}
+        if debug_mode:
+            assert exc_info.value.error_info == {"data": mocker.sentinel.data}
+        else:
+            assert exc_info.value.error_info is None

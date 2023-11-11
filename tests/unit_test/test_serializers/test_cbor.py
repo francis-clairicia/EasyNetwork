@@ -95,6 +95,15 @@ class TestCBORSerializer(BaseSerializerConfigInstanceCheck):
         # Act & Assert
         assert getattr(CBORSerializer, method) is getattr(FileBasedPacketSerializer, method)
 
+    def test____properties____right_values(self, debug_mode: bool) -> None:
+        # Arrange
+
+        # Act
+        serializer = CBORSerializer(debug=debug_mode)
+
+        # Assert
+        assert serializer.debug is debug_mode
+
     def test____dump_to_file____with_config(
         self,
         encoder_config: CBOREncoderConfig | None,

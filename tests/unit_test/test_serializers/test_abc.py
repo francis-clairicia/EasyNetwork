@@ -170,14 +170,15 @@ class TestAutoSeparatedPacketSerializer:
         return getattr(request, "param")
 
     @pytest.mark.parametrize("separator", [b"\n", b".", b"\r\n", b"--"], ids=lambda p: f"separator=={p}")
-    def test____properties____right_values(self, separator: bytes) -> None:
+    def test____properties____right_values(self, separator: bytes, debug_mode: bool) -> None:
         # Arrange
 
         # Act
-        serializer = _AutoSeparatedPacketSerializerForTest(separator=separator)
+        serializer = _AutoSeparatedPacketSerializerForTest(separator=separator, debug=debug_mode)
 
         # Assert
         assert serializer.separator == separator
+        assert serializer.debug is debug_mode
 
     def test____dunder_init____empty_separator_bytes(self) -> None:
         # Arrange
@@ -391,10 +392,11 @@ class TestAutoSeparatedPacketSerializer:
         self,
         expected_remaining_data: bytes,
         mock_deserialize_func: MagicMock,
+        debug_mode: bool,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer = _AutoSeparatedPacketSerializerForTest(separator=b"\r\n")
+        serializer = _AutoSeparatedPacketSerializerForTest(separator=b"\r\n", debug=debug_mode)
         mock_deserialize_func.side_effect = DeserializeError("Bad news", error_info=mocker.sentinel.error_info)
 
         # Act
@@ -415,10 +417,11 @@ class TestAutoSeparatedPacketSerializer:
         self,
         separator_found: bytes,
         mock_deserialize_func: MagicMock,
+        debug_mode: bool,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer = _AutoSeparatedPacketSerializerForTest(separator=b"\r\n", limit=1)
+        serializer = _AutoSeparatedPacketSerializerForTest(separator=b"\r\n", limit=1, debug=debug_mode)
         mock_deserialize_func.return_value = mocker.sentinel.packet
         data_to_test: bytes = b"data\r"
         if separator_found:
@@ -438,6 +441,7 @@ class TestAutoSeparatedPacketSerializer:
         else:
             assert str(exc_info.value) == "Separator is not found, and chunk exceed the limit"
             assert exc_info.value.remaining_data == b"\r"
+        assert exc_info.value.error_info is None
 
 
 class _FixedSizePacketSerializerForTest(FixedSizePacketSerializer[Any]):
@@ -464,14 +468,15 @@ class TestFixedSizePacketSerializer:
     def mock_deserialize_func(mocker: MockerFixture) -> MagicMock:
         return mocker.patch.object(_FixedSizePacketSerializerForTest, "deserialize")
 
-    def test____dunder_init____valid_packet_size(self, packet_size: int) -> None:
+    def test____properties____right_values(self, packet_size: int, debug_mode: bool) -> None:
         # Arrange
 
         # Act
-        serializer = _FixedSizePacketSerializerForTest(packet_size)
+        serializer = _FixedSizePacketSerializerForTest(packet_size, debug=debug_mode)
 
         # Assert
         assert serializer.packet_size == packet_size
+        assert serializer.debug is debug_mode
 
     @pytest.mark.parametrize(
         "packet_size",
@@ -597,10 +602,11 @@ class TestFixedSizePacketSerializer:
         expected_remaining_data: bytes,
         packet_size: int,
         mock_deserialize_func: MagicMock,
+        debug_mode: bool,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer = _FixedSizePacketSerializerForTest(packet_size)
+        serializer = _FixedSizePacketSerializerForTest(packet_size, debug=debug_mode)
         packet_data: bytes = random.randbytes(packet_size)
         mock_deserialize_func.side_effect = DeserializeError("Bad news", error_info=mocker.sentinel.error_info)
 
@@ -636,6 +642,15 @@ class TestFileBasedPacketSerializer:
     @staticmethod
     def mock_load_from_file_func(mocker: MockerFixture) -> MagicMock:
         return mocker.patch.object(_FileBasedPacketSerializerForTest, "load_from_file")
+
+    def test____properties____right_values(self, debug_mode: bool) -> None:
+        # Arrange
+
+        # Act
+        serializer = _FileBasedPacketSerializerForTest(expected_load_error=(), debug=debug_mode)
+
+        # Assert
+        assert serializer.debug is debug_mode
 
     def test____serialize____dump_to_file(
         self,
@@ -679,10 +694,11 @@ class TestFileBasedPacketSerializer:
     def test____deserialize____translate_eof_errors(
         self,
         mock_load_from_file_func: MagicMock,
+        debug_mode: bool,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer = _FileBasedPacketSerializerForTest(expected_load_error=())
+        serializer = _FileBasedPacketSerializerForTest(expected_load_error=(), debug=debug_mode)
         mock_load_from_file_func.side_effect = EOFError()
 
         # Act
@@ -693,13 +709,17 @@ class TestFileBasedPacketSerializer:
         # Assert
         mock_load_from_file_func.assert_called_once_with(mocker.ANY)
         assert exception.__cause__ is mock_load_from_file_func.side_effect
-        assert exception.error_info == {"data": b"data"}
+        if debug_mode:
+            assert exception.error_info == {"data": b"data"}
+        else:
+            assert exception.error_info is None
 
     @pytest.mark.parametrize("give_as_tuple", [False, True], ids=lambda boolean: f"give_as_tuple=={boolean}")
     def test____deserialize____translate_given_exceptions(
         self,
         give_as_tuple: bool,
         mock_load_from_file_func: MagicMock,
+        debug_mode: bool,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -710,9 +730,9 @@ class TestFileBasedPacketSerializer:
             pass
 
         if give_as_tuple:
-            serializer = _FileBasedPacketSerializerForTest(expected_load_error=(MyFileAPIBaseException,))
+            serializer = _FileBasedPacketSerializerForTest(expected_load_error=(MyFileAPIBaseException,), debug=debug_mode)
         else:
-            serializer = _FileBasedPacketSerializerForTest(expected_load_error=MyFileAPIBaseException)
+            serializer = _FileBasedPacketSerializerForTest(expected_load_error=MyFileAPIBaseException, debug=debug_mode)
         mock_load_from_file_func.side_effect = MyFileAPIValueError()
 
         # Act
@@ -723,11 +743,15 @@ class TestFileBasedPacketSerializer:
         # Assert
         mock_load_from_file_func.assert_called_once_with(mocker.ANY)
         assert exception.__cause__ is mock_load_from_file_func.side_effect
-        assert exception.error_info == {"data": b"data"}
+        if debug_mode:
+            assert exception.error_info == {"data": b"data"}
+        else:
+            assert exception.error_info is None
 
     def test____deserialize____with_remaining_data_to_read(
         self,
         mock_load_from_file_func: MagicMock,
+        debug_mode: bool,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -735,7 +759,7 @@ class TestFileBasedPacketSerializer:
             assert file.read(2) == b"da"
             return mocker.sentinel.packet
 
-        serializer = _FileBasedPacketSerializerForTest(expected_load_error=())
+        serializer = _FileBasedPacketSerializerForTest(expected_load_error=(), debug=debug_mode)
         mock_load_from_file_func.side_effect = side_effect
 
         # Act
@@ -745,7 +769,10 @@ class TestFileBasedPacketSerializer:
 
         # Assert
         mock_load_from_file_func.assert_called_once_with(mocker.ANY)
-        assert exception.error_info == {"packet": mocker.sentinel.packet, "extra": b"ta"}
+        if debug_mode:
+            assert exception.error_info == {"packet": mocker.sentinel.packet, "extra": b"ta"}
+        else:
+            assert exception.error_info is None
 
     def test____incremental_serialize____dump_to_file(
         self,
@@ -871,6 +898,7 @@ class TestFileBasedPacketSerializer:
         self,
         give_as_tuple: bool,
         mock_load_from_file_func: MagicMock,
+        debug_mode: bool,
     ) -> None:
         # Arrange
         class MyFileAPIBaseException(Exception):
@@ -890,9 +918,9 @@ class TestFileBasedPacketSerializer:
             raise MyFileAPIValueError
 
         if give_as_tuple:
-            serializer = _FileBasedPacketSerializerForTest(expected_load_error=(MyFileAPIBaseException,))
+            serializer = _FileBasedPacketSerializerForTest(expected_load_error=(MyFileAPIBaseException,), debug=debug_mode)
         else:
-            serializer = _FileBasedPacketSerializerForTest(expected_load_error=MyFileAPIBaseException)
+            serializer = _FileBasedPacketSerializerForTest(expected_load_error=MyFileAPIBaseException, debug=debug_mode)
         mock_load_from_file_func.side_effect = side_effect
 
         # Act
@@ -908,4 +936,7 @@ class TestFileBasedPacketSerializer:
         # Assert
         assert exception.remaining_data == b""
         assert type(exception.__cause__) is MyFileAPIValueError
-        assert exception.error_info == {"data": b"data"}
+        if debug_mode:
+            assert exception.error_info == {"data": b"data"}
+        else:
+            assert exception.error_info is None

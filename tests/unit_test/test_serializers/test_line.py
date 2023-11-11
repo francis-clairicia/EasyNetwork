@@ -32,8 +32,13 @@ class TestStringLineSerializer:
 
     @pytest.fixture
     @staticmethod
-    def serializer(newline: Literal["LF", "CR", "CRLF"], encoding: str, unicode_errors: str) -> StringLineSerializer:
-        return StringLineSerializer(newline, encoding=encoding, unicode_errors=unicode_errors)
+    def serializer(
+        newline: Literal["LF", "CR", "CRLF"],
+        encoding: str,
+        unicode_errors: str,
+        debug_mode: bool,
+    ) -> StringLineSerializer:
+        return StringLineSerializer(newline, encoding=encoding, unicode_errors=unicode_errors, debug=debug_mode)
 
     @pytest.mark.parametrize("method", ["incremental_serialize", "incremental_deserialize"])
     def test____base_class____implements_default_methods(self, method: str) -> None:
@@ -53,6 +58,7 @@ class TestStringLineSerializer:
         assert serializer.separator == b"\n"
         assert serializer.encoding == "ascii"
         assert serializer.unicode_errors == "strict"
+        assert serializer.debug is False
 
     @pytest.mark.parametrize("encoding", ["ascii", "utf-8"], indirect=True)
     @pytest.mark.parametrize("unicode_errors", ["strict", "ignore", "replace"], indirect=True)
@@ -61,16 +67,18 @@ class TestStringLineSerializer:
         newline: Literal["LF", "CR", "CRLF"],
         encoding: str,
         unicode_errors: str,
+        debug_mode: bool,
     ) -> None:
         # Arrange
 
         # Act
-        serializer = StringLineSerializer(newline, encoding=encoding, unicode_errors=unicode_errors)
+        serializer = StringLineSerializer(newline, encoding=encoding, unicode_errors=unicode_errors, debug=debug_mode)
 
         # Assert
         assert serializer.separator == _NEWLINES[newline]
         assert serializer.encoding == encoding
         assert serializer.unicode_errors == unicode_errors
+        assert serializer.debug is debug_mode
 
     def test____dunder_init____invalid_newline_value(
         self,
@@ -160,6 +168,7 @@ class TestStringLineSerializer:
         self,
         with_newlines: bool,
         serializer: StringLineSerializer,
+        debug_mode: bool,
     ) -> None:
         # Arrange
         bad_unicode = "é".encode("latin-1")
@@ -171,4 +180,7 @@ class TestStringLineSerializer:
 
         # Assert
         assert isinstance(exception.__cause__, UnicodeError)
-        assert exception.error_info == {"data": bad_unicode}
+        if debug_mode:
+            assert exception.error_info == {"data": bad_unicode}
+        else:
+            assert exception.error_info is None

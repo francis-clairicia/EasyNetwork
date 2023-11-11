@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+import weakref
 from abc import ABCMeta
 from collections.abc import Callable
 from typing import Any, final
@@ -49,8 +50,6 @@ class BaseTestSerializer(metaclass=ABCMeta):
         serializer_for_serialization: AbstractPacketSerializer[Any],
         serializer_for_deserialization: AbstractPacketSerializer[Any],
     ) -> None:
-        import weakref
-
         assert weakref.ref(serializer_for_serialization)() is serializer_for_serialization
         assert weakref.ref(serializer_for_deserialization)() is serializer_for_deserialization
 

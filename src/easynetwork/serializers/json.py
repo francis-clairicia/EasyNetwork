@@ -81,6 +81,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[Any]):
         "__unicode_errors",
         "__limit",
         "__use_lines",
+        "__debug",
     )
 
     def __init__(
@@ -92,6 +93,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[Any]):
         unicode_errors: str = "strict",
         limit: int = _DEFAULT_LIMIT,
         use_lines: bool = True,
+        debug: bool = False,
     ) -> None:
         """
         Parameters:
@@ -101,6 +103,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[Any]):
             unicode_errors: Controls how encoding errors are handled.
             limit: Maximum buffer size. Used in incremental serialization context.
             use_lines: If :data:`True` (the default), each ASCII lines is considered a JSON object.
+            debug: If :data:`True`, add information to :exc:`.DeserializeError` via the ``error_info`` attribute.
 
         See Also:
             :ref:`standard-encodings` and :ref:`error-handlers`.
@@ -134,6 +137,8 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[Any]):
 
         self.__limit: int = limit
         self.__use_lines: bool = bool(use_lines)
+
+        self.__debug: bool = bool(debug)
 
     @final
     def serialize(self, packet: Any) -> bytes:
@@ -215,21 +220,27 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[Any]):
         try:
             document: str = data.decode(self.__encoding, self.__unicode_errors)
         except UnicodeError as exc:
-            raise DeserializeError(f"Unicode decode error: {exc}", error_info={"data": data}) from exc
+            msg = f"Unicode decode error: {exc}"
+            if self.debug:
+                raise DeserializeError(msg, error_info={"data": data}) from exc
+            raise DeserializeError(msg) from exc
         finally:
             del data
         try:
             packet: Any = self.__decoder.decode(document)
         except self.__decoder_error_cls as exc:
-            raise DeserializeError(
-                f"JSON decode error: {exc}",
-                error_info={
-                    "document": exc.doc,
-                    "position": exc.pos,
-                    "lineno": exc.lineno,
-                    "colno": exc.colno,
-                },
-            ) from exc
+            msg = f"JSON decode error: {exc}"
+            if self.debug:
+                raise DeserializeError(
+                    msg,
+                    error_info={
+                        "document": exc.doc,
+                        "position": exc.pos,
+                        "lineno": exc.lineno,
+                        "colno": exc.colno,
+                    },
+                ) from exc
+            raise DeserializeError(msg) from exc
         return packet
 
     @final
@@ -271,27 +282,41 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[Any]):
         try:
             document: str = complete_document.decode(self.__encoding, self.__unicode_errors)
         except UnicodeError as exc:
-            raise IncrementalDeserializeError(
-                f"Unicode decode error: {exc}",
-                remaining_data=remaining_data,
-                error_info={"data": complete_document},
-            ) from exc
+            msg = f"Unicode decode error: {exc}"
+            if self.debug:
+                raise IncrementalDeserializeError(
+                    msg,
+                    remaining_data=remaining_data,
+                    error_info={"data": complete_document},
+                ) from exc
+            raise IncrementalDeserializeError(msg, remaining_data) from exc
         finally:
             del complete_document
         try:
             packet = self.__decoder.decode(document)
         except self.__decoder_error_cls as exc:
-            raise IncrementalDeserializeError(
-                f"JSON decode error: {exc}",
-                remaining_data=remaining_data,
-                error_info={
-                    "document": exc.doc,
-                    "position": exc.pos,
-                    "lineno": exc.lineno,
-                    "colno": exc.colno,
-                },
-            ) from exc
+            msg = f"JSON decode error: {exc}"
+            if self.debug:
+                raise IncrementalDeserializeError(
+                    msg,
+                    remaining_data=remaining_data,
+                    error_info={
+                        "document": exc.doc,
+                        "position": exc.pos,
+                        "lineno": exc.lineno,
+                        "colno": exc.colno,
+                    },
+                ) from exc
+            raise IncrementalDeserializeError(msg, remaining_data) from exc
         return packet, remaining_data
+
+    @property
+    @final
+    def debug(self) -> bool:
+        """
+        The debug mode flag. Read-only attribute.
+        """
+        return self.__debug
 
 
 class _JSONParser:

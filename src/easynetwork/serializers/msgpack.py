@@ -80,17 +80,20 @@ class MessagePackSerializer(AbstractPacketSerializer[Any]):
     Needs ``msgpack`` extra dependencies.
     """
 
-    __slots__ = ("__packb", "__unpackb", "__unpack_out_of_data_cls", "__unpack_extra_data_cls")
+    __slots__ = ("__packb", "__unpackb", "__unpack_out_of_data_cls", "__unpack_extra_data_cls", "__debug")
 
     def __init__(
         self,
         packer_config: MessagePackerConfig | None = None,
         unpacker_config: MessageUnpackerConfig | None = None,
+        *,
+        debug: bool = False,
     ) -> None:
         """
         Parameters:
             packer_config: Parameter object to configure the :class:`~msgpack.Packer`.
             unpacker_config: Parameter object to configure the :class:`~msgpack.Unpacker`.
+            debug: If :data:`True`, add information to :exc:`.DeserializeError` via the ``error_info`` attribute.
         """
         try:
             import msgpack
@@ -117,6 +120,8 @@ class MessagePackSerializer(AbstractPacketSerializer[Any]):
         self.__unpackb = partial(msgpack.unpackb, **dataclass_asdict(unpacker_config))
         self.__unpack_out_of_data_cls = msgpack.OutOfData
         self.__unpack_extra_data_cls = msgpack.ExtraData
+
+        self.__debug: bool = bool(debug)
 
     @final
     def serialize(self, packet: Any) -> bytes:
@@ -159,8 +164,27 @@ class MessagePackSerializer(AbstractPacketSerializer[Any]):
         try:
             return self.__unpackb(data)
         except self.__unpack_out_of_data_cls as exc:
-            raise DeserializeError("Missing data to create packet", error_info={"data": data}) from exc
+            msg = "Missing data to create packet"
+            if self.debug:
+                raise DeserializeError(msg, error_info={"data": data}) from exc
+            raise DeserializeError(msg) from exc
         except self.__unpack_extra_data_cls as exc:
-            raise DeserializeError("Extra data caught", error_info={"packet": exc.unpacked, "extra": exc.extra}) from exc  # type: ignore[attr-defined]
+            msg = "Extra data caught"
+            if self.debug:
+                raise DeserializeError(msg, error_info={"packet": exc.unpacked, "extra": exc.extra}) from exc  # type: ignore[attr-defined]
+            raise DeserializeError(msg) from exc
         except Exception as exc:  # The documentation says to catch all exceptions :)
-            raise DeserializeError(str(exc) or "Invalid token", error_info={"data": data}) from exc
+            msg = str(exc) or "Invalid token"
+            if self.debug:
+                raise DeserializeError(msg, error_info={"data": data}) from exc
+            raise DeserializeError(msg) from exc
+        finally:
+            del data
+
+    @property
+    @final
+    def debug(self) -> bool:
+        """
+        The debug mode flag. Read-only attribute.
+        """
+        return self.__debug

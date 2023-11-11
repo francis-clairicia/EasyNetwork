@@ -37,6 +37,15 @@ class TestBase64EncoderSerializer:
         # Act & Assert
         assert getattr(Base64EncoderSerializer, method) is getattr(AutoSeparatedPacketSerializer, method)
 
+    def test____properties____right_values(self, mock_serializer: MagicMock, debug_mode: bool) -> None:
+        # Arrange
+
+        # Act
+        serializer: Base64EncoderSerializer[Any] = Base64EncoderSerializer(mock_serializer, debug=debug_mode)
+
+        # Assert
+        assert serializer.debug is debug_mode
+
     def test____dunder_init____invalid_serializer(self, mocker: MockerFixture) -> None:
         # Arrange
         mock_not_serializer = mocker.NonCallableMagicMock(spec=object)
@@ -90,12 +99,13 @@ class TestBase64EncoderSerializer:
         alphabet: Literal["standard", "urlsafe"],
         mock_serializer: MagicMock,
         mock_b64decode: MagicMock,
+        debug_mode: bool,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
         import binascii
 
-        serializer: Base64EncoderSerializer[Any] = Base64EncoderSerializer(mock_serializer, alphabet=alphabet)
+        serializer: Base64EncoderSerializer[Any] = Base64EncoderSerializer(mock_serializer, alphabet=alphabet, debug=debug_mode)
         mock_b64decode.side_effect = binascii.Error()
 
         # Act

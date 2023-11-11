@@ -106,6 +106,15 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
     def mock_generator_stream_reader_cls(mock_generator_stream_reader: MagicMock, mocker: MockerFixture) -> MagicMock:
         return mocker.patch(f"{JSONSerializer.__module__}.GeneratorStreamReader", return_value=mock_generator_stream_reader)
 
+    def test____properties____right_values(self, debug_mode: bool) -> None:
+        # Arrange
+
+        # Act
+        serializer = JSONSerializer(debug=debug_mode)
+
+        # Assert
+        assert serializer.debug is debug_mode
+
     def test____dunder_init____with_encoder_config(
         self,
         encoder_config: JSONEncoderConfig | None,
@@ -265,10 +274,11 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
     def test____deserialize____translate_unicode_decode_errors(
         self,
         mock_decoder: MagicMock,
+        debug_mode: bool,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer: JSONSerializer = JSONSerializer()
+        serializer: JSONSerializer = JSONSerializer(debug=debug_mode)
         mock_bytes = mocker.NonCallableMagicMock()
         mock_bytes.decode.side_effect = UnicodeDecodeError("some encoding", b"invalid data", 0, 2, "Bad encoding ?")
 
@@ -281,17 +291,21 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         mock_bytes.decode.assert_called_once()
         mock_decoder.decode.assert_not_called()
         assert exception.__cause__ is mock_bytes.decode.side_effect
-        assert exception.error_info == {"data": mock_bytes}
+        if debug_mode:
+            assert exception.error_info == {"data": mock_bytes}
+        else:
+            assert exception.error_info is None
 
     def test____deserialize____translate_json_decode_errors(
         self,
         mock_decoder: MagicMock,
+        debug_mode: bool,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
         from json import JSONDecodeError
 
-        serializer: JSONSerializer = JSONSerializer()
+        serializer: JSONSerializer = JSONSerializer(debug=debug_mode)
         mock_bytes = mocker.NonCallableMagicMock()
         mock_decoder.decode.side_effect = JSONDecodeError("Invalid payload", "invalid\ndocument", 8)
 
@@ -304,12 +318,15 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         mock_bytes.decode.assert_called_once()
         mock_decoder.decode.assert_called_once()
         assert exception.__cause__ is mock_decoder.decode.side_effect
-        assert exception.error_info == {
-            "document": "invalid\ndocument",
-            "position": 8,
-            "lineno": 2,
-            "colno": 1,
-        }
+        if debug_mode:
+            assert exception.error_info == {
+                "document": "invalid\ndocument",
+                "position": 8,
+                "lineno": 2,
+                "colno": 1,
+            }
+        else:
+            assert exception.error_info is None
 
     def test____incremental_deserialize____parse_and_decode_data(
         self,
@@ -368,6 +385,7 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         self,
         mock_decoder: MagicMock,
         mock_json_parser: MagicMock,
+        debug_mode: bool,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -380,6 +398,7 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
             encoding=mocker.sentinel.encoding,
             unicode_errors=mocker.sentinel.str_errors,
             use_lines=False,
+            debug=debug_mode,
         )
         mock_bytes = mocker.NonCallableMagicMock()
         mock_bytes.decode.side_effect = UnicodeDecodeError("some encoding", b"invalid data", 0, 2, "Bad encoding ?")
@@ -397,12 +416,16 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         mock_decoder.decode.assert_not_called()
         assert exception.remaining_data is mocker.sentinel.remaining_data
         assert exception.__cause__ is mock_bytes.decode.side_effect
-        assert exception.error_info == {"data": mock_bytes}
+        if debug_mode:
+            assert exception.error_info == {"data": mock_bytes}
+        else:
+            assert exception.error_info is None
 
     def test____incremental_deserialize____translate_json_decode_errors(
         self,
         mock_decoder: MagicMock,
         mock_json_parser: MagicMock,
+        debug_mode: bool,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -417,6 +440,7 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
             encoding=mocker.sentinel.encoding,
             unicode_errors=mocker.sentinel.str_errors,
             use_lines=False,
+            debug=debug_mode,
         )
         mock_bytes = mocker.NonCallableMagicMock()
         mock_decoder.decode.side_effect = JSONDecodeError("Invalid payload", "invalid\ndocument", 8)
@@ -434,12 +458,15 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         mock_decoder.decode.assert_called_once()
         assert exception.remaining_data is mocker.sentinel.remaining_data
         assert exception.__cause__ is mock_decoder.decode.side_effect
-        assert exception.error_info == {
-            "document": "invalid\ndocument",
-            "position": 8,
-            "lineno": 2,
-            "colno": 1,
-        }
+        if debug_mode:
+            assert exception.error_info == {
+                "document": "invalid\ndocument",
+                "position": 8,
+                "lineno": 2,
+                "colno": 1,
+            }
+        else:
+            assert exception.error_info is None
 
 
 class TestJSONParser:

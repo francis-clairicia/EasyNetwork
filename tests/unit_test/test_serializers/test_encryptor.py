@@ -35,6 +35,15 @@ class TestEncryptorSerializer:
         # Act & Assert
         assert getattr(EncryptorSerializer, method) is getattr(AutoSeparatedPacketSerializer, method)
 
+    def test____properties____right_values(self, mock_serializer: MagicMock, debug_mode: bool) -> None:
+        # Arrange
+
+        # Act
+        serializer: EncryptorSerializer[Any] = EncryptorSerializer(mock_serializer, "key", debug=debug_mode)
+
+        # Assert
+        assert serializer.debug is debug_mode
+
     def test____dunder_init____invalid_serializer(self, mocker: MockerFixture) -> None:
         # Arrange
         mock_not_serializer = mocker.NonCallableMagicMock(spec=object)
@@ -103,6 +112,7 @@ class TestEncryptorSerializer:
         self,
         mock_serializer: MagicMock,
         mock_fernet: MagicMock,
+        debug_mode: bool,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -112,6 +122,7 @@ class TestEncryptorSerializer:
             mock_serializer,
             key=mocker.sentinel.key,
             token_ttl=mocker.sentinel.token_ttl,
+            debug=debug_mode,
         )
         mock_fernet.decrypt.side_effect = InvalidToken()
 

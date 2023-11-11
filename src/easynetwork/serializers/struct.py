@@ -73,17 +73,18 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_DTOPacketT]):
 
     __slots__ = ("__s", "__error_cls")
 
-    def __init__(self, format: str) -> None:
+    def __init__(self, format: str, *, debug: bool = False) -> None:
         """
         Parameters:
             format: The :class:`struct.Struct` format definition string.
+            debug: If :data:`True`, add information to :exc:`.DeserializeError` via the ``error_info`` attribute.
         """
         from struct import Struct, error
 
         if format and format[0] not in _ENDIANNESS_CHARACTERS:
             format = f"!{format}"  # network byte order
         struct = Struct(format)
-        super().__init__(struct.size)
+        super().__init__(struct.size, debug=debug)
         self.__s: _typing_struct.Struct = struct
         self.__error_cls = error
 
@@ -160,14 +161,20 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_DTOPacketT]):
         try:
             packet_tuple: tuple[Any, ...] = self.__s.unpack(data)
         except self.__error_cls as exc:
-            raise DeserializeError(f"Invalid value: {exc}", error_info={"data": data}) from exc
+            msg = f"Invalid value: {exc}"
+            if self.debug:
+                raise DeserializeError(msg, error_info={"data": data}) from exc
+            raise DeserializeError(msg) from exc
         try:
             return self.from_tuple(packet_tuple)
         except Exception as exc:
-            raise DeserializeError(
-                f"Error when building packet from unpacked struct value: {exc}",
-                error_info={"unpacked_struct": packet_tuple},
-            ) from exc
+            msg = f"Error when building packet from unpacked struct value: {exc}"
+            if self.debug:
+                raise DeserializeError(
+                    msg,
+                    error_info={"unpacked_struct": packet_tuple},
+                ) from exc
+            raise DeserializeError(msg) from exc
 
     @property
     @final
@@ -218,6 +225,8 @@ class NamedTupleStructSerializer(AbstractStructSerializer[_NamedTupleVar]):
         encoding: str | None = "utf-8",
         unicode_errors: str = "strict",
         strip_string_trailing_nul_bytes: bool = True,
+        *,
+        debug: bool = False,
     ) -> None:
         r"""
         Parameters:
@@ -227,6 +236,7 @@ class NamedTupleStructSerializer(AbstractStructSerializer[_NamedTupleVar]):
             encoding: String fields encoding. Can be disabled by setting it to :data:`None`.
             unicode_errors: Controls how encoding errors are handled. Ignored if `encoding` is set to :data:`None`.
             strip_string_trailing_nul_bytes: If `True` (the default), removes ``\0`` characters at the end of a string field.
+            debug: If :data:`True`, add information to :exc:`.DeserializeError` via the ``error_info`` attribute.
 
         See Also:
             :ref:`standard-encodings` and :ref:`error-handlers`.
@@ -247,7 +257,7 @@ class NamedTupleStructSerializer(AbstractStructSerializer[_NamedTupleVar]):
                 string_fields.add(field)
             elif len(field_fmt) != 1 or not field_fmt.isalpha():
                 raise ValueError(f"{field!r}: Invalid field format")
-        super().__init__(f"{format_endianness}{''.join(field_formats[field] for field in namedtuple_cls._fields)}")
+        super().__init__(f"{format_endianness}{''.join(field_formats[field] for field in namedtuple_cls._fields)}", debug=debug)
         self.__namedtuple_cls: type[_NamedTupleVar] = namedtuple_cls
         self.__string_fields: frozenset[str] = frozenset(string_fields)
         self.__encoding: str | None = encoding

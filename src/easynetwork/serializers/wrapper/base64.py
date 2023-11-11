@@ -46,6 +46,7 @@ class Base64EncoderSerializer(AutoSeparatedPacketSerializer[_DTOPacketT]):
         checksum: bool | str | bytes = False,
         separator: bytes = b"\r\n",
         limit: int = _DEFAULT_LIMIT,
+        debug: bool = False,
     ) -> None:
         """
         Parameters:
@@ -61,12 +62,18 @@ class Base64EncoderSerializer(AutoSeparatedPacketSerializer[_DTOPacketT]):
                       `checksum` can also be a URL-safe base64-encoded 32-byte key for a signed checksum.
             separator: Token for :class:`AutoSeparatedPacketSerializer`. Used in incremental serialization context.
             limit: Maximum buffer size. Used in incremental serialization context.
+            debug: If :data:`True`, add information to :exc:`.DeserializeError` via the ``error_info`` attribute.
         """
         import base64
         import binascii
         from hmac import compare_digest
 
-        super().__init__(separator=separator, incremental_serialize_check_separator=not separator.isspace(), limit=limit)
+        super().__init__(
+            separator=separator,
+            incremental_serialize_check_separator=not separator.isspace(),
+            limit=limit,
+            debug=debug,
+        )
         if not isinstance(serializer, AbstractPacketSerializer):
             raise TypeError(f"Expected a serializer instance, got {serializer!r}")
         self.__serializer: AbstractPacketSerializer[_DTOPacketT] = serializer
@@ -153,5 +160,5 @@ class Base64EncoderSerializer(AutoSeparatedPacketSerializer[_DTOPacketT]):
         if (checksum := self.__checksum) is not None:
             data, digest = data[:-32], data[-32:]
             if not self.__compare_digest(checksum(data), digest):
-                raise DeserializeError("Invalid token", error_info=None)
+                raise DeserializeError("Invalid token")
         return self.__serializer.deserialize(data)

@@ -46,6 +46,7 @@ class EncryptorSerializer(AutoSeparatedPacketSerializer[_DTOPacketT]):
         token_ttl: int | None = None,
         separator: bytes = b"\r\n",
         limit: int = _DEFAULT_LIMIT,
+        debug: bool = False,
     ) -> None:
         """
         Parameters:
@@ -54,13 +55,19 @@ class EncryptorSerializer(AutoSeparatedPacketSerializer[_DTOPacketT]):
             token_ttl: Token time-to-live. See :meth:`cryptography.fernet.Fernet.decrypt` for details.
             separator: Token for :class:`AutoSeparatedPacketSerializer`. Used in incremental serialization context.
             limit: Maximum buffer size. Used in incremental serialization context.
+            debug: If :data:`True`, add information to :exc:`.DeserializeError` via the ``error_info`` attribute.
         """
         try:
             import cryptography.fernet
         except ModuleNotFoundError as exc:  # pragma: no cover
             raise ModuleNotFoundError("encryption dependencies are missing. Consider adding 'encryption' extra") from exc
 
-        super().__init__(separator=separator, incremental_serialize_check_separator=not separator.isspace(), limit=limit)
+        super().__init__(
+            separator=separator,
+            incremental_serialize_check_separator=not separator.isspace(),
+            limit=limit,
+            debug=debug,
+        )
         if not isinstance(serializer, AbstractPacketSerializer):
             raise TypeError(f"Expected a serializer instance, got {serializer!r}")
         self.__serializer: AbstractPacketSerializer[_DTOPacketT] = serializer
@@ -117,5 +124,5 @@ class EncryptorSerializer(AutoSeparatedPacketSerializer[_DTOPacketT]):
         try:
             data = self.__fernet.decrypt(data, ttl=self.__token_ttl)
         except self.__invalid_token_cls:
-            raise DeserializeError("Invalid token", error_info=None) from None
+            raise DeserializeError("Invalid token") from None
         return self.__serializer.deserialize(data)

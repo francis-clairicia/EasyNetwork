@@ -39,6 +39,7 @@ class StringLineSerializer(AutoSeparatedPacketSerializer[str]):
         encoding: str = "ascii",
         unicode_errors: str = "strict",
         limit: int = _DEFAULT_LIMIT,
+        debug: bool = False,
     ) -> None:
         r"""
         Parameters:
@@ -53,6 +54,7 @@ class StringLineSerializer(AutoSeparatedPacketSerializer[str]):
             encoding: String encoding. Defaults to ``"ascii"``.
             unicode_errors: Controls how encoding errors are handled.
             limit: Maximum buffer size. Used in incremental serialization context.
+            debug: If :data:`True`, add information to :exc:`.DeserializeError` via the ``error_info`` attribute.
 
         See Also:
             :ref:`standard-encodings` and :ref:`error-handlers`.
@@ -67,7 +69,7 @@ class StringLineSerializer(AutoSeparatedPacketSerializer[str]):
                 separator = b"\r\n"
             case _:
                 assert_never(newline)
-        super().__init__(separator=separator, incremental_serialize_check_separator=False, limit=limit)
+        super().__init__(separator=separator, incremental_serialize_check_separator=False, limit=limit, debug=debug)
         self.__encoding: str = encoding
         self.__unicode_errors: str = unicode_errors
 
@@ -140,7 +142,12 @@ class StringLineSerializer(AutoSeparatedPacketSerializer[str]):
         try:
             return data.decode(self.__encoding, self.__unicode_errors)
         except UnicodeError as exc:
-            raise DeserializeError(str(exc), error_info={"data": data}) from exc
+            msg = str(exc)
+            if self.debug:
+                raise DeserializeError(msg, error_info={"data": data}) from exc
+            raise DeserializeError(msg) from exc
+        finally:
+            del data
 
     @property
     @final
