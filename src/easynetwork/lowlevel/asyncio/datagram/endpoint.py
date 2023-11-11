@@ -96,6 +96,8 @@ class DatagramEndpoint:
             return
 
         self.__transport.close()
+        # Let a chance to the call_soon() to set the inner future result
+        await TaskUtils.cancel_shielded_coro_yield()
         try:
             await self.__protocol._get_close_waiter()
         except asyncio.CancelledError:

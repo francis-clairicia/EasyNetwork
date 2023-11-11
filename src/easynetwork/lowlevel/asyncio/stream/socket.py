@@ -29,6 +29,7 @@ from ....exceptions import UnsupportedOperation
 from ... import socket as socket_tools
 from ...api_async.transports import abc as transports
 from ..socket import AsyncSocket
+from ..tasks import TaskUtils
 
 if TYPE_CHECKING:
     import asyncio.trsock
@@ -79,6 +80,8 @@ class AsyncioTransportStreamSocketAdapter(transports.AsyncStreamTransport):
             pass
         finally:
             self.__writer.close()
+        # Let a chance to the call_soon() to set the inner future result
+        await TaskUtils.cancel_shielded_coro_yield()
         try:
             await self.__writer.wait_closed()
         except OSError:
