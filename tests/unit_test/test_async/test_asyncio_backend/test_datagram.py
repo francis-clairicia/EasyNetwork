@@ -168,11 +168,10 @@ class TestDatagramEndpoint:
         if transport_is_closing:
             mock_asyncio_transport.close.assert_not_called()
             mock_asyncio_protocol._get_close_waiter.assert_awaited_once_with()
-            mock_asyncio_transport.abort.assert_not_called()
         else:
             mock_asyncio_transport.close.assert_called_once_with()
             mock_asyncio_protocol._get_close_waiter.assert_awaited_once_with()
-            mock_asyncio_transport.abort.assert_not_called()
+        mock_asyncio_transport.abort.assert_not_called()
 
     @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing=={p}")
     async def test____aclose____abort_transport_if_cancelled(
@@ -194,11 +193,10 @@ class TestDatagramEndpoint:
         if transport_is_closing:
             mock_asyncio_transport.close.assert_not_called()
             mock_asyncio_protocol._get_close_waiter.assert_awaited_once_with()
-            mock_asyncio_transport.abort.assert_not_called()
         else:
             mock_asyncio_transport.close.assert_called_once_with()
             mock_asyncio_protocol._get_close_waiter.assert_awaited_once_with()
-            mock_asyncio_transport.abort.assert_called_once_with()
+        mock_asyncio_transport.abort.assert_not_called()
 
     async def test____is_closing____return_transport_state(
         self,

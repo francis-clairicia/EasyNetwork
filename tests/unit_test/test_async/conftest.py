@@ -26,6 +26,11 @@ def __mute_socket_getaddrinfo(module_mocker: MockerFixture) -> None:
     module_mocker.patch("socket.getaddrinfo", autospec=True, side_effect=gaierror(EAI_NONAME, "Name or service not known"))
 
 
+@pytest.fixture(autouse=True)
+def __increase_event_loop_execution_time_before_warning(event_loop: asyncio.AbstractEventLoop) -> None:
+    event_loop.slow_callback_duration = 5.0
+
+
 @pytest.fixture(scope="session")
 def fake_cancellation_cls() -> type[BaseException]:
     return FakeCancellation

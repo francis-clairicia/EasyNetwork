@@ -83,6 +83,24 @@ class TestAsyncioTransportStreamSocketAdapter(BaseTestTransportStreamSocket):
 
     @pytest.fixture
     @staticmethod
+    def add_ssl_extra_to_transport(
+        asyncio_writer_extra_info: dict[str, Any],
+        mock_ssl_context: MagicMock,
+        mock_ssl_object: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        asyncio_writer_extra_info.update(
+            {
+                "sslcontext": mock_ssl_context,
+                "ssl_object": mock_ssl_object,
+                "peercert": mocker.sentinel.peercert,
+                "cipher": mocker.sentinel.cipher,
+                "compression": mocker.sentinel.compression,
+            }
+        )
+
+    @pytest.fixture
+    @staticmethod
     def socket(mock_asyncio_reader: MagicMock, mock_asyncio_writer: MagicMock) -> AsyncioTransportStreamSocketAdapter:
         mock_asyncio_writer.can_write_eof.return_value = True
         return AsyncioTransportStreamSocketAdapter(mock_asyncio_reader, mock_asyncio_writer)
@@ -127,6 +145,31 @@ class TestAsyncioTransportStreamSocketAdapter(BaseTestTransportStreamSocket):
 
     @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing=={p}")
     async def test____aclose____abort_transport_if_cancelled(
+        self,
+        transport_is_closing: bool,
+        socket: AsyncioTransportStreamSocketAdapter,
+        mock_asyncio_writer: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_asyncio_writer.is_closing.return_value = transport_is_closing
+        mock_asyncio_writer.wait_closed.side_effect = asyncio.CancelledError
+
+        # Act
+        with pytest.raises(asyncio.CancelledError):
+            await socket.aclose()
+
+        # Assert
+        if transport_is_closing:
+            mock_asyncio_writer.close.assert_not_called()
+            mock_asyncio_writer.wait_closed.assert_awaited_once_with()
+        else:
+            mock_asyncio_writer.close.assert_called_once_with()
+            mock_asyncio_writer.wait_closed.assert_awaited_once_with()
+        mock_asyncio_writer.transport.abort.assert_not_called()
+
+    @pytest.mark.usefixtures("add_ssl_extra_to_transport")
+    @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing=={p}")
+    async def test____aclose____abort_transport_if_cancelled____ssl(
         self,
         transport_is_closing: bool,
         socket: AsyncioTransportStreamSocketAdapter,
@@ -296,16 +339,14 @@ class TestAsyncioTransportStreamSocketAdapter(BaseTestTransportStreamSocket):
         assert socket.extra(SocketAttribute.sockname) == ("127.0.0.1", 11111)
         assert socket.extra(SocketAttribute.peername) == ("127.0.0.1", 12345)
 
+    @pytest.mark.usefixtures("add_ssl_extra_to_transport")
     async def test____get_extra_info____returns_ssl_info(
         self,
-        asyncio_writer_extra_info: dict[str, Any],
         socket: AsyncioTransportStreamSocketAdapter,
-        mock_ssl_object: MagicMock,
         mock_ssl_context: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        asyncio_writer_extra_info.update({"ssl_object": mock_ssl_object})
 
         # Act & Assert
         assert socket.extra(TLSAttribute.sslcontext) is mock_ssl_context
