@@ -13,6 +13,7 @@ from errno import errorcode as errno_errorcode
 from socket import SHUT_RDWR, SHUT_WR
 from typing import TYPE_CHECKING, Any
 
+from easynetwork.exceptions import UnsupportedOperation
 from easynetwork.lowlevel.asyncio.stream.listener import (
     AbstractAcceptedSocketFactory,
     AcceptedSocketFactory,
@@ -262,19 +263,25 @@ class TestAsyncioTransportStreamSocketAdapter(BaseTestTransportStreamSocket):
         mock_asyncio_writer.writelines.assert_not_called()
         mock_asyncio_writer.drain.assert_awaited_once_with()
 
+    @pytest.mark.parametrize("can_write_eof", [False, True], ids=lambda p: f"can_write_eof=={p}")
     async def test____send_eof____write_eof(
         self,
+        can_write_eof: bool,
         socket: AsyncioTransportStreamSocketAdapter,
         mock_asyncio_writer: MagicMock,
     ) -> None:
         # Arrange
+        mock_asyncio_writer.can_write_eof.return_value = can_write_eof
         mock_asyncio_writer.write_eof.return_value = None
 
-        # Act
-        await socket.send_eof()
-
-        # Assert
-        mock_asyncio_writer.write_eof.assert_called_once_with()
+        # Act & Assert
+        if can_write_eof:
+            await socket.send_eof()
+            mock_asyncio_writer.write_eof.assert_called_once_with()
+        else:
+            with pytest.raises(UnsupportedOperation):
+                await socket.send_eof()
+            mock_asyncio_writer.write_eof.assert_not_called()
 
     async def test____get_extra_info____returns_socket_info(
         self,

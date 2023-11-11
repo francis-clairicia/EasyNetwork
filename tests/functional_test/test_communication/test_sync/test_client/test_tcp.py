@@ -18,6 +18,18 @@ import pytest
 from .....tools import TimeTest
 
 
+def readline(sock: Socket) -> bytes:
+    buf: list[bytes] = []
+    while True:
+        chunk = sock.recv(1024)
+        if not chunk:
+            break
+        buf.append(chunk)
+        if b"\n" in chunk:
+            break
+    return b"".join(buf)
+
+
 @pytest.mark.usefixtures("simulate_no_ssl_module")
 class TestTCPNetworkClient:
     @pytest.fixture
@@ -46,7 +58,7 @@ class TestTCPNetworkClient:
 
     def test____send_packet____default(self, client: TCPNetworkClient[str, str], server: Socket) -> None:
         client.send_packet("ABCDEF")
-        assert server.recv(1024) == b"ABCDEF\n"
+        assert readline(server) == b"ABCDEF\n"
 
     def test____send_packet____connection_error____fresh_connection_closed_by_server(
         self,
@@ -65,7 +77,7 @@ class TestTCPNetworkClient:
         server: Socket,
     ) -> None:
         client.send_packet("ABCDEF")
-        assert server.recv(1024) == b"ABCDEF\n"
+        assert readline(server) == b"ABCDEF\n"
         server.close()
         with pytest.raises(ConnectionAbortedError):
             for _ in range(3):  # Windows and macOS catch the issue after several send()
@@ -94,7 +106,7 @@ class TestTCPNetworkClient:
         server: Socket,
     ) -> None:
         client.send_eof()
-        assert server.recv(1024) == b""
+        assert readline(server) == b""
         with pytest.raises(RuntimeError):
             client.send_packet("ABC")
 
@@ -114,7 +126,7 @@ class TestTCPNetworkClient:
         server: Socket,
     ) -> None:
         client.send_eof()
-        assert server.recv(1024) == b""
+        assert readline(server) == b""
         client.send_eof()
         client.send_eof()
 
@@ -183,7 +195,7 @@ class TestTCPNetworkClient:
             client.recv_packet()
 
         client.send_packet("ABCDEF")
-        assert server.recv(1024) == b"ABCDEF\n"
+        assert readline(server) == b"ABCDEF\n"
 
     def test____recv_packet____client_close_error(self, client: TCPNetworkClient[str, str]) -> None:
         client.close()
