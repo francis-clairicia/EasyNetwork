@@ -48,8 +48,7 @@ async def datagram_endpoint_factory(
                 family=socket_family,
                 local_addr=(localhost_ip, 0),
             )
-            stack.push_async_callback(lambda: asyncio.wait_for(endpoint.wait_closed(), 3))
-            stack.callback(endpoint.close)
+            stack.push_async_callback(lambda: asyncio.wait_for(endpoint.aclose(), 3))
             return endpoint
 
         yield factory

@@ -258,8 +258,7 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
                     local_addr=(localhost_ip, 0),
                     remote_addr=server_address,
                 )
-                stack.push_async_callback(endpoint.wait_closed)
-                stack.callback(endpoint.close)
+                stack.push_async_callback(endpoint.aclose)
                 return endpoint
 
             yield factory

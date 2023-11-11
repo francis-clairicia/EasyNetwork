@@ -150,48 +150,55 @@ class TestDatagramEndpoint:
         # Act & Assert
         assert endpoint.transport is mock_asyncio_transport
 
-    async def test____close____close_transport(
-        self,
-        endpoint: DatagramEndpoint,
-        mock_asyncio_transport: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act
-        endpoint.close()
-
-        # Assert
-        mock_asyncio_transport.close.assert_called_once_with()
-        mock_asyncio_transport.abort.assert_not_called()
-
-    async def test____wait_closed____wait_for_protocol_to_close_connection(
-        self,
-        endpoint: DatagramEndpoint,
-        mock_asyncio_protocol: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act
-        await endpoint.wait_closed()
-
-        # Assert
-        mock_asyncio_protocol._get_close_waiter.assert_awaited_once_with()
-
+    @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing=={p}")
     async def test____aclose____close_transport_and_wait(
         self,
+        transport_is_closing: bool,
         endpoint: DatagramEndpoint,
         mock_asyncio_transport: MagicMock,
         mock_asyncio_protocol: MagicMock,
     ) -> None:
         # Arrange
+        mock_asyncio_transport.is_closing.return_value = transport_is_closing
 
         # Act
         await endpoint.aclose()
 
         # Assert
-        mock_asyncio_transport.close.assert_called_once_with()
-        mock_asyncio_transport.abort.assert_not_called()
-        mock_asyncio_protocol._get_close_waiter.assert_awaited_once_with()
+        if transport_is_closing:
+            mock_asyncio_transport.close.assert_not_called()
+            mock_asyncio_protocol._get_close_waiter.assert_awaited_once_with()
+            mock_asyncio_transport.abort.assert_not_called()
+        else:
+            mock_asyncio_transport.close.assert_called_once_with()
+            mock_asyncio_protocol._get_close_waiter.assert_awaited_once_with()
+            mock_asyncio_transport.abort.assert_not_called()
+
+    @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing=={p}")
+    async def test____aclose____abort_transport_if_cancelled(
+        self,
+        transport_is_closing: bool,
+        endpoint: DatagramEndpoint,
+        mock_asyncio_transport: MagicMock,
+        mock_asyncio_protocol: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_asyncio_transport.is_closing.return_value = transport_is_closing
+        mock_asyncio_protocol._get_close_waiter.side_effect = asyncio.CancelledError
+
+        # Act
+        with pytest.raises(asyncio.CancelledError):
+            await endpoint.aclose()
+
+        # Assert
+        if transport_is_closing:
+            mock_asyncio_transport.close.assert_not_called()
+            mock_asyncio_protocol._get_close_waiter.assert_awaited_once_with()
+            mock_asyncio_transport.abort.assert_not_called()
+        else:
+            mock_asyncio_transport.close.assert_called_once_with()
+            mock_asyncio_protocol._get_close_waiter.assert_awaited_once_with()
+            mock_asyncio_transport.abort.assert_called_once_with()
 
     async def test____is_closing____return_transport_state(
         self,
@@ -712,26 +719,7 @@ class BaseTestAsyncioTransportDatagramSocket(BaseTestSocket):
         await socket.aclose()
 
         # Assert
-        mock_endpoint.close.assert_called_once_with()
-        mock_endpoint.wait_closed.assert_awaited_once_with()
-        mock_endpoint.transport.abort.assert_not_called()
-
-    async def test____aclose____abort_transport_if_cancelled(
-        self,
-        socket: AsyncBaseTransport,
-        mock_endpoint: MagicMock,
-    ) -> None:
-        # Arrange
-        mock_endpoint.wait_closed.side_effect = asyncio.CancelledError
-
-        # Act
-        with pytest.raises(asyncio.CancelledError):
-            await socket.aclose()
-
-        # Assert
-        mock_endpoint.close.assert_called_once_with()
-        mock_endpoint.wait_closed.assert_awaited_once_with()
-        mock_endpoint.transport.abort.assert_called_once_with()
+        mock_endpoint.aclose.assert_awaited_once_with()
 
     @pytest.mark.parametrize("transport_closed", [False, True], ids=lambda p: f"transport_closed=={p}")
     async def test____is_closing____return_internal_flag(

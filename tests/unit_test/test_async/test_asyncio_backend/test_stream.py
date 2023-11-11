@@ -87,58 +87,53 @@ class TestAsyncioTransportStreamSocketAdapter(BaseTestTransportStreamSocket):
         mock_asyncio_writer.can_write_eof.return_value = True
         return AsyncioTransportStreamSocketAdapter(mock_asyncio_reader, mock_asyncio_writer)
 
+    @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing=={p}")
     @pytest.mark.parametrize("can_write_eof", [False, True], ids=lambda p: f"can_write_eof=={p}")
     @pytest.mark.parametrize("wait_close_raise_error", [False, True], ids=lambda p: f"wait_close_raise_error=={p}")
-    @pytest.mark.parametrize("write_eof_rais_error", [False, True], ids=lambda p: f"write_eof_rais_error=={p}")
+    @pytest.mark.parametrize("write_eof_raise_error", [False, True], ids=lambda p: f"write_eof_raise_error=={p}")
     async def test____aclose____close_transport_and_wait(
         self,
+        transport_is_closing: bool,
         can_write_eof: bool,
         wait_close_raise_error: bool,
-        write_eof_rais_error: bool,
+        write_eof_raise_error: bool,
         socket: AsyncioTransportStreamSocketAdapter,
         mock_asyncio_writer: MagicMock,
     ) -> None:
         # Arrange
+        mock_asyncio_writer.is_closing.return_value = transport_is_closing
         mock_asyncio_writer.can_write_eof.return_value = can_write_eof
         if wait_close_raise_error:
             mock_asyncio_writer.wait_closed.side_effect = OSError
-        if write_eof_rais_error:
+        if write_eof_raise_error:
             mock_asyncio_writer.write_eof.side_effect = OSError
 
         # Act
         await socket.aclose()
 
         # Assert
-        if can_write_eof:
-            mock_asyncio_writer.write_eof.assert_called_once_with()
+        if transport_is_closing:
+            mock_asyncio_writer.close.assert_not_called()
+            mock_asyncio_writer.wait_closed.assert_awaited_once_with()
+            mock_asyncio_writer.transport.abort.assert_not_called()
         else:
-            mock_asyncio_writer.write_eof.assert_not_called()
-        mock_asyncio_writer.close.assert_called_once_with()
-        mock_asyncio_writer.wait_closed.assert_awaited_once_with()
-        mock_asyncio_writer.transport.abort.assert_not_called()
+            if can_write_eof:
+                mock_asyncio_writer.write_eof.assert_called_once_with()
+            else:
+                mock_asyncio_writer.write_eof.assert_not_called()
+            mock_asyncio_writer.close.assert_called_once_with()
+            mock_asyncio_writer.wait_closed.assert_awaited_once_with()
+            mock_asyncio_writer.transport.abort.assert_not_called()
 
-    async def test____aclose____wait_only_if_already_closing(
-        self,
-        socket: AsyncioTransportStreamSocketAdapter,
-        mock_asyncio_writer: MagicMock,
-    ) -> None:
-        # Arrange
-        mock_asyncio_writer.is_closing.return_value = True
-
-        # Act
-        await socket.aclose()
-
-        # Assert
-        mock_asyncio_writer.close.assert_not_called()
-        mock_asyncio_writer.wait_closed.assert_awaited_once_with()
-        mock_asyncio_writer.transport.abort.assert_not_called()
-
+    @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing=={p}")
     async def test____aclose____abort_transport_if_cancelled(
         self,
+        transport_is_closing: bool,
         socket: AsyncioTransportStreamSocketAdapter,
         mock_asyncio_writer: MagicMock,
     ) -> None:
         # Arrange
+        mock_asyncio_writer.is_closing.return_value = transport_is_closing
         mock_asyncio_writer.wait_closed.side_effect = asyncio.CancelledError
 
         # Act
@@ -146,9 +141,14 @@ class TestAsyncioTransportStreamSocketAdapter(BaseTestTransportStreamSocket):
             await socket.aclose()
 
         # Assert
-        mock_asyncio_writer.close.assert_called_once_with()
-        mock_asyncio_writer.wait_closed.assert_awaited_once_with()
-        mock_asyncio_writer.transport.abort.assert_called_once_with()
+        if transport_is_closing:
+            mock_asyncio_writer.close.assert_not_called()
+            mock_asyncio_writer.wait_closed.assert_awaited_once_with()
+            mock_asyncio_writer.transport.abort.assert_not_called()
+        else:
+            mock_asyncio_writer.close.assert_called_once_with()
+            mock_asyncio_writer.wait_closed.assert_awaited_once_with()
+            mock_asyncio_writer.transport.abort.assert_called_once_with()
 
     @pytest.mark.parametrize("transport_closed", [False, True], ids=lambda p: f"transport_closed=={p}")
     async def test____is_closing____return_internal_flag(
