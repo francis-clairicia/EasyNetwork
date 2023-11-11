@@ -90,7 +90,11 @@ class AsyncIOBackend(AbstractAsyncBackend):
     async def ignore_cancellation(self, coroutine: Coroutine[Any, Any, _T_co]) -> _T_co:
         if not asyncio.iscoroutine(coroutine):
             raise TypeError("Expected a coroutine object")
-        return await TaskUtils.cancel_shielded_await_task(asyncio.create_task(coroutine))
+        if sys.version_info >= (3, 12):
+            context = TaskUtils.current_asyncio_task().get_context()
+        else:
+            context = None
+        return await TaskUtils.cancel_shielded_await_task(asyncio.create_task(coroutine, context=context))
 
     def open_cancel_scope(self, *, deadline: float = math.inf) -> CancelScope:
         return CancelScope(deadline=deadline)
