@@ -7,6 +7,7 @@ from collections.abc import Callable, Coroutine, Sequence
 from socket import AF_INET, AF_INET6, AF_UNSPEC, AI_ADDRCONFIG, AI_PASSIVE, IPPROTO_TCP, IPPROTO_UDP, SOCK_DGRAM, SOCK_STREAM
 from typing import TYPE_CHECKING, Any, cast
 
+from easynetwork.exceptions import UnsupportedOperation
 from easynetwork.lowlevel.asyncio import AsyncIOBackend
 from easynetwork.lowlevel.asyncio.stream.listener import (
     AbstractAcceptedSocketFactory,
@@ -419,7 +420,7 @@ class TestAsyncIOBackend:
         )
 
         # Act
-        with pytest.raises(ValueError, match=r"^'happy_eyeballs_delay' option not supported with transport=False$"):
+        with pytest.raises(UnsupportedOperation, match=r"^'happy_eyeballs_delay' option not supported with transport=False$"):
             await backend.create_tcp_connection(
                 *remote_address,
                 happy_eyeballs_delay=42,
@@ -459,7 +460,7 @@ class TestAsyncIOBackend:
         )
 
         # Act
-        with pytest.raises(ValueError, match=r"^SSL\/TLS not supported with transport=False$"):
+        with pytest.raises(UnsupportedOperation, match=r"^SSL\/TLS not supported with transport=False$"):
             await backend.create_ssl_over_tcp_connection(
                 *remote_address,
                 ssl_context=mock_ssl_context,
@@ -612,7 +613,7 @@ class TestAsyncIOBackend:
 
         # Act
         with (
-            pytest.raises(ValueError, match=r"^SSL\/TLS not supported with transport=False$")
+            pytest.raises(UnsupportedOperation, match=r"^SSL\/TLS not supported with transport=False$")
             if not use_asyncio_transport
             else contextlib.nullcontext()
         ):
@@ -668,7 +669,7 @@ class TestAsyncIOBackend:
         )
 
         # Act
-        with pytest.raises(ValueError, match=r"^SSL\/TLS not supported with transport=False$"):
+        with pytest.raises(UnsupportedOperation, match=r"^SSL\/TLS not supported with transport=False$"):
             await backend.wrap_ssl_over_stream_socket_client_side(
                 mock_tcp_socket,
                 ssl_context=mock_ssl_context,
@@ -1154,7 +1155,7 @@ class TestAsyncIOBackend:
         )
 
         # Act
-        with pytest.raises(ValueError, match=r"^SSL\/TLS not supported with transport=False$"):
+        with pytest.raises(UnsupportedOperation, match=r"^SSL\/TLS not supported with transport=False$"):
             await backend.create_ssl_over_tcp_listeners(
                 remote_host,
                 remote_port,

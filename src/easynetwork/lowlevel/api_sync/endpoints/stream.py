@@ -26,6 +26,7 @@ from typing import Any, Generic, TypeGuard
 
 from .... import protocol as protocol_module
 from ...._typevars import _ReceivedPacketT, _SentPacketT
+from ....exceptions import UnsupportedOperation
 from ... import _stream, _utils, typed_attr
 from ..transports import abc as transports
 
@@ -130,7 +131,7 @@ class StreamEndpoint(typed_attr.TypedAttributeProvider, Generic[_SentPacketT, _R
         producer = self.__producer
 
         if not self.__supports_write(transport):
-            raise NotImplementedError("transport does not support sending data")
+            raise UnsupportedOperation("transport does not support sending data")
 
         producer.enqueue(packet)
         transport.send_all_from_iterable(producer, timeout)
@@ -150,7 +151,7 @@ class StreamEndpoint(typed_attr.TypedAttributeProvider, Generic[_SentPacketT, _R
         producer = self.__producer
 
         if not self.__supports_sending_eof(transport):
-            raise NotImplementedError("transport does not support sending EOF")
+            raise UnsupportedOperation("transport does not support sending EOF")
 
         transport.send_eof()
         self.__eof_sent = True
@@ -180,7 +181,7 @@ class StreamEndpoint(typed_attr.TypedAttributeProvider, Generic[_SentPacketT, _R
         consumer = self.__consumer
 
         if not self.__supports_read(transport):
-            raise NotImplementedError("transport does not support receiving data")
+            raise UnsupportedOperation("transport does not support receiving data")
 
         try:
             return next(consumer)  # If there is enough data from last call to create a packet, return immediately

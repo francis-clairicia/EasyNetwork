@@ -36,6 +36,7 @@ else:
     _ssl_module = ssl
     del ssl
 
+from ....exceptions import UnsupportedOperation
 from ... import _utils, constants, socket as socket_tools
 from . import base_selector
 
@@ -194,7 +195,7 @@ class SSLStreamTransport(base_selector.SelectorStreamTransport):
     @_utils.inherit_doc(base_selector.SelectorStreamTransport)
     def send_eof(self) -> None:
         # ssl.SSLSocket.shutdown() would close both read and write streams
-        raise NotImplementedError("SSL/TLS API does not support sending EOF.")
+        raise UnsupportedOperation("SSL/TLS API does not support sending EOF.")
 
     def _try_ssl_method(self, socket_method: Callable[_P, _R], /, *args: _P.args, **kwargs: _P.kwargs) -> _R:
         if _ssl_module is None:

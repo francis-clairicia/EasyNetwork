@@ -24,6 +24,7 @@ from typing import Any, Generic, TypeGuard
 
 from .... import protocol as protocol_module
 from ...._typevars import _ReceivedPacketT, _SentPacketT
+from ....exceptions import UnsupportedOperation
 from ... import typed_attr
 from ..transports import abc as transports
 
@@ -109,7 +110,7 @@ class DatagramEndpoint(typed_attr.TypedAttributeProvider, Generic[_SentPacketT, 
         protocol = self.__protocol
 
         if not self.__supports_write(transport):
-            raise NotImplementedError("transport does not support sending data")
+            raise UnsupportedOperation("transport does not support sending data")
 
         transport.send(protocol.make_datagram(packet), timeout)
 
@@ -136,7 +137,7 @@ class DatagramEndpoint(typed_attr.TypedAttributeProvider, Generic[_SentPacketT, 
         protocol = self.__protocol
 
         if not self.__supports_read(transport):
-            raise NotImplementedError("transport does not support receiving data")
+            raise UnsupportedOperation("transport does not support receiving data")
 
         return protocol.build_packet_from_datagram(transport.recv(timeout))
 

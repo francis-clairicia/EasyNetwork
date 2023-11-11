@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 from typing import TYPE_CHECKING, Any
 
+from easynetwork.exceptions import UnsupportedOperation
 from easynetwork.lowlevel.api_async.endpoints.datagram import AsyncDatagramEndpoint
 from easynetwork.lowlevel.api_async.transports.abc import (
     AsyncDatagramReadTransport,
@@ -134,7 +135,7 @@ class TestAsyncDatagramEndpoint:
 
         # Act
         with (
-            pytest.raises(NotImplementedError, match=r"^transport does not support sending data$")
+            pytest.raises(UnsupportedOperation, match=r"^transport does not support sending data$")
             if mock_datagram_transport.__class__ not in (AsyncDatagramWriteTransport, AsyncDatagramTransport)
             else contextlib.nullcontext()
         ):
@@ -161,7 +162,7 @@ class TestAsyncDatagramEndpoint:
         # Act
         packet: Any = mocker.sentinel.packet_not_received
         with (
-            pytest.raises(NotImplementedError, match=r"^transport does not support receiving data$")
+            pytest.raises(UnsupportedOperation, match=r"^transport does not support receiving data$")
             if mock_datagram_transport.__class__ not in (AsyncDatagramReadTransport, AsyncDatagramTransport)
             else contextlib.nullcontext()
         ):

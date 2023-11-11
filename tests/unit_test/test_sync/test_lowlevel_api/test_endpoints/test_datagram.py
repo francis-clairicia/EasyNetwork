@@ -4,6 +4,7 @@ import contextlib
 import math
 from typing import TYPE_CHECKING, Any
 
+from easynetwork.exceptions import UnsupportedOperation
 from easynetwork.lowlevel.api_sync.endpoints.datagram import DatagramEndpoint
 from easynetwork.lowlevel.api_sync.transports.abc import DatagramReadTransport, DatagramTransport, DatagramWriteTransport
 
@@ -166,7 +167,7 @@ class TestDatagramEndpoint:
 
         # Act
         with (
-            pytest.raises(NotImplementedError, match=r"^transport does not support sending data$")
+            pytest.raises(UnsupportedOperation, match=r"^transport does not support sending data$")
             if mock_datagram_transport.__class__ not in (DatagramWriteTransport, DatagramTransport)
             else contextlib.nullcontext()
         ):
@@ -195,7 +196,7 @@ class TestDatagramEndpoint:
         # Act
         packet: Any = mocker.sentinel.packet_not_received
         with (
-            pytest.raises(NotImplementedError, match=r"^transport does not support receiving data$")
+            pytest.raises(UnsupportedOperation, match=r"^transport does not support receiving data$")
             if mock_datagram_transport.__class__ not in (DatagramReadTransport, DatagramTransport)
             else contextlib.nullcontext()
         ):
