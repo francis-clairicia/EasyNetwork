@@ -76,18 +76,21 @@ class CBORSerializer(FileBasedPacketSerializer[Any]):
         self,
         encoder_config: CBOREncoderConfig | None = None,
         decoder_config: CBORDecoderConfig | None = None,
+        *,
+        debug: bool = False,
     ) -> None:
         """
         Parameters:
             encoder_config: Parameter object to configure the :class:`~cbor.encoder.CBOREncoder`.
             decoder_config: Parameter object to configure the :class:`~cbor.decoder.CBORDecoder`.
+            debug: If :data:`True`, add information to :exc:`.DeserializeError` via the ``error_info`` attribute.
         """
         try:
             import cbor2
         except ModuleNotFoundError as exc:  # pragma: no cover
             raise ModuleNotFoundError("cbor dependencies are missing. Consider adding 'cbor' extra") from exc
 
-        super().__init__(expected_load_error=(cbor2.CBORDecodeError, UnicodeError))
+        super().__init__(expected_load_error=(cbor2.CBORDecodeError, UnicodeError), debug=debug)
         self.__encoder_cls: Callable[[IO[bytes]], cbor2.CBOREncoder]
         self.__decoder_cls: Callable[[IO[bytes]], cbor2.CBORDecoder]
 

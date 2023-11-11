@@ -66,18 +66,21 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_DTOPacke
     A :term:`serializer wrapper` base class for compressors.
     """
 
-    __slots__ = ("__serializer", "__expected_error")
+    __slots__ = ("__serializer", "__expected_error", "__debug")
 
     def __init__(
         self,
         serializer: AbstractPacketSerializer[_DTOPacketT],
         expected_decompress_error: type[Exception] | tuple[type[Exception], ...],
+        *,
+        debug: bool = False,
     ) -> None:
         """
         Parameters:
             serializer: The serializer to wrap.
             expected_decompress_error: Errors that can be raised by :meth:`DecompressorInterface.decompress` implementation,
                                        which must be considered as deserialization errors.
+            debug: If :data:`True`, add information to :exc:`.DeserializeError` via the ``error_info`` attribute.
         """
         super().__init__()
         if not isinstance(serializer, AbstractPacketSerializer):
@@ -87,6 +90,8 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_DTOPacke
         assert all(issubclass(e, Exception) for e in expected_decompress_error)  # nosec assert_used
         self.__serializer: AbstractPacketSerializer[_DTOPacketT] = serializer
         self.__expected_error: tuple[type[Exception], ...] = expected_decompress_error
+
+        self.__debug: bool = bool(debug)
 
     @abc.abstractmethod
     def new_compressor_stream(self) -> CompressorInterface:
@@ -141,17 +146,20 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_DTOPacke
         try:
             data = decompressor.decompress(data)
         except self.__expected_error as exc:
-            raise DeserializeError(str(exc), error_info={"data": data}) from exc
+            msg = str(exc)
+            if self.debug:
+                raise DeserializeError(msg, error_info={"data": data}) from exc
+            raise DeserializeError(msg) from exc
         if not decompressor.eof:
-            raise DeserializeError(
-                "Compressed data ended before the end-of-stream marker was reached",
-                error_info={"already_decompressed_data": data},
-            )
+            msg = "Compressed data ended before the end-of-stream marker was reached"
+            if self.debug:
+                raise DeserializeError(msg, error_info={"already_decompressed_data": data})
+            raise DeserializeError(msg)
         if decompressor.unused_data:
-            raise DeserializeError(
-                "Trailing data error",
-                error_info={"decompressed_data": data, "extra": decompressor.unused_data},
-            )
+            msg = "Trailing data error"
+            if self.debug:
+                raise DeserializeError(msg, error_info={"decompressed_data": data, "extra": decompressor.unused_data})
+            raise DeserializeError(msg)
         del decompressor
         return self.__serializer.deserialize(data)
 
@@ -174,14 +182,17 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_DTOPacke
             try:
                 chunk = decompressor.decompress(chunk)
             except self.__expected_error as exc:
-                raise IncrementalDeserializeError(
-                    message=f"Decompression error: {exc}",
-                    remaining_data=b"",
-                    error_info={
-                        "already_decompressed_chunks": results,
-                        "invalid_chunk": chunk,
-                    },
-                ) from exc
+                msg = f"Decompression error: {exc}"
+                if self.debug:
+                    raise IncrementalDeserializeError(
+                        message=msg,
+                        remaining_data=b"",
+                        error_info={
+                            "already_decompressed_chunks": results,
+                            "invalid_chunk": chunk,
+                        },
+                    ) from exc
+                raise IncrementalDeserializeError(msg, remaining_data=b"") from exc
             if chunk:
                 results.append(chunk)
             del chunk
@@ -204,6 +215,14 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_DTOPacke
 
         return packet, unused_data
 
+    @property
+    @final
+    def debug(self) -> bool:
+        """
+        The debug mode flag. Read-only attribute.
+        """
+        return self.__debug
+
 
 class BZ2CompressorSerializer(AbstractCompressorSerializer[_DTOPacketT]):
     """
@@ -217,15 +236,17 @@ class BZ2CompressorSerializer(AbstractCompressorSerializer[_DTOPacketT]):
         serializer: AbstractPacketSerializer[_DTOPacketT],
         *,
         compress_level: int | None = None,
+        debug: bool = False,
     ) -> None:
         """
         Parameters:
             serializer: The serializer to wrap.
             compress_level: bzip2 compression level. Defaults to ``9``.
+            debug: If :data:`True`, add information to :exc:`.DeserializeError` via the ``error_info`` attribute.
         """
         import bz2
 
-        super().__init__(serializer=serializer, expected_decompress_error=OSError)
+        super().__init__(serializer=serializer, expected_decompress_error=OSError, debug=debug)
         self.__compresslevel: int = compress_level if compress_level is not None else 9
         self.__compressor_factory = bz2.BZ2Compressor
         self.__decompressor_factory = bz2.BZ2Decompressor
@@ -257,15 +278,17 @@ class ZlibCompressorSerializer(AbstractCompressorSerializer[_DTOPacketT]):
         serializer: AbstractPacketSerializer[_DTOPacketT],
         *,
         compress_level: int | None = None,
+        debug: bool = False,
     ) -> None:
         """
         Parameters:
             serializer: The serializer to wrap.
             compress_level: bzip2 compression level. Defaults to :data:`zlib.Z_BEST_COMPRESSION`.
+            debug: If :data:`True`, add information to :exc:`.DeserializeError` via the ``error_info`` attribute.
         """
         import zlib
 
-        super().__init__(serializer=serializer, expected_decompress_error=zlib.error)
+        super().__init__(serializer=serializer, expected_decompress_error=zlib.error, debug=debug)
         self.__compresslevel: int = compress_level if compress_level is not None else zlib.Z_BEST_COMPRESSION
         self.__compressor_factory = zlib.compressobj
         self.__decompressor_factory = zlib.decompressobj

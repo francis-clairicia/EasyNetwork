@@ -39,7 +39,7 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_DTOPack
     Base class for stream protocols that separates sent information by a byte sequence.
     """
 
-    __slots__ = ("__separator", "__limit", "__incremental_serialize_check_separator")
+    __slots__ = ("__separator", "__limit", "__incremental_serialize_check_separator", "__debug")
 
     def __init__(
         self,
@@ -47,15 +47,17 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_DTOPack
         *,
         incremental_serialize_check_separator: bool = True,
         limit: int = _DEFAULT_LIMIT,
+        debug: bool = False,
         **kwargs: Any,
     ) -> None:
         """
         Parameters:
             separator: Byte sequence that indicates the end of the token.
-            incremental_serialize_check_separator: If `True` (the default), checks that the data returned by
+            incremental_serialize_check_separator: If :data:`True` (the default), checks that the data returned by
                                                    :meth:`serialize` does not contain `separator`,
                                                    and removes superfluous `separator` added at the end.
             limit: Maximum buffer size.
+            debug: If :data:`True`, add information to :exc:`.DeserializeError` via the ``error_info`` attribute.
             kwargs: Extra options given to ``super().__init__()``.
 
         Raises:
@@ -72,6 +74,7 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_DTOPack
         self.__separator: bytes = separator
         self.__limit: int = limit
         self.__incremental_serialize_check_separator = bool(incremental_serialize_check_separator)
+        self.__debug: bool = bool(debug)
 
     @abstractmethod
     def serialize(self, packet: _DTOPacketT, /) -> bytes:
@@ -151,18 +154,27 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_DTOPack
         """
         return self.__separator
 
+    @property
+    @final
+    def debug(self) -> bool:
+        """
+        The debug mode flag. Read-only attribute.
+        """
+        return self.__debug
+
 
 class FixedSizePacketSerializer(AbstractIncrementalPacketSerializer[_DTOPacketT]):
     """
     A base class for stream protocols in which the packets are of a fixed size.
     """
 
-    __slots__ = ("__size",)
+    __slots__ = ("__size", "__debug")
 
-    def __init__(self, size: int, **kwargs: Any) -> None:
+    def __init__(self, size: int, *, debug: bool = False, **kwargs: Any) -> None:
         """
         Parameters:
             size: The expected data size.
+            debug: If :data:`True`, add information to :exc:`.DeserializeError` via the ``error_info`` attribute.
             kwargs: Extra options given to ``super().__init__()``.
 
         Raises:
@@ -174,6 +186,7 @@ class FixedSizePacketSerializer(AbstractIncrementalPacketSerializer[_DTOPacketT]
         if size <= 0:
             raise ValueError("size must be a positive integer")
         self.__size: int = size
+        self.__debug: bool = bool(debug)
 
     @abstractmethod
     def serialize(self, packet: _DTOPacketT, /) -> bytes:
@@ -240,19 +253,34 @@ class FixedSizePacketSerializer(AbstractIncrementalPacketSerializer[_DTOPacketT]
         """
         return self.__size
 
+    @property
+    @final
+    def debug(self) -> bool:
+        """
+        The debug mode flag. Read-only attribute.
+        """
+        return self.__debug
+
 
 class FileBasedPacketSerializer(AbstractIncrementalPacketSerializer[_DTOPacketT]):
     """
     Base class for APIs requiring a :std:term:`file object` for serialization/deserialization.
     """
 
-    __slots__ = ("__expected_errors",)
+    __slots__ = ("__expected_errors", "__debug")
 
-    def __init__(self, expected_load_error: type[Exception] | tuple[type[Exception], ...], **kwargs: Any) -> None:
+    def __init__(
+        self,
+        expected_load_error: type[Exception] | tuple[type[Exception], ...],
+        *,
+        debug: bool = False,
+        **kwargs: Any,
+    ) -> None:
         """
         Parameters:
             expected_load_error: Errors that can be raised by :meth:`load_from_file` implementation,
                                  which must be considered as deserialization errors.
+            debug: If :data:`True`, add information to :exc:`.DeserializeError` via the ``error_info`` attribute.
             kwargs: Extra options given to ``super().__init__()``.
         """
         super().__init__(**kwargs)
@@ -260,6 +288,7 @@ class FileBasedPacketSerializer(AbstractIncrementalPacketSerializer[_DTOPacketT]
             expected_load_error = (expected_load_error,)
         assert all(issubclass(e, Exception) for e in expected_load_error)  # nosec assert_used
         self.__expected_errors: tuple[type[Exception], ...] = expected_load_error
+        self.__debug: bool = bool(debug)
 
     @abstractmethod
     def dump_to_file(self, packet: _DTOPacketT, file: IO[bytes], /) -> None:
@@ -320,13 +349,22 @@ class FileBasedPacketSerializer(AbstractIncrementalPacketSerializer[_DTOPacketT]
             try:
                 packet: _DTOPacketT = self.load_from_file(buffer)
             except EOFError as exc:
-                raise DeserializeError("Missing data to create packet", error_info={"data": data}) from exc
+                msg = "Missing data to create packet"
+                if self.debug:
+                    raise DeserializeError(msg, error_info={"data": data}) from exc
+                raise DeserializeError(msg) from exc
             except self.__expected_errors as exc:
-                raise DeserializeError(str(exc), error_info={"data": data}) from exc
+                msg = str(exc)
+                if self.debug:
+                    raise DeserializeError(msg, error_info={"data": data}) from exc
+                raise DeserializeError(msg) from exc
             finally:
                 del data
             if extra := buffer.read():  # There is still data after deserialization
-                raise DeserializeError("Extra data caught", error_info={"packet": packet, "extra": extra})
+                msg = "Extra data caught"
+                if self.debug:
+                    raise DeserializeError(msg, error_info={"packet": packet, "extra": extra})
+                raise DeserializeError(msg)
         return packet
 
     @final
@@ -371,12 +409,23 @@ class FileBasedPacketSerializer(AbstractIncrementalPacketSerializer[_DTOPacketT]
                 except EOFError:
                     continue
                 except self.__expected_errors as exc:
-                    raise IncrementalDeserializeError(
-                        f"Deserialize error: {exc}",
-                        remaining_data=buffer.read(),
-                        error_info={"data": buffer.getvalue()},
-                    ) from exc
+                    msg = f"Deserialize error: {exc}"
+                    if self.debug:
+                        raise IncrementalDeserializeError(
+                            msg,
+                            remaining_data=buffer.read(),
+                            error_info={"data": buffer.getvalue()},
+                        ) from exc
+                    raise IncrementalDeserializeError(msg, remaining_data=buffer.read()) from exc
                 else:
                     return packet, buffer.read()
                 finally:
                     initial = False
+
+    @property
+    @final
+    def debug(self) -> bool:
+        """
+        The debug mode flag. Read-only attribute.
+        """
+        return self.__debug

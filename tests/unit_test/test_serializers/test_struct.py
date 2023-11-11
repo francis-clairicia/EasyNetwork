@@ -126,12 +126,13 @@ class TestAbstractStructSerializer(BaseTestStructBasedSerializer):
         self,
         mock_struct: MagicMock,
         mock_serializer_from_tuple: MagicMock,
+        debug_mode: bool,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
         from struct import error as StructError
 
-        serializer = _StructSerializerForTest("format")
+        serializer = _StructSerializerForTest("format", debug=debug_mode)
         mock_struct_unpack: MagicMock = mock_struct.unpack
         mock_struct_unpack.side_effect = StructError()
 
@@ -144,16 +145,20 @@ class TestAbstractStructSerializer(BaseTestStructBasedSerializer):
         mock_struct_unpack.assert_called_once_with(mocker.sentinel.data)
         mock_serializer_from_tuple.assert_not_called()
         assert exception.__cause__ is mock_struct_unpack.side_effect
-        assert exception.error_info == {"data": mocker.sentinel.data}
+        if debug_mode:
+            assert exception.error_info == {"data": mocker.sentinel.data}
+        else:
+            assert exception.error_info is None
 
     def test____deserialize____translate_any_exception_raised_by_from_tuple_method(
         self,
         mock_struct: MagicMock,
         mock_serializer_from_tuple: MagicMock,
+        debug_mode: bool,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer = _StructSerializerForTest("format")
+        serializer = _StructSerializerForTest("format", debug=debug_mode)
         mock_struct_unpack: MagicMock = mock_struct.unpack
         mock_struct_unpack.return_value = mocker.sentinel.packet_tuple
         mock_serializer_from_tuple.side_effect = Exception()
@@ -168,7 +173,10 @@ class TestAbstractStructSerializer(BaseTestStructBasedSerializer):
         mock_struct_unpack.assert_called_once_with(mocker.sentinel.data)
         mock_serializer_from_tuple.assert_called_once_with(mocker.sentinel.packet_tuple)
         assert exception.__cause__ is mock_serializer_from_tuple.side_effect
-        assert exception.error_info == {"unpacked_struct": mocker.sentinel.packet_tuple}
+        if debug_mode:
+            assert exception.error_info == {"unpacked_struct": mocker.sentinel.packet_tuple}
+        else:
+            assert exception.error_info is None
 
 
 class TestNamedTupleStructSerializer(BaseTestStructBasedSerializer):
@@ -197,6 +205,7 @@ class TestNamedTupleStructSerializer(BaseTestStructBasedSerializer):
         expected_format: str,
         endianness: str,
         mock_struct_cls: MagicMock,
+        debug_mode: bool,
     ) -> None:
         # Arrange
         namedtuple_cls = collections.namedtuple("namedtuple_cls", fields)  # type: ignore[misc]
@@ -206,10 +215,11 @@ class TestNamedTupleStructSerializer(BaseTestStructBasedSerializer):
             expected_format = f"{endianness}{expected_format}"
 
         # Act
-        _ = NamedTupleStructSerializer(namedtuple_cls, field_formats, format_endianness=endianness)
+        serializer = NamedTupleStructSerializer(namedtuple_cls, field_formats, format_endianness=endianness, debug=debug_mode)
 
         # Assert
         mock_struct_cls.assert_called_once_with(expected_format)
+        assert serializer.debug is debug_mode
 
     @pytest.mark.parametrize("endianness", ["z", "word"], ids=repr)
     def test____dunder_init____invalid_endianness_character(

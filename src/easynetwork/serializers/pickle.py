@@ -71,7 +71,7 @@ class PickleSerializer(AbstractPacketSerializer[Any]):
     A :term:`one-shot serializer` built on top of the :mod:`pickle` module.
     """
 
-    __slots__ = ("__optimize", "__pickler_cls", "__unpickler_cls")
+    __slots__ = ("__optimize", "__pickler_cls", "__unpickler_cls", "__debug")
 
     def __init__(
         self,
@@ -81,6 +81,7 @@ class PickleSerializer(AbstractPacketSerializer[Any]):
         pickler_cls: type[_typing_pickle.Pickler] | None = None,
         unpickler_cls: type[_typing_pickle.Unpickler] | None = None,
         pickler_optimize: bool = False,
+        debug: bool = False,
     ) -> None:
         """
         Parameters:
@@ -89,6 +90,7 @@ class PickleSerializer(AbstractPacketSerializer[Any]):
             pickler_cls: The :class:`~pickle.Pickler` class to use (see :ref:`pickle-inst`).
             unpickler_cls: The :class:`~pickle.Unpickler` class to use (see :ref:`pickle-restrict`).
             pickler_optimize: If `True`, :func:`pickletools.optimize` will be applied to :meth:`pickle.Pickler.dump` output.
+            debug: If :data:`True`, add information to :exc:`.DeserializeError` via the ``error_info`` attribute.
         """
         super().__init__()
 
@@ -116,6 +118,8 @@ class PickleSerializer(AbstractPacketSerializer[Any]):
 
         self.__pickler_cls = partial(pickler_cls or pickle.Pickler, **dataclass_asdict(pickler_config), buffer_callback=None)
         self.__unpickler_cls = partial(unpickler_cls or pickle.Unpickler, **dataclass_asdict(unpickler_config), buffers=None)
+
+        self.__debug: bool = bool(debug)
 
     @final
     def serialize(self, packet: Any) -> bytes:
@@ -164,9 +168,23 @@ class PickleSerializer(AbstractPacketSerializer[Any]):
             try:
                 packet: Any = self.__unpickler_cls(buffer).load()
             except Exception as exc:
-                raise DeserializeError(str(exc) or "Invalid token", error_info={"data": data}) from exc
+                msg = str(exc) or "Invalid token"
+                if self.debug:
+                    raise DeserializeError(msg, error_info={"data": data}) from exc
+                raise DeserializeError(msg) from exc
             finally:
                 del data
             if extra := buffer.read():  # There is still data after deserialization
-                raise DeserializeError("Extra data caught", {"packet": packet, "extra": extra})
+                msg = "Extra data caught"
+                if self.debug:
+                    raise DeserializeError(msg, error_info={"packet": packet, "extra": extra})
+                raise DeserializeError(msg)
         return packet
+
+    @property
+    @final
+    def debug(self) -> bool:
+        """
+        The debug mode flag. Read-only attribute.
+        """
+        return self.__debug

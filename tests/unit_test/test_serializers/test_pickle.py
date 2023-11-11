@@ -111,6 +111,15 @@ class TestPickleSerializer(BaseSerializerConfigInstanceCheck):
     def mock_pickletools_optimize(mocker: MockerFixture) -> MagicMock:
         return mocker.patch("pickletools.optimize", autospec=True)
 
+    def test____properties____right_values(self, debug_mode: bool) -> None:
+        # Arrange
+
+        # Act
+        serializer = PickleSerializer(debug=debug_mode)
+
+        # Assert
+        assert serializer.debug is debug_mode
+
     def test____serialize____with_config(
         self,
         pickler_optimize: bool,
@@ -239,9 +248,10 @@ class TestPickleSerializer(BaseSerializerConfigInstanceCheck):
         exception: type[BaseException],
         unpickler_config: UnpicklerConfig | None,
         mock_unpickler: MagicMock,
+        debug_mode: bool,
     ) -> None:
         # Arrange
-        serializer: PickleSerializer = PickleSerializer(unpickler_config=unpickler_config)
+        serializer: PickleSerializer = PickleSerializer(unpickler_config=unpickler_config, debug=debug_mode)
         mock_unpickler.load.side_effect = exception()
 
         # Act
@@ -251,17 +261,21 @@ class TestPickleSerializer(BaseSerializerConfigInstanceCheck):
         # Assert
         mock_unpickler.load.assert_called_once()
         assert exc_info.value.__cause__ is mock_unpickler.load.side_effect
-        assert exc_info.value.error_info == {"data": b"data"}
+        if debug_mode:
+            assert exc_info.value.error_info == {"data": b"data"}
+        else:
+            assert exc_info.value.error_info is None
 
     def test____deserialize____extra_data(
         self,
         unpickler_config: UnpicklerConfig | None,
         mock_unpickler: MagicMock,
         bytes_io: BytesIO,
+        debug_mode: bool,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer: PickleSerializer = PickleSerializer(unpickler_config=unpickler_config)
+        serializer: PickleSerializer = PickleSerializer(unpickler_config=unpickler_config, debug=debug_mode)
 
         def unpickler_load() -> Any:
             assert bytes_io.read(2) == b"da"
@@ -276,4 +290,7 @@ class TestPickleSerializer(BaseSerializerConfigInstanceCheck):
         # Assert
         mock_unpickler.load.assert_called_once()
         assert exc_info.value.__cause__ is None
-        assert exc_info.value.error_info == {"packet": mocker.sentinel.packet, "extra": b"ta"}
+        if debug_mode:
+            assert exc_info.value.error_info == {"packet": mocker.sentinel.packet, "extra": b"ta"}
+        else:
+            assert exc_info.value.error_info is None
