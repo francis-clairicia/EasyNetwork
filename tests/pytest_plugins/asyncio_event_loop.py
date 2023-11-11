@@ -35,6 +35,14 @@ def _get_windows_proactor_policy() -> type[asyncio.AbstractEventLoopPolicy] | No
     return getattr(asyncio, "WindowsProactorEventLoopPolicy", None)
 
 
+def _get_uvloop_policy() -> type[asyncio.AbstractEventLoopPolicy] | None:
+    try:
+        uvloop: Any = importlib.import_module("uvloop")
+    except ModuleNotFoundError:
+        return None
+    return getattr(uvloop, "EventLoopPolicy", None)
+
+
 def _set_event_loop_policy_according_to_configuration(config: pytest.Config) -> None:
     event_loop: EventLoop = config.getoption(ASYNCIO_EVENT_LOOP_OPTION)
     match event_loop:
@@ -48,12 +56,11 @@ def _set_event_loop_policy_according_to_configuration(config: pytest.Config) -> 
                 raise pytest.UsageError(f"{event_loop} event loop is not available in this platform")
             asyncio.set_event_loop_policy(WindowsProactorEventLoopPolicy())
         case EventLoop.UVLOOP:
-            try:
-                uvloop: Any = importlib.import_module("uvloop")
-            except ModuleNotFoundError:
+            UVLoopPolicy = _get_uvloop_policy()
+            if UVLoopPolicy is None:
                 raise pytest.UsageError(f"{event_loop} event loop is not available in this platform")
 
-            uvloop.install()
+            asyncio.set_event_loop_policy(UVLoopPolicy())
         case _:
             assert_never(event_loop)
 

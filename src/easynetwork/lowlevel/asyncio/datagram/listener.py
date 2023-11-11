@@ -61,12 +61,7 @@ class AsyncioTransportDatagramListenerSocketAdapter(transports.AsyncDatagramList
 
     async def aclose(self) -> None:
         self.__closing = True
-        self.__endpoint.close()
-        try:
-            await self.__endpoint.wait_closed()
-        except asyncio.CancelledError:
-            self.__endpoint.transport.abort()
-            raise
+        await self.__endpoint.aclose()
 
     async def recv_from(self) -> tuple[bytes, tuple[Any, ...]]:
         return await self.__endpoint.recvfrom()

@@ -16,6 +16,18 @@ import pytest
 import pytest_asyncio
 
 
+async def readline(loop: asyncio.AbstractEventLoop, sock: Socket) -> bytes:
+    buf: list[bytes] = []
+    while True:
+        chunk = await loop.sock_recv(sock, 1024)
+        if not chunk:
+            break
+        buf.append(chunk)
+        if b"\n" in chunk:
+            break
+    return b"".join(buf)
+
+
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("simulate_no_ssl_module")
 class TestAsyncTCPNetworkClient:
@@ -56,7 +68,7 @@ class TestAsyncTCPNetworkClient:
         server: Socket,
     ) -> None:
         await client.send_packet("ABCDEF")
-        assert await event_loop.sock_recv(server, 1024) == b"ABCDEF\n"
+        assert await readline(event_loop, server) == b"ABCDEF\n"
 
     async def test____send_packet____connection_error____fresh_connection_closed_by_server(
         self,
@@ -76,7 +88,7 @@ class TestAsyncTCPNetworkClient:
         server: Socket,
     ) -> None:
         await client.send_packet("ABCDEF")
-        assert await event_loop.sock_recv(server, 1024) == b"ABCDEF\n"
+        assert await readline(event_loop, server) == b"ABCDEF\n"
         server.close()
         with pytest.raises(ConnectionAbortedError):
             for _ in range(3):  # Windows and macOS catch the issue after several send()
@@ -109,7 +121,7 @@ class TestAsyncTCPNetworkClient:
         server: Socket,
     ) -> None:
         await client.send_eof()
-        assert await event_loop.sock_recv(server, 1024) == b""
+        assert await readline(event_loop, server) == b""
         with pytest.raises(RuntimeError):
             await client.send_packet("ABC")
         await event_loop.sock_sendall(server, b"ABCDEF\n")
@@ -129,7 +141,7 @@ class TestAsyncTCPNetworkClient:
         server: Socket,
     ) -> None:
         await client.send_eof()
-        assert await event_loop.sock_recv(server, 1024) == b""
+        assert await readline(event_loop, server) == b""
         await client.send_eof()
         await client.send_eof()
 
@@ -191,7 +203,7 @@ class TestAsyncTCPNetworkClient:
             await client.recv_packet()
 
         await client.send_packet("ABCDEF")
-        assert await event_loop.sock_recv(server, 1024) == b"ABCDEF\n"
+        assert await readline(event_loop, server) == b"ABCDEF\n"
 
     async def test____recv_packet____client_close_error(self, client: AsyncTCPNetworkClient[str, str]) -> None:
         await client.aclose()

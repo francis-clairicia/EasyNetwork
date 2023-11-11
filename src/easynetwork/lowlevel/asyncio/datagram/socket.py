@@ -57,12 +57,7 @@ class AsyncioTransportDatagramSocketAdapter(transports.AsyncDatagramTransport):
 
     async def aclose(self) -> None:
         self.__closing = True
-        self.__endpoint.close()
-        try:
-            return await self.__endpoint.wait_closed()
-        except asyncio.CancelledError:
-            self.__endpoint.transport.abort()
-            raise
+        await self.__endpoint.aclose()
 
     def is_closing(self) -> bool:
         return self.__closing

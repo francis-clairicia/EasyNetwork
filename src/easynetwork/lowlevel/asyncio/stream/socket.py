@@ -64,20 +64,28 @@ class AsyncioTransportStreamSocketAdapter(transports.AsyncStreamTransport):
 
     async def aclose(self) -> None:
         self.__closing = True
-        if not self.__writer.is_closing():
+        if self.__writer.is_closing():
+            # Only wait for it.
             try:
-                if self.__writer.can_write_eof():
-                    self.__writer.write_eof()
+                await self.__writer.wait_closed()
             except OSError:
                 pass
-            finally:
-                self.__writer.close()
+            return
+
+        try:
+            if self.__writer.can_write_eof():
+                self.__writer.write_eof()
+        except OSError:
+            pass
+        finally:
+            self.__writer.close()
         try:
             await self.__writer.wait_closed()
         except OSError:
             pass
         except asyncio.CancelledError:
-            self.__writer.transport.abort()
+            if self.__writer.get_extra_info("sslcontext") is not None:
+                self.__writer.transport.abort()
             raise
 
     def is_closing(self) -> bool:
