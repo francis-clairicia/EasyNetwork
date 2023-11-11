@@ -5,7 +5,7 @@
 groups = ["default", "bandit", "cbor", "dev", "doc", "encryption", "flake8", "format", "msgpack", "mypy", "sniffio", "test", "tox", "uvloop"]
 strategy = ["cross_platform"]
 lock_version = "4.4"
-content_hash = "sha256:65d56ad31ba148d4a578ba881fb78409db97ab8382353fc728ed8328f9e58bd8"
+content_hash = "sha256:26e0be9a91b54ccd02b468ad5510d9dd5d698ba74e112fda1e5de797b96baa95"
 
 [[package]]
 name = "alabaster"
@@ -1433,11 +1433,11 @@ files = [
 
 [[package]]
 name = "trove-classifiers"
-version = "2023.8.7"
+version = "2023.11.9"
 summary = "Canonical source for classifiers on PyPI (pypi.org)."
 files = [
-    {file = "trove-classifiers-2023.8.7.tar.gz", hash = "sha256:c9f2a0a85d545e5362e967e4f069f56fddfd91215e22ffa48c66fb283521319a"},
-    {file = "trove_classifiers-2023.8.7-py3-none-any.whl", hash = "sha256:a676626a31286130d56de2ea1232484df97c567eb429d56cfcb0637e681ecf09"},
+    {file = "trove-classifiers-2023.11.9.tar.gz", hash = "sha256:0542bc03d151f8af84f0eb0e74aa931b374b6f9c8ed8fbf7ee41989fb9d40f1d"},
+    {file = "trove_classifiers-2023.11.9-py3-none-any.whl", hash = "sha256:f9784ab55054bb327d0c8d33931fb2555b81e5b4868832490ab7959ae3ea9186"},
 ]
 
 [[package]]

@@ -97,7 +97,7 @@ test = [
     "pytest-mock~=3.10.0",
     "pytest-cov<5,>=4.0",
     "pytest-asyncio>=0.21.0",
-    "trove-classifiers==2023.8.7",
+    "trove-classifiers>=2023.11.9",
     "trustme>=1.0.0",
 ]
 doc = [
