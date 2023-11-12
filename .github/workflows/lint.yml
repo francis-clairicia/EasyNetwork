@@ -45,8 +45,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-tags: true
       - name: Setup tox
         uses: ./.github/actions/setup-tox
         with:

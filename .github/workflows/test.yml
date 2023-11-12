@@ -52,8 +52,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-tags: true
       - name: Setup tox (python ${{ matrix.python_version }})
         uses: ./.github/actions/setup-tox
         with:
@@ -87,8 +85,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-tags: true
       - name: Setup tox (python ${{ matrix.python_version }})
         uses: ./.github/actions/setup-tox
         with:
