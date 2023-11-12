@@ -72,6 +72,8 @@ jobs:
       SOURCE_DATE_EPOCH: ${{ inputs.SOURCE_DATE_EPOCH }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-tags: true
       - name: Setup tox
         uses: ./.github/actions/setup-tox
         with:
