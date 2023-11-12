@@ -119,7 +119,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         self.__is_shutdown: IEvent = self.__backend.create_event()
         self.__is_shutdown.set()
         self.__shutdown_asked: bool = False
-        self.__servers_tasks: deque[Task[NoReturn]] = deque()  # type: ignore[assignment]
+        self.__servers_tasks: deque[Task[NoReturn]] = deque()
         self.__mainloop_task: Task[NoReturn] | None = None
         self.__logger: logging.Logger = logger or logging.getLogger(__name__)
         self.__clients_cache: defaultdict[
@@ -409,7 +409,7 @@ class _ClientAPI(AsyncDatagramClient[_ResponseT]):
             return {}
         server = server_ref
         del server_ref
-        return server.extra_attributes | {
+        return dict(server.extra_attributes) | {
             INETClientAttribute.socket: lambda: self.__socket_proxy,
             INETClientAttribute.local_address: lambda: new_socket_address(
                 server.extra(INETSocketAttribute.sockname),

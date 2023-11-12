@@ -189,7 +189,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         self.__is_shutdown.set()
         self.__shutdown_asked: bool = False
         self.__max_recv_size: int = max_recv_size
-        self.__servers_tasks: deque[Task[NoReturn]] = deque()  # type: ignore[assignment]
+        self.__servers_tasks: deque[Task[NoReturn]] = deque()
         self.__mainloop_task: Task[NoReturn] | None = None
         self.__logger: logging.Logger = logger or logging.getLogger(__name__)
         self.__client_connection_log_level: int
@@ -534,7 +534,7 @@ class _ConnectedClientAPI(AsyncStreamClient[_ResponseT]):
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         client = self.__client
-        return client.extra_attributes | {
+        return dict(client.extra_attributes) | {
             INETClientAttribute.socket: lambda: self.__proxy,
             INETClientAttribute.local_address: lambda: new_socket_address(
                 client.extra(INETSocketAttribute.sockname),
