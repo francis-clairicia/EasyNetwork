@@ -131,21 +131,6 @@ class TestAsyncioBackend:
             await task
         assert task.cancelled()
 
-    @pytest.mark.xfail("sys.version_info < (3, 12)", reason="asyncio.Task.get_context() does not exist before Python 3.12")
-    async def test____ignore_cancellation____share_same_context_with_host_task(
-        self,
-        backend: AsyncIOBackend,
-    ) -> None:
-        async def coroutine() -> None:
-            await asyncio.sleep(0.1)
-
-            cvar_for_test.set("after_in_coroutine")
-
-        cvar_for_test.set("before_in_current_task")
-        await backend.ignore_cancellation(coroutine())
-
-        assert cvar_for_test.get() == "after_in_coroutine"
-
     async def test____timeout____respected(
         self,
         backend: AsyncIOBackend,

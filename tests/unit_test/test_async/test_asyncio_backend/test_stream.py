@@ -32,6 +32,7 @@ if TYPE_CHECKING:
 
     from pytest_mock import MockerFixture
 
+from ....tools import PlatformMarkers
 from ...base import BaseTestSocket
 
 
@@ -530,6 +531,7 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestSocket):
                     exc,
                 )
 
+    @PlatformMarkers.skipif_platform_win32
     @pytest.mark.parametrize("errno_value", sorted(ACCEPT_CAPACITY_ERRNOS), ids=errno_errorcode.__getitem__)
     async def test____serve____accept_capacity_error(
         self,

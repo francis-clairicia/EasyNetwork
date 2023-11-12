@@ -43,10 +43,11 @@ jobs:
     if: |
       (github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Bump version:'))
       && (github.event_name != 'pull_request' || github.event.pull_request.draft != true)
-    runs-on: ubuntu-22.04
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-22.04, windows-2022]
         python_version: ['3.11', '3.12']
 
     steps:
