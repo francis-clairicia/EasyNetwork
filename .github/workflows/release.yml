@@ -15,6 +15,9 @@ jobs:
   release:
     needs: build
     runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      id-token: write
 
     name: Distribute packages
     steps:
@@ -25,9 +28,6 @@ jobs:
           path: dist
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@v1.8.10
-        with:
-          user: __token__
-          password: ${{ secrets.PYPI_API_TOKEN }}
 
   build-failure:
     needs: build

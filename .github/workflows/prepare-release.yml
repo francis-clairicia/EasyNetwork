@@ -1,0 +1,21 @@
+name: Prepare a draft release for a new version
+
+on:
+  push:
+    tags:
+      - v*.*.*
+
+jobs:
+  draft-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    name: Create a Draft release for ${{ github.ref_name }}
+    steps:
+      - name: Create Github Release
+        uses: softprops/action-gh-release@v0.1.15
+        with:
+          name: easynetwork ${{ github.ref_name }}
+          draft: true
+          generate_release_notes: true
