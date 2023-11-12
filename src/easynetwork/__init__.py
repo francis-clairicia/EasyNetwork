@@ -30,4 +30,5 @@ __email__ = "clairicia.rcj.francis@gmail.com"
 __license__ = "Apache 2.0"
 __maintainer__ = "FrankySnow9"
 __status__ = "Development"
-__version__ = "1.0.0rc6"
+
+from .version import __version__
