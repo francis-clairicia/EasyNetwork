@@ -18,12 +18,12 @@ from __future__ import annotations
 
 __all__ = ["AbstractNetworkClient"]
 
-import time
 from abc import ABCMeta, abstractmethod
 from collections.abc import Iterator
 from typing import TYPE_CHECKING, Generic, Self
 
 from ..._typevars import _ReceivedPacketT, _SentPacketT
+from ...lowlevel import _utils
 from ...lowlevel.socket import SocketAddress
 
 if TYPE_CHECKING:
@@ -174,19 +174,15 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
         Yields:
             the received packet.
         """
-        perf_counter = time.perf_counter
-
         while True:
             try:
-                _start = perf_counter()
-                packet = self.recv_packet(timeout=timeout)
-                _end = perf_counter()
+                with _utils.ElapsedTime() as elapsed:
+                    packet = self.recv_packet(timeout=timeout)
             except OSError:
                 return
             yield packet
             if timeout is not None:
-                timeout -= _end - _start
-                timeout = max(timeout, 0)
+                timeout = elapsed.recompute_timeout(timeout)
 
     @abstractmethod
     def fileno(self) -> int:

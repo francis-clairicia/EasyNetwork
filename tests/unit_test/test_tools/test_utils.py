@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from easynetwork.exceptions import BusyResourceError
 from easynetwork.lowlevel._utils import (
+    ElapsedTime,
     ResourceGuard,
     check_real_socket_state,
     check_socket_family,
@@ -555,6 +556,58 @@ def test____remove_traceback_frames_in_place____remove_n_first_traceback(n: int)
         assert len(list(traceback.walk_tb(exception.__traceback__))) == 3
     else:  # n > 3
         assert len(list(traceback.walk_tb(exception.__traceback__))) == 0
+
+
+def test____ElapsedTime____catch_elapsed_time(mocker: MockerFixture) -> None:
+    # Arrange
+    now: float = 798546132.0
+    mocker.patch("time.perf_counter", autospec=True, side_effect=[now, now + 12.0])
+
+    # Act
+    with ElapsedTime() as elapsed:
+        pass
+
+    # Assert
+    assert elapsed.get_elapsed() == pytest.approx(12.0)
+    assert elapsed.recompute_timeout(42.4) == pytest.approx(30.4)
+    assert elapsed.recompute_timeout(8.0) == 0.0
+
+
+def test____ElapsedTime____not_reentrant() -> None:
+    # Arrange
+    with ElapsedTime() as elapsed:
+        # Act & Assert
+        with pytest.raises(RuntimeError, match=r"^Already entered$"):
+            with elapsed:
+                pytest.fail("Should not enter")
+
+
+def test____ElapsedTime____double_exit() -> None:
+    # Arrange
+
+    # Act & Assert
+    with pytest.raises(RuntimeError, match=r"^Already exited$"):
+        with contextlib.ExitStack() as stack:
+            elapsed = stack.enter_context(ElapsedTime())
+            stack.push(elapsed)
+
+
+def test____ElapsedTime____get_elapsed____not_entered() -> None:
+    # Arrange
+    elapsed = ElapsedTime()
+
+    # Act & Assert
+    with pytest.raises(RuntimeError, match=r"^Not entered$"):
+        elapsed.get_elapsed()
+
+
+def test____ElapsedTime____get_elapsed____within_context() -> None:
+    # Arrange
+
+    # Act & Assert
+    with ElapsedTime() as elapsed:
+        with pytest.raises(RuntimeError, match=r"^Within context$"):
+            elapsed.get_elapsed()
 
 
 def test____lock_with_timeout____acquire_and_release_with_timeout_at_None() -> None:

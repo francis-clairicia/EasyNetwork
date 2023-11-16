@@ -19,12 +19,12 @@ from __future__ import annotations
 __all__ = ["AbstractAsyncNetworkClient"]
 
 import math
-import time
 from abc import ABCMeta, abstractmethod
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Generic, Self
 
 from ..._typevars import _ReceivedPacketT, _SentPacketT
+from ...lowlevel import _utils
 from ...lowlevel.socket import SocketAddress
 
 if TYPE_CHECKING:
@@ -220,20 +220,16 @@ class AbstractAsyncNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metacl
         if timeout is None:
             timeout = math.inf
 
-        perf_counter = time.perf_counter
         timeout_after = self.get_backend().timeout
 
         while True:
             try:
-                with timeout_after(timeout):
-                    _start = perf_counter()
+                with timeout_after(timeout), _utils.ElapsedTime() as elapsed:
                     packet = await self.recv_packet()
-                    _end = perf_counter()
             except OSError:
                 return
             yield packet
-            timeout -= _end - _start
-            timeout = max(timeout, 0)
+            timeout = elapsed.recompute_timeout(timeout)
 
     @abstractmethod
     def get_backend(self) -> AsyncBackend:

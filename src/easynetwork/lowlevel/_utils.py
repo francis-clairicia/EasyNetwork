@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 __all__ = [
+    "ElapsedTime",
     "check_real_socket_state",
     "check_socket_family",
     "check_socket_no_ssl",
@@ -41,7 +42,7 @@ import socket as _socket
 import threading
 import time
 from collections.abc import Callable, Iterable, Iterator
-from typing import TYPE_CHECKING, Any, Concatenate, ParamSpec, TypeGuard, TypeVar
+from typing import TYPE_CHECKING, Any, Concatenate, ParamSpec, Self, TypeGuard, TypeVar
 
 try:
     import ssl as _ssl
@@ -228,6 +229,43 @@ def remove_traceback_frames_in_place(exc: _ExcType, n: int) -> _ExcType:
     return exc.with_traceback(tb)
 
 
+class ElapsedTime:
+    __slots__ = ("_current_time_func", "_start_time", "_end_time")
+
+    def __init__(self) -> None:
+        self._current_time_func: Callable[[], float] = time.perf_counter
+        self._start_time: float | None = None
+        self._end_time: float | None = None
+
+    def __enter__(self) -> Self:
+        if self._start_time is not None:
+            raise RuntimeError("Already entered")
+        self._start_time = self._current_time_func()
+        return self
+
+    def __exit__(self, *args: Any) -> None:
+        end_time = self._current_time_func()
+        if self._end_time is not None:
+            raise RuntimeError("Already exited")
+        self._end_time = end_time
+
+    def get_elapsed(self) -> float:
+        start_time = self._start_time
+        if start_time is None:
+            raise RuntimeError("Not entered")
+        end_time = self._end_time
+        if end_time is None:
+            raise RuntimeError("Within context")
+        return end_time - start_time
+
+    def recompute_timeout(self, old_timeout: float) -> float:
+        elapsed_time = self.get_elapsed()
+        new_timeout = old_timeout - elapsed_time
+        if new_timeout < 0.0:
+            new_timeout = 0.0
+        return new_timeout
+
+
 @contextlib.contextmanager
 def lock_with_timeout(
     lock: threading.RLock | threading.Lock,
@@ -238,19 +276,16 @@ def lock_with_timeout(
             yield timeout
         return
     timeout = validate_timeout_delay(timeout, positive_check=True)
-    perf_counter = time.perf_counter
     with contextlib.ExitStack() as stack:
         # Try to acquire without blocking first
         if lock.acquire(blocking=False):
             stack.push(lock)
         else:
-            _start = perf_counter()
-            if timeout == 0 or not lock.acquire(True, timeout):
-                raise error_from_errno(_errno.ETIMEDOUT)
+            with ElapsedTime() as elapsed:
+                if timeout == 0 or not lock.acquire(True, timeout):
+                    raise error_from_errno(_errno.ETIMEDOUT)
             stack.push(lock)
-            _end = perf_counter()
-            timeout -= _end - _start
-            timeout = max(timeout, 0.0)
+            timeout = elapsed.recompute_timeout(timeout)
         yield timeout
 
 

@@ -31,7 +31,6 @@ __all__ = [
 import errno as _errno
 import math
 import selectors
-import time
 from abc import abstractmethod
 from collections.abc import Callable
 from typing import TypeVar
@@ -99,7 +98,6 @@ class SelectorBaseTransport(transports.BaseTransport):
         callback: Callable[[], _R],
         timeout: float,
     ) -> _R:
-        perf_counter = time.perf_counter  # pull function to local namespace
         timeout = _utils.validate_timeout_delay(timeout, positive_check=True)
         retry_interval = self._retry_interval
         event: int
@@ -133,10 +131,9 @@ class SelectorBaseTransport(transports.BaseTransport):
                     if not available:
                         raise RuntimeError("timeout error with infinite timeout")
                 else:
-                    _start = perf_counter()
-                    available = bool(selector.select(wait_time))
-                    _end = perf_counter()
-                    timeout -= _end - _start
+                    with _utils.ElapsedTime() as elapsed:
+                        available = bool(selector.select(wait_time))
+                    timeout = elapsed.recompute_timeout(timeout)
                     if not available:
                         if not is_retry_interval:
                             break
