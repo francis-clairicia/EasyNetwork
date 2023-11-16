@@ -21,7 +21,6 @@ __all__ = ["BaseStandaloneNetworkServerImpl"]
 import concurrent.futures
 import contextlib
 import threading as _threading
-import time
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, NoReturn
 
@@ -84,11 +83,12 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
                 if timeout is None:
                     portal.run_coroutine(self.__server.shutdown)
                 else:
-                    _start = time.perf_counter()
+                    elapsed = _utils.ElapsedTime()
                     try:
-                        portal.run_coroutine(self.__do_shutdown_with_timeout, timeout)
+                        with elapsed:
+                            portal.run_coroutine(self.__do_shutdown_with_timeout, timeout)
                     finally:
-                        timeout -= time.perf_counter() - _start
+                        timeout = elapsed.recompute_timeout(timeout)
         self.__is_shutdown.wait(timeout)
 
     async def __do_shutdown_with_timeout(self, timeout_delay: float) -> None:

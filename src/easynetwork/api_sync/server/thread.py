@@ -21,8 +21,8 @@ __all__ = [
 ]
 
 import threading as _threading
-import time
 
+from ...lowlevel import _utils
 from .abc import AbstractNetworkServer
 
 
@@ -50,9 +50,8 @@ class NetworkServerThread(_threading.Thread):
             self.__is_up_event.set()
 
     def join(self, timeout: float | None = None) -> None:
-        _start = time.perf_counter()
-        self.__server.shutdown(timeout=timeout)
-        _end = time.perf_counter()
+        with _utils.ElapsedTime() as elapsed:
+            self.__server.shutdown(timeout=timeout)
         if timeout is not None:
-            timeout -= _end - _start
+            timeout = elapsed.recompute_timeout(timeout)
         super().join(timeout=timeout)

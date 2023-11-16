@@ -20,7 +20,6 @@ __all__ = ["StreamEndpoint"]
 
 import errno as _errno
 import math
-import time
 from collections.abc import Callable, Mapping
 from typing import Any, Generic, TypeGuard
 
@@ -192,12 +191,10 @@ class StreamEndpoint(typed_attr.TypedAttributeProvider, Generic[_SentPacketT, _R
             raise EOFError("end-of-stream")
 
         bufsize: int = self.__max_recv_size
-        perf_counter = time.perf_counter  # pull function to local namespace
 
         while True:
-            _start = perf_counter()
-            chunk: bytes = transport.recv(bufsize, timeout)
-            _end = perf_counter()
+            with _utils.ElapsedTime() as elapsed:
+                chunk: bytes = transport.recv(bufsize, timeout)
             if not chunk:
                 self.__eof_reached = True
                 raise EOFError("end-of-stream")
@@ -211,8 +208,7 @@ class StreamEndpoint(typed_attr.TypedAttributeProvider, Generic[_SentPacketT, _R
                 return next(consumer)
             except StopIteration:
                 if timeout > 0:
-                    timeout -= _end - _start
-                    timeout = max(timeout, 0.0)
+                    timeout = elapsed.recompute_timeout(timeout)
                 elif buffer_not_full:
                     break
         # Loop break
