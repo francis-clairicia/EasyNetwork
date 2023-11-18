@@ -80,7 +80,7 @@ class DeserializeError(Exception):
 class IncrementalDeserializeError(DeserializeError):
     """Error raised by an :term:`incremental serializer` if the data format is invalid."""
 
-    def __init__(self, message: str, remaining_data: bytes, error_info: Any = None) -> None:
+    def __init__(self, message: str, remaining_data: ReadableBuffer, error_info: Any = None) -> None:
         """
         Parameters:
             message: Error message.
@@ -90,7 +90,7 @@ class IncrementalDeserializeError(DeserializeError):
 
         super().__init__(message, error_info=error_info)
 
-        self.remaining_data: bytes = remaining_data
+        self.remaining_data: ReadableBuffer = remaining_data
         """Unused trailing data."""
 
 
@@ -106,13 +106,17 @@ class LimitOverrunError(IncrementalDeserializeError):
             separator: Searched separator.
         """
 
-        remaining_data = memoryview(buffer)[consumed:].tobytes()
-        if separator and remaining_data.startswith(separator):
-            remaining_data = remaining_data.removeprefix(separator)
+        remaining_data = memoryview(buffer)[consumed:]
+        seplen = len(separator)
+        if seplen and remaining_data[:seplen] == separator:
+            remaining_data = remaining_data[seplen:]
         else:
             remaining_data = remaining_data[1:]
 
         super().__init__(message, remaining_data, error_info=None)
+
+        self.remaining_data: memoryview
+        """Unused trailing data."""
 
         self.consumed: int = consumed
         """Total number of to be consumed bytes."""
@@ -156,7 +160,7 @@ class DatagramProtocolParseError(BaseProtocolParseError):
 class StreamProtocolParseError(BaseProtocolParseError):
     """Parsing error raised by :class:`easynetwork.protocol.StreamProtocol`."""
 
-    def __init__(self, remaining_data: bytes, error: IncrementalDeserializeError | PacketConversionError) -> None:
+    def __init__(self, remaining_data: ReadableBuffer, error: IncrementalDeserializeError | PacketConversionError) -> None:
         """
         Parameters:
             remaining_data: Unused trailing data.
@@ -168,7 +172,7 @@ class StreamProtocolParseError(BaseProtocolParseError):
         self.error: IncrementalDeserializeError | PacketConversionError
         """Error instance."""
 
-        self.remaining_data: bytes = remaining_data
+        self.remaining_data: ReadableBuffer = remaining_data
         """Unused trailing data."""
 
 

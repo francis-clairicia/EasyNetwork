@@ -38,7 +38,7 @@ class GeneratorStreamReader:
         Parameters:
             initial_bytes: a :class:`bytes` object that contains initial data.
         """
-        self.__buffer: bytes = initial_bytes
+        self.__buffer: bytes = bytes(initial_bytes)
 
     def read_all(self) -> bytes:
         """
@@ -77,13 +77,10 @@ class GeneratorStreamReader:
             return b""
 
         while not self.__buffer:
-            self.__buffer = yield
+            self.__buffer = bytes((yield))
 
-        if len(self.__buffer) <= size:
-            data, self.__buffer = self.__buffer, b""
-        else:
-            data = self.__buffer[:size]
-            self.__buffer = self.__buffer[size:]
+        data = self.__buffer[:size]
+        self.__buffer = self.__buffer[size:]
 
         return data
 
@@ -114,15 +111,12 @@ class GeneratorStreamReader:
             return b""
 
         while not self.__buffer:
-            self.__buffer = yield
-        while (buflen := len(self.__buffer)) < n:
+            self.__buffer = bytes((yield))
+        while len(self.__buffer) < n:
             self.__buffer += yield
 
-        if buflen == n:
-            data, self.__buffer = self.__buffer, b""
-        else:
-            data = self.__buffer[:n]
-            self.__buffer = self.__buffer[n:]
+        data = self.__buffer[:n]
+        self.__buffer = self.__buffer[n:]
 
         return data
 
@@ -167,7 +161,7 @@ class GeneratorStreamReader:
             raise ValueError("Empty separator")
 
         while not self.__buffer:
-            self.__buffer = yield
+            self.__buffer = bytes((yield))
 
         offset: int = 0
         sepidx: int = -1
@@ -193,13 +187,9 @@ class GeneratorStreamReader:
 
         offset = sepidx + seplen
         if keep_end:
-            if offset == buflen:
-                data, self.__buffer = self.__buffer, b""
-            else:
-                data = self.__buffer[:offset]
-                self.__buffer = self.__buffer[offset:]
+            data = self.__buffer[:offset]
         else:
             data = self.__buffer[:sepidx]
-            self.__buffer = self.__buffer[offset:]
+        self.__buffer = self.__buffer[offset:]
 
         return data

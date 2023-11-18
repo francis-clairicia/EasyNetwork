@@ -23,14 +23,11 @@ __all__ = [
 
 from collections import deque
 from collections.abc import Generator, Iterator
-from typing import TYPE_CHECKING, Any, Generic, final
+from typing import Any, Generic, final
 
 from .._typevars import _ReceivedPacketT, _SentPacketT
 from ..exceptions import StreamProtocolParseError
 from ..protocol import StreamProtocol
-
-if TYPE_CHECKING:
-    from _typeshed import ReadableBuffer
 
 
 @final
@@ -72,7 +69,7 @@ class StreamDataProducer(Generic[_SentPacketT]):
             else:
                 self.__g = None
             try:
-                chunk = next(filter(None, map(_ensure_bytes, generator)))
+                chunk = next(filter(None, map(bytes, generator)))
             except StopIteration:
                 pass
             else:
@@ -144,9 +141,9 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
             consumer.send(chunk)
         except StopIteration as exc:
             packet, remaining = exc.value
-            remaining = _ensure_bytes(remaining)
+            remaining = bytes(remaining)
         except StreamProtocolParseError as exc:
-            self.__b = _ensure_bytes(exc.remaining_data)
+            self.__b = bytes(exc.remaining_data)
             raise
         except Exception as exc:
             raise RuntimeError("protocol.build_packet_from_chunks() crashed") from exc
@@ -159,7 +156,7 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
         return packet
 
     def feed(self, chunk: bytes) -> None:
-        chunk = _ensure_bytes(chunk)
+        chunk = bytes(chunk)
         if not chunk:
             return
         if self.__b:
@@ -180,9 +177,3 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
 def _check_protocol(p: StreamProtocol[Any, Any]) -> None:
     if not isinstance(p, StreamProtocol):
         raise TypeError(f"Expected a StreamProtocol object, got {p!r}")
-
-
-def _ensure_bytes(b: ReadableBuffer) -> bytes:
-    if type(b) is not bytes:
-        b = memoryview(b).tobytes()
-    return b

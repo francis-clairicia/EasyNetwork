@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from easynetwork.exceptions import LimitOverrunError
 from easynetwork.serializers.tools import GeneratorStreamReader
 
@@ -9,20 +7,18 @@ import pytest
 
 from ...tools import next_return, send_return
 
-if TYPE_CHECKING:
-    from pytest_mock import MockerFixture
-
 
 class TestGeneratorStreamReader:
-    def test____read_all____pop_buffer_without_copying(self, mocker: MockerFixture) -> None:
+    def test____read_all____pop_buffer_without_copying(self) -> None:
         # Arrange
-        reader = GeneratorStreamReader(mocker.sentinel.initial_buffer)
+        initial_buffer = b"initial_buffer"
+        reader = GeneratorStreamReader(initial_buffer)
 
         # Act
         data = reader.read_all()
 
         # Assert
-        assert data is mocker.sentinel.initial_buffer
+        assert data is initial_buffer
         assert reader.read_all() == b""
 
     def test____read____yield_if_buffer_is_empty(self) -> None:

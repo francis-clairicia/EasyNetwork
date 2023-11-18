@@ -19,14 +19,18 @@ from __future__ import annotations
 __all__ = [
     "AbstractIncrementalPacketSerializer",
     "AbstractPacketSerializer",
+    "BufferedIncrementalPacketSerializer",
 ]
 
 from abc import ABCMeta, abstractmethod
 from collections.abc import Generator
-from typing import Generic
+from typing import TYPE_CHECKING, Generic
 
-from .._typevars import _DTOPacketT
+from .._typevars import _BufferT, _DTOPacketT
 from ..exceptions import DeserializeError
+
+if TYPE_CHECKING:
+    from _typeshed import ReadableBuffer
 
 
 class AbstractPacketSerializer(Generic[_DTOPacketT], metaclass=ABCMeta):
@@ -156,3 +160,19 @@ class AbstractIncrementalPacketSerializer(AbstractPacketSerializer[_DTOPacketT])
         if remaining:
             raise DeserializeError("Extra data caught", error_info={"packet": packet, "extra": remaining})
         return packet
+
+
+class BufferedIncrementalPacketSerializer(AbstractIncrementalPacketSerializer[_DTOPacketT], Generic[_DTOPacketT, _BufferT]):
+    __slots__ = ()
+
+    @abstractmethod
+    def create_deserializer_buffer(self, sizehint: int, /) -> _BufferT:
+        raise NotImplementedError
+
+    @abstractmethod
+    def buffered_incremental_deserialize(
+        self,
+        buffer: _BufferT,
+        /,
+    ) -> Generator[int | None, int, tuple[_DTOPacketT, ReadableBuffer]]:
+        raise NotImplementedError

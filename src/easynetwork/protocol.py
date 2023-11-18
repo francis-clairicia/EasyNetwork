@@ -17,14 +17,15 @@
 from __future__ import annotations
 
 __all__ = [
+    "BufferedStreamReceiver",
     "DatagramProtocol",
     "StreamProtocol",
 ]
 
 from collections.abc import Generator
-from typing import Any, Generic, overload
+from typing import TYPE_CHECKING, Any, Generic, Never, overload
 
-from ._typevars import _DTOPacketT, _ReceivedPacketT, _SentPacketT
+from ._typevars import _BufferT, _DTOPacketT, _ReceivedPacketT, _SentPacketT
 from .converter import AbstractPacketConverterComposite
 from .exceptions import (
     DatagramProtocolParseError,
@@ -32,8 +33,12 @@ from .exceptions import (
     IncrementalDeserializeError,
     PacketConversionError,
     StreamProtocolParseError,
+    UnsupportedOperation,
 )
-from .serializers.abc import AbstractIncrementalPacketSerializer, AbstractPacketSerializer
+from .serializers.abc import AbstractIncrementalPacketSerializer, AbstractPacketSerializer, BufferedIncrementalPacketSerializer
+
+if TYPE_CHECKING:
+    from _typeshed import ReadableBuffer, WriteableBuffer
 
 
 class DatagramProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
@@ -117,10 +122,71 @@ class DatagramProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
         return packet
 
 
+class BufferedStreamReceiver(Generic[_ReceivedPacketT, _BufferT]):
+    __slots__ = ("__serializer", "__converter", "__weakref__")
+
+    @overload
+    def __init__(
+        self,
+        serializer: BufferedIncrementalPacketSerializer[_ReceivedPacketT, _BufferT],
+        converter: None = ...,
+    ) -> None:
+        ...
+
+    @overload
+    def __init__(
+        self,
+        serializer: BufferedIncrementalPacketSerializer[_DTOPacketT, _BufferT],
+        converter: AbstractPacketConverterComposite[Any, _ReceivedPacketT, _DTOPacketT],
+    ) -> None:
+        ...
+
+    def __init__(
+        self,
+        serializer: BufferedIncrementalPacketSerializer[Any, _BufferT],
+        converter: AbstractPacketConverterComposite[Any, _ReceivedPacketT, Any] | None = None,
+    ) -> None:
+        """
+        Parameters:
+            serializer: The :term:`incremental serializer` to use.
+            converter: The :term:`converter` to use.
+        """
+
+        if not isinstance(serializer, BufferedIncrementalPacketSerializer):
+            raise TypeError(f"Expected an incremental serializer instance, got {serializer!r}")
+        if converter is not None and not isinstance(converter, AbstractPacketConverterComposite):
+            raise TypeError(f"Expected a converter instance, got {converter!r}")
+        self.__serializer: BufferedIncrementalPacketSerializer[Any, _BufferT] = serializer
+        self.__converter: AbstractPacketConverterComposite[Never, _ReceivedPacketT, Any] | None = converter
+
+    def create_buffer(self, sizehint: int) -> _BufferT:
+        return self.__serializer.create_deserializer_buffer(sizehint)
+
+    def build_packet_from_buffer(self, buffer: _BufferT) -> Generator[int | None, int, tuple[_ReceivedPacketT, ReadableBuffer]]:
+        packet: _ReceivedPacketT
+        try:
+            packet, remaining_data = yield from self.__serializer.buffered_incremental_deserialize(buffer)
+        except IncrementalDeserializeError as exc:
+            try:
+                raise StreamProtocolParseError(exc.remaining_data, exc) from exc
+            finally:
+                exc.remaining_data = b""
+        except DeserializeError as exc:
+            raise RuntimeError("DeserializeError raised instead of IncrementalDeserializeError") from exc
+
+        if (converter := self.__converter) is not None:
+            try:
+                packet = converter.create_from_dto_packet(packet)
+            except PacketConversionError as exc:
+                raise StreamProtocolParseError(remaining_data, exc) from exc
+
+        return packet, remaining_data
+
+
 class StreamProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
     """A :term:`protocol object` class for connection-oriented stream communication."""
 
-    __slots__ = ("__serializer", "__converter", "__weakref__")
+    __slots__ = ("__serializer", "__converter", "__buffered_receiver", "__weakref__")
 
     @overload
     def __init__(
@@ -156,6 +222,12 @@ class StreamProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
         self.__serializer: AbstractIncrementalPacketSerializer[Any] = serializer
         self.__converter: AbstractPacketConverterComposite[_SentPacketT, _ReceivedPacketT, Any] | None = converter
 
+        self.__buffered_receiver: BufferedStreamReceiver[_ReceivedPacketT, WriteableBuffer] | None
+        if isinstance(serializer, BufferedIncrementalPacketSerializer):
+            self.__buffered_receiver = BufferedStreamReceiver(serializer, converter=converter)
+        else:
+            self.__buffered_receiver = None
+
     def generate_chunks(self, packet: _SentPacketT) -> Generator[bytes, None, None]:
         """
         Serializes a Python object to a raw :term:`packet` part by part.
@@ -170,6 +242,12 @@ class StreamProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
         if (converter := self.__converter) is not None:
             packet = converter.convert_to_dto_packet(packet)
         return (yield from self.__serializer.incremental_serialize(packet))
+
+    def buffered_receiver(self) -> BufferedStreamReceiver[_ReceivedPacketT, WriteableBuffer]:
+        buffered_receiver = self.__buffered_receiver
+        if buffered_receiver is None:
+            raise UnsupportedOperation("This protocol does not support the buffer API")
+        return buffered_receiver
 
     def build_packet_from_chunks(self) -> Generator[None, bytes, tuple[_ReceivedPacketT, bytes]]:
         """
