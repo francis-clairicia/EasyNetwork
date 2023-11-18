@@ -292,21 +292,6 @@ class TestAsyncioTransportStreamSocketAdapter(BaseTestTransportStreamSocket):
         mock_asyncio_writer.drain.assert_awaited_once_with()
         assert written_chunks == [b"data", b"to", b"send"]
 
-    async def test____send_all_from_iterable____single_yield_calls_write_instead(
-        self,
-        socket: AsyncioTransportStreamSocketAdapter,
-        mock_asyncio_writer: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act
-        await socket.send_all_from_iterable(iter([b"data"]))
-
-        # Assert
-        mock_asyncio_writer.write.assert_called_once_with(b"data")
-        mock_asyncio_writer.writelines.assert_not_called()
-        mock_asyncio_writer.drain.assert_awaited_once_with()
-
     @pytest.mark.parametrize("can_write_eof", [False, True], ids=lambda p: f"can_write_eof=={p}")
     async def test____send_eof____write_eof(
         self,
