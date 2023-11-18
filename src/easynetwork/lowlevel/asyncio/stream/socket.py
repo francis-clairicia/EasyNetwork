@@ -101,12 +101,7 @@ class AsyncioTransportStreamSocketAdapter(transports.AsyncStreamTransport):
         await self.__writer.drain()
 
     async def send_all_from_iterable(self, iterable_of_data: Iterable[bytes | bytearray | memoryview]) -> None:
-        iterable_of_data = list(iterable_of_data)
-        if len(iterable_of_data) == 1:
-            self.__writer.write(iterable_of_data[0])
-        else:
-            self.__writer.writelines(iterable_of_data)
-        del iterable_of_data
+        self.__writer.writelines(iterable_of_data)
         await self.__writer.drain()
 
     async def send_eof(self) -> None:
