@@ -204,11 +204,8 @@ Most of the time, you will have a single :keyword:`yield`. The goal is: each :ke
 
 .. note::
 
-   The endpoint implementation can (and most likely will) decide to concatenate all the pieces and do one big send.
-   This is the optimized way to send a large byte buffer.
-
-   However, it may be more attractive to do something else with the returned bytes.
-   :meth:`~.AbstractIncrementalPacketSerializer.incremental_serialize` is here to give endpoints this freedom.
+   The endpoint implementation can decide to concatenate all the pieces and do one big send. However, it may be more attractive to do something else
+   with the returned bytes. :meth:`~.AbstractIncrementalPacketSerializer.incremental_serialize` is here to give endpoints this freedom.
 
 
 The Purpose Of ``incremental_deserialize()``

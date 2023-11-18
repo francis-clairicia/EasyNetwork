@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import errno
 import os
+from collections.abc import Generator
 from socket import AF_INET6, IPPROTO_TCP, SO_ERROR, SO_KEEPALIVE, SOL_SOCKET, TCP_NODELAY
 from typing import TYPE_CHECKING, Any
 
@@ -126,9 +127,10 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
     @pytest.fixture  # DO NOT set autouse=True
     @staticmethod
     def setup_producer_mock(mock_stream_protocol: MagicMock) -> None:
-        mock_stream_protocol.generate_chunks.side_effect = lambda packet: iter(
-            [str(packet).encode("ascii").removeprefix(b"sentinel.") + b"\n"]
-        )
+        def generate_chunks_side_effect(packet: Any) -> Generator[bytes, None, None]:
+            yield str(packet).removeprefix("sentinel.").encode("ascii") + b"\n"
+
+        mock_stream_protocol.generate_chunks.side_effect = generate_chunks_side_effect
 
     @pytest.fixture  # DO NOT set autouse=True
     @staticmethod

@@ -1000,19 +1000,36 @@ class TestRawStreamSocketAdapter(BaseTestSocket):
         # Assert
         mock_async_socket.sendall.assert_awaited_once_with(b"data")
 
-    async def test____send_all_from_iterable____sends_concatenated_data_to_async_socket(
+    async def test____send_all_from_iterable____use_async_socket_sendmsg(
         self,
         socket: RawStreamSocketAdapter,
         mock_async_socket: MagicMock,
     ) -> None:
         # Arrange
-        mock_async_socket.sendall.return_value = None
+        mock_async_socket.sendmsg.return_value = None
 
         # Act
         await socket.send_all_from_iterable([b"data", b"to", b"send"])
 
         # Assert
-        mock_async_socket.sendall.assert_awaited_once_with(b"datatosend")
+        mock_async_socket.sendmsg.assert_awaited_once_with([b"data", b"to", b"send"])
+        mock_async_socket.sendall.assert_not_called()
+
+    async def test____send_all_from_iterable____fallback_to_sendall(
+        self,
+        socket: RawStreamSocketAdapter,
+        mock_async_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_async_socket.sendmsg.side_effect = UnsupportedOperation
+
+        # Act
+        await socket.send_all_from_iterable([b"data", b"to", b"send"])
+
+        # Assert
+        mock_async_socket.sendmsg.assert_awaited_once()
+        assert mock_async_socket.sendall.await_args_list == list(map(mocker.call, [b"data", b"to", b"send"]))
 
     async def test____send_eof____shutdown_socket(
         self,

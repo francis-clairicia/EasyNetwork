@@ -17,7 +17,12 @@
 
 from __future__ import annotations
 
-__all__ = ["create_connection", "open_listener_sockets_from_getaddrinfo_result"]
+__all__ = [
+    "create_connection",
+    "open_listener_sockets_from_getaddrinfo_result",
+    "wait_until_readable",
+    "wait_until_writable",
+]
 
 import asyncio
 import contextlib
@@ -216,3 +221,31 @@ def open_listener_sockets_from_getaddrinfo_result(
         socket_exit_stack.pop_all()
 
     return sockets
+
+
+def wait_until_readable(sock: _socket.socket, loop: asyncio.AbstractEventLoop) -> asyncio.Future[None]:
+    def on_fut_done(f: asyncio.Future[None]) -> None:
+        loop.remove_reader(sock)
+
+    def wakeup(f: asyncio.Future[None]) -> None:
+        if not f.done():
+            f.set_result(None)
+
+    f = loop.create_future()
+    loop.add_reader(sock, wakeup, f)
+    f.add_done_callback(on_fut_done)
+    return f
+
+
+def wait_until_writable(sock: _socket.socket, loop: asyncio.AbstractEventLoop) -> asyncio.Future[None]:
+    def on_fut_done(f: asyncio.Future[None]) -> None:
+        loop.remove_writer(sock)
+
+    def wakeup(f: asyncio.Future[None]) -> None:
+        if not f.done():
+            f.set_result(None)
+
+    f = loop.create_future()
+    loop.add_writer(sock, wakeup, f)
+    f.add_done_callback(on_fut_done)
+    return f

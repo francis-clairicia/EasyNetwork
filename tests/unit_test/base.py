@@ -1,14 +1,18 @@
 from __future__ import annotations
 
-from socket import AF_INET, AF_INET6
+from socket import AF_INET, AF_INET6, socket as Socket
 from typing import TYPE_CHECKING
 
 from easynetwork.lowlevel.socket import AddressFamily
+
+import pytest
 
 from ._utils import get_all_socket_families
 
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
+
+    from pytest_mock import MockerFixture
 
 SUPPORTED_FAMILIES: tuple[str, ...] = tuple(sorted(AddressFamily.__members__))
 UNSUPPORTED_FAMILIES: tuple[str, ...] = tuple(sorted(get_all_socket_families().difference(SUPPORTED_FAMILIES)))
@@ -83,3 +87,23 @@ class BaseTestSocket:
         enotconn_exception = OSError(errno.ENOTCONN, os.strerror(errno.ENOTCONN))
         mock_socket.getpeername.side_effect = enotconn_exception
         return enotconn_exception
+
+
+class MixinTestSocketSendMSG:
+    @pytest.fixture(autouse=True)
+    @staticmethod
+    def SC_IOV_MAX(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> int:
+        try:
+            value: int = request.param
+        except AttributeError:
+            value = 1024
+        monkeypatch.setattr("easynetwork.lowlevel.constants.SC_IOV_MAX", value)
+        return value
+
+    @pytest.fixture(autouse=True)
+    @staticmethod
+    def supports_socket_sendmsg(mocker: MockerFixture) -> None:
+        def supports_socket_sendmsg(sock: Socket) -> bool:
+            return hasattr(sock, "sendmsg")
+
+        mocker.patch("easynetwork.lowlevel._utils.supports_socket_sendmsg", supports_socket_sendmsg)

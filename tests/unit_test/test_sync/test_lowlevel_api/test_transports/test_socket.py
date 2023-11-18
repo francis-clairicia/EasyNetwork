@@ -6,7 +6,7 @@ import errno
 import math
 import os
 import ssl
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from socket import SHUT_RDWR, SHUT_WR
 from typing import TYPE_CHECKING, Any
 
@@ -23,13 +23,38 @@ from easynetwork.lowlevel.socket import SocketAttribute, SocketProxy, TLSAttribu
 
 import pytest
 
+from ....base import MixinTestSocketSendMSG
+
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
 
+    from _typeshed import ReadableBuffer
     from pytest_mock import MockerFixture
 
 
-class TestSocketStreamTransport:
+def _retry_side_effect(callback: Callable[[], Any], timeout: float) -> Any:
+    while True:
+        try:
+            return callback()
+        except (WouldBlockOnRead, WouldBlockOnWrite):
+            pass
+
+
+class TestSocketStreamTransport(MixinTestSocketSendMSG):
+    @pytest.fixture(autouse=True)
+    @staticmethod
+    def mock_transport_retry(mocker: MockerFixture) -> MagicMock:
+        mock_transport_retry = mocker.patch.object(SocketStreamTransport, "_retry")
+        mock_transport_retry.side_effect = _retry_side_effect
+        return mock_transport_retry
+
+    @pytest.fixture
+    @staticmethod
+    def mock_transport_send_all(mocker: MockerFixture) -> MagicMock:
+        mock_transport_send_all = mocker.patch.object(SocketStreamTransport, "send_all", spec=lambda data, timeout: None)
+        mock_transport_send_all.return_value = None
+        return mock_transport_send_all
+
     @pytest.fixture
     @staticmethod
     def socket_fileno(request: pytest.FixtureRequest) -> int:
@@ -37,10 +62,17 @@ class TestSocketStreamTransport:
 
     @pytest.fixture
     @staticmethod
-    def mock_tcp_socket(mock_tcp_socket: MagicMock, socket_fileno: int) -> MagicMock:
+    def mock_tcp_socket(mock_tcp_socket: MagicMock, socket_fileno: int, mocker: MockerFixture) -> MagicMock:
         mock_tcp_socket.fileno.return_value = socket_fileno
         mock_tcp_socket.getsockname.return_value = ("local_address", 11111)
         mock_tcp_socket.getpeername.return_value = ("remote_address", 12345)
+
+        # Always create a new mock instance because sendmsg() is not available on all platforms
+        # therefore the mocker's autospec will consider sendmsg() unknown on these ones.
+        mock_tcp_socket.sendmsg = mocker.MagicMock(
+            spec=lambda *args: None,
+            side_effect=lambda buffers, *args: sum(map(len, map(memoryview, buffers))),
+        )
         return mock_tcp_socket
 
     @pytest.fixture
@@ -208,6 +240,168 @@ class TestSocketStreamTransport:
         mock_tcp_socket.fileno.assert_called_once()
         assert exc_info.value.fileno is mock_tcp_socket.fileno.return_value
 
+    def test____send_all_from_iterable____use_socket_sendmsg_when_available(
+        self,
+        transport: SocketStreamTransport,
+        mock_tcp_socket: MagicMock,
+        mock_transport_retry: MagicMock,
+        mock_transport_send_all: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        chunks: list[list[bytes]] = []
+
+        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer]) -> int:
+            buffers = list(buffers)
+            chunks.append(list(map(bytes, buffers)))
+            return sum(map(len, map(memoryview, buffers)))
+
+        mock_tcp_socket.sendmsg.side_effect = sendmsg_side_effect
+
+        # Act
+        transport.send_all_from_iterable(iter([b"data", b"to", b"send"]), 123456)
+
+        # Assert
+        mock_transport_send_all.assert_not_called()
+        mock_transport_retry.assert_called_once_with(mocker.ANY, 123456)
+        mock_tcp_socket.sendmsg.assert_called_once()
+        assert chunks == [[b"data", b"to", b"send"]]
+
+    @pytest.mark.parametrize("SC_IOV_MAX", [2], ids=lambda p: f"SC_IOV_MAX=={p}", indirect=True)
+    def test____send_all_from_iterable____nb_buffers_greather_than_SC_IOV_MAX(
+        self,
+        transport: SocketStreamTransport,
+        mock_tcp_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        chunks: list[list[bytes]] = []
+
+        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer]) -> int:
+            buffers = list(buffers)
+            chunks.append(list(map(bytes, buffers)))
+            return sum(map(len, map(memoryview, buffers)))
+
+        mock_tcp_socket.sendmsg.side_effect = sendmsg_side_effect
+
+        # Act
+        transport.send_all_from_iterable(iter([b"a", b"b", b"c", b"d", b"e"]), 123456)
+
+        # Assert
+        assert mock_tcp_socket.sendmsg.call_count == 3
+        assert chunks == [
+            [b"a", b"b"],
+            [b"c", b"d"],
+            [b"e"],
+        ]
+
+    def test____send_all_from_iterable____adjust_leftover_buffer(
+        self,
+        transport: SocketStreamTransport,
+        mock_tcp_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        chunks: list[list[bytes]] = []
+
+        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer]) -> int:
+            buffers = list(buffers)
+            chunks.append(list(map(bytes, buffers)))
+            return min(sum(map(len, map(memoryview, buffers))), 3)
+
+        mock_tcp_socket.sendmsg.side_effect = sendmsg_side_effect
+
+        # Act
+        transport.send_all_from_iterable(iter([b"abcd", b"efg", b"hijkl", b"mnop"]), 123456)
+
+        # Assert
+        assert mock_tcp_socket.sendmsg.call_count == 6
+        assert chunks == [
+            [b"abcd", b"efg", b"hijkl", b"mnop"],
+            [b"d", b"efg", b"hijkl", b"mnop"],
+            [b"g", b"hijkl", b"mnop"],
+            [b"jkl", b"mnop"],
+            [b"mnop"],
+            [b"p"],
+        ]
+
+    @pytest.mark.parametrize("error", [BlockingIOError, InterruptedError])
+    def test____send_all_from_iterable____blocking_error(
+        self,
+        error: type[OSError],
+        transport: SocketStreamTransport,
+        mock_tcp_socket: MagicMock,
+        mock_transport_retry: MagicMock,
+        mock_transport_send_all: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        to_raise: list[type[OSError]] = [error]
+        chunks: list[list[bytes]] = []
+
+        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer]) -> int:
+            if to_raise:
+                raise to_raise.pop(0)
+            buffers = list(buffers)
+            chunks.append(list(map(bytes, buffers)))
+            return sum(map(len, map(memoryview, buffers)))
+
+        mock_tcp_socket.sendmsg.side_effect = sendmsg_side_effect
+
+        # Act
+        transport.send_all_from_iterable(iter([b"data"]), 123456)
+
+        # Assert
+        mock_transport_send_all.assert_not_called()
+        mock_transport_retry.assert_called_once_with(mocker.ANY, 123456)
+        assert mock_tcp_socket.sendmsg.call_count == 2
+        assert chunks == [[b"data"]]
+
+    def test____send_all_from_iterable____fallback_to_send_all____sendmsg_unavailable(
+        self,
+        transport: SocketStreamTransport,
+        mock_tcp_socket: MagicMock,
+        mock_transport_retry: MagicMock,
+        mock_transport_send_all: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        del mock_tcp_socket.sendmsg
+
+        # Act
+        transport.send_all_from_iterable(iter([b"data", b"to", b"send"]), 123456)
+
+        # Assert
+        mock_transport_retry.assert_not_called()
+        assert mock_transport_send_all.call_args_list == list(
+            map(
+                lambda data: mocker.call(data, mocker.ANY),
+                [b"data", b"to", b"send"],
+            )
+        )
+
+    @pytest.mark.parametrize("SC_IOV_MAX", [-1, 0], ids=lambda p: f"SC_IOV_MAX=={p}", indirect=True)
+    def test____send_all_from_iterable____fallback_to_send_all____sendmsg_available_but_no_defined_limit(
+        self,
+        transport: SocketStreamTransport,
+        mock_tcp_socket: MagicMock,
+        mock_transport_retry: MagicMock,
+        mock_transport_send_all: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+
+        # Act
+        transport.send_all_from_iterable(iter([b"data", b"to", b"send"]), 123456)
+
+        # Assert
+        mock_transport_retry.assert_not_called()
+        mock_tcp_socket.sendmsg.assert_not_called()
+        assert mock_transport_send_all.call_args_list == list(
+            map(
+                lambda data: mocker.call(data, mocker.ANY),
+                [b"data", b"to", b"send"],
+            )
+        )
+
     @pytest.mark.parametrize(
         "os_error",
         [pytest.param(None)] + list(map(pytest.param, sorted(NOT_CONNECTED_SOCKET_ERRNOS | CLOSED_SOCKET_ERRNOS))),
@@ -283,14 +477,6 @@ class TestSocketStreamTransport:
         assert transport.extra(extra_attribute, mocker.sentinel.default_value) is mocker.sentinel.default_value
 
 
-def _retry_side_effect(callback: Callable[[], Any], timeout: float) -> Any:
-    while True:
-        try:
-            return callback()
-        except (WouldBlockOnRead, WouldBlockOnWrite):
-            pass
-
-
 class TestSSLStreamTransport:
     @pytest.fixture(autouse=True)
     @staticmethod
@@ -308,8 +494,8 @@ class TestSSLStreamTransport:
     @staticmethod
     def mock_ssl_socket(mock_ssl_socket: MagicMock, socket_fileno: int) -> MagicMock:
         mock_ssl_socket.fileno.return_value = socket_fileno
-        mock_ssl_socket.do_handshake.side_effect = [WouldBlockOnRead(socket_fileno), WouldBlockOnWrite(socket_fileno), None]
-        mock_ssl_socket.unwrap.side_effect = [WouldBlockOnRead(socket_fileno), WouldBlockOnWrite(socket_fileno), None]
+        mock_ssl_socket.do_handshake.side_effect = [ssl.SSLWantReadError, ssl.SSLWantWriteError, None]
+        mock_ssl_socket.unwrap.side_effect = [ssl.SSLWantReadError, ssl.SSLWantWriteError, None]
 
         mock_ssl_socket.getsockname.return_value = ("local_address", 11111)
         mock_ssl_socket.getpeername.return_value = ("remote_address", 12345)
@@ -544,7 +730,7 @@ class TestSSLStreamTransport:
     ) -> None:
         # Arrange
         if unwrap_error is not None:
-            mock_ssl_socket.unwrap.side_effect = [WouldBlockOnRead(socket_fileno), WouldBlockOnWrite(socket_fileno), unwrap_error]
+            mock_ssl_socket.unwrap.side_effect = [ssl.SSLWantReadError, ssl.SSLWantWriteError, unwrap_error]
         if shutdown_error is not None:
             mock_ssl_socket.shutdown.side_effect = shutdown_error
         mock_transport_retry.reset_mock()
@@ -556,7 +742,9 @@ class TestSSLStreamTransport:
         if standard_compatible:
             assert mock_ssl_socket.mock_calls == [
                 mocker.call.unwrap(),
+                mocker.call.fileno(),
                 mocker.call.unwrap(),
+                mocker.call.fileno(),
                 mocker.call.unwrap(),
                 mocker.call.shutdown(SHUT_RDWR),
                 mocker.call.close(),

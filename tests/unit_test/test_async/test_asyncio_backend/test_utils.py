@@ -21,6 +21,7 @@ from socket import (
     SOCK_DGRAM,
     SOCK_STREAM,
     SOL_SOCKET,
+    SocketType,
     gaierror,
 )
 from typing import TYPE_CHECKING, Any, Literal, assert_never, cast
@@ -30,10 +31,13 @@ from easynetwork.lowlevel.asyncio._asyncio_utils import (
     create_connection,
     ensure_resolved,
     open_listener_sockets_from_getaddrinfo_result,
+    wait_until_readable,
+    wait_until_writable,
 )
 
 import pytest
 
+from ....tools import is_proactor_event_loop
 from ..._utils import datagram_addrinfo_list, stream_addrinfo_list
 
 if TYPE_CHECKING:
@@ -635,3 +639,46 @@ def test____open_listener_sockets_from_getaddrinfo_result____ipv6_scope_id_not_p
     # Assert
     assert sockets == [mock_socket_ipv6]
     mock_socket_ipv6.bind.assert_called_once_with(("4e76:f928:6bbc:53ce:c01e:00d5:cdd5:6bbb", 65432, 0, 6))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ["waiter", "event_loop_add_event_func_name", "event_loop_remove_event_func_name"],
+    [
+        pytest.param(wait_until_readable, "add_reader", "remove_reader", id="read"),
+        pytest.param(wait_until_writable, "add_writer", "remove_writer", id="write"),
+    ],
+)
+@pytest.mark.parametrize("future_cancelled", [False, True], ids=lambda p: f"future_cancelled=={p}")
+async def test____wait_until___event_wakeup(
+    waiter: Callable[[SocketType, asyncio.AbstractEventLoop], asyncio.Future[None]],
+    event_loop: asyncio.AbstractEventLoop,
+    event_loop_add_event_func_name: str,
+    event_loop_remove_event_func_name: str,
+    future_cancelled: bool,
+    mock_socket_factory: Callable[[], MagicMock],
+    mocker: MockerFixture,
+) -> None:
+    # Arrange
+    if is_proactor_event_loop(event_loop):
+        pytest.skip(f"event_loop.{event_loop_add_event_func_name}() is not supported on asyncio.ProactorEventLoop")
+
+    event_loop_add_event = mocker.patch.object(
+        event_loop,
+        event_loop_add_event_func_name,
+        side_effect=lambda sock, cb, *args: event_loop.call_soon(cb, *args),
+    )
+    event_loop_remove_event = mocker.patch.object(event_loop, event_loop_remove_event_func_name)
+    mock_socket = mock_socket_factory()
+
+    # Act
+    fut = waiter(mock_socket, event_loop)
+    if future_cancelled:
+        fut.cancel()
+        await asyncio.sleep(0)
+    else:
+        await fut
+
+    # Assert
+    event_loop_add_event.assert_called_once_with(mock_socket, mocker.ANY, mocker.ANY)
+    event_loop_remove_event.assert_called_once_with(mock_socket)

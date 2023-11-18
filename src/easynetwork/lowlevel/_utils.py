@@ -16,6 +16,7 @@ from __future__ import annotations
 
 __all__ = [
     "ElapsedTime",
+    "adjust_leftover_buffer",
     "check_real_socket_state",
     "check_socket_family",
     "check_socket_no_ssl",
@@ -30,6 +31,7 @@ __all__ = [
     "remove_traceback_frames_in_place",
     "replace_kwargs",
     "set_reuseport",
+    "supports_socket_sendmsg",
     "validate_timeout_delay",
 ]
 
@@ -41,8 +43,10 @@ import os
 import socket as _socket
 import threading
 import time
+from abc import abstractmethod
+from collections import deque
 from collections.abc import Callable, Iterable, Iterator
-from typing import TYPE_CHECKING, Any, Concatenate, ParamSpec, Self, TypeGuard, TypeVar
+from typing import TYPE_CHECKING, Any, Concatenate, Final, ParamSpec, Protocol, Self, TypeGuard, TypeVar
 
 try:
     import ssl as _ssl
@@ -57,6 +61,8 @@ from .socket import AddressFamily
 
 if TYPE_CHECKING:
     from ssl import SSLError as _SSLError, SSLSocket as _SSLSocket
+
+    from _typeshed import ReadableBuffer
 
     from .socket import ISocket, SupportsSocketOptions
 
@@ -130,6 +136,20 @@ def check_real_socket_state(socket: ISocket) -> None:
         raise error_from_errno(errno)
 
 
+_HAS_SENDMSG: Final[bool] = hasattr(_socket.socket, "sendmsg")
+
+
+class _SupportsSocketSendMSG(Protocol):
+    @abstractmethod
+    def sendmsg(self, buffers: Iterable[ReadableBuffer], /) -> int:
+        ...
+
+
+def supports_socket_sendmsg(sock: _socket.socket) -> TypeGuard[_SupportsSocketSendMSG]:
+    assert isinstance(sock, _socket.SocketType)  # nosec assert_used
+    return _HAS_SENDMSG
+
+
 def is_ssl_socket(socket: _socket.socket) -> TypeGuard[_SSLSocket]:
     if ssl is None:
         return False
@@ -168,6 +188,17 @@ def is_ssl_eof_error(exc: BaseException) -> TypeGuard[_SSLError]:
 
 def iter_bytes(b: bytes | bytearray | memoryview) -> Iterator[bytes]:
     return map(int.to_bytes, b)
+
+
+def adjust_leftover_buffer(buffers: deque[memoryview], nbytes: int) -> None:
+    while nbytes > 0:
+        b = buffers.popleft()
+        b_len = len(b)
+        if b_len <= nbytes:
+            nbytes -= b_len
+        else:
+            buffers.appendleft(b[nbytes:])
+            break
 
 
 def is_socket_connected(sock: ISocket) -> bool:
