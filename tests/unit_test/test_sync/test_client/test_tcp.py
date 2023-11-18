@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
 from ..._utils import DummyLock
-from ...base import UNSUPPORTED_FAMILIES
+from ...base import UNSUPPORTED_FAMILIES, MixinTestSocketSendMSG
 from .base import BaseTestClient
 
 
@@ -37,7 +37,7 @@ def remove_ssl_OP_IGNORE_UNEXPECTED_EOF(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.delattr("ssl.OP_IGNORE_UNEXPECTED_EOF", raising=False)
 
 
-class TestTCPNetworkClient(BaseTestClient):
+class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
     @pytest.fixture(scope="class", params=["AF_INET", "AF_INET6"])
     @staticmethod
     def socket_family(request: Any) -> Any:
@@ -76,6 +76,8 @@ class TestTCPNetworkClient(BaseTestClient):
     def mock_tcp_socket(mock_tcp_socket: MagicMock, socket_family: int, socket_fileno: int) -> MagicMock:
         mock_tcp_socket.family = socket_family
         mock_tcp_socket.fileno.return_value = socket_fileno
+        with contextlib.suppress(AttributeError):
+            del mock_tcp_socket.sendmsg
         return mock_tcp_socket
 
     @pytest.fixture

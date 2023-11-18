@@ -129,7 +129,7 @@ class StreamWriteTransport(BaseTransport):
         """
 
         total_sent: int = 0
-        with memoryview(data) as data:
+        with memoryview(data) as data, data.cast("B") as data:
             nb_bytes_to_send = len(data)
             if nb_bytes_to_send == 0:
                 sent = self.send(data, timeout)
@@ -148,8 +148,9 @@ class StreamWriteTransport(BaseTransport):
         """
         An efficient way to send a bunch of data via the transport.
 
-        Currently, the default implementation concatenates the arguments and
-        calls :meth:`send_all` on the result.
+        Like :meth:`send_all`, this method continues to send data from bytes until either all data has been sent or an error
+        occurs. :data:`None` is returned on success. On error, an exception is raised, and there is no way to determine how much
+        data, if any, was successfully sent.
 
         Parameters:
             iterable_of_data: An :term:`iterable` yielding the bytes to send.
@@ -159,13 +160,10 @@ class StreamWriteTransport(BaseTransport):
             ValueError: Negative `timeout`.
             TimeoutError: Operation timed out.
         """
-        iterable_of_data = list(iterable_of_data)
-        if len(iterable_of_data) == 1:
-            data = iterable_of_data[0]
-        else:
-            data = b"".join(iterable_of_data)
-        del iterable_of_data
-        return self.send_all(data, timeout)
+        for data in iterable_of_data:
+            with _utils.ElapsedTime() as elapsed:
+                self.send_all(data, timeout)
+            timeout = elapsed.recompute_timeout(timeout)
 
 
 class StreamTransport(StreamWriteTransport, StreamReadTransport):

@@ -53,8 +53,8 @@ class TestStreamTransport:
         self,
         mock_transport: MagicMock,
         mock_transport_send: MagicMock,
-        mocker: MockerFixture,
         mock_time_perfcounter: MagicMock,
+        mocker: MockerFixture,
     ) -> None:
         # Arrange
         mock_transport_send.side_effect = [len(b"pack"), len(b"et"), len(b"\n")]
@@ -99,8 +99,20 @@ class TestStreamTransport:
     def test____send_all_from_iterable____concatenates_chunks_and_call_send_all(
         self,
         mock_transport: MagicMock,
+        mock_time_perfcounter: MagicMock,
+        mocker: MockerFixture,
     ) -> None:
         # Arrange
+        now = 12345
+        mock_time_perfcounter.side_effect = [
+            now,
+            now + 5,
+            now + 5,
+            now + 8,
+            now + 8,
+            now + 14,
+        ]
+        timeout: float = 123456789
         mock_transport.send_all.return_value = None
         chunks: list[bytes | bytearray | memoryview] = [b"a", bytearray(b"b"), memoryview(b"c")]
 
@@ -108,7 +120,11 @@ class TestStreamTransport:
         StreamTransport.send_all_from_iterable(mock_transport, chunks, 123456789)
 
         # Assert
-        mock_transport.send_all.assert_called_once_with(b"abc", 123456789)
+        assert mock_transport.send_all.call_args_list == [
+            mocker.call(b"a", timeout),
+            mocker.call(bytearray(b"b"), timeout - 5),
+            mocker.call(memoryview(b"c"), timeout - 8),
+        ]
 
     def test____send_all_from_iterable____single_yield____no_copy(
         self,

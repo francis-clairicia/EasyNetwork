@@ -22,10 +22,11 @@ __all__ = [
     "SocketStreamTransport",
 ]
 
+import itertools
 import selectors
 import socket
-from collections import ChainMap
-from collections.abc import Callable, Mapping
+from collections import ChainMap, deque
+from collections.abc import Callable, Iterable, Mapping
 from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar
 
 try:
@@ -95,6 +96,30 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport):
             return self.__socket.send(data)
         except (BlockingIOError, InterruptedError):
             raise base_selector.WouldBlockOnWrite(self.__socket.fileno()) from None
+
+    @_utils.inherit_doc(base_selector.SelectorStreamTransport)
+    def send_all_from_iterable(self, iterable_of_data: Iterable[bytes | bytearray | memoryview], timeout: float) -> None:
+        _sock = self.__socket
+        if constants.SC_IOV_MAX <= 0 or not _utils.supports_socket_sendmsg(_sock):
+            return super().send_all_from_iterable(iterable_of_data, timeout)
+
+        buffers: deque[memoryview] = deque(memoryview(data).cast("B") for data in iterable_of_data)
+        del iterable_of_data
+
+        sock_sendmsg = _sock.sendmsg
+        del _sock
+
+        def try_sendmsg() -> int:
+            try:
+                return sock_sendmsg(itertools.islice(buffers, constants.SC_IOV_MAX))
+            except (BlockingIOError, InterruptedError):
+                raise base_selector.WouldBlockOnWrite(self.__socket.fileno()) from None
+
+        while buffers:
+            with _utils.ElapsedTime() as elapsed:
+                sent: int = self._retry(try_sendmsg, timeout)
+            _utils.adjust_leftover_buffer(buffers, sent)
+            timeout = elapsed.recompute_timeout(timeout)
 
     @_utils.inherit_doc(base_selector.SelectorStreamTransport)
     def send_eof(self) -> None:

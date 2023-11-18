@@ -23,12 +23,16 @@ import asyncio
 import asyncio.trsock
 import contextlib
 import errno as _errno
+import itertools
 import socket as _socket
-from collections.abc import Iterator
-from typing import TYPE_CHECKING, Literal, Self, TypeAlias
+from collections import deque
+from collections.abc import Iterable, Iterator
+from typing import TYPE_CHECKING, Literal, Self, TypeAlias, cast
 from weakref import WeakSet
 
-from .. import _utils
+from ...exceptions import UnsupportedOperation
+from .. import _utils, constants
+from . import _asyncio_utils
 from .tasks import CancelScope, TaskUtils
 
 if TYPE_CHECKING:
@@ -120,6 +124,26 @@ class AsyncSocket:
             socket = self.__check_not_closed()
             await self.__loop.sock_sendall(socket, data)
 
+    async def sendmsg(self, buffers: Iterable[ReadableBuffer], /) -> None:
+        with self.__conflict_detection("send", abort_errno=_errno.ECONNABORTED):
+            socket = self.__check_not_closed()
+            if constants.SC_IOV_MAX <= 0 or not _utils.supports_socket_sendmsg(_sock := socket):
+                raise UnsupportedOperation("sendmsg() is not supported")
+
+            loop = self.__loop
+            buffers = cast("deque[memoryview]", deque(memoryview(data).cast("B") for data in buffers))
+
+            sock_sendmsg = _sock.sendmsg
+            del _sock
+
+            while buffers:
+                try:
+                    sent: int = sock_sendmsg(itertools.islice(buffers, constants.SC_IOV_MAX))
+                except (BlockingIOError, InterruptedError):
+                    await _asyncio_utils.wait_until_writable(socket, loop)
+                else:
+                    _utils.adjust_leftover_buffer(buffers, sent)
+
     async def sendto(self, data: ReadableBuffer, address: _socket._Address, /) -> None:
         with self.__conflict_detection("send", abort_errno=_errno.ECONNABORTED):
             socket = self.__check_not_closed()
@@ -152,7 +176,8 @@ class AsyncSocket:
         if task_id in self.__waiters:
             raise _utils.error_from_errno(_errno.EBUSY)
 
-        _ = TaskUtils.current_asyncio_task(self.__loop)
+        # Checks if we are within the bound loop
+        TaskUtils.current_asyncio_task(self.__loop)  # type: ignore[unused-awaitable]
 
         with CancelScope() as scope, contextlib.ExitStack() as stack:
             self.__scopes.add(scope)

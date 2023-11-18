@@ -5,15 +5,17 @@ import math
 import os
 import ssl
 import threading
+from collections import deque
 from collections.abc import Callable
 from errno import EINVAL, ENOTCONN, errorcode as errno_errorcode
-from socket import SO_ERROR, SOL_SOCKET
+from socket import SO_ERROR, SOL_SOCKET, SocketType
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.exceptions import BusyResourceError
 from easynetwork.lowlevel._utils import (
     ElapsedTime,
     ResourceGuard,
+    adjust_leftover_buffer,
     check_real_socket_state,
     check_socket_family,
     check_socket_is_connected,
@@ -31,6 +33,7 @@ from easynetwork.lowlevel._utils import (
     remove_traceback_frames_in_place,
     replace_kwargs,
     set_reuseport,
+    supports_socket_sendmsg,
     validate_timeout_delay,
 )
 from easynetwork.lowlevel.constants import NOT_CONNECTED_SOCKET_ERRNOS
@@ -227,6 +230,14 @@ def test____check_socket_family____invalid_family(socket_family: int) -> None:
         check_socket_family(socket_family)
 
 
+def test____supports_socket_sendmsg____checks_socket_type(mock_socket_factory: Callable[[], MagicMock]) -> None:
+    # Arrange
+    mock_socket = mock_socket_factory()
+
+    # Act & Assert
+    assert supports_socket_sendmsg(mock_socket) is hasattr(SocketType, "sendmsg")
+
+
 def test____is_ssl_socket____regular_socket(mock_socket_factory: Callable[[], MagicMock]) -> None:
     # Arrange
     mock_socket = mock_socket_factory()
@@ -346,6 +357,39 @@ def test____iter_bytes____iterate_over_bytes_returning_one_byte() -> None:
 
     # Assert
     assert result == expected_result
+
+
+def test____adjust_leftover_buffer____consume_whole_buffer() -> None:
+    # Arrange
+    buffers: deque[memoryview] = deque(map(memoryview, [b"abc", b"de", b"fgh"]))
+
+    # Act
+    adjust_leftover_buffer(buffers, 8)
+
+    # Assert
+    assert not buffers
+
+
+def test____adjust_leftover_buffer____remove_some_buffers() -> None:
+    # Arrange
+    buffers: deque[memoryview] = deque(map(memoryview, [b"abc", b"de", b"fgh"]))
+
+    # Act
+    adjust_leftover_buffer(buffers, 5)
+
+    # Assert
+    assert list(buffers) == list(map(memoryview, [b"fgh"]))
+
+
+def test____adjust_leftover_buffer____partial_buffer_remove() -> None:
+    # Arrange
+    buffers: deque[memoryview] = deque(map(memoryview, [b"abc", b"de", b"fgh"]))
+
+    # Act
+    adjust_leftover_buffer(buffers, 4)
+
+    # Assert
+    assert list(buffers) == list(map(memoryview, [b"e", b"fgh"]))
 
 
 def test____is_socket_connected____getpeername_returns(mock_tcp_socket: MagicMock) -> None:

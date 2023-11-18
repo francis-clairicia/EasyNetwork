@@ -22,6 +22,7 @@ class TestAsyncStreamTransport:
     async def test____send_all_from_iterable____concatenates_chunks_and_call_send_all(
         self,
         mock_transport: MagicMock,
+        mocker: MockerFixture,
     ) -> None:
         # Arrange
         mock_transport.send_all.return_value = None
@@ -31,7 +32,7 @@ class TestAsyncStreamTransport:
         await AsyncStreamTransport.send_all_from_iterable(mock_transport, chunks)
 
         # Assert
-        mock_transport.send_all.assert_awaited_once_with(b"abc")
+        assert mock_transport.send_all.await_args_list == list(map(mocker.call, chunks))
 
     async def test____send_all_from_iterable____single_yield____no_copy(
         self,

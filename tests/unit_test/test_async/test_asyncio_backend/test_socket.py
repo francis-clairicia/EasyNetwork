@@ -4,18 +4,22 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from collections.abc import Callable, Coroutine, Iterator
+from collections.abc import Callable, Coroutine, Iterable, Iterator
 from errno import EBUSY, ECONNABORTED, EINTR, ENOTSOCK
 from socket import SHUT_RD, SHUT_RDWR, SHUT_WR, socket as Socket
 from typing import TYPE_CHECKING, Any, final
 
+from easynetwork.exceptions import UnsupportedOperation
 from easynetwork.lowlevel.asyncio.socket import AsyncSocket
 
 import pytest
 
+from ...base import MixinTestSocketSendMSG
+
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
 
+    from _typeshed import ReadableBuffer
     from pytest_mock import MockerFixture
 
 
@@ -51,6 +55,31 @@ class BaseTestAsyncSocket:
                     await asyncio.sleep(0)
 
         monkeypatch.setattr(event_loop, event_loop_method, sock_method_patch)
+
+    @pytest.fixture(autouse=True)
+    @classmethod
+    def event_loop_mock_event_handlers(cls, event_loop: asyncio.AbstractEventLoop, mocker: MockerFixture) -> None:
+        to_patch = [
+            ("add_reader", "remove_reader"),
+            ("add_writer", "remove_writer"),
+        ]
+
+        for add_event_func_name, remove_event_func_name in to_patch:
+            cls.__patch_event_handler_method(event_loop, add_event_func_name, remove_event_func_name, mocker)
+
+    @staticmethod
+    def __patch_event_handler_method(
+        event_loop: asyncio.AbstractEventLoop,
+        add_event_func_name: str,
+        remove_event_func_name: str,
+        mocker: MockerFixture,
+    ) -> None:
+        mocker.patch.object(
+            event_loop,
+            add_event_func_name,
+            side_effect=lambda sock, cb, *args: event_loop.call_soon(cb, *args),
+        )
+        mocker.patch.object(event_loop, remove_event_func_name, return_value=None)
 
     @staticmethod
     @contextlib.contextmanager
@@ -326,13 +355,20 @@ class TestAsyncListenerSocket(MixinTestAsyncSocketBusy):
         mock_tcp_listener_socket.accept.assert_called_once_with()
 
 
-class TestAsyncStreamSocket(MixinTestAsyncSocketBusy):
+class TestAsyncStreamSocket(MixinTestAsyncSocketBusy, MixinTestSocketSendMSG):
     @pytest.fixture
     @staticmethod
-    def mock_tcp_socket(mock_tcp_socket: MagicMock) -> MagicMock:
+    def mock_tcp_socket(mock_tcp_socket: MagicMock, mocker: MockerFixture) -> MagicMock:
         mock_tcp_socket.recv.return_value = b"data"
         mock_tcp_socket.send.side_effect = len
         mock_tcp_socket.shutdown.return_value = None
+
+        # Always create a new mock instance because sendmsg() is not available on all platforms
+        # therefore the mocker's autospec will consider sendmsg() unknown on these ones.
+        mock_tcp_socket.sendmsg = mocker.MagicMock(
+            spec=lambda *args: None,
+            side_effect=lambda buffers, *args: sum(map(len, map(memoryview, buffers))),
+        )
         return mock_tcp_socket
 
     @pytest.fixture
@@ -345,7 +381,7 @@ class TestAsyncStreamSocket(MixinTestAsyncSocketBusy):
         mock_tcp_socket.reset_mock()
         return socket
 
-    @pytest.fixture(params=["sendall", "recv"])
+    @pytest.fixture(params=["sendall", "sendmsg", "recv"])
     @staticmethod
     def sock_method_name(request: Any) -> str:
         return request.param
@@ -361,10 +397,12 @@ class TestAsyncStreamSocket(MixinTestAsyncSocketBusy):
         match sock_method_name:
             case "sendall":
                 return lambda: socket.sendall(b"data")
+            case "sendmsg":
+                return lambda: socket.sendmsg([b"data", b"to", b"send"])
             case "recv":
                 return lambda: socket.recv(1024)
             case _:
-                raise SystemError
+                pytest.fail(f"Invalid parameter: {sock_method_name}")
 
     @pytest.fixture
     @staticmethod
@@ -372,10 +410,12 @@ class TestAsyncStreamSocket(MixinTestAsyncSocketBusy):
         match sock_method_name:
             case "sendall":
                 return mock_tcp_socket.send
+            case "sendmsg":
+                return mock_tcp_socket.sendmsg
             case "recv":
                 return mock_tcp_socket.recv
             case _:
-                raise SystemError
+                pytest.fail(f"Invalid parameter: {sock_method_name}")
 
     @pytest.fixture
     @staticmethod
@@ -394,6 +434,110 @@ class TestAsyncStreamSocket(MixinTestAsyncSocketBusy):
 
         # Assert
         mock_tcp_socket.send.assert_called_once_with(b"data")
+
+    async def test____sendmsg____sends_several_buffers_to_stdlib_socket(
+        self,
+        socket: AsyncSocket,
+        mock_tcp_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        chunks: list[list[bytes]] = []
+
+        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer]) -> int:
+            buffers = list(buffers)
+            chunks.append(list(map(bytes, buffers)))
+            return sum(map(len, map(memoryview, buffers)))
+
+        mock_tcp_socket.sendmsg.side_effect = sendmsg_side_effect
+
+        # Act
+        await socket.sendmsg(iter([b"data", b"to", b"send"]))
+
+        # Assert
+        mock_tcp_socket.sendmsg.assert_called_once()
+        assert chunks == [[b"data", b"to", b"send"]]
+
+    @pytest.mark.parametrize("SC_IOV_MAX", [2], ids=lambda p: f"SC_IOV_MAX=={p}", indirect=True)
+    async def test____sendmsg____nb_buffers_greather_than_SC_IOV_MAX(
+        self,
+        socket: AsyncSocket,
+        mock_tcp_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        chunks: list[list[bytes]] = []
+
+        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer]) -> int:
+            buffers = list(buffers)
+            chunks.append(list(map(bytes, buffers)))
+            return sum(map(len, map(memoryview, buffers)))
+
+        mock_tcp_socket.sendmsg.side_effect = sendmsg_side_effect
+
+        # Act
+        await socket.sendmsg(iter([b"a", b"b", b"c", b"d", b"e"]))
+
+        # Assert
+        assert mock_tcp_socket.sendmsg.call_count == 3
+        assert chunks == [
+            [b"a", b"b"],
+            [b"c", b"d"],
+            [b"e"],
+        ]
+
+    async def test____sendmsg____adjust_leftover_buffer(
+        self,
+        socket: AsyncSocket,
+        mock_tcp_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        chunks: list[list[bytes]] = []
+
+        def sendmsg_side_effect(buffers: Iterable[ReadableBuffer]) -> int:
+            buffers = list(buffers)
+            chunks.append(list(map(bytes, buffers)))
+            return min(sum(map(len, map(memoryview, buffers))), 3)
+
+        mock_tcp_socket.sendmsg.side_effect = sendmsg_side_effect
+
+        # Act
+        await socket.sendmsg(iter([b"abcd", b"efg", b"hijkl", b"mnop"]))
+
+        # Assert
+        assert mock_tcp_socket.sendmsg.call_count == 6
+        assert chunks == [
+            [b"abcd", b"efg", b"hijkl", b"mnop"],
+            [b"d", b"efg", b"hijkl", b"mnop"],
+            [b"g", b"hijkl", b"mnop"],
+            [b"jkl", b"mnop"],
+            [b"mnop"],
+            [b"p"],
+        ]
+
+    async def test____sendmsg____unavailable(
+        self,
+        socket: AsyncSocket,
+        mock_tcp_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        del mock_tcp_socket.sendmsg
+
+        # Act & Assert
+        with pytest.raises(UnsupportedOperation, match=r"^sendmsg\(\) is not supported$"):
+            await socket.sendmsg(iter([b"data", b"to", b"send"]))
+
+    @pytest.mark.parametrize("SC_IOV_MAX", [-1, 0], ids=lambda p: f"SC_IOV_MAX=={p}", indirect=True)
+    async def test____sendmsg____available_but_no_defined_limit(
+        self,
+        socket: AsyncSocket,
+        mock_tcp_socket: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        with pytest.raises(UnsupportedOperation, match=r"^sendmsg\(\) is not supported$"):
+            await socket.sendmsg(iter([b"data", b"to", b"send"]))
+
+        mock_tcp_socket.sendmsg.assert_not_called()
 
     async def test____recv____receives_data_from_stdlib_socket(
         self,
@@ -559,7 +703,7 @@ class TestAsyncDatagramSocket(MixinTestAsyncSocketBusy):
             case "recvfrom":
                 return lambda: socket.recvfrom(1024)
             case _:
-                raise SystemError
+                pytest.fail(f"Invalid parameter: {sock_method_name}")
 
     @pytest.fixture
     @staticmethod
@@ -570,7 +714,7 @@ class TestAsyncDatagramSocket(MixinTestAsyncSocketBusy):
             case "recvfrom":
                 return mock_udp_socket.recvfrom
             case _:
-                raise SystemError
+                pytest.fail(f"Invalid parameter: {sock_method_name}")
 
     @pytest.fixture
     @staticmethod

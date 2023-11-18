@@ -22,6 +22,7 @@ __all__ = [
     "DEFAULT_STREAM_BUFSIZE",
     "MAX_DATAGRAM_BUFSIZE",
     "NOT_CONNECTED_SOCKET_ERRNOS",
+    "SC_IOV_MAX",
     "SSL_HANDSHAKE_TIMEOUT",
     "SSL_SHUTDOWN_TIMEOUT",
     "_DEFAULT_LIMIT",
@@ -80,3 +81,20 @@ SSL_SHUTDOWN_TIMEOUT: Final[float] = 30.0
 
 # Buffer size limit when waiting for a byte sequence
 _DEFAULT_LIMIT: Final[int] = 64 * 1024  # 64 KiB
+
+
+def __get_sysconf(name: str, /) -> int:
+    import os
+
+    try:
+        # os.sysconf() can return a negative value if 'name' is not defined
+        return os.sysconf(name)  # type: ignore[attr-defined,unused-ignore]
+    except (AttributeError, OSError):
+        return -1
+
+
+# Maximum number of buffer that can accept sendmsg(2)
+# Can be a negative value
+SC_IOV_MAX: Final[int] = __get_sysconf("SC_IOV_MAX")
+
+del __get_sysconf

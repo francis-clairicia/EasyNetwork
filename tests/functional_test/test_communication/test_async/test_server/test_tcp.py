@@ -283,7 +283,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
             case "USE_SSL":
                 return True
             case _:
-                raise SystemError
+                pytest.fail(f"Invalid parameter: {request.param}")
 
     @pytest.fixture
     @staticmethod

@@ -166,6 +166,12 @@ class RawStreamSocketAdapter(transports.AsyncStreamTransport):
     async def send_eof(self) -> None:
         await self.__socket.shutdown(_socket.SHUT_WR)
 
+    async def send_all_from_iterable(self, iterable_of_data: Iterable[bytes | bytearray | memoryview]) -> None:
+        try:
+            await self.__socket.sendmsg(iterable_of_data)
+        except UnsupportedOperation:
+            await super().send_all_from_iterable(iterable_of_data)
+
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         socket = self.__socket.socket

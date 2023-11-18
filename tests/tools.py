@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import sys
 import time
 from collections.abc import Generator
@@ -56,3 +57,11 @@ class TimeTest:
             return
         assert self.start_time >= 0
         assert end_time - self.start_time == pytest.approx(self.expected_time, rel=self.approx)
+
+
+def is_proactor_event_loop(event_loop: asyncio.AbstractEventLoop) -> bool:
+    try:
+        ProactorEventLoop: type[asyncio.AbstractEventLoop] = getattr(asyncio, "ProactorEventLoop")
+    except AttributeError:
+        return False
+    return isinstance(event_loop, ProactorEventLoop)
