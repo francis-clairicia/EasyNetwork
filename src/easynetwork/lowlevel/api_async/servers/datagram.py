@@ -29,6 +29,7 @@ from typing import Any, Generic, NoReturn, Self, TypeVar, assert_never
 
 from .... import protocol as protocol_module
 from ...._typevars import _RequestT, _ResponseT
+from ....exceptions import DatagramProtocolParseError
 from ... import _asyncgen, _utils, typed_attr
 from ..backend.abc import AsyncBackend, ICondition, ILock, TaskGroup
 from ..transports import abc as transports
@@ -208,7 +209,18 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, 
                             with client_manager.set_client_state(address, _ClientState.TASK_WAITING):
                                 await condition.wait()
                             self.__check_datagram_queue_not_empty(datagram_queue)
-                        action = _asyncgen.SendAction(protocol.build_packet_from_datagram(datagram_queue.popleft()))
+                        datagram = datagram_queue.popleft()
+                        try:
+                            request = protocol.build_packet_from_datagram(datagram)
+                        except DatagramProtocolParseError:
+                            raise
+                        except Exception as exc:
+                            raise RuntimeError("protocol.build_packet_from_datagram() crashed") from exc
+                        else:
+                            action = _asyncgen.SendAction(request)
+                            del request
+                        finally:
+                            del datagram
                     except BaseException as exc:
                         action = _asyncgen.ThrowAction(exc)
                     try:

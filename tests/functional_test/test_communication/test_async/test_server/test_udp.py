@@ -169,7 +169,10 @@ class ErrorInRequestHandler(AsyncDatagramRequestHandler[str, str]):
         try:
             request = yield
         except Exception as exc:
-            await client.send_packet(f"{exc.__class__.__name__}: {exc}")
+            msg = f"{exc.__class__.__name__}: {exc}"
+            if exc.__cause__:
+                msg = f"{msg} (caused by {exc.__cause__.__class__.__name__}: {exc.__cause__})"
+            await client.send_packet(msg)
             if not self.mute_thrown_exception:
                 raise
         else:
@@ -368,14 +371,16 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         request_handler.mute_thrown_exception = mute_thrown_exception
         endpoint = await client_factory()
 
+        expected_message = b"RuntimeError: protocol.build_packet_from_datagram() crashed (caused by SystemError: CRASH)"
+
         await endpoint.sendto(b"something", None)
         await asyncio.sleep(0.2)
 
-        assert (await endpoint.recvfrom())[0] == b"SystemError: CRASH"
+        assert (await endpoint.recvfrom())[0] == expected_message
         if mute_thrown_exception:
             await endpoint.sendto(b"something", None)
             await asyncio.sleep(0.2)
-            assert (await endpoint.recvfrom())[0] == b"SystemError: CRASH"
+            assert (await endpoint.recvfrom())[0] == expected_message
             assert len(caplog.records) == 0  # After two attempts
         else:
             assert len(caplog.records) == 3

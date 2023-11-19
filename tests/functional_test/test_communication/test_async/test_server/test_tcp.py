@@ -251,7 +251,10 @@ class ErrorInRequestHandler(AsyncStreamRequestHandler[str, str]):
         try:
             request = yield
         except Exception as exc:
-            await client.send_packet(f"{exc.__class__.__name__}: {exc}")
+            msg = f"{exc.__class__.__name__}: {exc}"
+            if exc.__cause__:
+                msg = f"{msg} (caused by {exc.__cause__.__class__.__name__}: {exc.__cause__})"
+            await client.send_packet(msg)
             if not self.mute_thrown_exception:
                 raise
         else:
@@ -673,18 +676,20 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         request_handler.mute_thrown_exception = mute_thrown_exception
         reader, writer = await client_factory()
 
-        writer.write(b"something\n")  # StringSerializer does not accept unicode
+        expected_message = b"RuntimeError: protocol.build_packet_from_chunks() crashed (caused by SystemError: CRASH)\n"
+
+        writer.write(b"something\n")
         await asyncio.sleep(0.1)
 
         if mute_thrown_exception:
-            assert await reader.readline() == b"SystemError: CRASH\n"
-            writer.write(b"something\n")  # StringSerializer does not accept unicode
+            assert await reader.readline() == expected_message
+            writer.write(b"something\n")
             await asyncio.sleep(0.1)
-            assert await reader.readline() == b"SystemError: CRASH\n"
+            assert await reader.readline() == expected_message
             assert len(caplog.records) == 0  # After two attempts
         else:
             with pytest.raises(ConnectionResetError):
-                assert await reader.readline() == b"SystemError: CRASH\n"
+                assert await reader.readline() == expected_message
                 assert await reader.read() == b""
                 raise ConnectionResetError
             assert len(caplog.records) == 3

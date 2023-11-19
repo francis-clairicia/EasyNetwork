@@ -135,6 +135,8 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
                 next(consumer)
             except StopIteration:
                 raise RuntimeError("protocol.build_packet_from_chunks() did not yield") from None
+            except Exception as exc:
+                raise RuntimeError("protocol.build_packet_from_chunks() crashed") from exc
         self.__b = b""
         packet: _ReceivedPacketT
         remaining: bytes
@@ -148,6 +150,8 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
             remaining = _ensure_bytes(remaining)
             self.__b = remaining
             raise
+        except Exception as exc:
+            raise RuntimeError("protocol.build_packet_from_chunks() crashed") from exc
         else:
             self.__c = consumer
             raise StopIteration

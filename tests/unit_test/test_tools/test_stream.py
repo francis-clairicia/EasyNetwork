@@ -309,7 +309,7 @@ class TestStreamDataConsumer:
 
         mock_build_packet_from_chunks_func: MagicMock = mock_stream_protocol.build_packet_from_chunks
         mock_build_packet_from_chunks_func.side_effect = side_effect
-        consumer.feed(bytearray(b"Hello"))  # 0 + 0 == 0
+        consumer.feed(bytearray(b"Hello"))
 
         # Act
         packet = next(consumer)
@@ -466,6 +466,34 @@ class TestStreamDataConsumer:
         # Assert
         mock_build_packet_from_chunks_func.assert_called_once_with()
         assert consumer.get_buffer() == b"Hello"
+
+    @pytest.mark.parametrize("before_yielding", [False, True], ids=lambda p: f"before_yielding=={p}")
+    def test____next____generator_raised(
+        self,
+        before_yielding: bool,
+        consumer: StreamDataConsumer[Any],
+        mock_stream_protocol: MagicMock,
+    ) -> None:
+        # Arrange
+        expected_error = Exception("Error")
+
+        def side_effect() -> Generator[None, bytes, tuple[Any, bytes]]:
+            if before_yielding:
+                raise expected_error
+            yield
+            raise expected_error
+
+        mock_build_packet_from_chunks_func: MagicMock = mock_stream_protocol.build_packet_from_chunks
+        mock_build_packet_from_chunks_func.side_effect = side_effect
+        consumer.feed(b"Hello")
+        assert consumer.get_buffer() == b"Hello"
+
+        # Act
+        with pytest.raises(RuntimeError, match=r"^protocol\.build_packet_from_chunks\(\) crashed$") as exc_info:
+            next(consumer)
+
+        # Assert
+        assert exc_info.value.__cause__ is expected_error
 
     def test____clear____flush_pending_buffer(self, consumer: StreamDataConsumer[Any]) -> None:
         # Arrange

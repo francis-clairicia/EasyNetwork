@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 from typing import TYPE_CHECKING, Any
 
-from easynetwork.exceptions import UnsupportedOperation
+from easynetwork.exceptions import DatagramProtocolParseError, DeserializeError, UnsupportedOperation
 from easynetwork.lowlevel.api_async.endpoints.datagram import AsyncDatagramEndpoint
 from easynetwork.lowlevel.api_async.transports.abc import (
     AsyncDatagramReadTransport,
@@ -176,3 +176,41 @@ class TestAsyncDatagramEndpoint:
         else:
             mock_datagram_protocol.build_packet_from_datagram.assert_not_called()
             assert packet is mocker.sentinel.packet_not_received
+
+    @pytest.mark.parametrize("mock_datagram_transport", [AsyncDatagramReadTransport], indirect=True)
+    async def test____recv_packet____protocol_parse_error(
+        self,
+        endpoint: AsyncDatagramEndpoint[Any, Any],
+        mock_datagram_transport: MagicMock,
+        mock_datagram_protocol: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_datagram_transport.recv.side_effect = [b"packet"]
+        expected_error = DatagramProtocolParseError(DeserializeError("Invalid packet"))
+        mock_datagram_protocol.build_packet_from_datagram.side_effect = expected_error
+
+        # Act
+        with pytest.raises(DatagramProtocolParseError) as exc_info:
+            await endpoint.recv_packet()
+
+        # Assert
+        assert exc_info.value is expected_error
+
+    @pytest.mark.parametrize("mock_datagram_transport", [AsyncDatagramReadTransport], indirect=True)
+    async def test____recv_packet____protocol_crashed(
+        self,
+        endpoint: AsyncDatagramEndpoint[Any, Any],
+        mock_datagram_transport: MagicMock,
+        mock_datagram_protocol: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_datagram_transport.recv.side_effect = [b"packet"]
+        expected_error = Exception("Error")
+        mock_datagram_protocol.build_packet_from_datagram.side_effect = expected_error
+
+        # Act
+        with pytest.raises(RuntimeError, match=r"^protocol\.build_packet_from_datagram\(\) crashed$") as exc_info:
+            await endpoint.recv_packet()
+
+        # Assert
+        assert exc_info.value.__cause__ is expected_error
