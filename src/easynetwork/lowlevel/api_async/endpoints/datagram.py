@@ -23,7 +23,7 @@ from typing import Any, Generic, TypeGuard
 
 from .... import protocol as protocol_module
 from ...._typevars import _ReceivedPacketT, _SentPacketT
-from ....exceptions import UnsupportedOperation
+from ....exceptions import DatagramProtocolParseError, UnsupportedOperation
 from ... import _utils, typed_attr
 from ..transports import abc as transports
 
@@ -119,7 +119,15 @@ class AsyncDatagramEndpoint(typed_attr.TypedAttributeProvider, Generic[_SentPack
             if not self.__supports_read(transport):
                 raise UnsupportedOperation("transport does not support receiving data")
 
-            return protocol.build_packet_from_datagram(await transport.recv())
+            datagram = await transport.recv()
+            try:
+                return protocol.build_packet_from_datagram(datagram)
+            except DatagramProtocolParseError:
+                raise
+            except Exception as exc:
+                raise RuntimeError("protocol.build_packet_from_datagram() crashed") from exc
+            finally:
+                del datagram
 
     def __supports_read(self, transport: transports.AsyncBaseTransport) -> TypeGuard[transports.AsyncDatagramReadTransport]:
         return self.__is_read_transport

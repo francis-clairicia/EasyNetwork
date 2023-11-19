@@ -5,7 +5,7 @@ import math
 from collections.abc import Generator
 from typing import TYPE_CHECKING, Any
 
-from easynetwork.exceptions import UnsupportedOperation
+from easynetwork.exceptions import IncrementalDeserializeError, StreamProtocolParseError, UnsupportedOperation
 from easynetwork.lowlevel._stream import StreamDataConsumer
 from easynetwork.lowlevel.api_sync.endpoints.stream import StreamEndpoint
 from easynetwork.lowlevel.api_sync.transports.abc import StreamReadTransport, StreamTransport, StreamWriteTransport
@@ -413,7 +413,7 @@ class TestStreamEndpoint:
         assert packet_2 is mocker.sentinel.packet_2
 
     @pytest.mark.parametrize("mock_stream_transport", [StreamReadTransport], indirect=True)
-    def test____recv_packet____blocking_or_not____eof_error____default(
+    def test____recv_packet____blocking_or_not____eof_error(
         self,
         endpoint: StreamEndpoint[Any, Any],
         recv_timeout: float | None,
@@ -430,6 +430,61 @@ class TestStreamEndpoint:
         # Assert
         mock_stream_transport.recv.assert_called_once()
         consumer_feed.assert_not_called()
+
+    @pytest.mark.parametrize("mock_stream_transport", [StreamReadTransport], indirect=True)
+    def test____recv_packet____blocking_or_not____protocol_parse_error(
+        self,
+        endpoint: StreamEndpoint[Any, Any],
+        recv_timeout: float | None,
+        mock_stream_transport: MagicMock,
+        mock_stream_protocol: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_stream_transport.recv.side_effect = [b"packet\n"]
+        expected_error = StreamProtocolParseError(b"", IncrementalDeserializeError("Error", b""))
+
+        def side_effect() -> Generator[None, bytes, tuple[Any, bytes]]:
+            yield
+            raise expected_error
+
+        mock_stream_protocol.build_packet_from_chunks.side_effect = side_effect
+
+        # Act
+        with pytest.raises(StreamProtocolParseError) as exc_info:
+            _ = endpoint.recv_packet(timeout=recv_timeout)
+
+        # Assert
+        assert exc_info.value is expected_error
+
+    @pytest.mark.parametrize("mock_stream_transport", [StreamReadTransport], indirect=True)
+    @pytest.mark.parametrize("before_transport_reading", [False, True], ids=lambda p: f"before_transport_reading=={p}")
+    def test____recv_packet____blocking_or_not____protocol_crashed(
+        self,
+        before_transport_reading: bool,
+        endpoint: StreamEndpoint[Any, Any],
+        recv_timeout: float | None,
+        mock_stream_transport: MagicMock,
+        mock_stream_protocol: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_stream_transport.recv.side_effect = [b"packet_1\npacket_2\n"]
+        expected_error = Exception("Error")
+
+        if before_transport_reading:
+            endpoint.recv_packet()
+
+        def side_effect() -> Generator[None, bytes, tuple[Any, bytes]]:
+            yield
+            raise expected_error
+
+        mock_stream_protocol.build_packet_from_chunks.side_effect = side_effect
+
+        # Act
+        with pytest.raises(RuntimeError, match=r"^protocol\.build_packet_from_chunks\(\) crashed$") as exc_info:
+            _ = endpoint.recv_packet(timeout=recv_timeout)
+
+        # Assert
+        assert exc_info.value.__cause__ is expected_error
 
     @pytest.mark.parametrize("mock_stream_transport", [StreamReadTransport], indirect=True)
     def test____special_case____recv_packet____blocking_or_not____eof_error____do_not_try_socket_recv_on_next_call(
