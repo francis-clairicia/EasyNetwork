@@ -23,11 +23,14 @@ __all__ = [
 
 from collections import deque
 from collections.abc import Generator, Iterator
-from typing import Any, Generic, final
+from typing import TYPE_CHECKING, Any, Generic, final
 
 from .._typevars import _ReceivedPacketT, _SentPacketT
 from ..exceptions import StreamProtocolParseError
-from ..protocol import StreamProtocol
+from ..protocol import BufferedStreamReceiver, StreamProtocol
+
+if TYPE_CHECKING:
+    from _typeshed import ReadableBuffer, WriteableBuffer
 
 
 @final
@@ -141,7 +144,8 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
             consumer.send(chunk)
         except StopIteration as exc:
             packet, remaining = exc.value
-            remaining = bytes(remaining)
+            self.__b = bytes(remaining)
+            return packet
         except StreamProtocolParseError as exc:
             self.__b = bytes(exc.remaining_data)
             raise
@@ -152,8 +156,6 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
             raise StopIteration
         finally:
             del consumer, chunk
-        self.__b = remaining
-        return packet
 
     def feed(self, chunk: bytes) -> None:
         chunk = bytes(chunk)
@@ -172,6 +174,151 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
         consumer, self.__c = self.__c, None
         if consumer is not None:
             consumer.close()
+
+
+@final
+@Iterator.register
+class BufferedStreamDataConsumer(Generic[_ReceivedPacketT]):
+    __slots__ = (
+        "__buffered_receiver",
+        "__buffer",
+        "__buffer_view",
+        "__buffer_start",
+        "__already_written",
+        "__sizehint",
+        "__consumer",
+    )
+
+    def __init_subclass__(cls) -> None:  # pragma: no cover
+        raise TypeError("BufferedStreamDataConsumer cannot be subclassed")
+
+    def __init__(self, protocol: StreamProtocol[Any, _ReceivedPacketT], buffer_size_hint: int) -> None:
+        super().__init__()
+        _check_protocol(protocol)
+        if not isinstance(buffer_size_hint, int) or buffer_size_hint <= 0:
+            raise ValueError(f"{buffer_size_hint=!r}")
+        self.__buffered_receiver: BufferedStreamReceiver[_ReceivedPacketT, WriteableBuffer] = protocol.buffered_receiver()
+        self.__consumer: Generator[int | None, int, tuple[_ReceivedPacketT, ReadableBuffer]] | None = None
+        self.__buffer: WriteableBuffer | None = None
+        self.__buffer_view: memoryview | None = None
+        self.__buffer_start: int | None = None
+        self.__already_written: int = 0
+        self.__sizehint: int = buffer_size_hint
+
+    def __del__(self) -> None:  # pragma: no cover
+        self.__buffer = None
+        try:
+            consumer, self.__consumer = self.__consumer, None
+        except AttributeError:
+            return
+        try:
+            if consumer is not None:
+                consumer.close()
+        finally:
+            del consumer
+
+    def __iter__(self) -> Iterator[_ReceivedPacketT]:
+        return self
+
+    def __next__(self) -> _ReceivedPacketT:
+        consumer, self.__consumer = self.__consumer, None
+        if consumer is None:
+            raise StopIteration
+
+        # Forcibly reset buffer view
+        self.__buffer_view = None
+
+        nb_updated_bytes, self.__already_written = self.__already_written, 0
+        if nb_updated_bytes == 0:
+            raise StopIteration
+
+        packet: _ReceivedPacketT
+        remaining: ReadableBuffer
+        try:
+            self.__buffer_start = consumer.send(nb_updated_bytes)
+        except StopIteration as exc:
+            packet, remaining = exc.value
+            self.__save_remainder_in_buffer(remaining)
+            return packet
+        except StreamProtocolParseError as exc:
+            self.__save_remainder_in_buffer(exc.remaining_data)
+            raise
+        except Exception as exc:
+            raise RuntimeError("protocol.build_packet_from_buffer() crashed") from exc
+        else:
+            self.__consumer = consumer
+            raise StopIteration
+        finally:
+            del consumer
+
+    def get_buffer(self) -> WriteableBuffer:
+        if self.__buffer_view is not None:
+            return self.__buffer_view
+
+        if self.__buffer is None:
+            self.__buffer = self.__buffered_receiver.create_buffer(self.__sizehint)
+            self.__validate_created_buffer(self.__buffer)
+
+        if self.__consumer is None:
+            consumer = self.__buffered_receiver.build_packet_from_buffer(self.__buffer)
+            try:
+                self.__buffer_start = next(consumer)
+            except StopIteration:
+                raise RuntimeError("protocol.build_packet_from_buffer() did not yield") from None
+            except Exception as exc:
+                raise RuntimeError("protocol.build_packet_from_buffer() crashed") from exc
+            self.__consumer = consumer
+
+        buffer: memoryview = memoryview(self.__buffer)
+
+        match self.__buffer_start:
+            case None | 0:
+                pass
+            case start_idx:
+                buffer = buffer[start_idx:]
+
+        if self.__already_written:
+            buffer = buffer[self.__already_written :]
+
+        self.__buffer_view = buffer
+        return buffer
+
+    def buffer_updated(self, nbytes: int) -> None:
+        if nbytes < 0:
+            raise ValueError("Negative value given")
+        if self.__buffer_view is None:
+            raise RuntimeError("buffer_updated() has been called whilst get_buffer() was never called")
+        if nbytes > self.__buffer_view.nbytes:
+            raise RuntimeError("nbytes > buffer_view.nbytes")
+        self.__already_written += nbytes
+        self.__buffer_view = None
+
+    def clear(self) -> None:
+        self.__buffer = self.__buffer_view = self.__buffer_start = None
+        self.__already_written = 0
+        consumer, self.__consumer = self.__consumer, None
+        if consumer is not None:
+            consumer.close()
+
+    def __save_remainder_in_buffer(self, remaining_data: ReadableBuffer) -> None:
+        remaining_data = bytes(remaining_data)
+        nbytes = len(remaining_data)
+        if nbytes == 0:
+            # Nothing to save.
+            return
+        with memoryview(self.get_buffer()) as buffer:
+            buffer[:nbytes] = remaining_data
+        self.buffer_updated(nbytes)
+
+    @staticmethod
+    def __validate_created_buffer(buffer: WriteableBuffer) -> None:
+        with memoryview(buffer) as buffer:
+            if buffer.readonly:
+                raise ValueError("protocol.create_buffer() returned a read-only buffer")
+            if buffer.itemsize != 1:
+                raise ValueError("protocol.create_buffer() must return a byte buffer")
+            if not len(buffer):
+                raise RuntimeError("protocol.create_buffer() returned a null buffer")
 
 
 def _check_protocol(p: StreamProtocol[Any, Any]) -> None:
