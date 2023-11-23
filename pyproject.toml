@@ -180,7 +180,6 @@ line-length = 130
 target-version = ["py311"]
 
 [tool.mypy]
-mypy_path = "$MYPY_CONFIG_FILE_DIR/src"
 python_version = "3.11"
 show_error_codes = true
 warn_unused_configs = true
