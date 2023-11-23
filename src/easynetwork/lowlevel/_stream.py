@@ -146,9 +146,7 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
             packet, remaining = exc.value
             remaining = _ensure_bytes(remaining)
         except StreamProtocolParseError as exc:
-            remaining, exc.remaining_data = exc.remaining_data, b""
-            remaining = _ensure_bytes(remaining)
-            self.__b = remaining
+            self.__b = _ensure_bytes(exc.remaining_data)
             raise
         except Exception as exc:
             raise RuntimeError("protocol.build_packet_from_chunks() crashed") from exc

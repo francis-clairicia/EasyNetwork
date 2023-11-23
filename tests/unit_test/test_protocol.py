@@ -363,6 +363,7 @@ class TestStreamProtocol:
         mock_convert_func.assert_not_called()
         assert isinstance(exception.error, IncrementalDeserializeError)
         assert exception.remaining_data is mocker.sentinel.chunk
+        assert exception.error.remaining_data is mocker.sentinel.chunk
         assert isinstance(exception.__cause__, IncrementalDeserializeError)
 
     def test____build_packet_from_chunks____wrong_deserialize_error(

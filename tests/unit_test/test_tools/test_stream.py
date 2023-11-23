@@ -441,7 +441,7 @@ class TestStreamDataConsumer:
         # Assert
         mock_build_packet_from_chunks_func.assert_called_once_with()
         assert consumer.get_buffer() == b"World"
-        assert exception.remaining_data == b""
+        assert exception.remaining_data == b"World"
 
     def test____next____generator_did_not_yield(
         self,
