@@ -153,7 +153,7 @@ class BufferedStreamReceiver(Generic[_ReceivedPacketT, _BufferT]):
         """
 
         if not isinstance(serializer, BufferedIncrementalPacketSerializer):
-            raise TypeError(f"Expected an incremental serializer instance, got {serializer!r}")
+            raise TypeError(f"Expected a buffered incremental serializer instance, got {serializer!r}")
         if converter is not None and not isinstance(converter, AbstractPacketConverterComposite):
             raise TypeError(f"Expected a converter instance, got {converter!r}")
         self.__serializer: BufferedIncrementalPacketSerializer[Any, _BufferT] = serializer
