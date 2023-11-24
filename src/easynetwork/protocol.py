@@ -167,10 +167,7 @@ class BufferedStreamReceiver(Generic[_ReceivedPacketT, _BufferT]):
         try:
             packet, remaining_data = yield from self.__serializer.buffered_incremental_deserialize(buffer)
         except IncrementalDeserializeError as exc:
-            try:
-                raise StreamProtocolParseError(exc.remaining_data, exc) from exc
-            finally:
-                exc.remaining_data = b""
+            raise StreamProtocolParseError(exc.remaining_data, exc) from exc
         except DeserializeError as exc:
             raise RuntimeError("DeserializeError raised instead of IncrementalDeserializeError") from exc
 
