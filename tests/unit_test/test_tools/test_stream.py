@@ -1,16 +1,18 @@
 from __future__ import annotations
 
+import itertools
 from collections.abc import Generator
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal, assert_never
 
-from easynetwork.exceptions import IncrementalDeserializeError
-from easynetwork.lowlevel._stream import StreamDataConsumer, StreamDataProducer
+from easynetwork.exceptions import IncrementalDeserializeError, StreamProtocolParseError
+from easynetwork.lowlevel._stream import BufferedStreamDataConsumer, StreamDataConsumer, StreamDataProducer
 
 import pytest
 
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
 
+    from _typeshed import ReadableBuffer
     from pytest_mock import MockerFixture
 
 
@@ -380,7 +382,7 @@ class TestStreamDataConsumer:
         with pytest.raises(StopIteration):
             next(consumer)
         mock_build_packet_from_chunks_func.assert_called_once_with()
-        assert not consumer.get_buffer()
+        assert consumer.get_buffer() == b""
 
         mock_build_packet_from_chunks_func.reset_mock()
         consumer.feed(b"World")
@@ -421,8 +423,6 @@ class TestStreamDataConsumer:
         mock_stream_protocol: MagicMock,
     ) -> None:
         # Arrange
-        from easynetwork.exceptions import StreamProtocolParseError
-
         def side_effect() -> Generator[None, bytes, tuple[Any, bytes]]:
             data = yield
             assert data == b"Hello"
@@ -531,3 +531,621 @@ class TestStreamDataConsumer:
 
         # Assert
         assert consumer.get_buffer() == b""
+
+
+class TestBufferedStreamDataConsumer:
+    @pytest.fixture
+    @staticmethod
+    def mock_stream_protocol(mock_stream_protocol: MagicMock, mock_buffered_stream_receiver: MagicMock) -> MagicMock:
+        mock_stream_protocol.buffered_receiver.return_value = mock_buffered_stream_receiver
+        return mock_stream_protocol
+
+    @pytest.fixture
+    @staticmethod
+    def sizehint() -> int:
+        return 1024
+
+    @pytest.fixture(params=[None, 0], ids=lambda p: f"zero_or_none=={p}")
+    @staticmethod
+    def zero_or_none(request: pytest.FixtureRequest) -> int | None:
+        return request.param
+
+    @pytest.fixture
+    @staticmethod
+    def consumer(mock_stream_protocol: MagicMock, sizehint: int) -> BufferedStreamDataConsumer[Any]:
+        return BufferedStreamDataConsumer(mock_stream_protocol, sizehint)
+
+    @staticmethod
+    def write_in_consumer(consumer: BufferedStreamDataConsumer[Any], data: bytes | bytearray | memoryview) -> None:
+        nbytes = len(data)
+        with memoryview(consumer.get_write_buffer()) as buffer:
+            buffer[:nbytes] = data
+        consumer.buffer_updated(nbytes)
+
+    def test____dunder_init____invalid_protocol(self, mock_serializer: MagicMock, sizehint: int) -> None:
+        # Arrange
+        from easynetwork.protocol import DatagramProtocol
+
+        # Act & Assert
+        with pytest.raises(TypeError, match=r"^Expected a StreamProtocol object, got .*$"):
+            _ = BufferedStreamDataConsumer(DatagramProtocol(mock_serializer), sizehint)  # type: ignore[arg-type]
+
+    @pytest.mark.parametrize("sizehint", [-1, 0])
+    def test____dunder_init____invalid_sizehint(self, mock_stream_protocol: MagicMock, sizehint: int) -> None:
+        # Arrange
+
+        # Act & Assert
+        with pytest.raises(ValueError, match=rf"^buffer_size_hint={sizehint}$"):
+            _ = BufferedStreamDataConsumer(mock_stream_protocol, sizehint)
+
+    def test____dunder_iter____return_self(self, consumer: BufferedStreamDataConsumer[Any]) -> None:
+        # Arrange
+
+        # Act
+        iterator = iter(consumer)
+
+        # Assert
+        assert iterator is consumer
+
+    def test____get_write_buffer____protocol_create_buffer_validation____readonly_buffer(
+        self,
+        consumer: BufferedStreamDataConsumer[Any],
+        mock_buffered_stream_receiver: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_buffered_stream_receiver.create_buffer.side_effect = [b"read-only buffer"]
+
+        # Act & Assert
+        with pytest.raises(ValueError, match=r"^protocol\.create_buffer\(\) returned a read-only buffer$"):
+            _ = consumer.get_write_buffer()
+
+        mock_buffered_stream_receiver.build_packet_from_buffer.assert_not_called()
+
+    def test____get_write_buffer____protocol_create_buffer_validation____not_a_byte_buffer(
+        self,
+        consumer: BufferedStreamDataConsumer[Any],
+        mock_buffered_stream_receiver: MagicMock,
+    ) -> None:
+        # Arrange
+        from array import array
+
+        mock_buffered_stream_receiver.create_buffer.side_effect = [memoryview(array("I", itertools.repeat(0, 5)))]
+
+        # Act & Assert
+        with pytest.raises(ValueError, match=r"^protocol\.create_buffer\(\) must return a byte buffer$"):
+            _ = consumer.get_write_buffer()
+
+        mock_buffered_stream_receiver.build_packet_from_buffer.assert_not_called()
+
+    def test____get_write_buffer____protocol_create_buffer_validation____empty_byte_buffer(
+        self,
+        consumer: BufferedStreamDataConsumer[Any],
+        mock_buffered_stream_receiver: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_buffered_stream_receiver.create_buffer.side_effect = [bytearray()]
+
+        # Act & Assert
+        with pytest.raises(ValueError, match=r"^protocol\.create_buffer\(\) returned a null buffer$"):
+            _ = consumer.get_write_buffer()
+
+        mock_buffered_stream_receiver.build_packet_from_buffer.assert_not_called()
+
+    def test____get_write_buffer____do_not_recompute_buffer_view(
+        self,
+        consumer: BufferedStreamDataConsumer[Any],
+        mock_buffered_stream_receiver: MagicMock,
+    ) -> None:
+        # Arrange
+        def side_effect(buffer: memoryview) -> Generator[int, int, tuple[Any, bytes]]:
+            yield 0
+            pytest.fail("Should not arrive here")
+
+        mock_build_packet_from_buffer_func: MagicMock = mock_buffered_stream_receiver.build_packet_from_buffer
+        mock_build_packet_from_buffer_func.side_effect = side_effect
+
+        # Act & Assert
+        assert consumer.get_write_buffer() is consumer.get_write_buffer()
+
+    def test____buffer_updated____error_negative_nbytes(
+        self,
+        consumer: BufferedStreamDataConsumer[Any],
+        mock_buffered_stream_receiver: MagicMock,
+    ) -> None:
+        # Arrange
+        def side_effect(buffer: memoryview) -> Generator[int, int, tuple[Any, bytes]]:
+            yield 0
+            pytest.fail("Should not arrive here")
+
+        mock_build_packet_from_buffer_func: MagicMock = mock_buffered_stream_receiver.build_packet_from_buffer
+        mock_build_packet_from_buffer_func.side_effect = side_effect
+        consumer.get_write_buffer()
+
+        # Act & Assert
+        with pytest.raises(ValueError, match=r"^Negative value given$"):
+            consumer.buffer_updated(-1)
+
+    def test____buffer_updated____get_buffer_not_called(
+        self,
+        consumer: BufferedStreamDataConsumer[Any],
+        mock_buffered_stream_receiver: MagicMock,
+    ) -> None:
+        # Arrange
+        def side_effect(buffer: memoryview) -> Generator[int, int, tuple[Any, bytes]]:
+            yield 0
+            pytest.fail("Should not arrive here")
+
+        mock_build_packet_from_buffer_func: MagicMock = mock_buffered_stream_receiver.build_packet_from_buffer
+        mock_build_packet_from_buffer_func.side_effect = side_effect
+        # consumer.get_write_buffer()
+
+        # Act & Assert
+        with pytest.raises(RuntimeError, match=r"^buffer_updated\(\) has been called whilst get_buffer\(\) was never called$"):
+            consumer.buffer_updated(4)
+
+    def test____buffer_updated____nbytes_too_big(
+        self,
+        consumer: BufferedStreamDataConsumer[Any],
+        mock_buffered_stream_receiver: MagicMock,
+    ) -> None:
+        # Arrange
+        def side_effect(buffer: memoryview) -> Generator[int, int, tuple[Any, bytes]]:
+            yield -10
+            pytest.fail("Should not arrive here")
+
+        mock_build_packet_from_buffer_func: MagicMock = mock_buffered_stream_receiver.build_packet_from_buffer
+        mock_build_packet_from_buffer_func.side_effect = side_effect
+        assert len(memoryview(consumer.get_write_buffer())) == 10
+
+        # Act & Assert
+        with pytest.raises(RuntimeError, match=r"^nbytes > buffer_view\.nbytes$"):
+            consumer.buffer_updated(12)
+
+    def test____next____no_buffer(
+        self,
+        consumer: BufferedStreamDataConsumer[Any],
+        mock_buffered_stream_receiver: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_buffered_stream_receiver.create_buffer.assert_not_called()
+        mock_buffered_stream_receiver.build_packet_from_buffer.assert_not_called()
+        assert consumer.buffer_size == 0
+        assert consumer.get_value() is None
+
+        # Act
+        with pytest.raises(StopIteration):
+            next(consumer)
+
+        # Assert
+        mock_buffered_stream_receiver.create_buffer.assert_not_called()
+        mock_buffered_stream_receiver.build_packet_from_buffer.assert_not_called()
+
+    @pytest.mark.parametrize("remainder_type", ["buffer_view", "external"])
+    def test____next____oneshot(
+        self,
+        remainder_type: Literal["buffer_view", "external"],
+        consumer: BufferedStreamDataConsumer[Any],
+        zero_or_none: int | None,
+        mock_buffered_stream_receiver: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        def side_effect(buffer: memoryview) -> Generator[int | None, int, tuple[Any, ReadableBuffer]]:
+            nbytes = yield zero_or_none
+            data = buffer[:nbytes]
+            assert data == b"Hello world"
+            match remainder_type:
+                case "buffer_view":
+                    return mocker.sentinel.packet, buffer[nbytes:nbytes]
+                case "external":
+                    return mocker.sentinel.packet, b""
+                case _:
+                    assert_never(remainder_type)
+
+        mock_build_packet_from_buffer_func: MagicMock = mock_buffered_stream_receiver.build_packet_from_buffer
+        mock_build_packet_from_buffer_func.side_effect = side_effect
+        assert consumer.get_value() is None
+        self.write_in_consumer(consumer, b"Hello world")
+        assert consumer.buffer_size > 0
+        assert consumer.get_value() == b"Hello world"
+        mock_build_packet_from_buffer_func.reset_mock()
+
+        # Act
+        packet = next(consumer)
+
+        # Assert
+        assert packet is mocker.sentinel.packet
+        mock_build_packet_from_buffer_func.assert_not_called()
+        assert consumer.get_value() == b""
+
+    @pytest.mark.parametrize("remainder_type", ["buffer_view", "external"])
+    def test____next____with_remainder(
+        self,
+        remainder_type: Literal["buffer_view", "external"],
+        consumer: BufferedStreamDataConsumer[Any],
+        zero_or_none: int | None,
+        mock_buffered_stream_receiver: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        def side_effect(buffer: memoryview) -> Generator[int | None, int, tuple[Any, ReadableBuffer]]:
+            nbytes = yield zero_or_none
+            data = buffer[:nbytes]
+            assert data == b"Hello world"
+            match remainder_type:
+                case "buffer_view":
+                    return mocker.sentinel.packet, buffer[6:nbytes]
+                case "external":
+                    return mocker.sentinel.packet, b"world"
+                case _:
+                    assert_never(remainder_type)
+
+        mock_build_packet_from_buffer_func: MagicMock = mock_buffered_stream_receiver.build_packet_from_buffer
+        mock_build_packet_from_buffer_func.side_effect = side_effect
+        assert consumer.get_value() is None
+        self.write_in_consumer(consumer, b"Hello world")
+        assert consumer.buffer_size > 0
+        assert consumer.get_value() == b"Hello world"
+
+        # Act
+        packet = next(consumer)
+
+        # Assert
+        assert packet is mocker.sentinel.packet
+        assert consumer.get_value() == b"world"
+
+    def test____next____remainder_buffer_overlapping(
+        self,
+        consumer: BufferedStreamDataConsumer[Any],
+        zero_or_none: int | None,
+        mock_buffered_stream_receiver: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        def side_effect(buffer: memoryview) -> Generator[int | None, int, tuple[Any, ReadableBuffer]]:
+            nbytes = yield zero_or_none
+            assert buffer[:nbytes] == b"Hello world"
+            return mocker.sentinel.packet, buffer[2:nbytes]
+
+        mock_build_packet_from_buffer_func: MagicMock = mock_buffered_stream_receiver.build_packet_from_buffer
+        mock_build_packet_from_buffer_func.side_effect = side_effect
+        self.write_in_consumer(consumer, b"Hello world")
+
+        # Act
+        packet = next(consumer)
+
+        # Assert
+        assert packet is mocker.sentinel.packet
+        assert consumer.get_value() == b"llo world"
+
+    def test____next____several_attempts(
+        self,
+        consumer: BufferedStreamDataConsumer[Any],
+        zero_or_none: int | None,
+        mock_buffered_stream_receiver: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        def side_effect(buffer: memoryview) -> Generator[int | None, int, tuple[Any, ReadableBuffer]]:
+            nbytes = yield zero_or_none
+            assert buffer[:nbytes] == b"Hello"
+            nbytes = yield zero_or_none
+            assert buffer[:nbytes] == b"World"
+            return mocker.sentinel.packet, b"Bye"
+
+        mock_build_packet_from_buffer_func: MagicMock = mock_buffered_stream_receiver.build_packet_from_buffer
+        mock_build_packet_from_buffer_func.side_effect = side_effect
+
+        # Act & Assert
+        self.write_in_consumer(consumer, b"Hello")
+        mock_build_packet_from_buffer_func.assert_called_once_with(mocker.ANY)
+        with pytest.raises(StopIteration):
+            next(consumer)
+        assert consumer.get_value() == b""
+
+        mock_build_packet_from_buffer_func.reset_mock()
+        self.write_in_consumer(consumer, b"")
+        with pytest.raises(StopIteration):
+            next(consumer)
+        mock_build_packet_from_buffer_func.assert_not_called()
+        assert consumer.get_value() == b""
+
+        mock_build_packet_from_buffer_func.reset_mock()
+        self.write_in_consumer(consumer, b"World")
+        mock_build_packet_from_buffer_func.assert_not_called()
+        packet = next(consumer)
+        assert packet is mocker.sentinel.packet
+        assert consumer.get_value() == b"Bye"
+
+    def test____next____move_buffer_start_after_updating_it(
+        self,
+        consumer: BufferedStreamDataConsumer[Any],
+        zero_or_none: int | None,
+        mock_buffered_stream_receiver: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        def side_effect(buffer: memoryview) -> Generator[int | None, int, tuple[Any, ReadableBuffer]]:
+            nbytes = yield zero_or_none
+            assert buffer[:nbytes] == b"HelloWorld"
+            return mocker.sentinel.packet, b"Bye"
+
+        mock_build_packet_from_buffer_func: MagicMock = mock_buffered_stream_receiver.build_packet_from_buffer
+        mock_build_packet_from_buffer_func.side_effect = side_effect
+
+        # Act
+        self.write_in_consumer(consumer, b"Hello")
+        self.write_in_consumer(consumer, b"World")
+        assert consumer.get_value() == b"HelloWorld"
+        mock_build_packet_from_buffer_func.assert_called_once_with(mocker.ANY)
+        packet = next(consumer)
+
+        # Assert
+        assert packet is mocker.sentinel.packet
+        assert consumer.get_value() == b"Bye"
+
+    def test____next____buffer_start_on_first_yield(
+        self,
+        consumer: BufferedStreamDataConsumer[Any],
+        mock_buffered_stream_receiver: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        def side_effect(buffer: memoryview) -> Generator[int | None, int, tuple[Any, ReadableBuffer]]:
+            buffer[:5] = b"Hello"
+            nbytes = yield 5
+            assert buffer[: 5 + nbytes] == b"HelloWorld"
+            return mocker.sentinel.packet, b"Bye"
+
+        mock_build_packet_from_buffer_func: MagicMock = mock_buffered_stream_receiver.build_packet_from_buffer
+        mock_build_packet_from_buffer_func.side_effect = side_effect
+
+        # Act & Assert
+        consumer.get_write_buffer()
+        assert consumer.get_value() == b"Hello"
+        self.write_in_consumer(consumer, b"World")
+        assert consumer.get_value() == b"HelloWorld"
+        packet = next(consumer)
+        assert packet is mocker.sentinel.packet
+        assert consumer.get_value() == b"HelloBye"
+
+    def test____next____buffer_start_on_first_yield____several_writes(
+        self,
+        consumer: BufferedStreamDataConsumer[Any],
+        mock_buffered_stream_receiver: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        def side_effect(buffer: memoryview) -> Generator[int | None, int, tuple[Any, ReadableBuffer]]:
+            buffer[:5] = b"Hello"
+            nbytes = yield 5
+            assert buffer[: 5 + nbytes] == b"HelloWorld!"
+            return mocker.sentinel.packet, b"Bye"
+
+        mock_build_packet_from_buffer_func: MagicMock = mock_buffered_stream_receiver.build_packet_from_buffer
+        mock_build_packet_from_buffer_func.side_effect = side_effect
+
+        # Act & Assert
+        consumer.get_write_buffer()
+        assert consumer.get_value() == b"Hello"
+        self.write_in_consumer(consumer, b"World")
+        self.write_in_consumer(consumer, b"!")
+        assert consumer.get_value() == b"HelloWorld!"
+        packet = next(consumer)
+        assert packet is mocker.sentinel.packet
+        assert consumer.get_value() == b"HelloBye"
+
+    def test____next____buffer_start_on_subsequent_yields(
+        self,
+        consumer: BufferedStreamDataConsumer[Any],
+        mock_buffered_stream_receiver: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        def side_effect(buffer: memoryview) -> Generator[int | None, int, tuple[Any, ReadableBuffer]]:
+            nbytes = yield 0
+            assert buffer[:nbytes] == b"Hello"
+            nbytes += yield nbytes
+            assert buffer[:nbytes] == b"HelloWorld"
+            return mocker.sentinel.packet, b"Bye"
+
+        mock_build_packet_from_buffer_func: MagicMock = mock_buffered_stream_receiver.build_packet_from_buffer
+        mock_build_packet_from_buffer_func.side_effect = side_effect
+
+        # Act & Assert
+        self.write_in_consumer(consumer, b"Hello")
+        with pytest.raises(StopIteration):
+            next(consumer)
+        self.write_in_consumer(consumer, b"World")
+        packet = next(consumer)
+        assert packet is mocker.sentinel.packet
+        assert consumer.get_value() == b"Bye"
+
+    def test____next____negative_buffer_start(
+        self,
+        consumer: BufferedStreamDataConsumer[Any],
+        mock_buffered_stream_receiver: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        def side_effect(buffer: memoryview) -> Generator[int | None, int, tuple[Any, ReadableBuffer]]:
+            nbytes = yield -10
+            assert nbytes == 5
+            assert buffer[-10:-5] == b"Hello"
+            nbytes = yield -5
+            assert nbytes == 5
+            assert buffer[-5:] == b"World"
+            assert buffer[-10:] == b"HelloWorld"
+            return mocker.sentinel.packet, b"Bye"
+
+        mock_build_packet_from_buffer_func: MagicMock = mock_buffered_stream_receiver.build_packet_from_buffer
+        mock_build_packet_from_buffer_func.side_effect = side_effect
+
+        # Act & Assert
+        self.write_in_consumer(consumer, b"Hello")
+        with pytest.raises(StopIteration):
+            next(consumer)
+        self.write_in_consumer(consumer, b"World")
+        packet = next(consumer)
+        assert packet is mocker.sentinel.packet
+        full_buffer_value = consumer.get_value(full=True)
+        truncated_buffer_value = consumer.get_value(full=False)
+        assert full_buffer_value is not None and truncated_buffer_value is not None
+        assert full_buffer_value[-10:-7] == b"Bye"
+        assert truncated_buffer_value.endswith(b"Bye")
+
+    @pytest.mark.parametrize("remainder_type", ["buffer_view", "external"])
+    def test____next____protocol_parse_error(
+        self,
+        remainder_type: Literal["buffer_view", "external"],
+        consumer: BufferedStreamDataConsumer[Any],
+        zero_or_none: int | None,
+        mock_buffered_stream_receiver: MagicMock,
+    ) -> None:
+        # Arrange
+        def side_effect(buffer: memoryview) -> Generator[int | None, int, tuple[Any, ReadableBuffer]]:
+            nbytes = yield zero_or_none
+            assert buffer[:nbytes] == b"Hello world"
+            match remainder_type:
+                case "buffer_view":
+                    raise StreamProtocolParseError(buffer[6:nbytes], IncrementalDeserializeError("Error occurred", b""))
+                case "external":
+                    raise StreamProtocolParseError(b"world", IncrementalDeserializeError("Error occurred", b""))
+                case _:
+                    assert_never(remainder_type)
+
+        mock_build_packet_from_buffer_func: MagicMock = mock_buffered_stream_receiver.build_packet_from_buffer
+        mock_build_packet_from_buffer_func.side_effect = side_effect
+        self.write_in_consumer(consumer, b"Hello world")
+
+        # Act
+        with pytest.raises(StreamProtocolParseError) as exc_info:
+            next(consumer)
+        exception = exc_info.value
+
+        # Assert
+        assert consumer.get_value() == b"world"
+        assert exception.remaining_data == b"world"
+
+    def test____next____generator_did_not_yield(
+        self,
+        consumer: BufferedStreamDataConsumer[Any],
+        mock_buffered_stream_receiver: MagicMock,
+    ) -> None:
+        # Arrange
+        def side_effect(buffer: memoryview) -> Generator[None, int, tuple[Any, bytes]]:
+            if False:
+                yield  # type: ignore[unreachable]
+            return 42, b"42"
+
+        mock_build_packet_from_buffer_func: MagicMock = mock_buffered_stream_receiver.build_packet_from_buffer
+        mock_build_packet_from_buffer_func.side_effect = side_effect
+
+        # Act
+        with pytest.raises(RuntimeError, match=r"^protocol\.build_packet_from_buffer\(\) did not yield$"):
+            self.write_in_consumer(consumer, b"Hello")
+
+        with pytest.raises(StopIteration):
+            next(consumer)
+
+        # Assert
+        assert consumer.get_value() == b""
+
+    @pytest.mark.parametrize("before_yielding", [False, True], ids=lambda p: f"before_yielding=={p}")
+    def test____next____generator_raised(
+        self,
+        before_yielding: bool,
+        consumer: BufferedStreamDataConsumer[Any],
+        mock_buffered_stream_receiver: MagicMock,
+    ) -> None:
+        # Arrange
+        expected_error = Exception("Error")
+
+        def side_effect(buffer: memoryview) -> Generator[None, int, tuple[Any, bytes]]:
+            if before_yielding:
+                raise expected_error
+            yield
+            raise expected_error
+
+        mock_build_packet_from_buffer_func: MagicMock = mock_buffered_stream_receiver.build_packet_from_buffer
+        mock_build_packet_from_buffer_func.side_effect = side_effect
+
+        # Act & Assert
+        if before_yielding:
+            with pytest.raises(RuntimeError, match=r"^protocol\.build_packet_from_buffer\(\) crashed$") as exc_info:
+                self.write_in_consumer(consumer, b"Hello")
+
+            assert consumer.get_value() == b""
+
+            with pytest.raises(StopIteration):
+                next(consumer)
+
+        else:
+            self.write_in_consumer(consumer, b"Hello")
+
+            with pytest.raises(RuntimeError, match=r"^protocol\.build_packet_from_buffer\(\) crashed$") as exc_info:
+                next(consumer)
+
+            assert consumer.get_value() == b""
+
+        # Assert
+        assert exc_info.value.__cause__ is expected_error
+
+    def test____clear____never_used_consumer(
+        self,
+        consumer: BufferedStreamDataConsumer[Any],
+    ) -> None:
+        # Arrange
+
+        # Act
+        consumer.clear()
+
+        # Assert
+        assert consumer.get_value() is None
+
+    def test____clear____flush_pending_buffer(
+        self,
+        consumer: BufferedStreamDataConsumer[Any],
+        mock_buffered_stream_receiver: MagicMock,
+    ) -> None:
+        # Arrange
+        def side_effect(buffer: memoryview) -> Generator[int, int, tuple[Any, bytes]]:
+            yield 0
+            pytest.fail("Should not arrive here")
+
+        mock_build_packet_from_buffer_func: MagicMock = mock_buffered_stream_receiver.build_packet_from_buffer
+        mock_build_packet_from_buffer_func.side_effect = side_effect
+        self.write_in_consumer(consumer, b"Hello world")
+        assert consumer.get_value() == b"Hello world"
+
+        # Act
+        consumer.clear()
+
+        # Assert
+        assert consumer.get_value() is None
+
+    def test____clear____close_current_generator(
+        self,
+        consumer: BufferedStreamDataConsumer[Any],
+        mock_buffered_stream_receiver: MagicMock,
+    ) -> None:
+        # Arrange
+        def side_effect(buffer: memoryview) -> Generator[None, int, tuple[Any, bytes]]:
+            yield
+            with pytest.raises(GeneratorExit) as exc_info:
+                yield
+            raise exc_info.value
+
+        mock_build_packet_from_buffer_func: MagicMock = mock_buffered_stream_receiver.build_packet_from_buffer
+        mock_build_packet_from_buffer_func.side_effect = side_effect
+        self.write_in_consumer(consumer, b"Hello")
+        with pytest.raises(StopIteration):
+            next(consumer)
+        self.write_in_consumer(consumer, b"World")
+        assert consumer.get_value() == b"World"
+
+        # Act
+        consumer.clear()
+
+        # Assert
+        assert consumer.get_value() is None

@@ -6,7 +6,7 @@ from ssl import SSLContext, SSLSocket
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.converter import AbstractPacketConverterComposite
-from easynetwork.protocol import DatagramProtocol, StreamProtocol
+from easynetwork.protocol import BufferedStreamReceiver, DatagramProtocol, StreamProtocol
 from easynetwork.serializers.abc import (
     AbstractIncrementalPacketSerializer,
     AbstractPacketSerializer,
@@ -200,3 +200,18 @@ def mock_stream_protocol_factory(mocker: MockerFixture) -> Callable[[], Any]:
 @pytest.fixture
 def mock_stream_protocol(mock_stream_protocol_factory: Callable[[], Any]) -> Any:
     return mock_stream_protocol_factory()
+
+
+@pytest.fixture
+def mock_buffered_stream_receiver_factory(mocker: MockerFixture) -> Callable[[], Any]:
+    return lambda: mocker.NonCallableMagicMock(
+        spec=BufferedStreamReceiver,
+        **{
+            "create_buffer.side_effect": lambda sizehint: memoryview(bytearray(sizehint)),
+        },
+    )
+
+
+@pytest.fixture
+def mock_buffered_stream_receiver(mock_buffered_stream_receiver_factory: Callable[[], Any]) -> Any:
+    return mock_buffered_stream_receiver_factory()

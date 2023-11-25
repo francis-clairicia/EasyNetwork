@@ -221,7 +221,7 @@ class BufferedStreamDataConsumer(Generic[_ReceivedPacketT]):
         return self
 
     def __next__(self) -> _ReceivedPacketT:
-        consumer, self.__consumer = self.__consumer, None
+        consumer = self.__consumer
         if consumer is None:
             raise StopIteration
 
@@ -231,6 +231,10 @@ class BufferedStreamDataConsumer(Generic[_ReceivedPacketT]):
         nb_updated_bytes, self.__already_written = self.__already_written, 0
         if nb_updated_bytes == 0:
             raise StopIteration
+
+        # Reset consumer
+        # Will be re-assigned if needed
+        self.__consumer = None
 
         packet: _ReceivedPacketT
         remaining: ReadableBuffer
@@ -251,7 +255,7 @@ class BufferedStreamDataConsumer(Generic[_ReceivedPacketT]):
         finally:
             del consumer
 
-    def get_buffer(self) -> WriteableBuffer:
+    def get_write_buffer(self) -> WriteableBuffer:
         if self.__buffer_view is not None:
             return self.__buffer_view
 
@@ -293,6 +297,20 @@ class BufferedStreamDataConsumer(Generic[_ReceivedPacketT]):
         self.__already_written += nbytes
         self.__buffer_view = None
 
+    def get_value(self, *, full: bool = False) -> bytes | None:
+        if self.__buffer is None:
+            return None
+        if full:
+            return bytes(self.__buffer)
+        buffer = memoryview(self.__buffer)
+        if self.__buffer_start is None:
+            nbytes = self.__already_written
+        elif self.__buffer_start < 0:
+            nbytes = self.__buffer_start + len(buffer) + self.__already_written
+        else:
+            nbytes = self.__buffer_start + self.__already_written
+        return buffer[:nbytes].tobytes()
+
     def clear(self) -> None:
         self.__buffer = self.__buffer_view = self.__buffer_start = None
         self.__already_written = 0
@@ -306,7 +324,7 @@ class BufferedStreamDataConsumer(Generic[_ReceivedPacketT]):
         if nbytes == 0:
             # Nothing to save.
             return
-        with memoryview(self.get_buffer()) as buffer:
+        with memoryview(self.get_write_buffer()) as buffer:
             buffer[:nbytes] = remaining_data
         self.buffer_updated(nbytes)
 
@@ -318,7 +336,14 @@ class BufferedStreamDataConsumer(Generic[_ReceivedPacketT]):
             if buffer.itemsize != 1:
                 raise ValueError("protocol.create_buffer() must return a byte buffer")
             if not len(buffer):
-                raise RuntimeError("protocol.create_buffer() returned a null buffer")
+                raise ValueError("protocol.create_buffer() returned a null buffer")
+
+    @property
+    def buffer_size(self) -> int:
+        if self.__buffer is None:
+            return 0
+        with memoryview(self.__buffer) as buffer:
+            return len(buffer)
 
 
 def _check_protocol(p: StreamProtocol[Any, Any]) -> None:
