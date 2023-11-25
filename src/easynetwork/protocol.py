@@ -123,6 +123,12 @@ class DatagramProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
 
 
 class BufferedStreamReceiver(Generic[_ReceivedPacketT, _BufferT]):
+    """A specialization of :class:`StreamProtocol` in order to use a buffered :term:`incremental serializer`.
+
+    It is not recommended to instantiate `BufferedStreamReceiver` objects directly;
+    use :meth:`StreamProtocol.buffered_receiver` instead.
+    """
+
     __slots__ = ("__serializer", "__converter", "__weakref__")
 
     @overload
@@ -148,7 +154,7 @@ class BufferedStreamReceiver(Generic[_ReceivedPacketT, _BufferT]):
     ) -> None:
         """
         Parameters:
-            serializer: The :term:`incremental serializer` to use.
+            serializer: The buffered :term:`incremental serializer` to use.
             converter: The :term:`converter` to use.
         """
 
@@ -160,9 +166,35 @@ class BufferedStreamReceiver(Generic[_ReceivedPacketT, _BufferT]):
         self.__converter: AbstractPacketConverterComposite[Never, _ReceivedPacketT, Any] | None = converter
 
     def create_buffer(self, sizehint: int) -> _BufferT:
+        """
+        Called to allocate a new receive buffer.
+
+        See :meth:`.BufferedIncrementalPacketSerializer.create_deserializer_buffer` for details.
+        """
         return self.__serializer.create_deserializer_buffer(sizehint)
 
     def build_packet_from_buffer(self, buffer: _BufferT) -> Generator[int | None, int, tuple[_ReceivedPacketT, ReadableBuffer]]:
+        """
+        Creates a Python object representing the raw :term:`packet`.
+
+        Parameters:
+            buffer: The buffer allocated by :meth:`create_buffer`.
+
+        Raises:
+            StreamProtocolParseError: in case of deserialization error.
+            StreamProtocolParseError: in case of conversion error (if there is a :term:`converter`).
+            RuntimeError: The :term:`serializer` raised :exc:`.DeserializeError` instead of :exc:`.IncrementalDeserializeError`.
+
+        Yields:
+            until the whole :term:`packet` has been deserialized.
+
+            See :meth:`.BufferedIncrementalPacketSerializer.buffered_incremental_deserialize` for details.
+
+        Returns:
+            a tuple with the deserialized Python object and the unused trailing data.
+
+            See :meth:`.BufferedIncrementalPacketSerializer.buffered_incremental_deserialize` for details.
+        """
         packet: _ReceivedPacketT
         try:
             packet, remaining_data = yield from self.__serializer.buffered_incremental_deserialize(buffer)
@@ -241,6 +273,12 @@ class StreamProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
         return (yield from self.__serializer.incremental_serialize(packet))
 
     def buffered_receiver(self) -> BufferedStreamReceiver[_ReceivedPacketT, WriteableBuffer]:
+        """
+        Get a specialization interface in order to use the buffer API.
+
+        Raises:
+            UnsupportedOperation: The serializer does not derive from :class:`.BufferedIncrementalPacketSerializer`.
+        """
         buffered_receiver = self.__buffered_receiver
         if buffered_receiver is None:
             raise UnsupportedOperation("This protocol does not support the buffer API")

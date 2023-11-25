@@ -30,6 +30,9 @@ import typing
 
 if typing.TYPE_CHECKING:
     from _typeshed import WriteableBuffer
+else:  # pragma: no cover
+    # Needed for sphinx-autodoc
+    WriteableBuffer = bytearray | memoryview
 
 _DTOPacketT = typing.TypeVar("_DTOPacketT")
 

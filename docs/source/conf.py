@@ -81,6 +81,9 @@ autodoc_type_aliases = {
     "contextvars.Context": "contextvars.Context",
 }
 autodoc_inherit_docstrings = False
+autodoc_mock_imports = [
+    "_typesched",
+]
 
 # -- sphinx.ext.intersphinx configuration ------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/extensions/intersphinx.html
