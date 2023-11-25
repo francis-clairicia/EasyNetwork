@@ -79,6 +79,7 @@ autodoc_type_aliases = {
     "_socket._RetAddress": "typing.Any",
     "_socket.socket": "socket.socket",
     "contextvars.Context": "contextvars.Context",
+    "WriteableBuffer": "bytearray | memoryview",
 }
 autodoc_inherit_docstrings = False
 autodoc_mock_imports = [
