@@ -537,6 +537,7 @@ class TestBufferedStreamDataConsumer:
     @pytest.fixture
     @staticmethod
     def mock_stream_protocol(mock_stream_protocol: MagicMock, mock_buffered_stream_receiver: MagicMock) -> MagicMock:
+        mock_stream_protocol.buffered_receiver.side_effect = None
         mock_stream_protocol.buffered_receiver.return_value = mock_buffered_stream_receiver
         return mock_stream_protocol
 

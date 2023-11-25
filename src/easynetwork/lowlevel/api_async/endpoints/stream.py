@@ -18,8 +18,9 @@ from __future__ import annotations
 
 __all__ = ["AsyncStreamEndpoint"]
 
+import dataclasses
 from collections.abc import Callable, Mapping
-from typing import Any, Generic, TypeGuard
+from typing import Any, Generic
 
 from .... import protocol as protocol_module
 from ...._typevars import _ReceivedPacketT, _SentPacketT
@@ -35,16 +36,11 @@ class AsyncStreamEndpoint(typed_attr.TypedAttributeProvider, Generic[_SentPacket
 
     __slots__ = (
         "__transport",
-        "__is_read_transport",
-        "__is_write_transport",
-        "__is_bidirectional_transport",
-        "__producer",
-        "__consumer",
+        "__sender",
+        "__receiver",
         "__send_guard",
         "__recv_guard",
-        "__max_recv_size",
         "__eof_sent",
-        "__eof_reached",
         "__weakref__",
     )
 
@@ -66,17 +62,23 @@ class AsyncStreamEndpoint(typed_attr.TypedAttributeProvider, Generic[_SentPacket
         if not isinstance(max_recv_size, int) or max_recv_size <= 0:
             raise ValueError("'max_recv_size' must be a strictly positive integer")
 
-        self.__producer: _stream.StreamDataProducer[_SentPacketT] = _stream.StreamDataProducer(protocol)
-        self.__consumer: _stream.StreamDataConsumer[_ReceivedPacketT] = _stream.StreamDataConsumer(protocol)
-        self.__is_read_transport: bool = isinstance(transport, transports.AsyncStreamReadTransport)
-        self.__is_write_transport: bool = isinstance(transport, transports.AsyncStreamWriteTransport)
-        self.__is_bidirectional_transport: bool = isinstance(transport, transports.AsyncStreamTransport)
+        self.__sender: _DataSenderImpl[_SentPacketT] | None = None
+        if isinstance(transport, transports.AsyncStreamWriteTransport):
+            self.__sender = _DataSenderImpl(transport, _stream.StreamDataProducer(protocol))
+
+        self.__receiver: _DataReceiverImpl[_ReceivedPacketT] | _BufferedReceiverImpl[_ReceivedPacketT] | None = None
+        try:
+            if not isinstance(transport, transports.AsyncBufferedStreamReadTransport):
+                raise UnsupportedOperation
+            self.__receiver = _BufferedReceiverImpl(transport, _stream.BufferedStreamDataConsumer(protocol, max_recv_size))
+        except UnsupportedOperation:
+            if isinstance(transport, transports.AsyncStreamReadTransport):
+                self.__receiver = _DataReceiverImpl(transport, _stream.StreamDataConsumer(protocol), max_recv_size)
+
         self.__transport: transports.AsyncStreamReadTransport | transports.AsyncStreamWriteTransport = transport
         self.__send_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently sending data on this endpoint")
         self.__recv_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently receving data on this endpoint")
-        self.__max_recv_size: int = max_recv_size
         self.__eof_sent: bool = False
-        self.__eof_reached: bool = False
 
     def is_closing(self) -> bool:
         """
@@ -92,8 +94,10 @@ class AsyncStreamEndpoint(typed_attr.TypedAttributeProvider, Generic[_SentPacket
         Closes the endpoint.
         """
         await self.__transport.aclose()
-        self.__consumer.clear()
-        self.__producer.clear()
+        if self.__receiver is not None:
+            self.__receiver.clear()
+        if self.__sender is not None:
+            self.__sender.clear()
 
     async def send_packet(self, packet: _SentPacketT) -> None:
         """
@@ -113,14 +117,12 @@ class AsyncStreamEndpoint(typed_attr.TypedAttributeProvider, Generic[_SentPacket
             if self.__eof_sent:
                 raise RuntimeError("send_eof() has been called earlier")
 
-            transport = self.__transport
-            producer = self.__producer
+            sender = self.__sender
 
-            if not self.__supports_write(transport):
+            if sender is None:
                 raise UnsupportedOperation("transport does not support sending data")
 
-            producer.enqueue(packet)
-            await transport.send_all_from_iterable(producer)
+            return await sender.send(packet)
 
     async def send_eof(self) -> None:
         """
@@ -134,15 +136,14 @@ class AsyncStreamEndpoint(typed_attr.TypedAttributeProvider, Generic[_SentPacket
             if self.__eof_sent:
                 return
 
-            transport = self.__transport
-            producer = self.__producer
+            sender = self.__sender
 
-            if not self.__supports_sending_eof(transport):
+            if sender is None or not isinstance(sender.transport, transports.AsyncStreamTransport):
                 raise UnsupportedOperation("transport does not support sending EOF")
 
-            await transport.send_eof()
+            await sender.transport.send_eof()
             self.__eof_sent = True
-            producer.clear()
+            sender.clear()
 
     async def recv_packet(self) -> _ReceivedPacketT:
         """
@@ -156,50 +157,99 @@ class AsyncStreamEndpoint(typed_attr.TypedAttributeProvider, Generic[_SentPacket
             the received packet.
         """
         with self.__recv_guard:
-            transport = self.__transport
-            consumer = self.__consumer
+            receiver = self.__receiver
 
-            if not self.__supports_read(transport):
+            if receiver is None:
                 raise UnsupportedOperation("transport does not support receiving data")
 
-            try:
-                return next(consumer)  # If there is enough data from last call to create a packet, return immediately
-            except StopIteration:
-                pass
-
-            if self.__eof_reached:
-                raise EOFError("end-of-stream")
-
-            bufsize: int = self.__max_recv_size
-
-            while True:
-                chunk: bytes = await transport.recv(bufsize)
-                if not chunk:
-                    self.__eof_reached = True
-                    raise EOFError("end-of-stream")
-                try:
-                    consumer.feed(chunk)
-                finally:
-                    del chunk
-                try:
-                    return next(consumer)
-                except StopIteration:
-                    pass
-
-    def __supports_read(self, transport: transports.AsyncBaseTransport) -> TypeGuard[transports.AsyncStreamReadTransport]:
-        return self.__is_read_transport
-
-    def __supports_write(self, transport: transports.AsyncBaseTransport) -> TypeGuard[transports.AsyncStreamWriteTransport]:
-        return self.__is_write_transport
-
-    def __supports_sending_eof(self, transport: transports.AsyncBaseTransport) -> TypeGuard[transports.AsyncStreamTransport]:
-        return self.__is_bidirectional_transport
+            return await receiver.receive()
 
     @property
     def max_recv_size(self) -> int:
         """Read buffer size. Read-only attribute."""
-        return self.__max_recv_size
+        receiver = self.__receiver
+        if receiver is None:
+            return 0
+        return receiver.max_recv_size
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         return self.__transport.extra_attributes
+
+
+@dataclasses.dataclass(slots=True)
+class _DataSenderImpl(Generic[_SentPacketT]):
+    transport: transports.AsyncStreamWriteTransport
+    producer: _stream.StreamDataProducer[_SentPacketT]
+
+    def clear(self) -> None:
+        self.producer.clear()
+
+    async def send(self, packet: _SentPacketT) -> None:
+        self.producer.enqueue(packet)
+        return await self.transport.send_all_from_iterable(self.producer)
+
+
+@dataclasses.dataclass(slots=True)
+class _DataReceiverImpl(Generic[_ReceivedPacketT]):
+    transport: transports.AsyncStreamReadTransport
+    consumer: _stream.StreamDataConsumer[_ReceivedPacketT]
+    max_recv_size: int
+    _eof_reached: bool = dataclasses.field(init=False, default=False)
+
+    def clear(self) -> None:
+        self.consumer.clear()
+
+    async def receive(self) -> _ReceivedPacketT:
+        transport = self.transport
+        consumer = self.consumer
+        bufsize: int = self.max_recv_size
+
+        while True:
+            try:
+                return next(consumer)
+            except StopIteration:
+                pass
+            if not self._eof_reached:
+                chunk: bytes = await transport.recv(bufsize)
+                if chunk:
+                    consumer.feed(chunk)
+                else:
+                    self._eof_reached = True
+                del chunk
+            if self._eof_reached:
+                raise EOFError("end-of-stream")
+
+
+@dataclasses.dataclass(slots=True)
+class _BufferedReceiverImpl(Generic[_ReceivedPacketT]):
+    transport: transports.AsyncBufferedStreamReadTransport
+    consumer: _stream.BufferedStreamDataConsumer[_ReceivedPacketT]
+    _eof_reached: bool = dataclasses.field(init=False, default=False)
+
+    @property
+    def max_recv_size(self) -> int:
+        # Ensure buffer is allocated
+        self.consumer.get_write_buffer()
+        return self.consumer.buffer_size
+
+    def clear(self) -> None:
+        self.consumer.clear()
+
+    async def receive(self) -> _ReceivedPacketT:
+        transport = self.transport
+        consumer = self.consumer
+
+        while True:
+            try:
+                return next(consumer)
+            except StopIteration:
+                pass
+            if not self._eof_reached:
+                nbytes: int = await transport.recv_into(consumer.get_write_buffer())
+                if nbytes:
+                    consumer.buffer_updated(nbytes)
+                else:
+                    self._eof_reached = True
+            if self._eof_reached:
+                raise EOFError("end-of-stream")

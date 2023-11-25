@@ -6,6 +6,7 @@ from ssl import SSLContext, SSLSocket
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.converter import AbstractPacketConverterComposite
+from easynetwork.exceptions import UnsupportedOperation
 from easynetwork.protocol import BufferedStreamReceiver, DatagramProtocol, StreamProtocol
 from easynetwork.serializers.abc import (
     AbstractIncrementalPacketSerializer,
@@ -194,7 +195,7 @@ def mock_datagram_protocol(mock_datagram_protocol_factory: Callable[[], Any]) ->
 
 @pytest.fixture
 def mock_stream_protocol_factory(mocker: MockerFixture) -> Callable[[], Any]:
-    return lambda: mocker.NonCallableMagicMock(spec=StreamProtocol)
+    return lambda: mocker.NonCallableMagicMock(spec=StreamProtocol, **{"buffered_receiver.side_effect": UnsupportedOperation})
 
 
 @pytest.fixture

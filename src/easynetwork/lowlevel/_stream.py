@@ -225,12 +225,12 @@ class BufferedStreamDataConsumer(Generic[_ReceivedPacketT]):
         if consumer is None:
             raise StopIteration
 
-        # Forcibly reset buffer view
-        self.__buffer_view = None
-
         nb_updated_bytes, self.__already_written = self.__already_written, 0
         if nb_updated_bytes == 0:
             raise StopIteration
+
+        # Forcibly reset buffer view
+        self.__buffer_view = None
 
         # Reset consumer
         # Will be re-assigned if needed
@@ -294,8 +294,7 @@ class BufferedStreamDataConsumer(Generic[_ReceivedPacketT]):
             raise RuntimeError("buffer_updated() has been called whilst get_buffer() was never called")
         if nbytes > self.__buffer_view.nbytes:
             raise RuntimeError("nbytes > buffer_view.nbytes")
-        self.__already_written += nbytes
-        self.__buffer_view = None
+        self.__update_write_count(nbytes)
 
     def get_value(self, *, full: bool = False) -> bytes | None:
         if self.__buffer is None:
@@ -326,7 +325,11 @@ class BufferedStreamDataConsumer(Generic[_ReceivedPacketT]):
             return
         with memoryview(self.get_write_buffer()) as buffer:
             buffer[:nbytes] = remaining_data
-        self.buffer_updated(nbytes)
+        self.__update_write_count(nbytes)
+
+    def __update_write_count(self, nbytes: int) -> None:
+        self.__already_written += nbytes
+        self.__buffer_view = None
 
     @staticmethod
     def __validate_created_buffer(buffer: WriteableBuffer) -> None:
