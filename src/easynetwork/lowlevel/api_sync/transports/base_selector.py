@@ -186,6 +186,8 @@ class SelectorBufferedStreamReadTransport(SelectorStreamReadTransport, transport
     that supports externally allocated buffers.
     """
 
+    __slots__ = ()
+
     @abstractmethod
     def recv_noblock_into(self, buffer: WriteableBuffer) -> int:
         """

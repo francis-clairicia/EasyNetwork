@@ -96,6 +96,8 @@ class BufferedStreamReadTransport(StreamReadTransport):
     A continuous stream data reader transport that supports externally allocated buffers.
     """
 
+    __slots__ = ()
+
     @abstractmethod
     def recv_into(self, buffer: WriteableBuffer, timeout: float) -> int:
         """
