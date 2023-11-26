@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import random
 from collections.abc import Generator
-from typing import IO, TYPE_CHECKING, Any, final
+from typing import IO, TYPE_CHECKING, Any, Literal, final
 
 from easynetwork.exceptions import DeserializeError, IncrementalDeserializeError, LimitOverrunError
 from easynetwork.serializers.abc import AbstractIncrementalPacketSerializer
@@ -15,9 +15,12 @@ from easynetwork.serializers.base_stream import (
 
 import pytest
 
+from ...tools import send_return, write_data_and_extra_in_buffer, write_in_buffer
+
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
 
+    from _typeshed import ReadableBuffer
     from pytest_mock import MockerFixture
 
 
@@ -340,9 +343,7 @@ class TestAutoSeparatedPacketSerializer:
         # Act
         consumer = serializer.incremental_deserialize()
         next(consumer)
-        with pytest.raises(StopIteration) as exc_info:
-            consumer.send(data_to_test + expected_remaining_data)
-        packet, remaining_data = exc_info.value.value
+        packet, remaining_data = send_return(consumer, data_to_test + expected_remaining_data)
 
         # Assert
         mock_deserialize_func.assert_called_once_with(b"data")
@@ -371,9 +372,7 @@ class TestAutoSeparatedPacketSerializer:
         consumer = serializer.incremental_deserialize()
         next(consumer)
         consumer.send(b"data\r")
-        with pytest.raises(StopIteration) as exc_info:
-            consumer.send(b"\n" + expected_remaining_data)
-        packet, remaining_data = exc_info.value.value
+        packet, remaining_data = send_return(consumer, b"\n" + expected_remaining_data)
 
         # Assert
         mock_deserialize_func.assert_called_once_with(b"data")
@@ -483,6 +482,7 @@ class TestFixedSizePacketSerializer:
             pytest.param(0, id="null value"),
             pytest.param(-1, id="negative value"),
         ],
+        indirect=True,
     )
     def test____dunder_init____invalid_packet_size(self, packet_size: int) -> None:
         # Arrange
@@ -548,9 +548,7 @@ class TestFixedSizePacketSerializer:
         # Act
         consumer = serializer.incremental_deserialize()
         next(consumer)
-        with pytest.raises(StopIteration) as exc_info:
-            consumer.send(packet_data + expected_remaining_data)
-        packet, remaining_data = exc_info.value.value
+        packet, remaining_data = send_return(consumer, packet_data + expected_remaining_data)
 
         # Assert
         mock_deserialize_func.assert_called_once_with(packet_data)
@@ -564,7 +562,7 @@ class TestFixedSizePacketSerializer:
             pytest.param(b"remaining", id="with remaining data"),
         ],
     )
-    def test____incremental_deserialize____several_chunk(
+    def test____incremental_deserialize____several_chunks(
         self,
         expected_remaining_data: bytes,
         packet_size: int,
@@ -580,9 +578,7 @@ class TestFixedSizePacketSerializer:
         consumer = serializer.incremental_deserialize()
         next(consumer)
         consumer.send(packet_data[:-1])
-        with pytest.raises(StopIteration) as exc_info:
-            consumer.send(packet_data[-1:] + expected_remaining_data)
-        packet, remaining_data = exc_info.value.value
+        packet, remaining_data = send_return(consumer, packet_data[-1:] + expected_remaining_data)
 
         # Assert
         mock_deserialize_func.assert_called_once_with(packet_data)
@@ -622,6 +618,143 @@ class TestFixedSizePacketSerializer:
         assert exception.remaining_data == expected_remaining_data
         assert exception.error_info is mocker.sentinel.error_info
 
+    @pytest.mark.parametrize("sizehint_offset", [1024, 0, -1], ids=lambda i: f"(size{i:+})")
+    def test____create_deserializer_buffer____returns_bytearray_buffer(
+        self,
+        sizehint_offset: int,
+        packet_size: int,
+    ) -> None:
+        # Arrange
+        serializer = _FixedSizePacketSerializerForTest(packet_size)
+        sizehint = packet_size + sizehint_offset
+
+        # Act
+        buffer = serializer.create_deserializer_buffer(sizehint)
+
+        # Assert
+        assert isinstance(buffer, memoryview)
+        assert isinstance(buffer.obj, bytearray)
+        if sizehint >= packet_size:
+            assert buffer.nbytes == sizehint
+        else:
+            assert buffer.nbytes == packet_size
+
+    @pytest.mark.parametrize(
+        "expected_remaining_data",
+        [
+            pytest.param(b"", id="without remaining data"),
+            pytest.param(b"remaining", id="with remaining data"),
+        ],
+    )
+    def test____buffered_incremental_deserialize____one_shot_chunk(
+        self,
+        expected_remaining_data: bytes,
+        packet_size: int,
+        mock_deserialize_func: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        serializer = _FixedSizePacketSerializerForTest(packet_size)
+        packet_data: bytes = random.randbytes(packet_size)
+        mock_deserialize_func.return_value = mocker.sentinel.packet
+
+        # Act
+        buffer = serializer.create_deserializer_buffer(packet_size + len(expected_remaining_data) + 1024)
+        consumer = serializer.buffered_incremental_deserialize(buffer)
+        assert next(consumer) == 0
+        nbytes, _ = write_data_and_extra_in_buffer(
+            buffer,
+            packet_data,
+            expected_remaining_data,
+            too_short_buffer_for_extra_data="error",
+        )
+        packet, remaining_data = send_return(consumer, nbytes)
+
+        # Assert
+        mock_deserialize_func.assert_called_once_with(packet_data)
+        assert packet is mocker.sentinel.packet
+        assert remaining_data == expected_remaining_data
+
+    @pytest.mark.parametrize(
+        "expected_remaining_data",
+        [
+            pytest.param(b"", id="without remaining data"),
+            pytest.param(b"remaining", id="with remaining data"),
+        ],
+    )
+    def test____buffered_incremental_deserialize____several_chunks(
+        self,
+        expected_remaining_data: bytes,
+        packet_size: int,
+        mock_deserialize_func: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        serializer = _FixedSizePacketSerializerForTest(packet_size)
+        packet_data: bytes = random.randbytes(packet_size)
+        mock_deserialize_func.return_value = mocker.sentinel.packet
+
+        # Act
+        buffer = serializer.create_deserializer_buffer(packet_size + len(expected_remaining_data) + 1024)
+        consumer = serializer.buffered_incremental_deserialize(buffer)
+        assert next(consumer) == 0
+        nbytes = write_in_buffer(buffer, packet_data[:-1])
+        start_pos = consumer.send(nbytes)
+        assert start_pos == nbytes
+        nbytes, _ = write_data_and_extra_in_buffer(
+            buffer,
+            packet_data[-1:],
+            expected_remaining_data,
+            start_pos=start_pos,
+            too_short_buffer_for_extra_data="error",
+        )
+        packet, remaining_data = send_return(consumer, nbytes)
+
+        # Assert
+        mock_deserialize_func.assert_called_once_with(packet_data)
+        assert packet is mocker.sentinel.packet
+        assert remaining_data == expected_remaining_data
+
+    @pytest.mark.parametrize(
+        "expected_remaining_data",
+        [
+            pytest.param(b"", id="without remaining data"),
+            pytest.param(b"remaining", id="with remaining data"),
+        ],
+    )
+    def test____buffered_incremental_deserialize____translate_deserialize_errors(
+        self,
+        expected_remaining_data: bytes,
+        packet_size: int,
+        mock_deserialize_func: MagicMock,
+        debug_mode: bool,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        serializer = _FixedSizePacketSerializerForTest(packet_size, debug=debug_mode)
+        packet_data: bytes = random.randbytes(packet_size)
+        mock_deserialize_func.side_effect = DeserializeError("Bad news", error_info=mocker.sentinel.error_info)
+
+        # Act
+        buffer = serializer.create_deserializer_buffer(packet_size + len(expected_remaining_data) + 1024)
+        consumer = serializer.buffered_incremental_deserialize(buffer)
+        assert next(consumer) == 0
+        nbytes, _ = write_data_and_extra_in_buffer(
+            buffer,
+            packet_data,
+            expected_remaining_data,
+            too_short_buffer_for_extra_data="error",
+        )
+        with pytest.raises(IncrementalDeserializeError) as exc_info:
+            consumer.send(nbytes)
+        exception = exc_info.value
+
+        # Assert
+        mock_deserialize_func.assert_called_once_with(packet_data)
+        assert exception.__cause__ is mock_deserialize_func.side_effect
+        assert exception.remaining_data == expected_remaining_data
+        assert exception.error_info is mocker.sentinel.error_info
+
 
 class _FileBasedPacketSerializerForTest(FileBasedPacketSerializer[Any]):
     def dump_to_file(self, packet: Any, file: IO[bytes]) -> None:
@@ -641,6 +774,12 @@ class TestFileBasedPacketSerializer:
     @staticmethod
     def mock_load_from_file_func(mocker: MockerFixture) -> MagicMock:
         return mocker.patch.object(_FileBasedPacketSerializerForTest, "load_from_file")
+
+    @pytest.fixture(params=["data", "buffer"])
+    @staticmethod
+    def incremental_deserialize_mode(request: pytest.FixtureRequest) -> str:
+        assert request.param in ("data", "buffer")
+        return request.param
 
     def test____properties____right_values(self, debug_mode: bool) -> None:
         # Arrange
@@ -813,6 +952,7 @@ class TestFileBasedPacketSerializer:
 
     def test____incremental_deserialize____load_from_file____read_all(
         self,
+        incremental_deserialize_mode: Literal["data", "buffer"],
         mock_load_from_file_func: MagicMock,
         mocker: MockerFixture,
     ) -> None:
@@ -825,11 +965,19 @@ class TestFileBasedPacketSerializer:
         mock_load_from_file_func.side_effect = side_effect
 
         # Act
-        consumer = serializer.incremental_deserialize()
-        next(consumer)
-        with pytest.raises(StopIteration) as exc_info:
-            consumer.send(b"data")
-        packet, remaining_data = exc_info.value.value
+        remaining_data: ReadableBuffer
+        match incremental_deserialize_mode:
+            case "data":
+                data_consumer = serializer.incremental_deserialize()
+                next(data_consumer)
+                packet, remaining_data = send_return(data_consumer, b"data")
+            case "buffer":
+                buffer = serializer.create_deserializer_buffer(1024)
+                buffered_consumer = serializer.buffered_incremental_deserialize(buffer)
+                next(buffered_consumer)
+                packet, remaining_data = send_return(buffered_consumer, write_in_buffer(buffer, b"data"))
+            case _:
+                pytest.fail("Invalid fixture argument")
 
         # Assert
         mock_load_from_file_func.assert_called_once_with(mocker.ANY)
@@ -838,6 +986,7 @@ class TestFileBasedPacketSerializer:
 
     def test____incremental_deserialize____load_from_file____partial_read(
         self,
+        incremental_deserialize_mode: Literal["data", "buffer"],
         mock_load_from_file_func: MagicMock,
         mocker: MockerFixture,
     ) -> None:
@@ -850,11 +999,19 @@ class TestFileBasedPacketSerializer:
         mock_load_from_file_func.side_effect = side_effect
 
         # Act
-        consumer = serializer.incremental_deserialize()
-        next(consumer)
-        with pytest.raises(StopIteration) as exc_info:
-            consumer.send(b"data")
-        packet, remaining_data = exc_info.value.value
+        remaining_data: ReadableBuffer
+        match incremental_deserialize_mode:
+            case "data":
+                data_consumer = serializer.incremental_deserialize()
+                next(data_consumer)
+                packet, remaining_data = send_return(data_consumer, b"data")
+            case "buffer":
+                buffer = serializer.create_deserializer_buffer(1024)
+                buffered_consumer = serializer.buffered_incremental_deserialize(buffer)
+                next(buffered_consumer)
+                packet, remaining_data = send_return(buffered_consumer, write_in_buffer(buffer, b"data"))
+            case _:
+                pytest.fail("Invalid fixture argument")
 
         # Assert
         mock_load_from_file_func.assert_called_once_with(mocker.ANY)
@@ -863,6 +1020,7 @@ class TestFileBasedPacketSerializer:
 
     def test____incremental_deserialize____load_from_file____insufficient_read(
         self,
+        incremental_deserialize_mode: Literal["data", "buffer"],
         mock_load_from_file_func: MagicMock,
         mocker: MockerFixture,
     ) -> None:
@@ -878,14 +1036,25 @@ class TestFileBasedPacketSerializer:
         mock_load_from_file_func.side_effect = side_effect
 
         # Act
-        consumer = serializer.incremental_deserialize()
-        next(consumer)
-        consumer.send(b"d")
-        consumer.send(b"a")
-        consumer.send(b"t")
-        with pytest.raises(StopIteration) as exc_info:
-            consumer.send(b"a")
-        packet, remaining_data = exc_info.value.value
+        remaining_data: ReadableBuffer
+        match incremental_deserialize_mode:
+            case "data":
+                data_consumer = serializer.incremental_deserialize()
+                next(data_consumer)
+                data_consumer.send(b"d")
+                data_consumer.send(b"a")
+                data_consumer.send(b"t")
+                packet, remaining_data = send_return(data_consumer, b"a")
+            case "buffer":
+                buffer = serializer.create_deserializer_buffer(1024)
+                buffered_consumer = serializer.buffered_incremental_deserialize(buffer)
+                next(buffered_consumer)
+                buffered_consumer.send(write_in_buffer(buffer, b"d"))
+                buffered_consumer.send(write_in_buffer(buffer, b"a"))
+                buffered_consumer.send(write_in_buffer(buffer, b"t"))
+                packet, remaining_data = send_return(buffered_consumer, write_in_buffer(buffer, b"a"))
+            case _:
+                pytest.fail("Invalid fixture argument")
 
         # Assert
         assert len(mock_load_from_file_func.call_args_list) == 4
@@ -896,6 +1065,7 @@ class TestFileBasedPacketSerializer:
     def test____incremental_deserialize____load_from_file____translate_given_exceptions(
         self,
         give_as_tuple: bool,
+        incremental_deserialize_mode: Literal["data", "buffer"],
         mock_load_from_file_func: MagicMock,
         debug_mode: bool,
     ) -> None:
@@ -923,13 +1093,27 @@ class TestFileBasedPacketSerializer:
         mock_load_from_file_func.side_effect = side_effect
 
         # Act
-        consumer = serializer.incremental_deserialize()
-        next(consumer)
-        consumer.send(b"d")
-        consumer.send(b"a")
-        consumer.send(b"t")
-        with pytest.raises(IncrementalDeserializeError) as exc_info:
-            consumer.send(b"a")
+        match incremental_deserialize_mode:
+            case "data":
+                data_consumer = serializer.incremental_deserialize()
+                next(data_consumer)
+                data_consumer.send(b"d")
+                data_consumer.send(b"a")
+                data_consumer.send(b"t")
+                with pytest.raises(IncrementalDeserializeError) as exc_info:
+                    data_consumer.send(b"a")
+            case "buffer":
+                buffer = serializer.create_deserializer_buffer(1024)
+                buffered_consumer = serializer.buffered_incremental_deserialize(buffer)
+                next(buffered_consumer)
+                buffered_consumer.send(write_in_buffer(buffer, b"d"))
+                buffered_consumer.send(write_in_buffer(buffer, b"a"))
+                buffered_consumer.send(write_in_buffer(buffer, b"t"))
+                with pytest.raises(IncrementalDeserializeError) as exc_info:
+                    buffered_consumer.send(write_in_buffer(buffer, b"a"))
+            case _:
+                pytest.fail("Invalid fixture argument")
+
         exception = exc_info.value
 
         # Assert

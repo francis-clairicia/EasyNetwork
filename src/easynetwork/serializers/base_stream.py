@@ -25,13 +25,16 @@ __all__ = [
 from abc import abstractmethod
 from collections.abc import Generator
 from io import BytesIO
-from typing import IO, Any, final
+from typing import IO, TYPE_CHECKING, Any, final
 
 from .._typevars import _DTOPacketT
 from ..exceptions import DeserializeError, IncrementalDeserializeError
 from ..lowlevel.constants import _DEFAULT_LIMIT
-from .abc import AbstractIncrementalPacketSerializer
-from .tools import GeneratorStreamReader
+from .abc import AbstractIncrementalPacketSerializer, BufferedIncrementalPacketSerializer
+from .tools import GeneratorStreamReader, _wrap_generic_buffered_incremental_deserialize, _wrap_generic_incremental_deserialize
+
+if TYPE_CHECKING:
+    from _typeshed import ReadableBuffer
 
 
 class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_DTOPacketT]):
@@ -163,7 +166,7 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_DTOPack
         return self.__debug
 
 
-class FixedSizePacketSerializer(AbstractIncrementalPacketSerializer[_DTOPacketT]):
+class FixedSizePacketSerializer(BufferedIncrementalPacketSerializer[_DTOPacketT, memoryview]):
     """
     A base class for stream protocols in which the packets are of a fixed size.
     """
@@ -212,9 +215,12 @@ class FixedSizePacketSerializer(AbstractIncrementalPacketSerializer[_DTOPacketT]
         yield data
 
     @abstractmethod
-    def deserialize(self, data: bytes, /) -> _DTOPacketT:
+    def deserialize(self, data: bytes | memoryview, /) -> _DTOPacketT:
         """
         See :meth:`.AbstractPacketSerializer.deserialize` documentation.
+
+        Warning:
+            `data` can be a :class:`memoryview`.
         """
         raise NotImplementedError
 
@@ -245,6 +251,46 @@ class FixedSizePacketSerializer(AbstractIncrementalPacketSerializer[_DTOPacketT]
             del data
         return packet, remainder
 
+    @final
+    def create_deserializer_buffer(self, sizehint: int, /) -> memoryview:
+        """
+        See :meth:`.BufferedIncrementalPacketSerializer.buffered_incremental_deserialize` documentation for details.
+        """
+        bufsize: int = max(self.__size, sizehint)
+        return memoryview(bytearray(bufsize))
+
+    @final
+    def buffered_incremental_deserialize(self, buffer: memoryview, /) -> Generator[int, int, tuple[_DTOPacketT, memoryview]]:
+        """
+        Yields until there is enough data and calls :meth:`deserialize`.
+
+        See :meth:`.BufferedIncrementalPacketSerializer.buffered_incremental_deserialize` documentation for details.
+
+        Raises:
+            IncrementalDeserializeError: :meth:`deserialize` raised :exc:`.DeserializeError`.
+            Exception: Any error raised by :meth:`deserialize`.
+        """
+        packet_size: int = self.__size
+        assert len(buffer) >= packet_size  # nosec assert_used
+
+        nread: int = 0
+        while nread < packet_size:
+            nread += yield nread
+
+        data = buffer[:packet_size]
+        remainder = buffer[packet_size:nread]
+        del buffer
+
+        try:
+            packet = self.deserialize(data)
+        except DeserializeError as exc:
+            raise IncrementalDeserializeError(
+                f"Error when deserializing data: {exc}",
+                remaining_data=remainder,
+                error_info=exc.error_info,
+            ) from exc
+        return packet, remainder
+
     @property
     @final
     def packet_size(self) -> int:
@@ -262,7 +308,7 @@ class FixedSizePacketSerializer(AbstractIncrementalPacketSerializer[_DTOPacketT]
         return self.__debug
 
 
-class FileBasedPacketSerializer(AbstractIncrementalPacketSerializer[_DTOPacketT]):
+class FileBasedPacketSerializer(BufferedIncrementalPacketSerializer[_DTOPacketT, memoryview]):
     """
     Base class for APIs requiring a :std:term:`file object` for serialization/deserialization.
     """
@@ -398,6 +444,32 @@ class FileBasedPacketSerializer(AbstractIncrementalPacketSerializer[_DTOPacketT]
             IncrementalDeserializeError: :meth:`load_from_file` raised an error that matches `expected_load_error`.
             Exception: Any other error raised by :meth:`load_from_file`.
         """
+        return (yield from _wrap_generic_incremental_deserialize(self.__generic_incremental_deserialize))
+
+    @final
+    def create_deserializer_buffer(self, sizehint: int, /) -> memoryview:
+        """
+        See :meth:`.BufferedIncrementalPacketSerializer.create_deserializer_buffer` documentation for details.
+        """
+        return memoryview(bytearray(sizehint))
+
+    @final
+    def buffered_incremental_deserialize(self, buffer: memoryview, /) -> Generator[None, int, tuple[_DTOPacketT, ReadableBuffer]]:
+        """
+        Calls :meth:`load_from_file` and returns the result.
+
+        See :meth:`.BufferedIncrementalPacketSerializer.buffered_incremental_deserialize` documentation for details.
+
+        Note:
+            The generator will always :keyword:`yield` if :meth:`load_from_file` raises :class:`EOFError`.
+
+        Raises:
+            IncrementalDeserializeError: :meth:`load_from_file` raised an error that matches `expected_load_error`.
+            Exception: Any other error raised by :meth:`load_from_file`.
+        """
+        return (yield from _wrap_generic_buffered_incremental_deserialize(buffer, self.__generic_incremental_deserialize))
+
+    def __generic_incremental_deserialize(self) -> Generator[None, ReadableBuffer, tuple[_DTOPacketT, ReadableBuffer]]:
         with BytesIO((yield)) as buffer:
             initial: bool = True
             while True:

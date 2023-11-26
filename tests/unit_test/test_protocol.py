@@ -16,6 +16,8 @@ from easynetwork.serializers.abc import AbstractIncrementalPacketSerializer, Buf
 
 import pytest
 
+from ..tools import send_return
+
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
 
@@ -353,9 +355,7 @@ class TestStreamProtocol:
         # Act
         gen = protocol_without_converter.build_packet_from_chunks()
         next(gen)
-        with pytest.raises(StopIteration) as exc_info:
-            gen.send(mocker.sentinel.chunk)
-        packet, remaining_data = exc_info.value.value
+        packet, remaining_data = send_return(gen, mocker.sentinel.chunk)
 
         # Assert
         mock_incremental_deserialize_func.assert_called_once_with()
@@ -378,9 +378,7 @@ class TestStreamProtocol:
         # Act
         gen = protocol_with_converter.build_packet_from_chunks()
         next(gen)
-        with pytest.raises(StopIteration) as exc_info:
-            gen.send(mocker.sentinel.chunk)
-        packet, remaining_data = exc_info.value.value
+        packet, remaining_data = send_return(gen, mocker.sentinel.chunk)
 
         # Assert
         mock_incremental_deserialize_func.assert_called_once_with()
@@ -593,9 +591,7 @@ class TestBufferedStreamReceiver:
         assert next(gen) == 0
         nbytes = 34
         buffer[:nbytes] = b"a" * nbytes
-        with pytest.raises(StopIteration) as exc_info:
-            gen.send(nbytes)
-        packet, remaining_data = exc_info.value.value
+        packet, remaining_data = send_return(gen, nbytes)
 
         # Assert
         mock_incremental_deserialize_func.assert_called_once_with(buffer)
@@ -621,9 +617,7 @@ class TestBufferedStreamReceiver:
         assert next(gen) == 0
         nbytes = 34
         buffer[:nbytes] = b"a" * nbytes
-        with pytest.raises(StopIteration) as exc_info:
-            gen.send(nbytes)
-        packet, remaining_data = exc_info.value.value
+        packet, remaining_data = send_return(gen, nbytes)
 
         # Assert
         mock_incremental_deserialize_func.assert_called_once_with(buffer)

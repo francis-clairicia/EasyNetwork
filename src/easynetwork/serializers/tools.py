@@ -16,11 +16,21 @@
 
 from __future__ import annotations
 
-__all__ = ["GeneratorStreamReader"]
+__all__ = [
+    "GeneratorStreamReader",
+    "_wrap_generic_buffered_incremental_deserialize",
+    "_wrap_generic_incremental_deserialize",
+]
 
-from collections.abc import Generator
+import contextlib
+from collections.abc import Callable, Generator
+from typing import TYPE_CHECKING
 
+from .._typevars import _DTOPacketT
 from ..exceptions import LimitOverrunError
+
+if TYPE_CHECKING:
+    from _typeshed import ReadableBuffer
 
 
 class GeneratorStreamReader:
@@ -193,3 +203,26 @@ class GeneratorStreamReader:
         self.__buffer = self.__buffer[offset:]
 
         return data
+
+
+def _wrap_generic_incremental_deserialize(
+    func: Callable[[], Generator[None, ReadableBuffer, tuple[_DTOPacketT, ReadableBuffer]]],
+) -> Generator[None, bytes, tuple[_DTOPacketT, bytes]]:
+    packet, remainder = yield from func()
+    # remainder is not copied if it is already a "bytes" object
+    remainder = bytes(remainder)
+    return packet, remainder
+
+
+def _wrap_generic_buffered_incremental_deserialize(
+    buffer: memoryview,
+    func: Callable[[], Generator[None, ReadableBuffer, tuple[_DTOPacketT, ReadableBuffer]]],
+) -> Generator[None, int, tuple[_DTOPacketT, ReadableBuffer]]:
+    next(gen := func())
+    with contextlib.closing(gen):
+        while True:
+            nbytes: int = yield
+            try:
+                gen.send(buffer[:nbytes])
+            except StopIteration as exc:
+                return exc.value

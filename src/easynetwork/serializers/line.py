@@ -129,7 +129,7 @@ class StringLineSerializer(AutoSeparatedPacketSerializer[str]):
 
         Raises:
             DeserializeError: :class:`UnicodeError` raised when decoding `data`.
-            DeserializeError: Newline found in `data` (excluding those at the end of the sequence).
+            DeserializeError: Newline found in `data` (except those at the end of the sequence).
 
         Returns:
             the string.

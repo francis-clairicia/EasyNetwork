@@ -4,9 +4,12 @@ import asyncio
 import sys
 import time
 from collections.abc import Generator
-from typing import Any, TypeVar, final
+from typing import TYPE_CHECKING, Any, Literal, TypeAlias, TypeVar, assert_never, final
 
 import pytest
+
+if TYPE_CHECKING:
+    from _typeshed import WriteableBuffer
 
 _T_contra = TypeVar("_T_contra", contravariant=True)
 _V_co = TypeVar("_V_co", covariant=True)
@@ -65,3 +68,61 @@ def is_proactor_event_loop(event_loop: asyncio.AbstractEventLoop) -> bool:
     except AttributeError:
         return False
     return isinstance(event_loop, ProactorEventLoop)
+
+
+_TooShortBufferBehavior: TypeAlias = Literal["error", "fill_at_most", "xfail"]
+
+
+def write_in_buffer(
+    buffer: WriteableBuffer,
+    to_write: bytes,
+    *,
+    start_pos: int | None = None,
+    too_short_buffer: _TooShortBufferBehavior = "error",
+) -> int:
+    nbytes = len(to_write)
+    with memoryview(buffer) as buffer, buffer[start_pos or 0 :] as buffer:
+        if len(buffer) >= nbytes:
+            buffer[:nbytes] = to_write
+        else:
+            match too_short_buffer:
+                case "error":
+                    raise ValueError("Buffer is too short to contain the chunk to write.")
+                case "xfail":
+                    pytest.xfail("Buffer is too short to contain the chunk to write.")
+                case "fill_at_most":
+                    nbytes = len(buffer)
+                    buffer[:] = memoryview(to_write)[:nbytes]
+                case _:
+                    assert_never(too_short_buffer)
+    return nbytes
+
+
+def write_data_and_extra_in_buffer(
+    buffer: WriteableBuffer,
+    complete_data: bytes,
+    extra_data: bytes,
+    *,
+    start_pos: int | None = None,
+    too_short_buffer_for_complete_data: _TooShortBufferBehavior = "error",
+    too_short_buffer_for_extra_data: _TooShortBufferBehavior = "fill_at_most",
+) -> tuple[int, bytes]:
+    if start_pos is None:
+        start_pos = 0
+
+    complete_data_nbytes = write_in_buffer(
+        buffer,
+        complete_data,
+        start_pos=start_pos,
+        too_short_buffer=too_short_buffer_for_complete_data,
+    )
+    if not extra_data:
+        return complete_data_nbytes, extra_data
+
+    extra_data_nbytes = write_in_buffer(
+        buffer,
+        extra_data,
+        start_pos=start_pos + complete_data_nbytes,
+        too_short_buffer=too_short_buffer_for_extra_data,
+    )
+    return complete_data_nbytes + extra_data_nbytes, extra_data[:extra_data_nbytes]

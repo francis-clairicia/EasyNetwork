@@ -4,15 +4,22 @@ import random
 import weakref
 from abc import ABCMeta
 from collections.abc import Callable
-from typing import Any, final
+from typing import TYPE_CHECKING, Any, final
 
 from easynetwork.exceptions import DeserializeError, IncrementalDeserializeError
 from easynetwork.lowlevel._utils import iter_bytes
-from easynetwork.serializers.abc import AbstractIncrementalPacketSerializer, AbstractPacketSerializer
+from easynetwork.serializers.abc import (
+    AbstractIncrementalPacketSerializer,
+    AbstractPacketSerializer,
+    BufferedIncrementalPacketSerializer,
+)
 
 import pytest
 
-from ...tools import send_return
+from ...tools import send_return, write_data_and_extra_in_buffer, write_in_buffer
+
+if TYPE_CHECKING:
+    from _typeshed import WriteableBuffer
 
 
 class BaseTestSerializer(metaclass=ABCMeta):
@@ -204,7 +211,6 @@ class BaseTestIncrementalSerializer(BaseTestSerializer):
         packet_to_serialize: Any,
     ) -> None:
         # Arrange
-
         consumer = serializer_for_deserialization.incremental_deserialize()
         next(consumer)
 
@@ -241,6 +247,137 @@ class BaseTestIncrementalSerializer(BaseTestSerializer):
                 consumer.send(invalid_partial_data + invalid_partial_data_extra_data)
             else:
                 consumer.send(invalid_partial_data)
+        exception = exc_info.value
+
+        # Assert
+        assert exception.remaining_data == invalid_partial_data_expected_extra_data
+
+
+class BaseTestBufferedIncrementalSerializer(BaseTestIncrementalSerializer):
+    def test____fixture____consistency____incremental_serializer(
+        self,
+        serializer_for_serialization: AbstractIncrementalPacketSerializer[Any],
+        serializer_for_deserialization: AbstractIncrementalPacketSerializer[Any],
+    ) -> None:
+        super().test____fixture____consistency____incremental_serializer(
+            serializer_for_serialization=serializer_for_serialization,
+            serializer_for_deserialization=serializer_for_deserialization,
+        )
+        assert isinstance(serializer_for_serialization, BufferedIncrementalPacketSerializer)
+        assert isinstance(serializer_for_deserialization, BufferedIncrementalPacketSerializer)
+
+    def test____buffered_incremental_deserialize____one_shot_chunk(
+        self,
+        serializer_for_deserialization: BufferedIncrementalPacketSerializer[Any, WriteableBuffer],
+        complete_data_for_incremental_deserialize: bytes,
+        packet_to_serialize: Any,
+    ) -> None:
+        # Arrange
+        buffer = serializer_for_deserialization.create_deserializer_buffer(len(complete_data_for_incremental_deserialize))
+        consumer = serializer_for_deserialization.buffered_incremental_deserialize(buffer)
+        start_idx = next(consumer)
+        nbytes = write_in_buffer(
+            buffer,
+            complete_data_for_incremental_deserialize,
+            start_pos=start_idx,
+            too_short_buffer="xfail",
+        )
+
+        # Act
+        packet, remaining_data = send_return(consumer, nbytes)
+
+        # Assert
+        assert memoryview(remaining_data) == b""
+        assert type(packet) is type(packet_to_serialize)
+        assert packet == packet_to_serialize
+
+    def test____buffered_incremental_deserialize____with_remaining_data(
+        self,
+        serializer_for_deserialization: BufferedIncrementalPacketSerializer[Any, WriteableBuffer],
+        complete_data_for_incremental_deserialize: bytes,
+        packet_to_serialize: Any,
+        incremental_extra_data: bytes,
+    ) -> None:
+        # Arrange
+        assert len(incremental_extra_data) > 0
+        buffer = serializer_for_deserialization.create_deserializer_buffer(
+            len(complete_data_for_incremental_deserialize) + len(incremental_extra_data) + 1024
+        )
+        consumer = serializer_for_deserialization.buffered_incremental_deserialize(buffer)
+        start_idx = next(consumer)
+        nbytes, expected_remaining_data = write_data_and_extra_in_buffer(
+            buffer,
+            complete_data_for_incremental_deserialize,
+            incremental_extra_data,
+            start_pos=start_idx,
+            too_short_buffer_for_complete_data="xfail",
+        )
+        assert len(expected_remaining_data) > 0
+        assert incremental_extra_data.startswith(expected_remaining_data)
+
+        # Act
+        packet, remaining_data = send_return(consumer, nbytes)
+
+        # Assert
+        assert memoryview(remaining_data) == expected_remaining_data
+        assert type(packet) is type(packet_to_serialize)
+        assert packet == packet_to_serialize
+
+    def test____buffered_incremental_deserialize____give_chunk_byte_per_byte(
+        self,
+        serializer_for_deserialization: BufferedIncrementalPacketSerializer[Any, WriteableBuffer],
+        complete_data_for_incremental_deserialize: bytes,
+        packet_to_serialize: Any,
+    ) -> None:
+        # Arrange
+        buffer = serializer_for_deserialization.create_deserializer_buffer(len(complete_data_for_incremental_deserialize))
+        consumer = serializer_for_deserialization.buffered_incremental_deserialize(buffer)
+        start_idx = next(consumer)
+
+        # Act
+        with pytest.raises(StopIteration) as exc_info:
+            # The generator can stop at any moment (no need to go to the last byte)
+            # However, the remaining data returned should be empty
+            for chunk in iter_bytes(complete_data_for_incremental_deserialize):
+                nbytes = write_in_buffer(buffer, chunk, start_pos=start_idx)
+                assert nbytes == 1
+                start_idx = consumer.send(nbytes)
+
+        packet, remaining_data = exc_info.value.value
+
+        # Assert
+        assert memoryview(remaining_data) == b""
+        assert type(packet) is type(packet_to_serialize)
+        assert packet == packet_to_serialize
+
+    def test____buffered_incremental_deserialize____invalid_data(
+        self,
+        serializer_for_deserialization: BufferedIncrementalPacketSerializer[Any, WriteableBuffer],
+        invalid_partial_data: bytes,
+        invalid_partial_data_extra_data: bytes,
+        invalid_partial_data_expected_extra_data: bytes,
+    ) -> None:
+        # Arrange
+        buffer = serializer_for_deserialization.create_deserializer_buffer(
+            len(invalid_partial_data) + len(invalid_partial_data_extra_data) + 1024
+        )
+        consumer = serializer_for_deserialization.buffered_incremental_deserialize(buffer)
+        start_idx = next(consumer)
+        nbytes, expected_remaining_data = write_data_and_extra_in_buffer(
+            buffer,
+            invalid_partial_data,
+            invalid_partial_data_extra_data,
+            start_pos=start_idx,
+            too_short_buffer_for_complete_data="xfail",
+        )
+        invalid_partial_data_expected_extra_data = invalid_partial_data_expected_extra_data.replace(
+            invalid_partial_data_extra_data, expected_remaining_data, 1
+        )
+        del expected_remaining_data
+
+        # Act
+        with pytest.raises(IncrementalDeserializeError) as exc_info:
+            consumer.send(nbytes)
         exception = exc_info.value
 
         # Assert
