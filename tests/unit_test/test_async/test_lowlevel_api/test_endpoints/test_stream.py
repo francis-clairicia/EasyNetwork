@@ -101,7 +101,6 @@ class TestAsyncStreamEndpoint:
         mock_buffered_stream_receiver.build_packet_from_buffer.side_effect = build_packet_from_buffer_side_effect
         return mock_buffered_stream_receiver
 
-    # @pytest.fixture(params=["data"])
     @pytest.fixture(params=["data", "buffer"])
     @staticmethod
     def stream_protocol_mode(request: pytest.FixtureRequest) -> str:
@@ -420,7 +419,7 @@ class TestAsyncStreamEndpoint:
         packet: Any = await endpoint.recv_packet()
 
         # Assert
-        assert mock_stream_transport.recv_into.await_count == 2
+        assert mock_stream_transport.recv_into.await_args_list == [mocker.call(mocker.ANY) for _ in range(2)]
         assert consumer_buffer_updated.call_args_list == [
             mocker.call(mocker.ANY, len(b"pac")),
             mocker.call(mocker.ANY, len(b"ket\n")),

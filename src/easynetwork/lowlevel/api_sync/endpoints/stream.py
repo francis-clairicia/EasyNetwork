@@ -18,10 +18,11 @@ from __future__ import annotations
 
 __all__ = ["StreamEndpoint"]
 
+import dataclasses
 import errno as _errno
 import math
 from collections.abc import Callable, Mapping
-from typing import Any, Generic, TypeGuard
+from typing import Any, Generic
 
 from .... import protocol as protocol_module
 from ...._typevars import _ReceivedPacketT, _SentPacketT
@@ -37,14 +38,9 @@ class StreamEndpoint(typed_attr.TypedAttributeProvider, Generic[_SentPacketT, _R
 
     __slots__ = (
         "__transport",
-        "__is_read_transport",
-        "__is_write_transport",
-        "__is_bidirectional_transport",
-        "__producer",
-        "__consumer",
-        "__max_recv_size",
+        "__sender",
+        "__receiver",
         "__eof_sent",
-        "__eof_reached",
         "__weakref__",
     )
 
@@ -66,15 +62,21 @@ class StreamEndpoint(typed_attr.TypedAttributeProvider, Generic[_SentPacketT, _R
         if not isinstance(max_recv_size, int) or max_recv_size <= 0:
             raise ValueError("'max_recv_size' must be a strictly positive integer")
 
-        self.__producer: _stream.StreamDataProducer[_SentPacketT] = _stream.StreamDataProducer(protocol)
-        self.__consumer: _stream.StreamDataConsumer[_ReceivedPacketT] = _stream.StreamDataConsumer(protocol)
-        self.__is_read_transport: bool = isinstance(transport, transports.StreamReadTransport)
-        self.__is_write_transport: bool = isinstance(transport, transports.StreamWriteTransport)
-        self.__is_bidirectional_transport: bool = isinstance(transport, transports.StreamTransport)
+        self.__sender: _DataSenderImpl[_SentPacketT] | None = None
+        if isinstance(transport, transports.StreamWriteTransport):
+            self.__sender = _DataSenderImpl(transport, _stream.StreamDataProducer(protocol))
+
+        self.__receiver: _DataReceiverImpl[_ReceivedPacketT] | _BufferedReceiverImpl[_ReceivedPacketT] | None = None
+        try:
+            if not isinstance(transport, transports.BufferedStreamReadTransport):
+                raise UnsupportedOperation
+            self.__receiver = _BufferedReceiverImpl(transport, _stream.BufferedStreamDataConsumer(protocol, max_recv_size))
+        except UnsupportedOperation:
+            if isinstance(transport, transports.StreamReadTransport):
+                self.__receiver = _DataReceiverImpl(transport, _stream.StreamDataConsumer(protocol), max_recv_size)
+
         self.__transport: transports.StreamReadTransport | transports.StreamWriteTransport = transport
-        self.__max_recv_size: int = max_recv_size
         self.__eof_sent: bool = False
-        self.__eof_reached: bool = False
 
     def __del__(self) -> None:  # pragma: no cover
         try:
@@ -97,8 +99,10 @@ class StreamEndpoint(typed_attr.TypedAttributeProvider, Generic[_SentPacketT, _R
         Closes the endpoint.
         """
         self.__transport.close()
-        self.__consumer.clear()
-        self.__producer.clear()
+        if self.__receiver is not None:
+            self.__receiver.clear()
+        if self.__sender is not None:
+            self.__sender.clear()
 
     def send_packet(self, packet: _SentPacketT, *, timeout: float | None = None) -> None:
         """
@@ -123,17 +127,15 @@ class StreamEndpoint(typed_attr.TypedAttributeProvider, Generic[_SentPacketT, _R
         if self.__eof_sent:
             raise RuntimeError("send_eof() has been called earlier")
 
+        sender = self.__sender
+
+        if sender is None:
+            raise UnsupportedOperation("transport does not support sending data")
+
         if timeout is None:
             timeout = math.inf
 
-        transport = self.__transport
-        producer = self.__producer
-
-        if not self.__supports_write(transport):
-            raise UnsupportedOperation("transport does not support sending data")
-
-        producer.enqueue(packet)
-        transport.send_all_from_iterable(producer, timeout)
+        return sender.send(packet, timeout)
 
     def send_eof(self) -> None:
         """
@@ -146,15 +148,14 @@ class StreamEndpoint(typed_attr.TypedAttributeProvider, Generic[_SentPacketT, _R
         if self.__eof_sent:
             return
 
-        transport = self.__transport
-        producer = self.__producer
+        sender = self.__sender
 
-        if not self.__supports_sending_eof(transport):
+        if sender is None or not isinstance(sender.transport, transports.StreamTransport):
             raise UnsupportedOperation("transport does not support sending EOF")
 
-        transport.send_eof()
+        sender.transport.send_eof()
         self.__eof_sent = True
-        producer.clear()
+        sender.clear()
 
     def recv_packet(self, *, timeout: float | None = None) -> _ReceivedPacketT:
         """
@@ -173,37 +174,75 @@ class StreamEndpoint(typed_attr.TypedAttributeProvider, Generic[_SentPacketT, _R
         Returns:
             the received packet.
         """
+        receiver = self.__receiver
+
+        if receiver is None:
+            raise UnsupportedOperation("transport does not support receiving data")
+
         if timeout is None:
             timeout = math.inf
 
-        transport = self.__transport
-        consumer = self.__consumer
+        return receiver.receive(timeout)
 
-        if not self.__supports_read(transport):
-            raise UnsupportedOperation("transport does not support receiving data")
+    @property
+    def max_recv_size(self) -> int:
+        """Read buffer size. Read-only attribute."""
+        receiver = self.__receiver
+        if receiver is None:
+            return 0
+        return receiver.max_recv_size
+
+    @property
+    def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
+        return self.__transport.extra_attributes
+
+
+@dataclasses.dataclass(slots=True)
+class _DataSenderImpl(Generic[_SentPacketT]):
+    transport: transports.StreamWriteTransport
+    producer: _stream.StreamDataProducer[_SentPacketT]
+
+    def clear(self) -> None:
+        self.producer.clear()
+
+    def send(self, packet: _SentPacketT, timeout: float) -> None:
+        self.producer.enqueue(packet)
+        return self.transport.send_all_from_iterable(self.producer, timeout)
+
+
+@dataclasses.dataclass(slots=True)
+class _DataReceiverImpl(Generic[_ReceivedPacketT]):
+    transport: transports.StreamReadTransport
+    consumer: _stream.StreamDataConsumer[_ReceivedPacketT]
+    max_recv_size: int
+    _eof_reached: bool = dataclasses.field(init=False, default=False)
+
+    def clear(self) -> None:
+        self.consumer.clear()
+
+    def receive(self, timeout: float) -> _ReceivedPacketT:
+        transport = self.transport
+        consumer = self.consumer
 
         try:
             return next(consumer)  # If there is enough data from last call to create a packet, return immediately
         except StopIteration:
             pass
 
-        if self.__eof_reached:
+        if self._eof_reached:
             raise EOFError("end-of-stream")
 
-        bufsize: int = self.__max_recv_size
+        bufsize: int = self.max_recv_size
 
         while True:
             with _utils.ElapsedTime() as elapsed:
                 chunk: bytes = transport.recv(bufsize, timeout)
             if not chunk:
-                self.__eof_reached = True
+                self._eof_reached = True
                 raise EOFError("end-of-stream")
-            try:
-                consumer.feed(chunk)
-            finally:
-                del chunk
-            with consumer.get_buffer() as buffer:
-                buffer_not_full: bool = buffer.nbytes < bufsize
+            consumer.feed(chunk)
+            buffer_not_full: bool = len(chunk) < bufsize
+            del chunk
             try:
                 return next(consumer)
             except StopIteration:
@@ -214,20 +253,51 @@ class StreamEndpoint(typed_attr.TypedAttributeProvider, Generic[_SentPacketT, _R
         # Loop break
         raise _utils.error_from_errno(_errno.ETIMEDOUT)
 
-    def __supports_read(self, transport: transports.BaseTransport) -> TypeGuard[transports.StreamReadTransport]:
-        return self.__is_read_transport
 
-    def __supports_write(self, transport: transports.BaseTransport) -> TypeGuard[transports.StreamWriteTransport]:
-        return self.__is_write_transport
-
-    def __supports_sending_eof(self, transport: transports.BaseTransport) -> TypeGuard[transports.StreamTransport]:
-        return self.__is_bidirectional_transport
+@dataclasses.dataclass(slots=True)
+class _BufferedReceiverImpl(Generic[_ReceivedPacketT]):
+    transport: transports.BufferedStreamReadTransport
+    consumer: _stream.BufferedStreamDataConsumer[_ReceivedPacketT]
+    _eof_reached: bool = dataclasses.field(init=False, default=False)
 
     @property
     def max_recv_size(self) -> int:
-        """Read buffer size. Read-only attribute."""
-        return self.__max_recv_size
+        # Ensure buffer is allocated
+        self.consumer.get_write_buffer()
+        return self.consumer.buffer_size
 
-    @property
-    def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
-        return self.__transport.extra_attributes
+    def clear(self) -> None:
+        self.consumer.clear()
+
+    def receive(self, timeout: float) -> _ReceivedPacketT:
+        transport = self.transport
+        consumer = self.consumer
+
+        try:
+            return next(consumer)  # If there is enough data from last call to create a packet, return immediately
+        except StopIteration:
+            pass
+
+        if self._eof_reached:
+            raise EOFError("end-of-stream")
+
+        while True:
+            with memoryview(consumer.get_write_buffer()) as buffer:
+                bufsize: int = buffer.nbytes
+                with _utils.ElapsedTime() as elapsed:
+                    nbytes: int = transport.recv_into(buffer, timeout)
+            del buffer
+            if not nbytes:
+                self._eof_reached = True
+                raise EOFError("end-of-stream")
+            consumer.buffer_updated(nbytes)
+            buffer_not_full: bool = nbytes < bufsize
+            try:
+                return next(consumer)
+            except StopIteration:
+                if timeout > 0:
+                    timeout = elapsed.recompute_timeout(timeout)
+                elif buffer_not_full:
+                    break
+        # Loop break
+        raise _utils.error_from_errno(_errno.ETIMEDOUT)
