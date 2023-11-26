@@ -84,7 +84,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         "__socket_proxy",
         "__receive_lock",
         "__send_lock",
-        "__max_recv_size",
+        "__expected_recv_size",
     )
 
     @overload
@@ -275,7 +275,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         else:
             self.__receive_lock = backend.create_lock()
             self.__send_lock = backend.create_lock()
-        self.__max_recv_size: int = max_recv_size
+        self.__expected_recv_size: int = max_recv_size
 
     def __repr__(self) -> str:
         try:
@@ -491,7 +491,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
                 raise self.__closed()
             if self.__endpoint is None:
                 transport, self.__socket_proxy = endpoint_and_proxy
-                self.__endpoint = AsyncStreamEndpoint(transport, self.__protocol, max_recv_size=self.max_recv_size)
+                self.__endpoint = AsyncStreamEndpoint(transport, self.__protocol, max_recv_size=self.__expected_recv_size)
 
         if self.__endpoint.is_closing():
             raise self.__closed()
@@ -541,4 +541,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
     @final
     def max_recv_size(self) -> int:
         """Read buffer size. Read-only attribute."""
-        return self.__max_recv_size
+        endpoint = self.__endpoint
+        if endpoint is None:
+            return self.__expected_recv_size
+        return endpoint.max_recv_size

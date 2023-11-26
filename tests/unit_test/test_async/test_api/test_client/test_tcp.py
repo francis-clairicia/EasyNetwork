@@ -347,9 +347,11 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
 
     @pytest.mark.parametrize("max_recv_size", [None, 1, 2**64], ids=lambda p: f"max_recv_size=={p}")
     @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    @pytest.mark.parametrize("endpoint_connected", [False, True], ids=lambda p: f"endpoint_connected=={p}")
     async def test____dunder_init____max_recv_size____valid_value(
         self,
         request: pytest.FixtureRequest,
+        endpoint_connected: bool,
         max_recv_size: int | None,
         use_socket: bool,
         mock_stream_protocol: MagicMock,
@@ -371,6 +373,8 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
                 protocol=mock_stream_protocol,
                 max_recv_size=max_recv_size,
             )
+        if endpoint_connected:
+            await client.wait_connected()
 
         # Assert
         assert client.max_recv_size == expected_size
