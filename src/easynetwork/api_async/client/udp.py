@@ -331,13 +331,13 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
                 endpoint_and_proxy = await socket_connector.get()
             self.__socket_connector = None
             if endpoint_and_proxy is None:
-                raise ClientClosedError("Client is closing, or is already closed")
-            transport, self.__socket_proxy = endpoint_and_proxy
-            del endpoint_and_proxy
-            self.__endpoint = AsyncDatagramEndpoint(transport, self.__protocol)
+                raise self.__closed()
+            if self.__endpoint is None:
+                transport, self.__socket_proxy = endpoint_and_proxy
+                self.__endpoint = AsyncDatagramEndpoint(transport, self.__protocol)
 
         if self.__endpoint.is_closing():
-            raise ClientClosedError("Client is closing, or is already closed")
+            raise self.__closed()
         return self.__endpoint
 
     def __get_endpoint_sync(self) -> AsyncDatagramEndpoint[_SentPacketT, _ReceivedPacketT]:
@@ -345,9 +345,9 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
             if self.__socket_connector is not None:
                 raise _utils.error_from_errno(_errno.ENOTSOCK)
             else:
-                raise ClientClosedError("Client is closing, or is already closed")
+                raise self.__closed()
         if self.__endpoint.is_closing():
-            raise ClientClosedError("Client is closing, or is already closed")
+            raise self.__closed()
         return self.__endpoint
 
     @contextlib.contextmanager
@@ -356,8 +356,12 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
             yield
         except OSError as exc:
             if exc.errno in constants.CLOSED_SOCKET_ERRNOS:
-                raise ClientClosedError("Client is closing, or is already closed")
+                raise self.__closed()
             raise
+
+    @staticmethod
+    def __closed() -> ClientClosedError:
+        return ClientClosedError("Client is closing, or is already closed")
 
     @property
     @final
