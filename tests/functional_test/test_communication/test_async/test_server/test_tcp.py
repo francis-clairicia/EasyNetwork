@@ -663,7 +663,14 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
 
     @pytest.mark.parametrize("mute_thrown_exception", [False, True])
     @pytest.mark.parametrize("request_handler", [ErrorInRequestHandler], indirect=True)
-    @pytest.mark.parametrize("serializer", [pytest.param("invalid", id="serializer_crash")], indirect=True)
+    @pytest.mark.parametrize(
+        "incremental_serializer",
+        [
+            pytest.param("invalid", id="serializer_crash"),
+            pytest.param("invalid_buffered", id="buffered_serializer_crash"),
+        ],
+        indirect=True,
+    )
     async def test____serve_forever____internal_error(
         self,
         mute_thrown_exception: bool,
@@ -676,20 +683,23 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         request_handler.mute_thrown_exception = mute_thrown_exception
         reader, writer = await client_factory()
 
-        expected_message = b"RuntimeError: protocol.build_packet_from_chunks() crashed (caused by SystemError: CRASH)\n"
+        expected_messages = {
+            b"RuntimeError: protocol.build_packet_from_buffer() crashed (caused by SystemError: CRASH)\n",
+            b"RuntimeError: protocol.build_packet_from_chunks() crashed (caused by SystemError: CRASH)\n",
+        }
 
         writer.write(b"something\n")
         await asyncio.sleep(0.1)
 
         if mute_thrown_exception:
-            assert await reader.readline() == expected_message
+            assert await reader.readline() in expected_messages
             writer.write(b"something\n")
             await asyncio.sleep(0.1)
-            assert await reader.readline() == expected_message
+            assert await reader.readline() in expected_messages
             assert len(caplog.records) == 0  # After two attempts
         else:
             with pytest.raises(ConnectionResetError):
-                assert await reader.readline() == expected_message
+                assert await reader.readline() in expected_messages
                 assert await reader.read() == b""
                 raise ConnectionResetError
             assert len(caplog.records) == 3

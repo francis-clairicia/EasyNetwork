@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import itertools
 from collections.abc import Generator
 
 from easynetwork.exceptions import DeserializeError, IncrementalDeserializeError
-from easynetwork.serializers.abc import AbstractIncrementalPacketSerializer
+from easynetwork.serializers.abc import AbstractIncrementalPacketSerializer, BufferedIncrementalPacketSerializer
 
 
 class StringSerializer(AbstractIncrementalPacketSerializer[str]):
@@ -52,6 +53,41 @@ class StringSerializer(AbstractIncrementalPacketSerializer[str]):
                 raise IncrementalDeserializeError(str(exc), buffer) from exc
 
 
+class BufferedStringSerializer(StringSerializer, BufferedIncrementalPacketSerializer[str, bytearray]):
+    __slots__ = ()
+
+    def create_deserializer_buffer(self, sizehint: int) -> bytearray:
+        return bytearray(sizehint)
+
+    def buffered_incremental_deserialize(self, write_buffer: bytearray) -> Generator[int, int, tuple[str, bytearray]]:
+        buflen = len(write_buffer)
+        read_buffer = memoryview(write_buffer).toreadonly()
+
+        line_buffer = bytearray()
+
+        LINE_FEED = ord(b"\n")
+
+        while True:
+            consumed: int = 0
+            write_buffer[:] = itertools.repeat(0, buflen)
+
+            while LINE_FEED not in read_buffer[:consumed]:
+                if not read_buffer[consumed:].nbytes:
+                    line_buffer.extend(read_buffer)
+                    write_buffer[:] = itertools.repeat(0, buflen)
+                    consumed = 0
+                consumed += yield consumed
+
+            line_buffer.extend(read_buffer[:consumed])
+            data, line_buffer = line_buffer.split(b"\n", 1)
+            if not data:
+                continue
+            try:
+                return data.decode(encoding=self.encoding), line_buffer
+            except UnicodeError as exc:
+                raise IncrementalDeserializeError(str(exc), line_buffer) from exc
+
+
 class NotGoodStringSerializer(StringSerializer):
     __slots__ = ()
 
@@ -60,4 +96,12 @@ class NotGoodStringSerializer(StringSerializer):
 
     def incremental_deserialize(self) -> Generator[None, bytes, tuple[str, bytes]]:
         yield
+        raise SystemError("CRASH")
+
+
+class NotGoodBufferedStringSerializer(NotGoodStringSerializer, BufferedStringSerializer):
+    __slots__ = ()
+
+    def buffered_incremental_deserialize(self, write_buffer: bytearray) -> Generator[int, int, tuple[str, bytearray]]:
+        yield 0
         raise SystemError("CRASH")

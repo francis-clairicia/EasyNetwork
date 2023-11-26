@@ -358,7 +358,7 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
 
     @pytest.mark.parametrize("mute_thrown_exception", [False, True])
     @pytest.mark.parametrize("request_handler", [ErrorInRequestHandler], indirect=True)
-    @pytest.mark.parametrize("serializer", [pytest.param("invalid", id="serializer_crash")], indirect=True)
+    @pytest.mark.parametrize("one_shot_serializer", [pytest.param("invalid", id="serializer_crash")], indirect=True)
     async def test____serve_forever____internal_error(
         self,
         mute_thrown_exception: bool,
