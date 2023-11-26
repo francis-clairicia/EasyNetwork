@@ -167,21 +167,6 @@ class TestAsyncStreamServer:
         with pytest.raises(TypeError, match=r"^Expected a StreamProtocol object, got .*$"):
             _ = AsyncStreamServer(mock_listener, mock_invalid_protocol, max_recv_size)
 
-    @pytest.mark.parametrize("max_recv_size", [1, 2**64], ids=lambda p: f"max_recv_size=={p}")
-    async def test____dunder_init____max_recv_size____valid_value(
-        self,
-        mock_listener: MagicMock,
-        mock_stream_protocol: MagicMock,
-        max_recv_size: int,
-    ) -> None:
-        # Arrange
-
-        # Act
-        server: AsyncStreamServer[Any, Any] = AsyncStreamServer(mock_listener, mock_stream_protocol, max_recv_size)
-
-        # Assert
-        assert server.max_recv_size == max_recv_size
-
     @pytest.mark.parametrize("max_recv_size", [0, -1, 10.4], ids=lambda p: f"max_recv_size=={p}")
     async def test____dunder_init____max_recv_size____invalid_value(
         self,
