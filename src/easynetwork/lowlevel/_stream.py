@@ -284,6 +284,9 @@ class BufferedStreamDataConsumer(Generic[_ReceivedPacketT]):
         if self.__already_written:
             buffer = buffer[self.__already_written :]
 
+        if not buffer:
+            raise RuntimeError("The start position is set to the end of the buffer")
+
         self.__buffer_view = buffer
         return buffer
 

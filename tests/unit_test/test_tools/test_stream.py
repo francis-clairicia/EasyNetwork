@@ -648,6 +648,23 @@ class TestBufferedStreamDataConsumer:
         # Act & Assert
         assert consumer.get_write_buffer() is consumer.get_write_buffer()
 
+    def test____get_write_buffer____buffer_start_set_to_end(
+        self,
+        consumer: BufferedStreamDataConsumer[Any],
+        mock_buffered_stream_receiver: MagicMock,
+    ) -> None:
+        # Arrange
+        def side_effect(buffer: memoryview) -> Generator[int, int, tuple[Any, bytes]]:
+            yield len(buffer)
+            pytest.fail("Should not arrive here")
+
+        mock_build_packet_from_buffer_func: MagicMock = mock_buffered_stream_receiver.build_packet_from_buffer
+        mock_build_packet_from_buffer_func.side_effect = side_effect
+
+        # Act & Assert
+        with pytest.raises(RuntimeError, match=r"^The start position is set to the end of the buffer$"):
+            consumer.get_write_buffer()
+
     def test____buffer_updated____error_negative_nbytes(
         self,
         consumer: BufferedStreamDataConsumer[Any],
