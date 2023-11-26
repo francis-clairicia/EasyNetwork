@@ -971,6 +971,28 @@ class TestRawStreamSocketAdapter(BaseTestSocket):
         assert data == b"data"
         mock_async_socket.recv.assert_awaited_once_with(123456789)
 
+    async def test____recv_into____returns_data_from_async_socket(
+        self,
+        socket: RawStreamSocketAdapter,
+        mock_async_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        def recv_into_side_effect(buf: bytearray | memoryview) -> int:
+            with memoryview(buf) as buf:
+                buf[:4] = b"data"
+                return 4
+
+        mock_async_socket.recv_into.side_effect = recv_into_side_effect
+        buffer = bytearray(1024)
+
+        # Act
+        nbytes = await socket.recv_into(buffer)
+
+        # Assert
+        assert nbytes == 4
+        assert buffer[:nbytes] == b"data"
+        mock_async_socket.recv_into.assert_awaited_once_with(buffer)
+
     async def test____send_all____sends_data_to_async_socket(
         self,
         socket: RawStreamSocketAdapter,

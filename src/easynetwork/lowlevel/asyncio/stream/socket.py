@@ -34,6 +34,8 @@ if TYPE_CHECKING:
     import asyncio.trsock
     import ssl as _typing_ssl
 
+    from _typeshed import WriteableBuffer
+
 
 @final
 class AsyncioTransportStreamSocketAdapter(transports.AsyncStreamTransport):
@@ -126,7 +128,7 @@ class AsyncioTransportStreamSocketAdapter(transports.AsyncStreamTransport):
 
 
 @final
-class RawStreamSocketAdapter(transports.AsyncStreamTransport):
+class RawStreamSocketAdapter(transports.AsyncStreamTransport, transports.AsyncBufferedStreamReadTransport):
     __slots__ = ("__socket",)
 
     def __init__(
@@ -154,6 +156,9 @@ class RawStreamSocketAdapter(transports.AsyncStreamTransport):
 
     async def recv(self, bufsize: int) -> bytes:
         return await self.__socket.recv(bufsize)
+
+    async def recv_into(self, buffer: WriteableBuffer) -> int:
+        return await self.__socket.recv_into(buffer)
 
     async def send_all(self, data: bytes | bytearray | memoryview) -> None:
         await self.__socket.sendall(data)

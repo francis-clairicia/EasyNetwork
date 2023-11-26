@@ -31,6 +31,7 @@ class BaseTestAsyncSocket:
         to_patch = [
             ("sock_accept", "accept"),
             ("sock_recv", "recv"),
+            ("sock_recv_into", "recv_into"),
             ("sock_recvfrom", "recvfrom"),
             ("sock_sendall", "send"),
             ("sock_sendto", "sendto"),
@@ -363,6 +364,13 @@ class TestAsyncStreamSocket(MixinTestAsyncSocketBusy, MixinTestSocketSendMSG):
         mock_tcp_socket.send.side_effect = len
         mock_tcp_socket.shutdown.return_value = None
 
+        def recv_into_side_effect(buf: bytearray | memoryview) -> int:
+            with memoryview(buf) as buf:
+                buf[:4] = b"data"
+                return 4
+
+        mock_tcp_socket.recv_into.side_effect = recv_into_side_effect
+
         # Always create a new mock instance because sendmsg() is not available on all platforms
         # therefore the mocker's autospec will consider sendmsg() unknown on these ones.
         mock_tcp_socket.sendmsg = mocker.MagicMock(
@@ -381,7 +389,7 @@ class TestAsyncStreamSocket(MixinTestAsyncSocketBusy, MixinTestSocketSendMSG):
         mock_tcp_socket.reset_mock()
         return socket
 
-    @pytest.fixture(params=["sendall", "sendmsg", "recv"])
+    @pytest.fixture(params=["sendall", "sendmsg", "recv", "recv_into"])
     @staticmethod
     def sock_method_name(request: Any) -> str:
         return request.param
@@ -401,6 +409,8 @@ class TestAsyncStreamSocket(MixinTestAsyncSocketBusy, MixinTestSocketSendMSG):
                 return lambda: socket.sendmsg([b"data", b"to", b"send"])
             case "recv":
                 return lambda: socket.recv(1024)
+            case "recv_into":
+                return lambda: socket.recv_into(memoryview(bytearray(1024)))
             case _:
                 pytest.fail(f"Invalid parameter: {sock_method_name}")
 
@@ -414,6 +424,8 @@ class TestAsyncStreamSocket(MixinTestAsyncSocketBusy, MixinTestSocketSendMSG):
                 return mock_tcp_socket.sendmsg
             case "recv":
                 return mock_tcp_socket.recv
+            case "recv_into":
+                return mock_tcp_socket.recv_into
             case _:
                 pytest.fail(f"Invalid parameter: {sock_method_name}")
 
@@ -552,6 +564,22 @@ class TestAsyncStreamSocket(MixinTestAsyncSocketBusy, MixinTestSocketSendMSG):
         # Assert
         assert data == b"data"
         mock_tcp_socket.recv.assert_called_once_with(123456789)
+
+    async def test____recv_into____receives_data_from_stdlib_socket(
+        self,
+        socket: AsyncSocket,
+        mock_tcp_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        buffer = bytearray(1024)
+
+        # Act
+        nbytes = await socket.recv_into(buffer)
+
+        # Assert
+        assert nbytes == 4
+        assert buffer[:nbytes] == b"data"
+        mock_tcp_socket.recv_into.assert_called_once_with(buffer)
 
     @pytest.mark.parametrize(
         "shutdown_how",

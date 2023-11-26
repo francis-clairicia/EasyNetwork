@@ -38,7 +38,7 @@ from .tasks import CancelScope, TaskUtils
 if TYPE_CHECKING:
     from types import TracebackType
 
-    from _typeshed import ReadableBuffer
+    from _typeshed import ReadableBuffer, WriteableBuffer
 
 
 _SocketTaskId: TypeAlias = Literal["accept", "send", "recv"]
@@ -153,6 +153,11 @@ class AsyncSocket:
         with self.__conflict_detection("recv", abort_errno=_errno.ECONNABORTED):
             socket = self.__check_not_closed()
             return await self.__loop.sock_recv(socket, bufsize)
+
+    async def recv_into(self, buffer: WriteableBuffer, /) -> int:
+        with self.__conflict_detection("recv", abort_errno=_errno.ECONNABORTED):
+            socket = self.__check_not_closed()
+            return await self.__loop.sock_recv_into(socket, buffer)
 
     async def recvfrom(self, bufsize: int, /) -> tuple[bytes, _socket._RetAddress]:
         with self.__conflict_detection("recv", abort_errno=_errno.ECONNABORTED):

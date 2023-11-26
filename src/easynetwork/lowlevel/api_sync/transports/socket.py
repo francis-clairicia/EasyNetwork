@@ -44,6 +44,8 @@ from . import base_selector
 if TYPE_CHECKING:
     import ssl as _typing_ssl
 
+    from _typeshed import WriteableBuffer
+
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
 
@@ -57,7 +59,7 @@ def _close_stream_socket(sock: socket.socket) -> None:
         sock.close()
 
 
-class SocketStreamTransport(base_selector.SelectorStreamTransport):
+class SocketStreamTransport(base_selector.SelectorStreamTransport, base_selector.SelectorBufferedStreamReadTransport):
     __slots__ = ("__socket",)
 
     def __init__(
@@ -87,6 +89,13 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport):
     def recv_noblock(self, bufsize: int) -> bytes:
         try:
             return self.__socket.recv(bufsize)
+        except (BlockingIOError, InterruptedError):
+            raise base_selector.WouldBlockOnRead(self.__socket.fileno()) from None
+
+    @_utils.inherit_doc(base_selector.SelectorBufferedStreamReadTransport)
+    def recv_noblock_into(self, buffer: WriteableBuffer) -> int:
+        try:
+            return self.__socket.recv_into(buffer)
         except (BlockingIOError, InterruptedError):
             raise base_selector.WouldBlockOnRead(self.__socket.fileno()) from None
 
@@ -143,7 +152,7 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport):
         return socket_tools._get_socket_extra(socket)
 
 
-class SSLStreamTransport(base_selector.SelectorStreamTransport):
+class SSLStreamTransport(base_selector.SelectorStreamTransport, base_selector.SelectorBufferedStreamReadTransport):
     __slots__ = ("__socket", "__ssl_shutdown_timeout", "__standard_compatible")
 
     def __init__(
@@ -212,6 +221,10 @@ class SSLStreamTransport(base_selector.SelectorStreamTransport):
     @_utils.inherit_doc(base_selector.SelectorStreamTransport)
     def recv_noblock(self, bufsize: int) -> bytes:
         return self._try_ssl_method(self.__socket.recv, bufsize)
+
+    @_utils.inherit_doc(base_selector.SelectorBufferedStreamReadTransport)
+    def recv_noblock_into(self, buffer: WriteableBuffer) -> int:
+        return self._try_ssl_method(self.__socket.recv_into, buffer)
 
     @_utils.inherit_doc(base_selector.SelectorStreamTransport)
     def send_noblock(self, data: bytes | bytearray | memoryview) -> int:
