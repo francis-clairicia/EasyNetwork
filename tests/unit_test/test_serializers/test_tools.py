@@ -249,10 +249,9 @@ class TestGeneratorStreamReader:
         # Assert
         if separator_found:
             assert str(exc_info.value) == "Separator is found, but chunk is longer than limit"
-            assert exc_info.value.remaining_data == b""
         else:
             assert str(exc_info.value) == "Separator is not found, and chunk exceed the limit"
-            assert exc_info.value.remaining_data == b"\r"
+        assert exc_info.value.remaining_data == b""
 
     def test____read_until____empty_separator(self) -> None:
         # Arrange

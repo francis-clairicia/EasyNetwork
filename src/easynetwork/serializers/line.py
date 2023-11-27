@@ -129,6 +129,7 @@ class StringLineSerializer(AutoSeparatedPacketSerializer[str]):
 
         Raises:
             DeserializeError: :class:`UnicodeError` raised when decoding `data`.
+            DeserializeError: Newline found in `data` (excluding those at the end of the sequence).
 
         Returns:
             the string.
@@ -139,6 +140,8 @@ class StringLineSerializer(AutoSeparatedPacketSerializer[str]):
         separator: bytes = self.separator
         while data.endswith(separator):
             data = data.removesuffix(separator)
+        if separator in data:
+            raise DeserializeError("Newline found in string")
         try:
             return data.decode(self.__encoding, self.__unicode_errors)
         except UnicodeError as exc:

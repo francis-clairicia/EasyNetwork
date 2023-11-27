@@ -109,6 +109,8 @@ class LimitOverrunError(IncrementalDeserializeError):
         remaining_data = memoryview(buffer)[consumed:].tobytes()
         if separator and remaining_data.startswith(separator):
             remaining_data = remaining_data.removeprefix(separator)
+        else:
+            remaining_data = remaining_data[1:]
 
         super().__init__(message, remaining_data, error_info=None)
 

@@ -20,6 +20,9 @@ _NEWLINES: dict[str, bytes] = {
 @final
 class TestStringLineSerializer(BaseTestIncrementalSerializer):
     #### Serializers
+
+    BUFFER_LIMIT = 1024
+
     @pytest.fixture(scope="class", params=list(_NEWLINES))
     @staticmethod
     def newline(request: pytest.FixtureRequest) -> Literal["LF", "CR", "CRLF"]:
@@ -31,9 +34,9 @@ class TestStringLineSerializer(BaseTestIncrementalSerializer):
         return getattr(request, "param")
 
     @pytest.fixture(scope="class")
-    @staticmethod
-    def serializer(newline: Literal["LF", "CR", "CRLF"], encoding: str) -> StringLineSerializer:
-        return StringLineSerializer(newline, encoding=encoding)
+    @classmethod
+    def serializer(cls, newline: Literal["LF", "CR", "CRLF"], encoding: str) -> StringLineSerializer:
+        return StringLineSerializer(newline, encoding=encoding, limit=cls.BUFFER_LIMIT)
 
     @pytest.fixture(scope="class")
     @staticmethod
@@ -84,23 +87,38 @@ class TestStringLineSerializer(BaseTestIncrementalSerializer):
 
     #### Invalid data
 
-    @pytest.fixture(scope="class", params=["unicode-error"])
+    @pytest.fixture(scope="class", params=["unicode_error"])
     @staticmethod
     def invalid_complete_data(request: pytest.FixtureRequest) -> bytes:
         match getattr(request, "param"):
-            case "unicode-error":
+            case "unicode_error":
                 return "é".encode("latin-1")
             case _:
                 pytest.fail("Invalid fixture parameter")
 
-    @pytest.fixture
-    @staticmethod
-    def invalid_partial_data() -> bytes:
-        pytest.skip("Cannot be tested")
+    @pytest.fixture(scope="class", params=["unicode_error", "limit_overrun_without_newline", "limit_overrun_with_newline"])
+    @classmethod
+    def invalid_partial_data(cls, request: pytest.FixtureRequest, newline: Literal["CR", "LF", "CRLF"]) -> bytes:
+        match getattr(request, "param"):
+            case "unicode_error":
+                return "é".encode("latin-1") + _NEWLINES[newline]
+            case "limit_overrun_without_newline":
+                return b"4" * (cls.BUFFER_LIMIT + 10)
+            case "limit_overrun_with_newline":
+                return b"4" * (cls.BUFFER_LIMIT + 10) + _NEWLINES[newline]
+            case _:
+                pytest.fail("Invalid fixture parameter")
+
+    @pytest.fixture(scope="class")
+    @classmethod
+    def invalid_partial_data_extra_data(cls, invalid_partial_data: bytes) -> bytes:
+        if len(invalid_partial_data) > cls.BUFFER_LIMIT:
+            return b""
+        return b"remaining_data"
 
     #### Other
 
     @pytest.fixture(scope="class")
     @staticmethod
-    def oneshot_extra_data() -> bytes:
-        pytest.skip("Does not recognize extra data")
+    def oneshot_extra_data(newline: Literal["CR", "LF", "CRLF"]) -> bytes:
+        return _NEWLINES[newline] + b"remaining_data"

@@ -124,8 +124,13 @@ class BaseTestIncrementalSerializer(BaseTestSerializer):
 
     @pytest.fixture(scope="class")
     @staticmethod
-    def invalid_partial_data_extra_data() -> bytes | None:
+    def invalid_partial_data_extra_data() -> bytes:
         return b"remaining_data"
+
+    @pytest.fixture(scope="class")
+    @staticmethod
+    def invalid_partial_data_expected_extra_data(invalid_partial_data_extra_data: bytes) -> bytes:
+        return invalid_partial_data_extra_data
 
     def test____fixture____consistency____incremental_serializer(
         self,
@@ -223,7 +228,8 @@ class BaseTestIncrementalSerializer(BaseTestSerializer):
         self,
         serializer_for_deserialization: AbstractIncrementalPacketSerializer[Any],
         invalid_partial_data: bytes,
-        invalid_partial_data_extra_data: bytes | None,
+        invalid_partial_data_extra_data: bytes,
+        invalid_partial_data_expected_extra_data: bytes,
     ) -> None:
         # Arrange
         consumer = serializer_for_deserialization.incremental_deserialize()
@@ -238,10 +244,7 @@ class BaseTestIncrementalSerializer(BaseTestSerializer):
         exception = exc_info.value
 
         # Assert
-        if invalid_partial_data_extra_data is not None:
-            assert exception.remaining_data == invalid_partial_data_extra_data
-        else:
-            assert len(exception.remaining_data) > 0
+        assert exception.remaining_data == invalid_partial_data_expected_extra_data
 
 
 @final

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 from typing import Any, final
 
 from easynetwork.serializers.json import JSONEncoderConfig, JSONSerializer
@@ -10,7 +11,12 @@ from easynetwork.serializers.json import JSONEncoderConfig, JSONSerializer
 import pytest
 
 from .base import BaseTestIncrementalSerializer
-from .samples.json import SAMPLES
+from .samples.json import BIG_JSON, SAMPLES
+
+# 'BIG_JSON' serialized is approximatively 7.5KiB long.
+TOO_BIG_JSON = BIG_JSON * 2
+
+TOO_BIG_JSON_SERIALIZED = json.dumps(TOO_BIG_JSON, ensure_ascii=False).encode("utf-8")
 
 
 @final
@@ -18,6 +24,10 @@ class TestJSONSerializer(BaseTestIncrementalSerializer):
     #### Serializers
 
     ENCODER_CONFIG = JSONEncoderConfig(ensure_ascii=False)
+
+    BUFFER_LIMIT = 14 * 1024  # 14KiB
+
+    assert len(TOO_BIG_JSON_SERIALIZED) > BUFFER_LIMIT
 
     @pytest.fixture(scope="class", params=[False, True], ids=lambda p: f"use_lines=={p}")
     @staticmethod
@@ -27,12 +37,12 @@ class TestJSONSerializer(BaseTestIncrementalSerializer):
     @pytest.fixture(scope="class")
     @classmethod
     def serializer_for_serialization(cls, use_lines: bool) -> JSONSerializer:
-        return JSONSerializer(encoder_config=cls.ENCODER_CONFIG, use_lines=use_lines)
+        return JSONSerializer(encoder_config=cls.ENCODER_CONFIG, use_lines=use_lines, limit=cls.BUFFER_LIMIT)
 
     @pytest.fixture(scope="class")
-    @staticmethod
-    def serializer_for_deserialization(use_lines: bool) -> JSONSerializer:
-        return JSONSerializer(use_lines=use_lines)
+    @classmethod
+    def serializer_for_deserialization(cls, use_lines: bool) -> JSONSerializer:
+        return JSONSerializer(use_lines=use_lines, limit=cls.BUFFER_LIMIT)
 
     #### Packets to test
 
@@ -46,8 +56,6 @@ class TestJSONSerializer(BaseTestIncrementalSerializer):
     @pytest.fixture(scope="class")
     @classmethod
     def expected_complete_data(cls, packet_to_serialize: Any) -> bytes:
-        import json
-
         return json.dumps(packet_to_serialize, **dataclasses.asdict(cls.ENCODER_CONFIG), separators=(",", ":")).encode("utf-8")
 
     #### Incremental Serialize
@@ -64,8 +72,6 @@ class TestJSONSerializer(BaseTestIncrementalSerializer):
     @pytest.fixture(scope="class")
     @staticmethod
     def complete_data(packet_to_serialize: Any, use_lines: bool) -> bytes:
-        import json
-
         indent: int | None = None
         if not use_lines:
             # Test with indentation to see whitespace handling
@@ -82,7 +88,7 @@ class TestJSONSerializer(BaseTestIncrementalSerializer):
 
     #### Invalid data
 
-    @pytest.fixture(scope="class", params=[b"invalid", b"\0"])
+    @pytest.fixture(scope="class", params=[b"invalid", b"\0", '{"é": 123}'.encode("latin-1")])
     @staticmethod
     def invalid_complete_data(request: Any, use_lines: bool) -> bytes:
         data: bytes = getattr(request, "param")
@@ -90,17 +96,31 @@ class TestJSONSerializer(BaseTestIncrementalSerializer):
             data += b"\n"
         return data
 
-    @pytest.fixture(scope="class", params=[b"[ invalid ]", b"\0"])
-    @staticmethod
-    def invalid_partial_data(request: Any, use_lines: bool) -> bytes:
+    @pytest.fixture(
+        scope="class",
+        params=[
+            b"[ invalid ]",
+            b"\0",
+            '{"é": 123}'.encode("latin-1"),
+            pytest.param(TOO_BIG_JSON_SERIALIZED[:-20], id="too_big_json_partial"),
+            pytest.param(TOO_BIG_JSON_SERIALIZED, id="too_big_json_no_newline"),
+            pytest.param(TOO_BIG_JSON_SERIALIZED + b"\n", id="too_big_json_with_newline"),
+            pytest.param(b"4" * (BUFFER_LIMIT + 1024), id="too_big_raw_value_no_newline"),
+            pytest.param(b"4" * (BUFFER_LIMIT + 1024) + b"\n", id="too_big_raw_value_with_newline"),
+        ],
+    )
+    @classmethod
+    def invalid_partial_data(cls, request: Any, use_lines: bool) -> bytes:
         data: bytes = getattr(request, "param")
-        if use_lines:
+        if len(data) <= cls.BUFFER_LIMIT and use_lines:
             data += b"\n"
         return data
 
-    @pytest.fixture
-    @staticmethod
-    def invalid_partial_data_extra_data(invalid_partial_data: bytes) -> bytes:
+    @pytest.fixture(scope="class")
+    @classmethod
+    def invalid_partial_data_extra_data(cls, invalid_partial_data: bytes) -> bytes:
+        if len(invalid_partial_data) > cls.BUFFER_LIMIT:
+            return b""
         if invalid_partial_data.startswith(b"\0"):
             return b""
         return b"remaining_data"

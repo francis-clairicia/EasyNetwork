@@ -654,3 +654,4 @@ class TestJSONParser:
             assert str(exc_info.value) == "JSON object's end frame is found, but chunk is longer than limit"
         else:
             assert str(exc_info.value) == "JSON object's end frame is not found, and chunk exceed the limit"
+        assert exc_info.value.remaining_data == b""
