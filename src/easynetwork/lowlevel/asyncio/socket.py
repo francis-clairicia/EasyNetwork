@@ -160,14 +160,17 @@ class AsyncSocket:
             return await self.__loop.sock_recvfrom(socket, bufsize)
 
     async def shutdown(self, how: int, /) -> None:
-        socket: _socket.socket = self.__check_not_closed()
+        # Checks if we are within the bound loop
+        TaskUtils.check_current_asyncio_task(self.__loop)
+
         if how in {_socket.SHUT_RDWR, _socket.SHUT_WR}:
             while (waiter := self.__waiters.get("send")) is not None:
                 try:
                     await asyncio.shield(waiter)
                 finally:
-                    waiter = None  # Breack cyclic reference with raised exception
+                    waiter = None  # Break cyclic reference with raised exception
 
+        socket: _socket.socket = self.__check_not_closed()
         socket.shutdown(how)
         await asyncio.sleep(0)
 
@@ -177,9 +180,9 @@ class AsyncSocket:
             raise _utils.error_from_errno(_errno.EBUSY)
 
         # Checks if we are within the bound loop
-        TaskUtils.current_asyncio_task(self.__loop)  # type: ignore[unused-awaitable]
+        TaskUtils.check_current_asyncio_task(self.__loop)
 
-        with CancelScope() as scope, contextlib.ExitStack() as stack:
+        with contextlib.ExitStack() as stack, CancelScope() as scope:
             self.__scopes.add(scope)
             stack.callback(self.__scopes.discard, scope)
 
