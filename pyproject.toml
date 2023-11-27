@@ -202,7 +202,7 @@ enable_error_code = ["truthy-bool", "ignore-without-code", "unused-awaitable"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "strict"  # Avoid some unwanted behaviour
-addopts = "--strict-markers"
+addopts = "--strict-markers -p 'no:anyio'"  # hatch CLI dependencies installs anyio
 minversion = "7.1.2"
 testpaths = ["tests"]
 norecursedirs = ["scripts"]
