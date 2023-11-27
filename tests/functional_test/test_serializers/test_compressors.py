@@ -21,9 +21,7 @@ SAMPLES = [
 
 
 def _make_data_invalid(token: bytes) -> bytes:
-    idx = random.randrange(0, len(token))
-
-    return token[:idx] + random.randbytes(5) + token[idx:]
+    return token[:-2] + random.randbytes(5) + token[-2:]
 
 
 class BaseTestCompressorSerializer(BaseTestIncrementalSerializer):

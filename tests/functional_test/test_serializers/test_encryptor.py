@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import random
 from collections.abc import Callable
 from typing import Any, final
 
@@ -106,7 +105,7 @@ class TestEncryptorSerializer(BaseTestIncrementalSerializer):
             case "missing_data":
                 from cryptography.fernet import Fernet
 
-                return Fernet(cls.KEY).encrypt_at_time(random.randbytes(255), 0)[:-1] + b"\r\n"
+                return Fernet(cls.KEY).encrypt_at_time(b"a", 0)[:-1] + b"\r\n"
             case "limit_overrun_without_newline":
                 return b"4" * (cls.BUFFER_LIMIT + 10)
             case "limit_overrun_with_newline":
