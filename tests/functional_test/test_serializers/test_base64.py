@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import random
 from typing import Any, Literal, final
 
@@ -14,9 +17,6 @@ from .base import BaseTestIncrementalSerializer, NoSerialization
 
 
 def generate_key_from_string(s: str) -> bytes:
-    import base64
-    import hashlib
-
     return base64.urlsafe_b64encode(hashlib.sha256(s.encode("utf-8")).digest())
 
 
@@ -30,6 +30,8 @@ SAMPLES = [
 class BaseTestBase64EncoderSerializer(BaseTestIncrementalSerializer):
     #### Serializers
 
+    BUFFER_LIMIT = 1024
+
     @pytest.fixture(scope="class", params=["standard", "urlsafe"])
     @staticmethod
     def alphabet(request: pytest.FixtureRequest) -> Literal["standard", "urlsafe"]:
@@ -42,7 +44,7 @@ class BaseTestBase64EncoderSerializer(BaseTestIncrementalSerializer):
         checksum: bool | bytes,
         alphabet: Literal["standard", "urlsafe"],
     ) -> Base64EncoderSerializer[bytes]:
-        return Base64EncoderSerializer(NoSerialization(), alphabet=alphabet, checksum=checksum)
+        return Base64EncoderSerializer(NoSerialization(), alphabet=alphabet, checksum=checksum, limit=cls.BUFFER_LIMIT)
 
     @pytest.fixture(scope="class")
     @staticmethod
@@ -71,10 +73,6 @@ class BaseTestBase64EncoderSerializer(BaseTestIncrementalSerializer):
         checksum: bool | bytes,
         alphabet: Literal["standard", "urlsafe"],
     ) -> bytes:
-        import base64
-        import hashlib
-        import hmac
-
         if checksum:
             if isinstance(checksum, bytes):
                 key = base64.urlsafe_b64decode(checksum)
@@ -114,10 +112,27 @@ class BaseTestBase64EncoderSerializer(BaseTestIncrementalSerializer):
     def invalid_complete_data(complete_data: bytes) -> bytes:
         return complete_data[:-1]  # Remove one byte at last will break the padding
 
-    @pytest.fixture
-    @staticmethod
-    def invalid_partial_data() -> bytes:
-        pytest.skip("Cannot be tested")
+    @pytest.fixture(scope="class", params=["missing_data", "limit_overrun_without_newline", "limit_overrun_with_newline"])
+    @classmethod
+    def invalid_partial_data(cls, request: pytest.FixtureRequest, alphabet: Literal["standard", "urlsafe"]) -> bytes:
+        match request.param:
+            case "missing_data":
+                if alphabet == "standard":
+                    return base64.standard_b64encode(random.randbytes(255))[:-1] + b"\r\n"
+                return base64.urlsafe_b64encode(random.randbytes(255))[:-1] + b"\r\n"
+            case "limit_overrun_without_newline":
+                return b"4" * (cls.BUFFER_LIMIT + 10)
+            case "limit_overrun_with_newline":
+                return b"4" * (cls.BUFFER_LIMIT + 10) + b"\r\n"
+            case _:
+                pytest.fail("Invalid fixture parameter")
+
+    @pytest.fixture(scope="class")
+    @classmethod
+    def invalid_partial_data_extra_data(cls, invalid_partial_data: bytes) -> bytes:
+        if len(invalid_partial_data) > cls.BUFFER_LIMIT:
+            return b""
+        return b"remaining_data"
 
     #### Other
 

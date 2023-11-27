@@ -76,7 +76,7 @@ class TestCBORSerializer(BaseTestIncrementalSerializer):
     def invalid_complete_data(complete_data: bytes) -> bytes:
         return complete_data[:-1]  # Missing data error
 
-    @pytest.fixture
+    @pytest.fixture(scope="class")
     @staticmethod
     def invalid_partial_data() -> bytes:
         pytest.skip("Cannot be tested")

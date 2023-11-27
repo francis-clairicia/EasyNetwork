@@ -56,7 +56,7 @@ SAMPLES: list[tuple[Any, str]] = [
 ]
 
 
-BIG_JSON: Any = [
+BIG_JSON: list[Any] = [
     {
         "_id": "63cd615fa31a400f255ec20c",
         "index": 0,

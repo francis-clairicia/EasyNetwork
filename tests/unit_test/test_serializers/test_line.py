@@ -162,6 +162,26 @@ class TestStringLineSerializer:
         assert isinstance(line, str)
         assert line == "abc"
 
+    @pytest.mark.parametrize("position", ["beginning", "between"])
+    def test____deserialize____newline_in_string_error(
+        self,
+        position: Literal["beginning", "between"],
+        serializer: StringLineSerializer,
+    ) -> None:
+        # Arrange
+        separator = serializer.separator.decode()
+        match position:
+            case "beginning":
+                data = f"{separator}a".encode()
+            case "between":
+                data = f"a{separator}b".encode()
+            case _:
+                pytest.fail("Invalid fixture")
+
+        # Act & Assert
+        with pytest.raises(DeserializeError, match=r"^Newline found in string$"):
+            serializer.deserialize(data)
+
     @pytest.mark.parametrize("with_newlines", [False, True], ids=lambda boolean: f"with_newlines=={boolean}")
     @pytest.mark.parametrize("encoding", ["ascii", "utf-8"], indirect=True)
     def test____deserialize____decode_string_error(

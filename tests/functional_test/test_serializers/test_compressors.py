@@ -20,6 +20,10 @@ SAMPLES = [
 ]
 
 
+def _make_data_invalid(token: bytes) -> bytes:
+    return token[:-2] + random.randbytes(5) + token[-2:]
+
+
 class BaseTestCompressorSerializer(BaseTestIncrementalSerializer):
     #### Serializers: To be defined in subclass
 
@@ -53,12 +57,17 @@ class BaseTestCompressorSerializer(BaseTestIncrementalSerializer):
     @pytest.fixture(scope="class")
     @staticmethod
     def invalid_complete_data(complete_data: bytes) -> bytes:
-        return complete_data[:-1]  # Remove one byte at last will break the checksum
+        return _make_data_invalid(complete_data)
 
-    @pytest.fixture
+    @pytest.fixture(scope="class")
     @staticmethod
-    def invalid_partial_data() -> bytes:
-        pytest.skip("Cannot be tested")
+    def invalid_partial_data(invalid_complete_data: bytes) -> bytes:
+        return invalid_complete_data
+
+    @pytest.fixture(scope="class")
+    @staticmethod
+    def invalid_partial_data_expected_extra_data() -> bytes:
+        return b""
 
 
 @final

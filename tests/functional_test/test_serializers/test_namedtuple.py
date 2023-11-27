@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import struct
 from typing import Any, NamedTuple, final
 
 from easynetwork.serializers.struct import NamedTupleStructSerializer
@@ -25,6 +26,10 @@ POINT_FIELD_FORMATS = {
 
 
 STRUCT_FORMAT = f"!{''.join(map(POINT_FIELD_FORMATS.__getitem__, Point._fields))}"
+
+
+def pack_point(p: Point, *, encoding: str = "utf-8") -> bytes:
+    return struct.pack(STRUCT_FORMAT, p.name.encode(encoding), p.x, p.y)
 
 
 @final
@@ -67,9 +72,7 @@ class TestNamedTupleStructSerializer(BaseTestIncrementalSerializer):
     @pytest.fixture(scope="class")
     @classmethod
     def expected_complete_data(cls, packet_to_serialize: Point) -> bytes:
-        import struct
-
-        return struct.pack(STRUCT_FORMAT, packet_to_serialize.name.encode(), packet_to_serialize.x, packet_to_serialize.y)
+        return pack_point(packet_to_serialize)
 
     #### Incremental Serialize
 
@@ -94,12 +97,18 @@ class TestNamedTupleStructSerializer(BaseTestIncrementalSerializer):
 
     #### Invalid data
 
+    @pytest.fixture(scope="class", params=["missing_data", "unicode_error"])
+    @staticmethod
+    def invalid_complete_data(request: pytest.FixtureRequest) -> bytes:
+        match request.param:
+            case "missing_data":
+                return pack_point(Point("string", -4, b"y"))[:-3]
+            case "unicode_error":
+                return pack_point(Point("é", -4, b"y"), encoding="latin-1")
+            case _:
+                pytest.fail("Invalid parameter")
+
     @pytest.fixture(scope="class")
     @staticmethod
-    def invalid_complete_data(complete_data: bytes) -> bytes:
-        return complete_data[:-1]  # Missing data
-
-    @pytest.fixture
-    @staticmethod
     def invalid_partial_data() -> bytes:
-        pytest.skip("Cannot be tested")
+        return pack_point(Point("é", -4, b"y"), encoding="latin-1")

@@ -20,10 +20,12 @@ class TestEncryptorSerializer(BaseTestIncrementalSerializer):
 
     KEY = generate_key_from_string("key")
 
+    BUFFER_LIMIT = 1024
+
     @pytest.fixture(scope="class")
     @classmethod
     def serializer(cls) -> EncryptorSerializer[bytes]:
-        return EncryptorSerializer(NoSerialization(), key=cls.KEY)
+        return EncryptorSerializer(NoSerialization(), key=cls.KEY, limit=cls.BUFFER_LIMIT)
 
     @pytest.fixture(scope="class")
     @staticmethod
@@ -96,10 +98,27 @@ class TestEncryptorSerializer(BaseTestIncrementalSerializer):
             pytest.skip("empty bytes")
         return complete_data[:-1]  # Remove one byte at last will break the padding
 
-    @pytest.fixture
-    @staticmethod
-    def invalid_partial_data() -> bytes:
-        pytest.skip("Cannot be tested")
+    @pytest.fixture(scope="class", params=["missing_data", "limit_overrun_without_newline", "limit_overrun_with_newline"])
+    @classmethod
+    def invalid_partial_data(cls, request: pytest.FixtureRequest) -> bytes:
+        match request.param:
+            case "missing_data":
+                from cryptography.fernet import Fernet
+
+                return Fernet(cls.KEY).encrypt_at_time(b"a", 0)[:-1] + b"\r\n"
+            case "limit_overrun_without_newline":
+                return b"4" * (cls.BUFFER_LIMIT + 10)
+            case "limit_overrun_with_newline":
+                return b"4" * (cls.BUFFER_LIMIT + 10) + b"\r\n"
+            case _:
+                pytest.fail("Invalid fixture parameter")
+
+    @pytest.fixture(scope="class")
+    @classmethod
+    def invalid_partial_data_extra_data(cls, invalid_partial_data: bytes) -> bytes:
+        if len(invalid_partial_data) > cls.BUFFER_LIMIT:
+            return b""
+        return b"remaining_data"
 
     #### Other
 

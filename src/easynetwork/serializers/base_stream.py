@@ -132,19 +132,19 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_DTOPack
         """
         reader = GeneratorStreamReader()
         data = yield from reader.read_until(self.__separator, limit=self.__limit, keep_end=False)
-        buffer = reader.read_all()
+        remainder = reader.read_all()
 
         try:
             packet = self.deserialize(data)
         except DeserializeError as exc:
             raise IncrementalDeserializeError(
                 f"Error when deserializing data: {exc}",
-                remaining_data=buffer,
+                remaining_data=remainder,
                 error_info=exc.error_info,
             ) from exc
         finally:
             del data
-        return packet, buffer
+        return packet, remainder
 
     @property
     @final
@@ -231,19 +231,19 @@ class FixedSizePacketSerializer(AbstractIncrementalPacketSerializer[_DTOPacketT]
         """
         reader = GeneratorStreamReader()
         data = yield from reader.read_exactly(self.__size)
-        buffer = reader.read_all()
+        remainder = reader.read_all()
 
         try:
             packet = self.deserialize(data)
         except DeserializeError as exc:
             raise IncrementalDeserializeError(
                 f"Error when deserializing data: {exc}",
-                remaining_data=buffer,
+                remaining_data=remainder,
                 error_info=exc.error_info,
             ) from exc
         finally:
             del data
-        return packet, buffer
+        return packet, remainder
 
     @property
     @final
