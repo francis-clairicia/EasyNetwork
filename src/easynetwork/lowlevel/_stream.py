@@ -248,6 +248,8 @@ class BufferedStreamDataConsumer(Generic[_ReceivedPacketT]):
             self.__save_remainder_in_buffer(exc.remaining_data)
             raise
         except Exception as exc:
+            # Reset buffer, since we do not know the buffer state is still valid
+            self.__buffer = None
             raise RuntimeError("protocol.build_packet_from_buffer() crashed") from exc
         else:
             self.__consumer = consumer
@@ -260,8 +262,9 @@ class BufferedStreamDataConsumer(Generic[_ReceivedPacketT]):
             return self.__buffer_view
 
         if self.__buffer is None:
-            self.__buffer = self.__buffered_receiver.create_buffer(self.__sizehint)
-            self.__validate_created_buffer(self.__buffer)
+            whole_buffer = self.__buffered_receiver.create_buffer(self.__sizehint)
+            self.__validate_created_buffer(whole_buffer)
+            self.__buffer = whole_buffer
 
         if self.__consumer is None:
             consumer = self.__buffered_receiver.build_packet_from_buffer(self.__buffer)
@@ -270,6 +273,8 @@ class BufferedStreamDataConsumer(Generic[_ReceivedPacketT]):
             except StopIteration:
                 raise RuntimeError("protocol.build_packet_from_buffer() did not yield") from None
             except Exception as exc:
+                # Reset buffer, since we do not know the buffer state is still valid
+                self.__buffer = None
                 raise RuntimeError("protocol.build_packet_from_buffer() crashed") from exc
             self.__consumer = consumer
 

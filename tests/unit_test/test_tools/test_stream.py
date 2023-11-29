@@ -601,6 +601,7 @@ class TestBufferedStreamDataConsumer:
             _ = consumer.get_write_buffer()
 
         mock_buffered_stream_receiver.build_packet_from_buffer.assert_not_called()
+        assert consumer.get_value() is None
 
     def test____get_write_buffer____protocol_create_buffer_validation____not_a_byte_buffer(
         self,
@@ -617,6 +618,7 @@ class TestBufferedStreamDataConsumer:
             _ = consumer.get_write_buffer()
 
         mock_buffered_stream_receiver.build_packet_from_buffer.assert_not_called()
+        assert consumer.get_value() is None
 
     def test____get_write_buffer____protocol_create_buffer_validation____empty_byte_buffer(
         self,
@@ -631,6 +633,7 @@ class TestBufferedStreamDataConsumer:
             _ = consumer.get_write_buffer()
 
         mock_buffered_stream_receiver.build_packet_from_buffer.assert_not_called()
+        assert consumer.get_value() is None
 
     def test____get_write_buffer____do_not_recompute_buffer_view(
         self,
@@ -1093,7 +1096,7 @@ class TestBufferedStreamDataConsumer:
             with pytest.raises(RuntimeError, match=r"^protocol\.build_packet_from_buffer\(\) crashed$") as exc_info:
                 self.write_in_consumer(consumer, b"Hello")
 
-            assert consumer.get_value() == b""
+            assert consumer.get_value() is None
 
             with pytest.raises(StopIteration):
                 next(consumer)
@@ -1104,7 +1107,7 @@ class TestBufferedStreamDataConsumer:
             with pytest.raises(RuntimeError, match=r"^protocol\.build_packet_from_buffer\(\) crashed$") as exc_info:
                 next(consumer)
 
-            assert consumer.get_value() == b""
+            assert consumer.get_value() is None
 
         # Assert
         assert exc_info.value.__cause__ is expected_error
