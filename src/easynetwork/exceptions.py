@@ -115,9 +115,6 @@ class LimitOverrunError(IncrementalDeserializeError):
 
         super().__init__(message, remaining_data, error_info=None)
 
-        self.remaining_data: memoryview
-        """Unused trailing data."""
-
         self.consumed: int = consumed
         """Total number of to be consumed bytes."""
 

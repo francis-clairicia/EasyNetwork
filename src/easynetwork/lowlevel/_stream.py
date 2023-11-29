@@ -157,7 +157,7 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
         finally:
             del consumer, chunk
 
-    def feed(self, chunk: bytes) -> None:
+    def feed(self, chunk: ReadableBuffer) -> None:
         chunk = bytes(chunk)
         if not chunk:
             return

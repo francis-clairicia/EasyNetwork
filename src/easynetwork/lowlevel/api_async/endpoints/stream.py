@@ -67,12 +67,12 @@ class AsyncStreamEndpoint(typed_attr.TypedAttributeProvider, Generic[_SentPacket
             self.__sender = _DataSenderImpl(transport, _stream.StreamDataProducer(protocol))
 
         self.__receiver: _DataReceiverImpl[_ReceivedPacketT] | _BufferedReceiverImpl[_ReceivedPacketT] | None = None
-        try:
-            if not isinstance(transport, transports.AsyncBufferedStreamReadTransport):
-                raise UnsupportedOperation
-            self.__receiver = _BufferedReceiverImpl(transport, _stream.BufferedStreamDataConsumer(protocol, max_recv_size))
-        except UnsupportedOperation:
-            if isinstance(transport, transports.AsyncStreamReadTransport):
+        if isinstance(transport, transports.AsyncStreamReadTransport):
+            try:
+                if not isinstance(transport, transports.AsyncBufferedStreamReadTransport):
+                    raise UnsupportedOperation
+                self.__receiver = _BufferedReceiverImpl(transport, _stream.BufferedStreamDataConsumer(protocol, max_recv_size))
+            except UnsupportedOperation:
                 self.__receiver = _DataReceiverImpl(transport, _stream.StreamDataConsumer(protocol), max_recv_size)
 
         self.__transport: transports.AsyncStreamReadTransport | transports.AsyncStreamWriteTransport = transport

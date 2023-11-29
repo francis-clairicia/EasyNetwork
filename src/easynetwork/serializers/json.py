@@ -412,13 +412,13 @@ class _JSONParser:
 
     @staticmethod
     def _split_partial_document(partial_document: bytes, consumed: int, limit: int) -> tuple[bytes, bytes]:
-        consumed = _JSONParser._whitespaces_match(partial_document, consumed).end()
         if consumed > limit:
             raise LimitOverrunError(
                 "JSON object's end frame is found, but chunk is longer than limit",
                 partial_document,
                 consumed,
             )
+        consumed = _JSONParser._whitespaces_match(partial_document, consumed).end()
         if consumed == len(partial_document):
             # The following bytes are only spaces
             # Do not slice the document, the trailing spaces will be ignored by JSONDecoder

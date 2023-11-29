@@ -324,7 +324,6 @@ class ResourceGuard:
     __slots__ = (
         "__semaphore",
         "__msg",
-        "__held",
     )
 
     def __init__(self, message: str) -> None:
