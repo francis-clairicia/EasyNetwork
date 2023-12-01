@@ -15,6 +15,7 @@ Welcome to EasyNetwork's documentation!
    quickstart/index
    tutorials/index
    howto/index
+   howto/advanced/index
    api/index
    glossary
 

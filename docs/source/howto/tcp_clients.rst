@@ -334,6 +334,12 @@ You can control this value by setting the ``max_recv_size`` parameter:
          :linenos:
 
 
+.. note::
+
+   ``max_recv_size`` is also used as a size hint for :term:`buffered serializers <buffered serializer>`.
+   See :ref:`this section <buffer-instantiation>` for details.
+
+
 SSL/TLS Connection
 ------------------
 

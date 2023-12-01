@@ -108,6 +108,9 @@ class AbstractIncrementalPacketSerializer(AbstractPacketSerializer[_DTOPacketT])
         Yields:
             :data:`None` until the whole :term:`packet` has been deserialized.
 
+            At each :keyword:`yield` checkpoint, the endpoint implementation sends to the generator the data received
+            from the remote endpoint.
+
         Returns:
             a tuple with the deserialized Python object and the unused trailing data.
         """
@@ -201,7 +204,7 @@ class BufferedIncrementalPacketSerializer(AbstractIncrementalPacketSerializer[_D
         Yields:
             until the whole :term:`packet` has been deserialized.
 
-            The value returned is the position to start writing to the buffer. It can be:
+            The value yielded is the position to start writing to the buffer. It can be:
 
             * :data:`None`: Just use the whole buffer. Therefore, ``yield`` and ``yield None`` are equivalent to ``yield 0``.
 
@@ -209,6 +212,9 @@ class BufferedIncrementalPacketSerializer(AbstractIncrementalPacketSerializer[_D
 
             * A negative integer: Skips until the last `n` bytes.
               For example, ``yield -10`` means to write from the last 10th byte of the buffer.
+
+            At each :keyword:`yield` checkpoint, the endpoint implementation sends to the generator
+            the number of bytes written to the `buffer`.
 
         Returns:
             a tuple with the deserialized Python object and the unused trailing data.

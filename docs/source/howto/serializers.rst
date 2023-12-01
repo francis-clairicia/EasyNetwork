@@ -217,7 +217,7 @@ The Purpose Of ``incremental_deserialize()``
 This generator must return a pair of ``(packet, remainder)`` where ``packet`` is the deserialized packet and ``remainder`` is any
 superfluous trailing bytes that was useless.
 
-At each :keyword:`yield` checkpoint, the endpoint implementation sends the data received from the remote endpoint to the generator.
+At each :keyword:`yield` checkpoint, the endpoint implementation sends to the generator the data received from the remote endpoint.
 
 .. literalinclude:: ../_include/examples/howto/serializers/incremental_serializer/example2.py
    :pyobject: MyJSONSerializer.incremental_deserialize
