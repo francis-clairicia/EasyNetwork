@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 __all__ = [
+    "_BufferT",
     "_DTOPacketT",
     "_PacketT",
     "_ReceivedPacketT",
@@ -27,6 +28,12 @@ __all__ = [
 
 import typing
 
+if typing.TYPE_CHECKING:
+    from _typeshed import WriteableBuffer
+else:  # pragma: no cover
+    # Needed for sphinx-autodoc
+    WriteableBuffer = bytearray | memoryview
+
 _DTOPacketT = typing.TypeVar("_DTOPacketT")
 
 _SentPacketT = typing.TypeVar("_SentPacketT")
@@ -35,3 +42,5 @@ _PacketT = typing.TypeVar("_PacketT")
 
 _RequestT = typing.TypeVar("_RequestT")
 _ResponseT = typing.TypeVar("_ResponseT")
+
+_BufferT = typing.TypeVar("_BufferT", bound="WriteableBuffer")

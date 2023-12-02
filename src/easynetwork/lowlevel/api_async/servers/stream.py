@@ -24,6 +24,7 @@ from typing import Any, Generic, NoReturn, Self
 
 from .... import protocol as protocol_module
 from ...._typevars import _RequestT, _ResponseT
+from ....exceptions import UnsupportedOperation
 from ... import _asyncgen, _stream, _utils, typed_attr
 from ..backend.abc import AsyncBackend, TaskGroup
 from ..transports import abc as transports, utils as transports_utils
@@ -162,7 +163,18 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, _R
             client_exit_stack.push_async_callback(transports_utils.aclose_forcefully, self.__backend, transport)
 
             producer = _stream.StreamDataProducer(self.__protocol)
-            consumer = _stream.StreamDataConsumer(self.__protocol)
+            consumer: _stream.StreamDataConsumer[_RequestT] | _stream.BufferedStreamDataConsumer[_RequestT]
+
+            request_receiver: _RequestReceiver[_RequestT] | _BufferedRequestReceiver[_RequestT]
+            try:
+                if not isinstance(transport, transports.AsyncBufferedStreamReadTransport):
+                    raise UnsupportedOperation
+                consumer = _stream.BufferedStreamDataConsumer(self.__protocol, self.__max_recv_size)
+                request_receiver = _BufferedRequestReceiver(transport, consumer)
+            except UnsupportedOperation:
+                consumer = _stream.StreamDataConsumer(self.__protocol)
+                request_receiver = _RequestReceiver(transport, consumer, self.__max_recv_size)
+
             client = AsyncStreamClient(transport, producer)
 
             client_exit_stack.callback(consumer.clear)
@@ -178,18 +190,13 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, _R
                 except StopAsyncIteration:
                     return
 
-                async for action in _RequestReceiver(transport, consumer, self.__max_recv_size):
+                async for action in request_receiver:
                     try:
                         await action.asend(request_handler_generator)
                     except StopAsyncIteration:
                         break
                     finally:
                         del action
-
-    @property
-    def max_recv_size(self) -> int:
-        """Read buffer size. Read-only attribute."""
-        return self.__max_recv_size
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
@@ -226,10 +233,40 @@ class _RequestReceiver(Generic[_RequestT]):
                 data: bytes = await transport.recv(bufsize)
                 if not data:  # Closed connection (EOF)
                     break
+                consumer.feed(data)
+                del data
+        except BaseException as exc:
+            return _asyncgen.ThrowAction(exc)
+        raise StopAsyncIteration
+
+
+class _BufferedRequestReceiver(Generic[_RequestT]):
+    __slots__ = ("__consumer", "__transport")
+
+    def __init__(
+        self,
+        transport: transports.AsyncBufferedStreamReadTransport,
+        consumer: _stream.BufferedStreamDataConsumer[_RequestT],
+    ) -> None:
+        self.__transport: transports.AsyncBufferedStreamReadTransport = transport
+        self.__consumer: _stream.BufferedStreamDataConsumer[_RequestT] = consumer
+
+    def __aiter__(self) -> Self:
+        return self
+
+    async def __anext__(self) -> _asyncgen.AsyncGenAction[None, _RequestT]:
+        transport: transports.AsyncBufferedStreamReadTransport = self.__transport
+        consumer: _stream.BufferedStreamDataConsumer[_RequestT] = self.__consumer
+        try:
+            while not transport.is_closing():
                 try:
-                    consumer.feed(data)
-                finally:
-                    del data
+                    return _asyncgen.SendAction(next(consumer))
+                except StopIteration:
+                    pass
+                nbytes: int = await transport.recv_into(consumer.get_write_buffer())
+                if not nbytes:
+                    break
+                consumer.buffer_updated(nbytes)
         except BaseException as exc:
             return _asyncgen.ThrowAction(exc)
         raise StopAsyncIteration

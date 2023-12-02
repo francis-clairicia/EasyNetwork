@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Generator
 
 from easynetwork.exceptions import DeserializeError, IncrementalDeserializeError
-from easynetwork.serializers.abc import AbstractIncrementalPacketSerializer
+from easynetwork.serializers.abc import AbstractIncrementalPacketSerializer, BufferedIncrementalPacketSerializer
 
 
 class StringSerializer(AbstractIncrementalPacketSerializer[str]):
@@ -38,18 +38,47 @@ class StringSerializer(AbstractIncrementalPacketSerializer[str]):
             raise DeserializeError(str(exc)) from exc
 
     def incremental_deserialize(self) -> Generator[None, bytes, tuple[str, bytes]]:
-        buffer = b""
-        while True:
-            buffer += yield
-            if b"\n" not in buffer:
-                continue
-            data, buffer = buffer.split(b"\n", 1)
-            if not data:
-                continue
-            try:
-                return data.decode(encoding=self.encoding), buffer
-            except UnicodeError as exc:
-                raise IncrementalDeserializeError(str(exc), buffer) from exc
+        data = yield
+        newline = b"\n"
+        while (index := data.find(newline)) < 0:
+            data += yield
+
+        remainder = data[index + len(newline) :]
+        data = data[:index]
+
+        try:
+            return data.decode(encoding=self.encoding), remainder
+        except UnicodeError as exc:
+            raise IncrementalDeserializeError(str(exc), remainder) from exc
+
+
+class BufferedStringSerializer(StringSerializer, BufferedIncrementalPacketSerializer[str, bytearray]):
+    __slots__ = ()
+
+    MIN_SIZE: int = 8 * 1024
+
+    def create_deserializer_buffer(self, sizehint: int) -> bytearray:
+        return bytearray(max(sizehint, self.MIN_SIZE))
+
+    def buffered_incremental_deserialize(self, buffer: bytearray) -> Generator[int | None, int, tuple[str, bytearray]]:
+        buffer_size = len(buffer)
+        newline = b"\n"
+        separator_length = len(newline)
+
+        nb_written_bytes: int = yield None
+
+        while (index := buffer.find(newline, 0, nb_written_bytes)) < 0:
+            start_idx: int = nb_written_bytes
+            if start_idx > buffer_size - separator_length:
+                raise IncrementalDeserializeError("Too long line", remaining_data=b"")
+            nb_written_bytes += yield start_idx
+
+        remainder: bytearray = buffer[index + separator_length : nb_written_bytes]
+        data: bytearray = buffer[:index]
+        try:
+            return data.decode(encoding=self.encoding), remainder
+        except UnicodeError as exc:
+            raise IncrementalDeserializeError(str(exc), remainder) from exc
 
 
 class NotGoodStringSerializer(StringSerializer):
@@ -60,4 +89,12 @@ class NotGoodStringSerializer(StringSerializer):
 
     def incremental_deserialize(self) -> Generator[None, bytes, tuple[str, bytes]]:
         yield
+        raise SystemError("CRASH")
+
+
+class NotGoodBufferedStringSerializer(NotGoodStringSerializer, BufferedStringSerializer):
+    __slots__ = ()
+
+    def buffered_incremental_deserialize(self, write_buffer: bytearray) -> Generator[int, int, tuple[str, bytearray]]:
+        yield 0
         raise SystemError("CRASH")

@@ -34,6 +34,7 @@ extensions = [
     "enum_tools.autoenum",
     "sphinx_rtd_theme",
     "sphinx_tabs.tabs",
+    "sphinx_toolbox.collapse",
     "sphinx_toolbox.github",
     "sphinx_toolbox.sidebar_links",
     "sphinx_toolbox.more_autodoc.genericalias",
@@ -79,8 +80,13 @@ autodoc_type_aliases = {
     "_socket._RetAddress": "typing.Any",
     "_socket.socket": "socket.socket",
     "contextvars.Context": "contextvars.Context",
+    "ReadableBuffer": "bytes | bytearray | memoryview",
+    "WriteableBuffer": "bytearray | memoryview",
 }
 autodoc_inherit_docstrings = False
+autodoc_mock_imports = [
+    "_typesched",
+]
 
 # -- sphinx.ext.intersphinx configuration ------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/extensions/intersphinx.html
@@ -130,7 +136,12 @@ github_repository = "EasyNetwork"
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
 html_theme = "sphinx_rtd_theme"
-html_static_path = []
+html_static_path = [
+    "_static",
+]
+html_css_files = [
+    "css/details.css",
+]
 
 # -- sphinx-rtd-theme configuration ------------------------------------------
 # https://sphinx-rtd-theme.readthedocs.io/en/stable/configuring.html

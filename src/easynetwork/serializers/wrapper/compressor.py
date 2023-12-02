@@ -28,16 +28,19 @@ from typing import TYPE_CHECKING, Protocol, final
 
 from ..._typevars import _DTOPacketT
 from ...exceptions import DeserializeError, IncrementalDeserializeError
-from ..abc import AbstractIncrementalPacketSerializer, AbstractPacketSerializer
+from ..abc import AbstractPacketSerializer, BufferedIncrementalPacketSerializer
+from ..tools import _wrap_generic_buffered_incremental_deserialize, _wrap_generic_incremental_deserialize
 
 if TYPE_CHECKING:
     import bz2 as _typing_bz2
     import zlib as _typing_zlib
 
+    from _typeshed import ReadableBuffer
+
 
 class CompressorInterface(Protocol, metaclass=abc.ABCMeta):
     @abc.abstractmethod
-    def compress(self, data: bytes, /) -> bytes:
+    def compress(self, data: ReadableBuffer, /) -> bytes:
         raise NotImplementedError
 
     @abc.abstractmethod
@@ -47,7 +50,7 @@ class CompressorInterface(Protocol, metaclass=abc.ABCMeta):
 
 class DecompressorInterface(Protocol, metaclass=abc.ABCMeta):
     @abc.abstractmethod
-    def decompress(self, data: bytes, /) -> bytes:
+    def decompress(self, data: ReadableBuffer, /) -> bytes:
         raise NotImplementedError
 
     @property
@@ -61,7 +64,7 @@ class DecompressorInterface(Protocol, metaclass=abc.ABCMeta):
         raise NotImplementedError
 
 
-class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_DTOPacketT]):
+class AbstractCompressorSerializer(BufferedIncrementalPacketSerializer[_DTOPacketT, memoryview]):
     """
     A :term:`serializer wrapper` base class for compressors.
     """
@@ -175,10 +178,34 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_DTOPacke
                                          that matches `expected_decompress_error`.
             Exception: Any other error raised by :meth:`DecompressorInterface.decompress` or the underlying serializer.
         """
+        return (yield from _wrap_generic_incremental_deserialize(self.__generic_incremental_deserialize))
+
+    @final
+    def create_deserializer_buffer(self, sizehint: int) -> memoryview:
+        """
+        See :meth:`.BufferedIncrementalPacketSerializer.create_deserializer_buffer` documentation for details.
+        """
+        return memoryview(bytearray(sizehint))
+
+    @final
+    def buffered_incremental_deserialize(self, buffer: memoryview) -> Generator[None, int, tuple[_DTOPacketT, ReadableBuffer]]:
+        """
+        Yields until data decompression is finished and deserializes the decompressed data using the underlying serializer.
+
+        See :meth:`.BufferedIncrementalPacketSerializer.buffered_incremental_deserialize` documentation for details.
+
+        Raises:
+            IncrementalDeserializeError: :meth:`DecompressorInterface.decompress` raised an error
+                                         that matches `expected_decompress_error`.
+            Exception: Any other error raised by :meth:`DecompressorInterface.decompress` or the underlying serializer.
+        """
+        return (yield from _wrap_generic_buffered_incremental_deserialize(buffer, self.__generic_incremental_deserialize))
+
+    def __generic_incremental_deserialize(self) -> Generator[None, ReadableBuffer, tuple[_DTOPacketT, ReadableBuffer]]:
         results: deque[bytes] = deque()
         decompressor: DecompressorInterface = self.new_decompressor_stream()
         while not decompressor.eof:
-            chunk: bytes = yield
+            chunk: ReadableBuffer = yield
             try:
                 chunk = decompressor.decompress(chunk)
             except self.__expected_error as exc:
@@ -189,7 +216,7 @@ class AbstractCompressorSerializer(AbstractIncrementalPacketSerializer[_DTOPacke
                         remaining_data=b"",
                         error_info={
                             "already_decompressed_chunks": results,
-                            "invalid_chunk": chunk,
+                            "invalid_chunk": bytes(chunk),
                         },
                     ) from exc
                 raise IncrementalDeserializeError(msg, remaining_data=b"") from exc

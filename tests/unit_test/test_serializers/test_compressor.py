@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from easynetwork.exceptions import DeserializeError, IncrementalDeserializeError
 from easynetwork.serializers.wrapper.compressor import (
@@ -12,9 +12,12 @@ from easynetwork.serializers.wrapper.compressor import (
 
 import pytest
 
+from ...tools import send_return, write_in_buffer
+
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
 
+    from _typeshed import ReadableBuffer
     from pytest_mock import MockerFixture
 
 
@@ -72,6 +75,12 @@ class TestAbstractCompressorSerializer:
         yield mock
         del type(mock).eof
         del type(mock).unused_data
+
+    @pytest.fixture(params=["data", "buffer"])
+    @staticmethod
+    def incremental_deserialize_mode(request: pytest.FixtureRequest) -> str:
+        assert request.param in ("data", "buffer")
+        return request.param
 
     def test____properties____right_values(self, mock_serializer: MagicMock, debug_mode: bool) -> None:
         # Arrange
@@ -283,6 +292,7 @@ class TestAbstractCompressorSerializer:
 
     def test____incremental_deserialize____decompress_chunks(
         self,
+        incremental_deserialize_mode: Literal["data", "buffer"],
         mock_serializer: MagicMock,
         mock_serializer_new_decompressor_stream: MagicMock,
         mock_decompressor_stream: MagicMock,
@@ -291,33 +301,50 @@ class TestAbstractCompressorSerializer:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
+        given_chunks: list[bytes] = []
+
+        def decompress_side_effect(b: ReadableBuffer) -> bytes:
+            given_chunks.append(bytes(b))
+            return b"decompressed " + b
+
         serializer = _CompressorSerializerForTest(mock_serializer, ())
         mock_decompressor_stream_eof.side_effect = [False, False, True]
-        mock_decompressor_stream_unused_data.return_value = mocker.sentinel.unused_data
-        mock_decompressor_stream.decompress.side_effect = [b"decompressed chunk 1 ", b"decompressed chunk 2"]
+        mock_decompressor_stream_unused_data.return_value = b"some extra data"
+        mock_decompressor_stream.decompress.side_effect = decompress_side_effect
         mock_serializer.deserialize.return_value = mocker.sentinel.packet
 
         # Act
-        consumer = serializer.incremental_deserialize()
-        next(consumer)
-        consumer.send(b"chunk 1")
-        with pytest.raises(StopIteration) as exc_info:
-            consumer.send(b"chunk 2")
-        packet, remaining_data = exc_info.value.value
+        remaining_data: ReadableBuffer
+        match incremental_deserialize_mode:
+            case "data":
+                data_consumer = serializer.incremental_deserialize()
+                next(data_consumer)
+                data_consumer.send(b"chunk 1")
+                packet, remaining_data = send_return(data_consumer, b"chunk 2")
+            case "buffer":
+                buffer = serializer.create_deserializer_buffer(1024)
+                buffered_consumer = serializer.buffered_incremental_deserialize(buffer)
+                next(buffered_consumer)
+                buffered_consumer.send(write_in_buffer(buffer, b"chunk 1"))
+                packet, remaining_data = send_return(buffered_consumer, write_in_buffer(buffer, b"chunk 2"))
+            case _:
+                pytest.fail("Invalid fixture argument")
 
         # Assert
         mock_serializer_new_decompressor_stream.assert_called_once_with()
-        assert mock_decompressor_stream.decompress.call_args_list == [mocker.call(b"chunk 1"), mocker.call(b"chunk 2")]
+        assert mock_decompressor_stream.decompress.call_count == 2
+        assert given_chunks == [b"chunk 1", b"chunk 2"]
         assert len(mock_decompressor_stream_eof.call_args_list) == 3
         mock_decompressor_stream_unused_data.assert_called_once()
-        mock_serializer.deserialize.assert_called_once_with(b"decompressed chunk 1 decompressed chunk 2")
+        mock_serializer.deserialize.assert_called_once_with(b"decompressed chunk 1decompressed chunk 2")
         assert packet is mocker.sentinel.packet
-        assert remaining_data is mocker.sentinel.unused_data
+        assert remaining_data == b"some extra data"
 
     @pytest.mark.parametrize("give_as_tuple", [False, True], ids=lambda boolean: f"give_as_tuple=={boolean}")
     def test____incremental_deserialize____translate_given_exceptions(
         self,
         give_as_tuple: bool,
+        incremental_deserialize_mode: Literal["data", "buffer"],
         mock_serializer: MagicMock,
         mock_serializer_new_decompressor_stream: MagicMock,
         mock_decompressor_stream: MagicMock,
@@ -350,10 +377,21 @@ class TestAbstractCompressorSerializer:
         mock_decompressor_stream.decompress.side_effect = MyStreamAPIValueError()
 
         # Act
-        consumer = serializer.incremental_deserialize()
-        next(consumer)
-        with pytest.raises(IncrementalDeserializeError) as exc_info:
-            consumer.send(b"chunk")
+        match incremental_deserialize_mode:
+            case "data":
+                data_consumer = serializer.incremental_deserialize()
+                next(data_consumer)
+                with pytest.raises(IncrementalDeserializeError) as exc_info:
+                    data_consumer.send(b"chunk")
+            case "buffer":
+                buffer = serializer.create_deserializer_buffer(1024)
+                buffered_consumer = serializer.buffered_incremental_deserialize(buffer)
+                next(buffered_consumer)
+                with pytest.raises(IncrementalDeserializeError) as exc_info:
+                    buffered_consumer.send(write_in_buffer(buffer, b"chunk"))
+            case _:
+                pytest.fail("Invalid fixture argument")
+
         exception = exc_info.value
 
         # Assert
@@ -363,7 +401,7 @@ class TestAbstractCompressorSerializer:
         mock_decompressor_stream_unused_data.assert_not_called()
         mock_serializer.deserialize.assert_not_called()
         assert exception.__cause__ is mock_decompressor_stream.decompress.side_effect
-        assert exception.remaining_data == b""
+        assert bytes(exception.remaining_data) == b""
         if debug_mode:
             assert exception.error_info == {
                 "already_decompressed_chunks": deque([]),
@@ -374,6 +412,7 @@ class TestAbstractCompressorSerializer:
 
     def test____incremental_deserialize____translate_deserialize_errors(
         self,
+        incremental_deserialize_mode: Literal["data", "buffer"],
         mock_serializer: MagicMock,
         mock_serializer_new_decompressor_stream: MagicMock,
         mock_decompressor_stream: MagicMock,
@@ -390,10 +429,20 @@ class TestAbstractCompressorSerializer:
         mock_serializer.deserialize.side_effect = DeserializeError("Bad news", error_info=mocker.sentinel.error_info)
 
         # Act
-        consumer = serializer.incremental_deserialize()
-        next(consumer)
-        with pytest.raises(IncrementalDeserializeError) as exc_info:
-            consumer.send(b"chunk")
+        match incremental_deserialize_mode:
+            case "data":
+                data_consumer = serializer.incremental_deserialize()
+                next(data_consumer)
+                with pytest.raises(IncrementalDeserializeError) as exc_info:
+                    data_consumer.send(b"chunk")
+            case "buffer":
+                buffer = serializer.create_deserializer_buffer(1024)
+                buffered_consumer = serializer.buffered_incremental_deserialize(buffer)
+                next(buffered_consumer)
+                with pytest.raises(IncrementalDeserializeError) as exc_info:
+                    buffered_consumer.send(write_in_buffer(buffer, b"chunk"))
+            case _:
+                pytest.fail("Invalid fixture argument")
         exception = exc_info.value
 
         # Assert

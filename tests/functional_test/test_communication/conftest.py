@@ -12,7 +12,7 @@ from easynetwork.protocol import DatagramProtocol, StreamProtocol
 import pytest
 import trustme
 
-from .serializer import NotGoodStringSerializer, StringSerializer
+from .serializer import BufferedStringSerializer, NotGoodBufferedStringSerializer, NotGoodStringSerializer, StringSerializer
 
 _FAMILY_TO_LOCALHOST: dict[int, str] = {
     AF_INET: "127.0.0.1",
@@ -61,21 +61,40 @@ def udp_socket_factory(socket_factory: Callable[[int], Socket]) -> Callable[[], 
     return partial(socket_factory, SOCK_DGRAM)
 
 
-@pytest.fixture
-def serializer(request: pytest.FixtureRequest) -> StringSerializer:
-    if getattr(request, "param", "") == "invalid":
-        return NotGoodStringSerializer()
-    return StringSerializer()
+@pytest.fixture(params=["data"])
+def one_shot_serializer(request: pytest.FixtureRequest) -> StringSerializer:
+    match request.param:
+        case "data":
+            return StringSerializer()
+        case "invalid":
+            return NotGoodStringSerializer()
+        case _:
+            pytest.fail("Invalid parameter")
+
+
+@pytest.fixture(params=["data", "buffered"])
+def incremental_serializer(request: pytest.FixtureRequest) -> StringSerializer:
+    match request.param:
+        case "data":
+            return StringSerializer()
+        case "buffered":
+            return BufferedStringSerializer()
+        case "invalid":
+            return NotGoodStringSerializer()
+        case "invalid_buffered":
+            return NotGoodBufferedStringSerializer()
+        case _:
+            pytest.fail("Invalid parameter")
 
 
 @pytest.fixture
-def stream_protocol(serializer: StringSerializer) -> StreamProtocol[str, str]:
-    return StreamProtocol(serializer)
+def stream_protocol(incremental_serializer: StringSerializer) -> StreamProtocol[str, str]:
+    return StreamProtocol(incremental_serializer)
 
 
 @pytest.fixture
-def datagram_protocol(serializer: StringSerializer) -> DatagramProtocol[str, str]:
-    return DatagramProtocol(serializer)
+def datagram_protocol(one_shot_serializer: StringSerializer) -> DatagramProtocol[str, str]:
+    return DatagramProtocol(one_shot_serializer)
 
 
 # Origin: https://gist.github.com/4325783, by Geert Jansen.  Public domain.

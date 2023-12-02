@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 from easynetwork.lowlevel.api_sync.transports.base_selector import (
     SelectorBaseTransport,
+    SelectorBufferedStreamReadTransport,
     SelectorDatagramTransport,
     SelectorStreamTransport,
     WouldBlockOnRead,
@@ -393,6 +394,34 @@ class TestSelectorStreamTransport:
         mock_transport._retry.assert_called_once_with(mocker.ANY, mocker.sentinel.timeout)
         assert mock_transport.send_noblock.call_args_list == [mocker.call(mocker.sentinel.data) for _ in range(3)]
         assert sent is mocker.sentinel.nb_sent_bytes
+
+
+class TestSelectorBufferedStreamReadTransport:
+    @pytest.fixture
+    @staticmethod
+    def mock_transport(mocker: MockerFixture) -> MagicMock:
+        return mocker.NonCallableMagicMock(spec=SelectorBufferedStreamReadTransport)
+
+    def test____recv_into____call_noblock_within_retry(
+        self,
+        mock_transport: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_transport._retry.side_effect = _retry_side_effect
+        mock_transport.recv_noblock_into.side_effect = [
+            WouldBlockOnRead(mocker.sentinel.fd),
+            WouldBlockOnWrite(mocker.sentinel.fd),
+            mocker.sentinel.nb_bytes_written,
+        ]
+
+        # Act
+        nbytes = SelectorBufferedStreamReadTransport.recv_into(mock_transport, mocker.sentinel.buffer, mocker.sentinel.timeout)
+
+        # Assert
+        mock_transport._retry.assert_called_once_with(mocker.ANY, mocker.sentinel.timeout)
+        assert mock_transport.recv_noblock_into.call_args_list == [mocker.call(mocker.sentinel.buffer) for _ in range(3)]
+        assert nbytes is mocker.sentinel.nb_bytes_written
 
 
 class TestSelectorDatagramTransport:

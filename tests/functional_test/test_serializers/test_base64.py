@@ -129,10 +129,10 @@ class BaseTestBase64EncoderSerializer(BaseTestIncrementalSerializer):
 
     @pytest.fixture(scope="class")
     @classmethod
-    def invalid_partial_data_extra_data(cls, invalid_partial_data: bytes) -> bytes:
-        if len(invalid_partial_data) > cls.BUFFER_LIMIT:
-            return b""
-        return b"remaining_data"
+    def invalid_partial_data_extra_data(cls, invalid_partial_data: bytes) -> tuple[bytes, bytes]:
+        if len(invalid_partial_data) > cls.BUFFER_LIMIT and not invalid_partial_data.endswith(b"\r\n"):
+            return (b"remaining_data", b"")
+        return (b"remaining_data", b"remaining_data")
 
     #### Other
 

@@ -6,8 +6,13 @@ from ssl import SSLContext, SSLSocket
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.converter import AbstractPacketConverterComposite
-from easynetwork.protocol import DatagramProtocol, StreamProtocol
-from easynetwork.serializers.abc import AbstractIncrementalPacketSerializer, AbstractPacketSerializer
+from easynetwork.exceptions import UnsupportedOperation
+from easynetwork.protocol import BufferedStreamReceiver, DatagramProtocol, StreamProtocol
+from easynetwork.serializers.abc import (
+    AbstractIncrementalPacketSerializer,
+    AbstractPacketSerializer,
+    BufferedIncrementalPacketSerializer,
+)
 
 import pytest
 
@@ -147,9 +152,20 @@ def mock_serializer(mock_serializer_factory: Callable[[], Any]) -> Any:
     return mock_serializer_factory()
 
 
-@pytest.fixture
-def mock_incremental_serializer_factory(mocker: MockerFixture) -> Callable[[], Any]:
-    return lambda: mocker.NonCallableMagicMock(spec=AbstractIncrementalPacketSerializer)
+@pytest.fixture(params=[None, "buffered"], ids=lambda p: f"incremental_serializer_factory=={p}")
+def mock_incremental_serializer_factory(request: pytest.FixtureRequest, mocker: MockerFixture) -> Callable[[], Any]:
+    match getattr(request, "param", None):
+        case "buffered":
+            return lambda: mocker.NonCallableMagicMock(
+                spec=BufferedIncrementalPacketSerializer,
+                **{
+                    "create_deserializer_buffer.side_effect": lambda sizehint: memoryview(bytearray(sizehint)),
+                },
+            )
+        case None:
+            return lambda: mocker.NonCallableMagicMock(spec=AbstractIncrementalPacketSerializer)
+        case _:
+            pytest.fail("mock_incremental_serializer_factory: Invalid parameter")
 
 
 @pytest.fixture
@@ -179,9 +195,24 @@ def mock_datagram_protocol(mock_datagram_protocol_factory: Callable[[], Any]) ->
 
 @pytest.fixture
 def mock_stream_protocol_factory(mocker: MockerFixture) -> Callable[[], Any]:
-    return lambda: mocker.NonCallableMagicMock(spec=StreamProtocol)
+    return lambda: mocker.NonCallableMagicMock(spec=StreamProtocol, **{"buffered_receiver.side_effect": UnsupportedOperation})
 
 
 @pytest.fixture
 def mock_stream_protocol(mock_stream_protocol_factory: Callable[[], Any]) -> Any:
     return mock_stream_protocol_factory()
+
+
+@pytest.fixture
+def mock_buffered_stream_receiver_factory(mocker: MockerFixture) -> Callable[[], Any]:
+    return lambda: mocker.NonCallableMagicMock(
+        spec=BufferedStreamReceiver,
+        **{
+            "create_buffer.side_effect": lambda sizehint: memoryview(bytearray(sizehint)),
+        },
+    )
+
+
+@pytest.fixture
+def mock_buffered_stream_receiver(mock_buffered_stream_receiver_factory: Callable[[], Any]) -> Any:
+    return mock_buffered_stream_receiver_factory()

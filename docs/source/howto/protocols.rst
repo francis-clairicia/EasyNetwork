@@ -142,7 +142,7 @@ For example:
 
 .. warning::
 
-   The :meth:`~.AbstractPacketConverter.create_from_dto_packet` function must raise a :exc:`PacketConversionError` to indicate that
+   The :meth:`~.AbstractPacketConverter.create_from_dto_packet` function must raise a :exc:`.PacketConversionError` to indicate that
    a parsing error was "expected" so that the received data is considered invalid.
 
    Otherwise, any other error is considered a crash.

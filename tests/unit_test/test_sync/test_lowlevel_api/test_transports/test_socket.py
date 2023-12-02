@@ -203,6 +203,43 @@ class TestSocketStreamTransport(MixinTestSocketSendMSG):
         mock_tcp_socket.fileno.assert_called_once()
         assert exc_info.value.fileno is mock_tcp_socket.fileno.return_value
 
+    def test____recv_noblock_into____default(
+        self,
+        transport: SocketStreamTransport,
+        mock_tcp_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_tcp_socket.recv_into.return_value = mocker.sentinel.nb_bytes_written
+
+        # Act
+        result = transport.recv_noblock_into(mocker.sentinel.buffer)
+
+        # Assert
+        mock_tcp_socket.recv_into.assert_called_once_with(mocker.sentinel.buffer)
+        mock_tcp_socket.fileno.assert_not_called()
+        assert result is mocker.sentinel.nb_bytes_written
+
+    @pytest.mark.parametrize("error", [BlockingIOError, InterruptedError])
+    def test____recv_noblock_into____blocking_error(
+        self,
+        error: type[OSError],
+        transport: SocketStreamTransport,
+        mock_tcp_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_tcp_socket.recv_into.side_effect = error
+
+        # Act
+        with pytest.raises(WouldBlockOnRead) as exc_info:
+            transport.recv_noblock_into(mocker.sentinel.buffer)
+
+        # Assert
+        mock_tcp_socket.recv_into.assert_called_once_with(mocker.sentinel.buffer)
+        mock_tcp_socket.fileno.assert_called_once()
+        assert exc_info.value.fileno is mock_tcp_socket.fileno.return_value
+
     def test____send_noblock____default(
         self,
         transport: SocketStreamTransport,
@@ -799,6 +836,52 @@ class TestSSLStreamTransport:
 
         # Assert
         mock_ssl_socket.recv.assert_called_once_with(mocker.sentinel.bufsize)
+        mock_ssl_socket.fileno.assert_called_once()
+        assert isinstance(exc_info.value, (WouldBlockOnRead, WouldBlockOnWrite))
+        assert exc_info.value.fileno is mock_ssl_socket.fileno.return_value
+
+    def test____recv_noblock_into____default(
+        self,
+        transport: SSLStreamTransport,
+        mock_ssl_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_ssl_socket.recv_into.return_value = mocker.sentinel.nb_bytes_written
+
+        # Act
+        result = transport.recv_noblock_into(mocker.sentinel.buffer)
+
+        # Assert
+        mock_ssl_socket.recv_into.assert_called_once_with(mocker.sentinel.buffer)
+        mock_ssl_socket.fileno.assert_not_called()
+        assert result is mocker.sentinel.nb_bytes_written
+
+    @pytest.mark.parametrize(
+        ["error", "expected_blocking_error"],
+        [
+            pytest.param(ssl.SSLWantReadError, WouldBlockOnRead),
+            pytest.param(ssl.SSLSyscallError, WouldBlockOnRead),
+            pytest.param(ssl.SSLWantWriteError, WouldBlockOnWrite),
+        ],
+    )
+    def test____recv_noblock_into____blocking_error(
+        self,
+        error: type[OSError],
+        expected_blocking_error: type[WouldBlockOnRead] | type[WouldBlockOnWrite],
+        transport: SSLStreamTransport,
+        mock_ssl_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_ssl_socket.recv_into.side_effect = error
+
+        # Act
+        with pytest.raises(expected_blocking_error) as exc_info:
+            transport.recv_noblock_into(mocker.sentinel.buffer)
+
+        # Assert
+        mock_ssl_socket.recv_into.assert_called_once_with(mocker.sentinel.buffer)
         mock_ssl_socket.fileno.assert_called_once()
         assert isinstance(exc_info.value, (WouldBlockOnRead, WouldBlockOnWrite))
         assert exc_info.value.fileno is mock_ssl_socket.fileno.return_value

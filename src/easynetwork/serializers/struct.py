@@ -138,7 +138,7 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_DTOPacketT]):
         return self.__s.pack(*self.iter_values(packet))
 
     @final
-    def deserialize(self, data: bytes) -> _DTOPacketT:
+    def deserialize(self, data: bytes | memoryview) -> _DTOPacketT:
         """
         Creates a Python object representing the structure from `data`.
 

@@ -5,6 +5,9 @@ Glossary
 .. glossary::
    :sorted:
 
+   buffered serializer
+      See :term:`serializer`.
+
    communication protocol
       A set of formal rules describing how to transmit or exchange data, especially across a network.
 
@@ -57,7 +60,7 @@ Glossary
 
       Ideally, a serializer should only handle :ref:`primitive types <bltin-types>` and :ref:`constants <built-in-consts>`.
 
-      There are 2 types of serializers:
+      There are 3 types of serializers:
 
       * one-shot serializers
 
@@ -71,6 +74,11 @@ Glossary
 
         During deserialization, they have the ability **to know when the** :term:`packet` **is complete** (and wait if incomplete)
         and which bytes are not part of the initial :term:`packet`.
+
+      * buffered serializers
+
+        An incremental serializer specialization that allows the use of a custom in-memory byte buffer,
+        if supported by the underlying transport layer.
 
    serializer wrapper
       A :term:`serializer` that transforms data coming from another :term:`serializer`.

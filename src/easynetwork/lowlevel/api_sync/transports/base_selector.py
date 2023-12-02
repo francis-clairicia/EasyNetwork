@@ -18,6 +18,7 @@ from __future__ import annotations
 
 __all__ = [
     "SelectorBaseTransport",
+    "SelectorBufferedStreamReadTransport",
     "SelectorDatagramReadTransport",
     "SelectorDatagramTransport",
     "SelectorDatagramWriteTransport",
@@ -33,10 +34,13 @@ import math
 import selectors
 from abc import abstractmethod
 from collections.abc import Callable
-from typing import TypeVar
+from typing import TYPE_CHECKING, TypeVar
 
 from ... import _utils
 from . import abc as transports
+
+if TYPE_CHECKING:
+    from _typeshed import WriteableBuffer
 
 _R = TypeVar("_R")
 
@@ -142,7 +146,7 @@ class SelectorBaseTransport(transports.BaseTransport):
 
 class SelectorStreamReadTransport(SelectorBaseTransport, transports.StreamReadTransport):
     """
-    A continous stream data reader transport using the :mod:`selectors` module for blocking operations polling.
+    A continuous stream data reader transport using the :mod:`selectors` module for blocking operations polling.
     """
 
     __slots__ = ()
@@ -156,6 +160,7 @@ class SelectorStreamReadTransport(SelectorBaseTransport, transports.StreamReadTr
             bufsize: the maximum buffer size.
 
         Raises:
+            ValueError: Negative `bufsize`.
             WouldBlockOnRead: the operation would block when reading the pipe.
             WouldBlockOnWrite: the operation would block when writing on the pipe.
 
@@ -175,9 +180,45 @@ class SelectorStreamReadTransport(SelectorBaseTransport, transports.StreamReadTr
         return self._retry(lambda: self.recv_noblock(bufsize), timeout)
 
 
+class SelectorBufferedStreamReadTransport(SelectorStreamReadTransport, transports.BufferedStreamReadTransport):
+    """
+    A continuous stream data reader transport using the :mod:`selectors` module for blocking operations polling
+    that supports externally allocated buffers.
+    """
+
+    __slots__ = ()
+
+    @abstractmethod
+    def recv_noblock_into(self, buffer: WriteableBuffer) -> int:
+        """
+        Read into the given `buffer`.
+
+        Parameters:
+            buffer: where to write the received bytes.
+
+        Raises:
+            WouldBlockOnRead: the operation would block when reading the pipe.
+            WouldBlockOnWrite: the operation would block when writing on the pipe.
+
+        Returns:
+            the number of bytes written.
+
+            Returning ``0`` for a non-zero buffer indicates an EOF.
+        """
+        raise NotImplementedError
+
+    def recv_into(self, buffer: WriteableBuffer, timeout: float) -> int:
+        """
+        Read into the given `buffer`.
+
+        The default implementation will retry to call :meth:`recv_noblock_into` until it succeeds under the given `timeout`.
+        """
+        return self._retry(lambda: self.recv_noblock_into(buffer), timeout)
+
+
 class SelectorStreamWriteTransport(SelectorBaseTransport, transports.StreamWriteTransport):
     """
-    A continous stream data writer transport using the :mod:`selectors` module for blocking operations polling.
+    A continuous stream data writer transport using the :mod:`selectors` module for blocking operations polling.
     """
 
     __slots__ = ()
@@ -207,7 +248,7 @@ class SelectorStreamWriteTransport(SelectorBaseTransport, transports.StreamWrite
 
 class SelectorStreamTransport(SelectorStreamWriteTransport, SelectorStreamReadTransport, transports.StreamTransport):
     """
-    A continous stream data transport using the :mod:`selectors` module for blocking operations polling.
+    A continuous stream data transport using the :mod:`selectors` module for blocking operations polling.
     """
 
     __slots__ = ()

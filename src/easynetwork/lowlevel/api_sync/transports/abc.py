@@ -18,6 +18,7 @@ from __future__ import annotations
 
 __all__ = [
     "BaseTransport",
+    "BufferedStreamReadTransport",
     "DatagramReadTransport",
     "DatagramTransport",
     "DatagramWriteTransport",
@@ -28,8 +29,12 @@ __all__ = [
 
 from abc import ABCMeta, abstractmethod
 from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
 from ... import _utils, typed_attr
+
+if TYPE_CHECKING:
+    from _typeshed import WriteableBuffer
 
 
 class BaseTransport(typed_attr.TypedAttributeProvider, metaclass=ABCMeta):
@@ -59,7 +64,7 @@ class BaseTransport(typed_attr.TypedAttributeProvider, metaclass=ABCMeta):
 
 class StreamReadTransport(BaseTransport):
     """
-    A continous stream data reader transport.
+    A continuous stream data reader transport.
     """
 
     __slots__ = ()
@@ -86,9 +91,37 @@ class StreamReadTransport(BaseTransport):
         raise NotImplementedError
 
 
+class BufferedStreamReadTransport(StreamReadTransport):
+    """
+    A continuous stream data reader transport that supports externally allocated buffers.
+    """
+
+    __slots__ = ()
+
+    @abstractmethod
+    def recv_into(self, buffer: WriteableBuffer, timeout: float) -> int:
+        """
+        Read into the given `buffer`.
+
+        Parameters:
+            buffer: where to write the received bytes.
+            timeout: the allowed time (in seconds) for blocking operations. Can be set to :data:`math.inf`.
+
+        Raises:
+            ValueError: Negative `timeout`.
+            TimeoutError: Operation timed out.
+
+        Returns:
+            the number of bytes written.
+
+            Returning ``0`` for a non-zero buffer indicates an EOF.
+        """
+        raise NotImplementedError
+
+
 class StreamWriteTransport(BaseTransport):
     """
-    A continous stream data writer transport.
+    A continuous stream data writer transport.
     """
 
     __slots__ = ()
@@ -168,7 +201,7 @@ class StreamWriteTransport(BaseTransport):
 
 class StreamTransport(StreamWriteTransport, StreamReadTransport):
     """
-    A continous stream data transport.
+    A continuous stream data transport.
     """
 
     __slots__ = ()

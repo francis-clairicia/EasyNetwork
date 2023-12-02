@@ -18,6 +18,7 @@ from __future__ import annotations
 
 __all__ = [
     "AsyncBaseTransport",
+    "AsyncBufferedStreamReadTransport",
     "AsyncDatagramListener",
     "AsyncDatagramReadTransport",
     "AsyncDatagramTransport",
@@ -35,6 +36,8 @@ from typing import TYPE_CHECKING, Any, Generic, NoReturn, TypeVar
 from ... import typed_attr
 
 if TYPE_CHECKING:
+    from _typeshed import WriteableBuffer
+
     from ..backend.abc import TaskGroup
 
 _T_co = TypeVar("_T_co", covariant=True)
@@ -73,7 +76,7 @@ class AsyncBaseTransport(typed_attr.TypedAttributeProvider, metaclass=ABCMeta):
 
 class AsyncStreamReadTransport(AsyncBaseTransport):
     """
-    An asynchronous continous stream data reader transport.
+    An asynchronous continuous stream data reader transport.
     """
 
     __slots__ = ()
@@ -97,9 +100,32 @@ class AsyncStreamReadTransport(AsyncBaseTransport):
         raise NotImplementedError
 
 
+class AsyncBufferedStreamReadTransport(AsyncStreamReadTransport):
+    """
+    An asynchronous continuous stream data reader transport that supports externally allocated buffers.
+    """
+
+    __slots__ = ()
+
+    @abstractmethod
+    async def recv_into(self, buffer: WriteableBuffer) -> int:
+        """
+        Read into the given `buffer`.
+
+        Parameters:
+            buffer: where to write the received bytes.
+
+        Returns:
+            the number of bytes written.
+
+            Returning ``0`` for a non-zero buffer indicates an EOF.
+        """
+        raise NotImplementedError
+
+
 class AsyncStreamWriteTransport(AsyncBaseTransport):
     """
-    An asynchronous continous stream data writer transport.
+    An asynchronous continuous stream data writer transport.
     """
 
     __slots__ = ()
@@ -131,7 +157,7 @@ class AsyncStreamWriteTransport(AsyncBaseTransport):
 
 class AsyncStreamTransport(AsyncStreamWriteTransport, AsyncStreamReadTransport):
     """
-    An asynchronous continous stream data transport.
+    An asynchronous continuous stream data transport.
     """
 
     __slots__ = ()
