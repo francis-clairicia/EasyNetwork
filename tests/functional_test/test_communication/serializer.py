@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import itertools
 from collections.abc import Generator
 
 from easynetwork.exceptions import DeserializeError, IncrementalDeserializeError
@@ -39,53 +38,47 @@ class StringSerializer(AbstractIncrementalPacketSerializer[str]):
             raise DeserializeError(str(exc)) from exc
 
     def incremental_deserialize(self) -> Generator[None, bytes, tuple[str, bytes]]:
-        buffer = b""
-        while True:
-            buffer += yield
-            if b"\n" not in buffer:
-                continue
-            data, buffer = buffer.split(b"\n", 1)
-            if not data:
-                continue
-            try:
-                return data.decode(encoding=self.encoding), buffer
-            except UnicodeError as exc:
-                raise IncrementalDeserializeError(str(exc), buffer) from exc
+        data = yield
+        newline = b"\n"
+        while (index := data.find(newline)) < 0:
+            data += yield
+
+        remainder = data[index + len(newline) :]
+        data = data[:index]
+
+        try:
+            return data.decode(encoding=self.encoding), remainder
+        except UnicodeError as exc:
+            raise IncrementalDeserializeError(str(exc), remainder) from exc
 
 
 class BufferedStringSerializer(StringSerializer, BufferedIncrementalPacketSerializer[str, bytearray]):
     __slots__ = ()
 
+    MIN_SIZE: int = 8 * 1024
+
     def create_deserializer_buffer(self, sizehint: int) -> bytearray:
-        return bytearray(sizehint)
+        return bytearray(max(sizehint, self.MIN_SIZE))
 
-    def buffered_incremental_deserialize(self, write_buffer: bytearray) -> Generator[int, int, tuple[str, bytearray]]:
-        buflen = len(write_buffer)
-        read_buffer = memoryview(write_buffer).toreadonly()
+    def buffered_incremental_deserialize(self, buffer: bytearray) -> Generator[int | None, int, tuple[str, bytearray]]:
+        buffer_size = len(buffer)
+        newline = b"\n"
+        separator_length = len(newline)
 
-        line_buffer = bytearray()
+        nb_written_bytes: int = yield None
 
-        LINE_FEED = ord(b"\n")
+        while (index := buffer.find(newline, 0, nb_written_bytes)) < 0:
+            start_idx: int = nb_written_bytes
+            if start_idx > buffer_size - separator_length:
+                raise IncrementalDeserializeError("Too long line", remaining_data=b"")
+            nb_written_bytes += yield start_idx
 
-        while True:
-            consumed: int = 0
-            write_buffer[:] = itertools.repeat(0, buflen)
-
-            while LINE_FEED not in read_buffer[:consumed]:
-                if not read_buffer[consumed:].nbytes:
-                    line_buffer.extend(read_buffer)
-                    write_buffer[:] = itertools.repeat(0, buflen)
-                    consumed = 0
-                consumed += yield consumed
-
-            line_buffer.extend(read_buffer[:consumed])
-            data, line_buffer = line_buffer.split(b"\n", 1)
-            if not data:
-                continue
-            try:
-                return data.decode(encoding=self.encoding), line_buffer
-            except UnicodeError as exc:
-                raise IncrementalDeserializeError(str(exc), line_buffer) from exc
+        remainder: bytearray = buffer[index + separator_length : nb_written_bytes]
+        data: bytearray = buffer[:index]
+        try:
+            return data.decode(encoding=self.encoding), remainder
+        except UnicodeError as exc:
+            raise IncrementalDeserializeError(str(exc), remainder) from exc
 
 
 class NotGoodStringSerializer(StringSerializer):
