@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from collections.abc import Callable, Coroutine, Iterable, Iterator
-from errno import EBUSY, ECONNABORTED, EINTR, ENOTSOCK
+from errno import EBADF, EBUSY
 from socket import SHUT_RD, SHUT_RDWR, SHUT_WR, socket as Socket
 from typing import TYPE_CHECKING, Any, final
 
@@ -140,13 +140,12 @@ class MixinTestAsyncSocketBusy(BaseTestAsyncSocket):
             await socket_method()
 
         # Assert
-        assert exc_info.value.errno == ENOTSOCK
+        assert exc_info.value.errno == EBADF
         mock_socket_method.assert_not_called()
 
     async def test____method____closed_socket____during_attempt(
         self,
         socket: AsyncSocket,
-        abort_errno: int,
         socket_method: Callable[[], Coroutine[Any, Any, Any]],
         event_loop: asyncio.AbstractEventLoop,
         mock_socket_method: MagicMock,
@@ -161,7 +160,7 @@ class MixinTestAsyncSocketBusy(BaseTestAsyncSocket):
             await busy_method_task
 
         # Assert
-        assert exc_info.value.errno == abort_errno
+        assert exc_info.value.errno == EBADF
         mock_socket_method.assert_not_called()
 
     @pytest.mark.parametrize("cancellation_requests", [1, 3])
@@ -327,11 +326,6 @@ class TestAsyncListenerSocket(MixinTestAsyncSocketBusy):
 
     @pytest.fixture
     @staticmethod
-    def abort_errno() -> int:
-        return EINTR
-
-    @pytest.fixture
-    @staticmethod
     def socket_method(socket: AsyncSocket) -> Callable[[], Coroutine[Any, Any, Any]]:
         return lambda: socket.accept()
 
@@ -393,11 +387,6 @@ class TestAsyncStreamSocket(MixinTestAsyncSocketBusy, MixinTestSocketSendMSG):
     @staticmethod
     def sock_method_name(request: Any) -> str:
         return request.param
-
-    @pytest.fixture
-    @staticmethod
-    def abort_errno() -> int:
-        return ECONNABORTED
 
     @pytest.fixture
     @staticmethod
@@ -625,7 +614,7 @@ class TestAsyncStreamSocket(MixinTestAsyncSocketBusy, MixinTestSocketSendMSG):
             await socket.shutdown(shutdown_how)
 
         # Assert
-        assert exc_info.value.errno == ENOTSOCK
+        assert exc_info.value.errno == EBADF
         mock_tcp_socket.shutdown.assert_not_called()
 
     @pytest.mark.parametrize(
@@ -716,11 +705,6 @@ class TestAsyncDatagramSocket(MixinTestAsyncSocketBusy):
     @staticmethod
     def sock_method_name(request: Any) -> str:
         return request.param
-
-    @pytest.fixture
-    @staticmethod
-    def abort_errno() -> int:
-        return ECONNABORTED
 
     @pytest.fixture
     @staticmethod
