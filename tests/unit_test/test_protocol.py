@@ -650,8 +650,8 @@ class TestBufferedStreamReceiver:
         # Assert
         mock_convert_func.assert_not_called()
         assert isinstance(exception.error, IncrementalDeserializeError)
-        assert exception.remaining_data == b"a" * nbytes
-        assert exception.error.remaining_data == b"a" * nbytes
+        assert bytes(exception.remaining_data) == b"a" * nbytes
+        assert bytes(exception.error.remaining_data) == b"a" * nbytes
         assert isinstance(exception.__cause__, IncrementalDeserializeError)
 
     def test____build_packet_from_buffer____wrong_deserialize_error(
@@ -709,5 +709,5 @@ class TestBufferedStreamReceiver:
         # Assert
         mock_convert_func.assert_called_once()
         assert isinstance(exception.error, PacketConversionError)
-        assert exception.remaining_data == b"a" * nbytes
+        assert bytes(exception.remaining_data) == b"a" * nbytes
         assert exception.__cause__ is mock_convert_func.side_effect

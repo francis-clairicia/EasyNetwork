@@ -630,9 +630,9 @@ class TestJSONParser:
     @pytest.mark.parametrize(
         ["start_frame", "end_frame"],
         [
-            pytest.param(b'{"data":', b'"something"}', id="object frame"),
-            pytest.param(b'["data",', b'"something"]', id="list frame"),
-            pytest.param(b'"data', b' something"', id="string frame"),
+            pytest.param(b'{"data":', b'"something"}\n', id="object frame"),
+            pytest.param(b'["data",', b'"something"]\n', id="list frame"),
+            pytest.param(b'"data', b' something"\n', id="string frame"),
             pytest.param(b"123", b"45\n", id="plain value"),
         ],
     )
@@ -652,6 +652,7 @@ class TestJSONParser:
         # Assert
         if end_frame_found:
             assert str(exc_info.value) == "JSON object's end frame is found, but chunk is longer than limit"
+            assert bytes(exc_info.value.remaining_data) == b"\n"
         else:
             assert str(exc_info.value) == "JSON object's end frame is not found, and chunk exceed the limit"
-        assert exc_info.value.remaining_data == b""
+            assert bytes(exc_info.value.remaining_data) == b""

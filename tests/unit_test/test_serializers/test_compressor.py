@@ -401,7 +401,7 @@ class TestAbstractCompressorSerializer:
         mock_decompressor_stream_unused_data.assert_not_called()
         mock_serializer.deserialize.assert_not_called()
         assert exception.__cause__ is mock_decompressor_stream.decompress.side_effect
-        assert exception.remaining_data == b""
+        assert bytes(exception.remaining_data) == b""
         if debug_mode:
             assert exception.error_info == {
                 "already_decompressed_chunks": deque([]),

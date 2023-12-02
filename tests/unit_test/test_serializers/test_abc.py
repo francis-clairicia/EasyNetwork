@@ -408,11 +408,41 @@ class TestAutoSeparatedPacketSerializer:
         # Assert
         mock_deserialize_func.assert_called_once_with(b"data")
         assert exception.__cause__ is mock_deserialize_func.side_effect
-        assert exception.remaining_data == expected_remaining_data
+        assert bytes(exception.remaining_data) == expected_remaining_data
         assert exception.error_info is mocker.sentinel.error_info
 
     @pytest.mark.parametrize("separator_found", [False, True], ids=lambda p: f"separator_found=={p}")
     def test____incremental_deserialize____reached_limit(
+        self,
+        separator_found: bytes,
+        mock_deserialize_func: MagicMock,
+        debug_mode: bool,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        serializer = _AutoSeparatedPacketSerializerForTest(separator=b"\r\n", limit=1, debug=debug_mode)
+        mock_deserialize_func.return_value = mocker.sentinel.packet
+        data_to_test: bytes = b"data"
+        if separator_found:
+            data_to_test += b"\r\n"
+
+        # Act
+        consumer = serializer.incremental_deserialize()
+        next(consumer)
+        with pytest.raises(LimitOverrunError) as exc_info:
+            consumer.send(data_to_test)
+
+        # Assert
+        mock_deserialize_func.assert_not_called()
+        if separator_found:
+            assert str(exc_info.value) == "Separator is found, but chunk is longer than limit"
+        else:
+            assert str(exc_info.value) == "Separator is not found, and chunk exceed the limit"
+        assert bytes(exc_info.value.remaining_data) == b""
+        assert exc_info.value.error_info is None
+
+    @pytest.mark.parametrize("separator_found", [False, True], ids=lambda p: f"separator_found=={p}")
+    def test____incremental_deserialize____reached_limit____separator_partially_received(
         self,
         separator_found: bytes,
         mock_deserialize_func: MagicMock,
@@ -436,9 +466,10 @@ class TestAutoSeparatedPacketSerializer:
         mock_deserialize_func.assert_not_called()
         if separator_found:
             assert str(exc_info.value) == "Separator is found, but chunk is longer than limit"
+            assert bytes(exc_info.value.remaining_data) == b""
         else:
             assert str(exc_info.value) == "Separator is not found, and chunk exceed the limit"
-        assert exc_info.value.remaining_data == b""
+            assert bytes(exc_info.value.remaining_data) == b"\r"
         assert exc_info.value.error_info is None
 
 
@@ -615,7 +646,7 @@ class TestFixedSizePacketSerializer:
         # Assert
         mock_deserialize_func.assert_called_once_with(packet_data)
         assert exception.__cause__ is mock_deserialize_func.side_effect
-        assert exception.remaining_data == expected_remaining_data
+        assert bytes(exception.remaining_data) == expected_remaining_data
         assert exception.error_info is mocker.sentinel.error_info
 
     @pytest.mark.parametrize("sizehint_offset", [1024, 0, -1], ids=lambda i: f"(size{i:+})")
@@ -752,7 +783,7 @@ class TestFixedSizePacketSerializer:
         # Assert
         mock_deserialize_func.assert_called_once_with(packet_data)
         assert exception.__cause__ is mock_deserialize_func.side_effect
-        assert exception.remaining_data == expected_remaining_data
+        assert bytes(exception.remaining_data) == expected_remaining_data
         assert exception.error_info is mocker.sentinel.error_info
 
 
@@ -1117,7 +1148,7 @@ class TestFileBasedPacketSerializer:
         exception = exc_info.value
 
         # Assert
-        assert exception.remaining_data == b""
+        assert bytes(exception.remaining_data) == b""
         assert type(exception.__cause__) is MyFileAPIValueError
         if debug_mode:
             assert exception.error_info == {"data": b"data"}

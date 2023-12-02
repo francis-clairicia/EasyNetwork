@@ -103,7 +103,6 @@ class TestJSONSerializer(BaseTestIncrementalSerializer):
             b"\0",
             '{"é": 123}'.encode("latin-1"),
             pytest.param(TOO_BIG_JSON_SERIALIZED[:-20], id="too_big_json_partial"),
-            pytest.param(TOO_BIG_JSON_SERIALIZED, id="too_big_json_no_newline"),
             pytest.param(TOO_BIG_JSON_SERIALIZED + b"\n", id="too_big_json_with_newline"),
             pytest.param(b"4" * (BUFFER_LIMIT + 1024), id="too_big_raw_value_no_newline"),
             pytest.param(b"4" * (BUFFER_LIMIT + 1024) + b"\n", id="too_big_raw_value_with_newline"),
@@ -118,9 +117,14 @@ class TestJSONSerializer(BaseTestIncrementalSerializer):
 
     @pytest.fixture(scope="class")
     @classmethod
-    def invalid_partial_data_extra_data(cls, invalid_partial_data: bytes) -> bytes:
+    def invalid_partial_data_extra_data(cls, invalid_partial_data: bytes, use_lines: bool) -> tuple[bytes, bytes]:
         if len(invalid_partial_data) > cls.BUFFER_LIMIT:
-            return b""
+            if invalid_partial_data.endswith(b"\n"):
+                if use_lines:
+                    return (b"remaining_data", b"remaining_data")
+                else:
+                    return (b"remaining_data", b"\nremaining_data")
+            return (b"remaining_data", b"")
         if invalid_partial_data.startswith(b"\0"):
-            return b""
-        return b"remaining_data"
+            return (b"", b"")
+        return (b"remaining_data", b"remaining_data")

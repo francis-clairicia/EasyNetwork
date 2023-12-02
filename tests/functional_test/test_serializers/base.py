@@ -131,13 +131,8 @@ class BaseTestIncrementalSerializer(BaseTestSerializer):
 
     @pytest.fixture(scope="class")
     @staticmethod
-    def invalid_partial_data_extra_data() -> bytes:
-        return b"remaining_data"
-
-    @pytest.fixture(scope="class")
-    @staticmethod
-    def invalid_partial_data_expected_extra_data(invalid_partial_data_extra_data: bytes) -> bytes:
-        return invalid_partial_data_extra_data
+    def invalid_partial_data_extra_data() -> tuple[bytes, bytes]:
+        return (b"remaining_data", b"remaining_data")
 
     def test____fixture____consistency____incremental_serializer(
         self,
@@ -234,23 +229,21 @@ class BaseTestIncrementalSerializer(BaseTestSerializer):
         self,
         serializer_for_deserialization: AbstractIncrementalPacketSerializer[Any],
         invalid_partial_data: bytes,
-        invalid_partial_data_extra_data: bytes,
-        invalid_partial_data_expected_extra_data: bytes,
+        invalid_partial_data_extra_data: tuple[bytes, bytes],
     ) -> None:
         # Arrange
+        sent_extra_data, expected_remainder = invalid_partial_data_extra_data
+        del invalid_partial_data_extra_data
         consumer = serializer_for_deserialization.incremental_deserialize()
         next(consumer)
 
         # Act
         with pytest.raises(IncrementalDeserializeError) as exc_info:
-            if invalid_partial_data_extra_data:
-                consumer.send(invalid_partial_data + invalid_partial_data_extra_data)
-            else:
-                consumer.send(invalid_partial_data)
+            consumer.send(invalid_partial_data + sent_extra_data)
         exception = exc_info.value
 
         # Assert
-        assert exception.remaining_data == invalid_partial_data_expected_extra_data
+        assert bytes(exception.remaining_data) == expected_remainder
 
 
 class BaseTestBufferedIncrementalSerializer(BaseTestIncrementalSerializer):
@@ -354,26 +347,25 @@ class BaseTestBufferedIncrementalSerializer(BaseTestIncrementalSerializer):
         self,
         serializer_for_deserialization: BufferedIncrementalPacketSerializer[Any, WriteableBuffer],
         invalid_partial_data: bytes,
-        invalid_partial_data_extra_data: bytes,
-        invalid_partial_data_expected_extra_data: bytes,
+        invalid_partial_data_extra_data: tuple[bytes, bytes],
     ) -> None:
         # Arrange
+        sent_extra_data, expected_remainder = invalid_partial_data_extra_data
+        del invalid_partial_data_extra_data
         buffer = serializer_for_deserialization.create_deserializer_buffer(
-            len(invalid_partial_data) + len(invalid_partial_data_extra_data) + 1024
+            len(invalid_partial_data) + len(sent_extra_data) + 1024
         )
         consumer = serializer_for_deserialization.buffered_incremental_deserialize(buffer)
         start_idx = next(consumer)
-        nbytes, expected_remaining_data = write_data_and_extra_in_buffer(
+        nbytes, partial_remaining_data = write_data_and_extra_in_buffer(
             buffer,
             invalid_partial_data,
-            invalid_partial_data_extra_data,
+            sent_extra_data,
             start_pos=start_idx,
             too_short_buffer_for_complete_data="xfail",
         )
-        invalid_partial_data_expected_extra_data = invalid_partial_data_expected_extra_data.replace(
-            invalid_partial_data_extra_data, expected_remaining_data, 1
-        )
-        del expected_remaining_data
+        expected_remainder = expected_remainder.replace(sent_extra_data, partial_remaining_data, 1)
+        del partial_remaining_data
 
         # Act
         with pytest.raises(IncrementalDeserializeError) as exc_info:
@@ -381,7 +373,7 @@ class BaseTestBufferedIncrementalSerializer(BaseTestIncrementalSerializer):
         exception = exc_info.value
 
         # Assert
-        assert exception.remaining_data == invalid_partial_data_expected_extra_data
+        assert bytes(exception.remaining_data) == expected_remainder
 
 
 @final

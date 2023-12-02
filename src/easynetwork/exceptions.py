@@ -108,10 +108,12 @@ class LimitOverrunError(IncrementalDeserializeError):
 
         remaining_data = memoryview(buffer)[consumed:]
         seplen = len(separator)
-        if seplen and remaining_data[:seplen] == separator:
-            remaining_data = remaining_data[seplen:]
-        else:
-            remaining_data = remaining_data[1:]
+        if seplen:
+            if remaining_data[:seplen] == separator:
+                remaining_data = remaining_data[seplen:]
+            else:
+                while remaining_data.nbytes and remaining_data[:seplen] != separator[: remaining_data.nbytes]:
+                    remaining_data = remaining_data[1:]
 
         super().__init__(message, remaining_data, error_info=None)
 

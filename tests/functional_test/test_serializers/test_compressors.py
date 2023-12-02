@@ -66,8 +66,8 @@ class BaseTestCompressorSerializer(BaseTestBufferedIncrementalSerializer):
 
     @pytest.fixture(scope="class")
     @staticmethod
-    def invalid_partial_data_expected_extra_data() -> bytes:
-        return b""
+    def invalid_partial_data_extra_data() -> tuple[bytes, bytes]:
+        return (b"remaining_data", b"")
 
 
 @final
