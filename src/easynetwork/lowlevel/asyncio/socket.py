@@ -120,12 +120,12 @@ class AsyncSocket:
             return client_socket
 
     async def sendall(self, data: ReadableBuffer, /) -> None:
-        with self.__conflict_detection("send", abort_errno=_errno.ECONNABORTED):
+        with self.__conflict_detection("send"):
             socket = self.__check_not_closed()
             await self.__loop.sock_sendall(socket, data)
 
     async def sendmsg(self, buffers: Iterable[ReadableBuffer], /) -> None:
-        with self.__conflict_detection("send", abort_errno=_errno.ECONNABORTED):
+        with self.__conflict_detection("send"):
             socket = self.__check_not_closed()
             if constants.SC_IOV_MAX <= 0 or not _utils.supports_socket_sendmsg(_sock := socket):
                 raise UnsupportedOperation("sendmsg() is not supported")
@@ -145,22 +145,22 @@ class AsyncSocket:
                     _utils.adjust_leftover_buffer(buffers, sent)
 
     async def sendto(self, data: ReadableBuffer, address: _socket._Address, /) -> None:
-        with self.__conflict_detection("send", abort_errno=_errno.ECONNABORTED):
+        with self.__conflict_detection("send"):
             socket = self.__check_not_closed()
             await self.__loop.sock_sendto(socket, data, address)
 
     async def recv(self, bufsize: int, /) -> bytes:
-        with self.__conflict_detection("recv", abort_errno=_errno.ECONNABORTED):
+        with self.__conflict_detection("recv"):
             socket = self.__check_not_closed()
             return await self.__loop.sock_recv(socket, bufsize)
 
     async def recv_into(self, buffer: WriteableBuffer, /) -> int:
-        with self.__conflict_detection("recv", abort_errno=_errno.ECONNABORTED):
+        with self.__conflict_detection("recv"):
             socket = self.__check_not_closed()
             return await self.__loop.sock_recv_into(socket, buffer)
 
     async def recvfrom(self, bufsize: int, /) -> tuple[bytes, _socket._RetAddress]:
-        with self.__conflict_detection("recv", abort_errno=_errno.ECONNABORTED):
+        with self.__conflict_detection("recv"):
             socket = self.__check_not_closed()
             return await self.__loop.sock_recvfrom(socket, bufsize)
 
@@ -180,7 +180,7 @@ class AsyncSocket:
         await asyncio.sleep(0)
 
     @contextlib.contextmanager
-    def __conflict_detection(self, task_id: _SocketTaskId, *, abort_errno: int = _errno.EINTR) -> Iterator[None]:
+    def __conflict_detection(self, task_id: _SocketTaskId) -> Iterator[None]:
         if task_id in self.__waiters:
             raise _utils.error_from_errno(_errno.EBUSY)
 
@@ -200,11 +200,11 @@ class AsyncSocket:
             yield
 
         if scope.cancelled_caught():
-            raise _utils.error_from_errno(abort_errno)
+            raise _utils.error_from_errno(_errno.EBADF)
 
     def __check_not_closed(self) -> _socket.socket:
         if (socket := self.__socket) is None:
-            raise _utils.error_from_errno(_errno.ENOTSOCK)
+            raise _utils.error_from_errno(_errno.EBADF)
         return socket
 
     @property
