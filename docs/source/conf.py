@@ -27,6 +27,7 @@ extensions = [
     # Built-in
     "sphinx.ext.autodoc",
     "sphinx.ext.duration",
+    "sphinx.ext.ifconfig",
     "sphinx.ext.intersphinx",
     "sphinx.ext.napoleon",
     "sphinx.ext.todo",
@@ -51,7 +52,15 @@ highlight_language = "python3"
 manpages_url = "https://manpages.debian.org/{path}"
 
 templates_path = []
-exclude_patterns = ["_include", "_extensions"]
+exclude_patterns = ["_include", "_extensions", "_static"]
+
+rst_prolog = """
+.. ifconfig:: '.dev' in release or html_context.get('current_version') == 'latest'
+
+   .. warning::
+
+      This is the documentation for the latest unstable version.
+"""
 
 
 # -- sphinx.ext.autodoc configuration ----------------------------------------
@@ -149,8 +158,3 @@ html_css_files = [
 html_theme_options = {
     "navigation_depth": -1,  # Unlimited
 }
-
-# -- Options for the linkcheck builder ---------------------------------------
-# https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-the-linkcheck-builder
-
-linkcheck_timeout = 1

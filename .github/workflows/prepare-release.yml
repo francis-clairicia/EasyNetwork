@@ -3,7 +3,7 @@ name: Prepare a draft release for a new version
 on:
   push:
     tags:
-      - v*.*.*
+      - "[0-9]+.[0-9]+.*"
 
 jobs:
   draft-release:
@@ -16,6 +16,6 @@ jobs:
       - name: Create Github Release
         uses: softprops/action-gh-release@v0.1.15
         with:
-          name: easynetwork ${{ github.ref_name }}
+          name: easynetwork v${{ github.ref_name }}
           draft: true
           generate_release_notes: true
