@@ -66,7 +66,7 @@ class UnpicklerConfig:
     errors: str = "strict"
 
 
-class PickleSerializer(AbstractPacketSerializer[Any]):
+class PickleSerializer(AbstractPacketSerializer[Any, Any]):
     """
     A :term:`one-shot serializer` built on top of the :mod:`pickle` module.
     """

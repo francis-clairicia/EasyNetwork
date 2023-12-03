@@ -81,12 +81,12 @@ class TestBZ2CompressorSerializer(BaseTestCompressorSerializer):
 
     @pytest.fixture(scope="class")
     @staticmethod
-    def serializer_for_serialization(compress_level: int) -> BZ2CompressorSerializer[bytes]:
+    def serializer_for_serialization(compress_level: int) -> BZ2CompressorSerializer[bytes, bytes]:
         return BZ2CompressorSerializer(NoSerialization(), compress_level=compress_level)
 
     @pytest.fixture(scope="class")
     @staticmethod
-    def serializer_for_deserialization() -> BZ2CompressorSerializer[bytes]:
+    def serializer_for_deserialization() -> BZ2CompressorSerializer[bytes, bytes]:
         return BZ2CompressorSerializer(NoSerialization())
 
     #### One-shot Serialize
@@ -117,12 +117,12 @@ class TestZlibCompressorSerializer(BaseTestCompressorSerializer):
 
     @pytest.fixture(scope="class")
     @staticmethod
-    def serializer_for_serialization(compress_level: int) -> ZlibCompressorSerializer[bytes]:
+    def serializer_for_serialization(compress_level: int) -> ZlibCompressorSerializer[bytes, bytes]:
         return ZlibCompressorSerializer(NoSerialization(), compress_level=compress_level)
 
     @pytest.fixture(scope="class")
     @staticmethod
-    def serializer_for_deserialization() -> ZlibCompressorSerializer[bytes]:
+    def serializer_for_deserialization() -> ZlibCompressorSerializer[bytes, bytes]:
         return ZlibCompressorSerializer(NoSerialization())
 
     #### One-shot Serialize

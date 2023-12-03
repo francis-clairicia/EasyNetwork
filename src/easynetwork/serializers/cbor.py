@@ -63,7 +63,7 @@ class CBORDecoderConfig:
     str_errors: str = "strict"
 
 
-class CBORSerializer(FileBasedPacketSerializer[Any]):
+class CBORSerializer(FileBasedPacketSerializer[Any, Any]):
     """
     A :term:`serializer` built on top of the :mod:`cbor2` module.
 

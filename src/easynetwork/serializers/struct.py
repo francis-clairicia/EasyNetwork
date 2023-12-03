@@ -22,7 +22,7 @@ from abc import abstractmethod
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar, final
 
-from .._typevars import _DTOPacketT
+from .._typevars import _ReceivedDTOPacketT, _SentDTOPacketT
 from ..exceptions import DeserializeError
 from .base_stream import FixedSizePacketSerializer
 
@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 _ENDIANNESS_CHARACTERS: frozenset[str] = frozenset({"@", "=", "<", ">", "!"})
 
 
-class AbstractStructSerializer(FixedSizePacketSerializer[_DTOPacketT]):
+class AbstractStructSerializer(FixedSizePacketSerializer[_SentDTOPacketT, _ReceivedDTOPacketT]):
     r"""
     A base class for structured data.
 
@@ -89,7 +89,7 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_DTOPacketT]):
         self.__error_cls = error
 
     @abstractmethod
-    def iter_values(self, packet: _DTOPacketT, /) -> Iterable[Any]:
+    def iter_values(self, packet: _SentDTOPacketT, /) -> Iterable[Any]:
         """
         Returns an object suitable for :meth:`struct.Struct.pack`.
 
@@ -104,7 +104,7 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_DTOPacketT]):
         raise NotImplementedError
 
     @abstractmethod
-    def from_tuple(self, packet_tuple: tuple[Any, ...], /) -> _DTOPacketT:
+    def from_tuple(self, packet_tuple: tuple[Any, ...], /) -> _ReceivedDTOPacketT:
         """
         Finishes the packet deserialization by parsing the tuple obtained by :meth:`struct.Struct.unpack`.
 
@@ -119,7 +119,7 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_DTOPacketT]):
         raise NotImplementedError
 
     @final
-    def serialize(self, packet: _DTOPacketT) -> bytes:
+    def serialize(self, packet: _SentDTOPacketT) -> bytes:
         """
         Returns the structured data representation of the Python object `packet`.
 
@@ -138,7 +138,7 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_DTOPacketT]):
         return self.__s.pack(*self.iter_values(packet))
 
     @final
-    def deserialize(self, data: bytes | memoryview) -> _DTOPacketT:
+    def deserialize(self, data: bytes | memoryview) -> _ReceivedDTOPacketT:
         """
         Creates a Python object representing the structure from `data`.
 
@@ -186,7 +186,7 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_DTOPacketT]):
 _NamedTupleVar = TypeVar("_NamedTupleVar", bound=NamedTuple)
 
 
-class NamedTupleStructSerializer(AbstractStructSerializer[_NamedTupleVar]):
+class NamedTupleStructSerializer(AbstractStructSerializer[_NamedTupleVar, _NamedTupleVar]):
     r"""
     Generic class to handle a :term:`named tuple` with a :class:`struct.Struct` object.
 

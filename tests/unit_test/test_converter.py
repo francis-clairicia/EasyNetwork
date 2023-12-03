@@ -29,12 +29,12 @@ class TestStapledPacketConverter:
     def converter(
         mock_sent_packet_converter: MagicMock,
         mock_received_packet_converter: MagicMock,
-    ) -> StapledPacketConverter[Any, Any, Any]:
+    ) -> StapledPacketConverter[Any, Any, Any, Any]:
         return StapledPacketConverter(mock_sent_packet_converter, mock_received_packet_converter)
 
     def test____create_from_dto_packet____default(
         self,
-        converter: StapledPacketConverter[Any, Any, Any],
+        converter: StapledPacketConverter[Any, Any, Any, Any],
         mock_sent_packet_converter: MagicMock,
         mock_received_packet_converter: MagicMock,
         mocker: MockerFixture,
@@ -54,7 +54,7 @@ class TestStapledPacketConverter:
 
     def test____convert_to_dto_packet____callback(
         self,
-        converter: StapledPacketConverter[Any, Any, Any],
+        converter: StapledPacketConverter[Any, Any, Any, Any],
         mock_sent_packet_converter: MagicMock,
         mock_received_packet_converter: MagicMock,
         mocker: MockerFixture,

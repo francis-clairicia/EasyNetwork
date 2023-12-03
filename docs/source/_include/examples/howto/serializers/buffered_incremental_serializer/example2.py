@@ -2,16 +2,19 @@ from __future__ import annotations
 
 import io
 from collections.abc import Generator
-from typing import Any
+from typing import Any, TypeAlias
 
 from easynetwork.serializers.abc import BufferedIncrementalPacketSerializer
 
+SentPacket: TypeAlias = Any
+ReceivedPacket: TypeAlias = Any
 
-class MySerializer(BufferedIncrementalPacketSerializer[Any, memoryview]):
+
+class MySerializer(BufferedIncrementalPacketSerializer[SentPacket, ReceivedPacket, memoryview]):
     ...
 
     # It can receive either 'bytes' from endpoint or 'memoryviews' from buffered_incremental_deserialize()
-    def incremental_deserialize(self) -> Generator[None, bytes | memoryview, tuple[Any, bytes]]:
+    def incremental_deserialize(self) -> Generator[None, bytes | memoryview, tuple[ReceivedPacket, bytes]]:
         initial_bytes = yield
         with io.BytesIO(initial_bytes) as buffer:
             while True:
@@ -27,7 +30,7 @@ class MySerializer(BufferedIncrementalPacketSerializer[Any, memoryview]):
             remainder = buffer.read()
             return packet, remainder
 
-    def _load_from_file(self, file: io.IOBase) -> Any:
+    def _load_from_file(self, file: io.IOBase) -> ReceivedPacket:
         ...
 
     def create_deserializer_buffer(self, sizehint: int) -> memoryview:
@@ -35,7 +38,7 @@ class MySerializer(BufferedIncrementalPacketSerializer[Any, memoryview]):
         buffer = bytearray(sizehint)
         return memoryview(buffer)
 
-    def buffered_incremental_deserialize(self, buffer: memoryview) -> Generator[None, int, tuple[Any, bytes]]:
+    def buffered_incremental_deserialize(self, buffer: memoryview) -> Generator[None, int, tuple[ReceivedPacket, bytes]]:
         incremental_deserialize = self.incremental_deserialize()
         # Start the generator
         next(incremental_deserialize)

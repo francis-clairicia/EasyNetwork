@@ -26,14 +26,14 @@ from abc import ABCMeta, abstractmethod
 from collections.abc import Generator
 from typing import TYPE_CHECKING, Generic
 
-from .._typevars import _BufferT, _DTOPacketT
+from .._typevars import _BufferT, _ReceivedDTOPacketT, _SentDTOPacketT
 from ..exceptions import DeserializeError
 
 if TYPE_CHECKING:
     from _typeshed import ReadableBuffer
 
 
-class AbstractPacketSerializer(Generic[_DTOPacketT], metaclass=ABCMeta):
+class AbstractPacketSerializer(Generic[_SentDTOPacketT, _ReceivedDTOPacketT], metaclass=ABCMeta):
     """
     The base class for implementing a :term:`serializer`.
 
@@ -43,7 +43,7 @@ class AbstractPacketSerializer(Generic[_DTOPacketT], metaclass=ABCMeta):
     __slots__ = ("__weakref__",)
 
     @abstractmethod
-    def serialize(self, packet: _DTOPacketT, /) -> bytes:
+    def serialize(self, packet: _SentDTOPacketT, /) -> bytes:
         """
         Returns the byte representation of the Python object `packet`.
 
@@ -56,7 +56,7 @@ class AbstractPacketSerializer(Generic[_DTOPacketT], metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    def deserialize(self, data: bytes, /) -> _DTOPacketT:
+    def deserialize(self, data: bytes, /) -> _ReceivedDTOPacketT:
         """
         Creates a Python object representing the raw :term:`packet` from `data`.
 
@@ -72,7 +72,7 @@ class AbstractPacketSerializer(Generic[_DTOPacketT], metaclass=ABCMeta):
         raise NotImplementedError
 
 
-class AbstractIncrementalPacketSerializer(AbstractPacketSerializer[_DTOPacketT]):
+class AbstractIncrementalPacketSerializer(AbstractPacketSerializer[_SentDTOPacketT, _ReceivedDTOPacketT]):
     """
     The base class for implementing an :term:`incremental serializer`.
     """
@@ -80,7 +80,7 @@ class AbstractIncrementalPacketSerializer(AbstractPacketSerializer[_DTOPacketT])
     __slots__ = ()
 
     @abstractmethod
-    def incremental_serialize(self, packet: _DTOPacketT, /) -> Generator[bytes, None, None]:
+    def incremental_serialize(self, packet: _SentDTOPacketT, /) -> Generator[bytes, None, None]:
         """
         Returns the byte representation of the Python object `packet`.
 
@@ -98,7 +98,7 @@ class AbstractIncrementalPacketSerializer(AbstractPacketSerializer[_DTOPacketT])
         raise NotImplementedError
 
     @abstractmethod
-    def incremental_deserialize(self) -> Generator[None, bytes, tuple[_DTOPacketT, bytes]]:
+    def incremental_deserialize(self) -> Generator[None, bytes, tuple[_ReceivedDTOPacketT, bytes]]:
         """
         Creates a Python object representing the raw :term:`packet`.
 
@@ -116,7 +116,7 @@ class AbstractIncrementalPacketSerializer(AbstractPacketSerializer[_DTOPacketT])
         """
         raise NotImplementedError
 
-    def serialize(self, packet: _DTOPacketT, /) -> bytes:
+    def serialize(self, packet: _SentDTOPacketT, /) -> bytes:
         """
         Returns the byte representation of the Python object `packet`.
 
@@ -130,7 +130,7 @@ class AbstractIncrementalPacketSerializer(AbstractPacketSerializer[_DTOPacketT])
         """
         return b"".join(self.incremental_serialize(packet))
 
-    def deserialize(self, data: bytes, /) -> _DTOPacketT:
+    def deserialize(self, data: bytes, /) -> _ReceivedDTOPacketT:
         """
         Creates a Python object representing the raw :term:`packet` from `data`.
 
@@ -146,12 +146,12 @@ class AbstractIncrementalPacketSerializer(AbstractPacketSerializer[_DTOPacketT])
         Returns:
             the deserialized Python object.
         """
-        consumer: Generator[None, bytes, tuple[_DTOPacketT, bytes]] = self.incremental_deserialize()
+        consumer: Generator[None, bytes, tuple[_ReceivedDTOPacketT, bytes]] = self.incremental_deserialize()
         try:
             next(consumer)
         except StopIteration:
             raise RuntimeError("self.incremental_deserialize() generator did not yield") from None
-        packet: _DTOPacketT
+        packet: _ReceivedDTOPacketT
         remaining: bytes
         try:
             consumer.send(data)
@@ -165,7 +165,10 @@ class AbstractIncrementalPacketSerializer(AbstractPacketSerializer[_DTOPacketT])
         return packet
 
 
-class BufferedIncrementalPacketSerializer(AbstractIncrementalPacketSerializer[_DTOPacketT], Generic[_DTOPacketT, _BufferT]):
+class BufferedIncrementalPacketSerializer(
+    AbstractIncrementalPacketSerializer[_SentDTOPacketT, _ReceivedDTOPacketT],
+    Generic[_SentDTOPacketT, _ReceivedDTOPacketT, _BufferT],
+):
     """
     The base class for implementing an :term:`incremental serializer` with manual control of the receive buffer.
     """
@@ -191,7 +194,7 @@ class BufferedIncrementalPacketSerializer(AbstractIncrementalPacketSerializer[_D
         self,
         buffer: _BufferT,
         /,
-    ) -> Generator[int | None, int, tuple[_DTOPacketT, ReadableBuffer]]:
+    ) -> Generator[int | None, int, tuple[_ReceivedDTOPacketT, ReadableBuffer]]:
         """
         Creates a Python object representing the raw :term:`packet`.
 

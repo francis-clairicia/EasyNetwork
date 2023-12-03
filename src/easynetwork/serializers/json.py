@@ -68,7 +68,7 @@ class JSONDecoderConfig:
     strict: bool = True
 
 
-class JSONSerializer(AbstractIncrementalPacketSerializer[Any]):
+class JSONSerializer(AbstractIncrementalPacketSerializer[Any, Any]):
     """
     A :term:`serializer` built on top of the :mod:`json` module.
     """

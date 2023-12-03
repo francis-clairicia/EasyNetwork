@@ -20,9 +20,11 @@ __all__ = [
     "_BufferT",
     "_DTOPacketT",
     "_PacketT",
+    "_ReceivedDTOPacketT",
     "_ReceivedPacketT",
     "_RequestT",
     "_ResponseT",
+    "_SentDTOPacketT",
     "_SentPacketT",
 ]
 
@@ -35,6 +37,8 @@ else:  # pragma: no cover
     WriteableBuffer = bytearray | memoryview
 
 _DTOPacketT = typing.TypeVar("_DTOPacketT")
+_SentDTOPacketT = typing.TypeVar("_SentDTOPacketT")
+_ReceivedDTOPacketT = typing.TypeVar("_ReceivedDTOPacketT")
 
 _SentPacketT = typing.TypeVar("_SentPacketT")
 _ReceivedPacketT = typing.TypeVar("_ReceivedPacketT")

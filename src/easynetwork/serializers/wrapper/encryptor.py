@@ -22,14 +22,14 @@ __all__ = [
 
 from typing import final
 
-from ..._typevars import _DTOPacketT
+from ..._typevars import _ReceivedDTOPacketT, _SentDTOPacketT
 from ...exceptions import DeserializeError
 from ...lowlevel.constants import _DEFAULT_LIMIT
 from ..abc import AbstractPacketSerializer
 from ..base_stream import AutoSeparatedPacketSerializer
 
 
-class EncryptorSerializer(AutoSeparatedPacketSerializer[_DTOPacketT]):
+class EncryptorSerializer(AutoSeparatedPacketSerializer[_SentDTOPacketT, _ReceivedDTOPacketT]):
     """
     A :term:`serializer wrapper` to handle encrypted data, built on top of :mod:`cryptography.fernet` module.
 
@@ -40,7 +40,7 @@ class EncryptorSerializer(AutoSeparatedPacketSerializer[_DTOPacketT]):
 
     def __init__(
         self,
-        serializer: AbstractPacketSerializer[_DTOPacketT],
+        serializer: AbstractPacketSerializer[_SentDTOPacketT, _ReceivedDTOPacketT],
         key: str | bytes,
         *,
         token_ttl: int | None = None,
@@ -70,7 +70,7 @@ class EncryptorSerializer(AutoSeparatedPacketSerializer[_DTOPacketT]):
         )
         if not isinstance(serializer, AbstractPacketSerializer):
             raise TypeError(f"Expected a serializer instance, got {serializer!r}")
-        self.__serializer: AbstractPacketSerializer[_DTOPacketT] = serializer
+        self.__serializer: AbstractPacketSerializer[_SentDTOPacketT, _ReceivedDTOPacketT] = serializer
         self.__fernet = cryptography.fernet.Fernet(key)
         self.__token_ttl = token_ttl
         self.__invalid_token_cls = cryptography.fernet.InvalidToken
@@ -93,7 +93,7 @@ class EncryptorSerializer(AutoSeparatedPacketSerializer[_DTOPacketT]):
         return cryptography.fernet.Fernet.generate_key()
 
     @final
-    def serialize(self, packet: _DTOPacketT) -> bytes:
+    def serialize(self, packet: _SentDTOPacketT) -> bytes:
         """
         Serializes `packet` and encrypt the result.
 
@@ -107,7 +107,7 @@ class EncryptorSerializer(AutoSeparatedPacketSerializer[_DTOPacketT]):
         return self.__fernet.encrypt(data)
 
     @final
-    def deserialize(self, data: bytes) -> _DTOPacketT:
+    def deserialize(self, data: bytes) -> _ReceivedDTOPacketT:
         """
         Decrypts token `data` and deserializes the result.
 

@@ -17,7 +17,7 @@ class Response:
     ...
 
 
-class ClientConverter(AbstractPacketConverterComposite[Request, Response, dict[str, Any]]):
+class ClientConverter(AbstractPacketConverterComposite[Request, Response, dict[str, Any], dict[str, Any]]):
     def convert_to_dto_packet(self, request: Request, /) -> dict[str, Any]:
         ...
 
@@ -25,7 +25,7 @@ class ClientConverter(AbstractPacketConverterComposite[Request, Response, dict[s
         ...
 
 
-class ServerConverter(AbstractPacketConverterComposite[Response, Request, dict[str, Any]]):
+class ServerConverter(AbstractPacketConverterComposite[Response, Request, dict[str, Any], dict[str, Any]]):
     def convert_to_dto_packet(self, response: Response, /) -> dict[str, Any]:
         ...
 

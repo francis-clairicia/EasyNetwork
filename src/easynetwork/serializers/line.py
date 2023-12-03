@@ -25,7 +25,7 @@ from ..lowlevel.constants import _DEFAULT_LIMIT
 from .base_stream import AutoSeparatedPacketSerializer
 
 
-class StringLineSerializer(AutoSeparatedPacketSerializer[str]):
+class StringLineSerializer(AutoSeparatedPacketSerializer[str, str]):
     """
     A :term:`serializer` to handle ASCII-based protocols.
     """
