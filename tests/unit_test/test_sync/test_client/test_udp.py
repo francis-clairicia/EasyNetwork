@@ -197,6 +197,7 @@ class TestUDPNetworkClient(BaseTestClient):
     def test____dunder_init____create_datagram_endpoint____with_parameters(
         self,
         reuse_port: bool,
+        socket_family: int,
         local_address: tuple[str, int] | None,
         remote_address: tuple[str, int],
         mock_udp_socket: MagicMock,
@@ -210,12 +211,14 @@ class TestUDPNetworkClient(BaseTestClient):
         _ = UDPNetworkClient(
             remote_address,
             mock_datagram_protocol,
+            family=socket_family,
             local_address=local_address,
             reuse_port=reuse_port,
         )
 
         # Assert
         mock_create_udp_socket.assert_called_once_with(
+            family=socket_family,
             local_address=local_address,
             remote_address=remote_address,
             reuse_port=reuse_port,
@@ -224,6 +227,56 @@ class TestUDPNetworkClient(BaseTestClient):
             mocker.call.getpeername(),
             mocker.call.setblocking(False),
         ]
+
+    @pytest.mark.parametrize(
+        "local_address", [None, ("local_address", 12345)], ids=lambda p: f"local_address=={p}", indirect=True
+    )
+    @pytest.mark.parametrize("reuse_port", [False, True], ids=lambda p: f"reuse_port=={p}")
+    def test____dunder_init____create_datagram_endpoint____with_parameters____explicit_AF_UNSPEC(
+        self,
+        reuse_port: bool,
+        local_address: tuple[str, int] | None,
+        remote_address: tuple[str, int],
+        mock_datagram_protocol: MagicMock,
+        mock_create_udp_socket: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act
+        _ = UDPNetworkClient(
+            remote_address,
+            mock_datagram_protocol,
+            family=AF_UNSPEC,
+            local_address=local_address,
+            reuse_port=reuse_port,
+        )
+
+        # Assert
+        mock_create_udp_socket.assert_called_once_with(
+            family=AF_UNSPEC,
+            local_address=local_address,
+            remote_address=remote_address,
+            reuse_port=reuse_port,
+        )
+
+    @pytest.mark.parametrize("socket_family", list(UNSUPPORTED_FAMILIES), indirect=True)
+    def test____dunder_init____create_datagram_endpoint____invalid_family(
+        self,
+        socket_family: int,
+        remote_address: tuple[str, int],
+        mock_datagram_protocol: MagicMock,
+        mock_create_udp_socket: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        with pytest.raises(ValueError, match=r"^Only these families are supported: .+$"):
+            _ = UDPNetworkClient(
+                remote_address,
+                mock_datagram_protocol,
+                family=socket_family,
+            )
+        mock_create_udp_socket.assert_not_called()
 
     @pytest.mark.parametrize("bound", [False, True], ids=lambda p: f"bound=={p}")
     def test____dunder_init____use_given_socket____default(
@@ -848,11 +901,22 @@ class TestUDPSocketFactory:
     @pytest.mark.parametrize("with_local_address", [False, True], ids=lambda boolean: f"with_local_address=={boolean}")
     @pytest.mark.parametrize("with_remote_address", [False, True], ids=lambda boolean: f"with_remote_address=={boolean}")
     @pytest.mark.parametrize("set_reuse_port", [False, True], ids=lambda boolean: f"set_reuse_port=={boolean}")
+    @pytest.mark.parametrize(
+        ["family", "socket_families"],
+        [
+            pytest.param(AF_UNSPEC, (AF_INET, AF_INET6), id="AF_UNSPEC"),
+            pytest.param(AF_INET, (AF_INET,), id="AF_INET"),
+            pytest.param(AF_INET6, (AF_INET6,), id="AF_INET6"),
+        ],
+        indirect=["socket_families"],
+    )
     def test____create_udp_socket____with_parameters(
         self,
         with_local_address: bool,
         with_remote_address: bool,
         set_reuse_port: bool,
+        family: int,
+        socket_families: tuple[int, ...],
         mock_socket_cls: MagicMock,
         mock_getaddrinfo: MagicMock,
         mock_socket_ipv4: MagicMock,
@@ -865,40 +929,61 @@ class TestUDPSocketFactory:
         expected_local_address: tuple[str, int] = local_address if local_address is not None else ("localhost", 0)
 
         # Act
-        udp_socket = create_udp_socket(local_address=local_address, remote_address=remote_address, reuse_port=set_reuse_port)
+        udp_socket = create_udp_socket(
+            local_address=local_address,
+            remote_address=remote_address,
+            family=family,
+            reuse_port=set_reuse_port,
+        )
 
         # Assert
-        assert udp_socket is mock_socket_ipv4
         if remote_address is None:
             mock_getaddrinfo.assert_called_once_with(
                 *expected_local_address,
-                family=AF_UNSPEC,
+                family=family,
                 type=SOCK_DGRAM,
                 flags=AI_PASSIVE,
             )
         else:
             mock_getaddrinfo.assert_called_once_with(
                 *remote_address,
-                family=AF_UNSPEC,
+                family=family,
                 type=SOCK_DGRAM,
                 flags=0,
             )
-        mock_socket_cls.assert_called_once_with(AF_INET, SOCK_DGRAM, IPPROTO_UDP)
+        if AF_INET in socket_families:
+            assert udp_socket is mock_socket_ipv4
+            mock_socket_cls.assert_called_once_with(AF_INET, SOCK_DGRAM, IPPROTO_UDP)
+            used_socket = mock_socket_ipv4
+            not_used_socket = mock_socket_ipv6
+        else:
+            assert udp_socket is mock_socket_ipv6
+            mock_socket_cls.assert_called_once_with(AF_INET6, SOCK_DGRAM, IPPROTO_UDP)
+            used_socket = mock_socket_ipv6
+            not_used_socket = mock_socket_ipv4
         if set_reuse_port:
-            mock_socket_ipv4.setsockopt.assert_called_once_with(SOL_SOCKET, SO_REUSEPORT, True)
+            used_socket.setsockopt.assert_called_once_with(SOL_SOCKET, SO_REUSEPORT, True)
         else:
-            mock_socket_ipv4.setsockopt.assert_not_called()
-        if remote_address is None:
-            mock_socket_ipv4.bind.assert_called_once_with(("127.0.0.1", expected_local_address[1]))
-            mock_socket_ipv4.connect.assert_not_called()
+            used_socket.setsockopt.assert_not_called()
+        if used_socket is mock_socket_ipv4:
+            if remote_address is None:
+                used_socket.bind.assert_called_once_with(("127.0.0.1", expected_local_address[1]))
+                used_socket.connect.assert_not_called()
+            else:
+                used_socket.bind.assert_called_once_with(expected_local_address)
+                used_socket.connect.assert_called_once_with(("127.0.0.1", 12345))
         else:
-            mock_socket_ipv4.bind.assert_called_once_with(expected_local_address)
-            mock_socket_ipv4.connect.assert_called_once_with(("127.0.0.1", 12345))
-        mock_socket_ipv4.close.assert_not_called()
+            if remote_address is None:
+                used_socket.bind.assert_called_once_with(("::1", expected_local_address[1], 0, 0))
+                used_socket.connect.assert_not_called()
+            else:
+                used_socket.bind.assert_called_once_with(expected_local_address)
+                used_socket.connect.assert_called_once_with(("::1", 12345, 0, 0))
+        used_socket.close.assert_not_called()
 
-        mock_socket_ipv6.setsockopt.assert_not_called()
-        mock_socket_ipv6.bind.assert_not_called()
-        mock_socket_ipv6.connect.assert_not_called()
+        not_used_socket.setsockopt.assert_not_called()
+        not_used_socket.bind.assert_not_called()
+        not_used_socket.connect.assert_not_called()
 
     @pytest.mark.parametrize("with_remote_address", [False, True], ids=lambda boolean: f"with_remote_address=={boolean}")
     @pytest.mark.parametrize("fail_on", ["socket", "bind", "connect"], ids=lambda fail_on: f"fail_on=={fail_on}")

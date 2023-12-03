@@ -24,11 +24,12 @@ from socket import (
     SocketType,
     gaierror,
 )
-from typing import TYPE_CHECKING, Any, Literal, assert_never, cast
+from typing import TYPE_CHECKING, Any, Literal, Protocol as TypingProtocol, assert_never, cast
 
 from easynetwork.lowlevel._utils import error_from_errno
 from easynetwork.lowlevel.asyncio._asyncio_utils import (
     create_connection,
+    create_datagram_connection,
     ensure_resolved,
     open_listener_sockets_from_getaddrinfo_result,
     wait_until_readable,
@@ -203,12 +204,56 @@ async def test____ensure_resolved____propagate_unrelated_gaierror(
     mock_getaddrinfo.assert_not_awaited()
 
 
+class _CreateConnectionCallable(TypingProtocol):
+    async def __call__(
+        self,
+        host: str,
+        port: int,
+        loop: asyncio.AbstractEventLoop,
+        local_address: tuple[str, int] | None = None,
+    ) -> SocketType:
+        ...
+
+
+class _AddrInfoListFactory(TypingProtocol):
+    def __call__(
+        self,
+        port: int,
+        families: Sequence[int] = ...,
+    ) -> Sequence[tuple[int, int, int, str, tuple[Any, ...]]]:
+        ...
+
+
+@pytest.fixture(params=[SOCK_STREAM, SOCK_DGRAM], ids=lambda sock_type: f"sock_type=={sock_type!r}")
+def connection_socktype(request: pytest.FixtureRequest) -> int:
+    return request.param
+
+
+@pytest.fixture
+def create_connection_of_socktype(connection_socktype: int) -> _CreateConnectionCallable:
+    if connection_socktype == SOCK_STREAM:
+        return create_connection
+    if connection_socktype == SOCK_DGRAM:
+        return create_datagram_connection
+    pytest.fail("Invalid fixture argument")
+
+
+@pytest.fixture
+def addrinfo_list_factory(connection_socktype: int) -> _AddrInfoListFactory:
+    if connection_socktype == SOCK_STREAM:
+        return stream_addrinfo_list
+    if connection_socktype == SOCK_DGRAM:
+        return datagram_addrinfo_list
+    pytest.fail("Invalid fixture argument")
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("with_local_address", [False, True], ids=lambda boolean: f"with_local_address=={boolean}")
-@pytest.mark.parametrize("sock_type", [None, SOCK_STREAM, SOCK_DGRAM], ids=lambda sock_type: f"sock_type=={sock_type!r}")
 async def test____create_connection____default(
     event_loop: asyncio.AbstractEventLoop,
-    sock_type: int | None,
+    create_connection_of_socktype: _CreateConnectionCallable,
+    addrinfo_list_factory: _AddrInfoListFactory,
+    connection_socktype: int,
     with_local_address: bool,
     mock_socket_cls: MagicMock,
     mock_socket_ipv4: MagicMock,
@@ -218,40 +263,30 @@ async def test____create_connection____default(
     mocker: MockerFixture,
 ) -> None:
     # Arrange
-    expected_sock_type = SOCK_STREAM if sock_type is None else sock_type
-    expected_proto = IPPROTO_TCP if expected_sock_type == SOCK_STREAM else IPPROTO_UDP
+    expected_proto = IPPROTO_TCP if connection_socktype == SOCK_STREAM else IPPROTO_UDP
     remote_host, remote_port = "localhost", 12345
     local_address: tuple[str, int] | None = ("localhost", 11111) if with_local_address else None
 
     if local_address is None:
-        if expected_sock_type == SOCK_STREAM:
-            mock_getaddrinfo.side_effect = [stream_addrinfo_list(remote_port)]
-        else:
-            mock_getaddrinfo.side_effect = [datagram_addrinfo_list(remote_port)]
+        mock_getaddrinfo.side_effect = [addrinfo_list_factory(remote_port)]
     else:
-        if expected_sock_type == SOCK_STREAM:
-            mock_getaddrinfo.side_effect = [stream_addrinfo_list(remote_port), stream_addrinfo_list(local_address[1])]
-        else:
-            mock_getaddrinfo.side_effect = [datagram_addrinfo_list(remote_port), datagram_addrinfo_list(local_address[1])]
+        mock_getaddrinfo.side_effect = [addrinfo_list_factory(remote_port), addrinfo_list_factory(local_address[1])]
 
     # Act
-    if sock_type is None:
-        socket = await create_connection(remote_host, remote_port, event_loop, local_address=local_address)
-    else:
-        socket = await create_connection(remote_host, remote_port, event_loop, local_address=local_address, socktype=sock_type)
+    socket = await create_connection_of_socktype(remote_host, remote_port, event_loop, local_address=local_address)
 
     # Assert
     if local_address is None:
         assert mock_getaddrinfo.await_args_list == [
-            mocker.call(remote_host, remote_port, family=AF_UNSPEC, type=expected_sock_type, proto=0, flags=0),
+            mocker.call(remote_host, remote_port, family=AF_UNSPEC, type=connection_socktype, proto=0, flags=0),
         ]
     else:
         assert mock_getaddrinfo.await_args_list == [
-            mocker.call(remote_host, remote_port, family=AF_UNSPEC, type=expected_sock_type, proto=0, flags=0),
-            mocker.call(*local_address, family=AF_UNSPEC, type=expected_sock_type, proto=0, flags=0),
+            mocker.call(remote_host, remote_port, family=AF_UNSPEC, type=connection_socktype, proto=0, flags=0),
+            mocker.call(*local_address, family=AF_UNSPEC, type=connection_socktype, proto=0, flags=0),
         ]
 
-    mock_socket_cls.assert_called_once_with(AF_INET, expected_sock_type, expected_proto)
+    mock_socket_cls.assert_called_once_with(AF_INET, connection_socktype, expected_proto)
     assert socket is mock_socket_ipv4
 
     mock_socket_ipv4.setblocking.assert_called_once_with(False)
@@ -271,6 +306,9 @@ async def test____create_connection____default(
 async def test____create_connection____first_failed(
     event_loop: asyncio.AbstractEventLoop,
     fail_on: Literal["socket", "bind", "connect"],
+    create_connection_of_socktype: _CreateConnectionCallable,
+    addrinfo_list_factory: _AddrInfoListFactory,
+    connection_socktype: int,
     mock_socket_cls: MagicMock,
     mock_socket_ipv4: MagicMock,
     mock_socket_ipv6: MagicMock,
@@ -283,9 +321,9 @@ async def test____create_connection____first_failed(
     local_address: tuple[str, int] | None = ("localhost", 11111) if fail_on == "bind" else None
 
     if local_address is None:
-        mock_getaddrinfo.side_effect = [stream_addrinfo_list(remote_port)]
+        mock_getaddrinfo.side_effect = [addrinfo_list_factory(remote_port)]
     else:
-        mock_getaddrinfo.side_effect = [stream_addrinfo_list(remote_port), stream_addrinfo_list(local_address[1])]
+        mock_getaddrinfo.side_effect = [addrinfo_list_factory(remote_port), addrinfo_list_factory(local_address[1])]
 
     match fail_on:
         case "socket":
@@ -298,13 +336,19 @@ async def test____create_connection____first_failed(
             assert_never(fail_on)
 
     # Act
-    socket = await create_connection(remote_host, remote_port, event_loop, local_address=local_address)
+    socket = await create_connection_of_socktype(remote_host, remote_port, event_loop, local_address=local_address)
 
     # Assert
-    assert mock_socket_cls.call_args_list == [
-        mocker.call(AF_INET, SOCK_STREAM, IPPROTO_TCP),
-        mocker.call(AF_INET6, SOCK_STREAM, IPPROTO_TCP),
-    ]
+    if connection_socktype == SOCK_STREAM:
+        assert mock_socket_cls.call_args_list == [
+            mocker.call(AF_INET, SOCK_STREAM, IPPROTO_TCP),
+            mocker.call(AF_INET6, SOCK_STREAM, IPPROTO_TCP),
+        ]
+    else:
+        assert mock_socket_cls.call_args_list == [
+            mocker.call(AF_INET, SOCK_DGRAM, IPPROTO_UDP),
+            mocker.call(AF_INET6, SOCK_DGRAM, IPPROTO_UDP),
+        ]
     assert socket is mock_socket_ipv6
 
     if fail_on != "socket":
@@ -336,6 +380,9 @@ async def test____create_connection____first_failed(
 async def test____create_connection____all_failed(
     event_loop: asyncio.AbstractEventLoop,
     fail_on: Literal["socket", "bind", "connect"],
+    create_connection_of_socktype: _CreateConnectionCallable,
+    addrinfo_list_factory: _AddrInfoListFactory,
+    connection_socktype: int,
     mock_socket_cls: MagicMock,
     mock_socket_ipv4: MagicMock,
     mock_socket_ipv6: MagicMock,
@@ -348,9 +395,9 @@ async def test____create_connection____all_failed(
     local_address: tuple[str, int] | None = ("localhost", 11111) if fail_on == "bind" else None
 
     if local_address is None:
-        mock_getaddrinfo.side_effect = [stream_addrinfo_list(remote_port)]
+        mock_getaddrinfo.side_effect = [addrinfo_list_factory(remote_port)]
     else:
-        mock_getaddrinfo.side_effect = [stream_addrinfo_list(remote_port), stream_addrinfo_list(local_address[1])]
+        mock_getaddrinfo.side_effect = [addrinfo_list_factory(remote_port), addrinfo_list_factory(local_address[1])]
 
     match fail_on:
         case "socket":
@@ -365,7 +412,7 @@ async def test____create_connection____all_failed(
 
     # Act
     with pytest.raises(ExceptionGroup) as exc_info:
-        await create_connection(remote_host, remote_port, event_loop, local_address=local_address)
+        await create_connection_of_socktype(remote_host, remote_port, event_loop, local_address=local_address)
 
     # Assert
     os_errors, exc = exc_info.value.split(OSError)
@@ -375,10 +422,16 @@ async def test____create_connection____all_failed(
     assert all(isinstance(exc, OSError) for exc in os_errors.exceptions)
     del os_errors
 
-    assert mock_socket_cls.call_args_list == [
-        mocker.call(AF_INET, SOCK_STREAM, IPPROTO_TCP),
-        mocker.call(AF_INET6, SOCK_STREAM, IPPROTO_TCP),
-    ]
+    if connection_socktype == SOCK_STREAM:
+        assert mock_socket_cls.call_args_list == [
+            mocker.call(AF_INET, SOCK_STREAM, IPPROTO_TCP),
+            mocker.call(AF_INET6, SOCK_STREAM, IPPROTO_TCP),
+        ]
+    else:
+        assert mock_socket_cls.call_args_list == [
+            mocker.call(AF_INET, SOCK_DGRAM, IPPROTO_UDP),
+            mocker.call(AF_INET6, SOCK_DGRAM, IPPROTO_UDP),
+        ]
 
     if fail_on != "socket":
         mock_socket_ipv4.setblocking.assert_called_once_with(False)
@@ -407,6 +460,8 @@ async def test____create_connection____all_failed(
 async def test____create_connection____unrelated_exception(
     event_loop: asyncio.AbstractEventLoop,
     fail_on: Literal["socket", "connect"],
+    create_connection_of_socktype: _CreateConnectionCallable,
+    addrinfo_list_factory: _AddrInfoListFactory,
     mock_socket_cls: MagicMock,
     mock_socket_ipv4: MagicMock,
     mock_getaddrinfo: AsyncMock,
@@ -415,7 +470,7 @@ async def test____create_connection____unrelated_exception(
     # Arrange
     remote_host, remote_port = "localhost", 12345
 
-    mock_getaddrinfo.side_effect = [stream_addrinfo_list(remote_port)]
+    mock_getaddrinfo.side_effect = [addrinfo_list_factory(remote_port)]
     expected_failure_exception = BaseException()
 
     match fail_on:
@@ -428,7 +483,7 @@ async def test____create_connection____unrelated_exception(
 
     # Act
     with pytest.raises(BaseException) as exc_info:
-        await create_connection(remote_host, remote_port, event_loop)
+        await create_connection_of_socktype(remote_host, remote_port, event_loop)
 
     # Assert
     assert exc_info.value is expected_failure_exception
@@ -441,6 +496,8 @@ async def test____create_connection____unrelated_exception(
 async def test____create_connection____getaddrinfo_returned_empty_list(
     event_loop: asyncio.AbstractEventLoop,
     fail_on: Literal["remote_address", "local_address"],
+    create_connection_of_socktype: _CreateConnectionCallable,
+    addrinfo_list_factory: _AddrInfoListFactory,
     mock_socket_cls: MagicMock,
     mock_socket_ipv4: MagicMock,
     mock_socket_ipv6: MagicMock,
@@ -455,13 +512,13 @@ async def test____create_connection____getaddrinfo_returned_empty_list(
         case "remote_address":
             mock_getaddrinfo.side_effect = [[]]
         case "local_address":
-            mock_getaddrinfo.side_effect = [stream_addrinfo_list(remote_port), []]
+            mock_getaddrinfo.side_effect = [addrinfo_list_factory(remote_port), []]
         case _:
             assert_never(fail_on)
 
     # Act
     with pytest.raises(OSError, match=r"^getaddrinfo\('localhost'\) returned empty list$"):
-        await create_connection(remote_host, remote_port, event_loop, local_address=local_address)
+        await create_connection_of_socktype(remote_host, remote_port, event_loop, local_address=local_address)
 
     # Assert
     mock_socket_cls.assert_not_called()
@@ -473,6 +530,8 @@ async def test____create_connection____getaddrinfo_returned_empty_list(
 @pytest.mark.asyncio
 async def test____create_connection____getaddrinfo_return_mismatch(
     event_loop: asyncio.AbstractEventLoop,
+    create_connection_of_socktype: _CreateConnectionCallable,
+    addrinfo_list_factory: _AddrInfoListFactory,
     mock_socket_ipv4: MagicMock,
     mock_socket_ipv6: MagicMock,
     mock_getaddrinfo: AsyncMock,
@@ -483,13 +542,13 @@ async def test____create_connection____getaddrinfo_return_mismatch(
     local_address: tuple[str, int] = ("localhost", 11111)
 
     mock_getaddrinfo.side_effect = [
-        stream_addrinfo_list(remote_port, families=[AF_INET6]),
-        stream_addrinfo_list(local_address[1], families=[AF_INET]),
+        addrinfo_list_factory(remote_port, families=[AF_INET6]),
+        addrinfo_list_factory(local_address[1], families=[AF_INET]),
     ]
 
     # Act
     with pytest.raises(ExceptionGroup) as exc_info:
-        await create_connection(remote_host, remote_port, event_loop, local_address=local_address)
+        await create_connection_of_socktype(remote_host, remote_port, event_loop, local_address=local_address)
 
     # Assert
     os_errors, exc = exc_info.value.split(OSError)

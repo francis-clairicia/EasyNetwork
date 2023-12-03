@@ -42,7 +42,12 @@ else:
 from ...exceptions import UnsupportedOperation
 from ..api_async.backend.abc import AsyncBackend as AbstractAsyncBackend
 from ..api_async.backend.sniffio import current_async_library_cvar as _sniffio_current_async_library_cvar
-from ._asyncio_utils import create_connection, open_listener_sockets_from_getaddrinfo_result, resolve_local_addresses
+from ._asyncio_utils import (
+    create_connection,
+    create_datagram_connection,
+    open_listener_sockets_from_getaddrinfo_result,
+    resolve_local_addresses,
+)
 from .datagram.endpoint import create_datagram_endpoint
 from .datagram.listener import AsyncioTransportDatagramListenerSocketAdapter, RawDatagramListenerSocketAdapter
 from .datagram.socket import AsyncioTransportDatagramSocketAdapter, RawDatagramSocketAdapter
@@ -309,14 +314,15 @@ class AsyncIOBackend(AbstractAsyncBackend):
         remote_port: int,
         *,
         local_address: tuple[str, int] | None = None,
+        family: int = _socket.AF_UNSPEC,
     ) -> AsyncioTransportDatagramSocketAdapter | RawDatagramSocketAdapter:
         loop = asyncio.get_running_loop()
-        socket = await create_connection(
+        socket = await create_datagram_connection(
             remote_host,
             remote_port,
             loop,
             local_address=local_address,
-            socktype=_socket.SOCK_DGRAM,
+            family=family,
         )
         return await self.wrap_connected_datagram_socket(socket)
 

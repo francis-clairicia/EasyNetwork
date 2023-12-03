@@ -1046,6 +1046,7 @@ class AsyncBackend(metaclass=ABCMeta):
         remote_port: int,
         *,
         local_address: tuple[str, int] | None = ...,
+        family: int = ...,
     ) -> transports.AsyncDatagramTransport:
         """
         Opens an endpoint using the UDP protocol.
