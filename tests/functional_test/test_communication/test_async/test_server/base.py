@@ -3,12 +3,18 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from collections.abc import AsyncIterator
+from typing import NamedTuple
 
 from easynetwork.api_async.server.abc import AbstractAsyncNetworkServer
 from easynetwork.exceptions import ServerAlreadyRunning, ServerClosedError
 
 import pytest
 import pytest_asyncio
+
+
+class _ServerBootstrapInfo(NamedTuple):
+    task: asyncio.Task[None]
+    is_up_event: asyncio.Event
 
 
 @pytest.mark.asyncio
@@ -20,17 +26,27 @@ class BaseTestAsyncServer:
 
     @pytest_asyncio.fixture  # DO NOT SET autouse=True
     @staticmethod
-    async def run_server(server: AbstractAsyncNetworkServer) -> AsyncIterator[asyncio.Event]:
+    async def _bootstrap_server(server: AbstractAsyncNetworkServer) -> AsyncIterator[_ServerBootstrapInfo]:
         async def serve_forever(server: AbstractAsyncNetworkServer, event: asyncio.Event) -> None:
             with contextlib.suppress(ServerClosedError):
                 await server.serve_forever(is_up_event=event)
 
         event = asyncio.Event()
         async with asyncio.TaskGroup() as tg:
-            _ = tg.create_task(serve_forever(server, event))
+            task = tg.create_task(serve_forever(server, event))
             await asyncio.sleep(0)
-            yield event
+            yield _ServerBootstrapInfo(task, event)
             await server.shutdown()
+
+    @pytest_asyncio.fixture  # DO NOT SET autouse=True
+    @staticmethod
+    async def run_server(_bootstrap_server: _ServerBootstrapInfo) -> asyncio.Event:
+        return _bootstrap_server.is_up_event
+
+    @pytest_asyncio.fixture  # DO NOT SET autouse=True
+    @staticmethod
+    async def server_task(_bootstrap_server: _ServerBootstrapInfo) -> asyncio.Task[None]:
+        return _bootstrap_server.task
 
     async def test____server_close____idempotent(self, server: AbstractAsyncNetworkServer) -> None:
         await server.server_close()

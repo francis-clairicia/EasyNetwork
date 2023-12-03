@@ -799,6 +799,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     async def test____serve_forever____request_handler_ask_to_stop_accepting_new_connections(
         self,
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        server_task: asyncio.Task[None],
         server: MyAsyncTCPServer,
     ) -> None:
         reader, writer = await client_factory()
@@ -817,6 +818,11 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         errors, exc = exc_info.value.split(ConnectionError)
         assert exc is None
         assert errors is not None
+
+        writer.close()
+        await writer.wait_closed()
+        async with asyncio.timeout(5):
+            await asyncio.wait({server_task})
 
     async def test____serve_forever____close_client_on_connection_hook(
         self,

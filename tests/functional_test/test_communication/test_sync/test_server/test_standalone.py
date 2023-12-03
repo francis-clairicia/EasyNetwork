@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import socket
 import threading
 import time
 from collections.abc import AsyncGenerator, Iterator
@@ -102,6 +103,13 @@ class TestStandaloneTCPNetworkServer(BaseTestStandaloneNetworkServer):
     def server(stream_protocol: StreamProtocol[str, str]) -> StandaloneTCPNetworkServer[str, str]:
         return StandaloneTCPNetworkServer(None, 0, stream_protocol, EchoRequestHandler())
 
+    @pytest.fixture
+    @staticmethod
+    def client(server: StandaloneTCPNetworkServer[str, str], start_server: None) -> Iterator[socket.socket]:
+        port = server.get_addresses()[0].port
+        with socket.create_connection(("localhost", port)) as client:
+            yield client
+
     def test____dunder_init____invalid_backend(self, stream_protocol: StreamProtocol[str, str]) -> None:
         with pytest.raises(ValueError, match=r"^You must explicitly give a backend name or instance$"):
             _ = StandaloneTCPNetworkServer(
@@ -133,7 +141,7 @@ class TestStandaloneTCPNetworkServer(BaseTestStandaloneNetworkServer):
             assert not server.get_addresses()
             server.stop_listening()
 
-    @pytest.mark.usefixtures("start_server")
+    @pytest.mark.usefixtures("start_server", "client")
     def test____stop_listening____stop_accepting_new_connection(self, server: StandaloneTCPNetworkServer[str, str]) -> None:
         assert server.is_serving()
         assert len(server.sockets) > 0
