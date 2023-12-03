@@ -7,6 +7,7 @@ The easiest way to use sockets in Python!
 ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/easynetwork)
 
 [![Test](https://github.com/francis-clairicia/EasyNetwork/actions/workflows/test.yml/badge.svg)](https://github.com/francis-clairicia/EasyNetwork/actions/workflows/test.yml)
+[![Documentation Status](https://readthedocs.org/projects/easynetwork/badge/?version=latest)](https://easynetwork.readthedocs.io/en/latest/?badge=latest)
 [![Codecov](https://img.shields.io/codecov/c/github/francis-clairicia/EasyNetwork)](https://codecov.io/gh/francis-clairicia/EasyNetwork)
 [![CodeFactor Grade](https://img.shields.io/codefactor/grade/github/francis-clairicia/EasyNetwork)](https://www.codefactor.io/repository/github/francis-clairicia/easynetwork)
 
