@@ -17,7 +17,6 @@
 from __future__ import annotations
 
 __all__ = [
-    "AddressFamily",
     "INETSocketAttribute",
     "IPv4SocketAddress",
     "IPv6SocketAddress",
@@ -43,7 +42,6 @@ import socket as _socket
 import threading
 from abc import abstractmethod
 from collections.abc import Callable
-from enum import IntEnum, unique
 from struct import Struct
 from typing import (
     TYPE_CHECKING,
@@ -54,7 +52,6 @@ from typing import (
     Protocol,
     TypeAlias,
     TypeVar,
-    assert_never,
     final,
     overload,
     runtime_checkable,
@@ -122,22 +119,6 @@ class TLSAttribute(typed_attr.TypedAttributeSet):
     """the TLS protocol version (e.g. TLSv1.2)"""
 
 
-@unique
-class AddressFamily(IntEnum):
-    """
-    Enumeration of supported socket address families.
-    """
-
-    AF_INET = _socket.AF_INET
-    AF_INET6 = _socket.AF_INET6
-
-    def __repr__(self) -> str:
-        return f"{type(self).__name__}.{self.name}"
-
-    def __str__(self) -> str:  # pragma: no cover
-        return repr(self)
-
-
 class IPv4SocketAddress(NamedTuple):
     host: str
     port: int
@@ -175,13 +156,13 @@ SocketAddress: TypeAlias = IPv4SocketAddress | IPv6SocketAddress
 
 
 @overload
-def new_socket_address(addr: tuple[str, int], family: Literal[AddressFamily.AF_INET]) -> IPv4SocketAddress:
+def new_socket_address(addr: tuple[str, int], family: Literal[_socket.AddressFamily.AF_INET]) -> IPv4SocketAddress:
     ...
 
 
 @overload
 def new_socket_address(
-    addr: tuple[str, int] | tuple[str, int, int, int], family: Literal[AddressFamily.AF_INET6]
+    addr: tuple[str, int] | tuple[str, int, int, int], family: Literal[_socket.AddressFamily.AF_INET6]
 ) -> IPv6SocketAddress:
     ...
 
@@ -219,14 +200,13 @@ def new_socket_address(addr: tuple[Any, ...], family: int) -> SocketAddress:
     Returns:
         a :data:`SocketAddress` named tuple.
     """
-    family = AddressFamily(family)
     match family:
-        case AddressFamily.AF_INET:
+        case _socket.AddressFamily.AF_INET:
             return IPv4SocketAddress(*addr)
-        case AddressFamily.AF_INET6:
+        case _socket.AddressFamily.AF_INET6:
             return IPv6SocketAddress(*addr)
-        case _:  # pragma: no cover
-            assert_never(family)
+        case _:
+            raise ValueError(f"Unsupported address family {family!r}")
 
 
 @runtime_checkable

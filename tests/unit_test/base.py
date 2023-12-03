@@ -3,8 +3,6 @@ from __future__ import annotations
 from socket import AF_INET, AF_INET6, socket as Socket
 from typing import TYPE_CHECKING
 
-from easynetwork.lowlevel.socket import AddressFamily
-
 import pytest
 
 from ._utils import get_all_socket_families
@@ -14,7 +12,7 @@ if TYPE_CHECKING:
 
     from pytest_mock import MockerFixture
 
-SUPPORTED_FAMILIES: tuple[str, ...] = tuple(sorted(AddressFamily.__members__))
+SUPPORTED_FAMILIES: tuple[str, ...] = tuple(sorted(("AF_INET", "AF_INET6")))
 UNSUPPORTED_FAMILIES: tuple[str, ...] = tuple(sorted(get_all_socket_families().difference(SUPPORTED_FAMILIES)))
 
 
