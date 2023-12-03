@@ -347,18 +347,19 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         self,
         lowlevel_client: lowlevel_stream_server.AsyncStreamClient[_ResponseT],
     ) -> AsyncGenerator[None, _RequestT]:
-        client_address = lowlevel_client.extra(INETSocketAttribute.peername, None)
-        if client_address is None:
-            # The remote host closed the connection before starting the task.
-            # See this test for details:
-            # test____serve_forever____accept_client____client_sent_RST_packet_right_after_accept
-            self.__logger.warning("A client connection was interrupted just after listener.accept()")
-            return
-
-        client_address = new_socket_address(client_address, lowlevel_client.extra(INETSocketAttribute.family))
         async with contextlib.AsyncExitStack() as client_exit_stack:
             self.__attach_server()
             client_exit_stack.callback(self.__detach_server)
+
+            client_address = lowlevel_client.extra(INETSocketAttribute.peername, None)
+            if client_address is None:
+                # The remote host closed the connection before starting the task.
+                # See this test for details:
+                # test____serve_forever____accept_client____client_sent_RST_packet_right_after_accept
+                self.__logger.warning("A client connection was interrupted just after listener.accept()")
+                return
+
+            client_address = new_socket_address(client_address, lowlevel_client.extra(INETSocketAttribute.family))
 
             client_exit_stack.enter_context(self.__suppress_and_log_remaining_exception(client_address=client_address))
             # If the socket was not closed gracefully, (i.e. client.aclose() failed )
