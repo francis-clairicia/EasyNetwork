@@ -187,7 +187,7 @@ def new_socket_address(addr: tuple[Any, ...], family: int) -> SocketAddress:
         >>> new_socket_address(("127.0.0.1", 12345), socket.AF_APPLETALK)
         Traceback (most recent call last):
         ...
-        ValueError: <AddressFamily.AF_APPLETALK: 5> is not a valid AddressFamily
+        ValueError: Unsupported address family <AddressFamily.AF_APPLETALK: 5>
 
     Parameters:
         addr: The address in the form ``(host, port)`` or ``(host, port, flow, scope_id)``.
