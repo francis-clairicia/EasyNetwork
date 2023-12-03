@@ -69,6 +69,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         "__max_recv_size",
         "__servers_tasks",
         "__mainloop_task",
+        "__active_tasks",
         "__client_connection_log_level",
         "__logger",
     )
@@ -197,6 +198,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             self.__client_connection_log_level = logging.INFO
         else:
             self.__client_connection_log_level = logging.DEBUG
+        self.__active_tasks: int = 0
 
     @_utils.inherit_doc(AbstractAsyncNetworkServer)
     def is_serving(self) -> bool:
@@ -302,6 +304,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             ############################
 
             # Setup task group
+            self.__active_tasks = 0
             server_exit_stack.callback(self.__servers_tasks.clear)
             task_group = await server_exit_stack.enter_async_context(self.__backend.create_task_group())
             server_exit_stack.callback(self.__logger.info, "Server loop break, waiting for remaining tasks...")
@@ -333,23 +336,31 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         server: lowlevel_stream_server.AsyncStreamServer[_RequestT, _ResponseT],
         task_group: TaskGroup,
     ) -> NoReturn:
-        async with contextlib.aclosing(server):
-            await server.serve(self.__client_coroutine, task_group)
+        self.__attach_server()
+        try:
+            async with contextlib.aclosing(server):
+                await server.serve(self.__client_coroutine, task_group)
+        finally:
+            self.__detach_server()
 
     async def __client_coroutine(
         self,
         lowlevel_client: lowlevel_stream_server.AsyncStreamClient[_ResponseT],
     ) -> AsyncGenerator[None, _RequestT]:
-        client_address = lowlevel_client.extra(INETSocketAttribute.peername, None)
-        if client_address is None:
-            # The remote host closed the connection before starting the task.
-            # See this test for details:
-            # test____serve_forever____accept_client____client_sent_RST_packet_right_after_accept
-            self.__logger.warning("A client connection was interrupted just after listener.accept()")
-            return
-
-        client_address = new_socket_address(client_address, lowlevel_client.extra(INETSocketAttribute.family))
         async with contextlib.AsyncExitStack() as client_exit_stack:
+            self.__attach_server()
+            client_exit_stack.callback(self.__detach_server)
+
+            client_address = lowlevel_client.extra(INETSocketAttribute.peername, None)
+            if client_address is None:
+                # The remote host closed the connection before starting the task.
+                # See this test for details:
+                # test____serve_forever____accept_client____client_sent_RST_packet_right_after_accept
+                self.__logger.warning("A client connection was interrupted just after listener.accept()")
+                return
+
+            client_address = new_socket_address(client_address, lowlevel_client.extra(INETSocketAttribute.family))
+
             client_exit_stack.enter_context(self.__suppress_and_log_remaining_exception(client_address=client_address))
             # If the socket was not closed gracefully, (i.e. client.aclose() failed )
             # tell the OS to immediately abort the connection when calling socket.socket.close()
@@ -415,6 +426,17 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             finally:
                 if request_handler_generator is not None:
                     await request_handler_generator.aclose()
+
+    def __attach_server(self) -> None:
+        self.__active_tasks += 1
+
+    def __detach_server(self) -> None:
+        self.__active_tasks -= 1
+        if self.__active_tasks < 0:
+            raise AssertionError("self.__active_tasks < 0")
+        if not self.__active_tasks:
+            if self.__mainloop_task is not None:
+                self.__mainloop_task.cancel()
 
     @staticmethod
     def __set_socket_linger_if_not_closed(socket: ISocket) -> None:
@@ -534,7 +556,8 @@ class _ConnectedClientAPI(AsyncStreamClient[_ResponseT]):
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         client = self.__client
-        return dict(client.extra_attributes) | {
+        return {
+            **client.extra_attributes,
             INETClientAttribute.socket: lambda: self.__proxy,
             INETClientAttribute.local_address: lambda: new_socket_address(
                 client.extra(INETSocketAttribute.sockname),

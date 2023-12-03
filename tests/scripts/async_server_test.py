@@ -20,13 +20,20 @@ logger = logging.getLogger("app")
 
 class MyAsyncRequestHandler(AsyncStreamRequestHandler[str, str], AsyncDatagramRequestHandler[str, str]):
     async def service_init(self, exit_stack: contextlib.AsyncExitStack, server: AbstractAsyncNetworkServer) -> None:
-        pass
+        self.server = server
 
     async def handle(self, client: AsyncBaseClientInterface[str]) -> AsyncGenerator[None, str]:
+        from easynetwork.api_async.server.tcp import AsyncTCPNetworkServer
+
         request: str = yield
         logger.debug(f"Received {request!r} from {client!r}")
-        if request == "wait:":
-            request = (yield) + " after wait"
+        match request:
+            case "wait:":
+                request = (yield) + " after wait"
+            case "self_kill:" if isinstance(self.server, AsyncTCPNetworkServer):
+                self.server.stop_listening()
+                await client.send_packet("stop_listening() done")
+                return
         await client.send_packet(request.upper())
 
 
