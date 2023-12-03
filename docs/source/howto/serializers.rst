@@ -55,7 +55,7 @@ was "expected" so that the received data is considered invalid.
 
 .. literalinclude:: ../_include/examples/howto/serializers/one_shot_serializer/example2.py
    :linenos:
-   :emphasize-lines: 6,16,19-20
+   :emphasize-lines: 6,19,22-23
 
 .. warning::
 
@@ -136,7 +136,7 @@ Let's say that for the incremental part, we consider each line received to be a 
 
 .. literalinclude:: ../_include/examples/howto/serializers/incremental_serializer/example1.py
    :linenos:
-   :emphasize-lines: 7,10,12
+   :emphasize-lines: 7,13,15
 
 :class:`.AutoSeparatedPacketSerializer` adds the following behaviors:
 

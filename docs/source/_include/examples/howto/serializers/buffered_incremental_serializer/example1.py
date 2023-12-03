@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Generator
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeAlias
 
 from easynetwork.exceptions import DeserializeError, IncrementalDeserializeError
 from easynetwork.serializers.abc import BufferedIncrementalPacketSerializer
@@ -10,8 +10,11 @@ from easynetwork.serializers.abc import BufferedIncrementalPacketSerializer
 if TYPE_CHECKING:
     from _typeshed import ReadableBuffer
 
+SentPacket: TypeAlias = Any
+ReceivedPacket: TypeAlias = Any
 
-class MyJSONSerializer(BufferedIncrementalPacketSerializer[Any, bytearray]):
+
+class MyJSONSerializer(BufferedIncrementalPacketSerializer[SentPacket, ReceivedPacket, bytearray]):
     def __init__(self, *, ensure_ascii: bool = True) -> None:
         self._ensure_ascii: bool = ensure_ascii
 
@@ -21,27 +24,27 @@ class MyJSONSerializer(BufferedIncrementalPacketSerializer[Any, bytearray]):
         else:
             self._encoding = "utf-8"
 
-    def _dump(self, packet: Any) -> bytes:
+    def _dump(self, packet: SentPacket) -> bytes:
         document = json.dumps(packet, ensure_ascii=self._ensure_ascii)
         return document.encode(self._encoding)
 
-    def _load(self, data: bytes | bytearray) -> Any:
+    def _load(self, data: bytes | bytearray) -> ReceivedPacket:
         document = data.decode(self._encoding)
         return json.loads(document)
 
-    def serialize(self, packet: Any) -> bytes:
+    def serialize(self, packet: SentPacket) -> bytes:
         return self._dump(packet)
 
-    def deserialize(self, data: bytes) -> Any:
+    def deserialize(self, data: bytes) -> ReceivedPacket:
         try:
             return self._load(data)
         except (UnicodeError, json.JSONDecodeError) as exc:
             raise DeserializeError("JSON decode error") from exc
 
-    def incremental_serialize(self, packet: Any) -> Generator[bytes, None, None]:
+    def incremental_serialize(self, packet: SentPacket) -> Generator[bytes, None, None]:
         yield self._dump(packet) + b"\r\n"
 
-    def incremental_deserialize(self) -> Generator[None, bytes, tuple[Any, bytes]]:
+    def incremental_deserialize(self) -> Generator[None, bytes, tuple[ReceivedPacket, bytes]]:
         data = yield
         newline = b"\r\n"
         while (index := data.find(newline)) < 0:
@@ -64,7 +67,7 @@ class MyJSONSerializer(BufferedIncrementalPacketSerializer[Any, bytearray]):
     def buffered_incremental_deserialize(
         self,
         buffer: bytearray,
-    ) -> Generator[int | None, int, tuple[Any, ReadableBuffer]]:
+    ) -> Generator[int | None, int, tuple[ReceivedPacket, ReadableBuffer]]:
         buffer_size = len(buffer)
         newline = b"\r\n"
         separator_length = len(newline)

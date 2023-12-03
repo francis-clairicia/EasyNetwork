@@ -26,11 +26,14 @@ from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Generic, final
 
-from ._typevars import _DTOPacketT, _PacketT, _ReceivedPacketT, _SentPacketT
+from ._typevars import _DTOPacketT, _PacketT, _ReceivedDTOPacketT, _ReceivedPacketT, _SentDTOPacketT, _SentPacketT
 from .lowlevel import _utils
 
 
-class AbstractPacketConverterComposite(Generic[_SentPacketT, _ReceivedPacketT, _DTOPacketT], metaclass=ABCMeta):
+class AbstractPacketConverterComposite(
+    Generic[_SentPacketT, _ReceivedPacketT, _SentDTOPacketT, _ReceivedDTOPacketT],
+    metaclass=ABCMeta,
+):
     """
     The base class for implementing a :term:`composite converter`.
 
@@ -41,7 +44,7 @@ class AbstractPacketConverterComposite(Generic[_SentPacketT, _ReceivedPacketT, _
     __slots__ = ("__weakref__",)
 
     @abstractmethod
-    def create_from_dto_packet(self, packet: _DTOPacketT, /) -> _ReceivedPacketT:
+    def create_from_dto_packet(self, packet: _ReceivedDTOPacketT, /) -> _ReceivedPacketT:
         """
         Constructs the business object from the :term:`DTO` `packet`.
 
@@ -57,7 +60,7 @@ class AbstractPacketConverterComposite(Generic[_SentPacketT, _ReceivedPacketT, _
         raise NotImplementedError
 
     @abstractmethod
-    def convert_to_dto_packet(self, obj: _SentPacketT, /) -> _DTOPacketT:
+    def convert_to_dto_packet(self, obj: _SentPacketT, /) -> _SentDTOPacketT:
         """
         Creates the :term:`DTO` packet from the business object `obj`.
 
@@ -71,19 +74,21 @@ class AbstractPacketConverterComposite(Generic[_SentPacketT, _ReceivedPacketT, _
 
 
 @dataclass(frozen=True, slots=True)
-class StapledPacketConverter(AbstractPacketConverterComposite[_SentPacketT, _ReceivedPacketT, _DTOPacketT]):
+class StapledPacketConverter(
+    AbstractPacketConverterComposite[_SentPacketT, _ReceivedPacketT, _SentDTOPacketT, _ReceivedDTOPacketT]
+):
     """
     A :term:`composite converter` that merges two converters.
     """
 
-    sent_packet_converter: AbstractPacketConverterComposite[_SentPacketT, Any, _DTOPacketT]
+    sent_packet_converter: AbstractPacketConverterComposite[_SentPacketT, Any, _SentDTOPacketT, Any]
     """Sent packet converter."""
 
-    received_packet_converter: AbstractPacketConverterComposite[Any, _ReceivedPacketT, _DTOPacketT]
+    received_packet_converter: AbstractPacketConverterComposite[Any, _ReceivedPacketT, Any, _ReceivedDTOPacketT]
     """Received packet converter."""
 
     @final
-    def create_from_dto_packet(self, packet: _DTOPacketT, /) -> _ReceivedPacketT:
+    def create_from_dto_packet(self, packet: _ReceivedDTOPacketT, /) -> _ReceivedPacketT:
         """
         Calls ``self.received_packet_converter.create_from_dto_packet(packet)``.
 
@@ -99,7 +104,7 @@ class StapledPacketConverter(AbstractPacketConverterComposite[_SentPacketT, _Rec
         return self.received_packet_converter.create_from_dto_packet(packet)
 
     @final
-    def convert_to_dto_packet(self, obj: _SentPacketT, /) -> _DTOPacketT:
+    def convert_to_dto_packet(self, obj: _SentPacketT, /) -> _SentDTOPacketT:
         """
         Calls ``self.sent_packet_converter.convert_to_dto_packet(obj)``.
 
@@ -112,7 +117,10 @@ class StapledPacketConverter(AbstractPacketConverterComposite[_SentPacketT, _Rec
         return self.sent_packet_converter.convert_to_dto_packet(obj)
 
 
-class AbstractPacketConverter(AbstractPacketConverterComposite[_PacketT, _PacketT, _DTOPacketT], Generic[_PacketT, _DTOPacketT]):
+class AbstractPacketConverter(
+    AbstractPacketConverterComposite[_PacketT, _PacketT, _DTOPacketT, _DTOPacketT],
+    Generic[_PacketT, _DTOPacketT],
+):
     """
     The base class for implementing a :term:`converter`.
 

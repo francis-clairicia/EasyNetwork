@@ -95,7 +95,7 @@ Let's see how we can use it for ``MyJSONSerializer`` (from :doc:`../serializers`
 
    .. literalinclude:: ../../_include/examples/howto/serializers/buffered_incremental_serializer/example1.py
       :linenos:
-      :emphasize-lines: 8,14,60-
+      :emphasize-lines: 8,17,63-
 
 
 Choose the buffer type
@@ -116,7 +116,7 @@ For the tutorial, we use a :class:`bytearray`:
    :end-at: class MyJSONSerializer
    :dedent:
    :lineno-match:
-   :emphasize-lines: 8,14
+   :emphasize-lines: 8,17
 
 .. _buffer-instantiation:
 

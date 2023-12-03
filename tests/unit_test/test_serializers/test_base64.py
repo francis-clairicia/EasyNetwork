@@ -41,7 +41,7 @@ class TestBase64EncoderSerializer:
         # Arrange
 
         # Act
-        serializer: Base64EncoderSerializer[Any] = Base64EncoderSerializer(mock_serializer, debug=debug_mode)
+        serializer: Base64EncoderSerializer[Any, Any] = Base64EncoderSerializer(mock_serializer, debug=debug_mode)
 
         # Assert
         assert serializer.debug is debug_mode
@@ -62,7 +62,7 @@ class TestBase64EncoderSerializer:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer: Base64EncoderSerializer[Any] = Base64EncoderSerializer(mock_serializer, alphabet=alphabet)
+        serializer: Base64EncoderSerializer[Any, Any] = Base64EncoderSerializer(mock_serializer, alphabet=alphabet)
         mock_serializer.serialize.return_value = mocker.sentinel.data_not_encoded
         mock_b64encode.return_value = mocker.sentinel.data_encoded
 
@@ -82,7 +82,7 @@ class TestBase64EncoderSerializer:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer: Base64EncoderSerializer[Any] = Base64EncoderSerializer(mock_serializer, alphabet=alphabet)
+        serializer: Base64EncoderSerializer[Any, Any] = Base64EncoderSerializer(mock_serializer, alphabet=alphabet)
         mock_b64decode.return_value = mocker.sentinel.data_not_encoded
         mock_serializer.deserialize.return_value = mocker.sentinel.packet
 
@@ -105,7 +105,11 @@ class TestBase64EncoderSerializer:
         # Arrange
         import binascii
 
-        serializer: Base64EncoderSerializer[Any] = Base64EncoderSerializer(mock_serializer, alphabet=alphabet, debug=debug_mode)
+        serializer: Base64EncoderSerializer[Any, Any] = Base64EncoderSerializer(
+            mock_serializer,
+            alphabet=alphabet,
+            debug=debug_mode,
+        )
         mock_b64decode.side_effect = binascii.Error()
 
         # Act
@@ -128,7 +132,7 @@ class TestBase64EncoderSerializer:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer: Base64EncoderSerializer[Any] = Base64EncoderSerializer(mock_serializer)
+        serializer: Base64EncoderSerializer[Any, Any] = Base64EncoderSerializer(mock_serializer)
         mock_serializer.serialize.return_value = mocker.sentinel.data_not_encoded
         mock_b64encode.return_value = mocker.sentinel.data_encoded
         mock_b64decode.return_value = mocker.sentinel.data_not_encoded

@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 
 @final
-class _StructSerializerForTest(AbstractStructSerializer[Any]):
+class _StructSerializerForTest(AbstractStructSerializer[Any, Any]):
     def iter_values(self, packet: Any) -> Iterable[Any]:
         raise NotImplementedError
 

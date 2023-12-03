@@ -6,7 +6,7 @@ from easynetwork.exceptions import DeserializeError, IncrementalDeserializeError
 from easynetwork.serializers.abc import AbstractIncrementalPacketSerializer, BufferedIncrementalPacketSerializer
 
 
-class StringSerializer(AbstractIncrementalPacketSerializer[str]):
+class StringSerializer(AbstractIncrementalPacketSerializer[str, str]):
     """
     Serializer to use in order to test clients and servers
     """
@@ -52,7 +52,7 @@ class StringSerializer(AbstractIncrementalPacketSerializer[str]):
             raise IncrementalDeserializeError(str(exc), remainder) from exc
 
 
-class BufferedStringSerializer(StringSerializer, BufferedIncrementalPacketSerializer[str, bytearray]):
+class BufferedStringSerializer(StringSerializer, BufferedIncrementalPacketSerializer[str, str, bytearray]):
     __slots__ = ()
 
     MIN_SIZE: int = 8 * 1024

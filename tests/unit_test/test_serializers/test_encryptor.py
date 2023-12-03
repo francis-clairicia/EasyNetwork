@@ -39,7 +39,7 @@ class TestEncryptorSerializer:
         # Arrange
 
         # Act
-        serializer: EncryptorSerializer[Any] = EncryptorSerializer(mock_serializer, "key", debug=debug_mode)
+        serializer: EncryptorSerializer[Any, Any] = EncryptorSerializer(mock_serializer, "key", debug=debug_mode)
 
         # Assert
         assert serializer.debug is debug_mode
@@ -73,7 +73,7 @@ class TestEncryptorSerializer:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer: EncryptorSerializer[Any] = EncryptorSerializer(mock_serializer, key=mocker.sentinel.key)
+        serializer: EncryptorSerializer[Any, Any] = EncryptorSerializer(mock_serializer, key=mocker.sentinel.key)
         mock_serializer.serialize.return_value = mocker.sentinel.data_before_encryption
         mock_fernet.encrypt.return_value = mocker.sentinel.encrypted_data
 
@@ -92,7 +92,7 @@ class TestEncryptorSerializer:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer: EncryptorSerializer[Any] = EncryptorSerializer(
+        serializer: EncryptorSerializer[Any, Any] = EncryptorSerializer(
             mock_serializer,
             key=mocker.sentinel.key,
             token_ttl=mocker.sentinel.token_ttl,
@@ -118,7 +118,7 @@ class TestEncryptorSerializer:
         # Arrange
         from cryptography.fernet import InvalidToken
 
-        serializer: EncryptorSerializer[Any] = EncryptorSerializer(
+        serializer: EncryptorSerializer[Any, Any] = EncryptorSerializer(
             mock_serializer,
             key=mocker.sentinel.key,
             token_ttl=mocker.sentinel.token_ttl,

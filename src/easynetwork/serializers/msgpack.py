@@ -73,7 +73,7 @@ class MessageUnpackerConfig:
     ext_hook: Callable[[int, bytes], Any] = field(default_factory=_get_default_ext_hook)
 
 
-class MessagePackSerializer(AbstractPacketSerializer[Any]):
+class MessagePackSerializer(AbstractPacketSerializer[Any, Any]):
     """
     A :term:`one-shot serializer` built on top of the :mod:`msgpack` module.
 

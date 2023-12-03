@@ -25,7 +25,7 @@ __all__ = [
 from collections.abc import Generator
 from typing import TYPE_CHECKING, Any, Generic, Never, overload
 
-from ._typevars import _BufferT, _DTOPacketT, _ReceivedPacketT, _SentPacketT
+from ._typevars import _BufferT, _ReceivedDTOPacketT, _ReceivedPacketT, _SentDTOPacketT, _SentPacketT
 from .converter import AbstractPacketConverterComposite
 from .exceptions import (
     DatagramProtocolParseError,
@@ -49,7 +49,7 @@ class DatagramProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
     @overload
     def __init__(
         self,
-        serializer: AbstractPacketSerializer[_SentPacketT | _ReceivedPacketT],
+        serializer: AbstractPacketSerializer[_SentPacketT, _ReceivedPacketT],
         converter: None = ...,
     ) -> None:
         ...
@@ -57,15 +57,15 @@ class DatagramProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
     @overload
     def __init__(
         self,
-        serializer: AbstractPacketSerializer[_DTOPacketT],
-        converter: AbstractPacketConverterComposite[_SentPacketT, _ReceivedPacketT, _DTOPacketT],
+        serializer: AbstractPacketSerializer[_SentDTOPacketT, _ReceivedDTOPacketT],
+        converter: AbstractPacketConverterComposite[_SentPacketT, _ReceivedPacketT, _SentDTOPacketT, _ReceivedDTOPacketT],
     ) -> None:
         ...
 
     def __init__(
         self,
-        serializer: AbstractPacketSerializer[Any],
-        converter: AbstractPacketConverterComposite[_SentPacketT, _ReceivedPacketT, Any] | None = None,
+        serializer: AbstractPacketSerializer[Any, Any],
+        converter: AbstractPacketConverterComposite[_SentPacketT, _ReceivedPacketT, Any, Any] | None = None,
     ) -> None:
         """
         Parameters:
@@ -77,8 +77,8 @@ class DatagramProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
             raise TypeError(f"Expected a serializer instance, got {serializer!r}")
         if converter is not None and not isinstance(converter, AbstractPacketConverterComposite):
             raise TypeError(f"Expected a converter instance, got {converter!r}")
-        self.__serializer: AbstractPacketSerializer[Any] = serializer
-        self.__converter: AbstractPacketConverterComposite[_SentPacketT, _ReceivedPacketT, Any] | None = converter
+        self.__serializer: AbstractPacketSerializer[Any, Any] = serializer
+        self.__converter: AbstractPacketConverterComposite[_SentPacketT, _ReceivedPacketT, Any, Any] | None = converter
 
     def make_datagram(self, packet: _SentPacketT) -> bytes:
         """
@@ -134,7 +134,7 @@ class BufferedStreamReceiver(Generic[_ReceivedPacketT, _BufferT]):
     @overload
     def __init__(
         self,
-        serializer: BufferedIncrementalPacketSerializer[_ReceivedPacketT, _BufferT],
+        serializer: BufferedIncrementalPacketSerializer[Any, _ReceivedPacketT, _BufferT],
         converter: None = ...,
     ) -> None:
         ...
@@ -142,15 +142,15 @@ class BufferedStreamReceiver(Generic[_ReceivedPacketT, _BufferT]):
     @overload
     def __init__(
         self,
-        serializer: BufferedIncrementalPacketSerializer[_DTOPacketT, _BufferT],
-        converter: AbstractPacketConverterComposite[Any, _ReceivedPacketT, _DTOPacketT],
+        serializer: BufferedIncrementalPacketSerializer[Any, _ReceivedDTOPacketT, _BufferT],
+        converter: AbstractPacketConverterComposite[Any, _ReceivedPacketT, Any, _ReceivedDTOPacketT],
     ) -> None:
         ...
 
     def __init__(
         self,
-        serializer: BufferedIncrementalPacketSerializer[Any, _BufferT],
-        converter: AbstractPacketConverterComposite[Any, _ReceivedPacketT, Any] | None = None,
+        serializer: BufferedIncrementalPacketSerializer[Any, Any, _BufferT],
+        converter: AbstractPacketConverterComposite[Any, _ReceivedPacketT, Any, Any] | None = None,
     ) -> None:
         """
         Parameters:
@@ -162,8 +162,8 @@ class BufferedStreamReceiver(Generic[_ReceivedPacketT, _BufferT]):
             raise TypeError(f"Expected a buffered incremental serializer instance, got {serializer!r}")
         if converter is not None and not isinstance(converter, AbstractPacketConverterComposite):
             raise TypeError(f"Expected a converter instance, got {converter!r}")
-        self.__serializer: BufferedIncrementalPacketSerializer[Any, _BufferT] = serializer
-        self.__converter: AbstractPacketConverterComposite[Never, _ReceivedPacketT, Any] | None = converter
+        self.__serializer: BufferedIncrementalPacketSerializer[Any, Any, _BufferT] = serializer
+        self.__converter: AbstractPacketConverterComposite[Never, _ReceivedPacketT, Any, Any] | None = converter
 
     def create_buffer(self, sizehint: int) -> _BufferT:
         """
@@ -220,7 +220,7 @@ class StreamProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
     @overload
     def __init__(
         self,
-        serializer: AbstractIncrementalPacketSerializer[_SentPacketT | _ReceivedPacketT],
+        serializer: AbstractIncrementalPacketSerializer[_SentPacketT, _ReceivedPacketT],
         converter: None = ...,
     ) -> None:
         ...
@@ -228,15 +228,15 @@ class StreamProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
     @overload
     def __init__(
         self,
-        serializer: AbstractIncrementalPacketSerializer[_DTOPacketT],
-        converter: AbstractPacketConverterComposite[_SentPacketT, _ReceivedPacketT, _DTOPacketT],
+        serializer: AbstractIncrementalPacketSerializer[_SentDTOPacketT, _ReceivedDTOPacketT],
+        converter: AbstractPacketConverterComposite[_SentPacketT, _ReceivedPacketT, _SentDTOPacketT, _ReceivedDTOPacketT],
     ) -> None:
         ...
 
     def __init__(
         self,
-        serializer: AbstractIncrementalPacketSerializer[Any],
-        converter: AbstractPacketConverterComposite[_SentPacketT, _ReceivedPacketT, Any] | None = None,
+        serializer: AbstractIncrementalPacketSerializer[Any, Any],
+        converter: AbstractPacketConverterComposite[_SentPacketT, _ReceivedPacketT, Any, Any] | None = None,
     ) -> None:
         """
         Parameters:
@@ -248,8 +248,8 @@ class StreamProtocol(Generic[_SentPacketT, _ReceivedPacketT]):
             raise TypeError(f"Expected an incremental serializer instance, got {serializer!r}")
         if converter is not None and not isinstance(converter, AbstractPacketConverterComposite):
             raise TypeError(f"Expected a converter instance, got {converter!r}")
-        self.__serializer: AbstractIncrementalPacketSerializer[Any] = serializer
-        self.__converter: AbstractPacketConverterComposite[_SentPacketT, _ReceivedPacketT, Any] | None = converter
+        self.__serializer: AbstractIncrementalPacketSerializer[Any, Any] = serializer
+        self.__converter: AbstractPacketConverterComposite[_SentPacketT, _ReceivedPacketT, Any, Any] | None = converter
 
         self.__buffered_receiver: BufferedStreamReceiver[_ReceivedPacketT, WriteableBuffer] | None
         if isinstance(serializer, BufferedIncrementalPacketSerializer):
