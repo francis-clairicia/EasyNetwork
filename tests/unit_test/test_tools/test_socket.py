@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import socket
 from collections.abc import Callable
-from socket import IPPROTO_TCP, SO_KEEPALIVE, SO_LINGER, SOL_SOCKET, TCP_NODELAY
+from socket import AF_INET, AF_INET6, IPPROTO_TCP, SO_KEEPALIVE, SO_LINGER, SOL_SOCKET, TCP_NODELAY
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.lowlevel.socket import (
-    AddressFamily,
     IPv4SocketAddress,
     IPv6SocketAddress,
     SocketAddress,
@@ -22,21 +21,12 @@ from easynetwork.lowlevel.socket import (
 import pytest
 
 from .._utils import partial_eq
+from ..base import UNSUPPORTED_FAMILIES
 
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
 
     from pytest_mock import MockerFixture
-
-
-@pytest.mark.parametrize("name", list(AddressFamily.__members__))
-def test____AddressFamily____constants(name: str) -> None:
-    # Arrange
-    enum = AddressFamily[name]
-    constant = getattr(socket, name)
-
-    # Act & Assert
-    assert enum.value == constant
 
 
 class TestSocketAddress:
@@ -54,15 +44,15 @@ class TestSocketAddress:
     @pytest.mark.parametrize(
         ["address", "family", "expected_type"],
         [
-            pytest.param(("127.0.0.1", 3000), AddressFamily.AF_INET, IPv4SocketAddress),
-            pytest.param(("127.0.0.1", 3000), AddressFamily.AF_INET6, IPv6SocketAddress),
-            pytest.param(("127.0.0.1", 3000, 0, 0), AddressFamily.AF_INET6, IPv6SocketAddress),
+            pytest.param(("127.0.0.1", 3000), AF_INET, IPv4SocketAddress),
+            pytest.param(("127.0.0.1", 3000), AF_INET6, IPv6SocketAddress),
+            pytest.param(("127.0.0.1", 3000, 0, 0), AF_INET6, IPv6SocketAddress),
         ],
     )
     def test____new_socket_address____factory(
         self,
         address: tuple[Any, ...],
-        family: AddressFamily,
+        family: int,
         expected_type: type[SocketAddress],
     ) -> None:
         # Arrange
@@ -72,6 +62,20 @@ class TestSocketAddress:
 
         # Assert
         assert isinstance(socket_address, expected_type)
+
+    @pytest.mark.parametrize("socket_family_name", list(UNSUPPORTED_FAMILIES))
+    def test____new_socket_address____unsupported_family(
+        self,
+        socket_family_name: str,
+    ) -> None:
+        # Arrange
+        import socket
+
+        family: int = getattr(socket, socket_family_name)
+
+        # Act & Assert
+        with pytest.raises(ValueError, match=r"^Unsupported address family .+$"):
+            _ = new_socket_address(("127.0.0.1", 12345), family)
 
 
 class TestSocketProxy:

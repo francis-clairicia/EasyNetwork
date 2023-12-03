@@ -57,7 +57,6 @@ else:
     del _ssl
 
 from . import constants
-from .socket import AddressFamily
 
 if TYPE_CHECKING:
     from ssl import SSLError as _SSLError, SSLSocket as _SSLSocket
@@ -113,10 +112,8 @@ def error_from_errno(errno: int) -> OSError:
 
 
 def check_socket_family(family: int) -> None:
-    supported_families = AddressFamily.__members__
-
-    if family not in supported_families.values():
-        raise ValueError(f"Only these families are supported: {', '.join(supported_families)}")
+    if family not in {_socket.AF_INET, _socket.AF_INET6}:
+        raise ValueError("Only these families are supported: AF_INET, AF_INET6")
 
 
 def check_real_socket_state(socket: ISocket) -> None:
