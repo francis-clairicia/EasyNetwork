@@ -96,7 +96,11 @@ def get_all_socket_families() -> frozenset[str]:
 def _get_all_socket_families() -> frozenset[str]:
     import socket
 
-    return frozenset(v for v in dir(socket) if v.startswith("AF_"))
+    to_exclude = {
+        "AF_UNSPEC",
+    }
+
+    return frozenset(v for v in dir(socket) if v.startswith("AF_") and v not in to_exclude)
 
 
 def __addrinfo_list(

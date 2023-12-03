@@ -76,6 +76,7 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
         *,
         local_address: tuple[str, int] | None = ...,
+        family: int = ...,
         backend: str | AsyncBackend | None = ...,
         backend_kwargs: Mapping[str, Any] | None = ...,
     ) -> None:
@@ -147,6 +148,8 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
             case (str(host), int(port)):
                 if kwargs.get("local_address") is None:
                     kwargs["local_address"] = ("localhost", 0)
+                if (family := kwargs.get("family", _socket.AF_UNSPEC)) != _socket.AF_UNSPEC:
+                    _utils.check_socket_family(family)
                 socket_factory = _utils.make_callback(backend.create_udp_endpoint, host, port, **kwargs)
             case _:  # pragma: no cover
                 raise TypeError("Invalid arguments")

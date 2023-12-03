@@ -19,6 +19,7 @@ from __future__ import annotations
 
 __all__ = [
     "create_connection",
+    "create_datagram_connection",
     "open_listener_sockets_from_getaddrinfo_result",
     "wait_until_readable",
     "wait_until_writable",
@@ -82,33 +83,14 @@ async def resolve_local_addresses(
     return sorted(infos)
 
 
-async def create_connection(
-    host: str,
-    port: int,
+async def _create_connection_impl(
+    *,
     loop: asyncio.AbstractEventLoop,
-    local_address: tuple[str, int] | None = None,
-    socktype: int = _socket.SOCK_STREAM,
+    remote_addrinfo: Sequence[tuple[int, int, int, str, tuple[Any, ...]]],
+    local_addrinfo: Sequence[tuple[int, int, int, str, tuple[Any, ...]]] | None,
 ) -> _socket.socket:
-    remote_addrinfo: Sequence[tuple[int, int, int, str, tuple[Any, ...]]] = await ensure_resolved(
-        host,
-        port,
-        family=_socket.AF_UNSPEC,
-        type=socktype,
-        loop=loop,
-    )
-    local_addrinfo: Sequence[tuple[int, int, int, str, tuple[Any, ...]]] | None = None
-    if local_address is not None:
-        local_host, local_port = local_address
-        local_addrinfo = await ensure_resolved(
-            local_host,
-            local_port,
-            family=_socket.AF_UNSPEC,
-            type=socktype,
-            loop=loop,
-        )
-
     errors: list[OSError] = []
-    for family, _, proto, _, remote_sockaddr in remote_addrinfo:
+    for family, socktype, proto, _, remote_sockaddr in remote_addrinfo:
         try:
             socket = _socket.socket(family, socktype, proto)
         except OSError as exc:
@@ -160,6 +142,69 @@ async def create_connection(
         raise ExceptionGroup("create_connection() failed", errors)
     finally:
         errors.clear()
+
+
+async def create_connection(
+    host: str,
+    port: int,
+    loop: asyncio.AbstractEventLoop,
+    local_address: tuple[str, int] | None = None,
+) -> _socket.socket:
+    remote_addrinfo: Sequence[tuple[int, int, int, str, tuple[Any, ...]]] = await ensure_resolved(
+        host,
+        port,
+        family=_socket.AF_UNSPEC,
+        type=_socket.SOCK_STREAM,
+        loop=loop,
+    )
+    local_addrinfo: Sequence[tuple[int, int, int, str, tuple[Any, ...]]] | None = None
+    if local_address is not None:
+        local_host, local_port = local_address
+        local_addrinfo = await ensure_resolved(
+            local_host,
+            local_port,
+            family=_socket.AF_UNSPEC,
+            type=_socket.SOCK_STREAM,
+            loop=loop,
+        )
+
+    return await _create_connection_impl(
+        loop=loop,
+        remote_addrinfo=remote_addrinfo,
+        local_addrinfo=local_addrinfo,
+    )
+
+
+async def create_datagram_connection(
+    host: str,
+    port: int,
+    loop: asyncio.AbstractEventLoop,
+    local_address: tuple[str, int] | None = None,
+    family: int = _socket.AF_UNSPEC,
+) -> _socket.socket:
+    remote_addrinfo: Sequence[tuple[int, int, int, str, tuple[Any, ...]]] = await ensure_resolved(
+        host,
+        port,
+        family=family,
+        type=_socket.SOCK_DGRAM,
+        loop=loop,
+    )
+    local_addrinfo: Sequence[tuple[int, int, int, str, tuple[Any, ...]]] | None = None
+    if local_address is not None:
+        local_host, local_port = local_address
+        local_addrinfo = await ensure_resolved(
+            local_host,
+            local_port,
+            family=family,
+            type=_socket.SOCK_DGRAM,
+            loop=loop,
+        )
+
+    return await _create_connection_impl(
+        loop=loop,
+        remote_addrinfo=remote_addrinfo,
+        local_addrinfo=local_addrinfo,
+    )
 
 
 def open_listener_sockets_from_getaddrinfo_result(

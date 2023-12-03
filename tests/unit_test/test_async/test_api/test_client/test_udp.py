@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import errno
 import os
-from socket import AF_INET6, SO_ERROR, SOL_SOCKET
+from socket import AF_INET6, AF_UNSPEC, SO_ERROR, SOL_SOCKET
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.api_async.client.udp import AsyncUDPNetworkClient
@@ -162,6 +162,76 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
             mocker.call.getsockname(),
         ]
         assert isinstance(client.socket, SocketProxy)
+
+    async def test____dunder_init____with_remote_address____socket_family(
+        self,
+        remote_address: tuple[str, int],
+        socket_family: int,
+        mock_datagram_protocol: MagicMock,
+        mock_backend: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+
+        # Act
+        client: AsyncUDPNetworkClient[Any, Any] = AsyncUDPNetworkClient(
+            remote_address,
+            mock_datagram_protocol,
+            family=socket_family,
+            local_address=mocker.sentinel.local_address,
+        )
+        await client.wait_connected()
+
+        # Assert
+        mock_backend.create_udp_endpoint.assert_awaited_once_with(
+            *remote_address,
+            family=socket_family,
+            local_address=mocker.sentinel.local_address,
+        )
+
+    async def test____dunder_init____with_remote_address____explicit_AF_UNSPEC(
+        self,
+        remote_address: tuple[str, int],
+        mock_datagram_protocol: MagicMock,
+        mock_backend: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+
+        # Act
+        client: AsyncUDPNetworkClient[Any, Any] = AsyncUDPNetworkClient(
+            remote_address,
+            mock_datagram_protocol,
+            family=AF_UNSPEC,
+            local_address=mocker.sentinel.local_address,
+        )
+        await client.wait_connected()
+
+        # Assert
+        mock_backend.create_udp_endpoint.assert_awaited_once_with(
+            *remote_address,
+            family=AF_UNSPEC,
+            local_address=mocker.sentinel.local_address,
+        )
+
+    @pytest.mark.parametrize("socket_family", list(UNSUPPORTED_FAMILIES), indirect=True)
+    async def test____dunder_init____with_remote_address____invalid_socket_family(
+        self,
+        remote_address: tuple[str, int],
+        socket_family: int,
+        mock_datagram_protocol: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        with pytest.raises(ValueError, match=r"^Only these families are supported: .+$"):
+            _ = AsyncUDPNetworkClient(
+                remote_address,
+                mock_datagram_protocol,
+                family=socket_family,
+                local_address=mocker.sentinel.local_address,
+            )
 
     async def test____dunder_init____with_remote_address____force_local_address(
         self,

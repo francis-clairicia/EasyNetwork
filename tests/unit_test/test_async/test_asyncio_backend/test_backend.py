@@ -1213,11 +1213,13 @@ class TestAsyncIOBackend:
         mock_open_listeners.assert_not_called()
         mock_ListenerSocketAdapter.assert_not_called()
 
+    @pytest.mark.parametrize("socket_family", [None, AF_INET, AF_INET6], ids=lambda p: f"family=={p}")
     async def test____create_udp_endpoint____use_loop_create_datagram_endpoint(
         self,
         event_loop: asyncio.AbstractEventLoop,
         local_address: tuple[str, int] | None,
         remote_address: tuple[str, int],
+        socket_family: int | None,
         backend: AsyncIOBackend,
         mock_datagram_endpoint_factory: Callable[[], MagicMock],
         use_asyncio_transport: bool,
@@ -1239,20 +1241,23 @@ class TestAsyncIOBackend:
             return_value=mock_endpoint,
         )
         mock_own_create_connection: AsyncMock = mocker.patch(
-            "easynetwork.lowlevel.asyncio.backend.create_connection",
+            "easynetwork.lowlevel.asyncio.backend.create_datagram_connection",
             new_callable=mocker.AsyncMock,
             return_value=mock_udp_socket,
         )
 
         # Act
-        socket = await backend.create_udp_endpoint(*remote_address, local_address=local_address)
+        if socket_family is None:
+            socket = await backend.create_udp_endpoint(*remote_address, local_address=local_address)
+        else:
+            socket = await backend.create_udp_endpoint(*remote_address, local_address=local_address, family=socket_family)
 
         # Assert
         mock_own_create_connection.assert_awaited_once_with(
             *remote_address,
             event_loop,
             local_address=local_address,
-            socktype=SOCK_DGRAM,
+            family=AF_UNSPEC if socket_family is None else socket_family,
         )
         if use_asyncio_transport:
             mock_create_datagram_endpoint.assert_awaited_once_with(sock=mock_udp_socket)

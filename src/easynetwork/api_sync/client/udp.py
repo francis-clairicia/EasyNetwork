@@ -53,6 +53,7 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
         *,
         local_address: tuple[str, int] | None = ...,
+        family: int = ...,
         reuse_port: bool = ...,
         retry_interval: float = ...,
     ) -> None:
@@ -105,6 +106,8 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
             case _socket.socket() as socket if not kwargs:
                 _utils.ensure_datagram_socket_bound(socket)
             case (str(host), int(port)):
+                if (family := kwargs.get("family", _socket.AF_UNSPEC)) != _socket.AF_UNSPEC:
+                    _utils.check_socket_family(family)
                 socket = _create_udp_socket(remote_address=(host, port), **kwargs)
             case _:  # pragma: no cover
                 raise TypeError("Invalid arguments")
@@ -291,6 +294,7 @@ def _create_udp_socket(
     *,
     local_address: tuple[str, int] | None = None,
     remote_address: tuple[str, int] | None = None,
+    family: int = _socket.AF_UNSPEC,
     reuse_port: bool = False,
 ) -> _socket.socket:
     local_host: str | None
@@ -310,7 +314,7 @@ def _create_udp_socket(
 
     for family, _, proto, _, sockaddr in _socket.getaddrinfo(
         *(remote_address or local_address),
-        family=_socket.AF_UNSPEC,
+        family=family,
         type=_socket.SOCK_DGRAM,
         flags=flags,
     ):
