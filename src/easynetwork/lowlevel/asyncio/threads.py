@@ -28,8 +28,8 @@ from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, ParamSpec, Self, TypeVar, final
 
 from .. import _lock, _utils
+from ..api_async.backend import _sniffio_helpers
 from ..api_async.backend.abc import ThreadsPortal as AbstractThreadsPortal
-from ..api_async.backend.sniffio import current_async_library_cvar as _sniffio_current_async_library_cvar
 from .tasks import TaskUtils
 
 if TYPE_CHECKING:
@@ -146,9 +146,7 @@ class ThreadsPortal(AbstractThreadsPortal):
             waiter = self.__register_waiter(self.__call_soon_waiters, loop)
 
         ctx = contextvars.copy_context()
-
-        if _sniffio_current_async_library_cvar is not None:
-            ctx.run(_sniffio_current_async_library_cvar.set, "asyncio")
+        _sniffio_helpers.setup_sniffio_contextvar(ctx, "asyncio")
 
         future: concurrent.futures.Future[_T] = concurrent.futures.Future()
 

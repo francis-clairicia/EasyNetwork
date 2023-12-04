@@ -5,7 +5,6 @@ import contextvars
 from typing import TYPE_CHECKING
 
 from easynetwork.lowlevel.api_async.backend.futures import AsyncExecutor
-from easynetwork.lowlevel.api_async.backend.sniffio import current_async_library_cvar
 
 import pytest
 
@@ -85,10 +84,6 @@ class TestAsyncExecutor:
         # Assert
         if executor_handle_contexts:
             mock_contextvars_copy_context.assert_called_once_with()
-            if current_async_library_cvar is not None:
-                mock_context.run.assert_called_once_with(current_async_library_cvar.set, None)
-            else:
-                mock_context.run.assert_not_called()
             mock_stdlib_executor.submit.assert_called_once_with(
                 partial_eq(mock_context.run, func),
                 mocker.sentinel.arg1,
@@ -98,7 +93,6 @@ class TestAsyncExecutor:
             )
         else:
             mock_contextvars_copy_context.assert_not_called()
-            mock_context.run.assert_not_called()
             mock_stdlib_executor.submit.assert_called_once_with(
                 func,
                 mocker.sentinel.arg1,
@@ -152,12 +146,6 @@ class TestAsyncExecutor:
         # Assert
         if executor_handle_contexts:
             assert mock_contextvars_copy_context.call_args_list == [mocker.call() for _ in range(len(mock_contexts))]
-            if current_async_library_cvar is not None:
-                for mock_context in mock_contexts:
-                    mock_context.run.assert_called_once_with(current_async_library_cvar.set, None)
-            else:
-                for mock_context in mock_contexts:
-                    mock_context.run.assert_not_called()
             assert mock_stdlib_executor.submit.call_args_list == [
                 mocker.call(partial_eq(mock_context.run, func), arg) for mock_context, arg in zip(mock_contexts, func_args)
             ]

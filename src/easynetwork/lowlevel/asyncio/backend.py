@@ -40,8 +40,8 @@ else:
     del _ssl
 
 from ...exceptions import UnsupportedOperation
+from ..api_async.backend import _sniffio_helpers
 from ..api_async.backend.abc import AsyncBackend as AbstractAsyncBackend
-from ..api_async.backend.sniffio import current_async_library_cvar as _sniffio_current_async_library_cvar
 from ._asyncio_utils import (
     create_connection,
     create_datagram_connection,
@@ -391,8 +391,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
         loop = asyncio.get_running_loop()
         ctx = contextvars.copy_context()
 
-        if _sniffio_current_async_library_cvar is not None:
-            ctx.run(_sniffio_current_async_library_cvar.set, None)
+        _sniffio_helpers.setup_sniffio_contextvar(ctx, None)
 
         future = loop.run_in_executor(None, functools.partial(ctx.run, func, *args, **kwargs))
         try:

@@ -25,8 +25,8 @@ from collections import deque
 from collections.abc import AsyncGenerator, Callable, Iterable, Mapping
 from typing import TYPE_CHECKING, Any, ParamSpec, Self, TypeVar
 
+from . import _sniffio_helpers
 from .factory import AsyncBackendFactory
-from .sniffio import current_async_library_cvar as _sniffio_current_async_library_cvar
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -206,10 +206,7 @@ class AsyncExecutor:
     def _setup_func(self, func: Callable[_P, _T]) -> Callable[_P, _T]:
         if self.__handle_contexts:
             ctx = contextvars.copy_context()
-
-            if _sniffio_current_async_library_cvar is not None:
-                ctx.run(_sniffio_current_async_library_cvar.set, None)
-
+            _sniffio_helpers.setup_sniffio_contextvar(ctx, None)
             func = functools.partial(ctx.run, func)
         return func
 

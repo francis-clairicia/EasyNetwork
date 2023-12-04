@@ -25,8 +25,8 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Final, final
 
+from ._sniffio_helpers import current_async_library as _sniffio_current_async_library
 from .abc import AsyncBackend
-from .sniffio import current_async_library as _sniffio_current_async_library
 
 if TYPE_CHECKING:
     from importlib.metadata import EntryPoint
