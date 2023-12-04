@@ -17,9 +17,6 @@ Data Structures And Constants
 .. autoclass:: TLSAttribute
    :members:
 
-.. autoenum:: AddressFamily
-   :members:
-
 .. autonamedtuple:: IPv4SocketAddress
    :members:
 
