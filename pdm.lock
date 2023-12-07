@@ -2,10 +2,10 @@
 # It is not intended for manual editing.
 
 [metadata]
-groups = ["default", "bandit", "build", "cbor", "coverage", "dev", "doc", "encryption", "flake8", "format", "msgpack", "mypy", "pre-commit", "sniffio", "test", "tox", "uvloop"]
+groups = ["default", "bandit", "build", "cbor", "coverage", "dev", "doc", "encryption", "flake8", "format", "msgpack", "mypy", "pre-commit", "sniffio", "test", "tox", "types-encryption", "types-msgpack", "uvloop"]
 strategy = ["cross_platform"]
 lock_version = "4.4"
-content_hash = "sha256:8fb4f7827b0d7e743c2b957e090c0fc3dfa2d16cddf07bfb5210aaba01295c8c"
+content_hash = "sha256:589431756c4c9ac44a636587f4153c6261ab748f9d1eb87b70bd97df5f961582"
 
 [[package]]
 name = "alabaster"

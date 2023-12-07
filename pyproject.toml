@@ -90,8 +90,12 @@ format = [
 ]
 mypy = [
     "mypy~=1.7.0",
-    "types-cryptography>=3.3.23.2",
+]
+types-msgpack = [
     "msgpack-types>=0.2.0",
+]
+types-encryption = [
+    "types-cryptography>=3.3.23.2",
 ]
 flake8 = [
     "flake8>=6.0",
