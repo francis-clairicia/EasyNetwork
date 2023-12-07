@@ -74,24 +74,30 @@ class TestAsyncTCPNetworkClient:
 
     async def test____send_packet____connection_error____fresh_connection_closed_by_server(
         self,
+        use_asyncio_transport: bool,
         event_loop: asyncio.AbstractEventLoop,
         client: AsyncTCPNetworkClient[str, str],
         server: Socket,
     ) -> None:
+        if use_asyncio_transport:
+            pytest.skip("It is not mandadtory for asyncio.Transport implementations to raise ConnectionAbortedError")
         if is_uvloop_event_loop(event_loop):
             pytest.skip("It is not mandadtory for uvloop to raise ConnectionAbortedError")
         server.close()
         with pytest.raises(ConnectionAbortedError):
             for _ in range(3):  # Windows and macOS catch the issue after several send()
                 await client.send_packet("ABCDEF")
-                await asyncio.sleep(0.01)
+                await asyncio.sleep(0)
 
     async def test____send_packet____connection_error____after_previous_successful_try(
         self,
+        use_asyncio_transport: bool,
         event_loop: asyncio.AbstractEventLoop,
         client: AsyncTCPNetworkClient[str, str],
         server: Socket,
     ) -> None:
+        if use_asyncio_transport:
+            pytest.skip("It is not mandadtory for asyncio.Transport implementations to raise ConnectionAbortedError")
         if is_uvloop_event_loop(event_loop):
             pytest.skip("It is not mandadtory for uvloop to raise ConnectionAbortedError")
 
@@ -101,14 +107,17 @@ class TestAsyncTCPNetworkClient:
         with pytest.raises(ConnectionAbortedError):
             for _ in range(3):  # Windows and macOS catch the issue after several send()
                 await client.send_packet("ABCDEF")
-                await asyncio.sleep(0.01)
+                await asyncio.sleep(0)
 
     async def test____send_packet____connection_error____partial_read_then_close(
         self,
+        use_asyncio_transport: bool,
         event_loop: asyncio.AbstractEventLoop,
         client: AsyncTCPNetworkClient[str, str],
         server: Socket,
     ) -> None:
+        if use_asyncio_transport:
+            pytest.skip("It is not mandadtory for asyncio.Transport implementations to raise ConnectionAbortedError")
         if is_uvloop_event_loop(event_loop):
             pytest.skip("It is not mandadtory for uvloop to raise ConnectionAbortedError")
         await client.send_packet("ABC")
@@ -117,7 +126,7 @@ class TestAsyncTCPNetworkClient:
         with pytest.raises(ConnectionAbortedError):
             for _ in range(3):  # Windows and macOS catch the issue after several send()
                 await client.send_packet("DEF")
-                await asyncio.sleep(0.01)
+                await asyncio.sleep(0)
 
     async def test____send_packet____closed_client(self, client: AsyncTCPNetworkClient[str, str]) -> None:
         await client.aclose()
