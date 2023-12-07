@@ -185,6 +185,7 @@ class TestAsyncUDPNetworkClient:
                 await client.recv_packet()
 
     @pytest.mark.parametrize("one_shot_serializer", [pytest.param("invalid", id="serializer_crash")], indirect=True)
+    @use_asyncio_transport_xfail_uvloop
     async def test____recv_packet____protocol_crashed(
         self,
         client: AsyncUDPNetworkClient[str, str],
