@@ -409,7 +409,8 @@ class _ClientAPI(AsyncDatagramClient[_ResponseT]):
             return {}
         server = server_ref
         del server_ref
-        return dict(server.extra_attributes) | {
+        return {
+            **server.extra_attributes,
             INETClientAttribute.socket: lambda: self.__socket_proxy,
             INETClientAttribute.local_address: lambda: new_socket_address(
                 server.extra(INETSocketAttribute.sockname),

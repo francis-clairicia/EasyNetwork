@@ -71,6 +71,7 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
     request_received: collections.defaultdict[tuple[Any, ...], list[str]]
     request_count: collections.Counter[tuple[Any, ...]]
     bad_request_received: collections.defaultdict[tuple[Any, ...], list[BaseProtocolParseError]]
+    milk_handshake: bool = True
     close_all_clients_on_connection: bool = False
     close_client_after_n_request: int = -1
     server: AsyncTCPNetworkServer[str, str]
@@ -96,7 +97,8 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
     async def on_connection(self, client: AsyncStreamClient[str]) -> None:
         assert client_address(client) not in self.connected_clients
         self.connected_clients[client_address(client)] = client
-        await client.send_packet("milk")
+        if self.milk_handshake:
+            await client.send_packet("milk")
         if self.close_all_clients_on_connection:
             await self.backend.sleep(0.1)
             await client.aclose()
@@ -145,7 +147,14 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
                 await client.send_packet(f"After wait: {request}")
             case _:
                 self.request_received[client_address(client)].append(request)
-                await client.send_packet(request.upper())
+                try:
+                    await client.send_packet(request.upper())
+                except Exception as exc:
+                    msg = f"{exc.__class__.__name__}: {exc}"
+                    if exc.__cause__:
+                        msg = f"{msg} (caused by {exc.__cause__.__class__.__name__}: {exc.__cause__})"
+                    self.server.logger.error(msg, exc_info=exc)
+                    await client.aclose()
 
     @contextlib.asynccontextmanager
     async def handle_bad_requests(self, client: AsyncStreamClient[str]) -> AsyncIterator[None]:
@@ -348,7 +357,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
 
     @pytest_asyncio.fixture
     @staticmethod
-    async def client_factory(
+    async def client_factory_no_handshake(
         server_address: tuple[str, int],
         event_loop: asyncio.AbstractEventLoop,
         use_ssl: bool,
@@ -368,10 +377,21 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
                     )
                     stack.push_async_callback(lambda: asyncio.wait_for(writer.wait_closed(), 3))
                     stack.callback(writer.close)
-                    assert await reader.readline() == b"milk\n"
                 return reader, writer
 
             yield factory
+
+    @pytest.fixture
+    @staticmethod
+    def client_factory(
+        client_factory_no_handshake: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+    ) -> Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]]:
+        async def factory() -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+            reader, writer = await client_factory_no_handshake()
+            assert await reader.readline() == b"milk\n"
+            return reader, writer
+
+        return factory
 
     @staticmethod
     async def _wait_client_disconnected(writer: asyncio.StreamWriter, request_handler: MyAsyncTCPRequestHandler) -> None:
@@ -720,6 +740,29 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
             assert await reader.read() == b""
             raise ConnectionResetError
         assert len(caplog.records) == 3
+
+    @pytest.mark.parametrize("incremental_serializer", [pytest.param("bad_serialize", id="serializer_crash")], indirect=True)
+    async def test____serve_forever____unexpected_error_during_response_serialization(
+        self,
+        client_factory_no_handshake: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        caplog: pytest.LogCaptureFixture,
+        server: MyAsyncTCPServer,
+        request_handler: MyAsyncTCPRequestHandler,
+    ) -> None:
+        request_handler.milk_handshake = False
+        caplog.set_level(logging.ERROR, server.logger.name)
+        reader, writer = await client_factory_no_handshake()
+
+        while not request_handler.connected_clients:
+            await asyncio.sleep(0.1)
+
+        writer.write(b"request\n")
+        await asyncio.sleep(0.1)
+
+        assert await reader.read() == b""
+        assert len(caplog.records) == 1
+        assert caplog.records[0].levelno == logging.ERROR
+        assert caplog.records[0].message == "RuntimeError: protocol.generate_chunks() crashed (caused by SystemError: CRASH)"
 
     async def test____serve_forever____os_error(
         self,

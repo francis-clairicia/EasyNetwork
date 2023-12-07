@@ -311,8 +311,10 @@ class CancelScope(AbstractCancelScope):
 @final
 class TaskUtils:
     @staticmethod
-    def check_current_asyncio_task(loop: asyncio.AbstractEventLoop | None = None) -> None:
-        _ = TaskUtils.current_asyncio_task(loop=loop)
+    def check_current_event_loop(loop: asyncio.AbstractEventLoop) -> None:
+        running_loop = asyncio.get_running_loop()
+        if running_loop is not loop:
+            raise RuntimeError(f"{running_loop=!r} is not {loop=!r}")
 
     @staticmethod
     def current_asyncio_task(loop: asyncio.AbstractEventLoop | None = None) -> asyncio.Task[Any]:

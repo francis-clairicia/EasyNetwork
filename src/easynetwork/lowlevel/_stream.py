@@ -75,6 +75,8 @@ class StreamDataProducer(Generic[_SentPacketT]):
                 chunk = next(filter(None, map(bytes, generator)))
             except StopIteration:
                 pass
+            except Exception as exc:
+                raise RuntimeError("protocol.generate_chunks() crashed") from exc
             else:
                 self.__g = generator
                 return chunk

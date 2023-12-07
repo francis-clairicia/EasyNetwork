@@ -107,6 +107,8 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, 
 
                 try:
                     datagram: bytes = protocol.make_datagram(packet)
+                except Exception as exc:
+                    raise RuntimeError("protocol.make_datagram() crashed") from exc
                 finally:
                     del packet
                 try:

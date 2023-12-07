@@ -98,3 +98,14 @@ class NotGoodBufferedStringSerializer(NotGoodStringSerializer, BufferedStringSer
     def buffered_incremental_deserialize(self, write_buffer: bytearray) -> Generator[int, int, tuple[str, bytearray]]:
         yield 0
         raise SystemError("CRASH")
+
+
+class BadSerializeStringSerializer(StringSerializer):
+    __slots__ = ()
+
+    def serialize(self, packet: str) -> bytes:
+        raise SystemError("CRASH")
+
+    def incremental_serialize(self, packet: str) -> Generator[bytes, None, None]:
+        raise SystemError("CRASH")
+        yield b"chunk"  # type: ignore[unreachable]

@@ -145,6 +145,14 @@ class TestAsyncUDPNetworkClient:
         with pytest.raises(ClientClosedError):
             await client.send_packet("ABCDEF")
 
+    @pytest.mark.parametrize("one_shot_serializer", [pytest.param("bad_serialize", id="serializer_crash")], indirect=True)
+    async def test____send_packet____protocol_crashed(
+        self,
+        client: AsyncUDPNetworkClient[str, str],
+    ) -> None:
+        with pytest.raises(RuntimeError, match=r"^protocol\.make_datagram\(\) crashed$"):
+            await client.send_packet("ABCDEF")
+
     @use_asyncio_transport_xfail_uvloop
     async def test____recv_packet____default(self, client: AsyncUDPNetworkClient[str, str], server: DatagramEndpoint) -> None:
         await server.sendto(b"ABCDEF", client.get_local_address())
@@ -175,6 +183,22 @@ class TestAsyncUDPNetworkClient:
         with pytest.raises(DatagramProtocolParseError):
             async with asyncio.timeout(3):
                 await client.recv_packet()
+
+    @pytest.mark.parametrize("one_shot_serializer", [pytest.param("invalid", id="serializer_crash")], indirect=True)
+    @use_asyncio_transport_xfail_uvloop
+    async def test____recv_packet____protocol_crashed(
+        self,
+        client: AsyncUDPNetworkClient[str, str],
+        server: DatagramEndpoint,
+    ) -> None:
+        await server.sendto(b"ABCDEF", client.get_local_address())
+        try:
+            await client.recv_packet()
+        except NotImplementedError:
+            raise
+        except Exception:
+            with pytest.raises(RuntimeError, match=r"^protocol\.build_packet_from_datagram\(\) crashed$"):
+                raise
 
     @use_asyncio_transport_xfail_uvloop
     async def test____iter_received_packets____yields_available_packets_until_close(

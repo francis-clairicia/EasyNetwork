@@ -190,6 +190,37 @@ class TestStreamDataProducer:
         assert isinstance(chunk, bytes)
         assert chunk == b"chunk"
 
+    @pytest.mark.parametrize("before_yielding", [False, True], ids=lambda p: f"before_yielding=={p}")
+    def test____next____generator_raised(
+        self,
+        before_yielding: bool,
+        producer: StreamDataProducer[Any],
+        mock_stream_protocol: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        expected_error = Exception("Error")
+
+        def side_effect(_: Any) -> Generator[bytes, None, None]:
+            if before_yielding:
+                raise expected_error
+            yield b"chunk"
+            raise expected_error
+
+        mock_generate_chunks_func: MagicMock = mock_stream_protocol.generate_chunks
+        mock_generate_chunks_func.side_effect = side_effect
+        producer.enqueue(mocker.sentinel.packet_for_test_arrange)
+
+        if not before_yielding:
+            next(producer)
+
+        # Act
+        with pytest.raises(RuntimeError, match=r"^protocol\.generate_chunks\(\) crashed$") as exc_info:
+            next(producer)
+
+        # Assert
+        assert exc_info.value.__cause__ is expected_error
+
     def test____pending_packets____empty_producer(self, producer: StreamDataProducer[Any]) -> None:
         # Arrange
 
