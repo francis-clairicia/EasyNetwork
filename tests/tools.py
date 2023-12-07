@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import sys
 import time
 from collections.abc import Generator
@@ -68,6 +69,14 @@ def is_proactor_event_loop(event_loop: asyncio.AbstractEventLoop) -> bool:
     except AttributeError:
         return False
     return isinstance(event_loop, ProactorEventLoop)
+
+
+def is_uvloop_event_loop(event_loop: asyncio.AbstractEventLoop) -> bool:
+    try:
+        uvloop = importlib.import_module("uvloop")
+    except ModuleNotFoundError:
+        return False
+    return isinstance(event_loop, uvloop.Loop)
 
 
 _TooShortBufferBehavior: TypeAlias = Literal["error", "fill_at_most", "xfail"]
