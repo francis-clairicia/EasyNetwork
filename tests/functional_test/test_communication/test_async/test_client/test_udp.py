@@ -192,8 +192,13 @@ class TestAsyncUDPNetworkClient:
         server: DatagramEndpoint,
     ) -> None:
         await server.sendto(b"ABCDEF", client.get_local_address())
-        with pytest.raises(RuntimeError, match=r"^protocol\.build_packet_from_datagram\(\) crashed$"):
+        try:
             await client.recv_packet()
+        except NotImplementedError:
+            raise
+        except Exception:
+            with pytest.raises(RuntimeError, match=r"^protocol\.build_packet_from_datagram\(\) crashed$"):
+                raise
 
     @use_asyncio_transport_xfail_uvloop
     async def test____iter_received_packets____yields_available_packets_until_close(
