@@ -2,10 +2,10 @@
 # It is not intended for manual editing.
 
 [metadata]
-groups = ["default", "bandit", "cbor", "dev", "doc", "encryption", "flake8", "format", "msgpack", "mypy", "sniffio", "test", "tox", "uvloop"]
+groups = ["default", "bandit", "build", "cbor", "coverage", "dev", "doc", "encryption", "flake8", "format", "msgpack", "mypy", "pre-commit", "sniffio", "test", "tox", "uvloop"]
 strategy = ["cross_platform"]
 lock_version = "4.4"
-content_hash = "sha256:e8579f5960f341434c968d20ffe8d424c5f273a4d1d8492f6a9db3c525291722"
+content_hash = "sha256:8fb4f7827b0d7e743c2b957e090c0fc3dfa2d16cddf07bfb5210aaba01295c8c"
 
 [[package]]
 name = "alabaster"
@@ -136,6 +136,21 @@ files = [
     {file = "black-23.11.0-cp311-cp311-win_amd64.whl", hash = "sha256:58e5f4d08a205b11800332920e285bd25e1a75c54953e05502052738fe16b3b5"},
     {file = "black-23.11.0-py3-none-any.whl", hash = "sha256:54caaa703227c6e0c87b76326d0862184729a69b73d3b7305b6288e1d830067e"},
     {file = "black-23.11.0.tar.gz", hash = "sha256:4c68855825ff432d197229846f971bc4d6666ce90492e5b02013bcaca4d9ab05"},
+]
+
+[[package]]
+name = "build"
+version = "1.0.3"
+requires_python = ">= 3.7"
+summary = "A simple, correct Python build frontend"
+dependencies = [
+    "colorama; os_name == \"nt\"",
+    "packaging>=19.0",
+    "pyproject-hooks",
+]
+files = [
+    {file = "build-1.0.3-py3-none-any.whl", hash = "sha256:589bf99a67df7c9cf07ec0ac0e5e2ea5d4b37ac63301c4986d1acb126aa83f8f"},
+    {file = "build-1.0.3.tar.gz", hash = "sha256:538aab1b64f9828977f84bc63ae570b060a8ed1be419e7870b8b4fc5e6ea553b"},
 ]
 
 [[package]]
@@ -748,12 +763,12 @@ files = [
 
 [[package]]
 name = "identify"
-version = "2.5.32"
+version = "2.5.33"
 requires_python = ">=3.8"
 summary = "File identification library for Python"
 files = [
-    {file = "identify-2.5.32-py2.py3-none-any.whl", hash = "sha256:0b7656ef6cba81664b783352c73f8c24b39cf82f926f78f4550eda928e5e0545"},
-    {file = "identify-2.5.32.tar.gz", hash = "sha256:5d9979348ec1a21c768ae07e0a652924538e8bce67313a73cb0f681cf08ba407"},
+    {file = "identify-2.5.33-py2.py3-none-any.whl", hash = "sha256:d40ce5fcd762817627670da8a7d8d8e65f24342d14539c59488dc603bf662e34"},
+    {file = "identify-2.5.33.tar.gz", hash = "sha256:161558f9fe4559e1557e1bff323e8631f6a0e4837f7497767c1782832f16b62d"},
 ]
 
 [[package]]
@@ -778,15 +793,15 @@ files = [
 
 [[package]]
 name = "importlib-metadata"
-version = "6.9.0"
+version = "7.0.0"
 requires_python = ">=3.8"
 summary = "Read metadata from Python packages"
 dependencies = [
     "zipp>=0.5",
 ]
 files = [
-    {file = "importlib_metadata-6.9.0-py3-none-any.whl", hash = "sha256:1c8dc6839ddc9771412596926f24cb5a553bbd40624ee2c7e55e531542bed3b8"},
-    {file = "importlib_metadata-6.9.0.tar.gz", hash = "sha256:e8acb523c335a91822674e149b46c0399ec4d328c4d1f6e49c273da5ff0201b9"},
+    {file = "importlib_metadata-7.0.0-py3-none-any.whl", hash = "sha256:d97503976bb81f40a193d41ee6570868479c69d5068651eb039c40d850c59d67"},
+    {file = "importlib_metadata-7.0.0.tar.gz", hash = "sha256:7fc841f8b8332803464e5dc1c63a2e59121f46ca186c0e2e182e80bf8c1319f7"},
 ]
 
 [[package]]
@@ -1020,6 +1035,29 @@ files = [
 ]
 
 [[package]]
+name = "nh3"
+version = "0.2.15"
+summary = "Python bindings to the ammonia HTML sanitization library."
+files = [
+    {file = "nh3-0.2.15-cp37-abi3-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl", hash = "sha256:9c0d415f6b7f2338f93035bba5c0d8c1b464e538bfbb1d598acd47d7969284f0"},
+    {file = "nh3-0.2.15-cp37-abi3-macosx_10_12_x86_64.whl", hash = "sha256:6f42f99f0cf6312e470b6c09e04da31f9abaadcd3eb591d7d1a88ea931dca7f3"},
+    {file = "nh3-0.2.15-cp37-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:ac19c0d68cd42ecd7ead91a3a032fdfff23d29302dbb1311e641a130dfefba97"},
+    {file = "nh3-0.2.15-cp37-abi3-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:5f0d77272ce6d34db6c87b4f894f037d55183d9518f948bba236fe81e2bb4e28"},
+    {file = "nh3-0.2.15-cp37-abi3-manylinux_2_17_ppc64.manylinux2014_ppc64.whl", hash = "sha256:8d595df02413aa38586c24811237e95937ef18304e108b7e92c890a06793e3bf"},
+    {file = "nh3-0.2.15-cp37-abi3-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:86e447a63ca0b16318deb62498db4f76fc60699ce0a1231262880b38b6cff911"},
+    {file = "nh3-0.2.15-cp37-abi3-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:3277481293b868b2715907310c7be0f1b9d10491d5adf9fce11756a97e97eddf"},
+    {file = "nh3-0.2.15-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:60684857cfa8fdbb74daa867e5cad3f0c9789415aba660614fe16cd66cbb9ec7"},
+    {file = "nh3-0.2.15-cp37-abi3-manylinux_2_5_i686.manylinux1_i686.whl", hash = "sha256:3b803a5875e7234907f7d64777dfde2b93db992376f3d6d7af7f3bc347deb305"},
+    {file = "nh3-0.2.15-cp37-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:0d02d0ff79dfd8208ed25a39c12cbda092388fff7f1662466e27d97ad011b770"},
+    {file = "nh3-0.2.15-cp37-abi3-musllinux_1_2_armv7l.whl", hash = "sha256:f3b53ba93bb7725acab1e030bc2ecd012a817040fd7851b332f86e2f9bb98dc6"},
+    {file = "nh3-0.2.15-cp37-abi3-musllinux_1_2_i686.whl", hash = "sha256:b1e97221cedaf15a54f5243f2c5894bb12ca951ae4ddfd02a9d4ea9df9e1a29d"},
+    {file = "nh3-0.2.15-cp37-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:a5167a6403d19c515217b6bcaaa9be420974a6ac30e0da9e84d4fc67a5d474c5"},
+    {file = "nh3-0.2.15-cp37-abi3-win32.whl", hash = "sha256:427fecbb1031db085eaac9931362adf4a796428ef0163070c484b5a768e71601"},
+    {file = "nh3-0.2.15-cp37-abi3-win_amd64.whl", hash = "sha256:bc2d086fb540d0fa52ce35afaded4ea526b8fc4d3339f783db55c95de40ef02e"},
+    {file = "nh3-0.2.15.tar.gz", hash = "sha256:d1e30ff2d8d58fb2a14961f7aac1bbb1c51f9bdd7da727be35c63826060b0bf3"},
+]
+
+[[package]]
 name = "nodeenv"
 version = "1.8.0"
 requires_python = ">=2.7,!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,!=3.4.*,!=3.5.*,!=3.6.*"
@@ -1075,13 +1113,23 @@ files = [
 ]
 
 [[package]]
+name = "pkginfo"
+version = "1.9.6"
+requires_python = ">=3.6"
+summary = "Query metadata from sdists / bdists / installed packages."
+files = [
+    {file = "pkginfo-1.9.6-py3-none-any.whl", hash = "sha256:4b7a555a6d5a22169fcc9cf7bfd78d296b0361adad412a346c1226849af5e546"},
+    {file = "pkginfo-1.9.6.tar.gz", hash = "sha256:8fd5896e8718a4372f0ea9cc9d96f6417c9b986e23a4d116dda26b62cc29d046"},
+]
+
+[[package]]
 name = "platformdirs"
-version = "4.0.0"
-requires_python = ">=3.7"
+version = "4.1.0"
+requires_python = ">=3.8"
 summary = "A small Python package for determining appropriate platform-specific dirs, e.g. a \"user data dir\"."
 files = [
-    {file = "platformdirs-4.0.0-py3-none-any.whl", hash = "sha256:118c954d7e949b35437270383a3f2531e99dd93cf7ce4dc8340d3356d30f173b"},
-    {file = "platformdirs-4.0.0.tar.gz", hash = "sha256:cb633b2bcf10c51af60beb0ab06d2f1d69064b43abf4c185ca6b28865f3f9731"},
+    {file = "platformdirs-4.1.0-py3-none-any.whl", hash = "sha256:11c8f37bcca40db96d8144522d925583bdb7a31f7b0e37e3ed4318400a8e2380"},
+    {file = "platformdirs-4.1.0.tar.gz", hash = "sha256:906d548203468492d432bcb294d4bc2fff751bf84971fbb2c10918cc206ee420"},
 ]
 
 [[package]]
@@ -1182,6 +1230,16 @@ files = [
 ]
 
 [[package]]
+name = "pyproject-hooks"
+version = "1.0.0"
+requires_python = ">=3.7"
+summary = "Wrappers to call pyproject.toml-based build backend hooks."
+files = [
+    {file = "pyproject_hooks-1.0.0-py3-none-any.whl", hash = "sha256:283c11acd6b928d2f6a7c73fa0d01cb2bdc5f07c57a2eeb6e83d5e56b97976f8"},
+    {file = "pyproject_hooks-1.0.0.tar.gz", hash = "sha256:f271b298b97f5955d53fb12b72c1fb1948c22c1a6b70b315c54cedaca0264ef5"},
+]
+
+[[package]]
 name = "pytest"
 version = "7.4.3"
 requires_python = ">=3.7"
@@ -1226,15 +1284,15 @@ files = [
 
 [[package]]
 name = "pytest-mock"
-version = "3.10.0"
-requires_python = ">=3.7"
+version = "3.12.0"
+requires_python = ">=3.8"
 summary = "Thin-wrapper around the mock package for easier use with pytest"
 dependencies = [
     "pytest>=5.0",
 ]
 files = [
-    {file = "pytest-mock-3.10.0.tar.gz", hash = "sha256:fbbdb085ef7c252a326fd8cdcac0aa3b1333d8811f131bdcc701002e1be7ed4f"},
-    {file = "pytest_mock-3.10.0-py3-none-any.whl", hash = "sha256:f4c973eeae0282963eb293eb173ce91b091a79c1334455acfac9ddee8a1c784b"},
+    {file = "pytest-mock-3.12.0.tar.gz", hash = "sha256:31a40f038c22cad32287bb43932054451ff5583ff094bca6f675df2f8bc1a6e9"},
+    {file = "pytest_mock-3.12.0-py3-none-any.whl", hash = "sha256:0972719a7263072da3a21c7f4773069bcc7486027d7e8e1f81d98a47e701bc4f"},
 ]
 
 [[package]]
@@ -1285,6 +1343,21 @@ files = [
 ]
 
 [[package]]
+name = "readme-renderer"
+version = "42.0"
+requires_python = ">=3.8"
+summary = "readme_renderer is a library for rendering readme descriptions for Warehouse"
+dependencies = [
+    "Pygments>=2.5.1",
+    "docutils>=0.13.1",
+    "nh3>=0.2.14",
+]
+files = [
+    {file = "readme_renderer-42.0-py3-none-any.whl", hash = "sha256:13d039515c1f24de668e2c93f2e877b9dbe6c6c32328b90a40a49d8b2b85f36d"},
+    {file = "readme_renderer-42.0.tar.gz", hash = "sha256:2d55489f83be4992fe4454939d1a051c33edbab778e82761d060c9fc6b308cd1"},
+]
+
+[[package]]
 name = "requests"
 version = "2.31.0"
 requires_python = ">=3.7"
@@ -1298,6 +1371,29 @@ dependencies = [
 files = [
     {file = "requests-2.31.0-py3-none-any.whl", hash = "sha256:58cd2187c01e70e6e26505bca751777aa9f2ee0b7f4300988b709f44e013003f"},
     {file = "requests-2.31.0.tar.gz", hash = "sha256:942c5a758f98d790eaed1a29cb6eefc7ffb0d1cf7af05c3d2791656dbd6ad1e1"},
+]
+
+[[package]]
+name = "requests-toolbelt"
+version = "1.0.0"
+requires_python = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
+summary = "A utility belt for advanced users of python-requests"
+dependencies = [
+    "requests<3.0.0,>=2.0.1",
+]
+files = [
+    {file = "requests-toolbelt-1.0.0.tar.gz", hash = "sha256:7681a0a3d047012b5bdc0ee37d7f8f07ebe76ab08caeccfc3921ce23c88d5bc6"},
+    {file = "requests_toolbelt-1.0.0-py2.py3-none-any.whl", hash = "sha256:cccfdd665f0a24fcf4726e690f65639d272bb0637b9b92dfd91a5568ccf6bd06"},
+]
+
+[[package]]
+name = "rfc3986"
+version = "2.0.0"
+requires_python = ">=3.7"
+summary = "Validating URI References per RFC 3986"
+files = [
+    {file = "rfc3986-2.0.0-py2.py3-none-any.whl", hash = "sha256:50b1502b60e289cb37883f3dfd34532b8873c7de9f49bb546641ce9cbd256ebd"},
+    {file = "rfc3986-2.0.0.tar.gz", hash = "sha256:97aacf9dbd4bfd829baad6e6309fa6573aaf1be3f6fa735c8ab05e46cecb261c"},
 ]
 
 [[package]]
@@ -1729,6 +1825,19 @@ files = [
 ]
 
 [[package]]
+name = "tox-pdm"
+version = "0.7.0"
+requires_python = ">=3.7"
+summary = "A plugin for tox that utilizes PDM as the package manager and installer"
+dependencies = [
+    "tox>=4.0",
+]
+files = [
+    {file = "tox_pdm-0.7.0-py3-none-any.whl", hash = "sha256:13b36536b29c94943ff2d2ae65eaf81ca6c7afbb5b7ba2ad7cb3738fc726d662"},
+    {file = "tox_pdm-0.7.0.tar.gz", hash = "sha256:8ecc5d04df73a329f435574222de632dc0ded36b79f27e55d6dab92e9d1741f5"},
+]
+
+[[package]]
 name = "trove-classifiers"
 version = "2023.11.29"
 summary = "Canonical source for classifiers on PyPI (pypi.org)."
@@ -1749,6 +1858,27 @@ dependencies = [
 files = [
     {file = "trustme-1.1.0-py3-none-any.whl", hash = "sha256:ce105b68fb9f6d7ac7a9ee6e95bb2347a22ce4d3be78ef9a6494d5ef890e1e16"},
     {file = "trustme-1.1.0.tar.gz", hash = "sha256:5375ad7fb427074bec956592e0d4ee2a4cf4da68934e1ba4bcf4217126bc45e6"},
+]
+
+[[package]]
+name = "twine"
+version = "4.0.2"
+requires_python = ">=3.7"
+summary = "Collection of utilities for publishing packages on PyPI"
+dependencies = [
+    "importlib-metadata>=3.6",
+    "keyring>=15.1",
+    "pkginfo>=1.8.1",
+    "readme-renderer>=35.0",
+    "requests-toolbelt!=0.9.0,>=0.8.0",
+    "requests>=2.20",
+    "rfc3986>=1.4.0",
+    "rich>=12.0.0",
+    "urllib3>=1.26.0",
+]
+files = [
+    {file = "twine-4.0.2-py3-none-any.whl", hash = "sha256:929bc3c280033347a00f847236564d1c52a3e61b1ac2516c97c48f3ceab756d8"},
+    {file = "twine-4.0.2.tar.gz", hash = "sha256:9e102ef5fdd5a20661eb88fad46338806c3bd32cf1db729603fe3697b1bc83c8"},
 ]
 
 [[package]]
