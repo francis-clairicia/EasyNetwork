@@ -181,7 +181,7 @@ class BufferedIncrementalPacketSerializer(
         Called to allocate a new receive buffer.
 
         Parameters:
-            sizehint: the recommended size for the returned buffer.
+            sizehint: the recommended size (in bytes) for the returned buffer.
                       It is acceptable to return smaller or larger buffers than what `sizehint` suggests.
 
         Returns:
