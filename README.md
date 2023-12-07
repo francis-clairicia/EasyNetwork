@@ -49,13 +49,16 @@ Works with TCP and UDP.
 ## Usage
 ### TCP Echo server with JSON data
 ```py
+import asyncio
 import logging
 from collections.abc import AsyncGenerator
 from typing import Any, TypeAlias
 
-from easynetwork.api_async.server import AsyncStreamClient, AsyncStreamRequestHandler
-from easynetwork.api_sync.server import StandaloneTCPNetworkServer
-from easynetwork.exceptions import StreamProtocolParseError
+from easynetwork.api_async.server import (
+    AsyncStreamClient,
+    AsyncStreamRequestHandler,
+    AsyncTCPNetworkServer,
+)
 from easynetwork.protocol import StreamProtocol
 from easynetwork.serializers import JSONSerializer
 
@@ -78,19 +81,12 @@ class EchoRequestHandler(AsyncStreamRequestHandler[RequestType, ResponseType]):
         self,
         client: AsyncStreamClient[ResponseType],
     ) -> AsyncGenerator[None, RequestType]:
-        try:
-            request: RequestType = yield  # A JSON request has been sent by this client
-        except StreamProtocolParseError:
-            # Invalid JSON data sent
-            # This is an example of how you can answer to an invalid request
-            await client.send_packet({"error": "Invalid JSON", "code": "parse_error"})
-            return
+        data: Any = yield  # A JSON request has been sent by this client
 
-        self.logger.info(f"{client!r} sent {request!r}")
+        self.logger.info(f"{client!r} sent {data!r}")
 
         # As a good echo handler, the request is sent back to the client
-        response: ResponseType = request
-        await client.send_packet(response)
+        await client.send_packet(data)
 
         # Leaving the generator will NOT close the connection,
         # a new generator will be created afterwards.
@@ -98,32 +94,35 @@ class EchoRequestHandler(AsyncStreamRequestHandler[RequestType, ResponseType]):
         # await client.aclose()
 
 
-def main() -> None:
+async def main() -> None:
     host = None  # Bind on all interfaces
     port = 9000
 
     logging.basicConfig(level=logging.INFO, format="[ %(levelname)s ] [ %(name)s ] %(message)s")
-    with StandaloneTCPNetworkServer(host, port, JSONProtocol(), EchoRequestHandler()) as server:
+    async with AsyncTCPNetworkServer(host, port, JSONProtocol(), EchoRequestHandler()) as server:
         try:
-            server.serve_forever()
-        except KeyboardInterrupt:
+            await server.serve_forever()
+        except asyncio.CancelledError:
             pass
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
 ```
 
 ### TCP Echo client with JSON data
 ```py
-from typing import Any
+from typing import Any, TypeAlias
 
 from easynetwork.api_sync.client import TCPNetworkClient
 from easynetwork.protocol import StreamProtocol
 from easynetwork.serializers import JSONSerializer
 
+RequestType: TypeAlias = Any
+ResponseType: TypeAlias = Any
 
-class JSONProtocol(StreamProtocol[Any, Any]):
+
+class JSONProtocol(StreamProtocol[RequestType, ResponseType]):
     def __init__(self) -> None:
         super().__init__(JSONSerializer())
 
@@ -144,14 +143,17 @@ if __name__ == "__main__":
 
 ```py
 import asyncio
-from typing import Any
+from typing import Any, TypeAlias
 
 from easynetwork.api_async.client import AsyncTCPNetworkClient
 from easynetwork.protocol import StreamProtocol
 from easynetwork.serializers import JSONSerializer
 
+RequestType: TypeAlias = Any
+ResponseType: TypeAlias = Any
 
-class JSONProtocol(StreamProtocol[Any, Any]):
+
+class JSONProtocol(StreamProtocol[RequestType, ResponseType]):
     def __init__(self) -> None:
         super().__init__(JSONSerializer())
 
