@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import itertools
+import struct
 from collections.abc import Generator
 from typing import TYPE_CHECKING, Any, Literal, assert_never
 
@@ -603,23 +604,6 @@ class TestBufferedStreamDataConsumer:
         mock_buffered_stream_receiver.build_packet_from_buffer.assert_not_called()
         assert consumer.get_value() is None
 
-    def test____get_write_buffer____protocol_create_buffer_validation____not_a_byte_buffer(
-        self,
-        consumer: BufferedStreamDataConsumer[Any],
-        mock_buffered_stream_receiver: MagicMock,
-    ) -> None:
-        # Arrange
-        from array import array
-
-        mock_buffered_stream_receiver.create_buffer.side_effect = [memoryview(array("I", itertools.repeat(0, 5)))]
-
-        # Act & Assert
-        with pytest.raises(ValueError, match=r"^protocol\.create_buffer\(\) must return a byte buffer$"):
-            _ = consumer.get_write_buffer()
-
-        mock_buffered_stream_receiver.build_packet_from_buffer.assert_not_called()
-        assert consumer.get_value() is None
-
     def test____get_write_buffer____protocol_create_buffer_validation____empty_byte_buffer(
         self,
         consumer: BufferedStreamDataConsumer[Any],
@@ -1014,6 +998,45 @@ class TestBufferedStreamDataConsumer:
         assert full_buffer_value is not None and truncated_buffer_value is not None
         assert full_buffer_value[-10:-7] == b"Bye"
         assert truncated_buffer_value.endswith(b"Bye")
+
+    def test____next____not_a_byte_buffer(
+        self,
+        consumer: BufferedStreamDataConsumer[Any],
+        mock_buffered_stream_receiver: MagicMock,
+        sizehint: int,
+    ) -> None:
+        # Arrange
+        from array import array
+
+        itemsize = struct.calcsize("@I")
+
+        mock_buffered_stream_receiver.create_buffer.side_effect = lambda sizehint: array(
+            "I", itertools.repeat(0, sizehint // itemsize)
+        )
+
+        def side_effect(buffer: array[int]) -> Generator[int, int, tuple[Any, bytes]]:
+            nbytes = yield 0
+            assert nbytes == itemsize
+            nbytes = yield 1 * itemsize
+            assert nbytes == itemsize
+            return (buffer[0], buffer[1]), b""
+
+        mock_build_packet_from_buffer_func: MagicMock = mock_buffered_stream_receiver.build_packet_from_buffer
+        mock_build_packet_from_buffer_func.side_effect = side_effect
+
+        # Act & Assert
+        buffer = consumer.get_write_buffer()
+        assert memoryview(buffer).format == "B"
+        assert memoryview(buffer).itemsize == 1
+        assert memoryview(buffer).nbytes == sizehint
+        assert consumer.buffer_size == sizehint
+        self.write_in_consumer(consumer, struct.pack("@I", 42))
+        with pytest.raises(StopIteration):
+            next(consumer)
+        self.write_in_consumer(consumer, struct.pack("@I", 987))
+        packet = next(consumer)
+        assert isinstance(packet, tuple)
+        assert packet == (42, 987)
 
     @pytest.mark.parametrize("remainder_type", ["buffer_view", "external"])
     def test____next____protocol_parse_error(

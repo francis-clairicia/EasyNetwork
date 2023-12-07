@@ -278,7 +278,7 @@ class BufferedStreamDataConsumer(Generic[_ReceivedPacketT]):
                 raise RuntimeError("protocol.build_packet_from_buffer() crashed") from exc
             self.__consumer = consumer
 
-        buffer: memoryview = memoryview(self.__buffer)
+        buffer: memoryview = memoryview(self.__buffer).cast("B")
 
         match self.__buffer_start:
             case None | 0:
@@ -309,7 +309,7 @@ class BufferedStreamDataConsumer(Generic[_ReceivedPacketT]):
             return None
         if full:
             return bytes(self.__buffer)
-        buffer = memoryview(self.__buffer)
+        buffer = memoryview(self.__buffer).cast("B")
         if self.__buffer_start is None:
             nbytes = self.__already_written
         elif self.__buffer_start < 0:
@@ -344,8 +344,6 @@ class BufferedStreamDataConsumer(Generic[_ReceivedPacketT]):
         with memoryview(buffer) as buffer:
             if buffer.readonly:
                 raise ValueError("protocol.create_buffer() returned a read-only buffer")
-            if buffer.itemsize != 1:
-                raise ValueError("protocol.create_buffer() must return a byte buffer")
             if not len(buffer):
                 raise ValueError("protocol.create_buffer() returned a null buffer")
 
@@ -354,7 +352,7 @@ class BufferedStreamDataConsumer(Generic[_ReceivedPacketT]):
         if self.__buffer is None:
             return 0
         with memoryview(self.__buffer) as buffer:
-            return len(buffer)
+            return buffer.nbytes
 
 
 def _check_protocol(p: StreamProtocol[Any, Any]) -> None:
