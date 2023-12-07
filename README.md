@@ -97,9 +97,15 @@ class EchoRequestHandler(AsyncStreamRequestHandler[RequestType, ResponseType]):
 async def main() -> None:
     host = None  # Bind on all interfaces
     port = 9000
+    protocol = JSONProtocol()
+    handler = EchoRequestHandler()
 
-    logging.basicConfig(level=logging.INFO, format="[ %(levelname)s ] [ %(name)s ] %(message)s")
-    async with AsyncTCPNetworkServer(host, port, JSONProtocol(), EchoRequestHandler()) as server:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="[ %(levelname)s ] [ %(name)s ] %(message)s",
+    )
+
+    async with AsyncTCPNetworkServer(host, port, protocol, handler) as server:
         try:
             await server.serve_forever()
         except asyncio.CancelledError:
