@@ -9,7 +9,7 @@ from contextlib import ExitStack
 from typing import TYPE_CHECKING, Any, Literal
 
 from easynetwork.lowlevel.api_async.backend.factory import AsyncBackendFactory
-from easynetwork.lowlevel.asyncio.backend import AsyncIOBackend
+from easynetwork.lowlevel.std_asyncio.backend import AsyncIOBackend
 
 import pytest
 

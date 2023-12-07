@@ -14,16 +14,16 @@ from socket import SHUT_RDWR, SHUT_WR
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.exceptions import UnsupportedOperation
-from easynetwork.lowlevel.asyncio.stream.listener import (
+from easynetwork.lowlevel.constants import ACCEPT_CAPACITY_ERRNOS, NOT_CONNECTED_SOCKET_ERRNOS
+from easynetwork.lowlevel.socket import SocketAttribute, TLSAttribute
+from easynetwork.lowlevel.std_asyncio.stream.listener import (
     AbstractAcceptedSocketFactory,
     AcceptedSocketFactory,
     AcceptedSSLSocketFactory,
     ListenerSocketAdapter,
 )
-from easynetwork.lowlevel.asyncio.stream.socket import AsyncioTransportStreamSocketAdapter, RawStreamSocketAdapter
-from easynetwork.lowlevel.asyncio.tasks import CancelScope, TaskGroup as AsyncIOTaskGroup
-from easynetwork.lowlevel.constants import ACCEPT_CAPACITY_ERRNOS, NOT_CONNECTED_SOCKET_ERRNOS
-from easynetwork.lowlevel.socket import SocketAttribute, TLSAttribute
+from easynetwork.lowlevel.std_asyncio.stream.socket import AsyncioTransportStreamSocketAdapter, RawStreamSocketAdapter
+from easynetwork.lowlevel.std_asyncio.tasks import CancelScope, TaskGroup as AsyncIOTaskGroup
 
 import pytest
 

@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 from easynetwork.lowlevel._stream import StreamDataProducer
 from easynetwork.lowlevel.api_async.servers.stream import AsyncStreamClient, AsyncStreamServer
 from easynetwork.lowlevel.api_async.transports.abc import AsyncListener, AsyncStreamWriteTransport
-from easynetwork.lowlevel.asyncio.tasks import TaskGroup
+from easynetwork.lowlevel.std_asyncio.tasks import TaskGroup
 
 import pytest
 
