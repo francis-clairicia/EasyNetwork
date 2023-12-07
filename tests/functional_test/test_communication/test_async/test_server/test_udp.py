@@ -11,13 +11,13 @@ from typing import Any
 from easynetwork.api_async.server.handler import AsyncDatagramClient, AsyncDatagramRequestHandler, INETClientAttribute
 from easynetwork.api_async.server.udp import AsyncUDPNetworkServer
 from easynetwork.exceptions import BaseProtocolParseError, ClientClosedError, DatagramProtocolParseError, DeserializeError
-from easynetwork.lowlevel.asyncio.backend import AsyncIOBackend
-from easynetwork.lowlevel.asyncio.datagram.endpoint import DatagramEndpoint, create_datagram_endpoint
-from easynetwork.lowlevel.asyncio.datagram.listener import (
+from easynetwork.lowlevel.socket import SocketAddress
+from easynetwork.lowlevel.std_asyncio.backend import AsyncIOBackend
+from easynetwork.lowlevel.std_asyncio.datagram.endpoint import DatagramEndpoint, create_datagram_endpoint
+from easynetwork.lowlevel.std_asyncio.datagram.listener import (
     AsyncioTransportDatagramListenerSocketAdapter,
     RawDatagramListenerSocketAdapter,
 )
-from easynetwork.lowlevel.socket import SocketAddress
 from easynetwork.protocol import DatagramProtocol
 
 import pytest

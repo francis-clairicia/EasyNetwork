@@ -4,8 +4,8 @@ import asyncio
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from easynetwork.lowlevel.asyncio.datagram.endpoint import DatagramEndpoint
-from easynetwork.lowlevel.asyncio.socket import AsyncSocket
+from easynetwork.lowlevel.std_asyncio.datagram.endpoint import DatagramEndpoint
+from easynetwork.lowlevel.std_asyncio.socket import AsyncSocket
 
 import pytest
 

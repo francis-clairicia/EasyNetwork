@@ -10,7 +10,7 @@ from socket import SHUT_RD, SHUT_RDWR, SHUT_WR, socket as Socket
 from typing import TYPE_CHECKING, Any, final
 
 from easynetwork.exceptions import UnsupportedOperation
-from easynetwork.lowlevel.asyncio.socket import AsyncSocket
+from easynetwork.lowlevel.std_asyncio.socket import AsyncSocket
 
 import pytest
 

@@ -102,7 +102,7 @@ class TestAsyncBackendFactory:
         yield
         AsyncBackendFactory.invalidate_backends_cache()
 
-        from easynetwork.lowlevel.asyncio import AsyncIOBackend
+        from easynetwork.lowlevel.std_asyncio import AsyncIOBackend
 
         assert AsyncBackendFactory.get_all_backends() == {"asyncio": AsyncIOBackend}
 

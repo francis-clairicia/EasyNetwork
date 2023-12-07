@@ -166,7 +166,7 @@ class AsyncBackendFactory:
 
             backends["asyncio"] = EntryPoint(
                 name="asyncio",
-                value=f"{resolve_name('...asyncio', __package__)}:AsyncIOBackend",
+                value=f"{resolve_name('...std_asyncio', __package__)}:AsyncIOBackend",
                 group=AsyncBackendFactory.GROUP_NAME,
             )
 
