@@ -12,7 +12,13 @@ from easynetwork.protocol import DatagramProtocol, StreamProtocol
 import pytest
 import trustme
 
-from .serializer import BufferedStringSerializer, NotGoodBufferedStringSerializer, NotGoodStringSerializer, StringSerializer
+from .serializer import (
+    BadSerializeStringSerializer,
+    BufferedStringSerializer,
+    NotGoodBufferedStringSerializer,
+    NotGoodStringSerializer,
+    StringSerializer,
+)
 
 _FAMILY_TO_LOCALHOST: dict[int, str] = {
     AF_INET: "127.0.0.1",
@@ -68,6 +74,8 @@ def one_shot_serializer(request: pytest.FixtureRequest) -> StringSerializer:
             return StringSerializer()
         case "invalid":
             return NotGoodStringSerializer()
+        case "bad_serialize":
+            return BadSerializeStringSerializer()
         case _:
             pytest.fail("Invalid parameter")
 
@@ -83,6 +91,8 @@ def incremental_serializer(request: pytest.FixtureRequest) -> StringSerializer:
             return NotGoodStringSerializer()
         case "invalid_buffered":
             return NotGoodBufferedStringSerializer()
+        case "bad_serialize":
+            return BadSerializeStringSerializer()
         case _:
             pytest.fail("Invalid parameter")
 

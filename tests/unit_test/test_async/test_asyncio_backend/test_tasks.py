@@ -162,7 +162,7 @@ class TestTaskUtils:
 
             def callback() -> None:
                 try:
-                    _ = TaskUtils.current_asyncio_task()
+                    _ = TaskUtils.current_asyncio_task(loop)
                     future.set_result(None)
                 except BaseException as exc:
                     future.set_exception(exc)
@@ -176,3 +176,23 @@ class TestTaskUtils:
 
         # Act & Assert
         asyncio.run(main())
+
+    def test____check_current_event_loop____default(self) -> None:
+        # Arrange
+        async def main() -> None:
+            loop = asyncio.get_running_loop()
+            TaskUtils.check_current_event_loop(loop)
+
+        # Act & Assert
+        asyncio.run(main())
+
+    def test____check_current_event_loop____called_in_another_event_loop(self) -> None:
+        # Arrange
+        async def main() -> None:
+            # Create a fake event loop
+            loop = asyncio.new_event_loop()
+            TaskUtils.check_current_event_loop(loop)
+
+        # Act & Assert
+        with pytest.raises(RuntimeError, match=r"^running_loop=.+ is not loop=.+$"):
+            asyncio.run(main())

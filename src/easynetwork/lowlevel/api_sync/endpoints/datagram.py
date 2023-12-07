@@ -112,7 +112,14 @@ class DatagramEndpoint(typed_attr.TypedAttributeProvider, Generic[_SentPacketT, 
         if not self.__supports_write(transport):
             raise UnsupportedOperation("transport does not support sending data")
 
-        transport.send(protocol.make_datagram(packet), timeout)
+        try:
+            datagram: bytes = protocol.make_datagram(packet)
+        except Exception as exc:
+            raise RuntimeError("protocol.make_datagram() crashed") from exc
+        finally:
+            del packet
+
+        transport.send(datagram, timeout)
 
     def recv_packet(self, *, timeout: float | None = None) -> _ReceivedPacketT:
         """

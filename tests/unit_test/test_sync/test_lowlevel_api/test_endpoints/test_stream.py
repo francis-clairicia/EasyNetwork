@@ -318,10 +318,40 @@ class TestStreamEndpoint:
         if mock_stream_transport.__class__ in (StreamWriteTransport, StreamTransport):
             mock_stream_protocol.generate_chunks.assert_called_once_with(mocker.sentinel.packet)
             mock_stream_transport.send_all_from_iterable.assert_called_once_with(mocker.ANY, expected_send_timeout)
+            mock_stream_transport.send_all.assert_not_called()
+            mock_stream_transport.send.assert_not_called()
             assert chunks == [b"packet\n"]
         else:
             mock_stream_protocol.generate_chunks.assert_not_called()
             assert chunks == []
+
+    @pytest.mark.parametrize("mock_stream_transport", [StreamWriteTransport], indirect=True)
+    def test____send_packet____protocol_crashed(
+        self,
+        endpoint: StreamEndpoint[Any, Any],
+        send_timeout: float | None,
+        mock_stream_transport: MagicMock,
+        mock_stream_protocol: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        chunks: list[bytes] = []
+        mock_stream_transport.send_all_from_iterable.side_effect = lambda it, timeout: chunks.extend(it)
+        expected_error = Exception("Error")
+
+        def side_effect(packet: Any) -> Generator[bytes, None, None]:
+            raise expected_error
+            yield  # type: ignore[unreachable]
+
+        mock_stream_protocol.generate_chunks.side_effect = side_effect
+
+        # Act
+        with pytest.raises(RuntimeError, match=r"^protocol\.generate_chunks\(\) crashed$") as exc_info:
+            endpoint.send_packet(mocker.sentinel.packet, timeout=send_timeout)
+
+        # Assert
+        assert exc_info.value.__cause__ is expected_error
+        assert chunks == []
 
     @pytest.mark.parametrize("transport_closed", [False, True], ids=lambda p: f"transport_closed=={p}")
     def test____send_eof____default(

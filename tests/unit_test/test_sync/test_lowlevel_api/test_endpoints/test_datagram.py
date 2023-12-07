@@ -180,6 +180,28 @@ class TestDatagramEndpoint:
         else:
             mock_datagram_protocol.make_datagram.assert_not_called()
 
+    @pytest.mark.parametrize("mock_datagram_transport", [DatagramWriteTransport], indirect=True)
+    def test____send_packet____protocol_crashed(
+        self,
+        endpoint: DatagramEndpoint[Any, Any],
+        send_timeout: float | None,
+        mock_datagram_transport: MagicMock,
+        mock_datagram_protocol: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_datagram_transport.send.return_value = None
+        expected_error = Exception("Error")
+        mock_datagram_protocol.make_datagram.side_effect = expected_error
+
+        # Act
+        with pytest.raises(RuntimeError, match=r"^protocol\.make_datagram\(\) crashed$") as exc_info:
+            endpoint.send_packet(mocker.sentinel.packet, timeout=send_timeout)
+
+        # Assert
+        assert exc_info.value.__cause__ is expected_error
+        mock_datagram_transport.send.assert_not_called()
+
     def test____recv_packet____receive_bytes_from_transport(
         self,
         endpoint: DatagramEndpoint[Any, Any],
