@@ -28,6 +28,7 @@ from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, ParamSpec, Self, TypeVar, final
 
 from .. import _lock, _utils
+from .._final import runtime_final_class
 from ..api_async.backend import _sniffio_helpers
 from ..api_async.backend.abc import ThreadsPortal as AbstractThreadsPortal
 from .tasks import TaskUtils
@@ -40,6 +41,7 @@ _T = TypeVar("_T")
 
 
 @final
+@runtime_final_class
 class ThreadsPortal(AbstractThreadsPortal):
     __slots__ = ("__loop", "__lock", "__task_group", "__call_soon_waiters")
 

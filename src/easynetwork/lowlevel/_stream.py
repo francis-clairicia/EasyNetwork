@@ -28,18 +28,17 @@ from typing import TYPE_CHECKING, Any, Generic, final
 from .._typevars import _ReceivedPacketT, _SentPacketT
 from ..exceptions import StreamProtocolParseError
 from ..protocol import BufferedStreamReceiver, StreamProtocol
+from ._final import runtime_final_class
 
 if TYPE_CHECKING:
     from _typeshed import ReadableBuffer, WriteableBuffer
 
 
 @final
+@runtime_final_class
 @Iterator.register
 class StreamDataProducer(Generic[_SentPacketT]):
     __slots__ = ("__p", "__g", "__q")
-
-    def __init_subclass__(cls) -> None:  # pragma: no cover
-        raise TypeError("StreamDataProducer cannot be subclassed")
 
     def __init__(self, protocol: StreamProtocol[_SentPacketT, Any]) -> None:
         super().__init__()
@@ -98,12 +97,10 @@ class StreamDataProducer(Generic[_SentPacketT]):
 
 
 @final
+@runtime_final_class
 @Iterator.register
 class StreamDataConsumer(Generic[_ReceivedPacketT]):
     __slots__ = ("__p", "__b", "__c")
-
-    def __init_subclass__(cls) -> None:  # pragma: no cover
-        raise TypeError("StreamDataConsumer cannot be subclassed")
 
     def __init__(self, protocol: StreamProtocol[Any, _ReceivedPacketT]) -> None:
         super().__init__()
@@ -179,6 +176,7 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
 
 
 @final
+@runtime_final_class
 @Iterator.register
 class BufferedStreamDataConsumer(Generic[_ReceivedPacketT]):
     __slots__ = (
@@ -190,9 +188,6 @@ class BufferedStreamDataConsumer(Generic[_ReceivedPacketT]):
         "__sizehint",
         "__consumer",
     )
-
-    def __init_subclass__(cls) -> None:  # pragma: no cover
-        raise TypeError("BufferedStreamDataConsumer cannot be subclassed")
 
     def __init__(self, protocol: StreamProtocol[Any, _ReceivedPacketT], buffer_size_hint: int) -> None:
         super().__init__()

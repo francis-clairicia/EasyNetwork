@@ -58,6 +58,7 @@ from typing import (
 )
 
 from . import typed_attr
+from ._final import runtime_final_class
 
 if TYPE_CHECKING:
     import ssl as _typing_ssl
@@ -302,6 +303,7 @@ class ISocket(SupportsSocketOptions, Protocol):
 
 
 @final
+@runtime_final_class
 class SocketProxy:
     """
     A socket-like wrapper for exposing real transport sockets.
@@ -312,9 +314,6 @@ class SocketProxy:
     """
 
     __slots__ = ("__socket", "__lock_ctx", "__runner", "__weakref__")
-
-    def __init_subclass__(cls) -> None:  # pragma: no cover
-        raise TypeError("SocketProxy cannot be subclassed")
 
     def __init__(
         self,

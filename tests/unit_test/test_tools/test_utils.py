@@ -12,6 +12,7 @@ from socket import SO_ERROR, SOL_SOCKET, SocketType
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.exceptions import BusyResourceError
+from easynetwork.lowlevel._final import runtime_final_class
 from easynetwork.lowlevel._utils import (
     ElapsedTime,
     ResourceGuard,
@@ -710,3 +711,20 @@ def test____ResourceGuard____forbid_nested_contexts() -> None:
     with guard, pytest.raises(BusyResourceError, match=r"^guard message$"):
         with guard:
             pass
+
+
+@runtime_final_class
+class Klass:
+    pass
+
+
+def test____runtime_final_class____forgive_subclassing() -> None:
+    # Arrange
+
+    # Act & Assert
+    with pytest.raises(TypeError, match=r"^Klass cannot be subclassed$"):
+
+        class Test(Klass):
+            pass
+
+        del Test

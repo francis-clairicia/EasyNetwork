@@ -25,6 +25,7 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Final, final
 
+from ..._final import runtime_final_class
 from ._sniffio_helpers import current_async_library as _sniffio_current_async_library
 from .abc import AsyncBackend
 
@@ -33,6 +34,7 @@ if TYPE_CHECKING:
 
 
 @final
+@runtime_final_class
 class AsyncBackendFactory:
     GROUP_NAME: Final[str] = "easynetwork.async.backends"
     __BACKEND: str | type[AsyncBackend] | None = None

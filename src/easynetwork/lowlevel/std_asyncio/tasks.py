@@ -28,6 +28,7 @@ from collections.abc import Callable, Coroutine, Iterable, Iterator
 from typing import TYPE_CHECKING, Any, NamedTuple, Self, TypeVar, final
 from weakref import WeakKeyDictionary
 
+from .._final import runtime_final_class
 from ..api_async.backend.abc import CancelScope as AbstractCancelScope, Task as AbstractTask, TaskGroup as AbstractTaskGroup
 
 if TYPE_CHECKING:
@@ -39,6 +40,7 @@ _T_co = TypeVar("_T_co", covariant=True)
 
 
 @final
+@runtime_final_class
 class Task(AbstractTask[_T_co]):
     __slots__ = ("__t", "__h")
 
@@ -88,6 +90,7 @@ class Task(AbstractTask[_T_co]):
 
 
 @final
+@runtime_final_class
 class TaskGroup(AbstractTaskGroup):
     __slots__ = ("__asyncio_tg",)
 
@@ -134,6 +137,7 @@ class _DelayedCancel(NamedTuple):
 
 
 @final
+@runtime_final_class
 class CancelScope(AbstractCancelScope):
     __slots__ = (
         "__host_task",
@@ -309,6 +313,7 @@ class CancelScope(AbstractCancelScope):
 
 
 @final
+@runtime_final_class
 class TaskUtils:
     @staticmethod
     def check_current_event_loop(loop: asyncio.AbstractEventLoop) -> None:

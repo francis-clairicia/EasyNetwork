@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING, Any, Generic, NoReturn, final
 from ..._typevars import _RequestT, _ResponseT
 from ...exceptions import ClientClosedError, ServerAlreadyRunning, ServerClosedError
 from ...lowlevel import _asyncgen, _utils, constants
+from ...lowlevel._final import runtime_final_class
 from ...lowlevel.api_async.backend.factory import AsyncBackendFactory
 from ...lowlevel.api_async.servers import stream as lowlevel_stream_server
 from ...lowlevel.socket import (
@@ -495,6 +496,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
 
 @final
+@runtime_final_class
 class _ConnectedClientAPI(AsyncStreamClient[_ResponseT]):
     __slots__ = (
         "__client",
