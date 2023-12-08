@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any, Generic, NoReturn, final
 from ..._typevars import _RequestT, _ResponseT
 from ...exceptions import ClientClosedError, ServerAlreadyRunning, ServerClosedError
 from ...lowlevel import _asyncgen, _utils
+from ...lowlevel._final import runtime_final_class
 from ...lowlevel.api_async.backend.factory import AsyncBackendFactory
 from ...lowlevel.api_async.servers import datagram as lowlevel_datagram_server
 from ...lowlevel.api_async.transports.abc import AsyncDatagramListener
@@ -347,6 +348,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
 
 @final
+@runtime_final_class
 class _ClientAPI(AsyncDatagramClient[_ResponseT]):
     __slots__ = (
         "__server_ref",
