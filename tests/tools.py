@@ -147,7 +147,6 @@ def temporary_backend(backend: AsyncBackend) -> Iterator[None]:
     with contextlib.ExitStack() as stack:
         stack.callback(AsyncBackendFactory.invalidate_backends_cache)
         stack.callback(AsyncBackendFactory.remove_installed_hooks)
-        AsyncBackendFactory.invalidate_backends_cache()
         AsyncBackendFactory.push_backend_factory("asyncio", lambda: backend)
         assert AsyncBackendFactory.get_backend("asyncio") is backend
         yield

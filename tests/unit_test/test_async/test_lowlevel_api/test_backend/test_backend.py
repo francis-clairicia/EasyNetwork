@@ -108,7 +108,6 @@ class TestAsyncBackendFactory:
     @pytest.fixture(autouse=True)
     @classmethod
     def setup_factory(cls) -> None:
-        AsyncBackendFactory.invalidate_backends_cache()
         AsyncBackendFactory.remove_installed_hooks()
         for backend_name, backend_cls in cls.BACKENDS.items():
             AsyncBackendFactory.push_backend_factory(backend_name, backend_cls)
@@ -276,6 +275,66 @@ class TestAsyncBackendFactory:
         # Act & Assert
         with pytest.raises(TypeError, match=r"^.+ did not return an AsyncBackend instance$"):
             AsyncBackendFactory.get_backend("mock")
+
+    @pytest.mark.parametrize("action", ["push_backend_factory", "push_factory_hook"])
+    @pytest.mark.parametrize("backend_name", list(BACKENDS))
+    def test____get_backend____cache_erased_when_adding_new_hook(
+        self,
+        backend_name: str,
+        action: Literal["push_backend_factory", "push_factory_hook"],
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        first_backend_instance = AsyncBackendFactory.get_backend(backend_name)
+
+        # Act
+        match action:
+            case "push_backend_factory":
+                AsyncBackendFactory.push_backend_factory(backend_name, lambda: MockBackend(mocker))
+            case "push_factory_hook":
+
+                def hook(name: str) -> AsyncBackend:
+                    if name == backend_name:
+                        return MockBackend(mocker)
+                    raise UnsupportedOperation
+
+                AsyncBackendFactory.push_factory_hook(hook)
+            case _:
+                assert_never(action)
+        this_backend = AsyncBackendFactory.get_backend(backend_name)
+
+        # Assert
+        assert this_backend is not first_backend_instance
+
+    def test____get_backend____cache_erased_when_removing_installed_hook(self) -> None:
+        # Arrange
+        first_backend_instance = AsyncBackendFactory.get_backend("asyncio")
+        assert isinstance(first_backend_instance, FakeAsyncIOBackend)
+
+        from easynetwork.lowlevel.std_asyncio import AsyncIOBackend as OriginalAsyncIOBackend
+
+        # Act
+        AsyncBackendFactory.remove_installed_hooks()
+        this_backend = AsyncBackendFactory.get_backend("asyncio")
+
+        # Assert
+        assert isinstance(this_backend, OriginalAsyncIOBackend)
+
+    def test____get_backend____cache_not_erased_if_there_was_no_hook(self) -> None:
+        # Arrange
+        AsyncBackendFactory.remove_installed_hooks()
+
+        from easynetwork.lowlevel.std_asyncio import AsyncIOBackend as OriginalAsyncIOBackend
+
+        first_backend_instance = AsyncBackendFactory.get_backend("asyncio")
+        assert isinstance(first_backend_instance, OriginalAsyncIOBackend)
+
+        # Act
+        AsyncBackendFactory.remove_installed_hooks()
+        this_backend = AsyncBackendFactory.get_backend("asyncio")
+
+        # Assert
+        assert this_backend is first_backend_instance
 
     @pytest.mark.parametrize("running_backend_name", list(BACKENDS))
     def test____current____returns_running_backend(
@@ -457,3 +516,79 @@ class TestAsyncBackendFactory:
         # Assert
         assert not isinstance(backend, self.BACKENDS[backend_name])
         assert isinstance(backend, MockBackend)
+
+    @pytest.mark.parametrize("action", ["push_backend_factory", "push_factory_hook"])
+    @pytest.mark.parametrize("backend_name", list(BACKENDS))
+    def test____current____cache_erased_when_adding_new_hook(
+        self,
+        backend_name: str,
+        action: Literal["push_backend_factory", "push_factory_hook"],
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mocker.patch(
+            self.CURRENT_ASYNC_LIBRARY_FUNC,
+            autospec=True,
+            return_value=backend_name,
+        )
+        first_backend_instance = AsyncBackendFactory.current()
+
+        match action:
+            case "push_backend_factory":
+                AsyncBackendFactory.push_backend_factory(backend_name, lambda: MockBackend(mocker))
+            case "push_factory_hook":
+
+                def hook(name: str) -> AsyncBackend:
+                    if name == backend_name:
+                        return MockBackend(mocker)
+                    raise UnsupportedOperation
+
+                AsyncBackendFactory.push_factory_hook(hook)
+            case _:
+                assert_never(action)
+
+        # Act
+        this_backend = AsyncBackendFactory.current()
+
+        # Assert
+        assert this_backend is not first_backend_instance
+
+    def test____current____cache_erased_when_removing_installed_hook(self, mocker: MockerFixture) -> None:
+        # Arrange
+        mocker.patch(
+            self.CURRENT_ASYNC_LIBRARY_FUNC,
+            autospec=True,
+            return_value="asyncio",
+        )
+        first_backend_instance = AsyncBackendFactory.current()
+        assert isinstance(first_backend_instance, FakeAsyncIOBackend)
+
+        from easynetwork.lowlevel.std_asyncio import AsyncIOBackend as OriginalAsyncIOBackend
+
+        # Act
+        AsyncBackendFactory.remove_installed_hooks()
+        this_backend = AsyncBackendFactory.current()
+
+        # Assert
+        assert isinstance(this_backend, OriginalAsyncIOBackend)
+
+    def test____current____cache_not_erased_if_there_was_no_hook(self, mocker: MockerFixture) -> None:
+        # Arrange
+        mocker.patch(
+            self.CURRENT_ASYNC_LIBRARY_FUNC,
+            autospec=True,
+            return_value="asyncio",
+        )
+        AsyncBackendFactory.remove_installed_hooks()
+
+        from easynetwork.lowlevel.std_asyncio import AsyncIOBackend as OriginalAsyncIOBackend
+
+        first_backend_instance = AsyncBackendFactory.current()
+        assert isinstance(first_backend_instance, OriginalAsyncIOBackend)
+
+        # Act
+        AsyncBackendFactory.remove_installed_hooks()
+        this_backend = AsyncBackendFactory.current()
+
+        # Assert
+        assert this_backend is first_backend_instance

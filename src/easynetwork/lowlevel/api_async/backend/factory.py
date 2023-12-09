@@ -41,11 +41,11 @@ class AsyncBackendFactory:
     @classmethod
     def current(cls) -> AsyncBackend:
         name: str = _sniffio_helpers.current_async_library()
-        return cls.__get_backend(name, "Running library {name!r} misses the backend implementation")
+        return cls.__get_backend(name, error_msg_format="Running library {name!r} misses the backend implementation")
 
     @classmethod
     def get_backend(cls, name: str, /) -> AsyncBackend:
-        return cls.__get_backend(name, "Unknown backend {name!r}")
+        return cls.__get_backend(name, error_msg_format="Unknown backend {name!r}")
 
     @classmethod
     def push_factory_hook(cls, factory: Callable[[str], AsyncBackend], /) -> None:
@@ -53,6 +53,7 @@ class AsyncBackendFactory:
             raise TypeError(f"{factory!r} is not callable")
         with cls.__lock.get():
             cls.__hooks.appendleft(factory)
+            cls.invalidate_backends_cache()
 
     @classmethod
     def push_backend_factory(cls, backend_name: str, factory: Callable[[], AsyncBackend]) -> None:
@@ -72,7 +73,9 @@ class AsyncBackendFactory:
     @classmethod
     def remove_installed_hooks(cls) -> None:
         with cls.__lock.get():
-            cls.__hooks.clear()
+            if cls.__hooks:
+                cls.invalidate_backends_cache()
+                cls.__hooks.clear()
 
     @classmethod
     def __get_backend(cls, name: str, error_msg_format: str) -> AsyncBackend:
