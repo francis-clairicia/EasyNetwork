@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import operator
+from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.exceptions import BusyResourceError
@@ -10,6 +11,9 @@ from easynetwork.lowlevel.api_async.servers.datagram import AsyncDatagramServer,
 from easynetwork.lowlevel.api_async.transports.abc import AsyncDatagramListener
 
 import pytest
+import pytest_asyncio
+
+from .....tools import temporary_backend
 
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
@@ -44,14 +48,15 @@ class TestAsyncDatagramServer:
         # mock_datagram_protocol.build_packet_from_datagram.side_effect = build_packet_from_datagram_side_effect
         return mock_datagram_protocol
 
-    @pytest.fixture
+    @pytest_asyncio.fixture
     @staticmethod
-    def server(
+    async def server(
         mock_datagram_listener: MagicMock,
         mock_datagram_protocol: MagicMock,
         mock_backend: MagicMock,
-    ) -> AsyncDatagramServer[Any, Any, Any]:
-        return AsyncDatagramServer(mock_datagram_listener, mock_datagram_protocol, backend=mock_backend)
+    ) -> AsyncIterator[AsyncDatagramServer[Any, Any, Any]]:
+        with temporary_backend(mock_backend):
+            yield AsyncDatagramServer(mock_datagram_listener, mock_datagram_protocol)
 
     async def test____dunder_init____invalid_transport(
         self,
@@ -138,21 +143,11 @@ class TestAsyncDatagramServer:
         mock_datagram_protocol.make_datagram.assert_called_once_with(mocker.sentinel.packet)
         mock_datagram_listener.send_to.assert_awaited_once_with(b"packet", mocker.sentinel.destination)
 
-    async def test____get_backend____default(
-        self,
-        server: AsyncDatagramServer[Any, Any, Any],
-        mock_backend: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act & Assert
-        assert server.get_backend() is mock_backend
-
 
 class TestClientManager:
     @pytest.fixture
     @staticmethod
-    def mock_backend(mock_backend: MagicMock, mocker: MockerFixture) -> MagicMock:
+    def mock_backend(mock_backend: MagicMock) -> MagicMock:
         mock_backend.create_condition_var.side_effect = asyncio.Condition
         return mock_backend
 

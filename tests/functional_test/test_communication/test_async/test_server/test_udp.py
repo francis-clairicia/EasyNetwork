@@ -24,6 +24,7 @@ import pytest
 import pytest_asyncio
 
 from .....pytest_plugins.asyncio_event_loop import EventLoop
+from .....tools import temporary_backend
 from .base import BaseTestAsyncServer
 
 
@@ -206,11 +207,11 @@ class MyAsyncUDPServer(AsyncUDPNetworkServer[str, str]):
 class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
     @pytest.fixture
     @staticmethod
-    def backend_kwargs(event_loop_name: EventLoop, use_asyncio_transport: bool) -> dict[str, Any]:
+    def use_asyncio_transport(event_loop_name: EventLoop, use_asyncio_transport: bool) -> bool:
         if not use_asyncio_transport:
             if event_loop_name == EventLoop.UVLOOP:
                 pytest.xfail("uvloop runner does not implement the needed functions")
-        return {"transport": use_asyncio_transport}
+        return use_asyncio_transport
 
     @pytest.fixture
     @staticmethod
@@ -224,15 +225,9 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         request_handler: AsyncDatagramRequestHandler[str, str],
         localhost_ip: str,
         datagram_protocol: DatagramProtocol[str, str],
-        backend_kwargs: dict[str, Any],
+        use_asyncio_transport: bool,  # Only here for dependency
     ) -> AsyncIterator[MyAsyncUDPServer]:
-        async with MyAsyncUDPServer(
-            localhost_ip,
-            0,
-            datagram_protocol,
-            request_handler,
-            backend_kwargs=backend_kwargs,
-        ) as server:
+        async with MyAsyncUDPServer(localhost_ip, 0, datagram_protocol, request_handler) as server:
             assert not server.sockets
             assert not server.get_addresses()
             yield server
@@ -277,11 +272,12 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         request_handler: MyAsyncUDPRequestHandler,
         datagram_protocol: DatagramProtocol[str, str],
     ) -> None:
-        async with MyAsyncUDPServer(None, 0, datagram_protocol, request_handler, backend=NoListenerErrorBackend()) as s:
-            with pytest.raises(OSError, match=r"^empty listeners list$"):
-                await s.serve_forever()
+        with temporary_backend(NoListenerErrorBackend()):
+            async with MyAsyncUDPServer(None, 0, datagram_protocol, request_handler) as s:
+                with pytest.raises(OSError, match=r"^empty listeners list$"):
+                    await s.serve_forever()
 
-            assert not s.sockets
+                assert not s.sockets
 
     @pytest.mark.usefixtures("run_server_and_wait")
     async def test____serve_forever____server_assignment(

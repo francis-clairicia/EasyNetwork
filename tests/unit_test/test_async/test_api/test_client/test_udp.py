@@ -23,13 +23,6 @@ from ....base import UNSUPPORTED_FAMILIES
 from .base import BaseTestClient
 
 
-@pytest.fixture(autouse=True)
-def mock_new_backend(mocker: MockerFixture, mock_backend: MagicMock) -> MagicMock:
-    from easynetwork.lowlevel.api_async.backend.factory import AsyncBackendFactory
-
-    return mocker.patch.object(AsyncBackendFactory, "new", return_value=mock_backend)
-
-
 @pytest.mark.asyncio
 class TestAsyncUDPNetworkClient(BaseTestClient):
     @pytest.fixture(scope="class", params=["AF_INET", "AF_INET6"])
@@ -105,18 +98,13 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
         mock_datagram_protocol.make_datagram.side_effect = make_datagram_side_effect
         mock_datagram_protocol.build_packet_from_datagram.side_effect = build_packet_from_datagram_side_effect
 
-    @pytest.fixture
+    @pytest_asyncio.fixture
     @staticmethod
-    def client_not_connected(
-        mock_backend: MagicMock,
+    async def client_not_connected(
         mock_udp_socket: MagicMock,
         mock_datagram_protocol: MagicMock,
     ) -> AsyncUDPNetworkClient[Any, Any]:
-        client: AsyncUDPNetworkClient[Any, Any] = AsyncUDPNetworkClient(
-            mock_udp_socket,
-            mock_datagram_protocol,
-            backend=mock_backend,
-        )
+        client: AsyncUDPNetworkClient[Any, Any] = AsyncUDPNetworkClient(mock_udp_socket, mock_datagram_protocol)
         assert not client.is_connected()
         return client
 
@@ -138,7 +126,6 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
         remote_address: tuple[str, int],
         mock_udp_socket: MagicMock,
         mock_datagram_protocol: MagicMock,
-        mock_new_backend: MagicMock,
         mock_backend: MagicMock,
         mocker: MockerFixture,
     ) -> None:
@@ -153,7 +140,6 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
         await client.wait_connected()
 
         # Assert
-        mock_new_backend.assert_called_once_with(None)
         mock_backend.create_udp_endpoint.assert_awaited_once_with(
             *remote_address,
             local_address=mocker.sentinel.local_address,
@@ -255,49 +241,10 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
             local_address=("localhost", 0),
         )
 
-    async def test____dunder_init____backend____from_string(
-        self,
-        remote_address: tuple[str, int],
-        mock_datagram_protocol: MagicMock,
-        mock_new_backend: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act
-        _ = AsyncUDPNetworkClient(
-            remote_address,
-            mock_datagram_protocol,
-            backend="custom_backend",
-            backend_kwargs={"arg1": 1, "arg2": "2"},
-        )
-
-        # Assert
-        mock_new_backend.assert_called_once_with("custom_backend", arg1=1, arg2="2")
-
-    async def test____dunder_init____backend____explicit_argument(
-        self,
-        remote_address: tuple[str, int],
-        mock_datagram_protocol: MagicMock,
-        mock_backend: MagicMock,
-        mock_new_backend: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act
-        _ = AsyncUDPNetworkClient(
-            remote_address,
-            mock_datagram_protocol,
-            backend=mock_backend,
-        )
-
-        # Assert
-        mock_new_backend.assert_not_called()
-
     async def test____dunder_init____use_given_socket(
         self,
         mock_udp_socket: MagicMock,
         mock_datagram_protocol: MagicMock,
-        mock_new_backend: MagicMock,
         mock_backend: MagicMock,
         mocker: MockerFixture,
     ) -> None:
@@ -312,7 +259,6 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
 
         # Assert
         mock_udp_socket.bind.assert_not_called()
-        mock_new_backend.assert_called_once_with(None)
         mock_backend.wrap_connected_datagram_socket.assert_awaited_once_with(mock_udp_socket)
         assert mock_udp_socket.mock_calls == [
             mocker.call.getpeername(),
@@ -773,13 +719,3 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
         # Assert
         mock_datagram_socket_adapter.recv.assert_awaited_once()
         mock_datagram_protocol.build_packet_from_datagram.assert_not_called()
-
-    async def test____get_backend____default(
-        self,
-        client_connected_or_not: AsyncUDPNetworkClient[Any, Any],
-        mock_backend: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act & Assert
-        assert client_connected_or_not.get_backend() is mock_backend

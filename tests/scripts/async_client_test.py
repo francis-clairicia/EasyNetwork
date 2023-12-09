@@ -13,7 +13,7 @@ logger = logging.getLogger("app")
 
 
 def create_tcp_client(port: int) -> AsyncTCPNetworkClient[str, str]:
-    return AsyncTCPNetworkClient(("localhost", port), StreamProtocol(StringLineSerializer()), backend_kwargs={"transport": False})
+    return AsyncTCPNetworkClient(("localhost", port), StreamProtocol(StringLineSerializer()))
 
 
 def create_udp_client(port: int) -> AsyncUDPNetworkClient[str, str]:

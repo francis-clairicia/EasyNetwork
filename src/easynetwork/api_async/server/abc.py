@@ -30,8 +30,6 @@ from ...lowlevel.socket import SocketAddress
 if TYPE_CHECKING:
     from types import TracebackType
 
-    from ...lowlevel.api_async.backend.abc import AsyncBackend
-
 
 class SupportsEventSet(Protocol):
     """
@@ -116,7 +114,3 @@ class AbstractAsyncNetworkServer(metaclass=ABCMeta):
             A sequence of network socket address.
             If the server is not serving (:meth:`is_serving` returns :data:`False`), an empty sequence is returned.
         """
-
-    @abstractmethod
-    def get_backend(self) -> AsyncBackend:
-        raise NotImplementedError

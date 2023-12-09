@@ -32,6 +32,7 @@ from ...._typevars import _RequestT, _ResponseT
 from ....exceptions import DatagramProtocolParseError
 from ... import _asyncgen, _utils, typed_attr
 from ..backend.abc import AsyncBackend, ICondition, ILock, TaskGroup
+from ..backend.factory import current_async_backend
 from ..transports import abc as transports
 
 _T_Address = TypeVar("_T_Address", bound=Hashable)
@@ -43,7 +44,6 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, 
     __slots__ = (
         "__listener",
         "__protocol",
-        "__backend",
         "__client_manager",
         "__sendto_lock",
         "__serve_guard",
@@ -54,24 +54,16 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, 
         self,
         listener: transports.AsyncDatagramListener[_T_Address],
         protocol: protocol_module.DatagramProtocol[_ResponseT, _RequestT],
-        *,
-        backend: str | AsyncBackend | None = None,
-        backend_kwargs: Mapping[str, Any] | None = None,
     ) -> None:
         if not isinstance(listener, transports.AsyncDatagramListener):
             raise TypeError(f"Expected an AsyncDatagramListener object, got {listener!r}")
         if not isinstance(protocol, protocol_module.DatagramProtocol):
             raise TypeError(f"Expected a DatagramProtocol object, got {protocol!r}")
 
-        from ..backend.factory import AsyncBackendFactory
-
-        backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
-
         self.__listener: transports.AsyncDatagramListener[_T_Address] = listener
         self.__protocol: protocol_module.DatagramProtocol[_ResponseT, _RequestT] = protocol
-        self.__backend: AsyncBackend = backend
-        self.__client_manager: _ClientManager[_T_Address] = _ClientManager(self.__backend)
-        self.__sendto_lock: ILock = self.__backend.create_lock()
+        self.__client_manager: _ClientManager[_T_Address] = _ClientManager(current_async_backend())
+        self.__sendto_lock: ILock = current_async_backend().create_lock()
         self.__serve_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently receiving datagrams")
 
     def is_closing(self) -> bool:
@@ -124,7 +116,7 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, 
         with self.__serve_guard:
             client_coroutine = self.__client_coroutine
             client_manager = self.__client_manager
-            backend = self.__backend
+            backend = current_async_backend()
             listener = self.__listener
 
             async def handler(datagram: bytes, address: _T_Address, /) -> None:
@@ -158,12 +150,6 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, 
                 task_group.start_soon(handler, datagram, address)
                 del datagram, address
                 await backend.cancel_shielded_coro_yield()
-
-    def get_backend(self) -> AsyncBackend:
-        """
-        Return the underlying backend interface.
-        """
-        return self.__backend
 
     async def __client_coroutine(
         self,

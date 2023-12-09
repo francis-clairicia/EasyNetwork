@@ -22,14 +22,14 @@ import contextlib
 import dataclasses as _dataclasses
 import errno as _errno
 import socket as _socket
-from collections.abc import Awaitable, Callable, Iterator, Mapping
+from collections.abc import Awaitable, Callable, Iterator
 from typing import Any, final, overload
 
 from ..._typevars import _ReceivedPacketT, _SentPacketT
 from ...exceptions import ClientClosedError
 from ...lowlevel import _utils, constants
-from ...lowlevel.api_async.backend.abc import AsyncBackend, CancelScope, ILock
-from ...lowlevel.api_async.backend.factory import AsyncBackendFactory
+from ...lowlevel.api_async.backend.abc import CancelScope, ILock
+from ...lowlevel.api_async.backend.factory import current_async_backend
 from ...lowlevel.api_async.endpoints.datagram import AsyncDatagramEndpoint
 from ...lowlevel.api_async.transports.abc import AsyncDatagramTransport
 from ...lowlevel.socket import INETSocketAttribute, SocketAddress, SocketProxy, new_socket_address
@@ -61,7 +61,6 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
     __slots__ = (
         "__endpoint",
         "__socket_proxy",
-        "__backend",
         "__socket_connector",
         "__receive_lock",
         "__send_lock",
@@ -77,8 +76,6 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         *,
         local_address: tuple[str, int] | None = ...,
         family: int = ...,
-        backend: str | AsyncBackend | None = ...,
-        backend_kwargs: Mapping[str, Any] | None = ...,
     ) -> None:
         ...
 
@@ -88,9 +85,6 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         socket: _socket.socket,
         /,
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
-        *,
-        backend: str | AsyncBackend | None = ...,
-        backend_kwargs: Mapping[str, Any] | None = ...,
     ) -> None:
         ...
 
@@ -99,9 +93,6 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         __arg: tuple[str, int] | _socket.socket,
         /,
         protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
-        *,
-        backend: str | AsyncBackend | None = None,
-        backend_kwargs: Mapping[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
         """
@@ -119,22 +110,16 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         Socket Parameters:
             socket: An already connected UDP :class:`socket.socket`. If `socket` is given,
                     none of and `local_address` and `reuse_port` should be specified.
-
-        Backend Parameters:
-            backend: the backend to use. Automatically determined otherwise.
-            backend_kwargs: Keyword arguments for backend instanciation.
-                            Ignored if `backend` is already an :class:`.AsyncBackend` instance.
         """
         super().__init__()
 
-        backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
+        backend = current_async_backend()
 
         if not isinstance(protocol, DatagramProtocol):
             raise TypeError(f"Expected a DatagramProtocol object, got {protocol!r}")
 
         self.__protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT] = protocol
         self.__endpoint: AsyncDatagramEndpoint[_SentPacketT, _ReceivedPacketT] | None = None
-        self.__backend: AsyncBackend = backend
         self.__socket_proxy: SocketProxy | None = None
 
         socket_factory: Callable[[], Awaitable[AsyncDatagramTransport]]
@@ -155,9 +140,9 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
                 raise TypeError("Invalid arguments")
 
         self.__socket_connector: _SocketConnector | None = _SocketConnector(
-            lock=self.__backend.create_lock(),
+            lock=backend.create_lock(),
             factory=_utils.make_callback(self.__create_socket, socket_factory),
-            scope=self.__backend.open_cancel_scope(),
+            scope=backend.open_cancel_scope(),
         )
         self.__receive_lock: ILock = backend.create_lock()
         self.__send_lock: ILock = backend.create_lock()
@@ -322,10 +307,6 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         remote_address = endpoint.extra(INETSocketAttribute.peername)
         address_family = endpoint.extra(INETSocketAttribute.family)
         return new_socket_address(remote_address, address_family)
-
-    @_utils.inherit_doc(AbstractAsyncNetworkClient)
-    def get_backend(self) -> AsyncBackend:
-        return self.__backend
 
     async def __ensure_connected(self) -> AsyncDatagramEndpoint[_SentPacketT, _ReceivedPacketT]:
         if self.__endpoint is None:

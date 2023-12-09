@@ -25,12 +25,11 @@ from typing import TYPE_CHECKING, Generic, Self
 
 from ..._typevars import _ReceivedPacketT, _SentPacketT
 from ...lowlevel import _utils
+from ...lowlevel.api_async.backend.factory import current_async_backend
 from ...lowlevel.socket import SocketAddress
 
 if TYPE_CHECKING:
     from types import TracebackType
-
-    from ...lowlevel.api_async.backend.abc import AsyncBackend
 
 
 class AbstractAsyncNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=ABCMeta):
@@ -220,7 +219,7 @@ class AbstractAsyncNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metacl
         if timeout is None:
             timeout = math.inf
 
-        timeout_after = self.get_backend().timeout
+        timeout_after = current_async_backend().timeout
 
         while True:
             try:
@@ -230,7 +229,3 @@ class AbstractAsyncNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metacl
                 return
             yield packet
             timeout = elapsed.recompute_timeout(timeout)
-
-    @abstractmethod
-    def get_backend(self) -> AsyncBackend:
-        raise NotImplementedError

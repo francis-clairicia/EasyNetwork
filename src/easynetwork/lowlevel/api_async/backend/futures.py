@@ -22,16 +22,14 @@ import concurrent.futures
 import contextvars
 import functools
 from collections import deque
-from collections.abc import AsyncGenerator, Callable, Iterable, Mapping
+from collections.abc import AsyncGenerator, Callable, Iterable
 from typing import TYPE_CHECKING, Any, ParamSpec, Self, TypeVar
 
 from . import _sniffio_helpers
-from .factory import AsyncBackendFactory
+from .factory import current_async_backend
 
 if TYPE_CHECKING:
     from types import TracebackType
-
-    from .abc import AsyncBackend
 
 _P = ParamSpec("_P")
 _T = TypeVar("_T")
@@ -65,22 +63,17 @@ class AsyncExecutor:
                 results = [await t.join() for t in tasks]
     """
 
-    __slots__ = ("__backend", "__executor", "__handle_contexts", "__weakref__")
+    __slots__ = ("__executor", "__handle_contexts", "__weakref__")
 
     def __init__(
         self,
         executor: concurrent.futures.Executor,
-        backend: str | AsyncBackend | None = None,
-        backend_kwargs: Mapping[str, Any] | None = None,
         *,
         handle_contexts: bool = False,
     ) -> None:
         """
         Parameters:
             executor: The executor instance to wrap.
-            backend: the backend to use. Automatically determined otherwise.
-            backend_kwargs: Keyword arguments for backend instanciation.
-                            Ignored if `backend` is already an :class:`.AsyncBackend` instance.
             handle_contexts: If :data:`True`, contexts (:class:`contextvars.Context`) are properly propagated to workers.
                              Defaults to :data:`False` because not all executors support the use of contexts
                              (e.g. :class:`concurrent.futures.ProcessPoolExecutor`).
@@ -88,7 +81,6 @@ class AsyncExecutor:
         if not isinstance(executor, concurrent.futures.Executor):
             raise TypeError("Invalid executor type")
 
-        self.__backend: AsyncBackend = AsyncBackendFactory.ensure(backend, backend_kwargs)
         self.__executor: concurrent.futures.Executor = executor
         self.__handle_contexts: bool = bool(handle_contexts)
 
@@ -132,8 +124,7 @@ class AsyncExecutor:
         """
         func = self._setup_func(func)
         executor = self.__executor
-        backend = self.__backend
-        return await _result_or_cancel(backend, executor.submit(func, *args, **kwargs))
+        return await _result_or_cancel(executor.submit(func, *args, **kwargs))
 
     def map(self, func: Callable[..., _T], *iterables: Iterable[Any]) -> AsyncGenerator[_T, None]:
         """
@@ -158,14 +149,13 @@ class AsyncExecutor:
             An asynchronous iterator equivalent to ``map(func, *iterables)`` but the calls may be evaluated out-of-order.
         """
 
-        backend = self.__backend
         executor = self.__executor
         fs = deque(executor.submit(self._setup_func(func), *args) for args in zip(*iterables))
 
         async def result_iterator() -> AsyncGenerator[_T, None]:
             try:
                 while fs:
-                    yield await _result_or_cancel(backend, fs.popleft())
+                    yield await _result_or_cancel(fs.popleft())
             finally:
                 for future in fs:
                     future.cancel()
@@ -201,7 +191,7 @@ class AsyncExecutor:
                             has not started running. Any futures that are completed or running won't be cancelled,
                             regardless of the value of `cancel_futures`.
         """
-        await self.__backend.run_in_thread(self.__executor.shutdown, wait=True, cancel_futures=cancel_futures)
+        await current_async_backend().run_in_thread(self.__executor.shutdown, wait=True, cancel_futures=cancel_futures)
 
     def _setup_func(self, func: Callable[_P, _T]) -> Callable[_P, _T]:
         if self.__handle_contexts:
@@ -211,10 +201,10 @@ class AsyncExecutor:
         return func
 
 
-async def _result_or_cancel(backend: AsyncBackend, future: concurrent.futures.Future[_T]) -> _T:
+async def _result_or_cancel(future: concurrent.futures.Future[_T]) -> _T:
     try:
         try:
-            return await backend.wait_future(future)
+            return await current_async_backend().wait_future(future)
         finally:
             future.cancel()
     finally:

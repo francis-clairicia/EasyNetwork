@@ -16,160 +16,99 @@
 
 from __future__ import annotations
 
-__all__ = ["AsyncBackendFactory"]
+__all__ = ["AsyncBackendFactory", "current_async_backend"]
 
 import functools
-import inspect
-from collections import Counter
-from collections.abc import Mapping
-from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Final, final
+import threading
+from collections import deque
+from collections.abc import Callable
+from typing import Final, final
 
+from ....exceptions import UnsupportedOperation
+from ... import _lock
 from ..._final import runtime_final_class
-from ._sniffio_helpers import current_async_library as _sniffio_current_async_library
+from . import _sniffio_helpers
 from .abc import AsyncBackend
-
-if TYPE_CHECKING:
-    from importlib.metadata import EntryPoint
 
 
 @final
 @runtime_final_class
 class AsyncBackendFactory:
-    GROUP_NAME: Final[str] = "easynetwork.async.backends"
-    __BACKEND: str | type[AsyncBackend] | None = None
-    __BACKEND_EXTENSIONS: Final[dict[str, type[AsyncBackend]]] = {}
+    __lock: Final[_lock.ForkSafeLock[threading.RLock]] = _lock.ForkSafeLock(threading.RLock)
+    __hooks: Final[deque[Callable[[str], AsyncBackend]]] = deque()
+    __instances: Final[dict[str, AsyncBackend]] = {}
 
-    @staticmethod
-    def get_default_backend(guess_current_async_library: bool = True) -> type[AsyncBackend]:
-        backend: str | type[AsyncBackend] | None = AsyncBackendFactory.__BACKEND
-        if isinstance(backend, type):
-            return backend
-        if backend is None:
-            if guess_current_async_library:
-                backend = _sniffio_current_async_library()  # must raise if not recognized
-            else:
-                backend = "asyncio"
-        return AsyncBackendFactory.__get_backend_cls(
-            backend,
-            "Running library {name!r} misses the backend implementation",
-            extended=True,
-        )
+    @classmethod
+    def current(cls) -> AsyncBackend:
+        name: str = _sniffio_helpers.current_async_library()
+        return cls.__get_backend(name, "Running library {name!r} misses the backend implementation")
 
-    @staticmethod
-    def set_default_backend(backend: str | type[AsyncBackend] | None) -> None:
-        match backend:
-            case type() if not issubclass(backend, AsyncBackend) or inspect.isabstract(backend):
-                raise TypeError(f"Invalid backend class: {backend!r}")
-            case type() | None:
-                pass
-            case str():
-                AsyncBackendFactory.__get_backend_cls(backend, extended=False)
-            case _:  # pragma: no cover
-                raise TypeError(f"Invalid argument: {backend!r}")
+    @classmethod
+    def get_backend(cls, name: str, /) -> AsyncBackend:
+        return cls.__get_backend(name, "Unknown backend {name!r}")
 
-        AsyncBackendFactory.__BACKEND = backend
+    @classmethod
+    def push_factory_hook(cls, factory: Callable[[str], AsyncBackend], /) -> None:
+        if not callable(factory):
+            raise TypeError(f"{factory!r} is not callable")
+        with cls.__lock.get():
+            cls.__hooks.appendleft(factory)
 
-    @staticmethod
-    def extend(backend_name: str, backend_cls: type[AsyncBackend] | None) -> None:
-        default_backend_cls = AsyncBackendFactory.__get_backend_cls(backend_name, extended=False)
-        if backend_cls is None or backend_cls is default_backend_cls:
-            AsyncBackendFactory.__BACKEND_EXTENSIONS.pop(backend_name, None)
-            return
-        if not issubclass(backend_cls, default_backend_cls):
-            raise TypeError(f"Invalid backend class (not a subclass of {default_backend_cls!r}): {backend_cls!r}")
-        AsyncBackendFactory.__BACKEND_EXTENSIONS[backend_name] = backend_cls
+    @classmethod
+    def push_backend_factory(cls, backend_name: str, factory: Callable[[], AsyncBackend]) -> None:
+        if not isinstance(backend_name, str):
+            raise TypeError("backend_name: Expected a string")
+        if backend_name.strip() != backend_name or not backend_name:
+            raise ValueError("backend_name: Invalid value")
+        if not callable(factory):
+            raise TypeError(f"{factory!r} is not callable")
+        return cls.push_factory_hook(functools.partial(cls.__backend_factory_hook, backend_name, factory))
 
-    @staticmethod
-    def new(backend: str | None = None, /, **kwargs: Any) -> AsyncBackend:
-        backend_cls: type[AsyncBackend]
-        if backend is None:
-            backend_cls = AsyncBackendFactory.get_default_backend(guess_current_async_library=True)
-        else:
-            backend_cls = AsyncBackendFactory.__get_backend_cls(backend, extended=True)
-        return backend_cls(**kwargs)
+    @classmethod
+    def invalidate_backends_cache(cls) -> None:
+        with cls.__lock.get():
+            cls.__instances.clear()
 
-    @staticmethod
-    def ensure(backend: str | AsyncBackend | None, kwargs: Mapping[str, Any] | None = None) -> AsyncBackend:
-        if not isinstance(backend, AsyncBackend):
-            if kwargs is None:
-                kwargs = {}
-            backend = AsyncBackendFactory.new(backend, **kwargs)
-        return backend
+    @classmethod
+    def remove_installed_hooks(cls) -> None:
+        with cls.__lock.get():
+            cls.__hooks.clear()
 
-    @staticmethod
-    def get_all_backends(*, extended: bool = True) -> MappingProxyType[str, type[AsyncBackend]]:
-        backends = {
-            name: AsyncBackendFactory.__get_backend_cls(name, extended=extended)
-            for name in AsyncBackendFactory.__get_available_backends()
-        }
-        return MappingProxyType(backends)
-
-    @staticmethod
-    def get_available_backends() -> frozenset[str]:
-        return frozenset(AsyncBackendFactory.__get_available_backends())
-
-    @staticmethod
-    def remove_all_extensions() -> None:
-        AsyncBackendFactory.__BACKEND_EXTENSIONS.clear()
-
-    @staticmethod
-    def invalidate_backends_cache() -> None:
-        AsyncBackendFactory.remove_all_extensions()
-        AsyncBackendFactory.__load_backend_cls_from_entry_point.cache_clear()
-        AsyncBackendFactory.__get_available_backends.cache_clear()
-
-    @staticmethod
-    def __get_backend_cls(
-        name: str,
-        error_msg_format: str = "Unknown backend {name!r}",
-        *,
-        extended: bool,
-    ) -> type[AsyncBackend]:
-        if extended:
+    @classmethod
+    def __get_backend(cls, name: str, error_msg_format: str) -> AsyncBackend:
+        with cls.__lock.get():
             try:
-                return AsyncBackendFactory.__BACKEND_EXTENSIONS[name]
+                return cls.__instances[name]
             except KeyError:
                 pass
-        try:
-            return AsyncBackendFactory.__load_backend_cls_from_entry_point(name)
-        except KeyError:
-            raise KeyError(error_msg_format.format(name=name)) from None
+
+            backend_instance: AsyncBackend | None = None
+            for factory_hook in cls.__hooks:
+                try:
+                    backend_instance = factory_hook(name)
+                except UnsupportedOperation:
+                    continue
+
+                if not isinstance(backend_instance, AsyncBackend):
+                    raise TypeError(f"{factory_hook!r} did not return an AsyncBackend instance")
+                break
+
+            if backend_instance is None and name == "asyncio":
+                from ...std_asyncio import AsyncIOBackend
+
+                backend_instance = AsyncIOBackend()
+
+            if backend_instance is None:
+                raise NotImplementedError(error_msg_format.format(name=name))
+
+            cls.__instances[name] = backend_instance
+            return backend_instance
 
     @staticmethod
-    @functools.cache
-    def __load_backend_cls_from_entry_point(name: str) -> type[AsyncBackend]:
-        entry_point: EntryPoint = AsyncBackendFactory.__get_available_backends()[name]
+    def __backend_factory_hook(backend_name: str, factory: Callable[[], AsyncBackend], name: str, /) -> AsyncBackend:
+        if name != backend_name:
+            raise UnsupportedOperation(f"{name!r} backend is not implemented")
+        return factory()
 
-        entry_point_cls: Any = entry_point.load()
-        if (
-            not isinstance(entry_point_cls, type)
-            or not issubclass(entry_point_cls, AsyncBackend)
-            or inspect.isabstract(entry_point_cls)
-        ):
-            raise TypeError(f"Invalid backend entry point (name={name!r}): {entry_point_cls!r}")
-        return entry_point_cls
 
-    @staticmethod
-    @functools.cache
-    def __get_available_backends() -> MappingProxyType[str, EntryPoint]:
-        from importlib.metadata import EntryPoint, entry_points as get_all_entry_points
-
-        entry_points = get_all_entry_points(group=AsyncBackendFactory.GROUP_NAME)
-        duplicate_counter: Counter[str] = Counter([ep.name for ep in entry_points])
-
-        if duplicates := {name for name in duplicate_counter if duplicate_counter[name] > 1}:
-            raise TypeError(f"Conflicting backend name caught: {', '.join(map(repr, sorted(duplicates)))}")
-
-        backends: dict[str, EntryPoint] = {ep.name: ep for ep in entry_points}
-
-        if "asyncio" not in backends:
-            from importlib.util import resolve_name
-
-            backends["asyncio"] = EntryPoint(
-                name="asyncio",
-                value=f"{resolve_name('...std_asyncio', __package__)}:AsyncIOBackend",
-                group=AsyncBackendFactory.GROUP_NAME,
-            )
-
-        return MappingProxyType(backends)
+current_async_backend = AsyncBackendFactory.current

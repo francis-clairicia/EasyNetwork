@@ -20,6 +20,7 @@ from easynetwork.exceptions import (
     StreamProtocolParseError,
 )
 from easynetwork.lowlevel.api_async.backend.abc import AsyncBackend
+from easynetwork.lowlevel.api_async.backend.factory import current_async_backend
 from easynetwork.lowlevel.socket import SocketAddress, enable_socket_linger
 from easynetwork.lowlevel.std_asyncio._asyncio_utils import create_connection
 from easynetwork.lowlevel.std_asyncio.backend import AsyncIOBackend
@@ -30,6 +31,7 @@ from easynetwork.protocol import StreamProtocol
 import pytest
 import pytest_asyncio
 
+from .....tools import temporary_backend
 from .base import BaseTestAsyncServer
 
 
@@ -100,7 +102,7 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
         if self.milk_handshake:
             await client.send_packet("milk")
         if self.close_all_clients_on_connection:
-            await self.backend.sleep(0.1)
+            await current_async_backend().sleep(0.1)
             await client.aclose()
 
     async def on_disconnection(self, client: AsyncStreamClient[str]) -> None:
@@ -164,17 +166,13 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
             self.bad_request_received[client_address(client)].append(exc)
             await client.send_packet("wrong encoding man.")
 
-    @property
-    def backend(self) -> AsyncBackend:
-        return self.server.get_backend()
-
 
 class TimeoutRequestHandler(AsyncStreamRequestHandler[str, str]):
     request_timeout: float = 1.0
     timeout_on_second_yield: bool = False
 
     async def service_init(self, exit_stack: contextlib.AsyncExitStack, server: AsyncTCPNetworkServer[str, str]) -> None:
-        self.backend = server.get_backend()
+        self.backend = current_async_backend()
 
     async def on_connection(self, client: AsyncStreamClient[str]) -> None:
         await client.send_packet("milk")
@@ -206,7 +204,7 @@ class InitialHandshakeRequestHandler(AsyncStreamRequestHandler[str, str]):
     bypass_handshake: bool = False
 
     async def service_init(self, exit_stack: contextlib.AsyncExitStack, server: AsyncTCPNetworkServer[str, str]) -> None:
-        self.backend = server.get_backend()
+        self.backend = current_async_backend()
 
     async def on_connection(self, client: AsyncStreamClient[str]) -> AsyncGenerator[None, str]:
         await client.send_packet("milk")
@@ -299,10 +297,10 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
 
     @pytest.fixture
     @staticmethod
-    def backend_kwargs(use_asyncio_transport: bool, use_ssl: bool) -> dict[str, Any]:
+    def use_asyncio_transport(use_asyncio_transport: bool, use_ssl: bool) -> bool:
         if use_ssl and not use_asyncio_transport:
             pytest.skip("SSL/TLS not supported with transport=False")
-        return {"transport": use_asyncio_transport}
+        return use_asyncio_transport
 
     @pytest.fixture
     @staticmethod
@@ -324,7 +322,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         use_ssl: bool,
         server_ssl_context: ssl.SSLContext,
         ssl_handshake_timeout: float | None,
-        backend_kwargs: dict[str, Any],
+        use_asyncio_transport: bool,  # Only here for dependency
     ) -> AsyncIterator[MyAsyncTCPServer]:
         async with MyAsyncTCPServer(
             localhost_ip,
@@ -334,7 +332,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
             backlog=1,
             ssl=server_ssl_context if use_ssl else None,
             ssl_handshake_timeout=ssl_handshake_timeout,
-            backend_kwargs=backend_kwargs,
         ) as server:
             assert not server.sockets
             assert not server.get_addresses()
@@ -404,13 +401,13 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     @pytest.mark.parametrize("host", [None, ""], ids=repr)
     @pytest.mark.parametrize("log_client_connection", [True, False], ids=lambda p: f"log_client_connection=={p}")
     @pytest.mark.parametrize("use_ssl", ["NO_SSL"], indirect=True)
+    @pytest.mark.usefixtures("use_asyncio_transport")
     async def test____dunder_init____bind_to_all_available_interfaces(
         self,
         host: str | None,
         log_client_connection: bool,
         request_handler: MyAsyncTCPRequestHandler,
         stream_protocol: StreamProtocol[str, str],
-        backend_kwargs: dict[str, Any],
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         async with MyAsyncTCPServer(
@@ -418,7 +415,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
             0,
             stream_protocol,
             request_handler,
-            backend_kwargs=backend_kwargs,
             log_client_connection=log_client_connection,
         ) as s:
             caplog.set_level(logging.DEBUG, s.logger.name)
@@ -488,11 +484,12 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         request_handler: MyAsyncTCPRequestHandler,
         stream_protocol: StreamProtocol[str, str],
     ) -> None:
-        async with MyAsyncTCPServer(None, 0, stream_protocol, request_handler, backend=NoListenerErrorBackend()) as s:
-            with pytest.raises(OSError, match=r"^empty listeners list$"):
-                await s.serve_forever()
+        with temporary_backend(NoListenerErrorBackend()):
+            async with MyAsyncTCPServer(None, 0, stream_protocol, request_handler) as s:
+                with pytest.raises(OSError, match=r"^empty listeners list$"):
+                    await s.serve_forever()
 
-            assert not s.sockets
+                assert not s.sockets
 
     @pytest.mark.usefixtures("run_server_and_wait")
     async def test____serve_forever____server_assignment(

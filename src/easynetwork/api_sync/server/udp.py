@@ -21,7 +21,7 @@ __all__ = [
 ]
 
 import contextlib
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Generic
 
 from ..._typevars import _RequestT, _ResponseT
@@ -34,7 +34,6 @@ if TYPE_CHECKING:
     import logging
 
     from ...api_async.server.handler import AsyncDatagramRequestHandler
-    from ...lowlevel.api_async.backend.abc import AsyncBackend
     from ...protocol import DatagramProtocol
 
 
@@ -53,11 +52,10 @@ class StandaloneUDPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
         port: int,
         protocol: DatagramProtocol[_ResponseT, _RequestT],
         request_handler: AsyncDatagramRequestHandler[_RequestT, _ResponseT],
-        backend: str | AsyncBackend = "asyncio",
+        backend: str = "asyncio",
         *,
         reuse_port: bool = False,
         logger: logging.Logger | None = None,
-        backend_kwargs: Mapping[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
         """
@@ -65,41 +63,32 @@ class StandaloneUDPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
 
         Note:
             The backend interface must be explicitly given. It defaults to ``asyncio``.
-
-            :exc:`ValueError` is raised if :data:`None` is given.
         """
-        if backend is None:
-            raise ValueError("You must explicitly give a backend name or instance")
         super().__init__(
-            AsyncUDPNetworkServer(
+            backend,
+            _utils.make_callback(
+                AsyncUDPNetworkServer,  # type: ignore[arg-type]
                 host=host,
                 port=port,
                 protocol=protocol,
                 request_handler=request_handler,
                 reuse_port=reuse_port,
                 logger=logger,
-                backend=backend,
-                backend_kwargs=backend_kwargs,
                 **kwargs,
-            )
+            ),
         )
 
     @property
     @_utils.inherit_doc(AsyncUDPNetworkServer)
     def sockets(self) -> Sequence[SocketProxy]:
-        if (portal := self._portal) is not None:
+        if (portal := self._portal) is not None and (server := self._server) is not None:
             with contextlib.suppress(RuntimeError):
-                sockets = portal.run_sync(lambda: self._server.sockets)
+                sockets = portal.run_sync(lambda: server.sockets)
                 return tuple(SocketProxy(sock, runner=portal.run_sync) for sock in sockets)
         return ()
-
-    @property
-    @_utils.inherit_doc(AsyncUDPNetworkServer)
-    def logger(self) -> logging.Logger:
-        return self._server.logger
 
     if TYPE_CHECKING:
 
         @property
-        def _server(self) -> AsyncUDPNetworkServer[_RequestT, _ResponseT]:
+        def _server(self) -> AsyncUDPNetworkServer[_RequestT, _ResponseT] | None:
             ...

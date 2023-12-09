@@ -65,6 +65,9 @@ class BaseTestStandaloneNetworkServer:
     def test____server_close____while_server_is_running(self, server: AbstractNetworkServer) -> None:
         server.server_close()
 
+        with pytest.raises(ServerClosedError):
+            server.serve_forever()
+
     @pytest.mark.usefixtures("start_server")
     def test____serve_forever____error_server_already_running(self, server: AbstractNetworkServer) -> None:
         with pytest.raises(ServerAlreadyRunning):
@@ -110,16 +113,6 @@ class TestStandaloneTCPNetworkServer(BaseTestStandaloneNetworkServer):
         with socket.create_connection(("localhost", port)) as client:
             yield client
 
-    def test____dunder_init____invalid_backend(self, stream_protocol: StreamProtocol[str, str]) -> None:
-        with pytest.raises(ValueError, match=r"^You must explicitly give a backend name or instance$"):
-            _ = StandaloneTCPNetworkServer(
-                None,
-                0,
-                stream_protocol,
-                EchoRequestHandler(),
-                backend=None,  # type: ignore[arg-type]
-            )
-
     def test____serve_forever____serve_several_times(self, server: StandaloneTCPNetworkServer[str, str]) -> None:
         with server:
             for _ in range(3):
@@ -152,25 +145,12 @@ class TestStandaloneTCPNetworkServer(BaseTestStandaloneNetworkServer):
         assert len(server.sockets) > 0  # Sockets are closed, but always available until server_close() call
         assert len(server.get_addresses()) == 0
 
-    def test____logger_property____exposed(self, server: StandaloneTCPNetworkServer[str, str]) -> None:
-        assert server.logger is server._server.logger
-
 
 class TestStandaloneUDPNetworkServer(BaseTestStandaloneNetworkServer):
     @pytest.fixture
     @staticmethod
     def server(datagram_protocol: DatagramProtocol[str, str]) -> StandaloneUDPNetworkServer[str, str]:
         return StandaloneUDPNetworkServer("localhost", 0, datagram_protocol, EchoRequestHandler())
-
-    def test____dunder_init____invalid_backend(self, datagram_protocol: DatagramProtocol[str, str]) -> None:
-        with pytest.raises(ValueError, match=r"^You must explicitly give a backend name or instance$"):
-            _ = StandaloneUDPNetworkServer(
-                "localhost",
-                0,
-                datagram_protocol,
-                EchoRequestHandler(),
-                backend=None,  # type: ignore[arg-type]
-            )
 
     def test____serve_forever____serve_several_times(self, server: StandaloneUDPNetworkServer[str, str]) -> None:
         with server:
@@ -196,6 +176,3 @@ class TestStandaloneUDPNetworkServer(BaseTestStandaloneNetworkServer):
     def test____socket_property____server_is_running(self, server: StandaloneUDPNetworkServer[str, str]) -> None:
         assert len(server.sockets) > 0
         assert len(server.get_addresses()) > 0
-
-    def test____logger_property____exposed(self, server: StandaloneUDPNetworkServer[str, str]) -> None:
-        assert server.logger is server._server.logger
