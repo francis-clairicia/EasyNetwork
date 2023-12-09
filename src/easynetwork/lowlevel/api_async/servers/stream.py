@@ -26,7 +26,7 @@ from .... import protocol as protocol_module
 from ...._typevars import _RequestT, _ResponseT
 from ....exceptions import UnsupportedOperation
 from ... import _asyncgen, _stream, _utils, typed_attr
-from ..backend.abc import AsyncBackend, TaskGroup
+from ..backend.abc import TaskGroup
 from ..transports import abc as transports, utils as transports_utils
 
 
@@ -90,7 +90,6 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, _R
         "__listener",
         "__protocol",
         "__max_recv_size",
-        "__backend",
         "__serve_guard",
         "__weakref__",
     )
@@ -100,9 +99,6 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, _R
         listener: transports.AsyncListener[transports.AsyncStreamTransport],
         protocol: protocol_module.StreamProtocol[_ResponseT, _RequestT],
         max_recv_size: int,
-        *,
-        backend: str | AsyncBackend | None = None,
-        backend_kwargs: Mapping[str, Any] | None = None,
     ) -> None:
         if not isinstance(listener, transports.AsyncListener):
             raise TypeError(f"Expected an AsyncListener object, got {listener!r}")
@@ -111,14 +107,9 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, _R
         if not isinstance(max_recv_size, int) or max_recv_size <= 0:
             raise ValueError("'max_recv_size' must be a strictly positive integer")
 
-        from ..backend.factory import AsyncBackendFactory
-
-        backend = AsyncBackendFactory.ensure(backend, backend_kwargs)
-
         self.__listener: transports.AsyncListener[transports.AsyncStreamTransport] = listener
         self.__protocol: protocol_module.StreamProtocol[_ResponseT, _RequestT] = protocol
         self.__max_recv_size: int = max_recv_size
-        self.__backend: AsyncBackend = backend
         self.__serve_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently accepting new connections")
 
     def is_closing(self) -> bool:
@@ -145,12 +136,6 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, _R
             handler = _utils.prepend_argument(client_connected_cb)(self.__client_coroutine)
             await self.__listener.serve(handler, task_group)
 
-    def get_backend(self) -> AsyncBackend:
-        """
-        Return the underlying backend interface.
-        """
-        return self.__backend
-
     async def __client_coroutine(
         self,
         client_connected_cb: Callable[[AsyncStreamClient[_ResponseT]], AsyncGenerator[None, _RequestT]],
@@ -160,7 +145,7 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, _R
             raise TypeError(f"Expected an AsyncStreamTransport object, got {transport!r}")
 
         async with contextlib.AsyncExitStack() as client_exit_stack:
-            client_exit_stack.push_async_callback(transports_utils.aclose_forcefully, self.__backend, transport)
+            client_exit_stack.push_async_callback(transports_utils.aclose_forcefully, transport)
 
             producer = _stream.StreamDataProducer(self.__protocol)
             consumer: _stream.StreamDataConsumer[_RequestT] | _stream.BufferedStreamDataConsumer[_RequestT]

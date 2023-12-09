@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Generator
+from collections.abc import Awaitable, Callable, Generator, Iterator
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.lowlevel._stream import StreamDataProducer
@@ -9,6 +9,8 @@ from easynetwork.lowlevel.api_async.transports.abc import AsyncListener, AsyncSt
 from easynetwork.lowlevel.std_asyncio.tasks import TaskGroup
 
 import pytest
+
+from .....tools import temporary_backend
 
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
@@ -138,8 +140,9 @@ class TestAsyncStreamServer:
         mock_stream_protocol: MagicMock,
         max_recv_size: int,
         mock_backend: MagicMock,
-    ) -> AsyncStreamServer[Any, Any]:
-        return AsyncStreamServer(mock_listener, mock_stream_protocol, max_recv_size, backend=mock_backend)
+    ) -> Iterator[AsyncStreamServer[Any, Any]]:
+        with temporary_backend(mock_backend):
+            yield AsyncStreamServer(mock_listener, mock_stream_protocol, max_recv_size)
 
     async def test____dunder_init____invalid_transport(
         self,
@@ -243,13 +246,3 @@ class TestAsyncStreamServer:
             with pytest.raises(TypeError, match=r"^Expected an AsyncStreamTransport object, got .*$"):
                 await server.serve(client_connected_cb, tg)
         client_connected_cb.assert_not_called()
-
-    async def test____get_backend____default(
-        self,
-        server: AsyncStreamServer[Any, Any],
-        mock_backend: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act & Assert
-        assert server.get_backend() is mock_backend

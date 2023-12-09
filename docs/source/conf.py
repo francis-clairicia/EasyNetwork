@@ -119,7 +119,6 @@ napoleon_custom_sections = [
     ("Common Parameters", "params_style"),
     ("Socket Parameters", "params_style"),
     ("Connection Parameters", "params_style"),
-    ("Backend Parameters", "params_style"),
 ]
 
 

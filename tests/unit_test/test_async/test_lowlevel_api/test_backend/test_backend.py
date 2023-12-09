@@ -6,6 +6,7 @@ from socket import socket as Socket
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, assert_never, final
 
+from easynetwork.exceptions import UnsupportedOperation
 from easynetwork.lowlevel.api_async.backend.abc import AsyncBackend
 from easynetwork.lowlevel.api_async.backend.factory import AsyncBackendFactory
 
@@ -14,7 +15,6 @@ import pytest
 from ._fake_backends import BaseFakeBackend, FakeAsyncIOBackend, FakeCurioBackend, FakeTrioBackend
 
 if TYPE_CHECKING:
-    from importlib.metadata import EntryPoint
     from unittest.mock import MagicMock
 
     from pytest_mock import MockerFixture
@@ -95,389 +95,500 @@ class TestAsyncBackendFactory:
 
     BACKEND_CLS_TO_NAME: MappingProxyType[type[AsyncBackend], str] = MappingProxyType({v: k for k, v in BACKENDS.items()})
 
+    CURRENT_ASYNC_LIBRARY_FUNC: str = "easynetwork.lowlevel.api_async.backend._sniffio_helpers.current_async_library"
+
     @pytest.fixture(scope="class", autouse=True)
     @staticmethod
     def reset_factory_cache_at_end() -> Iterator[None]:
         # Drop after all tests are done in order not to impact next tests
         yield
         AsyncBackendFactory.invalidate_backends_cache()
-
-        from easynetwork.lowlevel.std_asyncio import AsyncIOBackend
-
-        assert AsyncBackendFactory.get_all_backends() == {"asyncio": AsyncIOBackend}
-
-    @pytest.fixture(autouse=True)
-    @staticmethod
-    def setup_factory() -> Iterator[None]:
-        AsyncBackendFactory.invalidate_backends_cache()
-        yield
-        AsyncBackendFactory.set_default_backend(None)
-        AsyncBackendFactory.remove_all_extensions()
+        AsyncBackendFactory.remove_installed_hooks()
 
     @pytest.fixture(autouse=True)
     @classmethod
-    def mock_importlib_metadata_entry_points(cls, mocker: MockerFixture) -> MagicMock:
-        return mocker.patch(
-            "importlib.metadata.entry_points",
-            autospec=True,
-            return_value=list(map(cls.build_entry_point, cls.BACKENDS)),
-        )
+    def setup_factory(cls) -> None:
+        AsyncBackendFactory.remove_installed_hooks()
+        for backend_name, backend_cls in cls.BACKENDS.items():
+            AsyncBackendFactory.push_backend_factory(backend_name, backend_cls)
 
-    @classmethod
-    def build_entry_point(
-        cls,
-        name: str,
-        value: str = "",
-    ) -> EntryPoint:
-        from importlib.metadata import EntryPoint
-
-        if not value:
-            try:
-                _default_cls = cls.BACKENDS[name]
-            except KeyError:
-                _default_cls = MockBackend
-            value = f"{_default_cls.__module__}:{_default_cls.__name__}"
-
-        return EntryPoint(name, value, AsyncBackendFactory.GROUP_NAME)
-
-    def test____get_all_backends____default(self) -> None:
+    def test____push_factory_hook____not_callable(self, mocker: MockerFixture) -> None:
         # Arrange
-
-        # Act
-        backends = AsyncBackendFactory.get_all_backends()
-
-        # Assert
-        assert backends == self.BACKENDS
-
-    def test____get_all_backends____entry_point_is_module(self, mock_importlib_metadata_entry_points: MagicMock) -> None:
-        # Arrange
-        mock_importlib_metadata_entry_points.return_value = [
-            self.build_entry_point("asyncio", __name__),
-        ]
+        obj = mocker.NonCallableMock()
 
         # Act & Assert
-        with pytest.raises(TypeError, match=r"^Invalid backend entry point \(name='asyncio'\): .+$"):
-            AsyncBackendFactory.get_all_backends()
+        with pytest.raises(TypeError, match=r"^.+ is not callable$"):
+            AsyncBackendFactory.push_factory_hook(obj)
 
-    def test____get_all_backends____entry_point_is_not_async_backend_class(
-        self,
-        mock_importlib_metadata_entry_points: MagicMock,
-    ) -> None:
+    def test____push_backend_factory____not_callable(self, mocker: MockerFixture) -> None:
         # Arrange
-        mock_importlib_metadata_entry_points.return_value = [
-            self.build_entry_point("asyncio", "builtins:int"),
-        ]
+        obj = mocker.NonCallableMock()
 
         # Act & Assert
-        with pytest.raises(TypeError, match=r"^Invalid backend entry point \(name='asyncio'\): .+$"):
-            AsyncBackendFactory.get_all_backends()
+        with pytest.raises(TypeError, match=r"^.+ is not callable$"):
+            AsyncBackendFactory.push_backend_factory("mock", obj)
 
-    def test____get_all_backends____entry_point_is_abstract(
-        self,
-        mock_importlib_metadata_entry_points: MagicMock,
-    ) -> None:
+    def test____push_backend_factory____backend_is_not_a_string(self, mocker: MockerFixture) -> None:
         # Arrange
-        mock_importlib_metadata_entry_points.return_value = [
-            self.build_entry_point("asyncio", "easynetwork.lowlevel.api_async.backend.abc:AsyncBackend"),
-        ]
+        factory = mocker.stub()
 
         # Act & Assert
-        with pytest.raises(TypeError, match=r"^Invalid backend entry point \(name='asyncio'\): .+$"):
-            AsyncBackendFactory.get_all_backends()
+        with pytest.raises(TypeError, match=r"^backend_name: Expected a string$"):
+            AsyncBackendFactory.push_backend_factory(4, factory)  # type: ignore[arg-type]
 
-    def test____get_all_backends____entry_point_module_not_found(
-        self,
-        mock_importlib_metadata_entry_points: MagicMock,
-    ) -> None:
+    @pytest.mark.parametrize("invalid_token", ["", "   ", "\nasyncio", "asyncio\t"], ids=repr)
+    def test____push_backend_factory____backend_string_is_invalid(self, invalid_token: str, mocker: MockerFixture) -> None:
         # Arrange
-        mock_importlib_metadata_entry_points.return_value = [
-            self.build_entry_point("asyncio", "unknown_module:Backend"),
-        ]
+        factory = mocker.stub()
 
         # Act & Assert
-        with pytest.raises(ModuleNotFoundError, match=r"^No module named 'unknown_module'$"):
-            AsyncBackendFactory.get_all_backends()
-
-    def test____get_all_backends____duplicate(
-        self,
-        mock_importlib_metadata_entry_points: MagicMock,
-    ) -> None:
-        # Arrange
-        mock_importlib_metadata_entry_points.return_value = [
-            self.build_entry_point("asyncio"),
-            self.build_entry_point("asyncio"),
-            self.build_entry_point("asyncio"),
-        ]
-
-        # Act & Assert
-        with pytest.raises(TypeError, match=r"^Conflicting backend name caught: 'asyncio'$"):
-            AsyncBackendFactory.get_all_backends()
-
-    def test____get_available_backends____default(
-        self,
-        mock_importlib_metadata_entry_points: MagicMock,
-    ) -> None:
-        # Arrange
-        mock_importlib_metadata_entry_points.return_value = [
-            self.build_entry_point("asyncio"),
-            self.build_entry_point("trio"),
-            self.build_entry_point("curio"),
-            self.build_entry_point("mock", f"{__name__}:MockBackend"),
-        ]
-
-        # Act
-        available_backends = AsyncBackendFactory.get_available_backends()
-
-        # Assert
-        assert isinstance(available_backends, frozenset)
-        assert available_backends == frozenset({"asyncio", "trio", "curio", "mock"})
+        with pytest.raises(ValueError, match=r"^backend_name: Invalid value$"):
+            AsyncBackendFactory.push_backend_factory(invalid_token, factory)
 
     @pytest.mark.parametrize("backend_name", list(BACKENDS))
-    @pytest.mark.parametrize("extended", [False, True], ids=lambda extended: f"extended=={extended}")
-    def test____set_default_backend____from_string(self, backend_name: str, extended: bool) -> None:
+    def test____get_backend____returns_backend_instance_from_hook(
+        self,
+        backend_name: str,
+    ) -> None:
         # Arrange
         expected_cls = self.BACKENDS[backend_name]
-        if extended:
-
-            class ExtendedBackend(self.BACKENDS[backend_name]):  # type: ignore[name-defined,misc]
-                pass
-
-            AsyncBackendFactory.extend(backend_name, ExtendedBackend)
-            expected_cls = ExtendedBackend
 
         # Act
-        AsyncBackendFactory.set_default_backend(backend_name)
+        backend = AsyncBackendFactory.get_backend(backend_name)
 
         # Assert
-        assert AsyncBackendFactory.get_default_backend(guess_current_async_library=False) is expected_cls
+        assert isinstance(backend, AsyncBackend)
+        assert isinstance(backend, expected_cls)
 
-    def test____set_default_backend____from_string____unknown_backend(self) -> None:
+    def test____get_backend____unknown_backend(self) -> None:
         # Arrange
 
         # Act & Assert
-        with pytest.raises(KeyError):
-            AsyncBackendFactory.set_default_backend("unknown")
+        with pytest.raises(NotImplementedError, match=r"^Unknown backend 'mock'$"):
+            AsyncBackendFactory.get_backend("mock")
 
-    @pytest.mark.parametrize("backend_cls", [*BACKENDS.values(), MockBackend])
-    @pytest.mark.parametrize("extended", [False, True], ids=lambda extended: f"extended=={extended}")
-    def test____set_default_backend____from_class(self, backend_cls: type[AsyncBackend], extended: bool) -> None:
+    @pytest.mark.parametrize("backend_name", list(BACKENDS))
+    def test____get_backend____by_default(self, backend_name: str) -> None:
         # Arrange
-        if extended:
-            try:
-                _backend_name = self.BACKEND_CLS_TO_NAME[backend_cls]
-            except KeyError:
-                pytest.skip("Not an entry-point")
+        AsyncBackendFactory.remove_installed_hooks()
 
-            class ExtendedBackend(backend_cls):  # type: ignore[valid-type,misc]
-                pass
+        # Act & Assert
+        match backend_name:
+            case "asyncio":
+                from easynetwork.lowlevel.std_asyncio import AsyncIOBackend
 
-            AsyncBackendFactory.extend(_backend_name, ExtendedBackend)
+                assert type(AsyncBackendFactory.get_backend("asyncio")) is AsyncIOBackend
+            case _:
+                with pytest.raises(NotImplementedError, match=r"^Unknown backend '.+'$"):
+                    AsyncBackendFactory.get_backend(backend_name)
+
+    @pytest.mark.parametrize("backend_name", list(BACKENDS))
+    def test____get_backend____singleton(self, backend_name: str) -> None:
+        # Arrange
+        first_backend_instance = AsyncBackendFactory.get_backend(backend_name)
 
         # Act
-        AsyncBackendFactory.set_default_backend(backend_cls)
+        this_backend = AsyncBackendFactory.get_backend(backend_name)
 
         # Assert
-        assert AsyncBackendFactory.get_default_backend(guess_current_async_library=False) is backend_cls
+        assert this_backend is first_backend_instance
 
-    @pytest.mark.parametrize("invalid_cls", [int, Socket, TestAsyncBackend])
-    def test____set_default_backend____from_class____error_do_not_derive_from_AsyncBackend(
+    @pytest.mark.parametrize("action", ["push_backend_factory", "push_factory_hook"])
+    def test____get_backend____add_hook(
         self,
+        action: Literal["push_backend_factory", "push_factory_hook"],
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        match action:
+            case "push_backend_factory":
+                AsyncBackendFactory.push_backend_factory("mock", lambda: MockBackend(mocker))
+            case "push_factory_hook":
+
+                def hook(name: str) -> AsyncBackend:
+                    if name == "mock":
+                        return MockBackend(mocker)
+                    raise UnsupportedOperation
+
+                AsyncBackendFactory.push_factory_hook(hook)
+            case _:
+                assert_never(action)
+
+        # Act
+        backend = AsyncBackendFactory.get_backend("mock")
+
+        # Assert
+        assert type(backend) is MockBackend
+
+    @pytest.mark.parametrize("action", ["push_backend_factory", "push_factory_hook"])
+    @pytest.mark.parametrize("backend_name", list(BACKENDS))
+    def test____get_backend____override_backend(
+        self,
+        backend_name: str,
+        action: Literal["push_backend_factory", "push_factory_hook"],
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        match action:
+            case "push_backend_factory":
+                AsyncBackendFactory.push_backend_factory(backend_name, lambda: MockBackend(mocker))
+            case "push_factory_hook":
+
+                def hook(name: str) -> AsyncBackend:
+                    if name == backend_name:
+                        return MockBackend(mocker)
+                    raise UnsupportedOperation
+
+                AsyncBackendFactory.push_factory_hook(hook)
+            case _:
+                assert_never(action)
+
+        # Act
+        backend = AsyncBackendFactory.get_backend(backend_name)
+
+        # Assert
+        assert not isinstance(backend, self.BACKENDS[backend_name])
+        assert isinstance(backend, MockBackend)
+
+    @pytest.mark.parametrize("action", ["push_backend_factory", "push_factory_hook"])
+    @pytest.mark.parametrize("invalid_cls", [int, Socket, TestAsyncBackend])
+    def test____get_backend____error_do_not_derive_from_AsyncBackend(
+        self,
+        action: Literal["push_backend_factory", "push_factory_hook"],
         invalid_cls: type[Any],
     ) -> None:
         # Arrange
+        match action:
+            case "push_backend_factory":
+                AsyncBackendFactory.push_backend_factory("mock", invalid_cls)
+            case "push_factory_hook":
 
-        # Act & Assert
-        with pytest.raises(TypeError, match=rf"^Invalid backend class: {invalid_cls!r}$"):
-            AsyncBackendFactory.set_default_backend(invalid_cls)
+                def hook(name: str) -> AsyncBackend:
+                    if name == "mock":
+                        return invalid_cls()
+                    raise UnsupportedOperation
 
-    def test____set_default_backend____from_class____error_abstract_class_given(self) -> None:
-        # Arrange
-
-        # Act & Assert
-        with pytest.raises(TypeError, match=rf"^Invalid backend class: {AsyncBackend!r}$"):
-            AsyncBackendFactory.set_default_backend(AsyncBackend)
-
-    @pytest.mark.parametrize("backend_name", list(BACKENDS))
-    def test____extend____replace_by_a_subclass(self, backend_name: str) -> None:
-        # Arrange
-        class ExtendedBackend(self.BACKENDS[backend_name]):  # type: ignore[name-defined,misc]
-            pass
-
-        # Act
-        AsyncBackendFactory.extend(backend_name, ExtendedBackend)
-
-        # Assert
-        assert AsyncBackendFactory.get_all_backends(extended=True)[backend_name] is ExtendedBackend
-        assert AsyncBackendFactory.get_all_backends(extended=False)[backend_name] is self.BACKENDS[backend_name]
-
-    @pytest.mark.parametrize("backend_name", list(BACKENDS))
-    @pytest.mark.parametrize("method", ["using_None", "using_base_cls"])
-    def test____extend____remove_extension(self, backend_name: str, method: Literal["using_None", "using_base_cls"]) -> None:
-        # Arrange
-        class ExtendedBackend(self.BACKENDS[backend_name]):  # type: ignore[name-defined,misc]
-            pass
-
-        AsyncBackendFactory.extend(backend_name, ExtendedBackend)
-        assert AsyncBackendFactory.get_all_backends(extended=True)[backend_name] is ExtendedBackend
-
-        # Act
-        match method:
-            case "using_None":
-                AsyncBackendFactory.extend(backend_name, None)
-            case "using_base_cls":
-                AsyncBackendFactory.extend(backend_name, self.BACKENDS[backend_name])
+                AsyncBackendFactory.push_factory_hook(hook)
             case _:
-                assert_never(method)
-
-        # Assert
-        assert AsyncBackendFactory.get_all_backends(extended=True)[backend_name] is self.BACKENDS[backend_name]
-        assert AsyncBackendFactory.get_all_backends(extended=False)[backend_name] is self.BACKENDS[backend_name]
-
-    @pytest.mark.parametrize("backend_name", list(BACKENDS))
-    def test____extend____error_invalid_class(self, backend_name: str) -> None:
-        # Arrange
-        default_backend_cls = self.BACKENDS[backend_name]
+                assert_never(action)
 
         # Act & Assert
-        with pytest.raises(
-            TypeError, match=rf"^Invalid backend class \(not a subclass of {default_backend_cls!r}\): {MockBackend!r}$"
-        ):
-            AsyncBackendFactory.extend(backend_name, MockBackend)
+        with pytest.raises(TypeError, match=r"^.+ did not return an AsyncBackend instance$"):
+            AsyncBackendFactory.get_backend("mock")
 
+    @pytest.mark.parametrize("action", ["push_backend_factory", "push_factory_hook"])
     @pytest.mark.parametrize("backend_name", list(BACKENDS))
-    def test____extend____several_replacement(self, backend_name: str) -> None:
+    def test____get_backend____cache_erased_when_adding_new_hook(
+        self,
+        backend_name: str,
+        action: Literal["push_backend_factory", "push_factory_hook"],
+        mocker: MockerFixture,
+    ) -> None:
         # Arrange
-        class ExtendedBackendV1(self.BACKENDS[backend_name]):  # type: ignore[name-defined,misc]
-            pass
-
-        class ExtendedBackendV2(self.BACKENDS[backend_name]):  # type: ignore[name-defined,misc]
-            pass
-
-        # Act & Assert
-        AsyncBackendFactory.extend(backend_name, ExtendedBackendV1)
-        assert AsyncBackendFactory.get_all_backends(extended=True)[backend_name] is ExtendedBackendV1
-        AsyncBackendFactory.extend(backend_name, ExtendedBackendV2)
-        assert AsyncBackendFactory.get_all_backends(extended=True)[backend_name] is ExtendedBackendV2
-
-    def test____get_default_backend____without_sniffio____returns_asyncio_backend(self) -> None:
-        # Arrange
-        AsyncBackendFactory.set_default_backend(None)
+        first_backend_instance = AsyncBackendFactory.get_backend(backend_name)
 
         # Act
-        backend_cls = AsyncBackendFactory.get_default_backend(guess_current_async_library=False)
+        match action:
+            case "push_backend_factory":
+                AsyncBackendFactory.push_backend_factory(backend_name, lambda: MockBackend(mocker))
+            case "push_factory_hook":
+
+                def hook(name: str) -> AsyncBackend:
+                    if name == backend_name:
+                        return MockBackend(mocker)
+                    raise UnsupportedOperation
+
+                AsyncBackendFactory.push_factory_hook(hook)
+            case _:
+                assert_never(action)
+        this_backend = AsyncBackendFactory.get_backend(backend_name)
 
         # Assert
-        assert backend_cls is FakeAsyncIOBackend
+        assert this_backend is not first_backend_instance
 
-    @pytest.mark.feature_sniffio
+    def test____get_backend____cache_erased_when_removing_installed_hook(self) -> None:
+        # Arrange
+        first_backend_instance = AsyncBackendFactory.get_backend("asyncio")
+        assert isinstance(first_backend_instance, FakeAsyncIOBackend)
+
+        from easynetwork.lowlevel.std_asyncio import AsyncIOBackend as OriginalAsyncIOBackend
+
+        # Act
+        AsyncBackendFactory.remove_installed_hooks()
+        this_backend = AsyncBackendFactory.get_backend("asyncio")
+
+        # Assert
+        assert isinstance(this_backend, OriginalAsyncIOBackend)
+
+    def test____get_backend____cache_not_erased_if_there_was_no_hook(self) -> None:
+        # Arrange
+        AsyncBackendFactory.remove_installed_hooks()
+
+        from easynetwork.lowlevel.std_asyncio import AsyncIOBackend as OriginalAsyncIOBackend
+
+        first_backend_instance = AsyncBackendFactory.get_backend("asyncio")
+        assert isinstance(first_backend_instance, OriginalAsyncIOBackend)
+
+        # Act
+        AsyncBackendFactory.remove_installed_hooks()
+        this_backend = AsyncBackendFactory.get_backend("asyncio")
+
+        # Assert
+        assert this_backend is first_backend_instance
+
     @pytest.mark.parametrize("running_backend_name", list(BACKENDS))
-    @pytest.mark.parametrize("extended", [False, True], ids=lambda extended: f"extended=={extended}")
-    def test____get_default_backend____with_sniffio____returns_running_backend(
+    def test____current____returns_running_backend(
         self,
         running_backend_name: str,
-        extended: bool,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
         expected_cls = self.BACKENDS[running_backend_name]
-        if extended:
-
-            class ExtendedBackend(self.BACKENDS[running_backend_name]):  # type: ignore[name-defined,misc]
-                pass
-
-            AsyncBackendFactory.extend(running_backend_name, ExtendedBackend)
-            expected_cls = ExtendedBackend
 
         mock_current_async_library: MagicMock = mocker.patch(
-            "sniffio.current_async_library",
+            self.CURRENT_ASYNC_LIBRARY_FUNC,
             autospec=True,
             return_value=running_backend_name,
         )
-        AsyncBackendFactory.set_default_backend(None)
 
         # Act
-        backend_cls = AsyncBackendFactory.get_default_backend(guess_current_async_library=True)
+        backend = AsyncBackendFactory.current()
 
         # Assert
         mock_current_async_library.assert_called_once_with()
-        assert backend_cls is expected_cls
+        assert isinstance(backend, expected_cls)
 
-    @pytest.mark.feature_sniffio
-    def test____get_default_backend____with_sniffio____running_library_does_not_have_backend_implementation(
+    def test____current____running_library_does_not_have_backend_implementation(
         self,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
         mock_current_async_library: MagicMock = mocker.patch(
-            "sniffio.current_async_library",
+            self.CURRENT_ASYNC_LIBRARY_FUNC,
             autospec=True,
             return_value="some_other_async_runner",
         )
-        AsyncBackendFactory.set_default_backend(None)
 
         # Act & Assert
-        with pytest.raises(KeyError):
-            AsyncBackendFactory.get_default_backend(guess_current_async_library=True)
+        with pytest.raises(
+            NotImplementedError,
+            match=r"^Running library 'some_other_async_runner' misses the backend implementation$",
+        ):
+            AsyncBackendFactory.current()
 
         # Assert
         mock_current_async_library.assert_called_once_with()
 
     @pytest.mark.parametrize("backend_name", list(BACKENDS))
-    @pytest.mark.parametrize("extended", [False, True], ids=lambda extended: f"extended=={extended}")
-    def test____new____instanciate_backend(self, backend_name: str, extended: bool) -> None:
+    def test____current____by_default(self, backend_name: str, mocker: MockerFixture) -> None:
         # Arrange
-        expected_cls = self.BACKENDS[backend_name]
-        if extended:
+        AsyncBackendFactory.remove_installed_hooks()
+        mocker.patch(
+            self.CURRENT_ASYNC_LIBRARY_FUNC,
+            autospec=True,
+            return_value=backend_name,
+        )
 
-            class ExtendedBackend(self.BACKENDS[backend_name]):  # type: ignore[name-defined,misc]
-                pass
+        # Act & Assert
+        match backend_name:
+            case "asyncio":
+                from easynetwork.lowlevel.std_asyncio import AsyncIOBackend
 
-            AsyncBackendFactory.extend(backend_name, ExtendedBackend)
-            expected_cls = ExtendedBackend
-
-        # Act
-        backend = AsyncBackendFactory.new(backend_name)
-
-        # Assert
-        assert isinstance(backend, expected_cls)
-
-    def test____new____instanciate_default_backend(self, mocker: MockerFixture) -> None:
-        # Arrange
-        AsyncBackendFactory.set_default_backend(MockBackend)
-
-        # Act
-        backend = AsyncBackendFactory.new(mocker=mocker)
-
-        # Assert
-        assert isinstance(backend, MockBackend)
-
-    def test____ensure____return_given_backend_object(self, mocker: MockerFixture) -> None:
-        # Arrange
-        expected_backend = MockBackend(mocker)
-
-        # Act
-        backend = AsyncBackendFactory.ensure(expected_backend)
-
-        # Assert
-        assert backend is expected_backend
+                assert type(AsyncBackendFactory.current()) is AsyncIOBackend
+            case _:
+                with pytest.raises(NotImplementedError, match=r"^Running library '.+' misses the backend implementation$"):
+                    AsyncBackendFactory.current()
 
     @pytest.mark.parametrize("backend_name", list(BACKENDS))
-    @pytest.mark.parametrize("backend_kwargs", [None, {}], ids=repr)
-    def test____ensure____instanciate_backend_from_name(self, backend_name: str, backend_kwargs: dict[str, Any] | None) -> None:
+    def test____current____singleton(self, backend_name: str, mocker: MockerFixture) -> None:
         # Arrange
+        mocker.patch(
+            self.CURRENT_ASYNC_LIBRARY_FUNC,
+            autospec=True,
+            return_value=backend_name,
+        )
+        first_backend_instance = AsyncBackendFactory.current()
 
         # Act
-        backend = AsyncBackendFactory.ensure(backend_name, backend_kwargs)
+        this_backend = AsyncBackendFactory.current()
 
         # Assert
-        assert isinstance(backend, self.BACKENDS[backend_name])
+        assert this_backend is first_backend_instance
 
-    def test____ensure____instanciate_default_backend(self, mocker: MockerFixture) -> None:
+    @pytest.mark.parametrize("action", ["push_backend_factory", "push_factory_hook"])
+    def test____current____add_hook(
+        self,
+        action: Literal["push_backend_factory", "push_factory_hook"],
+        mocker: MockerFixture,
+    ) -> None:
         # Arrange
-        AsyncBackendFactory.set_default_backend(MockBackend)
+        match action:
+            case "push_backend_factory":
+                AsyncBackendFactory.push_backend_factory("mock", lambda: MockBackend(mocker))
+            case "push_factory_hook":
+
+                def hook(name: str) -> AsyncBackend:
+                    if name == "mock":
+                        return MockBackend(mocker)
+                    raise UnsupportedOperation
+
+                AsyncBackendFactory.push_factory_hook(hook)
+            case _:
+                assert_never(action)
+
+        mocker.patch(
+            self.CURRENT_ASYNC_LIBRARY_FUNC,
+            autospec=True,
+            return_value="mock",
+        )
 
         # Act
-        backend = AsyncBackendFactory.ensure(None, {"mocker": mocker})
+        backend = AsyncBackendFactory.current()
 
         # Assert
+        assert type(backend) is MockBackend
+
+    @pytest.mark.parametrize("action", ["push_backend_factory", "push_factory_hook"])
+    @pytest.mark.parametrize("invalid_cls", [int, Socket, TestAsyncBackend])
+    def test____current____error_do_not_derive_from_AsyncBackend(
+        self,
+        action: Literal["push_backend_factory", "push_factory_hook"],
+        invalid_cls: type[Any],
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        match action:
+            case "push_backend_factory":
+                AsyncBackendFactory.push_backend_factory("mock", invalid_cls)
+            case "push_factory_hook":
+
+                def hook(name: str) -> AsyncBackend:
+                    if name == "mock":
+                        return invalid_cls()
+                    raise UnsupportedOperation
+
+                AsyncBackendFactory.push_factory_hook(hook)
+            case _:
+                assert_never(action)
+
+        mocker.patch(
+            self.CURRENT_ASYNC_LIBRARY_FUNC,
+            autospec=True,
+            return_value="mock",
+        )
+
+        # Act & Assert
+        with pytest.raises(TypeError, match=r"^.+ did not return an AsyncBackend instance$"):
+            AsyncBackendFactory.current()
+
+    @pytest.mark.parametrize("action", ["push_backend_factory", "push_factory_hook"])
+    @pytest.mark.parametrize("backend_name", list(BACKENDS))
+    def test____current____override_backend(
+        self,
+        backend_name: str,
+        action: Literal["push_backend_factory", "push_factory_hook"],
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        match action:
+            case "push_backend_factory":
+                AsyncBackendFactory.push_backend_factory(backend_name, lambda: MockBackend(mocker))
+            case "push_factory_hook":
+
+                def hook(name: str) -> AsyncBackend:
+                    if name == backend_name:
+                        return MockBackend(mocker)
+                    raise UnsupportedOperation
+
+                AsyncBackendFactory.push_factory_hook(hook)
+            case _:
+                assert_never(action)
+
+        mocker.patch(
+            self.CURRENT_ASYNC_LIBRARY_FUNC,
+            autospec=True,
+            return_value=backend_name,
+        )
+
+        # Act
+        backend = AsyncBackendFactory.current()
+
+        # Assert
+        assert not isinstance(backend, self.BACKENDS[backend_name])
         assert isinstance(backend, MockBackend)
+
+    @pytest.mark.parametrize("action", ["push_backend_factory", "push_factory_hook"])
+    @pytest.mark.parametrize("backend_name", list(BACKENDS))
+    def test____current____cache_erased_when_adding_new_hook(
+        self,
+        backend_name: str,
+        action: Literal["push_backend_factory", "push_factory_hook"],
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mocker.patch(
+            self.CURRENT_ASYNC_LIBRARY_FUNC,
+            autospec=True,
+            return_value=backend_name,
+        )
+        first_backend_instance = AsyncBackendFactory.current()
+
+        match action:
+            case "push_backend_factory":
+                AsyncBackendFactory.push_backend_factory(backend_name, lambda: MockBackend(mocker))
+            case "push_factory_hook":
+
+                def hook(name: str) -> AsyncBackend:
+                    if name == backend_name:
+                        return MockBackend(mocker)
+                    raise UnsupportedOperation
+
+                AsyncBackendFactory.push_factory_hook(hook)
+            case _:
+                assert_never(action)
+
+        # Act
+        this_backend = AsyncBackendFactory.current()
+
+        # Assert
+        assert this_backend is not first_backend_instance
+
+    def test____current____cache_erased_when_removing_installed_hook(self, mocker: MockerFixture) -> None:
+        # Arrange
+        mocker.patch(
+            self.CURRENT_ASYNC_LIBRARY_FUNC,
+            autospec=True,
+            return_value="asyncio",
+        )
+        first_backend_instance = AsyncBackendFactory.current()
+        assert isinstance(first_backend_instance, FakeAsyncIOBackend)
+
+        from easynetwork.lowlevel.std_asyncio import AsyncIOBackend as OriginalAsyncIOBackend
+
+        # Act
+        AsyncBackendFactory.remove_installed_hooks()
+        this_backend = AsyncBackendFactory.current()
+
+        # Assert
+        assert isinstance(this_backend, OriginalAsyncIOBackend)
+
+    def test____current____cache_not_erased_if_there_was_no_hook(self, mocker: MockerFixture) -> None:
+        # Arrange
+        mocker.patch(
+            self.CURRENT_ASYNC_LIBRARY_FUNC,
+            autospec=True,
+            return_value="asyncio",
+        )
+        AsyncBackendFactory.remove_installed_hooks()
+
+        from easynetwork.lowlevel.std_asyncio import AsyncIOBackend as OriginalAsyncIOBackend
+
+        first_backend_instance = AsyncBackendFactory.current()
+        assert isinstance(first_backend_instance, OriginalAsyncIOBackend)
+
+        # Act
+        AsyncBackendFactory.remove_installed_hooks()
+        this_backend = AsyncBackendFactory.current()
+
+        # Assert
+        assert this_backend is first_backend_instance

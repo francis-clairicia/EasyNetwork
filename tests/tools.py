@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import importlib
 import sys
 import time
-from collections.abc import Generator
+from collections.abc import Generator, Iterator
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias, TypeVar, assert_never, final
+
+from easynetwork.lowlevel.api_async.backend.factory import AsyncBackendFactory
 
 import pytest
 
 if TYPE_CHECKING:
+    from easynetwork.lowlevel.api_async.backend.abc import AsyncBackend
+
     from _typeshed import WriteableBuffer
 
 _T_contra = TypeVar("_T_contra", contravariant=True)
@@ -135,3 +140,13 @@ def write_data_and_extra_in_buffer(
         too_short_buffer=too_short_buffer_for_extra_data,
     )
     return complete_data_nbytes + extra_data_nbytes, extra_data[:extra_data_nbytes]
+
+
+@contextlib.contextmanager
+def temporary_backend(backend: AsyncBackend) -> Iterator[None]:
+    with contextlib.ExitStack() as stack:
+        stack.callback(AsyncBackendFactory.invalidate_backends_cache)
+        stack.callback(AsyncBackendFactory.remove_installed_hooks)
+        AsyncBackendFactory.push_backend_factory("asyncio", lambda: backend)
+        assert AsyncBackendFactory.get_backend("asyncio") is backend
+        yield

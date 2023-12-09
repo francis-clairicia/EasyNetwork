@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import concurrent.futures
 import contextvars
+from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
 from easynetwork.lowlevel.api_async.backend.futures import AsyncExecutor
 
 import pytest
 
+from .....tools import temporary_backend
 from ...._utils import partial_eq
 
 if TYPE_CHECKING:
@@ -32,8 +34,13 @@ class TestAsyncExecutor:
 
     @pytest.fixture
     @staticmethod
-    def executor(mock_backend: MagicMock, mock_stdlib_executor: MagicMock, executor_handle_contexts: bool) -> AsyncExecutor:
-        return AsyncExecutor(mock_stdlib_executor, mock_backend, handle_contexts=executor_handle_contexts)
+    def executor(
+        mock_backend: MagicMock,
+        mock_stdlib_executor: MagicMock,
+        executor_handle_contexts: bool,
+    ) -> Iterator[AsyncExecutor]:
+        with temporary_backend(mock_backend):
+            yield AsyncExecutor(mock_stdlib_executor, handle_contexts=executor_handle_contexts)
 
     @pytest.fixture(autouse=True)
     @staticmethod
@@ -42,7 +49,6 @@ class TestAsyncExecutor:
 
     async def test____dunder_init____invalid_executor(
         self,
-        mock_backend: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -50,7 +56,7 @@ class TestAsyncExecutor:
 
         # Act & Assert
         with pytest.raises(TypeError):
-            _ = AsyncExecutor(invalid_executor, mock_backend)
+            _ = AsyncExecutor(invalid_executor)
 
     async def test____run____submit_to_executor_and_wait(
         self,

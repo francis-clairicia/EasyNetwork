@@ -21,7 +21,7 @@ __all__ = [
 ]
 
 import contextlib
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Generic
 
 from ..._typevars import _RequestT, _ResponseT
@@ -35,7 +35,6 @@ if TYPE_CHECKING:
     from ssl import SSLContext as _SSLContext
 
     from ...api_async.server.handler import AsyncStreamRequestHandler
-    from ...lowlevel.api_async.backend.abc import AsyncBackend
     from ...protocol import StreamProtocol
 
 
@@ -54,7 +53,7 @@ class StandaloneTCPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
         port: int,
         protocol: StreamProtocol[_ResponseT, _RequestT],
         request_handler: AsyncStreamRequestHandler[_RequestT, _ResponseT],
-        backend: str | AsyncBackend = "asyncio",
+        backend: str = "asyncio",
         *,
         ssl: _SSLContext | None = None,
         ssl_handshake_timeout: float | None = None,
@@ -64,7 +63,6 @@ class StandaloneTCPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
         max_recv_size: int | None = None,
         log_client_connection: bool | None = None,
         logger: logging.Logger | None = None,
-        backend_kwargs: Mapping[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
         """
@@ -72,13 +70,11 @@ class StandaloneTCPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
 
         Note:
             The backend interface must be explicitly given. It defaults to ``asyncio``.
-
-            :exc:`ValueError` is raised if :data:`None` is given.
         """
-        if backend is None:
-            raise ValueError("You must explicitly give a backend name or instance")
         super().__init__(
-            AsyncTCPNetworkServer(
+            backend,
+            _utils.make_callback(
+                AsyncTCPNetworkServer,  # type: ignore[arg-type]
                 host=host,
                 port=port,
                 protocol=protocol,
@@ -91,10 +87,8 @@ class StandaloneTCPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
                 max_recv_size=max_recv_size,
                 log_client_connection=log_client_connection,
                 logger=logger,
-                backend=backend,
-                backend_kwargs=backend_kwargs,
                 **kwargs,
-            )
+            ),
         )
 
     def stop_listening(self) -> None:
@@ -106,26 +100,21 @@ class StandaloneTCPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
 
         Further calls to :meth:`is_serving` will return :data:`False`.
         """
-        if (portal := self._portal) is not None:
+        if (portal := self._portal) is not None and (server := self._server) is not None:
             with contextlib.suppress(RuntimeError):
-                portal.run_sync(self._server.stop_listening)
+                portal.run_sync(server.stop_listening)
 
     @property
     @_utils.inherit_doc(AsyncTCPNetworkServer)
     def sockets(self) -> Sequence[SocketProxy]:
-        if (portal := self._portal) is not None:
+        if (portal := self._portal) is not None and (server := self._server) is not None:
             with contextlib.suppress(RuntimeError):
-                sockets = portal.run_sync(lambda: self._server.sockets)
+                sockets = portal.run_sync(lambda: server.sockets)
                 return tuple(SocketProxy(sock, runner=portal.run_sync) for sock in sockets)
         return ()
-
-    @property
-    @_utils.inherit_doc(AsyncTCPNetworkServer)
-    def logger(self) -> logging.Logger:
-        return self._server.logger
 
     if TYPE_CHECKING:
 
         @property
-        def _server(self) -> AsyncTCPNetworkServer[_RequestT, _ResponseT]:
+        def _server(self) -> AsyncTCPNetworkServer[_RequestT, _ResponseT] | None:
             ...

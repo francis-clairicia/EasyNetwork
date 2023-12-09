@@ -67,13 +67,6 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         return mocker.patch("easynetwork.lowlevel._stream.StreamDataConsumer", return_value=mock_stream_data_consumer)
 
     @pytest.fixture(autouse=True)
-    @staticmethod
-    def mock_new_backend(mocker: MockerFixture, mock_backend: MagicMock) -> MagicMock:
-        from easynetwork.lowlevel.api_async.backend.factory import AsyncBackendFactory
-
-        return mocker.patch.object(AsyncBackendFactory, "new", return_value=mock_backend)
-
-    @pytest.fixture(autouse=True)
     @classmethod
     def local_address(
         cls,
@@ -156,18 +149,13 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_stream_data_consumer.__iter__.side_effect = lambda: mock_stream_data_consumer
         mock_stream_data_consumer.__next__.side_effect = next_side_effect
 
-    @pytest.fixture
+    @pytest_asyncio.fixture
     @staticmethod
-    def client_not_connected(
+    async def client_not_connected(
         remote_address: tuple[str, int],
-        mock_backend: MagicMock,
         mock_stream_protocol: MagicMock,
     ) -> AsyncTCPNetworkClient[Any, Any]:
-        client: AsyncTCPNetworkClient[Any, Any] = AsyncTCPNetworkClient(
-            remote_address,
-            mock_stream_protocol,
-            backend=mock_backend,
-        )
+        client: AsyncTCPNetworkClient[Any, Any] = AsyncTCPNetworkClient(remote_address, mock_stream_protocol)
         assert not client.is_connected()
         return client
 
@@ -191,7 +179,6 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_backend: MagicMock,
         mock_stream_data_consumer_cls: MagicMock,
         mock_stream_protocol: MagicMock,
-        mock_new_backend: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -207,7 +194,6 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         await client.wait_connected()
 
         # Assert
-        mock_new_backend.assert_called_once_with(None)
         mock_stream_data_consumer_cls.assert_called_once_with(mock_stream_protocol)
         mock_backend.create_tcp_connection.assert_awaited_once_with(
             *remote_address,
@@ -220,51 +206,12 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         ]
         assert isinstance(client.socket, SocketProxy)
 
-    async def test____dunder_init____backend____from_string(
-        self,
-        remote_address: tuple[str, int],
-        mock_stream_protocol: MagicMock,
-        mock_new_backend: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act
-        _ = AsyncTCPNetworkClient(
-            remote_address,
-            protocol=mock_stream_protocol,
-            backend="custom_backend",
-            backend_kwargs={"arg1": 1, "arg2": "2"},
-        )
-
-        # Assert
-        mock_new_backend.assert_called_once_with("custom_backend", arg1=1, arg2="2")
-
-    async def test____dunder_init____backend____explicit_argument(
-        self,
-        remote_address: tuple[str, int],
-        mock_stream_protocol: MagicMock,
-        mock_backend: MagicMock,
-        mock_new_backend: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act
-        _ = AsyncTCPNetworkClient(
-            remote_address,
-            protocol=mock_stream_protocol,
-            backend=mock_backend,
-        )
-
-        # Assert
-        mock_new_backend.assert_not_called()
-
     async def test____dunder_init____use_given_socket(
         self,
         mock_tcp_socket: MagicMock,
         mock_backend: MagicMock,
         mock_stream_data_consumer_cls: MagicMock,
         mock_stream_protocol: MagicMock,
-        mock_new_backend: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -274,7 +221,6 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         await client.wait_connected()
 
         # Assert
-        mock_new_backend.assert_called_once_with(None)
         mock_stream_data_consumer_cls.assert_called_once_with(mock_stream_protocol)
         mock_backend.wrap_stream_socket.assert_awaited_once_with(mock_tcp_socket)
         assert mock_tcp_socket.mock_calls == [
@@ -414,7 +360,6 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_backend: MagicMock,
         mock_stream_data_consumer_cls: MagicMock,
         mock_stream_protocol: MagicMock,
-        mock_new_backend: MagicMock,
         mock_ssl_context: MagicMock,
         mock_ssl_create_default_context: MagicMock,
         mocker: MockerFixture,
@@ -448,7 +393,6 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         await client.wait_connected()
 
         # Assert
-        mock_new_backend.assert_called_once_with(None)
         mock_stream_data_consumer_cls.assert_called_once_with(mock_stream_protocol)
         mock_ssl_create_default_context.assert_not_called()
         if use_socket:
@@ -1437,7 +1381,6 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         ssl_shared_lock: bool | None,
         mock_stream_socket_adapter: MagicMock,
         mock_stream_protocol: MagicMock,
-        mock_backend: MagicMock,
         mock_ssl_context: MagicMock,
         mocker: MockerFixture,
     ) -> None:
@@ -1448,7 +1391,6 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             ssl=mock_ssl_context,
             server_hostname="server_hostname",
             ssl_shared_lock=ssl_shared_lock,
-            backend=mock_backend,
         )
         await client.wait_connected()
 
@@ -1475,13 +1417,3 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             mock_stream_protocol.generate_chunks.assert_called_with(mocker.sentinel.packet)
             mock_stream_socket_adapter.send_all_from_iterable.assert_called()
             mock_stream_socket_adapter.send_all.assert_called_with(b"packet\n")
-
-    async def test____get_backend____default(
-        self,
-        client_connected_or_not: AsyncTCPNetworkClient[Any, Any],
-        mock_backend: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act & Assert
-        assert client_connected_or_not.get_backend() is mock_backend

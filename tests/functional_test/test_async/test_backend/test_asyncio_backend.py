@@ -26,7 +26,7 @@ class TestAsyncioBackend:
     @pytest.fixture
     @staticmethod
     def backend() -> AsyncIOBackend:
-        backend = AsyncBackendFactory.new("asyncio")
+        backend = AsyncBackendFactory.get_backend("asyncio")
         assert isinstance(backend, AsyncIOBackend)
         return backend
 
@@ -1051,7 +1051,7 @@ class TestAsyncioBackendShieldedCancellation:
     @pytest.fixture
     @staticmethod
     def backend() -> AsyncIOBackend:
-        backend = AsyncBackendFactory.new("asyncio")
+        backend = AsyncBackendFactory.get_backend("asyncio")
         assert isinstance(backend, AsyncIOBackend)
         return backend
 
