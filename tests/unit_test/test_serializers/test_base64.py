@@ -41,10 +41,15 @@ class TestBase64EncoderSerializer:
         # Arrange
 
         # Act
-        serializer: Base64EncoderSerializer[Any, Any] = Base64EncoderSerializer(mock_serializer, debug=debug_mode)
+        serializer: Base64EncoderSerializer[Any, Any] = Base64EncoderSerializer(
+            mock_serializer,
+            debug=debug_mode,
+            limit=123456789,
+        )
 
         # Assert
         assert serializer.debug is debug_mode
+        assert serializer.buffer_limit == 123456789
 
     def test____dunder_init____invalid_serializer(self, mocker: MockerFixture) -> None:
         # Arrange
