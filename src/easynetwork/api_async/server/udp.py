@@ -206,7 +206,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             server_exit_stack.callback(self.__send_locks_cache.clear)
             server_exit_stack.callback(self.__clients_cache.clear)
             await self.__request_handler.service_init(
-                await server_exit_stack.enter_async_context(contextlib.AsyncExitStack()),
+                await server_exit_stack.enter_async_context(contextlib.aclosing(contextlib.AsyncExitStack())),
                 weakref.proxy(self),
             )
             server_exit_stack.push_async_callback(self.__close_servers)

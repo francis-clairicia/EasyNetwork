@@ -82,6 +82,7 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
     async def service_init(self, exit_stack: contextlib.AsyncExitStack, server: AsyncTCPNetworkServer[str, str]) -> None:
         await super().service_init(exit_stack, server)
         self.server = server
+        assert isinstance(self.server, AsyncTCPNetworkServer)
         self.connected_clients = WeakValueDictionary()
         self.request_received = collections.defaultdict(list)
         self.request_count = collections.Counter()
@@ -171,7 +172,7 @@ class TimeoutRequestHandler(AsyncStreamRequestHandler[str, str]):
     request_timeout: float = 1.0
     timeout_on_second_yield: bool = False
 
-    async def service_init(self, exit_stack: contextlib.AsyncExitStack, server: AsyncTCPNetworkServer[str, str]) -> None:
+    async def service_init(self, exit_stack: contextlib.AsyncExitStack, server: Any) -> None:
         self.backend = current_async_backend()
 
     async def on_connection(self, client: AsyncStreamClient[str]) -> None:
@@ -203,7 +204,7 @@ class InitialHandshakeRequestHandler(AsyncStreamRequestHandler[str, str]):
     backend: AsyncBackend
     bypass_handshake: bool = False
 
-    async def service_init(self, exit_stack: contextlib.AsyncExitStack, server: AsyncTCPNetworkServer[str, str]) -> None:
+    async def service_init(self, exit_stack: contextlib.AsyncExitStack, server: Any) -> None:
         self.backend = current_async_backend()
 
     async def on_connection(self, client: AsyncStreamClient[str]) -> AsyncGenerator[None, str]:
@@ -231,7 +232,7 @@ class InitialHandshakeRequestHandler(AsyncStreamRequestHandler[str, str]):
 class RequestRefusedHandler(AsyncStreamRequestHandler[str, str]):
     refuse_after: int = 2**64
 
-    async def service_init(self, exit_stack: contextlib.AsyncExitStack, server: AsyncTCPNetworkServer[str, str]) -> None:
+    async def service_init(self, exit_stack: contextlib.AsyncExitStack, server: Any) -> None:
         self.request_count: collections.Counter[AsyncStreamClient[str]] = collections.Counter()
 
     async def on_connection(self, client: AsyncStreamClient[str]) -> None:

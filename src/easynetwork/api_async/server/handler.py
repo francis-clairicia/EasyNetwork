@@ -28,14 +28,10 @@ __all__ = [
 import contextlib
 from abc import ABCMeta, abstractmethod
 from collections.abc import AsyncGenerator, Coroutine
-from typing import TYPE_CHECKING, Any, Generic
+from typing import Any, Generic
 
 from ..._typevars import _RequestT, _ResponseT
 from ...lowlevel import socket as socket_tools, typed_attr
-
-if TYPE_CHECKING:
-    from ..server.tcp import AsyncTCPNetworkServer
-    from ..server.udp import AsyncUDPNetworkServer
 
 
 class INETClientAttribute(typed_attr.TypedAttributeSet):
@@ -137,14 +133,9 @@ class AsyncStreamRequestHandler(Generic[_RequestT, _ResponseT], metaclass=ABCMet
 
     __slots__ = ("__weakref__",)
 
-    async def service_init(
-        self,
-        exit_stack: contextlib.AsyncExitStack,
-        server: AsyncTCPNetworkServer[_RequestT, _ResponseT],
-        /,
-    ) -> None:
+    async def service_init(self, exit_stack: contextlib.AsyncExitStack, server: Any, /) -> None:
         """
-        Called at the server startup. The default implementation does nothing.
+        Called at server startup. The default implementation does nothing.
 
         Parameters:
             exit_stack: An :class:`~contextlib.AsyncExitStack` that can be used to add actions on server's tear down.
@@ -252,14 +243,9 @@ class AsyncDatagramRequestHandler(Generic[_RequestT, _ResponseT], metaclass=ABCM
 
     __slots__ = ("__weakref__",)
 
-    async def service_init(
-        self,
-        exit_stack: contextlib.AsyncExitStack,
-        server: AsyncUDPNetworkServer[_RequestT, _ResponseT],
-        /,
-    ) -> None:
+    async def service_init(self, exit_stack: contextlib.AsyncExitStack, server: Any, /) -> None:
         """
-        Called at the server startup. The default implementation does nothing.
+        Called at server startup. The default implementation does nothing.
 
         Parameters:
             exit_stack: An :class:`~contextlib.AsyncExitStack` that can be used to add actions on server's tear down.
