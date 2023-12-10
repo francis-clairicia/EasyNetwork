@@ -56,6 +56,7 @@ class MyAsyncUDPRequestHandler(AsyncDatagramRequestHandler[str, str]):
     async def service_init(self, exit_stack: contextlib.AsyncExitStack, server: AsyncUDPNetworkServer[str, str]) -> None:
         await super().service_init(exit_stack, server)
         self.server = server
+        assert isinstance(self.server, AsyncUDPNetworkServer)
         self.request_received = collections.defaultdict(list)
         self.bad_request_received = collections.defaultdict(list)
         self.created_clients = set()
@@ -158,7 +159,7 @@ class RequestRefusedHandler(AsyncDatagramRequestHandler[str, str]):
     refuse_after: int = 2**64
     bypass_refusal: bool = False
 
-    async def service_init(self, exit_stack: contextlib.AsyncExitStack, server: AsyncUDPNetworkServer[str, str]) -> None:
+    async def service_init(self, exit_stack: contextlib.AsyncExitStack, server: Any) -> None:
         self.request_count: collections.Counter[AsyncDatagramClient[str]] = collections.Counter()
 
     async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[None, str]:

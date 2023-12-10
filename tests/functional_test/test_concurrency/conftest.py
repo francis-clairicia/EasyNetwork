@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import contextlib
 import threading
 from collections.abc import AsyncGenerator, Iterator
 from typing import Literal
 
-from easynetwork.api_async.server.abc import AbstractAsyncNetworkServer
 from easynetwork.api_async.server.handler import AsyncBaseClientInterface, AsyncDatagramRequestHandler, AsyncStreamRequestHandler
 from easynetwork.api_sync.server.abc import AbstractNetworkServer
 from easynetwork.api_sync.server.tcp import StandaloneTCPNetworkServer
@@ -18,9 +16,6 @@ import pytest
 
 
 class EchoRequestHandler(AsyncStreamRequestHandler[str, str], AsyncDatagramRequestHandler[str, str]):
-    async def service_init(self, exit_stack: contextlib.AsyncExitStack, server: AbstractAsyncNetworkServer) -> None:
-        pass
-
     async def handle(self, client: AsyncBaseClientInterface[str]) -> AsyncGenerator[None, str]:
         request = yield
         await client.send_packet(request)
