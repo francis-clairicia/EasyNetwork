@@ -33,7 +33,7 @@ else:
     _ssl_module = _ssl
     del _ssl
 
-from ..._typevars import _ReceivedPacketT, _SentPacketT
+from ..._typevars import _T_ReceivedPacket, _T_SentPacket
 from ...exceptions import ClientClosedError
 from ...lowlevel import _utils, constants
 from ...lowlevel.api_async.backend.abc import CancelScope, ILock
@@ -71,7 +71,7 @@ class _SocketConnector:
         return self._result
 
 
-class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPacketT]):
+class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
     """
     An asynchronous network client interface for TCP connections.
     """
@@ -91,7 +91,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         self,
         address: tuple[str, int],
         /,
-        protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
+        protocol: StreamProtocol[_T_SentPacket, _T_ReceivedPacket],
         *,
         local_address: tuple[str, int] | None = ...,
         happy_eyeballs_delay: float | None = ...,
@@ -109,7 +109,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         self,
         socket: _socket.socket,
         /,
-        protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
+        protocol: StreamProtocol[_T_SentPacket, _T_ReceivedPacket],
         *,
         ssl: _typing_ssl.SSLContext | bool | None = ...,
         server_hostname: str | None = ...,
@@ -124,7 +124,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         self,
         __arg: tuple[str, int] | _socket.socket,
         /,
-        protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
+        protocol: StreamProtocol[_T_SentPacket, _T_ReceivedPacket],
         *,
         ssl: _typing_ssl.SSLContext | bool | None = None,
         server_hostname: str | None = None,
@@ -179,9 +179,9 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         if not isinstance(max_recv_size, int) or max_recv_size <= 0:
             raise ValueError("'max_recv_size' must be a strictly positive integer")
 
-        self.__endpoint: AsyncStreamEndpoint[_SentPacketT, _ReceivedPacketT] | None = None
+        self.__endpoint: AsyncStreamEndpoint[_T_SentPacket, _T_ReceivedPacket] | None = None
         self.__socket_proxy: SocketProxy | None = None
-        self.__protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT] = protocol
+        self.__protocol: StreamProtocol[_T_SentPacket, _T_ReceivedPacket] = protocol
 
         if ssl:
             if _ssl_module is None:
@@ -366,7 +366,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
                 return
             await self.__endpoint.aclose()
 
-    async def send_packet(self, packet: _SentPacketT) -> None:
+    async def send_packet(self, packet: _T_SentPacket) -> None:
         """
         Sends `packet` to the remote endpoint. Does not require task synchronization.
 
@@ -406,7 +406,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
                 return
             await endpoint.send_eof()
 
-    async def recv_packet(self) -> _ReceivedPacketT:
+    async def recv_packet(self) -> _T_ReceivedPacket:
         """
         Waits for a new packet to arrive from the remote endpoint. Does not require task synchronization.
 
@@ -464,7 +464,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
         address_family = endpoint.extra(INETSocketAttribute.family)
         return new_socket_address(remote_address, address_family)
 
-    async def __ensure_connected(self) -> AsyncStreamEndpoint[_SentPacketT, _ReceivedPacketT]:
+    async def __ensure_connected(self) -> AsyncStreamEndpoint[_T_SentPacket, _T_ReceivedPacket]:
         if self.__endpoint is None:
             endpoint_and_proxy = None
             if (socket_connector := self.__socket_connector) is not None:
@@ -480,7 +480,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_SentPacketT, _ReceivedPa
             raise self.__closed()
         return self.__endpoint
 
-    def __get_endpoint_sync(self) -> AsyncStreamEndpoint[_SentPacketT, _ReceivedPacketT]:
+    def __get_endpoint_sync(self) -> AsyncStreamEndpoint[_T_SentPacket, _T_ReceivedPacket]:
         if self.__endpoint is None:
             if self.__socket_connector is not None:
                 raise _utils.error_from_errno(_errno.ENOTSOCK)

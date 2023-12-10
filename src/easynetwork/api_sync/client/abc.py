@@ -22,7 +22,7 @@ from abc import ABCMeta, abstractmethod
 from collections.abc import Iterator
 from typing import TYPE_CHECKING, Generic, Self
 
-from ..._typevars import _ReceivedPacketT, _SentPacketT
+from ..._typevars import _T_ReceivedPacket, _T_SentPacket
 from ...lowlevel import _utils
 from ...lowlevel.socket import SocketAddress
 
@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from types import TracebackType
 
 
-class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=ABCMeta):
+class AbstractNetworkClient(Generic[_T_SentPacket, _T_ReceivedPacket], metaclass=ABCMeta):
     """
     The base class for a network client interface.
     """
@@ -100,7 +100,7 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
         raise NotImplementedError
 
     @abstractmethod
-    def send_packet(self, packet: _SentPacketT, *, timeout: float | None = ...) -> None:
+    def send_packet(self, packet: _T_SentPacket, *, timeout: float | None = ...) -> None:
         """
         Sends `packet` to the remote endpoint.
 
@@ -127,7 +127,7 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
         raise NotImplementedError
 
     @abstractmethod
-    def recv_packet(self, *, timeout: float | None = ...) -> _ReceivedPacketT:
+    def recv_packet(self, *, timeout: float | None = ...) -> _T_ReceivedPacket:
         """
         Waits for a new packet to arrive from the remote endpoint.
 
@@ -149,7 +149,7 @@ class AbstractNetworkClient(Generic[_SentPacketT, _ReceivedPacketT], metaclass=A
         """
         raise NotImplementedError
 
-    def iter_received_packets(self, *, timeout: float | None = 0) -> Iterator[_ReceivedPacketT]:
+    def iter_received_packets(self, *, timeout: float | None = 0) -> Iterator[_T_ReceivedPacket]:
         """
         Returns an :term:`iterator` that waits for a new packet to arrive from the remote endpoint.
 

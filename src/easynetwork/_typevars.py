@@ -17,15 +17,15 @@
 from __future__ import annotations
 
 __all__ = [
-    "_BufferT",
-    "_DTOPacketT",
-    "_PacketT",
-    "_ReceivedDTOPacketT",
-    "_ReceivedPacketT",
-    "_RequestT",
-    "_ResponseT",
-    "_SentDTOPacketT",
-    "_SentPacketT",
+    "_T_Buffer",
+    "_T_DTOPacket",
+    "_T_Packet",
+    "_T_ReceivedDTOPacket",
+    "_T_ReceivedPacket",
+    "_T_Request",
+    "_T_Response",
+    "_T_SentDTOPacket",
+    "_T_SentPacket",
 ]
 
 import typing
@@ -36,15 +36,15 @@ else:  # pragma: no cover
     # Needed for sphinx-autodoc
     WriteableBuffer = bytearray | memoryview
 
-_DTOPacketT = typing.TypeVar("_DTOPacketT")
-_SentDTOPacketT = typing.TypeVar("_SentDTOPacketT")
-_ReceivedDTOPacketT = typing.TypeVar("_ReceivedDTOPacketT")
+_T_DTOPacket = typing.TypeVar("_T_DTOPacket")
+_T_SentDTOPacket = typing.TypeVar("_T_SentDTOPacket")
+_T_ReceivedDTOPacket = typing.TypeVar("_T_ReceivedDTOPacket")
 
-_SentPacketT = typing.TypeVar("_SentPacketT")
-_ReceivedPacketT = typing.TypeVar("_ReceivedPacketT")
-_PacketT = typing.TypeVar("_PacketT")
+_T_SentPacket = typing.TypeVar("_T_SentPacket")
+_T_ReceivedPacket = typing.TypeVar("_T_ReceivedPacket")
+_T_Packet = typing.TypeVar("_T_Packet")
 
-_RequestT = typing.TypeVar("_RequestT")
-_ResponseT = typing.TypeVar("_ResponseT")
+_T_Request = typing.TypeVar("_T_Request")
+_T_Response = typing.TypeVar("_T_Response")
 
-_BufferT = typing.TypeVar("_BufferT", bound="WriteableBuffer")
+_T_Buffer = typing.TypeVar("_T_Buffer", bound="WriteableBuffer")

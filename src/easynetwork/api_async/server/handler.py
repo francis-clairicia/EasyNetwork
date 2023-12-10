@@ -30,7 +30,7 @@ from abc import ABCMeta, abstractmethod
 from collections.abc import AsyncGenerator, Coroutine
 from typing import Any, Generic
 
-from ..._typevars import _RequestT, _ResponseT
+from ..._typevars import _T_Request, _T_Response
 from ...lowlevel import socket as socket_tools, typed_attr
 
 
@@ -45,7 +45,7 @@ class INETClientAttribute(typed_attr.TypedAttributeSet):
     """the remote address to which the socket is connected, result of :meth:`socket.socket.getpeername`."""
 
 
-class AsyncBaseClientInterface(typed_attr.TypedAttributeProvider, Generic[_ResponseT], metaclass=ABCMeta):
+class AsyncBaseClientInterface(typed_attr.TypedAttributeProvider, Generic[_T_Response], metaclass=ABCMeta):
     """
     The base class for a client interface, used by request handlers.
     """
@@ -53,7 +53,7 @@ class AsyncBaseClientInterface(typed_attr.TypedAttributeProvider, Generic[_Respo
     __slots__ = ("__weakref__",)
 
     @abstractmethod
-    async def send_packet(self, packet: _ResponseT, /) -> None:
+    async def send_packet(self, packet: _T_Response, /) -> None:
         """
         Sends `packet` to the remote endpoint. Does not require task synchronization.
 
@@ -85,7 +85,7 @@ class AsyncBaseClientInterface(typed_attr.TypedAttributeProvider, Generic[_Respo
         raise NotImplementedError
 
 
-class AsyncStreamClient(AsyncBaseClientInterface[_ResponseT]):
+class AsyncStreamClient(AsyncBaseClientInterface[_T_Response]):
     """
     A client interface for stream oriented connection, used by stream request handlers.
     """
@@ -110,7 +110,7 @@ class AsyncStreamClient(AsyncBaseClientInterface[_ResponseT]):
         raise NotImplementedError
 
 
-class AsyncDatagramClient(AsyncBaseClientInterface[_ResponseT]):
+class AsyncDatagramClient(AsyncBaseClientInterface[_T_Response]):
     """
     A client interface for datagram oriented connection, used by datagram request handlers.
     """
@@ -126,7 +126,7 @@ class AsyncDatagramClient(AsyncBaseClientInterface[_ResponseT]):
         raise NotImplementedError
 
 
-class AsyncStreamRequestHandler(Generic[_RequestT, _ResponseT], metaclass=ABCMeta):
+class AsyncStreamRequestHandler(Generic[_T_Request, _T_Response], metaclass=ABCMeta):
     """
     The base class for a stream request handler, used by TCP network servers.
     """
@@ -144,7 +144,7 @@ class AsyncStreamRequestHandler(Generic[_RequestT, _ResponseT], metaclass=ABCMet
         pass
 
     @abstractmethod
-    def handle(self, client: AsyncStreamClient[_ResponseT], /) -> AsyncGenerator[None, _RequestT]:
+    def handle(self, client: AsyncStreamClient[_T_Response], /) -> AsyncGenerator[None, _T_Request]:
         """
         This function must do all the work required to service a request.
 
@@ -176,9 +176,9 @@ class AsyncStreamRequestHandler(Generic[_RequestT, _ResponseT], metaclass=ABCMet
 
     def on_connection(
         self,
-        client: AsyncStreamClient[_ResponseT],
+        client: AsyncStreamClient[_T_Response],
         /,
-    ) -> Coroutine[Any, Any, None] | AsyncGenerator[None, _RequestT]:
+    ) -> Coroutine[Any, Any, None] | AsyncGenerator[None, _T_Request]:
         """
         Called once the client is connected to perform any initialization actions required.
         The default implementation does nothing.
@@ -212,7 +212,7 @@ class AsyncStreamRequestHandler(Generic[_RequestT, _ResponseT], metaclass=ABCMet
 
         return _pass()
 
-    async def on_disconnection(self, client: AsyncStreamClient[_ResponseT], /) -> None:
+    async def on_disconnection(self, client: AsyncStreamClient[_T_Response], /) -> None:
         """
         Called once the client is disconnected to perform any clean-up actions required. The default implementation does nothing.
 
@@ -236,7 +236,7 @@ class AsyncStreamRequestHandler(Generic[_RequestT, _ResponseT], metaclass=ABCMet
         pass
 
 
-class AsyncDatagramRequestHandler(Generic[_RequestT, _ResponseT], metaclass=ABCMeta):
+class AsyncDatagramRequestHandler(Generic[_T_Request, _T_Response], metaclass=ABCMeta):
     """
     The base class for a datagram request handler, used by UDP network servers.
     """
@@ -254,7 +254,7 @@ class AsyncDatagramRequestHandler(Generic[_RequestT, _ResponseT], metaclass=ABCM
         pass
 
     @abstractmethod
-    def handle(self, client: AsyncDatagramClient[_ResponseT], /) -> AsyncGenerator[None, _RequestT]:
+    def handle(self, client: AsyncDatagramClient[_T_Response], /) -> AsyncGenerator[None, _T_Request]:
         """
         This function must do all the work required to service a request.
 

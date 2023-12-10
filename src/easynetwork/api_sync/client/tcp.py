@@ -32,7 +32,7 @@ else:
     _ssl_module = ssl
     del ssl
 
-from ..._typevars import _ReceivedPacketT, _SentPacketT
+from ..._typevars import _T_ReceivedPacket, _T_SentPacket
 from ...exceptions import ClientClosedError
 from ...lowlevel import _lock, _utils, constants
 from ...lowlevel.api_sync.endpoints.stream import StreamEndpoint
@@ -52,7 +52,7 @@ if TYPE_CHECKING:
     import ssl as _typing_ssl
 
 
-class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
+class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
     """
     A network client interface for TCP connections.
     """
@@ -69,7 +69,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
         self,
         address: tuple[str, int],
         /,
-        protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
+        protocol: StreamProtocol[_T_SentPacket, _T_ReceivedPacket],
         *,
         connect_timeout: float | None = ...,
         local_address: tuple[str, int] | None = ...,
@@ -88,7 +88,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
         self,
         socket: _socket.socket,
         /,
-        protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
+        protocol: StreamProtocol[_T_SentPacket, _T_ReceivedPacket],
         *,
         ssl: _typing_ssl.SSLContext | bool | None = ...,
         server_hostname: str | None = ...,
@@ -104,7 +104,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
         self,
         __arg: _socket.socket | tuple[str, int],
         /,
-        protocol: StreamProtocol[_SentPacketT, _ReceivedPacketT],
+        protocol: StreamProtocol[_T_SentPacket, _T_ReceivedPacket],
         *,
         ssl: _typing_ssl.SSLContext | bool | None = None,
         server_hostname: str | None = None,
@@ -287,7 +287,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
         with self.__send_lock.get():
             self.__endpoint.close()
 
-    def send_packet(self, packet: _SentPacketT, *, timeout: float | None = None) -> None:
+    def send_packet(self, packet: _T_SentPacket, *, timeout: float | None = None) -> None:
         """
         Sends `packet` to the remote endpoint. Thread-safe.
 
@@ -339,7 +339,7 @@ class TCPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
             endpoint = self.__endpoint
             endpoint.send_eof()
 
-    def recv_packet(self, *, timeout: float | None = None) -> _ReceivedPacketT:
+    def recv_packet(self, *, timeout: float | None = None) -> _T_ReceivedPacket:
         """
         Waits for a new packet to arrive from the remote endpoint. Thread-safe.
 

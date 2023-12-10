@@ -23,13 +23,13 @@ from collections.abc import Callable, Mapping
 from typing import Any, Generic, TypeGuard
 
 from .... import protocol as protocol_module
-from ...._typevars import _ReceivedPacketT, _SentPacketT
+from ...._typevars import _T_ReceivedPacket, _T_SentPacket
 from ....exceptions import DatagramProtocolParseError, UnsupportedOperation
 from ... import typed_attr
 from ..transports import abc as transports
 
 
-class DatagramEndpoint(typed_attr.TypedAttributeProvider, Generic[_SentPacketT, _ReceivedPacketT]):
+class DatagramEndpoint(typed_attr.TypedAttributeProvider, Generic[_T_SentPacket, _T_ReceivedPacket]):
     """
     A communication endpoint based on unreliable packets of data.
     """
@@ -45,7 +45,7 @@ class DatagramEndpoint(typed_attr.TypedAttributeProvider, Generic[_SentPacketT, 
     def __init__(
         self,
         transport: transports.DatagramTransport | transports.DatagramReadTransport | transports.DatagramWriteTransport,
-        protocol: protocol_module.DatagramProtocol[_SentPacketT, _ReceivedPacketT],
+        protocol: protocol_module.DatagramProtocol[_T_SentPacket, _T_ReceivedPacket],
     ) -> None:
         """
         Parameters:
@@ -61,7 +61,7 @@ class DatagramEndpoint(typed_attr.TypedAttributeProvider, Generic[_SentPacketT, 
         self.__is_read_transport: bool = isinstance(transport, transports.DatagramReadTransport)
         self.__is_write_transport: bool = isinstance(transport, transports.DatagramWriteTransport)
         self.__transport: transports.DatagramReadTransport | transports.DatagramWriteTransport = transport
-        self.__protocol: protocol_module.DatagramProtocol[_SentPacketT, _ReceivedPacketT] = protocol
+        self.__protocol: protocol_module.DatagramProtocol[_T_SentPacket, _T_ReceivedPacket] = protocol
 
     def __del__(self) -> None:  # pragma: no cover
         try:
@@ -85,7 +85,7 @@ class DatagramEndpoint(typed_attr.TypedAttributeProvider, Generic[_SentPacketT, 
         """
         self.__transport.close()
 
-    def send_packet(self, packet: _SentPacketT, *, timeout: float | None = None) -> None:
+    def send_packet(self, packet: _T_SentPacket, *, timeout: float | None = None) -> None:
         """
         Sends `packet` to the remote endpoint.
 
@@ -121,7 +121,7 @@ class DatagramEndpoint(typed_attr.TypedAttributeProvider, Generic[_SentPacketT, 
 
         transport.send(datagram, timeout)
 
-    def recv_packet(self, *, timeout: float | None = None) -> _ReceivedPacketT:
+    def recv_packet(self, *, timeout: float | None = None) -> _T_ReceivedPacket:
         """
         Waits for a new packet from the remote endpoint.
 

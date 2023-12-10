@@ -24,7 +24,7 @@ import contextlib
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Generic
 
-from ..._typevars import _RequestT, _ResponseT
+from ..._typevars import _T_Request, _T_Response
 from ...api_async.server.udp import AsyncUDPNetworkServer
 from ...lowlevel import _utils
 from ...lowlevel.socket import SocketProxy
@@ -37,7 +37,7 @@ if TYPE_CHECKING:
     from ...protocol import DatagramProtocol
 
 
-class StandaloneUDPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[_RequestT, _ResponseT]):
+class StandaloneUDPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[_T_Request, _T_Response]):
     """
     A network server for UDP communication.
 
@@ -50,8 +50,8 @@ class StandaloneUDPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
         self,
         host: str | None | Sequence[str],
         port: int,
-        protocol: DatagramProtocol[_ResponseT, _RequestT],
-        request_handler: AsyncDatagramRequestHandler[_RequestT, _ResponseT],
+        protocol: DatagramProtocol[_T_Response, _T_Request],
+        request_handler: AsyncDatagramRequestHandler[_T_Request, _T_Response],
         backend: str = "asyncio",
         *,
         reuse_port: bool = False,
@@ -90,5 +90,5 @@ class StandaloneUDPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
     if TYPE_CHECKING:
 
         @property
-        def _server(self) -> AsyncUDPNetworkServer[_RequestT, _ResponseT] | None:
+        def _server(self) -> AsyncUDPNetworkServer[_T_Request, _T_Response] | None:
             ...

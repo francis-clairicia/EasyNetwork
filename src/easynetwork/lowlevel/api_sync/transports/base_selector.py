@@ -42,7 +42,7 @@ from . import abc as transports
 if TYPE_CHECKING:
     from _typeshed import WriteableBuffer
 
-_R = TypeVar("_R")
+_T_Return = TypeVar("_T_Return")
 
 
 class WouldBlockOnRead(Exception):
@@ -99,9 +99,9 @@ class SelectorBaseTransport(transports.BaseTransport):
 
     def _retry(
         self,
-        callback: Callable[[], _R],
+        callback: Callable[[], _T_Return],
         timeout: float,
-    ) -> _R:
+    ) -> _T_Return:
         timeout = _utils.validate_timeout_delay(timeout, positive_check=True)
         retry_interval = self._retry_interval
         event: int
