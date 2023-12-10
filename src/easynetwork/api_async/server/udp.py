@@ -25,7 +25,7 @@ from collections import defaultdict, deque
 from collections.abc import AsyncGenerator, Callable, Coroutine, Iterator, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Generic, NoReturn, final
 
-from ..._typevars import _RequestT, _ResponseT
+from ..._typevars import _T_Request, _T_Response
 from ...exceptions import ClientClosedError, ServerAlreadyRunning, ServerClosedError
 from ...lowlevel import _asyncgen, _utils
 from ...lowlevel._final import runtime_final_class
@@ -41,7 +41,7 @@ if TYPE_CHECKING:
     from ...lowlevel.api_async.backend.abc import CancelScope, IEvent, ILock, Task, TaskGroup
 
 
-class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _ResponseT]):
+class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_Response]):
     """
     An asynchronous network server for UDP communication.
     """
@@ -65,8 +65,8 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         self,
         host: str | None | Sequence[str],
         port: int,
-        protocol: DatagramProtocol[_ResponseT, _RequestT],
-        request_handler: AsyncDatagramRequestHandler[_RequestT, _ResponseT],
+        protocol: DatagramProtocol[_T_Response, _T_Request],
+        request_handler: AsyncDatagramRequestHandler[_T_Request, _T_Response],
         *,
         reuse_port: bool = False,
         logger: logging.Logger | None = None,
@@ -104,10 +104,10 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         )
         self.__listeners_factory_scope: CancelScope | None = None
 
-        self.__servers: tuple[_datagram_server.AsyncDatagramServer[_RequestT, _ResponseT, tuple[Any, ...]], ...] | None
+        self.__servers: tuple[_datagram_server.AsyncDatagramServer[_T_Request, _T_Response, tuple[Any, ...]], ...] | None
         self.__servers = None
-        self.__protocol: DatagramProtocol[_ResponseT, _RequestT] = protocol
-        self.__request_handler: AsyncDatagramRequestHandler[_RequestT, _ResponseT] = request_handler
+        self.__protocol: DatagramProtocol[_T_Response, _T_Request] = protocol
+        self.__request_handler: AsyncDatagramRequestHandler[_T_Request, _T_Response] = request_handler
         self.__is_shutdown: IEvent = backend.create_event()
         self.__is_shutdown.set()
         self.__shutdown_asked: bool = False
@@ -115,11 +115,11 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         self.__mainloop_task: Task[NoReturn] | None = None
         self.__logger: logging.Logger = logger or logging.getLogger(__name__)
         self.__clients_cache: defaultdict[
-            _datagram_server.AsyncDatagramServer[_RequestT, _ResponseT, tuple[Any, ...]],
-            weakref.WeakValueDictionary[SocketAddress, _ClientAPI[_ResponseT]],
+            _datagram_server.AsyncDatagramServer[_T_Request, _T_Response, tuple[Any, ...]],
+            weakref.WeakValueDictionary[SocketAddress, _ClientAPI[_T_Response]],
         ]
         self.__send_locks_cache: defaultdict[
-            _datagram_server.AsyncDatagramServer[_RequestT, _ResponseT, tuple[Any, ...]],
+            _datagram_server.AsyncDatagramServer[_T_Request, _T_Response, tuple[Any, ...]],
             weakref.WeakValueDictionary[SocketAddress, ILock],
         ]
         self.__clients_cache = defaultdict(weakref.WeakValueDictionary)
@@ -241,7 +241,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
     async def __serve(
         self,
-        server: _datagram_server.AsyncDatagramServer[_RequestT, _ResponseT, tuple[Any, ...]],
+        server: _datagram_server.AsyncDatagramServer[_T_Request, _T_Response, tuple[Any, ...]],
         task_group: TaskGroup,
     ) -> NoReturn:
         async with contextlib.aclosing(server):
@@ -250,8 +250,8 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
     async def __datagram_received_coroutine(
         self,
         address: tuple[Any, ...],
-        server: _datagram_server.AsyncDatagramServer[_RequestT, _ResponseT, tuple[Any, ...]],
-    ) -> AsyncGenerator[None, _RequestT]:
+        server: _datagram_server.AsyncDatagramServer[_T_Request, _T_Response, tuple[Any, ...]],
+    ) -> AsyncGenerator[None, _T_Request]:
         address = new_socket_address(address, server.extra(INETSocketAttribute.family))
         with self.__suppress_and_log_remaining_exception(client_address=address):
             async with contextlib.aclosing(
@@ -262,7 +262,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
                 except StopAsyncIteration:
                     return
 
-                action: _asyncgen.AsyncGenAction[None, _RequestT]
+                action: _asyncgen.AsyncGenAction[None, _T_Request]
                 while True:
                     try:
                         action = _asyncgen.SendAction((yield))
@@ -295,7 +295,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
     def __get_client_lock(
         self,
-        server: _datagram_server.AsyncDatagramServer[_RequestT, _ResponseT, tuple[Any, ...]],
+        server: _datagram_server.AsyncDatagramServer[_T_Request, _T_Response, tuple[Any, ...]],
         address: SocketAddress,
     ) -> ILock:
         send_locks_cache = self.__send_locks_cache[server]
@@ -307,9 +307,9 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
     def __get_client(
         self,
-        server: _datagram_server.AsyncDatagramServer[_RequestT, _ResponseT, tuple[Any, ...]],
+        server: _datagram_server.AsyncDatagramServer[_T_Request, _T_Response, tuple[Any, ...]],
         address: SocketAddress,
-    ) -> _ClientAPI[_ResponseT]:
+    ) -> _ClientAPI[_T_Response]:
         clients_cache = self.__clients_cache[server]
         try:
             client = clients_cache[address]
@@ -342,7 +342,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
 @final
 @runtime_final_class
-class _ClientAPI(AsyncDatagramClient[_ResponseT]):
+class _ClientAPI(AsyncDatagramClient[_T_Response]):
     __slots__ = (
         "__server_ref",
         "__socket_proxy",
@@ -355,12 +355,12 @@ class _ClientAPI(AsyncDatagramClient[_ResponseT]):
     def __init__(
         self,
         address: SocketAddress,
-        server: _datagram_server.AsyncDatagramServer[Any, _ResponseT, Any],
+        server: _datagram_server.AsyncDatagramServer[Any, _T_Response, Any],
         send_lock: ILock,
         logger: logging.Logger,
     ) -> None:
         super().__init__()
-        self.__server_ref: weakref.ref[_datagram_server.AsyncDatagramServer[Any, _ResponseT, Any]] = weakref.ref(server)
+        self.__server_ref: weakref.ref[_datagram_server.AsyncDatagramServer[Any, _T_Response, Any]] = weakref.ref(server)
         self.__socket_proxy: SocketProxy = SocketProxy(server.extra(INETSocketAttribute.socket))
         self.__h: int | None = None
         self.__send_lock: ILock = send_lock
@@ -383,7 +383,7 @@ class _ClientAPI(AsyncDatagramClient[_ResponseT]):
     def is_closing(self) -> bool:
         return (server := self.__server_ref()) is None or server.is_closing()
 
-    async def send_packet(self, packet: _ResponseT, /) -> None:
+    async def send_packet(self, packet: _T_Response, /) -> None:
         self.__logger.debug("A datagram will be sent to %s", self.__address)
         async with self.__send_lock:
             server = self.__check_closed()
@@ -391,7 +391,7 @@ class _ClientAPI(AsyncDatagramClient[_ResponseT]):
             _utils.check_real_socket_state(self.__socket_proxy)
             self.__logger.debug("Datagram successfully sent to %s.", self.__address)
 
-    def __check_closed(self) -> _datagram_server.AsyncDatagramServer[Any, _ResponseT, Any]:
+    def __check_closed(self) -> _datagram_server.AsyncDatagramServer[Any, _T_Response, Any]:
         server = self.__server_ref()
         if server is None or server.is_closing():
             raise ClientClosedError("Closed client")

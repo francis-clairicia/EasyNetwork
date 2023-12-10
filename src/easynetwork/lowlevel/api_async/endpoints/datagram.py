@@ -22,13 +22,13 @@ from collections.abc import Callable, Mapping
 from typing import Any, Generic, TypeGuard
 
 from .... import protocol as protocol_module
-from ...._typevars import _ReceivedPacketT, _SentPacketT
+from ...._typevars import _T_ReceivedPacket, _T_SentPacket
 from ....exceptions import DatagramProtocolParseError, UnsupportedOperation
 from ... import _utils, typed_attr
 from ..transports import abc as transports
 
 
-class AsyncDatagramEndpoint(typed_attr.TypedAttributeProvider, Generic[_SentPacketT, _ReceivedPacketT]):
+class AsyncDatagramEndpoint(typed_attr.TypedAttributeProvider, Generic[_T_SentPacket, _T_ReceivedPacket]):
     """
     A communication endpoint based on unreliable packets of data.
     """
@@ -48,7 +48,7 @@ class AsyncDatagramEndpoint(typed_attr.TypedAttributeProvider, Generic[_SentPack
         transport: transports.AsyncDatagramTransport
         | transports.AsyncDatagramReadTransport
         | transports.AsyncDatagramWriteTransport,
-        protocol: protocol_module.DatagramProtocol[_SentPacketT, _ReceivedPacketT],
+        protocol: protocol_module.DatagramProtocol[_T_SentPacket, _T_ReceivedPacket],
     ) -> None:
         """
         Parameters:
@@ -64,7 +64,7 @@ class AsyncDatagramEndpoint(typed_attr.TypedAttributeProvider, Generic[_SentPack
         self.__is_read_transport: bool = isinstance(transport, transports.AsyncDatagramReadTransport)
         self.__is_write_transport: bool = isinstance(transport, transports.AsyncDatagramWriteTransport)
         self.__transport: transports.AsyncDatagramReadTransport | transports.AsyncDatagramWriteTransport = transport
-        self.__protocol: protocol_module.DatagramProtocol[_SentPacketT, _ReceivedPacketT] = protocol
+        self.__protocol: protocol_module.DatagramProtocol[_T_SentPacket, _T_ReceivedPacket] = protocol
         self.__send_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently sending data on this endpoint")
         self.__recv_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently receving data on this endpoint")
 
@@ -83,7 +83,7 @@ class AsyncDatagramEndpoint(typed_attr.TypedAttributeProvider, Generic[_SentPack
         """
         await self.__transport.aclose()
 
-    async def send_packet(self, packet: _SentPacketT) -> None:
+    async def send_packet(self, packet: _T_SentPacket) -> None:
         """
         Sends `packet` to the remote endpoint.
 
@@ -109,7 +109,7 @@ class AsyncDatagramEndpoint(typed_attr.TypedAttributeProvider, Generic[_SentPack
 
             await transport.send(datagram)
 
-    async def recv_packet(self) -> _ReceivedPacketT:
+    async def recv_packet(self) -> _T_ReceivedPacket:
         """
         Waits for a new packet from the remote endpoint.
 

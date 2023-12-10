@@ -27,7 +27,7 @@ from collections.abc import Generator
 from io import BytesIO
 from typing import IO, TYPE_CHECKING, Any, final
 
-from .._typevars import _ReceivedDTOPacketT, _SentDTOPacketT
+from .._typevars import _T_ReceivedDTOPacket, _T_SentDTOPacket
 from ..exceptions import DeserializeError, IncrementalDeserializeError
 from ..lowlevel.constants import _DEFAULT_LIMIT
 from .abc import AbstractIncrementalPacketSerializer, BufferedIncrementalPacketSerializer
@@ -37,7 +37,7 @@ if TYPE_CHECKING:
     from _typeshed import ReadableBuffer
 
 
-class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_SentDTOPacketT, _ReceivedDTOPacketT]):
+class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_T_SentDTOPacket, _T_ReceivedDTOPacket]):
     """
     Base class for stream protocols that separates sent information by a byte sequence.
     """
@@ -80,14 +80,14 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_SentDTO
         self.__debug: bool = bool(debug)
 
     @abstractmethod
-    def serialize(self, packet: _SentDTOPacketT, /) -> bytes:
+    def serialize(self, packet: _T_SentDTOPacket, /) -> bytes:
         """
         See :meth:`.AbstractPacketSerializer.serialize` documentation.
         """
         raise NotImplementedError
 
     @final
-    def incremental_serialize(self, packet: _SentDTOPacketT, /) -> Generator[bytes, None, None]:
+    def incremental_serialize(self, packet: _T_SentDTOPacket, /) -> Generator[bytes, None, None]:
         """
         Yields the data returned by :meth:`serialize` and appends `separator`.
 
@@ -115,14 +115,14 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_SentDTO
             yield separator
 
     @abstractmethod
-    def deserialize(self, data: bytes, /) -> _ReceivedDTOPacketT:
+    def deserialize(self, data: bytes, /) -> _T_ReceivedDTOPacket:
         """
         See :meth:`.AbstractPacketSerializer.deserialize` documentation.
         """
         raise NotImplementedError
 
     @final
-    def incremental_deserialize(self) -> Generator[None, bytes, tuple[_ReceivedDTOPacketT, bytes]]:
+    def incremental_deserialize(self) -> Generator[None, bytes, tuple[_T_ReceivedDTOPacket, bytes]]:
         """
         Yields until `separator` is found and calls :meth:`deserialize` **without** `separator`.
 
@@ -174,7 +174,7 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_SentDTO
         return self.__limit
 
 
-class FixedSizePacketSerializer(BufferedIncrementalPacketSerializer[_SentDTOPacketT, _ReceivedDTOPacketT, memoryview]):
+class FixedSizePacketSerializer(BufferedIncrementalPacketSerializer[_T_SentDTOPacket, _T_ReceivedDTOPacket, memoryview]):
     """
     A base class for stream protocols in which the packets are of a fixed size.
     """
@@ -200,14 +200,14 @@ class FixedSizePacketSerializer(BufferedIncrementalPacketSerializer[_SentDTOPack
         self.__debug: bool = bool(debug)
 
     @abstractmethod
-    def serialize(self, packet: _SentDTOPacketT, /) -> bytes:
+    def serialize(self, packet: _T_SentDTOPacket, /) -> bytes:
         """
         See :meth:`.AbstractPacketSerializer.serialize` documentation.
         """
         raise NotImplementedError
 
     @final
-    def incremental_serialize(self, packet: _SentDTOPacketT, /) -> Generator[bytes, None, None]:
+    def incremental_serialize(self, packet: _T_SentDTOPacket, /) -> Generator[bytes, None, None]:
         """
         Yields the data returned by :meth:`serialize`.
 
@@ -223,7 +223,7 @@ class FixedSizePacketSerializer(BufferedIncrementalPacketSerializer[_SentDTOPack
         yield data
 
     @abstractmethod
-    def deserialize(self, data: bytes | memoryview, /) -> _ReceivedDTOPacketT:
+    def deserialize(self, data: bytes | memoryview, /) -> _T_ReceivedDTOPacket:
         """
         See :meth:`.AbstractPacketSerializer.deserialize` documentation.
 
@@ -233,7 +233,7 @@ class FixedSizePacketSerializer(BufferedIncrementalPacketSerializer[_SentDTOPack
         raise NotImplementedError
 
     @final
-    def incremental_deserialize(self) -> Generator[None, bytes, tuple[_ReceivedDTOPacketT, bytes]]:
+    def incremental_deserialize(self) -> Generator[None, bytes, tuple[_T_ReceivedDTOPacket, bytes]]:
         """
         Yields until there is enough data and calls :meth:`deserialize`.
 
@@ -272,7 +272,7 @@ class FixedSizePacketSerializer(BufferedIncrementalPacketSerializer[_SentDTOPack
         self,
         buffer: memoryview,
         /,
-    ) -> Generator[int, int, tuple[_ReceivedDTOPacketT, memoryview]]:
+    ) -> Generator[int, int, tuple[_T_ReceivedDTOPacket, memoryview]]:
         """
         Yields until there is enough data and calls :meth:`deserialize`.
 
@@ -320,7 +320,7 @@ class FixedSizePacketSerializer(BufferedIncrementalPacketSerializer[_SentDTOPack
         return self.__debug
 
 
-class FileBasedPacketSerializer(BufferedIncrementalPacketSerializer[_SentDTOPacketT, _ReceivedDTOPacketT, memoryview]):
+class FileBasedPacketSerializer(BufferedIncrementalPacketSerializer[_T_SentDTOPacket, _T_ReceivedDTOPacket, memoryview]):
     """
     Base class for APIs requiring a :std:term:`file object` for serialization/deserialization.
     """
@@ -349,7 +349,7 @@ class FileBasedPacketSerializer(BufferedIncrementalPacketSerializer[_SentDTOPack
         self.__debug: bool = bool(debug)
 
     @abstractmethod
-    def dump_to_file(self, packet: _SentDTOPacketT, file: IO[bytes], /) -> None:
+    def dump_to_file(self, packet: _T_SentDTOPacket, file: IO[bytes], /) -> None:
         """
         Write the serialized `packet` to `file`.
 
@@ -360,7 +360,7 @@ class FileBasedPacketSerializer(BufferedIncrementalPacketSerializer[_SentDTOPack
         raise NotImplementedError
 
     @abstractmethod
-    def load_from_file(self, file: IO[bytes], /) -> _ReceivedDTOPacketT:
+    def load_from_file(self, file: IO[bytes], /) -> _T_ReceivedDTOPacket:
         """
         Read from `file` to deserialize the raw :term:`packet`.
 
@@ -377,7 +377,7 @@ class FileBasedPacketSerializer(BufferedIncrementalPacketSerializer[_SentDTOPack
         raise NotImplementedError
 
     @final
-    def serialize(self, packet: _SentDTOPacketT, /) -> bytes:
+    def serialize(self, packet: _T_SentDTOPacket, /) -> bytes:
         """
         Calls :meth:`dump_to_file` and returns the result.
 
@@ -391,7 +391,7 @@ class FileBasedPacketSerializer(BufferedIncrementalPacketSerializer[_SentDTOPack
             return buffer.getvalue()
 
     @final
-    def deserialize(self, data: bytes, /) -> _ReceivedDTOPacketT:
+    def deserialize(self, data: bytes, /) -> _T_ReceivedDTOPacket:
         """
         Calls :meth:`load_from_file` and returns the result.
 
@@ -405,7 +405,7 @@ class FileBasedPacketSerializer(BufferedIncrementalPacketSerializer[_SentDTOPack
         """
         with BytesIO(data) as buffer:
             try:
-                packet: _ReceivedDTOPacketT = self.load_from_file(buffer)
+                packet: _T_ReceivedDTOPacket = self.load_from_file(buffer)
             except EOFError as exc:
                 msg = "Missing data to create packet"
                 if self.debug:
@@ -426,7 +426,7 @@ class FileBasedPacketSerializer(BufferedIncrementalPacketSerializer[_SentDTOPack
         return packet
 
     @final
-    def incremental_serialize(self, packet: _SentDTOPacketT, /) -> Generator[bytes, None, None]:
+    def incremental_serialize(self, packet: _T_SentDTOPacket, /) -> Generator[bytes, None, None]:
         """
         Calls :meth:`dump_to_file` and yields the result.
 
@@ -443,7 +443,7 @@ class FileBasedPacketSerializer(BufferedIncrementalPacketSerializer[_SentDTOPack
         yield data
 
     @final
-    def incremental_deserialize(self) -> Generator[None, bytes, tuple[_ReceivedDTOPacketT, bytes]]:
+    def incremental_deserialize(self) -> Generator[None, bytes, tuple[_T_ReceivedDTOPacket, bytes]]:
         """
         Calls :meth:`load_from_file` and returns the result.
 
@@ -470,7 +470,7 @@ class FileBasedPacketSerializer(BufferedIncrementalPacketSerializer[_SentDTOPack
         self,
         buffer: memoryview,
         /,
-    ) -> Generator[None, int, tuple[_ReceivedDTOPacketT, ReadableBuffer]]:
+    ) -> Generator[None, int, tuple[_T_ReceivedDTOPacket, ReadableBuffer]]:
         """
         Calls :meth:`load_from_file` and returns the result.
 
@@ -485,7 +485,7 @@ class FileBasedPacketSerializer(BufferedIncrementalPacketSerializer[_SentDTOPack
         """
         return (yield from _wrap_generic_buffered_incremental_deserialize(buffer, self.__generic_incremental_deserialize))
 
-    def __generic_incremental_deserialize(self) -> Generator[None, ReadableBuffer, tuple[_ReceivedDTOPacketT, ReadableBuffer]]:
+    def __generic_incremental_deserialize(self) -> Generator[None, ReadableBuffer, tuple[_T_ReceivedDTOPacket, ReadableBuffer]]:
         with BytesIO((yield)) as buffer:
             initial: bool = True
             while True:
@@ -493,7 +493,7 @@ class FileBasedPacketSerializer(BufferedIncrementalPacketSerializer[_SentDTOPack
                     buffer.write((yield))
                     buffer.seek(0)
                 try:
-                    packet: _ReceivedDTOPacketT = self.load_from_file(buffer)
+                    packet: _T_ReceivedDTOPacket = self.load_from_file(buffer)
                 except EOFError:
                     continue
                 except self.__expected_errors as exc:

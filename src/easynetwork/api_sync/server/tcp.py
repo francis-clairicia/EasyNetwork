@@ -24,7 +24,7 @@ import contextlib
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Generic
 
-from ..._typevars import _RequestT, _ResponseT
+from ..._typevars import _T_Request, _T_Response
 from ...api_async.server.tcp import AsyncTCPNetworkServer
 from ...lowlevel import _utils
 from ...lowlevel.socket import SocketProxy
@@ -38,7 +38,7 @@ if TYPE_CHECKING:
     from ...protocol import StreamProtocol
 
 
-class StandaloneTCPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[_RequestT, _ResponseT]):
+class StandaloneTCPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[_T_Request, _T_Response]):
     """
     A network server for TCP connections.
 
@@ -51,8 +51,8 @@ class StandaloneTCPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
         self,
         host: str | None | Sequence[str],
         port: int,
-        protocol: StreamProtocol[_ResponseT, _RequestT],
-        request_handler: AsyncStreamRequestHandler[_RequestT, _ResponseT],
+        protocol: StreamProtocol[_T_Response, _T_Request],
+        request_handler: AsyncStreamRequestHandler[_T_Request, _T_Response],
         backend: str = "asyncio",
         *,
         ssl: _SSLContext | None = None,
@@ -116,5 +116,5 @@ class StandaloneTCPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
     if TYPE_CHECKING:
 
         @property
-        def _server(self) -> AsyncTCPNetworkServer[_RequestT, _ResponseT] | None:
+        def _server(self) -> AsyncTCPNetworkServer[_T_Request, _T_Response] | None:
             ...

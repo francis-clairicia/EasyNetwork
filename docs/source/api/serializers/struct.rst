@@ -7,7 +7,7 @@ Structure Serializer
 .. autoclass:: StructSerializer
    :members:
 
-.. autotypevar:: easynetwork.serializers.struct::_NamedTupleVar
+.. autotypevar:: easynetwork.serializers.struct::_T_NamedTuple
    :noindex:
 
 .. autoclass:: NamedTupleStructSerializer

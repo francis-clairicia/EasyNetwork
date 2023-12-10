@@ -47,7 +47,7 @@ if TYPE_CHECKING:
     from _typeshed import WriteableBuffer
 
 _P = ParamSpec("_P")
-_R = TypeVar("_R")
+_T_Return = TypeVar("_T_Return")
 
 
 def _close_stream_socket(sock: socket.socket) -> None:
@@ -235,7 +235,7 @@ class SSLStreamTransport(base_selector.SelectorStreamTransport, base_selector.Se
         # ssl.SSLSocket.shutdown() would close both read and write streams
         raise UnsupportedOperation("SSL/TLS API does not support sending EOF.")
 
-    def _try_ssl_method(self, socket_method: Callable[_P, _R], /, *args: _P.args, **kwargs: _P.kwargs) -> _R:
+    def _try_ssl_method(self, socket_method: Callable[_P, _T_Return], /, *args: _P.args, **kwargs: _P.kwargs) -> _T_Return:
         if _ssl_module is None:
             raise RuntimeError("stdlib ssl module not available")
         try:

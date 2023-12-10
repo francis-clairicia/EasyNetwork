@@ -25,7 +25,7 @@ from collections import deque
 from collections.abc import Generator, Iterator
 from typing import TYPE_CHECKING, Any, Generic, final
 
-from .._typevars import _ReceivedPacketT, _SentPacketT
+from .._typevars import _T_ReceivedPacket, _T_SentPacket
 from ..exceptions import StreamProtocolParseError
 from ..protocol import BufferedStreamReceiver, StreamProtocol
 from ._final import runtime_final_class
@@ -37,15 +37,15 @@ if TYPE_CHECKING:
 @final
 @runtime_final_class
 @Iterator.register
-class StreamDataProducer(Generic[_SentPacketT]):
+class StreamDataProducer(Generic[_T_SentPacket]):
     __slots__ = ("__p", "__g", "__q")
 
-    def __init__(self, protocol: StreamProtocol[_SentPacketT, Any]) -> None:
+    def __init__(self, protocol: StreamProtocol[_T_SentPacket, Any]) -> None:
         super().__init__()
         _check_protocol(protocol)
-        self.__p: StreamProtocol[_SentPacketT, Any] = protocol
+        self.__p: StreamProtocol[_T_SentPacket, Any] = protocol
         self.__g: Generator[bytes, None, None] | None = None
-        self.__q: deque[_SentPacketT] = deque()
+        self.__q: deque[_T_SentPacket] = deque()
 
     def __del__(self) -> None:  # pragma: no cover
         try:
@@ -63,7 +63,7 @@ class StreamDataProducer(Generic[_SentPacketT]):
 
     def __next__(self) -> bytes:
         protocol = self.__p
-        queue: deque[_SentPacketT] = self.__q
+        queue: deque[_T_SentPacket] = self.__q
         generator: Generator[bytes, None, None] | None
         while (generator := self.__g) is not None or queue:
             if generator is None:
@@ -86,7 +86,7 @@ class StreamDataProducer(Generic[_SentPacketT]):
     def pending_packets(self) -> bool:
         return self.__g is not None or bool(self.__q)
 
-    def enqueue(self, *packets: _SentPacketT) -> None:
+    def enqueue(self, *packets: _T_SentPacket) -> None:
         self.__q.extend(packets)
 
     def clear(self) -> None:
@@ -99,14 +99,14 @@ class StreamDataProducer(Generic[_SentPacketT]):
 @final
 @runtime_final_class
 @Iterator.register
-class StreamDataConsumer(Generic[_ReceivedPacketT]):
+class StreamDataConsumer(Generic[_T_ReceivedPacket]):
     __slots__ = ("__p", "__b", "__c")
 
-    def __init__(self, protocol: StreamProtocol[Any, _ReceivedPacketT]) -> None:
+    def __init__(self, protocol: StreamProtocol[Any, _T_ReceivedPacket]) -> None:
         super().__init__()
         _check_protocol(protocol)
-        self.__p: StreamProtocol[Any, _ReceivedPacketT] = protocol
-        self.__c: Generator[None, bytes, tuple[_ReceivedPacketT, bytes]] | None = None
+        self.__p: StreamProtocol[Any, _T_ReceivedPacket] = protocol
+        self.__c: Generator[None, bytes, tuple[_T_ReceivedPacket, bytes]] | None = None
         self.__b: bytes = b""
 
     def __del__(self) -> None:  # pragma: no cover
@@ -120,10 +120,10 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
         finally:
             del consumer
 
-    def __iter__(self) -> Iterator[_ReceivedPacketT]:
+    def __iter__(self) -> Iterator[_T_ReceivedPacket]:
         return self
 
-    def __next__(self) -> _ReceivedPacketT:
+    def __next__(self) -> _T_ReceivedPacket:
         chunk: bytes = self.__b
         if not chunk:
             raise StopIteration
@@ -137,7 +137,7 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
             except Exception as exc:
                 raise RuntimeError("protocol.build_packet_from_chunks() crashed") from exc
         self.__b = b""
-        packet: _ReceivedPacketT
+        packet: _T_ReceivedPacket
         remaining: bytes
         try:
             consumer.send(chunk)
@@ -178,7 +178,7 @@ class StreamDataConsumer(Generic[_ReceivedPacketT]):
 @final
 @runtime_final_class
 @Iterator.register
-class BufferedStreamDataConsumer(Generic[_ReceivedPacketT]):
+class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
     __slots__ = (
         "__buffered_receiver",
         "__buffer",
@@ -189,13 +189,13 @@ class BufferedStreamDataConsumer(Generic[_ReceivedPacketT]):
         "__consumer",
     )
 
-    def __init__(self, protocol: StreamProtocol[Any, _ReceivedPacketT], buffer_size_hint: int) -> None:
+    def __init__(self, protocol: StreamProtocol[Any, _T_ReceivedPacket], buffer_size_hint: int) -> None:
         super().__init__()
         _check_protocol(protocol)
         if not isinstance(buffer_size_hint, int) or buffer_size_hint <= 0:
             raise ValueError(f"{buffer_size_hint=!r}")
-        self.__buffered_receiver: BufferedStreamReceiver[_ReceivedPacketT, WriteableBuffer] = protocol.buffered_receiver()
-        self.__consumer: Generator[int | None, int, tuple[_ReceivedPacketT, ReadableBuffer]] | None = None
+        self.__buffered_receiver: BufferedStreamReceiver[_T_ReceivedPacket, WriteableBuffer] = protocol.buffered_receiver()
+        self.__consumer: Generator[int | None, int, tuple[_T_ReceivedPacket, ReadableBuffer]] | None = None
         self.__buffer: WriteableBuffer | None = None
         self.__buffer_view: memoryview | None = None
         self.__buffer_start: int | None = None
@@ -214,10 +214,10 @@ class BufferedStreamDataConsumer(Generic[_ReceivedPacketT]):
         finally:
             del consumer
 
-    def __iter__(self) -> Iterator[_ReceivedPacketT]:
+    def __iter__(self) -> Iterator[_T_ReceivedPacket]:
         return self
 
-    def __next__(self) -> _ReceivedPacketT:
+    def __next__(self) -> _T_ReceivedPacket:
         consumer = self.__consumer
         if consumer is None:
             raise StopIteration
@@ -233,7 +233,7 @@ class BufferedStreamDataConsumer(Generic[_ReceivedPacketT]):
         # Will be re-assigned if needed
         self.__consumer = None
 
-        packet: _ReceivedPacketT
+        packet: _T_ReceivedPacket
         remaining: ReadableBuffer
         try:
             self.__buffer_start = consumer.send(nb_updated_bytes)

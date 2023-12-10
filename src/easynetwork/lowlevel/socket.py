@@ -64,7 +64,7 @@ if TYPE_CHECKING:
     import ssl as _typing_ssl
 
 _P = ParamSpec("_P")
-_R = TypeVar("_R")
+_T_Return = TypeVar("_T_Return")
 
 
 class SocketAttribute(typed_attr.TypedAttributeSet):
@@ -378,7 +378,7 @@ class SocketProxy:
 
         return f"{s}>"
 
-    def __execute(self, func: Callable[_P, _R], /, *args: _P.args, **kwargs: _P.kwargs) -> _R:
+    def __execute(self, func: Callable[_P, _T_Return], /, *args: _P.args, **kwargs: _P.kwargs) -> _T_Return:
         with lock_ctx() if (lock_ctx := self.__lock_ctx) is not None else contextlib.nullcontext():
             if (run := self.__runner) is not None:
                 if args or kwargs:
@@ -599,7 +599,7 @@ def _cast_socket_kind(kind: int) -> int:
         return kind
 
 
-def _address_or_lookup_error(getsockaddr: Callable[[], _R]) -> _R:
+def _address_or_lookup_error(getsockaddr: Callable[[], _T_Return]) -> _T_Return:
     try:
         return getsockaddr()
     except OSError as exc:
@@ -608,7 +608,7 @@ def _address_or_lookup_error(getsockaddr: Callable[[], _R]) -> _R:
         raise TypedAttributeLookupError("address not available") from exc
 
 
-def _value_or_lookup_error(value: _R | None) -> _R:
+def _value_or_lookup_error(value: _T_Return | None) -> _T_Return:
     if value is None:
         from ..exceptions import TypedAttributeLookupError
 

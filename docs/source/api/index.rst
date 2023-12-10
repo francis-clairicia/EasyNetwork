@@ -12,4 +12,3 @@ API Reference
    protocol
    exceptions
    lowlevel/index
-   typevars

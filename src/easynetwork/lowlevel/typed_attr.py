@@ -23,8 +23,8 @@ from typing import Any, TypeVar, final, overload
 
 from ..exceptions import TypedAttributeLookupError
 
-T_Attr = TypeVar("T_Attr")
-T_Default = TypeVar("T_Default")
+_T_Attr = TypeVar("_T_Attr")
+_T_Default = TypeVar("_T_Default")
 undefined = object()
 
 
@@ -66,16 +66,16 @@ class TypedAttributeProvider:
         also be included in the returned mapping (but the wrapper may override the
         callables from the wrapped instance).
 
-        The callables should raise :exc:`TypedAttributeLookupError` if it is not possible to get the value.
+        The callables should raise :exc:`.TypedAttributeLookupError` if it is not possible to get the value.
         """
         return {}
 
     @overload
-    def extra(self, attribute: T_Attr) -> T_Attr:
+    def extra(self, attribute: _T_Attr) -> _T_Attr:
         ...
 
     @overload
-    def extra(self, attribute: T_Attr, default: T_Default) -> T_Attr | T_Default:
+    def extra(self, attribute: _T_Attr, default: _T_Default) -> _T_Attr | _T_Default:
         ...
 
     @final

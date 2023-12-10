@@ -26,7 +26,7 @@ from collections import deque
 from collections.abc import AsyncGenerator, Callable, Coroutine, Iterator, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Generic, NoReturn, final
 
-from ..._typevars import _RequestT, _ResponseT
+from ..._typevars import _T_Request, _T_Response
 from ...exceptions import ClientClosedError, ServerAlreadyRunning, ServerClosedError
 from ...lowlevel import _asyncgen, _utils, constants
 from ...lowlevel._final import runtime_final_class
@@ -53,7 +53,7 @@ if TYPE_CHECKING:
     from ...lowlevel.api_async.transports.abc import AsyncListener, AsyncStreamTransport
 
 
-class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _ResponseT]):
+class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_Response]):
     """
     An asynchronous network server for TCP connections.
     """
@@ -78,8 +78,8 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
         self,
         host: str | None | Sequence[str],
         port: int,
-        protocol: StreamProtocol[_ResponseT, _RequestT],
-        request_handler: AsyncStreamRequestHandler[_RequestT, _ResponseT],
+        protocol: StreamProtocol[_T_Response, _T_Request],
+        request_handler: AsyncStreamRequestHandler[_T_Request, _T_Response],
         *,
         ssl: _typing_ssl.SSLContext | None = None,
         ssl_handshake_timeout: float | None = None,
@@ -175,9 +175,9 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             )
         self.__listeners_factory_scope: CancelScope | None = None
 
-        self.__servers: tuple[_stream_server.AsyncStreamServer[_RequestT, _ResponseT], ...] | None = None
-        self.__protocol: StreamProtocol[_ResponseT, _RequestT] = protocol
-        self.__request_handler: AsyncStreamRequestHandler[_RequestT, _ResponseT] = request_handler
+        self.__servers: tuple[_stream_server.AsyncStreamServer[_T_Request, _T_Response], ...] | None = None
+        self.__protocol: StreamProtocol[_T_Response, _T_Request] = protocol
+        self.__request_handler: AsyncStreamRequestHandler[_T_Request, _T_Response] = request_handler
         self.__is_shutdown: IEvent = backend.create_event()
         self.__is_shutdown.set()
         self.__shutdown_asked: bool = False
@@ -320,7 +320,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
     async def __serve(
         self,
-        server: _stream_server.AsyncStreamServer[_RequestT, _ResponseT],
+        server: _stream_server.AsyncStreamServer[_T_Request, _T_Response],
         task_group: TaskGroup,
     ) -> NoReturn:
         self.__attach_server()
@@ -332,8 +332,8 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
     async def __client_coroutine(
         self,
-        lowlevel_client: _stream_server.AsyncStreamClient[_ResponseT],
-    ) -> AsyncGenerator[None, _RequestT]:
+        lowlevel_client: _stream_server.AsyncStreamClient[_T_Response],
+    ) -> AsyncGenerator[None, _T_Request]:
         async with contextlib.AsyncExitStack() as client_exit_stack:
             self.__attach_server()
             client_exit_stack.callback(self.__detach_server)
@@ -362,7 +362,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
             client_exit_stack.callback(self.__logger.log, self.__client_connection_log_level, "%s disconnected", client_address)
             client_exit_stack.push_async_callback(client._force_close)
 
-            request_handler_generator: AsyncGenerator[None, _RequestT] | None = None
+            request_handler_generator: AsyncGenerator[None, _T_Request] | None = None
             _on_connection_hook = self.__request_handler.on_connection(client)
             if isinstance(_on_connection_hook, AsyncGenerator):
                 try:
@@ -388,7 +388,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
             backend = current_async_backend()
             try:
-                action: _asyncgen.AsyncGenAction[None, _RequestT]
+                action: _asyncgen.AsyncGenAction[None, _T_Request]
                 while not client.is_closing():
                     if request_handler_generator is None:
                         request_handler_generator = self.__request_handler.handle(client)
@@ -479,7 +479,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_RequestT, _Resp
 
 @final
 @runtime_final_class
-class _ConnectedClientAPI(AsyncStreamClient[_ResponseT]):
+class _ConnectedClientAPI(AsyncStreamClient[_T_Response]):
     __slots__ = (
         "__client",
         "__closed",
@@ -492,10 +492,10 @@ class _ConnectedClientAPI(AsyncStreamClient[_ResponseT]):
     def __init__(
         self,
         address: SocketAddress,
-        client: _stream_server.AsyncStreamClient[_ResponseT],
+        client: _stream_server.AsyncStreamClient[_T_Response],
         logger: logging.Logger,
     ) -> None:
-        self.__client: _stream_server.AsyncStreamClient[_ResponseT] = client
+        self.__client: _stream_server.AsyncStreamClient[_T_Response] = client
         self.__closed: bool = False
         self.__send_lock = current_async_backend().create_lock()
         self.__logger: logging.Logger = logger
@@ -523,7 +523,7 @@ class _ConnectedClientAPI(AsyncStreamClient[_ResponseT]):
             self.__closed = True
             await self.__client.aclose()
 
-    async def send_packet(self, packet: _ResponseT, /) -> None:
+    async def send_packet(self, packet: _T_Response, /) -> None:
         self.__check_closed()
         self.__logger.debug("A response will be sent to %s", self.__address)
         async with self.__send_lock:

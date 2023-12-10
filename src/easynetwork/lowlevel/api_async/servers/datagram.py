@@ -28,7 +28,7 @@ from types import TracebackType
 from typing import Any, Generic, NoReturn, Self, TypeVar, assert_never
 
 from .... import protocol as protocol_module
-from ...._typevars import _RequestT, _ResponseT
+from ...._typevars import _T_Request, _T_Response
 from ....exceptions import DatagramProtocolParseError
 from ... import _asyncgen, _utils, typed_attr
 from ..backend.abc import AsyncBackend, ICondition, ILock, TaskGroup
@@ -36,11 +36,11 @@ from ..backend.factory import current_async_backend
 from ..transports import abc as transports
 
 _T_Address = TypeVar("_T_Address", bound=Hashable)
-_KT = TypeVar("_KT")
-_VT = TypeVar("_VT")
+_T_Key = TypeVar("_T_Key")
+_T_Value = TypeVar("_T_Value")
 
 
-class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, _ResponseT, _T_Address]):
+class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_T_Request, _T_Response, _T_Address]):
     __slots__ = (
         "__listener",
         "__protocol",
@@ -53,7 +53,7 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, 
     def __init__(
         self,
         listener: transports.AsyncDatagramListener[_T_Address],
-        protocol: protocol_module.DatagramProtocol[_ResponseT, _RequestT],
+        protocol: protocol_module.DatagramProtocol[_T_Response, _T_Request],
     ) -> None:
         if not isinstance(listener, transports.AsyncDatagramListener):
             raise TypeError(f"Expected an AsyncDatagramListener object, got {listener!r}")
@@ -61,7 +61,7 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, 
             raise TypeError(f"Expected a DatagramProtocol object, got {protocol!r}")
 
         self.__listener: transports.AsyncDatagramListener[_T_Address] = listener
-        self.__protocol: protocol_module.DatagramProtocol[_ResponseT, _RequestT] = protocol
+        self.__protocol: protocol_module.DatagramProtocol[_T_Response, _T_Request] = protocol
         self.__client_manager: _ClientManager[_T_Address] = _ClientManager(current_async_backend())
         self.__sendto_lock: ILock = current_async_backend().create_lock()
         self.__serve_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently receiving datagrams")
@@ -81,7 +81,7 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, 
         """
         await self.__listener.aclose()
 
-    async def send_packet_to(self, packet: _ResponseT, address: _T_Address) -> None:
+    async def send_packet_to(self, packet: _T_Response, address: _T_Address) -> None:
         """
         Sends `packet` to the remote endpoint `address`.
 
@@ -110,7 +110,7 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, 
 
     async def serve(
         self,
-        datagram_received_cb: Callable[[_T_Address, Self], AsyncGenerator[None, _RequestT]],
+        datagram_received_cb: Callable[[_T_Address, Self], AsyncGenerator[None, _T_Request]],
         task_group: TaskGroup,
     ) -> NoReturn:
         with self.__serve_guard:
@@ -153,7 +153,7 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, 
 
     async def __client_coroutine(
         self,
-        datagram_received_cb: Callable[[_T_Address, Self], AsyncGenerator[None, _RequestT]],
+        datagram_received_cb: Callable[[_T_Address, Self], AsyncGenerator[None, _T_Request]],
         address: _T_Address,
         task_group: TaskGroup,
     ) -> None:
@@ -190,7 +190,7 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, 
                     return
 
                 protocol = self.__protocol
-                action: _asyncgen.AsyncGenAction[None, _RequestT]
+                action: _asyncgen.AsyncGenAction[None, _T_Request]
                 while True:
                     try:
                         if not datagram_queue:
@@ -220,7 +220,7 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, 
 
     def __enqueue_task_at_end(
         self,
-        datagram_received_cb: Callable[[_T_Address, Self], AsyncGenerator[None, _RequestT]],
+        datagram_received_cb: Callable[[_T_Address, Self], AsyncGenerator[None, _T_Request]],
         address: _T_Address,
         task_group: TaskGroup,
         datagram_queue: deque[bytes],
@@ -332,25 +332,27 @@ class _ClientManager(Generic[_T_Address]):
         raise _utils.exception_with_notes(RuntimeError(msg), note)
 
 
-class _TemporaryValue(Generic[_KT, _VT]):
+class _TemporaryValue(Generic[_T_Key, _T_Value]):
     __slots__ = ("__values", "__counter", "__must_delete_value")
 
-    def __init__(self, value_factory: Callable[[], _VT], must_delete_value: Callable[[_VT], bool] | None = None) -> None:
+    def __init__(
+        self, value_factory: Callable[[], _T_Value], must_delete_value: Callable[[_T_Value], bool] | None = None
+    ) -> None:
         super().__init__()
 
         if must_delete_value is None:
             must_delete_value = lambda _: True
 
-        self.__values: defaultdict[_KT, _VT] = defaultdict(value_factory)
-        self.__counter: Counter[_KT] = Counter()
-        self.__must_delete_value: Callable[[_VT], bool] = must_delete_value
+        self.__values: defaultdict[_T_Key, _T_Value] = defaultdict(value_factory)
+        self.__counter: Counter[_T_Key] = Counter()
+        self.__must_delete_value: Callable[[_T_Value], bool] = must_delete_value
 
-    def __contains__(self, obj: _KT, /) -> bool:  # pragma: no cover  # This method exists for testing purposes
+    def __contains__(self, obj: _T_Key, /) -> bool:  # pragma: no cover  # This method exists for testing purposes
         return obj in self.__values
 
     @contextlib.contextmanager
-    def get(self, key: _KT) -> Iterator[_VT]:
-        value: _VT = self.__values[key]
+    def get(self, key: _T_Key) -> Iterator[_T_Value]:
+        value: _T_Value = self.__values[key]
         self.__counter[key] += 1
         try:
             yield value

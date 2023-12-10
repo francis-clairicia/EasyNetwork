@@ -23,14 +23,14 @@ from collections.abc import AsyncGenerator, Callable, Mapping
 from typing import Any, Generic, NoReturn, Self
 
 from .... import protocol as protocol_module
-from ...._typevars import _RequestT, _ResponseT
+from ...._typevars import _T_Request, _T_Response
 from ....exceptions import UnsupportedOperation
 from ... import _asyncgen, _stream, _utils, typed_attr
 from ..backend.abc import TaskGroup
 from ..transports import abc as transports, utils as transports_utils
 
 
-class AsyncStreamClient(typed_attr.TypedAttributeProvider, Generic[_ResponseT]):
+class AsyncStreamClient(typed_attr.TypedAttributeProvider, Generic[_T_Response]):
     __slots__ = (
         "__transport",
         "__producer",
@@ -38,11 +38,13 @@ class AsyncStreamClient(typed_attr.TypedAttributeProvider, Generic[_ResponseT]):
         "__weakref__",
     )
 
-    def __init__(self, transport: transports.AsyncStreamWriteTransport, producer: _stream.StreamDataProducer[_ResponseT]) -> None:
+    def __init__(
+        self, transport: transports.AsyncStreamWriteTransport, producer: _stream.StreamDataProducer[_T_Response]
+    ) -> None:
         super().__init__()
 
         self.__transport: transports.AsyncStreamWriteTransport = transport
-        self.__producer: _stream.StreamDataProducer[_ResponseT] = producer
+        self.__producer: _stream.StreamDataProducer[_T_Response] = producer
         self.__send_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently sending data on this endpoint")
 
     def is_closing(self) -> bool:
@@ -61,7 +63,7 @@ class AsyncStreamClient(typed_attr.TypedAttributeProvider, Generic[_ResponseT]):
         await self.__transport.aclose()
         self.__producer.clear()
 
-    async def send_packet(self, packet: _ResponseT) -> None:
+    async def send_packet(self, packet: _T_Response) -> None:
         """
         Sends `packet` to the remote endpoint.
 
@@ -85,7 +87,7 @@ class AsyncStreamClient(typed_attr.TypedAttributeProvider, Generic[_ResponseT]):
         return self.__transport.extra_attributes
 
 
-class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, _ResponseT]):
+class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_T_Request, _T_Response]):
     __slots__ = (
         "__listener",
         "__protocol",
@@ -97,7 +99,7 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, _R
     def __init__(
         self,
         listener: transports.AsyncListener[transports.AsyncStreamTransport],
-        protocol: protocol_module.StreamProtocol[_ResponseT, _RequestT],
+        protocol: protocol_module.StreamProtocol[_T_Response, _T_Request],
         max_recv_size: int,
     ) -> None:
         if not isinstance(listener, transports.AsyncListener):
@@ -108,7 +110,7 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, _R
             raise ValueError("'max_recv_size' must be a strictly positive integer")
 
         self.__listener: transports.AsyncListener[transports.AsyncStreamTransport] = listener
-        self.__protocol: protocol_module.StreamProtocol[_ResponseT, _RequestT] = protocol
+        self.__protocol: protocol_module.StreamProtocol[_T_Response, _T_Request] = protocol
         self.__max_recv_size: int = max_recv_size
         self.__serve_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently accepting new connections")
 
@@ -129,7 +131,7 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, _R
 
     async def serve(
         self,
-        client_connected_cb: Callable[[AsyncStreamClient[_ResponseT]], AsyncGenerator[None, _RequestT]],
+        client_connected_cb: Callable[[AsyncStreamClient[_T_Response]], AsyncGenerator[None, _T_Request]],
         task_group: TaskGroup,
     ) -> NoReturn:
         with self.__serve_guard:
@@ -138,7 +140,7 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, _R
 
     async def __client_coroutine(
         self,
-        client_connected_cb: Callable[[AsyncStreamClient[_ResponseT]], AsyncGenerator[None, _RequestT]],
+        client_connected_cb: Callable[[AsyncStreamClient[_T_Response]], AsyncGenerator[None, _T_Request]],
         transport: transports.AsyncStreamTransport,
     ) -> None:
         if not isinstance(transport, transports.AsyncStreamTransport):
@@ -148,9 +150,9 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, _R
             client_exit_stack.push_async_callback(transports_utils.aclose_forcefully, transport)
 
             producer = _stream.StreamDataProducer(self.__protocol)
-            consumer: _stream.StreamDataConsumer[_RequestT] | _stream.BufferedStreamDataConsumer[_RequestT]
+            consumer: _stream.StreamDataConsumer[_T_Request] | _stream.BufferedStreamDataConsumer[_T_Request]
 
-            request_receiver: _RequestReceiver[_RequestT] | _BufferedRequestReceiver[_RequestT]
+            request_receiver: _RequestReceiver[_T_Request] | _BufferedRequestReceiver[_T_Request]
             try:
                 if not isinstance(transport, transports.AsyncBufferedStreamReadTransport):
                     raise UnsupportedOperation
@@ -188,26 +190,26 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_RequestT, _R
         return self.__listener.extra_attributes
 
 
-class _RequestReceiver(Generic[_RequestT]):
+class _RequestReceiver(Generic[_T_Request]):
     __slots__ = ("__consumer", "__transport", "__max_recv_size")
 
     def __init__(
         self,
         transport: transports.AsyncStreamReadTransport,
-        consumer: _stream.StreamDataConsumer[_RequestT],
+        consumer: _stream.StreamDataConsumer[_T_Request],
         max_recv_size: int,
     ) -> None:
         assert max_recv_size > 0, f"{max_recv_size=}"  # nosec assert_used
         self.__transport: transports.AsyncStreamReadTransport = transport
-        self.__consumer: _stream.StreamDataConsumer[_RequestT] = consumer
+        self.__consumer: _stream.StreamDataConsumer[_T_Request] = consumer
         self.__max_recv_size: int = max_recv_size
 
     def __aiter__(self) -> Self:
         return self
 
-    async def __anext__(self) -> _asyncgen.AsyncGenAction[None, _RequestT]:
+    async def __anext__(self) -> _asyncgen.AsyncGenAction[None, _T_Request]:
         transport: transports.AsyncStreamReadTransport = self.__transport
-        consumer: _stream.StreamDataConsumer[_RequestT] = self.__consumer
+        consumer: _stream.StreamDataConsumer[_T_Request] = self.__consumer
         bufsize: int = self.__max_recv_size
         try:
             while not transport.is_closing():
@@ -225,23 +227,23 @@ class _RequestReceiver(Generic[_RequestT]):
         raise StopAsyncIteration
 
 
-class _BufferedRequestReceiver(Generic[_RequestT]):
+class _BufferedRequestReceiver(Generic[_T_Request]):
     __slots__ = ("__consumer", "__transport")
 
     def __init__(
         self,
         transport: transports.AsyncBufferedStreamReadTransport,
-        consumer: _stream.BufferedStreamDataConsumer[_RequestT],
+        consumer: _stream.BufferedStreamDataConsumer[_T_Request],
     ) -> None:
         self.__transport: transports.AsyncBufferedStreamReadTransport = transport
-        self.__consumer: _stream.BufferedStreamDataConsumer[_RequestT] = consumer
+        self.__consumer: _stream.BufferedStreamDataConsumer[_T_Request] = consumer
 
     def __aiter__(self) -> Self:
         return self
 
-    async def __anext__(self) -> _asyncgen.AsyncGenAction[None, _RequestT]:
+    async def __anext__(self) -> _asyncgen.AsyncGenAction[None, _T_Request]:
         transport: transports.AsyncBufferedStreamReadTransport = self.__transport
-        consumer: _stream.BufferedStreamDataConsumer[_RequestT] = self.__consumer
+        consumer: _stream.BufferedStreamDataConsumer[_T_Request] = self.__consumer
         try:
             while not transport.is_closing():
                 try:

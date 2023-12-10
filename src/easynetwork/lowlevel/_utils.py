@@ -66,11 +66,11 @@ if TYPE_CHECKING:
     from .socket import ISocket, SupportsSocketOptions
 
 _P = ParamSpec("_P")
-_R = TypeVar("_R")
+_T_Return = TypeVar("_T_Return")
 _T_Arg = TypeVar("_T_Arg")
 
-_ExcType = TypeVar("_ExcType", bound=BaseException)
-_FuncType = TypeVar("_FuncType", bound=Callable[..., Any])
+_T_Exception = TypeVar("_T_Exception", bound=BaseException)
+_T_Func = TypeVar("_T_Func", bound=Callable[..., Any])
 
 
 def replace_kwargs(kwargs: dict[str, Any], keys: dict[str, str]) -> None:
@@ -85,21 +85,21 @@ def replace_kwargs(kwargs: dict[str, Any], keys: dict[str, str]) -> None:
             pass
 
 
-def make_callback(func: Callable[_P, _R], /, *args: _P.args, **kwargs: _P.kwargs) -> Callable[[], _R]:
+def make_callback(func: Callable[_P, _T_Return], /, *args: _P.args, **kwargs: _P.kwargs) -> Callable[[], _T_Return]:
     return functools.partial(func, *args, **kwargs)
 
 
-def prepend_argument(arg: _T_Arg) -> Callable[[Callable[Concatenate[_T_Arg, _P], _R]], Callable[_P, _R]]:
-    def decorator(func: Callable[Concatenate[_T_Arg, _P], _R], /) -> Callable[_P, _R]:
+def prepend_argument(arg: _T_Arg) -> Callable[[Callable[Concatenate[_T_Arg, _P], _T_Return]], Callable[_P, _T_Return]]:
+    def decorator(func: Callable[Concatenate[_T_Arg, _P], _T_Return], /) -> Callable[_P, _T_Return]:
         return functools.partial(func, arg)
 
     return decorator
 
 
-def inherit_doc(base_cls: type[Any]) -> Callable[[_FuncType], _FuncType]:
+def inherit_doc(base_cls: type[Any]) -> Callable[[_T_Func], _T_Func]:
     assert isinstance(base_cls, type)  # nosec assert_used
 
-    def decorator(dest_func: _FuncType) -> _FuncType:
+    def decorator(dest_func: _T_Func) -> _T_Func:
         ref_func: Any = getattr(base_cls, dest_func.__name__)
         dest_func.__doc__ = ref_func.__doc__
         return dest_func
@@ -240,7 +240,7 @@ def set_reuseport(sock: SupportsSocketOptions) -> None:
             raise ValueError("reuse_port not supported by socket module, SO_REUSEPORT defined but not implemented.") from None
 
 
-def exception_with_notes(exc: _ExcType, notes: str | Iterable[str]) -> _ExcType:
+def exception_with_notes(exc: _T_Exception, notes: str | Iterable[str]) -> _T_Exception:
     if isinstance(notes, str):
         notes = (notes,)
     for note in notes:
@@ -248,7 +248,7 @@ def exception_with_notes(exc: _ExcType, notes: str | Iterable[str]) -> _ExcType:
     return exc
 
 
-def remove_traceback_frames_in_place(exc: _ExcType, n: int) -> _ExcType:
+def remove_traceback_frames_in_place(exc: _T_Exception, n: int) -> _T_Exception:
     tb = exc.__traceback__
     for _ in range(n):
         if tb is None:

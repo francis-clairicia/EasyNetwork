@@ -23,7 +23,7 @@ import socket as _socket
 from collections.abc import Iterator
 from typing import Any, final, overload
 
-from ..._typevars import _ReceivedPacketT, _SentPacketT
+from ..._typevars import _T_ReceivedPacket, _T_SentPacket
 from ...exceptions import ClientClosedError
 from ...lowlevel import _lock, _utils, constants
 from ...lowlevel.api_sync.endpoints.datagram import DatagramEndpoint
@@ -33,7 +33,7 @@ from ...protocol import DatagramProtocol
 from .abc import AbstractNetworkClient
 
 
-class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
+class UDPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
     """
     A network client interface for UDP communication.
     """
@@ -50,7 +50,7 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
         self,
         address: tuple[str, int],
         /,
-        protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
+        protocol: DatagramProtocol[_T_SentPacket, _T_ReceivedPacket],
         *,
         local_address: tuple[str, int] | None = ...,
         family: int = ...,
@@ -64,7 +64,7 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
         self,
         socket: _socket.socket,
         /,
-        protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
+        protocol: DatagramProtocol[_T_SentPacket, _T_ReceivedPacket],
         *,
         retry_interval: float = ...,
     ) -> None:
@@ -74,7 +74,7 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
         self,
         __arg: _socket.socket | tuple[str, int],
         /,
-        protocol: DatagramProtocol[_SentPacketT, _ReceivedPacketT],
+        protocol: DatagramProtocol[_T_SentPacket, _T_ReceivedPacket],
         *,
         retry_interval: float = 1.0,
         **kwargs: Any,
@@ -128,7 +128,7 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
         self.__send_lock = _lock.ForkSafeLock()
         self.__receive_lock = _lock.ForkSafeLock()
         try:
-            self.__endpoint: DatagramEndpoint[_SentPacketT, _ReceivedPacketT] = DatagramEndpoint(transport, protocol)
+            self.__endpoint: DatagramEndpoint[_T_SentPacket, _T_ReceivedPacket] = DatagramEndpoint(transport, protocol)
             self.__socket_proxy = SocketProxy(transport.extra(INETSocketAttribute.socket), lock=self.__send_lock.get)
         except BaseException:
             transport.close()
@@ -202,7 +202,7 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
             address_family = endpoint.extra(INETSocketAttribute.family)
             return new_socket_address(remote_address, address_family)
 
-    def send_packet(self, packet: _SentPacketT, *, timeout: float | None = None) -> None:
+    def send_packet(self, packet: _T_SentPacket, *, timeout: float | None = None) -> None:
         """
         Sends `packet` to the remote endpoint. Thread-safe.
 
@@ -235,7 +235,7 @@ class UDPNetworkClient(AbstractNetworkClient[_SentPacketT, _ReceivedPacketT]):
                 endpoint.send_packet(packet, timeout=timeout)
                 _utils.check_real_socket_state(endpoint.extra(INETSocketAttribute.socket))
 
-    def recv_packet(self, *, timeout: float | None = None) -> _ReceivedPacketT:
+    def recv_packet(self, *, timeout: float | None = None) -> _T_ReceivedPacket:
         """
         Waits for a new packet from the remote endpoint. Thread-safe.
 
