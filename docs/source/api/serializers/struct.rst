@@ -4,15 +4,19 @@ Structure Serializer
 
 .. currentmodule:: easynetwork.serializers
 
-Serializers that use the :mod:`struct` module.
-
-There is a base class :class:`AbstractStructSerializer` to easily manipulate structured data.
-
-.. autoclass:: AbstractStructSerializer
+.. autoclass:: StructSerializer
    :members:
 
 .. autotypevar:: easynetwork.serializers.struct::_NamedTupleVar
    :noindex:
 
 .. autoclass:: NamedTupleStructSerializer
+   :members:
+
+Abstract Structure Interface
+============================
+
+.. currentmodule:: easynetwork.serializers.struct
+
+.. autoclass:: AbstractStructSerializer
    :members:

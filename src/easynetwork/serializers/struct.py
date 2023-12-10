@@ -16,7 +16,7 @@
 
 from __future__ import annotations
 
-__all__ = ["AbstractStructSerializer", "NamedTupleStructSerializer"]
+__all__ = ["NamedTupleStructSerializer", "StructSerializer"]
 
 from abc import abstractmethod
 from collections.abc import Iterable
@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar, final
 
 from .._typevars import _ReceivedDTOPacketT, _SentDTOPacketT
 from ..exceptions import DeserializeError
+from ..lowlevel import _utils
 from .base_stream import FixedSizePacketSerializer
 
 if TYPE_CHECKING:
@@ -41,7 +42,7 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_SentDTOPacketT, _Recei
 
     To use the serializer directly without additional layers, it is possible to create a subclass with the minimal requirements::
 
-        >>> class StructSerializer(AbstractStructSerializer):
+        >>> class MyStructSerializer(AbstractStructSerializer):
         ...     __slots__ = ()
         ...     def iter_values(self, packet):
         ...         return packet
@@ -51,7 +52,7 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_SentDTOPacketT, _Recei
 
     And then::
 
-        >>> s = StructSerializer(">ii")
+        >>> s = MyStructSerializer(">ii")
         >>> data = s.serialize((10, 20))
         >>> data
         b'\x00\x00\x00\n\x00\x00\x00\x14'
@@ -63,12 +64,16 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_SentDTOPacketT, _Recei
     Note:
         If the endianness is not specified, the network byte-order is used::
 
-            >>> s = StructSerializer("qq")
+            >>> s = MyStructSerializer("qq")
             >>> s.struct.format
             '!qq'
 
     See Also:
-        The :class:`.NamedTupleStructSerializer` class.
+        :class:`.StructSerializer`
+            Default implementation without additional layers.
+
+        :class:`.NamedTupleStructSerializer`
+            Specialization for named tuple instances.
     """
 
     __slots__ = ("__s", "__error_cls")
@@ -153,7 +158,6 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_SentDTOPacketT, _Recei
 
         Raises:
             DeserializeError: A :class:`struct.error` have been raised.
-            DeserializeError: :meth:`from_tuple` crashed.
 
         Returns:
             the deserialized Python object.
@@ -165,22 +169,49 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_SentDTOPacketT, _Recei
             if self.debug:
                 raise DeserializeError(msg, error_info={"data": data}) from exc
             raise DeserializeError(msg) from exc
-        try:
-            return self.from_tuple(packet_tuple)
-        except Exception as exc:
-            msg = f"Error when building packet from unpacked struct value: {exc}"
-            if self.debug:
-                raise DeserializeError(
-                    msg,
-                    error_info={"unpacked_struct": packet_tuple},
-                ) from exc
-            raise DeserializeError(msg) from exc
+        return self.from_tuple(packet_tuple)
 
     @property
     @final
     def struct(self) -> _typing_struct.Struct:
         """The underlying :class:`struct.Struct` instance. Read-only attribute."""
         return self.__s
+
+
+class StructSerializer(AbstractStructSerializer[tuple[Any, ...], tuple[Any, ...]]):
+    r"""
+    Generic class to handle a :class:`tuple` of data with a :class:`struct.Struct` object.
+
+    Example:
+
+        >>> s = StructSerializer(">ii")
+        >>> data = s.serialize((10, 20))
+        >>> data
+        b'\x00\x00\x00\n\x00\x00\x00\x14'
+        >>> s.deserialize(data)
+        (10, 20)
+
+    Note:
+        If the endianness is not specified, the network byte-order is used::
+
+            >>> s = StructSerializer("qq")
+            >>> s.struct.format
+            '!qq'
+    """
+
+    __slots__ = ()
+
+    @final
+    @_utils.inherit_doc(AbstractStructSerializer)
+    def iter_values(self, packet: tuple[Any, ...], /) -> tuple[Any, ...]:
+        if not isinstance(packet, tuple):
+            raise TypeError(f"Expected a tuple instance, got {packet!r}")
+        return packet
+
+    @final
+    @_utils.inherit_doc(AbstractStructSerializer)
+    def from_tuple(self, packet_tuple: tuple[Any, ...], /) -> tuple[Any, ...]:
+        return packet_tuple
 
 
 _NamedTupleVar = TypeVar("_NamedTupleVar", bound=NamedTuple)
@@ -213,6 +244,13 @@ class NamedTupleStructSerializer(AbstractStructSerializer[_NamedTupleVar, _Named
         b'\x00\x00\x00\n\x00\x00\x00\x14'
         >>> s.deserialize(data)
         Point(x=10, y=20)
+
+    Note:
+        If the endianness is not specified, the network byte-order is used::
+
+            >>> s = NamedTupleStructSerializer(Point, {"x": "i", "y": "i"})
+            >>> s.struct.format
+            '!ii'
     """
 
     __slots__ = ("__namedtuple_cls", "__string_fields", "__encoding", "__unicode_errors", "__strip_trailing_nul")
@@ -345,7 +383,16 @@ class NamedTupleStructSerializer(AbstractStructSerializer[_NamedTupleVar, _Named
                 to_replace = string_fields
             if (encoding := self.__encoding) is not None:
                 unicode_errors: str = self.__unicode_errors
-                to_replace = {field: value.decode(encoding, unicode_errors) for field, value in string_fields.items()}
+                try:
+                    to_replace = {field: value.decode(encoding, unicode_errors) for field, value in string_fields.items()}
+                except UnicodeError as exc:
+                    msg = f"UnicodeError when building packet from unpacked struct value: {exc}"
+                    if self.debug:
+                        raise DeserializeError(
+                            msg,
+                            error_info={"unpacked_struct": packet_tuple},
+                        ) from exc
+                    raise DeserializeError(msg) from exc
             if to_replace is not None:
                 p = p._replace(**to_replace)
         return p
