@@ -318,6 +318,14 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[Any, Any]):
         """
         return self.__debug
 
+    @property
+    @final
+    def buffer_limit(self) -> int:
+        """
+        Maximum buffer size. Read-only attribute.
+        """
+        return self.__limit
+
 
 class _JSONParser:
     _JSON_VALUE_BYTES: frozenset[int] = frozenset(bytes(string.digits + string.ascii_letters + string.punctuation, "ascii"))

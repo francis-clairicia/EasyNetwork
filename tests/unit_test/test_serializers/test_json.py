@@ -110,10 +110,11 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         # Arrange
 
         # Act
-        serializer = JSONSerializer(debug=debug_mode)
+        serializer = JSONSerializer(debug=debug_mode, limit=123456789)
 
         # Assert
         assert serializer.debug is debug_mode
+        assert serializer.buffer_limit == 123456789
 
     def test____dunder_init____with_encoder_config(
         self,

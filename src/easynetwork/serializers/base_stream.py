@@ -165,6 +165,14 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_SentDTO
         """
         return self.__debug
 
+    @property
+    @final
+    def buffer_limit(self) -> int:
+        """
+        Maximum buffer size. Read-only attribute.
+        """
+        return self.__limit
+
 
 class FixedSizePacketSerializer(BufferedIncrementalPacketSerializer[_SentDTOPacketT, _ReceivedDTOPacketT, memoryview]):
     """

@@ -39,10 +39,16 @@ class TestEncryptorSerializer:
         # Arrange
 
         # Act
-        serializer: EncryptorSerializer[Any, Any] = EncryptorSerializer(mock_serializer, "key", debug=debug_mode)
+        serializer: EncryptorSerializer[Any, Any] = EncryptorSerializer(
+            mock_serializer,
+            "key",
+            debug=debug_mode,
+            limit=123456789,
+        )
 
         # Assert
         assert serializer.debug is debug_mode
+        assert serializer.buffer_limit == 123456789
 
     def test____dunder_init____invalid_serializer(self, mocker: MockerFixture) -> None:
         # Arrange

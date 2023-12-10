@@ -59,6 +59,7 @@ class TestStringLineSerializer:
         assert serializer.encoding == "ascii"
         assert serializer.unicode_errors == "strict"
         assert serializer.debug is False
+        assert serializer.buffer_limit > 0
 
     @pytest.mark.parametrize("encoding", ["ascii", "utf-8"], indirect=True)
     @pytest.mark.parametrize("unicode_errors", ["strict", "ignore", "replace"], indirect=True)
@@ -72,13 +73,20 @@ class TestStringLineSerializer:
         # Arrange
 
         # Act
-        serializer = StringLineSerializer(newline, encoding=encoding, unicode_errors=unicode_errors, debug=debug_mode)
+        serializer = StringLineSerializer(
+            newline,
+            encoding=encoding,
+            unicode_errors=unicode_errors,
+            debug=debug_mode,
+            limit=123456789,
+        )
 
         # Assert
         assert serializer.separator == _NEWLINES[newline]
         assert serializer.encoding == encoding
         assert serializer.unicode_errors == unicode_errors
         assert serializer.debug is debug_mode
+        assert serializer.buffer_limit == 123456789
 
     def test____dunder_init____invalid_newline_value(
         self,

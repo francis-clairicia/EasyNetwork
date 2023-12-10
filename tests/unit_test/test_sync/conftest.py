@@ -8,10 +8,10 @@ if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
 
-@pytest.fixture(scope="module", autouse=True)
-def dummy_lock_cls(module_mocker: MockerFixture) -> Any:
+@pytest.fixture(autouse=True)
+def dummy_lock_cls(mocker: MockerFixture) -> Any:
     from .._utils import DummyLock
 
-    module_mocker.patch("threading.Lock", new=DummyLock)
-    module_mocker.patch("threading.RLock", new=DummyLock)
+    mocker.patch("threading.Lock", new=DummyLock)
+    mocker.patch("threading.RLock", new=DummyLock)
     return DummyLock

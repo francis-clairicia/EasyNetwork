@@ -177,11 +177,12 @@ class TestAutoSeparatedPacketSerializer:
         # Arrange
 
         # Act
-        serializer = _AutoSeparatedPacketSerializerForTest(separator=separator, debug=debug_mode)
+        serializer = _AutoSeparatedPacketSerializerForTest(separator=separator, debug=debug_mode, limit=123456789)
 
         # Assert
         assert serializer.separator == separator
         assert serializer.debug is debug_mode
+        assert serializer.buffer_limit == 123456789
 
     def test____dunder_init____empty_separator_bytes(self) -> None:
         # Arrange
