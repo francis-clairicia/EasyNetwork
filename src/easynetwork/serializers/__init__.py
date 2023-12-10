@@ -17,7 +17,6 @@
 from __future__ import annotations
 
 __all__ = [
-    "AbstractStructSerializer",
     "CBORDecoderConfig",
     "CBOREncoderConfig",
     "CBORSerializer",
@@ -31,6 +30,7 @@ __all__ = [
     "PickleSerializer",
     "PicklerConfig",
     "StringLineSerializer",
+    "StructSerializer",
     "UnpicklerConfig",
 ]
 

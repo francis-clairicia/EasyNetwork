@@ -5,7 +5,12 @@ from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, final
 
 from easynetwork.exceptions import DeserializeError
-from easynetwork.serializers.struct import _ENDIANNESS_CHARACTERS, AbstractStructSerializer, NamedTupleStructSerializer
+from easynetwork.serializers.struct import (
+    _ENDIANNESS_CHARACTERS,
+    AbstractStructSerializer,
+    NamedTupleStructSerializer,
+    StructSerializer,
+)
 
 import pytest
 
@@ -147,34 +152,6 @@ class TestAbstractStructSerializer(BaseTestStructBasedSerializer):
         assert exception.__cause__ is mock_struct_unpack.side_effect
         if debug_mode:
             assert exception.error_info == {"data": mocker.sentinel.data}
-        else:
-            assert exception.error_info is None
-
-    def test____deserialize____translate_any_exception_raised_by_from_tuple_method(
-        self,
-        mock_struct: MagicMock,
-        mock_serializer_from_tuple: MagicMock,
-        debug_mode: bool,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        serializer = _StructSerializerForTest("format", debug=debug_mode)
-        mock_struct_unpack: MagicMock = mock_struct.unpack
-        mock_struct_unpack.return_value = mocker.sentinel.packet_tuple
-        mock_serializer_from_tuple.side_effect = Exception()
-
-        # Act
-
-        with pytest.raises(DeserializeError) as exc_info:
-            _ = serializer.deserialize(mocker.sentinel.data)
-        exception = exc_info.value
-
-        # Assert
-        mock_struct_unpack.assert_called_once_with(mocker.sentinel.data)
-        mock_serializer_from_tuple.assert_called_once_with(mocker.sentinel.packet_tuple)
-        assert exception.__cause__ is mock_serializer_from_tuple.side_effect
-        if debug_mode:
-            assert exception.error_info == {"unpacked_struct": mocker.sentinel.packet_tuple}
         else:
             assert exception.error_info is None
 
@@ -425,6 +402,28 @@ class TestNamedTupleStructSerializer(BaseTestStructBasedSerializer):
         assert result.x == "1234"
         assert result.y == "56789"
 
+    def test____from_tuple____construct_namedtuple____with_strings_and_encoding____decode_error(
+        self,
+        debug_mode: bool,
+    ) -> None:
+        # Arrange
+        namedtuple_cls = collections.namedtuple("namedtuple_cls", ["data"])
+        serializer = NamedTupleStructSerializer(namedtuple_cls, {"data": "10s"}, encoding="utf-8", debug=debug_mode)
+        packet_tuple = ("é".encode("latin-1").ljust(10, b"\0"),)
+
+        # Act
+        with pytest.raises(
+            DeserializeError, match=r"^UnicodeError when building packet from unpacked struct value: .+$"
+        ) as exc_info:
+            _ = serializer.from_tuple(packet_tuple)
+
+        # Assert
+        assert isinstance(exc_info.value.__cause__, UnicodeError)
+        if debug_mode:
+            assert exc_info.value.error_info == {"unpacked_struct": packet_tuple}
+        else:
+            assert exc_info.value.error_info is None
+
     @pytest.mark.parametrize(
         "strip_string_trailing_nul_bytes",
         [True, False],
@@ -469,3 +468,62 @@ class TestNamedTupleStructSerializer(BaseTestStructBasedSerializer):
             assert isinstance(result.y, bytes)
             assert result.x == expected_x
             assert result.y == expected_y
+
+
+class TestStructSerializer(BaseTestStructBasedSerializer):
+    @pytest.mark.parametrize("method", ["serialize", "incremental_serialize", "deserialize", "incremental_deserialize"])
+    def test____base_class____implements_default_methods(self, method: str) -> None:
+        # Arrange
+
+        # Act & Assert
+        assert getattr(StructSerializer, method) is getattr(AbstractStructSerializer, method)
+
+    @pytest.mark.parametrize("endianness", sorted(_ENDIANNESS_CHARACTERS.union([""])), ids=repr)
+    def test____dunder_init____format_with_endianness(
+        self,
+        endianness: str,
+        mock_struct_cls: MagicMock,
+        mock_struct: MagicMock,
+    ) -> None:
+        # Arrange
+        format = "format"
+        expected_format = f"{endianness}{format}" if endianness else f"!{format}"
+
+        # Act
+        serializer = StructSerializer(f"{endianness}{format}")
+
+        # Assert
+        mock_struct_cls.assert_called_once_with(expected_format)
+        assert serializer.struct is mock_struct
+        assert serializer.packet_size == 123456789
+
+    def test____iter_values____return_given_instance(self) -> None:
+        # Arrange
+        serializer = StructSerializer("format")
+        packet = (10, b"data")
+
+        # Act
+        iterable = serializer.iter_values(packet)
+
+        # Assert
+        assert iterable is packet
+
+    def test____iter_values____error_not_tuple(self) -> None:
+        # Arrange
+        serializer = StructSerializer("format")
+        packet = [10, b"data"]
+
+        # Act & Assert
+        with pytest.raises(TypeError, match=r"^Expected a tuple instance, got \[10, b'data'\]$"):
+            _ = serializer.iter_values(packet)  # type: ignore[arg-type]
+
+    def test____from_tuple____return_given_instance(self) -> None:
+        # Arrange
+        serializer = StructSerializer("format")
+        packet_tuple = (10, b"data")
+
+        # Act
+        packet = serializer.from_tuple(packet_tuple)
+
+        # Assert
+        assert packet is packet_tuple
