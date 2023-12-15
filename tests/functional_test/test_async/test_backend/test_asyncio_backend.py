@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextvars
 import time
 from collections.abc import Awaitable, Callable, Iterator
 from concurrent.futures import CancelledError as FutureCancelledError, Future, wait as wait_concurrent_futures
@@ -19,8 +18,6 @@ if TYPE_CHECKING:
     from unittest.mock import AsyncMock
 
     from pytest_mock import MockerFixture
-
-cvar_for_test: contextvars.ContextVar[str] = contextvars.ContextVar("cvar_for_test", default="")
 
 
 class ExceptionCaughtDict(TypedDict, total=False):
@@ -515,21 +512,6 @@ class TestAsyncioBackend:
             else:
                 assert not inner_task.cancelled()
                 assert await inner_task.join() == 42
-
-    async def test____create_task_group____start_soon_with_context(
-        self,
-        backend: AsyncIOBackend,
-    ) -> None:
-        async def coroutine(value: str) -> None:
-            cvar_for_test.set(value)
-
-        async with backend.create_task_group() as task_group:
-            cvar_for_test.set("something")
-            ctx = contextvars.copy_context()
-            task = task_group.start_soon(coroutine, "other", context=ctx)
-            await task.wait()
-            assert cvar_for_test.get() == "something"
-            assert ctx.run(cvar_for_test.get) == "other"
 
     async def test____wait_future____wait_until_done(
         self,

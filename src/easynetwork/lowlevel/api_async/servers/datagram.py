@@ -227,12 +227,12 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_T_Request,
         default_context: contextvars.Context,
     ) -> None:
         if datagram_queue:
-            task_group.start_soon(
+            default_context.run(
+                task_group.start_soon,
                 self.__client_coroutine,
                 datagram_received_cb,
                 address,
                 task_group,
-                context=default_context,
             )
 
     def __clear_queue_on_error(
