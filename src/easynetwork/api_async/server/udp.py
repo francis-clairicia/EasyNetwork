@@ -266,6 +266,8 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
                 while True:
                     try:
                         action = _asyncgen.SendAction((yield))
+                    except GeneratorExit:  # pragma: no cover
+                        raise
                     except BaseException as exc:
                         action = _asyncgen.ThrowAction(exc)
                     try:
