@@ -63,7 +63,7 @@ class DatagramEndpoint(typed_attr.TypedAttributeProvider, Generic[_T_SentPacket,
         self.__transport: transports.DatagramReadTransport | transports.DatagramWriteTransport = transport
         self.__protocol: protocol_module.DatagramProtocol[_T_SentPacket, _T_ReceivedPacket] = protocol
 
-    def __del__(self) -> None:  # pragma: no cover
+    def __del__(self) -> None:
         try:
             if not self.__transport.is_closed():
                 self.close()

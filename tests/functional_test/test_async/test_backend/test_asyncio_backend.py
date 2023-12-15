@@ -3,15 +3,17 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
 from concurrent.futures import CancelledError as FutureCancelledError, Future, wait as wait_concurrent_futures
 from contextlib import ExitStack
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, Required, TypedDict
 
 from easynetwork.lowlevel.api_async.backend.factory import AsyncBackendFactory
 from easynetwork.lowlevel.std_asyncio.backend import AsyncIOBackend
 
 import pytest
+
+from ....tools import temporary_exception_handler
 
 if TYPE_CHECKING:
     from unittest.mock import AsyncMock
@@ -21,8 +23,33 @@ if TYPE_CHECKING:
 cvar_for_test: contextvars.ContextVar[str] = contextvars.ContextVar("cvar_for_test", default="")
 
 
+class ExceptionCaughtDict(TypedDict, total=False):
+    message: Required[str]
+    exception: Exception
+    future: asyncio.Future[Any]
+    task: asyncio.Task[Any]
+    handle: asyncio.Handle
+    protocol: asyncio.BaseProtocol
+    transport: asyncio.BaseTransport
+
+
 @pytest.mark.asyncio
 class TestAsyncioBackend:
+    @pytest.fixture
+    @staticmethod
+    def event_loop_exceptions_caught(
+        event_loop: asyncio.AbstractEventLoop,
+        mocker: MockerFixture,
+    ) -> Iterator[list[ExceptionCaughtDict]]:
+        event_loop_exceptions_caught: list[ExceptionCaughtDict] = []
+        handler_stub = mocker.MagicMock(
+            "ExceptionHandler",
+            side_effect=lambda loop, context: event_loop_exceptions_caught.append(context),
+        )
+
+        with temporary_exception_handler(event_loop, handler_stub):
+            yield event_loop_exceptions_caught
+
     @pytest.fixture
     @staticmethod
     def backend() -> AsyncIOBackend:
@@ -690,11 +717,14 @@ class TestAsyncioBackend:
         async with backend.create_threads_portal() as threads_portal:
             assert await backend.run_in_thread(thread) == 42
 
+    @pytest.mark.parametrize("exception_cls", [Exception, BaseException])
     async def test____create_threads_portal____run_coroutine_from_thread____exception_raised(
         self,
         backend: AsyncIOBackend,
+        exception_cls: type[BaseException],
+        event_loop_exceptions_caught: list[ExceptionCaughtDict],
     ) -> None:
-        expected_exception = OSError("Why not?")
+        expected_exception = exception_cls("Why not?")
 
         async def coroutine(value: int) -> int:
             raise expected_exception
@@ -702,11 +732,24 @@ class TestAsyncioBackend:
         def thread() -> int:
             return threads_portal.run_coroutine(coroutine, 42)
 
-        async with backend.create_threads_portal() as threads_portal:
-            with pytest.raises(OSError) as exc_info:
-                await backend.run_in_thread(thread)
+        threads_portal = backend.create_threads_portal()
+        if issubclass(exception_cls, Exception):
+            async with threads_portal:
+                with pytest.raises(BaseException) as exc_info:
+                    await backend.run_in_thread(thread)
 
-        assert exc_info.value is expected_exception
+            assert exc_info.value is expected_exception
+            assert len(event_loop_exceptions_caught) == 0
+        else:
+            with pytest.raises(BaseExceptionGroup) as exc_group_info:
+                async with threads_portal:
+                    with pytest.raises(BaseException) as exc_info:
+                        await backend.run_in_thread(thread)
+
+                assert exc_info.value is expected_exception
+
+            assert len(event_loop_exceptions_caught) == 0
+            assert exc_group_info.value.exceptions[0] is expected_exception
 
     async def test____create_threads_portal____run_coroutine_from_thread____coroutine_cancelled(
         self,
@@ -810,11 +853,14 @@ class TestAsyncioBackend:
         async with backend.create_threads_portal() as threads_portal:
             assert await backend.run_in_thread(thread) == 42
 
+    @pytest.mark.parametrize("exception_cls", [Exception, BaseException])
     async def test____create_threads_portal____run_sync_from_thread_in_event_loop____exception_raised(
         self,
         backend: AsyncIOBackend,
+        exception_cls: type[BaseException],
+        event_loop_exceptions_caught: list[ExceptionCaughtDict],
     ) -> None:
-        expected_exception = OSError("Why not?")
+        expected_exception = exception_cls("Why not?")
 
         def not_threadsafe_func(value: int) -> int:
             raise expected_exception
@@ -822,11 +868,22 @@ class TestAsyncioBackend:
         def thread() -> int:
             return threads_portal.run_sync(not_threadsafe_func, 42)
 
-        async with backend.create_threads_portal() as threads_portal:
-            with pytest.raises(OSError) as exc_info:
-                await backend.run_in_thread(thread)
+        threads_portal = backend.create_threads_portal()
+        if issubclass(exception_cls, Exception):
+            async with threads_portal:
+                with pytest.raises(BaseException) as exc_info:
+                    await backend.run_in_thread(thread)
 
-        assert exc_info.value is expected_exception
+            assert exc_info.value is expected_exception
+            assert len(event_loop_exceptions_caught) == 0
+        else:
+            async with threads_portal:
+                with pytest.raises(BaseException) as exc_info:
+                    await backend.run_in_thread(thread)
+
+            assert exc_info.value is expected_exception
+            assert len(event_loop_exceptions_caught) == 1
+            assert event_loop_exceptions_caught[0]["exception"] is expected_exception
 
     async def test____create_threads_portal____run_sync_from_thread_in_event_loop____explicit_concurrent_future_Cancelled(
         self,

@@ -220,6 +220,17 @@ class TestAsyncSocketCommon(BaseTestAsyncSocket):
     ) -> AsyncSocket:
         return AsyncSocket(mock_stdlib_socket, event_loop)
 
+    async def test____dunder_init____forbids_ssl_sockets(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        mock_ssl_socket: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        with pytest.raises(TypeError, match=r"^ssl\.SSLSocket instances are forbidden$"):
+            _ = AsyncSocket(mock_ssl_socket, event_loop)
+
     @pytest.mark.usefixtures("socket")
     async def test____dunder_init____ensure_non_blocking_socket(
         self,

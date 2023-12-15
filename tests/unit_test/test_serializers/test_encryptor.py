@@ -143,3 +143,50 @@ class TestEncryptorSerializer:
         assert exception.__context__ is mock_fernet.decrypt.side_effect
         assert exception.__cause__ is None
         assert exception.error_info is None
+
+
+class TestEncryptorSerializerDependencies:
+    def test____dunder_init____cryptography_missing(
+        self,
+        mock_serializer: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_import: MagicMock = mocker.patch("builtins.__import__")
+        original_error = ModuleNotFoundError()
+        mock_import.side_effect = original_error
+
+        # Act
+        with pytest.raises(ModuleNotFoundError) as exc_info:
+            try:
+                _ = EncryptorSerializer(mock_serializer, "key")
+            finally:
+                mocker.stop(mock_import)
+
+        # Assert
+        mock_import.assert_called_once_with("cryptography.fernet", mocker.ANY, mocker.ANY, None, 0)
+        assert exc_info.value.args[0] == "encryption dependencies are missing. Consider adding 'encryption' extra"
+        assert exc_info.value.__notes__ == ['example: pip install "easynetwork[encryption]"']
+        assert exc_info.value.__cause__ is original_error
+
+    def test____generate_key____cryptography_missing(
+        self,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_import: MagicMock = mocker.patch("builtins.__import__")
+        original_error = ModuleNotFoundError()
+        mock_import.side_effect = original_error
+
+        # Act
+        with pytest.raises(ModuleNotFoundError) as exc_info:
+            try:
+                _ = EncryptorSerializer.generate_key()
+            finally:
+                mocker.stop(mock_import)
+
+        # Assert
+        mock_import.assert_called_once_with("cryptography.fernet", mocker.ANY, mocker.ANY, ("Fernet",), 0)
+        assert exc_info.value.args[0] == "encryption dependencies are missing. Consider adding 'encryption' extra"
+        assert exc_info.value.__notes__ == ['example: pip install "easynetwork[encryption]"']
+        assert exc_info.value.__cause__ is original_error

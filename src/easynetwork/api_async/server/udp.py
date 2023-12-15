@@ -399,11 +399,9 @@ class _ClientAPI(AsyncDatagramClient[_T_Response]):
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
-        server_ref = self.__server_ref()
-        if server_ref is None:  # pragma: no cover
+        server = self.__server_ref()
+        if server is None:  # pragma: no cover
             return {}
-        server = server_ref
-        del server_ref
         return {
             **server.extra_attributes,
             INETClientAttribute.socket: lambda: self.__socket_proxy,

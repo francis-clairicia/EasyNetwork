@@ -78,7 +78,7 @@ class StreamEndpoint(typed_attr.TypedAttributeProvider, Generic[_T_SentPacket, _
         self.__transport: transports.StreamReadTransport | transports.StreamWriteTransport = transport
         self.__eof_sent: bool = False
 
-    def __del__(self) -> None:  # pragma: no cover
+    def __del__(self) -> None:
         try:
             if not self.__transport.is_closed():
                 self.close()

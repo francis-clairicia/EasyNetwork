@@ -269,6 +269,37 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
                 server_hostname=server_hostname,
             )
 
+    async def test____dunder_init____invalid_first_argument____invalid_object(
+        self,
+        mock_stream_protocol: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        invalid_object = mocker.NonCallableMagicMock(spec=object)
+
+        # Act & Assert
+        with pytest.raises(TypeError, match=r"^Invalid arguments$"):
+            _ = AsyncTCPNetworkClient(
+                invalid_object,
+                protocol=mock_stream_protocol,
+            )
+
+    async def test____dunder_init____invalid_first_argument____invalid_host_port_pair(
+        self,
+        mock_stream_protocol: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        invalid_host = mocker.NonCallableMagicMock(spec=object)
+        invalid_port = mocker.NonCallableMagicMock(spec=object)
+
+        # Act & Assert
+        with pytest.raises(TypeError, match=r"^Invalid arguments$"):
+            _ = AsyncTCPNetworkClient(
+                (invalid_host, invalid_port),
+                protocol=mock_stream_protocol,
+            )
+
     @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
     async def test____dunder_init____protocol____invalid_value(
         self,

@@ -136,7 +136,7 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
                 if (family := kwargs.get("family", _socket.AF_UNSPEC)) != _socket.AF_UNSPEC:
                     _utils.check_socket_family(family)
                 socket_factory = _utils.make_callback(backend.create_udp_endpoint, host, port, **kwargs)
-            case _:  # pragma: no cover
+            case _:
                 raise TypeError("Invalid arguments")
 
         self.__socket_connector: _SocketConnector | None = _SocketConnector(

@@ -22,7 +22,7 @@ __all__ = [
 
 import os
 from collections.abc import Callable
-from typing import Literal, assert_never, final
+from typing import Literal, final
 
 from ..._typevars import _T_ReceivedDTOPacket, _T_SentDTOPacket
 from ...exceptions import DeserializeError
@@ -95,8 +95,8 @@ class Base64EncoderSerializer(AutoSeparatedPacketSerializer[_T_SentDTOPacket, _T
                 if len(key) != 32:
                     raise ValueError("signing key must be 32 url-safe base64-encoded bytes.")
                 self.__checksum = lambda data: hmac_digest(key, data, "sha256")
-            case _:  # pragma: no cover
-                assert_never(checksum)
+            case _:
+                raise TypeError("Invalid checksum argument")
 
         match alphabet:
             case "standard":
@@ -105,8 +105,8 @@ class Base64EncoderSerializer(AutoSeparatedPacketSerializer[_T_SentDTOPacket, _T
             case "urlsafe":
                 self.__encode = base64.urlsafe_b64encode
                 self.__decode = base64.urlsafe_b64decode
-            case _:  # pragma: no cover
-                assert_never(alphabet)
+            case _:
+                raise TypeError("Invalid alphabet argument")
 
         self.__decode_error_cls = binascii.Error
         self.__compare_digest = compare_digest

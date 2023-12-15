@@ -27,6 +27,7 @@ from dataclasses import asdict as dataclass_asdict, dataclass
 from functools import partial
 from typing import IO, TYPE_CHECKING, Any, final
 
+from ..lowlevel import _utils
 from .base_stream import FileBasedPacketSerializer
 
 if TYPE_CHECKING:
@@ -87,8 +88,8 @@ class CBORSerializer(FileBasedPacketSerializer[Any, Any]):
         """
         try:
             import cbor2
-        except ModuleNotFoundError as exc:  # pragma: no cover
-            raise ModuleNotFoundError("cbor dependencies are missing. Consider adding 'cbor' extra") from exc
+        except ModuleNotFoundError as exc:
+            raise _utils.missing_extra_deps("cbor") from exc
 
         super().__init__(expected_load_error=(cbor2.CBORDecodeError, UnicodeError), debug=debug)
         self.__encoder_cls: Callable[[IO[bytes]], cbor2.CBOREncoder]

@@ -124,7 +124,7 @@ class IPv4SocketAddress(NamedTuple):
     host: str
     port: int
 
-    def __str__(self) -> str:  # pragma: no cover
+    def __str__(self) -> str:
         return f"({self.host!r}, {self.port:d})"
 
     def for_connection(self) -> tuple[str, int]:
@@ -141,7 +141,7 @@ class IPv6SocketAddress(NamedTuple):
     flowinfo: int = 0
     scope_id: int = 0
 
-    def __str__(self) -> str:  # pragma: no cover
+    def __str__(self) -> str:
         return f"({self.host!r}, {self.port:d})"
 
     def for_connection(self) -> tuple[str, int]:

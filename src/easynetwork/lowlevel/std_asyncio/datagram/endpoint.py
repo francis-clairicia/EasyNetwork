@@ -180,7 +180,7 @@ class DatagramEndpointProtocol(asyncio.DatagramProtocol):
         self.__write_paused: bool = False
         self.__connection_lost: bool = False
 
-    def __del__(self) -> None:  # pragma: no cover
+    def __del__(self) -> None:
         # Prevent reports about unhandled exceptions.
         try:
             closed = self.__closed

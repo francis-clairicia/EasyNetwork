@@ -47,7 +47,7 @@ class StreamDataProducer(Generic[_T_SentPacket]):
         self.__g: Generator[bytes, None, None] | None = None
         self.__q: deque[_T_SentPacket] = deque()
 
-    def __del__(self) -> None:  # pragma: no cover
+    def __del__(self) -> None:
         try:
             generator, self.__g = self.__g, None
         except AttributeError:
@@ -109,7 +109,7 @@ class StreamDataConsumer(Generic[_T_ReceivedPacket]):
         self.__c: Generator[None, bytes, tuple[_T_ReceivedPacket, bytes]] | None = None
         self.__b: bytes = b""
 
-    def __del__(self) -> None:  # pragma: no cover
+    def __del__(self) -> None:
         try:
             consumer, self.__c = self.__c, None
         except AttributeError:
@@ -202,7 +202,7 @@ class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
         self.__already_written: int = 0
         self.__sizehint: int = buffer_size_hint
 
-    def __del__(self) -> None:  # pragma: no cover
+    def __del__(self) -> None:
         self.__buffer = None
         try:
             consumer, self.__consumer = self.__consumer, None

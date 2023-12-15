@@ -244,7 +244,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
                     )
                 else:
                     socket_factory = _utils.make_callback(backend.create_tcp_connection, host, port, **kwargs)
-            case _:  # pragma: no cover
+            case _:
                 raise TypeError("Invalid arguments")
 
         self.__socket_connector: _SocketConnector | None = _SocketConnector(

@@ -59,6 +59,22 @@ class TestBase64EncoderSerializer:
         with pytest.raises(TypeError, match=r"^Expected a serializer instance, got .+$"):
             Base64EncoderSerializer(mock_not_serializer)
 
+    @pytest.mark.parametrize("invalid_checksum", [1, 0, bytearray(b"key")], ids=repr)
+    def test____dunder_init____invalid_checksum(self, mock_serializer: MagicMock, invalid_checksum: Any) -> None:
+        # Arrange
+
+        # Act
+        with pytest.raises(TypeError, match=r"^Invalid checksum argument$"):
+            Base64EncoderSerializer(mock_serializer, checksum=invalid_checksum)
+
+    @pytest.mark.parametrize("invalid_alphabet", ["unknown", 4], ids=repr)
+    def test____dunder_init____invalid_alphabet(self, mock_serializer: MagicMock, invalid_alphabet: Any) -> None:
+        # Arrange
+
+        # Act
+        with pytest.raises(TypeError, match=r"^Invalid alphabet argument$"):
+            Base64EncoderSerializer(mock_serializer, alphabet=invalid_alphabet)
+
     def test____serialize____encode_previously_serialized_data(
         self,
         alphabet: Literal["standard", "urlsafe"],

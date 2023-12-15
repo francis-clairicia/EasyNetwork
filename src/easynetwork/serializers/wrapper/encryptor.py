@@ -24,6 +24,7 @@ from typing import final
 
 from ..._typevars import _T_ReceivedDTOPacket, _T_SentDTOPacket
 from ...exceptions import DeserializeError
+from ...lowlevel import _utils
 from ...lowlevel.constants import _DEFAULT_LIMIT
 from ..abc import AbstractPacketSerializer
 from ..base_stream import AutoSeparatedPacketSerializer
@@ -59,8 +60,8 @@ class EncryptorSerializer(AutoSeparatedPacketSerializer[_T_SentDTOPacket, _T_Rec
         """
         try:
             import cryptography.fernet
-        except ModuleNotFoundError as exc:  # pragma: no cover
-            raise ModuleNotFoundError("encryption dependencies are missing. Consider adding 'encryption' extra") from exc
+        except ModuleNotFoundError as exc:
+            raise _utils.missing_extra_deps("encryption") from exc
 
         super().__init__(
             separator=separator,
@@ -86,11 +87,11 @@ class EncryptorSerializer(AutoSeparatedPacketSerializer[_T_SentDTOPacket, _T_Rec
             Delegates to :meth:`cryptography.fernet.Fernet.generate_key`.
         """
         try:
-            import cryptography.fernet
-        except ModuleNotFoundError as exc:  # pragma: no cover
-            raise ModuleNotFoundError("encryption dependencies are missing. Consider adding 'encryption' extra") from exc
+            from cryptography.fernet import Fernet
+        except ModuleNotFoundError as exc:
+            raise _utils.missing_extra_deps("encryption") from exc
 
-        return cryptography.fernet.Fernet.generate_key()
+        return Fernet.generate_key()
 
     @final
     def serialize(self, packet: _T_SentDTOPacket) -> bytes:

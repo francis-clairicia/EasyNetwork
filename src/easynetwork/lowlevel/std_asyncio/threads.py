@@ -110,7 +110,7 @@ class ThreadsPortal(AbstractThreadsPortal):
                     if future.set_running_or_notify_cancel():
                         future.set_exception(exc)
                     if not isinstance(exc, Exception):
-                        raise  # pragma: no cover
+                        raise
                 else:
                     if future.set_running_or_notify_cancel():
                         future.set_result(result)
@@ -138,8 +138,8 @@ class ThreadsPortal(AbstractThreadsPortal):
                     raise _utils.exception_with_notes(TypeError(msg), note)
             except BaseException as exc:
                 future.set_exception(exc)
-                if isinstance(exc, (SystemExit, KeyboardInterrupt)):
-                    raise  # pragma: no cover
+                if not isinstance(exc, Exception):
+                    raise
             else:
                 future.set_result(result)
 

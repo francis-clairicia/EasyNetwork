@@ -68,7 +68,7 @@ class AsyncSocket:
         self.__waiters: dict[_SocketTaskId, asyncio.Future[None]] = {}
         self.__close_waiter: asyncio.Future[None] = loop.create_future()
 
-    def __del__(self) -> None:  # pragma: no cover
+    def __del__(self) -> None:
         try:
             socket: _socket.socket | None = self.__socket
         except AttributeError:
