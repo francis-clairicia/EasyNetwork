@@ -150,3 +150,14 @@ def temporary_backend(backend: AsyncBackend) -> Iterator[None]:
         AsyncBackendFactory.push_backend_factory("asyncio", lambda: backend)
         assert AsyncBackendFactory.get_backend("asyncio") is backend
         yield
+
+
+@contextlib.contextmanager
+def temporary_exception_handler(
+    event_loop: asyncio.AbstractEventLoop,
+    handler: asyncio.events._ExceptionHandler | None,
+) -> Iterator[None]:
+    with contextlib.ExitStack() as stack:
+        stack.callback(event_loop.set_exception_handler, event_loop.get_exception_handler())
+        event_loop.set_exception_handler(handler)
+        yield

@@ -271,3 +271,6 @@ exclude_lines = [
     # Don't complain about abstract methods, they aren't run:
     "@(abc\\.)?abstractmethod",
 ]
+
+[tool.coverage.html]
+show_contexts = "${COVERAGE_SHOWCONTEXTS-false}"

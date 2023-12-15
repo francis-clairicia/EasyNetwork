@@ -481,6 +481,17 @@ class TestDatagramEndpointProtocol:
         # Assert
         assert protocol._get_loop() is event_loop
 
+    def test____dunder_init____use_running_loop____not_in_asyncio_loop(
+        self,
+        mock_asyncio_recv_queue: MagicMock,
+        mock_asyncio_exception_queue: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        with pytest.raises(RuntimeError):
+            _ = DatagramEndpointProtocol(recv_queue=mock_asyncio_recv_queue, exception_queue=mock_asyncio_exception_queue)
+
     def test____connection_lost____by_closed_transport(
         self,
         protocol: DatagramEndpointProtocol,

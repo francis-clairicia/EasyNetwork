@@ -298,7 +298,7 @@ class CancelScope(AbstractCancelScope):
     @classmethod
     def _reschedule_delayed_task_cancel(cls, task: asyncio.Task[Any], cancel_msg: str | None) -> asyncio.Handle:
         if task in cls.__delayed_task_cancel_dict:
-            raise RuntimeError("CancelScope issue.")  # pragma: no cover
+            raise AssertionError("CancelScope issue in _reschedule_delayed_task_cancel.")
         task_cancel_handle = task.get_loop().call_soon(cls.__cancel_task_unless_done, task, cancel_msg)
         cls.__delayed_task_cancel_dict[task] = _DelayedCancel(task_cancel_handle, cancel_msg)
         task.get_loop().call_soon(cls.__delayed_task_cancel_dict.pop, task, None)

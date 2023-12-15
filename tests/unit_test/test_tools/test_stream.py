@@ -285,6 +285,8 @@ class TestStreamDataProducer:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
+        generator_exit_checkpoint = mocker.stub()
+
         def side_effect(_: Any) -> Generator[bytes, None, None]:
             with pytest.raises(GeneratorExit) as exc_info:  # Exception raised in generator when calling generator.close()
                 yield b"chunk"
@@ -295,11 +297,13 @@ class TestStreamDataProducer:
         producer.enqueue(mocker.sentinel.packet)
         assert next(producer) == b"chunk"
         assert producer.pending_packets()
+        generator_exit_checkpoint.assert_not_called()
 
         # Act
         producer.clear()
 
         # Assert
+        generator_exit_checkpoint.assert_not_called()
         assert not producer.pending_packets()
         with pytest.raises(StopIteration):
             next(producer)
@@ -449,6 +453,38 @@ class TestStreamDataConsumer:
         assert packet is mocker.sentinel.packet
         assert consumer.get_buffer() == b"Bye"
 
+    def test____next____ignore_empty_buffer(
+        self,
+        consumer: StreamDataConsumer[Any],
+        mock_stream_protocol: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        rest_checkpoint = mocker.stub()
+
+        def side_effect() -> Generator[None, bytes, tuple[Any, bytes]]:
+            data = yield
+            assert data == b"Hello"
+            rest = yield
+            rest_checkpoint(rest)
+            return mocker.sentinel.packet, b"World"
+
+        mock_build_packet_from_chunks_func: MagicMock = mock_stream_protocol.build_packet_from_chunks
+        mock_build_packet_from_chunks_func.side_effect = side_effect
+        consumer.feed(b"Hello")
+        with pytest.raises(StopIteration):
+            next(consumer)
+        assert consumer.get_buffer() == b""
+        consumer.feed(b"")
+        rest_checkpoint.assert_not_called()
+
+        # Act
+        with pytest.raises(StopIteration):
+            next(consumer)
+
+        # Assert
+        rest_checkpoint.assert_not_called()
+
     def test____next____protocol_parse_error(
         self,
         consumer: StreamDataConsumer[Any],
@@ -542,12 +578,16 @@ class TestStreamDataConsumer:
         self,
         consumer: StreamDataConsumer[Any],
         mock_stream_protocol: MagicMock,
+        mocker: MockerFixture,
     ) -> None:
         # Arrange
+        generator_exit_checkpoint = mocker.stub()
+
         def side_effect() -> Generator[None, bytes, tuple[Any, bytes]]:
             assert (yield) == b"Hello"
             with pytest.raises(GeneratorExit) as exc_info:
                 yield
+            generator_exit_checkpoint()
             raise exc_info.value
 
         mock_build_packet_from_chunks_func: MagicMock = mock_stream_protocol.build_packet_from_chunks
@@ -557,11 +597,13 @@ class TestStreamDataConsumer:
             next(consumer)
         consumer.feed(b"World")
         assert consumer.get_buffer() == b"World"
+        generator_exit_checkpoint.assert_not_called()
 
         # Act
         consumer.clear()
 
         # Assert
+        generator_exit_checkpoint.assert_called_once_with()
         assert consumer.get_buffer() == b""
 
 
@@ -1203,12 +1245,16 @@ class TestBufferedStreamDataConsumer:
         self,
         consumer: BufferedStreamDataConsumer[Any],
         mock_buffered_stream_receiver: MagicMock,
+        mocker: MockerFixture,
     ) -> None:
         # Arrange
+        generator_exit_checkpoint = mocker.stub()
+
         def side_effect(buffer: memoryview) -> Generator[None, int, tuple[Any, bytes]]:
             yield
             with pytest.raises(GeneratorExit) as exc_info:
                 yield
+            generator_exit_checkpoint()
             raise exc_info.value
 
         mock_build_packet_from_buffer_func: MagicMock = mock_buffered_stream_receiver.build_packet_from_buffer
@@ -1218,9 +1264,11 @@ class TestBufferedStreamDataConsumer:
             next(consumer)
         self.write_in_consumer(consumer, b"World")
         assert consumer.get_value() == b"World"
+        generator_exit_checkpoint.assert_not_called()
 
         # Act
         consumer.clear()
 
         # Assert
+        generator_exit_checkpoint.assert_called_once_with()
         assert consumer.get_value() is None

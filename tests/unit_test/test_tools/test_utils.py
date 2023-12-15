@@ -30,6 +30,7 @@ from easynetwork.lowlevel._utils import (
     iter_bytes,
     lock_with_timeout,
     make_callback,
+    missing_extra_deps,
     prepend_argument,
     remove_traceback_frames_in_place,
     replace_kwargs,
@@ -167,6 +168,30 @@ def test____error_from_errno____returns_OSError(mocker: MockerFixture) -> None:
     assert exception.errno == errno
     assert exception.strerror == "errno message"
     mock_strerror.assert_called_once_with(errno)
+
+
+def test____missing_extra_deps____returns_ModuleNotFoundError() -> None:
+    # Arrange
+
+    # Act
+    exception = missing_extra_deps("cbor")
+
+    # Assert
+    assert isinstance(exception, ModuleNotFoundError)
+    assert exception.args[0] == "cbor dependencies are missing. Consider adding 'cbor' extra"
+    assert exception.__notes__ == ['example: pip install "easynetwork[cbor]"']
+
+
+def test____missing_extra_deps____returns_ModuleNotFoundError____specify_feature_name() -> None:
+    # Arrange
+
+    # Act
+    exception = missing_extra_deps("msgpack", feature_name="message-pack")
+
+    # Assert
+    assert isinstance(exception, ModuleNotFoundError)
+    assert exception.args[0] == "message-pack dependencies are missing. Consider adding 'msgpack' extra"
+    assert exception.__notes__ == ['example: pip install "easynetwork[msgpack]"']
 
 
 def test____check_real_socket_state____socket_without_error(mock_tcp_socket: MagicMock, mocker: MockerFixture) -> None:

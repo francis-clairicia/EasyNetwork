@@ -201,3 +201,49 @@ class TestMessagePackSerializer(BaseSerializerConfigInstanceCheck):
             assert exc_info.value.error_info == {"data": mocker.sentinel.data}
         else:
             assert exc_info.value.error_info is None
+
+
+class TestMessagePackSerializerDependencies:
+    def test____dunder_init____msgpack_missing(
+        self,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_import: MagicMock = mocker.patch("builtins.__import__")
+        original_error = ModuleNotFoundError()
+        mock_import.side_effect = original_error
+
+        # Act
+        with pytest.raises(ModuleNotFoundError) as exc_info:
+            try:
+                _ = MessagePackSerializer()
+            finally:
+                mocker.stop(mock_import)
+
+        # Assert
+        mock_import.assert_called_once_with("msgpack", mocker.ANY, mocker.ANY, None, 0)
+        assert exc_info.value.args[0] == "message-pack dependencies are missing. Consider adding 'msgpack' extra"
+        assert exc_info.value.__notes__ == ['example: pip install "easynetwork[msgpack]"']
+        assert exc_info.value.__cause__ is original_error
+
+    def test____MessageUnpackerConfig____msgpack_missing(
+        self,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_import: MagicMock = mocker.patch("builtins.__import__")
+        original_error = ModuleNotFoundError()
+        mock_import.side_effect = original_error
+
+        # Act
+        with pytest.raises(ModuleNotFoundError) as exc_info:
+            try:
+                _ = MessageUnpackerConfig()
+            finally:
+                mocker.stop(mock_import)
+
+        # Assert
+        mock_import.assert_called_once_with("msgpack", mocker.ANY, mocker.ANY, ("ExtType",), 0)
+        assert exc_info.value.args[0] == "message-pack dependencies are missing. Consider adding 'msgpack' extra"
+        assert exc_info.value.__notes__ == ['example: pip install "easynetwork[msgpack]"']
+        assert exc_info.value.__cause__ is original_error

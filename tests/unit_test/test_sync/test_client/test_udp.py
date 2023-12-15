@@ -341,6 +341,37 @@ class TestUDPNetworkClient(BaseTestClient):
                 protocol=mock_datagram_protocol,
             )
 
+    def test____dunder_init____invalid_first_argument____invalid_object(
+        self,
+        mock_datagram_protocol: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        invalid_object = mocker.NonCallableMagicMock(spec=object)
+
+        # Act & Assert
+        with pytest.raises(TypeError, match=r"^Invalid arguments$"):
+            _ = UDPNetworkClient(
+                invalid_object,
+                protocol=mock_datagram_protocol,
+            )
+
+    def test____dunder_init____invalid_first_argument____invalid_host_port_pair(
+        self,
+        mock_datagram_protocol: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        invalid_host = mocker.NonCallableMagicMock(spec=object)
+        invalid_port = mocker.NonCallableMagicMock(spec=object)
+
+        # Act & Assert
+        with pytest.raises(TypeError, match=r"^Invalid arguments$"):
+            _ = UDPNetworkClient(
+                (invalid_host, invalid_port),
+                protocol=mock_datagram_protocol,
+            )
+
     def test____dunder_init____protocol____invalid_value(
         self,
         mock_udp_socket: MagicMock,

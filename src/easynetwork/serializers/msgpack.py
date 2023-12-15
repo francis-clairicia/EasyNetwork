@@ -28,15 +28,16 @@ from functools import partial
 from typing import Any, final
 
 from ..exceptions import DeserializeError
+from ..lowlevel import _utils
 from .abc import AbstractPacketSerializer
 
 
 def _get_default_ext_hook() -> Callable[[int, bytes], Any]:
     try:
-        import msgpack
-    except ModuleNotFoundError as exc:  # pragma: no cover
-        raise ModuleNotFoundError("message-pack dependencies are missing. Consider adding 'msgpack' extra") from exc
-    return msgpack.ExtType
+        from msgpack import ExtType
+    except ModuleNotFoundError as exc:
+        raise _utils.missing_extra_deps("msgpack", feature_name="message-pack") from exc
+    return ExtType
 
 
 @dataclass(kw_only=True)
@@ -97,8 +98,8 @@ class MessagePackSerializer(AbstractPacketSerializer[Any, Any]):
         """
         try:
             import msgpack
-        except ModuleNotFoundError as exc:  # pragma: no cover
-            raise ModuleNotFoundError("message-pack dependencies are missing. Consider adding 'msgpack' extra") from exc
+        except ModuleNotFoundError as exc:
+            raise _utils.missing_extra_deps("msgpack", feature_name="message-pack") from exc
 
         super().__init__()
         self.__packb: Callable[[Any], bytes]

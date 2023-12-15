@@ -194,7 +194,7 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
                 _utils.replace_kwargs(kwargs, {"local_address": "source_address", "connect_timeout": "timeout"})
                 kwargs.setdefault("timeout", None)
                 socket = _socket.create_connection((host, port), **kwargs, all_errors=True)
-            case _:  # pragma: no cover
+            case _:
                 raise TypeError("Invalid arguments")
 
         try:

@@ -109,7 +109,7 @@ class UDPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
                 if (family := kwargs.get("family", _socket.AF_UNSPEC)) != _socket.AF_UNSPEC:
                     _utils.check_socket_family(family)
                 socket = _create_udp_socket(remote_address=(host, port), **kwargs)
-            case _:  # pragma: no cover
+            case _:
                 raise TypeError("Invalid arguments")
 
         try:

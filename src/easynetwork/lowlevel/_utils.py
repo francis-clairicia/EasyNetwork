@@ -27,6 +27,7 @@ __all__ = [
     "is_ssl_socket",
     "lock_with_timeout",
     "make_callback",
+    "missing_extra_deps",
     "prepend_argument",
     "remove_traceback_frames_in_place",
     "replace_kwargs",
@@ -109,6 +110,15 @@ def inherit_doc(base_cls: type[Any]) -> Callable[[_T_Func], _T_Func]:
 
 def error_from_errno(errno: int) -> OSError:
     return OSError(errno, os.strerror(errno))
+
+
+def missing_extra_deps(extra_name: str, *, feature_name: str = "") -> ModuleNotFoundError:
+    if not feature_name:
+        feature_name = extra_name
+    return exception_with_notes(
+        ModuleNotFoundError(f"{feature_name} dependencies are missing. Consider adding {extra_name!r} extra"),
+        [f'example: pip install "easynetwork[{extra_name}]"'],
+    )
 
 
 def check_socket_family(family: int) -> None:
