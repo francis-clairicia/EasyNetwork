@@ -20,7 +20,6 @@ from __future__ import annotations
 __all__ = ["CancelScope", "Task", "TaskGroup", "TaskUtils"]
 
 import asyncio
-import contextvars
 import enum
 import math
 from collections import deque
@@ -120,9 +119,8 @@ class TaskGroup(AbstractTaskGroup):
         coro_func: Callable[..., Coroutine[Any, Any, _T]],
         /,
         *args: Any,
-        context: contextvars.Context | None = None,
     ) -> AbstractTask[_T]:
-        return Task(self.__asyncio_tg.create_task(coro_func(*args), context=context))
+        return Task(self.__asyncio_tg.create_task(coro_func(*args)))
 
 
 class _ScopeState(enum.Enum):

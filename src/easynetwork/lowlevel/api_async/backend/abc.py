@@ -28,7 +28,6 @@ __all__ = [
 ]
 
 import contextlib
-import contextvars
 import math
 from abc import ABCMeta, abstractmethod
 from collections.abc import Awaitable, Callable, Coroutine, Iterator, Mapping, Sequence
@@ -428,7 +427,6 @@ class TaskGroup(metaclass=ABCMeta):
         coro_func: Callable[..., Coroutine[Any, Any, _T]],
         /,
         *args: Any,
-        context: contextvars.Context | None = ...,
     ) -> Task[_T]:
         """
         Starts a new task in this task group.
@@ -437,8 +435,6 @@ class TaskGroup(metaclass=ABCMeta):
             coro_func: An async function.
             args: Positional arguments to be passed to `coro_func`. If you need to pass keyword arguments,
                   then use :func:`functools.partial`.
-            context: If given, it must be a :class:`contextvars.Context` instance in which the coroutine should be executed.
-                     If the framework does not support contexts (or does not use them), it must simply ignore this parameter.
 
         Returns:
             the created task.
