@@ -47,6 +47,11 @@ class TestAsyncExecutor:
     def mock_contextvars_copy_context(mocker: MockerFixture) -> MagicMock:
         return mocker.patch("contextvars.copy_context", autospec=True)
 
+    @pytest.fixture(autouse=True)
+    @staticmethod
+    def mock_unwrap_future(mocker: MockerFixture) -> MagicMock:
+        return mocker.patch(f"{AsyncExecutor.__module__}.unwrap_future", autospec=True)
+
     async def test____dunder_init____invalid_executor(
         self,
         mocker: MockerFixture,
@@ -62,9 +67,9 @@ class TestAsyncExecutor:
         self,
         executor: AsyncExecutor,
         executor_handle_contexts: bool,
-        mock_backend: MagicMock,
         mock_stdlib_executor: MagicMock,
         mock_contextvars_copy_context: MagicMock,
+        mock_unwrap_future: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -76,7 +81,7 @@ class TestAsyncExecutor:
             **{"cancel.return_value": False},
         )
         mock_stdlib_executor.submit.return_value = mock_future
-        mock_backend.wait_future.return_value = mocker.sentinel.result
+        mock_unwrap_future.return_value = mocker.sentinel.result
 
         # Act
         result = await executor.run(
@@ -107,7 +112,7 @@ class TestAsyncExecutor:
                 kw2=mocker.sentinel.kw2,
             )
         func.assert_not_called()
-        mock_backend.wait_future.assert_awaited_once_with(mock_future)
+        mock_unwrap_future.assert_awaited_once_with(mock_future)
         mock_future.cancel.assert_called_once_with()
         assert result is mocker.sentinel.result
 
@@ -117,9 +122,9 @@ class TestAsyncExecutor:
         executor: AsyncExecutor,
         executor_handle_contexts: bool,
         future_exception: type[BaseException] | None,
-        mock_backend: MagicMock,
         mock_stdlib_executor: MagicMock,
         mock_contextvars_copy_context: MagicMock,
+        mock_unwrap_future: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -135,9 +140,9 @@ class TestAsyncExecutor:
         func = mocker.stub()
         mock_stdlib_executor.submit.side_effect = mock_futures
         if future_exception is None:
-            mock_backend.wait_future.side_effect = [mocker.sentinel.result_1, mocker.sentinel.result_2, mocker.sentinel.result_3]
+            mock_unwrap_future.side_effect = [mocker.sentinel.result_1, mocker.sentinel.result_2, mocker.sentinel.result_3]
         else:
-            mock_backend.wait_future.side_effect = future_exception()
+            mock_unwrap_future.side_effect = future_exception()
         func_args = (mocker.sentinel.arg1, mocker.sentinel.arg2, mocker.sentinel.args3)
 
         # Act
@@ -147,7 +152,7 @@ class TestAsyncExecutor:
             results = []
             with pytest.raises(Exception) as exc_info:
                 results = [result async for result in executor.map(func, func_args)]
-            assert exc_info.value is mock_backend.wait_future.side_effect
+            assert exc_info.value is mock_unwrap_future.side_effect
 
         # Assert
         if executor_handle_contexts:
@@ -162,10 +167,10 @@ class TestAsyncExecutor:
             assert mock_stdlib_executor.submit.call_args_list == [mocker.call(func, arg) for arg in func_args]
         func.assert_not_called()
         if future_exception is None:
-            mock_backend.wait_future.await_args_list == [mocker.call(mock_fut) for mock_fut in mock_futures]
+            mock_unwrap_future.await_args_list == [mocker.call(mock_fut) for mock_fut in mock_futures]
             assert results == [mocker.sentinel.result_1, mocker.sentinel.result_2, mocker.sentinel.result_3]
         else:
-            mock_backend.wait_future.await_args_list == [mocker.call(mock_futures[0])]
+            mock_unwrap_future.await_args_list == [mocker.call(mock_futures[0])]
             assert results == []
         for mock_fut in mock_futures:
             mock_fut.cancel.assert_called_once_with()

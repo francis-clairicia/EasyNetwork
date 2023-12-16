@@ -82,44 +82,41 @@ class ThreadsPortal(AbstractThreadsPortal):
         *args: _P.args,
         **kwargs: _P.kwargs,
     ) -> concurrent.futures.Future[_T]:
-        def schedule_task() -> concurrent.futures.Future[_T]:
-            future: concurrent.futures.Future[_T] = concurrent.futures.Future()
+        future: concurrent.futures.Future[_T] = concurrent.futures.Future()
 
-            async def coroutine() -> None:
-                def on_fut_done(future: concurrent.futures.Future[_T]) -> None:
+        async def coroutine() -> None:
+            try:
+
+                @_utils.prepend_argument(TaskUtils.current_asyncio_task())
+                def on_fut_done(task: asyncio.Task[None], future: concurrent.futures.Future[_T]) -> None:
                     if future.cancelled():
-                        if self.__is_in_this_loop_thread(loop):
-                            if not cancelling:
-                                task.cancel()
-                            return
                         with contextlib.suppress(RuntimeError):
-                            self.run_sync(task.cancel)
+                            loop = task.get_loop()
+                            loop.call_soon_threadsafe(task.cancel)
 
-                task = TaskUtils.current_asyncio_task()
-                loop = task.get_loop()
-                cancelling: bool = False
-                try:
-                    future.add_done_callback(on_fut_done)
-                    result = await coro_func(*args, **kwargs)
-                except asyncio.CancelledError:
-                    cancelling = True
-                    future.cancel()
-                    future.set_running_or_notify_cancel()
+                future.add_done_callback(on_fut_done)
+                del on_fut_done
+
+                result = await coro_func(*args, **kwargs)
+            except asyncio.CancelledError:
+                future.cancel()
+                future.set_running_or_notify_cancel()
+                raise
+            except BaseException as exc:
+                if future.set_running_or_notify_cancel():
+                    future.set_exception(exc)
+                if not isinstance(exc, Exception):
                     raise
-                except BaseException as exc:
-                    if future.set_running_or_notify_cancel():
-                        future.set_exception(exc)
-                    if not isinstance(exc, Exception):
-                        raise
-                else:
-                    if future.set_running_or_notify_cancel():
-                        future.set_result(result)
+            else:
+                if future.set_running_or_notify_cancel():
+                    future.set_result(result)
 
+        def schedule_task() -> concurrent.futures.Future[_T]:
             task = self.__task_group.create_task(coroutine())
-            loop = task.get_loop()
-            del task
-            with self.__lock.get():
-                loop.call_soon(self.__register_waiter(self.__call_soon_waiters, loop).set_result, None)
+            if not task.done():  # task can be done eagerly
+                loop = task.get_loop()
+                with self.__lock.get():
+                    loop.call_soon(self.__register_waiter(self.__call_soon_waiters, loop).set_result, None)
             return future
 
         return self.run_sync(schedule_task)

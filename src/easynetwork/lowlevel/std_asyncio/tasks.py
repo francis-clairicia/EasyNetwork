@@ -327,15 +327,9 @@ class TaskUtils:
         return t
 
     @classmethod
-    async def cancel_shielded_wait_asyncio_futures(
-        cls,
-        fs: Iterable[asyncio.Future[Any]],
-        *,
-        abort_func: Callable[[], bool] | None = None,
-    ) -> asyncio.Handle | None:
+    async def cancel_shielded_wait_asyncio_futures(cls, fs: Iterable[asyncio.Future[Any]]) -> asyncio.Handle | None:
         fs = set(fs)
         current_task: asyncio.Task[Any] = cls.current_asyncio_task()
-        abort: bool | None = None
         task_cancelled: bool = False
         task_cancel_msg: str | None = None
 
@@ -345,13 +339,6 @@ class TaskUtils:
                 try:
                     await asyncio.wait(fs)
                 except asyncio.CancelledError as exc:
-                    if abort is None:
-                        if abort_func is None:
-                            abort = False
-                        else:
-                            abort = bool(abort_func())
-                    if abort:
-                        raise
                     task_cancelled = True
                     task_cancel_msg = _get_cancelled_error_message(exc)
 
@@ -359,7 +346,7 @@ class TaskUtils:
                 return CancelScope._reschedule_delayed_task_cancel(current_task, task_cancel_msg)
             return None
         finally:
-            del current_task, fs, abort_func
+            del current_task, fs
             task_cancel_msg = None
 
     @classmethod

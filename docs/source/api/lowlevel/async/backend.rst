@@ -157,15 +157,6 @@ Scheduling From Other Threads
    :members:
    :special-members: __aenter__, __aexit__
 
-``concurrent.futures`` Integration
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-.. automethod:: AsyncBackend.wait_future
-
-.. seealso::
-
-   :class:`.AsyncExecutor` class.
-
 
 Backend Factory
 ===============
@@ -191,3 +182,5 @@ Concurrency And Multithreading (``concurrent.futures`` Integration)
 .. autoclass:: AsyncExecutor
    :members:
    :special-members: __aenter__, __aexit__
+
+.. autofunction:: unwrap_future

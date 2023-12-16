@@ -16,11 +16,13 @@
 
 from __future__ import annotations
 
-__all__ = ["AsyncExecutor"]
+__all__ = ["AsyncExecutor", "unwrap_future"]
 
 import concurrent.futures
+import contextlib
 import contextvars
 import functools
+import threading
 from collections import deque
 from collections.abc import AsyncGenerator, Callable, Iterable
 from typing import TYPE_CHECKING, Any, ParamSpec, Self, TypeVar
@@ -201,10 +203,84 @@ class AsyncExecutor:
         return func
 
 
+async def unwrap_future(future: concurrent.futures.Future[_T]) -> _T:
+    """
+    Blocks until the future is done, and returns the result.
+
+    Cancellation handling:
+
+        * :meth:`unwrap_future` tries to cancel the given `future` (using :meth:`concurrent.futures.Future.cancel`)
+
+            * If the future has been effectively cancelled, the cancellation request is "accepted" and propagated.
+
+            * Otherwise, the cancellation request is *temporarily* "rejected":
+
+                * :meth:`unwrap_future` will block until `future` is done, and will ignore any further cancellation request.
+
+                * If the future ends up with an exception, it will be raised instead of the original cancellation exception.
+
+                * Otherwise, the original cancellation exception is re-raised.
+
+        * A coroutine awaiting a `future` in ``running`` state (:meth:`concurrent.futures.Future.running` returns :data:`True`)
+          cannot be cancelled.
+
+    Parameters:
+        future: The future object to wait for.
+
+    Raises:
+        concurrent.futures.CancelledError: the future has been unexpectedly cancelled by an external code
+                                           (typically :meth:`concurrent.futures.Executor.shutdown`).
+        Exception: If ``future.exception()`` does not return :data:`None`, this exception is raised.
+
+    Returns:
+        Whatever returns ``future.result()``
+    """
+    try:
+        backend = current_async_backend()
+        event_loop_thread_id = threading.get_ident()
+        done_event = backend.create_event()
+
+        async with backend.create_threads_portal() as portal:
+
+            def on_fut_done(future: concurrent.futures.Future[_T]) -> None:
+                with contextlib.suppress(RuntimeError):
+                    if threading.get_ident() == event_loop_thread_id:
+                        done_event.set()
+                    else:
+                        portal.run_sync_soon(done_event.set)
+
+            future.add_done_callback(on_fut_done)
+
+            if future.running():
+                await backend.ignore_cancellation(done_event.wait())
+            else:
+                try:
+                    await done_event.wait()
+                except backend.get_cancelled_exc_class():
+                    if future.cancel():
+                        raise
+
+                    # If future.cancel() failed, that means future.set_running_or_notify_cancel() has been called
+                    # and set future in RUNNING state.
+                    # This future cannot be cancelled anymore, therefore it must be awaited.
+                    await backend.ignore_cancellation(done_event.wait())
+
+                    # re-raise if there is no errors
+                    if future.exception(timeout=0) is None:
+                        raise
+
+        if future.cancelled():
+            # Task cancellation prevails over future cancellation
+            await backend.coro_yield()
+        return future.result(timeout=0)
+    finally:
+        del future
+
+
 async def _result_or_cancel(future: concurrent.futures.Future[_T]) -> _T:
     try:
         try:
-            return await current_async_backend().wait_future(future)
+            return await unwrap_future(future)
         finally:
             future.cancel()
     finally:
