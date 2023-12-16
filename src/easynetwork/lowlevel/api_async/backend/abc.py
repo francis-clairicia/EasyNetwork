@@ -1194,37 +1194,6 @@ class AsyncBackend(metaclass=ABCMeta):
         """
         raise NotImplementedError
 
-    @abstractmethod
-    async def wait_future(self, future: concurrent.futures.Future[_T_co]) -> _T_co:
-        """
-        Blocks until the future is done, and returns the result.
-
-        Cancellation handling:
-            In the case of cancellation, the rules follows what :class:`concurrent.futures.Future` defines:
-
-            * :meth:`wait_future` tries to cancel the given `future` (using :meth:`concurrent.futures.Future.cancel`)
-
-            * If the future has been effectively cancelled, the cancellation request is "accepted" and propagated.
-
-            * Otherwise, the cancellation request is "rejected" and discarded.
-              :meth:`wait_future` will block until `future` is done, and will ignore any further cancellation request.
-
-            * A coroutine awaiting a `future` in ``running`` state (:meth:`concurrent.futures.Future.running` returns :data:`True`)
-              cannot be cancelled.
-
-        Parameters:
-            future: The :class:`~concurrent.futures.Future` object to wait for.
-
-        Raises:
-            concurrent.futures.CancelledError: the future has been unexpectedly cancelled by an external code
-                                               (typically :meth:`concurrent.futures.Executor.shutdown`).
-            Exception: If ``future.exception()`` does not return :data:`None`, this exception is raised.
-
-        Returns:
-            Whatever returns ``future.result()``
-        """
-        raise NotImplementedError
-
 
 def _timeout_after(backend: AsyncBackend, delay: float) -> contextlib._GeneratorContextManager[CancelScope]:
     return _timeout_at(backend, backend.current_time() + delay)

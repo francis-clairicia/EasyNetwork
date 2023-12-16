@@ -57,7 +57,6 @@ from .tasks import CancelScope, TaskGroup, TaskUtils
 from .threads import ThreadsPortal
 
 if TYPE_CHECKING:
-    import concurrent.futures
     from ssl import SSLContext as _SSLContext
 
     from ..api_async.backend.abc import ILock
@@ -402,29 +401,6 @@ class AsyncIOBackend(AbstractAsyncBackend):
 
     def create_threads_portal(self) -> ThreadsPortal:
         return ThreadsPortal()
-
-    async def wait_future(self, future: concurrent.futures.Future[_T_co]) -> _T_co:
-        try:
-            loop = asyncio.get_running_loop()
-            while not future.done():
-                waiter: asyncio.Future[None] = loop.create_future()
-
-                def on_fut_done(future: concurrent.futures.Future[_T_co]) -> None:
-                    loop.call_soon_threadsafe(waiter.set_result, None)
-
-                future.add_done_callback(on_fut_done)
-
-                # If future.cancel() failed, that means future.set_running_or_notify_cancel() has been called
-                # and set future in RUNNING state.
-                # This future cannot be cancelled anymore, therefore it must be awaited.
-                await TaskUtils.cancel_shielded_wait_asyncio_futures({waiter}, abort_func=future.cancel)
-
-            if future.cancelled():
-                # Task cancellation prevails over future cancellation
-                await asyncio.sleep(0)
-            return future.result()
-        finally:
-            del future
 
     def using_asyncio_transport(self) -> bool:
         return self.__use_asyncio_transport
