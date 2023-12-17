@@ -243,6 +243,7 @@ class RequestRefusedHandler(AsyncStreamRequestHandler[str, str]):
 
     async def handle(self, client: AsyncStreamClient[str]) -> AsyncGenerator[None, str]:
         if self.request_count[client] >= self.refuse_after:
+            await asyncio.sleep(0.2)
             return
         request = yield
         self.request_count[client] += 1
@@ -274,6 +275,7 @@ class ErrorBeforeYieldHandler(AsyncStreamRequestHandler[str, str]):
         await client.send_packet("milk")
 
     async def handle(self, client: AsyncStreamClient[str]) -> AsyncGenerator[None, str]:
+        await asyncio.sleep(0.2)
         raise RandomError("An error occurred")
         request = yield  # type: ignore[unreachable]
         await client.send_packet(request)
