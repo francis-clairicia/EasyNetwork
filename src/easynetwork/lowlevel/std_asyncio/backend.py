@@ -42,6 +42,7 @@ else:
 from ...exceptions import UnsupportedOperation
 from ..api_async.backend import _sniffio_helpers
 from ..api_async.backend.abc import AsyncBackend as AbstractAsyncBackend
+from ..constants import HAPPY_EYEBALLS_DELAY as _DEFAULT_HAPPY_EYEBALLS_DELAY
 from ._asyncio_utils import (
     create_connection,
     create_datagram_connection,
@@ -122,30 +123,19 @@ class AsyncIOBackend(AbstractAsyncBackend):
         local_address: tuple[str, int] | None = None,
         happy_eyeballs_delay: float | None = None,
     ) -> AsyncioTransportStreamSocketAdapter | RawStreamSocketAdapter:
-        if happy_eyeballs_delay is not None:
-            self._check_asyncio_transport("'happy_eyeballs_delay' option")
-
-        if not self.__use_asyncio_transport:
-            loop = asyncio.get_running_loop()
-            socket = await create_connection(host, port, loop, local_address=local_address)
-            return RawStreamSocketAdapter(socket, loop)
-
-        happy_eyeballs_delay = self._default_happy_eyeballs_delay(happy_eyeballs_delay)
-
         if happy_eyeballs_delay is None:
-            reader, writer = await asyncio.open_connection(
-                host,
-                port,
-                local_addr=local_address,
-            )
-        else:
-            reader, writer = await asyncio.open_connection(
-                host,
-                port,
-                local_addr=local_address,
-                happy_eyeballs_delay=happy_eyeballs_delay,
-            )
-        return AsyncioTransportStreamSocketAdapter(reader, writer)
+            happy_eyeballs_delay = _DEFAULT_HAPPY_EYEBALLS_DELAY
+
+        loop = asyncio.get_running_loop()
+        socket = await create_connection(
+            host,
+            port,
+            loop,
+            local_address=local_address,
+            happy_eyeballs_delay=happy_eyeballs_delay,
+        )
+
+        return await self.wrap_stream_socket(socket)
 
     async def create_ssl_over_tcp_connection(
         self,
@@ -162,38 +152,28 @@ class AsyncIOBackend(AbstractAsyncBackend):
         self._check_ssl_support()
         self.__verify_ssl_context(ssl_context)
 
-        happy_eyeballs_delay = self._default_happy_eyeballs_delay(happy_eyeballs_delay)
-
         if happy_eyeballs_delay is None:
-            reader, writer = await asyncio.open_connection(
-                host,
-                port,
-                ssl=ssl_context,
-                server_hostname=server_hostname,
-                ssl_handshake_timeout=float(ssl_handshake_timeout),
-                ssl_shutdown_timeout=float(ssl_shutdown_timeout),
-                local_addr=local_address,
-            )
-        else:
-            reader, writer = await asyncio.open_connection(
-                host,
-                port,
-                ssl=ssl_context,
-                server_hostname=server_hostname,
-                ssl_handshake_timeout=float(ssl_handshake_timeout),
-                ssl_shutdown_timeout=float(ssl_shutdown_timeout),
-                local_addr=local_address,
-                happy_eyeballs_delay=happy_eyeballs_delay,
-            )
-        return AsyncioTransportStreamSocketAdapter(reader, writer)
+            happy_eyeballs_delay = _DEFAULT_HAPPY_EYEBALLS_DELAY
 
-    @staticmethod
-    def _default_happy_eyeballs_delay(happy_eyeballs_delay: float | None) -> float | None:
-        if happy_eyeballs_delay is None:
-            running_loop = asyncio.get_running_loop()
-            if isinstance(running_loop, asyncio.base_events.BaseEventLoop):  # Base class of standard implementation
-                happy_eyeballs_delay = 0.25  # Recommended value by the RFC 6555
-        return happy_eyeballs_delay
+        if server_hostname is None:
+            server_hostname = host
+
+        loop = asyncio.get_running_loop()
+        socket = await create_connection(
+            host,
+            port,
+            loop,
+            local_address=local_address,
+            happy_eyeballs_delay=happy_eyeballs_delay,
+        )
+
+        return await self.wrap_ssl_over_stream_socket_client_side(
+            socket,
+            ssl_context=ssl_context,
+            server_hostname=server_hostname,
+            ssl_handshake_timeout=ssl_handshake_timeout,
+            ssl_shutdown_timeout=ssl_shutdown_timeout,
+        )
 
     async def wrap_stream_socket(
         self,

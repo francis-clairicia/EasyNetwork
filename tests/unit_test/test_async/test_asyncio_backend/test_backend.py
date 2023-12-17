@@ -179,15 +179,19 @@ class TestAsyncIOBackend:
 
     @pytest.mark.parametrize("use_asyncio_transport", [True], indirect=True)
     @pytest.mark.parametrize("ssl", [False, True], ids=lambda p: f"ssl=={p}")
+    @pytest.mark.parametrize("happy_eyeballs_delay", [None, 42], ids=lambda p: f"happy_eyeballs_delay=={p}")
     async def test____create_tcp_connection____use_asyncio_open_connection(
         self,
         ssl: bool,
+        happy_eyeballs_delay: float | None,
+        event_loop: asyncio.AbstractEventLoop,
         local_address: tuple[str, int] | None,
         remote_address: tuple[str, int],
         backend: AsyncIOBackend,
         mock_asyncio_stream_reader_factory: Callable[[], MagicMock],
         mock_asyncio_stream_writer_factory: Callable[[], MagicMock],
         mock_ssl_context: MagicMock,
+        mock_tcp_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -201,6 +205,11 @@ class TestAsyncIOBackend:
             new_callable=mocker.AsyncMock,
             return_value=(mock_asyncio_reader, mock_asyncio_writer),
         )
+        mock_own_create_connection: AsyncMock = mocker.patch(
+            "easynetwork.lowlevel.std_asyncio.backend.create_connection",
+            new_callable=mocker.AsyncMock,
+            return_value=mock_tcp_socket,
+        )
 
         expected_ssl_kwargs: dict[str, Any] = {}
         if ssl:
@@ -210,6 +219,9 @@ class TestAsyncIOBackend:
                 "ssl_handshake_timeout": 123456.789,
                 "ssl_shutdown_timeout": 9876543.21,
             }
+        expected_happy_eyeballs_delay: float = 0.25
+        if happy_eyeballs_delay is not None:
+            expected_happy_eyeballs_delay = happy_eyeballs_delay
 
         # Act
         socket: AsyncioTransportStreamSocketAdapter | RawStreamSocketAdapter
@@ -220,145 +232,36 @@ class TestAsyncIOBackend:
                 server_hostname="server_hostname",
                 ssl_handshake_timeout=123456.789,
                 ssl_shutdown_timeout=9876543.21,
-                happy_eyeballs_delay=42,
+                happy_eyeballs_delay=happy_eyeballs_delay,
                 local_address=local_address,
             )
         else:
             socket = await backend.create_tcp_connection(
                 *remote_address,
-                happy_eyeballs_delay=42,
+                happy_eyeballs_delay=happy_eyeballs_delay,
                 local_address=local_address,
             )
 
         # Assert
-        mock_open_connection.assert_awaited_once_with(
+        mock_own_create_connection.assert_awaited_once_with(
             *remote_address,
+            event_loop,
+            happy_eyeballs_delay=expected_happy_eyeballs_delay,
+            local_address=local_address,
+        )
+        mock_open_connection.assert_awaited_once_with(
+            sock=mock_tcp_socket,
             **expected_ssl_kwargs,
-            happy_eyeballs_delay=42,
-            local_addr=local_address,
         )
         mock_StreamSocketAdapter.assert_called_once_with(mock_asyncio_reader, mock_asyncio_writer)
         assert socket is mocker.sentinel.socket
 
-    @pytest.mark.parametrize("use_asyncio_transport", [True], indirect=True)
-    @pytest.mark.parametrize("ssl", [False, True], ids=lambda p: f"ssl=={p}")
-    async def test____create_tcp_connection____use_asyncio_open_connection____no_happy_eyeballs_delay(
-        self,
-        ssl: bool,
-        local_address: tuple[str, int] | None,
-        remote_address: tuple[str, int],
-        backend: AsyncIOBackend,
-        mock_asyncio_stream_reader_factory: Callable[[], MagicMock],
-        mock_asyncio_stream_writer_factory: Callable[[], MagicMock],
-        mock_ssl_context: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        mocker.patch(
-            "easynetwork.lowlevel.std_asyncio.backend.AsyncioTransportStreamSocketAdapter", return_value=mocker.sentinel.socket
-        )
-        mock_open_connection: AsyncMock = mocker.patch(
-            "asyncio.open_connection",
-            new_callable=mocker.AsyncMock,
-            return_value=(mock_asyncio_stream_reader_factory(), mock_asyncio_stream_writer_factory()),
-        )
-        mocker.patch("asyncio.get_running_loop", return_value=mocker.NonCallableMagicMock(spec=asyncio.AbstractEventLoop))
-        expected_ssl_kwargs: dict[str, Any] = {}
-        if ssl:
-            expected_ssl_kwargs = {
-                "ssl": mock_ssl_context,
-                "server_hostname": "server_hostname",
-                "ssl_handshake_timeout": 123456.789,
-                "ssl_shutdown_timeout": 9876543.21,
-            }
-
-        # Act
-        if ssl:
-            await backend.create_ssl_over_tcp_connection(
-                *remote_address,
-                ssl_context=mock_ssl_context,
-                server_hostname="server_hostname",
-                ssl_handshake_timeout=123456.789,
-                ssl_shutdown_timeout=9876543.21,
-                happy_eyeballs_delay=None,
-                local_address=local_address,
-            )
-        else:
-            await backend.create_tcp_connection(
-                *remote_address,
-                happy_eyeballs_delay=None,
-                local_address=local_address,
-            )
-
-        # Assert
-        mock_open_connection.assert_awaited_once_with(
-            *remote_address,
-            **expected_ssl_kwargs,
-            local_addr=local_address,
-        )
-
-    @pytest.mark.parametrize("use_asyncio_transport", [True], indirect=True)
-    @pytest.mark.parametrize("ssl", [False, True], ids=lambda p: f"ssl=={p}")
-    async def test____create_tcp_connection____use_asyncio_open_connection____happy_eyeballs_delay_default_value_for_asyncio_implementation(
-        self,
-        ssl: bool,
-        local_address: tuple[str, int] | None,
-        remote_address: tuple[str, int],
-        backend: AsyncIOBackend,
-        mock_asyncio_stream_reader_factory: Callable[[], MagicMock],
-        mock_asyncio_stream_writer_factory: Callable[[], MagicMock],
-        mock_ssl_context: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        mocker.patch(
-            "easynetwork.lowlevel.std_asyncio.backend.AsyncioTransportStreamSocketAdapter", return_value=mocker.sentinel.socket
-        )
-        mock_open_connection: AsyncMock = mocker.patch(
-            "asyncio.open_connection",
-            new_callable=mocker.AsyncMock,
-            return_value=(mock_asyncio_stream_reader_factory(), mock_asyncio_stream_writer_factory()),
-        )
-        mocker.patch("asyncio.get_running_loop", return_value=mocker.NonCallableMagicMock(spec=asyncio.base_events.BaseEventLoop))
-        expected_ssl_kwargs: dict[str, Any] = {}
-        if ssl:
-            expected_ssl_kwargs = {
-                "ssl": mock_ssl_context,
-                "server_hostname": "server_hostname",
-                "ssl_handshake_timeout": 123456.789,
-                "ssl_shutdown_timeout": 9876543.21,
-            }
-
-        # Act
-        if ssl:
-            await backend.create_ssl_over_tcp_connection(
-                *remote_address,
-                ssl_context=mock_ssl_context,
-                server_hostname="server_hostname",
-                ssl_handshake_timeout=123456.789,
-                ssl_shutdown_timeout=9876543.21,
-                happy_eyeballs_delay=None,
-                local_address=local_address,
-            )
-        else:
-            await backend.create_tcp_connection(
-                *remote_address,
-                happy_eyeballs_delay=None,
-                local_address=local_address,
-            )
-
-        # Assert
-        mock_open_connection.assert_awaited_once_with(
-            *remote_address,
-            **expected_ssl_kwargs,
-            local_addr=local_address,
-            happy_eyeballs_delay=0.25,
-        )
-
     @pytest.mark.parametrize("use_asyncio_transport", [False], indirect=True)
+    @pytest.mark.parametrize("happy_eyeballs_delay", [None, 42], ids=lambda p: f"happy_eyeballs_delay=={p}")
     async def test____create_tcp_connection____creates_raw_socket_adapter(
         self,
         event_loop: asyncio.AbstractEventLoop,
+        happy_eyeballs_delay: float | None,
         local_address: tuple[str, int] | None,
         remote_address: tuple[str, int],
         backend: AsyncIOBackend,
@@ -379,11 +282,15 @@ class TestAsyncIOBackend:
             new_callable=mocker.AsyncMock,
             return_value=mock_tcp_socket,
         )
+        expected_happy_eyeballs_delay: float = 0.25
+        if happy_eyeballs_delay is not None:
+            expected_happy_eyeballs_delay = happy_eyeballs_delay
 
         # Act
         socket = await backend.create_tcp_connection(
             *remote_address,
             local_address=local_address,
+            happy_eyeballs_delay=happy_eyeballs_delay,
         )
 
         # Assert
@@ -392,45 +299,68 @@ class TestAsyncIOBackend:
             *remote_address,
             event_loop,
             local_address=local_address,
+            happy_eyeballs_delay=expected_happy_eyeballs_delay,
         )
         mock_RawStreamSocketAdapter.assert_called_once_with(mock_tcp_socket, event_loop)
         assert socket is mocker.sentinel.socket
 
-    @pytest.mark.parametrize("use_asyncio_transport", [False], indirect=True)
-    async def test____create_tcp_connection____happy_eyeballs_delay_not_supported(
+    @pytest.mark.parametrize("use_asyncio_transport", [True], indirect=True)
+    async def test____create_ssl_over_tcp_connection____use_host_as_server_hostname(
         self,
+        event_loop: asyncio.AbstractEventLoop,
         local_address: tuple[str, int] | None,
         remote_address: tuple[str, int],
         backend: AsyncIOBackend,
+        mock_asyncio_stream_reader_factory: Callable[[], MagicMock],
+        mock_asyncio_stream_writer_factory: Callable[[], MagicMock],
+        mock_ssl_context: MagicMock,
+        mock_tcp_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_RawStreamSocketAdapter: MagicMock = mocker.patch(
-            "easynetwork.lowlevel.std_asyncio.backend.RawStreamSocketAdapter", side_effect=AssertionError
+        mock_asyncio_reader = mock_asyncio_stream_reader_factory()
+        mock_asyncio_writer = mock_asyncio_stream_writer_factory()
+        mock_StreamSocketAdapter: MagicMock = mocker.patch(
+            "easynetwork.lowlevel.std_asyncio.backend.AsyncioTransportStreamSocketAdapter", return_value=mocker.sentinel.socket
         )
-        mock_asyncio_open_connection: AsyncMock = mocker.patch(
+        mock_open_connection: AsyncMock = mocker.patch(
             "asyncio.open_connection",
             new_callable=mocker.AsyncMock,
-            side_effect=AssertionError,
+            return_value=(mock_asyncio_reader, mock_asyncio_writer),
         )
         mock_own_create_connection: AsyncMock = mocker.patch(
             "easynetwork.lowlevel.std_asyncio.backend.create_connection",
             new_callable=mocker.AsyncMock,
-            side_effect=AssertionError,
+            return_value=mock_tcp_socket,
         )
 
         # Act
-        with pytest.raises(UnsupportedOperation, match=r"^'happy_eyeballs_delay' option not supported with transport=False$"):
-            await backend.create_tcp_connection(
-                *remote_address,
-                happy_eyeballs_delay=42,
-                local_address=local_address,
-            )
+        socket: AsyncioTransportStreamSocketAdapter | RawStreamSocketAdapter = await backend.create_ssl_over_tcp_connection(
+            *remote_address,
+            ssl_context=mock_ssl_context,
+            server_hostname=None,
+            ssl_handshake_timeout=123456.789,
+            ssl_shutdown_timeout=9876543.21,
+            happy_eyeballs_delay=42,
+            local_address=local_address,
+        )
 
         # Assert
-        mock_asyncio_open_connection.assert_not_called()
-        mock_own_create_connection.assert_not_called()
-        mock_RawStreamSocketAdapter.assert_not_called()
+        mock_own_create_connection.assert_awaited_once_with(
+            *remote_address,
+            event_loop,
+            happy_eyeballs_delay=42,
+            local_address=local_address,
+        )
+        mock_open_connection.assert_awaited_once_with(
+            sock=mock_tcp_socket,
+            ssl=mock_ssl_context,
+            server_hostname=remote_address[0],
+            ssl_handshake_timeout=123456.789,
+            ssl_shutdown_timeout=9876543.21,
+        )
+        mock_StreamSocketAdapter.assert_called_once_with(mock_asyncio_reader, mock_asyncio_writer)
+        assert socket is mocker.sentinel.socket
 
     @pytest.mark.parametrize("use_asyncio_transport", [False], indirect=True)
     async def test____create_ssl_over_tcp_connection____ssl_not_supported(
@@ -494,6 +424,11 @@ class TestAsyncIOBackend:
             new_callable=mocker.AsyncMock,
             side_effect=AssertionError,
         )
+        mock_own_create_connection: AsyncMock = mocker.patch(
+            "easynetwork.lowlevel.std_asyncio.backend.create_connection",
+            new_callable=mocker.AsyncMock,
+            side_effect=AssertionError,
+        )
 
         # Act
         with pytest.raises(ValueError, match=r"^Expected a ssl\.SSLContext instance, got True$"):
@@ -508,6 +443,7 @@ class TestAsyncIOBackend:
             )
 
         # Assert
+        mock_own_create_connection.assert_not_called()
         mock_asyncio_open_connection.assert_not_called()
         mock_AsyncioTransportStreamSocketAdapter.assert_not_called()
 
@@ -529,6 +465,11 @@ class TestAsyncIOBackend:
             new_callable=mocker.AsyncMock,
             side_effect=AssertionError,
         )
+        mock_own_create_connection: AsyncMock = mocker.patch(
+            "easynetwork.lowlevel.std_asyncio.backend.create_connection",
+            new_callable=mocker.AsyncMock,
+            side_effect=AssertionError,
+        )
 
         # Act
         with pytest.raises(RuntimeError, match=r"^stdlib ssl module not available$"):
@@ -543,6 +484,7 @@ class TestAsyncIOBackend:
             )
 
         # Assert
+        mock_own_create_connection.assert_not_called()
         mock_asyncio_open_connection.assert_not_called()
         mock_AsyncioTransportStreamSocketAdapter.assert_not_called()
 
