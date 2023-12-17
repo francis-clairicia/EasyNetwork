@@ -28,9 +28,11 @@ __all__ = [
 import asyncio
 import contextlib
 import itertools
+import math
 import socket as _socket
+from collections import OrderedDict
 from collections.abc import Iterable, Sequence
-from typing import Any
+from typing import Any, cast
 
 from .. import _utils
 
@@ -144,11 +146,93 @@ async def _create_connection_impl(
         errors.clear()
 
 
+# Taken from asyncio library
+def _interleave_addrinfos(
+    addrinfos: Sequence[tuple[int, int, int, str, tuple[Any, ...]]]
+) -> list[tuple[int, int, int, str, tuple[Any, ...]]]:
+    """Interleave list of addrinfo tuples by family."""
+    # Group addresses by family
+    addrinfos_by_family: OrderedDict[int, list[tuple[Any, ...]]] = OrderedDict()
+    for addr in addrinfos:
+        family = addr[0]
+        if family not in addrinfos_by_family:
+            addrinfos_by_family[family] = []
+        addrinfos_by_family[family].append(addr)
+    addrinfos_lists = list(addrinfos_by_family.values())
+    return [addr for addr in itertools.chain.from_iterable(itertools.zip_longest(*addrinfos_lists)) if addr is not None]
+
+
+# Taken from anyio project
+def _prioritize_ipv6_over_ipv4(
+    addrinfos: Sequence[tuple[int, int, int, str, tuple[Any, ...]]]
+) -> list[tuple[int, int, int, str, tuple[Any, ...]]]:
+    # Organize the list so that the first address is an IPv6 address (if available)
+    # and the second one is an IPv4 addresses. The rest can be in whatever order.
+    v6_found = v4_found = False
+    reordered: list[tuple[int, int, int, str, tuple[Any, ...]]] = []
+    for addr in addrinfos:
+        family = addr[0]
+        if family == _socket.AF_INET6 and not v6_found:
+            v6_found = True
+            reordered.insert(0, addr)
+        elif family == _socket.AF_INET and not v4_found and v6_found:
+            v4_found = True
+            reordered.insert(1, addr)
+        else:
+            reordered.append(addr)
+    return reordered
+
+
+async def _staggered_race_connection_impl(
+    *,
+    loop: asyncio.AbstractEventLoop,
+    remote_addrinfo: Sequence[tuple[int, int, int, str, tuple[Any, ...]]],
+    local_addrinfo: Sequence[tuple[int, int, int, str, tuple[Any, ...]]] | None,
+    happy_eyeballs_delay: float,
+) -> _socket.socket:
+    from .tasks import CancelScope
+
+    remote_addrinfo = _interleave_addrinfos(_prioritize_ipv6_over_ipv4(remote_addrinfo))
+    winner: _socket.socket | None = cast(_socket.socket | None, None)
+    errors: list[OSError | BaseExceptionGroup[OSError]] = []
+
+    async def try_connect(addr: tuple[int, int, int, str, tuple[Any, ...]]) -> None:
+        nonlocal winner
+        try:
+            socket = await _create_connection_impl(loop=loop, remote_addrinfo=[addr], local_addrinfo=local_addrinfo)
+        except* OSError as excgrp:
+            errors.extend(excgrp.exceptions)
+        else:
+            if winner is None:
+                winner = socket
+                connection_scope.cancel()
+            else:
+                socket.close()
+
+    try:
+        with CancelScope() as connection_scope:
+            async with asyncio.TaskGroup() as task_group:
+                for addr in remote_addrinfo:
+                    await asyncio.wait({task_group.create_task(try_connect(addr))}, timeout=happy_eyeballs_delay)
+
+        if winner is None:
+            raise BaseExceptionGroup("create_connection() failed", errors)
+        return winner
+    except BaseException:
+        if winner is not None:
+            winner.close()
+        raise
+    finally:
+        errors.clear()
+
+
 async def create_connection(
     host: str,
     port: int,
     loop: asyncio.AbstractEventLoop,
     local_address: tuple[str, int] | None = None,
+    *,
+    happy_eyeballs_delay: float = math.inf,
 ) -> _socket.socket:
     remote_addrinfo: Sequence[tuple[int, int, int, str, tuple[Any, ...]]] = await ensure_resolved(
         host,
@@ -168,10 +252,11 @@ async def create_connection(
             loop=loop,
         )
 
-    return await _create_connection_impl(
+    return await _staggered_race_connection_impl(
         loop=loop,
         remote_addrinfo=remote_addrinfo,
         local_addrinfo=local_addrinfo,
+        happy_eyeballs_delay=happy_eyeballs_delay,
     )
 
 

@@ -79,6 +79,10 @@ SSL_HANDSHAKE_TIMEOUT: Final[float] = 60.0
 # The default timeout mimics lingering_time
 SSL_SHUTDOWN_TIMEOUT: Final[float] = 30.0
 
+# "Connection Attempt Delay" for concurrent connections
+# Recommended value by the RFC 6555
+HAPPY_EYEBALLS_DELAY = 0.25
+
 # Buffer size limit when waiting for a byte sequence
 _DEFAULT_LIMIT: Final[int] = 64 * 1024  # 64 KiB
 

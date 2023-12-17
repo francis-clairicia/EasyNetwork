@@ -35,6 +35,7 @@ from easynetwork.lowlevel.std_asyncio._asyncio_utils import (
     wait_until_readable,
     wait_until_writable,
 )
+from easynetwork.lowlevel.std_asyncio.tasks import TaskUtils
 
 import pytest
 
@@ -74,7 +75,20 @@ def mock_socket_ipv6(mock_socket_factory: Callable[[], MagicMock]) -> MagicMock:
 
 @pytest.fixture(autouse=True)
 def mock_socket_cls(mock_socket_ipv4: MagicMock, mock_socket_ipv6: MagicMock, mocker: MockerFixture) -> MagicMock:
-    return mocker.patch("socket.socket", side_effect=[mock_socket_ipv6, mock_socket_ipv4])
+    def side_effect(family: int, type: int, proto: int) -> MagicMock:
+        if family == AF_INET6:
+            used_socket = mock_socket_ipv6
+        elif family == AF_INET:
+            used_socket = mock_socket_ipv4
+        else:
+            raise error_from_errno(errno.EAFNOSUPPORT)
+
+        used_socket.family = family
+        used_socket.type = type
+        used_socket.proto = proto
+        return used_socket
+
+    return mocker.patch("socket.socket", side_effect=side_effect)
 
 
 @pytest.mark.asyncio
@@ -460,6 +474,7 @@ async def test____create_connection____all_failed(
 async def test____create_connection____unrelated_exception(
     event_loop: asyncio.AbstractEventLoop,
     fail_on: Literal["socket", "connect"],
+    connection_socktype: int,
     create_connection_of_socktype: _CreateConnectionCallable,
     addrinfo_list_factory: _AddrInfoListFactory,
     mock_socket_cls: MagicMock,
@@ -486,7 +501,12 @@ async def test____create_connection____unrelated_exception(
         await create_connection_of_socktype(remote_host, remote_port, event_loop)
 
     # Assert
-    assert exc_info.value is expected_failure_exception
+    if connection_socktype == SOCK_STREAM:
+        assert isinstance(exc_info.value, BaseExceptionGroup)
+        assert len(exc_info.value.exceptions) == 1
+        assert exc_info.value.exceptions[0] is expected_failure_exception
+    else:
+        assert exc_info.value is expected_failure_exception
     if fail_on != "socket":
         mock_socket_ipv6.close.assert_called_once_with()
 
@@ -561,6 +581,196 @@ async def test____create_connection____getaddrinfo_return_mismatch(
     mock_socket_ipv4.bind.assert_not_called()
     mock_socket_ipv6.bind.assert_not_called()
     mock_sock_connect.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("connection_socktype", [SOCK_STREAM], indirect=True, ids=repr)
+async def test____create_connection____happy_eyeballs_delay____connect_cancellation(
+    event_loop: asyncio.AbstractEventLoop,
+    addrinfo_list_factory: _AddrInfoListFactory,
+    mock_socket_cls: MagicMock,
+    mock_socket_ipv4: MagicMock,
+    mock_socket_ipv6: MagicMock,
+    mock_getaddrinfo: AsyncMock,
+    mock_sock_connect: AsyncMock,
+    mocker: MockerFixture,
+) -> None:
+    # Arrange
+    timestamps: list[float] = []
+    remote_host, remote_port = "localhost", 12345
+    mock_getaddrinfo.side_effect = [addrinfo_list_factory(remote_port, families=[AF_INET6, AF_INET])]
+
+    async def connect_side_effect(sock: SocketType, address: tuple[Any, ...]) -> None:
+        timestamps.append(event_loop.time())
+        if sock.family == AF_INET6:
+            await asyncio.sleep(1)
+        else:
+            await asyncio.sleep(0.01)
+
+    mock_sock_connect.side_effect = connect_side_effect
+
+    # Act
+    socket = await create_connection(remote_host, remote_port, event_loop, happy_eyeballs_delay=0.5)
+
+    # Assert
+    assert socket is mock_socket_ipv4
+    assert mock_socket_cls.call_args_list == [
+        mocker.call(AF_INET6, SOCK_STREAM, IPPROTO_TCP),
+        mocker.call(AF_INET, SOCK_STREAM, IPPROTO_TCP),
+    ]
+
+    mock_socket_ipv6.close.assert_called_once_with()
+    mock_socket_ipv4.close.assert_not_called()
+
+    ipv6_start_time, ipv4_start_time = timestamps
+    assert ipv4_start_time - ipv6_start_time == pytest.approx(0.5, rel=1e-1)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("connection_socktype", [SOCK_STREAM], indirect=True, ids=repr)
+async def test____create_connection____happy_eyeballs_delay____connect_too_late(
+    event_loop: asyncio.AbstractEventLoop,
+    addrinfo_list_factory: _AddrInfoListFactory,
+    mock_socket_cls: MagicMock,
+    mock_socket_ipv4: MagicMock,
+    mock_socket_ipv6: MagicMock,
+    mock_getaddrinfo: AsyncMock,
+    mock_sock_connect: AsyncMock,
+    mocker: MockerFixture,
+) -> None:
+    # Arrange
+    remote_host, remote_port = "localhost", 12345
+    mock_getaddrinfo.side_effect = [addrinfo_list_factory(remote_port, families=[AF_INET6, AF_INET])]
+
+    async def connect_side_effect(sock: SocketType, address: tuple[Any, ...]) -> None:
+        try:
+            await asyncio.sleep(1)
+        except asyncio.CancelledError:
+            TaskUtils.current_asyncio_task().uncancel()
+            await asyncio.sleep(0)
+
+    mock_sock_connect.side_effect = connect_side_effect
+
+    # Act
+    socket = await create_connection(remote_host, remote_port, event_loop, happy_eyeballs_delay=0.25)
+
+    # Assert
+    assert socket is mock_socket_ipv6
+    assert mock_socket_cls.call_args_list == [
+        mocker.call(AF_INET6, SOCK_STREAM, IPPROTO_TCP),
+        mocker.call(AF_INET, SOCK_STREAM, IPPROTO_TCP),
+    ]
+
+    mock_socket_ipv4.close.assert_called_once_with()
+    mock_socket_ipv6.close.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("connection_socktype", [SOCK_STREAM], indirect=True, ids=repr)
+async def test____create_connection____happy_eyeballs_delay____winner_closed_because_of_exception_in_another_task(
+    event_loop: asyncio.AbstractEventLoop,
+    addrinfo_list_factory: _AddrInfoListFactory,
+    mock_socket_cls: MagicMock,
+    mock_socket_ipv4: MagicMock,
+    mock_socket_ipv6: MagicMock,
+    mock_getaddrinfo: AsyncMock,
+    mock_sock_connect: AsyncMock,
+    mocker: MockerFixture,
+) -> None:
+    # Arrange
+    expected_failure_exception = BaseException("error")
+    remote_host, remote_port = "localhost", 12345
+    mock_getaddrinfo.side_effect = [addrinfo_list_factory(remote_port, families=[AF_INET6, AF_INET])]
+
+    async def connect_side_effect(sock: SocketType, address: tuple[Any, ...]) -> None:
+        try:
+            await asyncio.sleep(0.5)
+        except asyncio.CancelledError:
+            raise expected_failure_exception from None
+
+    mock_sock_connect.side_effect = connect_side_effect
+
+    # Act
+    with pytest.raises(BaseExceptionGroup) as exc_info:
+        await create_connection(remote_host, remote_port, event_loop, happy_eyeballs_delay=0.25)
+
+    # Assert
+    assert mock_socket_cls.call_args_list == [
+        mocker.call(AF_INET6, SOCK_STREAM, IPPROTO_TCP),
+        mocker.call(AF_INET, SOCK_STREAM, IPPROTO_TCP),
+    ]
+    assert list(exc_info.value.exceptions) == [expected_failure_exception]
+
+    mock_socket_ipv4.close.assert_called_once_with()
+    mock_socket_ipv6.close.assert_called_once_with()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("connection_socktype", [SOCK_STREAM], indirect=True, ids=repr)
+async def test____create_connection____happy_eyeballs_delay____addrinfo_reordering____prioritize_ipv6_over_ipv4(
+    event_loop: asyncio.AbstractEventLoop,
+    addrinfo_list_factory: _AddrInfoListFactory,
+    mock_socket_cls: MagicMock,
+    mock_socket_ipv6: MagicMock,
+    mock_getaddrinfo: AsyncMock,
+    mock_sock_connect: AsyncMock,
+    mocker: MockerFixture,
+) -> None:
+    # Arrange
+    remote_host, remote_port = "localhost", 12345
+    mock_getaddrinfo.side_effect = [addrinfo_list_factory(remote_port, families=[AF_INET, AF_INET6])]
+
+    async def connect_side_effect(sock: SocketType, address: tuple[Any, ...]) -> None:
+        await asyncio.sleep(0.5)
+
+    mock_sock_connect.side_effect = connect_side_effect
+
+    # Act
+    socket = await create_connection(remote_host, remote_port, event_loop, happy_eyeballs_delay=0.25)
+
+    # Assert
+    assert socket is mock_socket_ipv6
+    assert mock_socket_cls.call_args_list == [
+        mocker.call(AF_INET6, SOCK_STREAM, IPPROTO_TCP),
+        mocker.call(AF_INET, SOCK_STREAM, IPPROTO_TCP),
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("connection_socktype", [SOCK_STREAM], indirect=True, ids=repr)
+async def test____create_connection____happy_eyeballs_delay____addrinfo_reordering____interleave_families(
+    event_loop: asyncio.AbstractEventLoop,
+    addrinfo_list_factory: _AddrInfoListFactory,
+    mock_socket_cls: MagicMock,
+    mock_socket_ipv6: MagicMock,
+    mock_getaddrinfo: AsyncMock,
+    mock_sock_connect: AsyncMock,
+    mocker: MockerFixture,
+) -> None:
+    # Arrange
+    remote_host, remote_port = "localhost", 12345
+    mock_getaddrinfo.side_effect = [
+        addrinfo_list_factory(remote_port, families=[AF_INET6, AF_INET6, AF_INET6, AF_INET, AF_INET, AF_INET]),
+    ]
+
+    async def connect_side_effect(sock: SocketType, address: tuple[Any, ...]) -> None:
+        await asyncio.sleep(1)
+
+    mock_sock_connect.side_effect = connect_side_effect
+
+    # Act
+    socket = await create_connection(remote_host, remote_port, event_loop, happy_eyeballs_delay=0.1)
+
+    # Assert
+    assert socket is mock_socket_ipv6
+    assert mock_socket_cls.call_args_list == [
+        mocker.call(AF_INET6, SOCK_STREAM, IPPROTO_TCP),
+        mocker.call(AF_INET, SOCK_STREAM, IPPROTO_TCP),
+        mocker.call(AF_INET6, SOCK_STREAM, IPPROTO_TCP),
+        mocker.call(AF_INET, SOCK_STREAM, IPPROTO_TCP),
+        mocker.call(AF_INET6, SOCK_STREAM, IPPROTO_TCP),
+        mocker.call(AF_INET, SOCK_STREAM, IPPROTO_TCP),
+    ]
 
 
 @pytest.fixture
