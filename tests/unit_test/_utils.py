@@ -6,7 +6,7 @@ from socket import AF_INET, AF_INET6, IPPROTO_TCP, IPPROTO_UDP, SOCK_DGRAM, SOCK
 from types import TracebackType
 from typing import Any
 
-_DEFAULT_FAMILIES: Sequence[int] = (AF_INET, AF_INET6)
+_DEFAULT_FAMILIES: Sequence[int] = (AF_INET6, AF_INET)
 
 
 class _LockMixin:

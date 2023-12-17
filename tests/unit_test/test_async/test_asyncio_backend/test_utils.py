@@ -74,7 +74,7 @@ def mock_socket_ipv6(mock_socket_factory: Callable[[], MagicMock]) -> MagicMock:
 
 @pytest.fixture(autouse=True)
 def mock_socket_cls(mock_socket_ipv4: MagicMock, mock_socket_ipv6: MagicMock, mocker: MockerFixture) -> MagicMock:
-    return mocker.patch("socket.socket", side_effect=[mock_socket_ipv4, mock_socket_ipv6])
+    return mocker.patch("socket.socket", side_effect=[mock_socket_ipv6, mock_socket_ipv4])
 
 
 @pytest.mark.asyncio
@@ -286,19 +286,19 @@ async def test____create_connection____default(
             mocker.call(*local_address, family=AF_UNSPEC, type=connection_socktype, proto=0, flags=0),
         ]
 
-    mock_socket_cls.assert_called_once_with(AF_INET, connection_socktype, expected_proto)
-    assert socket is mock_socket_ipv4
+    mock_socket_cls.assert_called_once_with(AF_INET6, connection_socktype, expected_proto)
+    assert socket is mock_socket_ipv6
 
-    mock_socket_ipv4.setblocking.assert_called_once_with(False)
+    mock_socket_ipv6.setblocking.assert_called_once_with(False)
     if local_address is None:
-        mock_socket_ipv4.bind.assert_not_called()
+        mock_socket_ipv6.bind.assert_not_called()
     else:
-        mock_socket_ipv4.bind.assert_called_once_with(("127.0.0.1", 11111))
-    mock_sock_connect.assert_awaited_once_with(mock_socket_ipv4, ("127.0.0.1", 12345))
-    mock_socket_ipv4.close.assert_not_called()
+        mock_socket_ipv6.bind.assert_called_once_with(("::1", 11111, 0, 0))
+    mock_sock_connect.assert_awaited_once_with(mock_socket_ipv6, ("::1", 12345, 0, 0))
+    mock_socket_ipv6.close.assert_not_called()
 
-    mock_socket_ipv6.setblocking.assert_not_called()
-    mock_socket_ipv6.bind.assert_not_called()
+    mock_socket_ipv4.setblocking.assert_not_called()
+    mock_socket_ipv4.bind.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -327,9 +327,9 @@ async def test____create_connection____first_failed(
 
     match fail_on:
         case "socket":
-            mock_socket_cls.side_effect = [error_from_errno(errno.EAFNOSUPPORT), mock_socket_ipv6]
+            mock_socket_cls.side_effect = [error_from_errno(errno.EAFNOSUPPORT), mock_socket_ipv4]
         case "bind":
-            mock_socket_ipv4.bind.side_effect = error_from_errno(errno.EADDRINUSE)
+            mock_socket_ipv6.bind.side_effect = error_from_errno(errno.EADDRINUSE)
         case "connect":
             mock_sock_connect.side_effect = [error_from_errno(errno.ECONNREFUSED), None]
         case _:
@@ -341,38 +341,38 @@ async def test____create_connection____first_failed(
     # Assert
     if connection_socktype == SOCK_STREAM:
         assert mock_socket_cls.call_args_list == [
-            mocker.call(AF_INET, SOCK_STREAM, IPPROTO_TCP),
             mocker.call(AF_INET6, SOCK_STREAM, IPPROTO_TCP),
+            mocker.call(AF_INET, SOCK_STREAM, IPPROTO_TCP),
         ]
     else:
         assert mock_socket_cls.call_args_list == [
-            mocker.call(AF_INET, SOCK_DGRAM, IPPROTO_UDP),
             mocker.call(AF_INET6, SOCK_DGRAM, IPPROTO_UDP),
+            mocker.call(AF_INET, SOCK_DGRAM, IPPROTO_UDP),
         ]
-    assert socket is mock_socket_ipv6
+    assert socket is mock_socket_ipv4
 
     if fail_on != "socket":
-        mock_socket_ipv4.setblocking.assert_called_once_with(False)
+        mock_socket_ipv6.setblocking.assert_called_once_with(False)
         if local_address is None:
-            mock_socket_ipv4.bind.assert_not_called()
+            mock_socket_ipv6.bind.assert_not_called()
         else:
-            mock_socket_ipv4.bind.assert_called_once_with(("127.0.0.1", 11111))
+            mock_socket_ipv6.bind.assert_called_once_with(("::1", 11111, 0, 0))
         match fail_on:
             case "bind":
-                assert mocker.call(mock_socket_ipv4, ("127.0.0.1", 12345)) not in mock_sock_connect.await_args_list
+                assert mocker.call(mock_socket_ipv6, ("::1", 12345, 0, 0)) not in mock_sock_connect.await_args_list
             case "connect":
-                mock_sock_connect.assert_any_await(mock_socket_ipv4, ("127.0.0.1", 12345))
+                mock_sock_connect.assert_any_await(mock_socket_ipv6, ("::1", 12345, 0, 0))
             case _:
                 assert_never(fail_on)
-        mock_socket_ipv4.close.assert_called_once_with()
+        mock_socket_ipv6.close.assert_called_once_with()
 
-    mock_socket_ipv6.setblocking.assert_called_once_with(False)
+    mock_socket_ipv4.setblocking.assert_called_once_with(False)
     if local_address is None:
-        mock_socket_ipv6.bind.assert_not_called()
+        mock_socket_ipv4.bind.assert_not_called()
     else:
-        mock_socket_ipv6.bind.assert_called_once_with(("::1", 11111, 0, 0))
-    mock_sock_connect.assert_awaited_with(mock_socket_ipv6, ("::1", 12345, 0, 0))
-    mock_socket_ipv6.close.assert_not_called()
+        mock_socket_ipv4.bind.assert_called_once_with(("127.0.0.1", 11111))
+    mock_sock_connect.assert_awaited_with(mock_socket_ipv4, ("127.0.0.1", 12345))
+    mock_socket_ipv4.close.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -424,13 +424,13 @@ async def test____create_connection____all_failed(
 
     if connection_socktype == SOCK_STREAM:
         assert mock_socket_cls.call_args_list == [
-            mocker.call(AF_INET, SOCK_STREAM, IPPROTO_TCP),
             mocker.call(AF_INET6, SOCK_STREAM, IPPROTO_TCP),
+            mocker.call(AF_INET, SOCK_STREAM, IPPROTO_TCP),
         ]
     else:
         assert mock_socket_cls.call_args_list == [
-            mocker.call(AF_INET, SOCK_DGRAM, IPPROTO_UDP),
             mocker.call(AF_INET6, SOCK_DGRAM, IPPROTO_UDP),
+            mocker.call(AF_INET, SOCK_DGRAM, IPPROTO_UDP),
         ]
 
     if fail_on != "socket":
@@ -463,7 +463,7 @@ async def test____create_connection____unrelated_exception(
     create_connection_of_socktype: _CreateConnectionCallable,
     addrinfo_list_factory: _AddrInfoListFactory,
     mock_socket_cls: MagicMock,
-    mock_socket_ipv4: MagicMock,
+    mock_socket_ipv6: MagicMock,
     mock_getaddrinfo: AsyncMock,
     mock_sock_connect: AsyncMock,
 ) -> None:
@@ -488,7 +488,7 @@ async def test____create_connection____unrelated_exception(
     # Assert
     assert exc_info.value is expected_failure_exception
     if fail_on != "socket":
-        mock_socket_ipv4.close.assert_called_once_with()
+        mock_socket_ipv6.close.assert_called_once_with()
 
 
 @pytest.mark.asyncio
