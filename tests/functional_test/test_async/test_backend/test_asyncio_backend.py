@@ -54,8 +54,8 @@ class TestAsyncioBackend:
         assert isinstance(backend, AsyncIOBackend)
         return backend
 
-    async def test____use_asyncio_transport____True_by_default(self, backend: AsyncIOBackend) -> None:
-        assert backend.using_asyncio_transport()
+    async def test____use_asyncio_transport____False_by_default(self, backend: AsyncIOBackend) -> None:
+        assert not backend.using_asyncio_transports()
 
     async def test____cancel_shielded_coro_yield____mute_cancellation(
         self,

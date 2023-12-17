@@ -39,7 +39,6 @@ else:
     ssl = _ssl
     del _ssl
 
-from ...exceptions import UnsupportedOperation
 from ..api_async.backend import _sniffio_helpers
 from ..api_async.backend.abc import AsyncBackend as AbstractAsyncBackend
 from ..constants import HAPPY_EYEBALLS_DELAY as _DEFAULT_HAPPY_EYEBALLS_DELAY
@@ -68,10 +67,7 @@ _T_co = TypeVar("_T_co", covariant=True)
 
 
 class AsyncIOBackend(AbstractAsyncBackend):
-    __slots__ = ("__use_asyncio_transport",)
-
-    def __init__(self, *, transport: bool = True) -> None:
-        self.__use_asyncio_transport: bool = bool(transport)
+    __slots__ = ()
 
     def bootstrap(
         self,
@@ -149,7 +145,6 @@ class AsyncIOBackend(AbstractAsyncBackend):
         local_address: tuple[str, int] | None = None,
         happy_eyeballs_delay: float | None = None,
     ) -> AsyncioTransportStreamSocketAdapter:
-        self._check_ssl_support()
         self.__verify_ssl_context(ssl_context)
 
         if happy_eyeballs_delay is None:
@@ -181,7 +176,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
     ) -> AsyncioTransportStreamSocketAdapter | RawStreamSocketAdapter:
         socket.setblocking(False)
 
-        if not self.__use_asyncio_transport:
+        if not self.using_asyncio_transports():
             return RawStreamSocketAdapter(socket, asyncio.get_running_loop())
 
         reader, writer = await asyncio.open_connection(sock=socket)
@@ -196,7 +191,6 @@ class AsyncIOBackend(AbstractAsyncBackend):
         ssl_handshake_timeout: float,
         ssl_shutdown_timeout: float,
     ) -> AsyncioTransportStreamSocketAdapter:
-        self._check_ssl_support()
         self.__verify_ssl_context(ssl_context)
 
         socket.setblocking(False)
@@ -221,7 +215,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
         sockets = await self._create_tcp_socket_listeners(host, port, backlog, reuse_port=reuse_port)
 
         loop = asyncio.get_running_loop()
-        factory = AcceptedSocketFactory(use_asyncio_transport=self.__use_asyncio_transport)
+        factory = AcceptedSocketFactory(use_asyncio_transport=self.using_asyncio_transports())
         return [ListenerSocketAdapter(sock, loop, factory) for sock in sockets]
 
     async def create_ssl_over_tcp_listeners(
@@ -235,7 +229,6 @@ class AsyncIOBackend(AbstractAsyncBackend):
         *,
         reuse_port: bool = False,
     ) -> Sequence[ListenerSocketAdapter[AsyncioTransportStreamSocketAdapter]]:
-        self._check_ssl_support()
         self.__verify_ssl_context(ssl_context)
 
         sockets = await self._create_tcp_socket_listeners(host, port, backlog, reuse_port=reuse_port)
@@ -311,7 +304,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
     ) -> AsyncioTransportDatagramSocketAdapter | RawDatagramSocketAdapter:
         socket.setblocking(False)
 
-        if not self.__use_asyncio_transport:
+        if not self.using_asyncio_transports():
             return RawDatagramSocketAdapter(socket, asyncio.get_running_loop())
 
         endpoint = await create_datagram_endpoint(sock=socket)
@@ -350,7 +343,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
             reuse_port=reuse_port,
         )
 
-        if not self.__use_asyncio_transport:
+        if not self.using_asyncio_transports():
             return [RawDatagramListenerSocketAdapter(sock, loop) for sock in sockets]
         return [AsyncioTransportDatagramListenerSocketAdapter(await create_datagram_endpoint(sock=sock)) for sock in sockets]
 
@@ -382,16 +375,9 @@ class AsyncIOBackend(AbstractAsyncBackend):
     def create_threads_portal(self) -> ThreadsPortal:
         return ThreadsPortal()
 
-    def using_asyncio_transport(self) -> bool:
-        return self.__use_asyncio_transport
-
-    def _check_asyncio_transport(self, context: str) -> None:
-        transport = self.__use_asyncio_transport
-        if not transport:
-            raise UnsupportedOperation(f"{context} not supported with {transport=}")
-
-    def _check_ssl_support(self) -> None:
-        self._check_asyncio_transport("SSL/TLS")
+    @classmethod
+    def using_asyncio_transports(cls) -> bool:
+        return os.environ.get("EASYNETWORK_HINT_FORCE_USE_ASYNCIO_TRANSPORTS", "") == "1"
 
     def __verify_ssl_context(self, ctx: _SSLContext) -> None:
         if ssl is None:
