@@ -300,13 +300,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
 
     @pytest.fixture
     @staticmethod
-    def use_asyncio_transport(use_asyncio_transport: bool, use_ssl: bool) -> bool:
-        if use_ssl and not use_asyncio_transport:
-            pytest.skip("SSL/TLS not supported with transport=False")
-        return use_asyncio_transport
-
-    @pytest.fixture
-    @staticmethod
     def request_handler(request: Any) -> AsyncStreamRequestHandler[str, str]:
         request_handler_cls: type[AsyncStreamRequestHandler[str, str]] = getattr(request, "param", MyAsyncTCPRequestHandler)
         return request_handler_cls()
@@ -403,7 +396,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
 
     @pytest.mark.parametrize("host", [None, ""], ids=repr)
     @pytest.mark.parametrize("log_client_connection", [True, False], ids=lambda p: f"log_client_connection=={p}")
-    @pytest.mark.parametrize("use_ssl", ["NO_SSL"], indirect=True)
     @pytest.mark.usefixtures("use_asyncio_transport")
     async def test____dunder_init____bind_to_all_available_interfaces(
         self,

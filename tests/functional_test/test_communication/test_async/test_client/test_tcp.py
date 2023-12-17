@@ -480,6 +480,7 @@ class TestAsyncTCPNetworkClientConnection:
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("use_asyncio_transport")
 class TestAsyncSSLOverTCPNetworkClient:
     @pytest_asyncio.fixture(autouse=True)
     @staticmethod
