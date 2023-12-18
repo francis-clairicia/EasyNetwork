@@ -39,17 +39,13 @@ from .abc import AbstractAsyncNetworkClient
 
 @_dataclasses.dataclass(kw_only=True, slots=True)
 class _SocketConnector:
-    lock: ILock
-    factory: Callable[[], Awaitable[tuple[AsyncDatagramTransport, SocketProxy]]] | None
+    factory: Callable[[], Awaitable[tuple[AsyncDatagramTransport, SocketProxy]]]
     scope: CancelScope
     _result: tuple[AsyncDatagramTransport, SocketProxy] | None = _dataclasses.field(init=False, default=None)
 
     async def get(self) -> tuple[AsyncDatagramTransport, SocketProxy] | None:
-        async with self.lock:
-            factory, self.factory = self.factory, None
-            if factory is not None:
-                with self.scope:
-                    self._result = await factory()
+        with self.scope:
+            self._result = await self.factory()
         return self._result
 
 
@@ -62,6 +58,7 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         "__endpoint",
         "__socket_proxy",
         "__socket_connector",
+        "__socket_connector_lock",
         "__receive_lock",
         "__send_lock",
         "__protocol",
@@ -140,10 +137,10 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
                 raise TypeError("Invalid arguments")
 
         self.__socket_connector: _SocketConnector | None = _SocketConnector(
-            lock=backend.create_lock(),
             factory=_utils.make_callback(self.__create_socket, socket_factory),
             scope=backend.open_cancel_scope(),
         )
+        self.__socket_connector_lock: ILock = backend.create_lock()
         self.__receive_lock: ILock = backend.create_lock()
         self.__send_lock: ILock = backend.create_lock()
 
@@ -309,16 +306,19 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         return new_socket_address(remote_address, address_family)
 
     async def __ensure_connected(self) -> AsyncDatagramEndpoint[_T_SentPacket, _T_ReceivedPacket]:
-        if self.__endpoint is None:
-            endpoint_and_proxy = None
-            if (socket_connector := self.__socket_connector) is not None:
-                endpoint_and_proxy = await socket_connector.get()
-            self.__socket_connector = None
-            if endpoint_and_proxy is None:
-                raise self.__closed()
+        async with self.__socket_connector_lock:
             if self.__endpoint is None:
+                endpoint_and_proxy = None
+                if (socket_connector := self.__socket_connector) is not None:
+                    endpoint_and_proxy = await socket_connector.get()
+                self.__socket_connector = None
+                if endpoint_and_proxy is None:
+                    raise self.__closed()
                 transport, self.__socket_proxy = endpoint_and_proxy
                 self.__endpoint = AsyncDatagramEndpoint(transport, self.__protocol)
+
+            # If you want coverage.py to work properly, keep this "pass" :)
+            pass
 
         if self.__endpoint.is_closing():
             raise self.__closed()

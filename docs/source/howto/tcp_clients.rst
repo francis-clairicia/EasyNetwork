@@ -409,8 +409,8 @@ Concurrency And Multithreading
          :linenos:
 
 
-SSL/TLS Considerations
-^^^^^^^^^^^^^^^^^^^^^^
+SSL/TLS Concurrency Considerations
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 For safety, concurrent calls to ``send_packet()`` and ``recv_packet()`` are "disabled" by default when using SSL.
 In fact, they share the same synchronization lock.
