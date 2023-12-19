@@ -27,8 +27,8 @@ from collections import deque
 from collections.abc import AsyncGenerator, Callable, Iterable
 from typing import TYPE_CHECKING, Any, ParamSpec, Self, TypeVar
 
-from . import _sniffio_helpers
-from .factory import current_async_backend
+from .api_async.backend import _sniffio_helpers
+from .api_async.backend.factory import current_async_backend
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -59,7 +59,7 @@ class AsyncExecutor:
         async def main() -> None:
             ...
 
-            async with AsyncExecutor(ProcessPoolExecutor()) as executor:
+            async with AsyncExecutor(ProcessPoolExecutor(), handle_contexts=False) as executor:
                 async with backend.create_task_group() as task_group:
                     tasks = [task_group.start_soon(executor.run, pow, a, b) for a, b in [(3, 4), (12, 2), (6, 8)]]
                 results = [await t.join() for t in tasks]
@@ -71,13 +71,13 @@ class AsyncExecutor:
         self,
         executor: concurrent.futures.Executor,
         *,
-        handle_contexts: bool = False,
+        handle_contexts: bool = True,
     ) -> None:
         """
         Parameters:
             executor: The executor instance to wrap.
-            handle_contexts: If :data:`True`, contexts (:class:`contextvars.Context`) are properly propagated to workers.
-                             Defaults to :data:`False` because not all executors support the use of contexts
+            handle_contexts: If :data:`True` (the default), contexts (:class:`contextvars.Context`) are properly propagated to
+                             workers. Set it to :data:`False` if the executor does not support the use of contexts
                              (e.g. :class:`concurrent.futures.ProcessPoolExecutor`).
         """
         if not isinstance(executor, concurrent.futures.Executor):
@@ -137,7 +137,7 @@ class AsyncExecutor:
             def pow_50(x):
                 return x**50
 
-            async with AsyncExecutor(ProcessPoolExecutor()) as executor:
+            async with AsyncExecutor(ProcessPoolExecutor(), handle_contexts=False) as executor:
                 results = [result async for result in executor.map(pow_50, (1, 4, 12))]
 
         Parameters:
@@ -268,10 +268,11 @@ async def unwrap_future(future: concurrent.futures.Future[_T]) -> _T:
                     # re-raise if there is no errors
                     if future.exception(timeout=0) is None:
                         raise
+                else:
+                    if future.cancelled():
+                        # Task cancellation prevails over future cancellation
+                        await backend.coro_yield()
 
-        if future.cancelled():
-            # Task cancellation prevails over future cancellation
-            await backend.coro_yield()
         return future.result(timeout=0)
     finally:
         del future

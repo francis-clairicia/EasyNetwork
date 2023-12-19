@@ -171,16 +171,3 @@ Backend Factory
 .. autoclass:: AsyncBackendFactory
    :members:
    :exclude-members: GROUP_NAME
-
-
-Concurrency And Multithreading (``concurrent.futures`` Integration)
-===================================================================
-
-.. automodule:: easynetwork.lowlevel.api_async.backend.futures
-   :no-docstring:
-
-.. autoclass:: AsyncExecutor
-   :members:
-   :special-members: __aenter__, __aexit__
-
-.. autofunction:: unwrap_future

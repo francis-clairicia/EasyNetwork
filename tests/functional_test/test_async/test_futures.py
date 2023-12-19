@@ -6,7 +6,7 @@ import time
 from collections.abc import AsyncIterator
 from typing import Any
 
-from easynetwork.lowlevel.api_async.backend.futures import AsyncExecutor, unwrap_future
+from easynetwork.lowlevel.futures import AsyncExecutor, unwrap_future
 
 import pytest
 import pytest_asyncio
@@ -22,10 +22,7 @@ class TestAsyncExecutor:
     @pytest_asyncio.fixture
     @staticmethod
     async def executor(max_workers: int | None) -> AsyncIterator[AsyncExecutor]:
-        async with AsyncExecutor(
-            concurrent.futures.ThreadPoolExecutor(max_workers=max_workers),
-            handle_contexts=True,
-        ) as executor:
+        async with AsyncExecutor(concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)) as executor:
             yield executor
 
     async def test____run____submit_and_wait(

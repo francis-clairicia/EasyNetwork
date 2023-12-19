@@ -5,12 +5,12 @@ import contextvars
 from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
-from easynetwork.lowlevel.api_async.backend.futures import AsyncExecutor
+from easynetwork.lowlevel.futures import AsyncExecutor
 
 import pytest
 
-from .....tools import temporary_backend
-from ...._utils import partial_eq
+from ....tools import temporary_backend
+from ..._utils import partial_eq
 
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
