@@ -72,7 +72,6 @@ dev = [
 ]
 build = [
     "build>=1.0.3",
-    "twine>=4.0.2",
 ]
 pre-commit = [
     "pre-commit>=2.20.0",
