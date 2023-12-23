@@ -160,8 +160,8 @@ class AsyncSocket:
             return await self.__loop.sock_recv_into(socket, buffer)
 
     async def recvfrom(self, bufsize: int, /) -> tuple[bytes, _socket._RetAddress]:
+        socket = self.__check_not_closed()
         with self.__conflict_detection("recv"):
-            socket = self.__check_not_closed()
             return await self.__loop.sock_recvfrom(socket, bufsize)
 
     async def shutdown(self, how: int, /) -> None:
