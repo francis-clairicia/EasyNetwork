@@ -21,13 +21,13 @@ class TestAsyncExecutor:
 
     @pytest_asyncio.fixture
     @staticmethod
-    async def executor(max_workers: int | None) -> AsyncIterator[AsyncExecutor]:
+    async def executor(max_workers: int | None) -> AsyncIterator[AsyncExecutor[concurrent.futures.Executor]]:
         async with AsyncExecutor(concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)) as executor:
             yield executor
 
     async def test____run____submit_and_wait(
         self,
-        executor: AsyncExecutor,
+        executor: AsyncExecutor[concurrent.futures.Executor],
     ) -> None:
         def thread_fn(value: int) -> int:
             return value
@@ -37,7 +37,7 @@ class TestAsyncExecutor:
     async def test____run____ignore_cancellation(
         self,
         event_loop: asyncio.AbstractEventLoop,
-        executor: AsyncExecutor,
+        executor: AsyncExecutor[concurrent.futures.Executor],
     ) -> None:
         task = event_loop.create_task(executor.run(time.sleep, 0.5))
 
@@ -51,7 +51,7 @@ class TestAsyncExecutor:
     @pytest.mark.feature_sniffio
     async def test____run____sniffio_contextvar_reset(
         self,
-        executor: AsyncExecutor,
+        executor: AsyncExecutor[concurrent.futures.Executor],
     ) -> None:
         import sniffio
 
@@ -68,7 +68,7 @@ class TestAsyncExecutor:
 
     async def test____map____schedule_many_calls(
         self,
-        executor: AsyncExecutor,
+        executor: AsyncExecutor[concurrent.futures.Executor],
     ) -> None:
         def thread_fn(a: int, b: int, c: int) -> tuple[int, int, int]:
             return a, b, c
@@ -79,7 +79,7 @@ class TestAsyncExecutor:
 
     async def test____map____early_schedule(
         self,
-        executor: AsyncExecutor,
+        executor: AsyncExecutor[concurrent.futures.Executor],
     ) -> None:
         def thread_fn(delay: float) -> int:
             time.sleep(delay)
@@ -98,7 +98,7 @@ class TestAsyncExecutor:
     @pytest.mark.feature_sniffio
     async def test____map____sniffio_contextvar_reset(
         self,
-        executor: AsyncExecutor,
+        executor: AsyncExecutor[concurrent.futures.Executor],
     ) -> None:
         import sniffio
 
@@ -115,7 +115,7 @@ class TestAsyncExecutor:
 
     async def test____shutdown____idempotent(
         self,
-        executor: AsyncExecutor,
+        executor: AsyncExecutor[concurrent.futures.Executor],
     ) -> None:
         await executor.shutdown()
         await executor.shutdown()
@@ -124,7 +124,7 @@ class TestAsyncExecutor:
     async def test____shutdown____cancel_futures(
         self,
         event_loop: asyncio.AbstractEventLoop,
-        executor: AsyncExecutor,
+        executor: AsyncExecutor[concurrent.futures.Executor],
     ) -> None:
         busy_task = event_loop.create_task(executor.run(time.sleep, 1))
 

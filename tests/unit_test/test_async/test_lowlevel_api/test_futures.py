@@ -38,7 +38,7 @@ class TestAsyncExecutor:
         mock_backend: MagicMock,
         mock_stdlib_executor: MagicMock,
         executor_handle_contexts: bool,
-    ) -> Iterator[AsyncExecutor]:
+    ) -> Iterator[AsyncExecutor[concurrent.futures.Executor]]:
         with temporary_backend(mock_backend):
             yield AsyncExecutor(mock_stdlib_executor, handle_contexts=executor_handle_contexts)
 
@@ -63,9 +63,19 @@ class TestAsyncExecutor:
         with pytest.raises(TypeError):
             _ = AsyncExecutor(invalid_executor)
 
+    async def test____wrapped_property____returned_wrapped_executor_instance(
+        self,
+        executor: AsyncExecutor[concurrent.futures.Executor],
+        mock_stdlib_executor: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        assert executor.wrapped is mock_stdlib_executor
+
     async def test____run____submit_to_executor_and_wait(
         self,
-        executor: AsyncExecutor,
+        executor: AsyncExecutor[concurrent.futures.Executor],
         executor_handle_contexts: bool,
         mock_stdlib_executor: MagicMock,
         mock_contextvars_copy_context: MagicMock,
@@ -119,7 +129,7 @@ class TestAsyncExecutor:
     @pytest.mark.parametrize("future_exception", [Exception, None])
     async def test____map____submit_to_executor_and_wait(
         self,
-        executor: AsyncExecutor,
+        executor: AsyncExecutor[concurrent.futures.Executor],
         executor_handle_contexts: bool,
         future_exception: type[BaseException] | None,
         mock_stdlib_executor: MagicMock,
@@ -177,7 +187,7 @@ class TestAsyncExecutor:
 
     async def test____shutdown_nowait____shutdown_executor(
         self,
-        executor: AsyncExecutor,
+        executor: AsyncExecutor[concurrent.futures.Executor],
         mock_stdlib_executor: MagicMock,
     ) -> None:
         # Arrange
@@ -192,7 +202,7 @@ class TestAsyncExecutor:
     async def test____shutdown_nowait____shutdown_executor____cancel_futures(
         self,
         cancel_futures: bool,
-        executor: AsyncExecutor,
+        executor: AsyncExecutor[concurrent.futures.Executor],
         mock_stdlib_executor: MagicMock,
     ) -> None:
         # Arrange
@@ -205,7 +215,7 @@ class TestAsyncExecutor:
 
     async def test____shutdown____shutdown_executor(
         self,
-        executor: AsyncExecutor,
+        executor: AsyncExecutor[concurrent.futures.Executor],
         mock_backend: MagicMock,
         mock_stdlib_executor: MagicMock,
     ) -> None:
@@ -223,7 +233,7 @@ class TestAsyncExecutor:
     async def test____shutdown____shutdown_executor____cancel_futures(
         self,
         cancel_futures: bool,
-        executor: AsyncExecutor,
+        executor: AsyncExecutor[concurrent.futures.Executor],
         mock_backend: MagicMock,
         mock_stdlib_executor: MagicMock,
     ) -> None:
@@ -243,7 +253,7 @@ class TestAsyncExecutor:
 
     async def test____context_manager____shutdown_executor_at_end(
         self,
-        executor: AsyncExecutor,
+        executor: AsyncExecutor[concurrent.futures.Executor],
         mock_backend: MagicMock,
         mock_stdlib_executor: MagicMock,
     ) -> None:
