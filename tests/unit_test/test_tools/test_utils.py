@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import itertools
 import math
 import os
 import ssl
@@ -28,6 +29,7 @@ from easynetwork.lowlevel._utils import (
     is_ssl_eof_error,
     is_ssl_socket,
     iter_bytes,
+    iterate_exceptions,
     lock_with_timeout,
     make_callback,
     missing_extra_deps,
@@ -626,6 +628,40 @@ def test____remove_traceback_frames_in_place____remove_n_first_traceback(n: int)
         assert len(list(traceback.walk_tb(exception.__traceback__))) == 3
     else:  # n > 3
         assert len(list(traceback.walk_tb(exception.__traceback__))) == 0
+
+
+def test____iterate_exceptions____yield_exception() -> None:
+    # Arrange
+    exception = BaseException()
+
+    # Act
+    all_exceptions = list(iterate_exceptions(exception))
+
+    # Assert
+    assert all_exceptions == [exception]
+
+
+def test____iterate_exceptions____yield_exceptions_in_group() -> None:
+    # Arrange
+    excgrp = BaseExceptionGroup("", [BaseException(), Exception()])
+
+    # Act
+    all_exceptions = list(iterate_exceptions(excgrp))
+
+    # Assert
+    assert all_exceptions == list(excgrp.exceptions)
+
+
+def test____iterate_exceptions____recursive_yield_exceptions_in_group() -> None:
+    # Arrange
+    sub_excgrp1 = BaseExceptionGroup("", [BaseException(), Exception()])
+    sub_excgrp2 = BaseExceptionGroup("", [BaseException(), Exception()])
+
+    # Act
+    all_exceptions = list(iterate_exceptions(BaseExceptionGroup("", [sub_excgrp1, sub_excgrp2])))
+
+    # Assert
+    assert all_exceptions == list(itertools.chain(sub_excgrp1.exceptions, sub_excgrp2.exceptions))
 
 
 def test____ElapsedTime____catch_elapsed_time(mocker: MockerFixture) -> None:

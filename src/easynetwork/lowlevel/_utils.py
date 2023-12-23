@@ -25,6 +25,7 @@ __all__ = [
     "exception_with_notes",
     "is_ssl_eof_error",
     "is_ssl_socket",
+    "iterate_exceptions",
     "lock_with_timeout",
     "make_callback",
     "missing_extra_deps",
@@ -265,6 +266,14 @@ def remove_traceback_frames_in_place(exc: _T_Exception, n: int) -> _T_Exception:
             break
         tb = tb.tb_next
     return exc.with_traceback(tb)
+
+
+def iterate_exceptions(exception: BaseException) -> Iterator[BaseException]:
+    if isinstance(exception, BaseExceptionGroup):
+        for exc in exception.exceptions:
+            yield from iterate_exceptions(exc)
+    else:
+        yield exception
 
 
 class ElapsedTime:
