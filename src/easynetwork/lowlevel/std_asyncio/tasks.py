@@ -24,9 +24,10 @@ import enum
 import math
 from collections import deque
 from collections.abc import Callable, Coroutine, Iterable, Iterator
-from typing import TYPE_CHECKING, Any, NamedTuple, Self, TypeVar, final
+from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, Self, TypeVar, final
 from weakref import WeakKeyDictionary
 
+from .. import _utils
 from .._final import runtime_final_class
 from ..api_async.backend.abc import CancelScope as AbstractCancelScope, Task as AbstractTask, TaskGroup as AbstractTaskGroup
 
@@ -139,25 +140,31 @@ class _DelayedCancel(NamedTuple):
 class CancelScope(AbstractCancelScope):
     __slots__ = (
         "__host_task",
+        "__host_task_cancelling",
+        "__host_task_cancel_calls",
         "__state",
         "__cancel_called",
         "__cancelled_caught",
         "__deadline",
         "__timeout_handle",
+        "__cancel_handle",
         "__delayed_cancellation_on_enter",
     )
 
-    __current_task_scope_dict: WeakKeyDictionary[asyncio.Task[Any], deque[CancelScope]] = WeakKeyDictionary()
-    __delayed_task_cancel_dict: WeakKeyDictionary[asyncio.Task[Any], _DelayedCancel] = WeakKeyDictionary()
+    __current_task_scope_dict: ClassVar[WeakKeyDictionary[asyncio.Task[Any], deque[CancelScope]]] = WeakKeyDictionary()
+    __delayed_task_cancel_dict: ClassVar[WeakKeyDictionary[asyncio.Task[Any], _DelayedCancel]] = WeakKeyDictionary()
 
     def __init__(self, *, deadline: float = math.inf) -> None:
         super().__init__()
         self.__host_task: asyncio.Task[Any] | None = None
+        self.__host_task_cancelling: int = 0
+        self.__host_task_cancel_calls: int = 0
         self.__state: _ScopeState = _ScopeState.CREATED
         self.__cancel_called: bool = False
         self.__cancelled_caught: bool = False
         self.__deadline: float = math.inf
         self.__timeout_handle: asyncio.Handle | None = None
+        self.__cancel_handle: asyncio.Handle | None = None
         self.reschedule(deadline)
 
     def __repr__(self) -> str:
@@ -175,6 +182,7 @@ class CancelScope(AbstractCancelScope):
             raise RuntimeError("CancelScope entered twice")
 
         self.__host_task = current_task = TaskUtils.current_asyncio_task()
+        self.__host_task_cancelling = current_task.cancelling()
 
         current_task_scope = self.__current_task_scope_dict
         if current_task not in current_task_scope:
@@ -187,7 +195,7 @@ class CancelScope(AbstractCancelScope):
         if self.__cancel_called:
             self.__deliver_cancellation()
         else:
-            self.__timeout()
+            self.__setup_cancellation_by_timeout()
         return self
 
     def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None) -> bool:
@@ -206,40 +214,59 @@ class CancelScope(AbstractCancelScope):
             self.__timeout_handle.cancel()
             self.__timeout_handle = None
 
+        if self.__cancel_handle:
+            self.__cancel_handle.cancel()
+            self.__cancel_handle = None
+
         host_task, self.__host_task = self.__host_task, None
         self.__current_task_scope_dict[host_task].popleft()
 
         if self.__cancel_called:
-            task_cancelling = host_task.uncancel()
-            if isinstance(exc_val, asyncio.CancelledError):
-                self.__cancelled_caught = self.__cancellation_id() in exc_val.args
+            if exc_val is not None:
+                self.__cancelled_caught = any(
+                    self.__uncancel_task(host_task, exc)
+                    for exc in _utils.iterate_exceptions(exc_val)
+                    if isinstance(exc, asyncio.CancelledError)
+                )
 
-            delayed_task_cancel = self.__delayed_task_cancel_dict.get(host_task, None)
+            delayed_task_cancel: _DelayedCancel | None = self.__delayed_task_cancel_dict.get(host_task, None)
             if delayed_task_cancel is not None and delayed_task_cancel.message == self.__cancellation_id():
                 del self.__delayed_task_cancel_dict[host_task]
                 delayed_task_cancel.handle.cancel()
                 delayed_task_cancel = None
 
-            if delayed_task_cancel is None:
-                for cancel_scope in self._inner_to_outer_task_scopes(host_task):
-                    if cancel_scope.__cancel_called:
-                        self._reschedule_delayed_task_cancel(host_task, cancel_scope.__cancellation_id())
-                        break
-                else:
-                    if task_cancelling > 0:
-                        self._reschedule_delayed_task_cancel(host_task, None)
+            for parent_scope in self._inner_to_outer_task_scopes(host_task):
+                if parent_scope.__cancel_called:
+                    if parent_scope.__cancel_handle is None:
+                        parent_scope.__deliver_cancellation()
+                    break
 
         return self.__cancelled_caught
+
+    def __uncancel_task(self, host_task: asyncio.Task[Any], exc: asyncio.CancelledError) -> bool:
+        while self.__host_task_cancel_calls:
+            self.__host_task_cancel_calls -= 1
+            if host_task.uncancel() <= self.__host_task_cancelling:
+                return True
+        return self.__cancellation_id() in exc.args
 
     def __deliver_cancellation(self) -> None:
         if self.__host_task is None:
             # Scope not active.
             return
-        try:
-            self.__delayed_task_cancel_dict.pop(self.__host_task).handle.cancel()
-        except KeyError:
-            pass
-        self.__host_task.cancel(msg=self.__cancellation_id())
+
+        should_retry: bool = False
+
+        if not self.__task_must_cancel(self.__host_task) and self.__host_task not in self.__delayed_task_cancel_dict:
+            should_retry = True
+            if self.__host_task is not asyncio.current_task():
+                self.__host_task.cancel(msg=self.__cancellation_id())
+                self.__host_task_cancel_calls += 1
+
+        if should_retry:
+            self.__cancel_handle = self.__host_task.get_loop().call_soon(self.__deliver_cancellation)
+        else:
+            self.__cancel_handle = None
 
     def __cancellation_id(self) -> str:
         return f"Cancelled by cancel scope {id(self):x}"
@@ -269,14 +296,14 @@ class CancelScope(AbstractCancelScope):
             self.__timeout_handle.cancel()
             self.__timeout_handle = None
         if self.__state is _ScopeState.ENTERED and not self.__cancel_called:
-            self.__timeout()
+            self.__setup_cancellation_by_timeout()
 
-    def __timeout(self) -> None:
+    def __setup_cancellation_by_timeout(self) -> None:
         if self.__deadline != math.inf:
             assert self.__host_task is not None  # nosec assert_used
             loop = self.__host_task.get_loop()
             if loop.time() >= self.__deadline:
-                self.__timeout_handle = loop.call_soon(self.cancel)
+                self.cancel()
             else:
                 self.__timeout_handle = loop.call_at(self.__deadline, self.cancel)
 
@@ -296,7 +323,7 @@ class CancelScope(AbstractCancelScope):
     @classmethod
     def _reschedule_delayed_task_cancel(cls, task: asyncio.Task[Any], cancel_msg: str | None) -> asyncio.Handle:
         if task in cls.__delayed_task_cancel_dict:
-            raise AssertionError("CancelScope issue in _reschedule_delayed_task_cancel.")
+            raise AssertionError("_reschedule_delayed_task_cancel() called too many times.")
         task_cancel_handle = task.get_loop().call_soon(cls.__cancel_task_unless_done, task, cancel_msg)
         cls.__delayed_task_cancel_dict[task] = _DelayedCancel(task_cancel_handle, cancel_msg)
         task.get_loop().call_soon(cls.__delayed_task_cancel_dict.pop, task, None)
@@ -308,6 +335,10 @@ class CancelScope(AbstractCancelScope):
             return
         task.uncancel()
         task.cancel(cancel_msg)
+
+    @staticmethod
+    def __task_must_cancel(task: asyncio.Task[Any]) -> bool:
+        return getattr(task, "_must_cancel", False)
 
 
 @final
