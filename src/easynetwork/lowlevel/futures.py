@@ -25,7 +25,7 @@ import functools
 import threading
 from collections import deque
 from collections.abc import AsyncGenerator, Callable, Iterable
-from typing import TYPE_CHECKING, Any, ParamSpec, Self, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, ParamSpec, Self, TypeVar
 
 from .api_async.backend import _sniffio_helpers
 from .api_async.backend.factory import current_async_backend
@@ -35,9 +35,10 @@ if TYPE_CHECKING:
 
 _P = ParamSpec("_P")
 _T = TypeVar("_T")
+_T_Executor = TypeVar("_T_Executor", bound=concurrent.futures.Executor, covariant=True)
 
 
-class AsyncExecutor:
+class AsyncExecutor(Generic[_T_Executor]):
     """
     Wraps a :class:`concurrent.futures.Executor` instance.
 
@@ -69,7 +70,7 @@ class AsyncExecutor:
 
     def __init__(
         self,
-        executor: concurrent.futures.Executor,
+        executor: _T_Executor,
         *,
         handle_contexts: bool = True,
     ) -> None:
@@ -83,7 +84,7 @@ class AsyncExecutor:
         if not isinstance(executor, concurrent.futures.Executor):
             raise TypeError("Invalid executor type")
 
-        self.__executor: concurrent.futures.Executor = executor
+        self.__executor: _T_Executor = executor
         self.__handle_contexts: bool = bool(handle_contexts)
 
     async def __aenter__(self) -> Self:
@@ -201,6 +202,11 @@ class AsyncExecutor:
             _sniffio_helpers.setup_sniffio_contextvar(ctx, None)
             func = functools.partial(ctx.run, func)
         return func
+
+    @property
+    def wrapped(self) -> _T_Executor:
+        """The wrapped :class:`~concurrent.futures.Executor` instance. Read-only attribute."""
+        return self.__executor
 
 
 async def unwrap_future(future: concurrent.futures.Future[_T]) -> _T:
