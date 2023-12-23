@@ -223,11 +223,11 @@ class CancelScope(AbstractCancelScope):
 
         if self.__cancel_called:
             if exc_val is not None:
-                for exc in _utils.iterate_exceptions(exc_val):
-                    if isinstance(exc, asyncio.CancelledError):
-                        self.__cancelled_caught = self.__uncancel_task(host_task, exc)
-                        if self.__cancelled_caught:
-                            break
+                self.__cancelled_caught = any(
+                    self.__uncancel_task(host_task, exc)
+                    for exc in _utils.iterate_exceptions(exc_val)
+                    if isinstance(exc, asyncio.CancelledError)
+                )
 
             delayed_task_cancel: _DelayedCancel | None = self.__delayed_task_cancel_dict.get(host_task, None)
             if delayed_task_cancel is not None and delayed_task_cancel.message == self.__cancellation_id():
