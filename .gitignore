@@ -1,6 +1,5 @@
 # Workspace
-.vscode/*
-!.vscode/settings.example.json
+.vscode/settings.json
 
 # Auto-generated files at build time
 src/easynetwork/version.py
