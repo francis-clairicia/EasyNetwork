@@ -6,7 +6,6 @@ from socket import socket as Socket
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, assert_never, final
 
-from easynetwork.exceptions import UnsupportedOperation
 from easynetwork.lowlevel.api_async.backend.abc import AsyncBackend
 from easynetwork.lowlevel.api_async.backend.factory import AsyncBackendFactory
 
@@ -205,10 +204,10 @@ class TestAsyncBackendFactory:
                 AsyncBackendFactory.push_backend_factory("mock", lambda: MockBackend(mocker))
             case "push_factory_hook":
 
-                def hook(name: str) -> AsyncBackend:
+                def hook(name: str) -> AsyncBackend | None:
                     if name == "mock":
                         return MockBackend(mocker)
-                    raise UnsupportedOperation
+                    return None
 
                 AsyncBackendFactory.push_factory_hook(hook)
             case _:
@@ -234,10 +233,10 @@ class TestAsyncBackendFactory:
                 AsyncBackendFactory.push_backend_factory(backend_name, lambda: MockBackend(mocker))
             case "push_factory_hook":
 
-                def hook(name: str) -> AsyncBackend:
+                def hook(name: str) -> AsyncBackend | None:
                     if name == backend_name:
                         return MockBackend(mocker)
-                    raise UnsupportedOperation
+                    return None
 
                 AsyncBackendFactory.push_factory_hook(hook)
             case _:
@@ -263,10 +262,10 @@ class TestAsyncBackendFactory:
                 AsyncBackendFactory.push_backend_factory("mock", invalid_cls)
             case "push_factory_hook":
 
-                def hook(name: str) -> AsyncBackend:
+                def hook(name: str) -> AsyncBackend | None:
                     if name == "mock":
                         return invalid_cls()
-                    raise UnsupportedOperation
+                    return None
 
                 AsyncBackendFactory.push_factory_hook(hook)
             case _:
@@ -293,10 +292,10 @@ class TestAsyncBackendFactory:
                 AsyncBackendFactory.push_backend_factory(backend_name, lambda: MockBackend(mocker))
             case "push_factory_hook":
 
-                def hook(name: str) -> AsyncBackend:
+                def hook(name: str) -> AsyncBackend | None:
                     if name == backend_name:
                         return MockBackend(mocker)
-                    raise UnsupportedOperation
+                    return None
 
                 AsyncBackendFactory.push_factory_hook(hook)
             case _:
@@ -427,10 +426,10 @@ class TestAsyncBackendFactory:
                 AsyncBackendFactory.push_backend_factory("mock", lambda: MockBackend(mocker))
             case "push_factory_hook":
 
-                def hook(name: str) -> AsyncBackend:
+                def hook(name: str) -> AsyncBackend | None:
                     if name == "mock":
                         return MockBackend(mocker)
-                    raise UnsupportedOperation
+                    return None
 
                 AsyncBackendFactory.push_factory_hook(hook)
             case _:
@@ -462,10 +461,10 @@ class TestAsyncBackendFactory:
                 AsyncBackendFactory.push_backend_factory("mock", invalid_cls)
             case "push_factory_hook":
 
-                def hook(name: str) -> AsyncBackend:
+                def hook(name: str) -> AsyncBackend | None:
                     if name == "mock":
                         return invalid_cls()
-                    raise UnsupportedOperation
+                    return None
 
                 AsyncBackendFactory.push_factory_hook(hook)
             case _:
@@ -495,10 +494,10 @@ class TestAsyncBackendFactory:
                 AsyncBackendFactory.push_backend_factory(backend_name, lambda: MockBackend(mocker))
             case "push_factory_hook":
 
-                def hook(name: str) -> AsyncBackend:
+                def hook(name: str) -> AsyncBackend | None:
                     if name == backend_name:
                         return MockBackend(mocker)
-                    raise UnsupportedOperation
+                    return None
 
                 AsyncBackendFactory.push_factory_hook(hook)
             case _:
@@ -538,10 +537,10 @@ class TestAsyncBackendFactory:
                 AsyncBackendFactory.push_backend_factory(backend_name, lambda: MockBackend(mocker))
             case "push_factory_hook":
 
-                def hook(name: str) -> AsyncBackend:
+                def hook(name: str) -> AsyncBackend | None:
                     if name == backend_name:
                         return MockBackend(mocker)
-                    raise UnsupportedOperation
+                    return None
 
                 AsyncBackendFactory.push_factory_hook(hook)
             case _:
