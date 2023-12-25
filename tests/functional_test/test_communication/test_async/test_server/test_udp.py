@@ -226,11 +226,15 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         request_handler: AsyncDatagramRequestHandler[str, str],
         localhost_ip: str,
         datagram_protocol: DatagramProtocol[str, str],
+        caplog: pytest.LogCaptureFixture,
+        logger_crash_threshold_level: dict[str, int],
         use_asyncio_transport: bool,  # Only here for dependency
     ) -> AsyncIterator[MyAsyncUDPServer]:
         async with MyAsyncUDPServer(localhost_ip, 0, datagram_protocol, request_handler) as server:
             assert not server.sockets
             assert not server.get_addresses()
+            caplog.set_level(logging.INFO, server.logger.name)
+            logger_crash_threshold_level[server.logger.name] = logging.WARNING
             yield server
 
     @pytest_asyncio.fixture
@@ -368,9 +372,12 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         request_handler: ErrorInRequestHandler,
         client_factory: Callable[[], Awaitable[DatagramEndpoint]],
         caplog: pytest.LogCaptureFixture,
+        logger_crash_maximum_nb_lines: dict[str, int],
         server: MyAsyncUDPServer,
     ) -> None:
         caplog.set_level(logging.ERROR, server.logger.name)
+        if not mute_thrown_exception:
+            logger_crash_maximum_nb_lines[server.logger.name] = 3
         request_handler.mute_thrown_exception = mute_thrown_exception
         endpoint = await client_factory()
 
@@ -387,29 +394,37 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
             assert len(caplog.records) == 0  # After two attempts
         else:
             assert len(caplog.records) == 3
+            assert caplog.records[1].exc_info is not None
+            assert type(caplog.records[1].exc_info[1]) is RuntimeError
 
     async def test____serve_forever____unexpected_error_during_process(
         self,
         client_factory: Callable[[], Awaitable[DatagramEndpoint]],
         caplog: pytest.LogCaptureFixture,
+        logger_crash_maximum_nb_lines: dict[str, int],
         server: MyAsyncUDPServer,
     ) -> None:
         caplog.set_level(logging.ERROR, server.logger.name)
+        logger_crash_maximum_nb_lines[server.logger.name] = 3
         endpoint = await client_factory()
 
         await endpoint.sendto(b"__error__", None)
         await asyncio.sleep(0.2)
 
         assert len(caplog.records) == 3
+        assert caplog.records[1].exc_info is not None
+        assert type(caplog.records[1].exc_info[1]) is RandomError
 
     @pytest.mark.parametrize("one_shot_serializer", [pytest.param("bad_serialize", id="serializer_crash")], indirect=True)
     async def test____serve_forever____unexpected_error_during_response_serialization(
         self,
         client_factory: Callable[[], Awaitable[DatagramEndpoint]],
         caplog: pytest.LogCaptureFixture,
+        logger_crash_maximum_nb_lines: dict[str, int],
         server: MyAsyncUDPServer,
     ) -> None:
         caplog.set_level(logging.ERROR, server.logger.name)
+        logger_crash_maximum_nb_lines[server.logger.name] = 1
         endpoint = await client_factory()
 
         await endpoint.sendto(b"request", None)
@@ -424,23 +439,29 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         self,
         client_factory: Callable[[], Awaitable[DatagramEndpoint]],
         caplog: pytest.LogCaptureFixture,
+        logger_crash_maximum_nb_lines: dict[str, int],
         server: MyAsyncUDPServer,
     ) -> None:
         caplog.set_level(logging.ERROR, server.logger.name)
+        logger_crash_maximum_nb_lines[server.logger.name] = 3
         endpoint = await client_factory()
 
         await endpoint.sendto(b"__os_error__", None)
         await asyncio.sleep(0.2)
 
         assert len(caplog.records) == 3
+        assert caplog.records[1].exc_info is not None
+        assert type(caplog.records[1].exc_info[1]) is OSError
 
     async def test____serve_forever____use_of_a_closed_client_in_request_handler(  # In a world where this thing happen
         self,
         client_factory: Callable[[], Awaitable[DatagramEndpoint]],
         caplog: pytest.LogCaptureFixture,
+        logger_crash_maximum_nb_lines: dict[str, int],
         server: MyAsyncUDPServer,
     ) -> None:
         caplog.set_level(logging.WARNING, server.logger.name)
+        logger_crash_maximum_nb_lines[server.logger.name] = 1
         endpoint = await client_factory()
         host, port = endpoint.get_extra_info("sockname")[:2]
 
@@ -481,10 +502,12 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         self,
         request_handler: ErrorBeforeYieldHandler,
         caplog: pytest.LogCaptureFixture,
+        logger_crash_maximum_nb_lines: dict[str, int],
         client_factory: Callable[[], Awaitable[DatagramEndpoint]],
         server: MyAsyncUDPServer,
     ) -> None:
         caplog.set_level(logging.ERROR, server.logger.name)
+        logger_crash_maximum_nb_lines[server.logger.name] = 3
         endpoint = await client_factory()
 
         request_handler.raise_error = True
@@ -493,6 +516,8 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
             async with asyncio.timeout(0.5):
                 await endpoint.recvfrom()
         assert len(caplog.records) == 3
+        assert caplog.records[1].exc_info is not None
+        assert type(caplog.records[1].exc_info[1]) is RandomError
         request_handler.raise_error = False
         await endpoint.sendto(b"hello world", None)
         assert (await endpoint.recvfrom())[0] == b"hello world"
