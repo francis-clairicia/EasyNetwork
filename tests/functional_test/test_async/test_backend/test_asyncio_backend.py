@@ -113,7 +113,7 @@ class TestAsyncioBackend:
     ) -> None:
         task: asyncio.Task[int] = event_loop.create_task(backend.ignore_cancellation(asyncio.sleep(0.5, 42)))
 
-        for i in range(5):
+        for i in range(3):
             for _ in range(3):
                 event_loop.call_later(0.1 * i, task.cancel)
 

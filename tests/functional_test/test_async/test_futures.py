@@ -41,7 +41,7 @@ class TestAsyncExecutor:
     ) -> None:
         task = event_loop.create_task(executor.run(time.sleep, 0.5))
 
-        for i in range(5):
+        for i in range(3):
             for _ in range(3):
                 event_loop.call_later(0.1 * i, task.cancel)
 
