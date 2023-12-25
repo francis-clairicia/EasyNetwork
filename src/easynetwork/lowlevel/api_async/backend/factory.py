@@ -24,7 +24,6 @@ from collections import deque
 from collections.abc import Callable
 from typing import Final, final
 
-from ....exceptions import UnsupportedOperation
 from ... import _lock
 from ..._final import runtime_final_class
 from . import _sniffio_helpers
@@ -35,7 +34,7 @@ from .abc import AsyncBackend
 @runtime_final_class
 class AsyncBackendFactory:
     __lock: Final[_lock.ForkSafeLock[threading.RLock]] = _lock.ForkSafeLock(threading.RLock)
-    __hooks: Final[deque[Callable[[str], AsyncBackend]]] = deque()
+    __hooks: Final[deque[Callable[[str], AsyncBackend | None]]] = deque()
     __instances: Final[dict[str, AsyncBackend]] = {}
 
     @classmethod
@@ -48,7 +47,7 @@ class AsyncBackendFactory:
         return cls.__get_backend(name, error_msg_format="Unknown backend {name!r}")
 
     @classmethod
-    def push_factory_hook(cls, factory: Callable[[str], AsyncBackend], /) -> None:
+    def push_factory_hook(cls, factory: Callable[[str], AsyncBackend | None], /) -> None:
         if not callable(factory):
             raise TypeError(f"{factory!r} is not callable")
         with cls.__lock.get():
@@ -87,30 +86,29 @@ class AsyncBackendFactory:
 
             backend_instance: AsyncBackend | None = None
             for factory_hook in cls.__hooks:
-                try:
-                    backend_instance = factory_hook(name)
-                except UnsupportedOperation:
+                backend_instance = factory_hook(name)
+                if backend_instance is None:
                     continue
-
                 if not isinstance(backend_instance, AsyncBackend):
                     raise TypeError(f"{factory_hook!r} did not return an AsyncBackend instance")
                 break
 
-            if backend_instance is None and name == "asyncio":
-                from ...std_asyncio import AsyncIOBackend
-
-                backend_instance = AsyncIOBackend()
-
             if backend_instance is None:
-                raise NotImplementedError(error_msg_format.format(name=name))
+                match name:
+                    case "asyncio":
+                        from ...std_asyncio import AsyncIOBackend
+
+                        backend_instance = AsyncIOBackend()
+                    case _:
+                        raise NotImplementedError(error_msg_format.format(name=name))
 
             cls.__instances[name] = backend_instance
             return backend_instance
 
     @staticmethod
-    def __backend_factory_hook(backend_name: str, factory: Callable[[], AsyncBackend], name: str, /) -> AsyncBackend:
+    def __backend_factory_hook(backend_name: str, factory: Callable[[], AsyncBackend], name: str, /) -> AsyncBackend | None:
         if name != backend_name:
-            raise UnsupportedOperation(f"{name!r} backend is not implemented")
+            return None
         return factory()
 
 
