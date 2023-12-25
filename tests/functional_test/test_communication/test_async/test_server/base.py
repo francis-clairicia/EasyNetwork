@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import collections
 import contextlib
+import itertools
+import logging
 from collections.abc import AsyncIterator
 from typing import NamedTuple
 
@@ -19,6 +22,16 @@ class _ServerBootstrapInfo(NamedTuple):
 
 @pytest.mark.asyncio
 class BaseTestAsyncServer:
+    @pytest.fixture
+    @staticmethod
+    def logger_crash_threshold_level() -> dict[str, int]:
+        return {}
+
+    @pytest.fixture
+    @staticmethod
+    def logger_crash_maximum_nb_lines() -> dict[str, int]:
+        return {}
+
     @pytest.fixture(autouse=True)
     @staticmethod
     def disable_asyncio_logs(caplog: pytest.LogCaptureFixture) -> None:
@@ -26,7 +39,12 @@ class BaseTestAsyncServer:
 
     @pytest_asyncio.fixture  # DO NOT SET autouse=True
     @staticmethod
-    async def _bootstrap_server(server: AbstractAsyncNetworkServer) -> AsyncIterator[_ServerBootstrapInfo]:
+    async def _bootstrap_server(
+        server: AbstractAsyncNetworkServer,
+        caplog: pytest.LogCaptureFixture,
+        logger_crash_threshold_level: dict[str, int],
+        logger_crash_maximum_nb_lines: dict[str, int],
+    ) -> AsyncIterator[_ServerBootstrapInfo]:
         async def serve_forever(server: AbstractAsyncNetworkServer, event: asyncio.Event) -> None:
             with contextlib.suppress(ServerClosedError):
                 await server.serve_forever(is_up_event=event)
@@ -37,6 +55,23 @@ class BaseTestAsyncServer:
             await asyncio.sleep(0)
             yield _ServerBootstrapInfo(task, event)
             await server.shutdown()
+
+        log_line_counter: collections.Counter[str] = collections.Counter()
+        for record in itertools.chain(caplog.get_records("setup"), caplog.get_records("call")):
+            threshold_level = logger_crash_threshold_level.get(record.name, logging.ERROR)
+            if record.levelno < threshold_level:
+                continue
+            log_line_counter[record.name] += 1
+            maximum_nb_lines = max(logger_crash_maximum_nb_lines.get(record.name, 0), 0)
+            if log_line_counter[record.name] <= maximum_nb_lines:
+                continue
+            threshold_level_name = logging.getLevelName(threshold_level)
+            if not maximum_nb_lines:
+                pytest.fail(f"Logs with level equal to or greater than {threshold_level_name} caught in {record.name} logger")
+            else:
+                pytest.fail(
+                    f"More than {maximum_nb_lines} logs with level equal to or greater than {threshold_level_name} caught in {record.name} logger"
+                )
 
     @pytest_asyncio.fixture  # DO NOT SET autouse=True
     @staticmethod
