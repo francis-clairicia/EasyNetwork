@@ -28,8 +28,8 @@ from ...api_async.server.abc import SupportsEventSet
 from ...exceptions import ServerAlreadyRunning, ServerClosedError
 from ...lowlevel import _utils
 from ...lowlevel._lock import ForkSafeLock
-from ...lowlevel.api_async.backend.abc import AsyncBackend, ThreadsPortal
-from ...lowlevel.api_async.backend.factory import AsyncBackendFactory as _Factory, current_async_backend as _current_backend
+from ...lowlevel.api_async.backend.abc import ThreadsPortal
+from ...lowlevel.api_async.backend.factory import AsyncBackendFactory as _Factory
 from ...lowlevel.socket import SocketAddress
 from .abc import AbstractNetworkServer
 
@@ -41,7 +41,7 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
     __slots__ = (
         "__server_factory",
         "__private_server",
-        "__backend",
+        "__backend_name",
         "__close_lock",
         "__bootstrap_lock",
         "__private_threads_portal",
@@ -51,7 +51,7 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
 
     def __init__(self, backend: str, server_factory: Callable[[], AbstractAsyncNetworkServer]) -> None:
         super().__init__()
-        self.__backend: AsyncBackend = _Factory.get_backend(backend)
+        self.__backend_name: str = backend
         self.__server_factory: Callable[[], AbstractAsyncNetworkServer] = server_factory
         self.__private_server: AbstractAsyncNetworkServer | None = None
         self.__private_threads_portal: ThreadsPortal | None = None
@@ -70,35 +70,32 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
 
     @_utils.inherit_doc(AbstractNetworkServer)
     def server_close(self) -> None:
-        with self.__close_lock.get(), contextlib.ExitStack() as stack, contextlib.suppress(RuntimeError):
+        with self.__close_lock.get(), contextlib.ExitStack() as stack:
             stack.callback(self.__is_closed.set)
 
             # Ensure we are not in the interval between the server shutdown and the scheduler shutdown
             stack.callback(self.__is_shutdown.wait)
 
             if (server := self._server) is not None and (portal := self._portal) is not None:
-                with contextlib.suppress(concurrent.futures.CancelledError):
+                with contextlib.suppress(RuntimeError, concurrent.futures.CancelledError):
                     portal.run_coroutine(server.server_close)
 
     @_utils.inherit_doc(AbstractNetworkServer)
     def shutdown(self, timeout: float | None = None) -> None:
         if (portal := self._portal) is not None and (server := self._server) is not None:
-            with contextlib.suppress(RuntimeError, concurrent.futures.CancelledError):
+            with contextlib.suppress(RuntimeError, concurrent.futures.CancelledError), _utils.ElapsedTime() as elapsed:
                 # If shutdown() have been cancelled, that means the scheduler itself is shutting down, and this is what we want
                 if timeout is None:
                     portal.run_coroutine(server.shutdown)
                 else:
-                    elapsed = _utils.ElapsedTime()
-                    try:
-                        with elapsed:
-                            portal.run_coroutine(self.__do_shutdown_with_timeout, server, timeout)
-                    finally:
-                        timeout = elapsed.recompute_timeout(timeout)
+                    portal.run_coroutine(self.__do_shutdown_with_timeout, server, timeout)
+            if timeout is not None:
+                timeout = elapsed.recompute_timeout(timeout)
         self.__is_shutdown.wait(timeout)
 
     @staticmethod
     async def __do_shutdown_with_timeout(server: AbstractAsyncNetworkServer, timeout_delay: float) -> None:
-        with _current_backend().move_on_after(timeout_delay):
+        with _Factory.current().move_on_after(timeout_delay):
             await server.shutdown()
 
     def serve_forever(
@@ -119,7 +116,7 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
             ServerAlreadyRunning: Another task already called :meth:`serve_forever`.
         """
 
-        backend = self.__backend
+        backend = _Factory.get_backend(self.__backend_name)
         with contextlib.ExitStack() as server_exit_stack, contextlib.suppress(backend.get_cancelled_exc_class()):
             # locks_stack is used to acquire locks until
             # serve_forever() coroutine creates the thread portal
