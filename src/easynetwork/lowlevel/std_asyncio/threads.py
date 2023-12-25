@@ -107,6 +107,16 @@ class ThreadsPortal(AbstractThreadsPortal):
                     future.set_exception(exc)
                 if not isinstance(exc, Exception):
                     raise
+                elif future.cancelled():
+                    loop = asyncio.get_running_loop()
+                    loop.call_soon(
+                        loop.call_exception_handler,
+                        {
+                            "message": "Task exception was not retrieved because future object is cancelled",
+                            "exception": exc,
+                            "task": asyncio.current_task(loop),
+                        },
+                    )
             else:
                 if future.set_running_or_notify_cancel():
                     future.set_result(result)

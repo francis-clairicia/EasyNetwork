@@ -852,6 +852,7 @@ class TestAsyncioBackend:
         self,
         value: int | Exception,
         backend: AsyncIOBackend,
+        event_loop_exceptions_caught: list[ExceptionCaughtDict],
         mocker: MockerFixture,
     ) -> None:
         cancellation_ignored = mocker.stub()
@@ -881,6 +882,16 @@ class TestAsyncioBackend:
             await backend.run_in_thread(thread)
 
         cancellation_ignored.assert_called_once()
+        if isinstance(value, Exception):
+            assert len(event_loop_exceptions_caught) == 1
+            assert (
+                event_loop_exceptions_caught[0]["message"]
+                == "Task exception was not retrieved because future object is cancelled"
+            )
+            assert event_loop_exceptions_caught[0]["exception"] is value
+            assert isinstance(event_loop_exceptions_caught[0]["task"], asyncio.Task)
+        else:
+            assert len(event_loop_exceptions_caught) == 0
 
     async def test____create_threads_portal____run_coroutine_soon____future_cancelled_before_await(
         self,
