@@ -49,14 +49,9 @@ class StreamDataProducer(Generic[_T_SentPacket]):
 
     def __del__(self) -> None:
         try:
-            generator, self.__g = self.__g, None
+            self.clear()
         except AttributeError:
             return
-        try:
-            if generator is not None:
-                generator.close()
-        finally:
-            del generator
 
     def __iter__(self) -> Iterator[bytes]:
         return self
@@ -111,14 +106,9 @@ class StreamDataConsumer(Generic[_T_ReceivedPacket]):
 
     def __del__(self) -> None:
         try:
-            consumer, self.__c = self.__c, None
+            self.clear()
         except AttributeError:
             return
-        try:
-            if consumer is not None:
-                consumer.close()
-        finally:
-            del consumer
 
     def __iter__(self) -> Iterator[_T_ReceivedPacket]:
         return self
@@ -203,16 +193,10 @@ class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
         self.__sizehint: int = buffer_size_hint
 
     def __del__(self) -> None:
-        self.__buffer = None
         try:
-            consumer, self.__consumer = self.__consumer, None
+            self.clear()
         except AttributeError:
             return
-        try:
-            if consumer is not None:
-                consumer.close()
-        finally:
-            del consumer
 
     def __iter__(self) -> Iterator[_T_ReceivedPacket]:
         return self
@@ -316,7 +300,8 @@ class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
         return buffer[:nbytes].tobytes()
 
     def clear(self) -> None:
-        self.__buffer = self.__buffer_view = self.__buffer_start = None
+        self.__release_buffer_view()
+        self.__buffer = self.__buffer_start = None
         self.__already_written = 0
         consumer, self.__consumer = self.__consumer, None
         if consumer is not None:
@@ -334,7 +319,12 @@ class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
 
     def __update_write_count(self, nbytes: int) -> None:
         self.__already_written += nbytes
-        self.__buffer_view = None
+        self.__release_buffer_view()
+
+    def __release_buffer_view(self) -> None:
+        buffer_view, self.__buffer_view = self.__buffer_view, None
+        if buffer_view is not None:
+            buffer_view.release()
 
     @staticmethod
     def __validate_created_buffer(buffer: WriteableBuffer) -> None:
