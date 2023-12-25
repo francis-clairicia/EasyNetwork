@@ -157,6 +157,11 @@ class AsyncSocket:
     async def recv_into(self, buffer: WriteableBuffer, /) -> int:
         socket = self.__check_not_closed()
         with self.__conflict_detection("recv"):
+            # NOTE: Workaround for an issue in asyncio.ProactorEventLoop which occurs because a call to Overlapped.WSARecvInto()
+            # does not release the exported buffer (using PyBuffer_Release()) at the end of the function unless the
+            # garbage collector clears the object.
+            buffer = memoryview(buffer)
+
             return await self.__loop.sock_recv_into(socket, buffer)
 
     async def recvfrom(self, bufsize: int, /) -> tuple[bytes, _socket._RetAddress]:
