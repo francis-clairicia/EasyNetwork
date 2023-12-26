@@ -320,17 +320,17 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
             if not server.is_closing()
         )
 
-    @property
-    def sockets(self) -> Sequence[SocketProxy]:
-        """The listeners sockets. Read-only attribute."""
+    def get_sockets(self) -> Sequence[SocketProxy]:
+        """Gets the listeners sockets.
+
+        Returns:
+            a read-only sequence of :class:`.SocketProxy` objects.
+
+            If the server is not running, an empty sequence is returned.
+        """
         if (servers := self.__servers) is None:
             return ()
         return tuple(SocketProxy(server.extra(INETSocketAttribute.socket)) for server in servers)
-
-    @property
-    def logger(self) -> logging.Logger:
-        """The server's logger."""
-        return self.__logger
 
 
 @final

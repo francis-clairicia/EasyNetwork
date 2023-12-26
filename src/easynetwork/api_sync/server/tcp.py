@@ -104,12 +104,17 @@ class StandaloneTCPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
             with contextlib.suppress(RuntimeError):
                 portal.run_sync(server.stop_listening)
 
-    @property
-    @_utils.inherit_doc(AsyncTCPNetworkServer)
-    def sockets(self) -> Sequence[SocketProxy]:
+    def get_sockets(self) -> Sequence[SocketProxy]:
+        """Gets the listeners sockets. Thread-safe.
+
+        Returns:
+            a read-only sequence of :class:`.SocketProxy` objects.
+
+            If the server is not running, an empty sequence is returned.
+        """
         if (portal := self._portal) is not None and (server := self._server) is not None:
             with contextlib.suppress(RuntimeError):
-                sockets = portal.run_sync(lambda: server.sockets)
+                sockets = portal.run_sync(server.get_sockets)
                 return tuple(SocketProxy(sock, runner=portal.run_sync) for sock in sockets)
         return ()
 

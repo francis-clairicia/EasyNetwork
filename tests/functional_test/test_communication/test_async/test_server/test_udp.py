@@ -47,6 +47,9 @@ def client_address(client: AsyncDatagramClient[Any]) -> SocketAddress:
     return client.extra(INETClientAttribute.remote_address)
 
 
+LOGGER = logging.getLogger(__name__)
+
+
 class MyAsyncUDPRequestHandler(AsyncDatagramRequestHandler[str, str]):
     request_received: collections.defaultdict[tuple[Any, ...], list[str]]
     bad_request_received: collections.defaultdict[tuple[Any, ...], list[BaseProtocolParseError]]
@@ -108,7 +111,7 @@ class MyAsyncUDPRequestHandler(AsyncDatagramRequestHandler[str, str]):
                     msg = f"{exc.__class__.__name__}: {exc}"
                     if exc.__cause__:
                         msg = f"{msg} (caused by {exc.__cause__.__class__.__name__}: {exc.__cause__})"
-                    self.server.logger.error(msg, exc_info=exc)
+                    LOGGER.error(msg, exc_info=exc)
 
     @contextlib.asynccontextmanager
     async def handle_bad_requests(self, client: AsyncDatagramClient[str]) -> AsyncIterator[None]:
@@ -230,11 +233,11 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         logger_crash_threshold_level: dict[str, int],
         use_asyncio_transport: bool,  # Only here for dependency
     ) -> AsyncIterator[MyAsyncUDPServer]:
-        async with MyAsyncUDPServer(localhost_ip, 0, datagram_protocol, request_handler) as server:
-            assert not server.sockets
+        async with MyAsyncUDPServer(localhost_ip, 0, datagram_protocol, request_handler, logger=LOGGER) as server:
+            assert not server.get_sockets()
             assert not server.get_addresses()
-            caplog.set_level(logging.INFO, server.logger.name)
-            logger_crash_threshold_level[server.logger.name] = logging.WARNING
+            caplog.set_level(logging.INFO, LOGGER.name)
+            logger_crash_threshold_level[LOGGER.name] = logging.WARNING
             yield server
 
     @pytest_asyncio.fixture
@@ -282,7 +285,7 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
                 with pytest.raises(OSError, match=r"^empty listeners list$"):
                     await s.serve_forever()
 
-                assert not s.sockets
+                assert not s.get_sockets()
 
     @pytest.mark.usefixtures("run_server_and_wait")
     async def test____serve_forever____server_assignment(
@@ -375,9 +378,9 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         logger_crash_maximum_nb_lines: dict[str, int],
         server: MyAsyncUDPServer,
     ) -> None:
-        caplog.set_level(logging.ERROR, server.logger.name)
+        caplog.set_level(logging.ERROR, LOGGER.name)
         if not mute_thrown_exception:
-            logger_crash_maximum_nb_lines[server.logger.name] = 3
+            logger_crash_maximum_nb_lines[LOGGER.name] = 3
         request_handler.mute_thrown_exception = mute_thrown_exception
         endpoint = await client_factory()
 
@@ -404,8 +407,8 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         logger_crash_maximum_nb_lines: dict[str, int],
         server: MyAsyncUDPServer,
     ) -> None:
-        caplog.set_level(logging.ERROR, server.logger.name)
-        logger_crash_maximum_nb_lines[server.logger.name] = 3
+        caplog.set_level(logging.ERROR, LOGGER.name)
+        logger_crash_maximum_nb_lines[LOGGER.name] = 3
         endpoint = await client_factory()
 
         await endpoint.sendto(b"__error__", None)
@@ -423,8 +426,8 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         logger_crash_maximum_nb_lines: dict[str, int],
         server: MyAsyncUDPServer,
     ) -> None:
-        caplog.set_level(logging.ERROR, server.logger.name)
-        logger_crash_maximum_nb_lines[server.logger.name] = 1
+        caplog.set_level(logging.ERROR, LOGGER.name)
+        logger_crash_maximum_nb_lines[LOGGER.name] = 1
         endpoint = await client_factory()
 
         await endpoint.sendto(b"request", None)
@@ -442,8 +445,8 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         logger_crash_maximum_nb_lines: dict[str, int],
         server: MyAsyncUDPServer,
     ) -> None:
-        caplog.set_level(logging.ERROR, server.logger.name)
-        logger_crash_maximum_nb_lines[server.logger.name] = 3
+        caplog.set_level(logging.ERROR, LOGGER.name)
+        logger_crash_maximum_nb_lines[LOGGER.name] = 3
         endpoint = await client_factory()
 
         await endpoint.sendto(b"__os_error__", None)
@@ -460,8 +463,8 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         logger_crash_maximum_nb_lines: dict[str, int],
         server: MyAsyncUDPServer,
     ) -> None:
-        caplog.set_level(logging.WARNING, server.logger.name)
-        logger_crash_maximum_nb_lines[server.logger.name] = 1
+        caplog.set_level(logging.WARNING, LOGGER.name)
+        logger_crash_maximum_nb_lines[LOGGER.name] = 1
         endpoint = await client_factory()
         host, port = endpoint.get_extra_info("sockname")[:2]
 
@@ -506,8 +509,8 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         client_factory: Callable[[], Awaitable[DatagramEndpoint]],
         server: MyAsyncUDPServer,
     ) -> None:
-        caplog.set_level(logging.ERROR, server.logger.name)
-        logger_crash_maximum_nb_lines[server.logger.name] = 3
+        caplog.set_level(logging.ERROR, LOGGER.name)
+        logger_crash_maximum_nb_lines[LOGGER.name] = 3
         endpoint = await client_factory()
 
         request_handler.raise_error = True
@@ -534,7 +537,7 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
     ) -> None:
         request_handler.bypass_refusal = False
         request_handler.refuse_after = refuse_after
-        caplog.set_level(logging.ERROR, server.logger.name)
+        caplog.set_level(logging.ERROR, LOGGER.name)
         endpoint = await client_factory()
 
         for _ in range(refuse_after):

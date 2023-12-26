@@ -68,6 +68,9 @@ class RandomError(Exception):
     pass
 
 
+LOGGER = logging.getLogger(__name__)
+
+
 class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
     connected_clients: WeakValueDictionary[SocketAddress, AsyncStreamClient[str]]
     request_received: collections.defaultdict[tuple[Any, ...], list[str]]
@@ -156,7 +159,7 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
                     msg = f"{exc.__class__.__name__}: {exc}"
                     if exc.__cause__:
                         msg = f"{msg} (caused by {exc.__cause__.__class__.__name__}: {exc.__cause__})"
-                    self.server.logger.error(msg, exc_info=exc)
+                    LOGGER.error(msg, exc_info=exc)
                     await client.aclose()
 
     @contextlib.asynccontextmanager
@@ -330,11 +333,12 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
             backlog=1,
             ssl=server_ssl_context if use_ssl else None,
             ssl_handshake_timeout=ssl_handshake_timeout,
+            logger=LOGGER,
         ) as server:
-            assert not server.sockets
+            assert not server.get_sockets()
             assert not server.get_addresses()
-            caplog.set_level(logging.INFO, server.logger.name)
-            logger_crash_threshold_level[server.logger.name] = logging.WARNING
+            caplog.set_level(logging.INFO, LOGGER.name)
+            logger_crash_threshold_level[LOGGER.name] = logging.WARNING
             yield server
 
     @pytest_asyncio.fixture
@@ -415,8 +419,9 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
             stream_protocol,
             request_handler,
             log_client_connection=log_client_connection,
+            logger=LOGGER,
         ) as s:
-            caplog.set_level(logging.DEBUG, s.logger.name)
+            caplog.set_level(logging.DEBUG, LOGGER.name)
             is_up_event = asyncio.Event()
             _ = asyncio.create_task(s.serve_forever(is_up_event=is_up_event))
             async with asyncio.timeout(1):
@@ -424,7 +429,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
 
             try:
                 assert len(s.get_addresses()) > 0
-                assert len(s.sockets) > 0
+                assert len(s.get_sockets()) > 0
 
                 port = s.get_addresses()[0].port
 
@@ -488,7 +493,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
                 with pytest.raises(OSError, match=r"^empty listeners list$"):
                     await s.serve_forever()
 
-                assert not s.sockets
+                assert not s.get_sockets()
 
     @pytest.mark.usefixtures("run_server_and_wait")
     async def test____serve_forever____server_assignment(
@@ -530,8 +535,8 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     ) -> None:
         from socket import socket as SocketType
 
-        caplog.set_level(logging.WARNING, server.logger.name)
-        logger_crash_maximum_nb_lines[server.logger.name] = 1
+        caplog.set_level(logging.WARNING, LOGGER.name)
+        logger_crash_maximum_nb_lines[LOGGER.name] = 1
 
         socket = SocketType()
 
@@ -670,7 +675,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         server: MyAsyncTCPServer,
         request_handler: MyAsyncTCPRequestHandler,
     ) -> None:
-        caplog.set_level(logging.WARNING, server.logger.name)
+        caplog.set_level(logging.WARNING, LOGGER.name)
         _, writer = await client_factory()
 
         enable_socket_linger(writer.get_extra_info("socket"), timeout=0)
@@ -699,9 +704,9 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         logger_crash_maximum_nb_lines: dict[str, int],
         server: MyAsyncTCPServer,
     ) -> None:
-        caplog.set_level(logging.ERROR, server.logger.name)
+        caplog.set_level(logging.ERROR, LOGGER.name)
         if not mute_thrown_exception:
-            logger_crash_maximum_nb_lines[server.logger.name] = 3
+            logger_crash_maximum_nb_lines[LOGGER.name] = 3
         request_handler.mute_thrown_exception = mute_thrown_exception
         reader, writer = await client_factory()
 
@@ -734,8 +739,8 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         logger_crash_maximum_nb_lines: dict[str, int],
         server: MyAsyncTCPServer,
     ) -> None:
-        caplog.set_level(logging.ERROR, server.logger.name)
-        logger_crash_maximum_nb_lines[server.logger.name] = 3
+        caplog.set_level(logging.ERROR, LOGGER.name)
+        logger_crash_maximum_nb_lines[LOGGER.name] = 3
         reader, writer = await client_factory()
 
         writer.write(b"__error__\n")
@@ -757,8 +762,8 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         request_handler: MyAsyncTCPRequestHandler,
     ) -> None:
         request_handler.milk_handshake = False
-        caplog.set_level(logging.ERROR, server.logger.name)
-        logger_crash_maximum_nb_lines[server.logger.name] = 1
+        caplog.set_level(logging.ERROR, LOGGER.name)
+        logger_crash_maximum_nb_lines[LOGGER.name] = 1
         reader, writer = await client_factory_no_handshake()
 
         while not request_handler.connected_clients:
@@ -779,8 +784,8 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
         server: MyAsyncTCPServer,
     ) -> None:
-        caplog.set_level(logging.ERROR, server.logger.name)
-        logger_crash_maximum_nb_lines[server.logger.name] = 3
+        caplog.set_level(logging.ERROR, LOGGER.name)
+        logger_crash_maximum_nb_lines[LOGGER.name] = 3
         reader, writer = await client_factory()
 
         writer.write(b"__os_error__\n")
@@ -800,8 +805,8 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         logger_crash_maximum_nb_lines: dict[str, int],
         server: MyAsyncTCPServer,
     ) -> None:
-        caplog.set_level(logging.WARNING, server.logger.name)
-        logger_crash_maximum_nb_lines[server.logger.name] = 1
+        caplog.set_level(logging.WARNING, LOGGER.name)
+        logger_crash_maximum_nb_lines[LOGGER.name] = 1
         reader, writer = await client_factory()
         host, port = writer.get_extra_info("sockname")[:2]
 
@@ -819,7 +824,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         caplog: pytest.LogCaptureFixture,
         server: MyAsyncTCPServer,
     ) -> None:
-        caplog.set_level(logging.WARNING, server.logger.name)
+        caplog.set_level(logging.WARNING, LOGGER.name)
         reader, writer = await client_factory()
 
         writer.write(b"__connection_error__\n")
@@ -836,8 +841,8 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         logger_crash_maximum_nb_lines: dict[str, int],
         server: MyAsyncTCPServer,
     ) -> None:
-        caplog.set_level(logging.WARNING, server.logger.name)
-        logger_crash_maximum_nb_lines[server.logger.name] = 1
+        caplog.set_level(logging.WARNING, LOGGER.name)
+        logger_crash_maximum_nb_lines[LOGGER.name] = 1
         _, writer = await client_factory()
         request_handler.fail_on_disconnection = True
 
@@ -937,8 +942,8 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
         server: MyAsyncTCPServer,
     ) -> None:
-        caplog.set_level(logging.ERROR, server.logger.name)
-        logger_crash_maximum_nb_lines[server.logger.name] = 3
+        caplog.set_level(logging.ERROR, LOGGER.name)
+        logger_crash_maximum_nb_lines[LOGGER.name] = 3
 
         with contextlib.suppress(ConnectionError):
             reader, _ = await client_factory()
@@ -959,7 +964,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         server: MyAsyncTCPServer,
     ) -> None:
         request_handler.refuse_after = refuse_after
-        caplog.set_level(logging.ERROR, server.logger.name)
+        caplog.set_level(logging.ERROR, LOGGER.name)
 
         with contextlib.suppress(ConnectionError):
             # If refuse after is equal to zero, client_factory() can raise ConnectionResetError
@@ -1026,8 +1031,8 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         logger_crash_maximum_nb_lines: dict[str, int],
         server: MyAsyncTCPServer,
     ) -> None:
-        caplog.set_level(logging.ERROR, server.logger.name)
-        logger_crash_maximum_nb_lines[server.logger.name] = 1
+        caplog.set_level(logging.ERROR, LOGGER.name)
+        logger_crash_maximum_nb_lines[LOGGER.name] = 1
         logger_crash_maximum_nb_lines["easynetwork.lowlevel.std_asyncio.stream.listener"] = 1
         socket = await create_connection(*server_address, event_loop)
         with pytest.raises(OSError):

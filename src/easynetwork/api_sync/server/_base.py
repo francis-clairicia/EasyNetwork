@@ -109,7 +109,7 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
 
         Parameters:
             is_up_event: If given, will be triggered when the server is ready to accept new clients.
-            runner_options: Options to pass to the :meth:`~AsyncBackend.bootstrap` method.
+            runner_options: Options to pass to the :meth:`.AsyncBackend.bootstrap` method.
 
         Raises:
             ServerClosedError: The server is closed.
