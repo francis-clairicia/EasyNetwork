@@ -23,7 +23,7 @@ __all__ = [
 
 from abc import ABCMeta, abstractmethod
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, NoReturn, Protocol, Self
+from typing import TYPE_CHECKING, Protocol, Self
 
 from ...lowlevel.socket import SocketAddress
 
@@ -73,7 +73,7 @@ class AbstractAsyncNetworkServer(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    async def serve_forever(self, *, is_up_event: SupportsEventSet | None = ...) -> NoReturn:
+    async def serve_forever(self, *, is_up_event: SupportsEventSet | None = ...) -> None:
         """
         Starts the server's main loop.
 

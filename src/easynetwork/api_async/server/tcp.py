@@ -65,10 +65,9 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
         "__protocol",
         "__request_handler",
         "__is_shutdown",
-        "__shutdown_asked",
         "__max_recv_size",
         "__servers_tasks",
-        "__mainloop_task",
+        "__server_run_scope",
         "__active_tasks",
         "__client_connection_log_level",
         "__logger",
@@ -174,16 +173,15 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
                 reuse_port=reuse_port,
             )
         self.__listeners_factory_scope: CancelScope | None = None
+        self.__server_run_scope: CancelScope | None = None
 
         self.__servers: tuple[_stream_server.AsyncStreamServer[_T_Request, _T_Response], ...] | None = None
         self.__protocol: StreamProtocol[_T_Response, _T_Request] = protocol
         self.__request_handler: AsyncStreamRequestHandler[_T_Request, _T_Response] = request_handler
         self.__is_shutdown: IEvent = backend.create_event()
         self.__is_shutdown.set()
-        self.__shutdown_asked: bool = False
         self.__max_recv_size: int = max_recv_size
         self.__servers_tasks: deque[Task[NoReturn]] = deque()
-        self.__mainloop_task: Task[NoReturn] | None = None
         self.__logger: logging.Logger = logger or logging.getLogger(__name__)
         self.__client_connection_log_level: int
         if log_client_connection:
@@ -219,10 +217,13 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
 
     async def __close_servers(self) -> None:
         async with contextlib.AsyncExitStack() as exit_stack:
+            server_close_group = await exit_stack.enter_async_context(current_async_backend().create_task_group())
+
             servers, self.__servers = self.__servers, None
             if servers is not None:
+                exit_stack.push_async_callback(current_async_backend().cancel_shielded_coro_yield)
                 for server in servers:
-                    exit_stack.push_async_callback(server.aclose)
+                    exit_stack.callback(server_close_group.start_soon, server.aclose)
                     del server
 
             for server_task in self.__servers_tasks:
@@ -234,25 +235,24 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
 
     @_utils.inherit_doc(AbstractAsyncNetworkServer)
     async def shutdown(self) -> None:
-        if self.__mainloop_task is not None:
-            self.__mainloop_task.cancel()
-        if self.__shutdown_asked:
-            await self.__is_shutdown.wait()
-            return
-        self.__shutdown_asked = True
-        try:
-            await self.__is_shutdown.wait()
-        finally:
-            self.__shutdown_asked = False
+        if self.__server_run_scope is not None:
+            self.__server_run_scope.cancel()
+        await self.__is_shutdown.wait()
 
     @_utils.inherit_doc(AbstractAsyncNetworkServer)
-    async def serve_forever(self, *, is_up_event: SupportsEventSet | None = None) -> NoReturn:
+    async def serve_forever(self, *, is_up_event: SupportsEventSet | None = None) -> None:
         async with contextlib.AsyncExitStack() as server_exit_stack:
             # Wake up server
             if not self.__is_shutdown.is_set():
                 raise ServerAlreadyRunning("Server is already running")
             self.__is_shutdown = is_shutdown = current_async_backend().create_event()
             server_exit_stack.callback(is_shutdown.set)
+            self.__server_run_scope = server_exit_stack.enter_context(current_async_backend().open_cancel_scope())
+
+            def reset_scope() -> None:
+                self.__server_run_scope = None
+
+            server_exit_stack.callback(reset_scope)
             ################
 
             # Bind and activate
@@ -266,7 +266,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
                     await current_async_backend().coro_yield()
                     listeners.extend(await self.__listeners_factory())
                 if self.__listeners_factory_scope.cancelled_caught():
-                    raise ServerClosedError("Closed server")
+                    raise ServerClosedError("Server has been closed during task setup")
             finally:
                 self.__listeners_factory_scope = None
             if not listeners:
@@ -303,20 +303,12 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
             #################
 
             # Server is up
-            if is_up_event is not None and not self.__shutdown_asked:
+            if is_up_event is not None:
                 is_up_event.set()
             ##############
 
             # Main loop
-            self.__mainloop_task = task_group.start_soon(current_async_backend().sleep_forever)
-            if self.__shutdown_asked:
-                self.__mainloop_task.cancel()
-            try:
-                await self.__mainloop_task.join()
-            finally:
-                self.__mainloop_task = None
-
-        raise AssertionError("sleep_forever() does not return")
+            await current_async_backend().sleep_forever()
 
     async def __serve(
         self,
@@ -423,9 +415,8 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
         self.__active_tasks -= 1
         if self.__active_tasks < 0:
             raise AssertionError("self.__active_tasks < 0")
-        if not self.__active_tasks:
-            if self.__mainloop_task is not None:
-                self.__mainloop_task.cancel()
+        if not self.__active_tasks and self.__server_run_scope is not None:
+            self.__server_run_scope.cancel()
 
     @staticmethod
     def __set_socket_linger_if_not_closed(socket: ISocket) -> None:

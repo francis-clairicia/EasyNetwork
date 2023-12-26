@@ -22,7 +22,7 @@ import concurrent.futures
 import contextlib
 import threading as _threading
 from collections.abc import Callable, Mapping, Sequence
-from typing import TYPE_CHECKING, Any, NoReturn
+from typing import TYPE_CHECKING, Any
 
 from ...api_async.server.abc import SupportsEventSet
 from ...exceptions import ServerAlreadyRunning, ServerClosedError
@@ -143,7 +143,7 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
             server_exit_stack.callback(reset_values)
             server_exit_stack.callback(acquire_bootstrap_lock)
 
-            async def serve_forever() -> NoReturn:
+            async def serve_forever() -> None:
                 async with (
                     self.__server_factory() as self.__private_server,
                     backend.create_threads_portal() as self.__private_threads_portal,

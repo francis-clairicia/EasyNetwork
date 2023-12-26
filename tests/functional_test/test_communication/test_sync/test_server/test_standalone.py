@@ -87,6 +87,21 @@ class BaseTestStandaloneNetworkServer:
             assert not server.is_serving()
             t.join()
 
+    def test____serve_forever____serve_several_times(self, server: AbstractNetworkServer) -> None:
+        with server:
+            for _ in range(3):
+                assert not server.is_serving()
+                assert not server.get_addresses()
+
+                server_thread = NetworkServerThread(server, daemon=True)
+                server_thread.start()
+                try:
+                    assert server.is_serving()
+                    assert len(server.get_addresses()) > 0
+                    time.sleep(0.5)
+                finally:
+                    server_thread.join()
+
     def test____server_thread____several_join(
         self,
         start_server: NetworkServerThread,
@@ -108,26 +123,21 @@ class TestStandaloneTCPNetworkServer(BaseTestStandaloneNetworkServer):
         with socket.create_connection(("localhost", port)) as client:
             yield client
 
-    def test____serve_forever____serve_several_times(self, server: StandaloneTCPNetworkServer[str, str]) -> None:
-        with server:
-            for _ in range(3):
-                assert not server.is_serving()
-                assert not server.get_addresses()
-
-                server_thread = NetworkServerThread(server, daemon=True)
-                server_thread.start()
-                try:
-                    assert server.is_serving()
-                    assert len(server.get_addresses()) > 0
-                    time.sleep(0.5)
-                finally:
-                    server_thread.join()
-
     def test____stop_listening____default_to_noop(self, server: StandaloneTCPNetworkServer[str, str]) -> None:
         with server:
             assert not server.sockets
             assert not server.get_addresses()
             server.stop_listening()
+
+    def test____socket_property____server_is_not_running(self, server: StandaloneTCPNetworkServer[str, str]) -> None:
+        with server:
+            assert len(server.sockets) == 0
+            assert len(server.get_addresses()) == 0
+
+    @pytest.mark.usefixtures("start_server")
+    def test____socket_property____server_is_running(self, server: StandaloneTCPNetworkServer[str, str]) -> None:
+        assert len(server.sockets) > 0
+        assert len(server.get_addresses()) > 0
 
     @pytest.mark.usefixtures("start_server", "client")
     def test____stop_listening____stop_accepting_new_connection(self, server: StandaloneTCPNetworkServer[str, str]) -> None:
@@ -146,21 +156,6 @@ class TestStandaloneUDPNetworkServer(BaseTestStandaloneNetworkServer):
     @staticmethod
     def server(datagram_protocol: DatagramProtocol[str, str]) -> StandaloneUDPNetworkServer[str, str]:
         return StandaloneUDPNetworkServer("localhost", 0, datagram_protocol, EchoRequestHandler())
-
-    def test____serve_forever____serve_several_times(self, server: StandaloneUDPNetworkServer[str, str]) -> None:
-        with server:
-            for _ in range(3):
-                assert not server.is_serving()
-                assert not server.get_addresses()
-
-                server_thread = NetworkServerThread(server, daemon=True)
-                server_thread.start()
-                try:
-                    assert server.is_serving()
-                    assert len(server.get_addresses()) > 0
-                    time.sleep(0.5)
-                finally:
-                    server_thread.join()
 
     def test____socket_property____server_is_not_running(self, server: StandaloneUDPNetworkServer[str, str]) -> None:
         with server:
