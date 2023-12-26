@@ -93,7 +93,9 @@ class TestTCPNetworkClient:
         assert server.recv(1) == b"A"
         server.close()
         with pytest.raises(ConnectionAbortedError):
-            client.send_packet("DEF")
+            for _ in range(3):  # Windows and macOS catch the issue after several send()
+                client.send_packet("DEF")
+                time.sleep(0.01)
 
     def test____send_packet____closed_client(self, client: TCPNetworkClient[str, str]) -> None:
         client.close()
