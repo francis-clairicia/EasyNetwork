@@ -720,10 +720,9 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
             assert await reader.readline() in expected_messages
             assert len(caplog.records) == 0  # After two attempts
         else:
-            with pytest.raises(ConnectionResetError):
+            with contextlib.suppress(ConnectionError):
                 assert await reader.readline() in expected_messages
                 assert await reader.read() == b""
-                raise ConnectionResetError
             assert len(caplog.records) == 3
             assert caplog.records[1].exc_info is not None
             assert type(caplog.records[1].exc_info[1]) is RuntimeError
@@ -742,9 +741,8 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         writer.write(b"__error__\n")
         await asyncio.sleep(0.1)
 
-        with pytest.raises(ConnectionResetError):
+        with contextlib.suppress(ConnectionError):
             assert await reader.read() == b""
-            raise ConnectionResetError
         assert len(caplog.records) == 3
         assert caplog.records[1].exc_info is not None
         assert type(caplog.records[1].exc_info[1]) is RandomError
@@ -788,9 +786,8 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         writer.write(b"__os_error__\n")
         await asyncio.sleep(0.1)
 
-        with pytest.raises(ConnectionResetError):
+        with contextlib.suppress(ConnectionError):
             assert await reader.read() == b""
-            raise ConnectionResetError
 
         assert len(caplog.records) == 3
         assert caplog.records[1].exc_info is not None
@@ -929,9 +926,8 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
 
         writer.write(b"something\n")
         await asyncio.sleep(0.1)
-        with pytest.raises(ConnectionResetError):
+        with contextlib.suppress(ConnectionError):
             assert await reader.read() == b""
-            raise ConnectionResetError
 
     @pytest.mark.parametrize("request_handler", [ErrorBeforeYieldHandler], indirect=True)
     async def test____serve_forever____request_handler_crashed_before_yield(
@@ -944,10 +940,9 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         caplog.set_level(logging.ERROR, server.logger.name)
         logger_crash_maximum_nb_lines[server.logger.name] = 3
 
-        with pytest.raises(ConnectionResetError):
+        with contextlib.suppress(ConnectionError):
             reader, _ = await client_factory()
             assert await reader.read() == b""
-            raise ConnectionResetError
         await asyncio.sleep(0.1)
         assert len(caplog.records) == 3
         assert caplog.records[1].exc_info is not None
@@ -966,7 +961,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         request_handler.refuse_after = refuse_after
         caplog.set_level(logging.ERROR, server.logger.name)
 
-        with pytest.raises(ConnectionResetError):
+        with contextlib.suppress(ConnectionError):
             # If refuse after is equal to zero, client_factory() can raise ConnectionResetError
             reader, writer = await client_factory()
 
@@ -975,9 +970,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
                 assert await reader.readline() == b"something\n"
 
             assert await reader.read() == b""
-
-            # Should not go here but just to be sure...
-            raise ConnectionResetError
         assert len(caplog.records) == 0
 
     @pytest.mark.parametrize("request_handler", [InitialHandshakeRequestHandler], indirect=True)
