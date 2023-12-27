@@ -393,8 +393,6 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
                         action = _asyncgen.SendAction((yield))
                     except ConnectionError:
                         break
-                    except GeneratorExit:  # pragma: no cover
-                        raise
                     except BaseException as exc:
                         action = _asyncgen.ThrowAction(exc)
                     try:
