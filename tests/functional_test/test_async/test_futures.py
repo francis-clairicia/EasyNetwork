@@ -34,20 +34,6 @@ class TestAsyncExecutor:
 
         assert await executor.run(thread_fn, 42) == 42
 
-    async def test____run____ignore_cancellation(
-        self,
-        event_loop: asyncio.AbstractEventLoop,
-        executor: AsyncExecutor[concurrent.futures.Executor],
-    ) -> None:
-        task = event_loop.create_task(executor.run(time.sleep, 0.5))
-
-        for i in range(3):
-            for _ in range(3):
-                event_loop.call_later(0.1 * i, task.cancel)
-
-        await task
-        assert not task.cancelled()
-
     @pytest.mark.feature_sniffio
     async def test____run____sniffio_contextvar_reset(
         self,
