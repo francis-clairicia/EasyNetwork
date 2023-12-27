@@ -245,9 +245,8 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
     ) -> AsyncGenerator[None, _T_Request]:
         address = new_socket_address(address, server.extra(INETSocketAttribute.family))
         with self.__suppress_and_log_remaining_exception(client_address=address):
-            async with contextlib.aclosing(
-                self.__request_handler.handle(self.__get_client(server, address))
-            ) as request_handler_generator:
+            request_handler_generator = self.__request_handler.handle(self.__get_client(server, address))
+            async with contextlib.aclosing(request_handler_generator):
                 try:
                     await anext(request_handler_generator)
                 except StopAsyncIteration:
@@ -257,8 +256,6 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
                 while True:
                     try:
                         action = _asyncgen.SendAction((yield))
-                    except GeneratorExit:  # pragma: no cover
-                        raise
                     except BaseException as exc:
                         action = _asyncgen.ThrowAction(exc)
                     try:

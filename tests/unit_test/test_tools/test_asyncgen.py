@@ -52,8 +52,22 @@ class TestAsyncGenAction:
         mock_generator.athrow.assert_awaited_once_with(exc)
         assert to_yield is mocker.sentinel.to_yield_from_throw
 
+    async def test____ThrowAction____close_generator(self, mock_generator: MagicMock, mocker: MockerFixture) -> None:
+        # Arrange
+        exc = GeneratorExit()
+        action: ThrowAction[Any] = ThrowAction(exc)
+
+        # Act
+        with pytest.raises(GeneratorExit) as exc_info:
+            await action.asend(mock_generator)
+
+        # Assert
+        assert exc_info.value is exc
+        assert mock_generator.mock_calls == [mocker.call.aclose()]
+        mock_generator.aclose.assert_awaited_once_with()
+
     # Test taken from "outcome" project (https://github.com/python-trio/outcome)
-    async def test____ErrorAction____does_not_create_reference_cycles(self, mock_generator: MagicMock) -> None:
+    async def test____ThrowAction____does_not_create_reference_cycles(self, mock_generator: MagicMock) -> None:
         # Arrange
         exc = ValueError("abc")
         action: ThrowAction[Any] = ThrowAction(exc)
