@@ -285,7 +285,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
 
             # Initialize request handler
             await self.__request_handler.service_init(
-                await server_exit_stack.enter_async_context(contextlib.aclosing(contextlib.AsyncExitStack())),
+                await server_exit_stack.enter_async_context(contextlib.AsyncExitStack()),
                 weakref.proxy(self),
             )
             ############################
