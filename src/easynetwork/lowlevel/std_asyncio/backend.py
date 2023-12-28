@@ -74,13 +74,12 @@ class AsyncIOBackend(AbstractAsyncBackend):
         *args: Any,
         runner_options: Mapping[str, Any] | None = None,
     ) -> _T:
-        @functools.wraps(coro_func)
-        async def bootstrap_task(*args: Any) -> _T:
+        async def bootstrap_task() -> _T:
             TaskUtils.current_asyncio_task().set_name(TaskUtils.compute_task_name_from_func(coro_func))
             return await TaskUtils.ensure_coroutine(coro_func, args)
 
         with asyncio.Runner(**(runner_options or {})) as runner:
-            return runner.run(bootstrap_task(*args))
+            return runner.run(bootstrap_task())
 
     async def coro_yield(self) -> None:
         await asyncio.sleep(0)

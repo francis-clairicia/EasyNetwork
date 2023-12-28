@@ -45,7 +45,7 @@ class TestAsyncIOBackendSync:
 
         # Act
         ret_val = backend.bootstrap(
-            lambda *args, **kwargs: coro_stub(*args, **kwargs),
+            coro_stub,
             mocker.sentinel.arg1,
             mocker.sentinel.arg2,
             mocker.sentinel.arg3,
