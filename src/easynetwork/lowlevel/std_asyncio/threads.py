@@ -84,18 +84,18 @@ class ThreadsPortal(AbstractThreadsPortal):
     ) -> concurrent.futures.Future[_T]:
         future: concurrent.futures.Future[_T] = concurrent.futures.Future()
 
-        async def coroutine() -> None:
+        def on_fut_done(task: asyncio.Task[None], future: concurrent.futures.Future[_T]) -> None:
+            if future.cancelled():
+                with contextlib.suppress(RuntimeError):
+                    loop = task.get_loop()
+                    loop.call_soon_threadsafe(task.cancel)
+
+        async def coroutine(waiter: asyncio.Future[None]) -> None:
             try:
+                waiter.set_result(None)
+                del waiter
 
-                @_utils.prepend_argument(TaskUtils.current_asyncio_task())
-                def on_fut_done(task: asyncio.Task[None], future: concurrent.futures.Future[_T]) -> None:
-                    if future.cancelled():
-                        with contextlib.suppress(RuntimeError):
-                            loop = task.get_loop()
-                            loop.call_soon_threadsafe(task.cancel)
-
-                future.add_done_callback(on_fut_done)
-                del on_fut_done
+                future.add_done_callback(_utils.prepend_argument(TaskUtils.current_asyncio_task(), on_fut_done))
 
                 result = await coro_func(*args, **kwargs)
             except asyncio.CancelledError:
@@ -122,11 +122,9 @@ class ThreadsPortal(AbstractThreadsPortal):
                     future.set_result(result)
 
         def schedule_task() -> concurrent.futures.Future[_T]:
-            task = self.__task_group.create_task(coroutine())
-            if not task.done():  # task can be done eagerly
-                loop = task.get_loop()
-                with self.__lock.get():
-                    loop.call_soon(self.__register_waiter(self.__call_soon_waiters, loop).set_result, None)
+            loop = asyncio.get_running_loop()
+            waiter = self.__register_waiter(self.__call_soon_waiters, loop)
+            _ = self.__task_group.create_task(coroutine(waiter))
             return future
 
         return self.run_sync(schedule_task)

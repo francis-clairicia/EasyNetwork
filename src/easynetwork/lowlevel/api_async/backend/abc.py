@@ -24,10 +24,12 @@ __all__ = [
     "ILock",
     "Task",
     "TaskGroup",
+    "TaskInfo",
     "ThreadsPortal",
 ]
 
 import contextlib
+import dataclasses
 import math
 from abc import ABCMeta, abstractmethod
 from collections.abc import Awaitable, Callable, Coroutine, Iterator, Mapping, Sequence
@@ -199,6 +201,12 @@ class Task(Generic[_T_co], metaclass=ABCMeta):
 
     __slots__ = ("__weakref__",)
 
+    @property
+    @abstractmethod
+    def info(self) -> TaskInfo:
+        """The task data. Read-only attribute."""
+        raise NotImplementedError
+
     @abstractmethod
     def done(self) -> bool:
         """
@@ -288,6 +296,28 @@ class Task(Generic[_T_co], metaclass=ABCMeta):
             return await task.join()
         """
         raise NotImplementedError
+
+
+@dataclasses.dataclass(eq=False, slots=True, frozen=True)
+class TaskInfo:
+    """
+    Represents an asynchronous task.
+    """
+
+    id: int
+    "The unique identifier of the task"
+    name: str
+    "The description of the task (if any)"
+    coro: Coroutine[Any, Any, Any] | None = dataclasses.field(repr=False)
+    "The coroutine object of the task"
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, TaskInfo):
+            return self.id == other.id
+        return NotImplemented
+
+    def __hash__(self) -> int:
+        return hash(self.id)
 
 
 class CancelScope(metaclass=ABCMeta):
@@ -396,8 +426,8 @@ class TaskGroup(metaclass=ABCMeta):
 
         async def main():
             async with backend.create_task_group() as tg:
-                task1 = tg.start_soon(some_coro)
-                task2 = tg.start_soon(another_coro)
+                tg.start_soon(some_coro)
+                tg.start_soon(another_coro)
             print("Both tasks have completed now.")
 
     The :keyword:`async with` statement will wait for all tasks in the group to finish.
@@ -427,14 +457,38 @@ class TaskGroup(metaclass=ABCMeta):
         coro_func: Callable[..., Coroutine[Any, Any, _T]],
         /,
         *args: Any,
-    ) -> Task[_T]:
+        name: str | None = ...,
+    ) -> None:
         """
-        Starts a new task in this task group.
+        Schedules the creation of a new task in this task group.
 
         Parameters:
             coro_func: An async function.
             args: Positional arguments to be passed to `coro_func`. If you need to pass keyword arguments,
                   then use :func:`functools.partial`.
+            name: Name of the task, for the purposes of introspection and debugging.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    async def start(
+        self,
+        coro_func: Callable[..., Coroutine[Any, Any, _T]],
+        /,
+        *args: Any,
+        name: str | None = ...,
+    ) -> Task[_T]:
+        """
+        Starts a new managed task in this task group. Blocks until the event loop starts the task.
+
+        Warning:
+            Unlike ``trio`` and ``anyio``, there is no ``task_status`` parameter.
+
+        Parameters:
+            coro_func: An async function.
+            args: Positional arguments to be passed to `coro_func`. If you need to pass keyword arguments,
+                  then use :func:`functools.partial`.
+            name: Name of the task, for the purposes of introspection and debugging.
 
         Returns:
             the created task.
@@ -829,6 +883,16 @@ class AsyncBackend(metaclass=ABCMeta):
 
         Returns:
             A new task group.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_current_task(self) -> TaskInfo:
+        """
+        Return the current task.
+
+        Returns:
+            a representation of the current task.
         """
         raise NotImplementedError
 

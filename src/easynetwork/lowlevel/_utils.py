@@ -23,6 +23,7 @@ __all__ = [
     "ensure_datagram_socket_bound",
     "error_from_errno",
     "exception_with_notes",
+    "get_callable_name",
     "is_ssl_eof_error",
     "is_ssl_socket",
     "iterate_exceptions",
@@ -48,7 +49,7 @@ import time
 from abc import abstractmethod
 from collections import deque
 from collections.abc import Callable, Iterable, Iterator
-from typing import TYPE_CHECKING, Any, Concatenate, Final, ParamSpec, Protocol, Self, TypeGuard, TypeVar
+from typing import TYPE_CHECKING, Any, Concatenate, Final, ParamSpec, Protocol, Self, TypeGuard, TypeVar, overload
 
 try:
     import ssl as _ssl
@@ -91,11 +92,44 @@ def make_callback(func: Callable[_P, _T_Return], /, *args: _P.args, **kwargs: _P
     return functools.partial(func, *args, **kwargs)
 
 
-def prepend_argument(arg: _T_Arg) -> Callable[[Callable[Concatenate[_T_Arg, _P], _T_Return]], Callable[_P, _T_Return]]:
+@overload
+def prepend_argument(
+    arg: _T_Arg,
+    func: None = ...,
+) -> Callable[[Callable[Concatenate[_T_Arg, _P], _T_Return]], Callable[_P, _T_Return]]:
+    ...
+
+
+@overload
+def prepend_argument(
+    arg: _T_Arg,
+    func: Callable[Concatenate[_T_Arg, _P], _T_Return],
+) -> Callable[_P, _T_Return]:
+    ...
+
+
+def prepend_argument(
+    arg: _T_Arg,
+    func: Callable[Concatenate[_T_Arg, _P], _T_Return] | None = None,
+) -> Callable[[Callable[Concatenate[_T_Arg, _P], _T_Return]], Callable[_P, _T_Return]] | Callable[_P, _T_Return]:
     def decorator(func: Callable[Concatenate[_T_Arg, _P], _T_Return], /) -> Callable[_P, _T_Return]:
         return functools.partial(func, arg)
 
+    if func is not None:
+        return decorator(func)
     return decorator
+
+
+def get_callable_name(func: Callable[..., Any]) -> str:
+    qualname: str | None = getattr(func, "__qualname__", None)
+    if not qualname:
+        qualname = getattr(func, "__name__", None)
+        if not qualname:
+            return ""
+    module: str | None = getattr(func, "__module__", None)
+    if not module:
+        return qualname
+    return f"{module}.{qualname}"
 
 
 def inherit_doc(base_cls: type[Any]) -> Callable[[_T_Func], _T_Func]:

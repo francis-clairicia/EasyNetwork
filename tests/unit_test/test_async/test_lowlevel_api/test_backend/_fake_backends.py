@@ -48,6 +48,9 @@ class BaseFakeBackend(AsyncBackend):
     def create_task_group(self) -> Any:
         raise NotImplementedError
 
+    def get_current_task(self) -> Any:
+        raise NotImplementedError
+
     async def create_tcp_connection(self, *args: Any, **kwargs: Any) -> Any:
         raise NotImplementedError
 
