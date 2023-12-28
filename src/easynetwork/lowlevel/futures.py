@@ -62,7 +62,7 @@ class AsyncExecutor(Generic[_T_Executor]):
 
             async with AsyncExecutor(ProcessPoolExecutor(), handle_contexts=False) as executor:
                 async with backend.create_task_group() as task_group:
-                    tasks = [task_group.start_soon(executor.run, pow, a, b) for a, b in [(3, 4), (12, 2), (6, 8)]]
+                    tasks = [await task_group.start(executor.run, pow, a, b) for a, b in [(3, 4), (12, 2), (6, 8)]]
                 results = [await t.join() for t in tasks]
     """
 

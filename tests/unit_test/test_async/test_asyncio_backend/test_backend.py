@@ -30,7 +30,7 @@ class TestAsyncIOBackendSync:
     def backend() -> AsyncIOBackend:
         return AsyncIOBackend()
 
-    @pytest.mark.parametrize("runner_options", [{"loop_factory": 42}, None])
+    @pytest.mark.parametrize("runner_options", [{"loop_factory": asyncio.new_event_loop}, None])
     def test____bootstrap____start_new_runner(
         self,
         runner_options: dict[str, Any] | None,
@@ -38,19 +38,14 @@ class TestAsyncIOBackendSync:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_asyncio_runner: MagicMock = mocker.NonCallableMagicMock(
-            spec=asyncio.Runner,
-            **{"run.return_value": mocker.sentinel.Runner_ret_val},
-        )
-        mock_asyncio_runner.__enter__.return_value = mock_asyncio_runner
-        mock_asyncio_runner_cls = mocker.patch("asyncio.Runner", side_effect=[mock_asyncio_runner])
-        mock_coroutine = mocker.NonCallableMagicMock(spec=Coroutine)
+        mock_asyncio_runner_cls = mocker.patch("asyncio.Runner", side_effect=asyncio.Runner)
+        mock_coroutine = mocker.AsyncMock(spec=Coroutine, return_value=mocker.sentinel.Runner_ret_val)
         coro_stub = mocker.stub()
-        coro_stub.return_value = mock_coroutine
+        coro_stub.return_value = mock_coroutine()
 
         # Act
         ret_val = backend.bootstrap(
-            coro_stub,
+            lambda *args, **kwargs: coro_stub(*args, **kwargs),
             mocker.sentinel.arg1,
             mocker.sentinel.arg2,
             mocker.sentinel.arg3,
@@ -69,8 +64,7 @@ class TestAsyncIOBackendSync:
             mocker.sentinel.arg3,
         )
 
-        mock_asyncio_runner.run.assert_called_once_with(mock_coroutine)
-        mock_coroutine.close.assert_called_once_with()
+        mock_coroutine.assert_awaited_once_with()
         assert ret_val is mocker.sentinel.Runner_ret_val
 
 
@@ -181,6 +175,22 @@ class TestAsyncIOBackend:
             await backend.ignore_cancellation(mocker.sentinel.coroutine)
 
         mock_asyncio_is_coroutine.assert_called_once_with(mocker.sentinel.coroutine)
+
+    async def test____get_current_task____compute_task_info(
+        self,
+        backend: AsyncIOBackend,
+    ) -> None:
+        # Arrange
+        current_task = asyncio.current_task()
+        assert current_task is not None
+
+        # Act
+        task_info = backend.get_current_task()
+
+        # Assert
+        assert task_info.id == id(current_task)
+        assert task_info.name == current_task.get_name()
+        assert task_info.coro is current_task.get_coro()
 
     @pytest.mark.parametrize("use_asyncio_transport", [True], indirect=True)
     @pytest.mark.parametrize("ssl", [False, True], ids=lambda p: f"ssl=={p}")

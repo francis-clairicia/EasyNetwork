@@ -298,7 +298,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
             ##################
 
             # Enable listener
-            self.__servers_tasks.extend(task_group.start_soon(self.__serve, server, task_group) for server in self.__servers)
+            self.__servers_tasks.extend([await task_group.start(self.__serve, server, task_group) for server in self.__servers])
             self.__logger.info("Start serving at %s", ", ".join(map(str, self.get_addresses())))
             #################
 

@@ -24,12 +24,17 @@ import enum
 import math
 from collections import deque
 from collections.abc import Callable, Coroutine, Iterable, Iterator
-from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, Self, TypeVar, final
+from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, Self, TypeVar, cast, final
 from weakref import WeakKeyDictionary
 
 from .. import _utils
 from .._final import runtime_final_class
-from ..api_async.backend.abc import CancelScope as AbstractCancelScope, Task as AbstractTask, TaskGroup as AbstractTaskGroup
+from ..api_async.backend.abc import (
+    CancelScope as AbstractCancelScope,
+    Task as AbstractTask,
+    TaskGroup as AbstractTaskGroup,
+    TaskInfo,
+)
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -60,6 +65,10 @@ class Task(AbstractTask[_T_co]):
         if not isinstance(other, Task):
             return NotImplemented
         return self.__t == other.__t
+
+    @property
+    def info(self) -> TaskInfo:
+        return TaskUtils.create_task_info(self.__t)
 
     def done(self) -> bool:
         return self.__t.done()
@@ -117,11 +126,50 @@ class TaskGroup(AbstractTaskGroup):
 
     def start_soon(
         self,
+        coro_func: Callable[..., Coroutine[Any, Any, Any]],
+        /,
+        *args: Any,
+        name: str | None = None,
+    ) -> None:
+        name = TaskUtils.compute_task_name_from_func(coro_func) if name is None else str(name)
+        coroutine = TaskUtils.ensure_coroutine(coro_func, args)
+        _ = self.__asyncio_tg.create_task(coroutine, name=name)
+
+    async def start(
+        self,
         coro_func: Callable[..., Coroutine[Any, Any, _T]],
         /,
         *args: Any,
+        name: str | None = None,
     ) -> AbstractTask[_T]:
-        return Task(self.__asyncio_tg.create_task(coro_func(*args)))
+        loop = asyncio.get_running_loop()
+        waiter: asyncio.Future[None] = loop.create_future()
+
+        name = TaskUtils.compute_task_name_from_func(coro_func) if name is None else str(name)
+        coroutine = TaskUtils.ensure_coroutine(coro_func, args)
+        task = Task(self.__asyncio_tg.create_task(self.__task_coroutine(coroutine, waiter), name=name))
+        del coroutine
+
+        try:
+            await waiter
+        finally:
+            del waiter
+        return task
+
+    @staticmethod
+    async def __task_coroutine(
+        coroutine: Coroutine[Any, Any, _T],
+        waiter: asyncio.Future[None],
+    ) -> _T:
+        try:
+            try:
+                if not waiter.done():
+                    waiter.set_result(None)
+            finally:
+                del waiter
+            return await coroutine
+        finally:
+            del coroutine
 
 
 class _ScopeState(enum.Enum):
@@ -402,6 +450,25 @@ class TaskUtils:
             return task.result()
         finally:
             del task
+
+    @classmethod
+    def ensure_coroutine(
+        cls,
+        coro_func: Callable[..., Coroutine[Any, Any, _T]],
+        args: tuple[Any, ...],
+    ) -> Coroutine[Any, Any, _T]:
+        coro = coro_func(*args)
+        if not isinstance(coro, Coroutine):
+            raise TypeError(f"A coroutine was expected, got {coro!r}")
+        return coro
+
+    @classmethod
+    def create_task_info(cls, task: asyncio.Task[Any]) -> TaskInfo:
+        return TaskInfo(id(task), task.get_name(), cast(Coroutine[Any, Any, Any] | None, task.get_coro()))
+
+    @classmethod
+    def compute_task_name_from_func(cls, func: Callable[..., Any]) -> str:
+        return _utils.get_callable_name(func) or repr(func)
 
 
 def _get_cancelled_error_message(exc: asyncio.CancelledError) -> str | None:

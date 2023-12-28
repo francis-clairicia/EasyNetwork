@@ -25,6 +25,7 @@ from easynetwork.lowlevel._utils import (
     ensure_datagram_socket_bound,
     error_from_errno,
     exception_with_notes,
+    get_callable_name,
     is_socket_connected,
     is_ssl_eof_error,
     is_ssl_socket,
@@ -123,7 +124,20 @@ def test____make_callback____build_no_arg_callable(mocker: MockerFixture) -> Non
     stub.assert_called_once_with(mocker.sentinel.arg1, mocker.sentinel.arg2, kw1=mocker.sentinel.kw1, kw2=mocker.sentinel.kw2)
 
 
-def test____prepend_argument____add_positional_argument(mocker: MockerFixture) -> None:
+def test____prepend_argument____add_positional_argument____direct_call(mocker: MockerFixture) -> None:
+    # Arrange
+    stub = mocker.stub()
+    stub.return_value = mocker.sentinel.ret_val
+
+    # Act
+    cb = prepend_argument(mocker.sentinel.first_arg, stub)
+
+    # Assert
+    assert cb(mocker.sentinel.arg1, kw1=mocker.sentinel.kw1) is mocker.sentinel.ret_val
+    stub.assert_called_once_with(mocker.sentinel.first_arg, mocker.sentinel.arg1, kw1=mocker.sentinel.kw1)
+
+
+def test____prepend_argument____add_positional_argument____decorator(mocker: MockerFixture) -> None:
     # Arrange
     stub = mocker.stub()
     stub.return_value = mocker.sentinel.ret_val
@@ -155,6 +169,57 @@ def test____prepend_argument____several_prepend(mocker: MockerFixture) -> None:
         mocker.sentinel.arg1,
         kw1=mocker.sentinel.kw1,
     )
+
+
+@pytest.mark.parametrize("module", ["package.module", None], ids=lambda p: f"module=={p!r}")
+def test____get_callable_name____qualname(module: str | None, mocker: MockerFixture) -> None:
+    # Arrange
+    func = mocker.stub()
+    func.__name__ = "func"
+    func.__qualname__ = "namespace.func"
+    func.__module__ = module or ""
+
+    # Act
+    name = get_callable_name(func)
+
+    # Assert
+    if module:
+        assert name == f"{module}.namespace.func"
+    else:
+        assert name == "namespace.func"
+
+
+@pytest.mark.parametrize("module", ["package.module", None], ids=lambda p: f"module=={p!r}")
+def test____get_callable_name____name_without_qualname(module: str | None, mocker: MockerFixture) -> None:
+    # Arrange
+    func = mocker.stub()
+    func.__name__ = "func"
+    del func.__qualname__
+    func.__module__ = module or ""
+
+    # Act
+    name = get_callable_name(func)
+
+    # Assert
+    if module:
+        assert name == f"{module}.func"
+    else:
+        assert name == "func"
+
+
+@pytest.mark.parametrize("module", ["package.module", None], ids=lambda p: f"module=={p!r}")
+def test____get_callable_name____neither_name_nor_qualname(module: str | None, mocker: MockerFixture) -> None:
+    # Arrange
+    func = mocker.stub()
+    del func.__name__
+    del func.__qualname__
+    func.__module__ = module or ""
+
+    # Act
+    name = get_callable_name(func)
+
+    # Assert
+    assert name == ""
 
 
 def test____error_from_errno____returns_OSError(mocker: MockerFixture) -> None:

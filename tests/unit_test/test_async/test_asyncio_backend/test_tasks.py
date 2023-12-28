@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Coroutine
 from typing import TYPE_CHECKING, Any
 
+from easynetwork.lowlevel.api_async.backend.abc import TaskInfo
 from easynetwork.lowlevel.std_asyncio.tasks import Task, TaskUtils
 
 import pytest
@@ -18,6 +20,8 @@ class TestTask:
     @staticmethod
     def mock_asyncio_task(mocker: MockerFixture) -> AsyncMock:
         mock = mocker.NonCallableMagicMock(spec=asyncio.Task)
+        mock.get_name.return_value = "mock_asyncio_task"
+        mock.get_coro.return_value = mocker.NonCallableMagicMock(spec=Coroutine)
         mock.done.return_value = False
         mock.cancelled.return_value = False
         mock.cancel.return_value = True
@@ -27,6 +31,24 @@ class TestTask:
     @staticmethod
     def task(mock_asyncio_task: AsyncMock) -> Task[Any]:
         return Task(mock_asyncio_task)
+
+    def test____info_property____asyncio_task_introspection(
+        self,
+        mock_asyncio_task: AsyncMock,
+    ) -> None:
+        # Arrange
+        task: Task[Any] = Task(mock_asyncio_task)
+        mock_asyncio_task.get_name.assert_not_called()
+        mock_asyncio_task.get_coro.assert_not_called()
+
+        # Act
+        task_info = task.info
+
+        # Assert
+        assert isinstance(task_info, TaskInfo)
+        assert task_info.name == "mock_asyncio_task"
+        assert task_info.id == id(mock_asyncio_task)
+        assert task_info.coro is mock_asyncio_task.get_coro.return_value
 
     def test____equality____between_two_tasks_referencing_same_asyncio_task(self, mock_asyncio_task: AsyncMock) -> None:
         # Arrange

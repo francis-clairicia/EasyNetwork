@@ -6,7 +6,7 @@ from socket import socket as Socket
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, assert_never, final
 
-from easynetwork.lowlevel.api_async.backend.abc import AsyncBackend
+from easynetwork.lowlevel.api_async.backend.abc import AsyncBackend, TaskInfo
 from easynetwork.lowlevel.api_async.backend.factory import AsyncBackendFactory
 
 import pytest
@@ -44,6 +44,39 @@ class MockBackend(BaseFakeBackend):
 
     async def ignore_cancellation(self, coroutine: Coroutine[Any, Any, Any]) -> Any:
         return await coroutine
+
+
+class TestTaskInfo:
+    def test____equality____between_two_task_info_objects____equal(self, mocker: MockerFixture) -> None:
+        # Arrange
+        t1 = TaskInfo(123456, "task", mocker.sentinel.coro)
+        t2 = TaskInfo(123456, "task", mocker.sentinel.coro)
+
+        # Act & Assert
+        assert t1 == t2
+
+    def test____equality____between_two_task_info_objects____not_equal(self, mocker: MockerFixture) -> None:
+        # Arrange
+        t1 = TaskInfo(123456, "task", mocker.sentinel.coro)
+        t2 = TaskInfo(789123, "task", mocker.sentinel.coro)
+
+        # Act & Assert
+        assert t1 != t2
+
+    def test____equality____with_other_object____not_implemented(self, mocker: MockerFixture) -> None:
+        # Arrange
+        t1 = TaskInfo(123456, "task", mocker.sentinel.coro)
+        t2 = mocker.NonCallableMagicMock(spec=object)
+
+        # Act & Assert
+        assert t1 != t2
+
+    def test____hash___from_id(self, mocker: MockerFixture) -> None:
+        # Arrange
+        t = TaskInfo(123456, "task", mocker.sentinel.coro)
+
+        # Act & Assert
+        assert hash(t) == hash(t.id)
 
 
 @pytest.mark.asyncio

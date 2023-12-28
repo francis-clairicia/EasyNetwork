@@ -135,7 +135,7 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_T_Request, _
         task_group: TaskGroup,
     ) -> NoReturn:
         with self.__serve_guard:
-            handler = _utils.prepend_argument(client_connected_cb)(self.__client_coroutine)
+            handler = _utils.prepend_argument(client_connected_cb, self.__client_coroutine)
             await self.__listener.serve(handler, task_group)
 
     async def __client_coroutine(

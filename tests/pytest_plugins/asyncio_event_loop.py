@@ -18,7 +18,8 @@ ASYNCIO_EVENT_LOOP_OPTION = "asyncio_event_loop"
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
-    parser.addoption(
+    group = parser.getgroup("asyncio")
+    group.addoption(
         "--asyncio-event-loop",
         dest=ASYNCIO_EVENT_LOOP_OPTION,
         type=EventLoop,

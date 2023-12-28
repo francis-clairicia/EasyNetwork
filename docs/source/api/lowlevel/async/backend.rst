@@ -72,6 +72,14 @@ Creating Concurrent Tasks
 .. autoclass:: Task
    :members:
 
+Introspection
+^^^^^^^^^^^^^
+
+.. automethod:: AsyncBackend.get_current_task
+
+.. autoclass:: TaskInfo
+   :members:
+
 Timeouts
 ^^^^^^^^
 

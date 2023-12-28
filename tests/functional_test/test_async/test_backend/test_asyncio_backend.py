@@ -7,6 +7,7 @@ from concurrent.futures import CancelledError as FutureCancelledError, wait as w
 from contextlib import ExitStack
 from typing import TYPE_CHECKING, Any, Literal, Required, TypedDict
 
+from easynetwork.lowlevel.api_async.backend.abc import TaskInfo
 from easynetwork.lowlevel.api_async.backend.factory import AsyncBackendFactory
 from easynetwork.lowlevel.std_asyncio.backend import AsyncIOBackend
 
@@ -416,17 +417,55 @@ class TestAsyncioBackend:
                 stack.close()
             stack.pop_all()
 
-    async def test____create_task_group____task_pool(
+    async def test____create_task_group____start_soon(
         self,
         backend: AsyncIOBackend,
     ) -> None:
+        tasks: list[TaskInfo] = []
+
         async def coroutine(value: int) -> int:
+            tasks.append(backend.get_current_task())
             return await asyncio.sleep(0.5, value)
 
         async with backend.create_task_group() as tg:
-            task_42 = tg.start_soon(coroutine, 42)
-            task_54 = tg.start_soon(coroutine, 54)
+            tg.start_soon(coroutine, 42)
+            tg.start_soon(coroutine, 54)
+            await asyncio.sleep(0)
+            assert len(tasks) == 2
 
+    async def test____create_task_group____start_soon____set_name(
+        self,
+        backend: AsyncIOBackend,
+    ) -> None:
+        tasks: list[TaskInfo] = []
+
+        async def coroutine(value: int) -> int:
+            tasks.append(backend.get_current_task())
+            return await asyncio.sleep(0.5, value)
+
+        async with backend.create_task_group() as tg:
+            tg.start_soon(coroutine, 42, name="compute 42")
+            tg.start_soon(coroutine, 54, name="compute 54")
+            await asyncio.sleep(0)
+
+        assert sorted(t.name for t in tasks) == ["compute 42", "compute 54"]
+
+    async def test____create_task_group____start_and_wait(
+        self,
+        backend: AsyncIOBackend,
+    ) -> None:
+        tasks: list[TaskInfo] = []
+
+        async def coroutine(value: int) -> int:
+            tasks.append(backend.get_current_task())
+            return await asyncio.sleep(0.5, value)
+
+        async with backend.create_task_group() as tg:
+            task_42 = await tg.start(coroutine, 42)
+            task_54 = await tg.start(coroutine, 54)
+
+            assert len(tasks) == 2
+            assert tasks == [task_42.info, task_54.info]
             assert not task_42.done()
             assert not task_54.done()
 
@@ -447,6 +486,31 @@ class TestAsyncioBackend:
         assert await task_42.join() == 42
         assert await task_54.join() == 54
 
+    async def test____create_task_group____start_and_wait____set_name(
+        self,
+        backend: AsyncIOBackend,
+    ) -> None:
+        async def coroutine(value: int) -> int:
+            return await asyncio.sleep(0.5, value)
+
+        async with backend.create_task_group() as tg:
+            task_42 = await tg.start(coroutine, 42, name="compute 42")
+            task_54 = await tg.start(coroutine, 54, name="compute 54")
+
+            assert task_42.info.name == "compute 42"
+            assert task_54.info.name == "compute 54"
+
+    async def test____create_task_group____start_and_wait____waiter_cancelled(
+        self,
+        backend: AsyncIOBackend,
+    ) -> None:
+        async def coroutine(value: int) -> int:
+            return await asyncio.sleep(0.5, value)
+
+        with backend.move_on_after(0):
+            async with backend.create_task_group() as tg:
+                await tg.start(coroutine, 42, name="compute 42")
+
     async def test____create_task_group____task_cancellation(
         self,
         backend: AsyncIOBackend,
@@ -455,8 +519,8 @@ class TestAsyncioBackend:
             return await asyncio.sleep(0.5, value)
 
         async with backend.create_task_group() as tg:
-            task_42 = tg.start_soon(coroutine, 42)
-            task_54 = tg.start_soon(coroutine, 54)
+            task_42 = await tg.start(coroutine, 42)
+            task_54 = await tg.start(coroutine, 54)
 
             await asyncio.sleep(0)
             assert not task_42.done()
@@ -486,7 +550,7 @@ class TestAsyncioBackend:
             return await asyncio.sleep(0.5, value)
 
         async with backend.create_task_group() as task_group:
-            inner_task = task_group.start_soon(coroutine, 42)
+            inner_task = await task_group.start(coroutine, 42)
 
             match join_method:
                 case "join":
@@ -506,6 +570,21 @@ class TestAsyncioBackend:
             else:
                 assert not inner_task.cancelled()
                 assert await inner_task.join() == 42
+
+    @pytest.mark.parametrize("starter", ["start", "start_soon"])
+    async def test____create_task_group____error_not_coroutine(
+        self,
+        starter: Literal["start", "start_soon"],
+        backend: AsyncIOBackend,
+        mocker: MockerFixture,
+    ) -> None:
+        async with backend.create_task_group() as tg:
+            with pytest.raises(TypeError, match=r"^A coroutine was expected, got .+$"):
+                match starter:
+                    case "start":
+                        await tg.start(mocker.stub())
+                    case "start_soon":
+                        tg.start_soon(mocker.stub())
 
     async def test____run_in_thread____cannot_be_cancelled(
         self,

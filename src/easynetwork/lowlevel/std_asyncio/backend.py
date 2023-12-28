@@ -28,7 +28,6 @@ import os
 import socket as _socket
 import sys
 from collections.abc import Callable, Coroutine, Mapping, Sequence
-from contextlib import closing
 from typing import TYPE_CHECKING, Any, NoReturn, ParamSpec, TypeVar
 
 try:
@@ -40,7 +39,7 @@ else:
     del _ssl
 
 from ..api_async.backend import _sniffio_helpers
-from ..api_async.backend.abc import AsyncBackend as AbstractAsyncBackend
+from ..api_async.backend.abc import AsyncBackend as AbstractAsyncBackend, TaskInfo
 from ..constants import HAPPY_EYEBALLS_DELAY as _DEFAULT_HAPPY_EYEBALLS_DELAY
 from ._asyncio_utils import (
     create_connection,
@@ -75,9 +74,13 @@ class AsyncIOBackend(AbstractAsyncBackend):
         *args: Any,
         runner_options: Mapping[str, Any] | None = None,
     ) -> _T:
-        # Avoid ResourceWarning by always closing the coroutine
-        with asyncio.Runner(**(runner_options or {})) as runner, closing(coro_func(*args)) as coro:
-            return runner.run(coro)
+        @functools.wraps(coro_func)
+        async def bootstrap_task(*args: Any) -> _T:
+            TaskUtils.current_asyncio_task().set_name(TaskUtils.compute_task_name_from_func(coro_func))
+            return await TaskUtils.ensure_coroutine(coro_func, args)
+
+        with asyncio.Runner(**(runner_options or {})) as runner:
+            return runner.run(bootstrap_task(*args))
 
     async def coro_yield(self) -> None:
         await asyncio.sleep(0)
@@ -110,6 +113,10 @@ class AsyncIOBackend(AbstractAsyncBackend):
 
     def create_task_group(self) -> TaskGroup:
         return TaskGroup()
+
+    def get_current_task(self) -> TaskInfo:
+        current_task = TaskUtils.current_asyncio_task()
+        return TaskUtils.create_task_info(current_task)
 
     async def create_tcp_connection(
         self,

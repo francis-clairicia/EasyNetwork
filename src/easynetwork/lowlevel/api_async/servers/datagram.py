@@ -175,7 +175,7 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_T_Request,
                 datagram_queue=datagram_queue,
                 default_context=contextvars.copy_context(),
             )
-            client_exit_stack.push(_utils.prepend_argument(datagram_queue)(self.__clear_queue_on_error))
+            client_exit_stack.push(_utils.prepend_argument(datagram_queue, self.__clear_queue_on_error))
             ########################################################################################################################
 
             request_handler_generator = datagram_received_cb(address, self)
