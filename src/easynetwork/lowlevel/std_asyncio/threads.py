@@ -114,7 +114,7 @@ class ThreadsPortal(AbstractThreadsPortal):
                         {
                             "message": "Task exception was not retrieved because future object is cancelled",
                             "exception": exc,
-                            "task": asyncio.current_task(loop),
+                            "task": TaskUtils.current_asyncio_task(loop),
                         },
                     )
             else:
@@ -124,7 +124,7 @@ class ThreadsPortal(AbstractThreadsPortal):
         def schedule_task() -> concurrent.futures.Future[_T]:
             loop = asyncio.get_running_loop()
             waiter = self.__register_waiter(self.__call_soon_waiters, loop)
-            _ = self.__task_group.create_task(coroutine(waiter))
+            _ = self.__task_group.create_task(coroutine(waiter), name=TaskUtils.compute_task_name_from_func(coro_func))
             return future
 
         return self.run_sync(schedule_task)

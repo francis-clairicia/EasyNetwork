@@ -28,7 +28,6 @@ import socket as _socket
 from collections import deque
 from collections.abc import Iterable, Iterator
 from typing import TYPE_CHECKING, Literal, Self, TypeAlias, cast
-from weakref import WeakSet
 
 from ...exceptions import UnsupportedOperation
 from .. import _utils, constants
@@ -64,7 +63,7 @@ class AsyncSocket:
         self.__socket: _socket.socket | None = socket
         self.__trsock: asyncio.trsock.TransportSocket = asyncio.trsock.TransportSocket(socket)
         self.__loop: asyncio.AbstractEventLoop = loop
-        self.__scopes: WeakSet[CancelScope] = WeakSet()
+        self.__scopes: set[CancelScope] = set()
         self.__waiters: dict[_SocketTaskId, asyncio.Future[None]] = {}
         self.__close_waiter: asyncio.Future[None] = loop.create_future()
 
