@@ -93,20 +93,20 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_T_Request,
             address: the remote endpoint address.
         """
         with self.__client_manager.send_guard(address):
-            async with self.__sendto_lock:
-                listener = self.__listener
-                protocol = self.__protocol
+            listener = self.__listener
+            protocol = self.__protocol
 
-                try:
-                    datagram: bytes = protocol.make_datagram(packet)
-                except Exception as exc:
-                    raise RuntimeError("protocol.make_datagram() crashed") from exc
-                finally:
-                    del packet
-                try:
+            try:
+                datagram: bytes = protocol.make_datagram(packet)
+            except Exception as exc:
+                raise RuntimeError("protocol.make_datagram() crashed") from exc
+            finally:
+                del packet
+            try:
+                async with self.__sendto_lock:
                     await listener.send_to(datagram, address)
-                finally:
-                    del datagram
+            finally:
+                del datagram
 
     async def serve(
         self,
@@ -163,7 +163,7 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_T_Request,
             condition = await client_exit_stack.enter_async_context(client_manager.lock(address))
 
             datagram_queue: deque[bytes] = client_exit_stack.enter_context(client_manager.datagram_queue(address))
-            self.__check_datagram_queue_not_empty(datagram_queue)
+            client_manager.check_datagram_queue_not_empty(datagram_queue)
 
             # This block must not have any asynchronous function calls or add any asynchronous callbacks/contexts to the exit stack.
             client_exit_stack.enter_context(client_manager.set_client_state(address, _ClientState.TASK_RUNNING))
@@ -196,7 +196,7 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_T_Request,
                         if not datagram_queue:
                             with client_manager.set_client_state(address, _ClientState.TASK_WAITING):
                                 await condition.wait()
-                            self.__check_datagram_queue_not_empty(datagram_queue)
+                            client_manager.check_datagram_queue_not_empty(datagram_queue)
                         datagram = datagram_queue.popleft()
                         try:
                             request = protocol.build_packet_from_datagram(datagram)
@@ -245,11 +245,6 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_T_Request,
     ) -> None:
         if exc_type is not None:
             datagram_queue.clear()
-
-    @staticmethod
-    def __check_datagram_queue_not_empty(datagram_queue: deque[bytes]) -> None:
-        if len(datagram_queue) == 0:
-            _ClientManager.handle_inconsistent_state_error()  # pragma: no cover
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
@@ -330,6 +325,11 @@ class _ClientManager(Generic[_T_Address]):
         msg = "The server has created too many tasks and ends up in an inconsistent state."
         note = "Please fill an issue (https://github.com/francis-clairicia/EasyNetwork/issues)"
         raise _utils.exception_with_notes(RuntimeError(msg), note)
+
+    @staticmethod
+    def check_datagram_queue_not_empty(datagram_queue: deque[bytes]) -> None:
+        if not len(datagram_queue):
+            _ClientManager.handle_inconsistent_state_error()
 
 
 class _TemporaryValue(Generic[_T_Key, _T_Value]):

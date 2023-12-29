@@ -218,7 +218,12 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
             ##################
 
             # Enable listener
-            self.__servers_tasks.extend([await task_group.start(self.__serve, server, task_group) for server in self.__servers])
+            self.__servers_tasks.extend(
+                [
+                    await task_group.start(server.serve, self.__datagram_received_coroutine, task_group)
+                    for server in self.__servers
+                ]
+            )
             self.__logger.info("Start serving at %s", ", ".join(map(str, self.get_addresses())))
             #################
 
@@ -228,15 +233,10 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
             ##############
 
             # Main loop
-            await current_async_backend().sleep_forever()
-
-    async def __serve(
-        self,
-        server: _datagram_server.AsyncDatagramServer[_T_Request, _T_Response, tuple[Any, ...]],
-        task_group: TaskGroup,
-    ) -> NoReturn:
-        async with contextlib.aclosing(server):
-            await server.serve(self.__datagram_received_coroutine, task_group)
+            try:
+                await current_async_backend().sleep_forever()
+            finally:
+                reset_scope()
 
     async def __datagram_received_coroutine(
         self,

@@ -244,6 +244,23 @@ class TestClientManager:
         with client_manager.datagram_queue(address) as other_datagram_queue:
             assert other_datagram_queue is not datagram_queue  # datagram_queue was empty and therefore deleted
 
+    def test____datagram_queue____check_not_empty(
+        self,
+        client_manager: _ClientManager[Any],
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        address = mocker.sentinel.address
+
+        # Act & Assert
+        with client_manager.datagram_queue(address) as datagram_queue:
+            datagram_queue.append(b"data")
+            client_manager.check_datagram_queue_not_empty(datagram_queue)
+
+            datagram_queue.clear()
+            with pytest.raises(RuntimeError):
+                client_manager.check_datagram_queue_not_empty(datagram_queue)
+
     def test____send_guard____per_client_resource_guard(
         self,
         client_manager: _ClientManager[Any],

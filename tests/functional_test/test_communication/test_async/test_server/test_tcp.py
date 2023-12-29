@@ -8,7 +8,7 @@ import ssl
 import weakref
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Sequence
 from socket import IPPROTO_TCP, TCP_NODELAY
-from typing import Any
+from typing import Any, Literal
 from weakref import WeakValueDictionary
 
 from easynetwork.api_async.server.handler import AsyncStreamClient, AsyncStreamRequestHandler, INETClientAttribute
@@ -530,7 +530,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         self,
         server_address: tuple[str, int],
         caplog: pytest.LogCaptureFixture,
-        server: MyAsyncTCPServer,
         logger_crash_maximum_nb_lines: dict[str, int],
     ) -> None:
         from socket import socket as SocketType
@@ -570,24 +569,26 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         # (c.f. https://stackoverflow.com/a/31835137)
         assert tcp_nodelay_state != 0
 
-    async def test____serve_forever____close_during_loop____continue_until_all_clients_are_gone(
+    @pytest.mark.parametrize("action", ["shutdown", "server_close"])
+    async def test____serve_forever____close_during_loop____kill_client_tasks(
         self,
+        action: Literal["shutdown", "server_close"],
         server: MyAsyncTCPServer,
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
     ) -> None:
-        reader, writer = await client_factory()
+        reader, _ = await client_factory()
 
-        await server.server_close()
+        match action:
+            case "shutdown":
+                await server.shutdown()
+            case "server_close":
+                await server.server_close()
+            case _:
+                pytest.fail("Invalid argument")
         await asyncio.sleep(0.3)
 
-        writer.write(b"hello\n")
-        assert await reader.readline() == b"HELLO\n"
-        writer.write(b"world!\n")
-        assert await reader.readline() == b"WORLD!\n"
-
-        writer.close()
-        await writer.wait_closed()
-        await asyncio.sleep(0.3)
+        with contextlib.suppress(ConnectionError):
+            assert await reader.read() == b""
 
     async def test____serve_forever____partial_request(
         self,
@@ -672,7 +673,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         self,
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
         caplog: pytest.LogCaptureFixture,
-        server: MyAsyncTCPServer,
         request_handler: MyAsyncTCPRequestHandler,
     ) -> None:
         caplog.set_level(logging.WARNING, LOGGER.name)
@@ -702,7 +702,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
         caplog: pytest.LogCaptureFixture,
         logger_crash_maximum_nb_lines: dict[str, int],
-        server: MyAsyncTCPServer,
     ) -> None:
         caplog.set_level(logging.ERROR, LOGGER.name)
         if not mute_thrown_exception:
@@ -737,7 +736,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
         caplog: pytest.LogCaptureFixture,
         logger_crash_maximum_nb_lines: dict[str, int],
-        server: MyAsyncTCPServer,
     ) -> None:
         caplog.set_level(logging.ERROR, LOGGER.name)
         logger_crash_maximum_nb_lines[LOGGER.name] = 3
@@ -758,7 +756,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         client_factory_no_handshake: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
         caplog: pytest.LogCaptureFixture,
         logger_crash_maximum_nb_lines: dict[str, int],
-        server: MyAsyncTCPServer,
         request_handler: MyAsyncTCPRequestHandler,
     ) -> None:
         request_handler.milk_handshake = False
@@ -782,7 +779,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         caplog: pytest.LogCaptureFixture,
         logger_crash_maximum_nb_lines: dict[str, int],
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
-        server: MyAsyncTCPServer,
     ) -> None:
         caplog.set_level(logging.ERROR, LOGGER.name)
         logger_crash_maximum_nb_lines[LOGGER.name] = 3
@@ -803,7 +799,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
         caplog: pytest.LogCaptureFixture,
         logger_crash_maximum_nb_lines: dict[str, int],
-        server: MyAsyncTCPServer,
     ) -> None:
         caplog.set_level(logging.WARNING, LOGGER.name)
         logger_crash_maximum_nb_lines[LOGGER.name] = 1
@@ -822,7 +817,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         self,
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
         caplog: pytest.LogCaptureFixture,
-        server: MyAsyncTCPServer,
     ) -> None:
         caplog.set_level(logging.WARNING, LOGGER.name)
         reader, writer = await client_factory()
@@ -839,7 +833,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         request_handler: MyAsyncTCPRequestHandler,
         caplog: pytest.LogCaptureFixture,
         logger_crash_maximum_nb_lines: dict[str, int],
-        server: MyAsyncTCPServer,
     ) -> None:
         caplog.set_level(logging.WARNING, LOGGER.name)
         logger_crash_maximum_nb_lines[LOGGER.name] = 1
@@ -940,7 +933,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         caplog: pytest.LogCaptureFixture,
         logger_crash_maximum_nb_lines: dict[str, int],
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
-        server: MyAsyncTCPServer,
     ) -> None:
         caplog.set_level(logging.ERROR, LOGGER.name)
         logger_crash_maximum_nb_lines[LOGGER.name] = 3
@@ -961,7 +953,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         request_handler: RequestRefusedHandler,
         caplog: pytest.LogCaptureFixture,
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
-        server: MyAsyncTCPServer,
     ) -> None:
         request_handler.refuse_after = refuse_after
         caplog.set_level(logging.ERROR, LOGGER.name)
@@ -1029,7 +1020,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         event_loop: asyncio.AbstractEventLoop,
         caplog: pytest.LogCaptureFixture,
         logger_crash_maximum_nb_lines: dict[str, int],
-        server: MyAsyncTCPServer,
     ) -> None:
         caplog.set_level(logging.ERROR, LOGGER.name)
         logger_crash_maximum_nb_lines[LOGGER.name] = 1

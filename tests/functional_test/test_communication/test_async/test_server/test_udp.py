@@ -376,7 +376,6 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         client_factory: Callable[[], Awaitable[DatagramEndpoint]],
         caplog: pytest.LogCaptureFixture,
         logger_crash_maximum_nb_lines: dict[str, int],
-        server: MyAsyncUDPServer,
     ) -> None:
         caplog.set_level(logging.ERROR, LOGGER.name)
         if not mute_thrown_exception:
@@ -405,7 +404,6 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         client_factory: Callable[[], Awaitable[DatagramEndpoint]],
         caplog: pytest.LogCaptureFixture,
         logger_crash_maximum_nb_lines: dict[str, int],
-        server: MyAsyncUDPServer,
     ) -> None:
         caplog.set_level(logging.ERROR, LOGGER.name)
         logger_crash_maximum_nb_lines[LOGGER.name] = 3
@@ -424,7 +422,6 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         client_factory: Callable[[], Awaitable[DatagramEndpoint]],
         caplog: pytest.LogCaptureFixture,
         logger_crash_maximum_nb_lines: dict[str, int],
-        server: MyAsyncUDPServer,
     ) -> None:
         caplog.set_level(logging.ERROR, LOGGER.name)
         logger_crash_maximum_nb_lines[LOGGER.name] = 1
@@ -443,7 +440,6 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         client_factory: Callable[[], Awaitable[DatagramEndpoint]],
         caplog: pytest.LogCaptureFixture,
         logger_crash_maximum_nb_lines: dict[str, int],
-        server: MyAsyncUDPServer,
     ) -> None:
         caplog.set_level(logging.ERROR, LOGGER.name)
         logger_crash_maximum_nb_lines[LOGGER.name] = 3
@@ -461,7 +457,6 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         client_factory: Callable[[], Awaitable[DatagramEndpoint]],
         caplog: pytest.LogCaptureFixture,
         logger_crash_maximum_nb_lines: dict[str, int],
-        server: MyAsyncUDPServer,
     ) -> None:
         caplog.set_level(logging.WARNING, LOGGER.name)
         logger_crash_maximum_nb_lines[LOGGER.name] = 1
@@ -507,7 +502,6 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         caplog: pytest.LogCaptureFixture,
         logger_crash_maximum_nb_lines: dict[str, int],
         client_factory: Callable[[], Awaitable[DatagramEndpoint]],
-        server: MyAsyncUDPServer,
     ) -> None:
         caplog.set_level(logging.ERROR, LOGGER.name)
         logger_crash_maximum_nb_lines[LOGGER.name] = 3
@@ -533,7 +527,6 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         request_handler: RequestRefusedHandler,
         caplog: pytest.LogCaptureFixture,
         client_factory: Callable[[], Awaitable[DatagramEndpoint]],
-        server: MyAsyncUDPServer,
     ) -> None:
         request_handler.bypass_refusal = False
         request_handler.refuse_after = refuse_after
