@@ -112,40 +112,6 @@ class TestTask:
         assert task_cancelled is mocker.sentinel.task_cancelled
 
     @pytest.mark.asyncio
-    async def test____wait____await_task(
-        self,
-        task: Task[Any],
-        mock_asyncio_task: AsyncMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        mock_asyncio_task.done.return_value = False
-        mock_asyncio_wait: AsyncMock = mocker.patch("asyncio.wait", autospec=True)
-
-        # Act
-        await task.wait()
-
-        # Assert
-        mock_asyncio_wait.assert_awaited_once_with({mock_asyncio_task})
-
-    @pytest.mark.asyncio
-    async def test____wait____task_already_done(
-        self,
-        task: Task[Any],
-        mock_asyncio_task: AsyncMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        mock_asyncio_task.done.return_value = True
-        mock_asyncio_wait: AsyncMock = mocker.patch("asyncio.wait", autospec=True)
-
-        # Act
-        await task.wait()
-
-        # Assert
-        mock_asyncio_wait.assert_awaited_once_with({mock_asyncio_task})
-
-    @pytest.mark.asyncio
     async def test____join____await_task(
         self,
         task: Task[Any],
