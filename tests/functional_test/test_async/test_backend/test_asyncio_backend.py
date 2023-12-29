@@ -539,10 +539,10 @@ class TestAsyncioBackend:
         # Tasks cannot be cancelled twice
         assert not task_42.cancel()
 
-    @pytest.mark.parametrize("join_method", ["join", "join_or_cancel"])
+    @pytest.mark.parametrize("join_method", ["join", "join_or_cancel", "wait"])
     async def test____create_task_group____task_join_cancel_shielding(
         self,
-        join_method: Literal["join", "join_or_cancel"],
+        join_method: Literal["join", "join_or_cancel", "wait"],
         event_loop: asyncio.AbstractEventLoop,
         backend: AsyncIOBackend,
     ) -> None:
@@ -552,11 +552,14 @@ class TestAsyncioBackend:
         async with backend.create_task_group() as task_group:
             inner_task = await task_group.start(coroutine, 42)
 
+            outer_task: asyncio.Task[Any]
             match join_method:
                 case "join":
                     outer_task = event_loop.create_task(inner_task.join())
                 case "join_or_cancel":
                     outer_task = event_loop.create_task(inner_task.join_or_cancel())
+                case "wait":
+                    outer_task = event_loop.create_task(inner_task.wait())
                 case _:
                     pytest.fail("invalid argument")
             event_loop.call_later(0.2, outer_task.cancel)
@@ -570,6 +573,47 @@ class TestAsyncioBackend:
             else:
                 assert not inner_task.cancelled()
                 assert await inner_task.join() == 42
+
+    @pytest.mark.parametrize("task_state", ["result", "exception", "cancelled"])
+    async def test____create_task_group____task_wait(
+        self,
+        task_state: Literal["result", "exception", "cancelled"],
+        event_loop: asyncio.AbstractEventLoop,
+        backend: AsyncIOBackend,
+    ) -> None:
+        future: asyncio.Future[None] = event_loop.create_future()
+
+        class FutureException(Exception):
+            pass
+
+        def set_future_result() -> None:
+            match task_state:
+                case "result":
+                    future.set_result(None)
+                case "exception":
+                    future.set_exception(FutureException("Error"))
+                case "cancelled":
+                    future.cancel()
+                case _:
+                    pytest.fail("invalid argument")
+
+        async def coroutine() -> None:
+            return await future
+
+        event_loop.call_later(0.1, set_future_result)
+
+        try:
+            async with backend.create_task_group() as task_group:
+                task = await task_group.start(coroutine)
+
+                await task.wait()
+                assert task.done()
+
+                # Must not yield if task is already done
+                async with asyncio.timeout(0):
+                    await task.wait()
+        except* FutureException:
+            pass
 
     @pytest.mark.parametrize("starter", ["start", "start_soon"])
     async def test____create_task_group____error_not_coroutine(

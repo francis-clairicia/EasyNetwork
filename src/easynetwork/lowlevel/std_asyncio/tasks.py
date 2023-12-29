@@ -81,7 +81,21 @@ class Task(AbstractTask[_T_co]):
 
     async def wait(self) -> None:
         task = self.__t
-        await asyncio.wait({task})
+        if task.done():
+            return
+        try:
+            waiter = asyncio.Event()
+
+            def on_task_done(task: asyncio.Task[Any]) -> None:
+                waiter.set()
+
+            task.add_done_callback(on_task_done)
+            try:
+                await waiter.wait()
+            finally:
+                task.remove_done_callback(on_task_done)
+        finally:
+            del task, self  # This is needed to avoid circular reference with raised exception
 
     async def join(self) -> _T_co:
         task = self.__t
