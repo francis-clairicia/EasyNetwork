@@ -144,10 +144,10 @@ def write_data_and_extra_in_buffer(
 
 @contextlib.contextmanager
 def temporary_backend(backend: AsyncBackend) -> Iterator[None]:
+    hook = AsyncBackendFactory.backend_factory_hook("asyncio", lambda: backend)
     with contextlib.ExitStack() as stack:
-        stack.callback(AsyncBackendFactory.invalidate_backends_cache)
-        stack.callback(AsyncBackendFactory.remove_installed_hooks)
-        AsyncBackendFactory.push_backend_factory("asyncio", lambda: backend)
+        stack.callback(AsyncBackendFactory.remove_factory_hook, hook)
+        AsyncBackendFactory.push_factory_hook(hook)
         assert AsyncBackendFactory.get_backend("asyncio") is backend
         yield
 

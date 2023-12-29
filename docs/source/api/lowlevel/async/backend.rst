@@ -169,13 +169,10 @@ Scheduling From Other Threads
 Backend Factory
 ===============
 
-.. automodule:: easynetwork.lowlevel.api_async.backend.factory
-   :no-docstring:
-
 .. todo::
 
    Document backend factory usage.
 
-.. autoclass:: AsyncBackendFactory
+.. automodule:: easynetwork.lowlevel.api_async.backend.factory
+   :no-docstring:
    :members:
-   :exclude-members: GROUP_NAME
