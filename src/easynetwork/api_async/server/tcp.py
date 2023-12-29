@@ -231,6 +231,9 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
                 exit_stack.push_async_callback(server_task.wait)
                 del server_task
 
+            if self.__server_run_scope is not None:
+                self.__server_run_scope.cancel()
+
             await current_async_backend().cancel_shielded_coro_yield()
 
     @_utils.inherit_doc(AbstractAsyncNetworkServer)
@@ -308,7 +311,10 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
             ##############
 
             # Main loop
-            await current_async_backend().sleep_forever()
+            try:
+                await current_async_backend().sleep_forever()
+            finally:
+                reset_scope()
 
     async def __serve(
         self,

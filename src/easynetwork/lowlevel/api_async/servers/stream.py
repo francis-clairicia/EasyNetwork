@@ -214,9 +214,11 @@ class _RequestReceiver(Generic[_T_Request]):
         try:
             while not transport.is_closing():
                 try:
-                    return _asyncgen.SendAction(next(consumer))
+                    request = next(consumer)
                 except StopIteration:
                     pass
+                else:
+                    return _asyncgen.SendAction(request)
                 data: bytes = await transport.recv(bufsize)
                 if not data:  # Closed connection (EOF)
                     break
@@ -247,9 +249,11 @@ class _BufferedRequestReceiver(Generic[_T_Request]):
         try:
             while not transport.is_closing():
                 try:
-                    return _asyncgen.SendAction(next(consumer))
+                    request = next(consumer)
                 except StopIteration:
                     pass
+                else:
+                    return _asyncgen.SendAction(request)
                 nbytes: int = await transport.recv_into(consumer.get_write_buffer())
                 if not nbytes:
                     break
