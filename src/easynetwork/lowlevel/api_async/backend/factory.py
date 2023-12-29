@@ -109,7 +109,10 @@ class AsyncBackendFactory:
     def __backend_factory_hook(backend_name: str, factory: Callable[[], AsyncBackend], name: str, /) -> AsyncBackend | None:
         if name != backend_name:
             return None
-        return factory()
+        instance = factory()
+        if not isinstance(instance, AsyncBackend):
+            raise TypeError(f"{factory!r} did not return an AsyncBackend instance")
+        return instance
 
 
 current_async_backend = AsyncBackendFactory.current

@@ -319,15 +319,21 @@ class TestAsyncBackendFactory:
         assert isinstance(backend, MockBackend)
 
     @pytest.mark.parametrize("invalid_cls", [int, Socket, TestAsyncBackend])
+    @pytest.mark.parametrize("using_backend_factory", [False, True], ids=lambda p: f"using_backend_factory=={p}")
     def test____get_backend____error_do_not_derive_from_AsyncBackend(
         self,
         invalid_cls: type[Any],
+        using_backend_factory: bool,
     ) -> None:
         # Arrange
-        def hook(name: str) -> AsyncBackend | None:
-            if name == "mock":
-                return invalid_cls()
-            return None
+        if using_backend_factory:
+            hook = AsyncBackendFactory.backend_factory_hook("mock", invalid_cls)
+        else:
+
+            def hook(name: str) -> AsyncBackend | None:
+                if name == "mock":
+                    return invalid_cls()
+                return None
 
         self._act__add_hook(hook)
 
@@ -474,16 +480,22 @@ class TestAsyncBackendFactory:
         assert type(backend) is MockBackend
 
     @pytest.mark.parametrize("invalid_cls", [int, Socket, TestAsyncBackend])
+    @pytest.mark.parametrize("using_backend_factory", [False, True], ids=lambda p: f"using_backend_factory=={p}")
     def test____current____error_do_not_derive_from_AsyncBackend(
         self,
         invalid_cls: type[Any],
+        using_backend_factory: bool,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        def hook(name: str) -> AsyncBackend | None:
-            if name == "mock":
-                return invalid_cls()
-            return None
+        if using_backend_factory:
+            hook = AsyncBackendFactory.backend_factory_hook("mock", invalid_cls)
+        else:
+
+            def hook(name: str) -> AsyncBackend | None:
+                if name == "mock":
+                    return invalid_cls()
+                return None
 
         self._act__add_hook(hook)
 
