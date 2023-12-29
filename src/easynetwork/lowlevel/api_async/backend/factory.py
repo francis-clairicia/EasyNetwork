@@ -51,30 +51,30 @@ class AsyncBackendFactory:
         if not callable(factory):
             raise TypeError(f"{factory!r} is not callable")
         with cls.__lock.get():
+            if factory in cls.__hooks:
+                raise ValueError(f"{factory!r} is already registered")
             cls.__hooks.appendleft(factory)
-            cls.invalidate_backends_cache()
+            cls.__instances.clear()
 
     @classmethod
-    def push_backend_factory(cls, backend_name: str, factory: Callable[[], AsyncBackend]) -> None:
+    def remove_factory_hook(cls, factory: Callable[[str], AsyncBackend | None], /) -> None:
+        with cls.__lock.get():
+            try:
+                cls.__hooks.remove(factory)
+            except ValueError:
+                pass
+            else:
+                cls.__instances.clear()
+
+    @classmethod
+    def backend_factory_hook(cls, backend_name: str, factory: Callable[[], AsyncBackend]) -> Callable[[str], AsyncBackend | None]:
         if not isinstance(backend_name, str):
             raise TypeError("backend_name: Expected a string")
         if backend_name.strip() != backend_name or not backend_name:
             raise ValueError("backend_name: Invalid value")
         if not callable(factory):
             raise TypeError(f"{factory!r} is not callable")
-        return cls.push_factory_hook(functools.partial(cls.__backend_factory_hook, backend_name, factory))
-
-    @classmethod
-    def invalidate_backends_cache(cls) -> None:
-        with cls.__lock.get():
-            cls.__instances.clear()
-
-    @classmethod
-    def remove_installed_hooks(cls) -> None:
-        with cls.__lock.get():
-            if cls.__hooks:
-                cls.invalidate_backends_cache()
-                cls.__hooks.clear()
+        return functools.partial(cls.__backend_factory_hook, backend_name, factory)
 
     @classmethod
     def __get_backend(cls, name: str, error_msg_format: str) -> AsyncBackend:
