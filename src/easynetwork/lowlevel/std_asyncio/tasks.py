@@ -297,11 +297,11 @@ class CancelScope(AbstractCancelScope):
                 delayed_task_cancel.handle.cancel()
                 delayed_task_cancel = None
 
-            for parent_scope in self._inner_to_outer_task_scopes(host_task):
-                if parent_scope.__cancel_called:
-                    if parent_scope.__cancel_handle is None:
-                        parent_scope.__deliver_cancellation()
-                    break
+        for parent_scope in self._inner_to_outer_task_scopes(host_task):
+            if parent_scope.__cancel_called:
+                if parent_scope.__cancel_handle is None:
+                    parent_scope.__deliver_cancellation()
+                break
 
         return self.__cancelled_caught
 

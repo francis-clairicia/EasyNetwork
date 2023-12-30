@@ -219,13 +219,8 @@ async def unwrap_future(future: concurrent.futures.Future[_T]) -> _T:
 
             * If the future has been effectively cancelled, the cancellation request is "accepted" and propagated.
 
-            * Otherwise, the cancellation request is *temporarily* "rejected":
-
-                * :meth:`unwrap_future` will block until `future` is done, and will ignore any further cancellation request.
-
-                * If the future ends up with an exception, it will be raised instead of the original cancellation exception.
-
-                * Otherwise, the original cancellation exception is re-raised.
+            * Otherwise, the cancellation request is "rejected": :meth:`unwrap_future` will block until `future` is done,
+              and will ignore any further cancellation request.
 
         * A coroutine awaiting a `future` in ``running`` state (:meth:`concurrent.futures.Future.running` returns :data:`True`)
           cannot be cancelled.
@@ -270,10 +265,6 @@ async def unwrap_future(future: concurrent.futures.Future[_T]) -> _T:
                     # and set future in RUNNING state.
                     # This future cannot be cancelled anymore, therefore it must be awaited.
                     await backend.ignore_cancellation(done_event.wait())
-
-                    # re-raise if there is no errors
-                    if future.exception(timeout=0) is None:
-                        raise
                 else:
                     if future.cancelled():
                         # Task cancellation prevails over future cancellation

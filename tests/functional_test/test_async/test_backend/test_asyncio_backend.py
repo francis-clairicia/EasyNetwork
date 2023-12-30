@@ -1449,3 +1449,33 @@ class TestAsyncioBackendShieldedCancellation:
             await task
 
         assert checkpoints == ["inner_yield_in_cancel"]
+
+    async def test____ignore_cancellation____reschedule_erased_cancel_from_parent(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        backend: AsyncIOBackend,
+    ) -> None:
+        checkpoints: list[str] = []
+
+        async def coroutine() -> None:
+            with backend.open_cancel_scope() as parent_scope:
+                parent_scope.cancel()
+
+                try:
+                    await backend.sleep_forever()
+                except asyncio.CancelledError:
+                    pass
+
+                checkpoints.append("cancel_erased")
+
+                await backend.ignore_cancellation(backend.sleep(0.1))
+                checkpoints.append("ignore_cancellation_called")
+
+                await backend.coro_yield()
+                checkpoints.append("should_not_be_here")
+
+            checkpoints.append("parent_scope_cancelled_caught")
+
+        await event_loop.create_task(coroutine())
+
+        assert checkpoints == ["cancel_erased", "ignore_cancellation_called", "parent_scope_cancelled_caught"]

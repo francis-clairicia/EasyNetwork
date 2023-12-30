@@ -163,11 +163,8 @@ class TestUnwrapFuture:
 
         if future_running is not None:
             assert not future.cancelled()
-            if future_running == "before":
-                assert not task.cancelled()
-                assert task.result() == 42
-            else:
-                assert task.cancelled()
+            assert not task.cancelled()
+            assert task.result() == 42
         else:
             assert future.cancelled()
             assert task.cancelled()
