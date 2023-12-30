@@ -252,23 +252,20 @@ async def unwrap_future(future: concurrent.futures.Future[_T]) -> _T:
 
             future.add_done_callback(on_fut_done)
 
-            if future.running():
+            try:
+                await done_event.wait()
+            except backend.get_cancelled_exc_class():
+                if future.cancel():
+                    raise
+
+                # If future.cancel() failed, that means future.set_running_or_notify_cancel() has been called
+                # and set future in RUNNING state.
+                # This future cannot be cancelled anymore, therefore it must be awaited.
                 await backend.ignore_cancellation(done_event.wait())
             else:
-                try:
-                    await done_event.wait()
-                except backend.get_cancelled_exc_class():
-                    if future.cancel():
-                        raise
-
-                    # If future.cancel() failed, that means future.set_running_or_notify_cancel() has been called
-                    # and set future in RUNNING state.
-                    # This future cannot be cancelled anymore, therefore it must be awaited.
-                    await backend.ignore_cancellation(done_event.wait())
-                else:
-                    if future.cancelled():
-                        # Task cancellation prevails over future cancellation
-                        await backend.coro_yield()
+                if future.cancelled():
+                    # Task cancellation prevails over future cancellation
+                    await backend.coro_yield()
 
         return future.result(timeout=0)
     finally:
