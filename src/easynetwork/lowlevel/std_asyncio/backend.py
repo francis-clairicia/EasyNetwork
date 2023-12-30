@@ -91,12 +91,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
         return asyncio.CancelledError
 
     async def ignore_cancellation(self, coroutine: Coroutine[Any, Any, _T_co]) -> _T_co:
-        if not asyncio.iscoroutine(coroutine):
-            raise TypeError("Expected a coroutine object")
-        # Open a scope in order to check pending cancellations at the end.
-        with self.open_cancel_scope():
-            return await TaskUtils.cancel_shielded_await_task(asyncio.create_task(coroutine))
-        raise AssertionError("This scope should never catch the cancellation exception")
+        return await TaskUtils.cancel_shielded_await(coroutine)
 
     def open_cancel_scope(self, *, deadline: float = math.inf) -> CancelScope:
         return CancelScope(deadline=deadline)
@@ -376,8 +371,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
 
         future = loop.run_in_executor(None, functools.partial(ctx.run, func, *args, **kwargs))
         try:
-            await TaskUtils.cancel_shielded_wait_asyncio_futures({future})
-            return future.result()
+            return await TaskUtils.cancel_shielded_await_future(future)
         finally:
             del future
 

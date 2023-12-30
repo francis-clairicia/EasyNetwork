@@ -20,6 +20,7 @@ from __future__ import annotations
 __all__ = ["CancelScope", "Task", "TaskGroup", "TaskUtils"]
 
 import asyncio
+import contextvars
 import enum
 import math
 from collections import deque
@@ -428,18 +429,48 @@ class TaskUtils:
 
         try:
             _schedule_task_discard(fs)
-            while fs:
-                try:
-                    await asyncio.wait(fs)
-                except asyncio.CancelledError as exc:
-                    task_cancelled = True
-                    task_cancel_msg = _get_cancelled_error_message(exc)
+            # Open a scope in order to check pending cancellations at the end.
+            with CancelScope():
+                while fs:
+                    try:
+                        await asyncio.wait(fs)
+                    except asyncio.CancelledError as exc:
+                        task_cancelled = True
+                        task_cancel_msg = _get_cancelled_error_message(exc)
 
-            if task_cancelled:
-                return CancelScope._reschedule_delayed_task_cancel(current_task, task_cancel_msg)
+                if task_cancelled:
+                    return CancelScope._reschedule_delayed_task_cancel(current_task, task_cancel_msg)
             return None
         finally:
             del current_task, fs
+            task_cancel_msg = None
+
+    @classmethod
+    async def cancel_shielded_await_future(cls, future: asyncio.Future[_T_co]) -> _T_co:
+        loop = asyncio.get_running_loop()
+        current_task: asyncio.Task[Any] = cls.current_asyncio_task(loop)
+        task_cancelled: bool = False
+        task_cancel_msg: str | None = None
+        try:
+            done_event = asyncio.Event()
+            future.add_done_callback(lambda _: done_event.set())
+
+            # Open a scope in order to check pending cancellations at the end.
+            with CancelScope():
+                while not done_event.is_set():
+                    try:
+                        await done_event.wait()
+                    except asyncio.CancelledError as exc:
+                        task_cancelled = True
+                        task_cancel_msg = _get_cancelled_error_message(exc)
+
+                if task_cancelled:
+                    CancelScope._reschedule_delayed_task_cancel(current_task, task_cancel_msg)
+                    if future.cancelled():
+                        await asyncio.sleep(0)
+            return future.result()
+        finally:
+            del current_task, future
             task_cancel_msg = None
 
     @classmethod
@@ -453,17 +484,41 @@ class TaskUtils:
             del current_task
 
     @classmethod
-    async def cancel_shielded_await_task(cls, task: asyncio.Task[_T_co]) -> _T_co:
-        # This task must be unregistered in order not to be cancelled by runner at event loop shutdown
-        asyncio._unregister_task(task)
+    async def cancel_shielded_await(cls, coroutine: Coroutine[Any, Any, _T_co]) -> _T_co:
+        loop = asyncio.get_running_loop()
+        current_task_context = cls.get_task_context(cls.current_asyncio_task(loop))
 
+        def copy_future_state(waiter: asyncio.Future[_T_co], task: asyncio.Task[_T_co]) -> None:
+            if waiter.done():
+                raise AssertionError("waiter should not be done")
+            if task.cancelled():
+                waiter.cancel()
+            elif (exc := task.exception()) is not None:
+                waiter.set_exception(exc)
+            else:
+                waiter.set_result(task.result())
+
+        def schedule_task(waiter: asyncio.Future[_T_co]) -> None:
+            try:
+                if not asyncio.iscoroutine(coroutine):
+                    raise TypeError("Expected a coroutine object")
+                task = loop.create_task(coroutine, context=current_task_context)
+            except BaseException as exc:
+                waiter.set_exception(exc)
+            else:
+                if task.done():  # eager task done
+                    copy_future_state(waiter, task)
+                else:
+                    task.add_done_callback(_utils.prepend_argument(waiter, copy_future_state))
+                    # This task must be unregistered in order not to be cancelled by runner at event loop shutdown
+                    asyncio._unregister_task(task)
+
+        waiter: asyncio.Future[_T_co] = loop.create_future()
+        loop.call_soon(schedule_task, waiter)
         try:
-            current_task_cancel_handle = await cls.cancel_shielded_wait_asyncio_futures({task})
-            if current_task_cancel_handle is not None and task.cancelled():
-                current_task_cancel_handle.cancel()
-            return task.result()
+            return await cls.cancel_shielded_await_future(waiter)
         finally:
-            del task
+            del waiter
 
     @classmethod
     def ensure_coroutine(
@@ -483,6 +538,14 @@ class TaskUtils:
     @classmethod
     def compute_task_name_from_func(cls, func: Callable[..., Any]) -> str:
         return _utils.get_callable_name(func) or repr(func)
+
+    @classmethod
+    def get_task_context(cls, task: asyncio.Task[Any]) -> contextvars.Context | None:
+        try:
+            get_context: Callable[[], contextvars.Context] = getattr(task, "get_context")
+        except AttributeError:
+            return None
+        return get_context()
 
 
 def _get_cancelled_error_message(exc: asyncio.CancelledError) -> str | None:
