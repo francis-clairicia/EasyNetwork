@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
+import sys
 import time
 from collections.abc import Awaitable, Callable, Iterator
 from concurrent.futures import CancelledError as FutureCancelledError, wait as wait_concurrent_futures
@@ -121,6 +123,28 @@ class TestAsyncioBackend:
         assert await task == 42
         assert task.cancelling() > 0
 
+    async def test____ignore_cancellation____exception_raised_in_task(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        backend: AsyncIOBackend,
+    ) -> None:
+        exception = Exception("error")
+
+        async def coroutine() -> None:
+            raise exception
+
+        task: asyncio.Task[None] = event_loop.create_task(backend.ignore_cancellation(coroutine()))
+
+        for i in range(3):
+            for _ in range(3):
+                event_loop.call_later(0.1 * i, task.cancel)
+
+        with pytest.raises(Exception) as exc_info:
+            await task
+
+        assert task.exception() is exception
+        assert exc_info.value is exception
+
     async def test____ignore_cancellation____task_does_not_appear_in_registered_tasks(
         self,
         event_loop: asyncio.AbstractEventLoop,
@@ -152,6 +176,45 @@ class TestAsyncioBackend:
         with pytest.raises(asyncio.CancelledError):
             await task
         assert task.cancelled()
+
+    @pytest.mark.parametrize(
+        "eager_task_factory",
+        [
+            pytest.param(
+                False,
+                marks=pytest.mark.xfail(
+                    sys.version_info < (3, 12),
+                    reason="asyncio.Task.get_context() does not exist before Python 3.12",
+                ),
+            ),
+            pytest.param(
+                True,
+                marks=pytest.mark.skipif(
+                    sys.version_info < (3, 12),
+                    reason="asyncio.eager_task_factory does not exist before Python 3.12",
+                ),
+            ),
+        ],
+    )
+    async def test____ignore_cancellation____share_same_context_with_host_task(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        eager_task_factory: bool,
+        backend: AsyncIOBackend,
+    ) -> None:
+        if eager_task_factory:
+            event_loop.set_task_factory(getattr(asyncio, "eager_task_factory"))
+
+        cvar_for_test: contextvars.ContextVar[str] = contextvars.ContextVar("cvar_for_test", default="")
+
+        # coroutine() will be done right after create_task() with eager_task_factory==True
+        async def coroutine() -> None:
+            cvar_for_test.set("after_in_coroutine")
+
+        cvar_for_test.set("before_in_current_task")
+        await backend.ignore_cancellation(coroutine())
+
+        assert cvar_for_test.get() == "after_in_coroutine"
 
     async def test____timeout____respected(
         self,
@@ -1132,7 +1195,14 @@ class TestAsyncioBackendShieldedCancellation:
         assert isinstance(backend, AsyncIOBackend)
         return backend
 
-    @pytest.fixture(params=["cancel_shielded_coro_yield", "ignore_cancellation", "run_in_thread"])
+    @pytest.fixture(
+        params=[
+            "cancel_shielded_coro_yield",
+            "ignore_cancellation",
+            "run_in_thread",
+            "cancel_shielded_wait_asyncio_futures",
+        ]
+    )
     @staticmethod
     def cancel_shielded_coroutine(
         request: pytest.FixtureRequest,
@@ -1145,6 +1215,17 @@ class TestAsyncioBackendShieldedCancellation:
                 return lambda: backend.ignore_cancellation(backend.sleep(0.1))
             case "run_in_thread":
                 return lambda: backend.run_in_thread(time.sleep, 0.1)
+            case "cancel_shielded_wait_asyncio_futures":
+                from easynetwork.lowlevel.std_asyncio.tasks import TaskUtils
+
+                async def cancel_shielded_wait_asyncio_futures() -> None:
+                    loop = asyncio.get_running_loop()
+                    futures = [loop.create_future() for _ in range(3)]
+                    for i, f in enumerate(futures, start=1):
+                        loop.call_later(0.1 * i, f.set_result, None)
+                    await TaskUtils.cancel_shielded_wait_asyncio_futures(futures)
+
+                return cancel_shielded_wait_asyncio_futures
             case _:
                 pytest.fail("Invalid parameter")
 
