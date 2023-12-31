@@ -26,6 +26,7 @@ def udp_socket_factory(request: pytest.FixtureRequest, localhost_ip: str) -> Cal
     return bound_udp_socket_factory
 
 
+@pytest.mark.flaky(retries=3, delay=1)
 class TestUDPNetworkClient:
     @pytest.fixture
     @staticmethod

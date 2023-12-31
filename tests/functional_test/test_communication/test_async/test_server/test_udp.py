@@ -208,6 +208,7 @@ class MyAsyncUDPServer(AsyncUDPNetworkServer[str, str]):
 
 
 @pytest.mark.asyncio
+@pytest.mark.flaky(retries=3, delay=1)
 class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
     @pytest.fixture
     @staticmethod

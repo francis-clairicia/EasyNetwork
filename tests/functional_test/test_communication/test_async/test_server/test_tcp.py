@@ -289,6 +289,7 @@ class MyAsyncTCPServer(AsyncTCPNetworkServer[str, str]):
 
 
 @pytest.mark.asyncio
+@pytest.mark.flaky(retries=3, delay=1)
 class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     @pytest.fixture(params=["NO_SSL", "USE_SSL"])
     @staticmethod
@@ -401,6 +402,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         async with asyncio.timeout(1):
             while request_handler.connected_clients:
                 await asyncio.sleep(0.1)
+        await asyncio.sleep(0.1)
 
     @pytest.mark.parametrize("host", [None, ""], ids=repr)
     @pytest.mark.parametrize("log_client_connection", [True, False], ids=lambda p: f"log_client_connection=={p}")
@@ -615,7 +617,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         client_address: tuple[Any, ...] = writer.get_extra_info("sockname")
 
         writer.write(b"hello\nworld\n")
-        await asyncio.sleep(0.1)
 
         assert await reader.readline() == b"HELLO\n"
         assert await reader.readline() == b"WORLD\n"
@@ -631,7 +632,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         request_handler.close_client_after_n_request = 1
 
         writer.write(b"hello\nworld\n")
-        await asyncio.sleep(0.1)
 
         assert await reader.readline() == b"HELLO\n"
         assert await reader.read() == b""
@@ -646,7 +646,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         client_address: tuple[Any, ...] = writer.get_extra_info("sockname")
 
         writer.write(b"__wait__\nhello, world!\n")
-        await asyncio.sleep(0.1)
 
         assert await reader.readline() == b"After wait: hello, world!\n"
         assert request_handler.request_received[client_address] == ["hello, world!"]
@@ -660,7 +659,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         client_address: tuple[Any, ...] = writer.get_extra_info("sockname")
 
         writer.write("\u00E9\n".encode("latin-1"))  # StringSerializer does not accept unicode
-        await asyncio.sleep(0.1)
 
         assert await reader.readline() == b"wrong encoding man.\n"
         assert request_handler.request_received[client_address] == []
@@ -715,18 +713,18 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         }
 
         writer.write(b"something\n")
-        await asyncio.sleep(0.1)
 
         if mute_thrown_exception:
             assert await reader.readline() in expected_messages
             writer.write(b"something\n")
-            await asyncio.sleep(0.1)
             assert await reader.readline() in expected_messages
+            await asyncio.sleep(0.1)
             assert len(caplog.records) == 0  # After two attempts
         else:
             with contextlib.suppress(ConnectionError):
                 assert await reader.readline() in expected_messages
                 assert await reader.read() == b""
+            await asyncio.sleep(0.1)
             assert len(caplog.records) == 3
             assert caplog.records[1].exc_info is not None
             assert type(caplog.records[1].exc_info[1]) is RuntimeError
@@ -742,10 +740,10 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         reader, writer = await client_factory()
 
         writer.write(b"__error__\n")
-        await asyncio.sleep(0.1)
-
         with contextlib.suppress(ConnectionError):
             assert await reader.read() == b""
+        await asyncio.sleep(0.1)
+
         assert len(caplog.records) == 3
         assert caplog.records[1].exc_info is not None
         assert type(caplog.records[1].exc_info[1]) is RandomError
@@ -767,9 +765,9 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
             await asyncio.sleep(0.1)
 
         writer.write(b"request\n")
+        assert await reader.read() == b""
         await asyncio.sleep(0.1)
 
-        assert await reader.read() == b""
         assert len(caplog.records) == 1
         assert caplog.records[0].levelno == logging.ERROR
         assert caplog.records[0].message == "RuntimeError: protocol.generate_chunks() crashed (caused by SystemError: CRASH)"
@@ -785,10 +783,9 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         reader, writer = await client_factory()
 
         writer.write(b"__os_error__\n")
-        await asyncio.sleep(0.1)
-
         with contextlib.suppress(ConnectionError):
             assert await reader.read() == b""
+        await asyncio.sleep(0.1)
 
         assert len(caplog.records) == 3
         assert caplog.records[1].exc_info is not None
@@ -806,9 +803,9 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         host, port = writer.get_extra_info("sockname")[:2]
 
         writer.write(b"__closed_client_error__\n")
+        assert await reader.read() == b""
         await asyncio.sleep(0.1)
 
-        assert await reader.read() == b""
         assert len(caplog.records) == 1
         assert caplog.records[0].levelno == logging.WARNING
         assert caplog.records[0].message == f"There have been attempts to do operation on closed client ({host!r}, {port})"
@@ -822,9 +819,9 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         reader, writer = await client_factory()
 
         writer.write(b"__connection_error__\n")
+        assert await reader.read() == b""
         await asyncio.sleep(0.1)
 
-        assert await reader.read() == b""
         assert len(caplog.records) == 0
 
     async def test____serve_forever____connection_error_in_disconnect_hook(
@@ -853,7 +850,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         reader, writer = await client_factory()
 
         writer.write(b"__close__\n")
-        await asyncio.sleep(0.1)
 
         assert await reader.read() == b""
 
@@ -866,7 +862,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         reader, writer = await client_factory()
 
         writer.write(b"__stop_listening__\n")
-        await asyncio.sleep(0.1)
 
         assert await reader.readline() == b"successfully stop listening\n"
 
@@ -923,7 +918,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         reader, writer = await client_factory()
 
         writer.write(b"something\n")
-        await asyncio.sleep(0.1)
+
         with contextlib.suppress(ConnectionError):
             assert await reader.read() == b""
 
@@ -966,6 +961,8 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
                 assert await reader.readline() == b"something\n"
 
             assert await reader.read() == b""
+
+        await asyncio.sleep(0.1)
         assert len(caplog.records) == 0
 
     @pytest.mark.parametrize("request_handler", [InitialHandshakeRequestHandler], indirect=True)

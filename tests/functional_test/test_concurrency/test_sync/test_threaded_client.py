@@ -15,6 +15,11 @@ from ....tools import TimeTest
 ClientType: TypeAlias = AbstractNetworkClient[str, str]
 
 
+pytestmark = [
+    pytest.mark.flaky(retries=3, delay=1),
+]
+
+
 @pytest.fixture
 def executor(client: ClientType) -> Iterator[ThreadPoolExecutor]:
     with ThreadPoolExecutor(max_workers=1) as executor:

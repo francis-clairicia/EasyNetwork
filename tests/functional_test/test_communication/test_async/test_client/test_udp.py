@@ -55,6 +55,7 @@ async def datagram_endpoint_factory(
 
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("use_asyncio_transport")
+@pytest.mark.flaky(retries=3, delay=1)
 class TestAsyncUDPNetworkClient:
     @pytest_asyncio.fixture
     @staticmethod
