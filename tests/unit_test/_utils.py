@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import functools
+import threading
 from collections.abc import Sequence
 from socket import AF_INET, AF_INET6, IPPROTO_TCP, IPPROTO_UDP, SOCK_DGRAM, SOCK_STREAM
 from types import TracebackType
@@ -10,17 +11,24 @@ _DEFAULT_FAMILIES: Sequence[int] = (AF_INET6, AF_INET)
 
 
 class _LockMixin:
+    _owner: object = None
     _locked_count: int = 0
+    _reentrant: bool = False
 
     class WouldBlock(Exception):
         pass
 
+    def _get_requester_id(self) -> object:
+        raise NotImplementedError
+
     def _acquire(self, blocking: bool = True, timeout: float = -1) -> bool:
-        if self._locked_count > 0:
+        if self._locked_count > 0 and (not self._reentrant or self._owner != self._get_requester_id()):
             if not blocking or timeout >= 0:
                 return False
             raise _LockMixin.WouldBlock(f"{self.__class__.__name__}.acquire() would block")
 
+        if self._reentrant and self._owner is None:
+            self._owner = self._get_requester_id()
         self._locked_count += 1
         return True
 
@@ -28,13 +36,17 @@ class _LockMixin:
         return self._locked_count > 0
 
     def _release(self) -> None:
+        if self._reentrant and self._owner != self._get_requester_id():
+            raise RuntimeError("release() called on an unacquired lock")
         assert self._locked_count > 0
         self._locked_count -= 1
+        if self._reentrant and self._locked_count == 0:
+            self._owner = None
 
 
 class DummyLock(_LockMixin):
     """
-    Helper class used to mock threading.Lock and threading.RLock classes
+    Helper class used to mock threading.Lock class.
     """
 
     def __enter__(self) -> bool:
@@ -48,6 +60,17 @@ class DummyLock(_LockMixin):
 
     def release(self) -> None:
         return self._release()
+
+
+class DummyRLock(DummyLock):
+    """
+    Helper class used to mock threading.RLock class.
+    """
+
+    _reentrant = True
+
+    def _get_requester_id(self) -> object:
+        return threading.get_ident()
 
 
 class AsyncDummyLock(_LockMixin):
