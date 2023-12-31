@@ -21,7 +21,7 @@ __all__ = [
 ]
 
 import contextlib
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Generic
 
 from ..._typevars import _T_Request, _T_Response
@@ -54,15 +54,17 @@ class StandaloneUDPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
         request_handler: AsyncDatagramRequestHandler[_T_Request, _T_Response],
         backend: str = "asyncio",
         *,
+        runner_options: Mapping[str, Any] | None = None,
         reuse_port: bool = False,
         logger: logging.Logger | None = None,
         **kwargs: Any,
     ) -> None:
         """
-        For the arguments, see :class:`.AsyncUDPNetworkServer` documentation.
+        For the other arguments, see :class:`.AsyncUDPNetworkServer` documentation.
 
-        Note:
-            The backend interface must be explicitly given. It defaults to ``asyncio``.
+        Parameters:
+            backend: The event loop to use. It defaults to ``asyncio``.
+            runner_options: Options to pass to the :meth:`.AsyncBackend.bootstrap` method.
         """
         super().__init__(
             backend,
@@ -76,6 +78,7 @@ class StandaloneUDPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
                 logger=logger,
                 **kwargs,
             ),
+            runner_options=runner_options,
         )
 
     def get_sockets(self) -> Sequence[SocketProxy]:

@@ -40,6 +40,7 @@ if TYPE_CHECKING:
 class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
     __slots__ = (
         "__server_factory",
+        "__default_runner_options",
         "__private_server",
         "__backend_name",
         "__close_lock",
@@ -49,7 +50,13 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
         "__is_closed",
     )
 
-    def __init__(self, backend: str, server_factory: Callable[[], AbstractAsyncNetworkServer]) -> None:
+    def __init__(
+        self,
+        backend: str,
+        server_factory: Callable[[], AbstractAsyncNetworkServer],
+        *,
+        runner_options: Mapping[str, Any] | None = None,
+    ) -> None:
         super().__init__()
         self.__backend_name: str = backend
         self.__server_factory: Callable[[], AbstractAsyncNetworkServer] = server_factory
@@ -60,6 +67,7 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
         self.__is_closed = _threading.Event()
         self.__close_lock = ForkSafeLock()
         self.__bootstrap_lock = ForkSafeLock()
+        self.__default_runner_options: dict[str, Any] = dict(runner_options) if runner_options else {}
 
     @_utils.inherit_doc(AbstractNetworkServer)
     def is_serving(self) -> bool:
@@ -110,11 +118,17 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
         Parameters:
             is_up_event: If given, will be triggered when the server is ready to accept new clients.
             runner_options: Options to pass to the :meth:`.AsyncBackend.bootstrap` method.
+                            The specified keys override the keys passed at initialization.
 
         Raises:
             ServerClosedError: The server is closed.
             ServerAlreadyRunning: Another task already called :meth:`serve_forever`.
         """
+        if self.__default_runner_options:
+            if runner_options:
+                runner_options = {**self.__default_runner_options, **runner_options}
+            else:
+                runner_options = self.__default_runner_options.copy()
 
         backend = _Factory.get_backend(self.__backend_name)
         with contextlib.ExitStack() as server_exit_stack, contextlib.suppress(backend.get_cancelled_exc_class()):

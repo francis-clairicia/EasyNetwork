@@ -21,7 +21,7 @@ __all__ = [
 ]
 
 import contextlib
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Generic
 
 from ..._typevars import _T_Request, _T_Response
@@ -55,6 +55,7 @@ class StandaloneTCPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
         request_handler: AsyncStreamRequestHandler[_T_Request, _T_Response],
         backend: str = "asyncio",
         *,
+        runner_options: Mapping[str, Any] | None = None,
         ssl: _SSLContext | None = None,
         ssl_handshake_timeout: float | None = None,
         ssl_shutdown_timeout: float | None = None,
@@ -66,10 +67,11 @@ class StandaloneTCPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
         **kwargs: Any,
     ) -> None:
         """
-        For the arguments, see :class:`.AsyncTCPNetworkServer` documentation.
+        For the other arguments, see :class:`.AsyncTCPNetworkServer` documentation.
 
-        Note:
-            The backend interface must be explicitly given. It defaults to ``asyncio``.
+        Parameters:
+            backend: The event loop to use. It defaults to ``asyncio``.
+            runner_options: Options to pass to the :meth:`.AsyncBackend.bootstrap` method.
         """
         super().__init__(
             backend,
@@ -89,6 +91,7 @@ class StandaloneTCPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
                 logger=logger,
                 **kwargs,
             ),
+            runner_options=runner_options,
         )
 
     def stop_listening(self) -> None:
