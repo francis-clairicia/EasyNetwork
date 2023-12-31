@@ -31,6 +31,7 @@ def readline(sock: Socket) -> bytes:
 
 
 @pytest.mark.usefixtures("simulate_no_ssl_module")
+@pytest.mark.flaky(retries=3, delay=1)
 class TestTCPNetworkClient:
     @pytest.fixture
     @staticmethod

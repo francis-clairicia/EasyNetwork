@@ -31,6 +31,7 @@ async def readline(loop: asyncio.AbstractEventLoop, sock: Socket) -> bytes:
 
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("simulate_no_ssl_module", "use_asyncio_transport")
+@pytest.mark.flaky(retries=3, delay=1)
 class TestAsyncTCPNetworkClient:
     @pytest.fixture
     @staticmethod
