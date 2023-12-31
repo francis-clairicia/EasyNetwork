@@ -21,6 +21,7 @@ __all__ = ["TCPNetworkClient"]
 import contextlib
 import errno as _errno
 import socket as _socket
+import threading
 from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any, final, overload
 
@@ -240,10 +241,10 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
         assert ssl_shared_lock is not None  # nosec assert_used
 
         if ssl and ssl_shared_lock:
-            self.__send_lock = self.__receive_lock = _lock.ForkSafeLock()
+            self.__send_lock = self.__receive_lock = _lock.ForkSafeLock(threading.Lock)
         else:
-            self.__send_lock = _lock.ForkSafeLock()
-            self.__receive_lock = _lock.ForkSafeLock()
+            self.__send_lock = _lock.ForkSafeLock(threading.Lock)
+            self.__receive_lock = _lock.ForkSafeLock(threading.Lock)
 
         try:
             self.__endpoint = StreamEndpoint(transport, protocol, max_recv_size=max_recv_size)

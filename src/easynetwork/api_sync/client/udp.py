@@ -20,6 +20,7 @@ __all__ = ["UDPNetworkClient"]
 
 import contextlib
 import socket as _socket
+import threading
 from collections.abc import Iterator
 from typing import Any, final, overload
 
@@ -125,8 +126,8 @@ class UDPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
             socket.close()
             raise
 
-        self.__send_lock = _lock.ForkSafeLock()
-        self.__receive_lock = _lock.ForkSafeLock()
+        self.__send_lock = _lock.ForkSafeLock(threading.Lock)
+        self.__receive_lock = _lock.ForkSafeLock(threading.Lock)
         try:
             self.__endpoint: DatagramEndpoint[_T_SentPacket, _T_ReceivedPacket] = DatagramEndpoint(transport, protocol)
             self.__socket_proxy = SocketProxy(transport.extra(INETSocketAttribute.socket), lock=self.__send_lock.get)
