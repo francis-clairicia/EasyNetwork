@@ -67,7 +67,7 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
         self.__is_closed = _threading.Event()
         self.__close_lock = ForkSafeLock()
         self.__bootstrap_lock = ForkSafeLock()
-        self.__default_runner_options: Mapping[str, Any] = dict(runner_options) if runner_options else {}
+        self.__default_runner_options: dict[str, Any] = dict(runner_options) if runner_options else {}
 
     @_utils.inherit_doc(AbstractNetworkServer)
     def is_serving(self) -> bool:
@@ -128,7 +128,7 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
             if runner_options:
                 runner_options = {**self.__default_runner_options, **runner_options}
             else:
-                runner_options = self.__default_runner_options
+                runner_options = self.__default_runner_options.copy()
 
         backend = _Factory.get_backend(self.__backend_name)
         with contextlib.ExitStack() as server_exit_stack, contextlib.suppress(backend.get_cancelled_exc_class()):
