@@ -218,10 +218,9 @@ class AsyncStreamRequestHandler(Generic[_T_Request, _T_Response], metaclass=ABCM
 
         This function will not be called in the following conditions:
 
-        * If :meth:`on_connection` is a simple :term:`coroutine function` and raises an exception.
+        * If :meth:`on_connection` raises an exception.
 
-        * If :meth:`on_connection` is an :term:`asynchronous generator` function and raises an exception
-          before the first :keyword:`yield`.
+        * If :meth:`on_connection` is an :term:`asynchronous generator` function and the connection is closed.
 
         Important:
             :meth:`AsyncStreamClient.is_closing` should return :data:`True` when this function is called.
