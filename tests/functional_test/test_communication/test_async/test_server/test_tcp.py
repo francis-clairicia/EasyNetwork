@@ -206,6 +206,7 @@ class CancellationRequestHandler(AsyncStreamRequestHandler[str, str]):
 class InitialHandshakeRequestHandler(AsyncStreamRequestHandler[str, str]):
     backend: AsyncBackend
     bypass_handshake: bool = False
+    handshake_2fa: bool = False
 
     async def service_init(self, exit_stack: contextlib.AsyncExitStack, server: Any) -> None:
         self.backend = current_async_backend()
@@ -217,14 +218,27 @@ class InitialHandshakeRequestHandler(AsyncStreamRequestHandler[str, str]):
         try:
             with self.backend.timeout(1):
                 password = yield
+
+            if password != "chocolate":
+                await client.send_packet("wrong password")
+                await client.aclose()
+                return
+
+            if self.handshake_2fa:
+                await client.send_packet("2FA code needed")
+                with self.backend.timeout(1):
+                    code = yield
+
+                if code != "42":
+                    await client.send_packet("wrong code")
+                    await client.aclose()
+                    return
+
         except TimeoutError:
             await client.send_packet("timeout error")
             await client.aclose()
             return
-        if password != "chocolate":
-            await client.send_packet("wrong password")
-            await client.aclose()
-            return
+
         await client.send_packet("you can enter")
 
     async def handle(self, client: AsyncStreamClient[str]) -> AsyncGenerator[None, str]:
@@ -396,12 +410,9 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         return factory
 
     @staticmethod
-    async def _wait_client_disconnected(writer: asyncio.StreamWriter, request_handler: MyAsyncTCPRequestHandler) -> None:
+    async def _wait_client_disconnected(writer: asyncio.StreamWriter) -> None:
         writer.close()
         await writer.wait_closed()
-        async with asyncio.timeout(1):
-            while request_handler.connected_clients:
-                await asyncio.sleep(0.1)
         await asyncio.sleep(0.1)
 
     @pytest.mark.parametrize("host", [None, ""], ids=repr)
@@ -522,7 +533,8 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
 
         assert request_handler.request_received[client_address] == ["hello, world."]
 
-        await self._wait_client_disconnected(writer, request_handler)
+        await self._wait_client_disconnected(writer)
+        assert client_address not in request_handler.connected_clients
 
     # skip Windows for this test, the ECONNRESET will happen on socket.send() or socket.recv()
     @pytest.mark.xfail('sys.platform == "win32"', reason="socket.getpeername() works by some magic")
@@ -667,18 +679,25 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
 
     @pytest.mark.parametrize("socket_family", ["AF_INET"], indirect=True)
     @pytest.mark.parametrize("use_ssl", ["NO_SSL"], indirect=True)
+    @pytest.mark.parametrize(
+        "request_handler",
+        [
+            pytest.param(MyAsyncTCPRequestHandler, id="during_handle"),
+            pytest.param(InitialHandshakeRequestHandler, id="during_on_connection_hook"),
+        ],
+        indirect=True,
+    )
     async def test____serve_forever____connection_reset_error(
         self,
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
         caplog: pytest.LogCaptureFixture,
-        request_handler: MyAsyncTCPRequestHandler,
     ) -> None:
         caplog.set_level(logging.WARNING, LOGGER.name)
         _, writer = await client_factory()
 
         enable_socket_linger(writer.get_extra_info("socket"), timeout=0)
 
-        await self._wait_client_disconnected(writer, request_handler)
+        await self._wait_client_disconnected(writer)
 
         # ECONNRESET not logged
         assert len(caplog.records) == 0
@@ -836,7 +855,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         _, writer = await client_factory()
         request_handler.fail_on_disconnection = True
 
-        await self._wait_client_disconnected(writer, request_handler)
+        await self._wait_client_disconnected(writer)
 
         # ECONNRESET not logged
         assert len(caplog.records) == 1
@@ -966,34 +985,60 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         assert len(caplog.records) == 0
 
     @pytest.mark.parametrize("request_handler", [InitialHandshakeRequestHandler], indirect=True)
+    @pytest.mark.parametrize("handshake_2fa", [True, False], ids=lambda p: f"handshake_2fa=={p}")
     async def test____serve_forever____request_handler_on_connection_is_async_gen(
         self,
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        handshake_2fa: bool,
+        request_handler: InitialHandshakeRequestHandler,
     ) -> None:
+        request_handler.handshake_2fa = handshake_2fa
         reader, writer = await client_factory()
 
         writer.write(b"chocolate\n")
+        if handshake_2fa:
+            assert await reader.readline() == b"2FA code needed\n"
+            writer.write(b"42\n")
+
         assert await reader.readline() == b"you can enter\n"
         writer.write(b"something\n")
         assert await reader.readline() == b"something\n"
 
     @pytest.mark.parametrize("request_handler", [InitialHandshakeRequestHandler], indirect=True)
+    @pytest.mark.parametrize("handshake_2fa", [True, False], ids=lambda p: f"handshake_2fa=={p}")
     async def test____serve_forever____request_handler_on_connection_is_async_gen____close_connection(
         self,
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        handshake_2fa: bool,
+        request_handler: InitialHandshakeRequestHandler,
     ) -> None:
+        request_handler.handshake_2fa = handshake_2fa
         reader, writer = await client_factory()
 
-        writer.write(b"something_else\n")
-        assert await reader.readline() == b"wrong password\n"
+        if handshake_2fa:
+            writer.write(b"chocolate\n")
+            assert await reader.readline() == b"2FA code needed\n"
+            writer.write(b"123\n")
+            assert await reader.readline() == b"wrong code\n"
+        else:
+            writer.write(b"something_else\n")
+            assert await reader.readline() == b"wrong password\n"
         assert await reader.read() == b""
 
     @pytest.mark.parametrize("request_handler", [InitialHandshakeRequestHandler], indirect=True)
+    @pytest.mark.parametrize("handshake_2fa", [True, False], ids=lambda p: f"handshake_2fa=={p}")
     async def test____serve_forever____request_handler_on_connection_is_async_gen____throw_cancel_error_within_generator(
         self,
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
+        handshake_2fa: bool,
+        request_handler: InitialHandshakeRequestHandler,
     ) -> None:
-        reader, _ = await client_factory()
+        request_handler.handshake_2fa = handshake_2fa
+        reader, writer = await client_factory()
+
+        if handshake_2fa:
+            writer.write(b"chocolate\n")
+            assert await reader.readline() == b"2FA code needed\n"
 
         assert await reader.readline() == b"timeout error\n"
 

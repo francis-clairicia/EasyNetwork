@@ -360,15 +360,30 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
             client_exit_stack.callback(self.__logger.log, self.__client_connection_log_level, "%s disconnected", client_address)
             client_exit_stack.push_async_callback(client._force_close)
 
-            request_handler_generator: AsyncGenerator[None, _T_Request] | None = None
+            request_handler_generator: AsyncGenerator[None, _T_Request]
+            action: _asyncgen.AsyncGenAction[None, _T_Request]
+
             _on_connection_hook = self.__request_handler.on_connection(client)
             if isinstance(_on_connection_hook, AsyncGenerator):
-                try:
-                    await anext(_on_connection_hook)
-                except StopAsyncIteration:
-                    pass
-                else:
-                    request_handler_generator = _on_connection_hook
+                async with contextlib.aclosing(_on_connection_hook):
+                    try:
+                        await anext(_on_connection_hook)
+                    except StopAsyncIteration:
+                        pass
+                    else:
+                        while True:
+                            try:
+                                action = _asyncgen.SendAction((yield))
+                            except ConnectionError:
+                                return
+                            except BaseException as exc:
+                                action = _asyncgen.ThrowAction(_utils.remove_traceback_frames_in_place(exc, 1))
+                            try:
+                                await action.asend(_on_connection_hook)
+                            except StopAsyncIteration:
+                                break
+                            finally:
+                                del action
             else:
                 assert inspect.isawaitable(_on_connection_hook)  # nosec assert_used
                 await _on_connection_hook
@@ -384,33 +399,27 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
 
             del client_exit_stack
 
-            backend = current_async_backend()
-            try:
-                action: _asyncgen.AsyncGenAction[None, _T_Request]
-                while not client.is_closing():
-                    if request_handler_generator is None:
-                        request_handler_generator = self.__request_handler.handle(client)
-                        try:
-                            await anext(request_handler_generator)
-                        except StopAsyncIteration:
-                            request_handler_generator = None
-                            break
+            while not client.is_closing():
+                request_handler_generator = self.__request_handler.handle(client)
+                async with contextlib.aclosing(request_handler_generator):
                     try:
-                        action = _asyncgen.SendAction((yield))
-                    except ConnectionError:
-                        break
-                    except BaseException as exc:
-                        action = _asyncgen.ThrowAction(exc)
-                    try:
-                        await action.asend(request_handler_generator)
+                        await anext(request_handler_generator)
                     except StopAsyncIteration:
-                        request_handler_generator = None
-                    finally:
-                        del action
-                    await backend.cancel_shielded_coro_yield()
-            finally:
-                if request_handler_generator is not None:
-                    await request_handler_generator.aclose()
+                        return
+
+                    while True:
+                        try:
+                            action = _asyncgen.SendAction((yield))
+                        except ConnectionError:
+                            return
+                        except BaseException as exc:
+                            action = _asyncgen.ThrowAction(_utils.remove_traceback_frames_in_place(exc, 1))
+                        try:
+                            await action.asend(request_handler_generator)
+                        except StopAsyncIteration:
+                            break
+                        finally:
+                            del action
 
     def __attach_server(self) -> None:
         self.__active_tasks += 1

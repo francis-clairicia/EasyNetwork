@@ -257,7 +257,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
                     try:
                         action = _asyncgen.SendAction((yield))
                     except BaseException as exc:
-                        action = _asyncgen.ThrowAction(exc)
+                        action = _asyncgen.ThrowAction(_utils.remove_traceback_frames_in_place(exc, 1))
                     try:
                         await action.asend(request_handler_generator)
                     except StopAsyncIteration:
