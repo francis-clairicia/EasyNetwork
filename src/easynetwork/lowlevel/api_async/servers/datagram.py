@@ -111,7 +111,7 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_T_Request,
     async def serve(
         self,
         datagram_received_cb: Callable[[_T_Address, Self], AsyncGenerator[None, _T_Request]],
-        task_group: TaskGroup,
+        task_group: TaskGroup | None = None,
     ) -> NoReturn:
         with self.__serve_guard:
             client_coroutine = self.__client_coroutine
@@ -119,7 +119,7 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_T_Request,
             backend = current_async_backend()
             listener = self.__listener
 
-            async def handler(datagram: bytes, address: _T_Address, /) -> None:
+            async def handler(datagram: bytes, address: _T_Address, task_group: TaskGroup, /) -> None:
                 with client_manager.datagram_queue(address) as datagram_queue:
                     datagram_queue.append(datagram)
 
@@ -145,11 +145,15 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_T_Request,
                     case _:  # pragma: no cover
                         assert_never(client_state)
 
-            while True:
-                datagram, address = await listener.recv_from()
-                task_group.start_soon(handler, datagram, address)
-                del datagram, address
-                await backend.cancel_shielded_coro_yield()
+            async with contextlib.AsyncExitStack() as stack:
+                if task_group is None:
+                    task_group = await stack.enter_async_context(backend.create_task_group())
+                while True:
+                    datagram, address = await listener.recv_from()
+                    task_group.start_soon(handler, datagram, address, task_group)
+                    del datagram, address
+
+            raise AssertionError("Expected code to be unreachable.")
 
     async def __client_coroutine(
         self,

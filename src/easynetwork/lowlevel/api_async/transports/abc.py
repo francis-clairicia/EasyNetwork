@@ -222,7 +222,7 @@ class AsyncListener(AsyncBaseTransport, Generic[_T_co]):
     __slots__ = ()
 
     @abstractmethod
-    async def serve(self, handler: Callable[[_T_co], Coroutine[Any, Any, None]], task_group: TaskGroup) -> NoReturn:
+    async def serve(self, handler: Callable[[_T_co], Coroutine[Any, Any, None]], task_group: TaskGroup | None = None) -> NoReturn:
         """
         Accept incoming connections as they come in and start tasks to handle them.
 

@@ -21,6 +21,7 @@ __all__ = ["ListenerSocketAdapter", "connect_accepted_socket"]
 
 import asyncio
 import asyncio.streams
+import contextlib
 import dataclasses
 import errno as _errno
 import logging
@@ -33,7 +34,7 @@ from typing import TYPE_CHECKING, Any, Generic, NoReturn, TypeVar, final
 from ... import constants, socket as socket_tools
 from ...api_async.transports import abc as transports
 from ..socket import AsyncSocket
-from ..tasks import TaskUtils
+from ..tasks import TaskGroup as AsyncIOTaskGroup
 from .socket import AsyncioTransportStreamSocketAdapter, RawStreamSocketAdapter
 
 if TYPE_CHECKING:
@@ -91,7 +92,11 @@ class ListenerSocketAdapter(transports.AsyncListener[_T_Stream]):
     async def aclose(self) -> None:
         return await self.__socket.aclose()
 
-    async def serve(self, handler: Callable[[_T_Stream], Coroutine[Any, Any, None]], task_group: AbstractTaskGroup) -> NoReturn:
+    async def serve(
+        self,
+        handler: Callable[[_T_Stream], Coroutine[Any, Any, None]],
+        task_group: AbstractTaskGroup | None = None,
+    ) -> NoReturn:
         connect = self.__accepted_socket_factory.connect
         loop = self.__socket.loop
         logger = logging.getLogger(__name__)
@@ -119,25 +124,29 @@ class ListenerSocketAdapter(transports.AsyncListener[_T_Stream]):
             else:
                 await handler(stream)
 
-        while True:
-            try:
-                client_socket = await self.__socket.accept()
-            except OSError as exc:
-                if exc.errno in constants.ACCEPT_CAPACITY_ERRNOS:
-                    logger.error(
-                        "accept returned %s (%s); retrying in %s seconds",
-                        _errno.errorcode[exc.errno],
-                        os.strerror(exc.errno),
-                        constants.ACCEPT_CAPACITY_ERROR_SLEEP_TIME,
-                        exc_info=exc,
-                    )
-                    await asyncio.sleep(constants.ACCEPT_CAPACITY_ERROR_SLEEP_TIME)
+        async with contextlib.AsyncExitStack() as stack:
+            if task_group is None:
+                task_group = await stack.enter_async_context(AsyncIOTaskGroup())
+            while True:
+                try:
+                    client_socket = await self.__socket.accept()
+                except OSError as exc:
+                    if exc.errno in constants.ACCEPT_CAPACITY_ERRNOS:
+                        logger.error(
+                            "accept returned %s (%s); retrying in %s seconds",
+                            _errno.errorcode[exc.errno],
+                            os.strerror(exc.errno),
+                            constants.ACCEPT_CAPACITY_ERROR_SLEEP_TIME,
+                            exc_info=exc,
+                        )
+                        await asyncio.sleep(constants.ACCEPT_CAPACITY_ERROR_SLEEP_TIME)
+                    else:
+                        raise
                 else:
-                    raise
-            else:
-                task_group.start_soon(client_task, client_socket)
-                del client_socket
-                await TaskUtils.cancel_shielded_coro_yield()
+                    task_group.start_soon(client_task, client_socket)
+                    del client_socket
+
+        raise AssertionError("Expected code to be unreachable.")
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:

@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.exceptions import BusyResourceError
+from easynetwork.lowlevel.api_async.backend.abc import TaskGroup
 from easynetwork.lowlevel.api_async.servers.datagram import AsyncDatagramServer, _ClientManager, _ClientState, _TemporaryValue
 from easynetwork.lowlevel.api_async.transports.abc import AsyncDatagramListener
 
@@ -101,7 +102,9 @@ class TestAsyncDatagramServer:
         assert state is listener_closed
 
     async def test____aclose____default(
-        self, server: AsyncDatagramServer[Any, Any, Any], mock_datagram_listener: MagicMock
+        self,
+        server: AsyncDatagramServer[Any, Any, Any],
+        mock_datagram_listener: MagicMock,
     ) -> None:
         # Arrange
         mock_datagram_listener.aclose.assert_not_called()
@@ -111,6 +114,42 @@ class TestAsyncDatagramServer:
 
         # Assert
         mock_datagram_listener.aclose.assert_awaited_once_with()
+
+    @pytest.mark.parametrize("external_group", [True, False], ids=lambda p: f"external_group=={p}")
+    async def test____serve____task_group(
+        self,
+        external_group: bool,
+        server: AsyncDatagramServer[Any, Any, Any],
+        mock_datagram_listener: MagicMock,
+        mock_backend: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_task_group = mocker.NonCallableMagicMock(spec=TaskGroup)
+        mock_task_group.__aenter__.return_value = mock_task_group
+        mock_task_group.start_soon.return_value = None
+        if external_group:
+            mock_backend.create_task_group.side_effect = []
+        else:
+            mock_backend.create_task_group.side_effect = [mock_task_group]
+        datagram_received_cb = mocker.stub()
+        mock_datagram_listener.recv_from.side_effect = [(b"data", mocker.sentinel.address), asyncio.CancelledError]
+
+        # Act
+        with pytest.raises(asyncio.CancelledError):
+            if external_group:
+                await server.serve(datagram_received_cb, mock_task_group)
+            else:
+                await server.serve(datagram_received_cb)
+
+        # Assert
+        if external_group:
+            mock_backend.create_task_group.assert_not_called()
+            mock_task_group.__aenter__.assert_not_awaited()
+        else:
+            mock_backend.create_task_group.assert_called_once_with()
+            mock_task_group.__aenter__.assert_awaited_once()
+        mock_task_group.start_soon.assert_called_once_with(mocker.ANY, b"data", mocker.sentinel.address, mock_task_group)
 
     async def test____get_extra_info____default(
         self,

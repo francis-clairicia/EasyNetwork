@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable, Generator, Iterator
 from typing import TYPE_CHECKING, Any
 
@@ -225,6 +226,23 @@ class TestAsyncStreamServer:
 
         # Assert
         assert value is mocker.sentinel.extra_info
+
+    @pytest.mark.parametrize("external_group", [TaskGroup(), None])
+    async def test____serve____task_group(
+        self,
+        external_group: TaskGroup | None,
+        server: AsyncStreamServer[Any, Any],
+        mock_listener: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_listener.serve.side_effect = asyncio.CancelledError
+        client_connected_cb = mocker.stub()
+
+        # Act & Assert
+        with pytest.raises(asyncio.CancelledError):
+            await server.serve(client_connected_cb, external_group)
+        mock_listener.serve.assert_awaited_once_with(mocker.ANY, external_group)
 
     async def test____serve____invalid_transport(
         self,
