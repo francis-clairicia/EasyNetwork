@@ -132,7 +132,7 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_T_Request, _
     async def serve(
         self,
         client_connected_cb: Callable[[AsyncStreamClient[_T_Response]], AsyncGenerator[None, _T_Request]],
-        task_group: TaskGroup,
+        task_group: TaskGroup | None = None,
     ) -> NoReturn:
         with self.__serve_guard:
             handler = _utils.prepend_argument(client_connected_cb, self.__client_coroutine)
