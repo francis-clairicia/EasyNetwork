@@ -110,7 +110,7 @@ class AsyncSocket:
             if futures_to_wait_for_completion:
                 await asyncio.wait(futures_to_wait_for_completion, return_when=asyncio.ALL_COMPLETED)
 
-        await asyncio.sleep(0)
+        await TaskUtils.coro_yield()
 
     async def accept(self) -> _socket.socket:
         listener_socket = self.__check_not_closed()
@@ -180,7 +180,7 @@ class AsyncSocket:
 
         socket: _socket.socket = self.__check_not_closed()
         socket.shutdown(how)
-        await asyncio.sleep(0)
+        await TaskUtils.coro_yield()
 
     @contextlib.contextmanager
     def __conflict_detection(self, task_id: _SocketTaskId) -> Iterator[None]:

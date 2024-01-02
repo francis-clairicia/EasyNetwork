@@ -82,7 +82,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
             return runner.run(bootstrap_task())
 
     async def coro_yield(self) -> None:
-        await asyncio.sleep(0)
+        await TaskUtils.coro_yield()
 
     async def cancel_shielded_coro_yield(self) -> None:
         await TaskUtils.cancel_shielded_coro_yield()

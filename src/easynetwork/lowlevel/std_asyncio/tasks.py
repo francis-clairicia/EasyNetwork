@@ -24,8 +24,9 @@ import contextvars
 import enum
 import inspect
 import math
+import types
 from collections import deque
-from collections.abc import Awaitable, Callable, Coroutine, Iterable, Iterator
+from collections.abc import Awaitable, Callable, Coroutine, Generator, Iterable, Iterator
 from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, Self, TypeVar, cast, final
 from weakref import WeakKeyDictionary
 
@@ -422,6 +423,11 @@ class TaskUtils:
         return t
 
     @classmethod
+    @types.coroutine
+    def coro_yield(cls) -> Generator[Any, Any, None]:
+        yield
+
+    @classmethod
     async def cancel_shielded_wait_asyncio_futures(cls, fs: Iterable[asyncio.Future[Any]]) -> asyncio.Handle | None:
         fs = set(fs)
         current_task: asyncio.Task[Any] = cls.current_asyncio_task()
@@ -468,7 +474,7 @@ class TaskUtils:
                 if task_cancelled:
                     CancelScope._reschedule_delayed_task_cancel(current_task, task_cancel_msg)
                     if future.cancelled():
-                        await asyncio.sleep(0)
+                        await cls.coro_yield()
             return future.result()
         finally:
             del current_task, future
@@ -478,7 +484,7 @@ class TaskUtils:
     async def cancel_shielded_coro_yield(cls) -> None:
         current_task: asyncio.Task[Any] = cls.current_asyncio_task()
         try:
-            await asyncio.sleep(0)
+            await cls.coro_yield()
         except asyncio.CancelledError as exc:
             CancelScope._reschedule_delayed_task_cancel(current_task, _get_cancelled_error_message(exc))
         finally:

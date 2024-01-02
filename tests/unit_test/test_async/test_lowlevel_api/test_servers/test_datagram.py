@@ -149,7 +149,31 @@ class TestAsyncDatagramServer:
         else:
             mock_backend.create_task_group.assert_called_once_with()
             mock_task_group.__aenter__.assert_awaited_once()
-        mock_task_group.start_soon.assert_called_once_with(mocker.ANY, b"data", mocker.sentinel.address, mock_task_group)
+        mock_task_group.start_soon.assert_called_once_with(
+            mocker.ANY,
+            datagram_received_cb,
+            mocker.sentinel.address,
+            mock_task_group,
+        )
+
+    async def test____serve____ignore_empty_datagram(
+        self,
+        server: AsyncDatagramServer[Any, Any, Any],
+        mock_datagram_listener: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_task_group = mocker.NonCallableMagicMock(spec=TaskGroup)
+        mock_task_group.start_soon.return_value = None
+        datagram_received_cb = mocker.stub()
+        mock_datagram_listener.recv_from.side_effect = [(b"", mocker.sentinel.address), asyncio.CancelledError]
+
+        # Act
+        with pytest.raises(asyncio.CancelledError):
+            await server.serve(datagram_received_cb, mock_task_group)
+
+        # Assert
+        mock_task_group.start_soon.assert_not_called()
 
     async def test____get_extra_info____default(
         self,
