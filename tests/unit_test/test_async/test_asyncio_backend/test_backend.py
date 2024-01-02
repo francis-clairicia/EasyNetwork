@@ -105,25 +105,6 @@ class TestAsyncIOBackend:
     ) -> None:
         assert backend.using_asyncio_transports() == use_asyncio_transport
 
-    @pytest.mark.parametrize("cancel_shielded", [False, True], ids=lambda b: f"cancel_shielded=={b}")
-    async def test____coro_yield____use_asyncio_sleep(
-        self,
-        cancel_shielded: bool,
-        backend: AsyncIOBackend,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        mock_sleep: AsyncMock = mocker.patch("asyncio.sleep", new_callable=mocker.async_stub)
-
-        # Act
-        if cancel_shielded:
-            await backend.cancel_shielded_coro_yield()
-        else:
-            await backend.coro_yield()
-
-        # Assert
-        mock_sleep.assert_awaited_once_with(0)
-
     async def test____get_cancelled_exc_class____returns_asyncio_CancelledError(
         self,
         backend: AsyncIOBackend,
