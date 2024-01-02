@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from collections.abc import Callable, Coroutine, Iterator
+from collections.abc import Awaitable, Callable, Iterator
 from socket import socket as Socket
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, final
@@ -43,7 +43,7 @@ class MockBackend(BaseFakeBackend):
     async def sleep(self, delay: float) -> None:
         return await self.mock_sleep(delay)
 
-    async def ignore_cancellation(self, coroutine: Coroutine[Any, Any, Any]) -> Any:
+    async def ignore_cancellation(self, coroutine: Awaitable[Any]) -> Any:
         return await coroutine
 
 

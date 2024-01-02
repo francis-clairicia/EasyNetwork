@@ -16,6 +16,7 @@ from easynetwork.lowlevel.std_asyncio.stream.socket import AsyncioTransportStrea
 
 import pytest
 
+from ....tools import temporary_task_factory
 from ..._utils import partial_eq
 
 if TYPE_CHECKING:
@@ -162,6 +163,43 @@ class TestAsyncIOBackend:
         # Assert
         mock_sleep.assert_awaited_once_with(123456789)
 
+    async def test____ignore_cancellation____wrap_awaitable(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        backend: AsyncIOBackend,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        future = event_loop.create_future()
+        future.set_result(mocker.sentinel.ret_val)
+
+        # Act
+        ret_val = await backend.ignore_cancellation(future)
+
+        # Assert
+        assert ret_val is mocker.sentinel.ret_val
+
+    async def test____ignore_cancellation____create_task_failed(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        backend: AsyncIOBackend,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        awaitable = mocker.async_stub()
+        awaitable.return_value = None
+        task_factory = mocker.stub()
+        exc = Exception("error")
+        task_factory.side_effect = exc
+
+        # Act & Assert
+        with temporary_task_factory(event_loop, task_factory):
+            with pytest.raises(Exception) as exc_info:
+                await backend.ignore_cancellation(awaitable())
+
+            assert exc_info.value is exc
+            awaitable.assert_not_awaited()
+
     async def test____ignore_cancellation____not_a_coroutine(
         self,
         backend: AsyncIOBackend,
@@ -171,10 +209,10 @@ class TestAsyncIOBackend:
         mock_asyncio_is_coroutine: MagicMock = mocker.patch("asyncio.iscoroutine", autospec=True, return_value=False)
 
         # Act & Assert
-        with pytest.raises(TypeError, match=r"^Expected a coroutine object$"):
+        with pytest.raises(TypeError, match=r"^Expected an awaitable object$"):
             await backend.ignore_cancellation(mocker.sentinel.coroutine)
 
-        mock_asyncio_is_coroutine.assert_called_once_with(mocker.sentinel.coroutine)
+        mock_asyncio_is_coroutine.assert_not_called()
 
     async def test____get_current_task____compute_task_info(
         self,

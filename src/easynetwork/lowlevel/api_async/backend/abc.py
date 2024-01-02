@@ -700,7 +700,7 @@ class AsyncBackend(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    async def ignore_cancellation(self, coroutine: Coroutine[Any, Any, _T_co]) -> _T_co:
+    async def ignore_cancellation(self, coroutine: Awaitable[_T_co]) -> _T_co:
         """
         Protect a :term:`coroutine` from being cancelled.
 

@@ -161,3 +161,14 @@ def temporary_exception_handler(
         stack.callback(event_loop.set_exception_handler, event_loop.get_exception_handler())
         event_loop.set_exception_handler(handler)
         yield
+
+
+@contextlib.contextmanager
+def temporary_task_factory(
+    event_loop: asyncio.AbstractEventLoop,
+    task_factory: asyncio.events._TaskFactory | None,
+) -> Iterator[None]:
+    with contextlib.ExitStack() as stack:
+        stack.callback(event_loop.set_task_factory, event_loop.get_task_factory())
+        event_loop.set_task_factory(task_factory)
+        yield
