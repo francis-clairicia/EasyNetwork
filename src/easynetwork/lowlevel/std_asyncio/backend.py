@@ -27,7 +27,7 @@ import math
 import os
 import socket as _socket
 import sys
-from collections.abc import Callable, Coroutine, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, NoReturn, ParamSpec, TypeVar
 
 try:
@@ -90,7 +90,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
     def get_cancelled_exc_class(self) -> type[BaseException]:
         return asyncio.CancelledError
 
-    async def ignore_cancellation(self, coroutine: Coroutine[Any, Any, _T_co]) -> _T_co:
+    async def ignore_cancellation(self, coroutine: Awaitable[_T_co]) -> _T_co:
         return await TaskUtils.cancel_shielded_await(coroutine)
 
     def open_cancel_scope(self, *, deadline: float = math.inf) -> CancelScope:
