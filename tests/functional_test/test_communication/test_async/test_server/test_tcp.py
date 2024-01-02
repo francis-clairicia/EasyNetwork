@@ -269,9 +269,23 @@ class RequestRefusedHandler(AsyncStreamRequestHandler[str, str]):
 
 class ErrorInRequestHandler(AsyncStreamRequestHandler[str, str]):
     mute_thrown_exception: bool = False
+    read_on_connection: bool = False
 
-    async def on_connection(self, client: AsyncStreamClient[str]) -> None:
+    async def on_connection(self, client: AsyncStreamClient[str]) -> AsyncGenerator[None, str]:
         await client.send_packet("milk")
+        if not self.read_on_connection:
+            return
+        try:
+            request = yield
+        except Exception as exc:
+            msg = f"{exc.__class__.__name__}: {exc}"
+            if exc.__cause__:
+                msg = f"{msg} (caused by {exc.__cause__.__class__.__name__}: {exc.__cause__})"
+            await client.send_packet(msg)
+            if not self.mute_thrown_exception:
+                raise
+        else:
+            await client.send_packet(request)
 
     async def handle(self, client: AsyncStreamClient[str]) -> AsyncGenerator[None, str]:
         try:
@@ -702,7 +716,8 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         # ECONNRESET not logged
         assert len(caplog.records) == 0
 
-    @pytest.mark.parametrize("mute_thrown_exception", [False, True])
+    @pytest.mark.parametrize("mute_thrown_exception", [False, True], ids=lambda p: f"mute_thrown_exception=={p}")
+    @pytest.mark.parametrize("read_on_connection", [False, True], ids=lambda p: f"read_on_connection=={p}")
     @pytest.mark.parametrize("request_handler", [ErrorInRequestHandler], indirect=True)
     @pytest.mark.parametrize(
         "incremental_serializer",
@@ -715,6 +730,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     async def test____serve_forever____internal_error(
         self,
         mute_thrown_exception: bool,
+        read_on_connection: bool,
         request_handler: ErrorInRequestHandler,
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
         caplog: pytest.LogCaptureFixture,
@@ -724,6 +740,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         if not mute_thrown_exception:
             logger_crash_maximum_nb_lines[LOGGER.name] = 3
         request_handler.mute_thrown_exception = mute_thrown_exception
+        request_handler.read_on_connection = read_on_connection
         reader, writer = await client_factory()
 
         expected_messages = {

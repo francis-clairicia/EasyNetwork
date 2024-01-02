@@ -195,27 +195,27 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_T_Request,
                     return
 
                 protocol = self.__protocol
+                parse_datagram = self.__parse_datagram
                 action: _asyncgen.AsyncGenAction[None, _T_Request]
+
+                try:
+                    await parse_datagram(datagram_queue.popleft(), protocol).asend(request_handler_generator)
+                except StopAsyncIteration:
+                    return
+
                 while True:
                     try:
-                        if not datagram_queue:
+                        if datagram_queue:
+                            # Always handle one request at a time
+                            await current_async_backend().cancel_shielded_coro_yield()
+                        else:
                             with client_manager.set_client_state(address, _ClientState.TASK_WAITING):
                                 await condition.wait()
                             client_manager.check_datagram_queue_not_empty(datagram_queue)
-                        datagram = datagram_queue.popleft()
-                        try:
-                            request = protocol.build_packet_from_datagram(datagram)
-                        except DatagramProtocolParseError:
-                            raise
-                        except Exception as exc:
-                            raise RuntimeError("protocol.build_packet_from_datagram() crashed") from exc
-                        else:
-                            action = _asyncgen.SendAction(request)
-                            del request
-                        finally:
-                            del datagram
                     except BaseException as exc:
                         action = _asyncgen.ThrowAction(exc)
+                    else:
+                        action = parse_datagram(datagram_queue.popleft(), protocol)
                     try:
                         await action.asend(request_handler_generator)
                     except StopAsyncIteration:
@@ -270,6 +270,25 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_T_Request,
     ) -> None:
         if exc_type is not None:
             datagram_queue.clear()
+
+    @staticmethod
+    def __parse_datagram(
+        datagram: bytes,
+        protocol: protocol_module.DatagramProtocol[_T_Response, _T_Request],
+    ) -> _asyncgen.AsyncGenAction[None, _T_Request]:
+        try:
+            try:
+                request = protocol.build_packet_from_datagram(datagram)
+            except DatagramProtocolParseError:
+                raise
+            except Exception as exc:
+                raise RuntimeError("protocol.build_packet_from_datagram() crashed") from exc
+            else:
+                return _asyncgen.SendAction(request)
+        except BaseException as exc:
+            return _asyncgen.ThrowAction(exc)
+        finally:
+            del datagram
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:

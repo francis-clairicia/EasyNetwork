@@ -27,6 +27,7 @@ from ...._typevars import _T_Request, _T_Response
 from ....exceptions import UnsupportedOperation
 from ... import _asyncgen, _stream, _utils, typed_attr
 from ..backend.abc import TaskGroup
+from ..backend.factory import current_async_backend
 from ..transports import abc as transports, utils as transports_utils
 
 
@@ -184,6 +185,9 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_T_Request, _
                         break
                     finally:
                         del action
+
+                    # Always handle one request at a time
+                    await current_async_backend().cancel_shielded_coro_yield()
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:

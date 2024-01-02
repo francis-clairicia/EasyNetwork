@@ -382,6 +382,10 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
                                 await action.asend(_on_connection_hook)
                             except StopAsyncIteration:
                                 break
+                            except BaseException as exc:
+                                # Remove action.asend() frames
+                                _utils.remove_traceback_frames_in_place(exc, 2)
+                                raise
                             finally:
                                 del action
             else:
@@ -418,6 +422,10 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
                             await action.asend(request_handler_generator)
                         except StopAsyncIteration:
                             break
+                        except BaseException as exc:
+                            # Remove action.asend() frames
+                            _utils.remove_traceback_frames_in_place(exc, 2)
+                            raise
                         finally:
                             del action
 
