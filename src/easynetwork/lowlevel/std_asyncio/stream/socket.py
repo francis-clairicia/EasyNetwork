@@ -29,6 +29,7 @@ from ....exceptions import UnsupportedOperation
 from ... import socket as socket_tools
 from ...api_async.transports import abc as transports
 from ..socket import AsyncSocket
+from ..tasks import TaskUtils
 
 if TYPE_CHECKING:
     import asyncio.trsock
@@ -110,7 +111,7 @@ class AsyncioTransportStreamSocketAdapter(transports.AsyncStreamTransport):
         if not self.__writer.can_write_eof():
             raise UnsupportedOperation("transport does not support sending EOF")
         self.__writer.write_eof()
-        await asyncio.sleep(0)
+        await TaskUtils.coro_yield()
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:

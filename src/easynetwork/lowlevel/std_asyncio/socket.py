@@ -116,6 +116,7 @@ class AsyncSocket:
         listener_socket = self.__check_not_closed()
         with self.__conflict_detection("accept"):
             client_socket, _ = await self.__loop.sock_accept(listener_socket)
+            await TaskUtils.cancel_shielded_coro_yield()
             return client_socket
 
     async def sendall(self, data: ReadableBuffer, /) -> None:
@@ -151,7 +152,9 @@ class AsyncSocket:
     async def recv(self, bufsize: int, /) -> bytes:
         socket = self.__check_not_closed()
         with self.__conflict_detection("recv"):
-            return await self.__loop.sock_recv(socket, bufsize)
+            data = await self.__loop.sock_recv(socket, bufsize)
+            await TaskUtils.cancel_shielded_coro_yield()
+            return data
 
     async def recv_into(self, buffer: WriteableBuffer, /) -> int:
         socket = self.__check_not_closed()
@@ -161,12 +164,16 @@ class AsyncSocket:
             # garbage collector clears the object.
             buffer = memoryview(buffer)
 
-            return await self.__loop.sock_recv_into(socket, buffer)
+            nbytes = await self.__loop.sock_recv_into(socket, buffer)
+            await TaskUtils.cancel_shielded_coro_yield()
+            return nbytes
 
     async def recvfrom(self, bufsize: int, /) -> tuple[bytes, _socket._RetAddress]:
         socket = self.__check_not_closed()
         with self.__conflict_detection("recv"):
-            return await self.__loop.sock_recvfrom(socket, bufsize)
+            data_and_address = await self.__loop.sock_recvfrom(socket, bufsize)
+            await TaskUtils.cancel_shielded_coro_yield()
+            return data_and_address
 
     async def shutdown(self, how: int, /) -> None:
         TaskUtils.check_current_event_loop(self.__loop)

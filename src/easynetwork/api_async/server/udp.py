@@ -262,6 +262,10 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
                         await action.asend(request_handler_generator)
                     except StopAsyncIteration:
                         return
+                    except BaseException as exc:
+                        # Remove action.asend() frames
+                        _utils.remove_traceback_frames_in_place(exc, 2)
+                        raise
                     finally:
                         del action
 
