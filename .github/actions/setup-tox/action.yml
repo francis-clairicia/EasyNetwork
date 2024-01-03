@@ -20,7 +20,13 @@ runs:
         # cache: true
         # cache-dependency-path: './pdm.lock'
     - name: Install dependencies
-      run: pdm sync --global --project=. --no-self --dev --group=tox
+      ### This command fails at least 1 in 100 times on Windows
+      # run: pdm sync --global --project=. --no-self --dev --group=tox
+      run: |
+        pdm export --dev --group tox --format requirements --without-hashes --output requirements-tox.txt
+        pip install -r requirements-tox.txt
+      env:
+        PDM_USE_VENV: False
       shell: bash
     - name: Disable tox parallel spinner by default
       run: echo "TOX_PARALLEL_NO_SPINNER=1" >> $GITHUB_ENV
