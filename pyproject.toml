@@ -112,7 +112,7 @@ test = [
     "pytest-asyncio~=0.21.0",
     "trove-classifiers>=2023.11.9",
     "trustme~=1.0",
-    "pytest-retry~=1.5",
+    "pytest-retry~=1.6",
 ]
 coverage = [
     "coverage~=7.0",
