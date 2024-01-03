@@ -357,7 +357,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
             del lowlevel_client
 
             logger.log(self.__client_connection_log_level, "Accepted new connection (address = %s)", client_address)
-            client_exit_stack.callback(self.__logger.log, self.__client_connection_log_level, "%s disconnected", client_address)
+            client_exit_stack.callback(logger.log, self.__client_connection_log_level, "%s disconnected", client_address)
             client_exit_stack.push_async_callback(client._force_close)
 
             request_handler_generator: AsyncGenerator[None, _T_Request]
@@ -397,7 +397,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
                 try:
                     await self.__request_handler.on_disconnection(client)
                 except* ConnectionError:
-                    self.__logger.warning("ConnectionError raised in request_handler.on_disconnection()")
+                    logger.warning("ConnectionError raised in request_handler.on_disconnection()")
 
             client_exit_stack.push_async_callback(disconnect_client)
 
@@ -428,6 +428,9 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
                             raise
                         finally:
                             del action
+
+                # Always handle one request at a time
+                await current_async_backend().coro_yield()
 
     def __attach_server(self) -> None:
         self.__active_tasks += 1

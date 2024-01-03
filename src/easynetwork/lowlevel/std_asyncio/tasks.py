@@ -482,13 +482,15 @@ class TaskUtils:
 
     @classmethod
     async def cancel_shielded_coro_yield(cls) -> None:
-        current_task: asyncio.Task[Any] = cls.current_asyncio_task()
-        try:
-            await cls.coro_yield()
-        except asyncio.CancelledError as exc:
-            CancelScope._reschedule_delayed_task_cancel(current_task, _get_cancelled_error_message(exc))
-        finally:
-            del current_task
+        # Open a scope in order to check pending cancellations at the end.
+        with CancelScope():
+            current_task: asyncio.Task[Any] = cls.current_asyncio_task()
+            try:
+                await cls.coro_yield()
+            except asyncio.CancelledError as exc:
+                CancelScope._reschedule_delayed_task_cancel(current_task, _get_cancelled_error_message(exc))
+            finally:
+                del current_task
 
     @classmethod
     async def cancel_shielded_await(cls, coroutine: Awaitable[_T_co]) -> _T_co:
