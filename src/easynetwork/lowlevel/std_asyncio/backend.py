@@ -48,7 +48,7 @@ from ._asyncio_utils import (
     resolve_local_addresses,
 )
 from .datagram.endpoint import create_datagram_endpoint
-from .datagram.listener import AsyncioTransportDatagramListenerSocketAdapter, RawDatagramListenerSocketAdapter
+from .datagram.listener import DatagramListenerSocketAdapter
 from .datagram.socket import AsyncioTransportDatagramSocketAdapter, RawDatagramSocketAdapter
 from .stream.listener import AcceptedSocketFactory, AcceptedSSLSocketFactory, ListenerSocketAdapter
 from .stream.socket import AsyncioTransportStreamSocketAdapter, RawStreamSocketAdapter
@@ -215,11 +215,11 @@ class AsyncIOBackend(AbstractAsyncBackend):
         backlog: int,
         *,
         reuse_port: bool = False,
-    ) -> Sequence[ListenerSocketAdapter[AsyncioTransportStreamSocketAdapter | RawStreamSocketAdapter]]:
+    ) -> Sequence[ListenerSocketAdapter[AsyncioTransportStreamSocketAdapter]]:
         sockets = await self._create_tcp_socket_listeners(host, port, backlog, reuse_port=reuse_port)
 
         loop = asyncio.get_running_loop()
-        factory = AcceptedSocketFactory(use_asyncio_transport=self.using_asyncio_transports())
+        factory = AcceptedSocketFactory()
         return [ListenerSocketAdapter(sock, loop, factory) for sock in sockets]
 
     async def create_ssl_over_tcp_listeners(
@@ -320,7 +320,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
         port: int,
         *,
         reuse_port: bool = False,
-    ) -> Sequence[AsyncioTransportDatagramListenerSocketAdapter] | Sequence[RawDatagramListenerSocketAdapter]:
+    ) -> Sequence[DatagramListenerSocketAdapter]:
         loop = asyncio.get_running_loop()
 
         hosts: Sequence[str | None]
@@ -347,9 +347,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
             reuse_port=reuse_port,
         )
 
-        if not self.using_asyncio_transports():
-            return [RawDatagramListenerSocketAdapter(sock, loop) for sock in sockets]
-        return [AsyncioTransportDatagramListenerSocketAdapter(await create_datagram_endpoint(sock=sock)) for sock in sockets]
+        return [DatagramListenerSocketAdapter(await create_datagram_endpoint(sock=sock)) for sock in sockets]
 
     def create_lock(self) -> asyncio.Lock:
         return asyncio.Lock()

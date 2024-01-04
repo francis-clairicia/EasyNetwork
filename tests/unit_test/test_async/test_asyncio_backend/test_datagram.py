@@ -14,10 +14,7 @@ from easynetwork.lowlevel.std_asyncio.datagram.endpoint import (
     DatagramEndpointProtocol,
     create_datagram_endpoint,
 )
-from easynetwork.lowlevel.std_asyncio.datagram.listener import (
-    AsyncioTransportDatagramListenerSocketAdapter,
-    RawDatagramListenerSocketAdapter,
-)
+from easynetwork.lowlevel.std_asyncio.datagram.listener import DatagramListenerSocketAdapter
 from easynetwork.lowlevel.std_asyncio.datagram.socket import AsyncioTransportDatagramSocketAdapter, RawDatagramSocketAdapter
 
 import pytest
@@ -381,31 +378,6 @@ class TestDatagramEndpoint:
         mock_asyncio_exception_queue.get_nowait.assert_called_once_with()
         mock_asyncio_transport.sendto.assert_called_once_with(b"some data", address)
         mock_asyncio_protocol._drain_helper.assert_awaited_once_with()
-
-    @pytest.mark.parametrize("address", [("127.0.0.1", 12345), None], ids=repr)
-    async def test____sendto____transport_already_closed(
-        self,
-        endpoint: DatagramEndpoint,
-        address: tuple[str, int] | None,
-        mock_asyncio_transport: MagicMock,
-        mock_asyncio_protocol: MagicMock,
-        mock_asyncio_exception_queue: MagicMock,
-    ) -> None:
-        # Arrange
-        from errno import ECONNABORTED
-
-        mock_asyncio_transport.is_closing.return_value = True
-        mock_asyncio_exception_queue.get_nowait.side_effect = asyncio.QueueEmpty
-
-        # Act
-        with pytest.raises(OSError) as exc_info:
-            await endpoint.sendto(b"some data", address)
-
-        # Assert
-        assert exc_info.value.errno == ECONNABORTED
-        mock_asyncio_exception_queue.get_nowait.assert_called_once()
-        mock_asyncio_transport.sendto.assert_not_called()
-        mock_asyncio_protocol._drain_helper.assert_not_awaited()
 
     async def test____get_extra_info____get_transport_extra_info(
         self,
@@ -821,7 +793,7 @@ class TestAsyncioTransportDatagramSocketAdapter(BaseTestAsyncioTransportDatagram
 
 
 @pytest.mark.asyncio
-class TestAsyncioTransportDatagramListenerSocketAdapter(BaseTestAsyncioTransportDatagramSocket):
+class TestDatagramListenerSocketAdapter(BaseTestAsyncioTransportDatagramSocket):
     @pytest.fixture
     @classmethod
     def mock_udp_socket(cls, mock_udp_socket: MagicMock) -> MagicMock:
@@ -839,12 +811,12 @@ class TestAsyncioTransportDatagramListenerSocketAdapter(BaseTestAsyncioTransport
         }
 
     @classmethod
-    def socket_factory(cls, mock_endpoint: MagicMock) -> AsyncioTransportDatagramListenerSocketAdapter:
-        return AsyncioTransportDatagramListenerSocketAdapter(mock_endpoint)
+    def socket_factory(cls, mock_endpoint: MagicMock) -> DatagramListenerSocketAdapter:
+        return DatagramListenerSocketAdapter(mock_endpoint)
 
     async def test____recv_from____read_from_reader(
         self,
-        socket: AsyncioTransportDatagramListenerSocketAdapter,
+        socket: DatagramListenerSocketAdapter,
         mock_endpoint: MagicMock,
     ) -> None:
         # Arrange
@@ -861,7 +833,7 @@ class TestAsyncioTransportDatagramListenerSocketAdapter(BaseTestAsyncioTransport
 
     async def test____send_to____write_and_drain(
         self,
-        socket: AsyncioTransportDatagramListenerSocketAdapter,
+        socket: DatagramListenerSocketAdapter,
         mock_endpoint: MagicMock,
     ) -> None:
         # Arrange
@@ -874,7 +846,7 @@ class TestAsyncioTransportDatagramListenerSocketAdapter(BaseTestAsyncioTransport
 
     async def test____get_extra_info____returns_socket_info(
         self,
-        socket: AsyncioTransportDatagramListenerSocketAdapter,
+        socket: DatagramListenerSocketAdapter,
         mock_udp_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
@@ -1008,71 +980,3 @@ class TestRawDatagramSocketAdapter(BaseTestRawDatagramSocket):
         assert socket.extra(SocketAttribute.family) == mock_udp_socket.family
         assert socket.extra(SocketAttribute.sockname) == ("127.0.0.1", 11111)
         assert socket.extra(SocketAttribute.peername) == ("127.0.0.1", 12345)
-
-
-@pytest.mark.asyncio
-class TestRawDatagramListenerSocketAdapter(BaseTestRawDatagramSocket):
-    @pytest.fixture(autouse=True)
-    @staticmethod
-    def mock_async_socket_cls(mock_async_socket: MagicMock, mocker: MockerFixture) -> MagicMock:
-        return mocker.patch(f"{RawDatagramListenerSocketAdapter.__module__}.AsyncSocket", return_value=mock_async_socket)
-
-    @pytest.fixture
-    @classmethod
-    def mock_udp_socket(cls, mock_udp_socket: MagicMock) -> MagicMock:
-        cls.set_local_address_to_socket_mock(mock_udp_socket, mock_udp_socket.family, ("127.0.0.1", 11111))
-        cls.configure_socket_mock_to_raise_ENOTCONN(mock_udp_socket)
-        return mock_udp_socket
-
-    @classmethod
-    def socket_factory(
-        cls,
-        mock_udp_socket: MagicMock,
-        event_loop: asyncio.AbstractEventLoop,
-    ) -> RawDatagramListenerSocketAdapter:
-        return RawDatagramListenerSocketAdapter(mock_udp_socket, event_loop)
-
-    async def test____recv_from____returns_data_from_async_socket(
-        self,
-        socket: RawDatagramListenerSocketAdapter,
-        mock_async_socket: MagicMock,
-    ) -> None:
-        # Arrange
-        mock_async_socket.recvfrom.return_value = (b"data", ("127.0.0.1", 12345))
-
-        # Act
-        data, address = await socket.recv_from()
-
-        # Assert
-        assert data == b"data"
-        assert address == ("127.0.0.1", 12345)
-        mock_async_socket.recvfrom.assert_awaited_once_with(MAX_DATAGRAM_BUFSIZE)
-
-    async def test____send_to____sends_data_to_async_socket(
-        self,
-        socket: RawDatagramListenerSocketAdapter,
-        mock_async_socket: MagicMock,
-    ) -> None:
-        # Arrange
-        mock_async_socket.sendto.return_value = None
-
-        # Act
-        await socket.send_to(b"data", ("127.0.0.1", 12345))
-
-        # Assert
-        mock_async_socket.sendto.assert_awaited_once_with(b"data", ("127.0.0.1", 12345))
-        mock_async_socket.sendall.assert_not_called()
-
-    async def test____get_extra_info____returns_socket_info(
-        self,
-        socket: RawDatagramSocketAdapter,
-        mock_udp_socket: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-
-        # Act & Assert
-        assert socket.extra(SocketAttribute.socket) is mock_udp_socket
-        assert socket.extra(SocketAttribute.family) == mock_udp_socket.family
-        assert socket.extra(SocketAttribute.sockname) == ("127.0.0.1", 11111)
-        assert socket.extra(SocketAttribute.peername, mocker.sentinel.no_value) is mocker.sentinel.no_value

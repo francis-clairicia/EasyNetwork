@@ -17,17 +17,14 @@
 
 from __future__ import annotations
 
-__all__ = ["AsyncioTransportDatagramListenerSocketAdapter", "RawDatagramListenerSocketAdapter"]
+__all__ = ["DatagramListenerSocketAdapter"]
 
 import asyncio
-import asyncio.streams
-import socket as _socket
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any, final
 
-from ... import constants, socket as socket_tools
+from ... import socket as socket_tools
 from ...api_async.transports import abc as transports
-from ..socket import AsyncSocket
 
 if TYPE_CHECKING:
     import asyncio.trsock
@@ -36,7 +33,7 @@ if TYPE_CHECKING:
 
 
 @final
-class AsyncioTransportDatagramListenerSocketAdapter(transports.AsyncDatagramListener[tuple[Any, ...]]):
+class DatagramListenerSocketAdapter(transports.AsyncDatagramListener[tuple[Any, ...]]):
     __slots__ = (
         "__endpoint",
         "__socket",
@@ -72,34 +69,4 @@ class AsyncioTransportDatagramListenerSocketAdapter(transports.AsyncDatagramList
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         socket = self.__socket
-        return socket_tools._get_socket_extra(socket, wrap_in_proxy=False)
-
-
-@final
-class RawDatagramListenerSocketAdapter(transports.AsyncDatagramListener[tuple[Any, ...]]):
-    __slots__ = ("__socket",)
-
-    def __init__(self, socket: _socket.socket, loop: asyncio.AbstractEventLoop) -> None:
-        super().__init__()
-
-        if socket.type != _socket.SOCK_DGRAM:
-            raise ValueError("A 'SOCK_DGRAM' socket is expected")
-
-        self.__socket: AsyncSocket = AsyncSocket(socket, loop)
-
-    def is_closing(self) -> bool:
-        return self.__socket.is_closing()
-
-    async def aclose(self) -> None:
-        return await self.__socket.aclose()
-
-    async def recv_from(self) -> tuple[bytes, tuple[Any, ...]]:
-        return await self.__socket.recvfrom(constants.MAX_DATAGRAM_BUFSIZE)
-
-    async def send_to(self, data: bytes | bytearray | memoryview, address: tuple[Any, ...]) -> None:
-        await self.__socket.sendto(data, address)
-
-    @property
-    def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
-        socket = self.__socket.socket
         return socket_tools._get_socket_extra(socket, wrap_in_proxy=False)

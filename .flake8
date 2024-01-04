@@ -30,3 +30,4 @@ per-file-ignores =
     tests/*.py:DALL001
     docs/*.py:DALL001
     docs/source/_include/*.py:F841,DALL001
+    benchmark/*.py:DALL001

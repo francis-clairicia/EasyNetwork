@@ -124,8 +124,6 @@ class DatagramEndpoint:
 
     async def sendto(self, data: bytes | bytearray | memoryview, address: tuple[Any, ...] | None = None, /) -> None:
         self.__check_exceptions()
-        if self.__transport.is_closing():
-            raise _utils.error_from_errno(_errno.ECONNABORTED)
         self.__transport.sendto(data, address)
         await self.__protocol._drain_helper()
 

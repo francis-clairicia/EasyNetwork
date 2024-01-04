@@ -25,7 +25,6 @@ from easynetwork.lowlevel.socket import SocketAddress, enable_socket_linger
 from easynetwork.lowlevel.std_asyncio._asyncio_utils import create_connection
 from easynetwork.lowlevel.std_asyncio.backend import AsyncIOBackend
 from easynetwork.lowlevel.std_asyncio.stream.listener import ListenerSocketAdapter
-from easynetwork.lowlevel.std_asyncio.stream.socket import AsyncioTransportStreamSocketAdapter, RawStreamSocketAdapter
 from easynetwork.protocol import StreamProtocol
 
 import pytest
@@ -43,7 +42,7 @@ class NoListenerErrorBackend(AsyncIOBackend):
         backlog: int,
         *,
         reuse_port: bool = False,
-    ) -> Sequence[ListenerSocketAdapter[AsyncioTransportStreamSocketAdapter | RawStreamSocketAdapter]]:
+    ) -> Sequence[ListenerSocketAdapter[Any]]:
         return []
 
     async def create_ssl_over_tcp_listeners(
@@ -56,7 +55,7 @@ class NoListenerErrorBackend(AsyncIOBackend):
         ssl_shutdown_timeout: float,
         *,
         reuse_port: bool = False,
-    ) -> Sequence[ListenerSocketAdapter[AsyncioTransportStreamSocketAdapter]]:
+    ) -> Sequence[ListenerSocketAdapter[Any]]:
         return []
 
 
@@ -352,7 +351,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         ssl_handshake_timeout: float | None,
         caplog: pytest.LogCaptureFixture,
         logger_crash_threshold_level: dict[str, int],
-        use_asyncio_transport: bool,  # Only here for dependency
     ) -> AsyncIterator[MyAsyncTCPServer]:
         async with MyAsyncTCPServer(
             localhost_ip,
@@ -431,7 +429,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
 
     @pytest.mark.parametrize("host", [None, ""], ids=repr)
     @pytest.mark.parametrize("log_client_connection", [True, False], ids=lambda p: f"log_client_connection=={p}")
-    @pytest.mark.usefixtures("use_asyncio_transport")
     async def test____dunder_init____bind_to_all_available_interfaces(
         self,
         host: str | None,

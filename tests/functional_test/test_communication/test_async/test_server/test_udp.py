@@ -14,16 +14,12 @@ from easynetwork.exceptions import BaseProtocolParseError, ClientClosedError, Da
 from easynetwork.lowlevel.socket import SocketAddress
 from easynetwork.lowlevel.std_asyncio.backend import AsyncIOBackend
 from easynetwork.lowlevel.std_asyncio.datagram.endpoint import DatagramEndpoint, create_datagram_endpoint
-from easynetwork.lowlevel.std_asyncio.datagram.listener import (
-    AsyncioTransportDatagramListenerSocketAdapter,
-    RawDatagramListenerSocketAdapter,
-)
+from easynetwork.lowlevel.std_asyncio.datagram.listener import DatagramListenerSocketAdapter
 from easynetwork.protocol import DatagramProtocol
 
 import pytest
 import pytest_asyncio
 
-from .....pytest_plugins.asyncio_event_loop import EventLoop
 from .....tools import temporary_backend
 from .base import BaseTestAsyncServer
 
@@ -35,7 +31,7 @@ class NoListenerErrorBackend(AsyncIOBackend):
         port: int,
         *,
         reuse_port: bool = False,
-    ) -> Sequence[RawDatagramListenerSocketAdapter] | Sequence[AsyncioTransportDatagramListenerSocketAdapter]:
+    ) -> Sequence[DatagramListenerSocketAdapter]:
         return []
 
 
@@ -212,14 +208,6 @@ class MyAsyncUDPServer(AsyncUDPNetworkServer[str, str]):
 class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
     @pytest.fixture
     @staticmethod
-    def use_asyncio_transport(event_loop_name: EventLoop, use_asyncio_transport: bool) -> bool:
-        if not use_asyncio_transport:
-            if event_loop_name == EventLoop.UVLOOP:
-                pytest.xfail("uvloop runner does not implement the needed functions")
-        return use_asyncio_transport
-
-    @pytest.fixture
-    @staticmethod
     def request_handler(request: Any) -> AsyncDatagramRequestHandler[str, str]:
         request_handler_cls: type[AsyncDatagramRequestHandler[str, str]] = getattr(request, "param", MyAsyncUDPRequestHandler)
         return request_handler_cls()
@@ -232,7 +220,6 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         datagram_protocol: DatagramProtocol[str, str],
         caplog: pytest.LogCaptureFixture,
         logger_crash_threshold_level: dict[str, int],
-        use_asyncio_transport: bool,  # Only here for dependency
     ) -> AsyncIterator[MyAsyncUDPServer]:
         async with MyAsyncUDPServer(localhost_ip, 0, datagram_protocol, request_handler, logger=LOGGER) as server:
             assert not server.get_sockets()

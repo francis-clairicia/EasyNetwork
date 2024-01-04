@@ -32,7 +32,7 @@ from ...lowlevel._final import runtime_final_class
 from ...lowlevel.api_async.backend.factory import current_async_backend
 from ...lowlevel.api_async.servers import datagram as _datagram_server
 from ...lowlevel.api_async.transports.abc import AsyncDatagramListener
-from ...lowlevel.socket import INETSocketAttribute, SocketAddress, SocketProxy, new_socket_address
+from ...lowlevel.socket import INETSocketAttribute, ISocket, SocketAddress, SocketProxy, new_socket_address
 from ...protocol import DatagramProtocol
 from .abc import AbstractAsyncNetworkServer, SupportsEventSet
 from .handler import AsyncDatagramClient, AsyncDatagramRequestHandler, INETClientAttribute
@@ -308,7 +308,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
         try:
             client = clients_cache[address]
         except KeyError:
-            clients_cache[address] = client = _ClientAPI(address, server, self.__get_client_lock(server, address), self.__logger)
+            clients_cache[address] = client = _ClientAPI(address, server, self.__get_client_lock(server, address))
         return client
 
     @_utils.inherit_doc(AbstractAsyncNetworkServer)
@@ -339,11 +339,11 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
 class _ClientAPI(AsyncDatagramClient[_T_Response]):
     __slots__ = (
         "__server_ref",
+        "__socket",
         "__socket_proxy",
         "__send_lock",
         "__address",
         "__h",
-        "__logger",
     )
 
     def __init__(
@@ -351,14 +351,13 @@ class _ClientAPI(AsyncDatagramClient[_T_Response]):
         address: SocketAddress,
         server: _datagram_server.AsyncDatagramServer[Any, _T_Response, Any],
         send_lock: ILock,
-        logger: logging.Logger,
     ) -> None:
         super().__init__()
         self.__server_ref: weakref.ref[_datagram_server.AsyncDatagramServer[Any, _T_Response, Any]] = weakref.ref(server)
-        self.__socket_proxy: SocketProxy = SocketProxy(server.extra(INETSocketAttribute.socket))
+        self.__socket: ISocket = server.extra(INETSocketAttribute.socket)
+        self.__socket_proxy: SocketProxy = SocketProxy(self.__socket)
         self.__h: int | None = None
         self.__send_lock: ILock = send_lock
-        self.__logger: logging.Logger = logger
         self.__address: SocketAddress = address
 
     def __repr__(self) -> str:
@@ -378,12 +377,10 @@ class _ClientAPI(AsyncDatagramClient[_T_Response]):
         return (server := self.__server_ref()) is None or server.is_closing()
 
     async def send_packet(self, packet: _T_Response, /) -> None:
-        self.__logger.debug("A datagram will be sent to %s", self.__address)
         async with self.__send_lock:
             server = self.__check_closed()
             await server.send_packet_to(packet, self.__address)
-            _utils.check_real_socket_state(self.__socket_proxy)
-            self.__logger.debug("Datagram successfully sent to %s.", self.__address)
+            _utils.check_real_socket_state(self.__socket)
 
     def __check_closed(self) -> _datagram_server.AsyncDatagramServer[Any, _T_Response, Any]:
         server = self.__server_ref()

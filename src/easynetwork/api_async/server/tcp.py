@@ -352,7 +352,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
             client_exit_stack.callback(self.__set_socket_linger_if_not_closed, lowlevel_client.extra(INETSocketAttribute.socket))
 
             logger: logging.Logger = self.__logger
-            client = _ConnectedClientAPI(client_address, lowlevel_client, logger)
+            client = _ConnectedClientAPI(client_address, lowlevel_client)
 
             del lowlevel_client
 
@@ -502,27 +502,26 @@ class _ConnectedClientAPI(AsyncStreamClient[_T_Response]):
         "__closed",
         "__send_lock",
         "__address",
+        "__socket",
         "__proxy",
-        "__logger",
     )
 
     def __init__(
         self,
         address: SocketAddress,
         client: _stream_server.AsyncStreamClient[_T_Response],
-        logger: logging.Logger,
     ) -> None:
         self.__client: _stream_server.AsyncStreamClient[_T_Response] = client
         self.__closed: bool = False
         self.__send_lock = current_async_backend().create_lock()
-        self.__logger: logging.Logger = logger
-        self.__proxy: SocketProxy = SocketProxy(client.extra(INETSocketAttribute.socket))
+        self.__socket: ISocket = client.extra(INETSocketAttribute.socket)
+        self.__proxy: SocketProxy = SocketProxy(self.__socket)
         self.__address: SocketAddress = address
 
         with contextlib.suppress(OSError):
-            set_tcp_nodelay(self.__proxy, True)
+            set_tcp_nodelay(self.__socket, True)
         with contextlib.suppress(OSError):
-            set_tcp_keepalive(self.__proxy, True)
+            set_tcp_keepalive(self.__socket, True)
 
     def __repr__(self) -> str:
         return f"<client with address {self.__address} at {id(self):#x}>"
@@ -541,17 +540,11 @@ class _ConnectedClientAPI(AsyncStreamClient[_T_Response]):
             await self.__client.aclose()
 
     async def send_packet(self, packet: _T_Response, /) -> None:
-        self.__check_closed()
-        self.__logger.debug("A response will be sent to %s", self.__address)
         async with self.__send_lock:
-            self.__check_closed()
+            if self.__closed:
+                raise ClientClosedError("Closed client")
             await self.__client.send_packet(packet)
-            _utils.check_real_socket_state(self.__proxy)
-            self.__logger.debug("Data sent to %s", self.__address)
-
-    def __check_closed(self) -> None:
-        if self.__closed:
-            raise ClientClosedError("Closed client")
+            _utils.check_real_socket_state(self.__socket)
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:

@@ -1,4 +1,4 @@
-exclude_dirs: ['tests']
+exclude_dirs: ['benchmark', 'tests']
 skips: [
   'B403',  # Imports of "pickle"
   'B610',  # This project does not use Django :)
