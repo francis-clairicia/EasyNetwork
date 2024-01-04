@@ -5,7 +5,7 @@
 groups = ["default", "bandit", "build", "cbor", "coverage", "dev", "doc", "encryption", "flake8", "format", "msgpack", "mypy", "pre-commit", "sniffio", "test", "tox", "types-encryption", "types-msgpack", "uvloop"]
 strategy = ["cross_platform", "inherit_metadata"]
 lock_version = "4.4.1"
-content_hash = "sha256:f6f47b15f09e82aba0041f5b747b8ce2d04a81ce43669bd7cf029a42e5bd485f"
+content_hash = "sha256:eea18b40acfffbbc48baab194118c4f07835242a2d08e6055e9e59905037c094"
 
 [[package]]
 name = "alabaster"
@@ -1889,7 +1889,7 @@ files = [
 
 [[package]]
 name = "tox-pdm"
-version = "0.7.0"
+version = "0.7.2"
 requires_python = ">=3.7"
 summary = "A plugin for tox that utilizes PDM as the package manager and installer"
 groups = ["tox"]
@@ -1897,8 +1897,8 @@ dependencies = [
     "tox>=4.0",
 ]
 files = [
-    {file = "tox_pdm-0.7.0-py3-none-any.whl", hash = "sha256:13b36536b29c94943ff2d2ae65eaf81ca6c7afbb5b7ba2ad7cb3738fc726d662"},
-    {file = "tox_pdm-0.7.0.tar.gz", hash = "sha256:8ecc5d04df73a329f435574222de632dc0ded36b79f27e55d6dab92e9d1741f5"},
+    {file = "tox_pdm-0.7.2-py3-none-any.whl", hash = "sha256:12f6215416b7acd00a80a9e7128f3dc3e3c89308d60707f5d0a24abdf83ac104"},
+    {file = "tox_pdm-0.7.2.tar.gz", hash = "sha256:a841a7e1e942a71805624703b9a6d286663bd6af79bba6130ba756975c315308"},
 ]
 
 [[package]]
