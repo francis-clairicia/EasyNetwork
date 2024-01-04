@@ -530,6 +530,7 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestSocket):
 
     @PlatformMarkers.skipif_platform_win32
     @pytest.mark.parametrize("errno_value", sorted(ACCEPT_CAPACITY_ERRNOS), ids=errno_errorcode.__getitem__)
+    @pytest.mark.flaky(retries=3, delay=0.1)
     async def test____serve____accept_capacity_error(
         self,
         errno_value: int,

@@ -81,7 +81,7 @@ uvloop = [
 ]
 tox = [
     "tox<5,>=4.0.8",
-    "tox-pdm~=0.7.0",
+    "tox-pdm~=0.7.2",
 ]
 format = [
     "isort!=5.11.0,>=5.10.1",
