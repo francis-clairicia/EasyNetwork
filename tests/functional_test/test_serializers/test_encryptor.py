@@ -122,11 +122,6 @@ class TestEncryptorSerializer(BaseTestIncrementalSerializer):
 
     #### Other
 
-    @pytest.fixture(scope="class")
-    @staticmethod
-    def oneshot_extra_data() -> bytes:
-        pytest.skip("Does not recognize extra data")
-
     def test____generate_key____create_url_safe_base64_encoded_bytes(self) -> None:
         # Arrange
         from base64 import urlsafe_b64decode

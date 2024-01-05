@@ -18,19 +18,28 @@ from __future__ import annotations
 
 __all__ = ["StringLineSerializer"]
 
+from collections.abc import Generator
 from typing import Literal, assert_never, final
 
-from ..exceptions import DeserializeError
+from ..exceptions import DeserializeError, IncrementalDeserializeError
 from ..lowlevel.constants import _DEFAULT_LIMIT
-from .base_stream import AutoSeparatedPacketSerializer
+from .abc import AbstractIncrementalPacketSerializer
+from .tools import GeneratorStreamReader
 
 
-class StringLineSerializer(AutoSeparatedPacketSerializer[str, str]):
+class StringLineSerializer(AbstractIncrementalPacketSerializer[str, str]):
     """
     A :term:`serializer` to handle ASCII-based protocols.
     """
 
-    __slots__ = ("__encoding", "__unicode_errors")
+    __slots__ = (
+        "__separator",
+        "__limit",
+        "__keep_end",
+        "__encoding",
+        "__unicode_errors",
+        "__debug",
+    )
 
     def __init__(
         self,
@@ -39,6 +48,7 @@ class StringLineSerializer(AutoSeparatedPacketSerializer[str, str]):
         encoding: str = "ascii",
         unicode_errors: str = "strict",
         limit: int = _DEFAULT_LIMIT,
+        keep_end: bool = False,
         debug: bool = False,
     ) -> None:
         r"""
@@ -54,6 +64,7 @@ class StringLineSerializer(AutoSeparatedPacketSerializer[str, str]):
             encoding: String encoding. Defaults to ``"ascii"``.
             unicode_errors: Controls how encoding errors are handled.
             limit: Maximum buffer size. Used in incremental serialization context.
+            keep_end: If :data:`True`, returned data will include the separator at the end.
             debug: If :data:`True`, add information to :exc:`.DeserializeError` via the ``error_info`` attribute.
 
         See Also:
@@ -69,9 +80,15 @@ class StringLineSerializer(AutoSeparatedPacketSerializer[str, str]):
                 separator = b"\r\n"
             case _:
                 assert_never(newline)
-        super().__init__(separator=separator, incremental_serialize_check_separator=False, limit=limit, debug=debug)
+        if limit <= 0:
+            raise ValueError("limit must be a positive integer")
+        super().__init__()
+        self.__separator: bytes = separator
+        self.__limit: int = limit
+        self.__keep_end: bool = bool(keep_end)
         self.__encoding: str = encoding
         self.__unicode_errors: str = unicode_errors
+        self.__debug: bool = bool(debug)
 
     @final
     def serialize(self, packet: str) -> bytes:
@@ -94,7 +111,6 @@ class StringLineSerializer(AutoSeparatedPacketSerializer[str, str]):
         Raises:
             TypeError: `packet` is not a :class:`str`.
             UnicodeError: Invalid string.
-            ValueError: `newline` found in `packet`.
 
         Returns:
             the byte sequence.
@@ -102,12 +118,32 @@ class StringLineSerializer(AutoSeparatedPacketSerializer[str, str]):
         Important:
             The output **does not** contain `newline`.
         """
-        if not isinstance(packet, str):
-            raise TypeError(f"Expected a string, got {packet!r}")
-        data = packet.encode(self.__encoding, self.__unicode_errors)
-        if self.separator in data:
-            raise ValueError("Newline found in string")
-        return data
+        if __debug__:
+            if not isinstance(packet, str):
+                raise TypeError(f"Expected a string, got {packet!r}")
+        return packet.encode(self.__encoding, self.__unicode_errors)
+
+    @final
+    def incremental_serialize(self, packet: str) -> Generator[bytes, None, None]:
+        """
+        Encodes the given string to bytes and appends `separator`.
+
+        See :meth:`.AbstractIncrementalPacketSerializer.incremental_serialize` documentation for details.
+
+        Raises:
+            TypeError: `packet` is not a :class:`str`.
+            UnicodeError: Invalid string.
+        """
+        if __debug__:
+            if not isinstance(packet, str):
+                raise TypeError(f"Expected a string, got {packet!r}")
+        data: bytes = packet.encode(self.__encoding, self.__unicode_errors)
+        if not data:
+            return
+        separator: bytes = self.__separator
+        if not data.endswith(separator):
+            data += separator
+        yield data
 
     @final
     def deserialize(self, data: bytes) -> str:
@@ -135,13 +171,13 @@ class StringLineSerializer(AutoSeparatedPacketSerializer[str, str]):
             the string.
 
         Important:
-            Trailing `newline` sequences are **removed**.
+            By default, trailing `newline` sequences are **removed**. This can be change by setting `keep_end` parameter to
+            :data:`True` at initialization.
         """
-        separator: bytes = self.separator
-        while data.endswith(separator):
-            data = data.removesuffix(separator)
-        if separator in data:
-            raise DeserializeError("Newline found in string")
+        if not self.__keep_end:
+            separator: bytes = self.separator
+            while data.endswith(separator):
+                data = data.removesuffix(separator)
         try:
             return data.decode(self.__encoding, self.__unicode_errors)
         except UnicodeError as exc:
@@ -151,6 +187,65 @@ class StringLineSerializer(AutoSeparatedPacketSerializer[str, str]):
             raise DeserializeError(msg) from exc
         finally:
             del data
+
+    @final
+    def incremental_deserialize(self) -> Generator[None, bytes, tuple[str, bytes]]:
+        """
+        Yields until `separator` is found and return the decoded string.
+
+        See :meth:`.AbstractIncrementalPacketSerializer.incremental_deserialize` documentation for details.
+
+        Raises:
+            LimitOverrunError: Reached buffer size limit.
+            IncrementalDeserializeError: :meth:`deserialize` raised :exc:`.DeserializeError`.
+            Exception: Any error raised by :meth:`deserialize`.
+        """
+        reader = GeneratorStreamReader()
+        data = yield from reader.read_until(self.__separator, limit=self.__limit, keep_end=self.__keep_end)
+        remainder = reader.read_all()
+
+        try:
+            packet = data.decode(self.__encoding, self.__unicode_errors)
+        except UnicodeError as exc:
+            msg = str(exc)
+            if self.debug:
+                raise IncrementalDeserializeError(msg, remainder, error_info={"data": data}) from exc
+            raise IncrementalDeserializeError(msg, remainder) from exc
+        finally:
+            del data
+        return packet, remainder
+
+    @property
+    @final
+    def separator(self) -> bytes:
+        """
+        Byte sequence that indicates the end of the token. Read-only attribute.
+        """
+        return self.__separator
+
+    @property
+    @final
+    def debug(self) -> bool:
+        """
+        The debug mode flag. Read-only attribute.
+        """
+        return self.__debug
+
+    @property
+    @final
+    def buffer_limit(self) -> int:
+        """
+        Maximum buffer size. Read-only attribute.
+        """
+        return self.__limit
+
+    @property
+    @final
+    def keep_end(self) -> bool:
+        """
+        Specifies whether or not to preserve the separator during deserialization. Read-only attribute.
+        """
+        return self.__keep_end
 
     @property
     @final

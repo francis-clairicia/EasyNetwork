@@ -204,8 +204,9 @@ class StructSerializer(AbstractStructSerializer[tuple[Any, ...], tuple[Any, ...]
     @final
     @_utils.inherit_doc(AbstractStructSerializer)
     def iter_values(self, packet: tuple[Any, ...], /) -> tuple[Any, ...]:
-        if not isinstance(packet, tuple):
-            raise TypeError(f"Expected a tuple instance, got {packet!r}")
+        if __debug__:
+            if not isinstance(packet, tuple):
+                raise TypeError(f"Expected a tuple instance, got {packet!r}")
         return packet
 
     @final
@@ -332,9 +333,10 @@ class NamedTupleStructSerializer(AbstractStructSerializer[_T_NamedTuple, _T_Name
         Returns:
             a `namedtuple_cls` instance.
         """
-        if not isinstance(packet, self.__namedtuple_cls):
-            namedtuple_name = self.__namedtuple_cls.__name__
-            raise TypeError(f"Expected a {namedtuple_name} instance, got {packet!r}")
+        if __debug__:
+            if not isinstance(packet, self.__namedtuple_cls):
+                namedtuple_name = self.__namedtuple_cls.__name__
+                raise TypeError(f"Expected a {namedtuple_name} instance, got {packet!r}")
         if (encoding := self.__encoding) is not None and self.__string_fields:
             string_fields: dict[str, str] = {field: getattr(packet, field) for field in self.__string_fields}
             unicode_errors: str = self.__unicode_errors

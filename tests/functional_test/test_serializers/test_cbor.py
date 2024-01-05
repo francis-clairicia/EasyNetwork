@@ -9,13 +9,13 @@ from easynetwork.serializers.cbor import CBOREncoderConfig, CBORSerializer
 
 import pytest
 
-from .base import BaseTestBufferedIncrementalSerializer
+from .base import BaseTestBufferedIncrementalSerializer, BaseTestSerializerExtraData
 from .samples.json import SAMPLES
 
 
 @final
 @pytest.mark.feature_cbor
-class TestCBORSerializer(BaseTestBufferedIncrementalSerializer):
+class TestCBORSerializer(BaseTestBufferedIncrementalSerializer, BaseTestSerializerExtraData):
     #### Serializers
 
     ENCODER_CONFIG = CBOREncoderConfig()

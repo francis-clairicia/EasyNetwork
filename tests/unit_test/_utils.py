@@ -5,7 +5,12 @@ import threading
 from collections.abc import Sequence
 from socket import AF_INET, AF_INET6, IPPROTO_TCP, IPPROTO_UDP, SOCK_DGRAM, SOCK_STREAM
 from types import TracebackType
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from unittest.mock import MagicMock
+
+    from pytest_mock import MockerFixture
 
 _DEFAULT_FAMILIES: Sequence[int] = (AF_INET6, AF_INET)
 
@@ -160,3 +165,19 @@ def datagram_addrinfo_list(
     families: Sequence[int] = _DEFAULT_FAMILIES,
 ) -> Sequence[tuple[int, int, int, str, tuple[Any, ...]]]:
     return __addrinfo_list(port, SOCK_DGRAM, IPPROTO_UDP, families)
+
+
+_original_import_module = __import__
+
+
+def mock_import_module_not_found(modules: set[str] | frozenset[str], mocker: MockerFixture) -> MagicMock:
+    modules = frozenset(modules)
+
+    def mock_import_side_effect(name: str, *args: Any) -> Any:
+        if name in modules:
+            raise ModuleNotFoundError(f"No module named {name!r}")
+        return _original_import_module(name, *args)
+
+    mock_import: MagicMock = mocker.patch("builtins.__import__")
+    mock_import.side_effect = mock_import_side_effect
+    return mock_import

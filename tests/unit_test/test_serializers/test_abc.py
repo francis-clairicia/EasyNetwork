@@ -260,7 +260,7 @@ class TestAutoSeparatedPacketSerializer:
 
         # Assert
         mock_serialize_func.assert_called_once_with(mocker.sentinel.packet)
-        assert data == [b"data\r\n" if check_separator else b"data\r\n\r\n"]
+        assert data == [b"data\r\n"]
 
     def test____incremental_serialize____remove_useless_trailing_separators(
         self,
@@ -280,7 +280,7 @@ class TestAutoSeparatedPacketSerializer:
 
         # Assert
         mock_serialize_func.assert_called_once_with(mocker.sentinel.packet)
-        assert data == [b"data\r\n" if check_separator else b"data\r\n\r\n\r\n\r\n\r\n"]
+        assert data == [b"data\r\n" if check_separator else b"data\r\n\r\n\r\n\r\n"]
 
     def test____incremental_serialize____does_not_remove_partial_separator_at_end(
         self,
@@ -300,7 +300,7 @@ class TestAutoSeparatedPacketSerializer:
 
         # Assert
         mock_serialize_func.assert_called_once_with(mocker.sentinel.packet)
-        assert data == [b"data\r\r\n" if check_separator else b"data\r\r\n\r\n"]
+        assert data == [b"data\r\r\n" if check_separator else b"data\r\r\n"]
 
     def test____incremental_serialize____error_if_separator_is_within_output(
         self,

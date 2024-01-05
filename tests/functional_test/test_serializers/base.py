@@ -104,6 +104,13 @@ class BaseTestSerializer(metaclass=ABCMeta):
         with pytest.raises(DeserializeError):
             _ = serializer_for_deserialization.deserialize(invalid_complete_data)
 
+
+class BaseTestSerializerExtraData(BaseTestSerializer):
+    @pytest.fixture(scope="class")
+    @staticmethod
+    def oneshot_extra_data() -> bytes:
+        return b"remaining_data"
+
     def test____deserialize____extra_data(
         self,
         serializer_for_deserialization: AbstractPacketSerializer[Any, Any],

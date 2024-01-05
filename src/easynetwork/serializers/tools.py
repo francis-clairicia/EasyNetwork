@@ -86,11 +86,12 @@ class GeneratorStreamReader:
         if size == 0:
             return b""
 
-        while not self.__buffer:
-            self.__buffer = bytes((yield))
+        buffer = self.__buffer
+        while not buffer:
+            self.__buffer = buffer = bytes((yield))
 
-        data = self.__buffer[:size]
-        self.__buffer = self.__buffer[size:]
+        data = buffer[:size]
+        self.__buffer = buffer[size:]
 
         return data
 
@@ -120,13 +121,15 @@ class GeneratorStreamReader:
         if n == 0:
             return b""
 
-        while not self.__buffer:
-            self.__buffer = bytes((yield))
-        while len(self.__buffer) < n:
-            self.__buffer += yield
+        buffer = self.__buffer
+        while not buffer:
+            self.__buffer = buffer = bytes((yield))
+        while len(buffer) < n:
+            buffer += yield
+            self.__buffer = buffer
 
-        data = self.__buffer[:n]
-        self.__buffer = self.__buffer[n:]
+        data = buffer[:n]
+        self.__buffer = buffer[n:]
 
         return data
 
@@ -170,16 +173,17 @@ class GeneratorStreamReader:
         if seplen < 1:
             raise ValueError("Empty separator")
 
-        while not self.__buffer:
-            self.__buffer = bytes((yield))
+        buffer = self.__buffer
+        while not buffer:
+            self.__buffer = buffer = bytes((yield))
 
         offset: int = 0
         sepidx: int = -1
         while True:
-            buflen = len(self.__buffer)
+            buflen = len(buffer)
 
             if buflen - offset >= seplen:
-                sepidx = self.__buffer.find(separator, offset)
+                sepidx = buffer.find(separator, offset)
 
                 if sepidx != -1:
                     break
@@ -187,20 +191,21 @@ class GeneratorStreamReader:
                 offset = buflen + 1 - seplen
                 if offset > limit:
                     msg = "Separator is not found, and chunk exceed the limit"
-                    raise LimitOverrunError(msg, self.__buffer, offset, separator)
+                    raise LimitOverrunError(msg, buffer, offset, separator)
 
-            self.__buffer += yield
+            buffer += yield
+            self.__buffer = buffer
 
         if sepidx > limit:
             msg = "Separator is found, but chunk is longer than limit"
-            raise LimitOverrunError(msg, self.__buffer, sepidx, separator)
+            raise LimitOverrunError(msg, buffer, sepidx, separator)
 
         offset = sepidx + seplen
         if keep_end:
-            data = self.__buffer[:offset]
+            data = buffer[:offset]
         else:
-            data = self.__buffer[:sepidx]
-        self.__buffer = self.__buffer[offset:]
+            data = buffer[:sepidx]
+        self.__buffer = buffer[offset:]
 
         return data
 

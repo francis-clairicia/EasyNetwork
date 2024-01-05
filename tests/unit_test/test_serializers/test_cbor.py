@@ -6,6 +6,7 @@ from easynetwork.serializers.cbor import CBORDecoderConfig, CBOREncoderConfig, C
 
 import pytest
 
+from .._utils import mock_import_module_not_found
 from .base import BaseSerializerConfigInstanceCheck
 
 if TYPE_CHECKING:
@@ -164,9 +165,7 @@ class TestCBORSerializerDependencies:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_import: MagicMock = mocker.patch("builtins.__import__")
-        original_error = ModuleNotFoundError()
-        mock_import.side_effect = original_error
+        mock_import: MagicMock = mock_import_module_not_found({"cbor2"}, mocker)
 
         # Act
         with pytest.raises(ModuleNotFoundError) as exc_info:
@@ -176,7 +175,7 @@ class TestCBORSerializerDependencies:
                 mocker.stop(mock_import)
 
         # Assert
-        mock_import.assert_called_once_with("cbor2", mocker.ANY, mocker.ANY, None, 0)
+        mock_import.assert_any_call("cbor2", mocker.ANY, mocker.ANY, None, 0)
         assert exc_info.value.args[0] == "cbor dependencies are missing. Consider adding 'cbor' extra"
         assert exc_info.value.__notes__ == ['example: pip install "easynetwork[cbor]"']
-        assert exc_info.value.__cause__ is original_error
+        assert isinstance(exc_info.value.__cause__, ModuleNotFoundError)

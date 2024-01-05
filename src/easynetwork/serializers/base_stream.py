@@ -104,6 +104,9 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_T_SentD
                 data = data.removesuffix(separator)
             if separator in data:
                 raise ValueError(f"{separator!r} separator found in serialized packet {packet!r} which was not at the end")
+        elif data.endswith(separator):
+            yield data
+            return
         if not data:
             return
         if len(data) + len(separator) <= self.__limit // 2:

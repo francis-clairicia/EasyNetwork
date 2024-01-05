@@ -10,7 +10,7 @@ from easynetwork.serializers.json import JSONEncoderConfig, JSONSerializer
 
 import pytest
 
-from .base import BaseTestIncrementalSerializer
+from .base import BaseTestIncrementalSerializer, BaseTestSerializerExtraData
 from .samples.json import BIG_JSON, SAMPLES
 
 # 'BIG_JSON' serialized is approximatively 7.5KiB long.
@@ -20,7 +20,7 @@ TOO_BIG_JSON_SERIALIZED = json.dumps(TOO_BIG_JSON, ensure_ascii=False).encode("u
 
 
 @final
-class TestJSONSerializer(BaseTestIncrementalSerializer):
+class TestJSONSerializer(BaseTestIncrementalSerializer, BaseTestSerializerExtraData):
     #### Serializers
 
     ENCODER_CONFIG = JSONEncoderConfig(ensure_ascii=False)

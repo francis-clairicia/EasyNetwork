@@ -9,13 +9,13 @@ from easynetwork.serializers.msgpack import MessagePackerConfig, MessagePackSeri
 
 import pytest
 
-from .base import BaseTestSerializer
+from .base import BaseTestSerializerExtraData
 from .samples.json import SAMPLES
 
 
 @final
 @pytest.mark.feature_msgpack
-class TestMessagePackSerializer(BaseTestSerializer):
+class TestMessagePackSerializer(BaseTestSerializerExtraData):
     #### Serializers
 
     @pytest.fixture(scope="class")

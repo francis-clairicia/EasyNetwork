@@ -22,7 +22,8 @@ class LineSerializer(AbstractIncrementalPacketSerializer[bytes, bytes]):
     __slots__ = ()
 
     def incremental_serialize(self, packet: bytes) -> Generator[bytes, None, None]:
-        assert packet.endswith(b"\n")
+        if not packet.endswith(b"\n"):
+            packet += b"\n"
         yield packet
 
     def incremental_deserialize(self) -> Generator[None, bytes, tuple[bytes, bytes]]:

@@ -9,7 +9,7 @@ from easynetwork.serializers.struct import StructSerializer
 
 import pytest
 
-from .base import BaseTestBufferedIncrementalSerializer
+from .base import BaseTestBufferedIncrementalSerializer, BaseTestSerializerExtraData
 
 STRUCT_FORMAT = "!10sqc"
 
@@ -19,7 +19,7 @@ def pack_point(p: tuple[bytes, int, bytes]) -> bytes:
 
 
 @final
-class TestStructSerializer(BaseTestBufferedIncrementalSerializer):
+class TestStructSerializer(BaseTestBufferedIncrementalSerializer, BaseTestSerializerExtraData):
     #### Serializers
 
     @pytest.fixture(scope="class")

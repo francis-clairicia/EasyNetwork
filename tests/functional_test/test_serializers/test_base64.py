@@ -136,13 +136,6 @@ class BaseTestBase64EncoderSerializer(BaseTestIncrementalSerializer):
             return (b"remaining_data", b"")
         return (b"remaining_data", b"remaining_data")
 
-    #### Other
-
-    @pytest.fixture(scope="class")
-    @staticmethod
-    def oneshot_extra_data() -> bytes:
-        pytest.skip("Does not recognize extra data")
-
 
 @final
 class TestBase64EncoderSerializerChecksum(BaseTestBase64EncoderSerializer):
