@@ -58,7 +58,9 @@ if __name__ == "__main__":
     N = args.workers
     NMESSAGES = args.num
     start = time.time()
-    for _ in range(TIMES):
+    for i in range(TIMES):
+        if TIMES > 1:
+            print(f"test {i + 1}/{TIMES}")
         with concurrent.futures.ProcessPoolExecutor(max_workers=N) as e:
             for _ in range(N):
                 e.submit(run_test, NMESSAGES)

@@ -502,7 +502,6 @@ class _ConnectedClientAPI(AsyncStreamClient[_T_Response]):
         "__closed",
         "__send_lock",
         "__address",
-        "__socket",
         "__proxy",
     )
 
@@ -514,14 +513,13 @@ class _ConnectedClientAPI(AsyncStreamClient[_T_Response]):
         self.__client: _stream_server.AsyncStreamClient[_T_Response] = client
         self.__closed: bool = False
         self.__send_lock = current_async_backend().create_lock()
-        self.__socket: ISocket = client.extra(INETSocketAttribute.socket)
-        self.__proxy: SocketProxy = SocketProxy(self.__socket)
+        self.__proxy: SocketProxy = SocketProxy(client.extra(INETSocketAttribute.socket))
         self.__address: SocketAddress = address
 
         with contextlib.suppress(OSError):
-            set_tcp_nodelay(self.__socket, True)
+            set_tcp_nodelay(self.__proxy, True)
         with contextlib.suppress(OSError):
-            set_tcp_keepalive(self.__socket, True)
+            set_tcp_keepalive(self.__proxy, True)
 
     def __repr__(self) -> str:
         return f"<client with address {self.__address} at {id(self):#x}>"
@@ -544,7 +542,6 @@ class _ConnectedClientAPI(AsyncStreamClient[_T_Response]):
             if self.__closed:
                 raise ClientClosedError("Closed client")
             await self.__client.send_packet(packet)
-            _utils.check_real_socket_state(self.__socket)
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:

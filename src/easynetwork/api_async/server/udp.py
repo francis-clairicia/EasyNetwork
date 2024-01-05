@@ -32,7 +32,7 @@ from ...lowlevel._final import runtime_final_class
 from ...lowlevel.api_async.backend.factory import current_async_backend
 from ...lowlevel.api_async.servers import datagram as _datagram_server
 from ...lowlevel.api_async.transports.abc import AsyncDatagramListener
-from ...lowlevel.socket import INETSocketAttribute, ISocket, SocketAddress, SocketProxy, new_socket_address
+from ...lowlevel.socket import INETSocketAttribute, SocketAddress, SocketProxy, new_socket_address
 from ...protocol import DatagramProtocol
 from .abc import AbstractAsyncNetworkServer, SupportsEventSet
 from .handler import AsyncDatagramClient, AsyncDatagramRequestHandler, INETClientAttribute
@@ -339,7 +339,6 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
 class _ClientAPI(AsyncDatagramClient[_T_Response]):
     __slots__ = (
         "__server_ref",
-        "__socket",
         "__socket_proxy",
         "__send_lock",
         "__address",
@@ -354,8 +353,7 @@ class _ClientAPI(AsyncDatagramClient[_T_Response]):
     ) -> None:
         super().__init__()
         self.__server_ref: weakref.ref[_datagram_server.AsyncDatagramServer[Any, _T_Response, Any]] = weakref.ref(server)
-        self.__socket: ISocket = server.extra(INETSocketAttribute.socket)
-        self.__socket_proxy: SocketProxy = SocketProxy(self.__socket)
+        self.__socket_proxy: SocketProxy = SocketProxy(server.extra(INETSocketAttribute.socket))
         self.__h: int | None = None
         self.__send_lock: ILock = send_lock
         self.__address: SocketAddress = address
@@ -380,7 +378,6 @@ class _ClientAPI(AsyncDatagramClient[_T_Response]):
         async with self.__send_lock:
             server = self.__check_closed()
             await server.send_packet_to(packet, self.__address)
-            _utils.check_real_socket_state(self.__socket)
 
     def __check_closed(self) -> _datagram_server.AsyncDatagramServer[Any, _T_Response, Any]:
         server = self.__server_ref()
@@ -391,7 +388,7 @@ class _ClientAPI(AsyncDatagramClient[_T_Response]):
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         server = self.__server_ref()
-        if server is None:  # pragma: no cover
+        if server is None:
             return {}
         return {
             **server.extra_attributes,
