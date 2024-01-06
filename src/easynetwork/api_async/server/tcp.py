@@ -503,6 +503,7 @@ class _ConnectedClientAPI(AsyncStreamClient[_T_Response]):
         "__send_lock",
         "__address",
         "__proxy",
+        "__extra_attributes_cache",
     )
 
     def __init__(
@@ -515,6 +516,7 @@ class _ConnectedClientAPI(AsyncStreamClient[_T_Response]):
         self.__send_lock = current_async_backend().create_lock()
         self.__proxy: SocketProxy = SocketProxy(client.extra(INETSocketAttribute.socket))
         self.__address: SocketAddress = address
+        self.__extra_attributes_cache: Mapping[Any, Callable[[], Any]] | None = None
 
         with contextlib.suppress(OSError):
             set_tcp_nodelay(self.__proxy, True)
@@ -545,8 +547,10 @@ class _ConnectedClientAPI(AsyncStreamClient[_T_Response]):
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
+        if (extra_attributes_cache := self.__extra_attributes_cache) is not None:
+            return extra_attributes_cache
         client = self.__client
-        return {
+        self.__extra_attributes_cache = extra_attributes_cache = {
             **client.extra_attributes,
             INETClientAttribute.socket: lambda: self.__proxy,
             INETClientAttribute.local_address: lambda: new_socket_address(
@@ -555,3 +559,4 @@ class _ConnectedClientAPI(AsyncStreamClient[_T_Response]):
             ),
             INETClientAttribute.remote_address: lambda: self.__address,
         }
+        return extra_attributes_cache

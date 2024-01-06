@@ -102,13 +102,13 @@ class DatagramEndpoint:
         return self.__transport.is_closing()
 
     async def recvfrom(self) -> tuple[bytes, tuple[Any, ...]]:
-        self.__check_exceptions()
         if self.__transport.is_closing():
             try:
                 data_and_address = self.__recv_queue.get_nowait()
             except asyncio.QueueEmpty:
                 data_and_address = None
             if data_and_address is None:
+                self.__check_exceptions()
                 raise _utils.error_from_errno(_errno.ECONNABORTED)
             await TaskUtils.cancel_shielded_coro_yield()
         else:
@@ -123,7 +123,6 @@ class DatagramEndpoint:
         return data_and_address
 
     async def sendto(self, data: bytes | bytearray | memoryview, address: tuple[Any, ...] | None = None, /) -> None:
-        self.__check_exceptions()
         self.__transport.sendto(data, address)
         await self.__protocol._drain_helper()
 
@@ -140,11 +139,6 @@ class DatagramEndpoint:
                 raise exc
             finally:
                 del exc
-
-    @property
-    @final
-    def transport(self) -> asyncio.DatagramTransport:
-        return self.__transport
 
 
 class DatagramEndpointProtocol(asyncio.DatagramProtocol):
@@ -226,13 +220,11 @@ class DatagramEndpointProtocol(asyncio.DatagramProtocol):
             self.__recv_queue.put_nowait(None)  # Wake up endpoint
 
     def pause_writing(self) -> None:
-        assert not self.__write_paused  # nosec assert_used
         self.__write_paused = True
 
         super().pause_writing()
 
     def resume_writing(self) -> None:
-        assert self.__write_paused  # nosec assert_used
         self.__write_paused = False
 
         for waiter in self.__drain_waiters:

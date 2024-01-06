@@ -48,6 +48,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
 
     __slots__ = (
         "__servers",
+        "__server_families",
         "__listeners_factory",
         "__listeners_factory_scope",
         "__protocol",
@@ -114,14 +115,15 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
         self.__logger: logging.Logger = logger or logging.getLogger(__name__)
         self.__clients_cache: defaultdict[
             _datagram_server.AsyncDatagramServer[_T_Request, _T_Response, tuple[Any, ...]],
-            weakref.WeakValueDictionary[SocketAddress, _ClientAPI[_T_Response]],
+            weakref.WeakValueDictionary[tuple[Any, ...], _ClientAPI[_T_Response]],
         ]
         self.__send_locks_cache: defaultdict[
             _datagram_server.AsyncDatagramServer[_T_Request, _T_Response, tuple[Any, ...]],
-            weakref.WeakValueDictionary[SocketAddress, ILock],
+            weakref.WeakValueDictionary[tuple[Any, ...], ILock],
         ]
         self.__clients_cache = defaultdict(weakref.WeakValueDictionary)
         self.__send_locks_cache = defaultdict(weakref.WeakValueDictionary)
+        self.__server_families: dict[_datagram_server.AsyncDatagramServer[_T_Request, _T_Response, tuple[Any, ...]], int] = {}
 
     @_utils.inherit_doc(AbstractAsyncNetworkServer)
     def is_serving(self) -> bool:
@@ -195,6 +197,9 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
                 raise OSError("empty listeners list")
             self.__servers = tuple(_datagram_server.AsyncDatagramServer(listener, self.__protocol) for listener in listeners)
             del listeners
+
+            self.__server_families = {s: s.extra(INETSocketAttribute.family) for s in self.__servers}
+            server_exit_stack.callback(self.__server_families.clear)
             ###################
 
             # Final teardown
@@ -243,8 +248,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
         address: tuple[Any, ...],
         server: _datagram_server.AsyncDatagramServer[_T_Request, _T_Response, tuple[Any, ...]],
     ) -> AsyncGenerator[None, _T_Request]:
-        address = new_socket_address(address, server.extra(INETSocketAttribute.family))
-        with self.__suppress_and_log_remaining_exception(client_address=address):
+        with self.__suppress_and_log_remaining_exception(address, server):
             request_handler_generator = self.__request_handler.handle(self.__get_client(server, address))
             async with contextlib.aclosing(request_handler_generator):
                 try:
@@ -270,7 +274,11 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
                         del action
 
     @contextlib.contextmanager
-    def __suppress_and_log_remaining_exception(self, client_address: SocketAddress) -> Iterator[None]:
+    def __suppress_and_log_remaining_exception(
+        self,
+        client_address: tuple[Any, ...],
+        server: _datagram_server.AsyncDatagramServer[_T_Request, _T_Response, tuple[Any, ...]],
+    ) -> Iterator[None]:
         try:
             try:
                 yield
@@ -278,19 +286,23 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
                 _utils.remove_traceback_frames_in_place(excgrp, 1)  # Removes the 'yield' frame just above
                 self.__logger.warning(
                     "There have been attempts to do operation on closed client %s",
-                    client_address,
+                    new_socket_address(client_address, self.__server_families[server]),
                     exc_info=excgrp,
                 )
         except Exception as exc:
             _utils.remove_traceback_frames_in_place(exc, 1)  # Removes the 'yield' frame just above
             self.__logger.error("-" * 40)
-            self.__logger.error("Exception occurred during processing of request from %s", client_address, exc_info=exc)
+            self.__logger.error(
+                "Exception occurred during processing of request from %s",
+                new_socket_address(client_address, self.__server_families[server]),
+                exc_info=exc,
+            )
             self.__logger.error("-" * 40)
 
     def __get_client_lock(
         self,
         server: _datagram_server.AsyncDatagramServer[_T_Request, _T_Response, tuple[Any, ...]],
-        address: SocketAddress,
+        address: tuple[Any, ...],
     ) -> ILock:
         send_locks_cache = self.__send_locks_cache[server]
         try:
@@ -302,7 +314,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
     def __get_client(
         self,
         server: _datagram_server.AsyncDatagramServer[_T_Request, _T_Response, tuple[Any, ...]],
-        address: SocketAddress,
+        address: tuple[Any, ...],
     ) -> _ClientAPI[_T_Response]:
         clients_cache = self.__clients_cache[server]
         try:
@@ -338,64 +350,64 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
 @runtime_final_class
 class _ClientAPI(AsyncDatagramClient[_T_Response]):
     __slots__ = (
-        "__server_ref",
-        "__socket_proxy",
+        "__server",
         "__send_lock",
         "__address",
         "__h",
+        "__extra_attributes_cache",
     )
 
     def __init__(
         self,
-        address: SocketAddress,
+        address: tuple[Any, ...],
         server: _datagram_server.AsyncDatagramServer[Any, _T_Response, Any],
         send_lock: ILock,
     ) -> None:
         super().__init__()
-        self.__server_ref: weakref.ref[_datagram_server.AsyncDatagramServer[Any, _T_Response, Any]] = weakref.ref(server)
-        self.__socket_proxy: SocketProxy = SocketProxy(server.extra(INETSocketAttribute.socket))
+        self.__server: _datagram_server.AsyncDatagramServer[Any, _T_Response, Any] = server
         self.__h: int | None = None
         self.__send_lock: ILock = send_lock
-        self.__address: SocketAddress = address
+        self.__address: tuple[Any, ...] = address
+        self.__extra_attributes_cache: Mapping[Any, Callable[[], Any]] | None = None
 
     def __repr__(self) -> str:
         return f"<client with address {self.__address} at {id(self):#x}>"
 
     def __hash__(self) -> int:
         if (h := self.__h) is None:
-            self.__h = h = hash((_ClientAPI, self.__server_ref, self.__address, 0xFF))
+            self.__h = h = hash((_ClientAPI, self.__server, self.__address, 0xFF))
         return h
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, _ClientAPI):
             return NotImplemented
-        return self.__server_ref == other.__server_ref and self.__address == other.__address
+        return self.__server == other.__server and self.__address == other.__address
 
     def is_closing(self) -> bool:
-        return (server := self.__server_ref()) is None or server.is_closing()
+        return self.__server.is_closing()
 
     async def send_packet(self, packet: _T_Response, /) -> None:
         async with self.__send_lock:
-            server = self.__check_closed()
+            server = self.__server
+            if server.is_closing():
+                raise ClientClosedError("Closed client")
             await server.send_packet_to(packet, self.__address)
-
-    def __check_closed(self) -> _datagram_server.AsyncDatagramServer[Any, _T_Response, Any]:
-        server = self.__server_ref()
-        if server is None or server.is_closing():
-            raise ClientClosedError("Closed client")
-        return server
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
-        server = self.__server_ref()
-        if server is None:
-            return {}
-        return {
+        if (extra_attributes_cache := self.__extra_attributes_cache) is not None:
+            return extra_attributes_cache
+        server = self.__server
+        self.__extra_attributes_cache = extra_attributes_cache = {
             **server.extra_attributes,
-            INETClientAttribute.socket: lambda: self.__socket_proxy,
+            INETClientAttribute.socket: lambda: SocketProxy(server.extra(INETSocketAttribute.socket)),
             INETClientAttribute.local_address: lambda: new_socket_address(
                 server.extra(INETSocketAttribute.sockname),
                 server.extra(INETSocketAttribute.family),
             ),
-            INETClientAttribute.remote_address: lambda: self.__address,
+            INETClientAttribute.remote_address: lambda: new_socket_address(
+                self.__address,
+                server.extra(INETSocketAttribute.family),
+            ),
         }
+        return extra_attributes_cache

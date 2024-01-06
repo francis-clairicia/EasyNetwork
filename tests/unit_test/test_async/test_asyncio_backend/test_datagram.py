@@ -141,16 +141,6 @@ class TestDatagramEndpoint:
             exception_queue=mock_asyncio_exception_queue,
         )
 
-    async def test____transport____property(
-        self,
-        endpoint: DatagramEndpoint,
-        mock_asyncio_transport: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act & Assert
-        assert endpoint.transport is mock_asyncio_transport
-
     @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing=={p}")
     async def test____aclose____close_transport_and_wait(
         self,
@@ -250,23 +240,28 @@ class TestDatagramEndpoint:
         data, address = await endpoint.recvfrom()
 
         # Assert
-        mock_asyncio_exception_queue.get_nowait.assert_called_once()
+        mock_asyncio_exception_queue.get_nowait.assert_not_called()
         mock_asyncio_recv_queue.get.assert_not_awaited()
         mock_asyncio_recv_queue.get_nowait.assert_called_once()
         assert data == b"some data"
         assert address == ("an_address", 12345)
 
     @pytest.mark.parametrize("condition", ["empty_queue", "None_pushed"])
+    @pytest.mark.parametrize("exception", [CustomException, None])
     async def test____recvfrom____connection_lost____transport_already_closed____no_more_data(
         self,
         endpoint: DatagramEndpoint,
+        exception: type[CustomException] | None,
         condition: Literal["empty_queue", "None_pushed"],
         mock_asyncio_transport: MagicMock,
         mock_asyncio_recv_queue: MagicMock,
         mock_asyncio_exception_queue: MagicMock,
     ) -> None:
         # Arrange
-        mock_asyncio_exception_queue.get_nowait.side_effect = asyncio.QueueEmpty
+        if exception is None:
+            mock_asyncio_exception_queue.get_nowait.side_effect = asyncio.QueueEmpty
+        else:
+            mock_asyncio_exception_queue.get_nowait.return_value = exception()
         mock_asyncio_transport.is_closing.return_value = True
 
         match condition:
@@ -277,12 +272,16 @@ class TestDatagramEndpoint:
             case _:
                 pytest.fail("Invalid condition")
 
-        # Act
-        with pytest.raises(OSError) as exc_info:
-            await endpoint.recvfrom()
+        # Act & Assert
+        if exception is None:
+            with pytest.raises(OSError) as exc_info:
+                await endpoint.recvfrom()
+            assert exc_info.value.errno == ECONNABORTED
+        else:
+            with pytest.raises(exception):
+                await endpoint.recvfrom()
 
         # Assert
-        assert exc_info.value.errno == ECONNABORTED
         mock_asyncio_exception_queue.get_nowait.assert_called_once()
         mock_asyncio_recv_queue.get.assert_not_awaited()
         mock_asyncio_recv_queue.get_nowait.assert_called_once()
@@ -307,25 +306,8 @@ class TestDatagramEndpoint:
 
         # Assert
         assert exc_info.value.errno == ECONNABORTED
-        assert len(mock_asyncio_exception_queue.get_nowait.call_args_list) == 2
-        mock_asyncio_recv_queue.get.assert_awaited_once_with()
-
-    async def test____recvfrom____raise_exception____protocol_already_sent_exception_in_queue(
-        self,
-        endpoint: DatagramEndpoint,
-        mock_asyncio_recv_queue: MagicMock,
-        mock_asyncio_exception_queue: MagicMock,
-    ) -> None:
-        # Arrange
-        mock_asyncio_exception_queue.get_nowait.return_value = CustomException()
-
-        # Act
-        with pytest.raises(CustomException):
-            await endpoint.recvfrom()
-
-        # Assert
         mock_asyncio_exception_queue.get_nowait.assert_called_once_with()
-        mock_asyncio_recv_queue.get.assert_not_awaited()
+        mock_asyncio_recv_queue.get.assert_awaited_once_with()
 
     async def test____recvfrom____raise_exception____transport_closed_by_protocol_with_exception_while_waiting(
         self,
@@ -335,20 +317,8 @@ class TestDatagramEndpoint:
         mock_asyncio_exception_queue: MagicMock,
     ) -> None:
         # Arrange
-        from itertools import count
-
         mock_asyncio_recv_queue.get.return_value = None  # None is sent to queue when readers must wake up
-
-        _count = count()
-
-        # Cannot use list for side_effect because returned value is an exception instance...
-        def get_nowait_side_effect() -> Exception:
-            if next(_count) == 0:
-                raise asyncio.QueueEmpty
-            return CustomException()
-
-        mock_asyncio_exception_queue.get_nowait.side_effect = get_nowait_side_effect
-
+        mock_asyncio_exception_queue.get_nowait.return_value = CustomException()
         mock_asyncio_transport.is_closing.side_effect = [False, True]  # 1st call OK, 2nd not so much
 
         # Act
@@ -356,7 +326,7 @@ class TestDatagramEndpoint:
             await endpoint.recvfrom()
 
         # Assert
-        assert len(mock_asyncio_exception_queue.get_nowait.call_args_list) == 2
+        mock_asyncio_exception_queue.get_nowait.assert_called_once_with()
         mock_asyncio_recv_queue.get.assert_awaited_once_with()
 
     @pytest.mark.parametrize("address", [("127.0.0.1", 12345), None], ids=repr)
@@ -375,7 +345,7 @@ class TestDatagramEndpoint:
         await endpoint.sendto(b"some data", address)
 
         # Assert
-        mock_asyncio_exception_queue.get_nowait.assert_called_once_with()
+        mock_asyncio_exception_queue.get_nowait.assert_not_called()
         mock_asyncio_transport.sendto.assert_called_once_with(b"some data", address)
         mock_asyncio_protocol._drain_helper.assert_awaited_once_with()
 
