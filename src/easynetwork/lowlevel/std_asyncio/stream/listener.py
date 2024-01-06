@@ -35,7 +35,7 @@ from ... import constants, socket as socket_tools
 from ...api_async.transports import abc as transports
 from ..socket import AsyncSocket
 from ..tasks import TaskGroup as AsyncIOTaskGroup
-from .socket import AsyncioTransportStreamSocketAdapter
+from .socket import AsyncioTransportBufferedStreamSocketAdapter, StreamReaderBufferedProtocol
 
 if TYPE_CHECKING:
     import asyncio.trsock
@@ -44,7 +44,7 @@ if TYPE_CHECKING:
     from ...api_async.backend.abc import TaskGroup as AbstractTaskGroup
 
 
-_T_Stream = TypeVar("_T_Stream", bound=AsyncioTransportStreamSocketAdapter)
+_T_Stream = TypeVar("_T_Stream", bound=transports.AsyncStreamTransport)
 
 
 async def connect_accepted_socket(
@@ -55,9 +55,8 @@ async def connect_accepted_socket(
     ssl: _ssl.SSLContext | None = None,
     ssl_handshake_timeout: float | None = None,
     ssl_shutdown_timeout: float | None = None,
-) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
-    reader = asyncio.streams.StreamReader(limit=limit, loop=loop)
-    protocol = asyncio.streams.StreamReaderProtocol(reader, loop=loop)
+) -> tuple[asyncio.Transport, StreamReaderBufferedProtocol]:
+    protocol = StreamReaderBufferedProtocol(loop=loop)
     transport, _ = await loop.connect_accepted_socket(
         lambda: protocol,
         sock,
@@ -65,8 +64,7 @@ async def connect_accepted_socket(
         ssl_handshake_timeout=ssl_handshake_timeout,
         ssl_shutdown_timeout=ssl_shutdown_timeout,
     )
-    writer = asyncio.streams.StreamWriter(transport, protocol, reader, loop)
-    return reader, writer
+    return transport, protocol
 
 
 class ListenerSocketAdapter(transports.AsyncListener[_T_Stream]):
@@ -168,7 +166,7 @@ class AbstractAcceptedSocketFactory(Generic[_T_Stream]):
 
 @final
 @dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
-class AcceptedSocketFactory(AbstractAcceptedSocketFactory[AsyncioTransportStreamSocketAdapter]):
+class AcceptedSocketFactory(AbstractAcceptedSocketFactory[AsyncioTransportBufferedStreamSocketAdapter]):
     def log_connection_error(self, logger: logging.Logger, exc: BaseException) -> None:
         logger.error("Error in client task", exc_info=exc)
 
@@ -176,14 +174,14 @@ class AcceptedSocketFactory(AbstractAcceptedSocketFactory[AsyncioTransportStream
         self,
         socket: _socket.socket,
         loop: asyncio.AbstractEventLoop,
-    ) -> AsyncioTransportStreamSocketAdapter:
-        reader, writer = await connect_accepted_socket(loop, socket)
-        return AsyncioTransportStreamSocketAdapter(reader, writer)
+    ) -> AsyncioTransportBufferedStreamSocketAdapter:
+        transport, protocol = await connect_accepted_socket(loop, socket)
+        return AsyncioTransportBufferedStreamSocketAdapter(transport, protocol)
 
 
 @final
 @dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
-class AcceptedSSLSocketFactory(AbstractAcceptedSocketFactory[AsyncioTransportStreamSocketAdapter]):
+class AcceptedSSLSocketFactory(AbstractAcceptedSocketFactory[AsyncioTransportBufferedStreamSocketAdapter]):
     ssl_context: _ssl.SSLContext
     ssl_handshake_timeout: float
     ssl_shutdown_timeout: float
@@ -195,12 +193,12 @@ class AcceptedSSLSocketFactory(AbstractAcceptedSocketFactory[AsyncioTransportStr
         self,
         socket: _socket.socket,
         loop: asyncio.AbstractEventLoop,
-    ) -> AsyncioTransportStreamSocketAdapter:
-        reader, writer = await connect_accepted_socket(
+    ) -> AsyncioTransportBufferedStreamSocketAdapter:
+        transport, protocol = await connect_accepted_socket(
             loop,
             socket,
             ssl=self.ssl_context,
             ssl_handshake_timeout=self.ssl_handshake_timeout,
             ssl_shutdown_timeout=self.ssl_shutdown_timeout,
         )
-        return AsyncioTransportStreamSocketAdapter(reader, writer)
+        return AsyncioTransportBufferedStreamSocketAdapter(transport, protocol)

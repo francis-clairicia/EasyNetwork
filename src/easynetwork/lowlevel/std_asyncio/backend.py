@@ -51,7 +51,7 @@ from .datagram.endpoint import create_datagram_endpoint
 from .datagram.listener import DatagramListenerSocketAdapter
 from .datagram.socket import AsyncioTransportDatagramSocketAdapter
 from .stream.listener import AcceptedSocketFactory, AcceptedSSLSocketFactory, ListenerSocketAdapter
-from .stream.socket import AsyncioTransportStreamSocketAdapter
+from .stream.socket import AsyncioTransportBufferedStreamSocketAdapter, AsyncioTransportStreamSocketAdapter
 from .tasks import CancelScope, TaskGroup, TaskUtils
 from .threads import ThreadsPortal
 
@@ -208,7 +208,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
         backlog: int,
         *,
         reuse_port: bool = False,
-    ) -> Sequence[ListenerSocketAdapter[AsyncioTransportStreamSocketAdapter]]:
+    ) -> Sequence[ListenerSocketAdapter[AsyncioTransportBufferedStreamSocketAdapter]]:
         sockets = await self._create_tcp_socket_listeners(host, port, backlog, reuse_port=reuse_port)
 
         loop = asyncio.get_running_loop()
@@ -225,7 +225,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
         ssl_shutdown_timeout: float,
         *,
         reuse_port: bool = False,
-    ) -> Sequence[ListenerSocketAdapter[AsyncioTransportStreamSocketAdapter]]:
+    ) -> Sequence[ListenerSocketAdapter[AsyncioTransportBufferedStreamSocketAdapter]]:
         self.__verify_ssl_context(ssl_context)
 
         sockets = await self._create_tcp_socket_listeners(host, port, backlog, reuse_port=reuse_port)

@@ -276,7 +276,7 @@ partial_branches = [
     # Have to re-enable the standard pragma
     "pragma: no branch",
 
-    # Don't complain about code in debug mode, they are always run
+    # Don't complain about code in debug mode, they are always run in unit tests
     "if __debug__:",
 ]
 

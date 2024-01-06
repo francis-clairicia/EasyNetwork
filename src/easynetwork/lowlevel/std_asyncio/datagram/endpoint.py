@@ -124,6 +124,8 @@ class DatagramEndpoint:
 
     async def sendto(self, data: bytes | bytearray | memoryview, address: tuple[Any, ...] | None = None, /) -> None:
         self.__transport.sendto(data, address)
+        if self.__transport.is_closing():
+            await TaskUtils.coro_yield()
         await self.__protocol._drain_helper()
 
     def get_extra_info(self, name: str, default: Any = None) -> Any:
@@ -194,12 +196,7 @@ class DatagramEndpointProtocol(asyncio.DatagramProtocol):
         if not self.__closed.done():
             self.__closed.set_result(None)
 
-        for waiter in self.__drain_waiters:
-            if not waiter.done():
-                if exc is None:
-                    waiter.set_result(None)
-                else:
-                    waiter.set_exception(exc)
+        self._wakeup_write_waiters(exc)
 
         if self.__transport is not None:
             self.__recv_queue.put_nowait(None)  # Wake up endpoint
@@ -227,9 +224,7 @@ class DatagramEndpointProtocol(asyncio.DatagramProtocol):
     def resume_writing(self) -> None:
         self.__write_paused = False
 
-        for waiter in self.__drain_waiters:
-            if not waiter.done():
-                waiter.set_result(None)
+        self._wakeup_write_waiters(None)
 
         super().resume_writing()
 
@@ -245,6 +240,14 @@ class DatagramEndpointProtocol(asyncio.DatagramProtocol):
         finally:
             self.__drain_waiters.remove(waiter)
             del waiter
+
+    def _wakeup_write_waiters(self, exc: Exception | None) -> None:
+        for waiter in self.__drain_waiters:
+            if not waiter.done():
+                if exc is None:
+                    waiter.set_result(None)
+                else:
+                    waiter.set_exception(exc)
 
     def _get_close_waiter(self) -> asyncio.Future[None]:
         return self.__closed

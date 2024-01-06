@@ -207,7 +207,7 @@ class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
             raise StopIteration
 
         nb_updated_bytes, self.__already_written = self.__already_written, 0
-        if nb_updated_bytes == 0:
+        if not nb_updated_bytes:
             raise StopIteration
 
         # Forcibly reset buffer view
@@ -277,12 +277,13 @@ class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
         return buffer
 
     def buffer_updated(self, nbytes: int) -> None:
-        if nbytes < 0:
-            raise ValueError("Negative value given")
-        if self.__buffer_view is None:
-            raise RuntimeError("buffer_updated() has been called whilst get_buffer() was never called")
-        if nbytes > self.__buffer_view.nbytes:
-            raise RuntimeError("nbytes > buffer_view.nbytes")
+        if __debug__:
+            if nbytes < 0:
+                raise ValueError("Negative value given")
+            if self.__buffer_view is None:
+                raise RuntimeError("buffer_updated() has been called whilst get_buffer() was never called")
+            if nbytes > self.__buffer_view.nbytes:
+                raise RuntimeError("nbytes > buffer_view.nbytes")
         self.__update_write_count(nbytes)
 
     def get_value(self, *, full: bool = False) -> bytes | None:
