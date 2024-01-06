@@ -429,9 +429,6 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
                         finally:
                             del action
 
-                # Always handle one request at a time
-                await current_async_backend().coro_yield()
-
     def __attach_server(self) -> None:
         self.__active_tasks += 1
 

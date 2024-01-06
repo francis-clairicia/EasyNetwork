@@ -42,17 +42,18 @@ if __name__ == "__main__":
         else:
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
-        sock.bind(("127.0.0.1", 0))
-        sock.connect(addr)
+        with sock:
+            sock.bind(("127.0.0.1", 0))
+            sock.connect(addr)
 
-        recv_buf = bytearray(REQSIZE)
+            recv_buf = bytearray(REQSIZE)
 
-        while n > 0:
-            sock.send(msg)
-            nrecv = sock.recv_into(recv_buf)
-            if nrecv < REQSIZE:
-                raise SystemExit()
-            n -= 1
+            while n > 0:
+                sock.send(msg)
+                nrecv = sock.recv_into(recv_buf)
+                if nrecv < REQSIZE:
+                    raise SystemExit()
+                n -= 1
 
     TIMES = args.times
     N = args.workers

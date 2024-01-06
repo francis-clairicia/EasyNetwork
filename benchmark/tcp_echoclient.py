@@ -69,19 +69,20 @@ if __name__ == "__main__":
         if client_context:
             sock = client_context.wrap_socket(sock)
 
-        sock.connect(addr)
+        with sock:
+            sock.connect(addr)
 
-        recv_buf = bytearray(REQSIZE)
+            recv_buf = bytearray(REQSIZE)
 
-        while n > 0:
-            sock.sendall(msg)
-            nrecv = 0
-            while nrecv < REQSIZE:
-                nbytes = sock.recv_into(recv_buf)
-                if not nbytes:
-                    raise SystemExit()
-                nrecv += nbytes
-            n -= 1
+            while n > 0:
+                sock.sendall(msg)
+                nrecv = 0
+                while nrecv < REQSIZE:
+                    nbytes = sock.recv_into(recv_buf)
+                    if not nbytes:
+                        raise SystemExit()
+                    nrecv += nbytes
+                n -= 1
 
     TIMES = args.times
     N = args.workers

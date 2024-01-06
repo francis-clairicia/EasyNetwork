@@ -28,6 +28,17 @@ class EchoRequestHandler(AsyncDatagramRequestHandler[Any, Any]):
         request: Any = yield
         await client.send_packet(request)
 
+    # async def handle(self, client: AsyncDatagramClient[Any]) -> AsyncGenerator[None, Any]:
+    #     import asyncio
+
+    #     while True:
+    #         try:
+    #             async with asyncio.timeout(10):
+    #                 request: Any = yield
+    #         except TimeoutError:
+    #             return
+    #         await client.send_packet(request)
+
 
 def create_udp_server(
     *,
