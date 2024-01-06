@@ -17,10 +17,9 @@
 
 from __future__ import annotations
 
-__all__ = ["AsyncioTransportStreamSocketAdapter", "RawStreamSocketAdapter"]
+__all__ = ["AsyncioTransportStreamSocketAdapter"]
 
 import asyncio
-import socket as _socket
 from collections import ChainMap
 from collections.abc import Callable, Iterable, Mapping
 from typing import TYPE_CHECKING, Any, final
@@ -28,14 +27,11 @@ from typing import TYPE_CHECKING, Any, final
 from ....exceptions import UnsupportedOperation
 from ... import socket as socket_tools
 from ...api_async.transports import abc as transports
-from ..socket import AsyncSocket
 from ..tasks import TaskUtils
 
 if TYPE_CHECKING:
     import asyncio.trsock
     import ssl as _typing_ssl
-
-    from _typeshed import WriteableBuffer
 
 
 @final
@@ -126,55 +122,3 @@ class AsyncioTransportStreamSocketAdapter(transports.AsyncStreamTransport):
             socket_tools._get_tls_extra(ssl_obj),
             {socket_tools.TLSAttribute.standard_compatible: lambda: True},
         )
-
-
-@final
-class RawStreamSocketAdapter(transports.AsyncStreamTransport, transports.AsyncBufferedStreamReadTransport):
-    __slots__ = ("__socket",)
-
-    def __init__(
-        self,
-        socket: _socket.socket,
-        loop: asyncio.AbstractEventLoop,
-    ) -> None:
-        super().__init__()
-
-        if socket.type != _socket.SOCK_STREAM:
-            raise ValueError("A 'SOCK_STREAM' socket is expected")
-
-        self.__socket: AsyncSocket = AsyncSocket(socket, loop)
-
-    async def aclose(self) -> None:
-        try:
-            await self.__socket.shutdown(_socket.SHUT_RDWR)
-        except OSError:
-            pass
-        finally:
-            await self.__socket.aclose()
-
-    def is_closing(self) -> bool:
-        return self.__socket.is_closing()
-
-    async def recv(self, bufsize: int) -> bytes:
-        return await self.__socket.recv(bufsize)
-
-    async def recv_into(self, buffer: WriteableBuffer) -> int:
-        return await self.__socket.recv_into(buffer)
-
-    async def send_all(self, data: bytes | bytearray | memoryview) -> None:
-        await self.__socket.sendall(data)
-
-    async def send_eof(self) -> None:
-        await self.__socket.shutdown(_socket.SHUT_WR)
-
-    async def send_all_from_iterable(self, iterable_of_data: Iterable[bytes | bytearray | memoryview]) -> None:
-        try:
-            return await self.__socket.sendmsg(iterable_of_data)
-        except UnsupportedOperation:
-            pass
-        return await super().send_all_from_iterable(iterable_of_data)
-
-    @property
-    def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
-        socket = self.__socket.socket
-        return socket_tools._get_socket_extra(socket, wrap_in_proxy=False)

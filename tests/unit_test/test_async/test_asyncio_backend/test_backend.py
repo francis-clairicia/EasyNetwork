@@ -12,7 +12,7 @@ from easynetwork.lowlevel.std_asyncio.stream.listener import (
     AcceptedSocketFactory,
     AcceptedSSLSocketFactory,
 )
-from easynetwork.lowlevel.std_asyncio.stream.socket import AsyncioTransportStreamSocketAdapter, RawStreamSocketAdapter
+from easynetwork.lowlevel.std_asyncio.stream.socket import AsyncioTransportStreamSocketAdapter
 
 import pytest
 
@@ -71,21 +71,9 @@ class TestAsyncIOBackendSync:
 
 @pytest.mark.asyncio
 class TestAsyncIOBackend:
-    @pytest.fixture(params=[False, True], ids=lambda boolean: f"use_asyncio_transport=={boolean}")
-    @staticmethod
-    def use_asyncio_transport(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> bool:
-        use_asyncio_transport: bool = bool(getattr(request, "param"))
-
-        if use_asyncio_transport:
-            monkeypatch.setenv("EASYNETWORK_HINT_FORCE_USE_ASYNCIO_TRANSPORTS", "1")
-        else:
-            monkeypatch.delenv("EASYNETWORK_HINT_FORCE_USE_ASYNCIO_TRANSPORTS", raising=False)
-
-        return use_asyncio_transport
-
     @pytest.fixture
     @staticmethod
-    def backend(use_asyncio_transport: bool) -> AsyncIOBackend:
+    def backend() -> AsyncIOBackend:
         return AsyncIOBackend()
 
     @pytest.fixture(params=[("local_address", 12345), None], ids=lambda addr: f"local_address=={addr}")
@@ -97,13 +85,6 @@ class TestAsyncIOBackend:
     @staticmethod
     def remote_address(request: Any) -> tuple[str, int] | None:
         return request.param
-
-    async def test____use_asyncio_transport____follows_option(
-        self,
-        backend: AsyncIOBackend,
-        use_asyncio_transport: bool,
-    ) -> None:
-        assert backend.using_asyncio_transports() == use_asyncio_transport
 
     async def test____get_cancelled_exc_class____returns_asyncio_CancelledError(
         self,
@@ -211,7 +192,6 @@ class TestAsyncIOBackend:
         assert task_info.name == current_task.get_name()
         assert task_info.coro is current_task.get_coro()
 
-    @pytest.mark.parametrize("use_asyncio_transport", [True], indirect=True)
     @pytest.mark.parametrize("ssl", [False, True], ids=lambda p: f"ssl=={p}")
     @pytest.mark.parametrize("happy_eyeballs_delay", [None, 42], ids=lambda p: f"happy_eyeballs_delay=={p}")
     async def test____create_tcp_connection____use_asyncio_open_connection(
@@ -258,7 +238,7 @@ class TestAsyncIOBackend:
             expected_happy_eyeballs_delay = happy_eyeballs_delay
 
         # Act
-        socket: AsyncioTransportStreamSocketAdapter | RawStreamSocketAdapter
+        socket: AsyncioTransportStreamSocketAdapter
         if ssl:
             socket = await backend.create_ssl_over_tcp_connection(
                 *remote_address,
@@ -288,54 +268,6 @@ class TestAsyncIOBackend:
             **expected_ssl_kwargs,
         )
         mock_StreamSocketAdapter.assert_called_once_with(mock_asyncio_reader, mock_asyncio_writer)
-        assert socket is mocker.sentinel.socket
-
-    @pytest.mark.parametrize("use_asyncio_transport", [False], indirect=True)
-    @pytest.mark.parametrize("happy_eyeballs_delay", [None, 42], ids=lambda p: f"happy_eyeballs_delay=={p}")
-    async def test____create_tcp_connection____creates_raw_socket_adapter(
-        self,
-        event_loop: asyncio.AbstractEventLoop,
-        happy_eyeballs_delay: float | None,
-        local_address: tuple[str, int] | None,
-        remote_address: tuple[str, int],
-        backend: AsyncIOBackend,
-        mock_tcp_socket: Callable[[], MagicMock],
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        mock_RawStreamSocketAdapter: MagicMock = mocker.patch(
-            "easynetwork.lowlevel.std_asyncio.backend.RawStreamSocketAdapter", return_value=mocker.sentinel.socket
-        )
-        mock_asyncio_open_connection: AsyncMock = mocker.patch(
-            "asyncio.open_connection",
-            new_callable=mocker.AsyncMock,
-            side_effect=AssertionError,
-        )
-        mock_own_create_connection: AsyncMock = mocker.patch(
-            "easynetwork.lowlevel.std_asyncio.backend.create_connection",
-            new_callable=mocker.AsyncMock,
-            return_value=mock_tcp_socket,
-        )
-        expected_happy_eyeballs_delay: float = 0.25
-        if happy_eyeballs_delay is not None:
-            expected_happy_eyeballs_delay = happy_eyeballs_delay
-
-        # Act
-        socket = await backend.create_tcp_connection(
-            *remote_address,
-            local_address=local_address,
-            happy_eyeballs_delay=happy_eyeballs_delay,
-        )
-
-        # Assert
-        mock_asyncio_open_connection.assert_not_called()
-        mock_own_create_connection.assert_awaited_once_with(
-            *remote_address,
-            event_loop,
-            local_address=local_address,
-            happy_eyeballs_delay=expected_happy_eyeballs_delay,
-        )
-        mock_RawStreamSocketAdapter.assert_called_once_with(mock_tcp_socket, event_loop)
         assert socket is mocker.sentinel.socket
 
     async def test____create_ssl_over_tcp_connection____use_host_as_server_hostname(
@@ -368,7 +300,7 @@ class TestAsyncIOBackend:
         )
 
         # Act
-        socket: AsyncioTransportStreamSocketAdapter | RawStreamSocketAdapter = await backend.create_ssl_over_tcp_connection(
+        socket: AsyncioTransportStreamSocketAdapter = await backend.create_ssl_over_tcp_connection(
             *remote_address,
             ssl_context=mock_ssl_context,
             server_hostname=None,
@@ -478,7 +410,6 @@ class TestAsyncIOBackend:
         self,
         event_loop: asyncio.AbstractEventLoop,
         backend: AsyncIOBackend,
-        use_asyncio_transport: bool,
         mock_tcp_socket: MagicMock,
         mock_asyncio_stream_reader_factory: Callable[[], MagicMock],
         mock_asyncio_stream_writer_factory: Callable[[], MagicMock],
@@ -491,10 +422,6 @@ class TestAsyncIOBackend:
             "easynetwork.lowlevel.std_asyncio.backend.AsyncioTransportStreamSocketAdapter",
             return_value=mocker.sentinel.socket,
         )
-        mock_RawStreamSocketAdapter: MagicMock = mocker.patch(
-            "easynetwork.lowlevel.std_asyncio.backend.RawStreamSocketAdapter",
-            return_value=mocker.sentinel.socket,
-        )
         mock_open_connection: AsyncMock = mocker.patch(
             "asyncio.open_connection",
             new_callable=mocker.AsyncMock,
@@ -505,14 +432,8 @@ class TestAsyncIOBackend:
         socket = await backend.wrap_stream_socket(mock_tcp_socket)
 
         # Assert
-        if use_asyncio_transport:
-            mock_open_connection.assert_awaited_once_with(sock=mock_tcp_socket)
-            mock_AsyncioTransportStreamSocketAdapter.assert_called_once_with(mock_asyncio_reader, mock_asyncio_writer)
-            mock_RawStreamSocketAdapter.assert_not_called()
-        else:
-            mock_open_connection.assert_not_awaited()
-            mock_RawStreamSocketAdapter.assert_called_once_with(mock_tcp_socket, event_loop)
-            mock_AsyncioTransportStreamSocketAdapter.assert_not_called()
+        mock_open_connection.assert_awaited_once_with(sock=mock_tcp_socket)
+        mock_AsyncioTransportStreamSocketAdapter.assert_called_once_with(mock_asyncio_reader, mock_asyncio_writer)
         assert socket is mocker.sentinel.socket
         mock_tcp_socket.setblocking.assert_called_with(False)
 
@@ -963,7 +884,6 @@ class TestAsyncIOBackend:
         mock_open_listeners.assert_not_called()
         mock_ListenerSocketAdapter.assert_not_called()
 
-    @pytest.mark.parametrize("use_asyncio_transport", [False], indirect=True)
     async def test____create_tcp_listeners____invalid_backlog(
         self,
         event_loop: asyncio.AbstractEventLoop,
@@ -1014,17 +934,12 @@ class TestAsyncIOBackend:
         socket_family: int | None,
         backend: AsyncIOBackend,
         mock_datagram_endpoint_factory: Callable[[], MagicMock],
-        use_asyncio_transport: bool,
         mock_udp_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         mock_endpoint = mock_datagram_endpoint_factory()
         mock_AsyncioTransportDatagramSocketAdapter: MagicMock = mocker.patch(
             "easynetwork.lowlevel.std_asyncio.backend.AsyncioTransportDatagramSocketAdapter",
-            return_value=mocker.sentinel.socket,
-        )
-        mock_RawDatagramSocketAdapter: MagicMock = mocker.patch(
-            "easynetwork.lowlevel.std_asyncio.backend.RawDatagramSocketAdapter",
             return_value=mocker.sentinel.socket,
         )
         mock_create_datagram_endpoint: AsyncMock = mocker.patch(
@@ -1051,14 +966,8 @@ class TestAsyncIOBackend:
             local_address=local_address,
             family=AF_UNSPEC if socket_family is None else socket_family,
         )
-        if use_asyncio_transport:
-            mock_create_datagram_endpoint.assert_awaited_once_with(sock=mock_udp_socket)
-            mock_AsyncioTransportDatagramSocketAdapter.assert_called_once_with(mock_endpoint)
-            mock_RawDatagramSocketAdapter.assert_not_called()
-        else:
-            mock_create_datagram_endpoint.assert_not_awaited()
-            mock_RawDatagramSocketAdapter.assert_called_once_with(mock_udp_socket, event_loop)
-            mock_AsyncioTransportDatagramSocketAdapter.assert_not_called()
+        mock_create_datagram_endpoint.assert_awaited_once_with(sock=mock_udp_socket)
+        mock_AsyncioTransportDatagramSocketAdapter.assert_called_once_with(mock_endpoint)
 
         assert socket is mocker.sentinel.socket
 
@@ -1066,7 +975,6 @@ class TestAsyncIOBackend:
         self,
         event_loop: asyncio.AbstractEventLoop,
         backend: AsyncIOBackend,
-        use_asyncio_transport: bool,
         mock_udp_socket: MagicMock,
         mock_datagram_endpoint_factory: Callable[[], MagicMock],
         mocker: MockerFixture,
@@ -1075,10 +983,6 @@ class TestAsyncIOBackend:
         mock_endpoint = mock_datagram_endpoint_factory()
         mock_AsyncioTransportDatagramSocketAdapter: MagicMock = mocker.patch(
             "easynetwork.lowlevel.std_asyncio.backend.AsyncioTransportDatagramSocketAdapter",
-            return_value=mocker.sentinel.socket,
-        )
-        mock_RawDatagramSocketAdapter: MagicMock = mocker.patch(
-            "easynetwork.lowlevel.std_asyncio.backend.RawDatagramSocketAdapter",
             return_value=mocker.sentinel.socket,
         )
         mock_create_datagram_endpoint: AsyncMock = mocker.patch(
@@ -1091,14 +995,8 @@ class TestAsyncIOBackend:
         socket = await backend.wrap_connected_datagram_socket(mock_udp_socket)
 
         # Assert
-        if use_asyncio_transport:
-            mock_create_datagram_endpoint.assert_awaited_once_with(sock=mock_udp_socket)
-            mock_AsyncioTransportDatagramSocketAdapter.assert_called_once_with(mock_endpoint)
-            mock_RawDatagramSocketAdapter.assert_not_called()
-        else:
-            mock_create_datagram_endpoint.assert_not_awaited()
-            mock_RawDatagramSocketAdapter.assert_called_once_with(mock_udp_socket, event_loop)
-            mock_AsyncioTransportDatagramSocketAdapter.assert_not_called()
+        mock_create_datagram_endpoint.assert_awaited_once_with(sock=mock_udp_socket)
+        mock_AsyncioTransportDatagramSocketAdapter.assert_called_once_with(mock_endpoint)
 
         assert socket is mocker.sentinel.socket
         mock_udp_socket.setblocking.assert_called_with(False)

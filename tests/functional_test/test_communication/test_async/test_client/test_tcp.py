@@ -14,8 +14,6 @@ from easynetwork.protocol import StreamProtocol
 import pytest
 import pytest_asyncio
 
-from .....tools import is_uvloop_event_loop
-
 
 async def readline(loop: asyncio.AbstractEventLoop, sock: Socket) -> bytes:
     buf: list[bytes] = []
@@ -30,7 +28,7 @@ async def readline(loop: asyncio.AbstractEventLoop, sock: Socket) -> bytes:
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures("simulate_no_ssl_module", "use_asyncio_transport")
+@pytest.mark.usefixtures("simulate_no_ssl_module")
 @pytest.mark.flaky(retries=3, delay=1)
 class TestAsyncTCPNetworkClient:
     @pytest.fixture
@@ -75,62 +73,6 @@ class TestAsyncTCPNetworkClient:
     ) -> None:
         await client.send_packet("ABCDEF")
         assert await readline(event_loop, server) == b"ABCDEF\n"
-
-    async def test____send_packet____connection_error____fresh_connection_closed_by_server(
-        self,
-        use_asyncio_transport: bool,
-        event_loop: asyncio.AbstractEventLoop,
-        client: AsyncTCPNetworkClient[str, str],
-        server: Socket,
-    ) -> None:
-        if use_asyncio_transport:
-            pytest.skip("It is not mandatory for asyncio.Transport implementations to raise ConnectionAbortedError")
-        if is_uvloop_event_loop(event_loop):
-            pytest.skip("It is not mandatory for uvloop to raise ConnectionAbortedError")
-        server.close()
-        with pytest.raises(ConnectionAbortedError):
-            for _ in range(3):  # Windows and macOS catch the issue after several send()
-                await client.send_packet("ABCDEF")
-                await asyncio.sleep(0)
-
-    async def test____send_packet____connection_error____after_previous_successful_try(
-        self,
-        use_asyncio_transport: bool,
-        event_loop: asyncio.AbstractEventLoop,
-        client: AsyncTCPNetworkClient[str, str],
-        server: Socket,
-    ) -> None:
-        if use_asyncio_transport:
-            pytest.skip("It is not mandatory for asyncio.Transport implementations to raise ConnectionAbortedError")
-        if is_uvloop_event_loop(event_loop):
-            pytest.skip("It is not mandatory for uvloop to raise ConnectionAbortedError")
-
-        await client.send_packet("ABCDEF")
-        assert await readline(event_loop, server) == b"ABCDEF\n"
-        server.close()
-        with pytest.raises(ConnectionAbortedError):
-            for _ in range(3):  # Windows and macOS catch the issue after several send()
-                await client.send_packet("ABCDEF")
-                await asyncio.sleep(0)
-
-    async def test____send_packet____connection_error____partial_read_then_close(
-        self,
-        use_asyncio_transport: bool,
-        event_loop: asyncio.AbstractEventLoop,
-        client: AsyncTCPNetworkClient[str, str],
-        server: Socket,
-    ) -> None:
-        if use_asyncio_transport:
-            pytest.skip("It is not mandatory for asyncio.Transport implementations to raise ConnectionAbortedError")
-        if is_uvloop_event_loop(event_loop):
-            pytest.skip("It is not mandatory for uvloop to raise ConnectionAbortedError")
-        await client.send_packet("ABC")
-        assert await event_loop.sock_recv(server, 1) == b"A"
-        server.close()
-        with pytest.raises(ConnectionAbortedError):
-            for _ in range(3):  # Windows and macOS catch the issue after several send()
-                await client.send_packet("DEF")
-                await asyncio.sleep(0)
 
     async def test____send_packet____closed_client(self, client: AsyncTCPNetworkClient[str, str]) -> None:
         await client.aclose()
@@ -263,14 +205,14 @@ class TestAsyncTCPNetworkClient:
     async def test____recv_packet____protocol_crashed(
         self,
         event_loop: asyncio.AbstractEventLoop,
-        use_asyncio_transport: bool,
         is_buffered_protocol: bool,
         client: AsyncTCPNetworkClient[str, str],
         server: Socket,
     ) -> None:
         expected_pattern: str
-        if is_buffered_protocol and not use_asyncio_transport:
-            expected_pattern = r"^protocol\.build_packet_from_buffer\(\) crashed$"
+        if is_buffered_protocol:
+            pytest.xfail("asyncio implementation does not support buffered serializer yet.")
+            # expected_pattern = r"^protocol\.build_packet_from_buffer\(\) crashed$"
         else:
             expected_pattern = r"^protocol\.build_packet_from_chunks\(\) crashed$"
         await event_loop.sock_sendall(server, b"ABCDEF\n")
@@ -334,7 +276,7 @@ class TestAsyncTCPNetworkClient:
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures("simulate_no_ssl_module", "use_asyncio_transport")
+@pytest.mark.usefixtures("simulate_no_ssl_module")
 class TestAsyncTCPNetworkClientConnection:
     @pytest_asyncio.fixture(autouse=True)
     @staticmethod
@@ -481,7 +423,6 @@ class TestAsyncTCPNetworkClientConnection:
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures("use_asyncio_transport")
 class TestAsyncSSLOverTCPNetworkClient:
     @pytest_asyncio.fixture(autouse=True)
     @staticmethod

@@ -49,9 +49,9 @@ from ._asyncio_utils import (
 )
 from .datagram.endpoint import create_datagram_endpoint
 from .datagram.listener import DatagramListenerSocketAdapter
-from .datagram.socket import AsyncioTransportDatagramSocketAdapter, RawDatagramSocketAdapter
+from .datagram.socket import AsyncioTransportDatagramSocketAdapter
 from .stream.listener import AcceptedSocketFactory, AcceptedSSLSocketFactory, ListenerSocketAdapter
-from .stream.socket import AsyncioTransportStreamSocketAdapter, RawStreamSocketAdapter
+from .stream.socket import AsyncioTransportStreamSocketAdapter
 from .tasks import CancelScope, TaskGroup, TaskUtils
 from .threads import ThreadsPortal
 
@@ -122,7 +122,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
         *,
         local_address: tuple[str, int] | None = None,
         happy_eyeballs_delay: float | None = None,
-    ) -> AsyncioTransportStreamSocketAdapter | RawStreamSocketAdapter:
+    ) -> AsyncioTransportStreamSocketAdapter:
         if happy_eyeballs_delay is None:
             happy_eyeballs_delay = _DEFAULT_HAPPY_EYEBALLS_DELAY
 
@@ -174,15 +174,8 @@ class AsyncIOBackend(AbstractAsyncBackend):
             ssl_shutdown_timeout=ssl_shutdown_timeout,
         )
 
-    async def wrap_stream_socket(
-        self,
-        socket: _socket.socket,
-    ) -> AsyncioTransportStreamSocketAdapter | RawStreamSocketAdapter:
+    async def wrap_stream_socket(self, socket: _socket.socket) -> AsyncioTransportStreamSocketAdapter:
         socket.setblocking(False)
-
-        if not self.using_asyncio_transports():
-            return RawStreamSocketAdapter(socket, asyncio.get_running_loop())
-
         reader, writer = await asyncio.open_connection(sock=socket)
         return AsyncioTransportStreamSocketAdapter(reader, writer)
 
@@ -291,7 +284,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
         *,
         local_address: tuple[str, int] | None = None,
         family: int = _socket.AF_UNSPEC,
-    ) -> AsyncioTransportDatagramSocketAdapter | RawDatagramSocketAdapter:
+    ) -> AsyncioTransportDatagramSocketAdapter:
         loop = asyncio.get_running_loop()
         socket = await create_datagram_connection(
             remote_host,
@@ -302,15 +295,8 @@ class AsyncIOBackend(AbstractAsyncBackend):
         )
         return await self.wrap_connected_datagram_socket(socket)
 
-    async def wrap_connected_datagram_socket(
-        self,
-        socket: _socket.socket,
-    ) -> AsyncioTransportDatagramSocketAdapter | RawDatagramSocketAdapter:
+    async def wrap_connected_datagram_socket(self, socket: _socket.socket) -> AsyncioTransportDatagramSocketAdapter:
         socket.setblocking(False)
-
-        if not self.using_asyncio_transports():
-            return RawDatagramSocketAdapter(socket, asyncio.get_running_loop())
-
         endpoint = await create_datagram_endpoint(sock=socket)
         return AsyncioTransportDatagramSocketAdapter(endpoint)
 
@@ -375,10 +361,6 @@ class AsyncIOBackend(AbstractAsyncBackend):
 
     def create_threads_portal(self) -> ThreadsPortal:
         return ThreadsPortal()
-
-    @classmethod
-    def using_asyncio_transports(cls) -> bool:
-        return os.environ.get("EASYNETWORK_HINT_FORCE_USE_ASYNCIO_TRANSPORTS", "") == "1"
 
     def __verify_ssl_context(self, ctx: _SSLContext) -> None:
         if ssl is None:
