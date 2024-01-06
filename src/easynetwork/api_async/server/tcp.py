@@ -363,31 +363,34 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
             request_handler_generator: AsyncGenerator[None, _T_Request]
             action: _asyncgen.AsyncGenAction[None, _T_Request]
 
+            SendAction = _asyncgen.SendAction
+            ThrowAction = _asyncgen.ThrowAction
+
             _on_connection_hook = self.__request_handler.on_connection(client)
             if isinstance(_on_connection_hook, AsyncGenerator):
-                async with contextlib.aclosing(_on_connection_hook):
-                    try:
-                        await anext(_on_connection_hook)
-                    except StopAsyncIteration:
-                        pass
-                    else:
-                        while True:
-                            try:
-                                action = _asyncgen.SendAction((yield))
-                            except ConnectionError:
-                                return
-                            except BaseException as exc:
-                                action = _asyncgen.ThrowAction(_utils.remove_traceback_frames_in_place(exc, 1))
-                            try:
-                                await action.asend(_on_connection_hook)
-                            except StopAsyncIteration:
-                                break
-                            except BaseException as exc:
-                                # Remove action.asend() frames
-                                _utils.remove_traceback_frames_in_place(exc, 2)
-                                raise
-                            finally:
-                                del action
+                try:
+                    await anext(_on_connection_hook)
+                except StopAsyncIteration:
+                    pass
+                else:
+                    while True:
+                        try:
+                            action = SendAction((yield))
+                        except ConnectionError:
+                            await _on_connection_hook.aclose()
+                            return
+                        except BaseException as exc:
+                            action = ThrowAction(_utils.remove_traceback_frames_in_place(exc, 1))
+                        try:
+                            await action.asend(_on_connection_hook)
+                        except StopAsyncIteration:
+                            break
+                        except BaseException as exc:
+                            # Remove action.asend() frames
+                            _utils.remove_traceback_frames_in_place(exc, 2)
+                            raise
+                        finally:
+                            del action
             else:
                 assert inspect.isawaitable(_on_connection_hook)  # nosec assert_used
                 await _on_connection_hook
@@ -403,31 +406,33 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
 
             del client_exit_stack
 
-            while not client.is_closing():
-                request_handler_generator = self.__request_handler.handle(client)
-                async with contextlib.aclosing(request_handler_generator):
-                    try:
-                        await anext(request_handler_generator)
-                    except StopAsyncIteration:
-                        return
+            new_request_handler = self.__request_handler.handle
+            client_is_closing = client.is_closing
 
-                    while True:
-                        try:
-                            action = _asyncgen.SendAction((yield))
-                        except ConnectionError:
-                            return
-                        except BaseException as exc:
-                            action = _asyncgen.ThrowAction(_utils.remove_traceback_frames_in_place(exc, 1))
-                        try:
-                            await action.asend(request_handler_generator)
-                        except StopAsyncIteration:
-                            break
-                        except BaseException as exc:
-                            # Remove action.asend() frames
-                            _utils.remove_traceback_frames_in_place(exc, 2)
-                            raise
-                        finally:
-                            del action
+            while not client_is_closing():
+                request_handler_generator = new_request_handler(client)
+                try:
+                    await anext(request_handler_generator)
+                except StopAsyncIteration:
+                    return
+                while True:
+                    try:
+                        action = SendAction((yield))
+                    except ConnectionError:
+                        await request_handler_generator.aclose()
+                        return
+                    except BaseException as exc:
+                        action = ThrowAction(_utils.remove_traceback_frames_in_place(exc, 1))
+                    try:
+                        await action.asend(request_handler_generator)
+                    except StopAsyncIteration:
+                        break
+                    except BaseException as exc:
+                        # Remove action.asend() frames
+                        _utils.remove_traceback_frames_in_place(exc, 2)
+                        raise
+                    finally:
+                        del action
 
     def __attach_server(self) -> None:
         self.__active_tasks += 1
