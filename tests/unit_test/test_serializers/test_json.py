@@ -189,12 +189,10 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         assert data == b'{"data":42}'
 
     @pytest.mark.parametrize("value", [b'{"data":42}', b"[4]", b'"string"'])
-    @pytest.mark.parametrize("limit_reached", [False, True], ids=lambda p: f"limit_reached=={p}")
     def test____incremental_serialize____encode_packet____with_frames(
         self,
         value: bytes,
         use_lines: bool,
-        limit_reached: bool,
         mock_encoder: MagicMock,
         mocker: MockerFixture,
     ) -> None:
@@ -202,7 +200,6 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         serializer: JSONSerializer = JSONSerializer(
             encoding=mocker.sentinel.encoding,
             unicode_errors=mocker.sentinel.str_errors,
-            limit=2 if limit_reached else 1024,
             use_lines=use_lines,
         )
         mock_string = mock_encoder.encode.return_value = mocker.NonCallableMagicMock()
@@ -215,20 +212,15 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         mock_encoder.encode.assert_called_once_with(mocker.sentinel.packet)
         mock_string.encode.assert_called_once_with(mocker.sentinel.encoding, mocker.sentinel.str_errors)
         if use_lines:
-            if limit_reached:
-                assert chunks == [value, b"\n"]
-            else:
-                assert chunks == [value + b"\n"]
+            assert chunks == [value + b"\n"]
         else:
             assert chunks == [value]
 
     @pytest.mark.parametrize("value", [b"12345", b"true", b"false", b"null"])
-    @pytest.mark.parametrize("limit_reached", [False, True], ids=lambda p: f"limit_reached=={p}")
     def test____incremental_serialize____encode_packet____plain_value(
         self,
         value: bytes,
         use_lines: bool,
-        limit_reached: bool,
         mock_encoder: MagicMock,
         mocker: MockerFixture,
     ) -> None:
@@ -236,7 +228,6 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         serializer: JSONSerializer = JSONSerializer(
             encoding=mocker.sentinel.encoding,
             unicode_errors=mocker.sentinel.str_errors,
-            limit=2 if limit_reached else 1024,
             use_lines=use_lines,
         )
         mock_string = mock_encoder.encode.return_value = mocker.NonCallableMagicMock()

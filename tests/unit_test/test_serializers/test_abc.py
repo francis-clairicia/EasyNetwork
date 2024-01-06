@@ -219,10 +219,8 @@ class TestAutoSeparatedPacketSerializer:
         mock_serialize_func.assert_called_once_with(mocker.sentinel.packet)
         assert data == []
 
-    @pytest.mark.parametrize("limit_reached", [False, True], ids=lambda p: f"limit_reached=={p}")
     def test____incremental_serialize____append_separator(
         self,
-        limit_reached: bool,
         check_separator: bool,
         mock_serialize_func: MagicMock,
         mocker: MockerFixture,
@@ -231,7 +229,6 @@ class TestAutoSeparatedPacketSerializer:
         serializer = _AutoSeparatedPacketSerializerForTest(
             separator=b"\r\n",
             incremental_serialize_check_separator=check_separator,
-            limit=4 if limit_reached else 42,
         )
         mock_serialize_func.return_value = b"data"
 
@@ -240,7 +237,7 @@ class TestAutoSeparatedPacketSerializer:
 
         # Assert
         mock_serialize_func.assert_called_once_with(mocker.sentinel.packet)
-        assert data == ([b"data", b"\r\n"] if limit_reached else [b"data\r\n"])
+        assert data == [b"data\r\n"]
 
     def test____incremental_serialize____keep_already_present_separator(
         self,

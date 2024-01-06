@@ -109,13 +109,8 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_T_SentD
             return
         if not data:
             return
-        if len(data) + len(separator) <= self.__limit // 2:
-            data += separator
-            yield data
-        else:
-            yield data
-            del data
-            yield separator
+        data += separator
+        yield data
 
     @abstractmethod
     def deserialize(self, data: bytes, /) -> _T_ReceivedDTOPacket:

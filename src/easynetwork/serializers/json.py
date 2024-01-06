@@ -180,18 +180,9 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[Any, Any]):
             all the parts of the JSON :term:`packet`.
         """
         data = self.__encoder.encode(packet).encode(self.__encoding, self.__unicode_errors)
-        if not data.startswith((b"{", b"[", b'"')):
+        if self.__use_lines or not data.startswith((b"{", b"[", b'"')):
             data += b"\n"
-            yield data
-        elif not self.__use_lines:
-            yield data
-        elif len(data) + 1 <= self.__limit // 2:
-            data += b"\n"
-            yield data
-        else:
-            yield data
-            del data
-            yield b"\n"
+        yield data
 
     @final
     def deserialize(self, data: bytes) -> Any:
