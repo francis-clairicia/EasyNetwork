@@ -92,11 +92,11 @@ class DatagramEndpoint:
     async def aclose(self) -> None:
         if self.__transport.is_closing():
             # Only wait for it.
-            await self.__protocol._get_close_waiter()
+            await asyncio.shield(self.__protocol._get_close_waiter())
             return
 
         self.__transport.close()
-        await self.__protocol._get_close_waiter()
+        await asyncio.shield(self.__protocol._get_close_waiter())
 
     def is_closing(self) -> bool:
         return self.__transport.is_closing()
