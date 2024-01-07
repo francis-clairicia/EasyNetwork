@@ -205,10 +205,7 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_T_Request,
 
                 while True:
                     try:
-                        if datagram_queue:
-                            # Always handle one request at a time
-                            await current_async_backend().cancel_shielded_coro_yield()
-                        else:
+                        if not datagram_queue:
                             with client_manager.set_client_state(address, _ClientState.TASK_WAITING):
                                 await condition.wait()
                             client_manager.check_datagram_queue_not_empty(datagram_queue)

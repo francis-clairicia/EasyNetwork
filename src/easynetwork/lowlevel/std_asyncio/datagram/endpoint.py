@@ -110,7 +110,6 @@ class DatagramEndpoint:
             if data_and_address is None:
                 self.__check_exceptions()
                 raise _utils.error_from_errno(_errno.ECONNABORTED)
-            await TaskUtils.cancel_shielded_coro_yield()
         else:
             data_and_address = await self.__recv_queue.get()
             if data_and_address is None:
@@ -199,11 +198,10 @@ class DatagramEndpointProtocol(asyncio.DatagramProtocol):
         self._wakeup_write_waiters(exc)
 
         if self.__transport is not None:
+            self.__transport = None
             self.__recv_queue.put_nowait(None)  # Wake up endpoint
             if exc is not None:
                 self.__exception_queue.put_nowait(exc)
-            self.__transport.close()
-            self.__transport = None
 
         super().connection_lost(exc)
 

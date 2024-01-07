@@ -379,3 +379,24 @@ def wait_until_writable(sock: _socket.socket, loop: asyncio.AbstractEventLoop) -
     loop.add_writer(sock, wakeup, f)
     f.add_done_callback(on_fut_done)
     return f
+
+
+# Taken from asyncio library
+def add_flowcontrol_defaults(high: int | None, low: int | None, kb: int) -> tuple[int, int]:  # pragma: no cover
+    if high is None:
+        if low is None:
+            hi = kb * 1024
+        else:
+            lo = low
+            hi = 4 * lo
+    else:
+        hi = high
+    if low is None:
+        lo = hi // 4
+    else:
+        lo = low
+
+    if not hi >= lo >= 0:
+        raise ValueError(f"high ({hi!r}) must be >= low ({lo!r}) must be >= 0")
+
+    return hi, lo

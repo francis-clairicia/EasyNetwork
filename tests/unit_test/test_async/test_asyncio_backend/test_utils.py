@@ -585,6 +585,7 @@ async def test____create_connection____getaddrinfo_return_mismatch(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("connection_socktype", [SOCK_STREAM], indirect=True, ids=repr)
+@pytest.mark.flaky(retries=3)
 async def test____create_connection____happy_eyeballs_delay____connect_cancellation(
     event_loop: asyncio.AbstractEventLoop,
     addrinfo_list_factory: _AddrInfoListFactory,

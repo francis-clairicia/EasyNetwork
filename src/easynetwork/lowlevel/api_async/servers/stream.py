@@ -157,7 +157,7 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_T_Request, _
             request_receiver: _RequestReceiver[_T_Request] | _BufferedRequestReceiver[_T_Request]
             try:
                 if not isinstance(transport, transports.AsyncBufferedStreamReadTransport):
-                    raise UnsupportedOperation
+                    raise UnsupportedOperation  # pragma: no cover
                 consumer = _stream.BufferedStreamDataConsumer(self.__protocol, self.__max_recv_size)
                 request_receiver = _BufferedRequestReceiver(
                     transport=transport,
@@ -216,25 +216,20 @@ class _BaseRequestReceiver(Generic[_T_Request]):
         return self
 
     async def __anext__(self) -> _asyncgen.AsyncGenAction[None, _T_Request]:
-        transport: transports.AsyncBaseTransport = self.transport
-        if transport.is_closing():
+        if self.transport.is_closing():
             raise StopAsyncIteration
 
         consumer = self._packet_iterator()
         try:
-            try:
-                request = next(consumer)
-            except StopIteration:
-                pass
-            else:
-                await self.backend.cancel_shielded_coro_yield()
-                return _asyncgen.SendAction(request)
-            while await self._read_data_from_transport():
+            while True:
                 try:
                     request = next(consumer)
                 except StopIteration:
-                    continue
-                return _asyncgen.SendAction(request)
+                    pass
+                else:
+                    return _asyncgen.SendAction(request)
+                if not await self._read_data_from_transport():
+                    break
         except BaseException as exc:
             return _asyncgen.ThrowAction(exc)
         raise StopAsyncIteration
@@ -254,7 +249,7 @@ class _RequestReceiver(_BaseRequestReceiver[_T_Request]):
 
     async def _read_data_from_transport(self) -> bool:
         data = await self.transport.recv(self.max_recv_size)
-        if data:
+        if len(data):
             self.consumer.feed(data)
             return True
         return False  # Closed connection (EOF)

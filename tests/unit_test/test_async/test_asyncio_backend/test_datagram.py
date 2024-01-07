@@ -329,8 +329,10 @@ class TestDatagramEndpoint:
         mock_asyncio_recv_queue.get.assert_awaited_once_with()
 
     @pytest.mark.parametrize("address", [("127.0.0.1", 12345), None], ids=repr)
+    @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing=={p}")
     async def test____sendto____send_and_await_drain(
         self,
+        transport_is_closing: bool,
         endpoint: DatagramEndpoint,
         address: tuple[str, int] | None,
         mock_asyncio_transport: MagicMock,
@@ -338,6 +340,7 @@ class TestDatagramEndpoint:
         mock_asyncio_exception_queue: MagicMock,
     ) -> None:
         # Arrange
+        mock_asyncio_transport.is_closing.side_effect = [transport_is_closing]
         mock_asyncio_exception_queue.get_nowait.side_effect = asyncio.QueueEmpty
 
         # Act
@@ -452,7 +455,7 @@ class TestDatagramEndpointProtocol:
         assert close_waiter.done() and close_waiter.exception() is None and close_waiter.result() is None
         mock_asyncio_recv_queue.put_nowait.assert_called_once_with(None)
         mock_asyncio_exception_queue.put_nowait.assert_not_called()
-        mock_asyncio_transport.close.assert_called_once_with()  # just to be sure :)
+        mock_asyncio_transport.close.assert_not_called()  # just to be sure :)
 
     def test____connection_lost____by_unrelated_error(
         self,
@@ -475,7 +478,7 @@ class TestDatagramEndpointProtocol:
         assert close_waiter.done() and close_waiter.exception() is None
         mock_asyncio_recv_queue.put_nowait.assert_called_once_with(None)
         mock_asyncio_exception_queue.put_nowait.assert_called_once_with(exception)
-        mock_asyncio_transport.close.assert_called_once_with()  # just to be sure :)
+        mock_asyncio_transport.close.assert_not_called()  # just to be sure :)
 
     def test____datagram_received____push_to_queue(
         self,

@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING, Any, final
 from ....exceptions import UnsupportedOperation
 from ... import _utils, socket as socket_tools
 from ...api_async.transports import abc as transports
+from .._asyncio_utils import add_flowcontrol_defaults
 from ..tasks import TaskUtils
 
 if TYPE_CHECKING:
@@ -45,6 +46,7 @@ class AsyncioTransportStreamSocketAdapter(transports.AsyncStreamTransport):
         "__writer",
         "__socket",
         "__closing",
+        "__over_ssl",
     )
 
     def __init__(
@@ -55,6 +57,7 @@ class AsyncioTransportStreamSocketAdapter(transports.AsyncStreamTransport):
         super().__init__()
         self.__reader: asyncio.StreamReader = reader
         self.__writer: asyncio.StreamWriter = writer
+        self.__over_ssl: bool = writer.get_extra_info("sslcontext") is not None
 
         socket: asyncio.trsock.TransportSocket | None = writer.get_extra_info("socket")
         assert socket is not None, "Writer transport must be a socket transport"  # nosec assert_used
@@ -87,7 +90,7 @@ class AsyncioTransportStreamSocketAdapter(transports.AsyncStreamTransport):
         except OSError:
             pass
         except asyncio.CancelledError:
-            if self.__writer.get_extra_info("sslcontext") is not None:
+            if self.__over_ssl:
                 self.__writer.transport.abort()
             raise
 
@@ -135,6 +138,7 @@ class AsyncioTransportBufferedStreamSocketAdapter(transports.AsyncStreamTranspor
         "__protocol",
         "__socket",
         "__closing",
+        "__over_ssl",
     )
 
     def __init__(
@@ -145,6 +149,7 @@ class AsyncioTransportBufferedStreamSocketAdapter(transports.AsyncStreamTranspor
         super().__init__()
         self.__transport: asyncio.Transport = transport
         self.__protocol: StreamReaderBufferedProtocol = protocol
+        self.__over_ssl: bool = transport.get_extra_info("sslcontext") is not None
 
         socket: asyncio.trsock.TransportSocket | None = transport.get_extra_info("socket")
         assert socket is not None, "Writer transport must be a socket transport"  # nosec assert_used
@@ -155,12 +160,15 @@ class AsyncioTransportBufferedStreamSocketAdapter(transports.AsyncStreamTranspor
         # To bypass this side effect, we use our own flag.
         self.__closing: bool = False
 
+        # Disable in-memory byte buffering.
+        transport.set_write_buffer_limits(1)
+
     async def aclose(self) -> None:
         self.__closing = True
         if self.__transport.is_closing():
             # Only wait for it.
             try:
-                await asyncio.shield(self.__protocol.get_close_waiter())
+                await asyncio.shield(self.__protocol._get_close_waiter())
             except OSError:
                 pass
             return
@@ -173,11 +181,11 @@ class AsyncioTransportBufferedStreamSocketAdapter(transports.AsyncStreamTranspor
         finally:
             self.__transport.close()
         try:
-            await asyncio.shield(self.__protocol.get_close_waiter())
+            await asyncio.shield(self.__protocol._get_close_waiter())
         except OSError:
             pass
         except asyncio.CancelledError:
-            if self.__transport.get_extra_info("sslcontext") is not None:
+            if self.__over_ssl:
                 self.__transport.abort()
             raise
 
@@ -198,6 +206,8 @@ class AsyncioTransportBufferedStreamSocketAdapter(transports.AsyncStreamTranspor
 
     async def send_all_from_iterable(self, iterable_of_data: Iterable[bytes | bytearray | memoryview]) -> None:
         self.__transport.writelines(iterable_of_data)
+        if self.__transport.is_closing():
+            await TaskUtils.coro_yield()
         await self.__protocol.writer_drain()
 
     async def send_eof(self) -> None:
@@ -233,6 +243,8 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
         "__drain_waiters",
         "__write_paused",
         "__read_paused",
+        "__read_high_water",
+        "__read_low_water",
         "__connection_lost",
         "__connection_lost_exception",
         "__eof_reached",
@@ -264,6 +276,12 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
         self.__eof_reached: bool = False
         self.__over_ssl: bool = False
 
+        max_size_in_kb = self.max_size // 1024
+        default_water_size = max_size_in_kb * 3 // 4
+        high, low = add_flowcontrol_defaults(None, None, default_water_size)
+        self.__read_high_water = high
+        self.__read_low_water = low
+
     def __del__(self) -> None:
         # Prevent reports about unhandled exceptions.
         try:
@@ -294,15 +312,15 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
         self._wakeup_read_waiter(exc)
         self._wakeup_write_waiters(exc)
 
-        if self.__transport is not None:
-            self.__transport.close()
-            self.__transport = None
+        self.__transport = None
 
         super().connection_lost(exc)
 
     def get_buffer(self, sizehint: int) -> WriteableBuffer:
         # Ignore sizehint, the buffer is already at its maximum size.
         # Return unused buffer part
+        if self.__buffer is None:
+            raise BufferError("get_buffer() called after connection_lost()")
         if self.__buffer_nbytes_written:
             return self.__buffer_view[self.__buffer_nbytes_written :]
         return self.__buffer_view
@@ -311,23 +329,10 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
         assert not self.__connection_lost, "buffer_updated() after connection_lost()"  # nosec assert_used
         assert not self.__eof_reached, "buffer_updated() after eof_received()"  # nosec assert_used
 
-        if not nbytes:
-            return
-
         self.__buffer_nbytes_written += nbytes
         assert 0 <= self.__buffer_nbytes_written <= self.__buffer_view.nbytes  # nosec assert_used
         self._wakeup_read_waiter(None)
-
-        if self.__transport is not None and not self.__read_paused and self.__buffer_nbytes_written == self.__buffer_view.nbytes:
-            try:
-                self.__transport.pause_reading()
-            except NotImplementedError:
-                # From asyncio.StreamReader: The transport can't be paused.
-                # We'll just have to buffer all data.
-                # Forget the transport so we don't keep trying.
-                self.__transport = None
-            else:
-                self.__read_paused = True
+        self._maybe_pause_transport()
 
     def eof_received(self) -> bool:
         self.__eof_reached = True
@@ -351,13 +356,13 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
 
         nbytes_written = self.__buffer_nbytes_written
         if nbytes_written > 0:
-            with self.__buffer_view[:nbytes_written] as protocol_buffer_written:
-                data = bytes(protocol_buffer_written[:bufsize])
-                if (unused := nbytes_written - bufsize) > 0:
-                    protocol_buffer_written[:unused] = protocol_buffer_written[-unused:]
-                    self.__buffer_nbytes_written = unused
-                else:
-                    self.__buffer_nbytes_written = 0
+            protocol_buffer_written = self.__buffer_view[:nbytes_written]
+            data = bytes(protocol_buffer_written[:bufsize])
+            if (unused := nbytes_written - bufsize) > 0:
+                protocol_buffer_written[:unused] = protocol_buffer_written[-unused:]
+                self.__buffer_nbytes_written = unused
+            else:
+                self.__buffer_nbytes_written = 0
         else:
             data = b""
         self._maybe_resume_transport()
@@ -367,7 +372,6 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
         if self.__connection_lost_exception is not None:
             raise self.__connection_lost_exception
         with memoryview(buffer).cast("B") as buffer:
-            assert buffer.itemsize == self.__buffer_view.itemsize  # nosec assert_used
             if not buffer.nbytes:
                 return 0
             if not self.__buffer_nbytes_written and not self.__eof_reached:
@@ -375,18 +379,19 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
 
             nbytes_written = self.__buffer_nbytes_written
             if nbytes_written > 0:
-                with self.__buffer_view[:nbytes_written] as protocol_buffer_written:
-                    bufsize_offset = nbytes_written - buffer.nbytes
-                    if bufsize_offset > 0:
-                        nbytes_written = buffer.nbytes
-                        buffer[:] = protocol_buffer_written[:nbytes_written]
-                        protocol_buffer_written[:bufsize_offset] = protocol_buffer_written[-bufsize_offset:]
-                        self.__buffer_nbytes_written = bufsize_offset
-                    else:
-                        buffer[:nbytes_written] = protocol_buffer_written
-                        self.__buffer_nbytes_written = 0
-            self._maybe_resume_transport()
-            return nbytes_written
+                protocol_buffer_written = self.__buffer_view[:nbytes_written]
+                bufsize_offset = nbytes_written - buffer.nbytes
+                if bufsize_offset > 0:
+                    nbytes_written = buffer.nbytes
+                    buffer[:] = protocol_buffer_written[:nbytes_written]
+                    protocol_buffer_written[:bufsize_offset] = protocol_buffer_written[-bufsize_offset:]
+                    self.__buffer_nbytes_written = bufsize_offset
+                else:
+                    buffer[:nbytes_written] = protocol_buffer_written
+                    self.__buffer_nbytes_written = 0
+
+        self._maybe_resume_transport()
+        return nbytes_written
 
     async def _wait_for_data(self, requester: str) -> None:
         if self.__read_waiter is not None:
@@ -396,7 +401,8 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
         assert not self.__read_paused, "transport reading is paused"  # nosec assert_used
 
         if self.__transport is None:
-            raise RuntimeError(f"{requester}() called after connection_lost()")
+            # happening if transport.pause_reading() raises NotImplementedError
+            raise _utils.error_from_errno(_errno.ECONNABORTED)
 
         self.__read_waiter = self.__loop.create_future()
         try:
@@ -413,10 +419,28 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
                     waiter.set_exception(exc)
             self.__read_waiter = None
 
+    def _get_read_buffer_size(self) -> int:
+        return self.__buffer_nbytes_written
+
+    def _get_read_buffer_limits(self) -> tuple[int, int]:
+        return (self.__read_low_water, self.__read_high_water)
+
+    def _maybe_pause_transport(self) -> None:
+        if self.__transport is not None and not self.__read_paused and self.__buffer_nbytes_written >= self.__read_high_water:
+            try:
+                self.__transport.pause_reading()
+            except NotImplementedError:
+                # From asyncio.StreamReader: The transport can't be paused.
+                # We'll just have to buffer all data.
+                # Forget the transport so we don't keep trying.
+                self.__transport = None
+            else:
+                self.__read_paused = True
+
     def _maybe_resume_transport(self) -> None:
         if self.__connection_lost:
             self._maybe_release_buffer()
-        elif self.__read_paused and self.__transport is not None and self.__buffer_nbytes_written < self.__buffer_view.nbytes:
+        elif self.__read_paused and self.__transport is not None and self.__buffer_nbytes_written <= self.__read_low_water:
             self.__transport.resume_reading()
             self.__read_paused = False
 
@@ -460,7 +484,7 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
                 else:
                     waiter.set_exception(exc)
 
-    def get_close_waiter(self) -> asyncio.Future[None]:
+    def _get_close_waiter(self) -> asyncio.Future[None]:
         return self.__closed
 
     def _get_loop(self) -> asyncio.AbstractEventLoop:

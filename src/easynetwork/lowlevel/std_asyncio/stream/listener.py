@@ -51,7 +51,6 @@ async def connect_accepted_socket(
     loop: asyncio.AbstractEventLoop,
     sock: _socket.socket,
     *,
-    limit: int = 65536,
     ssl: _ssl.SSLContext | None = None,
     ssl_handshake_timeout: float | None = None,
     ssl_shutdown_timeout: float | None = None,
