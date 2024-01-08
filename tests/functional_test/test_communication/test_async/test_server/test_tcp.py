@@ -45,19 +45,6 @@ class NoListenerErrorBackend(AsyncIOBackend):
     ) -> Sequence[ListenerSocketAdapter[Any]]:
         return []
 
-    async def create_ssl_over_tcp_listeners(
-        self,
-        host: str | Sequence[str] | None,
-        port: int,
-        backlog: int,
-        ssl_context: ssl.SSLContext,
-        ssl_handshake_timeout: float,
-        ssl_shutdown_timeout: float,
-        *,
-        reuse_port: bool = False,
-    ) -> Sequence[ListenerSocketAdapter[Any]]:
-        return []
-
 
 def client_address(client: AsyncStreamClient[Any]) -> SocketAddress:
     return client.extra(INETClientAttribute.remote_address)
@@ -340,6 +327,11 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     def ssl_handshake_timeout(request: Any) -> float | None:
         return getattr(request, "param", None)
 
+    @pytest.fixture
+    @staticmethod
+    def ssl_standard_compatible(request: Any) -> bool | None:
+        return getattr(request, "param", None)
+
     @pytest_asyncio.fixture
     @staticmethod
     async def server(
@@ -349,9 +341,13 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         use_ssl: bool,
         server_ssl_context: ssl.SSLContext,
         ssl_handshake_timeout: float | None,
+        ssl_standard_compatible: bool | None,
         caplog: pytest.LogCaptureFixture,
         logger_crash_threshold_level: dict[str, int],
     ) -> AsyncIterator[MyAsyncTCPServer]:
+        # Remove this option for non-regression
+        server_ssl_context.options &= ~ssl.OP_IGNORE_UNEXPECTED_EOF
+
         async with MyAsyncTCPServer(
             localhost_ip,
             0,
@@ -360,6 +356,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
             backlog=1,
             ssl=server_ssl_context if use_ssl else None,
             ssl_handshake_timeout=ssl_handshake_timeout,
+            ssl_standard_compatible=ssl_standard_compatible,
             logger=LOGGER,
         ) as server:
             assert not server.get_sockets()
@@ -480,7 +477,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
             assert accept_record is not None and disconnect_record is not None
             assert accept_record.levelno == expected_log_level and disconnect_record.levelno == expected_log_level
 
-    @pytest.mark.parametrize("ssl_parameter", ["ssl_handshake_timeout", "ssl_shutdown_timeout"])
+    @pytest.mark.parametrize("ssl_parameter", ["ssl_handshake_timeout", "ssl_shutdown_timeout", "ssl_standard_compatible"])
     async def test____dunder_init____useless_parameter_if_no_ssl_context(
         self,
         ssl_parameter: str,
@@ -1079,9 +1076,8 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     ) -> None:
         caplog.set_level(logging.ERROR, LOGGER.name)
         logger_crash_maximum_nb_lines[LOGGER.name] = 1
-        logger_crash_maximum_nb_lines["easynetwork.lowlevel.std_asyncio.stream.listener"] = 1
-        socket = await create_connection(*server_address, event_loop)
-        with pytest.raises(OSError):
+        logger_crash_maximum_nb_lines["easynetwork.lowlevel.api_async.transports.tls"] = 1
+        with await create_connection(*server_address, event_loop) as socket, pytest.raises(OSError):
             # The SSL handshake expects the client to send the list of encryption algorithms.
             # But we won't, so the server will close the connection after 1 second
             # and raise a TimeoutError or ConnectionAbortedError.
@@ -1092,3 +1088,44 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         await asyncio.sleep(0.1)
         assert len(caplog.records) == 1
         assert caplog.records[0].message == "Error in client task (during TLS handshake)"
+        assert caplog.records[0].exc_info is not None
+        assert type(caplog.records[0].exc_info[1]) is TimeoutError
+
+    @pytest.mark.parametrize("use_ssl", ["USE_SSL"], indirect=True)
+    @pytest.mark.parametrize("ssl_handshake_timeout", [pytest.param(1, id="timeout==1sec")], indirect=True)
+    @pytest.mark.parametrize("ssl_standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible=={p}")
+    @pytest.mark.parametrize(
+        "request_handler",
+        [
+            pytest.param(MyAsyncTCPRequestHandler, id="during_handle"),
+            pytest.param(InitialHandshakeRequestHandler, id="during_on_connection_hook"),
+        ],
+        indirect=True,
+    )
+    async def test____serve_forever____suppress_ssl_ragged_eof_errors(
+        self,
+        server_address: tuple[str, int],
+        server_ssl_context: ssl.SSLContext,
+        client_ssl_context: ssl.SSLContext,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        caplog.set_level(logging.WARNING, LOGGER.name)
+
+        # This test must fail if this option was not unset when creating the server
+        assert (server_ssl_context.options & ssl.OP_IGNORE_UNEXPECTED_EOF) == 0
+
+        from easynetwork.lowlevel.api_async.transports.tls import AsyncTLSStreamTransport
+
+        transport = await current_async_backend().create_tcp_connection(*server_address)
+        transport = await AsyncTLSStreamTransport.wrap(
+            transport,
+            client_ssl_context,
+            standard_compatible=False,  # <- Will not do shutdown handshake on close.
+            server_hostname="test.example.com",
+            handshake_timeout=1,
+        )
+        await asyncio.sleep(0.1)
+        await transport.aclose()
+
+        await asyncio.sleep(0.1)
+        assert len(caplog.records) == 0

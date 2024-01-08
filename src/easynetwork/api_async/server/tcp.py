@@ -49,7 +49,7 @@ from .handler import AsyncStreamClient, AsyncStreamRequestHandler, INETClientAtt
 if TYPE_CHECKING:
     import ssl as _typing_ssl
 
-    from ...lowlevel.api_async.backend.abc import CancelScope, IEvent, Task, TaskGroup
+    from ...lowlevel.api_async.backend.abc import AsyncBackend, CancelScope, IEvent, Task, TaskGroup
     from ...lowlevel.api_async.transports.abc import AsyncListener, AsyncStreamTransport
 
 
@@ -83,6 +83,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
         ssl: _typing_ssl.SSLContext | None = None,
         ssl_handshake_timeout: float | None = None,
         ssl_shutdown_timeout: float | None = None,
+        ssl_standard_compatible: bool | None = None,
         backlog: int | None = None,
         reuse_port: bool = False,
         max_recv_size: int | None = None,
@@ -111,6 +112,8 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
                                    before aborting the connection. ``60.0`` seconds if :data:`None` (default).
             ssl_shutdown_timeout: the time in seconds to wait for the SSL shutdown to complete before aborting the connection.
                                   ``30.0`` seconds if :data:`None` (default).
+            ssl_standard_compatible: if :data:`False`, skip the closing handshake when closing the connection,
+                                     and don't raise an exception if the peer does the same.
             backlog: is the maximum number of queued connections passed to :class:`~socket.socket.listen` (defaults to ``100``).
             reuse_port: tells the kernel to allow this endpoint to be bound to the same port as other existing endpoints
                         are bound to, so long as they all set this flag when being created.
@@ -149,19 +152,24 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
         if ssl_shutdown_timeout is not None and not ssl:
             raise ValueError("ssl_shutdown_timeout is only meaningful with ssl")
 
-        def _value_or_default(value: float | None, default: float) -> float:
-            return value if value is not None else default
+        if ssl_standard_compatible is not None and not ssl:
+            raise ValueError("ssl_standard_compatible is only meaningful with ssl")
+
+        if ssl_standard_compatible is None:
+            ssl_standard_compatible = True
 
         self.__listeners_factory: Callable[[], Coroutine[Any, Any, Sequence[AsyncListener[AsyncStreamTransport]]]] | None
         if ssl:
             self.__listeners_factory = _utils.make_callback(
-                backend.create_ssl_over_tcp_listeners,
+                self.__create_ssl_over_tcp_listeners,
+                backend,
                 host,
                 port,
                 backlog=backlog,
                 ssl_context=ssl,
-                ssl_handshake_timeout=_value_or_default(ssl_handshake_timeout, constants.SSL_HANDSHAKE_TIMEOUT),
-                ssl_shutdown_timeout=_value_or_default(ssl_shutdown_timeout, constants.SSL_SHUTDOWN_TIMEOUT),
+                ssl_handshake_timeout=ssl_handshake_timeout,
+                ssl_shutdown_timeout=ssl_shutdown_timeout,
+                ssl_standard_compatible=ssl_standard_compatible,
                 reuse_port=reuse_port,
             )
         else:
@@ -189,6 +197,38 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
         else:
             self.__client_connection_log_level = logging.DEBUG
         self.__active_tasks: int = 0
+
+    @staticmethod
+    async def __create_ssl_over_tcp_listeners(
+        backend: AsyncBackend,
+        host: str | Sequence[str] | None,
+        port: int,
+        backlog: int,
+        ssl_context: _typing_ssl.SSLContext,
+        *,
+        ssl_handshake_timeout: float | None,
+        ssl_shutdown_timeout: float | None,
+        ssl_standard_compatible: bool,
+        reuse_port: bool,
+    ) -> Sequence[AsyncListener[AsyncStreamTransport]]:
+        from ...lowlevel.api_async.transports.tls import AsyncTLSListener
+
+        listeners = await backend.create_tcp_listeners(
+            host=host,
+            port=port,
+            backlog=backlog,
+            reuse_port=reuse_port,
+        )
+        return [
+            AsyncTLSListener(
+                listener,
+                ssl_context,
+                handshake_timeout=ssl_handshake_timeout,
+                shutdown_timeout=ssl_shutdown_timeout,
+                standard_compatible=ssl_standard_compatible,
+            )
+            for listener in listeners
+        ]
 
     @_utils.inherit_doc(AbstractAsyncNetworkServer)
     def is_serving(self) -> bool:
@@ -380,6 +420,9 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
                             await _on_connection_hook.aclose()
                             return
                         except BaseException as exc:
+                            if _utils.is_ssl_eof_error(exc):
+                                await _on_connection_hook.aclose()
+                                return
                             action = ThrowAction(_utils.remove_traceback_frames_in_place(exc, 1))
                         try:
                             await action.asend(_on_connection_hook)
@@ -422,6 +465,9 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
                         await request_handler_generator.aclose()
                         return
                     except BaseException as exc:
+                        if _utils.is_ssl_eof_error(exc):
+                            await request_handler_generator.aclose()
+                            return
                         action = ThrowAction(_utils.remove_traceback_frames_in_place(exc, 1))
                     try:
                         await action.asend(request_handler_generator)

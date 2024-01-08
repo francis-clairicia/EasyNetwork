@@ -22,7 +22,7 @@ from collections.abc import Generator
 from typing import Literal, assert_never, final
 
 from ..exceptions import DeserializeError, IncrementalDeserializeError
-from ..lowlevel.constants import _DEFAULT_LIMIT
+from ..lowlevel.constants import DEFAULT_SERIALIZER_LIMIT
 from .abc import AbstractIncrementalPacketSerializer
 from .tools import GeneratorStreamReader
 
@@ -47,7 +47,7 @@ class StringLineSerializer(AbstractIncrementalPacketSerializer[str, str]):
         *,
         encoding: str = "ascii",
         unicode_errors: str = "strict",
-        limit: int = _DEFAULT_LIMIT,
+        limit: int = DEFAULT_SERIALIZER_LIMIT,
         keep_end: bool = False,
         debug: bool = False,
     ) -> None:

@@ -39,7 +39,6 @@ from typing import TYPE_CHECKING, Any, Generic, NoReturn, ParamSpec, Protocol, S
 if TYPE_CHECKING:
     import concurrent.futures
     import socket as _socket
-    import ssl as _typing_ssl
     from types import TracebackType
 
     from ..transports import abc as transports
@@ -924,43 +923,6 @@ class AsyncBackend(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    async def create_ssl_over_tcp_connection(
-        self,
-        host: str,
-        port: int,
-        ssl_context: _typing_ssl.SSLContext,
-        *,
-        server_hostname: str | None,
-        ssl_handshake_timeout: float,
-        ssl_shutdown_timeout: float,
-        local_address: tuple[str, int] | None = ...,
-        happy_eyeballs_delay: float | None = ...,
-    ) -> transports.AsyncStreamTransport:
-        """
-        Opens an SSL/TLS stream connection on top of the TCP/IP protocol.
-
-        Parameters:
-            host: The host IP/domain name.
-            port: Port of connection.
-            ssl_context: TLS connection configuration (see :mod:`ssl` module).
-            server_hostname: sets or overrides the hostname that the target server's certificate will be matched against.
-                             By default, `host` is used.
-            ssl_handshake_timeout: the time in seconds to wait for the TLS handshake to complete.
-            ssl_shutdown_timeout: the time in seconds to wait for the SSL shutdown to complete before aborting the connection.
-            local_address: If given, is a ``(local_host, local_port)`` tuple used to bind the socket locally.
-            happy_eyeballs_delay: If given, is the "Connection Attempt Delay" as defined in :rfc:`8305`.
-
-        Raises:
-            ConnectionError: Cannot connect to `host` with the given `port`.
-            ssl.SSLError: Error in the TLS handshake (invalid certificate, ciphers, etc.).
-            OSError: unrelated OS error occurred.
-
-        Returns:
-            A stream socket.
-        """
-        raise NotImplementedError
-
-    @abstractmethod
     async def wrap_stream_socket(self, socket: _socket.socket) -> transports.AsyncStreamTransport:
         """
         Wraps an already connected :data:`~socket.SOCK_STREAM` socket into an asynchronous stream socket.
@@ -974,42 +936,6 @@ class AsyncBackend(metaclass=ABCMeta):
             socket: The socket to wrap.
 
         Raises:
-            ValueError: Invalid socket type or family.
-
-        Returns:
-            A stream socket.
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    async def wrap_ssl_over_stream_socket_client_side(
-        self,
-        socket: _socket.socket,
-        ssl_context: _typing_ssl.SSLContext,
-        *,
-        server_hostname: str,
-        ssl_handshake_timeout: float,
-        ssl_shutdown_timeout: float,
-    ) -> transports.AsyncStreamTransport:
-        """
-        Wraps an already connected :data:`~socket.SOCK_STREAM` socket into an asynchronous stream socket in a SSL/TLS context.
-
-        Important:
-            The returned stream socket takes the ownership of `socket`.
-
-            You should use :meth:`AsyncStreamTransport.aclose` to close the socket.
-
-        Parameters:
-            socket: The socket to wrap.
-            ssl_context: TLS connection configuration (see :mod:`ssl` module).
-            server_hostname: sets the hostname that the target server's certificate will be matched against.
-            ssl_handshake_timeout: the time in seconds to wait for the TLS handshake to complete.
-            ssl_shutdown_timeout: the time in seconds to wait for the SSL shutdown to complete before aborting the connection.
-
-        Raises:
-            ConnectionError: TLS handshake failed to connect to the remote.
-            ssl.SSLError: Error in the TLS handshake (invalid certificate, ciphers, etc.).
-            OSError: unrelated OS error occurred.
             ValueError: Invalid socket type or family.
 
         Returns:
@@ -1042,51 +968,6 @@ class AsyncBackend(metaclass=ABCMeta):
                   (note that if `host` resolves to multiple network interfaces, a different random port will be selected
                   for each interface).
             backlog: is the maximum number of queued connections passed to :class:`~socket.socket.listen`.
-            reuse_port: tells the kernel to allow this endpoint to be bound to the same port as other existing endpoints
-                        are bound to, so long as they all set this flag when being created.
-                        This option is not supported on Windows.
-
-        Raises:
-            OSError: unrelated OS error occurred.
-
-        Returns:
-            A sequence of listener sockets.
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    async def create_ssl_over_tcp_listeners(
-        self,
-        host: str | Sequence[str] | None,
-        port: int,
-        backlog: int,
-        ssl_context: _typing_ssl.SSLContext,
-        *,
-        ssl_handshake_timeout: float,
-        ssl_shutdown_timeout: float,
-        reuse_port: bool = ...,
-    ) -> Sequence[transports.AsyncListener[transports.AsyncStreamTransport]]:
-        """
-        Opens listener sockets for TCP connections in a SSL/TLS context.
-
-        Parameters:
-            host: Can be set to several types which determine where the server would be listening:
-
-                  * If `host` is a string, the TCP server is bound to a single network interface specified by `host`.
-
-                  * If `host` is a sequence of strings, the TCP server is bound to all network interfaces specified by the sequence.
-
-                  * If `host` is :data:`None`, all interfaces are assumed and a list of multiple sockets will be returned
-                    (most likely one for IPv4 and another one for IPv6).
-            port: specify which port the server should listen on. If the value is ``0``, a random unused port will be selected
-                  (note that if `host` resolves to multiple network interfaces, a different random port will be selected
-                  for each interface).
-            backlog: is the maximum number of queued connections passed to :class:`~socket.socket.listen`.
-            ssl: can be set to an :class:`ssl.SSLContext` instance to enable TLS over the accepted connections.
-            ssl_handshake_timeout: (for a TLS connection) the time in seconds to wait for the TLS handshake to complete
-                                   before aborting the connection. ``60.0`` seconds if :data:`None` (default).
-            ssl_shutdown_timeout: the time in seconds to wait for the SSL shutdown to complete before aborting the connection.
-                                  ``30.0`` seconds if :data:`None` (default).
             reuse_port: tells the kernel to allow this endpoint to be bound to the same port as other existing endpoints
                         are bound to, so long as they all set this flag when being created.
                         This option is not supported on Windows.

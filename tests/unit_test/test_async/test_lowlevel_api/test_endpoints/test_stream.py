@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Awaitable, Callable, Generator
+from collections.abc import Generator
 from typing import TYPE_CHECKING, Any, Literal
 
 from easynetwork.exceptions import IncrementalDeserializeError, StreamProtocolParseError, UnsupportedOperation
@@ -16,38 +16,12 @@ from easynetwork.lowlevel.api_async.transports.abc import (
 
 import pytest
 
+from ...._utils import make_async_recv_into_side_effect as make_recv_into_side_effect
+
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
 
     from pytest_mock import MockerFixture
-
-
-def make_recv_into_side_effect(to_write: bytes | list[bytes]) -> Callable[[memoryview], Awaitable[int]]:
-    def write_in_buffer(buffer: memoryview, to_write: bytes) -> int:
-        nbytes = len(to_write)
-        buffer[:nbytes] = to_write
-        return nbytes
-
-    match to_write:
-        case bytes():
-
-            async def recv_into_side_effect(buffer: bytearray | memoryview) -> int:
-                return write_in_buffer(memoryview(buffer), to_write)
-
-        case list() if all(isinstance(b, bytes) for b in to_write):
-            iterator = iter(to_write)
-
-            async def recv_into_side_effect(buffer: bytearray | memoryview) -> int:
-                try:
-                    to_write = next(iterator)
-                except StopIteration:
-                    raise StopAsyncIteration from None
-                return write_in_buffer(memoryview(buffer), to_write)
-
-        case _:
-            pytest.fail("Invalid setup")
-
-    return recv_into_side_effect
 
 
 @pytest.mark.asyncio

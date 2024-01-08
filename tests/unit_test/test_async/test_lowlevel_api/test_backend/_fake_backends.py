@@ -54,19 +54,10 @@ class BaseFakeBackend(AsyncBackend):
     async def create_tcp_connection(self, *args: Any, **kwargs: Any) -> Any:
         raise NotImplementedError
 
-    async def create_ssl_over_tcp_connection(self, *args: Any, **kwargs: Any) -> Any:
-        raise NotImplementedError
-
     async def wrap_stream_socket(self, *args: Any, **kwargs: Any) -> Any:
         raise NotImplementedError
 
-    async def wrap_ssl_over_stream_socket_client_side(self, *args: Any, **kwargs: Any) -> Any:
-        raise NotImplementedError
-
     async def create_tcp_listeners(self, *args: Any, **kwargs: Any) -> Any:
-        raise NotImplementedError
-
-    async def create_ssl_over_tcp_listeners(self, *args: Any, **kwargs: Any) -> Any:
         raise NotImplementedError
 
     async def create_udp_endpoint(self, *args: Any, **kwargs: Any) -> Any:

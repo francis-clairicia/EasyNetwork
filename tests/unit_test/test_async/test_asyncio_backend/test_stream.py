@@ -18,7 +18,6 @@ from easynetwork.lowlevel.socket import SocketAttribute, TLSAttribute
 from easynetwork.lowlevel.std_asyncio.stream.listener import (
     AbstractAcceptedSocketFactory,
     AcceptedSocketFactory,
-    AcceptedSSLSocketFactory,
     ListenerSocketAdapter,
 )
 from easynetwork.lowlevel.std_asyncio.stream.socket import (
@@ -514,7 +513,7 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestSocket):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        caplog.set_level(logging.DEBUG)
+        caplog.set_level(logging.INFO)
         client_socket = mock_tcp_socket_factory()
         accepted_socket_factory.connect.side_effect = exc
         mock_async_socket.accept.side_effect = self._make_accept_side_effect([client_socket, asyncio.CancelledError], mocker)
@@ -539,6 +538,7 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestSocket):
                 assert len(caplog.records) == 1
                 assert caplog.records[0].levelno == logging.WARNING
                 assert caplog.records[0].message == "A client connection was interrupted just after listener.accept()"
+                assert caplog.records[0].exc_info is None
             case _:
                 assert len(caplog.records) == 0
                 accepted_socket_factory.log_connection_error.assert_called_once_with(
@@ -679,94 +679,6 @@ class TestAcceptedSocketFactory(BaseTestTransportStreamSocket, BaseTestSocket):
         mock_event_loop_connect_accepted_socket.assert_awaited_once_with(
             mocker.ANY,  # protocol_factory
             mock_tcp_socket,
-            ssl=None,
-            ssl_handshake_timeout=None,
-            ssl_shutdown_timeout=None,
-        )
-
-
-@pytest.mark.asyncio
-class TestAcceptedSSLSocketFactory(BaseTestTransportStreamSocket):
-    @pytest.fixture(scope="class")
-    @staticmethod
-    def ssl_handshake_timeout() -> float:
-        return 123456.789
-
-    @pytest.fixture(scope="class")
-    @staticmethod
-    def ssl_shutdown_timeout() -> float:
-        return 9876543.21
-
-    @pytest.fixture
-    @staticmethod
-    def mock_event_loop_connect_accepted_socket(
-        event_loop: asyncio.AbstractEventLoop,
-        mocker: MockerFixture,
-        mock_asyncio_transport: MagicMock,
-    ) -> AsyncMock:
-        return mocker.patch.object(
-            event_loop,
-            "connect_accepted_socket",
-            new_callable=mocker.AsyncMock,
-            return_value=(mock_asyncio_transport, mocker.sentinel.final_protocol),
-        )
-
-    @pytest.fixture
-    @staticmethod
-    def accepted_socket(
-        mock_ssl_context: MagicMock,
-        ssl_handshake_timeout: float,
-        ssl_shutdown_timeout: float,
-    ) -> AcceptedSSLSocketFactory:
-        return AcceptedSSLSocketFactory(
-            ssl_context=mock_ssl_context,
-            ssl_handshake_timeout=ssl_handshake_timeout,
-            ssl_shutdown_timeout=ssl_shutdown_timeout,
-        )
-
-    async def test____log_connection_error____error_log(
-        self,
-        caplog: pytest.LogCaptureFixture,
-        accepted_socket: AcceptedSocketFactory,
-    ) -> None:
-        # Arrange
-        logger = logging.getLogger(__name__)
-        caplog.set_level(logging.ERROR, logger.name)
-        exc = BaseException()
-
-        # Act
-        accepted_socket.log_connection_error(logger, exc)
-
-        # Assert
-        assert len(caplog.records) == 1
-        assert caplog.records[0].levelno == logging.ERROR
-        assert caplog.records[0].message == "Error in client task (during TLS handshake)"
-        assert caplog.records[0].exc_info is not None and caplog.records[0].exc_info[1] is exc
-
-    async def test____connect____creates_new_stream_socket(
-        self,
-        accepted_socket: AcceptedSSLSocketFactory,
-        mock_ssl_context: MagicMock,
-        ssl_handshake_timeout: float,
-        ssl_shutdown_timeout: float,
-        event_loop: asyncio.AbstractEventLoop,
-        mock_event_loop_connect_accepted_socket: AsyncMock,
-        mock_tcp_socket: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-
-        # Act
-        socket = await accepted_socket.connect(mock_tcp_socket, event_loop)
-
-        # Assert
-        assert isinstance(socket, AsyncioTransportBufferedStreamSocketAdapter)
-        mock_event_loop_connect_accepted_socket.assert_awaited_once_with(
-            mocker.ANY,  # protocol_factory
-            mock_tcp_socket,
-            ssl=mock_ssl_context,
-            ssl_handshake_timeout=ssl_handshake_timeout,
-            ssl_shutdown_timeout=ssl_shutdown_timeout,
         )
 
 

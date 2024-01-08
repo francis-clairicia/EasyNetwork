@@ -30,14 +30,6 @@ import sys
 from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, NoReturn, ParamSpec, TypeVar
 
-try:
-    import ssl as _ssl
-except ImportError:  # pragma: no cover
-    ssl = None
-else:
-    ssl = _ssl
-    del _ssl
-
 from ..api_async.backend import _sniffio_helpers
 from ..api_async.backend.abc import AsyncBackend as AbstractAsyncBackend, TaskInfo
 from ..constants import HAPPY_EYEBALLS_DELAY as _DEFAULT_HAPPY_EYEBALLS_DELAY
@@ -50,14 +42,12 @@ from ._asyncio_utils import (
 from .datagram.endpoint import create_datagram_endpoint
 from .datagram.listener import DatagramListenerSocketAdapter
 from .datagram.socket import AsyncioTransportDatagramSocketAdapter
-from .stream.listener import AcceptedSocketFactory, AcceptedSSLSocketFactory, ListenerSocketAdapter
+from .stream.listener import AcceptedSocketFactory, ListenerSocketAdapter
 from .stream.socket import AsyncioTransportBufferedStreamSocketAdapter, AsyncioTransportStreamSocketAdapter
 from .tasks import CancelScope, TaskGroup, TaskUtils
 from .threads import ThreadsPortal
 
 if TYPE_CHECKING:
-    from ssl import SSLContext as _SSLContext
-
     from ..api_async.backend.abc import ILock
 
 _P = ParamSpec("_P")
@@ -137,68 +127,9 @@ class AsyncIOBackend(AbstractAsyncBackend):
 
         return await self.wrap_stream_socket(socket)
 
-    async def create_ssl_over_tcp_connection(
-        self,
-        host: str,
-        port: int,
-        ssl_context: _SSLContext,
-        *,
-        server_hostname: str | None,
-        ssl_handshake_timeout: float,
-        ssl_shutdown_timeout: float,
-        local_address: tuple[str, int] | None = None,
-        happy_eyeballs_delay: float | None = None,
-    ) -> AsyncioTransportStreamSocketAdapter:
-        self.__verify_ssl_context(ssl_context)
-
-        if happy_eyeballs_delay is None:
-            happy_eyeballs_delay = _DEFAULT_HAPPY_EYEBALLS_DELAY
-
-        if server_hostname is None:
-            server_hostname = host
-
-        loop = asyncio.get_running_loop()
-        socket = await create_connection(
-            host,
-            port,
-            loop,
-            local_address=local_address,
-            happy_eyeballs_delay=happy_eyeballs_delay,
-        )
-
-        return await self.wrap_ssl_over_stream_socket_client_side(
-            socket,
-            ssl_context=ssl_context,
-            server_hostname=server_hostname,
-            ssl_handshake_timeout=ssl_handshake_timeout,
-            ssl_shutdown_timeout=ssl_shutdown_timeout,
-        )
-
     async def wrap_stream_socket(self, socket: _socket.socket) -> AsyncioTransportStreamSocketAdapter:
         socket.setblocking(False)
         reader, writer = await asyncio.open_connection(sock=socket)
-        return AsyncioTransportStreamSocketAdapter(reader, writer)
-
-    async def wrap_ssl_over_stream_socket_client_side(
-        self,
-        socket: _socket.socket,
-        ssl_context: _SSLContext,
-        *,
-        server_hostname: str,
-        ssl_handshake_timeout: float,
-        ssl_shutdown_timeout: float,
-    ) -> AsyncioTransportStreamSocketAdapter:
-        self.__verify_ssl_context(ssl_context)
-
-        socket.setblocking(False)
-
-        reader, writer = await asyncio.open_connection(
-            sock=socket,
-            ssl=ssl_context,
-            server_hostname=server_hostname,
-            ssl_handshake_timeout=float(ssl_handshake_timeout),
-            ssl_shutdown_timeout=float(ssl_shutdown_timeout),
-        )
         return AsyncioTransportStreamSocketAdapter(reader, writer)
 
     async def create_tcp_listeners(
@@ -209,43 +140,6 @@ class AsyncIOBackend(AbstractAsyncBackend):
         *,
         reuse_port: bool = False,
     ) -> Sequence[ListenerSocketAdapter[AsyncioTransportBufferedStreamSocketAdapter]]:
-        sockets = await self._create_tcp_socket_listeners(host, port, backlog, reuse_port=reuse_port)
-
-        loop = asyncio.get_running_loop()
-        factory = AcceptedSocketFactory()
-        return [ListenerSocketAdapter(sock, loop, factory) for sock in sockets]
-
-    async def create_ssl_over_tcp_listeners(
-        self,
-        host: str | Sequence[str] | None,
-        port: int,
-        backlog: int,
-        ssl_context: _SSLContext,
-        ssl_handshake_timeout: float,
-        ssl_shutdown_timeout: float,
-        *,
-        reuse_port: bool = False,
-    ) -> Sequence[ListenerSocketAdapter[AsyncioTransportBufferedStreamSocketAdapter]]:
-        self.__verify_ssl_context(ssl_context)
-
-        sockets = await self._create_tcp_socket_listeners(host, port, backlog, reuse_port=reuse_port)
-
-        loop = asyncio.get_running_loop()
-        factory = AcceptedSSLSocketFactory(
-            ssl_context=ssl_context,
-            ssl_handshake_timeout=float(ssl_handshake_timeout),
-            ssl_shutdown_timeout=float(ssl_shutdown_timeout),
-        )
-        return [ListenerSocketAdapter(sock, loop, factory) for sock in sockets]
-
-    async def _create_tcp_socket_listeners(
-        self,
-        host: str | Sequence[str] | None,
-        port: int,
-        backlog: int,
-        *,
-        reuse_port: bool,
-    ) -> Sequence[_socket.socket]:
         if not isinstance(backlog, int):
             raise TypeError("backlog: Expected an integer")
         loop = asyncio.get_running_loop()
@@ -275,7 +169,9 @@ class AsyncIOBackend(AbstractAsyncBackend):
             reuse_port=reuse_port,
         )
 
-        return sockets
+        loop = asyncio.get_running_loop()
+        factory = AcceptedSocketFactory()
+        return [ListenerSocketAdapter(sock, loop, factory) for sock in sockets]
 
     async def create_udp_endpoint(
         self,
@@ -361,9 +257,3 @@ class AsyncIOBackend(AbstractAsyncBackend):
 
     def create_threads_portal(self) -> ThreadsPortal:
         return ThreadsPortal()
-
-    def __verify_ssl_context(self, ctx: _SSLContext) -> None:
-        if ssl is None:
-            raise RuntimeError("stdlib ssl module not available")
-        if not isinstance(ctx, ssl.SSLContext):
-            raise ValueError(f"Expected a ssl.SSLContext instance, got {ctx!r}")

@@ -32,7 +32,7 @@ from typing import Any, final
 
 from ..exceptions import DeserializeError, IncrementalDeserializeError, LimitOverrunError
 from ..lowlevel._utils import iter_bytes
-from ..lowlevel.constants import _DEFAULT_LIMIT
+from ..lowlevel.constants import DEFAULT_SERIALIZER_LIMIT
 from .abc import AbstractIncrementalPacketSerializer
 from .tools import GeneratorStreamReader
 
@@ -91,7 +91,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[Any, Any]):
         *,
         encoding: str = "utf-8",
         unicode_errors: str = "strict",
-        limit: int = _DEFAULT_LIMIT,
+        limit: int = DEFAULT_SERIALIZER_LIMIT,
         use_lines: bool = True,
         debug: bool = False,
     ) -> None:

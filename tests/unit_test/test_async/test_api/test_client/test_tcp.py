@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import errno
 import os
+import ssl
 from collections.abc import Generator
 from socket import AF_INET6, IPPROTO_TCP, SO_ERROR, SO_KEEPALIVE, SOL_SOCKET, TCP_NODELAY
 from typing import TYPE_CHECKING, Any
@@ -10,12 +11,8 @@ from typing import TYPE_CHECKING, Any
 from easynetwork.api_async.client.tcp import AsyncTCPNetworkClient
 from easynetwork.exceptions import ClientClosedError, IncrementalDeserializeError, StreamProtocolParseError
 from easynetwork.lowlevel._stream import StreamDataConsumer
-from easynetwork.lowlevel.constants import (
-    CLOSED_SOCKET_ERRNOS,
-    DEFAULT_STREAM_BUFSIZE,
-    SSL_HANDSHAKE_TIMEOUT,
-    SSL_SHUTDOWN_TIMEOUT,
-)
+from easynetwork.lowlevel.api_async.transports.tls import AsyncTLSStreamTransport
+from easynetwork.lowlevel.constants import CLOSED_SOCKET_ERRNOS, DEFAULT_STREAM_BUFSIZE
 from easynetwork.lowlevel.socket import IPv4SocketAddress, IPv6SocketAddress, SocketProxy, _get_socket_extra
 from easynetwork.lowlevel.typed_attr import TypedAttributeProvider
 
@@ -23,7 +20,7 @@ import pytest
 import pytest_asyncio
 
 if TYPE_CHECKING:
-    from unittest.mock import MagicMock
+    from unittest.mock import AsyncMock, MagicMock
 
     from pytest_mock import MockerFixture
 
@@ -55,6 +52,11 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
     @staticmethod
     def mock_ssl_create_default_context(mock_ssl_context: MagicMock, mocker: MockerFixture) -> MagicMock:
         return mocker.patch("ssl.create_default_context", autospec=True, return_value=mock_ssl_context)
+
+    @pytest.fixture(autouse=True)
+    @staticmethod
+    def mock_tls_wrap_transport(mocker: MockerFixture) -> AsyncMock:
+        return mocker.patch.object(AsyncTLSStreamTransport, "wrap", autospec=True)
 
     @pytest.fixture
     @staticmethod
@@ -103,6 +105,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_backend: MagicMock,
         socket_family: int,
         mock_stream_socket_adapter: MagicMock,
+        mock_tls_wrap_transport: AsyncMock,
     ) -> None:
         mock_tcp_socket.family = socket_family
         mock_tcp_socket.getsockopt.return_value = 0  # Needed for tests dealing with send_packet()
@@ -110,9 +113,8 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         del mock_tcp_socket.recv
 
         mock_backend.create_tcp_connection.return_value = mock_stream_socket_adapter
-        mock_backend.create_ssl_over_tcp_connection.return_value = mock_stream_socket_adapter
         mock_backend.wrap_stream_socket.return_value = mock_stream_socket_adapter
-        mock_backend.wrap_ssl_over_stream_socket_client_side.return_value = mock_stream_socket_adapter
+        mock_tls_wrap_transport.return_value = mock_stream_socket_adapter
 
         mock_stream_socket_adapter.extra_attributes = _get_socket_extra(mock_tcp_socket, wrap_in_proxy=False)
         mock_stream_socket_adapter.extra.side_effect = TypedAttributeProvider.extra.__get__(mock_stream_socket_adapter)
@@ -179,10 +181,10 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_backend: MagicMock,
         mock_stream_data_consumer_cls: MagicMock,
         mock_stream_protocol: MagicMock,
+        mock_tls_wrap_transport: AsyncMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_backend.create_ssl_over_tcp_connection.side_effect = AssertionError
 
         # Act
         client: AsyncTCPNetworkClient[Any, Any] = AsyncTCPNetworkClient(
@@ -200,6 +202,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             local_address=mocker.sentinel.local_address,
             happy_eyeballs_delay=mocker.sentinel.happy_eyeballs_delay,
         )
+        mock_tls_wrap_transport.assert_not_awaited()
         assert mock_tcp_socket.mock_calls == [
             mocker.call.setsockopt(IPPROTO_TCP, TCP_NODELAY, True),
             mocker.call.setsockopt(SOL_SOCKET, SO_KEEPALIVE, True),
@@ -212,6 +215,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_backend: MagicMock,
         mock_stream_data_consumer_cls: MagicMock,
         mock_stream_protocol: MagicMock,
+        mock_tls_wrap_transport: AsyncMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -223,6 +227,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         # Assert
         mock_stream_data_consumer_cls.assert_called_once_with(mock_stream_protocol)
         mock_backend.wrap_stream_socket.assert_awaited_once_with(mock_tcp_socket)
+        mock_tls_wrap_transport.assert_not_awaited()
         assert mock_tcp_socket.mock_calls == [
             mocker.call.getpeername(),
             mocker.call.setsockopt(IPPROTO_TCP, TCP_NODELAY, True),
@@ -393,11 +398,11 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_stream_protocol: MagicMock,
         mock_ssl_context: MagicMock,
         mock_ssl_create_default_context: MagicMock,
+        mock_tls_wrap_transport: AsyncMock,
+        mock_stream_socket_adapter: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_backend.create_tcp_connection.side_effect = AssertionError
-        mock_backend.wrap_stream_socket.side_effect = AssertionError
 
         # Act
         client: AsyncTCPNetworkClient[Any, Any]
@@ -409,6 +414,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
                 server_hostname="server_hostname",
                 ssl_handshake_timeout=mocker.sentinel.ssl_handshake_timeout,
                 ssl_shutdown_timeout=mocker.sentinel.ssl_shutdown_timeout,
+                ssl_standard_compatible=mocker.sentinel.ssl_standard_compatible,
             )
         else:
             client = AsyncTCPNetworkClient(
@@ -418,6 +424,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
                 server_hostname="server_hostname",
                 ssl_handshake_timeout=mocker.sentinel.ssl_handshake_timeout,
                 ssl_shutdown_timeout=mocker.sentinel.ssl_shutdown_timeout,
+                ssl_standard_compatible=mocker.sentinel.ssl_standard_compatible,
                 local_address=mocker.sentinel.local_address,
                 happy_eyeballs_delay=mocker.sentinel.happy_eyeballs_delay,
             )
@@ -427,25 +434,15 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_stream_data_consumer_cls.assert_called_once_with(mock_stream_protocol)
         mock_ssl_create_default_context.assert_not_called()
         if use_socket:
-            mock_backend.wrap_ssl_over_stream_socket_client_side.assert_awaited_once_with(
-                mock_tcp_socket,
-                ssl_context=mock_ssl_context,
-                server_hostname="server_hostname",
-                ssl_handshake_timeout=mocker.sentinel.ssl_handshake_timeout,
-                ssl_shutdown_timeout=mocker.sentinel.ssl_shutdown_timeout,
-            )
+            mock_backend.wrap_stream_socket.assert_awaited_once_with(mock_tcp_socket)
             assert mock_tcp_socket.mock_calls == [
                 mocker.call.getpeername(),
                 mocker.call.setsockopt(IPPROTO_TCP, TCP_NODELAY, True),
                 mocker.call.setsockopt(SOL_SOCKET, SO_KEEPALIVE, True),
             ]
         else:
-            mock_backend.create_ssl_over_tcp_connection.assert_awaited_once_with(
+            mock_backend.create_tcp_connection.assert_awaited_once_with(
                 *remote_address,
-                ssl_context=mock_ssl_context,
-                server_hostname="server_hostname",
-                ssl_handshake_timeout=mocker.sentinel.ssl_handshake_timeout,
-                ssl_shutdown_timeout=mocker.sentinel.ssl_shutdown_timeout,
                 local_address=mocker.sentinel.local_address,
                 happy_eyeballs_delay=mocker.sentinel.happy_eyeballs_delay,
             )
@@ -453,7 +450,61 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
                 mocker.call.setsockopt(IPPROTO_TCP, TCP_NODELAY, True),
                 mocker.call.setsockopt(SOL_SOCKET, SO_KEEPALIVE, True),
             ]
+        mock_tls_wrap_transport.assert_awaited_once_with(
+            mock_stream_socket_adapter,
+            mock_ssl_context,
+            server_side=False,
+            server_hostname="server_hostname",
+            handshake_timeout=mocker.sentinel.ssl_handshake_timeout,
+            shutdown_timeout=mocker.sentinel.ssl_shutdown_timeout,
+            standard_compatible=mocker.sentinel.ssl_standard_compatible,
+        )
         assert isinstance(client.socket, SocketProxy)
+
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    async def test____dunder_init____ssl____default_values(
+        self,
+        use_socket: bool,
+        remote_address: tuple[str, int],
+        mock_tcp_socket: MagicMock,
+        mock_stream_protocol: MagicMock,
+        mock_ssl_context: MagicMock,
+        mock_tls_wrap_transport: AsyncMock,
+        mock_stream_socket_adapter: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+
+        # Act
+        client: AsyncTCPNetworkClient[Any, Any]
+        if use_socket:
+            client = AsyncTCPNetworkClient(
+                mock_tcp_socket,
+                protocol=mock_stream_protocol,
+                ssl=mock_ssl_context,
+                server_hostname="server_hostname",
+            )
+        else:
+            client = AsyncTCPNetworkClient(
+                remote_address,
+                protocol=mock_stream_protocol,
+                ssl=mock_ssl_context,
+                server_hostname="server_hostname",
+                local_address=mocker.sentinel.local_address,
+                happy_eyeballs_delay=mocker.sentinel.happy_eyeballs_delay,
+            )
+        await client.wait_connected()
+
+        # Assert
+        mock_tls_wrap_transport.assert_awaited_once_with(
+            mock_stream_socket_adapter,
+            mock_ssl_context,
+            server_side=False,
+            server_hostname="server_hostname",
+            handshake_timeout=None,
+            shutdown_timeout=None,
+            standard_compatible=True,
+        )
 
     @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
     @pytest.mark.parametrize(
@@ -462,6 +513,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             "server_hostname",
             "ssl_handshake_timeout",
             "ssl_shutdown_timeout",
+            "ssl_standard_compatible",
             "ssl_shared_lock",
         ],
     )
@@ -495,82 +547,21 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
                 )
 
     @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
-    async def test____dunder_init____ssl____default_timeouts(
-        self,
-        use_socket: bool,
-        remote_address: tuple[str, int],
-        mock_tcp_socket: MagicMock,
-        mock_backend: MagicMock,
-        mock_stream_protocol: MagicMock,
-        mock_ssl_context: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        mock_backend.create_tcp_connection.side_effect = AssertionError
-        mock_backend.wrap_stream_socket.side_effect = AssertionError
-
-        # Act
-        client: AsyncTCPNetworkClient[Any, Any]
-        if use_socket:
-            client = AsyncTCPNetworkClient(
-                mock_tcp_socket,
-                protocol=mock_stream_protocol,
-                ssl=mock_ssl_context,
-                server_hostname="server_hostname",
-                ssl_handshake_timeout=None,
-                ssl_shutdown_timeout=None,
-            )
-        else:
-            client = AsyncTCPNetworkClient(
-                remote_address,
-                protocol=mock_stream_protocol,
-                ssl=mock_ssl_context,
-                server_hostname="server_hostname",
-                ssl_handshake_timeout=None,
-                ssl_shutdown_timeout=None,
-                local_address=mocker.sentinel.local_address,
-                happy_eyeballs_delay=mocker.sentinel.happy_eyeballs_delay,
-            )
-        await client.wait_connected()
-
-        # Assert
-        if use_socket:
-            mock_backend.wrap_ssl_over_stream_socket_client_side.assert_awaited_once_with(
-                mock_tcp_socket,
-                ssl_context=mock_ssl_context,
-                server_hostname="server_hostname",
-                ssl_handshake_timeout=SSL_HANDSHAKE_TIMEOUT,
-                ssl_shutdown_timeout=SSL_SHUTDOWN_TIMEOUT,
-            )
-        else:
-            mock_backend.create_ssl_over_tcp_connection.assert_awaited_once_with(
-                *remote_address,
-                ssl_context=mock_ssl_context,
-                server_hostname="server_hostname",
-                ssl_handshake_timeout=SSL_HANDSHAKE_TIMEOUT,
-                ssl_shutdown_timeout=SSL_SHUTDOWN_TIMEOUT,
-                local_address=mocker.sentinel.local_address,
-                happy_eyeballs_delay=mocker.sentinel.happy_eyeballs_delay,
-            )
-
-    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
     async def test____dunder_init____ssl____server_hostname____do_not_disable_hostname_check_for_external_context(
         self,
         use_socket: bool,
         remote_address: tuple[str, int],
         mock_tcp_socket: MagicMock,
-        mock_backend: MagicMock,
         mock_stream_protocol: MagicMock,
         mock_ssl_context: MagicMock,
+        mock_tls_wrap_transport: AsyncMock,
+        mock_stream_socket_adapter: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
         check_hostname_by_default: bool = mock_ssl_context.check_hostname
         assert check_hostname_by_default
 
-        mock_backend.create_tcp_connection.side_effect = AssertionError
-        mock_backend.wrap_stream_socket.side_effect = AssertionError
-
         # Act
         client: AsyncTCPNetworkClient[Any, Any]
         if use_socket:
@@ -581,6 +572,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
                 server_hostname="",
                 ssl_handshake_timeout=mocker.sentinel.ssl_handshake_timeout,
                 ssl_shutdown_timeout=mocker.sentinel.ssl_shutdown_timeout,
+                ssl_standard_compatible=mocker.sentinel.ssl_standard_compatible,
             )
         else:
             client = AsyncTCPNetworkClient(
@@ -590,30 +582,22 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
                 server_hostname="",
                 ssl_handshake_timeout=mocker.sentinel.ssl_handshake_timeout,
                 ssl_shutdown_timeout=mocker.sentinel.ssl_shutdown_timeout,
+                ssl_standard_compatible=mocker.sentinel.ssl_standard_compatible,
                 local_address=mocker.sentinel.local_address,
                 happy_eyeballs_delay=mocker.sentinel.happy_eyeballs_delay,
             )
         await client.wait_connected()
 
         # Assert
-        if use_socket:
-            mock_backend.wrap_ssl_over_stream_socket_client_side.assert_awaited_once_with(
-                mock_tcp_socket,
-                ssl_context=mock_ssl_context,
-                server_hostname="",
-                ssl_handshake_timeout=mocker.sentinel.ssl_handshake_timeout,
-                ssl_shutdown_timeout=mocker.sentinel.ssl_shutdown_timeout,
-            )
-        else:
-            mock_backend.create_ssl_over_tcp_connection.assert_awaited_once_with(
-                *remote_address,
-                ssl_context=mock_ssl_context,
-                server_hostname="",
-                ssl_handshake_timeout=mocker.sentinel.ssl_handshake_timeout,
-                ssl_shutdown_timeout=mocker.sentinel.ssl_shutdown_timeout,
-                local_address=mocker.sentinel.local_address,
-                happy_eyeballs_delay=mocker.sentinel.happy_eyeballs_delay,
-            )
+        mock_tls_wrap_transport.assert_awaited_once_with(
+            mock_stream_socket_adapter,
+            mock_ssl_context,
+            server_side=False,
+            server_hostname=None,
+            handshake_timeout=mocker.sentinel.ssl_handshake_timeout,
+            shutdown_timeout=mocker.sentinel.ssl_shutdown_timeout,
+            standard_compatible=mocker.sentinel.ssl_standard_compatible,
+        )
         assert mock_ssl_context.check_hostname is True
 
     async def test____dunder_init____ssl____server_hostname____required_if_socket_is_given(
@@ -637,6 +621,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
                 server_hostname=None,
                 ssl_handshake_timeout=mocker.sentinel.ssl_handshake_timeout,
                 ssl_shutdown_timeout=mocker.sentinel.ssl_shutdown_timeout,
+                ssl_standard_compatible=mocker.sentinel.ssl_standard_compatible,
             )
 
     @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
@@ -645,15 +630,14 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         use_socket: bool,
         remote_address: tuple[str, int],
         mock_tcp_socket: MagicMock,
-        mock_backend: MagicMock,
         mock_stream_protocol: MagicMock,
         mock_ssl_context: MagicMock,
         mock_ssl_create_default_context: MagicMock,
+        mock_tls_wrap_transport: AsyncMock,
+        mock_stream_socket_adapter: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_backend.create_tcp_connection.side_effect = AssertionError
-        mock_backend.wrap_stream_socket.side_effect = AssertionError
 
         # Act
         client: AsyncTCPNetworkClient[Any, Any]
@@ -665,6 +649,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
                 server_hostname="server_hostname",
                 ssl_handshake_timeout=mocker.sentinel.ssl_handshake_timeout,
                 ssl_shutdown_timeout=mocker.sentinel.ssl_shutdown_timeout,
+                ssl_standard_compatible=mocker.sentinel.ssl_standard_compatible,
             )
         else:
             client = AsyncTCPNetworkClient(
@@ -674,6 +659,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
                 server_hostname="server_hostname",
                 ssl_handshake_timeout=mocker.sentinel.ssl_handshake_timeout,
                 ssl_shutdown_timeout=mocker.sentinel.ssl_shutdown_timeout,
+                ssl_standard_compatible=mocker.sentinel.ssl_standard_compatible,
                 local_address=mocker.sentinel.local_address,
                 happy_eyeballs_delay=mocker.sentinel.happy_eyeballs_delay,
             )
@@ -681,24 +667,15 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
 
         # Assert
         mock_ssl_create_default_context.assert_called_once_with()
-        if use_socket:
-            mock_backend.wrap_ssl_over_stream_socket_client_side.assert_awaited_once_with(
-                mock_tcp_socket,
-                ssl_context=mock_ssl_context,
-                server_hostname="server_hostname",
-                ssl_handshake_timeout=mocker.sentinel.ssl_handshake_timeout,
-                ssl_shutdown_timeout=mocker.sentinel.ssl_shutdown_timeout,
-            )
-        else:
-            mock_backend.create_ssl_over_tcp_connection.assert_awaited_once_with(
-                *remote_address,
-                ssl_context=mock_ssl_context,
-                server_hostname="server_hostname",
-                ssl_handshake_timeout=mocker.sentinel.ssl_handshake_timeout,
-                ssl_shutdown_timeout=mocker.sentinel.ssl_shutdown_timeout,
-                local_address=mocker.sentinel.local_address,
-                happy_eyeballs_delay=mocker.sentinel.happy_eyeballs_delay,
-            )
+        mock_tls_wrap_transport.assert_awaited_once_with(
+            mock_stream_socket_adapter,
+            mock_ssl_context,
+            server_side=False,
+            server_hostname="server_hostname",
+            handshake_timeout=mocker.sentinel.ssl_handshake_timeout,
+            shutdown_timeout=mocker.sentinel.ssl_shutdown_timeout,
+            standard_compatible=mocker.sentinel.ssl_standard_compatible,
+        )
 
     @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
     async def test____dunder_init____ssl____create_default_context____disable_hostname_check(
@@ -706,18 +683,16 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         use_socket: bool,
         remote_address: tuple[str, int],
         mock_tcp_socket: MagicMock,
-        mock_backend: MagicMock,
         mock_stream_protocol: MagicMock,
         mock_ssl_context: MagicMock,
         mock_ssl_create_default_context: MagicMock,
+        mock_tls_wrap_transport: AsyncMock,
+        mock_stream_socket_adapter: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
         check_hostname_by_default: bool = mock_ssl_context.check_hostname
         assert check_hostname_by_default
-
-        mock_backend.create_tcp_connection.side_effect = AssertionError
-        mock_backend.wrap_stream_socket.side_effect = AssertionError
 
         # Act
         client: AsyncTCPNetworkClient[Any, Any]
@@ -729,6 +704,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
                 server_hostname="",
                 ssl_handshake_timeout=mocker.sentinel.ssl_handshake_timeout,
                 ssl_shutdown_timeout=mocker.sentinel.ssl_shutdown_timeout,
+                ssl_standard_compatible=mocker.sentinel.ssl_standard_compatible,
             )
         else:
             client = AsyncTCPNetworkClient(
@@ -738,6 +714,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
                 server_hostname="",
                 ssl_handshake_timeout=mocker.sentinel.ssl_handshake_timeout,
                 ssl_shutdown_timeout=mocker.sentinel.ssl_shutdown_timeout,
+                ssl_standard_compatible=mocker.sentinel.ssl_standard_compatible,
                 local_address=mocker.sentinel.local_address,
                 happy_eyeballs_delay=mocker.sentinel.happy_eyeballs_delay,
             )
@@ -745,24 +722,15 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
 
         # Assert
         mock_ssl_create_default_context.assert_called_once_with()
-        if use_socket:
-            mock_backend.wrap_ssl_over_stream_socket_client_side.assert_awaited_once_with(
-                mock_tcp_socket,
-                ssl_context=mock_ssl_context,
-                server_hostname="",
-                ssl_handshake_timeout=mocker.sentinel.ssl_handshake_timeout,
-                ssl_shutdown_timeout=mocker.sentinel.ssl_shutdown_timeout,
-            )
-        else:
-            mock_backend.create_ssl_over_tcp_connection.assert_awaited_once_with(
-                *remote_address,
-                ssl_context=mock_ssl_context,
-                server_hostname="",
-                ssl_handshake_timeout=mocker.sentinel.ssl_handshake_timeout,
-                ssl_shutdown_timeout=mocker.sentinel.ssl_shutdown_timeout,
-                local_address=mocker.sentinel.local_address,
-                happy_eyeballs_delay=mocker.sentinel.happy_eyeballs_delay,
-            )
+        mock_tls_wrap_transport.assert_awaited_once_with(
+            mock_stream_socket_adapter,
+            mock_ssl_context,
+            server_side=False,
+            server_hostname=None,
+            handshake_timeout=mocker.sentinel.ssl_handshake_timeout,
+            shutdown_timeout=mocker.sentinel.ssl_shutdown_timeout,
+            standard_compatible=mocker.sentinel.ssl_standard_compatible,
+        )
         assert mock_ssl_context.check_hostname is False
 
     async def test____is_closing____connection_not_performed_yet(
@@ -1053,6 +1021,31 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_tcp_socket.getsockopt.assert_not_called()
 
     @pytest.mark.usefixtures("setup_producer_mock")
+    async def test____send_packet____unrelated_ssl_errors(
+        self,
+        client_connected_or_not: AsyncTCPNetworkClient[Any, Any],
+        mock_tcp_socket: MagicMock,
+        mock_stream_socket_adapter: MagicMock,
+        mock_stream_protocol: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_stream_socket_adapter.send_all.side_effect = ssl.SSLError(
+            ssl.SSLErrorNumber.SSL_ERROR_INVALID_ERROR_CODE,
+            "SOMETHING",
+        )
+
+        # Act
+        with pytest.raises(ssl.SSLError):
+            await client_connected_or_not.send_packet(mocker.sentinel.packet)
+
+        # Assert
+        mock_stream_protocol.generate_chunks.assert_called_once_with(mocker.sentinel.packet)
+        mock_stream_socket_adapter.send_all_from_iterable.assert_called_once()
+        mock_stream_socket_adapter.send_all.assert_awaited_once_with(b"packet\n")
+        mock_tcp_socket.getsockopt.assert_not_called()
+
+    @pytest.mark.usefixtures("setup_producer_mock")
     @pytest.mark.parametrize("closed_socket_errno", sorted(CLOSED_SOCKET_ERRNOS), ids=errno.errorcode.__getitem__)
     async def test____send_packet____convert_closed_socket_error(
         self,
@@ -1230,6 +1223,26 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_backend.coro_yield.assert_not_awaited()
 
     @pytest.mark.usefixtures("setup_consumer_mock")
+    async def test____recv_packet____eof_error____ssl(
+        self,
+        client_connected_or_not: AsyncTCPNetworkClient[Any, Any],
+        mock_stream_socket_adapter: MagicMock,
+        mock_stream_data_consumer: MagicMock,
+        mock_backend: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_stream_socket_adapter.recv.side_effect = ssl.SSLEOFError()
+
+        # Act
+        with pytest.raises(ConnectionAbortedError):
+            _ = await client_connected_or_not.recv_packet()
+
+        # Assert
+        mock_stream_socket_adapter.recv.assert_awaited_once_with(DEFAULT_STREAM_BUFSIZE)
+        mock_stream_data_consumer.feed.assert_not_called()
+        mock_backend.coro_yield.assert_not_awaited()
+
+    @pytest.mark.usefixtures("setup_consumer_mock")
     async def test____recv_packet____protocol_parse_error(
         self,
         client_connected_or_not: AsyncTCPNetworkClient[Any, Any],
@@ -1308,6 +1321,29 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
 
         # Act
         with pytest.raises(ConnectionAbortedError):
+            _ = await client_connected_or_not.recv_packet()
+
+        # Assert
+        mock_stream_socket_adapter.recv.assert_awaited_once_with(DEFAULT_STREAM_BUFSIZE)
+        mock_stream_data_consumer.feed.assert_not_called()
+        mock_backend.coro_yield.assert_not_awaited()
+
+    @pytest.mark.usefixtures("setup_consumer_mock")
+    async def test____recv_packet____unrelated_ssl_error(
+        self,
+        client_connected_or_not: AsyncTCPNetworkClient[Any, Any],
+        mock_stream_socket_adapter: MagicMock,
+        mock_stream_data_consumer: MagicMock,
+        mock_backend: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_stream_socket_adapter.recv.side_effect = ssl.SSLError(
+            ssl.SSLErrorNumber.SSL_ERROR_INVALID_ERROR_CODE,
+            "SOMETHING",
+        )
+
+        # Act
+        with pytest.raises(ssl.SSLError):
             _ = await client_connected_or_not.recv_packet()
 
         # Assert

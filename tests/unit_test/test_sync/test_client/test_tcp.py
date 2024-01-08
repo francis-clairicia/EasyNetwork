@@ -32,11 +32,6 @@ from ...base import UNSUPPORTED_FAMILIES, MixinTestSocketSendMSG
 from .base import BaseTestClient
 
 
-@pytest.fixture(autouse=True)
-def remove_ssl_OP_IGNORE_UNEXPECTED_EOF(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delattr("ssl.OP_IGNORE_UNEXPECTED_EOF", raising=False)
-
-
 class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
     @pytest.fixture(scope="class", params=["AF_INET", "AF_INET6"])
     @staticmethod
@@ -230,6 +225,11 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
 
     @pytest.fixture
     @staticmethod
+    def ssl_standard_compatible(request: Any) -> bool | None:
+        return getattr(request, "param", None)
+
+    @pytest.fixture
+    @staticmethod
     def ssl_shared_lock(request: Any) -> bool | None:
         return getattr(request, "param", None)
 
@@ -244,6 +244,7 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         request: Any,
         max_recv_size: int | None,
         ssl_shutdown_timeout: float | None,
+        ssl_standard_compatible: bool | None,
         retry_interval: float,
         remote_address: tuple[str, int],
         mock_tcp_socket: MagicMock,
@@ -265,6 +266,7 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
                         server_hostname=server_hostname,
                         max_recv_size=max_recv_size,
                         ssl_shutdown_timeout=ssl_shutdown_timeout,
+                        ssl_standard_compatible=ssl_standard_compatible,
                         ssl_shared_lock=ssl_shared_lock,
                         retry_interval=retry_interval,
                     )
@@ -276,6 +278,7 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
                         server_hostname=server_hostname,
                         max_recv_size=max_recv_size,
                         ssl_shutdown_timeout=ssl_shutdown_timeout,
+                        ssl_standard_compatible=ssl_standard_compatible,
                         ssl_shared_lock=ssl_shared_lock,
                         retry_interval=retry_interval,
                     )
@@ -698,6 +701,7 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
             "server_hostname",
             "ssl_handshake_timeout",
             "ssl_shutdown_timeout",
+            "ssl_standard_compatible",
             "ssl_shared_lock",
         ],
     )
@@ -976,6 +980,37 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
             mock_selector_register.assert_called_once_with(socket_fileno, would_block_event)
             mock_selector_select.assert_called_once_with(expected_timeout)
 
+    @pytest.mark.parametrize("use_ssl", ["USE_SSL"], indirect=True)
+    @pytest.mark.parametrize("ssl_standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible=={p}")
+    def test____dunder_init____ssl____standard_compatible(
+        self,
+        ssl_standard_compatible: bool,
+        remote_address: tuple[str, int],
+        mock_ssl_context: MagicMock,
+        mock_tcp_socket: MagicMock,
+        mock_stream_protocol: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act
+        _ = TCPNetworkClient(
+            remote_address,
+            protocol=mock_stream_protocol,
+            ssl=mock_ssl_context,
+            server_hostname="server_hostname",
+            ssl_standard_compatible=ssl_standard_compatible,
+        )
+
+        # Assert
+        mock_ssl_context.wrap_socket.assert_called_once_with(
+            mock_tcp_socket,
+            server_side=False,
+            server_hostname="server_hostname",
+            do_handshake_on_connect=False,
+            suppress_ragged_eofs=not ssl_standard_compatible,
+            session=None,
+        )
+
     def test____close____default(
         self,
         client: TCPNetworkClient[Any, Any],
@@ -1100,6 +1135,26 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         # Assert
         assert client.is_closed()
 
+        mock_used_socket.shutdown.assert_called_once_with(SHUT_RDWR)
+        mock_used_socket.close.assert_called_once_with()
+
+    @pytest.mark.parametrize("use_ssl", ["USE_SSL"], indirect=True)
+    @pytest.mark.parametrize("ssl_standard_compatible", [False], indirect=True, ids=lambda p: f"standard_compatible=={p}")
+    def test____close____ssl____do_not_call_unwrap(
+        self,
+        client: TCPNetworkClient[Any, Any],
+        mock_used_socket: MagicMock,
+        mock_ssl_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        assert not client.is_closed()
+
+        # Act
+        client.close()
+
+        # Assert
+        assert client.is_closed()
+        mock_ssl_socket.unwrap.assert_not_called()
         mock_used_socket.shutdown.assert_called_once_with(SHUT_RDWR)
         mock_used_socket.close.assert_called_once_with()
 
@@ -1323,7 +1378,7 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
 
     @pytest.mark.usefixtures("setup_producer_mock")
     @pytest.mark.parametrize("use_ssl", ["USE_SSL"], indirect=True)
-    @pytest.mark.parametrize("ssl_eof_error", [SSLEOFError, SSLZeroReturnError])
+    @pytest.mark.parametrize("ssl_eof_error", [SSLEOFError])
     def test____send_packet____ssl____eof_error(
         self,
         client: TCPNetworkClient[Any, Any],

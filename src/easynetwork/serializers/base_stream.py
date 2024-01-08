@@ -29,7 +29,7 @@ from typing import IO, TYPE_CHECKING, Any, final
 
 from .._typevars import _T_ReceivedDTOPacket, _T_SentDTOPacket
 from ..exceptions import DeserializeError, IncrementalDeserializeError
-from ..lowlevel.constants import _DEFAULT_LIMIT
+from ..lowlevel.constants import DEFAULT_SERIALIZER_LIMIT
 from .abc import AbstractIncrementalPacketSerializer, BufferedIncrementalPacketSerializer
 from .tools import GeneratorStreamReader, _wrap_generic_buffered_incremental_deserialize, _wrap_generic_incremental_deserialize
 
@@ -49,7 +49,7 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_T_SentD
         separator: bytes,
         *,
         incremental_serialize_check_separator: bool = True,
-        limit: int = _DEFAULT_LIMIT,
+        limit: int = DEFAULT_SERIALIZER_LIMIT,
         debug: bool = False,
         **kwargs: Any,
     ) -> None:

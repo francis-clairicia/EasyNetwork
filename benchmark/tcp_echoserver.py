@@ -53,8 +53,9 @@ class BufferedLineSerializer(LineSerializer, BufferedIncrementalPacketSerializer
                     raise IncrementalDeserializeError("Too long line", remaining_data=b"")
                 nb_written_bytes += yield start_idx
 
-            remainder: memoryview = buffer_view[index + 1 : nb_written_bytes]
-            data: bytes = bytes(buffer_view[: index + 1])
+            offset = index + 1
+            remainder: memoryview = buffer_view[offset:nb_written_bytes]
+            data: bytes = bytes(buffer_view[:offset])
             return data, remainder
 
 

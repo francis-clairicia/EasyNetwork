@@ -840,6 +840,23 @@ class TestSSLStreamTransport:
         assert isinstance(exc_info.value, (WouldBlockOnRead, WouldBlockOnWrite))
         assert exc_info.value.fileno is mock_ssl_socket.fileno.return_value
 
+    def test____recv_noblock____SSLZeroReturnError(
+        self,
+        transport: SSLStreamTransport,
+        mock_ssl_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_ssl_socket.recv.side_effect = ssl.SSLZeroReturnError
+
+        # Act
+        result = transport.recv_noblock(mocker.sentinel.bufsize)
+
+        # Assert
+        mock_ssl_socket.recv.assert_called_once_with(mocker.sentinel.bufsize)
+        mock_ssl_socket.fileno.assert_not_called()
+        assert result == b""
+
     def test____recv_noblock_into____default(
         self,
         transport: SSLStreamTransport,
@@ -886,6 +903,23 @@ class TestSSLStreamTransport:
         assert isinstance(exc_info.value, (WouldBlockOnRead, WouldBlockOnWrite))
         assert exc_info.value.fileno is mock_ssl_socket.fileno.return_value
 
+    def test____recv_noblock_into____SSLZeroReturnError(
+        self,
+        transport: SSLStreamTransport,
+        mock_ssl_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_ssl_socket.recv_into.side_effect = ssl.SSLZeroReturnError
+
+        # Act
+        result = transport.recv_noblock_into(mocker.sentinel.buffer)
+
+        # Assert
+        mock_ssl_socket.recv_into.assert_called_once_with(mocker.sentinel.buffer)
+        mock_ssl_socket.fileno.assert_not_called()
+        assert result == 0
+
     def test____send_noblock____default(
         self,
         transport: SSLStreamTransport,
@@ -931,6 +965,24 @@ class TestSSLStreamTransport:
         mock_ssl_socket.fileno.assert_called_once()
         assert isinstance(exc_info.value, (WouldBlockOnRead, WouldBlockOnWrite))
         assert exc_info.value.fileno is mock_ssl_socket.fileno.return_value
+
+    def test____send_noblock____SSLZeroReturnError(
+        self,
+        transport: SSLStreamTransport,
+        mock_ssl_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_ssl_socket.send.side_effect = ssl.SSLZeroReturnError
+
+        # Act
+        with pytest.raises(ConnectionError) as exc_info:
+            transport.send_noblock(mocker.sentinel.data)
+
+        # Assert
+        mock_ssl_socket.send.assert_called_once_with(mocker.sentinel.data)
+        mock_ssl_socket.fileno.assert_not_called()
+        assert exc_info.value.errno == errno.ECONNRESET
 
     def test____send_eof____default(
         self,

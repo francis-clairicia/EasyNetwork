@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import functools
 import threading
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from socket import AF_INET, AF_INET6, IPPROTO_TCP, IPPROTO_UDP, SOCK_DGRAM, SOCK_STREAM
 from types import TracebackType
 from typing import TYPE_CHECKING, Any
+
+import pytest
 
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
@@ -181,3 +183,45 @@ def mock_import_module_not_found(modules: set[str] | frozenset[str], mocker: Moc
     mock_import: MagicMock = mocker.patch("builtins.__import__")
     mock_import.side_effect = mock_import_side_effect
     return mock_import
+
+
+def __make_write_in_buffer_side_effect(to_write: bytes | list[bytes]) -> Callable[[bytearray | memoryview], int]:
+    def write_in_buffer(buffer: memoryview, to_write: bytes) -> int:
+        nbytes = len(to_write)
+        buffer[:nbytes] = to_write
+        return nbytes
+
+    match to_write:
+        case bytes():
+
+            def write_in_buffer_side_effect(buffer: bytearray | memoryview) -> int:
+                return write_in_buffer(memoryview(buffer), to_write)
+
+        case list() if all(isinstance(b, bytes) for b in to_write):
+            iterator = iter(to_write)
+
+            def write_in_buffer_side_effect(buffer: bytearray | memoryview) -> int:
+                return write_in_buffer(memoryview(buffer), next(iterator))
+
+        case _:
+            pytest.fail("Invalid setup")
+
+    return write_in_buffer_side_effect
+
+
+def make_recv_into_side_effect(to_write: bytes | list[bytes]) -> Callable[[bytearray | memoryview, float], int]:
+    write_in_buffer = __make_write_in_buffer_side_effect(to_write)
+
+    def recv_into_side_effect(buffer: bytearray | memoryview, timeout: float) -> int:
+        return write_in_buffer(buffer)
+
+    return recv_into_side_effect
+
+
+def make_async_recv_into_side_effect(to_write: bytes | list[bytes]) -> Callable[[bytearray | memoryview], Awaitable[int]]:
+    write_in_buffer = __make_write_in_buffer_side_effect(to_write)
+
+    async def recv_into_side_effect(buffer: bytearray | memoryview) -> int:
+        return write_in_buffer(buffer)
+
+    return recv_into_side_effect

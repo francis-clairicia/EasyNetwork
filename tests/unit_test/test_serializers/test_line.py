@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Literal
 
 from easynetwork.exceptions import DeserializeError, IncrementalDeserializeError, LimitOverrunError
-from easynetwork.lowlevel.constants import _DEFAULT_LIMIT
+from easynetwork.lowlevel.constants import DEFAULT_SERIALIZER_LIMIT
 from easynetwork.serializers.line import StringLineSerializer
 
 import pytest
@@ -38,7 +38,7 @@ class TestStringLineSerializer:
     def keep_end(request: pytest.FixtureRequest) -> bool:
         return bool(request.param)
 
-    @pytest.fixture(params=[_DEFAULT_LIMIT], ids=lambda p: f"limit=={p}")
+    @pytest.fixture(params=[DEFAULT_SERIALIZER_LIMIT], ids=lambda p: f"limit=={p}")
     @staticmethod
     def buffer_limit(request: pytest.FixtureRequest) -> int:
         return int(request.param)
@@ -73,7 +73,7 @@ class TestStringLineSerializer:
         assert serializer.encoding == "ascii"
         assert serializer.unicode_errors == "strict"
         assert serializer.debug is False
-        assert serializer.buffer_limit == _DEFAULT_LIMIT
+        assert serializer.buffer_limit == DEFAULT_SERIALIZER_LIMIT
         assert serializer.keep_end is False
 
     @pytest.mark.parametrize("encoding", ["ascii", "utf-8"], indirect=True)
