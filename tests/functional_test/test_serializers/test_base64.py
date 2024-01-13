@@ -13,7 +13,7 @@ from easynetwork.serializers.wrapper.base64 import Base64EncoderSerializer
 
 import pytest
 
-from .base import BaseTestIncrementalSerializer, NoSerialization
+from .base import BaseTestBufferedIncrementalSerializer, NoSerialization
 
 
 def generate_key_from_string(s: str) -> bytes:
@@ -26,7 +26,7 @@ SAMPLES = [
 ]
 
 
-class BaseTestBase64EncoderSerializer(BaseTestIncrementalSerializer):
+class BaseTestBase64EncoderSerializer(BaseTestBufferedIncrementalSerializer):
     #### Serializers
 
     BUFFER_LIMIT = 1024

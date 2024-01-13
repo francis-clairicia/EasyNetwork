@@ -209,7 +209,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[Any, Any]):
             the deserialized Python object.
         """
         try:
-            document: str = data.decode(self.__encoding, self.__unicode_errors)
+            document: str = str(data, self.__encoding, self.__unicode_errors)
         except UnicodeError as exc:
             msg = f"Unicode decode error: {exc}"
             if self.debug:
@@ -271,7 +271,7 @@ class JSONSerializer(AbstractIncrementalPacketSerializer[Any, Any]):
 
         packet: Any
         try:
-            document: str = complete_document.decode(self.__encoding, self.__unicode_errors)
+            document: str = str(complete_document, self.__encoding, self.__unicode_errors)
         except UnicodeError as exc:
             msg = f"Unicode decode error: {exc}"
             if self.debug:

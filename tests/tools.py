@@ -101,9 +101,9 @@ def write_in_buffer(
         else:
             match too_short_buffer:
                 case "error":
-                    raise ValueError("Buffer is too short to contain the chunk to write.")
+                    raise ValueError(f"Buffer is too short to contain the chunk to write. ({len(buffer)} < {nbytes})")
                 case "xfail":
-                    pytest.xfail("Buffer is too short to contain the chunk to write.")
+                    pytest.xfail(f"Buffer is too short to contain the chunk to write. ({len(buffer)} < {nbytes})")
                 case "fill_at_most":
                     nbytes = len(buffer)
                     buffer[:] = memoryview(to_write)[:nbytes]

@@ -172,6 +172,12 @@ class TestAutoSeparatedPacketSerializer:
     def check_separator(request: pytest.FixtureRequest) -> bool:
         return getattr(request, "param")
 
+    @pytest.fixture(params=["data", "buffer"])
+    @staticmethod
+    def incremental_deserialize_mode(request: pytest.FixtureRequest) -> str:
+        assert request.param in ("data", "buffer")
+        return request.param
+
     @pytest.mark.parametrize("separator", [b"\n", b".", b"\r\n", b"--"], ids=lambda p: f"separator=={p}")
     def test____properties____right_values(self, separator: bytes, debug_mode: bool) -> None:
         # Arrange
@@ -331,6 +337,7 @@ class TestAutoSeparatedPacketSerializer:
         self,
         expected_remaining_data: bytes,
         mock_deserialize_func: MagicMock,
+        incremental_deserialize_mode: Literal["data", "buffer"],
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -339,13 +346,24 @@ class TestAutoSeparatedPacketSerializer:
         data_to_test: bytes = b"data\r\n"
 
         # Act
-        consumer = serializer.incremental_deserialize()
-        next(consumer)
-        packet, remaining_data = send_return(consumer, data_to_test + expected_remaining_data)
+        sent_data = data_to_test + expected_remaining_data
+        remaining_data: ReadableBuffer
+        match incremental_deserialize_mode:
+            case "data":
+                data_consumer = serializer.incremental_deserialize()
+                next(data_consumer)
+                packet, remaining_data = send_return(data_consumer, sent_data)
+            case "buffer":
+                buffer = serializer.create_deserializer_buffer(1024)
+                buffered_consumer = serializer.buffered_incremental_deserialize(buffer)
+                start_pos = next(buffered_consumer)
+                packet, remaining_data = send_return(buffered_consumer, write_in_buffer(buffer, sent_data, start_pos=start_pos))
+            case _:
+                pytest.fail("Invalid fixture argument")
 
         # Assert
         mock_deserialize_func.assert_called_once_with(b"data")
-        assert remaining_data == expected_remaining_data
+        assert bytes(remaining_data) == expected_remaining_data
         assert packet is mocker.sentinel.packet
 
     @pytest.mark.parametrize(
@@ -360,6 +378,7 @@ class TestAutoSeparatedPacketSerializer:
         self,
         expected_remaining_data: bytes,
         mock_deserialize_func: MagicMock,
+        incremental_deserialize_mode: Literal["data", "buffer"],
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -367,14 +386,32 @@ class TestAutoSeparatedPacketSerializer:
         mock_deserialize_func.return_value = mocker.sentinel.packet
 
         # Act
-        consumer = serializer.incremental_deserialize()
-        next(consumer)
-        consumer.send(b"data\r")
-        packet, remaining_data = send_return(consumer, b"\n" + expected_remaining_data)
+        remaining_data: ReadableBuffer
+        match incremental_deserialize_mode:
+            case "data":
+                data_consumer = serializer.incremental_deserialize()
+                next(data_consumer)
+                data_consumer.send(b"data\r")
+                packet, remaining_data = send_return(data_consumer, b"\n" + expected_remaining_data)
+            case "buffer":
+                buffer = serializer.create_deserializer_buffer(1024)
+                buffered_consumer = serializer.buffered_incremental_deserialize(buffer)
+                start_pos = next(buffered_consumer)
+                start_pos = buffered_consumer.send(write_in_buffer(buffer, b"data\r", start_pos=start_pos))
+                packet, remaining_data = send_return(
+                    buffered_consumer,
+                    write_in_buffer(
+                        buffer,
+                        b"\n" + expected_remaining_data,
+                        start_pos=start_pos,
+                    ),
+                )
+            case _:
+                pytest.fail("Invalid fixture argument")
 
         # Assert
         mock_deserialize_func.assert_called_once_with(b"data")
-        assert remaining_data == expected_remaining_data
+        assert bytes(remaining_data) == expected_remaining_data
         assert packet is mocker.sentinel.packet
 
     @pytest.mark.parametrize(
@@ -389,6 +426,7 @@ class TestAutoSeparatedPacketSerializer:
         self,
         expected_remaining_data: bytes,
         mock_deserialize_func: MagicMock,
+        incremental_deserialize_mode: Literal["data", "buffer"],
         debug_mode: bool,
         mocker: MockerFixture,
     ) -> None:
@@ -397,11 +435,23 @@ class TestAutoSeparatedPacketSerializer:
         mock_deserialize_func.side_effect = DeserializeError("Bad news", error_info=mocker.sentinel.error_info)
 
         # Act
-        consumer = serializer.incremental_deserialize()
-        next(consumer)
-        with pytest.raises(IncrementalDeserializeError) as exc_info:
-            consumer.send(b"data\r\n" + expected_remaining_data)
-        exception = exc_info.value
+        sent_data = b"data\r\n" + expected_remaining_data
+        match incremental_deserialize_mode:
+            case "data":
+                data_consumer = serializer.incremental_deserialize()
+                next(data_consumer)
+                with pytest.raises(IncrementalDeserializeError) as exc_info:
+                    send_return(data_consumer, sent_data)
+                exception = exc_info.value
+            case "buffer":
+                buffer = serializer.create_deserializer_buffer(1024)
+                buffered_consumer = serializer.buffered_incremental_deserialize(buffer)
+                start_pos = next(buffered_consumer)
+                with pytest.raises(IncrementalDeserializeError) as exc_info:
+                    send_return(buffered_consumer, write_in_buffer(buffer, sent_data, start_pos=start_pos))
+                exception = exc_info.value
+            case _:
+                pytest.fail("Invalid fixture argument")
 
         # Assert
         mock_deserialize_func.assert_called_once_with(b"data")
@@ -412,7 +462,7 @@ class TestAutoSeparatedPacketSerializer:
     @pytest.mark.parametrize("separator_found", [False, True], ids=lambda p: f"separator_found=={p}")
     def test____incremental_deserialize____reached_limit(
         self,
-        separator_found: bytes,
+        separator_found: bool,
         mock_deserialize_func: MagicMock,
         debug_mode: bool,
         mocker: MockerFixture,
@@ -442,7 +492,7 @@ class TestAutoSeparatedPacketSerializer:
     @pytest.mark.parametrize("separator_found", [False, True], ids=lambda p: f"separator_found=={p}")
     def test____incremental_deserialize____reached_limit____separator_partially_received(
         self,
-        separator_found: bytes,
+        separator_found: bool,
         mock_deserialize_func: MagicMock,
         debug_mode: bool,
         mocker: MockerFixture,
@@ -468,6 +518,54 @@ class TestAutoSeparatedPacketSerializer:
         else:
             assert str(exc_info.value) == "Separator is not found, and chunk exceed the limit"
             assert bytes(exc_info.value.remaining_data) == b"\r"
+        assert exc_info.value.error_info is None
+
+    def test____buffered_incremental_deserialize____reached_limit(
+        self,
+        mock_deserialize_func: MagicMock,
+        debug_mode: bool,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        serializer = _AutoSeparatedPacketSerializerForTest(separator=b"\r\n", limit=1024, debug=debug_mode)
+        mock_deserialize_func.return_value = mocker.sentinel.packet
+        data_to_test: bytes = b"X" * 1023
+
+        # Act
+        buffer = serializer.create_deserializer_buffer(1024)
+        consumer = serializer.buffered_incremental_deserialize(buffer)
+        start_pos = next(consumer)
+        with pytest.raises(LimitOverrunError) as exc_info:
+            consumer.send(write_in_buffer(buffer, data_to_test, start_pos=start_pos))
+
+        # Assert
+        mock_deserialize_func.assert_not_called()
+        assert str(exc_info.value) == "Separator is not found, and chunk exceed the limit"
+        assert bytes(exc_info.value.remaining_data) == b""
+        assert exc_info.value.error_info is None
+
+    def test____buffered_incremental_deserialize____reached_limit____separator_partially_received(
+        self,
+        mock_deserialize_func: MagicMock,
+        debug_mode: bool,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        serializer = _AutoSeparatedPacketSerializerForTest(separator=b"\r\n", limit=1024, debug=debug_mode)
+        mock_deserialize_func.return_value = mocker.sentinel.packet
+        data_to_test: bytes = b"X" * 1023 + b"\r"
+
+        # Act
+        buffer = serializer.create_deserializer_buffer(1024)
+        consumer = serializer.buffered_incremental_deserialize(buffer)
+        start_pos = next(consumer)
+        with pytest.raises(LimitOverrunError) as exc_info:
+            consumer.send(write_in_buffer(buffer, data_to_test, start_pos=start_pos))
+
+        # Assert
+        mock_deserialize_func.assert_not_called()
+        assert str(exc_info.value) == "Separator is not found, and chunk exceed the limit"
+        assert bytes(exc_info.value.remaining_data) == b"\r"
         assert exc_info.value.error_info is None
 
 

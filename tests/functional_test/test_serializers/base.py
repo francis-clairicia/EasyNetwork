@@ -369,7 +369,7 @@ class BaseTestBufferedIncrementalSerializer(BaseTestIncrementalSerializer):
             invalid_partial_data,
             sent_extra_data,
             start_pos=start_idx,
-            too_short_buffer_for_complete_data="xfail",
+            too_short_buffer_for_complete_data="fill_at_most",
         )
         expected_remainder = expected_remainder.replace(sent_extra_data, partial_remaining_data, 1)
         del partial_remaining_data

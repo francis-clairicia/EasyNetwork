@@ -11,9 +11,9 @@ from typing import Any
 
 from easynetwork.api_async.server.handler import AsyncStreamClient, AsyncStreamRequestHandler
 from easynetwork.api_sync.server.tcp import StandaloneTCPNetworkServer
-from easynetwork.exceptions import IncrementalDeserializeError
 from easynetwork.protocol import StreamProtocol
 from easynetwork.serializers.abc import AbstractIncrementalPacketSerializer, BufferedIncrementalPacketSerializer
+from easynetwork.serializers.base_stream import _buffered_readuntil
 from easynetwork.serializers.tools import GeneratorStreamReader
 
 ROOT_DIR = pathlib.Path(__file__).parent
@@ -44,17 +44,10 @@ class BufferedLineSerializer(LineSerializer, BufferedIncrementalPacketSerializer
 
     def buffered_incremental_deserialize(self, buffer: bytearray) -> Generator[int | None, int, tuple[bytes, memoryview]]:
         with memoryview(buffer) as buffer_view:
-            buffer_size = len(buffer)
-            nb_written_bytes: int = yield None
+            _, offset, buflen = yield from _buffered_readuntil(buffer, b"\n")
+            del buffer
 
-            while (index := buffer.find(b"\n", 0, nb_written_bytes)) < 0:
-                start_idx: int = nb_written_bytes
-                if start_idx > buffer_size - 1:
-                    raise IncrementalDeserializeError("Too long line", remaining_data=b"")
-                nb_written_bytes += yield start_idx
-
-            offset = index + 1
-            remainder: memoryview = buffer_view[offset:nb_written_bytes]
+            remainder: memoryview = buffer_view[offset:buflen]
             data: bytes = bytes(buffer_view[:offset])
             return data, remainder
 

@@ -29,7 +29,15 @@ class TestEncryptorSerializer:
     def mock_fernet_cls(mocker: MockerFixture, mock_fernet: MagicMock) -> MagicMock:
         return mocker.patch("cryptography.fernet.Fernet", return_value=mock_fernet)
 
-    @pytest.mark.parametrize("method", ["incremental_serialize", "incremental_deserialize"])
+    @pytest.mark.parametrize(
+        "method",
+        [
+            "incremental_serialize",
+            "incremental_deserialize",
+            "create_deserializer_buffer",
+            "buffered_incremental_deserialize",
+        ],
+    )
     def test____base_class____implements_default_methods(self, method: str) -> None:
         # Arrange
         from easynetwork.serializers.base_stream import AutoSeparatedPacketSerializer

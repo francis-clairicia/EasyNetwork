@@ -8,7 +8,7 @@ from easynetwork.serializers.line import StringLineSerializer
 
 import pytest
 
-from .base import BaseTestIncrementalSerializer
+from .base import BaseTestBufferedIncrementalSerializer
 
 _NEWLINES: dict[str, bytes] = {
     "LF": b"\n",
@@ -18,7 +18,7 @@ _NEWLINES: dict[str, bytes] = {
 
 
 @final
-class TestStringLineSerializer(BaseTestIncrementalSerializer):
+class TestStringLineSerializer(BaseTestBufferedIncrementalSerializer):
     #### Serializers
 
     BUFFER_LIMIT = 1024

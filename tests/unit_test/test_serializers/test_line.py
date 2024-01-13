@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from easynetwork.exceptions import DeserializeError, IncrementalDeserializeError, LimitOverrunError
 from easynetwork.lowlevel.constants import DEFAULT_SERIALIZER_LIMIT
@@ -8,7 +8,10 @@ from easynetwork.serializers.line import StringLineSerializer
 
 import pytest
 
-from ...tools import send_return
+from ...tools import send_return, write_in_buffer
+
+if TYPE_CHECKING:
+    from _typeshed import ReadableBuffer
 
 _NEWLINES: dict[str, bytes] = {
     "LF": b"\n",
@@ -61,6 +64,12 @@ class TestStringLineSerializer:
             keep_end=keep_end,
             debug=debug_mode,
         )
+
+    @pytest.fixture(params=["data", "buffer"])
+    @staticmethod
+    def incremental_deserialize_mode(request: pytest.FixtureRequest) -> str:
+        assert request.param in ("data", "buffer")
+        return request.param
 
     def test____dunder_init____default(self) -> None:
         # Arrange
@@ -265,18 +274,30 @@ class TestStringLineSerializer:
     def test____incremental_deserialize____one_shot_chunk(
         self,
         expected_remaining_data: bytes,
+        incremental_deserialize_mode: Literal["data", "buffer"],
         serializer: StringLineSerializer,
     ) -> None:
         # Arrange
         data_to_test: bytes = b"data\r\n"
 
         # Act
-        consumer = serializer.incremental_deserialize()
-        next(consumer)
-        packet, remaining_data = send_return(consumer, data_to_test + expected_remaining_data)
+        sent_data = data_to_test + expected_remaining_data
+        remaining_data: ReadableBuffer
+        match incremental_deserialize_mode:
+            case "data":
+                data_consumer = serializer.incremental_deserialize()
+                next(data_consumer)
+                packet, remaining_data = send_return(data_consumer, sent_data)
+            case "buffer":
+                buffer = serializer.create_deserializer_buffer(1024)
+                buffered_consumer = serializer.buffered_incremental_deserialize(buffer)
+                start_pos = next(buffered_consumer)
+                packet, remaining_data = send_return(buffered_consumer, write_in_buffer(buffer, sent_data, start_pos=start_pos))
+            case _:
+                pytest.fail("Invalid fixture argument")
 
         # Assert
-        assert remaining_data == expected_remaining_data
+        assert bytes(remaining_data) == expected_remaining_data
         if serializer.keep_end:
             assert packet == "data\r\n"
         else:
@@ -294,15 +315,34 @@ class TestStringLineSerializer:
     def test____incremental_deserialize____several_chunks(
         self,
         expected_remaining_data: bytes,
+        incremental_deserialize_mode: Literal["data", "buffer"],
         serializer: StringLineSerializer,
     ) -> None:
         # Arrange
 
         # Act
-        consumer = serializer.incremental_deserialize()
-        next(consumer)
-        consumer.send(b"data\r")
-        packet, remaining_data = send_return(consumer, b"\n" + expected_remaining_data)
+        remaining_data: ReadableBuffer
+        match incremental_deserialize_mode:
+            case "data":
+                data_consumer = serializer.incremental_deserialize()
+                next(data_consumer)
+                data_consumer.send(b"data\r")
+                packet, remaining_data = send_return(data_consumer, b"\n" + expected_remaining_data)
+            case "buffer":
+                buffer = serializer.create_deserializer_buffer(1024)
+                buffered_consumer = serializer.buffered_incremental_deserialize(buffer)
+                start_pos = next(buffered_consumer)
+                start_pos = buffered_consumer.send(write_in_buffer(buffer, b"data\r", start_pos=start_pos))
+                packet, remaining_data = send_return(
+                    buffered_consumer,
+                    write_in_buffer(
+                        buffer,
+                        b"\n" + expected_remaining_data,
+                        start_pos=start_pos,
+                    ),
+                )
+            case _:
+                pytest.fail("Invalid fixture argument")
 
         # Assert
         assert remaining_data == expected_remaining_data
@@ -323,17 +363,30 @@ class TestStringLineSerializer:
     def test____incremental_deserialize____translate_unicode_errors(
         self,
         expected_remaining_data: bytes,
+        incremental_deserialize_mode: Literal["data", "buffer"],
         serializer: StringLineSerializer,
     ) -> None:
         # Arrange
         bad_encoded_line = "é".encode("latin-1")
 
         # Act
-        consumer = serializer.incremental_deserialize()
-        next(consumer)
-        with pytest.raises(IncrementalDeserializeError) as exc_info:
-            consumer.send(bad_encoded_line + b"\r\n" + expected_remaining_data)
-        exception = exc_info.value
+        sent_data = bad_encoded_line + b"\r\n" + expected_remaining_data
+        match incremental_deserialize_mode:
+            case "data":
+                data_consumer = serializer.incremental_deserialize()
+                next(data_consumer)
+                with pytest.raises(IncrementalDeserializeError) as exc_info:
+                    data_consumer.send(sent_data)
+                exception = exc_info.value
+            case "buffer":
+                buffer = serializer.create_deserializer_buffer(1024)
+                buffered_consumer = serializer.buffered_incremental_deserialize(buffer)
+                start_pos = next(buffered_consumer)
+                with pytest.raises(IncrementalDeserializeError) as exc_info:
+                    buffered_consumer.send(write_in_buffer(buffer, sent_data, start_pos=start_pos))
+                exception = exc_info.value
+            case _:
+                pytest.fail("Invalid fixture argument")
 
         # Assert
         assert isinstance(exception.__cause__, UnicodeError)
@@ -350,7 +403,7 @@ class TestStringLineSerializer:
     @pytest.mark.parametrize("buffer_limit", [1], indirect=True, ids=lambda p: f"limit=={p}")
     def test____incremental_deserialize____reached_limit(
         self,
-        separator_found: bytes,
+        separator_found: bool,
         serializer: StringLineSerializer,
     ) -> None:
         # Arrange
@@ -377,7 +430,7 @@ class TestStringLineSerializer:
     @pytest.mark.parametrize("buffer_limit", [1], indirect=True, ids=lambda p: f"limit=={p}")
     def test____incremental_deserialize____reached_limit____separator_partially_received(
         self,
-        separator_found: bytes,
+        separator_found: bool,
         serializer: StringLineSerializer,
     ) -> None:
         # Arrange
@@ -398,4 +451,46 @@ class TestStringLineSerializer:
         else:
             assert str(exc_info.value) == "Separator is not found, and chunk exceed the limit"
             assert bytes(exc_info.value.remaining_data) == b"\r"
+        assert exc_info.value.error_info is None
+
+    @pytest.mark.parametrize("newline", ["CRLF"], indirect=True)
+    @pytest.mark.parametrize("buffer_limit", [1024], indirect=True, ids=lambda p: f"limit=={p}")
+    def test____buffered_incremental_deserialize____reached_limit(
+        self,
+        serializer: StringLineSerializer,
+    ) -> None:
+        # Arrange
+        data_to_test: bytes = b"X" * 1023
+
+        # Act
+        buffer = serializer.create_deserializer_buffer(1024)
+        consumer = serializer.buffered_incremental_deserialize(buffer)
+        start_pos = next(consumer)
+        with pytest.raises(LimitOverrunError) as exc_info:
+            consumer.send(write_in_buffer(buffer, data_to_test, start_pos=start_pos))
+
+        # Assert
+        assert str(exc_info.value) == "Separator is not found, and chunk exceed the limit"
+        assert bytes(exc_info.value.remaining_data) == b""
+        assert exc_info.value.error_info is None
+
+    @pytest.mark.parametrize("newline", ["CRLF"], indirect=True)
+    @pytest.mark.parametrize("buffer_limit", [1024], indirect=True, ids=lambda p: f"limit=={p}")
+    def test____buffered_incremental_deserialize____reached_limit____separator_partially_received(
+        self,
+        serializer: StringLineSerializer,
+    ) -> None:
+        # Arrange
+        data_to_test: bytes = b"X" * 1023 + b"\r"
+
+        # Act
+        buffer = serializer.create_deserializer_buffer(1024)
+        consumer = serializer.buffered_incremental_deserialize(buffer)
+        start_pos = next(consumer)
+        with pytest.raises(LimitOverrunError) as exc_info:
+            consumer.send(write_in_buffer(buffer, data_to_test, start_pos=start_pos))
+
+        # Assert
+        assert str(exc_info.value) == "Separator is not found, and chunk exceed the limit"
+        assert bytes(exc_info.value.remaining_data) == b"\r"
         assert exc_info.value.error_info is None

@@ -23,11 +23,12 @@ from typing import Literal, assert_never, final
 
 from ..exceptions import DeserializeError, IncrementalDeserializeError
 from ..lowlevel.constants import DEFAULT_SERIALIZER_LIMIT
-from .abc import AbstractIncrementalPacketSerializer
+from .abc import BufferedIncrementalPacketSerializer
+from .base_stream import _buffered_readuntil
 from .tools import GeneratorStreamReader
 
 
-class StringLineSerializer(AbstractIncrementalPacketSerializer[str, str]):
+class StringLineSerializer(BufferedIncrementalPacketSerializer[str, str, bytearray]):
     """
     A :term:`serializer` to handle ASCII-based protocols.
     """
@@ -165,7 +166,6 @@ class StringLineSerializer(AbstractIncrementalPacketSerializer[str, str]):
 
         Raises:
             DeserializeError: :class:`UnicodeError` raised when decoding `data`.
-            DeserializeError: Newline found in `data` (except those at the end of the sequence).
 
         Returns:
             the string.
@@ -179,7 +179,7 @@ class StringLineSerializer(AbstractIncrementalPacketSerializer[str, str]):
             while data.endswith(separator):
                 data = data.removesuffix(separator)
         try:
-            return data.decode(self.__encoding, self.__unicode_errors)
+            return str(data, self.__encoding, self.__unicode_errors)
         except UnicodeError as exc:
             msg = str(exc)
             if self.debug:
@@ -197,15 +197,14 @@ class StringLineSerializer(AbstractIncrementalPacketSerializer[str, str]):
 
         Raises:
             LimitOverrunError: Reached buffer size limit.
-            IncrementalDeserializeError: :meth:`deserialize` raised :exc:`.DeserializeError`.
-            Exception: Any error raised by :meth:`deserialize`.
+            IncrementalDeserializeError: :class:`UnicodeError` raised when decoding `data`.
         """
         reader = GeneratorStreamReader()
         data = yield from reader.read_until(self.__separator, limit=self.__limit, keep_end=self.__keep_end)
         remainder = reader.read_all()
 
         try:
-            packet = data.decode(self.__encoding, self.__unicode_errors)
+            packet = str(data, self.__encoding, self.__unicode_errors)
         except UnicodeError as exc:
             msg = str(exc)
             if self.debug:
@@ -214,6 +213,41 @@ class StringLineSerializer(AbstractIncrementalPacketSerializer[str, str]):
         finally:
             del data
         return packet, remainder
+
+    @final
+    def create_deserializer_buffer(self, sizehint: int) -> bytearray:
+        """
+        See :meth:`.BufferedIncrementalPacketSerializer.buffered_incremental_deserialize` documentation for details.
+        """
+
+        # Ignore sizehint, we have our own limit
+        return bytearray(self.__limit)
+
+    @final
+    def buffered_incremental_deserialize(self, buffer: bytearray) -> Generator[int, int, tuple[str, memoryview]]:
+        """
+        Yields until `separator` is found and return the decoded string.
+
+        See :meth:`.BufferedIncrementalPacketSerializer.buffered_incremental_deserialize` documentation for details.
+
+        Raises:
+            LimitOverrunError: Reached buffer size limit.
+            IncrementalDeserializeError: :class:`UnicodeError` raised when decoding `data`.
+        """
+        with memoryview(buffer) as buffer_view:
+            sepidx, offset, buflen = yield from _buffered_readuntil(buffer, self.__separator)
+            del buffer
+
+            remainder: memoryview = buffer_view[offset:buflen]
+            with buffer_view[:offset] if self.__keep_end else buffer_view[:sepidx] as data:
+                try:
+                    packet = str(data, self.__encoding, self.__unicode_errors)
+                except UnicodeError as exc:
+                    msg = str(exc)
+                    if self.debug:
+                        raise IncrementalDeserializeError(msg, remainder, error_info={"data": bytes(data)}) from exc
+                    raise IncrementalDeserializeError(msg, remainder) from exc
+            return packet, remainder
 
     @property
     @final

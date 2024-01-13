@@ -173,19 +173,14 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer: JSONSerializer = JSONSerializer(
-            encoding=mocker.sentinel.encoding,
-            unicode_errors=mocker.sentinel.str_errors,
-        )
-        mock_string = mock_encoder.encode.return_value = mocker.NonCallableMagicMock()
-        mock_string.encode.return_value = b'{"data":42}'
+        serializer: JSONSerializer = JSONSerializer()
+        mock_encoder.encode.return_value = '{"data":42}'
 
         # Act
         data = serializer.serialize(mocker.sentinel.packet)
 
         # Assert
         mock_encoder.encode.assert_called_once_with(mocker.sentinel.packet)
-        mock_string.encode.assert_called_once_with(mocker.sentinel.encoding, mocker.sentinel.str_errors)
         assert data == b'{"data":42}'
 
     @pytest.mark.parametrize("value", [b'{"data":42}', b"[4]", b'"string"'])
@@ -197,20 +192,14 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer: JSONSerializer = JSONSerializer(
-            encoding=mocker.sentinel.encoding,
-            unicode_errors=mocker.sentinel.str_errors,
-            use_lines=use_lines,
-        )
-        mock_string = mock_encoder.encode.return_value = mocker.NonCallableMagicMock()
-        mock_string.encode.return_value = value
+        serializer: JSONSerializer = JSONSerializer(use_lines=use_lines)
+        mock_encoder.encode.return_value = value.decode()
 
         # Act
         chunks = list(serializer.incremental_serialize(mocker.sentinel.packet))
 
         # Assert
         mock_encoder.encode.assert_called_once_with(mocker.sentinel.packet)
-        mock_string.encode.assert_called_once_with(mocker.sentinel.encoding, mocker.sentinel.str_errors)
         if use_lines:
             assert chunks == [value + b"\n"]
         else:
@@ -225,20 +214,14 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer: JSONSerializer = JSONSerializer(
-            encoding=mocker.sentinel.encoding,
-            unicode_errors=mocker.sentinel.str_errors,
-            use_lines=use_lines,
-        )
-        mock_string = mock_encoder.encode.return_value = mocker.NonCallableMagicMock()
-        mock_string.encode.return_value = value
+        serializer: JSONSerializer = JSONSerializer(use_lines=use_lines)
+        mock_encoder.encode.return_value = value.decode()
 
         # Act
         chunks = list(serializer.incremental_serialize(mocker.sentinel.packet))
 
         # Assert
         mock_encoder.encode.assert_called_once_with(mocker.sentinel.packet)
-        mock_string.encode.assert_called_once_with(mocker.sentinel.encoding, mocker.sentinel.str_errors)
         assert chunks == [value + b"\n"]
 
     def test____deserialize____decode_data(
@@ -247,44 +230,36 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer: JSONSerializer = JSONSerializer(
-            encoding=mocker.sentinel.encoding,
-            unicode_errors=mocker.sentinel.str_errors,
-        )
-        mock_bytes = mocker.NonCallableMagicMock()
-        mock_bytes.decode.return_value = mocker.sentinel.document
+        serializer: JSONSerializer = JSONSerializer()
+        data = b'{"data": 42}'
         mock_decoder.decode.return_value = mocker.sentinel.packet
 
         # Act
-        packet = serializer.deserialize(mock_bytes)
+        packet = serializer.deserialize(data)
 
         # Assert
-        mock_bytes.decode.assert_called_once_with(mocker.sentinel.encoding, mocker.sentinel.str_errors)
-        mock_decoder.decode.assert_called_once_with(mocker.sentinel.document)
+        mock_decoder.decode.assert_called_once_with(data.decode())
         assert packet is mocker.sentinel.packet
 
     def test____deserialize____translate_unicode_decode_errors(
         self,
         mock_decoder: MagicMock,
         debug_mode: bool,
-        mocker: MockerFixture,
     ) -> None:
         # Arrange
-        serializer: JSONSerializer = JSONSerializer(debug=debug_mode)
-        mock_bytes = mocker.NonCallableMagicMock()
-        mock_bytes.decode.side_effect = UnicodeDecodeError("some encoding", b"invalid data", 0, 2, "Bad encoding ?")
+        serializer: JSONSerializer = JSONSerializer(encoding="utf-8", debug=debug_mode)
+        data = "é".encode("latin-1")
 
         # Act
         with pytest.raises(DeserializeError) as exc_info:
-            _ = serializer.deserialize(mock_bytes)
+            _ = serializer.deserialize(data)
         exception = exc_info.value
 
         # Assert
-        mock_bytes.decode.assert_called_once()
         mock_decoder.decode.assert_not_called()
-        assert exception.__cause__ is mock_bytes.decode.side_effect
+        assert isinstance(exception.__cause__, UnicodeError)
         if debug_mode:
-            assert exception.error_info == {"data": mock_bytes}
+            assert exception.error_info == {"data": data}
         else:
             assert exception.error_info is None
 
@@ -292,27 +267,25 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         self,
         mock_decoder: MagicMock,
         debug_mode: bool,
-        mocker: MockerFixture,
     ) -> None:
         # Arrange
         from json import JSONDecodeError
 
         serializer: JSONSerializer = JSONSerializer(debug=debug_mode)
-        mock_bytes = mocker.NonCallableMagicMock()
-        mock_decoder.decode.side_effect = JSONDecodeError("Invalid payload", "invalid\ndocument", 8)
+        data = b"invalid\ndocument"
+        mock_decoder.decode.side_effect = JSONDecodeError("Invalid payload", data.decode(), 8)
 
         # Act
         with pytest.raises(DeserializeError) as exc_info:
-            _ = serializer.deserialize(mock_bytes)
+            _ = serializer.deserialize(data)
         exception = exc_info.value
 
         # Assert
-        mock_bytes.decode.assert_called_once()
         mock_decoder.decode.assert_called_once()
         assert exception.__cause__ is mock_decoder.decode.side_effect
         if debug_mode:
             assert exception.error_info == {
-                "document": "invalid\ndocument",
+                "document": data.decode(),
                 "position": 8,
                 "lineno": 2,
                 "colno": 1,
@@ -332,21 +305,14 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         # Arrange
         def raw_parse_side_effect(*args: Any, **kwargs: Any) -> Generator[None, bytes, tuple[bytes, bytes]]:
             data = yield
-            assert data is mocker.sentinel.data
-            return mock_bytes, b"Hello World !"
+            return data, b"Hello World !"
 
         def reader_read_until_side_effect(*args: Any, **kwargs: Any) -> Generator[None, bytes, bytes]:
             data = yield
-            assert data is mocker.sentinel.data
-            return mock_bytes
+            return data
 
-        serializer: JSONSerializer = JSONSerializer(
-            encoding=mocker.sentinel.encoding,
-            unicode_errors=mocker.sentinel.str_errors,
-            use_lines=use_lines,
-        )
-        mock_bytes = mocker.NonCallableMagicMock()
-        mock_string_document = mock_bytes.decode.return_value = mocker.NonCallableMagicMock()
+        serializer: JSONSerializer = JSONSerializer(use_lines=use_lines)
+        data = b'{"data": 42}'
         mock_decoder.decode.return_value = mocker.sentinel.packet
         mock_json_parser.side_effect = raw_parse_side_effect
         mock_generator_stream_reader.read_until.side_effect = reader_read_until_side_effect
@@ -355,7 +321,7 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         # Act
         consumer = serializer.incremental_deserialize()
         next(consumer)
-        packet, remaining_data = send_return(consumer, mocker.sentinel.data)
+        packet, remaining_data = send_return(consumer, data)
 
         # Assert
         if use_lines:
@@ -368,8 +334,7 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
             mock_generator_stream_reader_cls.assert_not_called()
             mock_generator_stream_reader.read_until.assert_not_called()
             mock_generator_stream_reader.read_all.assert_not_called()
-        mock_bytes.decode.assert_called_once_with(mocker.sentinel.encoding, mocker.sentinel.str_errors)
-        mock_decoder.decode.assert_called_once_with(mock_string_document)
+        mock_decoder.decode.assert_called_once_with(data.decode())
         assert packet is mocker.sentinel.packet
         assert remaining_data == b"Hello World !"
 
@@ -383,33 +348,29 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
         # Arrange
         def raw_parse_side_effect(*args: Any, **kwargs: Any) -> Generator[None, bytes, tuple[bytes, bytes]]:
             data = yield
-            assert data is mocker.sentinel.data
-            return mock_bytes, mocker.sentinel.remaining_data
+            return data, mocker.sentinel.remaining_data
 
         serializer: JSONSerializer = JSONSerializer(
-            encoding=mocker.sentinel.encoding,
-            unicode_errors=mocker.sentinel.str_errors,
+            encoding="utf-8",
             use_lines=False,
             debug=debug_mode,
         )
-        mock_bytes = mocker.NonCallableMagicMock()
-        mock_bytes.decode.side_effect = UnicodeDecodeError("some encoding", b"invalid data", 0, 2, "Bad encoding ?")
+        data = "é".encode("latin-1")
         mock_json_parser.side_effect = raw_parse_side_effect
 
         # Act
         consumer = serializer.incremental_deserialize()
         next(consumer)
         with pytest.raises(IncrementalDeserializeError) as exc_info:
-            _ = consumer.send(mocker.sentinel.data)
+            _ = consumer.send(data)
         exception = exc_info.value
 
         # Assert
-        mock_bytes.decode.assert_called_once()
         mock_decoder.decode.assert_not_called()
         assert exception.remaining_data is mocker.sentinel.remaining_data
-        assert exception.__cause__ is mock_bytes.decode.side_effect
+        assert isinstance(exception.__cause__, UnicodeError)
         if debug_mode:
-            assert exception.error_info == {"data": mock_bytes}
+            assert exception.error_info == {"data": data}
         else:
             assert exception.error_info is None
 
@@ -425,34 +386,30 @@ class TestJSONSerializer(BaseSerializerConfigInstanceCheck):
 
         def raw_parse_side_effect(*args: Any, **kwargs: Any) -> Generator[None, bytes, tuple[bytes, bytes]]:
             data = yield
-            assert data is mocker.sentinel.data
-            return mock_bytes, mocker.sentinel.remaining_data
+            return data, mocker.sentinel.remaining_data
 
         serializer: JSONSerializer = JSONSerializer(
-            encoding=mocker.sentinel.encoding,
-            unicode_errors=mocker.sentinel.str_errors,
             use_lines=False,
             debug=debug_mode,
         )
-        mock_bytes = mocker.NonCallableMagicMock()
-        mock_decoder.decode.side_effect = JSONDecodeError("Invalid payload", "invalid\ndocument", 8)
+        data = b"invalid\ndocument"
+        mock_decoder.decode.side_effect = JSONDecodeError("Invalid payload", data.decode(), 8)
         mock_json_parser.side_effect = raw_parse_side_effect
 
         # Act
         consumer = serializer.incremental_deserialize()
         next(consumer)
         with pytest.raises(IncrementalDeserializeError) as exc_info:
-            _ = consumer.send(mocker.sentinel.data)
+            _ = consumer.send(data)
         exception = exc_info.value
 
         # Assert
-        mock_bytes.decode.assert_called_once()
         mock_decoder.decode.assert_called_once()
         assert exception.remaining_data is mocker.sentinel.remaining_data
         assert exception.__cause__ is mock_decoder.decode.side_effect
         if debug_mode:
             assert exception.error_info == {
-                "document": "invalid\ndocument",
+                "document": data.decode(),
                 "position": 8,
                 "lineno": 2,
                 "colno": 1,
