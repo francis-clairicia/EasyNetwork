@@ -369,7 +369,7 @@ class _ClientManager(Generic[_T_Address]):
 
     @staticmethod
     def check_datagram_queue_not_empty(datagram_queue: deque[bytes]) -> None:
-        if not len(datagram_queue):
+        if not datagram_queue:
             _ClientManager.handle_inconsistent_state_error()
 
 

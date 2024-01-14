@@ -311,7 +311,7 @@ class _IncomingDataReader:
 
     async def readinto(self, read_bio: _typing_ssl.MemoryBIO) -> int:
         data = await self.transport.recv(self.max_size)
-        if len(data):
+        if data:
             return read_bio.write(data)
         read_bio.write_eof()
         return 0

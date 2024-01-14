@@ -158,6 +158,5 @@ class AcceptedSocketFactory(AbstractAcceptedSocketFactory[AsyncioTransportBuffer
         socket: _socket.socket,
         loop: asyncio.AbstractEventLoop,
     ) -> AsyncioTransportBufferedStreamSocketAdapter:
-        protocol = StreamReaderBufferedProtocol(loop=loop)
-        transport, _ = await loop.connect_accepted_socket(lambda: protocol, socket)
+        transport, protocol = await loop.connect_accepted_socket(lambda: StreamReaderBufferedProtocol(loop=loop), socket)
         return AsyncioTransportBufferedStreamSocketAdapter(transport, protocol)

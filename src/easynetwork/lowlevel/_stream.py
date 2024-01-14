@@ -334,7 +334,7 @@ class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
         with memoryview(buffer) as buffer:
             if buffer.readonly:
                 raise ValueError("protocol.create_buffer() returned a read-only buffer")
-            if not len(buffer):
+            if not buffer:
                 raise ValueError("protocol.create_buffer() returned a null buffer")
 
     @property

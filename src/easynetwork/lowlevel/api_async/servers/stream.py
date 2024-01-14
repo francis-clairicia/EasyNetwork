@@ -249,7 +249,7 @@ class _RequestReceiver(_BaseRequestReceiver[_T_Request]):
 
     async def _read_data_from_transport(self) -> bool:
         data = await self.transport.recv(self.max_recv_size)
-        if len(data):
+        if data:
             self.consumer.feed(data)
             return True
         return False  # Closed connection (EOF)

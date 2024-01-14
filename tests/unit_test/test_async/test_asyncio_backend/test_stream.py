@@ -630,11 +630,14 @@ class TestAcceptedSocketFactory(BaseTestTransportStreamSocket, BaseTestSocket):
         mocker: MockerFixture,
         mock_asyncio_transport: MagicMock,
     ) -> AsyncMock:
+        async def side_effect(protocol_factory: Callable[[], asyncio.Protocol], sock: Any, *args: Any, **kwargs: Any) -> Any:
+            return mock_asyncio_transport, protocol_factory()
+
         return mocker.patch.object(
             event_loop,
             "connect_accepted_socket",
             new_callable=mocker.AsyncMock,
-            return_value=(mock_asyncio_transport, mocker.sentinel.final_protocol),
+            side_effect=side_effect,
         )
 
     @pytest.fixture

@@ -42,7 +42,7 @@ async def create_datagram_endpoint(
     family: int = 0,
     local_addr: tuple[str, int] | None = None,
     remote_addr: tuple[str, int] | None = None,
-    reuse_port: bool = False,
+    reuse_port: bool | None = None,
     sock: _socket.socket | None = None,
 ) -> DatagramEndpoint:
     loop = asyncio.get_running_loop()
