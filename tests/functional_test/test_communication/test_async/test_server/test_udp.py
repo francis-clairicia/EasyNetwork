@@ -137,13 +137,17 @@ class TimeoutRequestHandler(AsyncDatagramRequestHandler[str, str]):
 class ConcurrencyTestRequestHandler(AsyncDatagramRequestHandler[str, str]):
     sleep_time_before_second_yield: float = 0.0
     sleep_time_before_response: float = 0.0
+    recreate_generator: bool = True
 
     async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[None, str]:
-        assert (yield) == "something"
-        await asyncio.sleep(self.sleep_time_before_second_yield)
-        request = yield
-        await asyncio.sleep(self.sleep_time_before_response)
-        await client.send_packet(f"After wait: {request}")
+        while True:
+            assert (yield) == "something"
+            await asyncio.sleep(self.sleep_time_before_second_yield)
+            request = yield
+            await asyncio.sleep(self.sleep_time_before_response)
+            await client.send_packet(f"After wait: {request}")
+            if self.recreate_generator:
+                break
 
 
 class CancellationRequestHandler(AsyncDatagramRequestHandler[str, str]):
@@ -202,7 +206,6 @@ class MyAsyncUDPServer(AsyncUDPNetworkServer[str, str]):
     __slots__ = ()
 
 
-@pytest.mark.asyncio
 @pytest.mark.flaky(retries=3, delay=1)
 class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
     @pytest.fixture
@@ -547,12 +550,15 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
             assert (await endpoint.recvfrom())[0] == b"After wait: hello, world."
 
     @pytest.mark.parametrize("request_handler", [ConcurrencyTestRequestHandler], indirect=True)
+    @pytest.mark.parametrize("recreate_generator", [False, True], ids=lambda p: f"recreate_generator=={p}")
     async def test____serve_forever____too_many_datagrams_while_request_handle_is_performed(
         self,
+        recreate_generator: bool,
         request_handler: ConcurrencyTestRequestHandler,
         client_factory: Callable[[], Awaitable[DatagramEndpoint]],
     ) -> None:
         request_handler.sleep_time_before_response = 0.5
+        request_handler.recreate_generator = recreate_generator
         endpoint = await client_factory()
 
         await endpoint.sendto(b"something", None)

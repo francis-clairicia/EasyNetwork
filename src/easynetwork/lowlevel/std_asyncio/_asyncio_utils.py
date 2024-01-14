@@ -381,7 +381,7 @@ def wait_until_writable(sock: _socket.socket, loop: asyncio.AbstractEventLoop) -
     return f
 
 
-# Taken from asyncio library
+# Taken from asyncio library (https://github.com/python/cpython/tree/v3.12.0/Lib/asyncio)
 def add_flowcontrol_defaults(high: int | None, low: int | None, kb: int) -> tuple[int, int]:  # pragma: no cover
     if high is None:
         if low is None:

@@ -22,14 +22,6 @@ import contextvars
 import sys
 
 
-def current_async_library() -> str:
-    try:
-        from sniffio import current_async_library
-    except ModuleNotFoundError:
-        current_async_library = _current_async_library_fallback
-    return current_async_library()
-
-
 def _current_async_library_fallback() -> str:
     if "asyncio" in sys.modules:
         import asyncio
@@ -43,10 +35,16 @@ def _current_async_library_fallback() -> str:
     raise RuntimeError("unknown async library, or not in async context")
 
 
-def setup_sniffio_contextvar(context: contextvars.Context, library_name: str | None, /) -> None:
-    try:
-        import sniffio
-    except ModuleNotFoundError:
+try:
+    import sniffio
+except ModuleNotFoundError:
+    current_async_library = _current_async_library_fallback
+
+    def setup_sniffio_contextvar(context: contextvars.Context, library_name: str | None, /) -> None:
         pass
-    else:
+
+else:
+    current_async_library = sniffio.current_async_library
+
+    def setup_sniffio_contextvar(context: contextvars.Context, library_name: str | None, /) -> None:
         context.run(sniffio.current_async_library_cvar.set, library_name)

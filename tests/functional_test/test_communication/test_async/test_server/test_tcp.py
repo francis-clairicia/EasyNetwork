@@ -301,7 +301,6 @@ class MyAsyncTCPServer(AsyncTCPNetworkServer[str, str]):
     __slots__ = ()
 
 
-@pytest.mark.asyncio
 @pytest.mark.flaky(retries=3, delay=1)
 class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     @pytest.fixture(params=["NO_SSL", "USE_SSL"])
