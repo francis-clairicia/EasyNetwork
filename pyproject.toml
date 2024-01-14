@@ -88,7 +88,7 @@ format = [
     "black>=22.6.0",
 ]
 mypy = [
-    "mypy~=1.7.0",
+    "mypy~=1.8",
 ]
 types-msgpack = [
     "msgpack-types>=0.2.0",

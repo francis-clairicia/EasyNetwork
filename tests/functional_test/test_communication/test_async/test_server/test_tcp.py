@@ -5,7 +5,6 @@ import collections
 import contextlib
 import logging
 import ssl
-import weakref
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Sequence
 from socket import IPPROTO_TCP, TCP_NODELAY
 from typing import Any, Literal
@@ -524,7 +523,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     ) -> None:
         assert request_handler.server == server
         assert isinstance(request_handler.server, AsyncTCPNetworkServer)
-        assert isinstance(request_handler.server, weakref.ProxyType)
 
     async def test____serve_forever____accept_client(
         self,

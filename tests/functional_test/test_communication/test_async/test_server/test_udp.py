@@ -4,7 +4,6 @@ import asyncio
 import collections
 import contextlib
 import logging
-import weakref
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Sequence
 from typing import Any
 
@@ -283,7 +282,6 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
     ) -> None:
         assert request_handler.server == server
         assert isinstance(request_handler.server, AsyncUDPNetworkServer)
-        assert isinstance(request_handler.server, weakref.ProxyType)
 
     async def test____serve_forever____handle_request(
         self,

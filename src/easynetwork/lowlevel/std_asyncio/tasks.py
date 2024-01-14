@@ -27,7 +27,7 @@ import math
 import types
 from collections import deque
 from collections.abc import Awaitable, Callable, Coroutine, Generator, Iterable, Iterator
-from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, Self, TypeVar, cast, final
+from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, Self, TypeVar, TypeVarTuple, cast, final
 from weakref import WeakKeyDictionary
 
 from .. import _utils
@@ -45,6 +45,7 @@ if TYPE_CHECKING:
 
 _T = TypeVar("_T")
 _T_co = TypeVar("_T_co", covariant=True)
+_T_PosArgs = TypeVarTuple("_T_PosArgs")
 
 
 @final
@@ -143,9 +144,9 @@ class TaskGroup(AbstractTaskGroup):
 
     def start_soon(
         self,
-        coro_func: Callable[..., Coroutine[Any, Any, Any]],
+        coro_func: Callable[[*_T_PosArgs], Coroutine[Any, Any, _T]],
         /,
-        *args: Any,
+        *args: *_T_PosArgs,
         name: str | None = None,
     ) -> None:
         name = TaskUtils.compute_task_name_from_func(coro_func) if name is None else str(name)
@@ -154,9 +155,9 @@ class TaskGroup(AbstractTaskGroup):
 
     async def start(
         self,
-        coro_func: Callable[..., Coroutine[Any, Any, _T]],
+        coro_func: Callable[[*_T_PosArgs], Coroutine[Any, Any, _T]],
         /,
-        *args: Any,
+        *args: *_T_PosArgs,
         name: str | None = None,
     ) -> AbstractTask[_T]:
         loop = asyncio.get_running_loop()
@@ -531,8 +532,8 @@ class TaskUtils:
     @classmethod
     def ensure_coroutine(
         cls,
-        coro_func: Callable[..., Coroutine[Any, Any, _T]],
-        args: tuple[Any, ...],
+        coro_func: Callable[[*_T_PosArgs], Coroutine[Any, Any, _T]],
+        args: tuple[*_T_PosArgs],
     ) -> Coroutine[Any, Any, _T]:
         coro = coro_func(*args)
         if not isinstance(coro, Coroutine):

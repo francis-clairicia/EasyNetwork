@@ -28,7 +28,7 @@ import os
 import socket as _socket
 import sys
 from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
-from typing import TYPE_CHECKING, Any, NoReturn, ParamSpec, TypeVar
+from typing import TYPE_CHECKING, Any, NoReturn, ParamSpec, TypeVar, TypeVarTuple
 
 from ..api_async.backend import _sniffio_helpers
 from ..api_async.backend.abc import AsyncBackend as AbstractAsyncBackend, TaskInfo
@@ -53,6 +53,7 @@ if TYPE_CHECKING:
 _P = ParamSpec("_P")
 _T = TypeVar("_T")
 _T_co = TypeVar("_T_co", covariant=True)
+_T_PosArgs = TypeVarTuple("_T_PosArgs")
 
 
 class AsyncIOBackend(AbstractAsyncBackend):
@@ -60,8 +61,8 @@ class AsyncIOBackend(AbstractAsyncBackend):
 
     def bootstrap(
         self,
-        coro_func: Callable[..., Coroutine[Any, Any, _T]],
-        *args: Any,
+        coro_func: Callable[[*_T_PosArgs], Coroutine[Any, Any, _T]],
+        *args: *_T_PosArgs,
         runner_options: Mapping[str, Any] | None = None,
     ) -> _T:
         async def bootstrap_task() -> _T:

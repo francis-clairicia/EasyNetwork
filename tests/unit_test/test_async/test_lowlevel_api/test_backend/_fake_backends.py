@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from typing import Any, NoReturn, final
+from typing import Any, NoReturn, final, no_type_check
 
 from easynetwork.lowlevel.api_async.backend.abc import AsyncBackend
 
 
 class BaseFakeBackend(AsyncBackend):
+    @no_type_check
     def bootstrap(self, *args: Any, **kwargs: Any) -> Any:
         raise NotImplementedError
 

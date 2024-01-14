@@ -34,7 +34,7 @@ import math
 from abc import ABCMeta, abstractmethod
 from collections.abc import Awaitable, Callable, Coroutine, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager
-from typing import TYPE_CHECKING, Any, Generic, NoReturn, ParamSpec, Protocol, Self, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, NoReturn, ParamSpec, Protocol, Self, TypeVar, TypeVarTuple
 
 if TYPE_CHECKING:
     import concurrent.futures
@@ -47,6 +47,7 @@ if TYPE_CHECKING:
 _P = ParamSpec("_P")
 _T = TypeVar("_T")
 _T_co = TypeVar("_T_co", covariant=True)
+_T_PosArgs = TypeVarTuple("_T_PosArgs")
 
 
 class ILock(Protocol):
@@ -453,9 +454,9 @@ class TaskGroup(metaclass=ABCMeta):
     @abstractmethod
     def start_soon(
         self,
-        coro_func: Callable[..., Coroutine[Any, Any, _T]],
+        coro_func: Callable[[*_T_PosArgs], Coroutine[Any, Any, _T]],
         /,
-        *args: Any,
+        *args: *_T_PosArgs,
         name: str | None = ...,
     ) -> None:
         """
@@ -472,9 +473,9 @@ class TaskGroup(metaclass=ABCMeta):
     @abstractmethod
     async def start(
         self,
-        coro_func: Callable[..., Coroutine[Any, Any, _T]],
+        coro_func: Callable[[*_T_PosArgs], Coroutine[Any, Any, _T]],
         /,
-        *args: Any,
+        *args: *_T_PosArgs,
         name: str | None = ...,
     ) -> Task[_T]:
         """
@@ -627,8 +628,8 @@ class AsyncBackend(metaclass=ABCMeta):
     @abstractmethod
     def bootstrap(
         self,
-        coro_func: Callable[..., Coroutine[Any, Any, _T]],
-        *args: Any,
+        coro_func: Callable[[*_T_PosArgs], Coroutine[Any, Any, _T]],
+        *args: *_T_PosArgs,
         runner_options: Mapping[str, Any] | None = ...,
     ) -> _T:
         """
