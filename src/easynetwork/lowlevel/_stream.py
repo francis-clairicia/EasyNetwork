@@ -308,14 +308,16 @@ class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
             consumer.close()
 
     def __save_remainder_in_buffer(self, remaining_data: ReadableBuffer) -> None:
-        with memoryview(remaining_data).cast("B") as remaining_data:
-            nbytes = remaining_data.nbytes
-            if nbytes == 0:
-                # Nothing to save.
-                return
-            with memoryview(self.get_write_buffer()) as buffer:
-                buffer[:nbytes] = remaining_data
-            self.__update_write_count(nbytes)
+        # Copy remaining_data because it can be a view to the wrapped buffer
+        # NOTE: remaining_data is not copied if it is already a "bytes" object
+        remaining_data = bytes(remaining_data)
+        nbytes = len(remaining_data)
+        if nbytes == 0:
+            # Nothing to save.
+            return
+        with memoryview(self.get_write_buffer()) as buffer:
+            buffer[:nbytes] = remaining_data
+        self.__update_write_count(nbytes)
 
     def __update_write_count(self, nbytes: int) -> None:
         self.__already_written += nbytes

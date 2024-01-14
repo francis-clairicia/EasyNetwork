@@ -881,6 +881,8 @@ class TestBufferedStreamDataConsumer:
     ) -> None:
         # Arrange
         def side_effect(buffer: memoryview) -> Generator[int | None, int, tuple[Any, ReadableBuffer]]:
+            for i in range(buffer.nbytes):
+                buffer[i] = 0
             nbytes = yield zero_or_none
             assert buffer[:nbytes] == b"Hello world"
             return mocker.sentinel.packet, buffer[2:nbytes]
