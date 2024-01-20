@@ -22,7 +22,7 @@ import functools
 import threading
 from collections import deque
 from collections.abc import Callable
-from typing import Final, final
+from typing import ClassVar, Final, final
 
 from ..._final import runtime_final_class
 from . import _sniffio_helpers
@@ -33,7 +33,7 @@ from .abc import AsyncBackend
 @runtime_final_class
 class AsyncBackendFactory:
     __hooks: Final[deque[Callable[[str], AsyncBackend | None]]] = deque()
-    __thread_local_instances: Final[threading.local] = threading.local()
+    __thread_local_instances: ClassVar[threading.local] = threading.local()
 
     @classmethod
     def current(cls) -> AsyncBackend:
@@ -51,7 +51,7 @@ class AsyncBackendFactory:
         if factory in cls.__hooks:
             raise ValueError(f"{factory!r} is already registered")
         cls.__hooks.appendleft(factory)
-        cls.__thread_local_instances.__dict__.clear()
+        cls.__thread_local_instances = threading.local()
 
     @classmethod
     def remove_factory_hook(cls, factory: Callable[[str], AsyncBackend | None], /) -> None:
@@ -60,7 +60,7 @@ class AsyncBackendFactory:
         except ValueError:
             pass
         else:
-            cls.__thread_local_instances.__dict__.clear()
+            cls.__thread_local_instances = threading.local()
 
     @classmethod
     def backend_factory_hook(cls, backend_name: str, factory: Callable[[], AsyncBackend]) -> Callable[[str], AsyncBackend | None]:
