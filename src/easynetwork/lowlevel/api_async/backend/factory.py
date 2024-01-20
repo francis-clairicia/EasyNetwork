@@ -24,7 +24,6 @@ from collections import deque
 from collections.abc import Callable
 from typing import Final, final
 
-from ... import _lock
 from ..._final import runtime_final_class
 from . import _sniffio_helpers
 from .abc import AsyncBackend
@@ -33,9 +32,8 @@ from .abc import AsyncBackend
 @final
 @runtime_final_class
 class AsyncBackendFactory:
-    __lock: Final[_lock.ForkSafeLock[threading.RLock]] = _lock.ForkSafeLock(threading.RLock)
     __hooks: Final[deque[Callable[[str], AsyncBackend | None]]] = deque()
-    __instances: Final[dict[str, AsyncBackend]] = {}
+    __thread_local_instances: Final[threading.local] = threading.local()
 
     @classmethod
     def current(cls) -> AsyncBackend:
@@ -50,21 +48,19 @@ class AsyncBackendFactory:
     def push_factory_hook(cls, factory: Callable[[str], AsyncBackend | None], /) -> None:
         if not callable(factory):
             raise TypeError(f"{factory!r} is not callable")
-        with cls.__lock.get():
-            if factory in cls.__hooks:
-                raise ValueError(f"{factory!r} is already registered")
-            cls.__hooks.appendleft(factory)
-            cls.__instances.clear()
+        if factory in cls.__hooks:
+            raise ValueError(f"{factory!r} is already registered")
+        cls.__hooks.appendleft(factory)
+        cls.__thread_local_instances.__dict__.clear()
 
     @classmethod
     def remove_factory_hook(cls, factory: Callable[[str], AsyncBackend | None], /) -> None:
-        with cls.__lock.get():
-            try:
-                cls.__hooks.remove(factory)
-            except ValueError:
-                pass
-            else:
-                cls.__instances.clear()
+        try:
+            cls.__hooks.remove(factory)
+        except ValueError:
+            pass
+        else:
+            cls.__thread_local_instances.__dict__.clear()
 
     @classmethod
     def backend_factory_hook(cls, backend_name: str, factory: Callable[[], AsyncBackend]) -> Callable[[str], AsyncBackend | None]:
@@ -78,32 +74,31 @@ class AsyncBackendFactory:
 
     @classmethod
     def __get_backend(cls, name: str, error_msg_format: str) -> AsyncBackend:
-        with cls.__lock.get():
-            try:
-                return cls.__instances[name]
-            except KeyError:
-                pass
+        try:
+            return getattr(cls.__thread_local_instances, name)
+        except AttributeError:
+            pass
 
-            backend_instance: AsyncBackend | None = None
-            for factory_hook in cls.__hooks:
-                backend_instance = factory_hook(name)
-                if backend_instance is None:
-                    continue
-                if not isinstance(backend_instance, AsyncBackend):
-                    raise TypeError(f"{factory_hook!r} did not return an AsyncBackend instance")
-                break
-
+        backend_instance: AsyncBackend | None = None
+        for factory_hook in cls.__hooks:
+            backend_instance = factory_hook(name)
             if backend_instance is None:
-                match name:
-                    case "asyncio":
-                        from ...std_asyncio import AsyncIOBackend
+                continue
+            if not isinstance(backend_instance, AsyncBackend):
+                raise TypeError(f"{factory_hook!r} did not return an AsyncBackend instance")
+            break
 
-                        backend_instance = AsyncIOBackend()
-                    case _:
-                        raise NotImplementedError(error_msg_format.format(name=name))
+        if backend_instance is None:
+            match name:
+                case "asyncio":
+                    from ...std_asyncio import AsyncIOBackend
 
-            cls.__instances[name] = backend_instance
-            return backend_instance
+                    backend_instance = AsyncIOBackend()
+                case _:
+                    raise NotImplementedError(error_msg_format.format(name=name))
+
+        setattr(cls.__thread_local_instances, name, backend_instance)
+        return backend_instance
 
     @staticmethod
     def __backend_factory_hook(backend_name: str, factory: Callable[[], AsyncBackend], name: str, /) -> AsyncBackend | None:
