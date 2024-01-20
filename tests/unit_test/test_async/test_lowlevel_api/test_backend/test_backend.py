@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import contextlib
+import time
 from collections.abc import Awaitable, Callable, Iterator
 from socket import socket as Socket
 from types import MappingProxyType
@@ -580,3 +582,26 @@ class TestAsyncBackendFactory:
 
         # Assert
         assert isinstance(this_backend, OriginalAsyncIOBackend)
+
+    @pytest.mark.flaky(retries=3)
+    def test____current____thread_local_instances(self, mocker: MockerFixture) -> None:
+        # Arrange
+        mocker.patch(
+            self.CURRENT_ASYNC_LIBRARY_FUNC,
+            autospec=True,
+            return_value="asyncio",
+        )
+
+        def current_async_backend() -> AsyncBackend:
+            time.sleep(0.5)
+            return AsyncBackendFactory.current()
+
+        # Act
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            fut_backend_a = executor.submit(current_async_backend)
+            fut_backend_b = executor.submit(current_async_backend)
+
+            concurrent.futures.wait({fut_backend_a, fut_backend_b})
+
+        # Assert
+        assert fut_backend_a.result() is not fut_backend_b.result()
