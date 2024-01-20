@@ -146,7 +146,7 @@ async def _create_connection_impl(
         errors.clear()
 
 
-# Taken from asyncio library
+# Taken from asyncio library (https://github.com/python/cpython/tree/v3.12.0/Lib/asyncio)
 def _interleave_addrinfos(
     addrinfos: Sequence[tuple[int, int, int, str, tuple[Any, ...]]]
 ) -> list[tuple[int, int, int, str, tuple[Any, ...]]]:
@@ -162,7 +162,7 @@ def _interleave_addrinfos(
     return [addr for addr in itertools.chain.from_iterable(itertools.zip_longest(*addrinfos_lists)) if addr is not None]
 
 
-# Taken from anyio project
+# Taken from anyio project (https://github.com/agronholm/anyio/tree/4.2.0)
 def _prioritize_ipv6_over_ipv4(
     addrinfos: Sequence[tuple[int, int, int, str, tuple[Any, ...]]]
 ) -> list[tuple[int, int, int, str, tuple[Any, ...]]]:
