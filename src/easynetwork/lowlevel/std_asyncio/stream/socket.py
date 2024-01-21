@@ -321,9 +321,7 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
         # Return unused buffer part
         if self.__buffer is None:
             raise BufferError("get_buffer() called after connection_lost()")
-        if self.__buffer_nbytes_written:
-            return self.__buffer_view[self.__buffer_nbytes_written :]
-        return self.__buffer_view
+        return self.__buffer_view[self.__buffer_nbytes_written :]
 
     def buffer_updated(self, nbytes: int) -> None:
         assert not self.__connection_lost, "buffer_updated() after connection_lost()"  # nosec assert_used

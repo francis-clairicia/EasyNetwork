@@ -27,8 +27,7 @@ from .... import protocol as protocol_module
 from ...._typevars import _T_Request, _T_Response
 from ....exceptions import UnsupportedOperation
 from ... import _asyncgen, _stream, _utils, typed_attr
-from ..backend.abc import AsyncBackend, TaskGroup
-from ..backend.factory import current_async_backend
+from ..backend.abc import TaskGroup
 from ..transports import abc as transports, utils as transports_utils
 
 
@@ -162,7 +161,6 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_T_Request, _
                 request_receiver = _BufferedRequestReceiver(
                     transport=transport,
                     consumer=consumer,
-                    backend=current_async_backend(),
                 )
             except UnsupportedOperation:
                 consumer = _stream.StreamDataConsumer(self.__protocol)
@@ -170,7 +168,6 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_T_Request, _
                     transport=transport,
                     consumer=consumer,
                     max_recv_size=self.__max_recv_size,
-                    backend=current_async_backend(),
                 )
 
             client = AsyncStreamClient(transport, producer)
@@ -203,7 +200,6 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_T_Request, _
 
 @dataclasses.dataclass(kw_only=True, eq=False, frozen=True, slots=True)
 class _BaseRequestReceiver(Generic[_T_Request]):
-    backend: AsyncBackend
     transport: transports.AsyncBaseTransport
 
     def _packet_iterator(self) -> Iterator[_T_Request]:  # pragma: no cover
