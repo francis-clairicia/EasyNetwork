@@ -2,12 +2,11 @@
 from __future__ import annotations
 
 import argparse
-import functools
 import logging
 import sys
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import AsyncGenerator
 from contextlib import AsyncExitStack
-from typing import Any, Self
+from typing import Any
 
 from easynetwork.api_async.server.handler import AsyncDatagramClient, AsyncDatagramRequestHandler
 from easynetwork.api_sync.server.udp import StandaloneUDPNetworkServer
@@ -25,18 +24,10 @@ class NoSerializer(AbstractPacketSerializer[bytes, bytes]):
         return data
 
 
-class EchoRequestHandler(AsyncDatagramRequestHandler[Any, Any]):
-    def __init__(self, client_ttl: float, eager_tasks: bool) -> None:
+class _BaseRequestHandler(AsyncDatagramRequestHandler[Any, Any]):
+    def __init__(self, eager_tasks: bool) -> None:
         super().__init__()
         self._eager_tasks: bool = bool(eager_tasks)
-
-        self.__handle_func: Callable[[Self, AsyncDatagramClient[Any]], AsyncGenerator[None, Any]]
-
-        if client_ttl <= 0:
-            self.__handle_func = type(self).__handle_without_ttl
-        else:
-            print(f"Client TTL: {client_ttl:.1f} seconds")
-            self.__handle_func = functools.partial(type(self).__handle_with_ttl, client_ttl=client_ttl)
 
     async def service_init(self, exit_stack: AsyncExitStack, server: Any) -> None:
         import asyncio
@@ -45,17 +36,22 @@ class EchoRequestHandler(AsyncDatagramRequestHandler[Any, Any]):
             loop = asyncio.get_running_loop()
             loop.set_task_factory(getattr(asyncio, "eager_task_factory"))
 
-    def handle(self: Self, client: AsyncDatagramClient[Any]) -> AsyncGenerator[None, Any]:
-        handle = self.__handle_func
-        return handle(self, client)
 
-    async def __handle_without_ttl(self, client: AsyncDatagramClient[Any]) -> AsyncGenerator[None, Any]:
+class EchoRequestHandlerNoTTL(_BaseRequestHandler):
+    async def handle(self, client: AsyncDatagramClient[Any]) -> AsyncGenerator[None, Any]:
         request: Any = yield
         await client.send_packet(request)
 
-    async def __handle_with_ttl(self, client: AsyncDatagramClient[Any], *, client_ttl: float) -> AsyncGenerator[None, Any]:
+
+class EchoRequestHandlerWithTTL(_BaseRequestHandler):
+    def __init__(self, client_ttl: float, eager_tasks: bool) -> None:
+        super().__init__(eager_tasks=eager_tasks)
+        self._client_ttl: float = client_ttl
+
+    async def handle(self, client: AsyncDatagramClient[Any]) -> AsyncGenerator[None, Any]:
         from asyncio import timeout
 
+        client_ttl = self._client_ttl
         while True:
             try:
                 async with timeout(client_ttl):
@@ -82,11 +78,18 @@ def create_udp_server(
         print("using asyncio event loop")
     if eager_tasks:
         print("with eager task start")
+    if client_ttl > 0:
+        print(f"Client TTL: {client_ttl:.1f} seconds")
+    handler = (
+        EchoRequestHandlerWithTTL(client_ttl=client_ttl, eager_tasks=eager_tasks)
+        if client_ttl > 0
+        else EchoRequestHandlerNoTTL(eager_tasks=eager_tasks)
+    )
     return StandaloneUDPNetworkServer(
         None,
         port,
         DatagramProtocol(NoSerializer()),
-        EchoRequestHandler(client_ttl=client_ttl, eager_tasks=eager_tasks),
+        handler,
         runner_options=asyncio_options,
     )
 

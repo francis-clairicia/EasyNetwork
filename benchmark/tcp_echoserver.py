@@ -13,43 +13,29 @@ from easynetwork.api_async.server.handler import AsyncStreamClient, AsyncStreamR
 from easynetwork.api_sync.server.tcp import StandaloneTCPNetworkServer
 from easynetwork.protocol import StreamProtocol
 from easynetwork.serializers.abc import AbstractIncrementalPacketSerializer, BufferedIncrementalPacketSerializer
-from easynetwork.serializers.base_stream import _buffered_readuntil
-from easynetwork.serializers.tools import GeneratorStreamReader
 
 ROOT_DIR = pathlib.Path(__file__).parent
 
 
-class LineSerializer(AbstractIncrementalPacketSerializer[bytes, bytes]):
+class NoSerializer(AbstractIncrementalPacketSerializer[bytes, bytes]):
     __slots__ = ()
 
     def incremental_serialize(self, packet: bytes) -> Generator[bytes, None, None]:
-        if not packet.endswith(b"\n"):
-            packet += b"\n"
         yield packet
 
     def incremental_deserialize(self) -> Generator[None, bytes, tuple[bytes, bytes]]:
-        reader = GeneratorStreamReader()
-        packet = yield from reader.read_until(b"\n", limit=65536)
-        remainder = reader.read_all()
-        return packet, remainder
+        return (yield), b""
 
 
-class BufferedLineSerializer(LineSerializer, BufferedIncrementalPacketSerializer[bytes, bytes, bytearray]):
+class BufferedNoSerializer(NoSerializer, BufferedIncrementalPacketSerializer[bytes, bytes, memoryview]):
     __slots__ = ()
 
-    MIN_SIZE: int = 8 * 1024
+    def create_deserializer_buffer(self, sizehint: int) -> memoryview:
+        return memoryview(bytearray(sizehint))
 
-    def create_deserializer_buffer(self, sizehint: int) -> bytearray:
-        return bytearray(max(sizehint, self.MIN_SIZE))
-
-    def buffered_incremental_deserialize(self, buffer: bytearray) -> Generator[int | None, int, tuple[bytes, memoryview]]:
-        with memoryview(buffer) as buffer_view:
-            _, offset, buflen = yield from _buffered_readuntil(buffer, b"\n")
-            del buffer
-
-            remainder: memoryview = buffer_view[offset:buflen]
-            data: bytes = bytes(buffer_view[:offset])
-            return data, remainder
+    def buffered_incremental_deserialize(self, buffer: memoryview) -> Generator[int | None, int, tuple[bytes, bytes]]:
+        offset = yield None
+        return bytes(buffer[:offset]), b""
 
 
 class EchoRequestHandler(AsyncStreamRequestHandler[Any, Any]):
@@ -58,12 +44,20 @@ class EchoRequestHandler(AsyncStreamRequestHandler[Any, Any]):
         await client.send_packet(request)
 
 
+class EchoRequestHandlerInnerLoop(AsyncStreamRequestHandler[Any, Any]):
+    async def handle(self, client: AsyncStreamClient[Any]) -> AsyncGenerator[None, Any]:
+        while True:
+            request: Any = yield
+            await client.send_packet(request)
+
+
 def create_tcp_server(
     *,
     port: int,
     over_ssl: bool,
     use_uvloop: bool,
     buffered: bool,
+    context_reuse: bool,
 ) -> StandaloneTCPNetworkServer[Any, Any]:
     asyncio_options = {}
     if use_uvloop:
@@ -84,11 +78,13 @@ def create_tcp_server(
         ssl_context.verify_mode = ssl.CERT_NONE
     if buffered:
         print("with buffered serializer")
+    if context_reuse:
+        print("with context reuse")
     return StandaloneTCPNetworkServer(
         None,
         port,
-        StreamProtocol(BufferedLineSerializer() if buffered else LineSerializer()),
-        EchoRequestHandler(),
+        StreamProtocol(BufferedNoSerializer() if buffered else NoSerializer()),
+        EchoRequestHandlerInnerLoop() if context_reuse else EchoRequestHandler(),
         ssl=ssl_context,
         runner_options=asyncio_options,
     )
@@ -128,6 +124,11 @@ def main() -> None:
         dest="buffered",
         action="store_true",
     )
+    parser.add_argument(
+        "--context-reuse",
+        dest="context_reuse",
+        action="store_true",
+    )
 
     args = parser.parse_args()
 
@@ -139,6 +140,7 @@ def main() -> None:
         use_uvloop=args.use_uvloop,
         over_ssl=args.over_ssl,
         buffered=args.buffered,
+        context_reuse=args.context_reuse,
     ) as server:
         return server.serve_forever()
 

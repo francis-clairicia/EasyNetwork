@@ -5,7 +5,7 @@
 groups = ["default", "bandit", "build", "cbor", "coverage", "dev", "doc", "encryption", "flake8", "format", "msgpack", "mypy", "pre-commit", "sniffio", "test", "tox", "types-encryption", "types-msgpack", "uvloop"]
 strategy = ["cross_platform", "inherit_metadata"]
 lock_version = "4.4.1"
-content_hash = "sha256:ef4624a95daee0ea94a933cdbced95bcd201c6ddf333a30a0e6d69fed507f8ef"
+content_hash = "sha256:012776b88a43319a8e749f89bf58f5607fb0e16adcd562310703f13a13336062"
 
 [[package]]
 name = "alabaster"
@@ -631,21 +631,6 @@ summary = "flake8 plugin dealing with modules' __all__"
 groups = ["flake8"]
 dependencies = [
     "flake8>=6.0.0",
-]
-
-[[package]]
-name = "flake8-pyi"
-version = "23.11.0"
-requires_python = ">=3.8"
-summary = "A plugin for flake8 to enable linting .pyi stub files."
-groups = ["flake8"]
-dependencies = [
-    "flake8<7.0.0,>=6.0.0",
-    "pyflakes>=2.1.1",
-]
-files = [
-    {file = "flake8_pyi-23.11.0-py3-none-any.whl", hash = "sha256:4d36905006f65116264cf44be4ad2a75d0fd03d2d50e747af5c9f872c4d596de"},
-    {file = "flake8_pyi-23.11.0.tar.gz", hash = "sha256:93de2acdd34db508c87e7b5c5b431108e15dfd349a162ab194b9ac49f3b99103"},
 ]
 
 [[package]]
