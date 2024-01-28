@@ -73,6 +73,9 @@ repos:
     rev: '2.11.2'
     hooks:
       - id: pdm-lock-check
+      - id: pdm-export
+        name: pdm-export benchmark-servers
+        args: ['--dev', '--group', 'benchmark-servers', '--format', 'requirements', '--without-hashes', '--output', 'benchmark/servers/requirements.txt']
   - repo: https://github.com/pre-commit/pygrep-hooks
     rev: 'v1.10.0'
     hooks:

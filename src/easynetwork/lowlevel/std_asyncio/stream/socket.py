@@ -199,14 +199,17 @@ class AsyncioTransportBufferedStreamSocketAdapter(transports.AsyncStreamTranspor
         return await self.__protocol.receive_data_into(buffer)
 
     async def send_all(self, data: bytes | bytearray | memoryview) -> None:
-        self.__transport.write(data)
-        if self.__transport.is_closing():
+        transport = self.__transport
+        transport.write(data)
+        if transport.is_closing():
             await TaskUtils.coro_yield()
         await self.__protocol.writer_drain()
 
     async def send_all_from_iterable(self, iterable_of_data: Iterable[bytes | bytearray | memoryview]) -> None:
-        self.__transport.writelines(iterable_of_data)
-        if self.__transport.is_closing():
+        transport = self.__transport
+        for data in iterable_of_data:
+            transport.write(data)
+        if transport.is_closing():
             await TaskUtils.coro_yield()
         await self.__protocol.writer_drain()
 
@@ -353,7 +356,7 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
             await self._wait_for_data("receive_data")
 
         nbytes_written = self.__buffer_nbytes_written
-        if nbytes_written > 0:
+        if nbytes_written:
             protocol_buffer_written = self.__buffer_view[:nbytes_written]
             data = bytes(protocol_buffer_written[:bufsize])
             if (unused := nbytes_written - bufsize) > 0:
@@ -376,7 +379,7 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
                 await self._wait_for_data("receive_data_into")
 
             nbytes_written = self.__buffer_nbytes_written
-            if nbytes_written > 0:
+            if nbytes_written:
                 protocol_buffer_written = self.__buffer_view[:nbytes_written]
                 bufsize_offset = nbytes_written - buffer.nbytes
                 if bufsize_offset > 0:
@@ -424,9 +427,13 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
         return (self.__read_low_water, self.__read_high_water)
 
     def _maybe_pause_transport(self) -> None:
-        if self.__transport is not None and not self.__read_paused and self.__buffer_nbytes_written >= self.__read_high_water:
+        if (
+            (transport := self.__transport) is not None
+            and not self.__read_paused
+            and self.__buffer_nbytes_written >= self.__read_high_water
+        ):
             try:
-                self.__transport.pause_reading()
+                transport.pause_reading()
             except NotImplementedError:
                 # From asyncio.StreamReader: The transport can't be paused.
                 # We'll just have to buffer all data.
@@ -438,8 +445,12 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
     def _maybe_resume_transport(self) -> None:
         if self.__connection_lost:
             self._maybe_release_buffer()
-        elif self.__read_paused and self.__transport is not None and self.__buffer_nbytes_written <= self.__read_low_water:
-            self.__transport.resume_reading()
+        elif (
+            self.__read_paused
+            and (transport := self.__transport) is not None
+            and self.__buffer_nbytes_written <= self.__read_low_water
+        ):
+            transport.resume_reading()
             self.__read_paused = False
 
     def _maybe_release_buffer(self) -> None:

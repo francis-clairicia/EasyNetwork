@@ -24,7 +24,6 @@ __all__ = [
 ]
 
 import asyncio
-import asyncio.streams
 import contextlib
 import dataclasses
 import errno as _errno

@@ -905,18 +905,19 @@ class TestAsyncioTransportBufferedStreamSocketAdapter(BaseTestTransportSupportin
         socket: AsyncioTransportBufferedStreamSocketAdapter,
         mock_asyncio_transport: MagicMock,
         mock_asyncio_protocol: MagicMock,
+        mocker: MockerFixture,
     ) -> None:
         # Arrange
         written_chunks: list[bytes] = []
         mock_asyncio_transport.is_closing.side_effect = [transport_is_closing]
-        mock_asyncio_transport.writelines.side_effect = written_chunks.extend
+        mock_asyncio_transport.write.side_effect = written_chunks.append
 
         # Act
         await socket.send_all_from_iterable([b"data", b"to", b"send"])
 
         # Assert
-        mock_asyncio_transport.write.assert_not_called()
-        mock_asyncio_transport.writelines.assert_called_once()
+        assert mock_asyncio_transport.write.mock_calls == [mocker.call(b"data"), mocker.call(b"to"), mocker.call(b"send")]
+        mock_asyncio_transport.writelines.assert_not_called()
         mock_asyncio_protocol.writer_drain.assert_awaited_once_with()
         assert written_chunks == [b"data", b"to", b"send"]
 

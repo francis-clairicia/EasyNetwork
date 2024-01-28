@@ -111,7 +111,7 @@ def main() -> None:
         "--port",
         dest="port",
         type=int,
-        default=26000,
+        default=25000,
     )
     parser.add_argument(
         "--uvloop",
