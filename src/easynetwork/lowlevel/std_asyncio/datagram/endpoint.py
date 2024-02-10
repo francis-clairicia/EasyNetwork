@@ -53,7 +53,7 @@ async def create_datagram_endpoint(
         flags |= _socket.AI_PASSIVE
 
     transport, protocol = await loop.create_datagram_endpoint(
-        lambda: DatagramEndpointProtocol(loop=loop, recv_queue=recv_queue, exception_queue=exception_queue),
+        _utils.make_callback(DatagramEndpointProtocol, loop=loop, recv_queue=recv_queue, exception_queue=exception_queue),
         family=family,
         local_addr=local_addr,
         remote_addr=remote_addr,
@@ -172,16 +172,6 @@ class DatagramEndpointProtocol(asyncio.DatagramProtocol):
         self.__drain_waiters: collections.deque[asyncio.Future[None]] = collections.deque()
         self.__write_paused: bool = False
         self.__connection_lost: bool = False
-
-    def __del__(self) -> None:
-        # Prevent reports about unhandled exceptions.
-        try:
-            closed = self.__closed
-        except AttributeError:
-            pass
-        else:
-            if closed.done() and not closed.cancelled():
-                closed.exception()
 
     def connection_made(self, transport: asyncio.DatagramTransport) -> None:  # type: ignore[override]
         assert self.__transport is None, "Transport already set"  # nosec assert_used

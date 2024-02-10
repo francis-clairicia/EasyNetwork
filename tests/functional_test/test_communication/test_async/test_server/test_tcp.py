@@ -114,6 +114,8 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
         match request:
             case "__error__":
                 raise RandomError("Sorry man!")
+            case "__error_excgrp__":
+                raise ExceptionGroup("RandomError", [RandomError("Sorry man!")])
             case "__close__":
                 await client.aclose()
                 with pytest.raises(ClientClosedError):
@@ -121,6 +123,12 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
             case "__closed_client_error__":
                 await client.aclose()
                 await client.send_packet("something never sent")
+            case "__closed_client_error_excgrp__":
+                await client.aclose()
+                try:
+                    await client.send_packet("something never sent")
+                except BaseException as exc:
+                    raise BaseExceptionGroup("ClosedClientError", [exc]) from None
             case "__connection_error__":
                 await client.aclose()  # Close before for graceful close
                 raise ConnectionResetError("Because why not?")
@@ -756,8 +764,10 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
             assert caplog.records[1].exc_info is not None
             assert type(caplog.records[1].exc_info[1]) is RuntimeError
 
+    @pytest.mark.parametrize("excgrp", [False, True], ids=lambda p: f"exception_group_raised=={p}")
     async def test____serve_forever____unexpected_error_during_process(
         self,
+        excgrp: bool,
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
         caplog: pytest.LogCaptureFixture,
         logger_crash_maximum_nb_lines: dict[str, int],
@@ -766,14 +776,21 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         logger_crash_maximum_nb_lines[LOGGER.name] = 3
         reader, writer = await client_factory()
 
-        writer.write(b"__error__\n")
+        if excgrp:
+            writer.write(b"__error_excgrp__\n")
+        else:
+            writer.write(b"__error__\n")
         with contextlib.suppress(ConnectionError):
             assert await reader.read() == b""
         await asyncio.sleep(0.1)
 
         assert len(caplog.records) == 3
         assert caplog.records[1].exc_info is not None
-        assert type(caplog.records[1].exc_info[1]) is RandomError
+        if excgrp:
+            assert type(caplog.records[1].exc_info[1]) is ExceptionGroup
+            assert type(caplog.records[1].exc_info[1].exceptions[0]) is RandomError
+        else:
+            assert type(caplog.records[1].exc_info[1]) is RandomError
 
     @pytest.mark.parametrize("incremental_serializer", [pytest.param("bad_serialize", id="serializer_crash")], indirect=True)
     async def test____serve_forever____unexpected_error_during_response_serialization(
@@ -818,8 +835,10 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         assert caplog.records[1].exc_info is not None
         assert type(caplog.records[1].exc_info[1]) is OSError
 
+    @pytest.mark.parametrize("excgrp", [False, True], ids=lambda p: f"exception_group_raised=={p}")
     async def test____serve_forever____use_of_a_closed_client_in_request_handler(
         self,
+        excgrp: bool,
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
         caplog: pytest.LogCaptureFixture,
         logger_crash_maximum_nb_lines: dict[str, int],
@@ -829,7 +848,10 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         reader, writer = await client_factory()
         host, port = writer.get_extra_info("sockname")[:2]
 
-        writer.write(b"__closed_client_error__\n")
+        if excgrp:
+            writer.write(b"__closed_client_error_excgrp__\n")
+        else:
+            writer.write(b"__closed_client_error__\n")
         assert await reader.read() == b""
         await asyncio.sleep(0.1)
 

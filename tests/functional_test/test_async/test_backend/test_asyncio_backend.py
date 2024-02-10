@@ -675,21 +675,6 @@ class TestAsyncioBackend:
         except* FutureException:
             pass
 
-    @pytest.mark.parametrize("starter", ["start", "start_soon"])
-    async def test____create_task_group____error_not_coroutine(
-        self,
-        starter: Literal["start", "start_soon"],
-        backend: AsyncIOBackend,
-        mocker: MockerFixture,
-    ) -> None:
-        async with backend.create_task_group() as tg:
-            with pytest.raises(TypeError, match=r"^A coroutine was expected, got .+$"):
-                match starter:
-                    case "start":
-                        await tg.start(mocker.stub())
-                    case "start_soon":
-                        tg.start_soon(mocker.stub())
-
     async def test____run_in_thread____cannot_be_cancelled(
         self,
         event_loop: asyncio.AbstractEventLoop,

@@ -15,9 +15,10 @@ class WorkerTestReport(typing.NamedTuple):
     start_time: float
     end_time: float
     times_per_request: list[RequestReport]
+    messages_per_request: int
 
     def number_of_messages(self) -> int:
-        return len(self.times_per_request)
+        return len(self.times_per_request) * self.messages_per_request
 
     def latency_between_requests(self) -> float:
         whole_time = self.end_time - self.start_time

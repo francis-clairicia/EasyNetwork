@@ -285,16 +285,6 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
         self.__read_high_water = high
         self.__read_low_water = low
 
-    def __del__(self) -> None:
-        # Prevent reports about unhandled exceptions.
-        try:
-            closed = self.__closed
-        except AttributeError:
-            pass
-        else:
-            if closed.done() and not closed.cancelled():
-                closed.exception()
-
     def connection_made(self, transport: asyncio.Transport) -> None:  # type: ignore[override]
         assert self.__transport is None, "Transport already set"  # nosec assert_used
         self.__transport = transport
@@ -471,9 +461,9 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
         super().resume_writing()
 
     async def writer_drain(self) -> None:
-        if self.__connection_lost_exception is not None:
-            raise self.__connection_lost_exception
         if self.__connection_lost:
+            if self.__connection_lost_exception is not None:
+                raise self.__connection_lost_exception
             raise _utils.error_from_errno(_errno.ECONNRESET)
         if not self.__write_paused:
             return

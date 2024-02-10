@@ -38,17 +38,17 @@ from ....tools import PlatformMarkers
 from ...base import BaseTestSocket
 
 
-class BaseTestTransportStreamSocket:
+class BaseTestTransportStreamSocket(BaseTestSocket):
     @pytest.fixture
     @staticmethod
     def mock_asyncio_reader(mock_asyncio_stream_reader_factory: Callable[[], MagicMock]) -> MagicMock:
         return mock_asyncio_stream_reader_factory()
 
     @pytest.fixture
-    @staticmethod
-    def mock_tcp_socket(mock_tcp_socket: MagicMock) -> MagicMock:
-        mock_tcp_socket.getsockname.return_value = ("127.0.0.1", 11111)
-        mock_tcp_socket.getpeername.return_value = ("127.0.0.1", 12345)
+    @classmethod
+    def mock_tcp_socket(cls, mock_tcp_socket: MagicMock) -> MagicMock:
+        cls.set_local_address_to_socket_mock(mock_tcp_socket, mock_tcp_socket.family, ("127.0.0.1", 11111))
+        cls.set_remote_address_to_socket_mock(mock_tcp_socket, mock_tcp_socket.family, ("127.0.0.1", 12345))
         return mock_tcp_socket
 
     @pytest.fixture
@@ -361,7 +361,7 @@ class TestAsyncioTransportStreamSocketAdapter(BaseTestTransportSupportingSSL):
 
 
 @pytest.mark.asyncio
-class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestSocket):
+class TestListenerSocketAdapter(BaseTestTransportStreamSocket):
     @pytest.fixture(autouse=True)
     @staticmethod
     def mock_async_socket_cls(mock_async_socket: MagicMock, mocker: MockerFixture) -> MagicMock:
@@ -622,7 +622,7 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestSocket):
 
 
 @pytest.mark.asyncio
-class TestAcceptedSocketFactory(BaseTestTransportStreamSocket, BaseTestSocket):
+class TestAcceptedSocketFactory(BaseTestTransportStreamSocket):
     @pytest.fixture
     @staticmethod
     def mock_event_loop_connect_accepted_socket(

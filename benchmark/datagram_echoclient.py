@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import collections
 import concurrent.futures
+import gc
 import json
 import socket
 import sys
@@ -36,6 +37,8 @@ def run_test(
             sock.bind(("127.0.0.1", 0))
         sock.connect(address)
 
+        gc.disable()
+
         times_per_request: collections.deque[RequestReport] = collections.deque()
         recv_buf = bytearray(REQSIZE)
 
@@ -49,7 +52,12 @@ def run_test(
             test_end_time = request_end_time = time.perf_counter()
             times_per_request.append(RequestReport(start_time=request_start_time, end_time=request_end_time))
 
-    return WorkerTestReport(start_time=test_start_time, end_time=test_end_time, times_per_request=list(times_per_request))
+    return WorkerTestReport(
+        start_time=test_start_time,
+        end_time=test_end_time,
+        times_per_request=list(times_per_request),
+        messages_per_request=1,
+    )
 
 
 def main() -> None:

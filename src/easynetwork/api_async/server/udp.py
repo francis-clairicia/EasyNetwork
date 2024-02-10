@@ -20,9 +20,10 @@ __all__ = ["AsyncUDPNetworkServer"]
 
 import contextlib
 import logging
+import types
 import weakref
 from collections import deque
-from collections.abc import AsyncGenerator, Callable, Coroutine, Iterator, Mapping, Sequence
+from collections.abc import AsyncGenerator, Callable, Coroutine, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Generic, NoReturn, final
 
 from ..._typevars import _T_Request, _T_Response
@@ -38,7 +39,7 @@ from .abc import AbstractAsyncNetworkServer, SupportsEventSet
 from .handler import AsyncDatagramClient, AsyncDatagramRequestHandler, INETClientAttribute
 
 if TYPE_CHECKING:
-    from ...lowlevel.api_async.backend.abc import CancelScope, IEvent, ILock, Task, TaskGroup
+    from ...lowlevel.api_async.backend.abc import CancelScope, IEvent, Task, TaskGroup
 
 
 class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_Response]):
@@ -48,14 +49,11 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
 
     __slots__ = (
         "__servers",
-        "__server_families",
         "__listeners_factory",
         "__listeners_factory_scope",
         "__protocol",
         "__request_handler",
         "__is_shutdown",
-        "__clients_cache",
-        "__send_locks_cache",
         "__servers_tasks",
         "__server_run_scope",
         "__logger",
@@ -113,17 +111,6 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
         self.__is_shutdown.set()
         self.__servers_tasks: deque[Task[NoReturn]] = deque()
         self.__logger: logging.Logger = logger or logging.getLogger(__name__)
-        self.__clients_cache: weakref.WeakValueDictionary[
-            _datagram_server.DatagramClientContext[_T_Response, tuple[Any, ...]],
-            _ClientAPI[_T_Response],
-        ]
-        self.__send_locks_cache: weakref.WeakValueDictionary[
-            _datagram_server.DatagramClientContext[_T_Response, tuple[Any, ...]],
-            ILock,
-        ]
-        self.__clients_cache = weakref.WeakValueDictionary()
-        self.__send_locks_cache = weakref.WeakValueDictionary()
-        self.__server_families: dict[_datagram_server.AsyncDatagramServer[_T_Request, _T_Response, tuple[Any, ...]], int] = {}
 
     @_utils.inherit_doc(AbstractAsyncNetworkServer)
     def is_serving(self) -> bool:
@@ -197,9 +184,6 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
                 raise OSError("empty listeners list")
             self.__servers = tuple(_datagram_server.AsyncDatagramServer(listener, self.__protocol) for listener in listeners)
             del listeners
-
-            self.__server_families = {s: s.extra(INETSocketAttribute.family) for s in self.__servers}
-            server_exit_stack.callback(self.__server_families.clear)
             ###################
 
             # Final teardown
@@ -207,8 +191,6 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
             ################
 
             # Initialize request handler
-            server_exit_stack.callback(self.__send_locks_cache.clear)
-            server_exit_stack.callback(self.__clients_cache.clear)
             await self.__request_handler.service_init(
                 await server_exit_stack.enter_async_context(contextlib.AsyncExitStack()),
                 weakref.proxy(self),
@@ -247,22 +229,19 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
         self,
         lowlevel_client: _datagram_server.DatagramClientContext[_T_Response, tuple[Any, ...]],
     ) -> AsyncGenerator[None, _T_Request]:
-        with self.__suppress_and_log_remaining_exception(lowlevel_client):
-            request_handler_generator = self.__request_handler.handle(self.__get_client(lowlevel_client))
+        with _ClientErrorHandler(lowlevel_client, self.__logger):
+            request_handler_generator = self.__request_handler.handle(_ClientAPI(lowlevel_client))
             try:
                 await anext(request_handler_generator)
             except StopAsyncIteration:
                 return
 
             action: _asyncgen.AsyncGenAction[None, _T_Request]
-            SendAction = _asyncgen.SendAction
-            ThrowAction = _asyncgen.ThrowAction
-
             while True:
                 try:
-                    action = SendAction((yield))
+                    action = _asyncgen.SendAction((yield))
                 except BaseException as exc:
-                    action = ThrowAction(_utils.remove_traceback_frames_in_place(exc, 1))
+                    action = _asyncgen.ThrowAction(_utils.remove_traceback_frames_in_place(exc, 1))
                 try:
                     await action.asend(request_handler_generator)
                 except StopAsyncIteration:
@@ -273,41 +252,6 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
                     raise
                 finally:
                     del action
-
-    @contextlib.contextmanager
-    def __suppress_and_log_remaining_exception(
-        self,
-        lowlevel_client: _datagram_server.DatagramClientContext[_T_Response, tuple[Any, ...]],
-    ) -> Iterator[None]:
-        try:
-            try:
-                yield
-            except* ClientClosedError as excgrp:
-                _utils.remove_traceback_frames_in_place(excgrp, 1)  # Removes the 'yield' frame just above
-                self.__logger.warning(
-                    "There have been attempts to do operation on closed client %s",
-                    new_socket_address(lowlevel_client.address, self.__server_families[lowlevel_client.server]),
-                    exc_info=excgrp,
-                )
-        except Exception as exc:
-            _utils.remove_traceback_frames_in_place(exc, 1)  # Removes the 'yield' frame just above
-            self.__logger.error("-" * 40)
-            self.__logger.error(
-                "Exception occurred during processing of request from %s",
-                new_socket_address(lowlevel_client.address, self.__server_families[lowlevel_client.server]),
-                exc_info=exc,
-            )
-            self.__logger.error("-" * 40)
-
-    def __get_client(
-        self,
-        lowlevel_client: _datagram_server.DatagramClientContext[_T_Response, tuple[Any, ...]],
-    ) -> _ClientAPI[_T_Response]:
-        try:
-            return self.__clients_cache[lowlevel_client]
-        except KeyError:
-            self.__clients_cache[lowlevel_client] = client = _ClientAPI(lowlevel_client)
-            return client
 
     @_utils.inherit_doc(AbstractAsyncNetworkServer)
     def get_addresses(self) -> Sequence[SocketAddress]:
@@ -336,44 +280,45 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
 @runtime_final_class
 class _ClientAPI(AsyncDatagramClient[_T_Response]):
     __slots__ = (
-        "__client",
+        "__context",
         "__h",
         "__extra_attributes_cache",
     )
 
-    def __init__(self, client: _datagram_server.DatagramClientContext[_T_Response, tuple[Any, ...]]) -> None:
+    def __init__(self, context: _datagram_server.DatagramClientContext[_T_Response, tuple[Any, ...]]) -> None:
         super().__init__()
-        self.__client: _datagram_server.DatagramClientContext[_T_Response, tuple[Any, ...]] = client
+        self.__context: _datagram_server.DatagramClientContext[_T_Response, tuple[Any, ...]] = context
         self.__h: int | None = None
         self.__extra_attributes_cache: Mapping[Any, Callable[[], Any]] | None = None
 
     def __repr__(self) -> str:
-        return f"<client with address {self.__client.address} at {id(self):#x}>"
+        return f"<client with address {self.__context.address} at {id(self):#x}>"
 
     def __hash__(self) -> int:
         if (h := self.__h) is None:
-            self.__h = h = hash((_ClientAPI, self.__client, 0xFF))
+            self.__h = h = hash(self.__context)
         return h
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, _ClientAPI):
             return NotImplemented
-        return self.__client == other.__client
+        return self.__context == other.__context
 
     def is_closing(self) -> bool:
-        return self.__client.server.is_closing()
+        return self.__context.server.is_closing()
 
     async def send_packet(self, packet: _T_Response, /) -> None:
-        client = self.__client
-        if client.server.is_closing():
+        server = self.__context.server
+        address = self.__context.address
+        if server.is_closing():
             raise ClientClosedError("Closed client")
-        await client.send_packet(packet)
+        await server.send_packet_to(packet, address)
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         if (extra_attributes_cache := self.__extra_attributes_cache) is not None:
             return extra_attributes_cache
-        server = self.__client.server
+        server = self.__context.server
         self.__extra_attributes_cache = extra_attributes_cache = {
             **server.extra_attributes,
             INETClientAttribute.socket: lambda: SocketProxy(server.extra(INETSocketAttribute.socket)),
@@ -382,8 +327,85 @@ class _ClientAPI(AsyncDatagramClient[_T_Response]):
                 server.extra(INETSocketAttribute.family),
             ),
             INETClientAttribute.remote_address: lambda: new_socket_address(
-                self.__client.address,
+                self.__context.address,
                 server.extra(INETSocketAttribute.family),
             ),
         }
         return extra_attributes_cache
+
+
+@final
+@runtime_final_class
+class _ClientErrorHandler:
+    __slots__ = (
+        "__lowlevel_client",
+        "__logger",
+    )
+
+    def __init__(
+        self,
+        lowlevel_client: _datagram_server.DatagramClientContext[Any, tuple[Any, ...]],
+        logger: logging.Logger,
+    ) -> None:
+        self.__lowlevel_client: _datagram_server.DatagramClientContext[Any, tuple[Any, ...]] = lowlevel_client
+        self.__logger: logging.Logger = logger
+
+    def __enter__(self) -> None:
+        return
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: types.TracebackType | None,
+        /,
+    ) -> bool:
+        # Fast path.
+        if exc_val is None:
+            return False
+
+        del exc_type, exc_tb
+
+        try:
+            match exc_val:
+                case BaseExceptionGroup():
+                    connection_errors, exc_val = exc_val.split(ClientClosedError)
+                    if connection_errors is not None:
+                        self.__log_closed_client_errors(connection_errors)
+                    match exc_val:
+                        case None:
+                            return True
+                        case Exception():
+                            self.__log_exception(exc_val)
+                            return True
+                        case _:  # pragma: no cover
+                            del connection_errors
+                            raise exc_val
+                case ClientClosedError():
+                    self.__log_closed_client_errors(ExceptionGroup("", [exc_val]))
+                    return True
+                case Exception():
+                    self.__log_exception(exc_val)
+                    return True
+                case _:
+                    return False
+        finally:
+            del exc_val
+
+    def __log_closed_client_errors(self, exc: ExceptionGroup[ClientClosedError]) -> None:
+        lowlevel_client = self.__lowlevel_client
+        self.__logger.warning(
+            "There have been attempts to do operation on closed client %s",
+            new_socket_address(lowlevel_client.address, lowlevel_client.server.extra(INETSocketAttribute.family)),
+            exc_info=exc,
+        )
+
+    def __log_exception(self, exc: Exception) -> None:
+        lowlevel_client = self.__lowlevel_client
+        self.__logger.error("-" * 40)
+        self.__logger.error(
+            "Exception occurred during processing of request from %s",
+            new_socket_address(lowlevel_client.address, lowlevel_client.server.extra(INETSocketAttribute.family)),
+            exc_info=exc,
+        )
+        self.__logger.error("-" * 40)

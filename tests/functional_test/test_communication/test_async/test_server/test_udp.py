@@ -46,6 +46,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 class MyAsyncUDPRequestHandler(AsyncDatagramRequestHandler[str, str]):
+    request_count: collections.Counter[tuple[Any, ...]]
     request_received: collections.defaultdict[tuple[Any, ...], list[str]]
     bad_request_received: collections.defaultdict[tuple[Any, ...], list[BaseProtocolParseError]]
     created_clients: set[AsyncDatagramClient[str]]
@@ -55,6 +56,7 @@ class MyAsyncUDPRequestHandler(AsyncDatagramRequestHandler[str, str]):
         await super().service_init(exit_stack, server)
         self.server = server
         assert isinstance(self.server, AsyncUDPNetworkServer)
+        self.request_count = collections.Counter()
         self.request_received = collections.defaultdict(list)
         self.bad_request_received = collections.defaultdict(list)
         self.created_clients = set()
@@ -69,6 +71,7 @@ class MyAsyncUDPRequestHandler(AsyncDatagramRequestHandler[str, str]):
                 await client.send_packet("something")
 
         del (
+            self.request_count,
             self.request_received,
             self.bad_request_received,
             self.created_clients,
@@ -80,13 +83,18 @@ class MyAsyncUDPRequestHandler(AsyncDatagramRequestHandler[str, str]):
             async with self.handle_bad_requests(client):
                 request = yield
                 break
+        self.request_count[client_address(client)] += 1
         match request:
             case "__error__":
                 raise RandomError("Sorry man!")
+            case "__error_excgrp__":
+                raise ExceptionGroup("RandomError", [RandomError("Sorry man!")])
             case "__os_error__":
                 raise OSError("Server issue.")
             case "__closed_client_error__":
                 raise ClientClosedError
+            case "__closed_client_error_excgrp__":
+                raise ExceptionGroup("ClientClosedError", [ClientClosedError()])
             case "__eq__":
                 assert client in list(self.created_clients)
                 assert object() not in list(self.created_clients)
@@ -388,8 +396,10 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
             assert caplog.records[1].exc_info is not None
             assert type(caplog.records[1].exc_info[1]) is RuntimeError
 
+    @pytest.mark.parametrize("excgrp", [False, True], ids=lambda p: f"exception_group_raised=={p}")
     async def test____serve_forever____unexpected_error_during_process(
         self,
+        excgrp: bool,
         client_factory: Callable[[], Awaitable[DatagramEndpoint]],
         caplog: pytest.LogCaptureFixture,
         logger_crash_maximum_nb_lines: dict[str, int],
@@ -398,12 +408,19 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         logger_crash_maximum_nb_lines[LOGGER.name] = 3
         endpoint = await client_factory()
 
-        await endpoint.sendto(b"__error__", None)
+        if excgrp:
+            await endpoint.sendto(b"__error_excgrp__", None)
+        else:
+            await endpoint.sendto(b"__error__", None)
         await asyncio.sleep(0.2)
 
         assert len(caplog.records) == 3
         assert caplog.records[1].exc_info is not None
-        assert type(caplog.records[1].exc_info[1]) is RandomError
+        if excgrp:
+            assert type(caplog.records[1].exc_info[1]) is ExceptionGroup
+            assert type(caplog.records[1].exc_info[1].exceptions[0]) is RandomError
+        else:
+            assert type(caplog.records[1].exc_info[1]) is RandomError
 
     @pytest.mark.parametrize("one_shot_serializer", [pytest.param("bad_serialize", id="serializer_crash")], indirect=True)
     async def test____serve_forever____unexpected_error_during_response_serialization(
@@ -441,8 +458,10 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         assert caplog.records[1].exc_info is not None
         assert type(caplog.records[1].exc_info[1]) is OSError
 
+    @pytest.mark.parametrize("excgrp", [False, True], ids=lambda p: f"exception_group_raised=={p}")
     async def test____serve_forever____use_of_a_closed_client_in_request_handler(  # In a world where this thing happen
         self,
+        excgrp: bool,
         client_factory: Callable[[], Awaitable[DatagramEndpoint]],
         caplog: pytest.LogCaptureFixture,
         logger_crash_maximum_nb_lines: dict[str, int],
@@ -452,7 +471,10 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         endpoint = await client_factory()
         host, port = endpoint.get_extra_info("sockname")[:2]
 
-        await endpoint.sendto(b"__closed_client_error__", None)
+        if excgrp:
+            await endpoint.sendto(b"__closed_client_error_excgrp__", None)
+        else:
+            await endpoint.sendto(b"__closed_client_error__", None)
         await asyncio.sleep(0.2)
 
         assert len(caplog.records) == 1

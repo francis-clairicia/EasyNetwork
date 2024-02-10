@@ -28,11 +28,10 @@ __all__ = [
     "ThreadsPortal",
 ]
 
-import contextlib
 import dataclasses
 import math
 from abc import ABCMeta, abstractmethod
-from collections.abc import Awaitable, Callable, Coroutine, Iterator, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
 from contextlib import AbstractContextManager
 from typing import TYPE_CHECKING, Any, Generic, NoReturn, ParamSpec, Protocol, Self, TypeVar, TypeVarTuple
 
@@ -748,7 +747,7 @@ class AsyncBackend(metaclass=ABCMeta):
         Returns:
             a :term:`context manager`
         """
-        return _timeout_after(self, delay)
+        return _timeout_scope(self.move_on_after(delay))
 
     def timeout_at(self, deadline: float) -> AbstractContextManager[CancelScope]:
         """
@@ -765,7 +764,7 @@ class AsyncBackend(metaclass=ABCMeta):
         Returns:
             a :term:`context manager`
         """
-        return _timeout_at(self, deadline)
+        return _timeout_scope(self.move_on_at(deadline))
 
     def move_on_after(self, delay: float) -> CancelScope:
         """
@@ -1141,14 +1140,14 @@ class AsyncBackend(metaclass=ABCMeta):
         raise NotImplementedError
 
 
-def _timeout_after(backend: AsyncBackend, delay: float) -> contextlib._GeneratorContextManager[CancelScope]:
-    return _timeout_at(backend, backend.current_time() + delay)
+@dataclasses.dataclass(frozen=True, slots=True, weakref_slot=True)
+class _timeout_scope:
+    scope: CancelScope
 
+    def __enter__(self) -> CancelScope:
+        return self.scope.__enter__()
 
-@contextlib.contextmanager
-def _timeout_at(backend: AsyncBackend, deadline: float) -> Iterator[CancelScope]:
-    with backend.move_on_at(deadline) as scope:
-        yield scope
-
-    if scope.cancelled_caught():
-        raise TimeoutError("timed out")
+    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None) -> None:
+        cancelled_caught = self.scope.__exit__(exc_type, exc_val, exc_tb)
+        if cancelled_caught:
+            raise TimeoutError("timed out")

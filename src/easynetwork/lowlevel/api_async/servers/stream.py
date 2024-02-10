@@ -80,7 +80,6 @@ class AsyncStreamClient(typed_attr.TypedAttributeProvider, Generic[_T_Response])
             producer = self.__producer
 
             producer.enqueue(packet)
-            del packet
             await transport.send_all_from_iterable(producer)
 
     @property

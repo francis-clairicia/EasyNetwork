@@ -65,6 +65,7 @@ class BaseTestSocket:
         else:
             full_address = cls.get_resolved_addr_format(address, socket_family)
 
+        mock_socket.getsockname.side_effect = None
         mock_socket.getsockname.return_value = full_address
 
     @classmethod
@@ -74,6 +75,7 @@ class BaseTestSocket:
         socket_family: int,
         address: tuple[str, int],
     ) -> None:
+        mock_socket.getpeername.side_effect = None
         mock_socket.getpeername.return_value = cls.get_resolved_addr_format(address, socket_family)
 
     @classmethod
@@ -84,6 +86,7 @@ class BaseTestSocket:
         ## Exception raised by socket.getpeername() if socket.connect() was not called before
         enotconn_exception = OSError(errno.ENOTCONN, os.strerror(errno.ENOTCONN))
         mock_socket.getpeername.side_effect = enotconn_exception
+        mock_socket.getpeername.return_value = None
         return enotconn_exception
 
 

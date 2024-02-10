@@ -22,11 +22,16 @@ async def echo_server(address: tuple[str, int]) -> NoReturn:
     sock.bind(address)
     sock.setblocking(False)
     LOGGER.info(f"Server listening at {sock.getsockname()}")
-    with sock:
+    async with contextlib.AsyncExitStack() as stack:
+        stack.enter_context(sock)
+        task_group = await stack.enter_async_context(asyncio.TaskGroup())
+
         while True:
             datagram, addr = await loop.sock_recvfrom(sock, 65536)
             LOGGER.info(f"Connection from {addr}")
-            loop.create_task(_echo_datagram_client(loop, sock, datagram, addr))
+            task_group.create_task(_echo_datagram_client(loop, sock, datagram, addr))
+
+    raise AssertionError("unreachable")
 
 
 async def _echo_datagram_client(
@@ -40,14 +45,17 @@ async def _echo_datagram_client(
 
 async def echo_server_stream(address: tuple[str, int]) -> NoReturn:
     stream = await asyncio_dgram.bind(address)
-    loop = asyncio.get_running_loop()
 
     LOGGER.info(f"Server listening at {stream.sockname}")
-    with contextlib.closing(stream):
+    async with contextlib.AsyncExitStack() as stack:
+        stack.enter_context(contextlib.closing(stream))
+        task_group = await stack.enter_async_context(asyncio.TaskGroup())
         while True:
             datagram, addr = await stream.recv()
             LOGGER.info(f"Connection from {addr}")
-            loop.create_task(_echo_datagram_client_stream(stream, datagram, addr))
+            task_group.create_task(_echo_datagram_client_stream(stream, datagram, addr))
+
+    raise AssertionError("unreachable")
 
 
 async def _echo_datagram_client_stream(

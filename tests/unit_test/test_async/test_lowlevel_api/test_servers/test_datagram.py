@@ -6,14 +6,7 @@ from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.lowlevel.api_async.backend.abc import TaskGroup
-from easynetwork.lowlevel.api_async.servers.datagram import (
-    AsyncDatagramServer,
-    DatagramClientContext,
-    _ClientData,
-    _ClientManager,
-    _ClientState,
-    _ClientToken,
-)
+from easynetwork.lowlevel.api_async.servers.datagram import AsyncDatagramServer, _ClientData, _ClientState
 from easynetwork.lowlevel.api_async.transports.abc import AsyncDatagramListener
 
 import pytest
@@ -137,8 +130,8 @@ class TestAsyncDatagramServer:
             mock_backend.create_task_group.side_effect = []
         else:
             mock_backend.create_task_group.side_effect = [mock_task_group]
-        datagram_received_cb = mocker.stub()
-        mock_datagram_listener.recv_from.side_effect = [(b"data", mocker.sentinel.address), asyncio.CancelledError]
+        datagram_received_cb = mocker.async_stub()
+        mock_datagram_listener.serve.side_effect = asyncio.CancelledError
 
         # Act
         with pytest.raises(asyncio.CancelledError):
@@ -154,32 +147,6 @@ class TestAsyncDatagramServer:
         else:
             mock_backend.create_task_group.assert_called_once_with()
             mock_task_group.__aenter__.assert_awaited_once()
-        mock_task_group.start_soon.assert_called_once_with(
-            mocker.ANY,
-            datagram_received_cb,
-            b"data",
-            _ClientToken(DatagramClientContext(address=mocker.sentinel.address, server=server), mocker.ANY),
-            mock_task_group,
-        )
-
-    async def test____serve____ignore_empty_datagram(
-        self,
-        server: AsyncDatagramServer[Any, Any, Any],
-        mock_datagram_listener: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        mock_task_group = mocker.NonCallableMagicMock(spec=TaskGroup)
-        mock_task_group.start_soon.return_value = None
-        datagram_received_cb = mocker.stub()
-        mock_datagram_listener.recv_from.side_effect = [(b"", mocker.sentinel.address), asyncio.CancelledError]
-
-        # Act
-        with pytest.raises(asyncio.CancelledError):
-            await server.serve(datagram_received_cb, mock_task_group)
-
-        # Assert
-        mock_task_group.start_soon.assert_not_called()
 
     async def test____get_extra_info____default(
         self,
@@ -213,7 +180,7 @@ class TestAsyncDatagramServer:
         mock_datagram_listener.send_to.assert_awaited_once_with(b"packet", mocker.sentinel.destination)
 
 
-class TestClientManager:
+class TestClientData:
     @pytest.fixture
     @staticmethod
     def mock_backend(mock_backend: MagicMock) -> MagicMock:
@@ -223,13 +190,8 @@ class TestClientManager:
 
     @pytest.fixture
     @staticmethod
-    def mock_server(mocker: MockerFixture) -> MagicMock:
-        return mocker.NonCallableMagicMock(spec=AsyncDatagramServer)
-
-    @pytest.fixture
-    @staticmethod
-    def client_manager(mock_server: MagicMock, mock_backend: MagicMock) -> _ClientManager[Any, Any]:
-        return _ClientManager(mock_server, mock_backend)
+    def client_data(mock_backend: MagicMock) -> _ClientData:
+        return _ClientData(mock_backend)
 
     @staticmethod
     def get_client_state(client_data: _ClientData) -> _ClientState | None:
@@ -239,74 +201,23 @@ class TestClientManager:
     def get_client_queue(client_data: _ClientData) -> deque[bytes] | None:
         return client_data._datagram_queue
 
-    def test____client_context____default(
+    def test____dunder_init____default(
         self,
-        client_manager: _ClientManager[Any, Any],
-        mock_server: MagicMock,
-        mocker: MockerFixture,
+        client_data: _ClientData,
     ) -> None:
         # Arrange
 
-        # Act
-        ctx = client_manager.client_context(mocker.sentinel.address)
+        # Act & Assert
+        assert isinstance(client_data.task_lock, asyncio.Lock)
+        assert client_data.state is None
+        assert client_data._datagram_queue is None
+        assert client_data._queue_condition is None
 
-        # Assert
-        assert isinstance(ctx, DatagramClientContext)
-        assert ctx.address is mocker.sentinel.address
-        assert ctx.server is mock_server
-
-    def test____client_context____cache(
+    def test____client_state____regular_state_transition(
         self,
-        client_manager: _ClientManager[Any, Any],
-        mocker: MockerFixture,
+        client_data: _ClientData,
     ) -> None:
         # Arrange
-
-        # Act
-        ctx = client_manager.client_context(mocker.sentinel.address)
-        ctx_2 = client_manager.client_context(mocker.sentinel.address)
-
-        # Assert
-        assert ctx_2 is ctx
-
-    def test____client_data____default(
-        self,
-        client_manager: _ClientManager[Any, Any],
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        ctx = client_manager.client_context(mocker.sentinel.address)
-
-        # Act
-        data = client_manager.client_data(ctx)
-
-        # Assert
-        assert isinstance(data.task_lock, asyncio.Lock)
-        assert data.state is None
-        assert data._datagram_queue is None
-
-    def test____client_data____cache(
-        self,
-        client_manager: _ClientManager[Any, Any],
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        ctx = client_manager.client_context(mocker.sentinel.address)
-
-        # Act
-        data = client_manager.client_data(ctx)
-        data_2 = client_manager.client_data(ctx)
-
-        # Assert
-        assert data is data_2
-
-    def test____client_data____client_state____regular_state_transition(
-        self,
-        client_manager: _ClientManager[Any, Any],
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        client_data = client_manager.client_data(client_manager.client_context(mocker.sentinel.address))
 
         # Act & Assert
         assert self.get_client_state(client_data) is None
@@ -317,13 +228,11 @@ class TestClientManager:
         client_data.mark_done()
         assert self.get_client_state(client_data) is None
 
-    def test____client_data____client_state____irregular_state_transition(
+    def test____client_state____irregular_state_transition(
         self,
-        client_manager: _ClientManager[Any, Any],
-        mocker: MockerFixture,
+        client_data: _ClientData,
     ) -> None:
         # Arrange
-        client_data = client_manager.client_data(client_manager.client_context(mocker.sentinel.address))
 
         # Act & Assert
         ## Case 1: None
@@ -356,13 +265,11 @@ class TestClientManager:
         assert self.get_client_state(client_data) is _ClientState.TASK_RUNNING
 
     @pytest.mark.asyncio
-    async def test____client_data____datagram_queue____push_datagram(
+    async def test____datagram_queue____push_datagram(
         self,
-        client_manager: _ClientManager[Any, Any],
-        mocker: MockerFixture,
+        client_data: _ClientData,
     ) -> None:
         # Arrange
-        client_data = client_manager.client_data(client_manager.client_context(mocker.sentinel.address))
         assert self.get_client_queue(client_data) is None
 
         # Act
@@ -372,74 +279,56 @@ class TestClientManager:
 
         # Assert
         assert client_data._datagram_queue is not None
+        assert client_data._queue_condition is None
         assert list(client_data._datagram_queue) == [b"datagram_1", b"datagram_2", b"datagram_3"]
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("no_wait", [False, True], ids=lambda p: f"no_wait=={p}")
-    async def test____client_data____datagram_queue____pop_datagram(
+    async def test____datagram_queue____pop_datagram(
         self,
         no_wait: bool,
-        client_manager: _ClientManager[Any, Any],
-        mocker: MockerFixture,
+        client_data: _ClientData,
     ) -> None:
         # Arrange
-        client_data = client_manager.client_data(client_manager.client_context(mocker.sentinel.address))
         client_data._datagram_queue = deque([b"datagram_1", b"datagram_2", b"datagram_3"])
 
         # Act
         if no_wait:
-            assert (await client_data.pop_datagram()) == b"datagram_1"
-            assert (await client_data.pop_datagram()) == b"datagram_2"
-            assert (await client_data.pop_datagram()) == b"datagram_3"
-        else:
             assert client_data.pop_datagram_no_wait() == b"datagram_1"
             assert client_data.pop_datagram_no_wait() == b"datagram_2"
             assert client_data.pop_datagram_no_wait() == b"datagram_3"
+        else:
+            assert (await client_data.pop_datagram()) == b"datagram_1"
+            assert (await client_data.pop_datagram()) == b"datagram_2"
+            assert (await client_data.pop_datagram()) == b"datagram_3"
 
         # Assert
         assert len(client_data._datagram_queue) == 0
+        if no_wait:
+            assert client_data._queue_condition is None
+        else:
+            assert client_data._queue_condition is not None
 
     @pytest.mark.parametrize("queue", [deque(), None], ids=lambda p: f"queue=={p!r}")
-    def test____client_data____datagram_queue____pop_datagram_no_wait____empty_list(
+    def test____datagram_queue____pop_datagram_no_wait____empty_list(
         self,
         queue: deque[bytes] | None,
-        client_manager: _ClientManager[Any, Any],
-        mocker: MockerFixture,
+        client_data: _ClientData,
     ) -> None:
         # Arrange
-        client_data = client_manager.client_data(client_manager.client_context(mocker.sentinel.address))
         client_data._datagram_queue = queue
 
         # Act & Assert
         with pytest.raises(IndexError):
             client_data.pop_datagram_no_wait()
 
-    @pytest.mark.parametrize("queue", [deque(), deque([b"datagram"]), None], ids=lambda p: f"queue=={p!r}")
-    def test____client_data____datagram_queue____clear(
-        self,
-        queue: deque[bytes] | None,
-        client_manager: _ClientManager[Any, Any],
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        client_data = client_manager.client_data(client_manager.client_context(mocker.sentinel.address))
-        client_data._datagram_queue = queue
-
-        # Act
-        client_data.clear_datagram_queue()
-
-        # Assert
-        assert client_data._datagram_queue is None
-
     @pytest.mark.asyncio
-    async def test____client_data____datagram_queue____pop_datagram____wait_until_notification(
+    async def test____datagram_queue____pop_datagram____wait_until_notification(
         self,
         event_loop: asyncio.AbstractEventLoop,
-        client_manager: _ClientManager[Any, Any],
-        mocker: MockerFixture,
+        client_data: _ClientData,
     ) -> None:
         # Arrange
-        client_data = client_manager.client_data(client_manager.client_context(mocker.sentinel.address))
         pop_datagram_task = event_loop.create_task(client_data.pop_datagram())
         await asyncio.sleep(0.01)
         assert not pop_datagram_task.done()

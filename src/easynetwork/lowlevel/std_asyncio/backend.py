@@ -30,6 +30,7 @@ import sys
 from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, NoReturn, ParamSpec, TypeVar, TypeVarTuple
 
+from .. import _utils
 from ..api_async.backend import _sniffio_helpers
 from ..api_async.backend.abc import AsyncBackend as AbstractAsyncBackend, TaskInfo
 from ..constants import HAPPY_EYEBALLS_DELAY as _DEFAULT_HAPPY_EYEBALLS_DELAY
@@ -65,12 +66,8 @@ class AsyncIOBackend(AbstractAsyncBackend):
         *args: *_T_PosArgs,
         runner_options: Mapping[str, Any] | None = None,
     ) -> _T:
-        async def bootstrap_task() -> _T:
-            TaskUtils.current_asyncio_task().set_name(TaskUtils.compute_task_name_from_func(coro_func))
-            return await TaskUtils.ensure_coroutine(coro_func, args)
-
         with asyncio.Runner(**(runner_options or {})) as runner:
-            return runner.run(bootstrap_task())
+            return runner.run(coro_func(*args))
 
     async def coro_yield(self) -> None:
         await TaskUtils.coro_yield()
@@ -204,6 +201,8 @@ class AsyncIOBackend(AbstractAsyncBackend):
         *,
         reuse_port: bool = False,
     ) -> Sequence[DatagramListenerSocketAdapter]:
+        from .datagram.listener import DatagramListenerProtocol
+
         loop = asyncio.get_running_loop()
 
         hosts: Sequence[str | None]
@@ -229,8 +228,10 @@ class AsyncIOBackend(AbstractAsyncBackend):
             reuse_address=False,
             reuse_port=reuse_port,
         )
+        protocol_factory = _utils.make_callback(DatagramListenerProtocol, loop=loop)
 
-        return [DatagramListenerSocketAdapter(await create_datagram_endpoint(sock=sock)) for sock in sockets]
+        listeners = [await loop.create_datagram_endpoint(protocol_factory, sock=sock) for sock in sockets]
+        return [DatagramListenerSocketAdapter(transport, protocol) for transport, protocol in listeners]
 
     def create_lock(self) -> asyncio.Lock:
         return asyncio.Lock()
