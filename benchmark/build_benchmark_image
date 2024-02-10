@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -68,19 +67,13 @@ def main() -> None:
     parser.add_argument(
         "--python-version",
         default=SUPPORTED_PYTHON_VERSIONS[-1],
-        choices=list(SUPPORTED_PYTHON_VERSIONS) + ["same_as_interpreter"],
-        help="The CPython version to use for the servers (in major.minor format or set 'same_as_interpreter')",
+        choices=list(SUPPORTED_PYTHON_VERSIONS),
+        help="The CPython version to use for the servers (in major.minor format)",
     )
     args = parser.parse_args()
 
     python_version: str = args.python_version
-    if python_version == "same_as_interpreter":
-        python_version = f"{sys.version_info.major}.{sys.version_info.minor}"
-        print(f"Interpreter version: {python_version}")
-        if python_version not in SUPPORTED_PYTHON_VERSIONS:
-            raise ValueError(f"Unsupported python version (complete list: {', '.join(SUPPORTED_PYTHON_VERSIONS)})")
-    else:
-        print(f"Selected Python version: {python_version}")
+    print(f"Selected Python version: {python_version}")
 
     client = docker.from_env()
     _build_docker_image(client, _build_sdist_for_docker_image(), args.tag, python_version)
