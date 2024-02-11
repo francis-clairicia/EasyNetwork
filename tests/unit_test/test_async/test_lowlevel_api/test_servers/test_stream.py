@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from collections.abc import Awaitable, Callable, Generator, Iterator
 from typing import TYPE_CHECKING, Any
 
@@ -45,8 +46,17 @@ class TestAsyncStreamClient:
 
     @pytest.fixture
     @staticmethod
-    def client(mock_stream_transport: MagicMock, mock_stream_protocol: MagicMock) -> AsyncStreamClient[Any]:
-        return AsyncStreamClient(mock_stream_transport, StreamDataProducer(mock_stream_protocol))
+    def client_exit_stack() -> contextlib.AsyncExitStack:
+        return contextlib.AsyncExitStack()
+
+    @pytest.fixture
+    @staticmethod
+    def client(
+        mock_stream_transport: MagicMock,
+        mock_stream_protocol: MagicMock,
+        client_exit_stack: contextlib.AsyncExitStack,
+    ) -> AsyncStreamClient[Any]:
+        return AsyncStreamClient(mock_stream_transport, StreamDataProducer(mock_stream_protocol), client_exit_stack)
 
     @pytest.mark.parametrize("transport_closed", [False, True])
     async def test____is_closing____default(
@@ -70,17 +80,22 @@ class TestAsyncStreamClient:
         self,
         client: AsyncStreamClient[Any],
         mock_stream_transport: MagicMock,
+        client_exit_stack: contextlib.AsyncExitStack,
+        mocker: MockerFixture,
     ) -> None:
         # Arrange
         mock_stream_transport.aclose.assert_not_called()
+        close_stub = mocker.async_stub()
+        client_exit_stack.push_async_callback(close_stub)
 
         # Act
         await client.aclose()
 
         # Assert
         mock_stream_transport.aclose.assert_awaited_once_with()
+        close_stub.assert_awaited_once_with()
 
-    async def test____get_extra_info____default(
+    async def test____extra_attributes____default(
         self,
         client: AsyncStreamClient[Any],
         mock_stream_transport: MagicMock,
@@ -212,7 +227,7 @@ class TestAsyncStreamServer:
         # Assert
         mock_listener.aclose.assert_awaited_once_with()
 
-    async def test____get_extra_info____default(
+    async def test____extra_attributes____default(
         self,
         server: AsyncStreamServer[Any, Any],
         mock_listener: MagicMock,

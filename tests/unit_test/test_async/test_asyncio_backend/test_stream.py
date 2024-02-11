@@ -35,6 +35,7 @@ if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
 from ....tools import PlatformMarkers
+from ..._utils import partial_eq
 from ...base import BaseTestSocket
 
 
@@ -329,7 +330,7 @@ class TestAsyncioTransportStreamSocketAdapter(BaseTestTransportSupportingSSL):
                 await socket.send_eof()
             mock_asyncio_writer.write_eof.assert_not_called()
 
-    async def test____get_extra_info____returns_socket_info(
+    async def test____extra_attributes____returns_socket_info(
         self,
         socket: AsyncioTransportStreamSocketAdapter,
         mock_tcp_socket: MagicMock,
@@ -343,7 +344,7 @@ class TestAsyncioTransportStreamSocketAdapter(BaseTestTransportSupportingSSL):
         assert socket.extra(SocketAttribute.peername) == ("127.0.0.1", 12345)
 
     @pytest.mark.usefixtures("add_ssl_extra_to_transport")
-    async def test____get_extra_info____returns_ssl_info(
+    async def test____extra_attributes____returns_ssl_info(
         self,
         socket: AsyncioTransportStreamSocketAdapter,
         mock_ssl_context: MagicMock,
@@ -411,11 +412,15 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket):
         return ListenerSocketAdapter(mock_tcp_listener_socket, event_loop, accepted_socket_factory)
 
     @staticmethod
-    def _make_accept_side_effect(side_effect: Any, mocker: MockerFixture) -> Callable[[], Coroutine[Any, Any, MagicMock]]:
+    def _make_accept_side_effect(
+        side_effect: Any,
+        mocker: MockerFixture,
+        sleep_time: float = 0,
+    ) -> Callable[[], Coroutine[Any, Any, MagicMock]]:
         accept_cb = mocker.MagicMock(side_effect=side_effect)
 
         async def accept_side_effect() -> MagicMock:
-            await asyncio.sleep(0)
+            await asyncio.sleep(sleep_time)
             return accept_cb()
 
         return accept_side_effect
@@ -478,7 +483,11 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket):
         stream = mock_stream_socket_adapter_factory()
         client_socket = mock_tcp_socket_factory()
         accepted_socket_factory.connect.return_value = stream
-        mock_async_socket.accept.side_effect = self._make_accept_side_effect([client_socket, asyncio.CancelledError], mocker)
+        mock_async_socket.accept.side_effect = self._make_accept_side_effect(
+            [client_socket, asyncio.CancelledError],
+            mocker,
+            sleep_time=0.1,
+        )
 
         # Act
         task_group: AsyncIOTaskGroup | None
@@ -606,7 +615,7 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket):
         assert len(caplog.records) == 0
         assert exc_info.value is exc
 
-    async def test____get_extra_info____returns_socket_info(
+    async def test____extra_attributes____returns_socket_info(
         self,
         listener: ListenerSocketAdapter[Any],
         mock_tcp_listener_socket: MagicMock,
@@ -670,7 +679,6 @@ class TestAcceptedSocketFactory(BaseTestTransportStreamSocket):
         event_loop: asyncio.AbstractEventLoop,
         mock_event_loop_connect_accepted_socket: AsyncMock,
         mock_tcp_socket: MagicMock,
-        mocker: MockerFixture,
     ) -> None:
         # Arrange
 
@@ -680,7 +688,7 @@ class TestAcceptedSocketFactory(BaseTestTransportStreamSocket):
         # Assert
         assert isinstance(socket, AsyncioTransportBufferedStreamSocketAdapter)
         mock_event_loop_connect_accepted_socket.assert_awaited_once_with(
-            mocker.ANY,  # protocol_factory
+            partial_eq(StreamReaderBufferedProtocol, loop=event_loop),
             mock_tcp_socket,
         )
 
@@ -905,19 +913,18 @@ class TestAsyncioTransportBufferedStreamSocketAdapter(BaseTestTransportSupportin
         socket: AsyncioTransportBufferedStreamSocketAdapter,
         mock_asyncio_transport: MagicMock,
         mock_asyncio_protocol: MagicMock,
-        mocker: MockerFixture,
     ) -> None:
         # Arrange
         written_chunks: list[bytes] = []
         mock_asyncio_transport.is_closing.side_effect = [transport_is_closing]
-        mock_asyncio_transport.write.side_effect = written_chunks.append
+        mock_asyncio_transport.writelines.side_effect = written_chunks.extend
 
         # Act
         await socket.send_all_from_iterable([b"data", b"to", b"send"])
 
         # Assert
-        assert mock_asyncio_transport.write.mock_calls == [mocker.call(b"data"), mocker.call(b"to"), mocker.call(b"send")]
-        mock_asyncio_transport.writelines.assert_not_called()
+        mock_asyncio_transport.write.assert_not_called()
+        mock_asyncio_transport.writelines.assert_called_once()
         mock_asyncio_protocol.writer_drain.assert_awaited_once_with()
         assert written_chunks == [b"data", b"to", b"send"]
 
@@ -941,7 +948,7 @@ class TestAsyncioTransportBufferedStreamSocketAdapter(BaseTestTransportSupportin
                 await socket.send_eof()
             mock_asyncio_transport.write_eof.assert_not_called()
 
-    async def test____get_extra_info____returns_socket_info(
+    async def test____extra_attributes____returns_socket_info(
         self,
         socket: AsyncioTransportStreamSocketAdapter,
         mock_tcp_socket: MagicMock,
@@ -955,7 +962,7 @@ class TestAsyncioTransportBufferedStreamSocketAdapter(BaseTestTransportSupportin
         assert socket.extra(SocketAttribute.peername) == ("127.0.0.1", 12345)
 
     @pytest.mark.usefixtures("add_ssl_extra_to_transport")
-    async def test____get_extra_info____returns_ssl_info(
+    async def test____extra_attributes____returns_ssl_info(
         self,
         socket: AsyncioTransportStreamSocketAdapter,
         mock_ssl_context: MagicMock,

@@ -134,12 +134,10 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
 
         sentinel = mocker.sentinel
 
-        def feed_side_effect(chunk: bytes) -> None:
+        def next_side_effect(chunk: bytes | None) -> Any:
             nonlocal bytes_buffer
-            bytes_buffer += chunk
-
-        def next_side_effect() -> Any:
-            nonlocal bytes_buffer
+            if chunk is not None:
+                bytes_buffer += chunk
             data, separator, bytes_buffer = bytes_buffer.partition(b"\n")
             if not separator:
                 assert not bytes_buffer
@@ -147,9 +145,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
                 raise StopIteration
             return getattr(sentinel, data.decode("ascii"))
 
-        mock_stream_data_consumer.feed.side_effect = feed_side_effect
-        mock_stream_data_consumer.__iter__.side_effect = lambda: mock_stream_data_consumer
-        mock_stream_data_consumer.__next__.side_effect = next_side_effect
+        mock_stream_data_consumer.next.side_effect = next_side_effect
 
     @pytest_asyncio.fixture
     @staticmethod
@@ -1155,7 +1151,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
 
         # Assert
         mock_stream_socket_adapter.recv.assert_awaited_once_with(DEFAULT_STREAM_BUFSIZE)
-        mock_stream_data_consumer.feed.assert_called_once_with(b"packet\n")
+        assert mock_stream_data_consumer.next.call_args_list == [mocker.call(None), mocker.call(b"packet\n")]
         assert packet is mocker.sentinel.packet
 
     @pytest.mark.usefixtures("setup_consumer_mock")
@@ -1176,7 +1172,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         # Assert
         mock_backend.coro_yield.assert_not_awaited()
         assert mock_stream_socket_adapter.recv.call_args_list == [mocker.call(DEFAULT_STREAM_BUFSIZE) for _ in range(2)]
-        assert mock_stream_data_consumer.feed.call_args_list == [mocker.call(b"pac"), mocker.call(b"ket\n")]
+        assert mock_stream_data_consumer.next.call_args_list == [mocker.call(None), mocker.call(b"pac"), mocker.call(b"ket\n")]
         assert packet is mocker.sentinel.packet
 
     @pytest.mark.usefixtures("setup_consumer_mock")
@@ -1197,7 +1193,11 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
 
         # Assert
         mock_stream_socket_adapter.recv.assert_awaited_once()
-        mock_stream_data_consumer.feed.assert_called_once_with(b"packet_1\npacket_2\n")
+        assert mock_stream_data_consumer.next.call_args_list == [
+            mocker.call(None),
+            mocker.call(b"packet_1\npacket_2\n"),
+            mocker.call(None),
+        ]
         mock_backend.coro_yield.assert_not_awaited()
         assert packet_1 is mocker.sentinel.packet_1
         assert packet_2 is mocker.sentinel.packet_2
@@ -1219,7 +1219,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
 
         # Assert
         mock_stream_socket_adapter.recv.assert_awaited_once_with(DEFAULT_STREAM_BUFSIZE)
-        mock_stream_data_consumer.feed.assert_not_called()
+        mock_stream_data_consumer.next.assert_called_once_with(None)
         mock_backend.coro_yield.assert_not_awaited()
 
     @pytest.mark.usefixtures("setup_consumer_mock")
@@ -1239,7 +1239,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
 
         # Assert
         mock_stream_socket_adapter.recv.assert_awaited_once_with(DEFAULT_STREAM_BUFSIZE)
-        mock_stream_data_consumer.feed.assert_not_called()
+        mock_stream_data_consumer.next.assert_called_once_with(None)
         mock_backend.coro_yield.assert_not_awaited()
 
     @pytest.mark.usefixtures("setup_consumer_mock")
@@ -1249,12 +1249,13 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_stream_socket_adapter: MagicMock,
         mock_backend: MagicMock,
         mock_stream_data_consumer: MagicMock,
+        mocker: MockerFixture,
     ) -> None:
         # Arrange
 
         mock_stream_socket_adapter.recv.side_effect = [b"packet\n"]
         expected_error = StreamProtocolParseError(b"", IncrementalDeserializeError("Sorry", b""))
-        mock_stream_data_consumer.__next__.side_effect = [StopIteration, expected_error]
+        mock_stream_data_consumer.next.side_effect = [StopIteration, expected_error]
 
         # Act
         with pytest.raises(StreamProtocolParseError) as exc_info:
@@ -1263,7 +1264,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
 
         # Assert
         mock_stream_socket_adapter.recv.assert_awaited_once_with(DEFAULT_STREAM_BUFSIZE)
-        mock_stream_data_consumer.feed.assert_called_once_with(b"packet\n")
+        assert mock_stream_data_consumer.next.call_args_list == [mocker.call(None), mocker.call(b"packet\n")]
         mock_backend.coro_yield.assert_not_awaited()
         assert exception is expected_error
 
@@ -1284,7 +1285,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             _ = await client_connected_or_not.recv_packet()
 
         # Assert
-        mock_stream_data_consumer.feed.assert_not_called()
+        mock_stream_data_consumer.next.assert_not_called()
         mock_stream_socket_adapter.recv.assert_not_called()
         mock_backend.coro_yield.assert_not_awaited()
 
@@ -1304,7 +1305,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             _ = await client_connected_or_not.recv_packet()
 
         # Assert
-        mock_stream_data_consumer.feed.assert_not_called()
+        mock_stream_data_consumer.next.assert_not_called()
         mock_stream_socket_adapter.recv.assert_not_called()
         mock_backend.coro_yield.assert_not_awaited()
 
@@ -1325,7 +1326,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
 
         # Assert
         mock_stream_socket_adapter.recv.assert_awaited_once_with(DEFAULT_STREAM_BUFSIZE)
-        mock_stream_data_consumer.feed.assert_not_called()
+        mock_stream_data_consumer.next.assert_called_once_with(None)
         mock_backend.coro_yield.assert_not_awaited()
 
     @pytest.mark.usefixtures("setup_consumer_mock")
@@ -1348,7 +1349,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
 
         # Assert
         mock_stream_socket_adapter.recv.assert_awaited_once_with(DEFAULT_STREAM_BUFSIZE)
-        mock_stream_data_consumer.feed.assert_not_called()
+        mock_stream_data_consumer.next.assert_called_once_with(None)
         mock_backend.coro_yield.assert_not_awaited()
 
     @pytest.mark.usefixtures("setup_consumer_mock")
@@ -1370,7 +1371,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
 
         # Assert
         mock_stream_socket_adapter.recv.assert_awaited_once_with(DEFAULT_STREAM_BUFSIZE)
-        mock_stream_data_consumer.feed.assert_not_called()
+        mock_stream_data_consumer.next.assert_called_once_with(None)
         mock_backend.coro_yield.assert_not_awaited()
 
     @pytest.mark.usefixtures("setup_producer_mock", "setup_consumer_mock")

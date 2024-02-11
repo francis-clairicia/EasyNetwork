@@ -513,6 +513,30 @@ class TestSocketStreamTransport(MixinTestSocketSendMSG):
         mock_get_address.assert_called_once()
         assert transport.extra(extra_attribute, mocker.sentinel.default_value) is mocker.sentinel.default_value
 
+    @pytest.mark.parametrize(
+        ["extra_attribute", "called_socket_method"],
+        [
+            pytest.param(SocketAttribute.sockname, "getsockname", id="socket.getsockname()"),
+            pytest.param(SocketAttribute.peername, "getpeername", id="socket.getpeername()"),
+        ],
+    )
+    def test____extra_attributes____address_lookup_on_closed_socket(
+        self,
+        extra_attribute: Any,
+        called_socket_method: str,
+        transport: SocketStreamTransport,
+        mock_tcp_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_get_address: MagicMock = getattr(mock_tcp_socket, called_socket_method)
+        transport.close()
+        assert mock_tcp_socket.fileno.return_value == -1
+
+        # Act & Assert
+        with pytest.raises(TypedAttributeLookupError):
+            transport.extra(extra_attribute)
+        mock_get_address.assert_not_called()
+
 
 class TestSSLStreamTransport:
     @pytest.fixture(autouse=True)
@@ -1027,6 +1051,30 @@ class TestSSLStreamTransport:
     @pytest.mark.parametrize(
         ["extra_attribute", "called_socket_method"],
         [
+            pytest.param(SocketAttribute.sockname, "getsockname", id="socket.getsockname()"),
+            pytest.param(SocketAttribute.peername, "getpeername", id="socket.getpeername()"),
+        ],
+    )
+    def test____extra_attributes____address_lookup_on_closed_socket(
+        self,
+        extra_attribute: Any,
+        called_socket_method: str,
+        transport: SSLStreamTransport,
+        mock_ssl_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_get_address: MagicMock = getattr(mock_ssl_socket, called_socket_method)
+        transport.close()
+        assert mock_ssl_socket.fileno.return_value == -1
+
+        # Act & Assert
+        with pytest.raises(TypedAttributeLookupError):
+            transport.extra(extra_attribute)
+        mock_get_address.assert_not_called()
+
+    @pytest.mark.parametrize(
+        ["extra_attribute", "called_socket_method"],
+        [
             pytest.param(TLSAttribute.peercert, "getpeercert", id="socket.getpeercert()"),
             pytest.param(TLSAttribute.cipher, "cipher", id="socket.cipher()"),
             pytest.param(TLSAttribute.compression, "compression", id="socket.compression()"),
@@ -1301,3 +1349,27 @@ class TestSocketDatagramTransport:
             transport.extra(extra_attribute)
         mock_get_address.assert_called_once()
         assert transport.extra(extra_attribute, mocker.sentinel.default_value) is mocker.sentinel.default_value
+
+    @pytest.mark.parametrize(
+        ["extra_attribute", "called_socket_method"],
+        [
+            pytest.param(SocketAttribute.sockname, "getsockname", id="socket.getsockname()"),
+            pytest.param(SocketAttribute.peername, "getpeername", id="socket.getpeername()"),
+        ],
+    )
+    def test____extra_attributes____address_lookup_on_closed_socket(
+        self,
+        extra_attribute: Any,
+        called_socket_method: str,
+        transport: SocketDatagramTransport,
+        mock_udp_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_get_address: MagicMock = getattr(mock_udp_socket, called_socket_method)
+        transport.close()
+        assert mock_udp_socket.fileno.return_value == -1
+
+        # Act & Assert
+        with pytest.raises(TypedAttributeLookupError):
+            transport.extra(extra_attribute)
+        mock_get_address.assert_not_called()

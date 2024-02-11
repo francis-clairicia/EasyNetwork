@@ -161,7 +161,10 @@ class AsyncioTransportBufferedStreamSocketAdapter(transports.AsyncStreamTranspor
         self.__closing: bool = False
 
         # Disable in-memory byte buffering.
-        transport.set_write_buffer_limits(1)
+        if self.__over_ssl:
+            transport.set_write_buffer_limits(1)
+        else:
+            transport.set_write_buffer_limits(0)
 
     async def aclose(self) -> None:
         self.__closing = True
@@ -199,17 +202,14 @@ class AsyncioTransportBufferedStreamSocketAdapter(transports.AsyncStreamTranspor
         return await self.__protocol.receive_data_into(buffer)
 
     async def send_all(self, data: bytes | bytearray | memoryview) -> None:
-        transport = self.__transport
-        transport.write(data)
-        if transport.is_closing():
+        self.__transport.write(data)
+        if self.__transport.is_closing():
             await TaskUtils.coro_yield()
         await self.__protocol.writer_drain()
 
     async def send_all_from_iterable(self, iterable_of_data: Iterable[bytes | bytearray | memoryview]) -> None:
-        transport = self.__transport
-        for data in iterable_of_data:
-            transport.write(data)
-        if transport.is_closing():
+        self.__transport.writelines(iterable_of_data)
+        if self.__transport.is_closing():
             await TaskUtils.coro_yield()
         await self.__protocol.writer_drain()
 
@@ -278,12 +278,7 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
         self.__connection_lost_exception: Exception | None = None
         self.__eof_reached: bool = False
         self.__over_ssl: bool = False
-
-        max_size_in_kb = self.max_size // 1024
-        default_water_size = max_size_in_kb * 3 // 4
-        high, low = add_flowcontrol_defaults(None, None, default_water_size)
-        self.__read_high_water = high
-        self.__read_low_water = low
+        self._compute_read_buffer_limits()
 
     def connection_made(self, transport: asyncio.Transport) -> None:  # type: ignore[override]
         assert self.__transport is None, "Transport already set"  # nosec assert_used
@@ -307,11 +302,9 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
 
         self.__transport = None
 
-        super().connection_lost(exc)
-
     def get_buffer(self, sizehint: int) -> WriteableBuffer:
         # Ignore sizehint, the buffer is already at its maximum size.
-        # Return unused buffer part
+        # Returns unused buffer part
         if self.__buffer is None:
             raise BufferError("get_buffer() called after connection_lost()")
         return self.__buffer_view[self.__buffer_nbytes_written :]
@@ -336,8 +329,9 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
         return True
 
     async def receive_data(self, bufsize: int, /) -> bytes:
-        if self.__connection_lost_exception is not None:
-            raise self.__connection_lost_exception
+        if self.__connection_lost:
+            if self.__connection_lost_exception is not None:
+                raise self.__connection_lost_exception
         if bufsize == 0:
             return b""
         if bufsize < 0:
@@ -360,8 +354,9 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
         return data
 
     async def receive_data_into(self, buffer: WriteableBuffer, /) -> int:
-        if self.__connection_lost_exception is not None:
-            raise self.__connection_lost_exception
+        if self.__connection_lost:
+            if self.__connection_lost_exception is not None:
+                raise self.__connection_lost_exception
         with memoryview(buffer).cast("B") as buffer:
             if not buffer.nbytes:
                 return 0
@@ -408,7 +403,6 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
                     waiter.set_result(None)
                 else:
                     waiter.set_exception(exc)
-            self.__read_waiter = None
 
     def _get_read_buffer_size(self) -> int:
         return self.__buffer_nbytes_written
@@ -416,11 +410,18 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
     def _get_read_buffer_limits(self) -> tuple[int, int]:
         return (self.__read_low_water, self.__read_high_water)
 
+    def _compute_read_buffer_limits(self) -> None:
+        max_size_in_kb = self.max_size // 1024
+        default_water_size = max_size_in_kb * 3 // 4
+        high, low = add_flowcontrol_defaults(None, None, default_water_size)
+        self.__read_high_water: int = high
+        self.__read_low_water: int = low
+
     def _maybe_pause_transport(self) -> None:
         if (
-            (transport := self.__transport) is not None
+            self.__buffer_nbytes_written >= self.__read_high_water
             and not self.__read_paused
-            and self.__buffer_nbytes_written >= self.__read_high_water
+            and (transport := self.__transport) is not None
         ):
             try:
                 transport.pause_reading()
@@ -451,14 +452,10 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
     def pause_writing(self) -> None:
         self.__write_paused = True
 
-        super().pause_writing()
-
     def resume_writing(self) -> None:
         self.__write_paused = False
 
         self._wakeup_write_waiters(None)
-
-        super().resume_writing()
 
     async def writer_drain(self) -> None:
         if self.__connection_lost:

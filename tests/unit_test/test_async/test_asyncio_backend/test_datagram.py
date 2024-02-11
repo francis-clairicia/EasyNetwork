@@ -355,7 +355,7 @@ class TestDatagramEndpoint:
         mock_asyncio_transport.sendto.assert_called_once_with(b"some data", address)
         mock_asyncio_protocol._drain_helper.assert_awaited_once_with()
 
-    async def test____get_extra_info____get_transport_extra_info(
+    async def test____extra_attributes____get_transport_extra_info(
         self,
         endpoint: DatagramEndpoint,
         mock_asyncio_transport: MagicMock,
@@ -767,7 +767,7 @@ class TestAsyncioTransportDatagramSocketAdapter(BaseTestAsyncioDatagramTransport
         # Assert
         mock_endpoint.sendto.assert_awaited_once_with(b"data to send", None)
 
-    async def test____get_extra_info____returns_socket_info(
+    async def test____extra_attributes____returns_socket_info(
         self,
         socket: AsyncioTransportDatagramSocketAdapter,
         mock_udp_socket: MagicMock,
@@ -931,7 +931,7 @@ class TestDatagramListenerSocketAdapter(BaseTestAsyncioDatagramTransport):
         mock_asyncio_transport.sendto.assert_called_once_with(b"data to send", address)
         mock_asyncio_protocol.writer_drain.assert_awaited_once_with()
 
-    async def test____get_extra_info____returns_socket_info(
+    async def test____extra_attributes____returns_socket_info(
         self,
         socket: DatagramListenerSocketAdapter,
         mock_udp_socket: MagicMock,

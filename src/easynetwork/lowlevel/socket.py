@@ -570,8 +570,8 @@ def _get_socket_extra(sock: ISocket, *, wrap_in_proxy: bool = True) -> dict[Any,
     return {
         SocketAttribute.socket: (lambda: sock) if not wrap_in_proxy else (lambda: SocketProxy(sock)),
         SocketAttribute.family: lambda: _cast_socket_family(sock.family),
-        SocketAttribute.sockname: lambda: _address_or_lookup_error(sock.getsockname),
-        SocketAttribute.peername: lambda: _address_or_lookup_error(sock.getpeername),
+        SocketAttribute.sockname: lambda: _address_or_lookup_error(sock.fileno, sock.getsockname),
+        SocketAttribute.peername: lambda: _address_or_lookup_error(sock.fileno, sock.getpeername),
     }
 
 
@@ -599,8 +599,12 @@ def _cast_socket_kind(kind: int) -> int:
         return kind
 
 
-def _address_or_lookup_error(getsockaddr: Callable[[], _T_Return]) -> _T_Return:
+def _address_or_lookup_error(fileno: Callable[[], int], getsockaddr: Callable[[], _T_Return]) -> _T_Return:
     try:
+        if fileno() < 0:
+            from errno import EBADF
+
+            raise OSError(EBADF, os.strerror(EBADF))
         return getsockaddr()
     except OSError as exc:
         from ..exceptions import TypedAttributeLookupError

@@ -34,7 +34,7 @@ from abc import abstractmethod
 from collections.abc import Callable, Coroutine, Mapping
 from typing import TYPE_CHECKING, Any, Generic, NoReturn, TypeVar, final
 
-from ... import constants, socket as socket_tools
+from ... import _utils, constants, socket as socket_tools
 from ...api_async.transports import abc as transports
 from ..socket import AsyncSocket
 from ..tasks import TaskGroup as AsyncIOTaskGroup
@@ -81,7 +81,7 @@ class ListenerSocketAdapter(transports.AsyncListener[_T_Stream]):
         loop = self.__socket.loop
         logger = logging.getLogger(__name__)
 
-        async def client_task(client_socket: _socket.socket) -> None:
+        async def client_connection_task(client_socket: _socket.socket, task_group: AbstractTaskGroup) -> None:
             try:
                 stream = await connect(client_socket, loop)
             except asyncio.CancelledError:
@@ -102,7 +102,7 @@ class ListenerSocketAdapter(transports.AsyncListener[_T_Stream]):
                 if not isinstance(exc, Exception):
                     raise
             else:
-                await handler(stream)
+                task_group.start_soon(handler, stream)
 
         async with contextlib.AsyncExitStack() as stack:
             if task_group is None:
@@ -123,7 +123,7 @@ class ListenerSocketAdapter(transports.AsyncListener[_T_Stream]):
                     else:
                         raise
                 else:
-                    task_group.start_soon(client_task, client_socket)
+                    task_group.start_soon(client_connection_task, client_socket, task_group)
                     del client_socket
 
         raise AssertionError("Expected code to be unreachable.")
@@ -157,5 +157,8 @@ class AcceptedSocketFactory(AbstractAcceptedSocketFactory[AsyncioTransportBuffer
         socket: _socket.socket,
         loop: asyncio.AbstractEventLoop,
     ) -> AsyncioTransportBufferedStreamSocketAdapter:
-        transport, protocol = await loop.connect_accepted_socket(lambda: StreamReaderBufferedProtocol(loop=loop), socket)
+        transport, protocol = await loop.connect_accepted_socket(
+            _utils.make_callback(StreamReaderBufferedProtocol, loop=loop),
+            socket,
+        )
         return AsyncioTransportBufferedStreamSocketAdapter(transport, protocol)

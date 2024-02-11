@@ -39,16 +39,18 @@ def run_test(
 
         gc.disable()
 
+        # Wait for service to be available
+        sock.sendall(b"ping")
+        if not sock.recv(1024):
+            raise SystemExit()
+
         times_per_request: collections.deque[RequestReport] = collections.deque()
-        recv_buf = bytearray(REQSIZE)
 
         test_start_time = test_end_time = time.perf_counter()
         while (test_end_time - test_start_time) < duration:
             request_start_time = time.perf_counter()
             sock.send(msg)
-            nrecv = sock.recv_into(recv_buf)
-            if nrecv < REQSIZE:
-                raise SystemExit()
+            sock.recv(REQSIZE)
             test_end_time = request_end_time = time.perf_counter()
             times_per_request.append(RequestReport(start_time=request_start_time, end_time=request_end_time))
 

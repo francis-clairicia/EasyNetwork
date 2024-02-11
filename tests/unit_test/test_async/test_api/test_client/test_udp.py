@@ -145,6 +145,7 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
             local_address=mocker.sentinel.local_address,
         )
         assert mock_udp_socket.mock_calls == [
+            mocker.call.fileno(),
             mocker.call.getsockname(),
         ]
         assert isinstance(client.socket, SocketProxy)
@@ -263,6 +264,7 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
         assert mock_udp_socket.mock_calls == [
             mocker.call.getpeername(),
             mocker.call.getsockname(),
+            mocker.call.fileno(),
             mocker.call.getsockname(),
         ]
         assert isinstance(client.socket, SocketProxy)

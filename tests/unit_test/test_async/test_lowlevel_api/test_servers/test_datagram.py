@@ -148,7 +148,7 @@ class TestAsyncDatagramServer:
             mock_backend.create_task_group.assert_called_once_with()
             mock_task_group.__aenter__.assert_awaited_once()
 
-    async def test____get_extra_info____default(
+    async def test____extra_attributes____default(
         self,
         server: AsyncDatagramServer[Any, Any, Any],
         mock_datagram_listener: MagicMock,

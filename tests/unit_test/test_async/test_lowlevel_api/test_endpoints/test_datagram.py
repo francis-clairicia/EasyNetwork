@@ -107,7 +107,7 @@ class TestAsyncDatagramEndpoint:
         # Assert
         mock_datagram_transport.aclose.assert_awaited_once_with()
 
-    async def test____get_extra_info____default(
+    async def test____extra_attributes____default(
         self,
         endpoint: AsyncDatagramEndpoint[Any, Any],
         mock_datagram_transport: MagicMock,

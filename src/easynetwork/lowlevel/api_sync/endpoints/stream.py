@@ -203,11 +203,10 @@ class _DataSenderImpl(Generic[_T_SentPacket]):
     producer: _stream.StreamDataProducer[_T_SentPacket]
 
     def clear(self) -> None:
-        self.producer.clear()
+        pass
 
     def send(self, packet: _T_SentPacket, timeout: float) -> None:
-        self.producer.enqueue(packet)
-        return self.transport.send_all_from_iterable(self.producer, timeout)
+        return self.transport.send_all_from_iterable(self.producer.generate(packet), timeout)
 
 
 @dataclasses.dataclass(slots=True)
@@ -221,36 +220,32 @@ class _DataReceiverImpl(Generic[_T_ReceivedPacket]):
         self.consumer.clear()
 
     def receive(self, timeout: float) -> _T_ReceivedPacket:
-        transport = self.transport
         consumer = self.consumer
-
         try:
-            return next(consumer)  # If there is enough data from last call to create a packet, return immediately
+            return consumer.next(None)
         except StopIteration:
             pass
 
-        if self._eof_reached:
-            raise EOFError("end-of-stream")
-
+        transport = self.transport
         bufsize: int = self.max_recv_size
 
-        while True:
+        while not self._eof_reached:
             with _utils.ElapsedTime() as elapsed:
                 chunk: bytes = transport.recv(bufsize, timeout)
             if not chunk:
                 self._eof_reached = True
-                raise EOFError("end-of-stream")
-            consumer.feed(chunk)
+                continue
             buffer_not_full: bool = len(chunk) < bufsize
-            del chunk
             try:
-                return next(consumer)
+                return consumer.next(chunk)
             except StopIteration:
                 if timeout > 0:
                     timeout = elapsed.recompute_timeout(timeout)
                 elif buffer_not_full:
                     break
         # Loop break
+        if self._eof_reached:
+            raise EOFError("end-of-stream")
         raise _utils.error_from_errno(_errno.ETIMEDOUT)
 
 
@@ -270,34 +265,30 @@ class _BufferedReceiverImpl(Generic[_T_ReceivedPacket]):
         self.consumer.clear()
 
     def receive(self, timeout: float) -> _T_ReceivedPacket:
-        transport = self.transport
         consumer = self.consumer
-
         try:
-            return next(consumer)  # If there is enough data from last call to create a packet, return immediately
+            return consumer.next(None)
         except StopIteration:
             pass
 
-        if self._eof_reached:
-            raise EOFError("end-of-stream")
-
-        while True:
+        transport = self.transport
+        while not self._eof_reached:
             with memoryview(consumer.get_write_buffer()) as buffer:
                 bufsize: int = buffer.nbytes
                 with _utils.ElapsedTime() as elapsed:
                     nbytes: int = transport.recv_into(buffer, timeout)
-            del buffer
             if not nbytes:
                 self._eof_reached = True
-                raise EOFError("end-of-stream")
-            consumer.buffer_updated(nbytes)
+                continue
             buffer_not_full: bool = nbytes < bufsize
             try:
-                return next(consumer)
+                return consumer.next(nbytes)
             except StopIteration:
                 if timeout > 0:
                     timeout = elapsed.recompute_timeout(timeout)
                 elif buffer_not_full:
                     break
         # Loop break
+        if self._eof_reached:
+            raise EOFError("end-of-stream")
         raise _utils.error_from_errno(_errno.ETIMEDOUT)
