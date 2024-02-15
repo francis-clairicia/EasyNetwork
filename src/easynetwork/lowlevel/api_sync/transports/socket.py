@@ -126,10 +126,8 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport, base_selector
                 raise base_selector.WouldBlockOnWrite(self.__socket.fileno()) from None
 
         while buffers:
-            with _utils.ElapsedTime() as elapsed:
-                sent: int = self._retry(try_sendmsg, timeout)
+            sent, timeout = self._retry(try_sendmsg, timeout)
             _utils.adjust_leftover_buffer(buffers, sent)
-            timeout = elapsed.recompute_timeout(timeout)
 
     @_utils.inherit_doc(base_selector.SelectorStreamTransport)
     def send_eof(self) -> None:

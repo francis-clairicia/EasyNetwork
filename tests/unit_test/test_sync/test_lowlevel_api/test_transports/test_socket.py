@@ -32,10 +32,10 @@ if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
 
-def _retry_side_effect(callback: Callable[[], Any], timeout: float) -> Any:
+def _retry_side_effect(callback: Callable[[], Any], timeout: float) -> tuple[Any, float]:
     while True:
         try:
-            return callback()
+            return callback(), timeout
         except (WouldBlockOnRead, WouldBlockOnWrite):
             pass
 
