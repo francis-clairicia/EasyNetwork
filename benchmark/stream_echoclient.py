@@ -50,15 +50,11 @@ def run_test(
     msg *= messages_per_request
 
     with sock:
+        gc.disable()
+        gc.collect(2)
+
         sock.settimeout(socket_timeout)
         sock.connect(address)
-
-        gc.disable()
-
-        # Wait for service to be available
-        sock.sendall(b"ping\n")
-        if not sock.recv(1024):
-            raise SystemExit()
 
         times_per_request: collections.deque[RequestReport] = collections.deque()
         recv_buf = bytearray(REQSIZE)

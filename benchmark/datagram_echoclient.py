@@ -32,17 +32,13 @@ def run_test(
     msg = b"x" * message_size
 
     with sock:
+        gc.disable()
+        gc.collect(2)
+
         sock.settimeout(socket_timeout)
         if socket_family == socket.AF_INET:
             sock.bind(("127.0.0.1", 0))
         sock.connect(address)
-
-        gc.disable()
-
-        # Wait for service to be available
-        sock.sendall(b"ping")
-        if not sock.recv(1024):
-            raise SystemExit()
 
         times_per_request: collections.deque[RequestReport] = collections.deque()
 
