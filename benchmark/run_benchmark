@@ -74,6 +74,7 @@ _generic_stream_echoclient: Final[list[str]] = [
 
 _tcp_server_address: Final[tuple[str, int]] = ("127.0.0.1", EXPOSED_PORT)
 _tcp_echoclient: Final[list[str]] = _generic_stream_echoclient + [f"--addr=127.0.0.1:{EXPOSED_PORT}"]
+_tcp_readline_client: Final[list[str]] = _tcp_echoclient + ["--mpr=5"]
 
 _generic_datagram_echoclient: Final[list[str]] = [
     os.fspath(ROOT_DIR / "datagram_echoclient.py"),
@@ -166,6 +167,64 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
         "server_address": _tcp_server_address,
         "ping_request": b"ping\n",
         "client": _tcp_echoclient,
+        "type": SOCK_STREAM,
+    },
+    {
+        "name": "readline-easynetwork-asyncio",
+        "title": "TCP readline server (easynetwork+asyncio)",
+        "server": _python_cmd
+        + [
+            "/usr/src/servers/easynetwork_tcp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+            "--readline",
+        ],
+        "server_address": _tcp_server_address,
+        "ping_request": b"ping\n",
+        "client": _tcp_readline_client,
+        "type": SOCK_STREAM,
+    },
+    {
+        "name": "readline-easynetwork-uvloop",
+        "title": "TCP readline server (easynetwork+uvloop)",
+        "server": _python_cmd
+        + [
+            "/usr/src/servers/easynetwork_tcp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+            "--readline",
+            "--uvloop",
+        ],
+        "server_address": _tcp_server_address,
+        "ping_request": b"ping\n",
+        "client": _tcp_readline_client,
+        "type": SOCK_STREAM,
+    },
+    {
+        "name": "readline-asyncio-streams",
+        "title": "TCP readline server (asyncio/streams)",
+        "server": _python_cmd
+        + [
+            "/usr/src/servers/asyncio_tcp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+            "--readline",
+        ],
+        "server_address": _tcp_server_address,
+        "ping_request": b"ping\n",
+        "client": _tcp_readline_client,
+        "type": SOCK_STREAM,
+    },
+    {
+        "name": "readline-uvloop-streams",
+        "title": "TCP readline server (uvloop/streams)",
+        "server": _python_cmd
+        + [
+            "/usr/src/servers/asyncio_tcp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+            "--readline",
+            "--uvloop",
+        ],
+        "server_address": _tcp_server_address,
+        "ping_request": b"ping\n",
+        "client": _tcp_readline_client,
         "type": SOCK_STREAM,
     },
     {

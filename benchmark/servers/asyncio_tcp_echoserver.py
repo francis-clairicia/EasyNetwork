@@ -66,6 +66,24 @@ async def echo_client_streams(reader: asyncio.StreamReader, writer: asyncio.Stre
     LOGGER.info(f"{addr}: Connection closed")
 
 
+async def readline_client_streams(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+    sock: socket.socket = writer.get_extra_info("socket")
+    addr: Any = writer.get_extra_info("peername")
+    try:
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, True)
+    except (OSError, NameError):
+        pass
+    LOGGER.info(f"Connection from {addr}")
+    with contextlib.closing(writer):
+        while True:
+            data = await reader.readline()
+            if not data:
+                break
+            writer.write(data)
+            await writer.drain()
+    LOGGER.info(f"{addr}: Connection closed")
+
+
 class EchoProtocol(asyncio.Protocol):
     def connection_made(self, transport: asyncio.BaseTransport) -> None:
         self.transport: asyncio.Transport = cast(asyncio.Transport, transport)
@@ -110,12 +128,14 @@ def main() -> None:
     server_mode_parser_group = parser.add_mutually_exclusive_group()
     server_mode_parser_group.add_argument(
         "--streams",
-        default=False,
+        action="store_true",
+    )
+    server_mode_parser_group.add_argument(
+        "--readline",
         action="store_true",
     )
     server_mode_parser_group.add_argument(
         "--proto",
-        default=False,
         action="store_true",
     )
 
@@ -154,7 +174,11 @@ def main() -> None:
             ssl_context.verify_mode = ssl.CERT_NONE
 
         port: int = args.port
-        if args.streams:
+        if args.readline:
+            server = runner.run(asyncio.start_server(readline_client_streams, port=port, ssl=ssl_context))
+            LOGGER.info(f"Server listening at {', '.join(str(s.getsockname()) for s in server.sockets)}")
+            runner.run(server.serve_forever())
+        elif args.streams:
             server = runner.run(asyncio.start_server(echo_client_streams, port=port, ssl=ssl_context))
             LOGGER.info(f"Server listening at {', '.join(str(s.getsockname()) for s in server.sockets)}")
             runner.run(server.serve_forever())

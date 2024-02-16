@@ -13,6 +13,8 @@ from easynetwork.api_async.server.handler import AsyncStreamClient, AsyncStreamR
 from easynetwork.api_sync.server.tcp import StandaloneTCPNetworkServer
 from easynetwork.protocol import StreamProtocol
 from easynetwork.serializers.abc import AbstractIncrementalPacketSerializer, BufferedIncrementalPacketSerializer
+from easynetwork.serializers.base_stream import _buffered_readuntil
+from easynetwork.serializers.tools import GeneratorStreamReader
 
 ROOT_DIR = pathlib.Path(__file__).parent
 
@@ -38,6 +40,31 @@ class BufferedNoSerializer(NoSerializer, BufferedIncrementalPacketSerializer[byt
         return bytes(buffer[:offset]), b""
 
 
+class LineSerializer(AbstractIncrementalPacketSerializer[bytes, bytes]):
+    __slots__ = ()
+
+    def incremental_serialize(self, packet: bytes) -> Generator[bytes, None, None]:
+        yield packet
+
+    def incremental_deserialize(self) -> Generator[None, bytes, tuple[bytes, bytes]]:
+        reader = GeneratorStreamReader()
+        packet = yield from reader.read_until(b"\n", limit=65536)
+        remainder = reader.read_all()
+        return packet, remainder
+
+
+class BufferedLineSerializer(LineSerializer, BufferedIncrementalPacketSerializer[bytes, bytes, bytearray]):
+    __slots__ = ()
+
+    def create_deserializer_buffer(self, sizehint: int) -> bytearray:
+        return bytearray(sizehint)
+
+    def buffered_incremental_deserialize(self, buffer: bytearray) -> Generator[int | None, int, tuple[bytes, memoryview]]:
+        with memoryview(buffer) as buffer_view:
+            _, offset, buflen = yield from _buffered_readuntil(buffer, b"\n")
+            return bytes(buffer[:offset]), buffer_view[offset:buflen]
+
+
 class EchoRequestHandler(AsyncStreamRequestHandler[Any, Any]):
     async def handle(self, client: AsyncStreamClient[Any]) -> AsyncGenerator[None, Any]:
         request: Any = yield
@@ -57,6 +84,7 @@ def create_tcp_server(
     over_ssl: bool,
     use_uvloop: bool,
     buffered: bool,
+    readline: bool,
     context_reuse: bool,
 ) -> StandaloneTCPNetworkServer[Any, Any]:
     asyncio_options = {}
@@ -80,10 +108,15 @@ def create_tcp_server(
         print("with buffered serializer")
     if context_reuse:
         print("with context reuse")
+    protocol: StreamProtocol[Any, Any]
+    if readline:
+        protocol = StreamProtocol(BufferedLineSerializer() if buffered else LineSerializer())
+    else:
+        protocol = StreamProtocol(BufferedNoSerializer() if buffered else NoSerializer())
     return StandaloneTCPNetworkServer(
         None,
         port,
-        StreamProtocol(BufferedNoSerializer() if buffered else NoSerializer()),
+        protocol,
         EchoRequestHandlerInnerLoop() if context_reuse else EchoRequestHandler(),
         ssl=ssl_context,
         runner_options=asyncio_options,
@@ -125,6 +158,11 @@ def main() -> None:
         action="store_true",
     )
     parser.add_argument(
+        "--readline",
+        dest="readline",
+        action="store_true",
+    )
+    parser.add_argument(
         "--context-reuse",
         dest="context_reuse",
         action="store_true",
@@ -140,6 +178,7 @@ def main() -> None:
         use_uvloop=args.use_uvloop,
         over_ssl=args.over_ssl,
         buffered=args.buffered,
+        readline=args.readline,
         context_reuse=args.context_reuse,
     ) as server:
         return server.serve_forever()
