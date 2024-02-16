@@ -20,16 +20,17 @@ from __future__ import annotations
 __all__ = ["AsyncioTransportBufferedStreamSocketAdapter", "AsyncioTransportStreamSocketAdapter"]
 
 import asyncio
-import collections
 import errno as _errno
 from collections import ChainMap
 from collections.abc import Callable, Iterable, Mapping
+from types import TracebackType
 from typing import TYPE_CHECKING, Any, final
 
 from ....exceptions import UnsupportedOperation
 from ... import _utils, socket as socket_tools
 from ...api_async.transports import abc as transports
 from .._asyncio_utils import add_flowcontrol_defaults
+from .._flow_control import WriteFlowControl
 from ..tasks import TaskUtils
 
 if TYPE_CHECKING:
@@ -203,14 +204,10 @@ class AsyncioTransportBufferedStreamSocketAdapter(transports.AsyncStreamTranspor
 
     async def send_all(self, data: bytes | bytearray | memoryview) -> None:
         self.__transport.write(data)
-        if self.__transport.is_closing():
-            await TaskUtils.coro_yield()
         await self.__protocol.writer_drain()
 
     async def send_all_from_iterable(self, iterable_of_data: Iterable[bytes | bytearray | memoryview]) -> None:
         self.__transport.writelines(iterable_of_data)
-        if self.__transport.is_closing():
-            await TaskUtils.coro_yield()
         await self.__protocol.writer_drain()
 
     async def send_eof(self) -> None:
@@ -242,14 +239,14 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
         "__buffer_nbytes_written",
         "__transport",
         "__closed",
+        "__write_flow",
         "__read_waiter",
-        "__drain_waiters",
-        "__write_paused",
         "__read_paused",
         "__read_high_water",
         "__read_low_water",
         "__connection_lost",
         "__connection_lost_exception",
+        "__connection_lost_exception_tb",
         "__eof_reached",
         "__over_ssl",
     )
@@ -271,18 +268,20 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
         self.__transport: asyncio.Transport | None = None
         self.__closed: asyncio.Future[None] = loop.create_future()
         self.__read_waiter: asyncio.Future[None] | None = None
-        self.__drain_waiters: collections.deque[asyncio.Future[None]] = collections.deque()
-        self.__write_paused: bool = False
+        self.__write_flow: WriteFlowControl
         self.__read_paused: bool = False
         self.__connection_lost: bool = False
         self.__connection_lost_exception: Exception | None = None
+        self.__connection_lost_exception_tb: TracebackType | None = None
         self.__eof_reached: bool = False
         self.__over_ssl: bool = False
         self._compute_read_buffer_limits()
 
     def connection_made(self, transport: asyncio.Transport) -> None:  # type: ignore[override]
+        assert not self.__connection_lost, "connection_lost() was called"  # nosec assert_used
         assert self.__transport is None, "Transport already set"  # nosec assert_used
         self.__transport = transport
+        self.__write_flow = WriteFlowControl(self.__transport, self.__loop, connection_lost_errno=_errno.ECONNRESET)
         self.__over_ssl = transport.get_extra_info("sslcontext") is not None
 
     def connection_lost(self, exc: Exception | None) -> None:
@@ -292,13 +291,14 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
             self.__eof_reached = True
         else:
             self.__buffer_nbytes_written = 0
+            self.__connection_lost_exception_tb = exc.__traceback__
         self._maybe_release_buffer()
 
         if not self.__closed.done():
             self.__closed.set_result(None)
 
         self._wakeup_read_waiter(exc)
-        self._wakeup_write_waiters(exc)
+        self.__write_flow.connection_lost(exc)
 
         self.__transport = None
 
@@ -331,7 +331,7 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
     async def receive_data(self, bufsize: int, /) -> bytes:
         if self.__connection_lost:
             if self.__connection_lost_exception is not None:
-                raise self.__connection_lost_exception
+                raise self.__connection_lost_exception.with_traceback(self.__connection_lost_exception_tb)
         if bufsize == 0:
             return b""
         if bufsize < 0:
@@ -356,7 +356,7 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
     async def receive_data_into(self, buffer: WriteableBuffer, /) -> int:
         if self.__connection_lost:
             if self.__connection_lost_exception is not None:
-                raise self.__connection_lost_exception
+                raise self.__connection_lost_exception.with_traceback(self.__connection_lost_exception_tb)
         with memoryview(buffer).cast("B") as buffer:
             if not buffer.nbytes:
                 return 0
@@ -450,35 +450,13 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
             self.__buffer = None
 
     def pause_writing(self) -> None:
-        self.__write_paused = True
+        self.__write_flow.pause_writing()
 
     def resume_writing(self) -> None:
-        self.__write_paused = False
-
-        self._wakeup_write_waiters(None)
+        self.__write_flow.resume_writing()
 
     async def writer_drain(self) -> None:
-        if self.__connection_lost:
-            if self.__connection_lost_exception is not None:
-                raise self.__connection_lost_exception
-            raise _utils.error_from_errno(_errno.ECONNRESET)
-        if not self.__write_paused:
-            return
-        waiter = self.__loop.create_future()
-        self.__drain_waiters.append(waiter)
-        try:
-            await waiter
-        finally:
-            self.__drain_waiters.remove(waiter)
-            del waiter
-
-    def _wakeup_write_waiters(self, exc: Exception | None) -> None:
-        for waiter in self.__drain_waiters:
-            if not waiter.done():
-                if exc is None:
-                    waiter.set_result(None)
-                else:
-                    waiter.set_exception(exc)
+        await self.__write_flow.drain()
 
     def _get_close_waiter(self) -> asyncio.Future[None]:
         return self.__closed
@@ -490,4 +468,4 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
         return self.__read_paused
 
     def _writing_paused(self) -> bool:
-        return self.__write_paused
+        return self.__write_flow.writing_paused()

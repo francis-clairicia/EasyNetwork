@@ -18,9 +18,12 @@
 from __future__ import annotations
 
 __all__ = [
+    "add_flowcontrol_defaults",
     "create_connection",
     "create_datagram_connection",
+    "ensure_resolved",
     "open_listener_sockets_from_getaddrinfo_result",
+    "resolve_local_addresses",
     "wait_until_readable",
     "wait_until_writable",
 ]

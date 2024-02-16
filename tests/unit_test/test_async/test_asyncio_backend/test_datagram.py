@@ -643,7 +643,7 @@ class TestDatagramEndpointProtocol:
         if cancel_tasks:
             assert all(t.done() and t.cancelled() for t in tasks)
         elif exception is None:
-            assert all(t.done() and t.exception() is None and t.result() is None for t in tasks), tasks
+            assert all(t.done() and isinstance(t.exception(), ConnectionAbortedError) for t in tasks), tasks
         else:
             assert all(t.done() and t.exception() is exception for t in tasks)
 
@@ -1251,6 +1251,6 @@ class TestDatagramListenerProtocol:
         if cancel_tasks:
             assert all(t.done() and t.cancelled() for t in tasks)
         elif exception is None:
-            assert all(t.done() and t.exception() is None and t.result() is None for t in tasks), tasks
+            assert all(t.done() and isinstance(t.exception(), ConnectionAbortedError) for t in tasks), tasks
         else:
             assert all(t.done() and t.exception() is exception for t in tasks)

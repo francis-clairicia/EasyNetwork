@@ -25,13 +25,12 @@ __all__ = [
 
 import asyncio
 import asyncio.base_events
-import collections
 import errno as _errno
 import socket as _socket
 from typing import TYPE_CHECKING, Any, final
 
 from ... import _utils
-from ..tasks import TaskUtils
+from .._flow_control import WriteFlowControl
 
 if TYPE_CHECKING:
     import asyncio.trsock
@@ -123,8 +122,6 @@ class DatagramEndpoint:
 
     async def sendto(self, data: bytes | bytearray | memoryview, address: tuple[Any, ...] | None = None, /) -> None:
         self.__transport.sendto(data, address)
-        if self.__transport.is_closing():
-            await TaskUtils.coro_yield()
         await self.__protocol._drain_helper()
 
     def get_extra_info(self, name: str, default: Any = None) -> Any:
@@ -148,9 +145,8 @@ class DatagramEndpointProtocol(asyncio.DatagramProtocol):
         "__recv_queue",
         "__exception_queue",
         "__transport",
+        "__write_flow",
         "__closed",
-        "__drain_waiters",
-        "__write_paused",
         "__connection_lost",
     )
 
@@ -169,14 +165,14 @@ class DatagramEndpointProtocol(asyncio.DatagramProtocol):
         self.__exception_queue: asyncio.Queue[Exception] = exception_queue
         self.__transport: asyncio.DatagramTransport | None = None
         self.__closed: asyncio.Future[None] = loop.create_future()
-        self.__drain_waiters: collections.deque[asyncio.Future[None]] = collections.deque()
-        self.__write_paused: bool = False
+        self.__write_flow: WriteFlowControl
         self.__connection_lost: bool = False
 
     def connection_made(self, transport: asyncio.DatagramTransport) -> None:  # type: ignore[override]
+        assert not self.__connection_lost, "connection_lost() was called"  # nosec assert_used
         assert self.__transport is None, "Transport already set"  # nosec assert_used
         self.__transport = transport
-        self.__connection_lost = False
+        self.__write_flow = WriteFlowControl(self.__transport, self.__loop)
         _monkeypatch_transport(transport, self.__loop)
 
     def connection_lost(self, exc: Exception | None) -> None:
@@ -185,15 +181,13 @@ class DatagramEndpointProtocol(asyncio.DatagramProtocol):
         if not self.__closed.done():
             self.__closed.set_result(None)
 
-        self._wakeup_write_waiters(exc)
+        self.__write_flow.connection_lost(exc)
 
         if self.__transport is not None:
             self.__transport = None
             self.__recv_queue.put_nowait(None)  # Wake up endpoint
             if exc is not None:
                 self.__exception_queue.put_nowait(exc)
-
-        super().connection_lost(exc)
 
     def datagram_received(self, data: bytes, addr: tuple[Any, ...]) -> None:
         if self.__transport is not None:
@@ -205,37 +199,13 @@ class DatagramEndpointProtocol(asyncio.DatagramProtocol):
             self.__recv_queue.put_nowait(None)  # Wake up endpoint
 
     def pause_writing(self) -> None:
-        self.__write_paused = True
-
-        super().pause_writing()
+        self.__write_flow.pause_writing()
 
     def resume_writing(self) -> None:
-        self.__write_paused = False
-
-        self._wakeup_write_waiters(None)
-
-        super().resume_writing()
+        self.__write_flow.resume_writing()
 
     async def _drain_helper(self) -> None:
-        if self.__connection_lost:
-            raise _utils.error_from_errno(_errno.ECONNABORTED)
-        if not self.__write_paused:
-            return
-        waiter = self.__loop.create_future()
-        self.__drain_waiters.append(waiter)
-        try:
-            await waiter
-        finally:
-            self.__drain_waiters.remove(waiter)
-            del waiter
-
-    def _wakeup_write_waiters(self, exc: Exception | None) -> None:
-        for waiter in self.__drain_waiters:
-            if not waiter.done():
-                if exc is None:
-                    waiter.set_result(None)
-                else:
-                    waiter.set_exception(exc)
+        await self.__write_flow.drain()
 
     def _get_close_waiter(self) -> asyncio.Future[None]:
         return self.__closed
@@ -244,7 +214,7 @@ class DatagramEndpointProtocol(asyncio.DatagramProtocol):
         return self.__loop
 
     def _writing_paused(self) -> bool:
-        return self.__write_paused
+        return self.__write_flow.writing_paused()
 
 
 def _monkeypatch_transport(transport: asyncio.DatagramTransport, loop: asyncio.AbstractEventLoop) -> None:

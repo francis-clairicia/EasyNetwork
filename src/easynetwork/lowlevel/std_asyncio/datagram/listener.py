@@ -23,13 +23,13 @@ import asyncio
 import collections
 import contextlib
 import dataclasses
-import errno as _errno
 import logging
 from collections.abc import Callable, Coroutine, Mapping
 from typing import TYPE_CHECKING, Any, NoReturn, final
 
-from ... import _utils, socket as socket_tools
+from ... import socket as socket_tools
 from ...api_async.transports import abc as transports
+from .._flow_control import WriteFlowControl
 from ..tasks import TaskGroup as AsyncIOTaskGroup
 from .endpoint import _monkeypatch_transport
 
@@ -117,10 +117,8 @@ class DatagramListenerProtocol(asyncio.DatagramProtocol):
         "__delayed_datagrams_queue",
         "__transport",
         "__closed",
-        "__drain_waiters",
-        "__write_paused",
+        "__write_flow",
         "__connection_lost",
-        "__connection_lost_exception",
         "__serve_forever_fut",
     )
 
@@ -137,27 +135,25 @@ class DatagramListenerProtocol(asyncio.DatagramProtocol):
         self.__delayed_datagrams_queue: collections.deque[tuple[bytes, tuple[Any, ...]]] = collections.deque()
         self.__transport: asyncio.DatagramTransport | None = None
         self.__closed: asyncio.Future[None] = loop.create_future()
-        self.__drain_waiters: collections.deque[asyncio.Future[None]] = collections.deque()
-        self.__write_paused: bool = False
+        self.__write_flow: WriteFlowControl
         self.__connection_lost: bool = False
-        self.__connection_lost_exception: Exception | None = None
         self.__serve_forever_fut: asyncio.Future[NoReturn] = loop.create_future()
 
     def connection_made(self, transport: asyncio.DatagramTransport) -> None:  # type: ignore[override]
+        assert not self.__connection_lost, "connection_lost() was called"  # nosec assert_used
         assert self.__transport is None, "Transport already set"  # nosec assert_used
         self.__transport = transport
-        self.__connection_lost = False
+        self.__write_flow = WriteFlowControl(self.__transport, self.__loop)
         _monkeypatch_transport(transport, self.__loop)
 
     def connection_lost(self, exc: Exception | None) -> None:
         self.__connection_lost = True
-        self.__connection_lost_exception = exc
         self.__serve_forever_fut.cancel(msg="connection_lost()")
 
         if not self.__closed.done():
             self.__closed.set_result(None)
 
-        self._wakeup_write_waiters(exc)
+        self.__write_flow.connection_lost(exc)
 
         self.__transport = None
 
@@ -194,35 +190,13 @@ class DatagramListenerProtocol(asyncio.DatagramProtocol):
             self.__datagram_serve_ctx = None
 
     def pause_writing(self) -> None:
-        self.__write_paused = True
+        self.__write_flow.pause_writing()
 
     def resume_writing(self) -> None:
-        self.__write_paused = False
-
-        self._wakeup_write_waiters(None)
+        self.__write_flow.resume_writing()
 
     async def writer_drain(self) -> None:
-        if self.__connection_lost:
-            if self.__connection_lost_exception is not None:
-                raise self.__connection_lost_exception
-            raise _utils.error_from_errno(_errno.ECONNABORTED)
-        if not self.__write_paused:
-            return
-        waiter = self.__loop.create_future()
-        self.__drain_waiters.append(waiter)
-        try:
-            await waiter
-        finally:
-            self.__drain_waiters.remove(waiter)
-            del waiter
-
-    def _wakeup_write_waiters(self, exc: Exception | None) -> None:
-        for waiter in self.__drain_waiters:
-            if not waiter.done():
-                if exc is None:
-                    waiter.set_result(None)
-                else:
-                    waiter.set_exception(exc)
+        await self.__write_flow.drain()
 
     def _get_close_waiter(self) -> asyncio.Future[None]:
         return self.__closed
@@ -231,4 +205,4 @@ class DatagramListenerProtocol(asyncio.DatagramProtocol):
         return self.__loop
 
     def _writing_paused(self) -> bool:
-        return self.__write_paused
+        return self.__write_flow.writing_paused()
