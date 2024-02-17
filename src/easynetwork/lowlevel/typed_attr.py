@@ -22,7 +22,7 @@
 
 from __future__ import annotations
 
-__all__ = ["TypedAttributeLookupError", "TypedAttributeProvider", "TypedAttributeSet"]
+__all__ = ["TypedAttributeProvider", "TypedAttributeSet"]
 
 from collections.abc import Callable, Mapping
 from typing import Any, TypeVar, final, overload
