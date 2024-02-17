@@ -115,7 +115,6 @@ class AsyncSocket:
     async def accept(self) -> _socket.socket:
         listener_socket = self.__check_not_closed()
         with self.__conflict_detection("accept"):
-            await TaskUtils.coro_yield()
             client_socket, _ = await self.__loop.sock_accept(listener_socket)
             return client_socket
 

@@ -494,7 +494,7 @@ def main() -> None:
 
     benchmarks_data_list: list[_BenchmarkData] = []
 
-    for benchmark in [b for b in BENCHMARKS_DEF if any(re.search(pattern, b["name"]) for pattern in args.benchmark)]:
+    for benchmark in [b for b in BENCHMARKS_DEF if any(re.match(pattern, b["name"]) for pattern in args.benchmark)]:
         print(benchmark["title"])
         print("=" * len(benchmark["title"]))
         print()

@@ -28,7 +28,8 @@ from typing import TYPE_CHECKING, Any, Generic, NoReturn, final
 
 from ..._typevars import _T_Request, _T_Response
 from ...exceptions import ClientClosedError, ServerAlreadyRunning, ServerClosedError
-from ...lowlevel import _asyncgen, _utils
+from ...lowlevel import _utils
+from ...lowlevel._asyncgen import AsyncGenAction, SendAction, ThrowAction
 from ...lowlevel._final import runtime_final_class
 from ...lowlevel.api_async.backend.factory import current_async_backend
 from ...lowlevel.api_async.servers import datagram as _datagram_server
@@ -236,12 +237,12 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
             except StopAsyncIteration:
                 return
 
-            action: _asyncgen.AsyncGenAction[None, _T_Request]
+            action: AsyncGenAction[None, _T_Request]
             while True:
                 try:
-                    action = _asyncgen.SendAction((yield))
+                    action = SendAction((yield))
                 except BaseException as exc:
-                    action = _asyncgen.ThrowAction(_utils.remove_traceback_frames_in_place(exc, 1))
+                    action = ThrowAction(_utils.remove_traceback_frames_in_place(exc, 1))
                 try:
                     await action.asend(request_handler_generator)
                 except StopAsyncIteration:

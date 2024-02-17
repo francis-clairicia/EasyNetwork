@@ -28,7 +28,8 @@ from typing import TYPE_CHECKING, Any, Generic, NoReturn, final
 
 from ..._typevars import _T_Request, _T_Response
 from ...exceptions import ClientClosedError, ServerAlreadyRunning, ServerClosedError
-from ...lowlevel import _asyncgen, _utils, constants
+from ...lowlevel import _utils, constants
+from ...lowlevel._asyncgen import AsyncGenAction, SendAction, ThrowAction
 from ...lowlevel._final import runtime_final_class
 from ...lowlevel.api_async.backend.factory import current_async_backend
 from ...lowlevel.api_async.servers import stream as _stream_server
@@ -401,10 +402,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
             client_exit_stack.push_async_callback(client._force_close)
 
             request_handler_generator: AsyncGenerator[None, _T_Request]
-            action: _asyncgen.AsyncGenAction[None, _T_Request]
-
-            SendAction = _asyncgen.SendAction
-            ThrowAction = _asyncgen.ThrowAction
+            action: AsyncGenAction[None, _T_Request]
 
             _on_connection_hook = self.__request_handler.on_connection(client)
             if isinstance(_on_connection_hook, AsyncGenerator):
@@ -547,7 +545,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
 class _ConnectedClientAPI(AsyncStreamClient[_T_Response]):
     __slots__ = (
         "__client",
-        "__closed",
+        "__closing",
         "__send_lock",
         "__address",
         "__proxy",
@@ -560,7 +558,7 @@ class _ConnectedClientAPI(AsyncStreamClient[_T_Response]):
         client: _stream_server.AsyncStreamClient[_T_Response],
     ) -> None:
         self.__client: _stream_server.AsyncStreamClient[_T_Response] = client
-        self.__closed: bool = False
+        self.__closing: bool = False
         self.__send_lock = current_async_backend().create_lock()
         self.__proxy: SocketProxy = SocketProxy(client.extra(INETSocketAttribute.socket))
         self.__address: SocketAddress = address
@@ -575,21 +573,21 @@ class _ConnectedClientAPI(AsyncStreamClient[_T_Response]):
         return f"<client with address {self.__address} at {id(self):#x}>"
 
     def is_closing(self) -> bool:
-        return self.__closed or self.__client.is_closing()
+        return self.__closing
 
     async def _force_close(self) -> None:
-        self.__closed = True
+        self.__closing = True
         async with self.__send_lock:  # If self.aclose() took the lock, wait for it to finish
             pass
 
     async def aclose(self) -> None:
         async with self.__send_lock:
-            self.__closed = True
+            self.__closing = True
             await self.__client.aclose()
 
     async def send_packet(self, packet: _T_Response, /) -> None:
         async with self.__send_lock:
-            if self.__closed:
+            if self.__closing:
                 raise ClientClosedError("Closed client")
             await self.__client.send_packet(packet)
 

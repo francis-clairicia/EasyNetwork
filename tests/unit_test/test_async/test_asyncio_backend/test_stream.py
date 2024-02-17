@@ -1398,15 +1398,19 @@ class TestStreamReaderBufferedProtocol(BaseTestTransportSupportingSSL):
                     pytest.fail("Invalid param")
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing=={p}")
     async def test____drain_helper____quick_exit_if_not_paused(
         self,
+        transport_is_closing: bool,
         event_loop: asyncio.AbstractEventLoop,
         protocol: StreamReaderBufferedProtocol,
+        mock_asyncio_transport: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
         assert not protocol._writing_paused()
         mock_create_future: MagicMock = mocker.patch.object(event_loop, "create_future")
+        mock_asyncio_transport.is_closing.side_effect = [transport_is_closing]
 
         # Act
         await protocol.writer_drain()
@@ -1418,6 +1422,7 @@ class TestStreamReaderBufferedProtocol(BaseTestTransportSupportingSSL):
     async def test____drain_helper____raise_connection_reset_if_connection_is_lost(
         self,
         protocol: StreamReaderBufferedProtocol,
+        mock_asyncio_transport: MagicMock,
     ) -> None:
         # Arrange
         assert not protocol._writing_paused()
@@ -1425,6 +1430,7 @@ class TestStreamReaderBufferedProtocol(BaseTestTransportSupportingSSL):
         from errno import ECONNRESET
 
         protocol.connection_lost(None)
+        mock_asyncio_transport.is_closing.return_value = True
 
         # Act & Assert
         with pytest.raises(OSError) as exc_info:
@@ -1436,10 +1442,12 @@ class TestStreamReaderBufferedProtocol(BaseTestTransportSupportingSSL):
     async def test____drain_helper____connection_lost_by_unrelated_error(
         self,
         protocol: StreamReaderBufferedProtocol,
+        mock_asyncio_transport: MagicMock,
     ) -> None:
         # Arrange
         exception = OSError("Something bad happen")
         protocol.connection_lost(exception)
+        mock_asyncio_transport.is_closing.return_value = True
 
         # Act & Assert
         with pytest.raises(OSError) as exc_info:

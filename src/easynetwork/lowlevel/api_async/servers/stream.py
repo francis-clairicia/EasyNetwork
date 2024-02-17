@@ -26,7 +26,8 @@ from typing import Any, Generic, NoReturn, Self
 from .... import protocol as protocol_module
 from ...._typevars import _T_Request, _T_Response
 from ....exceptions import UnsupportedOperation
-from ... import _asyncgen, _stream, _utils, typed_attr
+from ... import _stream, _utils, typed_attr
+from ..._asyncgen import AsyncGenAction, SendAction, ThrowAction
 from ..backend.abc import TaskGroup
 from ..transports import abc as transports, utils as transports_utils
 
@@ -210,7 +211,7 @@ class _RequestReceiver(Generic[_T_Request]):
     def __aiter__(self) -> Self:
         return self
 
-    async def __anext__(self) -> _asyncgen.AsyncGenAction[None, _T_Request]:
+    async def __anext__(self) -> AsyncGenAction[None, _T_Request]:
         try:
             consumer = self.consumer
             try:
@@ -218,16 +219,16 @@ class _RequestReceiver(Generic[_T_Request]):
             except StopIteration:
                 pass
             else:
-                return _asyncgen.SendAction(request)
+                return SendAction(request)
 
             while data := await self.transport.recv(self.max_recv_size):
                 try:
                     request = consumer.next(data)
                 except StopIteration:
                     continue
-                return _asyncgen.SendAction(request)
+                return SendAction(request)
         except BaseException as exc:
-            return _asyncgen.ThrowAction(exc)
+            return ThrowAction(exc)
         raise StopAsyncIteration
 
 
@@ -239,7 +240,7 @@ class _BufferedRequestReceiver(Generic[_T_Request]):
     def __aiter__(self) -> Self:
         return self
 
-    async def __anext__(self) -> _asyncgen.AsyncGenAction[None, _T_Request]:
+    async def __anext__(self) -> AsyncGenAction[None, _T_Request]:
         try:
             consumer = self.consumer
             try:
@@ -247,14 +248,14 @@ class _BufferedRequestReceiver(Generic[_T_Request]):
             except StopIteration:
                 pass
             else:
-                return _asyncgen.SendAction(request)
+                return SendAction(request)
 
             while nbytes := await self.transport.recv_into(consumer.get_write_buffer()):
                 try:
                     request = consumer.next(nbytes)
                 except StopIteration:
                     continue
-                return _asyncgen.SendAction(request)
+                return SendAction(request)
         except BaseException as exc:
-            return _asyncgen.ThrowAction(exc)
+            return ThrowAction(exc)
         raise StopAsyncIteration

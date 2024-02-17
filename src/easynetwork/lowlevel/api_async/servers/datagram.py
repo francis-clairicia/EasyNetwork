@@ -30,7 +30,8 @@ from typing import Any, Generic, NoReturn, TypeVar
 from .... import protocol as protocol_module
 from ...._typevars import _T_Request, _T_Response
 from ....exceptions import DatagramProtocolParseError
-from ... import _asyncgen, _utils, typed_attr
+from ... import _utils, typed_attr
+from ..._asyncgen import AsyncGenAction, SendAction, ThrowAction
 from ..backend.abc import AsyncBackend, ICondition, ILock, TaskGroup
 from ..backend.factory import current_async_backend
 from ..transports import abc as transports
@@ -169,7 +170,7 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_T_Request,
                 except StopAsyncIteration:
                     return
 
-                action: _asyncgen.AsyncGenAction[None, _T_Request] = self.__parse_datagram(datagram, self.__protocol)
+                action: AsyncGenAction[None, _T_Request] = self.__parse_datagram(datagram, self.__protocol)
                 try:
                     await action.asend(request_handler_generator)
                 except StopAsyncIteration:
@@ -182,7 +183,7 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_T_Request,
                     try:
                         datagram = await client_data.pop_datagram()
                     except BaseException as exc:
-                        action = _asyncgen.ThrowAction(exc)
+                        action = ThrowAction(exc)
                     else:
                         action = self.__parse_datagram(datagram, self.__protocol)
                         del datagram
@@ -221,7 +222,7 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_T_Request,
     def __parse_datagram(
         datagram: bytes,
         protocol: protocol_module.DatagramProtocol[_T_Response, _T_Request],
-    ) -> _asyncgen.AsyncGenAction[None, _T_Request]:
+    ) -> AsyncGenAction[None, _T_Request]:
         try:
             try:
                 request = protocol.build_packet_from_datagram(datagram)
@@ -230,9 +231,9 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_T_Request,
             except Exception as exc:
                 raise RuntimeError("protocol.build_packet_from_datagram() crashed") from exc
         except BaseException as exc:
-            return _asyncgen.ThrowAction(exc)
+            return ThrowAction(exc)
         else:
-            return _asyncgen.SendAction(request)
+            return SendAction(request)
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
