@@ -40,6 +40,14 @@ repos:
         types_or: [python, pyi]
         require_serial: true
         pass_filenames: false
+      - id: mypy
+        name: mypy (benchmark)
+        files: ^((src|benchmark)/)
+        entry: tox run -q -e mypy-benchmark
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+        pass_filenames: false
   - repo: https://github.com/PyCQA/isort
     rev: '5.13.2'
     hooks:
