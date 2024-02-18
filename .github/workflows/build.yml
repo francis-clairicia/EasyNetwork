@@ -19,6 +19,7 @@ on:
       - '!.github/actions/setup-tox/**'
       - '!.github/workflows/build.yml'
       - '.vscode/**'
+      - 'benchmark/**'
       - 'docs/**'
   push:
     branches:
@@ -37,6 +38,7 @@ on:
       - '!.github/actions/setup-tox/**'
       - '!.github/workflows/build.yml'
       - '.vscode/**'
+      - 'benchmark/**'
       - 'docs/**'
   workflow_dispatch:
     inputs:
