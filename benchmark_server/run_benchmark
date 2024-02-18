@@ -62,6 +62,8 @@ class _BenchmarkVariationData(TypedDict):
     latency_q1: float
     latency_median: float
     latency_q3: float
+    latency_nb_low_outliers: float
+    latency_nb_high_outliers: float
     transfer: NotRequired[float]
 
 
@@ -413,6 +415,18 @@ def _start_docker_instance(
         sys.exit("Could not start server\n" + logs)
 
 
+def _compute_latency_iqr(data: _BenchmarkVariationData) -> float:
+    return data["latency_q3"] - data["latency_q1"]
+
+
+def _compute_latency_lowerfence(data: _BenchmarkVariationData) -> float:
+    return max(data["latency_q1"] - 1.5 * _compute_latency_iqr(data), data["latency_min"])
+
+
+def _compute_latency_upperfence(data: _BenchmarkVariationData) -> float:
+    return min(data["latency_q3"] + 1.5 * _compute_latency_iqr(data), data["latency_max"])
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("-D", "--duration", default=30, type=int, help="duration of test in seconds")
@@ -543,10 +557,24 @@ def main() -> None:
                 data: _BenchmarkVariationData = json.loads(output)
 
                 print(f"{data['messages']} in {duration} seconds")
+                print("Latency:")
+                print(f"- min {data['latency_min']}ms")
+                print(f"- max {data['latency_max']}ms")
+                print(f"- mean {data['latency_mean']}ms")
+                print(f"- std {data['latency_stdev']}ms ({100 * data['latency_stdev'] / data['latency_mean']:.2f}%)")
+                latency_distribution = [
+                    (25, data["latency_q1"]),
+                    (50, data["latency_median"]),
+                    (75, data["latency_q3"]),
+                ]
+                print(f"- distribution: {'; '.join(f'{percent}% under {time}ms' for percent, time in latency_distribution)}")
+                print(f"- number of low outliers: {data['latency_nb_low_outliers']}")
+                print(f"- number of high outliers: {data['latency_nb_high_outliers']}")
                 print(f"{data['rps']} requests/sec")
                 if "transfer" in data:
                     print(f"Transfer: {data['transfer']} MiB/sec")
                 print()
+                del latency_distribution
 
                 benchmark_data["variation"].append(data)
 
@@ -601,13 +629,16 @@ def main() -> None:
                     go.Box(
                         name=f"{round(msgsize / 1024, 1)}KiB",
                         x=[b["name"].replace("-", "<br>") for b in benchmarks_data_list],
+                        y=[
+                            [b["variation"][index]["latency_min"], b["variation"][index]["latency_max"]]
+                            for b in benchmarks_data_list
+                        ],
                         q1=[b["variation"][index]["latency_q1"] for b in benchmarks_data_list],
                         median=[b["variation"][index]["latency_median"] for b in benchmarks_data_list],
                         q3=[b["variation"][index]["latency_q3"] for b in benchmarks_data_list],
-                        mean=[b["variation"][index]["latency_mean"] for b in benchmarks_data_list],
-                        sd=[b["variation"][index]["latency_stdev"] for b in benchmarks_data_list],
-                        lowerfence=[b["variation"][index]["latency_min"] for b in benchmarks_data_list],
-                        upperfence=[b["variation"][index]["latency_max"] for b in benchmarks_data_list],
+                        lowerfence=[_compute_latency_lowerfence(b["variation"][index]) for b in benchmarks_data_list],
+                        upperfence=[_compute_latency_upperfence(b["variation"][index]) for b in benchmarks_data_list],
+                        boxpoints="outliers",
                     )
                     for index, msgsize in enumerate(payload_size_levels)
                 ]
