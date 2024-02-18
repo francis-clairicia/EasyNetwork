@@ -13,7 +13,6 @@ import json
 import socket
 import ssl
 import sys
-import time
 from typing import Literal, assert_never
 
 from tool.client import RequestReport, TestReport, WorkerTestReport, dump_report, print_report
@@ -59,9 +58,11 @@ def run_test(
         times_per_request: collections.deque[RequestReport] = collections.deque()
         recv_buf = bytearray(REQSIZE)
 
-        test_start_time = test_end_time = time.perf_counter()
-        while (test_end_time - test_start_time) < duration:
-            request_start_time = time.perf_counter()
+        from time import perf_counter
+
+        current_test_duration = 0.0
+        while current_test_duration < duration:
+            request_start_time = perf_counter()
             sock.sendall(msg)
             nrecv = 0
             while nrecv < REQSIZE:
@@ -69,12 +70,11 @@ def run_test(
                 if not nbytes:
                     raise SystemExit()
                 nrecv += nbytes
-            test_end_time = request_end_time = time.perf_counter()
+            request_end_time = perf_counter()
+            current_test_duration += request_end_time - request_start_time
             times_per_request.append(RequestReport(start_time=request_start_time, end_time=request_end_time))
 
     return WorkerTestReport(
-        start_time=test_start_time,
-        end_time=test_end_time,
         times_per_request=list(times_per_request),
         messages_per_request=messages_per_request,
     )

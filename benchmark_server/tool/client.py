@@ -16,8 +16,6 @@ class RequestReport(typing.NamedTuple):
 
 
 class WorkerTestReport(typing.NamedTuple):
-    start_time: float
-    end_time: float
     times_per_request: list[RequestReport]
     messages_per_request: int
 
@@ -27,6 +25,9 @@ class WorkerTestReport(typing.NamedTuple):
     def latency_stats(self) -> list[float]:
         return [r.duration(resolution=1_000) for r in self.times_per_request]
 
+    def duration(self, *, resolution: int = 1) -> float:
+        return sum(r.duration(resolution=resolution) for r in self.times_per_request)
+
 
 class TestReport(typing.NamedTuple):
     message_size: int
@@ -35,17 +36,12 @@ class TestReport(typing.NamedTuple):
     def number_of_messages(self) -> int:
         return sum(report.number_of_messages() for report in self.worker_reports)
 
-    def start_time(self) -> float:
-        return min(report.start_time for report in self.worker_reports)
-
-    def end_time(self) -> float:
-        return max(report.end_time for report in self.worker_reports)
-
     def latency_stats(self) -> list[float]:
-        return functools.reduce(operator.iadd, (report.latency_stats() for report in self.worker_reports))
+        return functools.reduce(operator.iadd, (report.latency_stats() for report in self.worker_reports), [])
 
-    def duration(self) -> float:
-        return round(self.end_time() - self.start_time(), 2)
+    def duration(self) -> int:
+        duration = statistics.mean(report.duration() for report in self.worker_reports)
+        return int(duration)
 
 
 class ReportDict(typing.TypedDict):
