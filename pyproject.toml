@@ -123,6 +123,10 @@ doc = [
     "sphinx-toolbox>=3.5.0",
     "enum-tools[sphinx]>=0.10.0",
 ]
+micro-benchmark = [
+    "pytest~=7.4",
+    "pytest-benchmark[histogram]~=4.0",
+]
 benchmark-servers = [
     "build~=1.0",
     "docker~=7.0",
@@ -226,7 +230,7 @@ strict_equality = true
 enable_error_code = ["truthy-bool", "ignore-without-code", "unused-awaitable"]
 
 [[tool.mypy.overrides]]
-module = ["docker.*", "plotly.*"]
+module = ["docker.*", "plotly.*", "pytest_benchmark.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

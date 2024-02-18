@@ -41,9 +41,17 @@ repos:
         require_serial: true
         pass_filenames: false
       - id: mypy
-        name: mypy (benchmark)
-        files: ^((src|benchmark)/)
-        entry: tox run -q -e mypy-benchmark
+        name: mypy (benchmark/servers)
+        files: ^((src|benchmark_server)/)
+        entry: tox run -q -e mypy-benchmark_server
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+        pass_filenames: false
+      - id: mypy
+        name: mypy (benchmark/micro-benchs)
+        files: ^((src|micro_benchmarks)/)
+        entry: tox run -q -e mypy-micro_benchmarks
         language: system
         types_or: [python, pyi]
         require_serial: true
@@ -83,7 +91,7 @@ repos:
       - id: pdm-lock-check
       - id: pdm-export
         name: pdm-export benchmark-servers-deps
-        args: ['--dev', '--group', 'benchmark-servers-deps', '--format', 'requirements', '--without-hashes', '--output', 'benchmark/servers/requirements.txt']
+        args: ['--dev', '--group', 'benchmark-servers-deps', '--format', 'requirements', '--without-hashes', '--output', 'benchmark_server/servers/requirements.txt']
   - repo: https://github.com/pre-commit/pygrep-hooks
     rev: 'v1.10.0'
     hooks:

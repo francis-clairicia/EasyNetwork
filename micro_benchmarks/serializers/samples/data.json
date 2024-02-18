@@ -1,0 +1,45 @@
+{
+    "_id": "65d21520a7c898b160db76d9",
+    "index": 0,
+    "guid": "2bc24c86-2969-498b-9b9c-c14f0c0c3f8b",
+    "isActive": true,
+    "balance": "$3,904.50",
+    "picture": "http://placehold.it/32x32",
+    "age": 32,
+    "eyeColor": "blue",
+    "name": "Lela Summers",
+    "gender": "female",
+    "company": "SLAMBDA",
+    "email": "lelasummers@slambda.com",
+    "phone": "+1 (820) 528-3352",
+    "address": "287 Sackett Street, Elwood, South Carolina, 2650",
+    "about": "Mollit id et officia proident consequat mollit sint velit quis. Esse cillum cupidatat irure ex dolor labore dolor veniam nostrud anim incididunt est nulla. Commodo eu ad fugiat veniam in fugiat irure veniam eu non nulla velit elit ipsum. Do dolore nostrud ea sunt est officia occaecat.\r\n",
+    "registered": "2019-07-07T05:13:31 -02:00",
+    "latitude": 69.579113,
+    "longitude": 30.28922,
+    "tags": [
+        "et",
+        "proident",
+        "culpa",
+        "id",
+        "esse",
+        "anim",
+        "aute"
+    ],
+    "friends": [
+        {
+            "id": 0,
+            "name": "Kaitlin Murray"
+        },
+        {
+            "id": 1,
+            "name": "Eve Yates"
+        },
+        {
+            "id": 2,
+            "name": "Paige Paul"
+        }
+    ],
+    "greeting": "Hello, Lela Summers! You have 5 unread messages.",
+    "favoriteFruit": "strawberry"
+}
