@@ -62,8 +62,10 @@ class _BenchmarkVariationData(TypedDict):
     latency_q1: float
     latency_median: float
     latency_q3: float
-    latency_nb_low_outliers: float
-    latency_nb_high_outliers: float
+    latency_nb_low_outliers: int
+    latency_nb_high_outliers: int
+    latency_percent_low_outliers: float
+    latency_percent_high_outliers: float
     transfer: NotRequired[float]
 
 
@@ -568,8 +570,8 @@ def main() -> None:
                     (75, data["latency_q3"]),
                 ]
                 print(f"- distribution: {'; '.join(f'{percent}% under {time}ms' for percent, time in latency_distribution)}")
-                print(f"- number of low outliers: {data['latency_nb_low_outliers']}")
-                print(f"- number of high outliers: {data['latency_nb_high_outliers']}")
+                print(f"- number of low outliers: {data['latency_nb_low_outliers']} ({data['latency_percent_low_outliers']}%)")
+                print(f"- number of high outliers: {data['latency_nb_high_outliers']} ({data['latency_percent_high_outliers']}%)")
                 print(f"{data['rps']} requests/sec")
                 if "transfer" in data:
                     print(f"Transfer: {data['transfer']} MiB/sec")
