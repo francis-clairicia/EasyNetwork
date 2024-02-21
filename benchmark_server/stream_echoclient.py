@@ -10,6 +10,7 @@ import collections
 import concurrent.futures
 import gc
 import json
+import multiprocessing
 import socket
 import ssl
 import sys
@@ -103,7 +104,7 @@ def main() -> None:
 
     nb_workers: int = args.workers
     message_size: int = args.msize
-    with concurrent.futures.ProcessPoolExecutor(max_workers=nb_workers) as e:
+    with concurrent.futures.ProcessPoolExecutor(max_workers=nb_workers, mp_context=multiprocessing.get_context("spawn")) as e:
         workers_list = [
             e.submit(
                 run_test,
