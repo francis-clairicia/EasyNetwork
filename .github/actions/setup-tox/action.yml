@@ -12,7 +12,7 @@ runs:
     - name: Disable PDM update check
       run: echo "PDM_CHECK_UPDATE=False" >> $GITHUB_ENV
       shell: bash
-    - uses: pdm-project/setup-pdm@v3
+    - uses: pdm-project/setup-pdm@v4
       with:
         version: '2.11.2'
         python-version: ${{ inputs.python-version }}
