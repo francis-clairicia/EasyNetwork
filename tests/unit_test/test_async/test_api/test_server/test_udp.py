@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from easynetwork.api_async.server.udp import AsyncUDPNetworkServer
+from easynetwork.servers.async_udp import AsyncUDPNetworkServer
 
 import pytest
 

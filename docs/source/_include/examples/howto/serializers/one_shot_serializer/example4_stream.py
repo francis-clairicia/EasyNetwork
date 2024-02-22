@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from easynetwork.api_sync.client import TCPNetworkClient
+from easynetwork.clients import TCPNetworkClient
 from easynetwork.protocol import StreamProtocol
 from easynetwork.serializers.wrapper import Base64EncoderSerializer
 

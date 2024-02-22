@@ -3,8 +3,8 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncGenerator
 
-from easynetwork.api_async.server import AsyncStreamClient, AsyncStreamRequestHandler, AsyncTCPNetworkServer
 from easynetwork.protocol import StreamProtocol
+from easynetwork.servers import AsyncStreamClient, AsyncStreamRequestHandler, AsyncTCPNetworkServer
 
 
 class Request:

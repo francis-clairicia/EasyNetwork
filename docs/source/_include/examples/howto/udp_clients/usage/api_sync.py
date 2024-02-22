@@ -3,7 +3,7 @@ from __future__ import annotations
 import socket
 from typing import Any
 
-from easynetwork.api_sync.client import UDPNetworkClient
+from easynetwork.clients import UDPNetworkClient
 from easynetwork.exceptions import DatagramProtocolParseError
 
 ###############

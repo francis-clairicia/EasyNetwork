@@ -12,7 +12,7 @@ How-to — TCP Servers
 Introduction
 ============
 
-The :mod:`easynetwork.api_async.server` module simplifies the task of writing network servers. The service creation model is inspired by
+The :mod:`easynetwork.servers` module simplifies the task of writing network servers. The service creation model is inspired by
 the standard :mod:`socketserver` library, but is an enhanced version with even more abstraction.
 
 Creating a server requires several steps:

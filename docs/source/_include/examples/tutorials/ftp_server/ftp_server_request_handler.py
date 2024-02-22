@@ -5,8 +5,8 @@ import logging
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from easynetwork.api_async.server import AsyncStreamClient, AsyncStreamRequestHandler, INETClientAttribute
 from easynetwork.exceptions import StreamProtocolParseError
+from easynetwork.servers import AsyncStreamClient, AsyncStreamRequestHandler, INETClientAttribute
 
 from ftp_command import FTPCommand
 from ftp_reply import FTPReply

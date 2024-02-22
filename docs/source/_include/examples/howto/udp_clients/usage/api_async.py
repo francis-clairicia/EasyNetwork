@@ -4,7 +4,7 @@ import asyncio
 import socket
 from typing import Any
 
-from easynetwork.api_async.client import AsyncUDPNetworkClient
+from easynetwork.clients import AsyncUDPNetworkClient
 from easynetwork.exceptions import DatagramProtocolParseError
 
 ###############

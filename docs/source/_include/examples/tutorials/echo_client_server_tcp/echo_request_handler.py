@@ -3,8 +3,8 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator
 from typing import Any, TypeAlias
 
-from easynetwork.api_async.server import AsyncStreamClient, AsyncStreamRequestHandler, INETClientAttribute
 from easynetwork.exceptions import StreamProtocolParseError
+from easynetwork.servers import AsyncStreamClient, AsyncStreamRequestHandler, INETClientAttribute
 
 # These TypeAliases are there to help you understand
 # where requests and responses are used

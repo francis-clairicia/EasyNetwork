@@ -5,7 +5,7 @@ import contextlib
 import traceback
 from typing import Any, TypeAlias
 
-from easynetwork.api_async.client import AsyncTCPNetworkClient
+from easynetwork.clients import AsyncTCPNetworkClient
 from easynetwork.exceptions import StreamProtocolParseError
 from easynetwork.protocol import StreamProtocol
 from easynetwork.serializers import JSONSerializer

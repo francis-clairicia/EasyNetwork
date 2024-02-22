@@ -4,7 +4,7 @@ from collections.abc import Callable, Iterator
 from socket import AF_INET, socket as Socket
 from typing import Any
 
-from easynetwork.api_sync.client.udp import UDPNetworkClient
+from easynetwork.clients.udp import UDPNetworkClient
 from easynetwork.exceptions import ClientClosedError, DatagramProtocolParseError
 from easynetwork.lowlevel.socket import IPv4SocketAddress, IPv6SocketAddress
 from easynetwork.protocol import DatagramProtocol

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from easynetwork.api_async.server.handler import (
+from easynetwork.servers.handlers import (
     AsyncDatagramClient,
     AsyncDatagramRequestHandler,
     AsyncStreamClient,

@@ -24,18 +24,18 @@ import contextlib
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Generic
 
-from ..._typevars import _T_Request, _T_Response
-from ...api_async.server.tcp import AsyncTCPNetworkServer
-from ...lowlevel import _utils
-from ...lowlevel.socket import SocketProxy
+from .._typevars import _T_Request, _T_Response
+from ..lowlevel import _utils
+from ..lowlevel.socket import SocketProxy
 from . import _base
+from .async_tcp import AsyncTCPNetworkServer
 
 if TYPE_CHECKING:
     import logging
     from ssl import SSLContext as _SSLContext
 
-    from ...api_async.server.handler import AsyncStreamRequestHandler
-    from ...protocol import StreamProtocol
+    from ..protocol import StreamProtocol
+    from .handlers import AsyncStreamRequestHandler
 
 
 class StandaloneTCPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[_T_Request, _T_Response]):

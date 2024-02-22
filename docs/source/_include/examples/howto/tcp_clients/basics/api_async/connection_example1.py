@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
-from easynetwork.api_async.client import AsyncTCPNetworkClient
+from easynetwork.clients import AsyncTCPNetworkClient
 from easynetwork.protocol import StreamProtocol
 from easynetwork.serializers import JSONSerializer
 

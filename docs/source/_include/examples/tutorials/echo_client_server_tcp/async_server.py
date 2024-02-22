@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
-from easynetwork.api_async.server import AsyncTCPNetworkServer
+from easynetwork.servers import AsyncTCPNetworkServer
 
 from echo_request_handler import EchoRequestHandler
 from json_protocol import JSONProtocol

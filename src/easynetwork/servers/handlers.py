@@ -30,8 +30,8 @@ from abc import ABCMeta, abstractmethod
 from collections.abc import AsyncGenerator, Coroutine
 from typing import Any, Generic
 
-from ..._typevars import _T_Request, _T_Response
-from ...lowlevel import socket as socket_tools, typed_attr
+from .._typevars import _T_Request, _T_Response
+from ..lowlevel import socket as socket_tools, typed_attr
 
 
 class INETClientAttribute(typed_attr.TypedAttributeSet):

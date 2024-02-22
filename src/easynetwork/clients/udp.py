@@ -24,13 +24,13 @@ import threading
 from collections.abc import Iterator
 from typing import Any, final, overload
 
-from ..._typevars import _T_ReceivedPacket, _T_SentPacket
-from ...exceptions import ClientClosedError
-from ...lowlevel import _lock, _utils, constants
-from ...lowlevel.api_sync.endpoints.datagram import DatagramEndpoint
-from ...lowlevel.api_sync.transports.socket import SocketDatagramTransport
-from ...lowlevel.socket import INETSocketAttribute, SocketAddress, SocketProxy, new_socket_address
-from ...protocol import DatagramProtocol
+from .._typevars import _T_ReceivedPacket, _T_SentPacket
+from ..exceptions import ClientClosedError
+from ..lowlevel import _lock, _utils, constants
+from ..lowlevel.api_sync.endpoints.datagram import DatagramEndpoint
+from ..lowlevel.api_sync.transports.socket import SocketDatagramTransport
+from ..lowlevel.socket import INETSocketAttribute, SocketAddress, SocketProxy, new_socket_address
+from ..protocol import DatagramProtocol
 from .abc import AbstractNetworkClient
 
 

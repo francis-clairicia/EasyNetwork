@@ -24,17 +24,17 @@ import contextlib
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Generic
 
-from ..._typevars import _T_Request, _T_Response
-from ...api_async.server.udp import AsyncUDPNetworkServer
-from ...lowlevel import _utils
-from ...lowlevel.socket import SocketProxy
+from .._typevars import _T_Request, _T_Response
+from ..lowlevel import _utils
+from ..lowlevel.socket import SocketProxy
 from . import _base
+from .async_udp import AsyncUDPNetworkServer
 
 if TYPE_CHECKING:
     import logging
 
-    from ...api_async.server.handler import AsyncDatagramRequestHandler
-    from ...protocol import DatagramProtocol
+    from ..protocol import DatagramProtocol
+    from .handlers import AsyncDatagramRequestHandler
 
 
 class StandaloneUDPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[_T_Request, _T_Response]):

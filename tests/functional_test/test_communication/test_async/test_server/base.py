@@ -8,8 +8,8 @@ import logging
 from collections.abc import AsyncIterator
 from typing import NamedTuple
 
-from easynetwork.api_async.server.abc import AbstractAsyncNetworkServer
 from easynetwork.exceptions import ServerAlreadyRunning, ServerClosedError
+from easynetwork.servers.abc import AbstractAsyncNetworkServer
 
 import pytest
 import pytest_asyncio

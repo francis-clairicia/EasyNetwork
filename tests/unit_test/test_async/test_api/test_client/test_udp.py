@@ -5,7 +5,7 @@ import os
 from socket import AF_INET6, AF_UNSPEC, SO_ERROR, SOL_SOCKET
 from typing import TYPE_CHECKING, Any
 
-from easynetwork.api_async.client.udp import AsyncUDPNetworkClient
+from easynetwork.clients.async_udp import AsyncUDPNetworkClient
 from easynetwork.exceptions import ClientClosedError, DatagramProtocolParseError, DeserializeError
 from easynetwork.lowlevel.constants import CLOSED_SOCKET_ERRNOS
 from easynetwork.lowlevel.socket import IPv4SocketAddress, IPv6SocketAddress, SocketProxy, _get_socket_extra

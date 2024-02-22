@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 
-from easynetwork.api_async.server import AsyncDatagramClient, AsyncDatagramRequestHandler
+from easynetwork.servers import AsyncDatagramClient, AsyncDatagramRequestHandler
 
 
 class Request:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from easynetwork.api_sync.client import TCPNetworkClient
+from easynetwork.clients import TCPNetworkClient
 from easynetwork.exceptions import DeserializeError, PacketConversionError, StreamProtocolParseError
 from easynetwork.protocol import StreamProtocol
 from easynetwork.serializers import JSONSerializer

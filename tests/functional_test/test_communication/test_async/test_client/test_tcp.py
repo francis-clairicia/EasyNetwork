@@ -6,7 +6,7 @@ import ssl
 from collections.abc import AsyncIterator
 from socket import AF_INET, IPPROTO_TCP, SHUT_WR, TCP_NODELAY, socket as Socket
 
-from easynetwork.api_async.client.tcp import AsyncTCPNetworkClient
+from easynetwork.clients.async_tcp import AsyncTCPNetworkClient
 from easynetwork.exceptions import ClientClosedError, StreamProtocolParseError
 from easynetwork.lowlevel.socket import IPv4SocketAddress, IPv6SocketAddress, SocketProxy
 from easynetwork.protocol import StreamProtocol

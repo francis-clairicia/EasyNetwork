@@ -9,12 +9,12 @@ import sys
 from collections.abc import AsyncGenerator, Generator
 from typing import Any
 
-from easynetwork.api_async.server.handler import AsyncStreamClient, AsyncStreamRequestHandler
-from easynetwork.api_sync.server.tcp import StandaloneTCPNetworkServer
 from easynetwork.protocol import StreamProtocol
 from easynetwork.serializers.abc import AbstractIncrementalPacketSerializer, BufferedIncrementalPacketSerializer
 from easynetwork.serializers.base_stream import _buffered_readuntil
 from easynetwork.serializers.tools import GeneratorStreamReader
+from easynetwork.servers.handlers import AsyncStreamClient, AsyncStreamRequestHandler
+from easynetwork.servers.standalone_tcp import StandaloneTCPNetworkServer
 
 ROOT_DIR = pathlib.Path(__file__).parent
 

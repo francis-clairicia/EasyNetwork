@@ -22,19 +22,15 @@ import concurrent.futures
 import contextlib
 import threading as _threading
 from collections.abc import Callable, Mapping, Sequence
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-from ...api_async.server.abc import SupportsEventSet
-from ...exceptions import ServerAlreadyRunning, ServerClosedError
-from ...lowlevel import _utils
-from ...lowlevel._lock import ForkSafeLock
-from ...lowlevel.api_async.backend.abc import ThreadsPortal
-from ...lowlevel.api_async.backend.factory import AsyncBackendFactory as _Factory
-from ...lowlevel.socket import SocketAddress
-from .abc import AbstractNetworkServer
-
-if TYPE_CHECKING:
-    from ...api_async.server.abc import AbstractAsyncNetworkServer
+from ..exceptions import ServerAlreadyRunning, ServerClosedError
+from ..lowlevel import _utils
+from ..lowlevel._lock import ForkSafeLock
+from ..lowlevel.api_async.backend.abc import ThreadsPortal
+from ..lowlevel.api_async.backend.factory import AsyncBackendFactory as _Factory
+from ..lowlevel.socket import SocketAddress
+from .abc import AbstractAsyncNetworkServer, AbstractNetworkServer, SupportsEventSet
 
 
 class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 
-from easynetwork.api_sync.client import TCPNetworkClient
+from easynetwork.clients import TCPNetworkClient
 
 from json_protocol import JSONProtocol
 

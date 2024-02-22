@@ -33,12 +33,12 @@ else:
     _ssl_module = ssl
     del ssl
 
-from ..._typevars import _T_ReceivedPacket, _T_SentPacket
-from ...exceptions import ClientClosedError
-from ...lowlevel import _lock, _utils, constants
-from ...lowlevel.api_sync.endpoints.stream import StreamEndpoint
-from ...lowlevel.api_sync.transports.socket import SocketStreamTransport, SSLStreamTransport
-from ...lowlevel.socket import (
+from .._typevars import _T_ReceivedPacket, _T_SentPacket
+from ..exceptions import ClientClosedError
+from ..lowlevel import _lock, _utils, constants
+from ..lowlevel.api_sync.endpoints.stream import StreamEndpoint
+from ..lowlevel.api_sync.transports.socket import SocketStreamTransport, SSLStreamTransport
+from ..lowlevel.socket import (
     INETSocketAttribute,
     SocketAddress,
     SocketProxy,
@@ -46,7 +46,7 @@ from ...lowlevel.socket import (
     set_tcp_keepalive,
     set_tcp_nodelay,
 )
-from ...protocol import StreamProtocol
+from ..protocol import StreamProtocol
 from .abc import AbstractNetworkClient
 
 if TYPE_CHECKING:

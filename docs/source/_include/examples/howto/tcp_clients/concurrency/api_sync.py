@@ -6,7 +6,7 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, TypeAlias
 
-from easynetwork.api_sync.client import TCPNetworkClient
+from easynetwork.clients import TCPNetworkClient
 from easynetwork.exceptions import StreamProtocolParseError
 from easynetwork.protocol import StreamProtocol
 from easynetwork.serializers import JSONSerializer

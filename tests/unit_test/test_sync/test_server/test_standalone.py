@@ -3,9 +3,9 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, Any
 
-from easynetwork.api_sync.server.tcp import StandaloneTCPNetworkServer
-from easynetwork.api_sync.server.udp import StandaloneUDPNetworkServer
 from easynetwork.lowlevel.std_asyncio import AsyncIOBackend
+from easynetwork.servers.standalone_tcp import StandaloneTCPNetworkServer
+from easynetwork.servers.standalone_udp import StandaloneUDPNetworkServer
 
 import pytest
 

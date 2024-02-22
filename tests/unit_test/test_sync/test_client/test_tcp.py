@@ -9,7 +9,7 @@ from socket import AF_INET6, IPPROTO_TCP, SHUT_RDWR, SHUT_WR, SO_KEEPALIVE, SOL_
 from ssl import SSLEOFError, SSLError, SSLErrorNumber, SSLWantReadError, SSLWantWriteError, SSLZeroReturnError
 from typing import TYPE_CHECKING, Any
 
-from easynetwork.api_sync.client.tcp import TCPNetworkClient
+from easynetwork.clients.tcp import TCPNetworkClient
 from easynetwork.exceptions import ClientClosedError, IncrementalDeserializeError, UnsupportedOperation
 from easynetwork.lowlevel._stream import StreamDataConsumer
 from easynetwork.lowlevel.constants import (
