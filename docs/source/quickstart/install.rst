@@ -22,8 +22,6 @@ Here is the full list:
 
    * ``cbor``: Installs the required dependencies for :class:`.CBORSerializer`.
 
-   * ``encryption``: Installs the required dependencies for :class:`.EncryptorSerializer`.
-
    * ``msgpack``: Installs the required dependencies for :class:`.MessagePackSerializer`.
 
 * Asynchronous I/O extensions:

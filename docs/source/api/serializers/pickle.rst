@@ -10,7 +10,7 @@ Pickle Serializer
 
 .. todo::
 
-   Add examples of how to use PickleSerializer with EncryptorSerializer or Base64EncoderSerializer with checksum.
+   Add examples of how to use PickleSerializer with Base64EncoderSerializer with checksum.
 
 .. autoclass:: PickleSerializer
    :members:

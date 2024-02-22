@@ -29,7 +29,6 @@ Serializers
 
    wrappers/base64
    wrappers/compressor
-   wrappers/encryptor
 
 -----
 
