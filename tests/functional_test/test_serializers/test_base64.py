@@ -13,7 +13,7 @@ from easynetwork.serializers.wrapper.base64 import Base64EncoderSerializer
 
 import pytest
 
-from .base import BaseTestIncrementalSerializer, NoSerialization
+from .base import BaseTestBufferedIncrementalSerializer, NoSerialization
 
 
 def generate_key_from_string(s: str) -> bytes:
@@ -26,7 +26,7 @@ SAMPLES = [
 ]
 
 
-class BaseTestBase64EncoderSerializer(BaseTestIncrementalSerializer):
+class BaseTestBase64EncoderSerializer(BaseTestBufferedIncrementalSerializer):
     #### Serializers
 
     BUFFER_LIMIT = 1024
@@ -135,13 +135,6 @@ class BaseTestBase64EncoderSerializer(BaseTestIncrementalSerializer):
         if len(invalid_partial_data) > cls.BUFFER_LIMIT and not invalid_partial_data.endswith(b"\r\n"):
             return (b"remaining_data", b"")
         return (b"remaining_data", b"remaining_data")
-
-    #### Other
-
-    @pytest.fixture(scope="class")
-    @staticmethod
-    def oneshot_extra_data() -> bytes:
-        pytest.skip("Does not recognize extra data")
 
 
 @final

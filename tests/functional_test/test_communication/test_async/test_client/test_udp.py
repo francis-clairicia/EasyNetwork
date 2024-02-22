@@ -16,7 +16,6 @@ import pytest_asyncio
 
 from .....tools import PlatformMarkers
 from .._utils import delay
-from ..conftest import use_asyncio_transport_xfail_uvloop
 
 
 @pytest.fixture
@@ -54,7 +53,6 @@ async def datagram_endpoint_factory(
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures("use_asyncio_transport")
 @pytest.mark.flaky(retries=3, delay=1)
 class TestAsyncUDPNetworkClient:
     @pytest_asyncio.fixture
@@ -151,13 +149,11 @@ class TestAsyncUDPNetworkClient:
         with pytest.raises(RuntimeError, match=r"^protocol\.make_datagram\(\) crashed$"):
             await client.send_packet("ABCDEF")
 
-    @use_asyncio_transport_xfail_uvloop
     async def test____recv_packet____default(self, client: AsyncUDPNetworkClient[str, str], server: DatagramEndpoint) -> None:
         await server.sendto(b"ABCDEF", client.get_local_address())
         async with asyncio.timeout(3):
             assert await client.recv_packet() == "ABCDEF"
 
-    @use_asyncio_transport_xfail_uvloop
     async def test____recv_packet____ignore_other_socket_packets(
         self,
         client: AsyncUDPNetworkClient[str, str],
@@ -173,7 +169,6 @@ class TestAsyncUDPNetworkClient:
         with pytest.raises(ClientClosedError):
             await client.recv_packet()
 
-    @use_asyncio_transport_xfail_uvloop
     async def test____recv_packet____invalid_data(
         self, client: AsyncUDPNetworkClient[str, str], server: DatagramEndpoint
     ) -> None:
@@ -183,7 +178,6 @@ class TestAsyncUDPNetworkClient:
                 await client.recv_packet()
 
     @pytest.mark.parametrize("one_shot_serializer", [pytest.param("invalid", id="serializer_crash")], indirect=True)
-    @use_asyncio_transport_xfail_uvloop
     async def test____recv_packet____protocol_crashed(
         self,
         client: AsyncUDPNetworkClient[str, str],
@@ -198,7 +192,6 @@ class TestAsyncUDPNetworkClient:
             with pytest.raises(RuntimeError, match=r"^protocol\.build_packet_from_datagram\(\) crashed$"):
                 raise
 
-    @use_asyncio_transport_xfail_uvloop
     async def test____iter_received_packets____yields_available_packets_until_close(
         self,
         client: AsyncUDPNetworkClient[str, str],
@@ -216,7 +209,6 @@ class TestAsyncUDPNetworkClient:
             close_task.cancel()
             await asyncio.wait({close_task})
 
-    @use_asyncio_transport_xfail_uvloop
     async def test____iter_received_packets____yields_available_packets_within_given_timeout(
         self,
         client: AsyncUDPNetworkClient[str, str],
@@ -260,7 +252,6 @@ class TestAsyncUDPNetworkClient:
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures("use_asyncio_transport")
 class TestAsyncUDPNetworkClientConnection:
     class EchoProtocol(asyncio.DatagramProtocol):
         transport: asyncio.DatagramTransport | None = None
@@ -386,7 +377,6 @@ class TestAsyncUDPNetworkClientConnection:
 
             assert client.get_remote_address()[:2] == remote_address
 
-    @use_asyncio_transport_xfail_uvloop
     async def test____send_packet____recv_packet____implicit_connection(
         self,
         remote_address: tuple[str, int],

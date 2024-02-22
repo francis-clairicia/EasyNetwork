@@ -21,6 +21,7 @@ class _ServerBootstrapInfo(NamedTuple):
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("enable_eager_tasks")
 class BaseTestAsyncServer:
     @pytest.fixture
     @staticmethod
@@ -109,11 +110,13 @@ class BaseTestAsyncServer:
     async def test____serve_forever____shutdown_during_setup(
         self,
         server: AbstractAsyncNetworkServer,
+        enable_eager_tasks: bool,
     ) -> None:
         event = asyncio.Event()
         async with asyncio.TaskGroup() as tg:
             _ = tg.create_task(server.serve_forever(is_up_event=event))
-            await asyncio.sleep(0)
+            if not enable_eager_tasks:
+                await asyncio.sleep(0)
             assert not event.is_set()
             async with asyncio.timeout(1):
                 await server.shutdown()
@@ -122,6 +125,7 @@ class BaseTestAsyncServer:
     async def test____serve_forever____server_close_during_setup(
         self,
         server: AbstractAsyncNetworkServer,
+        enable_eager_tasks: bool,
     ) -> None:
         event = asyncio.Event()
 
@@ -131,7 +135,8 @@ class BaseTestAsyncServer:
 
         async with asyncio.TaskGroup() as tg:
             _ = tg.create_task(serve())
-            await asyncio.sleep(0)
+            if not enable_eager_tasks:
+                await asyncio.sleep(0)
             assert not event.is_set()
             async with asyncio.timeout(1):
                 await server.server_close()

@@ -183,11 +183,10 @@ class _DataSenderImpl(Generic[_T_SentPacket]):
     producer: _stream.StreamDataProducer[_T_SentPacket]
 
     def clear(self) -> None:
-        self.producer.clear()
+        pass
 
     async def send(self, packet: _T_SentPacket) -> None:
-        self.producer.enqueue(packet)
-        return await self.transport.send_all_from_iterable(self.producer)
+        return await self.transport.send_all_from_iterable(self.producer.generate(packet))
 
 
 @dataclasses.dataclass(slots=True)
@@ -201,24 +200,26 @@ class _DataReceiverImpl(Generic[_T_ReceivedPacket]):
         self.consumer.clear()
 
     async def receive(self) -> _T_ReceivedPacket:
-        transport = self.transport
         consumer = self.consumer
+        try:
+            return consumer.next(None)
+        except StopIteration:
+            pass
+
+        transport = self.transport
         bufsize: int = self.max_recv_size
 
-        while True:
+        while not self._eof_reached:
+            chunk: bytes = await transport.recv(bufsize)
+            if not chunk:
+                self._eof_reached = True
+                continue
             try:
-                return next(consumer)
+                return consumer.next(chunk)
             except StopIteration:
                 pass
-            if not self._eof_reached:
-                chunk: bytes = await transport.recv(bufsize)
-                if chunk:
-                    consumer.feed(chunk)
-                else:
-                    self._eof_reached = True
-                del chunk
-            if self._eof_reached:
-                raise EOFError("end-of-stream")
+
+        raise EOFError("end-of-stream")
 
 
 @dataclasses.dataclass(slots=True)
@@ -237,19 +238,22 @@ class _BufferedReceiverImpl(Generic[_T_ReceivedPacket]):
         self.consumer.clear()
 
     async def receive(self) -> _T_ReceivedPacket:
-        transport = self.transport
         consumer = self.consumer
+        try:
+            return consumer.next(None)
+        except StopIteration:
+            pass
 
-        while True:
+        transport = self.transport
+
+        while not self._eof_reached:
+            nbytes: int = await transport.recv_into(consumer.get_write_buffer())
+            if not nbytes:
+                self._eof_reached = True
+                continue
             try:
-                return next(consumer)
+                return consumer.next(nbytes)
             except StopIteration:
                 pass
-            if not self._eof_reached:
-                nbytes: int = await transport.recv_into(consumer.get_write_buffer())
-                if nbytes:
-                    consumer.buffer_updated(nbytes)
-                else:
-                    self._eof_reached = True
-            if self._eof_reached:
-                raise EOFError("end-of-stream")
+
+        raise EOFError("end-of-stream")

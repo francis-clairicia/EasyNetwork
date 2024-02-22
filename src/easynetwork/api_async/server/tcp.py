@@ -28,7 +28,8 @@ from typing import TYPE_CHECKING, Any, Generic, NoReturn, final
 
 from ..._typevars import _T_Request, _T_Response
 from ...exceptions import ClientClosedError, ServerAlreadyRunning, ServerClosedError
-from ...lowlevel import _asyncgen, _utils, constants
+from ...lowlevel import _utils, constants
+from ...lowlevel._asyncgen import AsyncGenAction, SendAction, ThrowAction
 from ...lowlevel._final import runtime_final_class
 from ...lowlevel.api_async.backend.factory import current_async_backend
 from ...lowlevel.api_async.servers import stream as _stream_server
@@ -49,7 +50,7 @@ from .handler import AsyncStreamClient, AsyncStreamRequestHandler, INETClientAtt
 if TYPE_CHECKING:
     import ssl as _typing_ssl
 
-    from ...lowlevel.api_async.backend.abc import CancelScope, IEvent, Task, TaskGroup
+    from ...lowlevel.api_async.backend.abc import AsyncBackend, CancelScope, IEvent, Task, TaskGroup
     from ...lowlevel.api_async.transports.abc import AsyncListener, AsyncStreamTransport
 
 
@@ -83,6 +84,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
         ssl: _typing_ssl.SSLContext | None = None,
         ssl_handshake_timeout: float | None = None,
         ssl_shutdown_timeout: float | None = None,
+        ssl_standard_compatible: bool | None = None,
         backlog: int | None = None,
         reuse_port: bool = False,
         max_recv_size: int | None = None,
@@ -111,6 +113,8 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
                                    before aborting the connection. ``60.0`` seconds if :data:`None` (default).
             ssl_shutdown_timeout: the time in seconds to wait for the SSL shutdown to complete before aborting the connection.
                                   ``30.0`` seconds if :data:`None` (default).
+            ssl_standard_compatible: if :data:`False`, skip the closing handshake when closing the connection,
+                                     and don't raise an exception if the peer does the same.
             backlog: is the maximum number of queued connections passed to :class:`~socket.socket.listen` (defaults to ``100``).
             reuse_port: tells the kernel to allow this endpoint to be bound to the same port as other existing endpoints
                         are bound to, so long as they all set this flag when being created.
@@ -149,19 +153,24 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
         if ssl_shutdown_timeout is not None and not ssl:
             raise ValueError("ssl_shutdown_timeout is only meaningful with ssl")
 
-        def _value_or_default(value: float | None, default: float) -> float:
-            return value if value is not None else default
+        if ssl_standard_compatible is not None and not ssl:
+            raise ValueError("ssl_standard_compatible is only meaningful with ssl")
+
+        if ssl_standard_compatible is None:
+            ssl_standard_compatible = True
 
         self.__listeners_factory: Callable[[], Coroutine[Any, Any, Sequence[AsyncListener[AsyncStreamTransport]]]] | None
         if ssl:
             self.__listeners_factory = _utils.make_callback(
-                backend.create_ssl_over_tcp_listeners,
+                self.__create_ssl_over_tcp_listeners,
+                backend,
                 host,
                 port,
                 backlog=backlog,
                 ssl_context=ssl,
-                ssl_handshake_timeout=_value_or_default(ssl_handshake_timeout, constants.SSL_HANDSHAKE_TIMEOUT),
-                ssl_shutdown_timeout=_value_or_default(ssl_shutdown_timeout, constants.SSL_SHUTDOWN_TIMEOUT),
+                ssl_handshake_timeout=ssl_handshake_timeout,
+                ssl_shutdown_timeout=ssl_shutdown_timeout,
+                ssl_standard_compatible=ssl_standard_compatible,
                 reuse_port=reuse_port,
             )
         else:
@@ -189,6 +198,38 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
         else:
             self.__client_connection_log_level = logging.DEBUG
         self.__active_tasks: int = 0
+
+    @staticmethod
+    async def __create_ssl_over_tcp_listeners(
+        backend: AsyncBackend,
+        host: str | Sequence[str] | None,
+        port: int,
+        backlog: int,
+        ssl_context: _typing_ssl.SSLContext,
+        *,
+        ssl_handshake_timeout: float | None,
+        ssl_shutdown_timeout: float | None,
+        ssl_standard_compatible: bool,
+        reuse_port: bool,
+    ) -> Sequence[AsyncListener[AsyncStreamTransport]]:
+        from ...lowlevel.api_async.transports.tls import AsyncTLSListener
+
+        listeners = await backend.create_tcp_listeners(
+            host=host,
+            port=port,
+            backlog=backlog,
+            reuse_port=reuse_port,
+        )
+        return [
+            AsyncTLSListener(
+                listener,
+                ssl_context,
+                handshake_timeout=ssl_handshake_timeout,
+                shutdown_timeout=ssl_shutdown_timeout,
+                standard_compatible=ssl_standard_compatible,
+            )
+            for listener in listeners
+        ]
 
     @_utils.inherit_doc(AbstractAsyncNetworkServer)
     def is_serving(self) -> bool:
@@ -352,7 +393,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
             client_exit_stack.callback(self.__set_socket_linger_if_not_closed, lowlevel_client.extra(INETSocketAttribute.socket))
 
             logger: logging.Logger = self.__logger
-            client = _ConnectedClientAPI(client_address, lowlevel_client, logger)
+            client = _ConnectedClientAPI(client_address, lowlevel_client)
 
             del lowlevel_client
 
@@ -361,33 +402,36 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
             client_exit_stack.push_async_callback(client._force_close)
 
             request_handler_generator: AsyncGenerator[None, _T_Request]
-            action: _asyncgen.AsyncGenAction[None, _T_Request]
+            action: AsyncGenAction[None, _T_Request]
 
             _on_connection_hook = self.__request_handler.on_connection(client)
             if isinstance(_on_connection_hook, AsyncGenerator):
-                async with contextlib.aclosing(_on_connection_hook):
-                    try:
-                        await anext(_on_connection_hook)
-                    except StopAsyncIteration:
-                        pass
-                    else:
-                        while True:
-                            try:
-                                action = _asyncgen.SendAction((yield))
-                            except ConnectionError:
+                try:
+                    await anext(_on_connection_hook)
+                except StopAsyncIteration:
+                    pass
+                else:
+                    while True:
+                        try:
+                            action = SendAction((yield))
+                        except ConnectionError:
+                            await _on_connection_hook.aclose()
+                            return
+                        except BaseException as exc:
+                            if _utils.is_ssl_eof_error(exc):
+                                await _on_connection_hook.aclose()
                                 return
-                            except BaseException as exc:
-                                action = _asyncgen.ThrowAction(_utils.remove_traceback_frames_in_place(exc, 1))
-                            try:
-                                await action.asend(_on_connection_hook)
-                            except StopAsyncIteration:
-                                break
-                            except BaseException as exc:
-                                # Remove action.asend() frames
-                                _utils.remove_traceback_frames_in_place(exc, 2)
-                                raise
-                            finally:
-                                del action
+                            action = ThrowAction(_utils.remove_traceback_frames_in_place(exc, 1))
+                        try:
+                            await action.asend(_on_connection_hook)
+                        except StopAsyncIteration:
+                            break
+                        except BaseException as exc:
+                            # Remove action.asend() frames
+                            _utils.remove_traceback_frames_in_place(exc, 2)
+                            raise
+                        finally:
+                            del action
             else:
                 assert inspect.isawaitable(_on_connection_hook)  # nosec assert_used
                 await _on_connection_hook
@@ -403,34 +447,36 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
 
             del client_exit_stack
 
-            while not client.is_closing():
-                request_handler_generator = self.__request_handler.handle(client)
-                async with contextlib.aclosing(request_handler_generator):
+            new_request_handler = self.__request_handler.handle
+            client_is_closing = client.is_closing
+
+            while not client_is_closing():
+                request_handler_generator = new_request_handler(client)
+                try:
+                    await anext(request_handler_generator)
+                except StopAsyncIteration:
+                    return
+                while True:
                     try:
-                        await anext(request_handler_generator)
-                    except StopAsyncIteration:
+                        action = SendAction((yield))
+                    except ConnectionError:
+                        await request_handler_generator.aclose()
                         return
-
-                    while True:
-                        try:
-                            action = _asyncgen.SendAction((yield))
-                        except ConnectionError:
+                    except BaseException as exc:
+                        if _utils.is_ssl_eof_error(exc):
+                            await request_handler_generator.aclose()
                             return
-                        except BaseException as exc:
-                            action = _asyncgen.ThrowAction(_utils.remove_traceback_frames_in_place(exc, 1))
-                        try:
-                            await action.asend(request_handler_generator)
-                        except StopAsyncIteration:
-                            break
-                        except BaseException as exc:
-                            # Remove action.asend() frames
-                            _utils.remove_traceback_frames_in_place(exc, 2)
-                            raise
-                        finally:
-                            del action
-
-                # Always handle one request at a time
-                await current_async_backend().coro_yield()
+                        action = ThrowAction(_utils.remove_traceback_frames_in_place(exc, 1))
+                    try:
+                        await action.asend(request_handler_generator)
+                    except StopAsyncIteration:
+                        break
+                    except BaseException as exc:
+                        # Remove action.asend() frames
+                        _utils.remove_traceback_frames_in_place(exc, 2)
+                        raise
+                    finally:
+                        del action
 
     def __attach_server(self) -> None:
         self.__active_tasks += 1
@@ -499,25 +545,24 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
 class _ConnectedClientAPI(AsyncStreamClient[_T_Response]):
     __slots__ = (
         "__client",
-        "__closed",
+        "__closing",
         "__send_lock",
         "__address",
         "__proxy",
-        "__logger",
+        "__extra_attributes_cache",
     )
 
     def __init__(
         self,
         address: SocketAddress,
         client: _stream_server.AsyncStreamClient[_T_Response],
-        logger: logging.Logger,
     ) -> None:
         self.__client: _stream_server.AsyncStreamClient[_T_Response] = client
-        self.__closed: bool = False
+        self.__closing: bool = False
         self.__send_lock = current_async_backend().create_lock()
-        self.__logger: logging.Logger = logger
         self.__proxy: SocketProxy = SocketProxy(client.extra(INETSocketAttribute.socket))
         self.__address: SocketAddress = address
+        self.__extra_attributes_cache: Mapping[Any, Callable[[], Any]] | None = None
 
         with contextlib.suppress(OSError):
             set_tcp_nodelay(self.__proxy, True)
@@ -528,35 +573,30 @@ class _ConnectedClientAPI(AsyncStreamClient[_T_Response]):
         return f"<client with address {self.__address} at {id(self):#x}>"
 
     def is_closing(self) -> bool:
-        return self.__closed or self.__client.is_closing()
+        return self.__closing
 
     async def _force_close(self) -> None:
-        self.__closed = True
+        self.__closing = True
         async with self.__send_lock:  # If self.aclose() took the lock, wait for it to finish
             pass
 
     async def aclose(self) -> None:
         async with self.__send_lock:
-            self.__closed = True
+            self.__closing = True
             await self.__client.aclose()
 
     async def send_packet(self, packet: _T_Response, /) -> None:
-        self.__check_closed()
-        self.__logger.debug("A response will be sent to %s", self.__address)
         async with self.__send_lock:
-            self.__check_closed()
+            if self.__closing:
+                raise ClientClosedError("Closed client")
             await self.__client.send_packet(packet)
-            _utils.check_real_socket_state(self.__proxy)
-            self.__logger.debug("Data sent to %s", self.__address)
-
-    def __check_closed(self) -> None:
-        if self.__closed:
-            raise ClientClosedError("Closed client")
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
+        if (extra_attributes_cache := self.__extra_attributes_cache) is not None:
+            return extra_attributes_cache
         client = self.__client
-        return {
+        self.__extra_attributes_cache = extra_attributes_cache = {
             **client.extra_attributes,
             INETClientAttribute.socket: lambda: self.__proxy,
             INETClientAttribute.local_address: lambda: new_socket_address(
@@ -565,3 +605,4 @@ class _ConnectedClientAPI(AsyncStreamClient[_T_Response]):
             ),
             INETClientAttribute.remote_address: lambda: self.__address,
         }
+        return extra_attributes_cache

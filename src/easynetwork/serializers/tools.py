@@ -16,21 +16,11 @@
 
 from __future__ import annotations
 
-__all__ = [
-    "GeneratorStreamReader",
-    "_wrap_generic_buffered_incremental_deserialize",
-    "_wrap_generic_incremental_deserialize",
-]
+__all__ = ["GeneratorStreamReader"]
 
-import contextlib
-from collections.abc import Callable, Generator
-from typing import TYPE_CHECKING
+from collections.abc import Generator
 
-from .._typevars import _T_DTOPacket
 from ..exceptions import LimitOverrunError
-
-if TYPE_CHECKING:
-    from _typeshed import ReadableBuffer
 
 
 class GeneratorStreamReader:
@@ -86,11 +76,12 @@ class GeneratorStreamReader:
         if size == 0:
             return b""
 
-        while not self.__buffer:
-            self.__buffer = bytes((yield))
+        buffer = self.__buffer
+        while not buffer:
+            self.__buffer = buffer = bytes((yield))
 
-        data = self.__buffer[:size]
-        self.__buffer = self.__buffer[size:]
+        data = buffer[:size]
+        self.__buffer = buffer[size:]
 
         return data
 
@@ -120,13 +111,15 @@ class GeneratorStreamReader:
         if n == 0:
             return b""
 
-        while not self.__buffer:
-            self.__buffer = bytes((yield))
-        while len(self.__buffer) < n:
-            self.__buffer += yield
+        buffer = self.__buffer
+        while not buffer:
+            self.__buffer = buffer = bytes((yield))
+        while len(buffer) < n:
+            buffer += yield
+            self.__buffer = buffer
 
-        data = self.__buffer[:n]
-        self.__buffer = self.__buffer[n:]
+        data = buffer[:n]
+        self.__buffer = buffer[n:]
 
         return data
 
@@ -170,16 +163,17 @@ class GeneratorStreamReader:
         if seplen < 1:
             raise ValueError("Empty separator")
 
-        while not self.__buffer:
-            self.__buffer = bytes((yield))
+        buffer = self.__buffer
+        while not buffer:
+            self.__buffer = buffer = bytes((yield))
 
         offset: int = 0
         sepidx: int = -1
         while True:
-            buflen = len(self.__buffer)
+            buflen = len(buffer)
 
             if buflen - offset >= seplen:
-                sepidx = self.__buffer.find(separator, offset)
+                sepidx = buffer.find(separator, offset)
 
                 if sepidx != -1:
                     break
@@ -187,42 +181,20 @@ class GeneratorStreamReader:
                 offset = buflen + 1 - seplen
                 if offset > limit:
                     msg = "Separator is not found, and chunk exceed the limit"
-                    raise LimitOverrunError(msg, self.__buffer, offset, separator)
+                    raise LimitOverrunError(msg, buffer, offset, separator)
 
-            self.__buffer += yield
+            buffer += yield
+            self.__buffer = buffer
 
         if sepidx > limit:
             msg = "Separator is found, but chunk is longer than limit"
-            raise LimitOverrunError(msg, self.__buffer, sepidx, separator)
+            raise LimitOverrunError(msg, buffer, sepidx, separator)
 
         offset = sepidx + seplen
         if keep_end:
-            data = self.__buffer[:offset]
+            data = buffer[:offset]
         else:
-            data = self.__buffer[:sepidx]
-        self.__buffer = self.__buffer[offset:]
+            data = buffer[:sepidx]
+        self.__buffer = buffer[offset:]
 
         return data
-
-
-def _wrap_generic_incremental_deserialize(
-    func: Callable[[], Generator[None, ReadableBuffer, tuple[_T_DTOPacket, ReadableBuffer]]],
-) -> Generator[None, bytes, tuple[_T_DTOPacket, bytes]]:
-    packet, remainder = yield from func()
-    # remainder is not copied if it is already a "bytes" object
-    remainder = bytes(remainder)
-    return packet, remainder
-
-
-def _wrap_generic_buffered_incremental_deserialize(
-    buffer: memoryview,
-    func: Callable[[], Generator[None, ReadableBuffer, tuple[_T_DTOPacket, ReadableBuffer]]],
-) -> Generator[None, int, tuple[_T_DTOPacket, ReadableBuffer]]:
-    next(gen := func())
-    with contextlib.closing(gen):
-        while True:
-            nbytes: int = yield
-            try:
-                gen.send(buffer[:nbytes])
-            except StopIteration as exc:
-                return exc.value

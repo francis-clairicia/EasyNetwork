@@ -21,8 +21,7 @@ __all__ = [
     "StreamDataProducer",
 ]
 
-from collections import deque
-from collections.abc import Generator, Iterator
+from collections.abc import Generator
 from typing import TYPE_CHECKING, Any, Generic, final
 
 from .._typevars import _T_ReceivedPacket, _T_SentPacket
@@ -36,73 +35,32 @@ if TYPE_CHECKING:
 
 @final
 @runtime_final_class
-@Iterator.register
 class StreamDataProducer(Generic[_T_SentPacket]):
-    __slots__ = ("__p", "__g", "__q")
+    __slots__ = ("__protocol",)
 
     def __init__(self, protocol: StreamProtocol[_T_SentPacket, Any]) -> None:
         super().__init__()
         _check_protocol(protocol)
-        self.__p: StreamProtocol[_T_SentPacket, Any] = protocol
-        self.__g: Generator[bytes, None, None] | None = None
-        self.__q: deque[_T_SentPacket] = deque()
+        self.__protocol: StreamProtocol[_T_SentPacket, Any] = protocol
 
-    def __del__(self) -> None:
+    def generate(self, packet: _T_SentPacket) -> Generator[bytes, None, None]:
         try:
-            self.clear()
-        except AttributeError:
-            return
-
-    def __iter__(self) -> Iterator[bytes]:
-        return self
-
-    def __next__(self) -> bytes:
-        protocol = self.__p
-        queue: deque[_T_SentPacket] = self.__q
-        generator: Generator[bytes, None, None] | None
-        while (generator := self.__g) is not None or queue:
-            if generator is None:
-                generator = protocol.generate_chunks(queue.popleft())
-            else:
-                self.__g = None
-            try:
-                chunk = next(filter(None, map(bytes, generator)))
-            except StopIteration:
-                pass
-            except Exception as exc:
-                raise RuntimeError("protocol.generate_chunks() crashed") from exc
-            else:
-                self.__g = generator
-                return chunk
-            finally:
-                del generator
-        raise StopIteration
-
-    def pending_packets(self) -> bool:
-        return self.__g is not None or bool(self.__q)
-
-    def enqueue(self, *packets: _T_SentPacket) -> None:
-        self.__q.extend(packets)
-
-    def clear(self) -> None:
-        self.__q.clear()
-        generator, self.__g = self.__g, None
-        if generator is not None:
-            generator.close()
+            yield from self.__protocol.generate_chunks(packet)
+        except Exception as exc:
+            raise RuntimeError("protocol.generate_chunks() crashed") from exc
 
 
 @final
 @runtime_final_class
-@Iterator.register
 class StreamDataConsumer(Generic[_T_ReceivedPacket]):
-    __slots__ = ("__p", "__b", "__c")
+    __slots__ = ("__protocol", "__buffer", "__consumer")
 
     def __init__(self, protocol: StreamProtocol[Any, _T_ReceivedPacket]) -> None:
         super().__init__()
         _check_protocol(protocol)
-        self.__p: StreamProtocol[Any, _T_ReceivedPacket] = protocol
-        self.__c: Generator[None, bytes, tuple[_T_ReceivedPacket, bytes]] | None = None
-        self.__b: bytes = b""
+        self.__protocol: StreamProtocol[Any, _T_ReceivedPacket] = protocol
+        self.__consumer: Generator[None, bytes, tuple[_T_ReceivedPacket, bytes]] | None = None
+        self.__buffer: bytes = b""
 
     def __del__(self) -> None:
         try:
@@ -110,69 +68,60 @@ class StreamDataConsumer(Generic[_T_ReceivedPacket]):
         except AttributeError:
             return
 
-    def __iter__(self) -> Iterator[_T_ReceivedPacket]:
-        return self
-
-    def __next__(self) -> _T_ReceivedPacket:
-        chunk: bytes = self.__b
-        if not chunk:
-            raise StopIteration
-        consumer, self.__c = self.__c, None
-        if consumer is None:
-            consumer = self.__p.build_packet_from_chunks()
+    def next(self, received_chunk: bytes | None) -> _T_ReceivedPacket:
+        if not received_chunk:
+            if not (received_chunk := self.__buffer):
+                raise StopIteration
+        elif self.__buffer:
+            received_chunk = self.__buffer + received_chunk
+        if (consumer := self.__consumer) is None:
+            consumer = self.__protocol.build_packet_from_chunks()
             try:
                 next(consumer)
             except StopIteration:
+                self.__buffer = bytes(received_chunk)
                 raise RuntimeError("protocol.build_packet_from_chunks() did not yield") from None
             except Exception as exc:
                 raise RuntimeError("protocol.build_packet_from_chunks() crashed") from exc
-        self.__b = b""
+        else:
+            # Reset consumer
+            # Will be re-assigned if needed
+            self.__consumer = None
+        self.__buffer = b""
         packet: _T_ReceivedPacket
         remaining: bytes
         try:
-            consumer.send(chunk)
+            consumer.send(received_chunk)
         except StopIteration as exc:
             packet, remaining = exc.value
-            self.__b = bytes(remaining)
+            self.__buffer = bytes(remaining)
             return packet
         except StreamProtocolParseError as exc:
-            self.__b = bytes(exc.remaining_data)
+            self.__buffer = bytes(exc.remaining_data)
             raise
         except Exception as exc:
             raise RuntimeError("protocol.build_packet_from_chunks() crashed") from exc
         else:
-            self.__c = consumer
+            self.__consumer = consumer
             raise StopIteration
-        finally:
-            del consumer, chunk
-
-    def feed(self, chunk: ReadableBuffer) -> None:
-        chunk = bytes(chunk)
-        if not chunk:
-            return
-        if self.__b:
-            self.__b += chunk
-        else:
-            self.__b = chunk
 
     def get_buffer(self) -> memoryview:
-        return memoryview(self.__b)
+        return memoryview(self.__buffer)
 
     def clear(self) -> None:
-        self.__b = b""
-        consumer, self.__c = self.__c, None
+        self.__buffer = b""
+        consumer, self.__consumer = self.__consumer, None
         if consumer is not None:
             consumer.close()
 
 
 @final
 @runtime_final_class
-@Iterator.register
 class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
     __slots__ = (
         "__buffered_receiver",
         "__buffer",
-        "__buffer_view",
+        "__exported_write_buffer_view",
         "__buffer_start",
         "__already_written",
         "__sizehint",
@@ -187,7 +136,7 @@ class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
         self.__buffered_receiver: BufferedStreamReceiver[_T_ReceivedPacket, WriteableBuffer] = protocol.buffered_receiver()
         self.__consumer: Generator[int | None, int, tuple[_T_ReceivedPacket, ReadableBuffer]] | None = None
         self.__buffer: WriteableBuffer | None = None
-        self.__buffer_view: memoryview | None = None
+        self.__exported_write_buffer_view: memoryview | None = None
         self.__buffer_start: int | None = None
         self.__already_written: int = 0
         self.__sizehint: int = buffer_size_hint
@@ -198,20 +147,25 @@ class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
         except AttributeError:
             return
 
-    def __iter__(self) -> Iterator[_T_ReceivedPacket]:
-        return self
+    def next(self, nb_updated_bytes: int | None) -> _T_ReceivedPacket:
+        if nb_updated_bytes is None:
+            nb_updated_bytes = 0
+        else:
+            if (buffer_view := self.__exported_write_buffer_view) is None:
+                raise RuntimeError("next() has been called whilst get_write_buffer() was never called")
+            if not (0 <= nb_updated_bytes <= buffer_view.nbytes):
+                raise RuntimeError("Invalid value given")
+            del buffer_view
 
-    def __next__(self) -> _T_ReceivedPacket:
-        consumer = self.__consumer
-        if consumer is None:
+        if (consumer := self.__consumer) is None:
             raise StopIteration
 
-        nb_updated_bytes, self.__already_written = self.__already_written, 0
-        if nb_updated_bytes == 0:
-            raise StopIteration
+        nb_updated_bytes += self.__already_written
+        self.__already_written = 0
+        self.__release_write_buffer_view()
 
-        # Forcibly reset buffer view
-        self.__buffer_view = None
+        if not nb_updated_bytes:
+            raise StopIteration
 
         # Reset consumer
         # Will be re-assigned if needed
@@ -235,12 +189,10 @@ class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
         else:
             self.__consumer = consumer
             raise StopIteration
-        finally:
-            del consumer
 
     def get_write_buffer(self) -> WriteableBuffer:
-        if self.__buffer_view is not None:
-            return self.__buffer_view
+        if self.__exported_write_buffer_view is not None:
+            return self.__exported_write_buffer_view
 
         if self.__buffer is None:
             whole_buffer = self.__buffered_receiver.create_buffer(self.__sizehint)
@@ -273,17 +225,8 @@ class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
         if not buffer:
             raise RuntimeError("The start position is set to the end of the buffer")
 
-        self.__buffer_view = buffer
+        self.__exported_write_buffer_view = buffer
         return buffer
-
-    def buffer_updated(self, nbytes: int) -> None:
-        if nbytes < 0:
-            raise ValueError("Negative value given")
-        if self.__buffer_view is None:
-            raise RuntimeError("buffer_updated() has been called whilst get_buffer() was never called")
-        if nbytes > self.__buffer_view.nbytes:
-            raise RuntimeError("nbytes > buffer_view.nbytes")
-        self.__update_write_count(nbytes)
 
     def get_value(self, *, full: bool = False) -> bytes | None:
         if self.__buffer is None:
@@ -300,7 +243,7 @@ class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
         return buffer[:nbytes].tobytes()
 
     def clear(self) -> None:
-        self.__release_buffer_view()
+        self.__release_write_buffer_view()
         self.__buffer = self.__buffer_start = None
         self.__already_written = 0
         consumer, self.__consumer = self.__consumer, None
@@ -311,20 +254,17 @@ class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
         # Copy remaining_data because it can be a view to the wrapped buffer
         # NOTE: remaining_data is not copied if it is already a "bytes" object
         remaining_data = bytes(remaining_data)
-        nbytes = len(remaining_data)
-        if nbytes == 0:
+        if not remaining_data:
             # Nothing to save.
             return
+        nbytes = len(remaining_data)
         with memoryview(self.get_write_buffer()) as buffer:
             buffer[:nbytes] = remaining_data
-        self.__update_write_count(nbytes)
-
-    def __update_write_count(self, nbytes: int) -> None:
         self.__already_written += nbytes
-        self.__release_buffer_view()
+        self.__release_write_buffer_view()
 
-    def __release_buffer_view(self) -> None:
-        buffer_view, self.__buffer_view = self.__buffer_view, None
+    def __release_write_buffer_view(self) -> None:
+        buffer_view, self.__exported_write_buffer_view = self.__exported_write_buffer_view, None
         if buffer_view is not None:
             buffer_view.release()
 
@@ -333,7 +273,7 @@ class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
         with memoryview(buffer) as buffer:
             if buffer.readonly:
                 raise ValueError("protocol.create_buffer() returned a read-only buffer")
-            if not len(buffer):
+            if not buffer:
                 raise ValueError("protocol.create_buffer() returned a null buffer")
 
     @property

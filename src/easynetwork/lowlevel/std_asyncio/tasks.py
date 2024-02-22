@@ -27,7 +27,7 @@ import math
 import types
 from collections import deque
 from collections.abc import Awaitable, Callable, Coroutine, Generator, Iterable, Iterator
-from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, Self, TypeVar, cast, final
+from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, Self, TypeVar, TypeVarTuple, cast, final
 from weakref import WeakKeyDictionary
 
 from .. import _utils
@@ -45,6 +45,7 @@ if TYPE_CHECKING:
 
 _T = TypeVar("_T")
 _T_co = TypeVar("_T_co", covariant=True)
+_T_PosArgs = TypeVarTuple("_T_PosArgs")
 
 
 @final
@@ -143,29 +144,24 @@ class TaskGroup(AbstractTaskGroup):
 
     def start_soon(
         self,
-        coro_func: Callable[..., Coroutine[Any, Any, Any]],
+        coro_func: Callable[[*_T_PosArgs], Coroutine[Any, Any, _T]],
         /,
-        *args: Any,
+        *args: *_T_PosArgs,
         name: str | None = None,
     ) -> None:
-        name = TaskUtils.compute_task_name_from_func(coro_func) if name is None else str(name)
-        coroutine = TaskUtils.ensure_coroutine(coro_func, args)
-        _ = self.__asyncio_tg.create_task(coroutine, name=name)
+        _ = self.__asyncio_tg.create_task(coro_func(*args), name=name)
 
     async def start(
         self,
-        coro_func: Callable[..., Coroutine[Any, Any, _T]],
+        coro_func: Callable[[*_T_PosArgs], Coroutine[Any, Any, _T]],
         /,
-        *args: Any,
+        *args: *_T_PosArgs,
         name: str | None = None,
     ) -> AbstractTask[_T]:
         loop = asyncio.get_running_loop()
         waiter: asyncio.Future[None] = loop.create_future()
 
-        name = TaskUtils.compute_task_name_from_func(coro_func) if name is None else str(name)
-        coroutine = TaskUtils.ensure_coroutine(coro_func, args)
-        task = Task(self.__asyncio_tg.create_task(self.__task_coroutine(coroutine, waiter), name=name))
-        del coroutine
+        task = Task(self.__asyncio_tg.create_task(self.__task_coroutine(coro_func, args, waiter), name=name))
 
         try:
             await waiter
@@ -175,18 +171,19 @@ class TaskGroup(AbstractTaskGroup):
 
     @staticmethod
     async def __task_coroutine(
-        coroutine: Coroutine[Any, Any, _T],
+        coro_func: Callable[[*_T_PosArgs], Coroutine[Any, Any, _T]],
+        args: tuple[*_T_PosArgs],
         waiter: asyncio.Future[None],
     ) -> _T:
+        if not waiter.done():
+            waiter.set_result(None)
+        del waiter
+
         try:
-            try:
-                if not waiter.done():
-                    waiter.set_result(None)
-            finally:
-                del waiter
-            return await coroutine
-        finally:
-            del coroutine
+            return await coro_func(*args)
+        except BaseException as exc:
+            _utils.remove_traceback_frames_in_place(exc, 1)
+            raise
 
 
 class _ScopeState(enum.Enum):
@@ -422,9 +419,9 @@ class TaskUtils:
             raise RuntimeError("This function should be called within a task.")
         return t
 
-    @classmethod
+    @staticmethod
     @types.coroutine
-    def coro_yield(cls) -> Generator[Any, Any, None]:
+    def coro_yield() -> Generator[Any, Any, None]:
         yield
 
     @classmethod
@@ -482,15 +479,10 @@ class TaskUtils:
 
     @classmethod
     async def cancel_shielded_coro_yield(cls) -> None:
-        # Open a scope in order to check pending cancellations at the end.
-        with CancelScope():
-            current_task: asyncio.Task[Any] = cls.current_asyncio_task()
-            try:
-                await cls.coro_yield()
-            except asyncio.CancelledError as exc:
-                CancelScope._reschedule_delayed_task_cancel(current_task, _get_cancelled_error_message(exc))
-            finally:
-                del current_task
+        try:
+            await cls.coro_yield()
+        except asyncio.CancelledError as exc:
+            CancelScope._reschedule_delayed_task_cancel(cls.current_asyncio_task(), _get_cancelled_error_message(exc))
 
     @classmethod
     async def cancel_shielded_await(cls, coroutine: Awaitable[_T_co]) -> _T_co:
@@ -531,17 +523,6 @@ class TaskUtils:
             del waiter
 
     @classmethod
-    def ensure_coroutine(
-        cls,
-        coro_func: Callable[..., Coroutine[Any, Any, _T]],
-        args: tuple[Any, ...],
-    ) -> Coroutine[Any, Any, _T]:
-        coro = coro_func(*args)
-        if not isinstance(coro, Coroutine):
-            raise TypeError(f"A coroutine was expected, got {coro!r}")
-        return coro
-
-    @classmethod
     def wrap_awaitable(cls, coroutine: Awaitable[_T]) -> Coroutine[Any, Any, _T]:
         if not inspect.isawaitable(coroutine):
             raise TypeError("Expected an awaitable object")
@@ -549,7 +530,11 @@ class TaskUtils:
         if not isinstance(coroutine, Coroutine):
 
             async def coro_wrapper(coroutine: Awaitable[_T]) -> _T:
-                return await coroutine
+                try:
+                    return await coroutine
+                except BaseException as exc:
+                    _utils.remove_traceback_frames_in_place(exc, 1)
+                    raise
 
             coroutine = coro_wrapper(coroutine)
             del coro_wrapper

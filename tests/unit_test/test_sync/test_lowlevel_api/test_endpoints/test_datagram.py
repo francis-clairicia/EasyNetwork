@@ -137,7 +137,7 @@ class TestDatagramEndpoint:
         # Assert
         mock_datagram_transport.close.assert_called_once_with()
 
-    def test____get_extra_info____default(
+    def test____extra_attributes____default(
         self,
         endpoint: DatagramEndpoint[Any, Any],
         mock_datagram_transport: MagicMock,

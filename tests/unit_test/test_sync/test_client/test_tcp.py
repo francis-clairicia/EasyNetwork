@@ -32,11 +32,6 @@ from ...base import UNSUPPORTED_FAMILIES, MixinTestSocketSendMSG
 from .base import BaseTestClient
 
 
-@pytest.fixture(autouse=True)
-def remove_ssl_OP_IGNORE_UNEXPECTED_EOF(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delattr("ssl.OP_IGNORE_UNEXPECTED_EOF", raising=False)
-
-
 class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
     @pytest.fixture(scope="class", params=["AF_INET", "AF_INET6"])
     @staticmethod
@@ -195,12 +190,10 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
 
         sentinel = mocker.sentinel
 
-        def feed_side_effect(chunk: bytes) -> None:
+        def next_side_effect(chunk: bytes | None) -> Any:
             nonlocal bytes_buffer
-            bytes_buffer += chunk
-
-        def next_side_effect() -> Any:
-            nonlocal bytes_buffer
+            if chunk is not None:
+                bytes_buffer += chunk
             data, separator, bytes_buffer = bytes_buffer.partition(b"\n")
             if not separator:
                 assert not bytes_buffer
@@ -213,9 +206,7 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
 
             return memoryview(bytes_buffer)
 
-        mock_stream_data_consumer.feed.side_effect = feed_side_effect
-        mock_stream_data_consumer.__iter__.side_effect = lambda: mock_stream_data_consumer
-        mock_stream_data_consumer.__next__.side_effect = next_side_effect
+        mock_stream_data_consumer.next.side_effect = next_side_effect
         mock_stream_data_consumer.get_buffer.side_effect = get_buffer_side_effect
 
     @pytest.fixture
@@ -226,6 +217,11 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
     @pytest.fixture
     @staticmethod
     def ssl_shutdown_timeout(request: Any) -> float | None:
+        return getattr(request, "param", None)
+
+    @pytest.fixture
+    @staticmethod
+    def ssl_standard_compatible(request: Any) -> bool | None:
         return getattr(request, "param", None)
 
     @pytest.fixture
@@ -244,6 +240,7 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         request: Any,
         max_recv_size: int | None,
         ssl_shutdown_timeout: float | None,
+        ssl_standard_compatible: bool | None,
         retry_interval: float,
         remote_address: tuple[str, int],
         mock_tcp_socket: MagicMock,
@@ -265,6 +262,7 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
                         server_hostname=server_hostname,
                         max_recv_size=max_recv_size,
                         ssl_shutdown_timeout=ssl_shutdown_timeout,
+                        ssl_standard_compatible=ssl_standard_compatible,
                         ssl_shared_lock=ssl_shared_lock,
                         retry_interval=retry_interval,
                     )
@@ -276,6 +274,7 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
                         server_hostname=server_hostname,
                         max_recv_size=max_recv_size,
                         ssl_shutdown_timeout=ssl_shutdown_timeout,
+                        ssl_standard_compatible=ssl_standard_compatible,
                         ssl_shared_lock=ssl_shared_lock,
                         retry_interval=retry_interval,
                     )
@@ -698,6 +697,7 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
             "server_hostname",
             "ssl_handshake_timeout",
             "ssl_shutdown_timeout",
+            "ssl_standard_compatible",
             "ssl_shared_lock",
         ],
     )
@@ -976,6 +976,37 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
             mock_selector_register.assert_called_once_with(socket_fileno, would_block_event)
             mock_selector_select.assert_called_once_with(expected_timeout)
 
+    @pytest.mark.parametrize("use_ssl", ["USE_SSL"], indirect=True)
+    @pytest.mark.parametrize("ssl_standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible=={p}")
+    def test____dunder_init____ssl____standard_compatible(
+        self,
+        ssl_standard_compatible: bool,
+        remote_address: tuple[str, int],
+        mock_ssl_context: MagicMock,
+        mock_tcp_socket: MagicMock,
+        mock_stream_protocol: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act
+        _ = TCPNetworkClient(
+            remote_address,
+            protocol=mock_stream_protocol,
+            ssl=mock_ssl_context,
+            server_hostname="server_hostname",
+            ssl_standard_compatible=ssl_standard_compatible,
+        )
+
+        # Assert
+        mock_ssl_context.wrap_socket.assert_called_once_with(
+            mock_tcp_socket,
+            server_side=False,
+            server_hostname="server_hostname",
+            do_handshake_on_connect=False,
+            suppress_ragged_eofs=not ssl_standard_compatible,
+            session=None,
+        )
+
     def test____close____default(
         self,
         client: TCPNetworkClient[Any, Any],
@@ -1100,6 +1131,26 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         # Assert
         assert client.is_closed()
 
+        mock_used_socket.shutdown.assert_called_once_with(SHUT_RDWR)
+        mock_used_socket.close.assert_called_once_with()
+
+    @pytest.mark.parametrize("use_ssl", ["USE_SSL"], indirect=True)
+    @pytest.mark.parametrize("ssl_standard_compatible", [False], indirect=True, ids=lambda p: f"standard_compatible=={p}")
+    def test____close____ssl____do_not_call_unwrap(
+        self,
+        client: TCPNetworkClient[Any, Any],
+        mock_used_socket: MagicMock,
+        mock_ssl_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        assert not client.is_closed()
+
+        # Act
+        client.close()
+
+        # Assert
+        assert client.is_closed()
+        mock_ssl_socket.unwrap.assert_not_called()
         mock_used_socket.shutdown.assert_called_once_with(SHUT_RDWR)
         mock_used_socket.close.assert_called_once_with()
 
@@ -1323,7 +1374,7 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
 
     @pytest.mark.usefixtures("setup_producer_mock")
     @pytest.mark.parametrize("use_ssl", ["USE_SSL"], indirect=True)
-    @pytest.mark.parametrize("ssl_eof_error", [SSLEOFError, SSLZeroReturnError])
+    @pytest.mark.parametrize("ssl_eof_error", [SSLEOFError])
     def test____send_packet____ssl____eof_error(
         self,
         client: TCPNetworkClient[Any, Any],
@@ -1534,7 +1585,7 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         mock_selector_select.assert_not_called()
 
         mock_used_socket.recv.assert_called_once_with(DEFAULT_STREAM_BUFSIZE)
-        mock_stream_data_consumer.feed.assert_called_once_with(b"packet\n")
+        assert mock_stream_data_consumer.next.call_args_list == [mocker.call(None), mocker.call(b"packet\n")]
         assert packet is mocker.sentinel.packet
 
     @pytest.mark.parametrize("recv_timeout", [None, float("+inf"), 123456789], indirect=True)  # Do not test with timeout==0
@@ -1557,7 +1608,7 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         mock_used_socket.settimeout.assert_not_called()
         mock_used_socket.setblocking.assert_not_called()
         assert mock_used_socket.recv.call_args_list == [mocker.call(DEFAULT_STREAM_BUFSIZE) for _ in range(2)]
-        assert mock_stream_data_consumer.feed.call_args_list == [mocker.call(b"pac"), mocker.call(b"ket\n")]
+        assert mock_stream_data_consumer.next.call_args_list == [mocker.call(None), mocker.call(b"pac"), mocker.call(b"ket\n")]
         assert packet is mocker.sentinel.packet
 
     @pytest.mark.parametrize("recv_timeout", [0], indirect=True)  # Only test with timeout==0
@@ -1587,14 +1638,19 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
             packet: Any = client.recv_packet(timeout=recv_timeout)
 
             assert mock_used_socket.recv.call_args_list == [mocker.call(max_recv_size) for _ in range(3)]
-            assert mock_stream_data_consumer.feed.call_args_list == [mocker.call(b"pac"), mocker.call(b"ket"), mocker.call(b"\n")]
+            assert mock_stream_data_consumer.next.call_args_list == [
+                mocker.call(None),
+                mocker.call(b"pac"),
+                mocker.call(b"ket"),
+                mocker.call(b"\n"),
+            ]
             assert packet is mocker.sentinel.packet
         else:
             with pytest.raises(TimeoutError):
                 client.recv_packet(timeout=recv_timeout)
 
             mock_used_socket.recv.assert_called_once_with(max_recv_size)
-            mock_stream_data_consumer.feed.assert_called_once_with(b"pac")
+            assert mock_stream_data_consumer.next.call_args_list == [mocker.call(None), mocker.call(b"pac")]
 
         mock_used_socket.settimeout.assert_not_called()
         mock_used_socket.setblocking.assert_not_called()
@@ -1619,7 +1675,11 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         mock_used_socket.recv.assert_called_once()
         mock_used_socket.settimeout.assert_not_called()
         mock_used_socket.setblocking.assert_not_called()
-        mock_stream_data_consumer.feed.assert_called_once_with(b"packet_1\npacket_2\n")
+        assert mock_stream_data_consumer.next.call_args_list == [
+            mocker.call(None),
+            mocker.call(b"packet_1\npacket_2\n"),
+            mocker.call(None),
+        ]
         assert packet_1 is mocker.sentinel.packet_1
         assert packet_2 is mocker.sentinel.packet_2
 
@@ -1642,7 +1702,7 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         mock_used_socket.settimeout.assert_not_called()
         mock_used_socket.setblocking.assert_not_called()
         mock_used_socket.recv.assert_called_once_with(DEFAULT_STREAM_BUFSIZE)
-        mock_stream_data_consumer.feed.assert_not_called()
+        mock_stream_data_consumer.next.assert_called_once_with(None)
 
     @pytest.mark.usefixtures("setup_consumer_mock")
     def test____recv_packet____blocking_or_not____eof_error____convert_connection_errors(
@@ -1663,7 +1723,7 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         mock_used_socket.settimeout.assert_not_called()
         mock_used_socket.setblocking.assert_not_called()
         mock_used_socket.recv.assert_called_once_with(DEFAULT_STREAM_BUFSIZE)
-        mock_stream_data_consumer.feed.assert_not_called()
+        mock_stream_data_consumer.next.assert_called_once_with(None)
 
     @pytest.mark.usefixtures("setup_consumer_mock")
     @pytest.mark.parametrize("closed_socket_errno", sorted(CLOSED_SOCKET_ERRNOS), ids=errno.errorcode.__getitem__)
@@ -1686,7 +1746,7 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         mock_used_socket.settimeout.assert_not_called()
         mock_used_socket.setblocking.assert_not_called()
         mock_used_socket.recv.assert_called_once_with(DEFAULT_STREAM_BUFSIZE)
-        mock_stream_data_consumer.feed.assert_not_called()
+        mock_stream_data_consumer.next.assert_called_once_with(None)
 
     @pytest.mark.usefixtures("setup_consumer_mock")
     def test____recv_packet____blocking_or_not____protocol_parse_error(
@@ -1695,13 +1755,14 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         recv_timeout: float | None,
         mock_used_socket: MagicMock,
         mock_stream_data_consumer: MagicMock,
+        mocker: MockerFixture,
     ) -> None:
         # Arrange
         from easynetwork.exceptions import StreamProtocolParseError
 
         mock_used_socket.recv.side_effect = [b"packet\n"]
         expected_error = StreamProtocolParseError(b"", IncrementalDeserializeError("Sorry", b""))
-        mock_stream_data_consumer.__next__.side_effect = [StopIteration, expected_error]
+        mock_stream_data_consumer.next.side_effect = [StopIteration, expected_error]
 
         # Act
         with pytest.raises(StreamProtocolParseError) as exc_info:
@@ -1712,7 +1773,7 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         mock_used_socket.settimeout.assert_not_called()
         mock_used_socket.setblocking.assert_not_called()
         mock_used_socket.recv.assert_called_once_with(DEFAULT_STREAM_BUFSIZE)
-        mock_stream_data_consumer.feed.assert_called_once_with(b"packet\n")
+        assert mock_stream_data_consumer.next.call_args_list == [mocker.call(None), mocker.call(b"packet\n")]
         assert exception is expected_error
 
     @pytest.mark.usefixtures("setup_consumer_mock")
@@ -1738,7 +1799,7 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         mock_used_socket.setblocking.assert_not_called()
         mock_selector_register.assert_not_called()
         mock_selector_select.assert_not_called()
-        mock_stream_data_consumer.feed.assert_not_called()
+        mock_stream_data_consumer.next.assert_not_called()
         mock_used_socket.recv.assert_not_called()
 
     @pytest.mark.usefixtures("setup_consumer_mock")
@@ -1763,7 +1824,7 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         mock_used_socket.settimeout.assert_not_called()
         mock_used_socket.setblocking.assert_not_called()
         mock_used_socket.recv.assert_called_once_with(DEFAULT_STREAM_BUFSIZE)
-        mock_stream_data_consumer.feed.assert_not_called()
+        mock_stream_data_consumer.next.assert_called_once_with(None)
 
     @pytest.mark.usefixtures("setup_consumer_mock")
     @pytest.mark.parametrize("use_ssl", ["USE_SSL"], indirect=True)
@@ -1786,7 +1847,7 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         mock_used_socket.settimeout.assert_not_called()
         mock_used_socket.setblocking.assert_not_called()
         mock_used_socket.recv.assert_called_once_with(DEFAULT_STREAM_BUFSIZE)
-        mock_stream_data_consumer.feed.assert_not_called()
+        mock_stream_data_consumer.next.assert_called_once_with(None)
 
     @pytest.mark.parametrize(
         "recv_timeout",
@@ -1824,7 +1885,7 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
             assert len(mock_used_socket.recv.call_args_list) == 2
             mock_selector_register.assert_called_with(socket_fileno, EVENT_READ)
             mock_selector_select.assert_any_call(recv_timeout)
-        mock_stream_data_consumer.feed.assert_not_called()
+        mock_stream_data_consumer.next.assert_called_once_with(None)
 
     @pytest.mark.parametrize(
         "recv_timeout",
@@ -1863,13 +1924,16 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
 
         # Assert
         assert mock_used_socket.recv.call_args_list == [mocker.call(max_recv_size) for _ in range(7)]
-        assert mock_stream_data_consumer.feed.call_args_list == [
+        assert mock_stream_data_consumer.next.call_args_list == [
+            mocker.call(None),
             mocker.call(b"pac"),
             mocker.call(b"ket"),
             mocker.call(b"_1\np"),
+            mocker.call(None),
             mocker.call(b"ack"),
             mocker.call(b"et_"),
             mocker.call(b"2\n"),
+            mocker.call(None),
         ]
         assert packets == [mocker.sentinel.packet_1, mocker.sentinel.packet_2]
 
@@ -1892,13 +1956,16 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
 
         # Assert
         assert mock_used_socket.recv.call_args_list == [mocker.call(max_recv_size) for _ in range(7)]
-        assert mock_stream_data_consumer.feed.call_args_list == [
+        assert mock_stream_data_consumer.next.call_args_list == [
+            mocker.call(None),
             mocker.call(b"pac"),
             mocker.call(b"ket"),
             mocker.call(b"_1\np"),
+            mocker.call(None),
             mocker.call(b"ack"),
             mocker.call(b"et_"),
             mocker.call(b"2\n"),
+            mocker.call(None),
         ]
         assert packets == [mocker.sentinel.packet_1, mocker.sentinel.packet_2]
 
@@ -1921,13 +1988,16 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
 
         # Assert
         assert mock_used_socket.recv.call_args_list == [mocker.call(max_recv_size) for _ in range(7)]
-        assert mock_stream_data_consumer.feed.call_args_list == [
+        assert mock_stream_data_consumer.next.call_args_list == [
+            mocker.call(None),
             mocker.call(b"pac"),
             mocker.call(b"ket"),
             mocker.call(b"_1\np"),
+            mocker.call(None),
             mocker.call(b"ack"),
             mocker.call(b"et_"),
             mocker.call(b"2\n"),
+            mocker.call(None),
         ]
         assert packets == [mocker.sentinel.packet_1, mocker.sentinel.packet_2]
 
@@ -1941,7 +2011,7 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         # Arrange
         from easynetwork.exceptions import StreamProtocolParseError
 
-        mock_stream_data_consumer.__next__.side_effect = StreamProtocolParseError(b"", IncrementalDeserializeError("Sorry", b""))
+        mock_stream_data_consumer.next.side_effect = StreamProtocolParseError(b"", IncrementalDeserializeError("Sorry", b""))
 
         # Act
         with pytest.raises(StreamProtocolParseError) as exc_info:
@@ -1949,7 +2019,7 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         exception = exc_info.value
 
         # Assert
-        assert exception is mock_stream_data_consumer.__next__.side_effect
+        assert exception is mock_stream_data_consumer.next.side_effect
 
     @pytest.mark.parametrize("several_generators", [False, True], ids=lambda t: f"several_generators=={t}")
     @pytest.mark.usefixtures("setup_consumer_mock")
@@ -1976,7 +2046,11 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
 
         # Assert
         mock_used_socket.recv.assert_called_once_with(DEFAULT_STREAM_BUFSIZE)
-        mock_stream_data_consumer.feed.assert_called_once_with(b"packet_1\npacket_2\n")
+        assert mock_stream_data_consumer.next.call_args_list == [
+            mocker.call(None),
+            mocker.call(b"packet_1\npacket_2\n"),
+            mocker.call(None),
+        ]
         assert packet_1 is mocker.sentinel.packet_1
         assert packet_2 is mocker.sentinel.packet_2
 

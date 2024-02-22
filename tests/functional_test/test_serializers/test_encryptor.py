@@ -9,13 +9,13 @@ from easynetwork.serializers.wrapper.encryptor import EncryptorSerializer
 
 import pytest
 
-from .base import BaseTestIncrementalSerializer, NoSerialization
+from .base import BaseTestBufferedIncrementalSerializer, NoSerialization
 from .test_base64 import SAMPLES, generate_key_from_string
 
 
 @final
 @pytest.mark.feature_encryption
-class TestEncryptorSerializer(BaseTestIncrementalSerializer):
+class TestEncryptorSerializer(BaseTestBufferedIncrementalSerializer):
     #### Serializers
 
     KEY = generate_key_from_string("key")
@@ -121,11 +121,6 @@ class TestEncryptorSerializer(BaseTestIncrementalSerializer):
         return (b"remaining_data", b"remaining_data")
 
     #### Other
-
-    @pytest.fixture(scope="class")
-    @staticmethod
-    def oneshot_extra_data() -> bytes:
-        pytest.skip("Does not recognize extra data")
 
     def test____generate_key____create_url_safe_base64_encoded_bytes(self) -> None:
         # Arrange

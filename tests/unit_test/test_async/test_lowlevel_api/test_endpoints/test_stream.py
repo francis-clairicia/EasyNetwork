@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Awaitable, Callable, Generator
+from collections.abc import Generator
 from typing import TYPE_CHECKING, Any, Literal
 
 from easynetwork.exceptions import IncrementalDeserializeError, StreamProtocolParseError, UnsupportedOperation
-from easynetwork.lowlevel._stream import BufferedStreamDataConsumer, StreamDataConsumer
 from easynetwork.lowlevel.api_async.endpoints.stream import AsyncStreamEndpoint
 from easynetwork.lowlevel.api_async.transports.abc import (
     AsyncBufferedStreamReadTransport,
@@ -16,57 +15,16 @@ from easynetwork.lowlevel.api_async.transports.abc import (
 
 import pytest
 
+from ...._utils import make_async_recv_into_side_effect as make_recv_into_side_effect
+
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
 
     from pytest_mock import MockerFixture
 
 
-def make_recv_into_side_effect(to_write: bytes | list[bytes]) -> Callable[[memoryview], Awaitable[int]]:
-    def write_in_buffer(buffer: memoryview, to_write: bytes) -> int:
-        nbytes = len(to_write)
-        buffer[:nbytes] = to_write
-        return nbytes
-
-    match to_write:
-        case bytes():
-
-            async def recv_into_side_effect(buffer: bytearray | memoryview) -> int:
-                return write_in_buffer(memoryview(buffer), to_write)
-
-        case list() if all(isinstance(b, bytes) for b in to_write):
-            iterator = iter(to_write)
-
-            async def recv_into_side_effect(buffer: bytearray | memoryview) -> int:
-                try:
-                    to_write = next(iterator)
-                except StopIteration:
-                    raise StopAsyncIteration from None
-                return write_in_buffer(memoryview(buffer), to_write)
-
-        case _:
-            pytest.fail("Invalid setup")
-
-    return recv_into_side_effect
-
-
 @pytest.mark.asyncio
 class TestAsyncStreamEndpoint:
-    @pytest.fixture
-    @staticmethod
-    def consumer_feed(mocker: MockerFixture) -> MagicMock:
-        return mocker.patch.object(StreamDataConsumer, "feed", autospec=True, side_effect=StreamDataConsumer.feed)
-
-    @pytest.fixture
-    @staticmethod
-    def consumer_buffer_updated(mocker: MockerFixture) -> MagicMock:
-        return mocker.patch.object(
-            BufferedStreamDataConsumer,
-            "buffer_updated",
-            autospec=True,
-            side_effect=BufferedStreamDataConsumer.buffer_updated,
-        )
-
     @pytest.fixture(
         params=[AsyncStreamReadTransport, AsyncBufferedStreamReadTransport, AsyncStreamWriteTransport, AsyncStreamTransport]
     )
@@ -240,7 +198,7 @@ class TestAsyncStreamEndpoint:
         # Assert
         mock_stream_transport.aclose.assert_awaited_once_with()
 
-    async def test____get_extra_info____default(
+    async def test____extra_attributes____default(
         self,
         endpoint: AsyncStreamEndpoint[Any, Any],
         mock_stream_transport: MagicMock,
@@ -366,8 +324,6 @@ class TestAsyncStreamEndpoint:
         endpoint: AsyncStreamEndpoint[Any, Any],
         max_recv_size: int,
         mock_stream_transport: MagicMock,
-        consumer_feed: MagicMock,
-        consumer_buffer_updated: MagicMock,
         stream_protocol_mode: Literal["data", "buffer"],
         mocker: MockerFixture,
     ) -> None:
@@ -392,20 +348,13 @@ class TestAsyncStreamEndpoint:
             if stream_protocol_mode == "buffer":
                 mock_stream_transport.recv_into.assert_awaited_once_with(mocker.ANY)
                 mock_stream_transport.recv.assert_not_called()
-                consumer_buffer_updated.assert_called_once_with(mocker.ANY, len(b"packet\n"))
-                consumer_feed.assert_not_called()
             else:
                 mock_stream_transport.recv.assert_awaited_once_with(max_recv_size)
                 mock_stream_transport.recv_into.assert_not_called()
-                consumer_feed.assert_called_once_with(mocker.ANY, b"packet\n")
-                consumer_buffer_updated.assert_not_called()
         elif mock_stream_transport.__class__ in (AsyncStreamReadTransport, AsyncStreamTransport):
             mock_stream_transport.recv.assert_awaited_once_with(max_recv_size)
-            consumer_feed.assert_called_once_with(mocker.ANY, b"packet\n")
-            consumer_buffer_updated.assert_not_called()
             assert packet is mocker.sentinel.packet
         else:
-            consumer_feed.assert_not_called()
             assert packet is mocker.sentinel.packet_not_received
 
     @pytest.mark.parametrize("mock_stream_transport", [AsyncStreamReadTransport], indirect=True)
@@ -414,7 +363,6 @@ class TestAsyncStreamEndpoint:
         endpoint: AsyncStreamEndpoint[Any, Any],
         max_recv_size: int,
         mock_stream_transport: MagicMock,
-        consumer_feed: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -425,10 +373,6 @@ class TestAsyncStreamEndpoint:
 
         # Assert
         assert mock_stream_transport.recv.await_args_list == [mocker.call(max_recv_size) for _ in range(2)]
-        assert consumer_feed.call_args_list == [
-            mocker.call(mocker.ANY, b"pac"),
-            mocker.call(mocker.ANY, b"ket\n"),
-        ]
         assert packet is mocker.sentinel.packet
 
     @pytest.mark.parametrize("mock_stream_transport", [AsyncBufferedStreamReadTransport], indirect=True)
@@ -437,7 +381,6 @@ class TestAsyncStreamEndpoint:
         self,
         endpoint: AsyncStreamEndpoint[Any, Any],
         mock_stream_transport: MagicMock,
-        consumer_buffer_updated: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -448,10 +391,6 @@ class TestAsyncStreamEndpoint:
 
         # Assert
         assert mock_stream_transport.recv_into.await_args_list == [mocker.call(mocker.ANY) for _ in range(2)]
-        assert consumer_buffer_updated.call_args_list == [
-            mocker.call(mocker.ANY, len(b"pac")),
-            mocker.call(mocker.ANY, len(b"ket\n")),
-        ]
         assert packet is mocker.sentinel.packet
 
     @pytest.mark.parametrize("mock_stream_transport", [AsyncStreamReadTransport], indirect=True)
@@ -459,7 +398,6 @@ class TestAsyncStreamEndpoint:
         self,
         endpoint: AsyncStreamEndpoint[Any, Any],
         mock_stream_transport: MagicMock,
-        consumer_feed: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -471,7 +409,6 @@ class TestAsyncStreamEndpoint:
 
         # Assert
         mock_stream_transport.recv.assert_awaited_once()
-        consumer_feed.assert_called_once_with(mocker.ANY, b"packet_1\npacket_2\n")
         assert packet_1 is mocker.sentinel.packet_1
         assert packet_2 is mocker.sentinel.packet_2
 
@@ -481,7 +418,6 @@ class TestAsyncStreamEndpoint:
         self,
         endpoint: AsyncStreamEndpoint[Any, Any],
         mock_stream_transport: MagicMock,
-        consumer_buffer_updated: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -493,7 +429,6 @@ class TestAsyncStreamEndpoint:
 
         # Assert
         mock_stream_transport.recv_into.assert_awaited_once()
-        consumer_buffer_updated.assert_called_once_with(mocker.ANY, len(b"packet_1\npacket_2\n"))
         assert packet_1 is mocker.sentinel.packet_1
         assert packet_2 is mocker.sentinel.packet_2
 
@@ -502,7 +437,6 @@ class TestAsyncStreamEndpoint:
         self,
         endpoint: AsyncStreamEndpoint[Any, Any],
         mock_stream_transport: MagicMock,
-        consumer_feed: MagicMock,
     ) -> None:
         # Arrange
         mock_stream_transport.recv.side_effect = [b""]
@@ -513,7 +447,6 @@ class TestAsyncStreamEndpoint:
 
         # Assert
         mock_stream_transport.recv.assert_awaited_once()
-        consumer_feed.assert_not_called()
 
     @pytest.mark.parametrize("mock_stream_transport", [AsyncBufferedStreamReadTransport], indirect=True)
     @pytest.mark.parametrize("stream_protocol_mode", ["buffer"], indirect=True)
@@ -521,7 +454,6 @@ class TestAsyncStreamEndpoint:
         self,
         endpoint: AsyncStreamEndpoint[Any, Any],
         mock_stream_transport: MagicMock,
-        consumer_buffer_updated: MagicMock,
     ) -> None:
         # Arrange
         mock_stream_transport.recv_into.side_effect = make_recv_into_side_effect([b""])
@@ -532,7 +464,6 @@ class TestAsyncStreamEndpoint:
 
         # Assert
         mock_stream_transport.recv_into.assert_awaited_once()
-        consumer_buffer_updated.assert_not_called()
 
     @pytest.mark.parametrize("mock_stream_transport", [AsyncStreamReadTransport], indirect=True)
     async def test____recv_packet____protocol_parse_error(

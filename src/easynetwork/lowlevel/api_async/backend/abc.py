@@ -28,18 +28,16 @@ __all__ = [
     "ThreadsPortal",
 ]
 
-import contextlib
 import dataclasses
 import math
 from abc import ABCMeta, abstractmethod
-from collections.abc import Awaitable, Callable, Coroutine, Iterator, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
 from contextlib import AbstractContextManager
-from typing import TYPE_CHECKING, Any, Generic, NoReturn, ParamSpec, Protocol, Self, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, NoReturn, ParamSpec, Protocol, Self, TypeVar, TypeVarTuple
 
 if TYPE_CHECKING:
     import concurrent.futures
     import socket as _socket
-    import ssl as _typing_ssl
     from types import TracebackType
 
     from ..transports import abc as transports
@@ -48,6 +46,7 @@ if TYPE_CHECKING:
 _P = ParamSpec("_P")
 _T = TypeVar("_T")
 _T_co = TypeVar("_T_co", covariant=True)
+_T_PosArgs = TypeVarTuple("_T_PosArgs")
 
 
 class ILock(Protocol):
@@ -454,9 +453,9 @@ class TaskGroup(metaclass=ABCMeta):
     @abstractmethod
     def start_soon(
         self,
-        coro_func: Callable[..., Coroutine[Any, Any, _T]],
+        coro_func: Callable[[*_T_PosArgs], Coroutine[Any, Any, _T]],
         /,
-        *args: Any,
+        *args: *_T_PosArgs,
         name: str | None = ...,
     ) -> None:
         """
@@ -473,9 +472,9 @@ class TaskGroup(metaclass=ABCMeta):
     @abstractmethod
     async def start(
         self,
-        coro_func: Callable[..., Coroutine[Any, Any, _T]],
+        coro_func: Callable[[*_T_PosArgs], Coroutine[Any, Any, _T]],
         /,
-        *args: Any,
+        *args: *_T_PosArgs,
         name: str | None = ...,
     ) -> Task[_T]:
         """
@@ -628,8 +627,8 @@ class AsyncBackend(metaclass=ABCMeta):
     @abstractmethod
     def bootstrap(
         self,
-        coro_func: Callable[..., Coroutine[Any, Any, _T]],
-        *args: Any,
+        coro_func: Callable[[*_T_PosArgs], Coroutine[Any, Any, _T]],
+        *args: *_T_PosArgs,
         runner_options: Mapping[str, Any] | None = ...,
     ) -> _T:
         """
@@ -748,7 +747,7 @@ class AsyncBackend(metaclass=ABCMeta):
         Returns:
             a :term:`context manager`
         """
-        return _timeout_after(self, delay)
+        return _timeout_scope(self.move_on_after(delay))
 
     def timeout_at(self, deadline: float) -> AbstractContextManager[CancelScope]:
         """
@@ -765,7 +764,7 @@ class AsyncBackend(metaclass=ABCMeta):
         Returns:
             a :term:`context manager`
         """
-        return _timeout_at(self, deadline)
+        return _timeout_scope(self.move_on_at(deadline))
 
     def move_on_after(self, delay: float) -> CancelScope:
         """
@@ -924,43 +923,6 @@ class AsyncBackend(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    async def create_ssl_over_tcp_connection(
-        self,
-        host: str,
-        port: int,
-        ssl_context: _typing_ssl.SSLContext,
-        *,
-        server_hostname: str | None,
-        ssl_handshake_timeout: float,
-        ssl_shutdown_timeout: float,
-        local_address: tuple[str, int] | None = ...,
-        happy_eyeballs_delay: float | None = ...,
-    ) -> transports.AsyncStreamTransport:
-        """
-        Opens an SSL/TLS stream connection on top of the TCP/IP protocol.
-
-        Parameters:
-            host: The host IP/domain name.
-            port: Port of connection.
-            ssl_context: TLS connection configuration (see :mod:`ssl` module).
-            server_hostname: sets or overrides the hostname that the target server's certificate will be matched against.
-                             By default, `host` is used.
-            ssl_handshake_timeout: the time in seconds to wait for the TLS handshake to complete.
-            ssl_shutdown_timeout: the time in seconds to wait for the SSL shutdown to complete before aborting the connection.
-            local_address: If given, is a ``(local_host, local_port)`` tuple used to bind the socket locally.
-            happy_eyeballs_delay: If given, is the "Connection Attempt Delay" as defined in :rfc:`8305`.
-
-        Raises:
-            ConnectionError: Cannot connect to `host` with the given `port`.
-            ssl.SSLError: Error in the TLS handshake (invalid certificate, ciphers, etc.).
-            OSError: unrelated OS error occurred.
-
-        Returns:
-            A stream socket.
-        """
-        raise NotImplementedError
-
-    @abstractmethod
     async def wrap_stream_socket(self, socket: _socket.socket) -> transports.AsyncStreamTransport:
         """
         Wraps an already connected :data:`~socket.SOCK_STREAM` socket into an asynchronous stream socket.
@@ -974,42 +936,6 @@ class AsyncBackend(metaclass=ABCMeta):
             socket: The socket to wrap.
 
         Raises:
-            ValueError: Invalid socket type or family.
-
-        Returns:
-            A stream socket.
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    async def wrap_ssl_over_stream_socket_client_side(
-        self,
-        socket: _socket.socket,
-        ssl_context: _typing_ssl.SSLContext,
-        *,
-        server_hostname: str,
-        ssl_handshake_timeout: float,
-        ssl_shutdown_timeout: float,
-    ) -> transports.AsyncStreamTransport:
-        """
-        Wraps an already connected :data:`~socket.SOCK_STREAM` socket into an asynchronous stream socket in a SSL/TLS context.
-
-        Important:
-            The returned stream socket takes the ownership of `socket`.
-
-            You should use :meth:`AsyncStreamTransport.aclose` to close the socket.
-
-        Parameters:
-            socket: The socket to wrap.
-            ssl_context: TLS connection configuration (see :mod:`ssl` module).
-            server_hostname: sets the hostname that the target server's certificate will be matched against.
-            ssl_handshake_timeout: the time in seconds to wait for the TLS handshake to complete.
-            ssl_shutdown_timeout: the time in seconds to wait for the SSL shutdown to complete before aborting the connection.
-
-        Raises:
-            ConnectionError: TLS handshake failed to connect to the remote.
-            ssl.SSLError: Error in the TLS handshake (invalid certificate, ciphers, etc.).
-            OSError: unrelated OS error occurred.
             ValueError: Invalid socket type or family.
 
         Returns:
@@ -1042,51 +968,6 @@ class AsyncBackend(metaclass=ABCMeta):
                   (note that if `host` resolves to multiple network interfaces, a different random port will be selected
                   for each interface).
             backlog: is the maximum number of queued connections passed to :class:`~socket.socket.listen`.
-            reuse_port: tells the kernel to allow this endpoint to be bound to the same port as other existing endpoints
-                        are bound to, so long as they all set this flag when being created.
-                        This option is not supported on Windows.
-
-        Raises:
-            OSError: unrelated OS error occurred.
-
-        Returns:
-            A sequence of listener sockets.
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    async def create_ssl_over_tcp_listeners(
-        self,
-        host: str | Sequence[str] | None,
-        port: int,
-        backlog: int,
-        ssl_context: _typing_ssl.SSLContext,
-        *,
-        ssl_handshake_timeout: float,
-        ssl_shutdown_timeout: float,
-        reuse_port: bool = ...,
-    ) -> Sequence[transports.AsyncListener[transports.AsyncStreamTransport]]:
-        """
-        Opens listener sockets for TCP connections in a SSL/TLS context.
-
-        Parameters:
-            host: Can be set to several types which determine where the server would be listening:
-
-                  * If `host` is a string, the TCP server is bound to a single network interface specified by `host`.
-
-                  * If `host` is a sequence of strings, the TCP server is bound to all network interfaces specified by the sequence.
-
-                  * If `host` is :data:`None`, all interfaces are assumed and a list of multiple sockets will be returned
-                    (most likely one for IPv4 and another one for IPv6).
-            port: specify which port the server should listen on. If the value is ``0``, a random unused port will be selected
-                  (note that if `host` resolves to multiple network interfaces, a different random port will be selected
-                  for each interface).
-            backlog: is the maximum number of queued connections passed to :class:`~socket.socket.listen`.
-            ssl: can be set to an :class:`ssl.SSLContext` instance to enable TLS over the accepted connections.
-            ssl_handshake_timeout: (for a TLS connection) the time in seconds to wait for the TLS handshake to complete
-                                   before aborting the connection. ``60.0`` seconds if :data:`None` (default).
-            ssl_shutdown_timeout: the time in seconds to wait for the SSL shutdown to complete before aborting the connection.
-                                  ``30.0`` seconds if :data:`None` (default).
             reuse_port: tells the kernel to allow this endpoint to be bound to the same port as other existing endpoints
                         are bound to, so long as they all set this flag when being created.
                         This option is not supported on Windows.
@@ -1259,14 +1140,14 @@ class AsyncBackend(metaclass=ABCMeta):
         raise NotImplementedError
 
 
-def _timeout_after(backend: AsyncBackend, delay: float) -> contextlib._GeneratorContextManager[CancelScope]:
-    return _timeout_at(backend, backend.current_time() + delay)
+@dataclasses.dataclass(frozen=True, slots=True, weakref_slot=True)
+class _timeout_scope:
+    scope: CancelScope
 
+    def __enter__(self) -> CancelScope:
+        return self.scope.__enter__()
 
-@contextlib.contextmanager
-def _timeout_at(backend: AsyncBackend, deadline: float) -> Iterator[CancelScope]:
-    with backend.move_on_at(deadline) as scope:
-        yield scope
-
-    if scope.cancelled_caught():
-        raise TimeoutError("timed out")
+    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None) -> None:
+        cancelled_caught = self.scope.__exit__(exc_type, exc_val, exc_tb)
+        if cancelled_caught:
+            raise TimeoutError("timed out")

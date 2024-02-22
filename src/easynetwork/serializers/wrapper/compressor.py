@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, Protocol, final
 from ..._typevars import _T_ReceivedDTOPacket, _T_SentDTOPacket
 from ...exceptions import DeserializeError, IncrementalDeserializeError
 from ..abc import AbstractPacketSerializer, BufferedIncrementalPacketSerializer
-from ..tools import _wrap_generic_buffered_incremental_deserialize, _wrap_generic_incremental_deserialize
+from ..base_stream import _wrap_generic_buffered_incremental_deserialize, _wrap_generic_incremental_deserialize
 
 if TYPE_CHECKING:
     import bz2 as _typing_bz2

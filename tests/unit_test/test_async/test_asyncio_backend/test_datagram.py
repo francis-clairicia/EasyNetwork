@@ -1,24 +1,22 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Callable
 from errno import ECONNABORTED
 from socket import AI_PASSIVE
 from typing import TYPE_CHECKING, Any, Literal, cast
 
-from easynetwork.lowlevel.api_async.transports.abc import AsyncBaseTransport
-from easynetwork.lowlevel.constants import MAX_DATAGRAM_BUFSIZE
+from easynetwork.lowlevel.api_async.backend.abc import TaskGroup
+from easynetwork.lowlevel.api_async.backend.factory import current_async_backend
 from easynetwork.lowlevel.socket import SocketAttribute
 from easynetwork.lowlevel.std_asyncio.datagram.endpoint import (
     DatagramEndpoint,
     DatagramEndpointProtocol,
     create_datagram_endpoint,
 )
-from easynetwork.lowlevel.std_asyncio.datagram.listener import (
-    AsyncioTransportDatagramListenerSocketAdapter,
-    RawDatagramListenerSocketAdapter,
-)
-from easynetwork.lowlevel.std_asyncio.datagram.socket import AsyncioTransportDatagramSocketAdapter, RawDatagramSocketAdapter
+from easynetwork.lowlevel.std_asyncio.datagram.listener import DatagramListenerProtocol, DatagramListenerSocketAdapter
+from easynetwork.lowlevel.std_asyncio.datagram.socket import AsyncioTransportDatagramSocketAdapter
 
 import pytest
 
@@ -27,6 +25,7 @@ if TYPE_CHECKING:
 
     from pytest_mock import MockerFixture
 
+from ..._utils import partial_eq
 from ...base import BaseTestSocket
 
 
@@ -39,6 +38,7 @@ class CustomException(Exception):
 @pytest.mark.parametrize("remote_address", ["remote_address", None], ids=lambda p: f"remote_address=={p}")
 @pytest.mark.parametrize("reuse_port", [False, True], ids=lambda p: f"reuse_port=={p}")
 async def test____create_datagram_endpoint____return_DatagramEndpoint_instance(
+    event_loop: asyncio.AbstractEventLoop,
     local_address: Any | None,
     remote_address: Any | None,
     reuse_port: bool,
@@ -80,7 +80,7 @@ async def test____create_datagram_endpoint____return_DatagramEndpoint_instance(
 
     # Assert
     mock_loop_create_datagram_endpoint.assert_awaited_once_with(
-        mocker.ANY,  # protocol_factory
+        partial_eq(DatagramEndpointProtocol, loop=event_loop, recv_queue=mocker.ANY, exception_queue=mocker.ANY),
         family=mocker.sentinel.socket_family,
         local_addr=local_address,
         remote_addr=remote_address,
@@ -143,16 +143,6 @@ class TestDatagramEndpoint:
             recv_queue=mock_asyncio_recv_queue,
             exception_queue=mock_asyncio_exception_queue,
         )
-
-    async def test____transport____property(
-        self,
-        endpoint: DatagramEndpoint,
-        mock_asyncio_transport: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act & Assert
-        assert endpoint.transport is mock_asyncio_transport
 
     @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing=={p}")
     async def test____aclose____close_transport_and_wait(
@@ -253,23 +243,28 @@ class TestDatagramEndpoint:
         data, address = await endpoint.recvfrom()
 
         # Assert
-        mock_asyncio_exception_queue.get_nowait.assert_called_once()
+        mock_asyncio_exception_queue.get_nowait.assert_not_called()
         mock_asyncio_recv_queue.get.assert_not_awaited()
         mock_asyncio_recv_queue.get_nowait.assert_called_once()
         assert data == b"some data"
         assert address == ("an_address", 12345)
 
     @pytest.mark.parametrize("condition", ["empty_queue", "None_pushed"])
+    @pytest.mark.parametrize("exception", [CustomException, None])
     async def test____recvfrom____connection_lost____transport_already_closed____no_more_data(
         self,
         endpoint: DatagramEndpoint,
+        exception: type[CustomException] | None,
         condition: Literal["empty_queue", "None_pushed"],
         mock_asyncio_transport: MagicMock,
         mock_asyncio_recv_queue: MagicMock,
         mock_asyncio_exception_queue: MagicMock,
     ) -> None:
         # Arrange
-        mock_asyncio_exception_queue.get_nowait.side_effect = asyncio.QueueEmpty
+        if exception is None:
+            mock_asyncio_exception_queue.get_nowait.side_effect = asyncio.QueueEmpty
+        else:
+            mock_asyncio_exception_queue.get_nowait.return_value = exception()
         mock_asyncio_transport.is_closing.return_value = True
 
         match condition:
@@ -280,12 +275,16 @@ class TestDatagramEndpoint:
             case _:
                 pytest.fail("Invalid condition")
 
-        # Act
-        with pytest.raises(OSError) as exc_info:
-            await endpoint.recvfrom()
+        # Act & Assert
+        if exception is None:
+            with pytest.raises(OSError) as exc_info:
+                await endpoint.recvfrom()
+            assert exc_info.value.errno == ECONNABORTED
+        else:
+            with pytest.raises(exception):
+                await endpoint.recvfrom()
 
         # Assert
-        assert exc_info.value.errno == ECONNABORTED
         mock_asyncio_exception_queue.get_nowait.assert_called_once()
         mock_asyncio_recv_queue.get.assert_not_awaited()
         mock_asyncio_recv_queue.get_nowait.assert_called_once()
@@ -310,25 +309,8 @@ class TestDatagramEndpoint:
 
         # Assert
         assert exc_info.value.errno == ECONNABORTED
-        assert len(mock_asyncio_exception_queue.get_nowait.call_args_list) == 2
-        mock_asyncio_recv_queue.get.assert_awaited_once_with()
-
-    async def test____recvfrom____raise_exception____protocol_already_sent_exception_in_queue(
-        self,
-        endpoint: DatagramEndpoint,
-        mock_asyncio_recv_queue: MagicMock,
-        mock_asyncio_exception_queue: MagicMock,
-    ) -> None:
-        # Arrange
-        mock_asyncio_exception_queue.get_nowait.return_value = CustomException()
-
-        # Act
-        with pytest.raises(CustomException):
-            await endpoint.recvfrom()
-
-        # Assert
         mock_asyncio_exception_queue.get_nowait.assert_called_once_with()
-        mock_asyncio_recv_queue.get.assert_not_awaited()
+        mock_asyncio_recv_queue.get.assert_awaited_once_with()
 
     async def test____recvfrom____raise_exception____transport_closed_by_protocol_with_exception_while_waiting(
         self,
@@ -338,20 +320,8 @@ class TestDatagramEndpoint:
         mock_asyncio_exception_queue: MagicMock,
     ) -> None:
         # Arrange
-        from itertools import count
-
         mock_asyncio_recv_queue.get.return_value = None  # None is sent to queue when readers must wake up
-
-        _count = count()
-
-        # Cannot use list for side_effect because returned value is an exception instance...
-        def get_nowait_side_effect() -> Exception:
-            if next(_count) == 0:
-                raise asyncio.QueueEmpty
-            return CustomException()
-
-        mock_asyncio_exception_queue.get_nowait.side_effect = get_nowait_side_effect
-
+        mock_asyncio_exception_queue.get_nowait.return_value = CustomException()
         mock_asyncio_transport.is_closing.side_effect = [False, True]  # 1st call OK, 2nd not so much
 
         # Act
@@ -359,12 +329,14 @@ class TestDatagramEndpoint:
             await endpoint.recvfrom()
 
         # Assert
-        assert len(mock_asyncio_exception_queue.get_nowait.call_args_list) == 2
+        mock_asyncio_exception_queue.get_nowait.assert_called_once_with()
         mock_asyncio_recv_queue.get.assert_awaited_once_with()
 
     @pytest.mark.parametrize("address", [("127.0.0.1", 12345), None], ids=repr)
+    @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing=={p}")
     async def test____sendto____send_and_await_drain(
         self,
+        transport_is_closing: bool,
         endpoint: DatagramEndpoint,
         address: tuple[str, int] | None,
         mock_asyncio_transport: MagicMock,
@@ -372,42 +344,18 @@ class TestDatagramEndpoint:
         mock_asyncio_exception_queue: MagicMock,
     ) -> None:
         # Arrange
+        mock_asyncio_transport.is_closing.side_effect = [transport_is_closing]
         mock_asyncio_exception_queue.get_nowait.side_effect = asyncio.QueueEmpty
 
         # Act
         await endpoint.sendto(b"some data", address)
 
         # Assert
-        mock_asyncio_exception_queue.get_nowait.assert_called_once_with()
+        mock_asyncio_exception_queue.get_nowait.assert_not_called()
         mock_asyncio_transport.sendto.assert_called_once_with(b"some data", address)
         mock_asyncio_protocol._drain_helper.assert_awaited_once_with()
 
-    @pytest.mark.parametrize("address", [("127.0.0.1", 12345), None], ids=repr)
-    async def test____sendto____transport_already_closed(
-        self,
-        endpoint: DatagramEndpoint,
-        address: tuple[str, int] | None,
-        mock_asyncio_transport: MagicMock,
-        mock_asyncio_protocol: MagicMock,
-        mock_asyncio_exception_queue: MagicMock,
-    ) -> None:
-        # Arrange
-        from errno import ECONNABORTED
-
-        mock_asyncio_transport.is_closing.return_value = True
-        mock_asyncio_exception_queue.get_nowait.side_effect = asyncio.QueueEmpty
-
-        # Act
-        with pytest.raises(OSError) as exc_info:
-            await endpoint.sendto(b"some data", address)
-
-        # Assert
-        assert exc_info.value.errno == ECONNABORTED
-        mock_asyncio_exception_queue.get_nowait.assert_called_once()
-        mock_asyncio_transport.sendto.assert_not_called()
-        mock_asyncio_protocol._drain_helper.assert_not_awaited()
-
-    async def test____get_extra_info____get_transport_extra_info(
+    async def test____extra_attributes____get_transport_extra_info(
         self,
         endpoint: DatagramEndpoint,
         mock_asyncio_transport: MagicMock,
@@ -511,7 +459,7 @@ class TestDatagramEndpointProtocol:
         assert close_waiter.done() and close_waiter.exception() is None and close_waiter.result() is None
         mock_asyncio_recv_queue.put_nowait.assert_called_once_with(None)
         mock_asyncio_exception_queue.put_nowait.assert_not_called()
-        mock_asyncio_transport.close.assert_called_once_with()  # just to be sure :)
+        mock_asyncio_transport.close.assert_not_called()  # just to be sure :)
 
     def test____connection_lost____by_unrelated_error(
         self,
@@ -534,7 +482,7 @@ class TestDatagramEndpointProtocol:
         assert close_waiter.done() and close_waiter.exception() is None
         mock_asyncio_recv_queue.put_nowait.assert_called_once_with(None)
         mock_asyncio_exception_queue.put_nowait.assert_called_once_with(exception)
-        mock_asyncio_transport.close.assert_called_once_with()  # just to be sure :)
+        mock_asyncio_transport.close.assert_not_called()  # just to be sure :)
 
     def test____datagram_received____push_to_queue(
         self,
@@ -549,7 +497,7 @@ class TestDatagramEndpointProtocol:
         # Assert
         mock_asyncio_recv_queue.put_nowait.assert_called_once_with((b"datagram", ("an_address", 12345)))
 
-    def test____datagram_received____do_not_push_to_queue_ater_connection_lost(
+    def test____datagram_received____do_not_push_to_queue_after_connection_lost(
         self,
         protocol: DatagramEndpointProtocol,
         mock_asyncio_recv_queue: MagicMock,
@@ -580,7 +528,7 @@ class TestDatagramEndpointProtocol:
         mock_asyncio_exception_queue.put_nowait.assert_called_once_with(exception)
         mock_asyncio_recv_queue.put_nowait.assert_called_once_with(None)
 
-    def test____error_received____do_not_push_to_queue_ater_connection_lost(
+    def test____error_received____do_not_push_to_queue_after_connection_lost(
         self,
         protocol: DatagramEndpointProtocol,
         mock_asyncio_recv_queue: MagicMock,
@@ -695,13 +643,45 @@ class TestDatagramEndpointProtocol:
         if cancel_tasks:
             assert all(t.done() and t.cancelled() for t in tasks)
         elif exception is None:
-            assert all(t.done() and t.exception() is None and t.result() is None for t in tasks), tasks
+            assert all(t.done() and isinstance(t.exception(), ConnectionAbortedError) for t in tasks), tasks
         else:
             assert all(t.done() and t.exception() is exception for t in tasks)
 
 
 @pytest.mark.asyncio
-class BaseTestAsyncioTransportDatagramSocket(BaseTestSocket):
+class BaseTestAsyncioDatagramTransport(BaseTestSocket):
+    @pytest.fixture
+    @classmethod
+    def mock_udp_socket(cls, mock_udp_socket: MagicMock, remote_address: tuple[Any, ...] | None) -> MagicMock:
+        cls.set_local_address_to_socket_mock(mock_udp_socket, mock_udp_socket.family, ("127.0.0.1", 11111))
+        if remote_address is None:
+            cls.configure_socket_mock_to_raise_ENOTCONN(mock_udp_socket)
+        else:
+            cls.set_remote_address_to_socket_mock(mock_udp_socket, mock_udp_socket.family, remote_address)
+        return mock_udp_socket
+
+    @pytest.fixture
+    @staticmethod
+    def asyncio_transport_extra_info(mock_udp_socket: MagicMock, remote_address: tuple[Any, ...] | None) -> dict[str, Any]:
+        return {
+            "socket": mock_udp_socket,
+            "sockname": mock_udp_socket.getsockname.return_value,
+            "peername": remote_address,
+        }
+
+    @pytest.fixture
+    @staticmethod
+    def mock_asyncio_transport(asyncio_transport_extra_info: dict[str, Any], mocker: MockerFixture) -> MagicMock:
+        mock = mocker.NonCallableMagicMock(spec=asyncio.DatagramTransport)
+        mock.get_extra_info.side_effect = asyncio_transport_extra_info.get
+        mock.is_closing.return_value = False
+        return mock
+
+    @pytest.fixture
+    @staticmethod
+    def endpoint_extra_info(asyncio_transport_extra_info: dict[str, Any]) -> dict[str, Any]:
+        return asyncio_transport_extra_info
+
     @pytest.fixture
     @staticmethod
     def mock_endpoint(
@@ -712,18 +692,22 @@ class BaseTestAsyncioTransportDatagramSocket(BaseTestSocket):
         mock.get_extra_info.side_effect = endpoint_extra_info.get
         return mock
 
+
+@pytest.mark.asyncio
+class TestAsyncioTransportDatagramSocketAdapter(BaseTestAsyncioDatagramTransport):
     @pytest.fixture
     @classmethod
-    def socket(cls, mock_endpoint: MagicMock) -> AsyncBaseTransport:
-        return cls.socket_factory(mock_endpoint)
+    def remote_address(cls) -> tuple[Any, ...] | None:
+        return ("127.0.0.1", 12345)
 
+    @pytest.fixture
     @classmethod
-    def socket_factory(cls, mock_endpoint: MagicMock) -> AsyncBaseTransport:
-        raise NotImplementedError
+    def socket(cls, mock_endpoint: MagicMock) -> AsyncioTransportDatagramSocketAdapter:
+        return AsyncioTransportDatagramSocketAdapter(mock_endpoint)
 
     async def test____aclose____close_transport_and_wait(
         self,
-        socket: AsyncBaseTransport,
+        socket: AsyncioTransportDatagramSocketAdapter,
         mock_endpoint: MagicMock,
     ) -> None:
         # Arrange
@@ -738,7 +722,7 @@ class BaseTestAsyncioTransportDatagramSocket(BaseTestSocket):
     async def test____is_closing____return_internal_flag(
         self,
         transport_closed: bool,
-        socket: AsyncBaseTransport,
+        socket: AsyncioTransportDatagramSocketAdapter,
         mock_endpoint: MagicMock,
     ) -> None:
         # Arrange
@@ -753,29 +737,6 @@ class BaseTestAsyncioTransportDatagramSocket(BaseTestSocket):
         # Assert
         mock_endpoint.is_closing.assert_not_called()
         assert state is transport_closed
-
-
-@pytest.mark.asyncio
-class TestAsyncioTransportDatagramSocketAdapter(BaseTestAsyncioTransportDatagramSocket):
-    @pytest.fixture
-    @classmethod
-    def mock_udp_socket(cls, mock_udp_socket: MagicMock) -> MagicMock:
-        cls.set_local_address_to_socket_mock(mock_udp_socket, mock_udp_socket.family, ("127.0.0.1", 11111))
-        cls.set_remote_address_to_socket_mock(mock_udp_socket, mock_udp_socket.family, ("127.0.0.1", 12345))
-        return mock_udp_socket
-
-    @pytest.fixture
-    @staticmethod
-    def endpoint_extra_info(mock_udp_socket: MagicMock) -> dict[str, Any]:
-        return {
-            "socket": mock_udp_socket,
-            "sockname": mock_udp_socket.getsockname.return_value,
-            "peername": mock_udp_socket.getpeername.return_value,
-        }
-
-    @classmethod
-    def socket_factory(cls, mock_endpoint: MagicMock) -> AsyncioTransportDatagramSocketAdapter:
-        return AsyncioTransportDatagramSocketAdapter(mock_endpoint)
 
     async def test____recv____read_from_reader(
         self,
@@ -806,7 +767,7 @@ class TestAsyncioTransportDatagramSocketAdapter(BaseTestAsyncioTransportDatagram
         # Assert
         mock_endpoint.sendto.assert_awaited_once_with(b"data to send", None)
 
-    async def test____get_extra_info____returns_socket_info(
+    async def test____extra_attributes____returns_socket_info(
         self,
         socket: AsyncioTransportDatagramSocketAdapter,
         mock_udp_socket: MagicMock,
@@ -821,251 +782,158 @@ class TestAsyncioTransportDatagramSocketAdapter(BaseTestAsyncioTransportDatagram
 
 
 @pytest.mark.asyncio
-class TestAsyncioTransportDatagramListenerSocketAdapter(BaseTestAsyncioTransportDatagramSocket):
+class TestDatagramListenerSocketAdapter(BaseTestAsyncioDatagramTransport):
+    @pytest.fixture
+    @staticmethod
+    def mock_endpoint() -> Any:  # type: ignore[override]
+        raise ValueError("Do not use this fixture here")
+
     @pytest.fixture
     @classmethod
-    def mock_udp_socket(cls, mock_udp_socket: MagicMock) -> MagicMock:
-        cls.set_local_address_to_socket_mock(mock_udp_socket, mock_udp_socket.family, ("127.0.0.1", 11111))
-        cls.configure_socket_mock_to_raise_ENOTCONN(mock_udp_socket)
-        return mock_udp_socket
+    def remote_address(cls) -> tuple[Any, ...] | None:
+        return None
 
     @pytest.fixture
     @staticmethod
-    def endpoint_extra_info(mock_udp_socket: MagicMock) -> dict[str, Any]:
-        return {
-            "socket": mock_udp_socket,
-            "sockname": mock_udp_socket.getsockname.return_value,
-            "peername": None,
-        }
+    def mock_asyncio_protocol(mocker: MockerFixture, event_loop: asyncio.AbstractEventLoop) -> MagicMock:
+        mock = mocker.NonCallableMagicMock(spec=DatagramListenerProtocol)
+        # Currently, _get_close_waiter() is a synchronous function returning a Future, but it will be awaited so this works
+        mock._get_close_waiter = mocker.AsyncMock()
+        mock._get_loop.return_value = event_loop
+        return mock
 
-    @classmethod
-    def socket_factory(cls, mock_endpoint: MagicMock) -> AsyncioTransportDatagramListenerSocketAdapter:
-        return AsyncioTransportDatagramListenerSocketAdapter(mock_endpoint)
-
-    async def test____recv_from____read_from_reader(
-        self,
-        socket: AsyncioTransportDatagramListenerSocketAdapter,
-        mock_endpoint: MagicMock,
-    ) -> None:
-        # Arrange
-        received_data = b"data"
-        mock_endpoint.recvfrom.return_value = (received_data, ("127.0.0.1", 12345))
-
-        # Act
-        data, address = await socket.recv_from()
-
-        # Assert
-        mock_endpoint.recvfrom.assert_awaited_once_with()
-        assert data is received_data  # Should not be copied
-        assert address == ("127.0.0.1", 12345)
-
-    async def test____send_to____write_and_drain(
-        self,
-        socket: AsyncioTransportDatagramListenerSocketAdapter,
-        mock_endpoint: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act
-        await socket.send_to(b"data to send", ("127.0.0.1", 12345))
-
-        # Assert
-        mock_endpoint.sendto.assert_awaited_once_with(b"data to send", ("127.0.0.1", 12345))
-
-    async def test____get_extra_info____returns_socket_info(
-        self,
-        socket: AsyncioTransportDatagramListenerSocketAdapter,
-        mock_udp_socket: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-
-        # Act & Assert
-        assert socket.extra(SocketAttribute.socket) is mock_udp_socket
-        assert socket.extra(SocketAttribute.family) == mock_udp_socket.family
-        assert socket.extra(SocketAttribute.sockname) == ("127.0.0.1", 11111)
-        assert socket.extra(SocketAttribute.peername, mocker.sentinel.no_value) is mocker.sentinel.no_value
-
-
-@pytest.mark.asyncio
-class BaseTestRawDatagramSocket(BaseTestSocket):
     @pytest.fixture
     @staticmethod
-    def mock_async_socket(
-        mock_async_socket: MagicMock,
-        mock_udp_socket: MagicMock,
-    ) -> MagicMock:
-        mock_async_socket.socket = mock_udp_socket
-        return mock_async_socket
+    def socket(
+        mock_asyncio_transport: MagicMock,
+        mock_asyncio_protocol: MagicMock,
+    ) -> DatagramListenerSocketAdapter:
+        return DatagramListenerSocketAdapter(mock_asyncio_transport, mock_asyncio_protocol)
 
-    @pytest.fixture
-    @classmethod
-    def socket(cls, mock_udp_socket: MagicMock, event_loop: asyncio.AbstractEventLoop) -> AsyncBaseTransport:
-        return cls.socket_factory(mock_udp_socket, event_loop)
-
-    @classmethod
-    def socket_factory(cls, mock_udp_socket: MagicMock, event_loop: asyncio.AbstractEventLoop) -> AsyncBaseTransport:
-        raise NotImplementedError
-
-    async def test____dunder_init____invalid_socket_type(
+    @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing=={p}")
+    async def test____aclose____close_transport_and_wait(
         self,
-        event_loop: asyncio.AbstractEventLoop,
-        mock_tcp_socket: MagicMock,
+        transport_is_closing: bool,
+        socket: DatagramListenerSocketAdapter,
+        mock_asyncio_transport: MagicMock,
+        mock_asyncio_protocol: MagicMock,
     ) -> None:
         # Arrange
-
-        # Act & Assert
-        with pytest.raises(ValueError, match=r"^A 'SOCK_DGRAM' socket is expected$"):
-            _ = self.socket_factory(mock_tcp_socket, event_loop)
-
-    async def test____is_closing____default(
-        self,
-        socket: AsyncBaseTransport,
-        mock_async_socket: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        mock_async_socket.is_closing.return_value = mocker.sentinel.is_closing
-
-        # Act
-        state = socket.is_closing()
-
-        # Assert
-        assert state is mocker.sentinel.is_closing
-        mock_async_socket.is_closing.assert_called_once_with()
-
-    async def test____aclose____close_socket(
-        self,
-        socket: AsyncBaseTransport,
-        mock_async_socket: MagicMock,
-    ) -> None:
-        # Arrange
+        mock_asyncio_transport.is_closing.return_value = transport_is_closing
 
         # Act
         await socket.aclose()
 
         # Assert
-        mock_async_socket.aclose.assert_awaited_once_with()
+        if transport_is_closing:
+            mock_asyncio_transport.close.assert_not_called()
+            mock_asyncio_protocol._get_close_waiter.assert_awaited_once_with()
+        else:
+            mock_asyncio_transport.close.assert_called_once_with()
+            mock_asyncio_protocol._get_close_waiter.assert_awaited_once_with()
+        mock_asyncio_transport.abort.assert_not_called()
 
-
-@pytest.mark.asyncio
-class TestRawDatagramSocketAdapter(BaseTestRawDatagramSocket):
-    @pytest.fixture(autouse=True)
-    @staticmethod
-    def mock_async_socket_cls(mock_async_socket: MagicMock, mocker: MockerFixture) -> MagicMock:
-        return mocker.patch(f"{RawDatagramSocketAdapter.__module__}.AsyncSocket", return_value=mock_async_socket)
-
-    @pytest.fixture
-    @classmethod
-    def mock_udp_socket(cls, mock_udp_socket: MagicMock) -> MagicMock:
-        cls.set_local_address_to_socket_mock(mock_udp_socket, mock_udp_socket.family, ("127.0.0.1", 11111))
-        cls.set_remote_address_to_socket_mock(mock_udp_socket, mock_udp_socket.family, ("127.0.0.1", 12345))
-        return mock_udp_socket
-
-    @classmethod
-    def socket_factory(cls, mock_udp_socket: MagicMock, event_loop: asyncio.AbstractEventLoop) -> RawDatagramSocketAdapter:
-        return RawDatagramSocketAdapter(mock_udp_socket, event_loop)
-
-    async def test____recv____returns_data_from_async_socket(
+    @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing=={p}")
+    async def test____aclose____abort_transport_if_cancelled(
         self,
-        socket: RawDatagramSocketAdapter,
-        mock_async_socket: MagicMock,
+        transport_is_closing: bool,
+        socket: DatagramListenerSocketAdapter,
+        mock_asyncio_transport: MagicMock,
+        mock_asyncio_protocol: MagicMock,
     ) -> None:
         # Arrange
-        mock_async_socket.recvfrom.return_value = (b"data", ("127.0.0.1", 12345))
+        mock_asyncio_transport.is_closing.return_value = transport_is_closing
+        mock_asyncio_protocol._get_close_waiter.side_effect = asyncio.CancelledError
 
         # Act
-        data = await socket.recv()
+        with pytest.raises(asyncio.CancelledError):
+            await socket.aclose()
 
         # Assert
-        assert data == b"data"
-        mock_async_socket.recvfrom.assert_awaited_once_with(MAX_DATAGRAM_BUFSIZE)
+        if transport_is_closing:
+            mock_asyncio_transport.close.assert_not_called()
+            mock_asyncio_protocol._get_close_waiter.assert_awaited_once_with()
+        else:
+            mock_asyncio_transport.close.assert_called_once_with()
+            mock_asyncio_protocol._get_close_waiter.assert_awaited_once_with()
+        mock_asyncio_transport.abort.assert_not_called()
 
-    async def test____send____sends_data_to_async_socket(
+    @pytest.mark.parametrize("transport_closed", [False, True], ids=lambda p: f"transport_closed=={p}")
+    async def test____is_closing____return_internal_flag(
         self,
-        socket: RawDatagramSocketAdapter,
-        mock_async_socket: MagicMock,
+        transport_closed: bool,
+        socket: DatagramListenerSocketAdapter,
+        mock_asyncio_transport: MagicMock,
     ) -> None:
         # Arrange
-        mock_async_socket.sendto.return_value = None
+        if transport_closed:
+            await socket.aclose()
+            mock_asyncio_transport.reset_mock()
+        mock_asyncio_transport.is_closing.side_effect = AssertionError
 
         # Act
-        await socket.send(b"data")
+        state = socket.is_closing()
 
         # Assert
-        mock_async_socket.sendall.assert_awaited_once_with(b"data")
-        mock_async_socket.sendto.assert_not_called()
+        mock_asyncio_transport.is_closing.assert_not_called()
+        assert state is transport_closed
 
-    async def test____get_extra_info____returns_socket_info(
+    @pytest.mark.parametrize("external_group", [True, False], ids=lambda p: f"external_group=={p}")
+    async def test____serve____task_group(
         self,
-        socket: RawDatagramSocketAdapter,
-        mock_udp_socket: MagicMock,
+        external_group: bool,
+        socket: DatagramListenerSocketAdapter,
+        mock_asyncio_protocol: MagicMock,
+        mocker: MockerFixture,
     ) -> None:
         # Arrange
-
-        # Act & Assert
-        assert socket.extra(SocketAttribute.socket) is mock_udp_socket
-        assert socket.extra(SocketAttribute.family) == mock_udp_socket.family
-        assert socket.extra(SocketAttribute.sockname) == ("127.0.0.1", 11111)
-        assert socket.extra(SocketAttribute.peername) == ("127.0.0.1", 12345)
-
-
-@pytest.mark.asyncio
-class TestRawDatagramListenerSocketAdapter(BaseTestRawDatagramSocket):
-    @pytest.fixture(autouse=True)
-    @staticmethod
-    def mock_async_socket_cls(mock_async_socket: MagicMock, mocker: MockerFixture) -> MagicMock:
-        return mocker.patch(f"{RawDatagramListenerSocketAdapter.__module__}.AsyncSocket", return_value=mock_async_socket)
-
-    @pytest.fixture
-    @classmethod
-    def mock_udp_socket(cls, mock_udp_socket: MagicMock) -> MagicMock:
-        cls.set_local_address_to_socket_mock(mock_udp_socket, mock_udp_socket.family, ("127.0.0.1", 11111))
-        cls.configure_socket_mock_to_raise_ENOTCONN(mock_udp_socket)
-        return mock_udp_socket
-
-    @classmethod
-    def socket_factory(
-        cls,
-        mock_udp_socket: MagicMock,
-        event_loop: asyncio.AbstractEventLoop,
-    ) -> RawDatagramListenerSocketAdapter:
-        return RawDatagramListenerSocketAdapter(mock_udp_socket, event_loop)
-
-    async def test____recv_from____returns_data_from_async_socket(
-        self,
-        socket: RawDatagramListenerSocketAdapter,
-        mock_async_socket: MagicMock,
-    ) -> None:
-        # Arrange
-        mock_async_socket.recvfrom.return_value = (b"data", ("127.0.0.1", 12345))
+        mock_task_group = mocker.NonCallableMagicMock(spec=TaskGroup)
+        mock_task_group.__aenter__.return_value = mock_task_group
+        mock_task_group.start_soon.return_value = None
+        mock_AsyncIOTaskGroup = mocker.patch(
+            f"{DatagramListenerSocketAdapter.__module__}.AsyncIOTaskGroup",
+            side_effect=[mock_task_group],
+        )
+        datagram_received_cb = mocker.async_stub()
+        mock_asyncio_protocol.serve.side_effect = asyncio.CancelledError
 
         # Act
-        data, address = await socket.recv_from()
+        with pytest.raises(asyncio.CancelledError):
+            if external_group:
+                await socket.serve(datagram_received_cb, mock_task_group)
+            else:
+                await socket.serve(datagram_received_cb)
 
         # Assert
-        assert data == b"data"
-        assert address == ("127.0.0.1", 12345)
-        mock_async_socket.recvfrom.assert_awaited_once_with(MAX_DATAGRAM_BUFSIZE)
+        if external_group:
+            mock_AsyncIOTaskGroup.assert_not_called()
+            mock_task_group.__aenter__.assert_not_awaited()
+        else:
+            mock_AsyncIOTaskGroup.assert_called_once_with()
+            mock_task_group.__aenter__.assert_awaited_once()
 
-    async def test____send_to____sends_data_to_async_socket(
+    @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing=={p}")
+    async def test____send_to____write_and_drain(
         self,
-        socket: RawDatagramListenerSocketAdapter,
-        mock_async_socket: MagicMock,
+        transport_is_closing: bool,
+        socket: DatagramListenerSocketAdapter,
+        mock_asyncio_transport: MagicMock,
+        mock_asyncio_protocol: MagicMock,
     ) -> None:
         # Arrange
-        mock_async_socket.sendto.return_value = None
+        address: tuple[str, int] = ("127.0.0.1", 12345)
+        mock_asyncio_transport.is_closing.side_effect = [transport_is_closing]
 
         # Act
-        await socket.send_to(b"data", ("127.0.0.1", 12345))
+        await socket.send_to(b"data to send", address)
 
         # Assert
-        mock_async_socket.sendto.assert_awaited_once_with(b"data", ("127.0.0.1", 12345))
-        mock_async_socket.sendall.assert_not_called()
+        mock_asyncio_transport.sendto.assert_called_once_with(b"data to send", address)
+        mock_asyncio_protocol.writer_drain.assert_awaited_once_with()
 
-    async def test____get_extra_info____returns_socket_info(
+    async def test____extra_attributes____returns_socket_info(
         self,
-        socket: RawDatagramSocketAdapter,
+        socket: DatagramListenerSocketAdapter,
         mock_udp_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
@@ -1076,3 +944,313 @@ class TestRawDatagramListenerSocketAdapter(BaseTestRawDatagramSocket):
         assert socket.extra(SocketAttribute.family) == mock_udp_socket.family
         assert socket.extra(SocketAttribute.sockname) == ("127.0.0.1", 11111)
         assert socket.extra(SocketAttribute.peername, mocker.sentinel.no_value) is mocker.sentinel.no_value
+
+
+class TestDatagramListenerProtocol:
+    @pytest.fixture
+    @staticmethod
+    def mock_asyncio_transport(mocker: MockerFixture) -> MagicMock:
+        mock = mocker.NonCallableMagicMock(spec=asyncio.DatagramTransport)
+        mock.is_closing.return_value = False
+
+        # Tell connection_made() not to try to monkeypatch this mock object
+        del mock._address
+
+        return mock
+
+    @pytest.fixture
+    @staticmethod
+    def protocol(
+        event_loop: asyncio.AbstractEventLoop,
+        mock_asyncio_transport: MagicMock,
+    ) -> DatagramListenerProtocol:
+        protocol = DatagramListenerProtocol(loop=event_loop)
+        protocol.connection_made(mock_asyncio_transport)
+        return protocol
+
+    @pytest.mark.asyncio
+    async def test____dunder_init____use_running_loop(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+    ) -> None:
+        # Arrange
+
+        # Act
+        protocol = DatagramListenerProtocol()
+
+        # Assert
+        assert protocol._get_loop() is event_loop
+
+    def test____dunder_init____use_running_loop____not_in_asyncio_loop(self) -> None:
+        # Arrange
+
+        # Act & Assert
+        with pytest.raises(RuntimeError):
+            _ = DatagramListenerProtocol()
+
+    def test____connection_lost____by_closed_transport(
+        self,
+        protocol: DatagramListenerProtocol,
+        mock_asyncio_transport: MagicMock,
+    ) -> None:
+        # Arrange
+        close_waiter = protocol._get_close_waiter()
+        assert not close_waiter.done()
+
+        # Act
+        protocol.connection_lost(None)
+        protocol.connection_lost(None)  # Double call must not change anything
+
+        # Assert
+        assert close_waiter.done() and close_waiter.exception() is None and close_waiter.result() is None
+        mock_asyncio_transport.close.assert_not_called()  # just to be sure :)
+
+    def test____connection_lost____by_unrelated_error(
+        self,
+        protocol: DatagramListenerProtocol,
+        mock_asyncio_transport: MagicMock,
+    ) -> None:
+        # Arrange
+        exception = OSError("Something bad happen")
+
+        close_waiter = protocol._get_close_waiter()
+        assert not close_waiter.done()
+
+        # Act
+        protocol.connection_lost(exception)
+        protocol.connection_lost(exception)  # Double call must not change anything
+
+        # Assert
+        assert close_waiter.done() and close_waiter.exception() is None
+        mock_asyncio_transport.close.assert_not_called()  # just to be sure :)
+
+    @pytest.mark.asyncio
+    async def test____serve____called_twice(
+        self,
+        protocol: DatagramListenerProtocol,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        backend = current_async_backend()
+        datagram_received_stub = mocker.async_stub()
+
+        # Act & Assert
+        async with backend.create_task_group() as tg:
+            with pytest.raises(RuntimeError, match=r"^DatagramListenerProtocol.serve\(\) awaited twice"):
+                task = await tg.start(protocol.serve, datagram_received_stub, tg)
+                try:
+                    with backend.timeout(10):
+                        await protocol.serve(datagram_received_stub, tg)
+                finally:
+                    task.cancel()
+
+    @pytest.mark.asyncio
+    async def test____serve____datagram_received____start_task(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        protocol: DatagramListenerProtocol,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        backend = current_async_backend()
+        serve_scope = backend.move_on_after(10)
+        datagram_received_stub = mocker.async_stub()
+        datagram_received_stub.side_effect = lambda *args: serve_scope.cancel()
+
+        # Act
+        async with backend.create_task_group() as tg:
+            with serve_scope:
+                event_loop.call_later(0.1, protocol.datagram_received, b"datagram", ("an_address", 12345))
+                await protocol.serve(datagram_received_stub, tg)
+
+        # Assert
+        datagram_received_stub.assert_awaited_once_with(b"datagram", ("an_address", 12345))
+
+    @pytest.mark.asyncio
+    async def test____serve____datagram_received____start_task_for_datagrams_received_before_serving(
+        self,
+        protocol: DatagramListenerProtocol,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        backend = current_async_backend()
+        serve_scope = backend.move_on_after(10)
+        datagram_received_stub = mocker.async_stub()
+        datagram_received_stub.side_effect = lambda *args: serve_scope.cancel()
+        protocol.datagram_received(b"datagram", ("an_address", 12345))
+        protocol.datagram_received(b"datagram_2", ("other_address", 54321))
+
+        # Act
+        async with backend.create_task_group() as tg:
+            with serve_scope:
+                await protocol.serve(datagram_received_stub, tg)
+
+        # Assert
+        assert datagram_received_stub.await_args_list == [
+            mocker.call(b"datagram", ("an_address", 12345)),
+            mocker.call(b"datagram_2", ("other_address", 54321)),
+        ]
+
+    @pytest.mark.parametrize("event_loop_debug", [False, True], ids=lambda p: f"event_loop_debug=={p}")
+    def test____error_received____log_error(
+        self,
+        event_loop_debug: bool,
+        event_loop: asyncio.AbstractEventLoop,
+        protocol: DatagramListenerProtocol,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        # Arrange
+        event_loop.set_debug(event_loop_debug)
+        assert event_loop.get_debug() is event_loop_debug
+        caplog.set_level(logging.INFO, DatagramListenerProtocol.__module__)
+        exception = OSError("Something bad happen")
+
+        # Act
+        protocol.error_received(exception)
+
+        # Assert
+        assert len(caplog.records) == 1
+        assert caplog.records[0].levelno == logging.WARNING
+        assert caplog.records[0].getMessage() == "Unrelated error occurred on datagram reception: OSError: Something bad happen"
+        if event_loop_debug:
+            assert caplog.records[0].exc_info == (type(exception), exception, exception.__traceback__)
+        else:
+            assert caplog.records[0].exc_info is None
+
+    @pytest.mark.parametrize("event_loop_debug", [False, True], ids=lambda p: f"event_loop_debug=={p}")
+    def test____error_received____do_not_log_after_connection_lost(
+        self,
+        event_loop_debug: bool,
+        event_loop: asyncio.AbstractEventLoop,
+        protocol: DatagramListenerProtocol,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        # Arrange
+        event_loop.set_debug(event_loop_debug)
+        assert event_loop.get_debug() is event_loop_debug
+        caplog.set_level(logging.INFO, DatagramListenerProtocol.__module__)
+        exception = OSError("Something bad happen")
+        protocol.connection_lost(None)
+
+        # Act
+        protocol.error_received(exception)
+
+        # Assert
+        assert len(caplog.records) == 0
+
+    @pytest.mark.asyncio
+    async def test____drain_helper____quick_exit_if_not_paused(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        protocol: DatagramListenerProtocol,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        assert not protocol._writing_paused()
+        mock_create_future: MagicMock = mocker.patch.object(event_loop, "create_future")
+
+        # Act
+        await protocol.writer_drain()
+
+        # Assert
+        mock_create_future.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test____drain_helper____raise_connection_aborted_if_connection_is_lost(
+        self,
+        protocol: DatagramListenerProtocol,
+    ) -> None:
+        # Arrange
+        assert not protocol._writing_paused()
+
+        from errno import ECONNABORTED
+
+        protocol.connection_lost(None)
+
+        # Act & Assert
+        with pytest.raises(OSError) as exc_info:
+            await protocol.writer_drain()
+
+        assert exc_info.value.errno == ECONNABORTED
+
+    @pytest.mark.asyncio
+    async def test____drain_helper____raise_given_exception_if_connection_is_lost(
+        self,
+        protocol: DatagramListenerProtocol,
+    ) -> None:
+        # Arrange
+        error = OSError("socket error")
+        assert not protocol._writing_paused()
+
+        protocol.connection_lost(error)
+
+        # Act & Assert
+        with pytest.raises(OSError) as exc_info:
+            await protocol.writer_drain()
+
+        assert exc_info.value is error
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("cancel_tasks", [False, True], ids=lambda p: f"cancel_tasks_before=={p}")
+    async def test____drain_helper____wait_during_writing_pause(
+        self,
+        cancel_tasks: bool,
+        protocol: DatagramListenerProtocol,
+    ) -> None:
+        # Arrange
+        import inspect
+
+        # Act
+        protocol.pause_writing()
+        assert protocol._writing_paused()
+        tasks: set[asyncio.Task[None]] = set()
+        for _ in range(10):
+            tasks.add(asyncio.create_task(protocol.writer_drain()))
+        await asyncio.sleep(0)  # Suspend to let the event loop start all tasks
+        assert all(inspect.getcoroutinestate(t.get_coro()) == "CORO_SUSPENDED" for t in tasks)  # type: ignore[arg-type]
+        if cancel_tasks:
+            for t in tasks:
+                t.cancel()
+        protocol.resume_writing()
+        await asyncio.sleep(0)  # Suspend to let the event loop run all tasks
+
+        # Assert
+        if cancel_tasks:
+            assert all(t.done() and t.cancelled() for t in tasks)
+        else:
+            assert all(t.done() and t.exception() is None and t.result() is None for t in tasks)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("exception", [None, OSError("Something bad happen")])
+    @pytest.mark.parametrize("cancel_tasks", [False, True], ids=lambda p: f"cancel_tasks_before=={p}")
+    async def test____drain_helper____wait_during_writing_pause____connection_lost_while_waiting(
+        self,
+        cancel_tasks: bool,
+        exception: Exception | None,
+        protocol: DatagramListenerProtocol,
+    ) -> None:
+        # Arrange
+        import inspect
+
+        protocol.pause_writing()
+        assert protocol._writing_paused()
+        tasks: set[asyncio.Task[None]] = set()
+        for _ in range(10):
+            tasks.add(asyncio.create_task(protocol.writer_drain()))
+        await asyncio.sleep(0)  # Suspend to let the event loop start all tasks
+        assert all(inspect.getcoroutinestate(t.get_coro()) == "CORO_SUSPENDED" for t in tasks)  # type: ignore[arg-type]
+        if cancel_tasks:
+            for t in tasks:
+                t.cancel()
+
+        # Act
+        protocol.connection_lost(exception)
+        await asyncio.sleep(0)  # Suspend to let the event loop run all tasks
+
+        # Assert
+        if cancel_tasks:
+            assert all(t.done() and t.cancelled() for t in tasks)
+        elif exception is None:
+            assert all(t.done() and isinstance(t.exception(), ConnectionAbortedError) for t in tasks), tasks
+        else:
+            assert all(t.done() and t.exception() is exception for t in tasks)

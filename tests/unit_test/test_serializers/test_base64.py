@@ -29,7 +29,15 @@ class TestBase64EncoderSerializer:
     def mock_b64decode(mocker: MockerFixture, alphabet: Literal["standard", "urlsafe"]) -> MagicMock:
         return mocker.patch(f"base64.{alphabet}_b64decode", autospec=True)
 
-    @pytest.mark.parametrize("method", ["incremental_serialize", "incremental_deserialize"])
+    @pytest.mark.parametrize(
+        "method",
+        [
+            "incremental_serialize",
+            "incremental_deserialize",
+            "create_deserializer_buffer",
+            "buffered_incremental_deserialize",
+        ],
+    )
     def test____base_class____implements_default_methods(self, method: str) -> None:
         # Arrange
         from easynetwork.serializers.base_stream import AutoSeparatedPacketSerializer

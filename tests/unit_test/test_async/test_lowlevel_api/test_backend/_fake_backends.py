@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from typing import Any, NoReturn, final
+from typing import Any, NoReturn, final, no_type_check
 
 from easynetwork.lowlevel.api_async.backend.abc import AsyncBackend
 
 
 class BaseFakeBackend(AsyncBackend):
+    @no_type_check
     def bootstrap(self, *args: Any, **kwargs: Any) -> Any:
         raise NotImplementedError
 
@@ -54,19 +55,10 @@ class BaseFakeBackend(AsyncBackend):
     async def create_tcp_connection(self, *args: Any, **kwargs: Any) -> Any:
         raise NotImplementedError
 
-    async def create_ssl_over_tcp_connection(self, *args: Any, **kwargs: Any) -> Any:
-        raise NotImplementedError
-
     async def wrap_stream_socket(self, *args: Any, **kwargs: Any) -> Any:
         raise NotImplementedError
 
-    async def wrap_ssl_over_stream_socket_client_side(self, *args: Any, **kwargs: Any) -> Any:
-        raise NotImplementedError
-
     async def create_tcp_listeners(self, *args: Any, **kwargs: Any) -> Any:
-        raise NotImplementedError
-
-    async def create_ssl_over_tcp_listeners(self, *args: Any, **kwargs: Any) -> Any:
         raise NotImplementedError
 
     async def create_udp_endpoint(self, *args: Any, **kwargs: Any) -> Any:

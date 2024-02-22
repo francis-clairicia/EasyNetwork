@@ -18,9 +18,12 @@
 from __future__ import annotations
 
 __all__ = [
+    "add_flowcontrol_defaults",
     "create_connection",
     "create_datagram_connection",
+    "ensure_resolved",
     "open_listener_sockets_from_getaddrinfo_result",
+    "resolve_local_addresses",
     "wait_until_readable",
     "wait_until_writable",
 ]
@@ -379,3 +382,24 @@ def wait_until_writable(sock: _socket.socket, loop: asyncio.AbstractEventLoop) -
     loop.add_writer(sock, wakeup, f)
     f.add_done_callback(on_fut_done)
     return f
+
+
+# Taken from asyncio library (https://github.com/python/cpython/tree/v3.12.0/Lib/asyncio)
+def add_flowcontrol_defaults(high: int | None, low: int | None, kb: int) -> tuple[int, int]:  # pragma: no cover
+    if high is None:
+        if low is None:
+            hi = kb * 1024
+        else:
+            lo = low
+            hi = 4 * lo
+    else:
+        hi = high
+    if low is None:
+        lo = hi // 4
+    else:
+        lo = low
+
+    if not hi >= lo >= 0:
+        raise ValueError(f"high ({hi!r}) must be >= low ({lo!r}) must be >= 0")
+
+    return hi, lo

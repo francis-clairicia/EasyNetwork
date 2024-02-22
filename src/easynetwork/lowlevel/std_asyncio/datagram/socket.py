@@ -17,16 +17,14 @@
 
 from __future__ import annotations
 
-__all__ = ["AsyncioTransportDatagramSocketAdapter", "RawDatagramSocketAdapter"]
+__all__ = ["AsyncioTransportDatagramSocketAdapter"]
 
 import asyncio
-import socket as _socket
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any, final
 
-from ... import constants, socket as socket_tools
+from ... import socket as socket_tools
 from ...api_async.transports import abc as transports
-from ..socket import AsyncSocket
 
 if TYPE_CHECKING:
     import asyncio.trsock
@@ -72,39 +70,4 @@ class AsyncioTransportDatagramSocketAdapter(transports.AsyncDatagramTransport):
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         socket = self.__socket
-        return socket_tools._get_socket_extra(socket, wrap_in_proxy=False)
-
-
-@final
-class RawDatagramSocketAdapter(transports.AsyncDatagramTransport):
-    __slots__ = ("__socket",)
-
-    def __init__(
-        self,
-        socket: _socket.socket,
-        loop: asyncio.AbstractEventLoop,
-    ) -> None:
-        super().__init__()
-
-        if socket.type != _socket.SOCK_DGRAM:
-            raise ValueError("A 'SOCK_DGRAM' socket is expected")
-
-        self.__socket: AsyncSocket = AsyncSocket(socket, loop)
-
-    async def aclose(self) -> None:
-        return await self.__socket.aclose()
-
-    def is_closing(self) -> bool:
-        return self.__socket.is_closing()
-
-    async def recv(self) -> bytes:
-        data, _ = await self.__socket.recvfrom(constants.MAX_DATAGRAM_BUFSIZE)
-        return data
-
-    async def send(self, data: bytes | bytearray | memoryview) -> None:
-        await self.__socket.sendall(data)
-
-    @property
-    def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
-        socket = self.__socket.socket
         return socket_tools._get_socket_extra(socket, wrap_in_proxy=False)

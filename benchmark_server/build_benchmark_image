@@ -1,0 +1,83 @@
+#!/usr/bin/env python3
+# mypy: disable-error-code=no-any-unimported
+#
+# Originally come from MagicStack's Network Server Performance Benchmarking Toolbench
+# https://github.com/MagicStack/vmbench
+
+from __future__ import annotations
+
+import argparse
+import os
+from pathlib import Path
+from typing import Any
+
+import build as pyproject_build
+import docker
+import docker.models
+
+ROOT_DIR = Path(__file__).parent
+
+SUPPORTED_PYTHON_VERSIONS = [
+    "3.11",
+    "3.12",
+]
+
+
+def _build_sdist_for_docker_image() -> Path:
+    src_dir = ROOT_DIR.parent
+    output_dir = ROOT_DIR / "dist"
+    distribution = "sdist"
+    config_settings: dict[str, Any] = {}
+
+    print("Building source distribution for docker image...")
+    with pyproject_build.env.DefaultIsolatedEnv() as env:
+        builder = pyproject_build.ProjectBuilder.from_isolated_env(env, src_dir)
+        env.install(builder.build_system_requires)
+        env.install(builder.get_requires_for_build(distribution, config_settings))
+        sdist = Path(builder.build(distribution, output_dir, config_settings))
+        print(f"-> Sucessfully built {sdist.relative_to(ROOT_DIR)}")
+        return sdist
+
+
+def _build_docker_image(client: docker.DockerClient, sdist_path: Path, tag: str, python_version: str) -> None:
+    sdist_path = sdist_path.relative_to(ROOT_DIR)
+    print("Building docker image...")
+    client.images.build(
+        path=os.fspath(ROOT_DIR),
+        tag=tag,
+        buildargs={
+            "PYTHON_VERSION": python_version,
+            "EASYNETWORK_SDIST": os.fspath(sdist_path),
+        },
+        rm=True,
+        quiet=False,
+    )
+    client.images.prune(filters={"dangling": True})
+    print(f"-> Sucessfully built docker image {tag!r}")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument(
+        "-t",
+        "--tag",
+        default="easynetwork/benchmark",
+        help="Built image tag",
+    )
+    parser.add_argument(
+        "--python-version",
+        default=SUPPORTED_PYTHON_VERSIONS[-1],
+        choices=list(SUPPORTED_PYTHON_VERSIONS),
+        help="The CPython version to use for the servers (in major.minor format)",
+    )
+    args = parser.parse_args()
+
+    python_version: str = args.python_version
+    print(f"Selected Python version: {python_version}")
+
+    client = docker.from_env()
+    _build_docker_image(client, _build_sdist_for_docker_image(), args.tag, python_version)
+
+
+if __name__ == "__main__":
+    main()

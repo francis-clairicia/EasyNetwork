@@ -22,6 +22,7 @@ __all__ = [
     "SocketStreamTransport",
 ]
 
+import errno
 import itertools
 import selectors
 import socket
@@ -125,10 +126,8 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport, base_selector
                 raise base_selector.WouldBlockOnWrite(self.__socket.fileno()) from None
 
         while buffers:
-            with _utils.ElapsedTime() as elapsed:
-                sent: int = self._retry(try_sendmsg, timeout)
+            sent, timeout = self._retry(try_sendmsg, timeout)
             _utils.adjust_leftover_buffer(buffers, sent)
-            timeout = elapsed.recompute_timeout(timeout)
 
     @_utils.inherit_doc(base_selector.SelectorStreamTransport)
     def send_eof(self) -> None:
@@ -220,15 +219,24 @@ class SSLStreamTransport(base_selector.SelectorStreamTransport, base_selector.Se
 
     @_utils.inherit_doc(base_selector.SelectorStreamTransport)
     def recv_noblock(self, bufsize: int) -> bytes:
-        return self._try_ssl_method(self.__socket.recv, bufsize)
+        try:
+            return self._try_ssl_method(self.__socket.recv, bufsize)
+        except _ssl_module.SSLZeroReturnError if _ssl_module else ():
+            return b""
 
     @_utils.inherit_doc(base_selector.SelectorBufferedStreamReadTransport)
     def recv_noblock_into(self, buffer: WriteableBuffer) -> int:
-        return self._try_ssl_method(self.__socket.recv_into, buffer)
+        try:
+            return self._try_ssl_method(self.__socket.recv_into, buffer)
+        except _ssl_module.SSLZeroReturnError if _ssl_module else ():
+            return 0
 
     @_utils.inherit_doc(base_selector.SelectorStreamTransport)
     def send_noblock(self, data: bytes | bytearray | memoryview) -> int:
-        return self._try_ssl_method(self.__socket.send, data)
+        try:
+            return self._try_ssl_method(self.__socket.send, data)
+        except _ssl_module.SSLZeroReturnError if _ssl_module else () as exc:
+            raise _utils.error_from_errno(errno.ECONNRESET) from exc
 
     @_utils.inherit_doc(base_selector.SelectorStreamTransport)
     def send_eof(self) -> None:

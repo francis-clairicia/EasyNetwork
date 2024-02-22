@@ -8,7 +8,7 @@ from easynetwork.serializers.line import StringLineSerializer
 
 import pytest
 
-from .base import BaseTestIncrementalSerializer
+from .base import BaseTestBufferedIncrementalSerializer
 
 _NEWLINES: dict[str, bytes] = {
     "LF": b"\n",
@@ -18,7 +18,7 @@ _NEWLINES: dict[str, bytes] = {
 
 
 @final
-class TestStringLineSerializer(BaseTestIncrementalSerializer):
+class TestStringLineSerializer(BaseTestBufferedIncrementalSerializer):
     #### Serializers
 
     BUFFER_LIMIT = 1024
@@ -119,10 +119,3 @@ class TestStringLineSerializer(BaseTestIncrementalSerializer):
         if len(invalid_partial_data) > cls.BUFFER_LIMIT and not invalid_partial_data.endswith(_NEWLINES[newline]):
             return (b"remaining_data", b"")
         return (b"remaining_data", b"remaining_data")
-
-    #### Other
-
-    @pytest.fixture(scope="class")
-    @staticmethod
-    def oneshot_extra_data(newline: Literal["CR", "LF", "CRLF"]) -> bytes:
-        return _NEWLINES[newline] + b"remaining_data"

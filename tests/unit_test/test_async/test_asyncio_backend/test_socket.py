@@ -99,7 +99,9 @@ class BaseTestAsyncSocket:
         event_loop: asyncio.AbstractEventLoop,
         mock_socket_method: MagicMock,
     ) -> asyncio.Task[Any]:
+        mock_socket_method.reset_mock()
         accept_task = event_loop.create_task(coroutine)
+        await asyncio.sleep(0)
         async with asyncio.timeout(5):
             while len(mock_socket_method.call_args_list) == 0:
                 await asyncio.sleep(0)

@@ -7,6 +7,8 @@ from easynetwork.serializers.wrapper.encryptor import EncryptorSerializer
 
 import pytest
 
+from .._utils import mock_import_module_not_found
+
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
 
@@ -27,7 +29,15 @@ class TestEncryptorSerializer:
     def mock_fernet_cls(mocker: MockerFixture, mock_fernet: MagicMock) -> MagicMock:
         return mocker.patch("cryptography.fernet.Fernet", return_value=mock_fernet)
 
-    @pytest.mark.parametrize("method", ["incremental_serialize", "incremental_deserialize"])
+    @pytest.mark.parametrize(
+        "method",
+        [
+            "incremental_serialize",
+            "incremental_deserialize",
+            "create_deserializer_buffer",
+            "buffered_incremental_deserialize",
+        ],
+    )
     def test____base_class____implements_default_methods(self, method: str) -> None:
         # Arrange
         from easynetwork.serializers.base_stream import AutoSeparatedPacketSerializer
@@ -152,9 +162,7 @@ class TestEncryptorSerializerDependencies:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_import: MagicMock = mocker.patch("builtins.__import__")
-        original_error = ModuleNotFoundError()
-        mock_import.side_effect = original_error
+        mock_import: MagicMock = mock_import_module_not_found({"cryptography.fernet"}, mocker)
 
         # Act
         with pytest.raises(ModuleNotFoundError) as exc_info:
@@ -164,19 +172,17 @@ class TestEncryptorSerializerDependencies:
                 mocker.stop(mock_import)
 
         # Assert
-        mock_import.assert_called_once_with("cryptography.fernet", mocker.ANY, mocker.ANY, None, 0)
+        mock_import.assert_any_call("cryptography.fernet", mocker.ANY, mocker.ANY, None, 0)
         assert exc_info.value.args[0] == "encryption dependencies are missing. Consider adding 'encryption' extra"
         assert exc_info.value.__notes__ == ['example: pip install "easynetwork[encryption]"']
-        assert exc_info.value.__cause__ is original_error
+        assert isinstance(exc_info.value.__cause__, ModuleNotFoundError)
 
     def test____generate_key____cryptography_missing(
         self,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_import: MagicMock = mocker.patch("builtins.__import__")
-        original_error = ModuleNotFoundError()
-        mock_import.side_effect = original_error
+        mock_import: MagicMock = mock_import_module_not_found({"cryptography.fernet"}, mocker)
 
         # Act
         with pytest.raises(ModuleNotFoundError) as exc_info:
@@ -186,7 +192,7 @@ class TestEncryptorSerializerDependencies:
                 mocker.stop(mock_import)
 
         # Assert
-        mock_import.assert_called_once_with("cryptography.fernet", mocker.ANY, mocker.ANY, ("Fernet",), 0)
+        mock_import.assert_any_call("cryptography.fernet", mocker.ANY, mocker.ANY, ("Fernet",), 0)
         assert exc_info.value.args[0] == "encryption dependencies are missing. Consider adding 'encryption' extra"
         assert exc_info.value.__notes__ == ['example: pip install "easynetwork[encryption]"']
-        assert exc_info.value.__cause__ is original_error
+        assert isinstance(exc_info.value.__cause__, ModuleNotFoundError)

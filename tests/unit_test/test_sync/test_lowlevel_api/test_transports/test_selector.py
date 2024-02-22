@@ -141,13 +141,14 @@ class TestSelectorBaseTransport:
         callback.side_effect = [blocking_error(mocker.sentinel.fd), mocker.sentinel.result]
 
         # Act
-        result = SelectorBaseTransport._retry(mock_transport, callback, math.inf)
+        result, timeout = SelectorBaseTransport._retry(mock_transport, callback, math.inf)
 
         # Assert
         assert callback.call_args_list == [mocker.call() for _ in range(2)]
         mock_selector_register.assert_called_once_with(mocker.sentinel.fd, selector_event)
         mock_selector_select.assert_called_once_with()
         assert result is mocker.sentinel.result
+        assert timeout == math.inf
 
     @pytest.mark.parametrize(
         ["blocking_error", "selector_event"],
@@ -267,8 +268,9 @@ class TestSelectorBaseTransport:
 
         # Act
         result = None
+        reduced_timeout = None
         with pytest.raises(TimeoutError) if not available else contextlib.nullcontext():
-            result = SelectorBaseTransport._retry(mock_transport, callback, timeout)
+            result, reduced_timeout = SelectorBaseTransport._retry(mock_transport, callback, timeout)
 
         # Assert
         mock_selector_register.assert_called_once_with(mocker.sentinel.fd, selector_event)
@@ -276,9 +278,11 @@ class TestSelectorBaseTransport:
         if available:
             assert callback.call_args_list == [mocker.call() for _ in range(2)]
             assert result is mocker.sentinel.result
+            assert reduced_timeout == 0.0
         else:
             callback.assert_called_once_with()
             assert result is None
+            assert reduced_timeout is None
 
     @pytest.mark.parametrize(
         ["blocking_error", "selector_event"],
@@ -325,8 +329,9 @@ class TestSelectorBaseTransport:
 
         # Act
         result = None
+        reduced_timeout = None
         with pytest.raises(TimeoutError) if not available else contextlib.nullcontext():
-            result = SelectorBaseTransport._retry(mock_transport, callback, timeout)
+            result, reduced_timeout = SelectorBaseTransport._retry(mock_transport, callback, timeout)
 
         # Assert
         assert mock_selector_register.call_args_list == [mocker.call(mocker.sentinel.fd, selector_event) for _ in range(3)]
@@ -334,9 +339,11 @@ class TestSelectorBaseTransport:
         if available:
             assert callback.call_args_list == [mocker.call() for _ in range(4)]
             assert result is mocker.sentinel.result
+            assert reduced_timeout == 0.0
         else:
             assert callback.call_args_list == [mocker.call() for _ in range(3)]
             assert result is None
+            assert reduced_timeout is None
 
 
 def _retry_side_effect(callback: Callable[[], Any], timeout: float) -> Any:
@@ -363,7 +370,7 @@ class TestSelectorStreamTransport:
         mock_transport.recv_noblock.side_effect = [
             WouldBlockOnRead(mocker.sentinel.fd),
             WouldBlockOnWrite(mocker.sentinel.fd),
-            mocker.sentinel.bytes,
+            (mocker.sentinel.bytes, mocker.sentinel.timeout),
         ]
 
         # Act
@@ -384,7 +391,7 @@ class TestSelectorStreamTransport:
         mock_transport.send_noblock.side_effect = [
             WouldBlockOnRead(mocker.sentinel.fd),
             WouldBlockOnWrite(mocker.sentinel.fd),
-            mocker.sentinel.nb_sent_bytes,
+            (mocker.sentinel.nb_sent_bytes, mocker.sentinel.timeout),
         ]
 
         # Act
@@ -412,7 +419,7 @@ class TestSelectorBufferedStreamReadTransport:
         mock_transport.recv_noblock_into.side_effect = [
             WouldBlockOnRead(mocker.sentinel.fd),
             WouldBlockOnWrite(mocker.sentinel.fd),
-            mocker.sentinel.nb_bytes_written,
+            (mocker.sentinel.nb_bytes_written, mocker.sentinel.timeout),
         ]
 
         # Act
@@ -440,7 +447,7 @@ class TestSelectorDatagramTransport:
         mock_transport.recv_noblock.side_effect = [
             WouldBlockOnRead(mocker.sentinel.fd),
             WouldBlockOnWrite(mocker.sentinel.fd),
-            mocker.sentinel.bytes,
+            (mocker.sentinel.bytes, mocker.sentinel.timeout),
         ]
 
         # Act
@@ -461,7 +468,7 @@ class TestSelectorDatagramTransport:
         mock_transport.send_noblock.side_effect = [
             WouldBlockOnRead(mocker.sentinel.fd),
             WouldBlockOnWrite(mocker.sentinel.fd),
-            None,
+            (None, mocker.sentinel.timeout),
         ]
 
         # Act

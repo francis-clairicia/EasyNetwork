@@ -17,10 +17,13 @@
 
 from __future__ import annotations
 
-__all__ = ["ListenerSocketAdapter", "connect_accepted_socket"]
+__all__ = [
+    "AbstractAcceptedSocketFactory",
+    "AcceptedSocketFactory",
+    "ListenerSocketAdapter",
+]
 
 import asyncio
-import asyncio.streams
 import contextlib
 import dataclasses
 import errno as _errno
@@ -31,42 +34,19 @@ from abc import abstractmethod
 from collections.abc import Callable, Coroutine, Mapping
 from typing import TYPE_CHECKING, Any, Generic, NoReturn, TypeVar, final
 
-from ... import constants, socket as socket_tools
+from ... import _utils, constants, socket as socket_tools
 from ...api_async.transports import abc as transports
 from ..socket import AsyncSocket
 from ..tasks import TaskGroup as AsyncIOTaskGroup
-from .socket import AsyncioTransportStreamSocketAdapter, RawStreamSocketAdapter
+from .socket import AsyncioTransportBufferedStreamSocketAdapter, StreamReaderBufferedProtocol
 
 if TYPE_CHECKING:
     import asyncio.trsock
-    import ssl as _ssl
 
     from ...api_async.backend.abc import TaskGroup as AbstractTaskGroup
 
 
-_T_Stream = TypeVar("_T_Stream", bound=AsyncioTransportStreamSocketAdapter | RawStreamSocketAdapter)
-
-
-async def connect_accepted_socket(
-    loop: asyncio.AbstractEventLoop,
-    sock: _socket.socket,
-    *,
-    limit: int = 65536,
-    ssl: _ssl.SSLContext | None = None,
-    ssl_handshake_timeout: float | None = None,
-    ssl_shutdown_timeout: float | None = None,
-) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
-    reader = asyncio.streams.StreamReader(limit=limit, loop=loop)
-    protocol = asyncio.streams.StreamReaderProtocol(reader, loop=loop)
-    transport, _ = await loop.connect_accepted_socket(
-        lambda: protocol,
-        sock,
-        ssl=ssl,
-        ssl_handshake_timeout=ssl_handshake_timeout,
-        ssl_shutdown_timeout=ssl_shutdown_timeout,
-    )
-    writer = asyncio.streams.StreamWriter(transport, protocol, reader, loop)
-    return reader, writer
+_T_Stream = TypeVar("_T_Stream", bound=transports.AsyncStreamTransport)
 
 
 class ListenerSocketAdapter(transports.AsyncListener[_T_Stream]):
@@ -101,7 +81,7 @@ class ListenerSocketAdapter(transports.AsyncListener[_T_Stream]):
         loop = self.__socket.loop
         logger = logging.getLogger(__name__)
 
-        async def client_task(client_socket: _socket.socket) -> None:
+        async def client_connection_task(client_socket: _socket.socket, task_group: AbstractTaskGroup) -> None:
             try:
                 stream = await connect(client_socket, loop)
             except asyncio.CancelledError:
@@ -122,7 +102,7 @@ class ListenerSocketAdapter(transports.AsyncListener[_T_Stream]):
                 if not isinstance(exc, Exception):
                     raise
             else:
-                await handler(stream)
+                task_group.start_soon(handler, stream)
 
         async with contextlib.AsyncExitStack() as stack:
             if task_group is None:
@@ -143,7 +123,7 @@ class ListenerSocketAdapter(transports.AsyncListener[_T_Stream]):
                     else:
                         raise
                 else:
-                    task_group.start_soon(client_task, client_socket)
+                    task_group.start_soon(client_connection_task, client_socket, task_group)
                     del client_socket
 
         raise AssertionError("Expected code to be unreachable.")
@@ -168,9 +148,7 @@ class AbstractAcceptedSocketFactory(Generic[_T_Stream]):
 
 @final
 @dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
-class AcceptedSocketFactory(AbstractAcceptedSocketFactory[AsyncioTransportStreamSocketAdapter | RawStreamSocketAdapter]):
-    use_asyncio_transport: bool
-
+class AcceptedSocketFactory(AbstractAcceptedSocketFactory[AsyncioTransportBufferedStreamSocketAdapter]):
     def log_connection_error(self, logger: logging.Logger, exc: BaseException) -> None:
         logger.error("Error in client task", exc_info=exc)
 
@@ -178,34 +156,9 @@ class AcceptedSocketFactory(AbstractAcceptedSocketFactory[AsyncioTransportStream
         self,
         socket: _socket.socket,
         loop: asyncio.AbstractEventLoop,
-    ) -> AsyncioTransportStreamSocketAdapter | RawStreamSocketAdapter:
-        if not self.use_asyncio_transport:
-            return RawStreamSocketAdapter(socket, loop)
-
-        reader, writer = await connect_accepted_socket(loop, socket)
-        return AsyncioTransportStreamSocketAdapter(reader, writer)
-
-
-@final
-@dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
-class AcceptedSSLSocketFactory(AbstractAcceptedSocketFactory[AsyncioTransportStreamSocketAdapter]):
-    ssl_context: _ssl.SSLContext
-    ssl_handshake_timeout: float
-    ssl_shutdown_timeout: float
-
-    def log_connection_error(self, logger: logging.Logger, exc: BaseException) -> None:
-        logger.error("Error in client task (during TLS handshake)", exc_info=exc)
-
-    async def connect(
-        self,
-        socket: _socket.socket,
-        loop: asyncio.AbstractEventLoop,
-    ) -> AsyncioTransportStreamSocketAdapter:
-        reader, writer = await connect_accepted_socket(
-            loop,
+    ) -> AsyncioTransportBufferedStreamSocketAdapter:
+        transport, protocol = await loop.connect_accepted_socket(
+            _utils.make_callback(StreamReaderBufferedProtocol, loop=loop),
             socket,
-            ssl=self.ssl_context,
-            ssl_handshake_timeout=self.ssl_handshake_timeout,
-            ssl_shutdown_timeout=self.ssl_shutdown_timeout,
         )
-        return AsyncioTransportStreamSocketAdapter(reader, writer)
+        return AsyncioTransportBufferedStreamSocketAdapter(transport, protocol)

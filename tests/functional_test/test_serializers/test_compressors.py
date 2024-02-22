@@ -9,7 +9,7 @@ from easynetwork.serializers.wrapper.compressor import BZ2CompressorSerializer, 
 
 import pytest
 
-from .base import BaseTestBufferedIncrementalSerializer, NoSerialization
+from .base import BaseTestBufferedIncrementalSerializer, BaseTestSerializerExtraData, NoSerialization
 
 SAMPLES = [
     (b"", "empty bytes"),
@@ -23,7 +23,7 @@ def _make_data_invalid(token: bytes) -> bytes:
     return token[:-2] + random.randbytes(5) + token[-2:]
 
 
-class BaseTestCompressorSerializer(BaseTestBufferedIncrementalSerializer):
+class BaseTestCompressorSerializer(BaseTestBufferedIncrementalSerializer, BaseTestSerializerExtraData):
     #### Serializers: To be defined in subclass
 
     #### Packets to test

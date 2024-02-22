@@ -101,14 +101,14 @@ class SelectorBaseTransport(transports.BaseTransport):
         self,
         callback: Callable[[], _T_Return],
         timeout: float,
-    ) -> _T_Return:
+    ) -> tuple[_T_Return, float]:
         timeout = _utils.validate_timeout_delay(timeout, positive_check=True)
         retry_interval = self._retry_interval
         event: int
         fileno: int
         while True:
             try:
-                return callback()
+                return callback(), timeout
             except WouldBlockOnRead as exc:
                 event = selectors.EVENT_READ
                 fileno = exc.fileno
@@ -177,7 +177,7 @@ class SelectorStreamReadTransport(SelectorBaseTransport, transports.StreamReadTr
 
         The default implementation will retry to call :meth:`recv_noblock` until it succeeds under the given `timeout`.
         """
-        return self._retry(lambda: self.recv_noblock(bufsize), timeout)
+        return self._retry(lambda: self.recv_noblock(bufsize), timeout)[0]
 
 
 class SelectorBufferedStreamReadTransport(SelectorStreamReadTransport, transports.BufferedStreamReadTransport):
@@ -213,7 +213,7 @@ class SelectorBufferedStreamReadTransport(SelectorStreamReadTransport, transport
 
         The default implementation will retry to call :meth:`recv_noblock_into` until it succeeds under the given `timeout`.
         """
-        return self._retry(lambda: self.recv_noblock_into(buffer), timeout)
+        return self._retry(lambda: self.recv_noblock_into(buffer), timeout)[0]
 
 
 class SelectorStreamWriteTransport(SelectorBaseTransport, transports.StreamWriteTransport):
@@ -243,7 +243,7 @@ class SelectorStreamWriteTransport(SelectorBaseTransport, transports.StreamWrite
 
         The default implementation will retry to call :meth:`send_noblock` until it succeeds under the given `timeout`.
         """
-        return self._retry(lambda: self.send_noblock(data), timeout)
+        return self._retry(lambda: self.send_noblock(data), timeout)[0]
 
 
 class SelectorStreamTransport(SelectorStreamWriteTransport, SelectorStreamReadTransport, transports.StreamTransport):
@@ -281,7 +281,7 @@ class SelectorDatagramReadTransport(SelectorBaseTransport, transports.DatagramRe
 
         The default implementation will retry to call :meth:`recv_noblock` until it succeeds under the given `timeout`.
         """
-        return self._retry(lambda: self.recv_noblock(), timeout)
+        return self._retry(lambda: self.recv_noblock(), timeout)[0]
 
 
 class SelectorDatagramWriteTransport(SelectorBaseTransport, transports.DatagramWriteTransport):
@@ -312,7 +312,7 @@ class SelectorDatagramWriteTransport(SelectorBaseTransport, transports.DatagramW
 
         The default implementation will retry to call :meth:`send_noblock` until it succeeds under the given `timeout`.
         """
-        return self._retry(lambda: self.send_noblock(data), timeout)
+        return self._retry(lambda: self.send_noblock(data), timeout)[0]
 
 
 class SelectorDatagramTransport(SelectorDatagramWriteTransport, SelectorDatagramReadTransport, transports.DatagramTransport):

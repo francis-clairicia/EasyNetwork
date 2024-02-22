@@ -40,10 +40,7 @@ class SendAction(AsyncGenAction[_T_Yield, _T_Send]):
     value: _T_Send
 
     async def asend(self, generator: AsyncGenerator[_T_Yield, _T_Send]) -> _T_Yield:
-        try:
-            return await generator.asend(self.value)
-        finally:
-            del generator, self  # Needed to avoid circular reference with raised exception
+        return await generator.asend(self.value)
 
 
 @dataclasses.dataclass(slots=True)

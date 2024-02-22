@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import contextlib
 import math
-from collections.abc import Callable, Generator
+from collections.abc import Generator
 from typing import TYPE_CHECKING, Any, Literal
 
 from easynetwork.exceptions import IncrementalDeserializeError, StreamProtocolParseError, UnsupportedOperation
-from easynetwork.lowlevel._stream import BufferedStreamDataConsumer, StreamDataConsumer
 from easynetwork.lowlevel.api_sync.endpoints.stream import StreamEndpoint
 from easynetwork.lowlevel.api_sync.transports.abc import (
     BufferedStreamReadTransport,
@@ -17,34 +16,12 @@ from easynetwork.lowlevel.api_sync.transports.abc import (
 
 import pytest
 
+from ...._utils import make_recv_into_side_effect
+
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
 
     from pytest_mock import MockerFixture
-
-
-def make_recv_into_side_effect(to_write: bytes | list[bytes]) -> Callable[[memoryview, float], int]:
-    def write_in_buffer(buffer: memoryview, to_write: bytes) -> int:
-        nbytes = len(to_write)
-        buffer[:nbytes] = to_write
-        return nbytes
-
-    match to_write:
-        case bytes():
-
-            def recv_into_side_effect(buffer: bytearray | memoryview, timeout: float) -> int:
-                return write_in_buffer(memoryview(buffer), to_write)
-
-        case list() if all(isinstance(b, bytes) for b in to_write):
-            iterator = iter(to_write)
-
-            def recv_into_side_effect(buffer: bytearray | memoryview, timeout: float) -> int:
-                return write_in_buffer(memoryview(buffer), next(iterator))
-
-        case _:
-            pytest.fail("Invalid setup")
-
-    return recv_into_side_effect
 
 
 class TestStreamEndpoint:
@@ -52,21 +29,6 @@ class TestStreamEndpoint:
     @staticmethod
     def mock_time_perfcounter(mocker: MockerFixture) -> MagicMock:
         return mocker.patch("time.perf_counter", autospec=True, return_value=12345)
-
-    @pytest.fixture
-    @staticmethod
-    def consumer_feed(mocker: MockerFixture) -> MagicMock:
-        return mocker.patch.object(StreamDataConsumer, "feed", autospec=True, side_effect=StreamDataConsumer.feed)
-
-    @pytest.fixture
-    @staticmethod
-    def consumer_buffer_updated(mocker: MockerFixture) -> MagicMock:
-        return mocker.patch.object(
-            BufferedStreamDataConsumer,
-            "buffer_updated",
-            autospec=True,
-            side_effect=BufferedStreamDataConsumer.buffer_updated,
-        )
 
     @pytest.fixture(params=[StreamReadTransport, BufferedStreamReadTransport, StreamWriteTransport, StreamTransport])
     @staticmethod
@@ -277,7 +239,7 @@ class TestStreamEndpoint:
         # Assert
         mock_stream_transport.close.assert_called_once_with()
 
-    def test____get_extra_info____default(
+    def test____extra_attributes____default(
         self,
         endpoint: StreamEndpoint[Any, Any],
         mock_stream_transport: MagicMock,
@@ -409,8 +371,6 @@ class TestStreamEndpoint:
         expected_recv_timeout: float,
         max_recv_size: int,
         mock_stream_transport: MagicMock,
-        consumer_feed: MagicMock,
-        consumer_buffer_updated: MagicMock,
         stream_protocol_mode: Literal["data", "buffer"],
         mocker: MockerFixture,
     ) -> None:
@@ -434,19 +394,13 @@ class TestStreamEndpoint:
             if stream_protocol_mode == "buffer":
                 mock_stream_transport.recv_into.assert_called_once_with(mocker.ANY, expected_recv_timeout)
                 mock_stream_transport.recv.assert_not_called()
-                consumer_buffer_updated.assert_called_once_with(mocker.ANY, len(b"packet\n"))
-                consumer_feed.assert_not_called()
             else:
                 mock_stream_transport.recv.assert_called_once_with(max_recv_size, expected_recv_timeout)
                 mock_stream_transport.recv_into.assert_not_called()
-                consumer_feed.assert_called_once_with(mocker.ANY, b"packet\n")
-                consumer_buffer_updated.assert_not_called()
         elif mock_stream_transport.__class__ in (StreamReadTransport, StreamTransport):
             mock_stream_transport.recv.assert_called_once_with(max_recv_size, expected_recv_timeout)
-            consumer_feed.assert_called_once_with(mocker.ANY, b"packet\n")
             assert packet is mocker.sentinel.packet
         else:
-            consumer_feed.assert_not_called()
             assert packet is mocker.sentinel.packet_not_received
 
     @pytest.mark.parametrize("recv_timeout", [None, math.inf, 123456789], indirect=True)  # Do not test with timeout==0
@@ -458,7 +412,6 @@ class TestStreamEndpoint:
         expected_recv_timeout: float,
         max_recv_size: int,
         mock_stream_transport: MagicMock,
-        consumer_feed: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -469,10 +422,6 @@ class TestStreamEndpoint:
 
         # Assert
         assert mock_stream_transport.recv.call_args_list == [mocker.call(max_recv_size, expected_recv_timeout) for _ in range(2)]
-        assert consumer_feed.call_args_list == [
-            mocker.call(mocker.ANY, b"pac"),
-            mocker.call(mocker.ANY, b"ket\n"),
-        ]
         assert packet is mocker.sentinel.packet
 
     @pytest.mark.parametrize("recv_timeout", [None, math.inf, 123456789], indirect=True)  # Do not test with timeout==0
@@ -484,7 +433,6 @@ class TestStreamEndpoint:
         recv_timeout: float | None,
         expected_recv_timeout: float,
         mock_stream_transport: MagicMock,
-        consumer_buffer_updated: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -496,10 +444,6 @@ class TestStreamEndpoint:
         # Assert
         assert mock_stream_transport.recv_into.call_args_list == [
             mocker.call(mocker.ANY, expected_recv_timeout) for _ in range(2)
-        ]
-        assert consumer_buffer_updated.call_args_list == [
-            mocker.call(mocker.ANY, len(b"pac")),
-            mocker.call(mocker.ANY, len(b"ket\n")),
         ]
         assert packet is mocker.sentinel.packet
 
@@ -520,7 +464,6 @@ class TestStreamEndpoint:
         expected_recv_timeout: float,
         max_recv_size: int,
         mock_stream_transport: MagicMock,
-        consumer_feed: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -533,18 +476,12 @@ class TestStreamEndpoint:
             assert mock_stream_transport.recv.call_args_list == [
                 mocker.call(max_recv_size, expected_recv_timeout) for _ in range(3)
             ]
-            assert consumer_feed.call_args_list == [
-                mocker.call(mocker.ANY, b"pac"),
-                mocker.call(mocker.ANY, b"ket"),
-                mocker.call(mocker.ANY, b"\n"),
-            ]
             assert packet is mocker.sentinel.packet
         else:
             with pytest.raises(TimeoutError):
                 endpoint.recv_packet(timeout=recv_timeout)
 
             mock_stream_transport.recv.assert_called_once_with(max_recv_size, expected_recv_timeout)
-            consumer_feed.assert_called_once_with(mocker.ANY, b"pac")
 
     @pytest.mark.parametrize("recv_timeout", [0], indirect=True)  # Only test with timeout==0
     @pytest.mark.parametrize(
@@ -564,7 +501,6 @@ class TestStreamEndpoint:
         expected_recv_timeout: float,
         max_recv_size: int,
         mock_stream_transport: MagicMock,
-        consumer_buffer_updated: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -577,18 +513,12 @@ class TestStreamEndpoint:
             assert mock_stream_transport.recv_into.call_args_list == [
                 mocker.call(mocker.ANY, expected_recv_timeout) for _ in range(3)
             ]
-            assert consumer_buffer_updated.call_args_list == [
-                mocker.call(mocker.ANY, len(b"pac")),
-                mocker.call(mocker.ANY, len(b"ket")),
-                mocker.call(mocker.ANY, len(b"\n")),
-            ]
             assert packet is mocker.sentinel.packet
         else:
             with pytest.raises(TimeoutError):
                 endpoint.recv_packet(timeout=recv_timeout)
 
             mock_stream_transport.recv_into.assert_called_once_with(mocker.ANY, expected_recv_timeout)
-            consumer_buffer_updated.assert_called_once_with(mocker.ANY, len(b"pac"))
 
     @pytest.mark.parametrize("mock_stream_transport", [StreamReadTransport], indirect=True)
     def test____recv_packet____blocking_or_not____extra_data(
@@ -596,7 +526,6 @@ class TestStreamEndpoint:
         endpoint: StreamEndpoint[Any, Any],
         recv_timeout: float | None,
         mock_stream_transport: MagicMock,
-        consumer_feed: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -608,7 +537,6 @@ class TestStreamEndpoint:
 
         # Assert
         mock_stream_transport.recv.assert_called_once()
-        consumer_feed.assert_called_once_with(mocker.ANY, b"packet_1\npacket_2\n")
         assert packet_1 is mocker.sentinel.packet_1
         assert packet_2 is mocker.sentinel.packet_2
 
@@ -619,7 +547,6 @@ class TestStreamEndpoint:
         endpoint: StreamEndpoint[Any, Any],
         recv_timeout: float | None,
         mock_stream_transport: MagicMock,
-        consumer_buffer_updated: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -631,7 +558,6 @@ class TestStreamEndpoint:
 
         # Assert
         mock_stream_transport.recv_into.assert_called_once()
-        consumer_buffer_updated.assert_called_once_with(mocker.ANY, len(b"packet_1\npacket_2\n"))
         assert packet_1 is mocker.sentinel.packet_1
         assert packet_2 is mocker.sentinel.packet_2
 
@@ -641,7 +567,6 @@ class TestStreamEndpoint:
         endpoint: StreamEndpoint[Any, Any],
         recv_timeout: float | None,
         mock_stream_transport: MagicMock,
-        consumer_feed: MagicMock,
     ) -> None:
         # Arrange
         mock_stream_transport.recv.side_effect = [b""]
@@ -652,7 +577,6 @@ class TestStreamEndpoint:
 
         # Assert
         mock_stream_transport.recv.assert_called_once()
-        consumer_feed.assert_not_called()
 
     @pytest.mark.parametrize("mock_stream_transport", [BufferedStreamReadTransport], indirect=True)
     @pytest.mark.parametrize("stream_protocol_mode", ["buffer"], indirect=True)
@@ -661,7 +585,6 @@ class TestStreamEndpoint:
         endpoint: StreamEndpoint[Any, Any],
         recv_timeout: float | None,
         mock_stream_transport: MagicMock,
-        consumer_buffer_updated: MagicMock,
     ) -> None:
         # Arrange
         mock_stream_transport.recv_into.side_effect = make_recv_into_side_effect([b""])
@@ -672,7 +595,6 @@ class TestStreamEndpoint:
 
         # Assert
         mock_stream_transport.recv_into.assert_called_once()
-        consumer_buffer_updated.assert_not_called()
 
     @pytest.mark.parametrize("mock_stream_transport", [StreamReadTransport], indirect=True)
     def test____recv_packet____blocking_or_not____protocol_parse_error(

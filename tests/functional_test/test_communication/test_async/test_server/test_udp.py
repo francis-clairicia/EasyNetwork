@@ -4,7 +4,6 @@ import asyncio
 import collections
 import contextlib
 import logging
-import weakref
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Sequence
 from typing import Any
 
@@ -14,16 +13,12 @@ from easynetwork.exceptions import BaseProtocolParseError, ClientClosedError, Da
 from easynetwork.lowlevel.socket import SocketAddress
 from easynetwork.lowlevel.std_asyncio.backend import AsyncIOBackend
 from easynetwork.lowlevel.std_asyncio.datagram.endpoint import DatagramEndpoint, create_datagram_endpoint
-from easynetwork.lowlevel.std_asyncio.datagram.listener import (
-    AsyncioTransportDatagramListenerSocketAdapter,
-    RawDatagramListenerSocketAdapter,
-)
+from easynetwork.lowlevel.std_asyncio.datagram.listener import DatagramListenerSocketAdapter
 from easynetwork.protocol import DatagramProtocol
 
 import pytest
 import pytest_asyncio
 
-from .....pytest_plugins.asyncio_event_loop import EventLoop
 from .....tools import temporary_backend
 from .base import BaseTestAsyncServer
 
@@ -35,7 +30,7 @@ class NoListenerErrorBackend(AsyncIOBackend):
         port: int,
         *,
         reuse_port: bool = False,
-    ) -> Sequence[RawDatagramListenerSocketAdapter] | Sequence[AsyncioTransportDatagramListenerSocketAdapter]:
+    ) -> Sequence[DatagramListenerSocketAdapter]:
         return []
 
 
@@ -51,6 +46,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 class MyAsyncUDPRequestHandler(AsyncDatagramRequestHandler[str, str]):
+    request_count: collections.Counter[tuple[Any, ...]]
     request_received: collections.defaultdict[tuple[Any, ...], list[str]]
     bad_request_received: collections.defaultdict[tuple[Any, ...], list[BaseProtocolParseError]]
     created_clients: set[AsyncDatagramClient[str]]
@@ -60,6 +56,7 @@ class MyAsyncUDPRequestHandler(AsyncDatagramRequestHandler[str, str]):
         await super().service_init(exit_stack, server)
         self.server = server
         assert isinstance(self.server, AsyncUDPNetworkServer)
+        self.request_count = collections.Counter()
         self.request_received = collections.defaultdict(list)
         self.bad_request_received = collections.defaultdict(list)
         self.created_clients = set()
@@ -74,6 +71,7 @@ class MyAsyncUDPRequestHandler(AsyncDatagramRequestHandler[str, str]):
                 await client.send_packet("something")
 
         del (
+            self.request_count,
             self.request_received,
             self.bad_request_received,
             self.created_clients,
@@ -85,13 +83,18 @@ class MyAsyncUDPRequestHandler(AsyncDatagramRequestHandler[str, str]):
             async with self.handle_bad_requests(client):
                 request = yield
                 break
+        self.request_count[client_address(client)] += 1
         match request:
             case "__error__":
                 raise RandomError("Sorry man!")
+            case "__error_excgrp__":
+                raise ExceptionGroup("RandomError", [RandomError("Sorry man!")])
             case "__os_error__":
                 raise OSError("Server issue.")
             case "__closed_client_error__":
                 raise ClientClosedError
+            case "__closed_client_error_excgrp__":
+                raise ExceptionGroup("ClientClosedError", [ClientClosedError()])
             case "__eq__":
                 assert client in list(self.created_clients)
                 assert object() not in list(self.created_clients)
@@ -142,13 +145,17 @@ class TimeoutRequestHandler(AsyncDatagramRequestHandler[str, str]):
 class ConcurrencyTestRequestHandler(AsyncDatagramRequestHandler[str, str]):
     sleep_time_before_second_yield: float = 0.0
     sleep_time_before_response: float = 0.0
+    recreate_generator: bool = True
 
     async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[None, str]:
-        assert (yield) == "something"
-        await asyncio.sleep(self.sleep_time_before_second_yield)
-        request = yield
-        await asyncio.sleep(self.sleep_time_before_response)
-        await client.send_packet(f"After wait: {request}")
+        while True:
+            assert (yield) == "something"
+            await asyncio.sleep(self.sleep_time_before_second_yield)
+            request = yield
+            await asyncio.sleep(self.sleep_time_before_response)
+            await client.send_packet(f"After wait: {request}")
+            if self.recreate_generator:
+                break
 
 
 class CancellationRequestHandler(AsyncDatagramRequestHandler[str, str]):
@@ -207,17 +214,8 @@ class MyAsyncUDPServer(AsyncUDPNetworkServer[str, str]):
     __slots__ = ()
 
 
-@pytest.mark.asyncio
 @pytest.mark.flaky(retries=3, delay=1)
 class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
-    @pytest.fixture
-    @staticmethod
-    def use_asyncio_transport(event_loop_name: EventLoop, use_asyncio_transport: bool) -> bool:
-        if not use_asyncio_transport:
-            if event_loop_name == EventLoop.UVLOOP:
-                pytest.xfail("uvloop runner does not implement the needed functions")
-        return use_asyncio_transport
-
     @pytest.fixture
     @staticmethod
     def request_handler(request: Any) -> AsyncDatagramRequestHandler[str, str]:
@@ -232,7 +230,6 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         datagram_protocol: DatagramProtocol[str, str],
         caplog: pytest.LogCaptureFixture,
         logger_crash_threshold_level: dict[str, int],
-        use_asyncio_transport: bool,  # Only here for dependency
     ) -> AsyncIterator[MyAsyncUDPServer]:
         async with MyAsyncUDPServer(localhost_ip, 0, datagram_protocol, request_handler, logger=LOGGER) as server:
             assert not server.get_sockets()
@@ -296,7 +293,6 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
     ) -> None:
         assert request_handler.server == server
         assert isinstance(request_handler.server, AsyncUDPNetworkServer)
-        assert isinstance(request_handler.server, weakref.ProxyType)
 
     async def test____serve_forever____handle_request(
         self,
@@ -400,8 +396,10 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
             assert caplog.records[1].exc_info is not None
             assert type(caplog.records[1].exc_info[1]) is RuntimeError
 
+    @pytest.mark.parametrize("excgrp", [False, True], ids=lambda p: f"exception_group_raised=={p}")
     async def test____serve_forever____unexpected_error_during_process(
         self,
+        excgrp: bool,
         client_factory: Callable[[], Awaitable[DatagramEndpoint]],
         caplog: pytest.LogCaptureFixture,
         logger_crash_maximum_nb_lines: dict[str, int],
@@ -410,12 +408,19 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         logger_crash_maximum_nb_lines[LOGGER.name] = 3
         endpoint = await client_factory()
 
-        await endpoint.sendto(b"__error__", None)
+        if excgrp:
+            await endpoint.sendto(b"__error_excgrp__", None)
+        else:
+            await endpoint.sendto(b"__error__", None)
         await asyncio.sleep(0.2)
 
         assert len(caplog.records) == 3
         assert caplog.records[1].exc_info is not None
-        assert type(caplog.records[1].exc_info[1]) is RandomError
+        if excgrp:
+            assert type(caplog.records[1].exc_info[1]) is ExceptionGroup
+            assert type(caplog.records[1].exc_info[1].exceptions[0]) is RandomError
+        else:
+            assert type(caplog.records[1].exc_info[1]) is RandomError
 
     @pytest.mark.parametrize("one_shot_serializer", [pytest.param("bad_serialize", id="serializer_crash")], indirect=True)
     async def test____serve_forever____unexpected_error_during_response_serialization(
@@ -453,8 +458,10 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         assert caplog.records[1].exc_info is not None
         assert type(caplog.records[1].exc_info[1]) is OSError
 
+    @pytest.mark.parametrize("excgrp", [False, True], ids=lambda p: f"exception_group_raised=={p}")
     async def test____serve_forever____use_of_a_closed_client_in_request_handler(  # In a world where this thing happen
         self,
+        excgrp: bool,
         client_factory: Callable[[], Awaitable[DatagramEndpoint]],
         caplog: pytest.LogCaptureFixture,
         logger_crash_maximum_nb_lines: dict[str, int],
@@ -464,7 +471,10 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         endpoint = await client_factory()
         host, port = endpoint.get_extra_info("sockname")[:2]
 
-        await endpoint.sendto(b"__closed_client_error__", None)
+        if excgrp:
+            await endpoint.sendto(b"__closed_client_error_excgrp__", None)
+        else:
+            await endpoint.sendto(b"__closed_client_error__", None)
         await asyncio.sleep(0.2)
 
         assert len(caplog.records) == 1
@@ -562,12 +572,15 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
             assert (await endpoint.recvfrom())[0] == b"After wait: hello, world."
 
     @pytest.mark.parametrize("request_handler", [ConcurrencyTestRequestHandler], indirect=True)
+    @pytest.mark.parametrize("recreate_generator", [False, True], ids=lambda p: f"recreate_generator=={p}")
     async def test____serve_forever____too_many_datagrams_while_request_handle_is_performed(
         self,
+        recreate_generator: bool,
         request_handler: ConcurrencyTestRequestHandler,
         client_factory: Callable[[], Awaitable[DatagramEndpoint]],
     ) -> None:
         request_handler.sleep_time_before_response = 0.5
+        request_handler.recreate_generator = recreate_generator
         endpoint = await client_factory()
 
         await endpoint.sendto(b"something", None)

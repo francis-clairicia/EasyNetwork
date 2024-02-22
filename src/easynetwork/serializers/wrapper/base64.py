@@ -26,7 +26,7 @@ from typing import Literal, final
 
 from ..._typevars import _T_ReceivedDTOPacket, _T_SentDTOPacket
 from ...exceptions import DeserializeError
-from ...lowlevel.constants import _DEFAULT_LIMIT
+from ...lowlevel.constants import DEFAULT_SERIALIZER_LIMIT
 from ..abc import AbstractPacketSerializer
 from ..base_stream import AutoSeparatedPacketSerializer
 
@@ -45,7 +45,7 @@ class Base64EncoderSerializer(AutoSeparatedPacketSerializer[_T_SentDTOPacket, _T
         alphabet: Literal["standard", "urlsafe"] = "urlsafe",
         checksum: bool | str | bytes = False,
         separator: bytes = b"\r\n",
-        limit: int = _DEFAULT_LIMIT,
+        limit: int = DEFAULT_SERIALIZER_LIMIT,
         debug: bool = False,
     ) -> None:
         """

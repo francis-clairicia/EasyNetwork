@@ -4,8 +4,11 @@
 # Auto-generated files at build time
 src/easynetwork/version.py
 
-# Compiled requirements
-requirements*.txt
+# Benchmark reports
+benchmark_reports
+benchmark*.json
+benchmark*.html
+benchmark*.svg
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

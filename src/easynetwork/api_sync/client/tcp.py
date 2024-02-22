@@ -78,6 +78,7 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
         server_hostname: str | None = ...,
         ssl_handshake_timeout: float | None = ...,
         ssl_shutdown_timeout: float | None = ...,
+        ssl_standard_compatible: bool | None = ...,
         ssl_shared_lock: bool | None = ...,
         max_recv_size: int | None = ...,
         retry_interval: float = ...,
@@ -95,6 +96,7 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
         server_hostname: str | None = ...,
         ssl_handshake_timeout: float | None = ...,
         ssl_shutdown_timeout: float | None = ...,
+        ssl_standard_compatible: bool | None = ...,
         ssl_shared_lock: bool | None = ...,
         max_recv_size: int | None = ...,
         retry_interval: float = ...,
@@ -111,6 +113,7 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
         server_hostname: str | None = None,
         ssl_handshake_timeout: float | None = None,
         ssl_shutdown_timeout: float | None = None,
+        ssl_standard_compatible: bool | None = None,
         ssl_shared_lock: bool | None = None,
         max_recv_size: int | None = None,
         retry_interval: float = 1.0,
@@ -142,6 +145,8 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
                                    before aborting the connection. ``60.0`` seconds if :data:`None` (default).
             ssl_shutdown_timeout: the time in seconds to wait for the SSL shutdown to complete before aborting the connection.
                                   ``30.0`` seconds if :data:`None` (default).
+            ssl_standard_compatible: if :data:`False`, skip the closing handshake when closing the connection,
+                                     and don't raise an exception if the peer does the same.
             ssl_shared_lock: If :data:`True` (the default), :meth:`send_packet` and :meth:`recv_packet` uses
                              the same lock instance.
             max_recv_size: Read buffer size. If not given, a default reasonable value is used.
@@ -165,11 +170,17 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
         if ssl_shutdown_timeout is not None and not ssl:
             raise ValueError("ssl_shutdown_timeout is only meaningful with ssl")
 
+        if ssl_standard_compatible is not None and not ssl:
+            raise ValueError("ssl_standard_compatible is only meaningful with ssl")
+
         if ssl_shared_lock is not None and not ssl:
             raise ValueError("ssl_shared_lock is only meaningful with ssl")
 
         if ssl_shared_lock is None:
             ssl_shared_lock = True
+
+        if ssl_standard_compatible is None:
+            ssl_standard_compatible = True
 
         socket: _socket.socket
         match __arg:
@@ -213,8 +224,7 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
                     assert isinstance(ssl, _ssl_module.SSLContext)  # nosec assert_used
                     if not server_hostname:
                         ssl.check_hostname = False
-                    if hasattr(_ssl_module, "OP_IGNORE_UNEXPECTED_EOF"):
-                        ssl.options &= ~getattr(_ssl_module, "OP_IGNORE_UNEXPECTED_EOF")
+                    ssl.options &= ~_ssl_module.OP_IGNORE_UNEXPECTED_EOF
                 if not server_hostname:
                     server_hostname = None
 
@@ -225,7 +235,7 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
                         retry_interval=retry_interval,
                         server_hostname=server_hostname,
                         server_side=False,
-                        standard_compatible=True,
+                        standard_compatible=ssl_standard_compatible,
                         handshake_timeout=ssl_handshake_timeout,
                         shutdown_timeout=ssl_shutdown_timeout,
                     )
@@ -380,8 +390,6 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
         try:
             yield
         except ConnectionError as exc:
-            raise self.__abort() from exc
-        except _ssl_module.SSLZeroReturnError if _ssl_module else () as exc:
             raise self.__abort() from exc
         except _ssl_module.SSLError if _ssl_module else () as exc:
             if _utils.is_ssl_eof_error(exc):

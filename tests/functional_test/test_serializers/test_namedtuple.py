@@ -9,7 +9,7 @@ from easynetwork.serializers.struct import NamedTupleStructSerializer
 
 import pytest
 
-from .base import BaseTestBufferedIncrementalSerializer
+from .base import BaseTestBufferedIncrementalSerializer, BaseTestSerializerExtraData
 
 
 class Point(NamedTuple):
@@ -33,7 +33,7 @@ def pack_point(p: Point, *, encoding: str = "utf-8") -> bytes:
 
 
 @final
-class TestNamedTupleStructSerializer(BaseTestBufferedIncrementalSerializer):
+class TestNamedTupleStructSerializer(BaseTestBufferedIncrementalSerializer, BaseTestSerializerExtraData):
     #### Serializers
 
     @pytest.fixture(scope="class")

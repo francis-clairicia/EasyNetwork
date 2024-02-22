@@ -19,13 +19,13 @@ from __future__ import annotations
 __all__ = [
     "ACCEPT_CAPACITY_ERRNOS",
     "ACCEPT_CAPACITY_ERROR_SLEEP_TIME",
+    "DEFAULT_SERIALIZER_LIMIT",
     "DEFAULT_STREAM_BUFSIZE",
     "MAX_DATAGRAM_BUFSIZE",
     "NOT_CONNECTED_SOCKET_ERRNOS",
     "SC_IOV_MAX",
     "SSL_HANDSHAKE_TIMEOUT",
     "SSL_SHUTDOWN_TIMEOUT",
-    "_DEFAULT_LIMIT",
 ]
 
 import errno as _errno
@@ -81,10 +81,10 @@ SSL_SHUTDOWN_TIMEOUT: Final[float] = 30.0
 
 # "Connection Attempt Delay" for concurrent connections
 # Recommended value by the RFC 6555
-HAPPY_EYEBALLS_DELAY = 0.25
+HAPPY_EYEBALLS_DELAY: Final[float] = 0.25
 
 # Buffer size limit when waiting for a byte sequence
-_DEFAULT_LIMIT: Final[int] = 64 * 1024  # 64 KiB
+DEFAULT_SERIALIZER_LIMIT: Final[int] = 64 * 1024  # 64 KiB
 
 
 def __get_sysconf(name: str, /) -> int:

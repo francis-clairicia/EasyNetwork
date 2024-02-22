@@ -1,0 +1,681 @@
+#!/usr/bin/env python3
+# mypy: disable-error-code=no-any-unimported
+#
+# Originally come from MagicStack's Network Server Performance Benchmarking Toolbench
+# https://github.com/MagicStack/vmbench
+
+from __future__ import annotations
+
+import argparse
+import contextlib
+import datetime
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+from collections.abc import Sequence
+from pathlib import Path
+from socket import SOCK_DGRAM, SOCK_STREAM
+from typing import TYPE_CHECKING, Final, NotRequired, TypedDict, cast
+
+import docker
+import docker.errors
+
+if TYPE_CHECKING:
+    from docker.models.containers import Container
+
+ROOT_DIR: Final[Path] = Path(__file__).parent
+
+EXPOSED_PORT: Final[int] = 25000
+
+
+class _BenchmarkDef(TypedDict):
+    name: str
+    title: str
+    server: list[str]
+    server_address: str | tuple[str, int]
+    ping_request: bytes
+    client: list[str]
+    type: int
+
+
+class _BenchmarkVariationDef(TypedDict):
+    title: str
+    payload_size: int
+    args: list[str]
+
+
+class _BenchmarkData(TypedDict):
+    name: str
+    variation: list[_BenchmarkVariationData]
+
+
+class _BenchmarkVariationData(TypedDict):
+    messages: int
+    rps: int
+    latency_min: float
+    latency_max: float
+    latency_mean: float
+    latency_stdev: float
+    latency_q1: float
+    latency_median: float
+    latency_q3: float
+    latency_nb_low_outliers: int
+    latency_nb_high_outliers: int
+    latency_percent_low_outliers: float
+    latency_percent_high_outliers: float
+    transfer: NotRequired[float]
+
+
+_python_cmd: Final[list[str]] = ["python3", "-OO"]
+
+_generic_stream_echoclient: Final[list[str]] = [
+    os.fspath(ROOT_DIR / "stream_echoclient.py"),
+    "--output-format=json",
+]
+
+_tcp_server_address: Final[tuple[str, int]] = ("127.0.0.1", EXPOSED_PORT)
+_tcp_echoclient: Final[list[str]] = _generic_stream_echoclient + [f"--addr=127.0.0.1:{EXPOSED_PORT}"]
+_tcp_readline_client: Final[list[str]] = _tcp_echoclient + ["--mpr=5"]
+
+_generic_datagram_echoclient: Final[list[str]] = [
+    os.fspath(ROOT_DIR / "datagram_echoclient.py"),
+    "--output-format=json",
+]
+
+_udp_server_address: Final[tuple[str, int]] = ("127.0.0.1", EXPOSED_PORT)
+_udp_echoclient: Final[list[str]] = _generic_datagram_echoclient + [f"--addr=127.0.0.1:{EXPOSED_PORT}"]
+
+
+BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
+    {
+        "name": "tcpecho-easynetwork-asyncio",
+        "title": "TCP echo server (easynetwork+asyncio)",
+        "server": _python_cmd
+        + [
+            "/usr/src/servers/easynetwork_tcp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+        ],
+        "server_address": _tcp_server_address,
+        "ping_request": b"ping\n",
+        "client": _tcp_echoclient,
+        "type": SOCK_STREAM,
+    },
+    {
+        "name": "tcpecho-easynetwork-uvloop",
+        "title": "TCP echo server (easynetwork+uvloop)",
+        "server": _python_cmd
+        + [
+            "/usr/src/servers/easynetwork_tcp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+            "--uvloop",
+        ],
+        "server_address": _tcp_server_address,
+        "ping_request": b"ping\n",
+        "client": _tcp_echoclient,
+        "type": SOCK_STREAM,
+    },
+    {
+        "name": "tcpecho-asyncio-sockets",
+        "title": "TCP echo server (asyncio/sockets)",
+        "server": _python_cmd
+        + [
+            "/usr/src/servers/asyncio_tcp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+        ],
+        "server_address": _tcp_server_address,
+        "ping_request": b"ping\n",
+        "client": _tcp_echoclient,
+        "type": SOCK_STREAM,
+    },
+    {
+        "name": "tcpecho-uvloop-sockets",
+        "title": "TCP echo server (uvloop/sockets)",
+        "server": _python_cmd
+        + [
+            "/usr/src/servers/asyncio_tcp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+            "--uvloop",
+        ],
+        "server_address": _tcp_server_address,
+        "ping_request": b"ping\n",
+        "client": _tcp_echoclient,
+        "type": SOCK_STREAM,
+    },
+    {
+        "name": "tcpecho-asyncio-streams",
+        "title": "TCP echo server (asyncio/streams)",
+        "server": _python_cmd
+        + [
+            "/usr/src/servers/asyncio_tcp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+            "--streams",
+        ],
+        "server_address": _tcp_server_address,
+        "ping_request": b"ping\n",
+        "client": _tcp_echoclient,
+        "type": SOCK_STREAM,
+    },
+    {
+        "name": "tcpecho-uvloop-streams",
+        "title": "TCP echo server (uvloop/streams)",
+        "server": _python_cmd
+        + [
+            "/usr/src/servers/asyncio_tcp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+            "--streams",
+            "--uvloop",
+        ],
+        "server_address": _tcp_server_address,
+        "ping_request": b"ping\n",
+        "client": _tcp_echoclient,
+        "type": SOCK_STREAM,
+    },
+    {
+        "name": "readline-easynetwork-asyncio",
+        "title": "TCP readline server (easynetwork+asyncio)",
+        "server": _python_cmd
+        + [
+            "/usr/src/servers/easynetwork_tcp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+            "--readline",
+        ],
+        "server_address": _tcp_server_address,
+        "ping_request": b"ping\n",
+        "client": _tcp_readline_client,
+        "type": SOCK_STREAM,
+    },
+    {
+        "name": "readline-easynetwork-uvloop",
+        "title": "TCP readline server (easynetwork+uvloop)",
+        "server": _python_cmd
+        + [
+            "/usr/src/servers/easynetwork_tcp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+            "--readline",
+            "--uvloop",
+        ],
+        "server_address": _tcp_server_address,
+        "ping_request": b"ping\n",
+        "client": _tcp_readline_client,
+        "type": SOCK_STREAM,
+    },
+    {
+        "name": "readline-asyncio-streams",
+        "title": "TCP readline server (asyncio/streams)",
+        "server": _python_cmd
+        + [
+            "/usr/src/servers/asyncio_tcp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+            "--readline",
+        ],
+        "server_address": _tcp_server_address,
+        "ping_request": b"ping\n",
+        "client": _tcp_readline_client,
+        "type": SOCK_STREAM,
+    },
+    {
+        "name": "readline-uvloop-streams",
+        "title": "TCP readline server (uvloop/streams)",
+        "server": _python_cmd
+        + [
+            "/usr/src/servers/asyncio_tcp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+            "--readline",
+            "--uvloop",
+        ],
+        "server_address": _tcp_server_address,
+        "ping_request": b"ping\n",
+        "client": _tcp_readline_client,
+        "type": SOCK_STREAM,
+    },
+    {
+        "name": "udpecho-easynetwork-asyncio",
+        "title": "UDP echo server (easynetwork+asyncio)",
+        "server": _python_cmd
+        + [
+            "/usr/src/servers/easynetwork_udp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+        ],
+        "server_address": _udp_server_address,
+        "ping_request": b"ping",
+        "client": _udp_echoclient,
+        "type": SOCK_DGRAM,
+    },
+    {
+        "name": "udpecho-easynetwork-uvloop",
+        "title": "UDP echo server (easynetwork+uvloop)",
+        "server": _python_cmd
+        + [
+            "/usr/src/servers/easynetwork_udp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+            "--uvloop",
+        ],
+        "server_address": _udp_server_address,
+        "ping_request": b"ping",
+        "client": _udp_echoclient,
+        "type": SOCK_DGRAM,
+    },
+    {
+        "name": "udpecho-asyncio-sockets",
+        "title": "UDP echo server (asyncio/sockets)",
+        "server": _python_cmd
+        + [
+            "/usr/src/servers/asyncio_udp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+        ],
+        "server_address": _udp_server_address,
+        "ping_request": b"ping",
+        "client": _udp_echoclient,
+        "type": SOCK_DGRAM,
+    },
+    # TODO: At the time this benchmark was written, uvloop (0.19) does not implement sock_sendto() and sock_recvfrom()
+    # See https://github.com/MagicStack/uvloop/issues/561
+    # {
+    #     "name": "udpecho-uvloop-sockets",
+    #     "title": "UDP echo server (uvloop/sockets)",
+    #     "server": _python_cmd
+    #     + [
+    #         "/usr/src/servers/asyncio_udp_echoserver.py",
+    #         f"--port={EXPOSED_PORT}",
+    #         "--uvloop",
+    #     ],
+    #     "server_address": _udp_server_address,
+    #     "ping_request": b"ping",
+    #     "client": _udp_echoclient,
+    #     "type": SOCK_DGRAM,
+    # },
+    {
+        "name": "udpecho-asyncio-streams",
+        "title": "UDP echo server (asyncio/streams)",
+        "server": _python_cmd
+        + [
+            "/usr/src/servers/asyncio_udp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+            "--streams",
+        ],
+        "server_address": _udp_server_address,
+        "ping_request": b"ping",
+        "client": _udp_echoclient,
+        "type": SOCK_DGRAM,
+    },
+    {
+        "name": "udpecho-uvloop-streams",
+        "title": "UDP echo server (uvloop/streams)",
+        "server": _python_cmd
+        + [
+            "/usr/src/servers/asyncio_udp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+            "--streams",
+            "--uvloop",
+        ],
+        "server_address": _udp_server_address,
+        "ping_request": b"ping",
+        "client": _udp_echoclient,
+        "type": SOCK_DGRAM,
+    },
+)
+
+
+def _kill_container(container: Container) -> None:
+    with contextlib.suppress(docker.errors.NotFound):
+        container.kill()
+
+
+def _stop_container(container: Container, timeout: int) -> None:
+    with contextlib.suppress(docker.errors.NotFound):
+        container.stop(timeout=timeout)
+
+
+def _start_docker_instance(
+    client: docker.DockerClient,
+    image_tag: str,
+    server_cmd: Sequence[str],
+    server_address: str | tuple[str, int],
+    ping_request: bytes,
+    socket_type: int,
+    *,
+    timeout: float,
+    docker_wait: float,
+) -> Container:
+    container_name = "easynetwork-benchmark"
+
+    container: Container
+    try:
+        container = cast("Container", client.containers.get(container_name))
+        container.remove(force=True)
+    except docker.errors.NotFound:
+        pass
+
+    ports = {
+        f"{EXPOSED_PORT}/tcp": EXPOSED_PORT,
+        f"{EXPOSED_PORT}/udp": EXPOSED_PORT,
+    }
+
+    container = cast(
+        "Container",
+        client.containers.run(
+            image_tag,
+            server_cmd,
+            name=container_name,
+            remove=True,
+            tty=True,
+            detach=True,
+            ports=ports,
+        ),
+    )
+
+    with contextlib.ExitStack() as on_error_stack:
+        on_error_stack.callback(_kill_container, container)
+
+        time.sleep(docker_wait)
+
+        start = time.monotonic()
+
+        import socket
+
+        if isinstance(server_address, str):
+            family = socket.AF_UNIX
+        else:
+            family = socket.AF_INET
+
+        print(f"Trying to connect to server at address {server_address}")
+
+        while (elapsed_time := time.monotonic() - start) < timeout:
+            sock = socket.socket(family, socket_type)
+            sock.settimeout(min(0.1, timeout - elapsed_time))
+            try:
+                if socket_type == SOCK_DGRAM and family == socket.AF_INET:
+                    sock.bind(("127.0.0.1", 0))
+                sock.connect(server_address)
+                if socket_type == SOCK_DGRAM:
+                    sock.send(ping_request)
+                else:
+                    sock.sendall(ping_request)
+                if sock.recv(65536):
+                    print("Server is up and running.")
+                else:
+                    raise OSError("socket read")
+            except OSError:
+                pass
+            else:
+                try:
+                    sock.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+                sock.close()
+
+                # There was no errors, unwind all
+                on_error_stack.pop_all()
+                return container
+
+        logs: bytes | str = container.logs()
+        if not isinstance(logs, str):
+            logs = str(logs, "utf-8", "ignore")
+        sys.exit("Could not start server\n" + logs)
+
+
+def _compute_latency_iqr(data: _BenchmarkVariationData) -> float:
+    return data["latency_q3"] - data["latency_q1"]
+
+
+def _compute_latency_lowerfence(data: _BenchmarkVariationData) -> float:
+    return max(data["latency_q1"] - 1.5 * _compute_latency_iqr(data), data["latency_min"])
+
+
+def _compute_latency_upperfence(data: _BenchmarkVariationData) -> float:
+    return min(data["latency_q3"] + 1.5 * _compute_latency_iqr(data), data["latency_max"])
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("-D", "--duration", default=30, type=int, help="duration of test in seconds")
+    parser.add_argument(
+        "-b",
+        "--benchmark",
+        type=str,
+        nargs="+",
+        default=[r".+"],
+        help="a list of benchmarks to run (regular expressions are supported)",
+    )
+    parser.add_argument(
+        "-t",
+        "--docker-image-tag",
+        default="easynetwork/benchmark",
+        help="the benchmark docker image",
+    )
+    parser.add_argument(
+        "-c",
+        "--concurrency-level",
+        type=int,
+        default=10,
+        help="the concurrency level to use",
+    )
+    parser.add_argument(
+        "--payload-size-levels",
+        type=int,
+        nargs="+",
+        default=[1024, 10 * 1024],
+        help="a list of message size levels to use (in bytes)",
+    )
+    parser.add_argument(
+        "--save-json",
+        "-J",
+        type=Path,
+        default=None,
+        help="path to save benchmark results in JSON format",
+    )
+    parser.add_argument(
+        "--save-html",
+        "-H",
+        type=Path,
+        default=None,
+        help="path to save benchmark results in HTML format",
+    )
+    parser.add_argument(
+        "--docker-timeout",
+        type=int,
+        default=5,
+        help="The amount of time to wait before considering the docker container unconnectable",
+    )
+    parser.add_argument(
+        "--docker-wait",
+        type=int,
+        default=0,
+        help="The amount of time to wait for the docker "
+        + "container to start before testing the "
+        + "connection. Useful for when the webserver "
+        + "running in docker takes a little bit of "
+        + "time to start.",
+    )
+    args = parser.parse_args()
+
+    client = docker.from_env()
+    image_tag: str = args.docker_image_tag
+    concurrency: int = args.concurrency_level
+    payload_size_levels: list[int] = args.payload_size_levels
+
+    variations: list[_BenchmarkVariationDef] = [
+        {
+            "title": f"{round(msgsize / 1024, 1)}KiB messages, concurrency {concurrency}",
+            "payload_size": msgsize,
+            "args": [f"--msize={msgsize}"],
+        }
+        for msgsize in payload_size_levels
+    ]
+
+    warmup = ["--msize=1024", "--duration=10", f"--concurrency={concurrency}"]
+
+    benchmarks_data_list: list[_BenchmarkData] = []
+
+    for benchmark in [b for b in BENCHMARKS_DEF if any(re.match(pattern, b["name"]) for pattern in args.benchmark)]:
+        print(benchmark["title"])
+        print("=" * len(benchmark["title"]))
+        print()
+
+        print("Starting server...")
+        server_cmd = benchmark["server"]
+        print("  " + " ".join(server_cmd))
+        container: Container = _start_docker_instance(
+            client,
+            image_tag,
+            server_cmd,
+            benchmark["server_address"],
+            benchmark["ping_request"],
+            socket_type=benchmark["type"],
+            timeout=args.docker_timeout,
+            docker_wait=args.docker_wait,
+        )
+        print()
+
+        with contextlib.ExitStack() as stack:
+            stack.callback(_stop_container, container, timeout=2)
+            stack.callback(print, "Shutting down server...")
+
+            print("Warming up server...")
+            warmup_cmd = benchmark["client"] + warmup
+            print(" ".join(warmup_cmd))
+            subprocess.check_output(warmup_cmd)
+            print()
+
+            duration: int = args.duration
+
+            benchmark_data: _BenchmarkData = {
+                "name": benchmark["name"],
+                "variation": [],
+            }
+            benchmarks_data_list.append(benchmark_data)
+
+            for variation in variations:
+                benchmark_title = f"BENCHMARK: {variation['title']}"
+                print(benchmark_title)
+                print("-" * len(benchmark_title))
+                client_cmd = benchmark["client"] + variation["args"]
+                client_cmd += [f"--duration={duration}", f"--concurrency={concurrency}"]
+                print(" ".join(client_cmd))
+                output = subprocess.check_output(client_cmd, text=True)
+                data: _BenchmarkVariationData = json.loads(output)
+
+                print(f"{data['messages']} in {duration} seconds")
+                print("Latency:")
+                print(f"- min {data['latency_min']}ms")
+                print(f"- max {data['latency_max']}ms")
+                print(f"- mean {data['latency_mean']}ms")
+                print(f"- std {data['latency_stdev']}ms ({100 * data['latency_stdev'] / data['latency_mean']:.2f}%)")
+                latency_distribution = [
+                    (25, data["latency_q1"]),
+                    (50, data["latency_median"]),
+                    (75, data["latency_q3"]),
+                ]
+                print(f"- distribution: {'; '.join(f'{percent}% under {time}ms' for percent, time in latency_distribution)}")
+                print(f"- number of low outliers: {data['latency_nb_low_outliers']} ({data['latency_percent_low_outliers']}%)")
+                print(f"- number of high outliers: {data['latency_nb_high_outliers']} ({data['latency_percent_high_outliers']}%)")
+                print(f"{data['rps']} requests/sec")
+                if "transfer" in data:
+                    print(f"Transfer: {data['transfer']} MiB/sec")
+                print()
+                del latency_distribution
+
+                benchmark_data["variation"].append(data)
+
+        # Pause time between server creation
+        time.sleep(1)
+
+        print()
+
+    if not benchmarks_data_list:
+        print("Benchmark parameter does not match any known suite.")
+        sys.exit(1)
+
+    now = datetime.datetime.now()
+    if args.save_json:
+        benchmark_json_report = {
+            "date": now.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            "duration": args.duration,
+            "concurrency_level": concurrency,
+            "payload_size_levels": payload_size_levels,
+            "benchmarks": benchmarks_data_list,
+        }
+
+        with open(args.save_json, "w") as f:
+            json.dump(benchmark_json_report, f, indent=4)
+
+        print(f"JSON report written in {args.save_json}")
+
+    if args.save_html:
+        import plotly.graph_objects as go
+
+        def _build_rps_bars_figure() -> go.Figure:
+            fig = go.Figure(
+                data=[
+                    go.Bar(
+                        name=f"{round(msgsize / 1024, 1)}KiB",
+                        x=[b["name"].replace("-", "<br>") for b in benchmarks_data_list],
+                        y=[b["variation"][index]["rps"] for b in benchmarks_data_list],
+                    )
+                    for index, msgsize in enumerate(payload_size_levels)
+                ]
+            )
+            fig.update_layout(
+                barmode="group",
+                yaxis_title="Requests / sec",
+                legend_title="Payload size",
+            )
+            return fig
+
+        def _build_latency_boxes_figure() -> go.Figure:
+            fig = go.Figure(
+                data=[
+                    go.Box(
+                        name=f"{round(msgsize / 1024, 1)}KiB",
+                        x=[b["name"].replace("-", "<br>") for b in benchmarks_data_list],
+                        y=[
+                            [b["variation"][index]["latency_min"], b["variation"][index]["latency_max"]]
+                            for b in benchmarks_data_list
+                        ],
+                        q1=[b["variation"][index]["latency_q1"] for b in benchmarks_data_list],
+                        median=[b["variation"][index]["latency_median"] for b in benchmarks_data_list],
+                        q3=[b["variation"][index]["latency_q3"] for b in benchmarks_data_list],
+                        lowerfence=[_compute_latency_lowerfence(b["variation"][index]) for b in benchmarks_data_list],
+                        upperfence=[_compute_latency_upperfence(b["variation"][index]) for b in benchmarks_data_list],
+                        boxpoints="outliers",
+                    )
+                    for index, msgsize in enumerate(payload_size_levels)
+                ]
+            )
+            fig.update_layout(
+                boxmode="group",
+                yaxis_title="Latency (msec)",
+                legend_title="Payload size",
+            )
+            return fig
+
+        figures = [
+            _build_rps_bars_figure(),
+            _build_latency_boxes_figure(),
+        ]
+
+        benchmark_title = f"Server Performance Benchmark Report ({now.strftime('%c')})"
+        with open(args.save_html, "w") as f:
+            print("<!DOCTYPE html>", file=f)
+            print("<html>", file=f)
+            print("<head>", file=f)
+            print('<meta charset="utf-8" />', file=f)
+            print(f"<title>{benchmark_title}</title>", file=f)
+            print("</head>", file=f)
+            print("<body>", file=f)
+
+            for i, fig in enumerate(figures):
+                fig.update_layout(title=f"{benchmark_title}. Duration: {args.duration}s; Concurrency level: {concurrency}")
+                fig.write_html(f, full_html=False, include_plotlyjs=(i == 0), default_width="95vw", default_height="95vh")
+
+            print("</body>", file=f)
+            print("</html>", file=f)
+
+        print(f"HTML report written in {args.save_html}")
+
+
+if __name__ == "__main__":
+    main()

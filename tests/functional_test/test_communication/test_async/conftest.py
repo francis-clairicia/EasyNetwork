@@ -1,25 +1,14 @@
 from __future__ import annotations
 
+import asyncio
+import sys
+
 import pytest
 
-use_asyncio_transport_xfail_uvloop = pytest.mark.parametrize(
-    "use_asyncio_transport",
-    [
-        pytest.param(False, marks=pytest.mark.xfail_uvloop),
-        pytest.param(True),
-    ],
-    ids=lambda boolean: f"use_asyncio_transport=={boolean}",
-    indirect=True,
-)
 
-
-@pytest.fixture(params=[False, True], ids=lambda boolean: f"use_asyncio_transport=={boolean}")
-def use_asyncio_transport(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> bool:
-    use_asyncio_transport: bool = bool(getattr(request, "param"))
-
-    if use_asyncio_transport:
-        monkeypatch.setenv("EASYNETWORK_HINT_FORCE_USE_ASYNCIO_TRANSPORTS", "1")
-    else:
-        monkeypatch.delenv("EASYNETWORK_HINT_FORCE_USE_ASYNCIO_TRANSPORTS", raising=False)
-
-    return use_asyncio_transport
+@pytest.fixture(params=[True, False] if sys.version_info >= (3, 12) else [False], ids=lambda p: f"enable_eager_tasks=={p}")
+def enable_eager_tasks(request: pytest.FixtureRequest, event_loop: asyncio.AbstractEventLoop) -> bool:
+    enable_eager_tasks = bool(request.param)
+    if enable_eager_tasks:
+        event_loop.set_task_factory(getattr(asyncio, "eager_task_factory"))
+    return enable_eager_tasks

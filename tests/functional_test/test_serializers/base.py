@@ -104,6 +104,13 @@ class BaseTestSerializer(metaclass=ABCMeta):
         with pytest.raises(DeserializeError):
             _ = serializer_for_deserialization.deserialize(invalid_complete_data)
 
+
+class BaseTestSerializerExtraData(BaseTestSerializer):
+    @pytest.fixture(scope="class")
+    @staticmethod
+    def oneshot_extra_data() -> bytes:
+        return b"remaining_data"
+
     def test____deserialize____extra_data(
         self,
         serializer_for_deserialization: AbstractPacketSerializer[Any, Any],
@@ -362,7 +369,7 @@ class BaseTestBufferedIncrementalSerializer(BaseTestIncrementalSerializer):
             invalid_partial_data,
             sent_extra_data,
             start_pos=start_idx,
-            too_short_buffer_for_complete_data="xfail",
+            too_short_buffer_for_complete_data="fill_at_most",
         )
         expected_remainder = expected_remainder.replace(sent_extra_data, partial_remaining_data, 1)
         del partial_remaining_data

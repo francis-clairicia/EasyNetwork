@@ -144,6 +144,18 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         self.__receive_lock: ILock = backend.create_lock()
         self.__send_lock: ILock = backend.create_lock()
 
+    @staticmethod
+    async def __create_socket(
+        socket_factory: Callable[[], Awaitable[AsyncDatagramTransport]],
+    ) -> tuple[AsyncDatagramTransport, SocketProxy]:
+        transport = await socket_factory()
+        socket_proxy = SocketProxy(transport.extra(INETSocketAttribute.socket))
+
+        local_address: SocketAddress = new_socket_address(transport.extra(INETSocketAttribute.sockname), socket_proxy.family)
+        if local_address.port == 0:
+            raise AssertionError(f"{transport} is not bound to a local address")
+        return transport, socket_proxy
+
     def __repr__(self) -> str:
         try:
             endpoint = self.__endpoint
@@ -182,18 +194,6 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
             OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
         """
         await self.__ensure_connected()
-
-    @staticmethod
-    async def __create_socket(
-        socket_factory: Callable[[], Awaitable[AsyncDatagramTransport]],
-    ) -> tuple[AsyncDatagramTransport, SocketProxy]:
-        transport = await socket_factory()
-        socket_proxy = SocketProxy(transport.extra(INETSocketAttribute.socket))
-
-        local_address: SocketAddress = new_socket_address(transport.extra(INETSocketAttribute.sockname), socket_proxy.family)
-        if local_address.port == 0:
-            raise AssertionError(f"{transport} is not bound to a local address")
-        return transport, socket_proxy
 
     def is_closing(self) -> bool:
         """

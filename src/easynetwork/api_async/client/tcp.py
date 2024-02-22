@@ -36,7 +36,7 @@ else:
 from ..._typevars import _T_ReceivedPacket, _T_SentPacket
 from ...exceptions import ClientClosedError
 from ...lowlevel import _utils, constants
-from ...lowlevel.api_async.backend.abc import CancelScope, ILock
+from ...lowlevel.api_async.backend.abc import AsyncBackend, CancelScope, ILock
 from ...lowlevel.api_async.backend.factory import current_async_backend
 from ...lowlevel.api_async.endpoints.stream import AsyncStreamEndpoint
 from ...lowlevel.api_async.transports.abc import AsyncStreamTransport
@@ -96,6 +96,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         server_hostname: str | None = ...,
         ssl_handshake_timeout: float | None = ...,
         ssl_shutdown_timeout: float | None = ...,
+        ssl_standard_compatible: bool | None = ...,
         ssl_shared_lock: bool | None = ...,
         max_recv_size: int | None = ...,
     ) -> None:
@@ -112,6 +113,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         server_hostname: str | None = ...,
         ssl_handshake_timeout: float | None = ...,
         ssl_shutdown_timeout: float | None = ...,
+        ssl_standard_compatible: bool | None = ...,
         ssl_shared_lock: bool | None = ...,
         max_recv_size: int | None = ...,
     ) -> None:
@@ -127,6 +129,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         server_hostname: str | None = None,
         ssl_handshake_timeout: float | None = None,
         ssl_shutdown_timeout: float | None = None,
+        ssl_standard_compatible: bool | None = None,
         ssl_shared_lock: bool | None = None,
         max_recv_size: int | None = None,
         **kwargs: Any,
@@ -158,6 +161,8 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
                                    before aborting the connection. ``60.0`` seconds if :data:`None` (default).
             ssl_shutdown_timeout: the time in seconds to wait for the SSL shutdown to complete before aborting the connection.
                                   ``30.0`` seconds if :data:`None` (default).
+            ssl_standard_compatible: if :data:`False`, skip the closing handshake when closing the connection,
+                                     and don't raise an exception if the peer does the same.
             ssl_shared_lock: If :data:`True` (the default), :meth:`send_packet` and :meth:`recv_packet` uses
                              the same lock instance.
             max_recv_size: Read buffer size. If not given, a default reasonable value is used.
@@ -188,6 +193,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
                 assert isinstance(ssl, _ssl_module.SSLContext)  # nosec assert_used
                 if server_hostname is not None and not server_hostname:
                     ssl.check_hostname = False
+                ssl.options &= ~_ssl_module.OP_IGNORE_UNEXPECTED_EOF
         else:
             if server_hostname is not None:
                 raise ValueError("server_hostname is only meaningful with ssl")
@@ -198,14 +204,17 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
             if ssl_shutdown_timeout is not None:
                 raise ValueError("ssl_shutdown_timeout is only meaningful with ssl")
 
+            if ssl_standard_compatible is not None:
+                raise ValueError("ssl_standard_compatible is only meaningful with ssl")
+
             if ssl_shared_lock is not None:
                 raise ValueError("ssl_shared_lock is only meaningful with ssl")
 
         if ssl_shared_lock is None:
             ssl_shared_lock = True
 
-        def _value_or_default(value: float | None, default: float) -> float:
-            return value if value is not None else default
+        if ssl_standard_compatible is None:
+            ssl_standard_compatible = True
 
         socket_factory: Callable[[], Awaitable[AsyncStreamTransport]]
         match __arg:
@@ -217,12 +226,14 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
                     if server_hostname is None:
                         raise ValueError("You must set server_hostname when using ssl without a host")
                     socket_factory = _utils.make_callback(
-                        backend.wrap_ssl_over_stream_socket_client_side,
+                        self.__wrap_ssl_over_stream_socket_client_side,
+                        backend,
                         socket,
                         ssl_context=ssl,
                         server_hostname=server_hostname,
-                        ssl_handshake_timeout=_value_or_default(ssl_handshake_timeout, constants.SSL_HANDSHAKE_TIMEOUT),
-                        ssl_shutdown_timeout=_value_or_default(ssl_shutdown_timeout, constants.SSL_SHUTDOWN_TIMEOUT),
+                        ssl_handshake_timeout=ssl_handshake_timeout,
+                        ssl_shutdown_timeout=ssl_shutdown_timeout,
+                        ssl_standard_compatible=ssl_standard_compatible,
                         **kwargs,
                     )
                 else:
@@ -230,13 +241,15 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
             case (str(host), int(port)):
                 if ssl:
                     socket_factory = _utils.make_callback(
-                        backend.create_ssl_over_tcp_connection,
+                        self.__create_ssl_over_tcp_connection,
+                        backend,
                         host,
                         port,
                         ssl_context=ssl,
                         server_hostname=server_hostname,
-                        ssl_handshake_timeout=_value_or_default(ssl_handshake_timeout, constants.SSL_HANDSHAKE_TIMEOUT),
-                        ssl_shutdown_timeout=_value_or_default(ssl_shutdown_timeout, constants.SSL_SHUTDOWN_TIMEOUT),
+                        ssl_handshake_timeout=ssl_handshake_timeout,
+                        ssl_shutdown_timeout=ssl_shutdown_timeout,
+                        ssl_standard_compatible=ssl_standard_compatible,
                         **kwargs,
                     )
                 else:
@@ -260,6 +273,80 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
             self.__receive_lock = backend.create_lock()
             self.__send_lock = backend.create_lock()
         self.__expected_recv_size: int = max_recv_size
+
+    @staticmethod
+    async def __create_ssl_over_tcp_connection(
+        backend: AsyncBackend,
+        host: str,
+        port: int,
+        ssl_context: _typing_ssl.SSLContext,
+        *,
+        server_hostname: str | None,
+        ssl_handshake_timeout: float | None,
+        ssl_shutdown_timeout: float | None,
+        ssl_standard_compatible: bool,
+        local_address: tuple[str, int] | None = None,
+        happy_eyeballs_delay: float | None = None,
+    ) -> AsyncStreamTransport:
+        from ...lowlevel.api_async.transports.tls import AsyncTLSStreamTransport
+
+        transport = await backend.create_tcp_connection(
+            host,
+            port,
+            local_address=local_address,
+            happy_eyeballs_delay=happy_eyeballs_delay,
+        )
+
+        return await AsyncTLSStreamTransport.wrap(
+            transport,
+            ssl_context,
+            server_side=False,
+            handshake_timeout=ssl_handshake_timeout,
+            shutdown_timeout=ssl_shutdown_timeout,
+            server_hostname=server_hostname or None,
+            standard_compatible=ssl_standard_compatible,
+        )
+
+    @staticmethod
+    async def __wrap_ssl_over_stream_socket_client_side(
+        backend: AsyncBackend,
+        socket: _socket.socket,
+        ssl_context: _typing_ssl.SSLContext,
+        *,
+        server_hostname: str,
+        ssl_handshake_timeout: float | None,
+        ssl_shutdown_timeout: float | None,
+        ssl_standard_compatible: bool,
+    ) -> AsyncStreamTransport:
+        from ...lowlevel.api_async.transports.tls import AsyncTLSStreamTransport
+
+        transport = await backend.wrap_stream_socket(socket)
+
+        return await AsyncTLSStreamTransport.wrap(
+            transport,
+            ssl_context,
+            server_side=False,
+            handshake_timeout=ssl_handshake_timeout,
+            shutdown_timeout=ssl_shutdown_timeout,
+            server_hostname=server_hostname or None,
+            standard_compatible=ssl_standard_compatible,
+        )
+
+    @staticmethod
+    async def __create_socket(
+        socket_factory: Callable[[], Awaitable[AsyncStreamTransport]],
+    ) -> tuple[AsyncStreamTransport, SocketProxy]:
+        transport = await socket_factory()
+
+        socket_proxy = SocketProxy(transport.extra(INETSocketAttribute.socket))
+
+        _utils.check_socket_family(socket_proxy.family)
+
+        with contextlib.suppress(OSError):
+            set_tcp_nodelay(socket_proxy, True)
+        with contextlib.suppress(OSError):
+            set_tcp_keepalive(socket_proxy, True)
+        return transport, socket_proxy
 
     def __repr__(self) -> str:
         try:
@@ -307,22 +394,6 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
             OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
         """
         await self.__ensure_connected()
-
-    @staticmethod
-    async def __create_socket(
-        socket_factory: Callable[[], Awaitable[AsyncStreamTransport]],
-    ) -> tuple[AsyncStreamTransport, SocketProxy]:
-        transport = await socket_factory()
-
-        socket_proxy = SocketProxy(transport.extra(INETSocketAttribute.socket))
-
-        _utils.check_socket_family(socket_proxy.family)
-
-        with contextlib.suppress(OSError):
-            set_tcp_nodelay(socket_proxy, True)
-        with contextlib.suppress(OSError):
-            set_tcp_keepalive(socket_proxy, True)
-        return transport, socket_proxy
 
     def is_closing(self) -> bool:
         """
@@ -496,6 +567,10 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
             yield
         except ConnectionError as exc:
             raise self.__abort() from exc
+        except _ssl_module.SSLError if _ssl_module else () as exc:
+            if _utils.is_ssl_eof_error(exc):
+                raise self.__abort() from exc
+            raise
         except OSError as exc:
             if exc.errno in constants.CLOSED_SOCKET_ERRNOS:
                 raise self.__closed()

@@ -16,35 +16,39 @@
 
 from __future__ import annotations
 
-__all__ = ["AsyncDatagramServer"]
+__all__ = ["AsyncDatagramServer", "DatagramClientContext"]
 
-import contextlib
 import contextvars
+import dataclasses
 import enum
-import operator
-from collections import Counter, defaultdict, deque
-from collections.abc import AsyncGenerator, AsyncIterator, Callable, Hashable, Iterator, Mapping
-from types import TracebackType
-from typing import Any, Generic, NoReturn, Self, TypeVar, assert_never
+import weakref
+from collections import deque
+from collections.abc import AsyncGenerator, Callable, Hashable, Mapping
+from contextlib import AsyncExitStack, ExitStack
+from typing import Any, Generic, NoReturn, TypeVar
 
 from .... import protocol as protocol_module
 from ...._typevars import _T_Request, _T_Response
 from ....exceptions import DatagramProtocolParseError
-from ... import _asyncgen, _utils, typed_attr
+from ... import _utils, typed_attr
+from ..._asyncgen import AsyncGenAction, SendAction, ThrowAction
 from ..backend.abc import AsyncBackend, ICondition, ILock, TaskGroup
 from ..backend.factory import current_async_backend
 from ..transports import abc as transports
 
 _T_Address = TypeVar("_T_Address", bound=Hashable)
-_T_Key = TypeVar("_T_Key")
-_T_Value = TypeVar("_T_Value")
+
+
+@dataclasses.dataclass(frozen=True, unsafe_hash=True, slots=True, weakref_slot=True)
+class DatagramClientContext(Generic[_T_Response, _T_Address]):
+    address: _T_Address
+    server: AsyncDatagramServer[Any, _T_Response, _T_Address]
 
 
 class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_T_Request, _T_Response, _T_Address]):
     __slots__ = (
         "__listener",
         "__protocol",
-        "__client_manager",
         "__sendto_lock",
         "__serve_guard",
         "__weakref__",
@@ -62,7 +66,6 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_T_Request,
 
         self.__listener: transports.AsyncDatagramListener[_T_Address] = listener
         self.__protocol: protocol_module.DatagramProtocol[_T_Response, _T_Request] = protocol
-        self.__client_manager: _ClientManager[_T_Address] = _ClientManager(current_async_backend())
         self.__sendto_lock: ILock = current_async_backend().create_lock()
         self.__serve_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently receiving datagrams")
 
@@ -92,130 +95,98 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_T_Request,
             packet: the Python object to send.
             address: the remote endpoint address.
         """
-        with self.__client_manager.send_guard(address):
-            listener = self.__listener
-            protocol = self.__protocol
-
-            try:
-                datagram: bytes = protocol.make_datagram(packet)
-            except Exception as exc:
-                raise RuntimeError("protocol.make_datagram() crashed") from exc
-            finally:
-                del packet
-            try:
-                async with self.__sendto_lock:
-                    await listener.send_to(datagram, address)
-            finally:
-                del datagram
+        try:
+            datagram: bytes = self.__protocol.make_datagram(packet)
+        except Exception as exc:
+            raise RuntimeError("protocol.make_datagram() crashed") from exc
+        async with self.__sendto_lock:
+            await self.__listener.send_to(datagram, address)
 
     async def serve(
         self,
-        datagram_received_cb: Callable[[_T_Address, Self], AsyncGenerator[None, _T_Request]],
+        datagram_received_cb: Callable[[DatagramClientContext[_T_Response, _T_Address]], AsyncGenerator[None, _T_Request]],
         task_group: TaskGroup | None = None,
     ) -> NoReturn:
         with self.__serve_guard:
-            client_coroutine = self.__client_coroutine
-            client_manager = self.__client_manager
             listener = self.__listener
+            backend = current_async_backend()
+            client_cache: weakref.WeakValueDictionary[_T_Address, _ClientToken[_T_Response, _T_Address]]
+            client_cache = weakref.WeakValueDictionary()
+            default_context = contextvars.copy_context()
 
-            async def receive_datagram(task_group: TaskGroup, /) -> None:
-                datagram, address = await listener.recv_from()
-                if not datagram:
-                    return
-
-                with client_manager.datagram_queue(address) as datagram_queue:
-                    datagram_queue.append(datagram)
-
-                    # client_coroutine() is running (or will be run) if datagram_queue was not empty
-                    # Therefore, start a new task only if there was no previous datagrams
-                    if len(datagram_queue) > 1:
-                        return
-
-                match (client_state := client_manager.client_state(address)):
-                    case None:
-                        task_group.start_soon(client_coroutine, datagram_received_cb, address, task_group)
-                    case _ClientState.TASK_WAITING:
-                        # Set a null timeout scope because condition.acquire() will block
-                        # if client_coroutine() is cancelled
-                        with current_async_backend().move_on_after(0):
-                            async with client_manager.lock(address) as condition:
-                                condition.notify()
-                    case _ClientState.TASK_RUNNING:
-                        # Do nothing
-                        pass
-                    case _:  # pragma: no cover
-                        assert_never(client_state)
-
-            async with contextlib.AsyncExitStack() as stack:
+            async with AsyncExitStack() as stack:
                 if task_group is None:
-                    task_group = await stack.enter_async_context(current_async_backend().create_task_group())
-                while True:
-                    await receive_datagram(task_group)
+                    task_group = await stack.enter_async_context(backend.create_task_group())
+
+                # The responsibility for ordering datagram reception is shifted to the listener.
+                async def handler(datagram: bytes, address: _T_Address, /) -> None:
+                    try:
+                        client = client_cache[address]
+                    except KeyError:
+                        client_cache[address] = client = _ClientToken(DatagramClientContext(address, self), _ClientData(backend))
+                        new_client_task = True
+                    else:
+                        new_client_task = client.data.state is None
+
+                    if new_client_task:
+                        client.data.mark_pending()
+                        await self.__client_coroutine(datagram_received_cb, datagram, client, task_group, default_context)
+                    else:
+                        await client.data.push_datagram(datagram)
+
+                await listener.serve(handler, task_group)
 
             raise AssertionError("Expected code to be unreachable.")
 
     async def __client_coroutine(
         self,
-        datagram_received_cb: Callable[[_T_Address, Self], AsyncGenerator[None, _T_Request]],
-        address: _T_Address,
+        datagram_received_cb: Callable[[DatagramClientContext[_T_Response, _T_Address]], AsyncGenerator[None, _T_Request]],
+        datagram: bytes,
+        client: _ClientToken[_T_Response, _T_Address],
         task_group: TaskGroup,
+        default_context: contextvars.Context,
     ) -> None:
-        client_manager = self.__client_manager
+        client_data = client.data
+        async with client_data.task_lock:
+            with ExitStack() as exit_stack:
+                #####################################################################################################
+                # CRITICAL SECTION
+                # This block must not have any asynchronous function calls
+                # or add any asynchronous callbacks/contexts to the exit stack.
+                client_data.mark_running()
+                exit_stack.callback(
+                    self.__on_task_done,
+                    datagram_received_cb=datagram_received_cb,
+                    client=client,
+                    task_group=task_group,
+                    default_context=default_context,
+                )
+                #####################################################################################################
 
-        async with contextlib.AsyncExitStack() as client_exit_stack:
-            condition = await client_exit_stack.enter_async_context(client_manager.lock(address))
+                request_handler_generator = datagram_received_cb(client.ctx)
 
-            datagram_queue: deque[bytes] = client_exit_stack.enter_context(client_manager.datagram_queue(address))
-            client_manager.check_datagram_queue_not_empty(datagram_queue)
-
-            #####################################################################################################
-            # CRITICAL SECTION
-            # This block must not have any asynchronous function calls
-            # or add any asynchronous callbacks/contexts to the exit stack.
-            critical_section_stack = client_exit_stack.enter_context(contextlib.ExitStack())
-            self.__critical_section__client_coroutine_bootstrap(
-                datagram_received_cb=datagram_received_cb,
-                address=address,
-                task_group=task_group,
-                datagram_queue=datagram_queue,
-                critical_section_stack=critical_section_stack,
-            )
-            del critical_section_stack
-            #####################################################################################################
-
-            request_handler_generator = datagram_received_cb(address, self)
-
-            del client_exit_stack, datagram_received_cb
-
-            async with contextlib.aclosing(request_handler_generator):
                 try:
                     await anext(request_handler_generator)
                 except StopAsyncIteration:
-                    del datagram_queue[0]
                     return
 
-                protocol = self.__protocol
-                parse_datagram = self.__parse_datagram
-                action: _asyncgen.AsyncGenAction[None, _T_Request]
-
+                action: AsyncGenAction[None, _T_Request] = self.__parse_datagram(datagram, self.__protocol)
                 try:
-                    await parse_datagram(datagram_queue.popleft(), protocol).asend(request_handler_generator)
+                    await action.asend(request_handler_generator)
                 except StopAsyncIteration:
                     return
+                finally:
+                    del action
 
+                del datagram
                 while True:
                     try:
-                        if datagram_queue:
-                            # Always handle one request at a time
-                            await current_async_backend().cancel_shielded_coro_yield()
-                        else:
-                            with client_manager.set_client_state(address, _ClientState.TASK_WAITING):
-                                await condition.wait()
-                            client_manager.check_datagram_queue_not_empty(datagram_queue)
+                        datagram = await client_data.pop_datagram()
                     except BaseException as exc:
-                        action = _asyncgen.ThrowAction(exc)
+                        action = ThrowAction(exc)
                     else:
-                        action = parse_datagram(datagram_queue.popleft(), protocol)
+                        action = self.__parse_datagram(datagram, self.__protocol)
+                        del datagram
                     try:
                         await action.asend(request_handler_generator)
                     except StopAsyncIteration:
@@ -223,59 +194,35 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_T_Request,
                     finally:
                         del action
 
-    def __critical_section__client_coroutine_bootstrap(
+    def __on_task_done(
         self,
-        *,
-        datagram_received_cb: Callable[[_T_Address, Self], AsyncGenerator[None, _T_Request]],
-        address: _T_Address,
+        datagram_received_cb: Callable[[DatagramClientContext[_T_Response, _T_Address]], AsyncGenerator[None, _T_Request]],
+        client: _ClientToken[_T_Response, _T_Address],
         task_group: TaskGroup,
-        datagram_queue: deque[bytes],
-        critical_section_stack: contextlib.ExitStack,
-    ) -> None:
-        critical_section_stack.enter_context(self.__client_manager.set_client_state(address, _ClientState.TASK_RUNNING))
-        critical_section_stack.callback(
-            self.__enqueue_task_at_end,
-            datagram_received_cb=datagram_received_cb,
-            address=address,
-            task_group=task_group,
-            datagram_queue=datagram_queue,
-            default_context=contextvars.copy_context(),
-        )
-        critical_section_stack.push(_utils.prepend_argument(datagram_queue, self.__clear_queue_on_error))
-
-    def __enqueue_task_at_end(
-        self,
-        datagram_received_cb: Callable[[_T_Address, Self], AsyncGenerator[None, _T_Request]],
-        address: _T_Address,
-        task_group: TaskGroup,
-        datagram_queue: deque[bytes],
         default_context: contextvars.Context,
     ) -> None:
-        if datagram_queue:
-            default_context.run(
-                task_group.start_soon,
-                self.__client_coroutine,
-                datagram_received_cb,
-                address,
-                task_group,
-            )
+        client.data.mark_done()
+        try:
+            pending_datagram = client.data.pop_datagram_no_wait()
+        except IndexError:
+            return
 
-    @staticmethod
-    def __clear_queue_on_error(
-        datagram_queue: deque[bytes],
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: TracebackType | None,
-        /,
-    ) -> None:
-        if exc_type is not None:
-            datagram_queue.clear()
+        client.data.mark_pending()
+        default_context.run(
+            task_group.start_soon,
+            self.__client_coroutine,
+            datagram_received_cb,
+            pending_datagram,
+            client,
+            task_group,
+            default_context,
+        )
 
     @staticmethod
     def __parse_datagram(
         datagram: bytes,
         protocol: protocol_module.DatagramProtocol[_T_Response, _T_Request],
-    ) -> _asyncgen.AsyncGenAction[None, _T_Request]:
+    ) -> AsyncGenAction[None, _T_Request]:
         try:
             try:
                 request = protocol.build_packet_from_datagram(datagram)
@@ -283,12 +230,10 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_T_Request,
                 raise
             except Exception as exc:
                 raise RuntimeError("protocol.build_packet_from_datagram() crashed") from exc
-            else:
-                return _asyncgen.SendAction(request)
         except BaseException as exc:
-            return _asyncgen.ThrowAction(exc)
-        finally:
-            del datagram
+            return ThrowAction(exc)
+        else:
+            return SendAction(request)
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
@@ -297,112 +242,86 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_T_Request,
 
 @enum.unique
 class _ClientState(enum.Enum):
+    TASK_PENDING = enum.auto()
     TASK_RUNNING = enum.auto()
-    TASK_WAITING = enum.auto()
 
 
-class _ClientManager(Generic[_T_Address]):
+@dataclasses.dataclass(slots=True, weakref_slot=True)
+class _ClientToken(Generic[_T_Response, _T_Address]):
+    ctx: DatagramClientContext[_T_Response, _T_Address]
+    data: _ClientData
+
+
+class _ClientData:
     __slots__ = (
-        "__client_lock",
-        "__client_queue",
-        "__client_state",
-        "__send_guard",
-        "__weakref__",
+        "__backend",
+        "__task_lock",
+        "__state",
+        "_queue_condition",
+        "_datagram_queue",
     )
 
     def __init__(self, backend: AsyncBackend) -> None:
-        super().__init__()
+        self.__backend: AsyncBackend = backend
+        self.__task_lock: ILock = backend.create_lock()
+        self.__state: _ClientState | None = None
+        self._queue_condition: ICondition | None = None
+        self._datagram_queue: deque[bytes] | None = None
 
-        self.__client_lock: _TemporaryValue[_T_Address, ICondition] = _TemporaryValue(backend.create_condition_var)
-        self.__client_queue: _TemporaryValue[_T_Address, deque[bytes]] = _TemporaryValue(
-            deque,
-            must_delete_value=operator.not_,  # delete if and only if the deque is empty
-        )
-        self.__client_state: dict[_T_Address, _ClientState] = {}
-        self.__send_guard: _TemporaryValue[_T_Address, _utils.ResourceGuard] = _TemporaryValue(
-            lambda: _utils.ResourceGuard("another task is currently sending data for this address")
-        )
+    @property
+    def task_lock(self) -> ILock:
+        return self.__task_lock
 
-    def client_state(self, address: _T_Address) -> _ClientState | None:
-        return self.__client_state.get(address)
+    @property
+    def state(self) -> _ClientState | None:
+        return self.__state
 
-    @contextlib.contextmanager
-    def set_client_state(self, address: _T_Address, state: _ClientState) -> Iterator[None]:
-        old_state: _ClientState | None = self.__client_state.get(address)
-        match state:
-            case _ClientState.TASK_RUNNING if old_state is None:
-                pass
-            case _ClientState.TASK_WAITING if old_state is _ClientState.TASK_RUNNING:
-                pass
-            case _:
-                self.handle_inconsistent_state_error()
+    async def push_datagram(self, datagram: bytes) -> None:
+        self.__ensure_queue().append(datagram)
+        if (queue_condition := self._queue_condition) is not None:
+            async with queue_condition:
+                queue_condition.notify()
 
-        self.__client_state[address] = state
-        try:
-            yield
-        finally:
-            assert self.__client_state[address] is state  # nosec assert_used
-            if old_state is None:
-                del self.__client_state[address]
-            else:
-                self.__client_state[address] = old_state
+    def pop_datagram_no_wait(self) -> bytes:
+        if not (queue := self._datagram_queue):
+            raise IndexError("pop from an empty deque")
+        return queue.popleft()
 
-    @contextlib.asynccontextmanager
-    async def lock(self, address: _T_Address) -> AsyncIterator[ICondition]:
-        with self.__client_lock.get(address) as condition:
-            async with condition:
-                yield condition
+    async def pop_datagram(self) -> bytes:
+        queue_condition = self.__ensure_queue_condition_var()
+        async with queue_condition:
+            queue = self.__ensure_queue()
+            while not queue:
+                await queue_condition.wait()
+            return queue.popleft()
 
-    @contextlib.contextmanager
-    def datagram_queue(self, address: _T_Address) -> Iterator[deque[bytes]]:
-        with self.__client_queue.get(address) as datagram_queue:
-            yield datagram_queue
+    def mark_pending(self) -> None:
+        if self.__state is not None:
+            self.handle_inconsistent_state_error()
+        self.__state = _ClientState.TASK_PENDING
 
-    @contextlib.contextmanager
-    def send_guard(self, address: _T_Address) -> Iterator[None]:
-        with self.__send_guard.get(address) as send_guard:
-            with send_guard:
-                yield
+    def mark_done(self) -> None:
+        if self.__state is not _ClientState.TASK_RUNNING:
+            self.handle_inconsistent_state_error()
+        self.__state = None
+
+    def mark_running(self) -> None:
+        if self.__state is not _ClientState.TASK_PENDING:
+            self.handle_inconsistent_state_error()
+        self.__state = _ClientState.TASK_RUNNING
+
+    def __ensure_queue(self) -> deque[bytes]:
+        if (queue := self._datagram_queue) is None:
+            self._datagram_queue = queue = deque()
+        return queue
+
+    def __ensure_queue_condition_var(self) -> ICondition:
+        if (cond := self._queue_condition) is None:
+            self._queue_condition = cond = self.__backend.create_condition_var()
+        return cond
 
     @staticmethod
     def handle_inconsistent_state_error() -> NoReturn:
         msg = "The server has created too many tasks and ends up in an inconsistent state."
         note = "Please fill an issue (https://github.com/francis-clairicia/EasyNetwork/issues)"
         raise _utils.exception_with_notes(RuntimeError(msg), note)
-
-    @staticmethod
-    def check_datagram_queue_not_empty(datagram_queue: deque[bytes]) -> None:
-        if not len(datagram_queue):
-            _ClientManager.handle_inconsistent_state_error()
-
-
-class _TemporaryValue(Generic[_T_Key, _T_Value]):
-    __slots__ = ("__values", "__counter", "__must_delete_value")
-
-    def __init__(
-        self, value_factory: Callable[[], _T_Value], must_delete_value: Callable[[_T_Value], bool] | None = None
-    ) -> None:
-        super().__init__()
-
-        if must_delete_value is None:
-            must_delete_value = lambda _: True
-
-        self.__values: defaultdict[_T_Key, _T_Value] = defaultdict(value_factory)
-        self.__counter: Counter[_T_Key] = Counter()
-        self.__must_delete_value: Callable[[_T_Value], bool] = must_delete_value
-
-    def __contains__(self, obj: _T_Key, /) -> bool:  # pragma: no cover  # This method exists for testing purposes
-        return obj in self.__values
-
-    @contextlib.contextmanager
-    def get(self, key: _T_Key) -> Iterator[_T_Value]:
-        value: _T_Value = self.__values[key]
-        self.__counter[key] += 1
-        try:
-            yield value
-        finally:
-            self.__counter[key] -= 1
-            assert self.__counter[key] >= 0, f"{self.__counter[key]=}"  # nosec assert_used
-            if self.__counter[key] == 0 and self.__must_delete_value(value):
-                del self.__counter[key], self.__values[key]
-            del key, value

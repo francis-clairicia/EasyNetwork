@@ -9,6 +9,13 @@ Abstract Base Classes
    :members:
    :no-docstring:
 
+SSL/TLS Support
+===============
+
+.. automodule:: easynetwork.lowlevel.api_async.transports.tls
+   :members:
+   :no-docstring:
+
 
 Miscellaneous
 =============

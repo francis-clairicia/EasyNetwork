@@ -241,12 +241,20 @@ class AsyncDatagramListener(AsyncBaseTransport, Generic[_T_Address]):
     __slots__ = ()
 
     @abstractmethod
-    async def recv_from(self) -> tuple[bytes, _T_Address]:
+    async def serve(
+        self,
+        handler: Callable[[bytes, _T_Address], Coroutine[Any, Any, None]],
+        task_group: TaskGroup | None = None,
+    ) -> NoReturn:
         """
-        Receive incoming datagrams as they come.
+        Receive incoming datagrams as they come in and start tasks to handle them.
 
-        Returns:
-            a pair with the datagram packet and the sender address.
+        Important:
+            The implementation must ensure that datagrams are processed in the order in which they are received.
+
+        Parameters:
+            handler: a callable that will be used to handle each received datagram.
+            task_group: the task group that will be used to start tasks for handling each received datagram.
         """
         raise NotImplementedError
 

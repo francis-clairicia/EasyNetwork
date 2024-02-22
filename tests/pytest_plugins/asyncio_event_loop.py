@@ -69,7 +69,6 @@ def _set_event_loop_policy_according_to_configuration(config: pytest.Config) -> 
 def pytest_configure(config: pytest.Config) -> None:
     _set_event_loop_policy_according_to_configuration(config)
     config.addinivalue_line("markers", "skipif_uvloop: Skip asyncio test if uvloop is used")
-    config.addinivalue_line("markers", "xfail_uvloop: Expected asyncio test to fail if uvloop is used")
 
 
 @pytest.hookimpl(trylast=True)
@@ -87,22 +86,9 @@ def _skip_test_if_uvloop_is_used(config: pytest.Config, item: pytest.Item) -> No
         )
 
 
-def _xfail_test_if_uvloop_is_used(config: pytest.Config, item: pytest.Item) -> None:
-    if item.get_closest_marker("xfail_uvloop") is not None:
-        item.add_marker(
-            pytest.mark.xfail(
-                config.getoption(ASYNCIO_EVENT_LOOP_OPTION) == EventLoop.UVLOOP,
-                reason="uvloop runner does not implement the needed function",
-                strict=True,
-                raises=NotImplementedError,
-            )
-        )
-
-
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     for item in items:
         _skip_test_if_uvloop_is_used(config, item)
-        _xfail_test_if_uvloop_is_used(config, item)
 
 
 @pytest.fixture

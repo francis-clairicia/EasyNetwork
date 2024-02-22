@@ -22,22 +22,23 @@ __all__ = [
     "FixedSizePacketSerializer",
 ]
 
+import contextlib
 from abc import abstractmethod
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from io import BytesIO
 from typing import IO, TYPE_CHECKING, Any, final
 
 from .._typevars import _T_ReceivedDTOPacket, _T_SentDTOPacket
-from ..exceptions import DeserializeError, IncrementalDeserializeError
-from ..lowlevel.constants import _DEFAULT_LIMIT
-from .abc import AbstractIncrementalPacketSerializer, BufferedIncrementalPacketSerializer
-from .tools import GeneratorStreamReader, _wrap_generic_buffered_incremental_deserialize, _wrap_generic_incremental_deserialize
+from ..exceptions import DeserializeError, IncrementalDeserializeError, LimitOverrunError
+from ..lowlevel.constants import DEFAULT_SERIALIZER_LIMIT
+from .abc import BufferedIncrementalPacketSerializer
+from .tools import GeneratorStreamReader
 
 if TYPE_CHECKING:
     from _typeshed import ReadableBuffer
 
 
-class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_T_SentDTOPacket, _T_ReceivedDTOPacket]):
+class AutoSeparatedPacketSerializer(BufferedIncrementalPacketSerializer[_T_SentDTOPacket, _T_ReceivedDTOPacket, bytearray]):
     """
     Base class for stream protocols that separates sent information by a byte sequence.
     """
@@ -49,7 +50,7 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_T_SentD
         separator: bytes,
         *,
         incremental_serialize_check_separator: bool = True,
-        limit: int = _DEFAULT_LIMIT,
+        limit: int = DEFAULT_SERIALIZER_LIMIT,
         debug: bool = False,
         **kwargs: Any,
     ) -> None:
@@ -104,15 +105,13 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_T_SentD
                 data = data.removesuffix(separator)
             if separator in data:
                 raise ValueError(f"{separator!r} separator found in serialized packet {packet!r} which was not at the end")
+        elif data.endswith(separator):
+            yield data
+            return
         if not data:
             return
-        if len(data) + len(separator) <= self.__limit // 2:
-            data += separator
-            yield data
-        else:
-            yield data
-            del data
-            yield separator
+        data += separator
+        yield data
 
     @abstractmethod
     def deserialize(self, data: bytes, /) -> _T_ReceivedDTOPacket:
@@ -120,6 +119,15 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_T_SentD
         See :meth:`.AbstractPacketSerializer.deserialize` documentation.
         """
         raise NotImplementedError
+
+    def deserialize_from_buffer(self, data: ReadableBuffer, /) -> _T_ReceivedDTOPacket:
+        """
+        Called by :meth:`buffered_incremental_deserialize` and must have the same behavior as :meth:`deserialize`.
+
+        The default implementation creates a :class:`bytes` object from `data` and calls :meth:`deserialize`.
+        """
+        data = bytes(data)
+        return self.deserialize(data)
 
     @final
     def incremental_deserialize(self) -> Generator[None, bytes, tuple[_T_ReceivedDTOPacket, bytes]]:
@@ -148,6 +156,43 @@ class AutoSeparatedPacketSerializer(AbstractIncrementalPacketSerializer[_T_SentD
         finally:
             del data
         return packet, remainder
+
+    @final
+    def create_deserializer_buffer(self, sizehint: int) -> bytearray:
+        """
+        See :meth:`.BufferedIncrementalPacketSerializer.buffered_incremental_deserialize` documentation for details.
+        """
+
+        # Ignore sizehint, we have our own limit
+        return bytearray(self.__limit)
+
+    @final
+    def buffered_incremental_deserialize(self, buffer: bytearray) -> Generator[int, int, tuple[_T_ReceivedDTOPacket, memoryview]]:
+        """
+        Yields until `separator` is found and calls :meth:`deserialize_from_buffer` **without** `separator`.
+
+        See :meth:`.BufferedIncrementalPacketSerializer.buffered_incremental_deserialize` documentation for details.
+
+        Raises:
+            LimitOverrunError: Reached buffer size limit.
+            IncrementalDeserializeError: :meth:`deserialize_from_buffer` raised :exc:`.DeserializeError`.
+            Exception: Any error raised by :meth:`deserialize_from_buffer`.
+        """
+        with memoryview(buffer) as buffer_view:
+            sepidx, offset, buflen = yield from _buffered_readuntil(buffer, self.__separator)
+            del buffer
+
+            remainder: memoryview = buffer_view[offset:buflen]
+            with buffer_view[:sepidx] as data:
+                try:
+                    packet = self.deserialize_from_buffer(data)
+                except DeserializeError as exc:
+                    raise IncrementalDeserializeError(
+                        f"Error when deserializing data: {exc}",
+                        remaining_data=remainder,
+                        error_info=exc.error_info,
+                    ) from exc
+            return packet, remainder
 
     @property
     @final
@@ -223,14 +268,20 @@ class FixedSizePacketSerializer(BufferedIncrementalPacketSerializer[_T_SentDTOPa
         yield data
 
     @abstractmethod
-    def deserialize(self, data: bytes | memoryview, /) -> _T_ReceivedDTOPacket:
+    def deserialize(self, data: bytes, /) -> _T_ReceivedDTOPacket:
         """
         See :meth:`.AbstractPacketSerializer.deserialize` documentation.
-
-        Warning:
-            `data` can be a :class:`memoryview`.
         """
         raise NotImplementedError
+
+    def deserialize_from_buffer(self, data: ReadableBuffer, /) -> _T_ReceivedDTOPacket:
+        """
+        Called by :meth:`buffered_incremental_deserialize` and must have the same behavior as :meth:`deserialize`.
+
+        The default implementation creates a :class:`bytes` object from `data` and calls :meth:`deserialize`.
+        """
+        data = bytes(data)
+        return self.deserialize(data)
 
     @final
     def incremental_deserialize(self) -> Generator[None, bytes, tuple[_T_ReceivedDTOPacket, bytes]]:
@@ -274,13 +325,13 @@ class FixedSizePacketSerializer(BufferedIncrementalPacketSerializer[_T_SentDTOPa
         /,
     ) -> Generator[int, int, tuple[_T_ReceivedDTOPacket, memoryview]]:
         """
-        Yields until there is enough data and calls :meth:`deserialize`.
+        Yields until there is enough data and calls :meth:`deserialize_from_buffer`.
 
         See :meth:`.BufferedIncrementalPacketSerializer.buffered_incremental_deserialize` documentation for details.
 
         Raises:
-            IncrementalDeserializeError: :meth:`deserialize` raised :exc:`.DeserializeError`.
-            Exception: Any error raised by :meth:`deserialize`.
+            IncrementalDeserializeError: :meth:`deserialize_from_buffer` raised :exc:`.DeserializeError`.
+            Exception: Any error raised by :meth:`deserialize_from_buffer`.
         """
         packet_size: int = self.__size
         assert len(buffer) >= packet_size  # nosec assert_used
@@ -294,7 +345,7 @@ class FixedSizePacketSerializer(BufferedIncrementalPacketSerializer[_T_SentDTOPa
         del buffer
 
         try:
-            packet = self.deserialize(data)
+            packet = self.deserialize_from_buffer(data)
         except DeserializeError as exc:
             raise IncrementalDeserializeError(
                 f"Error when deserializing data: {exc}",
@@ -517,3 +568,53 @@ class FileBasedPacketSerializer(BufferedIncrementalPacketSerializer[_T_SentDTOPa
         The debug mode flag. Read-only attribute.
         """
         return self.__debug
+
+
+def _wrap_generic_incremental_deserialize(
+    func: Callable[[], Generator[None, ReadableBuffer, tuple[_T_ReceivedDTOPacket, ReadableBuffer]]],
+) -> Generator[None, bytes, tuple[_T_ReceivedDTOPacket, bytes]]:
+    packet, remainder = yield from func()
+    # remainder is not copied if it is already a "bytes" object
+    remainder = bytes(remainder)
+    return packet, remainder
+
+
+def _wrap_generic_buffered_incremental_deserialize(
+    buffer: memoryview,
+    func: Callable[[], Generator[None, ReadableBuffer, tuple[_T_ReceivedDTOPacket, ReadableBuffer]]],
+) -> Generator[None, int, tuple[_T_ReceivedDTOPacket, ReadableBuffer]]:
+    next(gen := func())
+    with contextlib.closing(gen):
+        while True:
+            nbytes: int = yield
+            try:
+                gen.send(buffer[:nbytes])
+            except StopIteration as exc:
+                return exc.value
+
+
+def _buffered_readuntil(
+    buffer: bytearray,
+    separator: bytes,
+) -> Generator[int, int, tuple[int, int, int]]:
+    last_idx = len(buffer) - 1
+    seplen: int = len(separator)
+    limit = last_idx - seplen
+    buflen: int = yield 0
+
+    offset: int = 0
+    sepidx: int = -1
+    while True:
+        if buflen - offset >= seplen:
+            sepidx = buffer.find(separator, offset, buflen)
+
+            if sepidx != -1:
+                offset = sepidx + seplen
+                return sepidx, offset, buflen
+
+            offset = buflen + 1 - seplen
+            if offset > limit:
+                msg = "Separator is not found, and chunk exceed the limit"
+                raise LimitOverrunError(msg, buffer, offset, separator)
+
+        buflen += yield buflen

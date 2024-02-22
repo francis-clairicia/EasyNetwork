@@ -372,21 +372,23 @@ def lock_with_timeout(
 
 class ResourceGuard:
     __slots__ = (
-        "__semaphore",
+        "__held",
         "__msg",
     )
 
     def __init__(self, message: str) -> None:
-        # A semaphore is used to check consistency between __enter__ and __exit__ calls (misnesting contexts)
-        self.__semaphore = threading.BoundedSemaphore(value=1)
+        self.__held: bool = False
         self.__msg = message
 
     def __enter__(self) -> None:
-        if not self.__semaphore.acquire(blocking=False):
+        if self.__held:
             from ..exceptions import BusyResourceError
 
             msg = self.__msg
             raise BusyResourceError(msg)
+        self.__held = True
 
     def __exit__(self, *args: Any) -> None:
-        self.__semaphore.release()
+        if not self.__held:
+            raise AssertionError("ResourceGuard released too many times")
+        self.__held = False

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from socket import AF_INET, IPPROTO_TCP, IPPROTO_UDP, SOCK_DGRAM, SOCK_STREAM, socket as Socket
-from ssl import SSLContext, SSLSocket
+from ssl import SSLContext, SSLObject, SSLSocket
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.converter import AbstractPacketConverterComposite
@@ -140,6 +140,22 @@ def mock_ssl_context_factory(mocker: MockerFixture) -> Callable[[], MagicMock]:
 @pytest.fixture
 def mock_ssl_context(mock_ssl_context_factory: Callable[[], MagicMock]) -> MagicMock:
     return mock_ssl_context_factory()
+
+
+@pytest.fixture
+def mock_ssl_object_factory(mocker: MockerFixture) -> Callable[[], MagicMock]:
+    def factory() -> MagicMock:
+        mock_ssl_object = mocker.NonCallableMagicMock(spec=SSLObject)
+        mock_ssl_object.do_handshake.return_value = None
+        mock_ssl_object.unwrap.return_value = None
+        return mock_ssl_object
+
+    return factory
+
+
+@pytest.fixture
+def mock_ssl_object(mock_ssl_object_factory: Callable[[], MagicMock]) -> MagicMock:
+    return mock_ssl_object_factory()
 
 
 @pytest.fixture

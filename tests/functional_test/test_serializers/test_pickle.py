@@ -9,14 +9,14 @@ from easynetwork.serializers.pickle import PicklerConfig, PickleSerializer, Unpi
 
 import pytest
 
-from .base import BaseTestSerializer
+from .base import BaseTestSerializerExtraData
 from .samples.pickle import SAMPLES
 
 ALL_PROTOCOLS: tuple[int, ...] = tuple(range(0, pickle.HIGHEST_PROTOCOL + 1))
 
 
 @final
-class TestPickleSerializer(BaseTestSerializer):
+class TestPickleSerializer(BaseTestSerializerExtraData):
     @pytest.fixture(scope="class", params=ALL_PROTOCOLS, ids=lambda p: f"pickle_data_protocol=={p}")
     @staticmethod
     def pickle_data_protocol(request: Any) -> int:

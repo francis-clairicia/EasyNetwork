@@ -32,10 +32,10 @@ if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
 
-def _retry_side_effect(callback: Callable[[], Any], timeout: float) -> Any:
+def _retry_side_effect(callback: Callable[[], Any], timeout: float) -> tuple[Any, float]:
     while True:
         try:
-            return callback()
+            return callback(), timeout
         except (WouldBlockOnRead, WouldBlockOnWrite):
             pass
 
@@ -513,6 +513,30 @@ class TestSocketStreamTransport(MixinTestSocketSendMSG):
         mock_get_address.assert_called_once()
         assert transport.extra(extra_attribute, mocker.sentinel.default_value) is mocker.sentinel.default_value
 
+    @pytest.mark.parametrize(
+        ["extra_attribute", "called_socket_method"],
+        [
+            pytest.param(SocketAttribute.sockname, "getsockname", id="socket.getsockname()"),
+            pytest.param(SocketAttribute.peername, "getpeername", id="socket.getpeername()"),
+        ],
+    )
+    def test____extra_attributes____address_lookup_on_closed_socket(
+        self,
+        extra_attribute: Any,
+        called_socket_method: str,
+        transport: SocketStreamTransport,
+        mock_tcp_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_get_address: MagicMock = getattr(mock_tcp_socket, called_socket_method)
+        transport.close()
+        assert mock_tcp_socket.fileno.return_value == -1
+
+        # Act & Assert
+        with pytest.raises(TypedAttributeLookupError):
+            transport.extra(extra_attribute)
+        mock_get_address.assert_not_called()
+
 
 class TestSSLStreamTransport:
     @pytest.fixture(autouse=True)
@@ -840,6 +864,23 @@ class TestSSLStreamTransport:
         assert isinstance(exc_info.value, (WouldBlockOnRead, WouldBlockOnWrite))
         assert exc_info.value.fileno is mock_ssl_socket.fileno.return_value
 
+    def test____recv_noblock____SSLZeroReturnError(
+        self,
+        transport: SSLStreamTransport,
+        mock_ssl_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_ssl_socket.recv.side_effect = ssl.SSLZeroReturnError
+
+        # Act
+        result = transport.recv_noblock(mocker.sentinel.bufsize)
+
+        # Assert
+        mock_ssl_socket.recv.assert_called_once_with(mocker.sentinel.bufsize)
+        mock_ssl_socket.fileno.assert_not_called()
+        assert result == b""
+
     def test____recv_noblock_into____default(
         self,
         transport: SSLStreamTransport,
@@ -885,6 +926,23 @@ class TestSSLStreamTransport:
         mock_ssl_socket.fileno.assert_called_once()
         assert isinstance(exc_info.value, (WouldBlockOnRead, WouldBlockOnWrite))
         assert exc_info.value.fileno is mock_ssl_socket.fileno.return_value
+
+    def test____recv_noblock_into____SSLZeroReturnError(
+        self,
+        transport: SSLStreamTransport,
+        mock_ssl_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_ssl_socket.recv_into.side_effect = ssl.SSLZeroReturnError
+
+        # Act
+        result = transport.recv_noblock_into(mocker.sentinel.buffer)
+
+        # Assert
+        mock_ssl_socket.recv_into.assert_called_once_with(mocker.sentinel.buffer)
+        mock_ssl_socket.fileno.assert_not_called()
+        assert result == 0
 
     def test____send_noblock____default(
         self,
@@ -932,6 +990,24 @@ class TestSSLStreamTransport:
         assert isinstance(exc_info.value, (WouldBlockOnRead, WouldBlockOnWrite))
         assert exc_info.value.fileno is mock_ssl_socket.fileno.return_value
 
+    def test____send_noblock____SSLZeroReturnError(
+        self,
+        transport: SSLStreamTransport,
+        mock_ssl_socket: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_ssl_socket.send.side_effect = ssl.SSLZeroReturnError
+
+        # Act
+        with pytest.raises(ConnectionError) as exc_info:
+            transport.send_noblock(mocker.sentinel.data)
+
+        # Assert
+        mock_ssl_socket.send.assert_called_once_with(mocker.sentinel.data)
+        mock_ssl_socket.fileno.assert_not_called()
+        assert exc_info.value.errno == errno.ECONNRESET
+
     def test____send_eof____default(
         self,
         transport: SSLStreamTransport,
@@ -971,6 +1047,30 @@ class TestSSLStreamTransport:
             transport.extra(extra_attribute)
         mock_get_address.assert_called_once()
         assert transport.extra(extra_attribute, mocker.sentinel.default_value) is mocker.sentinel.default_value
+
+    @pytest.mark.parametrize(
+        ["extra_attribute", "called_socket_method"],
+        [
+            pytest.param(SocketAttribute.sockname, "getsockname", id="socket.getsockname()"),
+            pytest.param(SocketAttribute.peername, "getpeername", id="socket.getpeername()"),
+        ],
+    )
+    def test____extra_attributes____address_lookup_on_closed_socket(
+        self,
+        extra_attribute: Any,
+        called_socket_method: str,
+        transport: SSLStreamTransport,
+        mock_ssl_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_get_address: MagicMock = getattr(mock_ssl_socket, called_socket_method)
+        transport.close()
+        assert mock_ssl_socket.fileno.return_value == -1
+
+        # Act & Assert
+        with pytest.raises(TypedAttributeLookupError):
+            transport.extra(extra_attribute)
+        mock_get_address.assert_not_called()
 
     @pytest.mark.parametrize(
         ["extra_attribute", "called_socket_method"],
@@ -1249,3 +1349,27 @@ class TestSocketDatagramTransport:
             transport.extra(extra_attribute)
         mock_get_address.assert_called_once()
         assert transport.extra(extra_attribute, mocker.sentinel.default_value) is mocker.sentinel.default_value
+
+    @pytest.mark.parametrize(
+        ["extra_attribute", "called_socket_method"],
+        [
+            pytest.param(SocketAttribute.sockname, "getsockname", id="socket.getsockname()"),
+            pytest.param(SocketAttribute.peername, "getpeername", id="socket.getpeername()"),
+        ],
+    )
+    def test____extra_attributes____address_lookup_on_closed_socket(
+        self,
+        extra_attribute: Any,
+        called_socket_method: str,
+        transport: SocketDatagramTransport,
+        mock_udp_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_get_address: MagicMock = getattr(mock_udp_socket, called_socket_method)
+        transport.close()
+        assert mock_udp_socket.fileno.return_value == -1
+
+        # Act & Assert
+        with pytest.raises(TypedAttributeLookupError):
+            transport.extra(extra_attribute)
+        mock_get_address.assert_not_called()
