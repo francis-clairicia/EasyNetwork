@@ -57,8 +57,7 @@ class UDPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
         family: int = ...,
         reuse_port: bool = ...,
         retry_interval: float = ...,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     @overload
     def __init__(
@@ -68,8 +67,7 @@ class UDPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
         protocol: DatagramProtocol[_T_SentPacket, _T_ReceivedPacket],
         *,
         retry_interval: float = ...,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     def __init__(
         self,

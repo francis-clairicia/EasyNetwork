@@ -99,5 +99,4 @@ def event_loop_name(pytestconfig: pytest.Config) -> EventLoop:
 if TYPE_CHECKING:
 
     @pytest.fixture
-    def event_loop(event_loop: asyncio.AbstractEventLoop) -> asyncio.AbstractEventLoop:
-        ...
+    def event_loop(event_loop: asyncio.AbstractEventLoop) -> asyncio.AbstractEventLoop: ...

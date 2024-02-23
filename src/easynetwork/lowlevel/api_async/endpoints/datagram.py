@@ -45,9 +45,9 @@ class AsyncDatagramEndpoint(typed_attr.TypedAttributeProvider, Generic[_T_SentPa
 
     def __init__(
         self,
-        transport: transports.AsyncDatagramTransport
-        | transports.AsyncDatagramReadTransport
-        | transports.AsyncDatagramWriteTransport,
+        transport: (
+            transports.AsyncDatagramTransport | transports.AsyncDatagramReadTransport | transports.AsyncDatagramWriteTransport
+        ),
         protocol: protocol_module.DatagramProtocol[_T_SentPacket, _T_ReceivedPacket],
     ) -> None:
         """

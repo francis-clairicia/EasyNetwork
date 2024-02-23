@@ -225,8 +225,7 @@ class _CreateConnectionCallable(TypingProtocol):
         port: int,
         loop: asyncio.AbstractEventLoop,
         local_address: tuple[str, int] | None = None,
-    ) -> SocketType:
-        ...
+    ) -> SocketType: ...
 
 
 class _AddrInfoListFactory(TypingProtocol):
@@ -234,8 +233,7 @@ class _AddrInfoListFactory(TypingProtocol):
         self,
         port: int,
         families: Sequence[int] = ...,
-    ) -> Sequence[tuple[int, int, int, str, tuple[Any, ...]]]:
-        ...
+    ) -> Sequence[tuple[int, int, int, str, tuple[Any, ...]]]: ...
 
 
 @pytest.fixture(params=[SOCK_STREAM, SOCK_DGRAM], ids=lambda sock_type: f"sock_type=={sock_type!r}")

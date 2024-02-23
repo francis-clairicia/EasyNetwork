@@ -98,5 +98,4 @@ class StandaloneUDPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
     if TYPE_CHECKING:
 
         @property
-        def _server(self) -> AsyncUDPNetworkServer[_T_Request, _T_Response] | None:
-            ...
+        def _server(self) -> AsyncUDPNetworkServer[_T_Request, _T_Response] | None: ...

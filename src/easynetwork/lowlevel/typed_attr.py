@@ -77,12 +77,10 @@ class TypedAttributeProvider:
         return {}
 
     @overload
-    def extra(self, attribute: _T_Attr) -> _T_Attr:
-        ...
+    def extra(self, attribute: _T_Attr) -> _T_Attr: ...
 
     @overload
-    def extra(self, attribute: _T_Attr, default: _T_Default) -> _T_Attr | _T_Default:
-        ...
+    def extra(self, attribute: _T_Attr, default: _T_Default) -> _T_Attr | _T_Default: ...
 
     @final
     def extra(self, attribute: Any, default: object = undefined) -> object:

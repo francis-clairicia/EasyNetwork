@@ -99,8 +99,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         ssl_standard_compatible: bool | None = ...,
         ssl_shared_lock: bool | None = ...,
         max_recv_size: int | None = ...,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     @overload
     def __init__(
@@ -116,8 +115,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         ssl_standard_compatible: bool | None = ...,
         ssl_shared_lock: bool | None = ...,
         max_recv_size: int | None = ...,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     def __init__(
         self,

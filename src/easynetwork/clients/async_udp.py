@@ -73,8 +73,7 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         *,
         local_address: tuple[str, int] | None = ...,
         family: int = ...,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     @overload
     def __init__(
@@ -82,8 +81,7 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         socket: _socket.socket,
         /,
         protocol: DatagramProtocol[_T_SentPacket, _T_ReceivedPacket],
-    ) -> None:
-        ...
+    ) -> None: ...
 
     def __init__(
         self,

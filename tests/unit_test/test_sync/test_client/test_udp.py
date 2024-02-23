@@ -880,9 +880,9 @@ class TestUDPSocketFactory:
         return mocker.patch(
             "socket.getaddrinfo",
             autospec=True,
-            side_effect=lambda host, port, *args, **kwargs: datagram_addrinfo_list(port, socket_families)
-            if socket_families
-            else [],
+            side_effect=lambda host, port, *args, **kwargs: (
+                datagram_addrinfo_list(port, socket_families) if socket_families else []
+            ),
         )
 
     @pytest.fixture

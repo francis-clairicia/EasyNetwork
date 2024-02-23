@@ -96,16 +96,14 @@ def make_callback(func: Callable[_P, _T_Return], /, *args: _P.args, **kwargs: _P
 def prepend_argument(
     arg: _T_Arg,
     func: None = ...,
-) -> Callable[[Callable[Concatenate[_T_Arg, _P], _T_Return]], Callable[_P, _T_Return]]:
-    ...
+) -> Callable[[Callable[Concatenate[_T_Arg, _P], _T_Return]], Callable[_P, _T_Return]]: ...
 
 
 @overload
 def prepend_argument(
     arg: _T_Arg,
     func: Callable[Concatenate[_T_Arg, _P], _T_Return],
-) -> Callable[_P, _T_Return]:
-    ...
+) -> Callable[_P, _T_Return]: ...
 
 
 def prepend_argument(
@@ -183,8 +181,7 @@ _HAS_SENDMSG: Final[bool] = hasattr(_socket.socket, "sendmsg")
 
 class _SupportsSocketSendMSG(Protocol):
     @abstractmethod
-    def sendmsg(self, buffers: Iterable[ReadableBuffer], /) -> int:
-        ...
+    def sendmsg(self, buffers: Iterable[ReadableBuffer], /) -> int: ...
 
 
 def supports_socket_sendmsg(sock: _socket.socket) -> TypeGuard[_SupportsSocketSendMSG]:

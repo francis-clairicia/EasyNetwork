@@ -9,7 +9,7 @@ ci:
 
 repos:
   - repo: https://github.com/asottile/pyupgrade
-    rev: v3.15.0
+    rev: v3.15.1
     hooks:
       - id: pyupgrade
         args: ['--py311-plus']
@@ -62,12 +62,12 @@ repos:
       - id: isort
         args: ['--filter-files', '--settings-file', 'pyproject.toml']
   - repo: https://github.com/psf/black
-    rev: '23.12.1'
+    rev: '24.2.0'
     hooks:
       - id: black
         args: ['--config', 'pyproject.toml']
   - repo: https://github.com/PyCQA/flake8
-    rev: '6.1.0'
+    rev: '7.0.0'
     hooks:
       - id: flake8
         args: ['--config', '.flake8']
@@ -86,7 +86,7 @@ repos:
         types: []  # Overwrite with empty in order to fallback to types_or
         types_or: [python, pyi]
   - repo: https://github.com/pdm-project/pdm
-    rev: '2.11.2'
+    rev: '2.12.3'
     hooks:
       - id: pdm-lock-check
       - id: pdm-export

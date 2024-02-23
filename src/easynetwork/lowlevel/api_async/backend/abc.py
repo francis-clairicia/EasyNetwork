@@ -76,8 +76,7 @@ class ILock(Protocol):
     """
 
     @abstractmethod
-    async def __aenter__(self) -> Any:
-        ...
+    async def __aenter__(self) -> Any: ...
 
     @abstractmethod
     async def __aexit__(
@@ -86,8 +85,7 @@ class ILock(Protocol):
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
         /,
-    ) -> bool | None:
-        ...
+    ) -> bool | None: ...
 
     @abstractmethod
     async def acquire(self) -> Any:

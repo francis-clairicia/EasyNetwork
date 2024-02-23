@@ -51,16 +51,14 @@ class DatagramProtocol(Generic[_T_SentPacket, _T_ReceivedPacket]):
         self,
         serializer: AbstractPacketSerializer[_T_SentPacket, _T_ReceivedPacket],
         converter: None = ...,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     @overload
     def __init__(
         self,
         serializer: AbstractPacketSerializer[_T_SentDTOPacket, _T_ReceivedDTOPacket],
         converter: AbstractPacketConverterComposite[_T_SentPacket, _T_ReceivedPacket, _T_SentDTOPacket, _T_ReceivedDTOPacket],
-    ) -> None:
-        ...
+    ) -> None: ...
 
     def __init__(
         self,
@@ -136,16 +134,14 @@ class BufferedStreamReceiver(Generic[_T_ReceivedPacket, _T_Buffer]):
         self,
         serializer: BufferedIncrementalPacketSerializer[Any, _T_ReceivedPacket, _T_Buffer],
         converter: None = ...,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     @overload
     def __init__(
         self,
         serializer: BufferedIncrementalPacketSerializer[Any, _T_ReceivedDTOPacket, _T_Buffer],
         converter: AbstractPacketConverterComposite[Any, _T_ReceivedPacket, Any, _T_ReceivedDTOPacket],
-    ) -> None:
-        ...
+    ) -> None: ...
 
     def __init__(
         self,
@@ -222,16 +218,14 @@ class StreamProtocol(Generic[_T_SentPacket, _T_ReceivedPacket]):
         self,
         serializer: AbstractIncrementalPacketSerializer[_T_SentPacket, _T_ReceivedPacket],
         converter: None = ...,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     @overload
     def __init__(
         self,
         serializer: AbstractIncrementalPacketSerializer[_T_SentDTOPacket, _T_ReceivedDTOPacket],
         converter: AbstractPacketConverterComposite[_T_SentPacket, _T_ReceivedPacket, _T_SentDTOPacket, _T_ReceivedDTOPacket],
-    ) -> None:
-        ...
+    ) -> None: ...
 
     def __init__(
         self,

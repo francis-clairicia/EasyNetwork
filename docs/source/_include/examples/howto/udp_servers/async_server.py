@@ -7,12 +7,10 @@ from easynetwork.protocol import DatagramProtocol
 from easynetwork.servers import AsyncDatagramClient, AsyncDatagramRequestHandler, AsyncUDPNetworkServer
 
 
-class Request:
-    ...
+class Request: ...
 
 
-class Response:
-    ...
+class Response: ...
 
 
 class MyRequestHandler(AsyncDatagramRequestHandler[Request, Response]):
@@ -29,8 +27,7 @@ class MyRequestHandler(AsyncDatagramRequestHandler[Request, Response]):
 
 # NOTE: The sent packet is "Response" and the received packet is "Request"
 class ServerProtocol(DatagramProtocol[Response, Request]):
-    def __init__(self) -> None:
-        ...
+    def __init__(self) -> None: ...
 
 
 async def main() -> None:

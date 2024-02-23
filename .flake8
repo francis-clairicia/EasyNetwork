@@ -17,6 +17,8 @@ extend-ignore =
     E402
     # E501: line too long (already have black for that)
     E501
+    # E701: multiple statements on one line (colon) (Thanks black)
+    E701
     # E731: do not assign a lambda expression, use a def
     E731
 per-file-ignores =

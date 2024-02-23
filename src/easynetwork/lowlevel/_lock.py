@@ -32,12 +32,10 @@ class ForkSafeLock(Generic[_T_Lock]):
     __slots__ = ("__pid", "__unsafe_lock", "__lock_factory", "__weakref__")
 
     @overload
-    def __init__(self: ForkSafeLock[threading.RLock], lock_factory: None = ...) -> None:
-        ...
+    def __init__(self: ForkSafeLock[threading.RLock], lock_factory: None = ...) -> None: ...
 
     @overload
-    def __init__(self, lock_factory: Callable[[], _T_Lock]) -> None:
-        ...
+    def __init__(self, lock_factory: Callable[[], _T_Lock]) -> None: ...
 
     def __init__(self, lock_factory: Callable[[], _T_Lock] | None = None) -> None:
         if lock_factory is None:

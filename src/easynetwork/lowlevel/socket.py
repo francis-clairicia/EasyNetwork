@@ -157,20 +157,17 @@ SocketAddress: TypeAlias = IPv4SocketAddress | IPv6SocketAddress
 
 
 @overload
-def new_socket_address(addr: tuple[str, int], family: Literal[_socket.AddressFamily.AF_INET]) -> IPv4SocketAddress:
-    ...
+def new_socket_address(addr: tuple[str, int], family: Literal[_socket.AddressFamily.AF_INET]) -> IPv4SocketAddress: ...
 
 
 @overload
 def new_socket_address(
     addr: tuple[str, int] | tuple[str, int, int, int], family: Literal[_socket.AddressFamily.AF_INET6]
-) -> IPv6SocketAddress:
-    ...
+) -> IPv6SocketAddress: ...
 
 
 @overload
-def new_socket_address(addr: tuple[Any, ...], family: int) -> SocketAddress:
-    ...
+def new_socket_address(addr: tuple[Any, ...], family: int) -> SocketAddress: ...
 
 
 def new_socket_address(addr: tuple[Any, ...], family: int) -> SocketAddress:
@@ -214,13 +211,11 @@ def new_socket_address(addr: tuple[Any, ...], family: int) -> SocketAddress:
 class SupportsSocketOptions(Protocol):
     @overload
     @abstractmethod
-    def getsockopt(self, level: int, optname: int, /) -> int:
-        ...
+    def getsockopt(self, level: int, optname: int, /) -> int: ...
 
     @overload
     @abstractmethod
-    def getsockopt(self, level: int, optname: int, buflen: int, /) -> bytes:
-        ...
+    def getsockopt(self, level: int, optname: int, buflen: int, /) -> bytes: ...
 
     @abstractmethod
     def getsockopt(self, *args: Any) -> int | bytes:
@@ -231,13 +226,11 @@ class SupportsSocketOptions(Protocol):
 
     @overload
     @abstractmethod
-    def setsockopt(self, level: int, optname: int, value: int | bytes, /) -> None:
-        ...
+    def setsockopt(self, level: int, optname: int, value: int | bytes, /) -> None: ...
 
     @overload
     @abstractmethod
-    def setsockopt(self, level: int, optname: int, value: None, optlen: int, /) -> None:
-        ...
+    def setsockopt(self, level: int, optname: int, value: None, optlen: int, /) -> None: ...
 
     @abstractmethod
     def setsockopt(self, *args: Any) -> None:
@@ -399,12 +392,10 @@ class SocketProxy:
         return self.__execute(self.__socket.get_inheritable)
 
     @overload
-    def getsockopt(self, level: int, optname: int, /) -> int:
-        ...
+    def getsockopt(self, level: int, optname: int, /) -> int: ...
 
     @overload
-    def getsockopt(self, level: int, optname: int, buflen: int, /) -> bytes:
-        ...
+    def getsockopt(self, level: int, optname: int, buflen: int, /) -> bytes: ...
 
     def getsockopt(self, *args: Any) -> int | bytes:
         """
@@ -413,12 +404,10 @@ class SocketProxy:
         return self.__execute(self.__socket.getsockopt, *args)  # type: ignore[arg-type]
 
     @overload
-    def setsockopt(self, level: int, optname: int, value: int | bytes, /) -> None:
-        ...
+    def setsockopt(self, level: int, optname: int, value: int | bytes, /) -> None: ...
 
     @overload
-    def setsockopt(self, level: int, optname: int, value: None, optlen: int, /) -> None:
-        ...
+    def setsockopt(self, level: int, optname: int, value: None, optlen: int, /) -> None: ...
 
     def setsockopt(self, *args: Any) -> None:
         """

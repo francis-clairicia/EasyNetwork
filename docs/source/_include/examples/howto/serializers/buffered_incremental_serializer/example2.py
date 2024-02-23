@@ -30,8 +30,7 @@ class MySerializer(BufferedIncrementalPacketSerializer[SentPacket, ReceivedPacke
             remainder = buffer.read()
             return packet, remainder
 
-    def _load_from_file(self, file: io.IOBase) -> ReceivedPacket:
-        ...
+    def _load_from_file(self, file: io.IOBase) -> ReceivedPacket: ...
 
     def create_deserializer_buffer(self, sizehint: int) -> memoryview:
         # Don't care about buffer size

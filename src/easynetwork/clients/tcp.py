@@ -82,8 +82,7 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
         ssl_shared_lock: bool | None = ...,
         max_recv_size: int | None = ...,
         retry_interval: float = ...,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     @overload
     def __init__(
@@ -100,8 +99,7 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
         ssl_shared_lock: bool | None = ...,
         max_recv_size: int | None = ...,
         retry_interval: float = ...,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     def __init__(
         self,

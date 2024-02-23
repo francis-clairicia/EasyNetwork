@@ -319,10 +319,14 @@ class TestAutoSeparatedPacketSerializer:
         mock_serialize_func.return_value = b"data\r\nother"
 
         # Act & Assert
-        with pytest.raises(
-            ValueError,
-            match=r"^b'[\\]r[\\]n' separator found in serialized packet sentinel\.packet which was not at the end$",
-        ) if check_separator else contextlib.nullcontext():
+        with (
+            pytest.raises(
+                ValueError,
+                match=r"^b'[\\]r[\\]n' separator found in serialized packet sentinel\.packet which was not at the end$",
+            )
+            if check_separator
+            else contextlib.nullcontext()
+        ):
             list(serializer.incremental_serialize(mocker.sentinel.packet))
 
     @pytest.mark.parametrize(

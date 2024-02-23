@@ -7,12 +7,10 @@ from easynetwork.protocol import StreamProtocol
 from easynetwork.servers import AsyncStreamClient, AsyncStreamRequestHandler, AsyncTCPNetworkServer
 
 
-class Request:
-    ...
+class Request: ...
 
 
-class Response:
-    ...
+class Response: ...
 
 
 class MyRequestHandler(AsyncStreamRequestHandler[Request, Response]):
@@ -29,8 +27,7 @@ class MyRequestHandler(AsyncStreamRequestHandler[Request, Response]):
 
 # NOTE: The sent packet is "Response" and the received packet is "Request"
 class ServerProtocol(StreamProtocol[Response, Request]):
-    def __init__(self) -> None:
-        ...
+    def __init__(self) -> None: ...
 
 
 async def main() -> None:

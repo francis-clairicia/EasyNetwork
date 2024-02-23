@@ -126,5 +126,4 @@ class StandaloneTCPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
     if TYPE_CHECKING:
 
         @property
-        def _server(self) -> AsyncTCPNetworkServer[_T_Request, _T_Response] | None:
-            ...
+        def _server(self) -> AsyncTCPNetworkServer[_T_Request, _T_Response] | None: ...
