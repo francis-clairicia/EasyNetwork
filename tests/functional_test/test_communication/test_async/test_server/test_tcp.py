@@ -164,7 +164,30 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
             await client.send_packet("wrong encoding man.")
 
 
-class TimeoutRequestHandler(AsyncStreamRequestHandler[str, str]):
+class TimeoutYieldedRequestHandler(AsyncStreamRequestHandler[str, str]):
+    request_timeout: float = 1.0
+    timeout_on_second_yield: bool = False
+
+    async def service_init(self, exit_stack: contextlib.AsyncExitStack, server: Any) -> None:
+        pass
+
+    async def on_connection(self, client: AsyncStreamClient[str]) -> None:
+        await client.send_packet("milk")
+
+    async def handle(self, client: AsyncStreamClient[str]) -> AsyncGenerator[float | None, str]:
+        if self.timeout_on_second_yield:
+            request = yield None
+            await client.send_packet(request)
+        try:
+            with pytest.raises(TimeoutError):
+                yield self.request_timeout
+            await client.send_packet("successfully timed out")
+        finally:
+            self.request_timeout = 1.0  # Force reset to 1 second in order not to overload the server
+
+
+class TimeoutContextRequestHandler(AsyncStreamRequestHandler[str, str]):
+    backend: AsyncBackend
     request_timeout: float = 1.0
     timeout_on_second_yield: bool = False
 
@@ -197,20 +220,18 @@ class CancellationRequestHandler(AsyncStreamRequestHandler[str, str]):
 
 
 class InitialHandshakeRequestHandler(AsyncStreamRequestHandler[str, str]):
-    backend: AsyncBackend
     bypass_handshake: bool = False
     handshake_2fa: bool = False
 
     async def service_init(self, exit_stack: contextlib.AsyncExitStack, server: Any) -> None:
-        self.backend = current_async_backend()
+        pass
 
-    async def on_connection(self, client: AsyncStreamClient[str]) -> AsyncGenerator[None, str]:
+    async def on_connection(self, client: AsyncStreamClient[str]) -> AsyncGenerator[float | None, str]:
         await client.send_packet("milk")
         if self.bypass_handshake:
             return
         try:
-            with self.backend.timeout(1):
-                password = yield
+            password = yield 1.0
 
             if password != "chocolate":
                 await client.send_packet("wrong password")
@@ -219,8 +240,7 @@ class InitialHandshakeRequestHandler(AsyncStreamRequestHandler[str, str]):
 
             if self.handshake_2fa:
                 await client.send_packet("2FA code needed")
-                with self.backend.timeout(1):
-                    code = yield
+                code = yield 1.0
 
                 if code != "42":
                     await client.send_packet("wrong code")
@@ -939,14 +959,14 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
 
         assert await reader.read() == b""
 
-    @pytest.mark.parametrize("request_handler", [TimeoutRequestHandler], indirect=True)
+    @pytest.mark.parametrize("request_handler", [TimeoutYieldedRequestHandler, TimeoutContextRequestHandler], indirect=True)
     @pytest.mark.parametrize("request_timeout", [0.0, 1.0], ids=lambda p: f"timeout=={p}")
     @pytest.mark.parametrize("timeout_on_second_yield", [False, True], ids=lambda p: f"timeout_on_second_yield=={p}")
     async def test____serve_forever____throw_cancelled_error(
         self,
         request_timeout: float,
         timeout_on_second_yield: bool,
-        request_handler: TimeoutRequestHandler,
+        request_handler: TimeoutYieldedRequestHandler | TimeoutContextRequestHandler,
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
     ) -> None:
         request_handler.request_timeout = request_timeout

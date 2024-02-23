@@ -10,7 +10,7 @@ from typing import Any
 
 from easynetwork.protocol import DatagramProtocol
 from easynetwork.serializers.abc import AbstractPacketSerializer
-from easynetwork.servers.handlers import AsyncDatagramClient, AsyncDatagramRequestHandler
+from easynetwork.servers.handlers import AsyncDatagramClient, AsyncDatagramRequestHandler, INETClientAttribute
 from easynetwork.servers.standalone_udp import StandaloneUDPNetworkServer
 
 
@@ -48,15 +48,13 @@ class EchoRequestHandlerWithTTL(_BaseRequestHandler):
         super().__init__(eager_tasks=eager_tasks)
         self._client_ttl: float = client_ttl
 
-    async def handle(self, client: AsyncDatagramClient[Any]) -> AsyncGenerator[None, Any]:
-        from asyncio import timeout
-
+    async def handle(self, client: AsyncDatagramClient[Any]) -> AsyncGenerator[float | None, Any]:
         client_ttl = self._client_ttl
         while True:
             try:
-                async with timeout(client_ttl):
-                    request = yield
+                request = yield client_ttl
             except TimeoutError:
+                print(f"{client.extra(INETClientAttribute.local_address)}: timed out")
                 return
             await client.send_packet(request)
 

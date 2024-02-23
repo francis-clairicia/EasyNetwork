@@ -125,11 +125,35 @@ class MyAsyncUDPRequestHandler(AsyncDatagramRequestHandler[str, str]):
             await client.send_packet("wrong encoding man.")
 
 
-class TimeoutRequestHandler(AsyncDatagramRequestHandler[str, str]):
+class TimeoutYieldedRequestHandler(AsyncDatagramRequestHandler[str, str]):
     request_timeout: float = 1.0
+    timeout_on_third_yield: bool = False
+
+    async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[float | None, str]:
+        assert (yield None) == "something"
+        if self.timeout_on_third_yield:
+            request = yield None
+            await client.send_packet(request)
+        try:
+            with pytest.raises(TimeoutError):
+                yield self.request_timeout
+            await client.send_packet("successfully timed out")
+        except BaseException:
+            await client.send_packet("error occurred")
+            raise
+        finally:
+            self.request_timeout = 1.0  # Force reset to 1 second in order not to overload the server
+
+
+class TimeoutContextRequestHandler(AsyncDatagramRequestHandler[str, str]):
+    request_timeout: float = 1.0
+    timeout_on_third_yield: bool = False
 
     async def handle(self, client: AsyncDatagramClient[str]) -> AsyncGenerator[None, str]:
         assert (yield) == "something"
+        if self.timeout_on_third_yield:
+            request = yield
+            await client.send_packet(request)
         try:
             with pytest.raises(TimeoutError):
                 async with asyncio.timeout(self.request_timeout):
@@ -481,18 +505,25 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         assert caplog.records[0].levelno == logging.WARNING
         assert caplog.records[0].message == f"There have been attempts to do operation on closed client ({host!r}, {port})"
 
-    @pytest.mark.parametrize("request_handler", [TimeoutRequestHandler], indirect=True)
+    @pytest.mark.parametrize("request_handler", [TimeoutYieldedRequestHandler, TimeoutContextRequestHandler], indirect=True)
     @pytest.mark.parametrize("request_timeout", [0.0, 1.0], ids=lambda p: f"timeout=={p}")
+    @pytest.mark.parametrize("timeout_on_third_yield", [False, True], ids=lambda p: f"timeout_on_third_yield=={p}")
     async def test____serve_forever____throw_cancelled_error(
         self,
         request_timeout: float,
-        request_handler: TimeoutRequestHandler,
+        timeout_on_third_yield: bool,
+        request_handler: TimeoutYieldedRequestHandler | TimeoutContextRequestHandler,
         client_factory: Callable[[], Awaitable[DatagramEndpoint]],
     ) -> None:
         request_handler.request_timeout = request_timeout
+        request_handler.timeout_on_third_yield = timeout_on_third_yield
         endpoint = await client_factory()
 
         await endpoint.sendto(b"something", None)
+        if timeout_on_third_yield:
+            await endpoint.sendto(b"something", None)
+            assert (await endpoint.recvfrom())[0] == b"something"
+
         async with asyncio.timeout(request_timeout + 1):
             assert (await endpoint.recvfrom())[0] == b"successfully timed out"
 

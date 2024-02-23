@@ -21,14 +21,14 @@ __all__ = ["AsyncStreamClient", "AsyncStreamServer"]
 import contextlib
 import dataclasses
 from collections.abc import AsyncGenerator, Callable, Mapping
-from typing import Any, Generic, NoReturn, Self
+from typing import Any, Generic, NoReturn
 
 from .... import protocol as protocol_module
 from ...._typevars import _T_Request, _T_Response
 from ....exceptions import UnsupportedOperation
 from ... import _stream, _utils, typed_attr
 from ..._asyncgen import AsyncGenAction, SendAction, ThrowAction
-from ..backend.abc import TaskGroup
+from ..backend.abc import AsyncBackend, TaskGroup
 from ..transports import abc as transports, utils as transports_utils
 
 
@@ -133,7 +133,7 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_T_Request, _
 
     async def serve(
         self,
-        client_connected_cb: Callable[[AsyncStreamClient[_T_Response]], AsyncGenerator[None, _T_Request]],
+        client_connected_cb: Callable[[AsyncStreamClient[_T_Response]], AsyncGenerator[float | None, _T_Request]],
         task_group: TaskGroup | None = None,
     ) -> NoReturn:
         with self.__serve_guard:
@@ -142,11 +142,13 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_T_Request, _
 
     async def __client_coroutine(
         self,
-        client_connected_cb: Callable[[AsyncStreamClient[_T_Response]], AsyncGenerator[None, _T_Request]],
+        client_connected_cb: Callable[[AsyncStreamClient[_T_Response]], AsyncGenerator[float | None, _T_Request]],
         transport: transports.AsyncStreamTransport,
     ) -> None:
         if not isinstance(transport, transports.AsyncStreamTransport):
             raise TypeError(f"Expected an AsyncStreamTransport object, got {transport!r}")
+
+        from ..backend.factory import current_async_backend
 
         async with contextlib.AsyncExitStack() as task_exit_stack:
             task_exit_stack.push_async_callback(transports_utils.aclose_forcefully, transport)
@@ -160,12 +162,14 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_T_Request, _
                     raise UnsupportedOperation  # pragma: no cover
                 consumer = _stream.BufferedStreamDataConsumer(self.__protocol, self.__max_recv_size)
                 request_receiver = _BufferedRequestReceiver(
+                    backend=current_async_backend(),
                     transport=transport,
                     consumer=consumer,
                 )
             except UnsupportedOperation:
                 consumer = _stream.StreamDataConsumer(self.__protocol)
                 request_receiver = _RequestReceiver(
+                    backend=current_async_backend(),
                     transport=transport,
                     consumer=consumer,
                     max_recv_size=self.__max_recv_size,
@@ -178,21 +182,27 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_T_Request, _
 
             request_handler_generator = client_connected_cb(client)
 
-            del client_exit_stack, task_exit_stack, client_connected_cb, client
+            del client_exit_stack, task_exit_stack, client_connected_cb, client, current_async_backend
 
-            async with contextlib.aclosing(request_handler_generator):
-                try:
-                    await anext(request_handler_generator)
-                except StopAsyncIteration:
-                    return
-
-                async for action in request_receiver:
+            timeout: float | None
+            try:
+                timeout = await anext(request_handler_generator)
+            except StopAsyncIteration:
+                return
+            else:
+                while True:
                     try:
-                        await action.asend(request_handler_generator)
+                        action = await request_receiver.next(timeout)
+                    except StopAsyncIteration:
+                        break
+                    try:
+                        timeout = await action.asend(request_handler_generator)
                     except StopAsyncIteration:
                         break
                     finally:
                         del action
+            finally:
+                await request_handler_generator.aclose()
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
@@ -201,17 +211,16 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_T_Request, _
 
 @dataclasses.dataclass(kw_only=True, eq=False, frozen=True, slots=True)
 class _RequestReceiver(Generic[_T_Request]):
+    backend: AsyncBackend
     transport: transports.AsyncStreamReadTransport
     consumer: _stream.StreamDataConsumer[_T_Request]
     max_recv_size: int
+    __null_timeout_ctx: contextlib.nullcontext[None] = dataclasses.field(init=False, default_factory=contextlib.nullcontext)
 
     def __post_init__(self) -> None:
         assert self.max_recv_size > 0, f"{self.max_recv_size=}"  # nosec assert_used
 
-    def __aiter__(self) -> Self:
-        return self
-
-    async def __anext__(self) -> AsyncGenAction[None, _T_Request]:
+    async def next(self, timeout: float | None) -> AsyncGenAction[_T_Request]:
         try:
             consumer = self.consumer
             try:
@@ -221,12 +230,13 @@ class _RequestReceiver(Generic[_T_Request]):
             else:
                 return SendAction(request)
 
-            while data := await self.transport.recv(self.max_recv_size):
-                try:
-                    request = consumer.next(data)
-                except StopIteration:
-                    continue
-                return SendAction(request)
+            with self.__null_timeout_ctx if timeout is None else self.backend.timeout(timeout):
+                while data := await self.transport.recv(self.max_recv_size):
+                    try:
+                        request = consumer.next(data)
+                    except StopIteration:
+                        continue
+                    return SendAction(request)
         except BaseException as exc:
             return ThrowAction(exc)
         raise StopAsyncIteration
@@ -234,13 +244,12 @@ class _RequestReceiver(Generic[_T_Request]):
 
 @dataclasses.dataclass(kw_only=True, eq=False, frozen=True, slots=True)
 class _BufferedRequestReceiver(Generic[_T_Request]):
+    backend: AsyncBackend
     transport: transports.AsyncBufferedStreamReadTransport
     consumer: _stream.BufferedStreamDataConsumer[_T_Request]
+    __null_timeout_ctx: contextlib.nullcontext[None] = dataclasses.field(init=False, default_factory=contextlib.nullcontext)
 
-    def __aiter__(self) -> Self:
-        return self
-
-    async def __anext__(self) -> AsyncGenAction[None, _T_Request]:
+    async def next(self, timeout: float | None) -> AsyncGenAction[_T_Request]:
         try:
             consumer = self.consumer
             try:
@@ -250,12 +259,13 @@ class _BufferedRequestReceiver(Generic[_T_Request]):
             else:
                 return SendAction(request)
 
-            while nbytes := await self.transport.recv_into(consumer.get_write_buffer()):
-                try:
-                    request = consumer.next(nbytes)
-                except StopIteration:
-                    continue
-                return SendAction(request)
+            with self.__null_timeout_ctx if timeout is None else self.backend.timeout(timeout):
+                while nbytes := await self.transport.recv_into(consumer.get_write_buffer()):
+                    try:
+                        request = consumer.next(nbytes)
+                    except StopIteration:
+                        continue
+                    return SendAction(request)
         except BaseException as exc:
             return ThrowAction(exc)
         raise StopAsyncIteration

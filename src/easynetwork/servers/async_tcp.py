@@ -372,7 +372,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
     async def __client_coroutine(
         self,
         lowlevel_client: _stream_server.AsyncStreamClient[_T_Response],
-    ) -> AsyncGenerator[None, _T_Request]:
+    ) -> AsyncGenerator[float | None, _T_Request]:
         async with contextlib.AsyncExitStack() as client_exit_stack:
             self.__attach_server()
             client_exit_stack.callback(self.__detach_server)
@@ -401,19 +401,20 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
             client_exit_stack.callback(logger.log, self.__client_connection_log_level, "%s disconnected", client_address)
             client_exit_stack.push_async_callback(client._force_close)
 
-            request_handler_generator: AsyncGenerator[None, _T_Request]
-            action: AsyncGenAction[None, _T_Request]
+            request_handler_generator: AsyncGenerator[float | None, _T_Request]
+            action: AsyncGenAction[_T_Request]
+            timeout: float | None
 
             _on_connection_hook = self.__request_handler.on_connection(client)
             if isinstance(_on_connection_hook, AsyncGenerator):
                 try:
-                    await anext(_on_connection_hook)
+                    timeout = await anext(_on_connection_hook)
                 except StopAsyncIteration:
                     pass
                 else:
                     while True:
                         try:
-                            action = SendAction((yield))
+                            action = SendAction((yield timeout))
                         except ConnectionError:
                             await _on_connection_hook.aclose()
                             return
@@ -423,7 +424,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
                                 return
                             action = ThrowAction(_utils.remove_traceback_frames_in_place(exc, 1))
                         try:
-                            await action.asend(_on_connection_hook)
+                            timeout = await action.asend(_on_connection_hook)
                         except StopAsyncIteration:
                             break
                         except BaseException as exc:
@@ -432,6 +433,8 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
                             raise
                         finally:
                             del action
+                finally:
+                    await _on_connection_hook.aclose()
             else:
                 assert inspect.isawaitable(_on_connection_hook)  # nosec assert_used
                 await _on_connection_hook
@@ -453,30 +456,33 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
             while not client_is_closing():
                 request_handler_generator = new_request_handler(client)
                 try:
-                    await anext(request_handler_generator)
+                    timeout = await anext(request_handler_generator)
                 except StopAsyncIteration:
                     return
-                while True:
-                    try:
-                        action = SendAction((yield))
-                    except ConnectionError:
-                        await request_handler_generator.aclose()
-                        return
-                    except BaseException as exc:
-                        if _utils.is_ssl_eof_error(exc):
+                else:
+                    while True:
+                        try:
+                            action = SendAction((yield timeout))
+                        except ConnectionError:
                             await request_handler_generator.aclose()
                             return
-                        action = ThrowAction(_utils.remove_traceback_frames_in_place(exc, 1))
-                    try:
-                        await action.asend(request_handler_generator)
-                    except StopAsyncIteration:
-                        break
-                    except BaseException as exc:
-                        # Remove action.asend() frames
-                        _utils.remove_traceback_frames_in_place(exc, 2)
-                        raise
-                    finally:
-                        del action
+                        except BaseException as exc:
+                            if _utils.is_ssl_eof_error(exc):
+                                await request_handler_generator.aclose()
+                                return
+                            action = ThrowAction(_utils.remove_traceback_frames_in_place(exc, 1))
+                        try:
+                            timeout = await action.asend(request_handler_generator)
+                        except StopAsyncIteration:
+                            break
+                        except BaseException as exc:
+                            # Remove action.asend() frames
+                            _utils.remove_traceback_frames_in_place(exc, 2)
+                            raise
+                        finally:
+                            del action
+                finally:
+                    await request_handler_generator.aclose()
 
     def __attach_server(self) -> None:
         self.__active_tasks += 1

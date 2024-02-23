@@ -162,7 +162,7 @@ class ClientLoopInRequestHandler(AsyncStreamRequestHandler[Request, Response]):
                 await client.send_packet(Response())
 
 
-class TimeoutRequestHandler(AsyncStreamRequestHandler[Request, Response]):
+class TimeoutContextRequestHandler(AsyncStreamRequestHandler[Request, Response]):
     async def handle(
         self,
         client: AsyncStreamClient[Response],
@@ -171,6 +171,20 @@ class TimeoutRequestHandler(AsyncStreamRequestHandler[Request, Response]):
             async with asyncio.timeout(30):
                 # The client has 30 seconds to send the request to the server.
                 request: Request = yield
+        except TimeoutError:
+            await client.send_packet(TimedOut())
+        else:
+            await client.send_packet(Response())
+
+
+class TimeoutYieldedRequestHandler(AsyncStreamRequestHandler[Request, Response]):
+    async def handle(
+        self,
+        client: AsyncStreamClient[Response],
+    ) -> AsyncGenerator[float | None, Request]:
+        try:
+            # The client has 30 seconds to send the request to the server.
+            request: Request = yield 30.0
         except TimeoutError:
             await client.send_packet(TimedOut())
         else:

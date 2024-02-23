@@ -18,6 +18,7 @@ from __future__ import annotations
 
 __all__ = ["AsyncDatagramServer", "DatagramClientContext"]
 
+import contextlib
 import contextvars
 import dataclasses
 import enum
@@ -104,7 +105,9 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_T_Request,
 
     async def serve(
         self,
-        datagram_received_cb: Callable[[DatagramClientContext[_T_Response, _T_Address]], AsyncGenerator[None, _T_Request]],
+        datagram_received_cb: Callable[
+            [DatagramClientContext[_T_Response, _T_Address]], AsyncGenerator[float | None, _T_Request]
+        ],
         task_group: TaskGroup | None = None,
     ) -> NoReturn:
         with self.__serve_guard:
@@ -140,7 +143,9 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_T_Request,
 
     async def __client_coroutine(
         self,
-        datagram_received_cb: Callable[[DatagramClientContext[_T_Response, _T_Address]], AsyncGenerator[None, _T_Request]],
+        datagram_received_cb: Callable[
+            [DatagramClientContext[_T_Response, _T_Address]], AsyncGenerator[float | None, _T_Request]
+        ],
         datagram: bytes,
         client: _ClientToken[_T_Response, _T_Address],
         task_group: TaskGroup,
@@ -164,39 +169,46 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_T_Request,
                 #####################################################################################################
 
                 request_handler_generator = datagram_received_cb(client.ctx)
+                timeout: float | None
 
                 try:
+                    # Ignore sent timeout here, we already have the datagram.
                     await anext(request_handler_generator)
                 except StopAsyncIteration:
                     return
-
-                action: AsyncGenAction[None, _T_Request] = self.__parse_datagram(datagram, self.__protocol)
-                try:
-                    await action.asend(request_handler_generator)
-                except StopAsyncIteration:
-                    return
-                finally:
-                    del action
-
-                del datagram
-                while True:
+                else:
+                    action: AsyncGenAction[_T_Request] = self.__parse_datagram(datagram, self.__protocol)
                     try:
-                        datagram = await client_data.pop_datagram()
-                    except BaseException as exc:
-                        action = ThrowAction(exc)
-                    else:
-                        action = self.__parse_datagram(datagram, self.__protocol)
-                        del datagram
-                    try:
-                        await action.asend(request_handler_generator)
+                        timeout = await action.asend(request_handler_generator)
                     except StopAsyncIteration:
-                        break
+                        return
                     finally:
                         del action
 
+                    del datagram
+                    while True:
+                        try:
+                            with contextlib.nullcontext() if timeout is None else client_data.backend.timeout(timeout):
+                                datagram = await client_data.pop_datagram()
+
+                            action = self.__parse_datagram(datagram, self.__protocol)
+                            del datagram
+                        except BaseException as exc:
+                            action = ThrowAction(exc)
+                        try:
+                            timeout = await action.asend(request_handler_generator)
+                        except StopAsyncIteration:
+                            break
+                        finally:
+                            del action
+                finally:
+                    await request_handler_generator.aclose()
+
     def __on_task_done(
         self,
-        datagram_received_cb: Callable[[DatagramClientContext[_T_Response, _T_Address]], AsyncGenerator[None, _T_Request]],
+        datagram_received_cb: Callable[
+            [DatagramClientContext[_T_Response, _T_Address]], AsyncGenerator[float | None, _T_Request]
+        ],
         client: _ClientToken[_T_Response, _T_Address],
         task_group: TaskGroup,
         default_context: contextvars.Context,
@@ -222,7 +234,7 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_T_Request,
     def __parse_datagram(
         datagram: bytes,
         protocol: protocol_module.DatagramProtocol[_T_Response, _T_Request],
-    ) -> AsyncGenAction[None, _T_Request]:
+    ) -> AsyncGenAction[_T_Request]:
         try:
             try:
                 request = protocol.build_packet_from_datagram(datagram)
@@ -267,6 +279,10 @@ class _ClientData:
         self.__state: _ClientState | None = None
         self._queue_condition: ICondition | None = None
         self._datagram_queue: deque[bytes] | None = None
+
+    @property
+    def backend(self) -> AsyncBackend:
+        return self.__backend
 
     @property
     def task_lock(self) -> ILock:

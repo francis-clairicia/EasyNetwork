@@ -106,13 +106,13 @@ class MultipleYieldInRequestHandler(AsyncDatagramRequestHandler[Request, Respons
         return True
 
 
-class TimeoutRequestHandler(AsyncDatagramRequestHandler[Request, Response]):
+class TimeoutContextRequestHandler(AsyncDatagramRequestHandler[Request, Response]):
     async def handle(
         self,
         client: AsyncDatagramClient[Response],
     ) -> AsyncGenerator[None, Request]:
-        # It is *never* useful to have a timeout for the 1st datagram because the datagram
-        # is already in the queue.
+        # It is *never* useful to have a timeout for the 1st datagram
+        # because the datagram is already in the queue.
         request: Request = yield
 
         ...
@@ -123,6 +123,28 @@ class TimeoutRequestHandler(AsyncDatagramRequestHandler[Request, Response]):
             async with asyncio.timeout(30):
                 # The client has 30 seconds to send the 2nd request to the server.
                 another_request: Request = yield
+        except TimeoutError:
+            await client.send_packet(TimedOut())
+        else:
+            await client.send_packet(Response())
+
+
+class TimeoutYieldedRequestHandler(AsyncDatagramRequestHandler[Request, Response]):
+    async def handle(
+        self,
+        client: AsyncDatagramClient[Response],
+    ) -> AsyncGenerator[float | None, Request]:
+        # It is *never* useful to have a timeout for the 1st datagram
+        # because the datagram is already in the queue.
+        request: Request = yield None
+
+        ...
+
+        await client.send_packet(Response())
+
+        try:
+            # The client has 30 seconds to send the 2nd request to the server.
+            another_request: Request = yield 30
         except TimeoutError:
             await client.send_packet(TimedOut())
         else:
