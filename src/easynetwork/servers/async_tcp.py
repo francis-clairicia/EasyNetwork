@@ -416,11 +416,9 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
                         try:
                             action = SendAction((yield timeout))
                         except ConnectionError:
-                            await _on_connection_hook.aclose()
                             return
                         except BaseException as exc:
                             if _utils.is_ssl_eof_error(exc):
-                                await _on_connection_hook.aclose()
                                 return
                             action = ThrowAction(_utils.remove_traceback_frames_in_place(exc, 1))
                         try:
@@ -464,11 +462,9 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
                         try:
                             action = SendAction((yield timeout))
                         except ConnectionError:
-                            await request_handler_generator.aclose()
                             return
                         except BaseException as exc:
                             if _utils.is_ssl_eof_error(exc):
-                                await request_handler_generator.aclose()
                                 return
                             action = ThrowAction(_utils.remove_traceback_frames_in_place(exc, 1))
                         try:
