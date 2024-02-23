@@ -8,7 +8,7 @@ from concurrent.futures import Future
 from socket import AF_INET, IPPROTO_TCP, SHUT_WR, TCP_NODELAY, socket as Socket
 from typing import Any
 
-from easynetwork.api_sync.client.tcp import TCPNetworkClient
+from easynetwork.clients.tcp import TCPNetworkClient
 from easynetwork.exceptions import ClientClosedError, StreamProtocolParseError
 from easynetwork.lowlevel.socket import IPv4SocketAddress, IPv6SocketAddress
 from easynetwork.protocol import StreamProtocol

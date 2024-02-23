@@ -4,8 +4,8 @@ import asyncio
 import contextlib
 from collections.abc import AsyncGenerator
 
-from easynetwork.api_async.server import AsyncDatagramClient, AsyncDatagramRequestHandler, AsyncUDPNetworkServer
 from easynetwork.exceptions import DatagramProtocolParseError
+from easynetwork.servers import AsyncDatagramClient, AsyncDatagramRequestHandler, AsyncUDPNetworkServer
 
 
 class Request:

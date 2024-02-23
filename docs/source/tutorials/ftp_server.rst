@@ -215,28 +215,28 @@ Server:
       .. code-block:: console
 
          (.venv) $ python server.py
-         [ INFO ] [ easynetwork.api_async.server.tcp ] Start serving at ('::', 21000), ('0.0.0.0', 21000)
-         [ INFO ] [ easynetwork.api_async.server.tcp ] Accepted new connection (address = ('127.0.0.1', 45994))
+         [ INFO ] [ easynetwork.servers.async_tcp ] Start serving at ('::', 21000), ('0.0.0.0', 21000)
+         [ INFO ] [ easynetwork.servers.async_tcp ] Accepted new connection (address = ('127.0.0.1', 45994))
          [ INFO ] [ FTPRequestHandler ] Sent by client ('127.0.0.1', 45994): FTPRequest(command=<FTPCommand.NOOP: 'NOOP'>, args=())
          [ INFO ] [ FTPRequestHandler ] Sent by client ('127.0.0.1', 45994): FTPRequest(command=<FTPCommand.NOOP: 'NOOP'>, args=())
          [ INFO ] [ FTPRequestHandler ] Sent by client ('127.0.0.1', 45994): FTPRequest(command=<FTPCommand.STOR: 'STOR'>, args=('/path/to/file.txt',))
          [ WARNING ] [ FTPRequestHandler ] ('127.0.0.1', 45994): PacketConversionError: Command unrecognized: 'UNKNOWN'
          [ INFO ] [ FTPRequestHandler ] Sent by client ('127.0.0.1', 45994): FTPRequest(command=<FTPCommand.QUIT: 'QUIT'>, args=())
-         [ INFO ] [ easynetwork.api_async.server.tcp ] ('127.0.0.1', 45994) disconnected
+         [ INFO ] [ easynetwork.servers.async_tcp ] ('127.0.0.1', 45994) disconnected
 
    .. group-tab:: IPv6 connection
 
       .. code-block:: console
 
          (.venv) $ python server.py
-         [ INFO ] [ easynetwork.api_async.server.tcp ] Start serving at ('::', 21000), ('0.0.0.0', 21000)
-         [ INFO ] [ easynetwork.api_async.server.tcp ] Accepted new connection (address = ('::1', 45994))
+         [ INFO ] [ easynetwork.servers.async_tcp ] Start serving at ('::', 21000), ('0.0.0.0', 21000)
+         [ INFO ] [ easynetwork.servers.async_tcp ] Accepted new connection (address = ('::1', 45994))
          [ INFO ] [ FTPRequestHandler ] Sent by client ('::1', 45994): FTPRequest(command=<FTPCommand.NOOP: 'NOOP'>, args=())
          [ INFO ] [ FTPRequestHandler ] Sent by client ('::1', 45994): FTPRequest(command=<FTPCommand.NOOP: 'NOOP'>, args=())
          [ INFO ] [ FTPRequestHandler ] Sent by client ('::1', 45994): FTPRequest(command=<FTPCommand.STOR: 'STOR'>, args=('/path/to/file.txt',))
          [ WARNING ] [ FTPRequestHandler ] ('::1', 45994): PacketConversionError: Command unrecognized: 'UNKNOWN'
          [ INFO ] [ FTPRequestHandler ] Sent by client ('::1', 45994): FTPRequest(command=<FTPCommand.QUIT: 'QUIT'>, args=())
-         [ INFO ] [ easynetwork.api_async.server.tcp ] ('::1', 45994) disconnected
+         [ INFO ] [ easynetwork.servers.async_tcp ] ('::1', 45994) disconnected
 
 
 Client:

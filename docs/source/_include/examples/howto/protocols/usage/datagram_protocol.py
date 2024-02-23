@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from easynetwork.api_sync.client import UDPNetworkClient
+from easynetwork.clients import UDPNetworkClient
 from easynetwork.exceptions import DatagramProtocolParseError
 
 from ..basics.datagram_protocol_subclass import JSONDatagramProtocol

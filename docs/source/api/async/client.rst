@@ -2,7 +2,9 @@
 Clients API
 ***********
 
-.. automodule:: easynetwork.api_async.client
+Asynchronous network client interfaces
+
+.. currentmodule:: easynetwork.clients
 
 .. contents:: Table of Contents
    :local:

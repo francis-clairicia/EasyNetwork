@@ -5,7 +5,7 @@ import asyncio
 import logging
 from collections.abc import Callable
 
-from easynetwork.api_async.client import AbstractAsyncNetworkClient, AsyncTCPNetworkClient, AsyncUDPNetworkClient
+from easynetwork.clients import AbstractAsyncNetworkClient, AsyncTCPNetworkClient, AsyncUDPNetworkClient
 from easynetwork.protocol import DatagramProtocol, StreamProtocol
 from easynetwork.serializers.line import StringLineSerializer
 

@@ -5,8 +5,8 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from sphinx.application import Sphinx
 
-from easynetwork.api_sync.server import AbstractNetworkServer
-from easynetwork.api_sync.server._base import BaseStandaloneNetworkServerImpl
+from easynetwork.servers import AbstractNetworkServer
+from easynetwork.servers._base import BaseStandaloneNetworkServerImpl
 
 
 def _replace_base_in_place(klass: type, bases: list[type], base_to_replace: type, base_to_set_instead: type) -> None:

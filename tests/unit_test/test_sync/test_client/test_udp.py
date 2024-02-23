@@ -8,7 +8,7 @@ from selectors import EVENT_READ, EVENT_WRITE
 from socket import AF_INET, AF_INET6, AF_UNSPEC, AI_PASSIVE, IPPROTO_UDP, SO_ERROR, SOCK_DGRAM, SOL_SOCKET, AddressFamily
 from typing import TYPE_CHECKING, Any, Literal, assert_never
 
-from easynetwork.api_sync.client.udp import UDPNetworkClient, _create_udp_socket as create_udp_socket
+from easynetwork.clients.udp import UDPNetworkClient, _create_udp_socket as create_udp_socket
 from easynetwork.exceptions import ClientClosedError, DatagramProtocolParseError, DeserializeError
 from easynetwork.lowlevel._utils import error_from_errno
 from easynetwork.lowlevel.constants import CLOSED_SOCKET_ERRNOS, MAX_DATAGRAM_BUFSIZE

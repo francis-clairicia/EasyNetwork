@@ -2,7 +2,9 @@
 Servers API
 ***********
 
-.. automodule:: easynetwork.api_sync.server
+Network server interfaces
+
+.. currentmodule:: easynetwork.servers
 
 .. contents:: Table of Contents
    :local:

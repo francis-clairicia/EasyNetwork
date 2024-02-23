@@ -25,15 +25,15 @@ import socket as _socket
 from collections.abc import Awaitable, Callable, Iterator
 from typing import Any, final, overload
 
-from ..._typevars import _T_ReceivedPacket, _T_SentPacket
-from ...exceptions import ClientClosedError
-from ...lowlevel import _utils, constants
-from ...lowlevel.api_async.backend.abc import CancelScope, ILock
-from ...lowlevel.api_async.backend.factory import current_async_backend
-from ...lowlevel.api_async.endpoints.datagram import AsyncDatagramEndpoint
-from ...lowlevel.api_async.transports.abc import AsyncDatagramTransport
-from ...lowlevel.socket import INETSocketAttribute, SocketAddress, SocketProxy, new_socket_address
-from ...protocol import DatagramProtocol
+from .._typevars import _T_ReceivedPacket, _T_SentPacket
+from ..exceptions import ClientClosedError
+from ..lowlevel import _utils, constants
+from ..lowlevel.api_async.backend.abc import CancelScope, ILock
+from ..lowlevel.api_async.backend.factory import current_async_backend
+from ..lowlevel.api_async.endpoints.datagram import AsyncDatagramEndpoint
+from ..lowlevel.api_async.transports.abc import AsyncDatagramTransport
+from ..lowlevel.socket import INETSocketAttribute, SocketAddress, SocketProxy, new_socket_address
+from ..protocol import DatagramProtocol
 from .abc import AbstractAsyncNetworkClient
 
 

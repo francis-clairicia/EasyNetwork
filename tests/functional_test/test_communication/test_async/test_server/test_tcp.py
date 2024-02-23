@@ -10,8 +10,6 @@ from socket import IPPROTO_TCP, TCP_NODELAY
 from typing import Any, Literal
 from weakref import WeakValueDictionary
 
-from easynetwork.api_async.server.handler import AsyncStreamClient, AsyncStreamRequestHandler, INETClientAttribute
-from easynetwork.api_async.server.tcp import AsyncTCPNetworkServer
 from easynetwork.exceptions import (
     BaseProtocolParseError,
     ClientClosedError,
@@ -25,6 +23,8 @@ from easynetwork.lowlevel.std_asyncio._asyncio_utils import create_connection
 from easynetwork.lowlevel.std_asyncio.backend import AsyncIOBackend
 from easynetwork.lowlevel.std_asyncio.stream.listener import ListenerSocketAdapter
 from easynetwork.protocol import StreamProtocol
+from easynetwork.servers.async_tcp import AsyncTCPNetworkServer
+from easynetwork.servers.handlers import AsyncStreamClient, AsyncStreamRequestHandler, INETClientAttribute
 
 import pytest
 import pytest_asyncio

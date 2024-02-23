@@ -4,7 +4,7 @@ import math
 from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any, final
 
-from easynetwork.api_async.client.abc import AbstractAsyncNetworkClient
+from easynetwork.clients.abc import AbstractAsyncNetworkClient
 from easynetwork.lowlevel.socket import SocketAddress
 
 import pytest

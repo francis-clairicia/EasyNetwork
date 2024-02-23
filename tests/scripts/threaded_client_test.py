@@ -6,7 +6,7 @@ import logging
 import time
 from collections.abc import Callable
 
-from easynetwork.api_sync.client import AbstractNetworkClient, TCPNetworkClient, UDPNetworkClient
+from easynetwork.clients import AbstractNetworkClient, TCPNetworkClient, UDPNetworkClient
 from easynetwork.protocol import DatagramProtocol, StreamProtocol
 from easynetwork.serializers.line import StringLineSerializer
 

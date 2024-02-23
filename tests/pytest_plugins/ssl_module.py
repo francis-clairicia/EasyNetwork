@@ -8,8 +8,8 @@ from typing import Any
 import pytest
 
 ALL_MODULES_WHICH_USE_SSL_MODULE: tuple[tuple[str, str], ...] = (
-    ("easynetwork.api_async.client.tcp", "_ssl_module"),
-    ("easynetwork.api_sync.client.tcp", "_ssl_module"),
+    ("easynetwork.clients.async_tcp", "_ssl_module"),
+    ("easynetwork.clients.tcp", "_ssl_module"),
     ("easynetwork.lowlevel.api_sync.transports.socket", "_ssl_module"),
     ("easynetwork.lowlevel.api_async.transports.tls", "_ssl_module"),
     ("easynetwork.lowlevel._utils", "ssl"),

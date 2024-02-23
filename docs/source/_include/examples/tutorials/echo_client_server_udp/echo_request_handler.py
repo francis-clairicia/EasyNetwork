@@ -3,8 +3,8 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator
 from typing import Any, TypeAlias
 
-from easynetwork.api_async.server import AsyncDatagramClient, AsyncDatagramRequestHandler, INETClientAttribute
 from easynetwork.exceptions import DatagramProtocolParseError
+from easynetwork.servers import AsyncDatagramClient, AsyncDatagramRequestHandler, INETClientAttribute
 
 RequestType: TypeAlias = Any
 ResponseType: TypeAlias = Any

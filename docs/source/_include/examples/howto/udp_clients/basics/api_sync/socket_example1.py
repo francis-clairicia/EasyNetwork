@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import socket
 
-from easynetwork.api_sync.client import UDPNetworkClient
+from easynetwork.clients import UDPNetworkClient
 from easynetwork.protocol import DatagramProtocol
 from easynetwork.serializers import JSONSerializer
 

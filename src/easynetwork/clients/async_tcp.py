@@ -33,14 +33,14 @@ else:
     _ssl_module = _ssl
     del _ssl
 
-from ..._typevars import _T_ReceivedPacket, _T_SentPacket
-from ...exceptions import ClientClosedError
-from ...lowlevel import _utils, constants
-from ...lowlevel.api_async.backend.abc import AsyncBackend, CancelScope, ILock
-from ...lowlevel.api_async.backend.factory import current_async_backend
-from ...lowlevel.api_async.endpoints.stream import AsyncStreamEndpoint
-from ...lowlevel.api_async.transports.abc import AsyncStreamTransport
-from ...lowlevel.socket import (
+from .._typevars import _T_ReceivedPacket, _T_SentPacket
+from ..exceptions import ClientClosedError
+from ..lowlevel import _utils, constants
+from ..lowlevel.api_async.backend.abc import AsyncBackend, CancelScope, ILock
+from ..lowlevel.api_async.backend.factory import current_async_backend
+from ..lowlevel.api_async.endpoints.stream import AsyncStreamEndpoint
+from ..lowlevel.api_async.transports.abc import AsyncStreamTransport
+from ..lowlevel.socket import (
     INETSocketAttribute,
     SocketAddress,
     SocketProxy,
@@ -48,7 +48,7 @@ from ...lowlevel.socket import (
     set_tcp_keepalive,
     set_tcp_nodelay,
 )
-from ...protocol import StreamProtocol
+from ..protocol import StreamProtocol
 from .abc import AbstractAsyncNetworkClient
 
 if TYPE_CHECKING:
@@ -288,7 +288,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         local_address: tuple[str, int] | None = None,
         happy_eyeballs_delay: float | None = None,
     ) -> AsyncStreamTransport:
-        from ...lowlevel.api_async.transports.tls import AsyncTLSStreamTransport
+        from ..lowlevel.api_async.transports.tls import AsyncTLSStreamTransport
 
         transport = await backend.create_tcp_connection(
             host,
@@ -318,7 +318,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         ssl_shutdown_timeout: float | None,
         ssl_standard_compatible: bool,
     ) -> AsyncStreamTransport:
-        from ...lowlevel.api_async.transports.tls import AsyncTLSStreamTransport
+        from ..lowlevel.api_async.transports.tls import AsyncTLSStreamTransport
 
         transport = await backend.wrap_stream_socket(socket)
 

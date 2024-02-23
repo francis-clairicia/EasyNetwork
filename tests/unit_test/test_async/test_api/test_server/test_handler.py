@@ -7,9 +7,9 @@ import inspect
 from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Any
 
-from easynetwork.api_async.server.handler import AsyncBaseClientInterface, AsyncDatagramRequestHandler, AsyncStreamRequestHandler
-from easynetwork.api_async.server.tcp import AsyncTCPNetworkServer
-from easynetwork.api_async.server.udp import AsyncUDPNetworkServer
+from easynetwork.servers.async_tcp import AsyncTCPNetworkServer
+from easynetwork.servers.async_udp import AsyncUDPNetworkServer
+from easynetwork.servers.handlers import AsyncBaseClientInterface, AsyncDatagramRequestHandler, AsyncStreamRequestHandler
 
 import pytest
 

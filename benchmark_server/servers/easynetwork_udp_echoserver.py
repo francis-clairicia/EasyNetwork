@@ -8,10 +8,10 @@ from collections.abc import AsyncGenerator
 from contextlib import AsyncExitStack
 from typing import Any
 
-from easynetwork.api_async.server.handler import AsyncDatagramClient, AsyncDatagramRequestHandler
-from easynetwork.api_sync.server.udp import StandaloneUDPNetworkServer
 from easynetwork.protocol import DatagramProtocol
 from easynetwork.serializers.abc import AbstractPacketSerializer
+from easynetwork.servers.handlers import AsyncDatagramClient, AsyncDatagramRequestHandler
+from easynetwork.servers.standalone_udp import StandaloneUDPNetworkServer
 
 
 class NoSerializer(AbstractPacketSerializer[bytes, bytes]):

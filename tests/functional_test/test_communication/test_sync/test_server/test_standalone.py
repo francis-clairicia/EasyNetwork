@@ -5,13 +5,13 @@ import threading
 import time
 from collections.abc import AsyncGenerator, Iterator
 
-from easynetwork.api_async.server.handler import AsyncBaseClientInterface, AsyncDatagramRequestHandler, AsyncStreamRequestHandler
-from easynetwork.api_sync.server.abc import AbstractNetworkServer
-from easynetwork.api_sync.server.tcp import StandaloneTCPNetworkServer
-from easynetwork.api_sync.server.thread import NetworkServerThread
-from easynetwork.api_sync.server.udp import StandaloneUDPNetworkServer
 from easynetwork.exceptions import ServerAlreadyRunning, ServerClosedError
 from easynetwork.protocol import DatagramProtocol, StreamProtocol
+from easynetwork.servers.abc import AbstractNetworkServer
+from easynetwork.servers.handlers import AsyncBaseClientInterface, AsyncDatagramRequestHandler, AsyncStreamRequestHandler
+from easynetwork.servers.standalone_tcp import StandaloneTCPNetworkServer
+from easynetwork.servers.standalone_udp import StandaloneUDPNetworkServer
+from easynetwork.servers.threads_helper import NetworkServerThread
 
 import pytest
 

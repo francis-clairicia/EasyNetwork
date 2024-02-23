@@ -7,14 +7,14 @@ import logging
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Sequence
 from typing import Any
 
-from easynetwork.api_async.server.handler import AsyncDatagramClient, AsyncDatagramRequestHandler, INETClientAttribute
-from easynetwork.api_async.server.udp import AsyncUDPNetworkServer
 from easynetwork.exceptions import BaseProtocolParseError, ClientClosedError, DatagramProtocolParseError, DeserializeError
 from easynetwork.lowlevel.socket import SocketAddress
 from easynetwork.lowlevel.std_asyncio.backend import AsyncIOBackend
 from easynetwork.lowlevel.std_asyncio.datagram.endpoint import DatagramEndpoint, create_datagram_endpoint
 from easynetwork.lowlevel.std_asyncio.datagram.listener import DatagramListenerSocketAdapter
 from easynetwork.protocol import DatagramProtocol
+from easynetwork.servers.async_udp import AsyncUDPNetworkServer
+from easynetwork.servers.handlers import AsyncDatagramClient, AsyncDatagramRequestHandler, INETClientAttribute
 
 import pytest
 import pytest_asyncio

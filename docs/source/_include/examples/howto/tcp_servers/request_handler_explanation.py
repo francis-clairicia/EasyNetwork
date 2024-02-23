@@ -4,8 +4,8 @@ import asyncio
 import contextlib
 from collections.abc import AsyncGenerator
 
-from easynetwork.api_async.server import AsyncStreamClient, AsyncStreamRequestHandler, AsyncTCPNetworkServer
 from easynetwork.exceptions import StreamProtocolParseError
+from easynetwork.servers import AsyncStreamClient, AsyncStreamRequestHandler, AsyncTCPNetworkServer
 
 
 class Request:

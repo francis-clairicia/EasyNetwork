@@ -2,7 +2,9 @@
 Servers API
 ***********
 
-.. automodule:: easynetwork.api_async.server
+Asynchronous network server interfaces
+
+.. currentmodule:: easynetwork.servers
 
 .. contents:: Table of Contents
    :local:
@@ -16,7 +18,7 @@ Abstract Base Class
    :members:
    :special-members: __aenter__, __aexit__
 
-.. autoprotocol:: easynetwork.api_async.server.abc::SupportsEventSet
+.. autoprotocol:: easynetwork.servers.abc::SupportsEventSet
 
 
 TCP Implementation

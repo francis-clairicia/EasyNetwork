@@ -22,7 +22,7 @@ __all__ = [
 
 import threading as _threading
 
-from ...lowlevel import _utils
+from ..lowlevel import _utils
 from .abc import AbstractNetworkServer
 
 

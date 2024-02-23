@@ -8,7 +8,7 @@ from collections.abc import Generator
 from socket import AF_INET6, IPPROTO_TCP, SO_ERROR, SO_KEEPALIVE, SOL_SOCKET, TCP_NODELAY
 from typing import TYPE_CHECKING, Any
 
-from easynetwork.api_async.client.tcp import AsyncTCPNetworkClient
+from easynetwork.clients.async_tcp import AsyncTCPNetworkClient
 from easynetwork.exceptions import ClientClosedError, IncrementalDeserializeError, StreamProtocolParseError
 from easynetwork.lowlevel._stream import StreamDataConsumer
 from easynetwork.lowlevel.api_async.transports.tls import AsyncTLSStreamTransport

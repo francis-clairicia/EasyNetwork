@@ -4,13 +4,13 @@ import threading
 from collections.abc import AsyncGenerator, Iterator
 from typing import Literal
 
-from easynetwork.api_async.server.handler import AsyncBaseClientInterface, AsyncDatagramRequestHandler, AsyncStreamRequestHandler
-from easynetwork.api_sync.server.abc import AbstractNetworkServer
-from easynetwork.api_sync.server.tcp import StandaloneTCPNetworkServer
-from easynetwork.api_sync.server.udp import StandaloneUDPNetworkServer
 from easynetwork.lowlevel.socket import IPv4SocketAddress
 from easynetwork.protocol import DatagramProtocol, StreamProtocol
 from easynetwork.serializers.line import StringLineSerializer
+from easynetwork.servers.abc import AbstractNetworkServer
+from easynetwork.servers.handlers import AsyncBaseClientInterface, AsyncDatagramRequestHandler, AsyncStreamRequestHandler
+from easynetwork.servers.standalone_tcp import StandaloneTCPNetworkServer
+from easynetwork.servers.standalone_udp import StandaloneUDPNetworkServer
 
 import pytest
 

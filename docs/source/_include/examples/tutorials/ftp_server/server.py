@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from easynetwork.api_sync.server import StandaloneTCPNetworkServer
+from easynetwork.servers import StandaloneTCPNetworkServer
 
 from ftp_reply import FTPReply
 from ftp_request import FTPRequest

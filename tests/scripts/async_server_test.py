@@ -5,13 +5,12 @@ import contextlib
 import logging
 from collections.abc import AsyncGenerator, Callable
 
-from easynetwork.api_async.server.abc import AbstractAsyncNetworkServer
-from easynetwork.api_async.server.handler import AsyncBaseClientInterface, AsyncDatagramRequestHandler, AsyncStreamRequestHandler
-from easynetwork.api_sync.server.abc import AbstractNetworkServer
-from easynetwork.api_sync.server.tcp import StandaloneTCPNetworkServer
-from easynetwork.api_sync.server.udp import StandaloneUDPNetworkServer
 from easynetwork.protocol import DatagramProtocol, StreamProtocol
 from easynetwork.serializers.line import StringLineSerializer
+from easynetwork.servers.abc import AbstractAsyncNetworkServer, AbstractNetworkServer
+from easynetwork.servers.handlers import AsyncBaseClientInterface, AsyncDatagramRequestHandler, AsyncStreamRequestHandler
+from easynetwork.servers.standalone_tcp import StandaloneTCPNetworkServer
+from easynetwork.servers.standalone_udp import StandaloneUDPNetworkServer
 
 PORT = 9000
 
@@ -23,7 +22,7 @@ class MyAsyncRequestHandler(AsyncStreamRequestHandler[str, str], AsyncDatagramRe
         self.server = server
 
     async def handle(self, client: AsyncBaseClientInterface[str]) -> AsyncGenerator[None, str]:
-        from easynetwork.api_async.server.tcp import AsyncTCPNetworkServer
+        from easynetwork.servers.async_tcp import AsyncTCPNetworkServer
 
         request: str = yield
         logger.debug(f"Received {request!r} from {client!r}")

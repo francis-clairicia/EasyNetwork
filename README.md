@@ -54,13 +54,13 @@ import logging
 from collections.abc import AsyncGenerator
 from typing import Any, TypeAlias
 
-from easynetwork.api_async.server import (
+from easynetwork.protocol import StreamProtocol
+from easynetwork.serializers import JSONSerializer
+from easynetwork.servers import (
     AsyncStreamClient,
     AsyncStreamRequestHandler,
     AsyncTCPNetworkServer,
 )
-from easynetwork.protocol import StreamProtocol
-from easynetwork.serializers import JSONSerializer
 
 # These TypeAliases are there to help you understand
 # where requests and responses are used in the code
@@ -120,7 +120,7 @@ if __name__ == "__main__":
 ```py
 from typing import Any, TypeAlias
 
-from easynetwork.api_sync.client import TCPNetworkClient
+from easynetwork.clients import TCPNetworkClient
 from easynetwork.protocol import StreamProtocol
 from easynetwork.serializers import JSONSerializer
 
@@ -151,7 +151,7 @@ if __name__ == "__main__":
 import asyncio
 from typing import Any, TypeAlias
 
-from easynetwork.api_async.client import AsyncTCPNetworkClient
+from easynetwork.clients import AsyncTCPNetworkClient
 from easynetwork.protocol import StreamProtocol
 from easynetwork.serializers import JSONSerializer
 
