@@ -1,4 +1,4 @@
-# Copyright 2021-2023, Francis Clairicia-Rose-Claire-Josephine
+# Copyright 2021-2024, Francis Clairicia-Rose-Claire-Josephine
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -23,7 +23,7 @@ __all__ = []  # type: list[str]
 
 __author__ = "FrankySnow9"
 __contact__ = "clairicia.rcj.francis@gmail.com"
-__copyright__ = "Copyright 2021-2023, Francis Clairicia-Rose-Claire-Josephine"
+__copyright__ = "Copyright 2021-2024, Francis Clairicia-Rose-Claire-Josephine"
 __credits__ = ["FrankySnow9"]
 __deprecated__ = False
 __email__ = "clairicia.rcj.francis@gmail.com"

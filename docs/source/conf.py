@@ -13,7 +13,7 @@ from importlib.metadata import version as get_version
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 project = "EasyNetwork"
-copyright = "2023, Francis Clairicia-Rose-Claire-Josephine"
+copyright = "2024, Francis Clairicia-Rose-Claire-Josephine"
 author = "FrankySnow9"
 release = get_version("easynetwork")
 version = ".".join(release.split(".")[:3])
