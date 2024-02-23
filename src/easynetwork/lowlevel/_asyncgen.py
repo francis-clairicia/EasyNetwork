@@ -27,7 +27,7 @@ _T_Send = TypeVar("_T_Send")
 _T_Yield = TypeVar("_T_Yield")
 
 
-class AsyncGenAction(Generic[_T_Yield, _T_Send], metaclass=ABCMeta):
+class AsyncGenAction(Generic[_T_Send], metaclass=ABCMeta):
     __slots__ = ()
 
     @abstractmethod
@@ -36,7 +36,7 @@ class AsyncGenAction(Generic[_T_Yield, _T_Send], metaclass=ABCMeta):
 
 
 @dataclasses.dataclass(slots=True)
-class SendAction(AsyncGenAction[_T_Yield, _T_Send]):
+class SendAction(AsyncGenAction[_T_Send]):
     value: _T_Send
 
     async def asend(self, generator: AsyncGenerator[_T_Yield, _T_Send]) -> _T_Yield:
@@ -44,7 +44,7 @@ class SendAction(AsyncGenAction[_T_Yield, _T_Send]):
 
 
 @dataclasses.dataclass(slots=True)
-class ThrowAction(AsyncGenAction[_T_Yield, Any]):
+class ThrowAction(AsyncGenAction[Any]):
     exception: BaseException
 
     async def asend(self, generator: AsyncGenerator[_T_Yield, Any]) -> _T_Yield:

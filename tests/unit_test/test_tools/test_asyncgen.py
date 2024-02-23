@@ -28,10 +28,10 @@ class TestAsyncGenAction:
     async def test____SendAction____send_value(self, mock_generator: MagicMock, mocker: MockerFixture) -> None:
         # Arrange
         mock_generator.asend.return_value = mocker.sentinel.to_yield_from_send
-        action: SendAction[Any, Any] = SendAction(mocker.sentinel.value)
+        action: SendAction[Any] = SendAction(mocker.sentinel.value)
 
         # Act
-        to_yield = await action.asend(mock_generator)
+        to_yield: Any = await action.asend(mock_generator)
 
         # Assert
         assert mock_generator.mock_calls == [mocker.call.asend(mocker.sentinel.value)]
@@ -42,10 +42,10 @@ class TestAsyncGenAction:
         # Arrange
         exc = ValueError("abc")
         mock_generator.athrow.return_value = mocker.sentinel.to_yield_from_throw
-        action: ThrowAction[Any] = ThrowAction(exc)
+        action: ThrowAction = ThrowAction(exc)
 
         # Act
-        to_yield = await action.asend(mock_generator)
+        to_yield: Any = await action.asend(mock_generator)
 
         # Assert
         assert mock_generator.mock_calls == [mocker.call.athrow(exc)]
@@ -55,7 +55,7 @@ class TestAsyncGenAction:
     async def test____ThrowAction____close_generator(self, mock_generator: MagicMock, mocker: MockerFixture) -> None:
         # Arrange
         exc = GeneratorExit()
-        action: ThrowAction[Any] = ThrowAction(exc)
+        action: ThrowAction = ThrowAction(exc)
 
         # Act
         with pytest.raises(GeneratorExit) as exc_info:
@@ -70,7 +70,7 @@ class TestAsyncGenAction:
     async def test____ThrowAction____does_not_create_reference_cycles(self, mock_generator: MagicMock) -> None:
         # Arrange
         exc = ValueError("abc")
-        action: ThrowAction[Any] = ThrowAction(exc)
+        action: ThrowAction = ThrowAction(exc)
         mock_generator.athrow.side_effect = exc
 
         # Act

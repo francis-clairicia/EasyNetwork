@@ -144,7 +144,7 @@ class AsyncStreamRequestHandler(Generic[_T_Request, _T_Response], metaclass=ABCM
         pass
 
     @abstractmethod
-    def handle(self, client: AsyncStreamClient[_T_Response], /) -> AsyncGenerator[None, _T_Request]:
+    def handle(self, client: AsyncStreamClient[_T_Response], /) -> AsyncGenerator[float | None, _T_Request]:
         """
         This function must do all the work required to service a request.
 
@@ -178,7 +178,7 @@ class AsyncStreamRequestHandler(Generic[_T_Request, _T_Response], metaclass=ABCM
         self,
         client: AsyncStreamClient[_T_Response],
         /,
-    ) -> Coroutine[Any, Any, None] | AsyncGenerator[None, _T_Request]:
+    ) -> Coroutine[Any, Any, None] | AsyncGenerator[float | None, _T_Request]:
         """
         Called once the client is connected to perform any initialization actions required.
         The default implementation does nothing.
@@ -253,7 +253,7 @@ class AsyncDatagramRequestHandler(Generic[_T_Request, _T_Response], metaclass=AB
         pass
 
     @abstractmethod
-    def handle(self, client: AsyncDatagramClient[_T_Response], /) -> AsyncGenerator[None, _T_Request]:
+    def handle(self, client: AsyncDatagramClient[_T_Response], /) -> AsyncGenerator[float | None, _T_Request]:
         """
         This function must do all the work required to service a request.
 

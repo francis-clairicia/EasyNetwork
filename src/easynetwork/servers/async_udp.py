@@ -229,30 +229,33 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
     async def __datagram_received_coroutine(
         self,
         lowlevel_client: _datagram_server.DatagramClientContext[_T_Response, tuple[Any, ...]],
-    ) -> AsyncGenerator[None, _T_Request]:
+    ) -> AsyncGenerator[float | None, _T_Request]:
         with _ClientErrorHandler(lowlevel_client, self.__logger):
             request_handler_generator = self.__request_handler.handle(_ClientAPI(lowlevel_client))
+            timeout: float | None
             try:
-                await anext(request_handler_generator)
+                timeout = await anext(request_handler_generator)
             except StopAsyncIteration:
                 return
-
-            action: AsyncGenAction[None, _T_Request]
-            while True:
-                try:
-                    action = SendAction((yield))
-                except BaseException as exc:
-                    action = ThrowAction(_utils.remove_traceback_frames_in_place(exc, 1))
-                try:
-                    await action.asend(request_handler_generator)
-                except StopAsyncIteration:
-                    return
-                except BaseException as exc:
-                    # Remove action.asend() frames
-                    _utils.remove_traceback_frames_in_place(exc, 2)
-                    raise
-                finally:
-                    del action
+            else:
+                action: AsyncGenAction[_T_Request]
+                while True:
+                    try:
+                        action = SendAction((yield timeout))
+                    except BaseException as exc:
+                        action = ThrowAction(_utils.remove_traceback_frames_in_place(exc, 1))
+                    try:
+                        timeout = await action.asend(request_handler_generator)
+                    except StopAsyncIteration:
+                        return
+                    except BaseException as exc:
+                        # Remove action.asend() frames
+                        _utils.remove_traceback_frames_in_place(exc, 2)
+                        raise
+                    finally:
+                        del action
+            finally:
+                await request_handler_generator.aclose()
 
     @_utils.inherit_doc(AbstractAsyncNetworkServer)
     def get_addresses(self) -> Sequence[SocketAddress]:

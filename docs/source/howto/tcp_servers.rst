@@ -142,14 +142,36 @@ Having Multiple ``yield`` Statements
 Cancellation And Timeouts
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Since all :exc:`BaseException` subclasses are thrown into the generator, you can apply a timeout to the read stream
-using the asynchronous framework (the cancellation exception is retrieved in the generator):
+.. tabs::
 
-.. literalinclude:: ../_include/examples/howto/tcp_servers/request_handler_explanation.py
-   :pyobject: TimeoutRequestHandler.handle
-   :dedent:
-   :linenos:
-   :emphasize-lines: 6,9-10
+   .. tab:: Using ``yield`` (Recommended)
+
+      It is possible to send the timeout delay to the parent task:
+
+      .. literalinclude:: ../_include/examples/howto/tcp_servers/request_handler_explanation.py
+         :pyobject: TimeoutYieldedRequestHandler.handle
+         :dedent:
+         :linenos:
+         :emphasize-lines: 4,7
+
+   .. tab:: Using ``with``
+
+      Since all :exc:`BaseException` subclasses are thrown into the generator, you can apply a timeout to the read stream
+      using the asynchronous framework (the cancellation exception is retrieved in the generator):
+
+      .. literalinclude:: ../_include/examples/howto/tcp_servers/request_handler_explanation.py
+         :pyobject: TimeoutContextRequestHandler.handle
+         :dedent:
+         :linenos:
+         :emphasize-lines: 6,9-10
+
+      .. warning::
+
+         Note that this behavior works because the generator is always executed and closed
+         in the same asynchronous task for the current implementation.
+
+         This feature is available so that features like ``anyio.CancelScope`` can be used.
+         However, it may be removed in a future release.
 
 
 Connecting/Disconnecting Hooks
