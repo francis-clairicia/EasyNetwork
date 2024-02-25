@@ -74,7 +74,18 @@ Error Handling
    :pyobject: ErrorHandlingInRequestHandler.handle
    :dedent:
    :linenos:
-   :emphasize-lines: 8
+
+.. warning::
+
+   You should always log or re-raise a bare :exc:`Exception` thrown in your generator.
+
+   .. literalinclude:: ../_include/examples/howto/udp_servers/request_handler_explanation.py
+      :pyobject: ErrorHandlingInRequestHandler.handle
+      :dedent:
+      :linenos:
+      :start-at: except Exception
+      :end-at: InternalError()
+      :emphasize-lines: 2-3
 
 
 Having Multiple ``yield`` Statements
@@ -111,7 +122,7 @@ Cancellation And Timeouts
          :pyobject: TimeoutYieldedRequestHandler.handle
          :dedent:
          :linenos:
-         :emphasize-lines: 4,15
+         :emphasize-lines: 4,15-17
 
    .. tab:: Using ``with``
 
@@ -136,8 +147,8 @@ Cancellation And Timeouts
 Service Initialization
 ----------------------
 
-The server will call :meth:`~.AsyncStreamRequestHandler.service_init` and pass it an :class:`~contextlib.AsyncExitStack`
-at the beginning of the :meth:`~.AsyncTCPNetworkServer.serve_forever` task to set up the global service.
+The server will call :meth:`~.AsyncDatagramRequestHandler.service_init` and pass it an :class:`~contextlib.AsyncExitStack`
+at the beginning of the :meth:`~.AsyncUDPNetworkServer.serve_forever` task to set up the global service.
 
 This allows you to do something like this:
 

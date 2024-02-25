@@ -296,4 +296,4 @@ Concurrency And Multithreading
 
       * :meth:`~.AsyncUDPNetworkClient.send_packet` and :meth:`~.AsyncUDPNetworkClient.recv_packet` do not share the same lock instance.
 
-      * :meth:`~.AsyncUDPNetworkClient.close` will not wait for :meth:`~.AsyncUDPNetworkClient.recv_packet`.
+      * :meth:`~.AsyncUDPNetworkClient.aclose` will not wait for :meth:`~.AsyncUDPNetworkClient.recv_packet`.

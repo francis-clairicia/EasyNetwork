@@ -74,6 +74,10 @@ that exchange large amounts of data with their clients. In such a situation, the
 the whole thing crashing down. Under "normal" conditions, the basic implementation is more than enough
 to keep a server running with acceptable performance.
 
+.. important::
+
+   I want to point out that it's not about speed, it's about improving global performance by minimizing memory footprint over time.
+
 ------
 
 Writing A Buffered Serializer
