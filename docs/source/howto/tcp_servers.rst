@@ -109,12 +109,23 @@ Error Handling
    :pyobject: ErrorHandlingInRequestHandler.handle
    :dedent:
    :linenos:
-   :emphasize-lines: 8
 
 .. note::
 
    ``handle()`` will never get a :exc:`ConnectionError` subclass. In case of an unexpected disconnect, the generator is closed,
    so you should handle :exc:`GeneratorExit` instead.
+
+.. warning::
+
+   You should always log or re-raise a bare :exc:`Exception` thrown in your generator.
+
+   .. literalinclude:: ../_include/examples/howto/tcp_servers/request_handler_explanation.py
+      :pyobject: ErrorHandlingInRequestHandler.handle
+      :dedent:
+      :linenos:
+      :start-at: except Exception
+      :end-at: InternalError()
+      :emphasize-lines: 2-3
 
 
 Having Multiple ``yield`` Statements
@@ -152,7 +163,7 @@ Cancellation And Timeouts
          :pyobject: TimeoutYieldedRequestHandler.handle
          :dedent:
          :linenos:
-         :emphasize-lines: 4,7
+         :emphasize-lines: 4,7-9
 
    .. tab:: Using ``with``
 

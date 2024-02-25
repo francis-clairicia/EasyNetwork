@@ -123,8 +123,9 @@ class DatagramProtocol(Generic[_T_SentPacket, _T_ReceivedPacket]):
 class BufferedStreamReceiver(Generic[_T_ReceivedPacket, _T_Buffer]):
     """A specialization of :class:`StreamProtocol` in order to use a buffered :term:`incremental serializer`.
 
-    It is not recommended to instantiate `BufferedStreamReceiver` objects directly;
-    use :meth:`StreamProtocol.buffered_receiver` instead.
+    Warning:
+        It is not recommended to instantiate `BufferedStreamReceiver` objects directly;
+        use :meth:`StreamProtocol.buffered_receiver` instead.
     """
 
     __slots__ = ("__serializer", "__converter", "__weakref__")

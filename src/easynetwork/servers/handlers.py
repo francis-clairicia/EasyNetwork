@@ -171,6 +171,9 @@ class AsyncStreamRequestHandler(Generic[_T_Request, _T_Response], metaclass=ABCM
 
         Parameters:
             client: An interface to communicate with the remote endpoint.
+
+        Yields:
+            :data:`None` or a number interpreted as the timeout delay.
         """
         raise NotImplementedError
 
@@ -205,6 +208,9 @@ class AsyncStreamRequestHandler(Generic[_T_Request, _T_Response], metaclass=ABCM
 
         Parameters:
             client: An interface to communicate with the remote endpoint.
+
+        Yields:
+            If it is an :term:`asynchronous generator`, :data:`None` or a number interpreted as the timeout delay.
         """
 
         async def _pass() -> None:
@@ -290,5 +296,8 @@ class AsyncDatagramRequestHandler(Generic[_T_Request, _T_Response], metaclass=AB
 
         Parameters:
             client: An interface to communicate with the remote endpoint.
+
+        Yields:
+            :data:`None` or a number interpreted as the timeout delay.
         """
         raise NotImplementedError

@@ -401,7 +401,7 @@ Concurrency And Multithreading
 
       * :meth:`~.AsyncTCPNetworkClient.send_packet` and :meth:`~.AsyncTCPNetworkClient.recv_packet` do not share the same lock instance.
 
-      * :meth:`~.AsyncTCPNetworkClient.close` will not wait for :meth:`~.AsyncTCPNetworkClient.recv_packet`.
+      * :meth:`~.AsyncTCPNetworkClient.aclose` will not wait for :meth:`~.AsyncTCPNetworkClient.recv_packet`.
 
       This allows you to do something like this:
 

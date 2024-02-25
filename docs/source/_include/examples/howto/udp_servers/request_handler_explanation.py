@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import traceback
 from collections.abc import AsyncGenerator
 
 from easynetwork.exceptions import DatagramProtocolParseError
@@ -79,6 +80,9 @@ class ErrorHandlingInRequestHandler(AsyncDatagramRequestHandler[Request, Respons
         except DatagramProtocolParseError:
             await client.send_packet(BadRequest())
         except Exception:
+            # Most likely a bug in EasyNetwork code. Log the error.
+            traceback.print_exc()
+
             await client.send_packet(InternalError())
         else:
             await client.send_packet(Response())

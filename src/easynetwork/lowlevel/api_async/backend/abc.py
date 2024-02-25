@@ -363,7 +363,7 @@ class CancelScope(metaclass=ABCMeta):
         Returns the scope cancellation state.
 
         Returns:
-            :data:`True` if the scope has been is *cancelled*.
+            :data:`True` if the scope has been *cancelled*.
         """
         raise NotImplementedError
 

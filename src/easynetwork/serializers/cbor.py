@@ -39,7 +39,7 @@ class CBOREncoderConfig:
     """
     A dataclass with the CBOR encoder options.
 
-    See :class:`cbor2.encoder.CBOREncoder` for details.
+    See :class:`cbor2.CBOREncoder` for details.
     """
 
     datetime_as_timestamp: bool = False
@@ -56,7 +56,7 @@ class CBORDecoderConfig:
     """
     A dataclass with the CBOR decoder options.
 
-    See :class:`cbor2.decoder.CBORDecoder` for details.
+    See :class:`cbor2.CBORDecoder` for details.
     """
 
     object_hook: Callable[..., Any] | None = None
