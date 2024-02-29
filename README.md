@@ -149,20 +149,10 @@ if __name__ == "__main__":
 
 ```py
 import asyncio
-from typing import Any, TypeAlias
 
 from easynetwork.clients import AsyncTCPNetworkClient
-from easynetwork.protocol import StreamProtocol
-from easynetwork.serializers import JSONSerializer
 
-RequestType: TypeAlias = Any
-ResponseType: TypeAlias = Any
-
-
-class JSONProtocol(StreamProtocol[RequestType, ResponseType]):
-    def __init__(self) -> None:
-        super().__init__(JSONSerializer())
-
+...
 
 async def main() -> None:
     async with AsyncTCPNetworkClient(("localhost", 9000), JSONProtocol()) as client:
