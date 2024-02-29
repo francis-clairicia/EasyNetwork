@@ -236,6 +236,8 @@ class _RequestReceiver(Generic[_T_Request]):
                         request = consumer.next(data)
                     except StopIteration:
                         continue
+                    finally:
+                        del data
                     return SendAction(request)
         except BaseException as exc:
             return ThrowAction(exc)

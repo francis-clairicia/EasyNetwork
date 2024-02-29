@@ -235,14 +235,15 @@ class _DataReceiverImpl(Generic[_T_ReceivedPacket]):
             if not chunk:
                 self._eof_reached = True
                 continue
-            buffer_not_full: bool = len(chunk) < bufsize
             try:
                 return consumer.next(chunk)
             except StopIteration:
                 if timeout > 0:
                     timeout = elapsed.recompute_timeout(timeout)
-                elif buffer_not_full:
+                elif len(chunk) < bufsize:
                     break
+            finally:
+                del chunk
         # Loop break
         if self._eof_reached:
             raise EOFError("end-of-stream")
@@ -280,13 +281,12 @@ class _BufferedReceiverImpl(Generic[_T_ReceivedPacket]):
             if not nbytes:
                 self._eof_reached = True
                 continue
-            buffer_not_full: bool = nbytes < bufsize
             try:
                 return consumer.next(nbytes)
             except StopIteration:
                 if timeout > 0:
                     timeout = elapsed.recompute_timeout(timeout)
-                elif buffer_not_full:
+                elif nbytes < bufsize:
                     break
         # Loop break
         if self._eof_reached:

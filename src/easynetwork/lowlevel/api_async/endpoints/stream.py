@@ -218,6 +218,8 @@ class _DataReceiverImpl(Generic[_T_ReceivedPacket]):
                 return consumer.next(chunk)
             except StopIteration:
                 pass
+            finally:
+                del chunk
 
         raise EOFError("end-of-stream")
 
