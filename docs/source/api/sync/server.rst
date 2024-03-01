@@ -22,12 +22,12 @@ TCP Implementation
 ==================
 
 .. autoclass:: StandaloneTCPNetworkServer
-   :inherited-members:
    :members:
+   :inherited-members:
 
 UDP Implementation
 ==================
 
 .. autoclass:: StandaloneUDPNetworkServer
-   :inherited-members:
    :members:
+   :inherited-members:

@@ -23,9 +23,11 @@ TCP Implementation
 
 .. autoclass:: TCPNetworkClient
    :members:
+   :inherited-members:
 
 UDP Implementation
 ==================
 
 .. autoclass:: UDPNetworkClient
    :members:
+   :inherited-members:
