@@ -9,11 +9,8 @@ How-to — TCP Client Endpoints
 
 ------
 
-The Basics
-==========
-
 The Protocol Object
--------------------
+===================
 
 The TCP clients expect a :class:`.StreamProtocol` instance to communicate with the remote endpoint.
 
@@ -24,7 +21,7 @@ The TCP clients expect a :class:`.StreamProtocol` instance to communicate with t
 
 
 Connecting To The Remote Host
------------------------------
+=============================
 
 You need the host address (domain name or IP) and the port of connection in order to connect to the remote host:
 
@@ -60,14 +57,15 @@ You need the host address (domain name or IP) and the port of connection in orde
 
       .. note::
 
-         The call to ``wait_connected()`` is required to actually initialize the client, since we cannot perform asynchronous operations
-         at object creation. This is what the client does when it enters the the :keyword:`async with` context.
+         The call to :meth:`~.AsyncTCPNetworkClient.wait_connected` is required to actually initialize the client,
+         since we cannot perform asynchronous operations at object creation.
+         This is what the client does when it enters the the :keyword:`async with` context.
 
-         Once completed, ``wait_connected()`` is a no-op.
+         Once completed, :meth:`~.AsyncTCPNetworkClient.wait_connected` is a no-op.
 
 
 Using An Already Connected Socket
----------------------------------
+=================================
 
 If you have your own way to obtain a connected :class:`socket.socket` instance, you can pass it to the client.
 
@@ -95,14 +93,11 @@ If the socket is not connected, an :exc:`OSError` is raised.
 
       .. note::
 
-         Even with a ready-to-use socket, the call to ``wait_connected()`` is still required.
+         Even with a ready-to-use socket, the call to :meth:`~.AsyncTCPNetworkClient.wait_connected` is still required.
 
-
-Basic Usage
-===========
 
 Sending Packets
----------------
+===============
 
 There's not much to say, except that objects passed as arguments are automatically converted to bytes to send to the remote host
 thanks to the :term:`protocol object`.
@@ -127,7 +122,7 @@ thanks to the :term:`protocol object`.
 
 
 Receiving Packets
------------------
+=================
 
 You get the next available packet, already parsed. Extraneous data is kept for the next call.
 
@@ -192,7 +187,7 @@ You get the next available packet, already parsed. Extraneous data is kept for t
 
 
 Receiving Multiple Packets At Once
-----------------------------------
+==================================
 
 You can use ``iter_received_packets()`` to get all the received packets in a sequence or a set.
 
@@ -228,7 +223,7 @@ The ``timeout`` parameter defaults to zero to get only the data already in the b
 
       .. seealso::
 
-         :meth:`TCPNetworkClient.iter_received_packets() <.AbstractNetworkClient.iter_received_packets>`
+         :meth:`.TCPNetworkClient.iter_received_packets`
             The method description and usage (especially for the ``timeout`` parameter).
 
    .. group-tab:: Asynchronous
@@ -241,20 +236,12 @@ The ``timeout`` parameter defaults to zero to get only the data already in the b
 
       .. seealso::
 
-         :meth:`AsyncTCPNetworkClient.iter_received_packets() <.AbstractAsyncNetworkClient.iter_received_packets>`
+         :meth:`.AsyncTCPNetworkClient.iter_received_packets`
             The method description and usage (especially for the ``timeout`` parameter).
 
 
-Advanced Usage
-==============
-
-.. note::
-
-   This section is for people who know what they're doing and are looking for something specific.
-
-
 Close The Write-End Stream
---------------------------
+==========================
 
 If you are sure you will never reuse ``send_packet()``, you can call ``send_eof()`` to shut down the write stream.
 
@@ -282,7 +269,7 @@ If you are sure you will never reuse ``send_packet()``, you can call ``send_eof(
 
 
 Low-Level Socket Operations
----------------------------
+===========================
 
 For low-level operations such as :meth:`~socket.socket.setsockopt`, the client object exposes the socket through a :class:`.SocketProxy`:
 
@@ -306,11 +293,11 @@ For low-level operations such as :meth:`~socket.socket.setsockopt`, the client o
 
       .. warning::
 
-         Make sure that ``wait_connected()`` has been called before.
+         Make sure that :meth:`~.AsyncTCPNetworkClient.wait_connected` has been called before.
 
 
 ``socket.recv()`` Buffer Size
------------------------------
+=============================
 
 By default, the client uses a reasonable buffer size when calling ``recv_packet()``.
 You can control this value by setting the ``max_recv_size`` parameter:
@@ -341,7 +328,7 @@ You can control this value by setting the ``max_recv_size`` parameter:
 
 
 SSL/TLS Connection
-------------------
+==================
 
 If you want to use SSL to communicate with the remote host, the easiest way is to pass ``ssl=True``:
 
@@ -374,7 +361,7 @@ If you want to use SSL to communicate with the remote host, the easiest way is t
 
 
 Concurrency And Multithreading
-------------------------------
+==============================
 
 .. tabs::
 
@@ -390,27 +377,18 @@ Concurrency And Multithreading
       * The :attr:`client.socket <.TCPNetworkClient.socket>` methods are also thread-safe. This means that you cannot access
         the underlying socket methods (e.g. :meth:`~socket.socket.getsockopt`) during a write operation.
 
-      This allows you to do something like this:
-
-      .. literalinclude:: ../_include/examples/howto/tcp_clients/concurrency/api_sync.py
-         :linenos:
-
    .. group-tab:: Asynchronous
 
-      All client methods do not require external task synchronization. Synchronization follows these rules:
+      All client methods do not require external task synchronization (such as :class:`asyncio.Lock`).
+      Synchronization follows these rules:
 
       * :meth:`~.AsyncTCPNetworkClient.send_packet` and :meth:`~.AsyncTCPNetworkClient.recv_packet` do not share the same lock instance.
 
       * :meth:`~.AsyncTCPNetworkClient.aclose` will not wait for :meth:`~.AsyncTCPNetworkClient.recv_packet`.
 
-      This allows you to do something like this:
-
-      .. literalinclude:: ../_include/examples/howto/tcp_clients/concurrency/api_async.py
-         :linenos:
-
 
 SSL/TLS Concurrency Considerations
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+----------------------------------
 
 For safety, concurrent calls to ``send_packet()`` and ``recv_packet()`` are "disabled" by default when using SSL.
 In fact, they share the same synchronization lock.

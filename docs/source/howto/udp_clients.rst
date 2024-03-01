@@ -9,11 +9,8 @@ How-to — UDP Client Endpoints
 
 ------
 
-The Basics
-==========
-
 The Protocol Object
--------------------
+===================
 
 The UDP clients expect a :class:`.DatagramProtocol` instance to communicate with the remote endpoint.
 
@@ -24,7 +21,7 @@ The UDP clients expect a :class:`.DatagramProtocol` instance to communicate with
 
 
 Connecting To The Remote Host
------------------------------
+=============================
 
 .. important::
 
@@ -52,14 +49,15 @@ You need the host address (domain name or IP) and the port of connection in orde
 
       .. note::
 
-         The call to ``wait_connected()`` is required to actually initialize the client, since we cannot perform asynchronous operations
-         at object creation. This is what the client does when it enters the the :keyword:`async with` context.
+         The call to :meth:`~.AsyncUDPNetworkClient.wait_connected` is required to actually initialize the client,
+         since we cannot perform asynchronous operations at object creation.
+         This is what the client does when it enters the the :keyword:`async with` context.
 
-         Once completed, ``wait_connected()`` is a no-op.
+         Once completed, :meth:`~.AsyncUDPNetworkClient.wait_connected` is a no-op.
 
 
 Using An Already Connected Socket
----------------------------------
+=================================
 
 If you have your own way to obtain a connected :class:`socket.socket` instance, you can pass it to the client.
 
@@ -87,14 +85,11 @@ If the socket is not connected, an :exc:`OSError` is raised.
 
       .. note::
 
-         Even with a ready-to-use socket, the call to ``wait_connected()`` is still required.
+         Even with a ready-to-use socket, the call to :meth:`~.AsyncUDPNetworkClient.wait_connected` is still required.
 
-
-Basic Usage
-===========
 
 Sending Packets
----------------
+===============
 
 There's not much to say, except that objects passed as arguments are automatically converted to bytes to send to the remote host
 thanks to the :term:`protocol object`.
@@ -119,7 +114,7 @@ thanks to the :term:`protocol object`.
 
 
 Receiving Packets
------------------
+=================
 
 You get the next available packet, already parsed.
 
@@ -184,7 +179,7 @@ You get the next available packet, already parsed.
 
 
 Receiving Multiple Packets At Once
-----------------------------------
+==================================
 
 You can use ``iter_received_packets()`` to get all the received packets in a sequence or a set.
 
@@ -220,7 +215,7 @@ The ``timeout`` parameter defaults to zero to get only the data already in the b
 
       .. seealso::
 
-         :meth:`UDPNetworkClient.iter_received_packets() <.AbstractNetworkClient.iter_received_packets>`
+         :meth:`.UDPNetworkClient.iter_received_packets`
             The method description and usage (especially for the ``timeout`` parameter).
 
    .. group-tab:: Asynchronous
@@ -233,20 +228,12 @@ The ``timeout`` parameter defaults to zero to get only the data already in the b
 
       .. seealso::
 
-         :meth:`AsyncUDPNetworkClient.iter_received_packets() <.AbstractAsyncNetworkClient.iter_received_packets>`
+         :meth:`.AsyncUDPNetworkClient.iter_received_packets`
             The method description and usage (especially for the ``timeout`` parameter).
 
 
-Advanced Usage
-==============
-
-.. note::
-
-   This section is for people who know what they're doing and are looking for something specific.
-
-
 Low-Level Socket Operations
----------------------------
+===========================
 
 For low-level operations such as :meth:`~socket.socket.setsockopt`, the client object exposes the socket through a :class:`.SocketProxy`:
 
@@ -270,17 +257,18 @@ For low-level operations such as :meth:`~socket.socket.setsockopt`, the client o
 
       .. warning::
 
-         Make sure that ``wait_connected()`` has been called before.
+         Make sure that :meth:`~.AsyncUDPNetworkClient.wait_connected` has been called before.
 
 
 Concurrency And Multithreading
-------------------------------
+==============================
 
 .. tabs::
 
    .. group-tab:: Synchronous
 
-      All client methods are thread-safe. Synchronization follows these rules:
+      All client methods are thread-safe (such as :class:`asyncio.Lock`).
+      Synchronization follows these rules:
 
       * :meth:`~.UDPNetworkClient.send_packet` and :meth:`~.UDPNetworkClient.recv_packet` do not share the same
         :class:`threading.Lock` instance.

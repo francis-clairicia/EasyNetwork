@@ -26,12 +26,14 @@ TCP Implementation
 
 .. autoclass:: AsyncTCPNetworkServer
    :members:
+   :inherited-members:
 
 UDP Implementation
 ==================
 
 .. autoclass:: AsyncUDPNetworkServer
    :members:
+   :inherited-members:
 
 
 Request Handler Interface

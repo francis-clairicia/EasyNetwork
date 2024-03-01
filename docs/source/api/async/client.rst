@@ -24,9 +24,11 @@ TCP Implementation
 
 .. autoclass:: AsyncTCPNetworkClient
    :members:
+   :inherited-members:
 
 UDP Implementation
 ==================
 
 .. autoclass:: AsyncUDPNetworkClient
    :members:
+   :inherited-members:
