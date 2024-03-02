@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import contextvars
+import logging
 import traceback
 from collections.abc import AsyncGenerator
+from typing import ClassVar
 
 from easynetwork.exceptions import StreamProtocolParseError
-from easynetwork.servers import AsyncStreamClient, AsyncStreamRequestHandler, AsyncTCPNetworkServer
+from easynetwork.lowlevel.socket import SocketAddress
+from easynetwork.servers import AsyncStreamClient, AsyncStreamRequestHandler, AsyncTCPNetworkServer, INETClientAttribute
 
 
 class Request: ...
@@ -268,3 +272,39 @@ class ServiceInitializationHookRequestHandler(AsyncStreamRequestHandler[Request,
 
     def _service_quit(self) -> None:
         print("Service stopped")
+
+
+class ClientContextRequestHandler(AsyncStreamRequestHandler[Request, Response]):
+    client_addr_var: ClassVar[contextvars.ContextVar[SocketAddress]]
+    client_addr_var = contextvars.ContextVar("client_addr")
+
+    @classmethod
+    def client_log(cls, message: str) -> None:
+        # The address of the currently handled client can be accessed
+        # without passing it explicitly to this function.
+
+        logger = logging.getLogger(cls.__name__)
+
+        client_address = cls.client_addr_var.get()
+
+        logger.info("From %s: %s", client_address, message)
+
+    async def on_connection(
+        self,
+        client: AsyncStreamClient[Response],
+    ) -> None:
+        address = client.extra(INETClientAttribute.remote_address)
+        self.client_addr_var.set(address)
+
+        # In any code that we call within "handle()" is now possible to get
+        # client's address by calling 'client_addr_var.get()'.
+
+    async def handle(
+        self,
+        client: AsyncStreamClient[Response],
+    ) -> AsyncGenerator[None, Request]:
+        request: Request = yield
+
+        self.client_log(f"Received request: {request!r}")
+
+        await client.send_packet(Response())

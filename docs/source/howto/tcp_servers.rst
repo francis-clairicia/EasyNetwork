@@ -168,7 +168,7 @@ Cancellation And Timeouts
    .. tab:: Using ``with``
 
       Since all :exc:`BaseException` subclasses are thrown into the generator, you can apply a timeout to the read stream
-      using the asynchronous framework (the cancellation exception is retrieved in the generator):
+      using the :term:`asynchronous framework` (the cancellation exception is retrieved in the generator):
 
       .. literalinclude:: ../_include/examples/howto/tcp_servers/request_handler_explanation.py
          :pyobject: TimeoutContextRequestHandler.handle
@@ -232,6 +232,31 @@ This allows you to do something like this:
    :emphasize-lines: 1
 
 
+Per-client variables (``contextvars`` integration)
+--------------------------------------------------
+
+If your :term:`asynchronous framework` supports per-task :external+python:doc:`context variables <library/contextvars>`,
+you can use this feature in your request handler:
+
+.. literalinclude:: ../_include/examples/howto/tcp_servers/request_handler_explanation.py
+   :pyobject: ClientContextRequestHandler
+   :dedent:
+   :linenos:
+
+.. tip::
+
+   It is possible to initialize the context to be copied in :meth:`~.AsyncStreamRequestHandler.service_init`.
+
+   This means that the :meth:`contextvars.ContextVar.set` calls made in ``service_init()`` will be applied
+   to subsequent client tasks.
+
+.. warning::
+
+   There is no context isolation between :meth:`~.AsyncStreamRequestHandler.handle` calls.
+
+   This means that the :meth:`contextvars.ContextVar.set` calls made in ``handle()`` are applied to whole client task.
+
+
 Server Object
 =============
 
@@ -244,3 +269,30 @@ A basic example of how to run the server:
 
    :doc:`/tutorials/echo_client_server_tcp`
       A working example of the server implementation.
+
+
+Run Server In Background
+------------------------
+
+.. literalinclude:: ../_include/examples/howto/tcp_servers/background_server.py
+   :linenos:
+
+The output of the example should look something like this:
+
+.. code-block:: console
+
+   $ python background_server.py
+   Server loop running in task: Task-2
+   From server: {'task': 'Task-8', 'request': {'message': 'Hello world 1'}}
+   From server: {'task': 'Task-11', 'request': {'message': 'Hello world 2'}}
+   From server: {'task': 'Task-14', 'request': {'message': 'Hello world 3'}}
+
+
+SSL/TLS Connection
+------------------
+
+If you want your client to make an SSL connection, you need to pass an :class:`~ssl.SSLContext` with the required configuration:
+
+.. literalinclude:: ../_include/examples/howto/tcp_servers/background_server_ssl.py
+   :linenos:
+   :emphasize-lines: 34,45-50

@@ -5,6 +5,17 @@ Glossary
 .. glossary::
    :sorted:
 
+   asynchronous framework
+      The library which permits you to write asynchronous tasks, such as:
+
+      * :external+python:doc:`asyncio <library/asyncio>`
+
+      * `trio <https://trio.readthedocs.io/en/stable/>`_
+
+      * `anyio <https://anyio.readthedocs.io/en/stable/>`_
+
+      * etc.
+
    buffered serializer
       See :term:`serializer`.
 
