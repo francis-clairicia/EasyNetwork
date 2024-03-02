@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import contextvars
+import logging
 import traceback
 from collections.abc import AsyncGenerator
+from typing import ClassVar
 
 from easynetwork.exceptions import DatagramProtocolParseError
+from easynetwork.lowlevel.socket import SocketAddress
 from easynetwork.servers import AsyncUDPNetworkServer
-from easynetwork.servers.handlers import AsyncDatagramClient, AsyncDatagramRequestHandler
+from easynetwork.servers.handlers import AsyncDatagramClient, AsyncDatagramRequestHandler, INETClientAttribute
 
 
 class Request: ...
@@ -177,3 +181,35 @@ class ServiceInitializationHookRequestHandler(AsyncDatagramRequestHandler[Reques
 
     def _service_quit(self) -> None:
         print("Service stopped")
+
+
+class ClientContextRequestHandler(AsyncDatagramRequestHandler[Request, Response]):
+    client_addr_var: ClassVar[contextvars.ContextVar[SocketAddress]]
+    client_addr_var = contextvars.ContextVar("client_addr")
+
+    @classmethod
+    def client_log(cls, message: str) -> None:
+        # The address of the currently handled client can be accessed
+        # without passing it explicitly to this function.
+
+        logger = logging.getLogger(cls.__name__)
+
+        client_address = cls.client_addr_var.get()
+
+        logger.info("From %s: %s", client_address, message)
+
+    async def handle(
+        self,
+        client: AsyncDatagramClient[Response],
+    ) -> AsyncGenerator[None, Request]:
+        address = client.extra(INETClientAttribute.remote_address)
+        self.client_addr_var.set(address)
+
+        # In any code that we call within "handle()" is now possible to get
+        # client's address by calling 'client_addr_var.get()'.
+
+        request: Request = yield
+
+        self.client_log(f"Received request: {request!r}")
+
+        await client.send_packet(Response())

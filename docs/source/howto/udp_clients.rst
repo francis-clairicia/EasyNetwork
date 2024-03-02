@@ -144,7 +144,7 @@ You get the next available packet, already parsed.
          :dedent:
          :linenos:
 
-      You can control the receive timeout by adding a timeout scope using the asynchronous framework:
+      You can control the receive timeout by adding a timeout scope using the :term:`asynchronous framework` :
 
       .. literalinclude:: ../_include/examples/howto/udp_clients/usage/api_async.py
          :pyobject: recv_packet_example2

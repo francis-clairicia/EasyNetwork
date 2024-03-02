@@ -48,7 +48,7 @@ You need the host address (domain name or IP) and the port of connection in orde
       .. literalinclude:: ../_include/examples/howto/tcp_clients/basics/api_async/connection_example1.py
          :linenos:
 
-      You can control the connection timeout by adding a timeout scope using the asynchronous framework:
+      You can control the connection timeout by adding a timeout scope using the :term:`asynchronous framework`:
 
       .. literalinclude:: ../_include/examples/howto/tcp_clients/basics/api_async/connection_example2.py
          :pyobject: main

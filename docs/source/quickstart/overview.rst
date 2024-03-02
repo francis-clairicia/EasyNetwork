@@ -10,4 +10,6 @@ The communication protocol can be whatever you want, be it JSON, Pickle, ASCII, 
 compressed, or any other format that is not part of the standard library.
 You choose the data format and the library takes care of the rest.
 
+This project is especially useful for simple **message** exchange between clients and servers.
+
 Works with TCP and UDP.

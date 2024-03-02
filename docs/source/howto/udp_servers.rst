@@ -127,7 +127,7 @@ Cancellation And Timeouts
    .. tab:: Using ``with``
 
       Since all :exc:`BaseException` subclasses are thrown into the generator, you can apply a timeout to the read stream
-      using the asynchronous framework (the cancellation exception is retrieved in the generator):
+      using the :term:`asynchronous framework` (the cancellation exception is retrieved in the generator):
 
       .. literalinclude:: ../_include/examples/howto/udp_servers/request_handler_explanation.py
          :pyobject: TimeoutContextRequestHandler.handle
@@ -160,6 +160,25 @@ This allows you to do something like this:
    :emphasize-lines: 1
 
 
+Per-client variables (``contextvars`` integration)
+--------------------------------------------------
+
+If your :term:`asynchronous framework` supports per-task :external+python:doc:`context variables <library/contextvars>`,
+you can use this feature in your request handler:
+
+.. literalinclude:: ../_include/examples/howto/udp_servers/request_handler_explanation.py
+   :pyobject: ClientContextRequestHandler
+   :dedent:
+   :linenos:
+
+.. tip::
+
+   It is possible to initialize the context to be copied in :meth:`~.AsyncDatagramRequestHandler.service_init`.
+
+   This means that the :meth:`contextvars.ContextVar.set` calls made in ``service_init()`` will be applied
+   to subsequent client tasks.
+
+
 Server Object
 =============
 
@@ -172,3 +191,20 @@ A basic example of how to run the server:
 
    :doc:`/tutorials/echo_client_server_udp`
       A working example of the server implementation.
+
+
+Run Server In Background
+------------------------
+
+.. literalinclude:: ../_include/examples/howto/udp_servers/background_server.py
+   :linenos:
+
+The output of the example should look something like this:
+
+.. code-block:: console
+
+   $ python background_server.py
+   Server loop running in task: Task-2
+   From server: {'task': 'Task-6', 'request': {'message': 'Hello world 1'}}
+   From server: {'task': 'Task-7', 'request': {'message': 'Hello world 2'}}
+   From server: {'task': 'Task-8', 'request': {'message': 'Hello world 3'}}
