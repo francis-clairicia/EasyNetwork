@@ -1080,6 +1080,25 @@ class TestStreamReaderBufferedProtocol(BaseTestTransportSupportingSSL):
         with pytest.raises(BufferError):
             protocol.get_buffer(-1)
 
+    def test____connection_lost____close_waiter_done(
+        self,
+        protocol: StreamReaderBufferedProtocol,
+        mock_asyncio_transport: MagicMock,
+    ) -> None:
+        # Arrange
+        close_waiter = protocol._get_close_waiter()
+        close_waiter.cancel()
+        assert close_waiter.done()
+
+        # Act
+        protocol.connection_lost(None)
+
+        # Assert
+        mock_asyncio_transport.close.assert_not_called()
+
+        with pytest.raises(BufferError):
+            protocol.get_buffer(-1)
+
     def test____connection_lost____by_unrelated_error(
         self,
         protocol: StreamReaderBufferedProtocol,
@@ -1253,6 +1272,22 @@ class TestStreamReaderBufferedProtocol(BaseTestTransportSupportingSSL):
         assert exc_info.value is exception
 
     @pytest.mark.asyncio
+    async def test____receive_data____connection_reset(
+        self,
+        event_loop: asyncio.AbstractEventLoop,
+        protocol: StreamReaderBufferedProtocol,
+        data_receiver: _ProtocolDataReceiver,
+    ) -> None:
+        # Arrange
+        event_loop.call_soon(self.write_in_protocol_buffer, protocol, b"abc")
+        event_loop.call_soon(protocol.connection_lost, None)
+
+        # Act & Assert
+        for _ in range(3):
+            with pytest.raises(ConnectionResetError):
+                _ = await data_receiver(protocol, 1024)
+
+    @pytest.mark.asyncio
     async def test____receive_data____invalid_bufsize(
         self,
         protocol: StreamReaderBufferedProtocol,
@@ -1325,8 +1360,10 @@ class TestStreamReaderBufferedProtocol(BaseTestTransportSupportingSSL):
         mock_asyncio_transport.resume_reading.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test____receive_data____deferred_buffer_release(
+    @pytest.mark.parametrize("exception", [None, OSError("Something bad happen")])
+    async def test____receive_data____buffer_release(
         self,
+        exception: OSError | None,
         protocol: StreamReaderBufferedProtocol,
         data_receiver: _ProtocolDataReceiver,
     ) -> None:
@@ -1334,30 +1371,7 @@ class TestStreamReaderBufferedProtocol(BaseTestTransportSupportingSSL):
         self.write_in_protocol_buffer(protocol, b"abcdef")
 
         # Act & Assert
-        protocol.connection_lost(None)
-        assert protocol._get_read_buffer_size() == 6
-        protocol.get_buffer(-1)  # assert not raises
-
-        assert (await data_receiver(protocol, 3)) == b"abc"
-        assert protocol._get_read_buffer_size() == 3
-        protocol.get_buffer(-1)  # assert not raises
-
-        assert (await data_receiver(protocol, 3)) == b"def"
-        assert protocol._get_read_buffer_size() == 0
-        with pytest.raises(BufferError):
-            protocol.get_buffer(-1)
-
-    @pytest.mark.asyncio
-    async def test____receive_data____immediate_buffer_release(
-        self,
-        protocol: StreamReaderBufferedProtocol,
-        data_receiver: _ProtocolDataReceiver,
-    ) -> None:
-        # Arrange
-        self.write_in_protocol_buffer(protocol, b"abcdef")
-
-        # Act & Assert
-        protocol.connection_lost(OSError("Something bad happen"))
+        protocol.connection_lost(exception)
         assert protocol._get_read_buffer_size() == 0
         with pytest.raises(BufferError):
             protocol.get_buffer(-1)

@@ -88,6 +88,8 @@ class WriteFlowControl:
                 waiter.set_result(None)
 
     def connection_lost(self, exc: Exception | None) -> None:
+        if self.__connection_lost:  # Already called, bail out.
+            return
         self.__write_paused = False
         self.__connection_lost = True
         self.__connection_lost_exception = exc
