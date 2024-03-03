@@ -285,14 +285,23 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
         self.__over_ssl = transport.get_extra_info("sslcontext") is not None
 
     def connection_lost(self, exc: Exception | None) -> None:
+        if self.__connection_lost:  # Already called, bail out.
+            return
+
         self.__connection_lost = True
+        self.__read_paused = False
+
+        if exc is None and self.__buffer_nbytes_written > 0:
+            exc = _utils.error_from_errno(_errno.ECONNRESET)
         self.__connection_lost_exception = exc
         if exc is None:
             self.__eof_reached = True
         else:
-            self.__buffer_nbytes_written = 0
             self.__connection_lost_exception_tb = exc.__traceback__
-        self._maybe_release_buffer()
+
+        self.__buffer_nbytes_written = 0
+        self.__buffer = None
+        self.__buffer_view.release()
 
         if not self.__closed.done():
             self.__closed.set_result(None)
@@ -329,9 +338,8 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
         return True
 
     async def receive_data(self, bufsize: int, /) -> bytes:
-        if self.__connection_lost:
-            if self.__connection_lost_exception is not None:
-                raise self.__connection_lost_exception.with_traceback(self.__connection_lost_exception_tb)
+        if self.__connection_lost_exception is not None:
+            raise self.__connection_lost_exception.with_traceback(self.__connection_lost_exception_tb)
         if bufsize == 0:
             return b""
         if bufsize < 0:
@@ -354,9 +362,8 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
         return data
 
     async def receive_data_into(self, buffer: WriteableBuffer, /) -> int:
-        if self.__connection_lost:
-            if self.__connection_lost_exception is not None:
-                raise self.__connection_lost_exception.with_traceback(self.__connection_lost_exception_tb)
+        if self.__connection_lost_exception is not None:
+            raise self.__connection_lost_exception.with_traceback(self.__connection_lost_exception_tb)
         with memoryview(buffer).cast("B") as buffer:
             if not buffer.nbytes:
                 return 0
@@ -395,6 +402,8 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
             await self.__read_waiter
         finally:
             self.__read_waiter = None
+        if self.__connection_lost_exception is not None:
+            raise self.__connection_lost_exception.with_traceback(self.__connection_lost_exception_tb)
 
     def _wakeup_read_waiter(self, exc: Exception | None) -> None:
         if (waiter := self.__read_waiter) is not None:
@@ -434,20 +443,13 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
                 self.__read_paused = True
 
     def _maybe_resume_transport(self) -> None:
-        if self.__connection_lost:
-            self._maybe_release_buffer()
-        elif (
+        if (
             self.__read_paused
             and (transport := self.__transport) is not None
             and self.__buffer_nbytes_written <= self.__read_low_water
         ):
             transport.resume_reading()
             self.__read_paused = False
-
-    def _maybe_release_buffer(self) -> None:
-        if not self.__buffer_nbytes_written and self.__connection_lost:
-            self.__buffer_view.release()
-            self.__buffer = None
 
     def pause_writing(self) -> None:
         self.__write_flow.pause_writing()
