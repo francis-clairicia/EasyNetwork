@@ -22,5 +22,5 @@ __all__ = [
     "ZlibCompressorSerializer",
 ]
 
-from .base64 import *
-from .compressor import *
+from .base64 import Base64EncoderSerializer
+from .compressor import BZ2CompressorSerializer, ZlibCompressorSerializer

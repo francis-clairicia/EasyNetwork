@@ -14,6 +14,8 @@ The `CBOR <https://cbor.io>`_ is an alternative representation of the ``JSON`` d
 Configuration
 =============
 
+.. currentmodule:: easynetwork.serializers.cbor
+
 .. autoclass:: CBOREncoderConfig
    :members:
 

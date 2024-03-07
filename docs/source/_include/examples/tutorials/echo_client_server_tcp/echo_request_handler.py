@@ -4,7 +4,7 @@ from collections.abc import AsyncGenerator
 from typing import Any, TypeAlias
 
 from easynetwork.exceptions import StreamProtocolParseError
-from easynetwork.servers import AsyncStreamClient, AsyncStreamRequestHandler, INETClientAttribute
+from easynetwork.servers.handlers import AsyncStreamClient, AsyncStreamRequestHandler, INETClientAttribute
 
 # These TypeAliases are there to help you understand
 # where requests and responses are used

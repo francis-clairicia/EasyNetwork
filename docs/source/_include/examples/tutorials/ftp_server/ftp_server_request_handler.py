@@ -6,7 +6,7 @@ from collections.abc import AsyncGenerator
 from typing import Any
 
 from easynetwork.exceptions import StreamProtocolParseError
-from easynetwork.servers import AsyncStreamClient, AsyncStreamRequestHandler, INETClientAttribute
+from easynetwork.servers.handlers import AsyncStreamClient, AsyncStreamRequestHandler, INETClientAttribute
 
 from ftp_command import FTPCommand
 from ftp_reply import FTPReply

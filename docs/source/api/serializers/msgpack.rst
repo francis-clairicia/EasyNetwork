@@ -14,6 +14,8 @@ The `MessagePack <https://msgpack.org/>`_ is an alternative representation of th
 Configuration
 =============
 
+.. currentmodule:: easynetwork.serializers.msgpack
+
 .. autoclass:: MessagePackerConfig
    :members:
 

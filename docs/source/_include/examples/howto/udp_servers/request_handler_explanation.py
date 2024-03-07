@@ -6,7 +6,8 @@ import traceback
 from collections.abc import AsyncGenerator
 
 from easynetwork.exceptions import DatagramProtocolParseError
-from easynetwork.servers import AsyncDatagramClient, AsyncDatagramRequestHandler, AsyncUDPNetworkServer
+from easynetwork.servers import AsyncUDPNetworkServer
+from easynetwork.servers.handlers import AsyncDatagramClient, AsyncDatagramRequestHandler
 
 
 class Request: ...

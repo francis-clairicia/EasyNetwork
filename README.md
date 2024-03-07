@@ -56,11 +56,8 @@ from typing import Any, TypeAlias
 
 from easynetwork.protocol import StreamProtocol
 from easynetwork.serializers import JSONSerializer
-from easynetwork.servers import (
-    AsyncStreamClient,
-    AsyncStreamRequestHandler,
-    AsyncTCPNetworkServer,
-)
+from easynetwork.servers import AsyncTCPNetworkServer
+from easynetwork.servers.handlers import AsyncStreamClient, AsyncStreamRequestHandler
 
 # These TypeAliases are there to help you understand
 # where requests and responses are used in the code

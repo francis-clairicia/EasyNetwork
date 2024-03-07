@@ -4,7 +4,8 @@ import asyncio
 from collections.abc import AsyncGenerator
 
 from easynetwork.protocol import StreamProtocol
-from easynetwork.servers import AsyncStreamClient, AsyncStreamRequestHandler, AsyncTCPNetworkServer
+from easynetwork.servers import AsyncTCPNetworkServer
+from easynetwork.servers.handlers import AsyncStreamClient, AsyncStreamRequestHandler
 
 
 class Request: ...

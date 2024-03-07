@@ -16,7 +16,7 @@
 
 from __future__ import annotations
 
-__all__ = ["NamedTupleStructSerializer", "StructSerializer"]
+__all__ = ["AbstractStructSerializer", "NamedTupleStructSerializer", "StructSerializer"]
 
 from abc import abstractmethod
 from collections.abc import Iterable

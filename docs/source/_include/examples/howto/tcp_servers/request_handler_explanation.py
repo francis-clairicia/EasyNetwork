@@ -6,7 +6,8 @@ import traceback
 from collections.abc import AsyncGenerator
 
 from easynetwork.exceptions import StreamProtocolParseError
-from easynetwork.servers import AsyncStreamClient, AsyncStreamRequestHandler, AsyncTCPNetworkServer
+from easynetwork.servers import AsyncTCPNetworkServer
+from easynetwork.servers.handlers import AsyncStreamClient, AsyncStreamRequestHandler
 
 
 class Request: ...

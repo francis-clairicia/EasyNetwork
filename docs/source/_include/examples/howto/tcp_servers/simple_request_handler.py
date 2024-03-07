@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 
-from easynetwork.servers import AsyncStreamClient, AsyncStreamRequestHandler
+from easynetwork.servers.handlers import AsyncStreamClient, AsyncStreamRequestHandler
 
 
 class Request:

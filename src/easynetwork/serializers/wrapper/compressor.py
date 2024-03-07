@@ -17,7 +17,10 @@
 from __future__ import annotations
 
 __all__ = [
+    "AbstractCompressorSerializer",
     "BZ2CompressorSerializer",
+    "CompressorInterface",
+    "DecompressorInterface",
     "ZlibCompressorSerializer",
 ]
 
