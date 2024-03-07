@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 
 from easynetwork.exceptions import UnsupportedOperation
 from easynetwork.lowlevel.constants import ACCEPT_CAPACITY_ERRNOS, NOT_CONNECTED_SOCKET_ERRNOS
-from easynetwork.lowlevel.socket import SocketAttribute, TLSAttribute
+from easynetwork.lowlevel.socket import SocketAttribute
 from easynetwork.lowlevel.std_asyncio.stream.listener import (
     AbstractAcceptedSocketFactory,
     AcceptedSocketFactory,
@@ -81,7 +81,7 @@ class BaseTestTransportStreamSocket(BaseTestSocket):
         return mock
 
 
-class BaseTestTransportSupportingSSL(BaseTestTransportStreamSocket):
+class BaseTestTransportWithSSL(BaseTestTransportStreamSocket):
     @pytest.fixture
     @staticmethod
     def mock_ssl_object(mock_ssl_context: MagicMock, mocker: MockerFixture) -> MagicMock:
@@ -445,7 +445,7 @@ class TestAcceptedSocketFactory(BaseTestTransportStreamSocket):
 
 
 @pytest.mark.asyncio
-class TestAsyncioTransportStreamSocketAdapter(BaseTestTransportSupportingSSL):
+class TestAsyncioTransportStreamSocketAdapter(BaseTestTransportWithSSL):
     @pytest.fixture
     @staticmethod
     def mock_asyncio_protocol(mocker: MockerFixture, event_loop: asyncio.AbstractEventLoop) -> MagicMock:
@@ -463,6 +463,19 @@ class TestAsyncioTransportStreamSocketAdapter(BaseTestTransportSupportingSSL):
     ) -> AsyncioTransportStreamSocketAdapter:
         mock_asyncio_transport.can_write_eof.return_value = True
         return AsyncioTransportStreamSocketAdapter(mock_asyncio_transport, mock_asyncio_protocol)
+
+    @pytest.mark.usefixtures("add_ssl_extra_to_transport")
+    async def test____dunder_init____refuse_transports_over_ssl(
+        self,
+        mock_asyncio_transport: MagicMock,
+        mock_asyncio_protocol: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_asyncio_transport.can_write_eof.return_value = True
+
+        # Act & Assert
+        with pytest.raises(NotImplementedError):
+            _ = AsyncioTransportStreamSocketAdapter(mock_asyncio_transport, mock_asyncio_protocol)
 
     @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing=={p}")
     @pytest.mark.parametrize("can_write_eof", [False, True], ids=lambda p: f"can_write_eof=={p}")
@@ -528,33 +541,6 @@ class TestAsyncioTransportStreamSocketAdapter(BaseTestTransportSupportingSSL):
             mock_asyncio_transport.close.assert_called_once_with()
             mock_asyncio_protocol._get_close_waiter.assert_awaited_once_with()
         mock_asyncio_transport.abort.assert_not_called()
-
-    @pytest.mark.usefixtures("add_ssl_extra_to_transport")
-    @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing=={p}")
-    async def test____aclose____abort_transport_if_cancelled____ssl(
-        self,
-        transport_is_closing: bool,
-        socket: AsyncioTransportStreamSocketAdapter,
-        mock_asyncio_transport: MagicMock,
-        mock_asyncio_protocol: MagicMock,
-    ) -> None:
-        # Arrange
-        mock_asyncio_transport.is_closing.return_value = transport_is_closing
-        mock_asyncio_protocol._get_close_waiter.side_effect = asyncio.CancelledError
-
-        # Act
-        with pytest.raises(asyncio.CancelledError):
-            await socket.aclose()
-
-        # Assert
-        if transport_is_closing:
-            mock_asyncio_transport.close.assert_not_called()
-            mock_asyncio_protocol._get_close_waiter.assert_awaited_once_with()
-            mock_asyncio_transport.abort.assert_not_called()
-        else:
-            mock_asyncio_transport.close.assert_called_once_with()
-            mock_asyncio_protocol._get_close_waiter.assert_awaited_once_with()
-            mock_asyncio_transport.abort.assert_called_once_with()
 
     @pytest.mark.parametrize("transport_closed", [False, True], ids=lambda p: f"transport_closed=={p}")
     async def test____is_closing____return_internal_flag(
@@ -712,28 +698,11 @@ class TestAsyncioTransportStreamSocketAdapter(BaseTestTransportSupportingSSL):
         assert socket.extra(SocketAttribute.sockname) == ("127.0.0.1", 11111)
         assert socket.extra(SocketAttribute.peername) == ("127.0.0.1", 12345)
 
-    @pytest.mark.usefixtures("add_ssl_extra_to_transport")
-    async def test____extra_attributes____returns_ssl_info(
-        self,
-        socket: AsyncioTransportStreamSocketAdapter,
-        mock_ssl_context: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-
-        # Act & Assert
-        assert socket.extra(TLSAttribute.sslcontext) is mock_ssl_context
-        assert socket.extra(TLSAttribute.peercert) is mocker.sentinel.peercert
-        assert socket.extra(TLSAttribute.cipher) is mocker.sentinel.cipher
-        assert socket.extra(TLSAttribute.compression) is mocker.sentinel.compression
-        assert socket.extra(TLSAttribute.tls_version) is mocker.sentinel.tls_version
-        assert socket.extra(TLSAttribute.standard_compatible) is True
-
 
 _ProtocolDataReceiver: TypeAlias = Callable[[StreamReaderBufferedProtocol, int], Coroutine[Any, Any, bytes]]
 
 
-class TestStreamReaderBufferedProtocol(BaseTestTransportSupportingSSL):
+class TestStreamReaderBufferedProtocol(BaseTestTransportWithSSL):
     @pytest.fixture(autouse=True)
     @staticmethod
     def reduce_protocol_buffer_size(monkeypatch: pytest.MonkeyPatch) -> None:
