@@ -17,28 +17,20 @@
 from __future__ import annotations
 
 __all__ = [
-    "CBORDecoderConfig",
-    "CBOREncoderConfig",
     "CBORSerializer",
-    "JSONDecoderConfig",
-    "JSONEncoderConfig",
     "JSONSerializer",
     "MessagePackSerializer",
-    "MessagePackerConfig",
-    "MessageUnpackerConfig",
     "NamedTupleStructSerializer",
     "PickleSerializer",
-    "PicklerConfig",
     "StringLineSerializer",
     "StructSerializer",
-    "UnpicklerConfig",
 ]
 
 
 ############ Package initialization ############
-from .cbor import *
-from .json import *
-from .line import *
-from .msgpack import *
-from .pickle import *
-from .struct import *
+from .cbor import CBORSerializer
+from .json import JSONSerializer
+from .line import StringLineSerializer
+from .msgpack import MessagePackSerializer
+from .pickle import PickleSerializer
+from .struct import NamedTupleStructSerializer, StructSerializer

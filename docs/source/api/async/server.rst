@@ -37,6 +37,8 @@ UDP Implementation
 Request Handler Interface
 =========================
 
+.. currentmodule:: easynetwork.servers.handlers
+
 .. autoclass:: AsyncStreamRequestHandler
    :members:
 

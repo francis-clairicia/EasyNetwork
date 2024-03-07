@@ -3,7 +3,8 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import Literal
 
-from easynetwork.clients import AbstractNetworkClient, TCPNetworkClient, UDPNetworkClient
+from easynetwork.clients import TCPNetworkClient, UDPNetworkClient
+from easynetwork.clients.abc import AbstractNetworkClient
 from easynetwork.protocol import DatagramProtocol, StreamProtocol
 from easynetwork.serializers.line import StringLineSerializer
 

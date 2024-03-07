@@ -18,6 +18,8 @@ Pickle Serializer
 Configuration
 =============
 
+.. currentmodule:: easynetwork.serializers.pickle
+
 .. autoclass:: PicklerConfig
    :members:
 

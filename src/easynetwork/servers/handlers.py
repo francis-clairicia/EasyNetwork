@@ -113,6 +113,9 @@ class AsyncStreamClient(AsyncBaseClientInterface[_T_Response]):
 class AsyncDatagramClient(AsyncBaseClientInterface[_T_Response]):
     """
     A client interface for datagram oriented connection, used by datagram request handlers.
+
+    Unlike :class:`AsyncStreamClient`, the client object can be recreated on each ``handle()`` call,
+    but implements ``__hash__()`` and ``__eq__()`` for uniqueness checking, so it can be used in a :class:`set` for example.
     """
 
     __slots__ = ()
