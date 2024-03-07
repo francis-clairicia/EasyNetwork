@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 from easynetwork.lowlevel.std_asyncio import AsyncIOBackend
 from easynetwork.lowlevel.std_asyncio.datagram.listener import DatagramListenerProtocol
 from easynetwork.lowlevel.std_asyncio.stream.listener import AbstractAcceptedSocketFactory, AcceptedSocketFactory
+from easynetwork.lowlevel.std_asyncio.stream.socket import StreamReaderBufferedProtocol
 
 import pytest
 
@@ -206,28 +207,27 @@ class TestAsyncIOBackend:
         assert task_info.coro is current_task.get_coro()
 
     @pytest.mark.parametrize("happy_eyeballs_delay", [None, 42], ids=lambda p: f"happy_eyeballs_delay=={p}")
-    async def test____create_tcp_connection____use_asyncio_open_connection(
+    async def test____create_tcp_connection____use_loop_create_connection(
         self,
         happy_eyeballs_delay: float | None,
         event_loop: asyncio.AbstractEventLoop,
         local_address: tuple[str, int] | None,
         remote_address: tuple[str, int],
         backend: AsyncIOBackend,
-        mock_asyncio_stream_reader_factory: Callable[[], MagicMock],
-        mock_asyncio_stream_writer_factory: Callable[[], MagicMock],
         mock_tcp_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_asyncio_reader = mock_asyncio_stream_reader_factory()
-        mock_asyncio_writer = mock_asyncio_stream_writer_factory()
-        mock_StreamSocketAdapter: MagicMock = mocker.patch(
+        mock_asyncio_transport = mocker.NonCallableMagicMock(spec=asyncio.Transport)
+        mock_protocol = mocker.NonCallableMagicMock(spec=StreamReaderBufferedProtocol)
+        mock_AsyncioTransportStreamSocketAdapter: MagicMock = mocker.patch(
             "easynetwork.lowlevel.std_asyncio.backend.AsyncioTransportStreamSocketAdapter", return_value=mocker.sentinel.socket
         )
-        mock_open_connection: AsyncMock = mocker.patch(
-            "asyncio.open_connection",
+        mock_event_loop_create_connection: AsyncMock = mocker.patch.object(
+            event_loop,
+            "create_connection",
             new_callable=mocker.AsyncMock,
-            return_value=(mock_asyncio_reader, mock_asyncio_writer),
+            return_value=(mock_asyncio_transport, mock_protocol),
         )
         mock_own_create_connection: AsyncMock = mocker.patch(
             "easynetwork.lowlevel.std_asyncio.backend.create_connection",
@@ -253,37 +253,42 @@ class TestAsyncIOBackend:
             happy_eyeballs_delay=expected_happy_eyeballs_delay,
             local_address=local_address,
         )
-        mock_open_connection.assert_awaited_once_with(sock=mock_tcp_socket)
-        mock_StreamSocketAdapter.assert_called_once_with(mock_asyncio_reader, mock_asyncio_writer)
+        mock_event_loop_create_connection.assert_awaited_once_with(
+            partial_eq(StreamReaderBufferedProtocol, loop=event_loop),
+            sock=mock_tcp_socket,
+        )
+        mock_AsyncioTransportStreamSocketAdapter.assert_called_once_with(mock_asyncio_transport, mock_protocol)
         assert socket is mocker.sentinel.socket
 
     async def test____wrap_stream_socket____use_asyncio_open_connection(
         self,
+        event_loop: asyncio.AbstractEventLoop,
         backend: AsyncIOBackend,
         mock_tcp_socket: MagicMock,
-        mock_asyncio_stream_reader_factory: Callable[[], MagicMock],
-        mock_asyncio_stream_writer_factory: Callable[[], MagicMock],
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_asyncio_reader = mock_asyncio_stream_reader_factory()
-        mock_asyncio_writer = mock_asyncio_stream_writer_factory()
+        mock_asyncio_transport = mocker.NonCallableMagicMock(spec=asyncio.Transport)
+        mock_protocol = mocker.NonCallableMagicMock(spec=StreamReaderBufferedProtocol)
         mock_AsyncioTransportStreamSocketAdapter: MagicMock = mocker.patch(
-            "easynetwork.lowlevel.std_asyncio.backend.AsyncioTransportStreamSocketAdapter",
-            return_value=mocker.sentinel.socket,
+            "easynetwork.lowlevel.std_asyncio.backend.AsyncioTransportStreamSocketAdapter", return_value=mocker.sentinel.socket
         )
-        mock_open_connection: AsyncMock = mocker.patch(
-            "asyncio.open_connection",
+        mock_event_loop_create_connection: AsyncMock = mocker.patch.object(
+            event_loop,
+            "create_connection",
             new_callable=mocker.AsyncMock,
-            return_value=(mock_asyncio_reader, mock_asyncio_writer),
+            return_value=(mock_asyncio_transport, mock_protocol),
         )
 
         # Act
         socket = await backend.wrap_stream_socket(mock_tcp_socket)
 
         # Assert
-        mock_open_connection.assert_awaited_once_with(sock=mock_tcp_socket)
-        mock_AsyncioTransportStreamSocketAdapter.assert_called_once_with(mock_asyncio_reader, mock_asyncio_writer)
+        mock_event_loop_create_connection.assert_awaited_once_with(
+            partial_eq(StreamReaderBufferedProtocol, loop=event_loop),
+            sock=mock_tcp_socket,
+        )
+        mock_AsyncioTransportStreamSocketAdapter.assert_called_once_with(mock_asyncio_transport, mock_protocol)
         assert socket is mocker.sentinel.socket
         mock_tcp_socket.setblocking.assert_called_with(False)
 

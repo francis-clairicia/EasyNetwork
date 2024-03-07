@@ -17,11 +17,10 @@
 
 from __future__ import annotations
 
-__all__ = ["AsyncioTransportBufferedStreamSocketAdapter", "AsyncioTransportStreamSocketAdapter"]
+__all__ = ["AsyncioTransportStreamSocketAdapter"]
 
 import asyncio
 import errno as _errno
-from collections import ChainMap
 from collections.abc import Callable, Iterable, Mapping
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, final
@@ -35,111 +34,17 @@ from ..tasks import TaskUtils
 
 if TYPE_CHECKING:
     import asyncio.trsock
-    import ssl as _typing_ssl
 
     from _typeshed import WriteableBuffer
 
 
 @final
-class AsyncioTransportStreamSocketAdapter(transports.AsyncStreamTransport):
-    __slots__ = (
-        "__reader",
-        "__writer",
-        "__socket",
-        "__closing",
-        "__over_ssl",
-    )
-
-    def __init__(
-        self,
-        reader: asyncio.StreamReader,
-        writer: asyncio.StreamWriter,
-    ) -> None:
-        super().__init__()
-        self.__reader: asyncio.StreamReader = reader
-        self.__writer: asyncio.StreamWriter = writer
-        self.__over_ssl: bool = writer.get_extra_info("sslcontext") is not None
-
-        socket: asyncio.trsock.TransportSocket | None = writer.get_extra_info("socket")
-        assert socket is not None, "Writer transport must be a socket transport"  # nosec assert_used
-        self.__socket: asyncio.trsock.TransportSocket = socket
-
-        # asyncio.Transport.is_closing() can suddently become true if there is something wrong with the socket
-        # even if transport.close() was never called.
-        # To bypass this side effect, we use our own flag.
-        self.__closing: bool = False
-
-    async def aclose(self) -> None:
-        self.__closing = True
-        if self.__writer.is_closing():
-            # Only wait for it.
-            try:
-                await self.__writer.wait_closed()
-            except OSError:
-                pass
-            return
-
-        try:
-            if self.__writer.can_write_eof():
-                self.__writer.write_eof()
-        except OSError:
-            pass
-        finally:
-            self.__writer.close()
-        try:
-            await self.__writer.wait_closed()
-        except OSError:
-            pass
-        except asyncio.CancelledError:
-            if self.__over_ssl:
-                self.__writer.transport.abort()
-            raise
-
-    def is_closing(self) -> bool:
-        return self.__closing
-
-    async def recv(self, bufsize: int) -> bytes:
-        if bufsize < 0:
-            raise ValueError("'bufsize' must be a positive or null integer")
-        return await self.__reader.read(bufsize)
-
-    async def send_all(self, data: bytes | bytearray | memoryview) -> None:
-        self.__writer.write(data)
-        await self.__writer.drain()
-
-    async def send_all_from_iterable(self, iterable_of_data: Iterable[bytes | bytearray | memoryview]) -> None:
-        self.__writer.writelines(iterable_of_data)
-        await self.__writer.drain()
-
-    async def send_eof(self) -> None:
-        if not self.__writer.can_write_eof():
-            raise UnsupportedOperation("transport does not support sending EOF")
-        self.__writer.write_eof()
-        await TaskUtils.coro_yield()
-
-    @property
-    def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
-        socket = self.__socket
-        socket_extra: dict[Any, Callable[[], Any]] = socket_tools._get_socket_extra(socket, wrap_in_proxy=False)
-
-        ssl_obj: _typing_ssl.SSLObject | _typing_ssl.SSLSocket | None = self.__writer.get_extra_info("ssl_object")
-        if ssl_obj is None:
-            return socket_extra
-        return ChainMap(
-            socket_extra,
-            socket_tools._get_tls_extra(ssl_obj),
-            {socket_tools.TLSAttribute.standard_compatible: lambda: True},
-        )
-
-
-@final
-class AsyncioTransportBufferedStreamSocketAdapter(transports.AsyncStreamTransport, transports.AsyncBufferedStreamReadTransport):
+class AsyncioTransportStreamSocketAdapter(transports.AsyncStreamTransport, transports.AsyncBufferedStreamReadTransport):
     __slots__ = (
         "__transport",
         "__protocol",
         "__socket",
         "__closing",
-        "__over_ssl",
     )
 
     def __init__(
@@ -150,11 +55,14 @@ class AsyncioTransportBufferedStreamSocketAdapter(transports.AsyncStreamTranspor
         super().__init__()
         self.__transport: asyncio.Transport = transport
         self.__protocol: StreamReaderBufferedProtocol = protocol
-        self.__over_ssl: bool = transport.get_extra_info("sslcontext") is not None
+        over_ssl: bool = transport.get_extra_info("sslcontext") is not None
 
         socket: asyncio.trsock.TransportSocket | None = transport.get_extra_info("socket")
         assert socket is not None, "Writer transport must be a socket transport"  # nosec assert_used
         self.__socket: asyncio.trsock.TransportSocket = socket
+
+        if over_ssl:
+            raise NotImplementedError(f"{self.__class__.__name__} does not support SSL")
 
         # asyncio.Transport.is_closing() can suddently become true if there is something wrong with the socket
         # even if transport.close() was never called.
@@ -162,10 +70,7 @@ class AsyncioTransportBufferedStreamSocketAdapter(transports.AsyncStreamTranspor
         self.__closing: bool = False
 
         # Disable in-memory byte buffering.
-        if self.__over_ssl:
-            transport.set_write_buffer_limits(1)
-        else:
-            transport.set_write_buffer_limits(0)
+        transport.set_write_buffer_limits(0)
 
     async def aclose(self) -> None:
         self.__closing = True
@@ -188,10 +93,6 @@ class AsyncioTransportBufferedStreamSocketAdapter(transports.AsyncStreamTranspor
             await asyncio.shield(self.__protocol._get_close_waiter())
         except OSError:
             pass
-        except asyncio.CancelledError:
-            if self.__over_ssl:
-                self.__transport.abort()
-            raise
 
     def is_closing(self) -> bool:
         return self.__closing
@@ -218,17 +119,7 @@ class AsyncioTransportBufferedStreamSocketAdapter(transports.AsyncStreamTranspor
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
-        socket = self.__socket
-        socket_extra: dict[Any, Callable[[], Any]] = socket_tools._get_socket_extra(socket, wrap_in_proxy=False)
-
-        ssl_obj: _typing_ssl.SSLObject | _typing_ssl.SSLSocket | None = self.__transport.get_extra_info("ssl_object")
-        if ssl_obj is None:
-            return socket_extra
-        return ChainMap(
-            socket_extra,
-            socket_tools._get_tls_extra(ssl_obj),
-            {socket_tools.TLSAttribute.standard_compatible: lambda: True},
-        )
+        return socket_tools._get_socket_extra(self.__socket, wrap_in_proxy=False)
 
 
 class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):

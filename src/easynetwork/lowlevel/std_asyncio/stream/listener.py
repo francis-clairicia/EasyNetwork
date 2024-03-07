@@ -38,7 +38,7 @@ from ... import _utils, constants, socket as socket_tools
 from ...api_async.transports import abc as transports
 from ..socket import AsyncSocket
 from ..tasks import TaskGroup as AsyncIOTaskGroup
-from .socket import AsyncioTransportBufferedStreamSocketAdapter, StreamReaderBufferedProtocol
+from .socket import AsyncioTransportStreamSocketAdapter, StreamReaderBufferedProtocol
 
 if TYPE_CHECKING:
     import asyncio.trsock
@@ -148,7 +148,7 @@ class AbstractAcceptedSocketFactory(Generic[_T_Stream]):
 
 @final
 @dataclasses.dataclass(frozen=True, slots=True, kw_only=True)
-class AcceptedSocketFactory(AbstractAcceptedSocketFactory[AsyncioTransportBufferedStreamSocketAdapter]):
+class AcceptedSocketFactory(AbstractAcceptedSocketFactory[AsyncioTransportStreamSocketAdapter]):
     def log_connection_error(self, logger: logging.Logger, exc: BaseException) -> None:
         logger.error("Error in client task", exc_info=exc)
 
@@ -156,9 +156,9 @@ class AcceptedSocketFactory(AbstractAcceptedSocketFactory[AsyncioTransportBuffer
         self,
         socket: _socket.socket,
         loop: asyncio.AbstractEventLoop,
-    ) -> AsyncioTransportBufferedStreamSocketAdapter:
+    ) -> AsyncioTransportStreamSocketAdapter:
         transport, protocol = await loop.connect_accepted_socket(
             _utils.make_callback(StreamReaderBufferedProtocol, loop=loop),
             socket,
         )
-        return AsyncioTransportBufferedStreamSocketAdapter(transport, protocol)
+        return AsyncioTransportStreamSocketAdapter(transport, protocol)
