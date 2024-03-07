@@ -20,11 +20,7 @@ from easynetwork.lowlevel.std_asyncio.stream.listener import (
     AcceptedSocketFactory,
     ListenerSocketAdapter,
 )
-from easynetwork.lowlevel.std_asyncio.stream.socket import (
-    AsyncioTransportBufferedStreamSocketAdapter,
-    AsyncioTransportStreamSocketAdapter,
-    StreamReaderBufferedProtocol,
-)
+from easynetwork.lowlevel.std_asyncio.stream.socket import AsyncioTransportStreamSocketAdapter, StreamReaderBufferedProtocol
 from easynetwork.lowlevel.std_asyncio.tasks import CancelScope, TaskGroup as AsyncIOTaskGroup
 
 import pytest
@@ -114,251 +110,6 @@ class BaseTestTransportSupportingSSL(BaseTestTransportStreamSocket):
                 "compression": mocker.sentinel.compression,
             }
         )
-
-
-@pytest.mark.asyncio
-class TestAsyncioTransportStreamSocketAdapter(BaseTestTransportSupportingSSL):
-    @pytest.fixture
-    @staticmethod
-    def socket(mock_asyncio_reader: MagicMock, mock_asyncio_writer: MagicMock) -> AsyncioTransportStreamSocketAdapter:
-        mock_asyncio_writer.can_write_eof.return_value = True
-        return AsyncioTransportStreamSocketAdapter(mock_asyncio_reader, mock_asyncio_writer)
-
-    @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing=={p}")
-    @pytest.mark.parametrize("can_write_eof", [False, True], ids=lambda p: f"can_write_eof=={p}")
-    @pytest.mark.parametrize("wait_close_raise_error", [False, True], ids=lambda p: f"wait_close_raise_error=={p}")
-    @pytest.mark.parametrize("write_eof_raise_error", [False, True], ids=lambda p: f"write_eof_raise_error=={p}")
-    async def test____aclose____close_transport_and_wait(
-        self,
-        transport_is_closing: bool,
-        can_write_eof: bool,
-        wait_close_raise_error: bool,
-        write_eof_raise_error: bool,
-        socket: AsyncioTransportStreamSocketAdapter,
-        mock_asyncio_writer: MagicMock,
-    ) -> None:
-        # Arrange
-        mock_asyncio_writer.is_closing.return_value = transport_is_closing
-        mock_asyncio_writer.can_write_eof.return_value = can_write_eof
-        if wait_close_raise_error:
-            mock_asyncio_writer.wait_closed.side_effect = OSError
-        if write_eof_raise_error:
-            mock_asyncio_writer.write_eof.side_effect = OSError
-
-        # Act
-        await socket.aclose()
-
-        # Assert
-        if transport_is_closing:
-            mock_asyncio_writer.close.assert_not_called()
-            mock_asyncio_writer.wait_closed.assert_awaited_once_with()
-            mock_asyncio_writer.transport.abort.assert_not_called()
-        else:
-            if can_write_eof:
-                mock_asyncio_writer.write_eof.assert_called_once_with()
-            else:
-                mock_asyncio_writer.write_eof.assert_not_called()
-            mock_asyncio_writer.close.assert_called_once_with()
-            mock_asyncio_writer.wait_closed.assert_awaited_once_with()
-            mock_asyncio_writer.transport.abort.assert_not_called()
-
-    @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing=={p}")
-    async def test____aclose____abort_transport_if_cancelled(
-        self,
-        transport_is_closing: bool,
-        socket: AsyncioTransportStreamSocketAdapter,
-        mock_asyncio_writer: MagicMock,
-    ) -> None:
-        # Arrange
-        mock_asyncio_writer.is_closing.return_value = transport_is_closing
-        mock_asyncio_writer.wait_closed.side_effect = asyncio.CancelledError
-
-        # Act
-        with pytest.raises(asyncio.CancelledError):
-            await socket.aclose()
-
-        # Assert
-        if transport_is_closing:
-            mock_asyncio_writer.close.assert_not_called()
-            mock_asyncio_writer.wait_closed.assert_awaited_once_with()
-        else:
-            mock_asyncio_writer.close.assert_called_once_with()
-            mock_asyncio_writer.wait_closed.assert_awaited_once_with()
-        mock_asyncio_writer.transport.abort.assert_not_called()
-
-    @pytest.mark.usefixtures("add_ssl_extra_to_transport")
-    @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing=={p}")
-    async def test____aclose____abort_transport_if_cancelled____ssl(
-        self,
-        transport_is_closing: bool,
-        socket: AsyncioTransportStreamSocketAdapter,
-        mock_asyncio_writer: MagicMock,
-    ) -> None:
-        # Arrange
-        mock_asyncio_writer.is_closing.return_value = transport_is_closing
-        mock_asyncio_writer.wait_closed.side_effect = asyncio.CancelledError
-
-        # Act
-        with pytest.raises(asyncio.CancelledError):
-            await socket.aclose()
-
-        # Assert
-        if transport_is_closing:
-            mock_asyncio_writer.close.assert_not_called()
-            mock_asyncio_writer.wait_closed.assert_awaited_once_with()
-            mock_asyncio_writer.transport.abort.assert_not_called()
-        else:
-            mock_asyncio_writer.close.assert_called_once_with()
-            mock_asyncio_writer.wait_closed.assert_awaited_once_with()
-            mock_asyncio_writer.transport.abort.assert_called_once_with()
-
-    @pytest.mark.parametrize("transport_closed", [False, True], ids=lambda p: f"transport_closed=={p}")
-    async def test____is_closing____return_internal_flag(
-        self,
-        transport_closed: bool,
-        socket: AsyncioTransportStreamSocketAdapter,
-        mock_asyncio_writer: MagicMock,
-    ) -> None:
-        # Arrange
-        if transport_closed:
-            await socket.aclose()
-            mock_asyncio_writer.reset_mock()
-        mock_asyncio_writer.is_closing.side_effect = AssertionError
-
-        # Act
-        state = socket.is_closing()
-
-        # Assert
-        mock_asyncio_writer.is_closing.assert_not_called()
-        assert state is transport_closed
-
-    async def test____recv____read_from_reader(
-        self,
-        socket: AsyncioTransportStreamSocketAdapter,
-        mock_asyncio_reader: MagicMock,
-    ) -> None:
-        # Arrange
-        mock_asyncio_reader.read.return_value = b"data"
-
-        # Act
-        data: bytes = await socket.recv(1024)
-
-        # Assert
-        mock_asyncio_reader.read.assert_awaited_once_with(1024)
-        assert data == b"data"
-
-    async def test____recv____null_bufsize(
-        self,
-        socket: AsyncioTransportStreamSocketAdapter,
-        mock_asyncio_reader: MagicMock,
-    ) -> None:
-        # Arrange
-        mock_asyncio_reader.read.return_value = b""
-
-        # Act
-        data: bytes = await socket.recv(0)
-
-        # Assert
-        mock_asyncio_reader.read.assert_awaited_once_with(0)
-        assert data == b""
-
-    async def test____recv____negative_bufsize_error(
-        self,
-        socket: AsyncioTransportStreamSocketAdapter,
-        mock_asyncio_reader: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act
-        with pytest.raises(ValueError):
-            await socket.recv(-1)
-
-        # Assert
-        mock_asyncio_reader.read.assert_not_awaited()
-
-    async def test____send_all____write_and_drain(
-        self,
-        socket: AsyncioTransportStreamSocketAdapter,
-        mock_asyncio_writer: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act
-        await socket.send_all(b"data to send")
-
-        # Assert
-        mock_asyncio_writer.write.assert_called_once_with(b"data to send")
-        mock_asyncio_writer.writelines.assert_not_called()
-        mock_asyncio_writer.drain.assert_awaited_once_with()
-
-    async def test____send_all_from_iterable____writelines_and_drain(
-        self,
-        socket: AsyncioTransportStreamSocketAdapter,
-        mock_asyncio_writer: MagicMock,
-    ) -> None:
-        # Arrange
-        written_chunks: list[bytes] = []
-
-        mock_asyncio_writer.writelines.side_effect = written_chunks.extend
-
-        # Act
-        await socket.send_all_from_iterable([b"data", b"to", b"send"])
-
-        # Assert
-        mock_asyncio_writer.write.assert_not_called()
-        mock_asyncio_writer.writelines.assert_called_once()
-        mock_asyncio_writer.drain.assert_awaited_once_with()
-        assert written_chunks == [b"data", b"to", b"send"]
-
-    @pytest.mark.parametrize("can_write_eof", [False, True], ids=lambda p: f"can_write_eof=={p}")
-    async def test____send_eof____write_eof(
-        self,
-        can_write_eof: bool,
-        socket: AsyncioTransportStreamSocketAdapter,
-        mock_asyncio_writer: MagicMock,
-    ) -> None:
-        # Arrange
-        mock_asyncio_writer.can_write_eof.return_value = can_write_eof
-        mock_asyncio_writer.write_eof.return_value = None
-
-        # Act & Assert
-        if can_write_eof:
-            await socket.send_eof()
-            mock_asyncio_writer.write_eof.assert_called_once_with()
-        else:
-            with pytest.raises(UnsupportedOperation):
-                await socket.send_eof()
-            mock_asyncio_writer.write_eof.assert_not_called()
-
-    async def test____extra_attributes____returns_socket_info(
-        self,
-        socket: AsyncioTransportStreamSocketAdapter,
-        mock_tcp_socket: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act & Assert
-        assert socket.extra(SocketAttribute.socket) is mock_tcp_socket
-        assert socket.extra(SocketAttribute.family) == mock_tcp_socket.family
-        assert socket.extra(SocketAttribute.sockname) == ("127.0.0.1", 11111)
-        assert socket.extra(SocketAttribute.peername) == ("127.0.0.1", 12345)
-
-    @pytest.mark.usefixtures("add_ssl_extra_to_transport")
-    async def test____extra_attributes____returns_ssl_info(
-        self,
-        socket: AsyncioTransportStreamSocketAdapter,
-        mock_ssl_context: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-
-        # Act & Assert
-        assert socket.extra(TLSAttribute.sslcontext) is mock_ssl_context
-        assert socket.extra(TLSAttribute.peercert) is mocker.sentinel.peercert
-        assert socket.extra(TLSAttribute.cipher) is mocker.sentinel.cipher
-        assert socket.extra(TLSAttribute.compression) is mocker.sentinel.compression
-        assert socket.extra(TLSAttribute.tls_version) is mocker.sentinel.tls_version
-        assert socket.extra(TLSAttribute.standard_compatible) is True
 
 
 @pytest.mark.asyncio
@@ -686,7 +437,7 @@ class TestAcceptedSocketFactory(BaseTestTransportStreamSocket):
         socket = await accepted_socket.connect(mock_tcp_socket, event_loop)
 
         # Assert
-        assert isinstance(socket, AsyncioTransportBufferedStreamSocketAdapter)
+        assert isinstance(socket, AsyncioTransportStreamSocketAdapter)
         mock_event_loop_connect_accepted_socket.assert_awaited_once_with(
             partial_eq(StreamReaderBufferedProtocol, loop=event_loop),
             mock_tcp_socket,
@@ -694,7 +445,7 @@ class TestAcceptedSocketFactory(BaseTestTransportStreamSocket):
 
 
 @pytest.mark.asyncio
-class TestAsyncioTransportBufferedStreamSocketAdapter(BaseTestTransportSupportingSSL):
+class TestAsyncioTransportStreamSocketAdapter(BaseTestTransportSupportingSSL):
     @pytest.fixture
     @staticmethod
     def mock_asyncio_protocol(mocker: MockerFixture, event_loop: asyncio.AbstractEventLoop) -> MagicMock:
@@ -709,9 +460,9 @@ class TestAsyncioTransportBufferedStreamSocketAdapter(BaseTestTransportSupportin
     def socket(
         mock_asyncio_transport: MagicMock,
         mock_asyncio_protocol: MagicMock,
-    ) -> AsyncioTransportBufferedStreamSocketAdapter:
+    ) -> AsyncioTransportStreamSocketAdapter:
         mock_asyncio_transport.can_write_eof.return_value = True
-        return AsyncioTransportBufferedStreamSocketAdapter(mock_asyncio_transport, mock_asyncio_protocol)
+        return AsyncioTransportStreamSocketAdapter(mock_asyncio_transport, mock_asyncio_protocol)
 
     @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing=={p}")
     @pytest.mark.parametrize("can_write_eof", [False, True], ids=lambda p: f"can_write_eof=={p}")
@@ -723,7 +474,7 @@ class TestAsyncioTransportBufferedStreamSocketAdapter(BaseTestTransportSupportin
         can_write_eof: bool,
         wait_close_raise_error: bool,
         write_eof_raise_error: bool,
-        socket: AsyncioTransportBufferedStreamSocketAdapter,
+        socket: AsyncioTransportStreamSocketAdapter,
         mock_asyncio_transport: MagicMock,
         mock_asyncio_protocol: MagicMock,
     ) -> None:
@@ -757,7 +508,7 @@ class TestAsyncioTransportBufferedStreamSocketAdapter(BaseTestTransportSupportin
     async def test____aclose____abort_transport_if_cancelled(
         self,
         transport_is_closing: bool,
-        socket: AsyncioTransportBufferedStreamSocketAdapter,
+        socket: AsyncioTransportStreamSocketAdapter,
         mock_asyncio_transport: MagicMock,
         mock_asyncio_protocol: MagicMock,
     ) -> None:
@@ -783,7 +534,7 @@ class TestAsyncioTransportBufferedStreamSocketAdapter(BaseTestTransportSupportin
     async def test____aclose____abort_transport_if_cancelled____ssl(
         self,
         transport_is_closing: bool,
-        socket: AsyncioTransportBufferedStreamSocketAdapter,
+        socket: AsyncioTransportStreamSocketAdapter,
         mock_asyncio_transport: MagicMock,
         mock_asyncio_protocol: MagicMock,
     ) -> None:
@@ -809,7 +560,7 @@ class TestAsyncioTransportBufferedStreamSocketAdapter(BaseTestTransportSupportin
     async def test____is_closing____return_internal_flag(
         self,
         transport_closed: bool,
-        socket: AsyncioTransportBufferedStreamSocketAdapter,
+        socket: AsyncioTransportStreamSocketAdapter,
         mock_asyncio_transport: MagicMock,
     ) -> None:
         # Arrange
@@ -827,7 +578,7 @@ class TestAsyncioTransportBufferedStreamSocketAdapter(BaseTestTransportSupportin
 
     async def test____recv____read_from_reader(
         self,
-        socket: AsyncioTransportBufferedStreamSocketAdapter,
+        socket: AsyncioTransportStreamSocketAdapter,
         mock_asyncio_protocol: MagicMock,
     ) -> None:
         # Arrange
@@ -842,7 +593,7 @@ class TestAsyncioTransportBufferedStreamSocketAdapter(BaseTestTransportSupportin
 
     async def test____recv____null_bufsize(
         self,
-        socket: AsyncioTransportBufferedStreamSocketAdapter,
+        socket: AsyncioTransportStreamSocketAdapter,
         mock_asyncio_protocol: MagicMock,
     ) -> None:
         # Arrange
@@ -857,7 +608,7 @@ class TestAsyncioTransportBufferedStreamSocketAdapter(BaseTestTransportSupportin
 
     async def test____recv_into____read_from_reader(
         self,
-        socket: AsyncioTransportBufferedStreamSocketAdapter,
+        socket: AsyncioTransportStreamSocketAdapter,
         mock_asyncio_protocol: MagicMock,
     ) -> None:
         # Arrange
@@ -873,7 +624,7 @@ class TestAsyncioTransportBufferedStreamSocketAdapter(BaseTestTransportSupportin
 
     async def test____recv_into____null_buffer(
         self,
-        socket: AsyncioTransportBufferedStreamSocketAdapter,
+        socket: AsyncioTransportStreamSocketAdapter,
         mock_asyncio_protocol: MagicMock,
     ) -> None:
         # Arrange
@@ -891,7 +642,7 @@ class TestAsyncioTransportBufferedStreamSocketAdapter(BaseTestTransportSupportin
     async def test____send_all____write_and_drain(
         self,
         transport_is_closing: bool,
-        socket: AsyncioTransportBufferedStreamSocketAdapter,
+        socket: AsyncioTransportStreamSocketAdapter,
         mock_asyncio_transport: MagicMock,
         mock_asyncio_protocol: MagicMock,
     ) -> None:
@@ -910,7 +661,7 @@ class TestAsyncioTransportBufferedStreamSocketAdapter(BaseTestTransportSupportin
     async def test____send_all_from_iterable____writelines_and_drain(
         self,
         transport_is_closing: bool,
-        socket: AsyncioTransportBufferedStreamSocketAdapter,
+        socket: AsyncioTransportStreamSocketAdapter,
         mock_asyncio_transport: MagicMock,
         mock_asyncio_protocol: MagicMock,
     ) -> None:
@@ -932,7 +683,7 @@ class TestAsyncioTransportBufferedStreamSocketAdapter(BaseTestTransportSupportin
     async def test____send_eof____write_eof(
         self,
         can_write_eof: bool,
-        socket: AsyncioTransportBufferedStreamSocketAdapter,
+        socket: AsyncioTransportStreamSocketAdapter,
         mock_asyncio_transport: MagicMock,
     ) -> None:
         # Arrange

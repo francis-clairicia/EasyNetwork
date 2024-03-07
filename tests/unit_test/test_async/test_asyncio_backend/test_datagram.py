@@ -56,7 +56,7 @@ async def test____create_datagram_endpoint____return_DatagramEndpoint_instance(
     mock_loop_create_datagram_endpoint: AsyncMock = cast(
         "AsyncMock",
         mocker.patch.object(
-            asyncio.get_running_loop(),
+            event_loop,
             "create_datagram_endpoint",
             new_callable=mocker.AsyncMock,
             return_value=(

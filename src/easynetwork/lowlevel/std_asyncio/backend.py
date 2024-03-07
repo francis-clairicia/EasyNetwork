@@ -44,7 +44,7 @@ from .datagram.endpoint import create_datagram_endpoint
 from .datagram.listener import DatagramListenerSocketAdapter
 from .datagram.socket import AsyncioTransportDatagramSocketAdapter
 from .stream.listener import AcceptedSocketFactory, ListenerSocketAdapter
-from .stream.socket import AsyncioTransportBufferedStreamSocketAdapter, AsyncioTransportStreamSocketAdapter
+from .stream.socket import AsyncioTransportStreamSocketAdapter, StreamReaderBufferedProtocol
 from .tasks import CancelScope, TaskGroup, TaskUtils
 from .threads import ThreadsPortal
 
@@ -127,8 +127,12 @@ class AsyncIOBackend(AbstractAsyncBackend):
 
     async def wrap_stream_socket(self, socket: _socket.socket) -> AsyncioTransportStreamSocketAdapter:
         socket.setblocking(False)
-        reader, writer = await asyncio.open_connection(sock=socket)
-        return AsyncioTransportStreamSocketAdapter(reader, writer)
+        loop = asyncio.get_running_loop()
+        transport, protocol = await loop.create_connection(
+            _utils.make_callback(StreamReaderBufferedProtocol, loop=loop),
+            sock=socket,
+        )
+        return AsyncioTransportStreamSocketAdapter(transport, protocol)
 
     async def create_tcp_listeners(
         self,
@@ -137,7 +141,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
         backlog: int,
         *,
         reuse_port: bool = False,
-    ) -> Sequence[ListenerSocketAdapter[AsyncioTransportBufferedStreamSocketAdapter]]:
+    ) -> Sequence[ListenerSocketAdapter[AsyncioTransportStreamSocketAdapter]]:
         if not isinstance(backlog, int):
             raise TypeError("backlog: Expected an integer")
         loop = asyncio.get_running_loop()
