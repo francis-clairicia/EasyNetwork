@@ -22,7 +22,7 @@ __all__ = [
 
 import contextlib
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, Any, Generic
+from typing import TYPE_CHECKING, Any, Generic, Literal
 
 from .._typevars import _T_Request, _T_Response
 from ..lowlevel import _utils
@@ -63,6 +63,7 @@ class StandaloneTCPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
         backlog: int | None = None,
         reuse_port: bool = False,
         max_recv_size: int | None = None,
+        manual_buffer_allocation: Literal["try", "no", "force"] = "try",
         log_client_connection: bool | None = None,
         logger: logging.Logger | None = None,
         **kwargs: Any,
@@ -89,6 +90,7 @@ class StandaloneTCPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
                 backlog=backlog,
                 reuse_port=reuse_port,
                 max_recv_size=max_recv_size,
+                manual_buffer_allocation=manual_buffer_allocation,
                 log_client_connection=log_client_connection,
                 logger=logger,
                 **kwargs,

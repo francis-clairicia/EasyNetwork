@@ -21,12 +21,14 @@ __all__ = ["StreamEndpoint"]
 import dataclasses
 import errno as _errno
 import math
+import warnings
 from collections.abc import Callable, Mapping
-from typing import Any, Generic
+from typing import Any, Generic, Literal, assert_never
 
 from .... import protocol as protocol_module
 from ...._typevars import _T_ReceivedPacket, _T_SentPacket
 from ....exceptions import UnsupportedOperation
+from ....warnings import ManualBufferAllocationWarning
 from ... import _stream, _utils, typed_attr
 from ..transports import abc as transports
 
@@ -49,6 +51,8 @@ class StreamEndpoint(typed_attr.TypedAttributeProvider, Generic[_T_SentPacket, _
         transport: transports.StreamTransport | transports.StreamReadTransport | transports.StreamWriteTransport,
         protocol: protocol_module.StreamProtocol[_T_SentPacket, _T_ReceivedPacket],
         max_recv_size: int,
+        *,
+        manual_buffer_allocation: Literal["try", "no", "force"] = "try",
     ) -> None:
         """
         Parameters:
@@ -61,6 +65,11 @@ class StreamEndpoint(typed_attr.TypedAttributeProvider, Generic[_T_SentPacket, _
             raise TypeError(f"Expected a StreamTransport object, got {transport!r}")
         if not isinstance(max_recv_size, int) or max_recv_size <= 0:
             raise ValueError("'max_recv_size' must be a strictly positive integer")
+        if manual_buffer_allocation not in ("try", "no", "force"):
+            raise ValueError('"manual_buffer_allocation" must be "try", "no" or "force"')
+
+        self.__transport: transports.StreamReadTransport | transports.StreamWriteTransport = transport
+        self.__eof_sent: bool = False
 
         self.__sender: _DataSenderImpl[_T_SentPacket] | None = None
         if isinstance(transport, transports.StreamWriteTransport):
@@ -68,15 +77,26 @@ class StreamEndpoint(typed_attr.TypedAttributeProvider, Generic[_T_SentPacket, _
 
         self.__receiver: _DataReceiverImpl[_T_ReceivedPacket] | _BufferedReceiverImpl[_T_ReceivedPacket] | None = None
         if isinstance(transport, transports.StreamReadTransport):
-            try:
-                if not isinstance(transport, transports.BufferedStreamReadTransport):
-                    raise UnsupportedOperation
-                self.__receiver = _BufferedReceiverImpl(transport, _stream.BufferedStreamDataConsumer(protocol, max_recv_size))
-            except UnsupportedOperation:
-                self.__receiver = _DataReceiverImpl(transport, _stream.StreamDataConsumer(protocol), max_recv_size)
-
-        self.__transport: transports.StreamReadTransport | transports.StreamWriteTransport = transport
-        self.__eof_sent: bool = False
+            match manual_buffer_allocation:
+                case "try" | "force":
+                    try:
+                        buffered_consumer = _stream.BufferedStreamDataConsumer(protocol, max_recv_size)
+                        if not isinstance(transport, transports.BufferedStreamReadTransport):
+                            msg = f"The transport implementation {transport!r} does not implement BufferedStreamReadTransport interface"
+                            if manual_buffer_allocation == "try":
+                                warnings.warn(msg, category=ManualBufferAllocationWarning, stacklevel=2)
+                            raise UnsupportedOperation(msg)
+                        self.__receiver = _BufferedReceiverImpl(transport, buffered_consumer)
+                    except UnsupportedOperation:
+                        if manual_buffer_allocation == "force":
+                            raise
+                        self.__receiver = _DataReceiverImpl(transport, _stream.StreamDataConsumer(protocol), max_recv_size)
+                case "no":
+                    self.__receiver = _DataReceiverImpl(transport, _stream.StreamDataConsumer(protocol), max_recv_size)
+                case _:  # pragma: no cover
+                    assert_never(manual_buffer_allocation)
+            if self.__receiver is None:
+                raise AssertionError("self.__receiver should be set.")
 
     def __del__(self) -> None:
         try:

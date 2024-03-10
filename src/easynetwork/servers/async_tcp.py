@@ -24,7 +24,7 @@ import logging
 import weakref
 from collections import deque
 from collections.abc import AsyncGenerator, Callable, Coroutine, Iterator, Mapping, Sequence
-from typing import TYPE_CHECKING, Any, Generic, NoReturn, final
+from typing import TYPE_CHECKING, Any, Generic, Literal, NoReturn, final
 
 from .._typevars import _T_Request, _T_Response
 from ..exceptions import ClientClosedError, ServerAlreadyRunning, ServerClosedError
@@ -67,6 +67,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
         "__request_handler",
         "__is_shutdown",
         "__max_recv_size",
+        "__manual_buffer_allocation",
         "__servers_tasks",
         "__server_run_scope",
         "__active_tasks",
@@ -88,6 +89,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
         backlog: int | None = None,
         reuse_port: bool = False,
         max_recv_size: int | None = None,
+        manual_buffer_allocation: Literal["try", "no", "force"] = "try",
         log_client_connection: bool | None = None,
         logger: logging.Logger | None = None,
     ) -> None:
@@ -146,6 +148,8 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
             max_recv_size = constants.DEFAULT_STREAM_BUFSIZE
         if not isinstance(max_recv_size, int) or max_recv_size <= 0:
             raise ValueError("'max_recv_size' must be a strictly positive integer")
+        if manual_buffer_allocation not in ("try", "no", "force"):
+            raise ValueError('"manual_buffer_allocation" must be "try", "no" or "force"')
 
         if ssl_handshake_timeout is not None and not ssl:
             raise ValueError("ssl_handshake_timeout is only meaningful with ssl")
@@ -190,6 +194,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
         self.__is_shutdown: IEvent = backend.create_event()
         self.__is_shutdown.set()
         self.__max_recv_size: int = max_recv_size
+        self.__manual_buffer_allocation: Literal["try", "no", "force"] = manual_buffer_allocation
         self.__servers_tasks: deque[Task[NoReturn]] = deque()
         self.__logger: logging.Logger = logger or logging.getLogger(__name__)
         self.__client_connection_log_level: int
@@ -316,7 +321,12 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
             if not listeners:
                 raise OSError("empty listeners list")
             self.__servers = tuple(
-                _stream_server.AsyncStreamServer(listener, self.__protocol, max_recv_size=self.__max_recv_size)
+                _stream_server.AsyncStreamServer(
+                    listener,
+                    self.__protocol,
+                    max_recv_size=self.__max_recv_size,
+                    manual_buffer_allocation=self.__manual_buffer_allocation,
+                )
                 for listener in listeners
             )
             del listeners

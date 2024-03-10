@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Generator
 from socket import AF_INET, AF_INET6, socket as Socket
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+
+from easynetwork.exceptions import UnsupportedOperation
 
 import pytest
 
@@ -108,3 +111,82 @@ class MixinTestSocketSendMSG:
             return hasattr(sock, "sendmsg")
 
         mocker.patch("easynetwork.lowlevel._utils.supports_socket_sendmsg", supports_socket_sendmsg)
+
+
+class BaseTestWithStreamProtocol:
+    @pytest.fixture
+    @staticmethod
+    def mock_buffered_stream_receiver(
+        mock_buffered_stream_receiver: MagicMock,
+        mocker: MockerFixture,
+    ) -> MagicMock:
+        def build_packet_from_buffer_side_effect(buffer: memoryview) -> Generator[None, int, tuple[Any, bytes]]:
+            chunk: bytes = b""
+            while True:
+                nbytes = yield
+                chunk += buffer[:nbytes]
+                if b"\n" not in chunk:
+                    continue
+                del buffer
+                data, chunk = chunk.split(b"\n", 1)
+                return getattr(mocker.sentinel, data.decode(encoding="ascii")), chunk
+
+        mock_buffered_stream_receiver.build_packet_from_buffer.side_effect = build_packet_from_buffer_side_effect
+        return mock_buffered_stream_receiver
+
+    @pytest.fixture(params=["data", "buffer"])
+    @staticmethod
+    def stream_protocol_mode(request: pytest.FixtureRequest) -> str:
+        assert request.param in ("data", "buffer")
+        return request.param
+
+    @pytest.fixture
+    @staticmethod
+    def mock_stream_protocol(
+        stream_protocol_mode: str,
+        mock_stream_protocol: MagicMock,
+        mock_buffered_stream_receiver: MagicMock,
+        mocker: MockerFixture,
+    ) -> MagicMock:
+        def generate_chunks_side_effect(packet: Any) -> Generator[bytes, None, None]:
+            yield str(packet).removeprefix("sentinel.").encode("ascii") + b"\n"
+
+        def build_packet_from_chunks_side_effect() -> Generator[None, bytes, tuple[Any, bytes]]:
+            buffer = b""
+            while True:
+                buffer += yield
+                if b"\n" not in buffer:
+                    continue
+                data, buffer = buffer.split(b"\n", 1)
+                return getattr(mocker.sentinel, data.decode(encoding="ascii")), buffer
+
+        mock_stream_protocol.generate_chunks.side_effect = generate_chunks_side_effect
+        mock_stream_protocol.build_packet_from_chunks.side_effect = build_packet_from_chunks_side_effect
+
+        match stream_protocol_mode:
+            case "data":
+                mock_stream_protocol.buffered_receiver.side_effect = UnsupportedOperation(
+                    "This protocol does not support the buffer API"
+                )
+            case "buffer":
+                mock_stream_protocol.buffered_receiver.side_effect = None
+                mock_stream_protocol.buffered_receiver.return_value = mock_buffered_stream_receiver
+            case _:
+                pytest.fail(f'"stream_protocol_mode": Invalid parameter, got {stream_protocol_mode!r}')
+
+        return mock_stream_protocol
+
+
+class BaseTestWithDatagramProtocol:
+    @pytest.fixture
+    @staticmethod
+    def mock_datagram_protocol(mock_datagram_protocol: MagicMock, mocker: MockerFixture) -> MagicMock:
+        def make_datagram_side_effect(packet: Any) -> bytes:
+            return str(packet).encode("ascii").removeprefix(b"sentinel.")
+
+        def build_packet_from_datagram_side_effect(data: bytes) -> Any:
+            return getattr(mocker.sentinel, data.decode("ascii"))
+
+        mock_datagram_protocol.make_datagram.side_effect = make_datagram_side_effect
+        mock_datagram_protocol.build_packet_from_datagram.side_effect = build_packet_from_datagram_side_effect
+        return mock_datagram_protocol

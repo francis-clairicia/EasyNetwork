@@ -23,7 +23,7 @@ import dataclasses
 import errno as _errno
 import socket as _socket
 from collections.abc import Awaitable, Callable, Iterator
-from typing import TYPE_CHECKING, Any, final, overload
+from typing import TYPE_CHECKING, Any, Literal, final, overload
 
 try:
     import ssl as _ssl
@@ -59,12 +59,12 @@ if TYPE_CHECKING:
 class _SocketConnector:
     factory: Callable[[], Awaitable[tuple[AsyncStreamTransport, SocketProxy]]]
     scope: CancelScope
-    _result: tuple[AsyncStreamTransport, SocketProxy] | None = dataclasses.field(init=False, default=None)
 
     async def get(self) -> tuple[AsyncStreamTransport, SocketProxy] | None:
+        result: tuple[AsyncStreamTransport, SocketProxy] | None = None
         with self.scope:
-            self._result = await self.factory()
-        return self._result
+            result = await self.factory()
+        return result
 
 
 class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
@@ -81,6 +81,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         "__receive_lock",
         "__send_lock",
         "__expected_recv_size",
+        "__manual_buffer_allocation",
     )
 
     @overload
@@ -99,6 +100,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         ssl_standard_compatible: bool | None = ...,
         ssl_shared_lock: bool | None = ...,
         max_recv_size: int | None = ...,
+        manual_buffer_allocation: Literal["try", "no", "force"] = ...,
     ) -> None: ...
 
     @overload
@@ -115,6 +117,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         ssl_standard_compatible: bool | None = ...,
         ssl_shared_lock: bool | None = ...,
         max_recv_size: int | None = ...,
+        manual_buffer_allocation: Literal["try", "no", "force"] = ...,
     ) -> None: ...
 
     def __init__(
@@ -130,6 +133,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         ssl_standard_compatible: bool | None = None,
         ssl_shared_lock: bool | None = None,
         max_recv_size: int | None = None,
+        manual_buffer_allocation: Literal["try", "no", "force"] = "try",
         **kwargs: Any,
     ) -> None:
         """
@@ -178,6 +182,8 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
             max_recv_size = constants.DEFAULT_STREAM_BUFSIZE
         if not isinstance(max_recv_size, int) or max_recv_size <= 0:
             raise ValueError("'max_recv_size' must be a strictly positive integer")
+        if manual_buffer_allocation not in ("try", "no", "force"):
+            raise ValueError('"manual_buffer_allocation" must be "try", "no" or "force"')
 
         self.__endpoint: AsyncStreamEndpoint[_T_SentPacket, _T_ReceivedPacket] | None = None
         self.__socket_proxy: SocketProxy | None = None
@@ -271,6 +277,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
             self.__receive_lock = backend.create_lock()
             self.__send_lock = backend.create_lock()
         self.__expected_recv_size: int = max_recv_size
+        self.__manual_buffer_allocation: Literal["try", "no", "force"] = manual_buffer_allocation
 
     @staticmethod
     async def __create_ssl_over_tcp_connection(
@@ -540,7 +547,12 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
                 if endpoint_and_proxy is None:
                     raise self.__closed()
                 transport, self.__socket_proxy = endpoint_and_proxy
-                self.__endpoint = AsyncStreamEndpoint(transport, self.__protocol, max_recv_size=self.__expected_recv_size)
+                self.__endpoint = AsyncStreamEndpoint(
+                    transport,
+                    self.__protocol,
+                    max_recv_size=self.__expected_recv_size,
+                    manual_buffer_allocation=self.__manual_buffer_allocation,
+                )
 
             # If you want coverage.py to work properly, keep this "pass" :)
             pass

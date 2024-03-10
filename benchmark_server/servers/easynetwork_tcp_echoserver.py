@@ -10,7 +10,7 @@ from collections.abc import AsyncGenerator, Generator
 from typing import Any
 
 from easynetwork.protocol import StreamProtocol
-from easynetwork.serializers.abc import AbstractIncrementalPacketSerializer, BufferedIncrementalPacketSerializer
+from easynetwork.serializers.abc import BufferedIncrementalPacketSerializer
 from easynetwork.serializers.base_stream import _buffered_readuntil
 from easynetwork.serializers.tools import GeneratorStreamReader
 from easynetwork.servers.handlers import AsyncStreamClient, AsyncStreamRequestHandler
@@ -19,7 +19,7 @@ from easynetwork.servers.standalone_tcp import StandaloneTCPNetworkServer
 ROOT_DIR = pathlib.Path(__file__).parent
 
 
-class NoSerializer(AbstractIncrementalPacketSerializer[bytes, bytes]):
+class NoSerializer(BufferedIncrementalPacketSerializer[bytes, bytes, memoryview]):
     __slots__ = ()
 
     def incremental_serialize(self, packet: bytes) -> Generator[bytes, None, None]:
@@ -27,10 +27,6 @@ class NoSerializer(AbstractIncrementalPacketSerializer[bytes, bytes]):
 
     def incremental_deserialize(self) -> Generator[None, bytes, tuple[bytes, bytes]]:
         return (yield), b""
-
-
-class BufferedNoSerializer(NoSerializer, BufferedIncrementalPacketSerializer[bytes, bytes, memoryview]):
-    __slots__ = ()
 
     def create_deserializer_buffer(self, sizehint: int) -> memoryview:
         return memoryview(bytearray(sizehint))
@@ -40,7 +36,7 @@ class BufferedNoSerializer(NoSerializer, BufferedIncrementalPacketSerializer[byt
         return bytes(buffer[:offset]), b""
 
 
-class LineSerializer(AbstractIncrementalPacketSerializer[bytes, bytes]):
+class LineSerializer(BufferedIncrementalPacketSerializer[bytes, bytes, bytearray]):
     __slots__ = ()
 
     def incremental_serialize(self, packet: bytes) -> Generator[bytes, None, None]:
@@ -51,10 +47,6 @@ class LineSerializer(AbstractIncrementalPacketSerializer[bytes, bytes]):
         packet = yield from reader.read_until(b"\n", limit=65536)
         remainder = reader.read_all()
         return packet, remainder
-
-
-class BufferedLineSerializer(LineSerializer, BufferedIncrementalPacketSerializer[bytes, bytes, bytearray]):
-    __slots__ = ()
 
     def create_deserializer_buffer(self, sizehint: int) -> bytearray:
         return bytearray(sizehint)
@@ -110,9 +102,9 @@ def create_tcp_server(
         print("with context reuse")
     protocol: StreamProtocol[Any, Any]
     if readline:
-        protocol = StreamProtocol(BufferedLineSerializer() if buffered else LineSerializer())
+        protocol = StreamProtocol(LineSerializer())
     else:
-        protocol = StreamProtocol(BufferedNoSerializer() if buffered else NoSerializer())
+        protocol = StreamProtocol(NoSerializer())
     return StandaloneTCPNetworkServer(
         None,
         port,
@@ -120,6 +112,7 @@ def create_tcp_server(
         EchoRequestHandlerInnerLoop() if context_reuse else EchoRequestHandler(),
         ssl=ssl_context,
         runner_options=asyncio_options,
+        manual_buffer_allocation="force" if buffered else "no",
     )
 
 

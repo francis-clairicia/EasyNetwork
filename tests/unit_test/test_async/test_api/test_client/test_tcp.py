@@ -383,6 +383,32 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
                     max_recv_size=max_recv_size,
                 )
 
+    @pytest.mark.parametrize("manual_buffer_allocation", ["unknown", ""], ids=lambda p: f"manual_buffer_allocation=={p!r}")
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    async def test____dunder_init____manual_buffer_allocation____invalid_value(
+        self,
+        request: pytest.FixtureRequest,
+        manual_buffer_allocation: Any,
+        use_socket: bool,
+        mock_stream_protocol: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        with pytest.raises(ValueError, match=r'^"manual_buffer_allocation" must be "try", "no" or "force"$'):
+            if use_socket:
+                _ = AsyncTCPNetworkClient(
+                    request.getfixturevalue("mock_tcp_socket"),
+                    mock_stream_protocol,
+                    manual_buffer_allocation=manual_buffer_allocation,
+                )
+            else:
+                _ = AsyncTCPNetworkClient(
+                    request.getfixturevalue("remote_address"),
+                    protocol=mock_stream_protocol,
+                    manual_buffer_allocation=manual_buffer_allocation,
+                )
+
     @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
     async def test____dunder_init____ssl(
         self,
