@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import warnings
 from collections.abc import Generator
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -12,19 +13,25 @@ from easynetwork.lowlevel.api_async.transports.abc import (
     AsyncStreamTransport,
     AsyncStreamWriteTransport,
 )
+from easynetwork.warnings import ManualBufferAllocationWarning
 
 import pytest
 
 from ...._utils import make_async_recv_into_side_effect as make_recv_into_side_effect
+from ....base import BaseTestWithStreamProtocol
 
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
 
     from pytest_mock import MockerFixture
 
+pytest_mark_ignore_manual_buffer_allocation_warning = pytest.mark.filterwarnings(
+    f"ignore::{ManualBufferAllocationWarning.__module__}.{ManualBufferAllocationWarning.__qualname__}",
+)
+
 
 @pytest.mark.asyncio
-class TestAsyncStreamEndpoint:
+class TestAsyncStreamEndpoint(BaseTestWithStreamProtocol):
     @pytest.fixture(
         params=[AsyncStreamReadTransport, AsyncBufferedStreamReadTransport, AsyncStreamWriteTransport, AsyncStreamTransport]
     )
@@ -41,66 +48,6 @@ class TestAsyncStreamEndpoint:
 
     @pytest.fixture
     @staticmethod
-    def mock_buffered_stream_receiver(
-        mock_buffered_stream_receiver: MagicMock,
-        mocker: MockerFixture,
-    ) -> MagicMock:
-        def build_packet_from_buffer_side_effect(buffer: memoryview) -> Generator[None, int, tuple[Any, bytes]]:
-            chunk: bytes = b""
-            while True:
-                nbytes = yield
-                chunk += buffer[:nbytes]
-                if b"\n" not in chunk:
-                    continue
-                del buffer
-                data, chunk = chunk.split(b"\n", 1)
-                return getattr(mocker.sentinel, data.decode(encoding="ascii")), chunk
-
-        mock_buffered_stream_receiver.build_packet_from_buffer.side_effect = build_packet_from_buffer_side_effect
-        return mock_buffered_stream_receiver
-
-    @pytest.fixture(params=["data", "buffer"])
-    @staticmethod
-    def stream_protocol_mode(request: pytest.FixtureRequest) -> str:
-        assert request.param in ("data", "buffer")
-        return request.param
-
-    @pytest.fixture
-    @staticmethod
-    def mock_stream_protocol(
-        stream_protocol_mode: str,
-        mock_stream_protocol: MagicMock,
-        mock_buffered_stream_receiver: MagicMock,
-        mocker: MockerFixture,
-    ) -> MagicMock:
-        def generate_chunks_side_effect(packet: Any) -> Generator[bytes, None, None]:
-            yield str(packet).removeprefix("sentinel.").encode("ascii") + b"\n"
-
-        def build_packet_from_chunks_side_effect() -> Generator[None, bytes, tuple[Any, bytes]]:
-            buffer = b""
-            while True:
-                buffer += yield
-                if b"\n" not in buffer:
-                    continue
-                data, buffer = buffer.split(b"\n", 1)
-                return getattr(mocker.sentinel, data.decode(encoding="ascii")), buffer
-
-        mock_stream_protocol.generate_chunks.side_effect = generate_chunks_side_effect
-        mock_stream_protocol.build_packet_from_chunks.side_effect = build_packet_from_chunks_side_effect
-
-        match stream_protocol_mode:
-            case "data":
-                mock_stream_protocol.buffered_receiver.side_effect = UnsupportedOperation
-            case "buffer":
-                mock_stream_protocol.buffered_receiver.side_effect = None
-                mock_stream_protocol.buffered_receiver.return_value = mock_buffered_stream_receiver
-            case _:
-                pytest.fail("Invalid parameter")
-
-        return mock_stream_protocol
-
-    @pytest.fixture
-    @staticmethod
     def max_recv_size(request: Any) -> int:
         return getattr(request, "param", 256 * 1024)
 
@@ -111,8 +58,11 @@ class TestAsyncStreamEndpoint:
         mock_stream_protocol: MagicMock,
         max_recv_size: int,
     ) -> AsyncStreamEndpoint[Any, Any]:
-        return AsyncStreamEndpoint(mock_stream_transport, mock_stream_protocol, max_recv_size)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", ManualBufferAllocationWarning)
+            return AsyncStreamEndpoint(mock_stream_transport, mock_stream_protocol, max_recv_size)
 
+    @pytest_mark_ignore_manual_buffer_allocation_warning
     async def test____dunder_init____invalid_transport(
         self,
         mock_stream_protocol: MagicMock,
@@ -126,6 +76,7 @@ class TestAsyncStreamEndpoint:
         with pytest.raises(TypeError, match=r"^Expected an AsyncStreamTransport object, got .*$"):
             _ = AsyncStreamEndpoint(mock_invalid_transport, mock_stream_protocol, max_recv_size)
 
+    @pytest_mark_ignore_manual_buffer_allocation_warning
     async def test____dunder_init____invalid_protocol(
         self,
         mock_stream_transport: MagicMock,
@@ -139,6 +90,7 @@ class TestAsyncStreamEndpoint:
         with pytest.raises(TypeError, match=r"^Expected a StreamProtocol object, got .*$"):
             _ = AsyncStreamEndpoint(mock_stream_transport, mock_invalid_protocol, max_recv_size)
 
+    @pytest_mark_ignore_manual_buffer_allocation_warning
     @pytest.mark.parametrize("max_recv_size", [1, 2**16], ids=lambda p: f"max_recv_size=={p}")
     async def test____dunder_init____max_recv_size____valid_value(
         self,
@@ -157,6 +109,7 @@ class TestAsyncStreamEndpoint:
         else:
             assert endpoint.max_recv_size == 0
 
+    @pytest_mark_ignore_manual_buffer_allocation_warning
     @pytest.mark.parametrize("max_recv_size", [0, -1, 10.4], ids=lambda p: f"max_recv_size=={p}")
     async def test____dunder_init____max_recv_size____invalid_value(
         self,
@@ -169,6 +122,25 @@ class TestAsyncStreamEndpoint:
         # Act & Assert
         with pytest.raises(ValueError, match=r"^'max_recv_size' must be a strictly positive integer$"):
             _ = AsyncStreamEndpoint(mock_stream_transport, mock_stream_protocol, max_recv_size)
+
+    @pytest.mark.parametrize("manual_buffer_allocation", ["unknown", ""], ids=lambda p: f"manual_buffer_allocation=={p!r}")
+    async def test____dunder_init____manual_buffer_allocation____invalid_value(
+        self,
+        mock_stream_transport: MagicMock,
+        mock_stream_protocol: MagicMock,
+        max_recv_size: int,
+        manual_buffer_allocation: Any,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        with pytest.raises(ValueError, match=r'^"manual_buffer_allocation" must be "try", "no" or "force"$'):
+            _ = AsyncStreamEndpoint(
+                mock_stream_transport,
+                mock_stream_protocol,
+                max_recv_size,
+                manual_buffer_allocation=manual_buffer_allocation,
+            )
 
     @pytest.mark.parametrize("transport_closed", [False, True])
     async def test____is_closing____default(
@@ -222,7 +194,7 @@ class TestAsyncStreamEndpoint:
     ) -> None:
         # Arrange
         chunks: list[bytes] = []
-        with contextlib.suppress(AttributeError):
+        if hasattr(mock_stream_transport, "send_all_from_iterable"):
             mock_stream_transport.send_all_from_iterable.side_effect = lambda it: chunks.extend(it)
 
         # Act
@@ -328,9 +300,9 @@ class TestAsyncStreamEndpoint:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        with contextlib.suppress(AttributeError):
+        if hasattr(mock_stream_transport, "recv"):
             mock_stream_transport.recv.side_effect = [b"packet\n"]
-        with contextlib.suppress(AttributeError):
+        if hasattr(mock_stream_transport, "recv_into"):
             mock_stream_transport.recv_into.side_effect = make_recv_into_side_effect([b"packet\n"])
 
         # Act
@@ -613,3 +585,106 @@ class TestAsyncStreamEndpoint:
 
         # Assert
         mock_stream_transport.recv_into.assert_not_called()
+
+    # NOTE: The cases where recv_packet() uses transport.recv() or transport.recv_into() when manual_buffer_allocation == "try"
+    #       are implicitly tested above, because this is the default behavior.
+
+    @pytest.mark.parametrize("mock_stream_transport", [AsyncStreamReadTransport, AsyncBufferedStreamReadTransport], indirect=True)
+    @pytest.mark.parametrize("stream_protocol_mode", ["data"], indirect=True)
+    async def test____manual_buffer_allocation____try____but_stream_protocol_does_not_support_it(
+        self,
+        mock_stream_transport: MagicMock,
+        mock_stream_protocol: MagicMock,
+        max_recv_size: int,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", ManualBufferAllocationWarning)
+            _ = AsyncStreamEndpoint(mock_stream_transport, mock_stream_protocol, max_recv_size, manual_buffer_allocation="try")
+
+    @pytest.mark.parametrize("mock_stream_transport", [AsyncStreamReadTransport], indirect=True)
+    @pytest.mark.parametrize("stream_protocol_mode", ["buffer"], indirect=True)
+    async def test____manual_buffer_allocation____try____but_stream_transport_does_not_support_it(
+        self,
+        mock_stream_transport: MagicMock,
+        mock_stream_protocol: MagicMock,
+        max_recv_size: int,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        with pytest.warns(
+            ManualBufferAllocationWarning,
+            match=r"^The transport implementation .+ does not implement AsyncBufferedStreamReadTransport interface$",
+        ):
+            _ = AsyncStreamEndpoint(mock_stream_transport, mock_stream_protocol, max_recv_size, manual_buffer_allocation="try")
+
+    @pytest.mark.parametrize("mock_stream_transport", [AsyncStreamReadTransport, AsyncBufferedStreamReadTransport], indirect=True)
+    async def test____manual_buffer_allocation____disabled(
+        self,
+        mock_stream_transport: MagicMock,
+        mock_stream_protocol: MagicMock,
+        max_recv_size: int,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_stream_transport.recv.side_effect = [b"packet\n"]
+
+        # Act
+        endpoint: AsyncStreamEndpoint[Any, Any]
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", ManualBufferAllocationWarning)
+            endpoint = AsyncStreamEndpoint(
+                mock_stream_transport,
+                mock_stream_protocol,
+                max_recv_size,
+                manual_buffer_allocation="no",
+            )
+        packet = await endpoint.recv_packet()
+
+        # Assert
+        mock_stream_transport.recv.assert_awaited_once_with(max_recv_size)
+        if hasattr(mock_stream_transport, "recv_into"):
+            mock_stream_transport.recv_into.assert_not_called()
+        assert packet is mocker.sentinel.packet
+
+    @pytest.mark.parametrize("mock_stream_transport", [AsyncStreamReadTransport, AsyncBufferedStreamReadTransport], indirect=True)
+    @pytest.mark.parametrize("stream_protocol_mode", ["data"], indirect=True)
+    async def test____manual_buffer_allocation____force____but_stream_protocol_does_not_support_it(
+        self,
+        mock_stream_transport: MagicMock,
+        mock_stream_protocol: MagicMock,
+        max_recv_size: int,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        with (
+            pytest.raises(UnsupportedOperation, match=r"^This protocol does not support the buffer API$"),
+            warnings.catch_warnings(),
+        ):
+            warnings.simplefilter("error", ManualBufferAllocationWarning)
+            _ = AsyncStreamEndpoint(mock_stream_transport, mock_stream_protocol, max_recv_size, manual_buffer_allocation="force")
+
+    @pytest.mark.parametrize("mock_stream_transport", [AsyncStreamReadTransport], indirect=True)
+    @pytest.mark.parametrize("stream_protocol_mode", ["buffer"], indirect=True)
+    async def test____manual_buffer_allocation____force____but_stream_transport_does_not_support_it(
+        self,
+        mock_stream_transport: MagicMock,
+        mock_stream_protocol: MagicMock,
+        max_recv_size: int,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        with (
+            pytest.raises(
+                UnsupportedOperation,
+                match=r"^The transport implementation .+ does not implement AsyncBufferedStreamReadTransport interface$",
+            ),
+            warnings.catch_warnings(),
+        ):
+            warnings.simplefilter("error", ManualBufferAllocationWarning)
+            _ = AsyncStreamEndpoint(mock_stream_transport, mock_stream_protocol, max_recv_size, manual_buffer_allocation="force")

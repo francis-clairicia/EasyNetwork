@@ -20,12 +20,14 @@ __all__ = ["AsyncStreamClient", "AsyncStreamServer"]
 
 import contextlib
 import dataclasses
+import warnings
 from collections.abc import AsyncGenerator, Callable, Mapping
-from typing import Any, Generic, NoReturn
+from typing import Any, Generic, Literal, NoReturn, assert_never
 
 from .... import protocol as protocol_module
 from ...._typevars import _T_Request, _T_Response
 from ....exceptions import UnsupportedOperation
+from ....warnings import ManualBufferAllocationWarning
 from ... import _stream, _utils, typed_attr
 from ..._asyncgen import AsyncGenAction, SendAction, ThrowAction
 from ..backend.abc import AsyncBackend, TaskGroup
@@ -95,6 +97,7 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_T_Request, _
         "__protocol",
         "__max_recv_size",
         "__serve_guard",
+        "__manual_buffer_allocation",
         "__weakref__",
     )
 
@@ -103,6 +106,8 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_T_Request, _
         listener: transports.AsyncListener[transports.AsyncStreamTransport],
         protocol: protocol_module.StreamProtocol[_T_Response, _T_Request],
         max_recv_size: int,
+        *,
+        manual_buffer_allocation: Literal["try", "no", "force"] = "try",
     ) -> None:
         if not isinstance(listener, transports.AsyncListener):
             raise TypeError(f"Expected an AsyncListener object, got {listener!r}")
@@ -110,11 +115,14 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_T_Request, _
             raise TypeError(f"Expected a StreamProtocol object, got {protocol!r}")
         if not isinstance(max_recv_size, int) or max_recv_size <= 0:
             raise ValueError("'max_recv_size' must be a strictly positive integer")
+        if manual_buffer_allocation not in ("try", "no", "force"):
+            raise ValueError('"manual_buffer_allocation" must be "try", "no" or "force"')
 
         self.__listener: transports.AsyncListener[transports.AsyncStreamTransport] = listener
         self.__protocol: protocol_module.StreamProtocol[_T_Response, _T_Request] = protocol
         self.__max_recv_size: int = max_recv_size
         self.__serve_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently accepting new connections")
+        self.__manual_buffer_allocation: Literal["try", "no", "force"] = manual_buffer_allocation
 
     def is_closing(self) -> bool:
         """
@@ -157,23 +165,40 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_T_Request, _
             consumer: _stream.StreamDataConsumer[_T_Request] | _stream.BufferedStreamDataConsumer[_T_Request]
 
             request_receiver: _RequestReceiver[_T_Request] | _BufferedRequestReceiver[_T_Request]
-            try:
-                if not isinstance(transport, transports.AsyncBufferedStreamReadTransport):
-                    raise UnsupportedOperation  # pragma: no cover
-                consumer = _stream.BufferedStreamDataConsumer(self.__protocol, self.__max_recv_size)
-                request_receiver = _BufferedRequestReceiver(
-                    backend=current_async_backend(),
-                    transport=transport,
-                    consumer=consumer,
-                )
-            except UnsupportedOperation:
-                consumer = _stream.StreamDataConsumer(self.__protocol)
-                request_receiver = _RequestReceiver(
-                    backend=current_async_backend(),
-                    transport=transport,
-                    consumer=consumer,
-                    max_recv_size=self.__max_recv_size,
-                )
+            match self.__manual_buffer_allocation:
+                case "try" | "force" as manual_buffer_allocation:
+                    try:
+                        consumer = _stream.BufferedStreamDataConsumer(self.__protocol, self.__max_recv_size)
+                        if not isinstance(transport, transports.AsyncBufferedStreamReadTransport):
+                            msg = f"The transport implementation {transport!r} does not implement AsyncBufferedStreamReadTransport interface"
+                            if manual_buffer_allocation == "try":
+                                warnings.warn(msg, category=ManualBufferAllocationWarning, stacklevel=1)
+                            raise UnsupportedOperation(msg)
+                        request_receiver = _BufferedRequestReceiver(
+                            backend=current_async_backend(),
+                            transport=transport,
+                            consumer=consumer,
+                        )
+                    except UnsupportedOperation:
+                        if manual_buffer_allocation == "force":
+                            raise
+                        consumer = _stream.StreamDataConsumer(self.__protocol)
+                        request_receiver = _RequestReceiver(
+                            backend=current_async_backend(),
+                            transport=transport,
+                            consumer=consumer,
+                            max_recv_size=self.__max_recv_size,
+                        )
+                case "no":
+                    consumer = _stream.StreamDataConsumer(self.__protocol)
+                    request_receiver = _RequestReceiver(
+                        backend=current_async_backend(),
+                        transport=transport,
+                        consumer=consumer,
+                        max_recv_size=self.__max_recv_size,
+                    )
+                case manual_buffer_allocation:  # pragma: no cover
+                    assert_never(manual_buffer_allocation)
 
             client_exit_stack = await task_exit_stack.enter_async_context(contextlib.AsyncExitStack())
             client_exit_stack.callback(consumer.clear)

@@ -41,12 +41,12 @@ from .abc import AbstractAsyncNetworkClient
 class _SocketConnector:
     factory: Callable[[], Awaitable[tuple[AsyncDatagramTransport, SocketProxy]]]
     scope: CancelScope
-    _result: tuple[AsyncDatagramTransport, SocketProxy] | None = _dataclasses.field(init=False, default=None)
 
     async def get(self) -> tuple[AsyncDatagramTransport, SocketProxy] | None:
+        result: tuple[AsyncDatagramTransport, SocketProxy] | None = None
         with self.scope:
-            self._result = await self.factory()
-        return self._result
+            result = await self.factory()
+        return result
 
 
 class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_ReceivedPacket]):

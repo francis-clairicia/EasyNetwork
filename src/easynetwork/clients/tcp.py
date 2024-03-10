@@ -23,7 +23,7 @@ import errno as _errno
 import socket as _socket
 import threading
 from collections.abc import Iterator
-from typing import TYPE_CHECKING, Any, final, overload
+from typing import TYPE_CHECKING, Any, Literal, final, overload
 
 try:
     import ssl
@@ -82,6 +82,7 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
         ssl_shared_lock: bool | None = ...,
         max_recv_size: int | None = ...,
         retry_interval: float = ...,
+        manual_buffer_allocation: Literal["try", "no", "force"] = ...,
     ) -> None: ...
 
     @overload
@@ -99,6 +100,7 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
         ssl_shared_lock: bool | None = ...,
         max_recv_size: int | None = ...,
         retry_interval: float = ...,
+        manual_buffer_allocation: Literal["try", "no", "force"] = ...,
     ) -> None: ...
 
     def __init__(
@@ -115,6 +117,7 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
         ssl_shared_lock: bool | None = None,
         max_recv_size: int | None = None,
         retry_interval: float = 1.0,
+        manual_buffer_allocation: Literal["try", "no", "force"] = "try",
         **kwargs: Any,
     ) -> None:
         """
@@ -150,6 +153,14 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
             max_recv_size: Read buffer size. If not given, a default reasonable value is used.
             retry_interval: The maximum wait time to wait for a blocking operation before retrying.
                             Set it to :data:`math.inf` to disable this feature.
+            manual_buffer_allocation: Select whether or not to enable the manual buffer allocation system:
+
+                                      * ``"try"``: (the default) will use the buffer API if the protocol supports it,
+                                        and fall back to the default implementation otherwise.
+
+                                      * ``"no"``: does not use the buffer API, even if the protocol object supports it.
+
+                                      * ``"force"``: requires the buffer API. Raises :exc:`.UnsupportedOperation` if it fails.
 
         See Also:
             :ref:`SSL/TLS security considerations <ssl-security>`
@@ -255,7 +266,12 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
             self.__receive_lock = _lock.ForkSafeLock(threading.Lock)
 
         try:
-            self.__endpoint = StreamEndpoint(transport, protocol, max_recv_size=max_recv_size)
+            self.__endpoint = StreamEndpoint(
+                transport,
+                protocol,
+                max_recv_size=max_recv_size,
+                manual_buffer_allocation=manual_buffer_allocation,
+            )
             self.__socket_proxy = SocketProxy(transport.extra(INETSocketAttribute.socket), lock=self.__send_lock.get)
 
             with contextlib.suppress(OSError):

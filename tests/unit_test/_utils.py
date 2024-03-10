@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import functools
+import inspect
 import threading
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Coroutine, Sequence
 from socket import AF_INET, AF_INET6, IPPROTO_TCP, IPPROTO_UDP, SOCK_DGRAM, SOCK_STREAM
 from types import TracebackType
 from typing import TYPE_CHECKING, Any
@@ -10,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 if TYPE_CHECKING:
-    from unittest.mock import MagicMock
+    from unittest.mock import AsyncMock, MagicMock
 
     from pytest_mock import MockerFixture
 
@@ -225,3 +226,28 @@ def make_async_recv_into_side_effect(to_write: bytes | list[bytes]) -> Callable[
         return write_in_buffer(buffer)
 
     return recv_into_side_effect
+
+
+def stub_decorator(mocker: MockerFixture, name: str | None = None) -> Callable[[Callable[..., Any]], MagicMock]:
+
+    def decorator(f: Callable[..., Any]) -> MagicMock:
+        stub = mocker.stub(name)
+        stub.side_effect = f
+        return stub
+
+    return decorator
+
+
+def async_stub_decorator(
+    mocker: MockerFixture,
+    name: str | None = None,
+) -> Callable[[Callable[..., Coroutine[Any, Any, Any]]], AsyncMock]:
+
+    def decorator(f: Callable[..., Coroutine[Any, Any, Any]]) -> AsyncMock:
+        if not inspect.iscoroutinefunction(f):
+            raise TypeError("decorated function must be a coroutine function")
+        stub = mocker.async_stub(name)
+        stub.side_effect = f
+        return stub
+
+    return decorator

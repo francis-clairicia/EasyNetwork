@@ -14,7 +14,7 @@ Network server interfaces
 Abstract Base Class
 ===================
 
-.. autoclass:: AbstractNetworkServer
+.. autoclass:: easynetwork.servers.abc::AbstractNetworkServer
    :members:
    :special-members: __enter__, __exit__
 

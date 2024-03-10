@@ -14,7 +14,7 @@ Asynchronous network client interfaces
 Abstract Base Class
 ===================
 
-.. autoclass:: AbstractAsyncNetworkClient
+.. autoclass:: easynetwork.clients.abc::AbstractAsyncNetworkClient
    :members:
    :special-members: __aenter__, __aexit__
 

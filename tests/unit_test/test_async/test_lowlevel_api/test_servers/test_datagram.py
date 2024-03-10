@@ -13,6 +13,7 @@ import pytest
 import pytest_asyncio
 
 from .....tools import temporary_backend
+from ....base import BaseTestWithDatagramProtocol
 
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
@@ -21,7 +22,7 @@ if TYPE_CHECKING:
 
 
 @pytest.mark.asyncio
-class TestAsyncDatagramServer:
+class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
     @pytest.fixture
     @staticmethod
     def mock_datagram_listener(mocker: MockerFixture) -> MagicMock:
@@ -33,19 +34,6 @@ class TestAsyncDatagramServer:
 
         mock_datagram_listener.aclose.side_effect = close_side_effect
         return mock_datagram_listener
-
-    @pytest.fixture
-    @staticmethod
-    def mock_datagram_protocol(mock_datagram_protocol: MagicMock, mocker: MockerFixture) -> MagicMock:
-        def make_datagram_side_effect(packet: Any) -> bytes:
-            return str(packet).encode("ascii").removeprefix(b"sentinel.")
-
-        # def build_packet_from_datagram_side_effect(data: bytes) -> Any:
-        #     return getattr(mocker.sentinel, data.decode("ascii"))
-
-        mock_datagram_protocol.make_datagram.side_effect = make_datagram_side_effect
-        # mock_datagram_protocol.build_packet_from_datagram.side_effect = build_packet_from_datagram_side_effect
-        return mock_datagram_protocol
 
     @pytest_asyncio.fixture
     @staticmethod

@@ -13,6 +13,8 @@ from easynetwork.lowlevel.api_async.transports.abc import (
 
 import pytest
 
+from ....base import BaseTestWithDatagramProtocol
+
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
 
@@ -20,7 +22,7 @@ if TYPE_CHECKING:
 
 
 @pytest.mark.asyncio
-class TestAsyncDatagramEndpoint:
+class TestAsyncDatagramEndpoint(BaseTestWithDatagramProtocol):
     @pytest.fixture(params=[AsyncDatagramReadTransport, AsyncDatagramWriteTransport, AsyncDatagramTransport])
     @staticmethod
     def mock_datagram_transport(request: pytest.FixtureRequest, mocker: MockerFixture) -> MagicMock:
@@ -32,19 +34,6 @@ class TestAsyncDatagramEndpoint:
 
         mock_datagram_transport.aclose.side_effect = close_side_effect
         return mock_datagram_transport
-
-    @pytest.fixture
-    @staticmethod
-    def mock_datagram_protocol(mock_datagram_protocol: MagicMock, mocker: MockerFixture) -> MagicMock:
-        def make_datagram_side_effect(packet: Any) -> bytes:
-            return str(packet).encode("ascii").removeprefix(b"sentinel.")
-
-        def build_packet_from_datagram_side_effect(data: bytes) -> Any:
-            return getattr(mocker.sentinel, data.decode("ascii"))
-
-        mock_datagram_protocol.make_datagram.side_effect = make_datagram_side_effect
-        mock_datagram_protocol.build_packet_from_datagram.side_effect = build_packet_from_datagram_side_effect
-        return mock_datagram_protocol
 
     @pytest.fixture
     @staticmethod

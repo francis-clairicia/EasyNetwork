@@ -625,7 +625,7 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
 
     @pytest.mark.parametrize("max_recv_size", [0, -1, 10.4], ids=lambda p: f"max_recv_size=={p}")
     @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
-    def test____dunder_init____max_size____invalid_value(
+    def test____dunder_init____max_recv_size____invalid_value(
         self,
         max_recv_size: Any,
         use_socket: bool,
@@ -654,6 +654,39 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
                     max_recv_size=max_recv_size,
                     ssl=ssl_context,
                     server_hostname=server_hostname,
+                )
+
+    @pytest.mark.parametrize("manual_buffer_allocation", ["unknown", ""], ids=lambda p: f"manual_buffer_allocation=={p!r}")
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    def test____dunder_init____manual_buffer_allocation____invalid_value(
+        self,
+        manual_buffer_allocation: Any,
+        use_socket: bool,
+        remote_address: tuple[str, int],
+        mock_tcp_socket: MagicMock,
+        mock_stream_protocol: MagicMock,
+        ssl_context: MagicMock | None,
+        server_hostname: Any | None,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        with pytest.raises(ValueError, match=r'^"manual_buffer_allocation" must be "try", "no" or "force"$'):
+            if use_socket:
+                _ = TCPNetworkClient(
+                    mock_tcp_socket,
+                    protocol=mock_stream_protocol,
+                    ssl=ssl_context,
+                    server_hostname=server_hostname,
+                    manual_buffer_allocation=manual_buffer_allocation,
+                )
+            else:
+                _ = TCPNetworkClient(
+                    remote_address,
+                    protocol=mock_stream_protocol,
+                    ssl=ssl_context,
+                    server_hostname=server_hostname,
+                    manual_buffer_allocation=manual_buffer_allocation,
                 )
 
     @pytest.mark.parametrize("retry_interval", [0, -12.34])
