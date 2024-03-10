@@ -14,7 +14,7 @@ Asynchronous network server interfaces
 Abstract Base Class
 ===================
 
-.. autoclass:: AbstractAsyncNetworkServer
+.. autoclass:: easynetwork.servers.abc::AbstractAsyncNetworkServer
    :members:
    :special-members: __aenter__, __aexit__
 

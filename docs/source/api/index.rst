@@ -11,4 +11,5 @@ API Reference
    converter
    protocol
    exceptions
+   warnings
    lowlevel/index

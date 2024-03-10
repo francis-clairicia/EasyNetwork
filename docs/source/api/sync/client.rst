@@ -14,7 +14,7 @@ Network client interfaces
 Abstract Base Class
 ===================
 
-.. autoclass:: AbstractNetworkClient
+.. autoclass:: easynetwork.clients.abc::AbstractNetworkClient
    :members:
    :special-members: __enter__, __exit__
 

@@ -168,6 +168,16 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
             ssl_shared_lock: If :data:`True` (the default), :meth:`send_packet` and :meth:`recv_packet` uses
                              the same lock instance.
             max_recv_size: Read buffer size. If not given, a default reasonable value is used.
+            manual_buffer_allocation: Select whether or not to enable the manual buffer allocation system:
+
+                                      * ``"try"``: (the default) will use the buffer API if the transport and protocol support it,
+                                        and fall back to the default implementation otherwise.
+                                        Emits a :exc:`.ManualBufferAllocationWarning` if only the transport does not support it.
+
+                                      * ``"no"``: does not use the buffer API, even if they both support it.
+
+                                      * ``"force"``: requires the buffer API. Raises :exc:`.UnsupportedOperation` if it fails and
+                                        no warnings are emitted.
 
         See Also:
             :ref:`SSL/TLS security considerations <ssl-security>`

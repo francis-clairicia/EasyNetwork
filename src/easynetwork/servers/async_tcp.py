@@ -125,6 +125,16 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
             log_client_connection: If :data:`True`, log clients connection/disconnection in :data:`logging.INFO` level.
                                    (This log will always be available in :data:`logging.DEBUG` level.)
             logger: If given, the logger instance to use.
+            manual_buffer_allocation: Select whether or not to enable the manual buffer allocation system:
+
+                                      * ``"try"``: (the default) will use the buffer API if the transport and protocol support it,
+                                        and fall back to the default implementation otherwise.
+                                        Emits a :exc:`.ManualBufferAllocationWarning` if only the transport does not support it.
+
+                                      * ``"no"``: does not use the buffer API, even if they both support it.
+
+                                      * ``"force"``: requires the buffer API. Raises :exc:`.UnsupportedOperation` if it fails and
+                                        no warnings are emitted.
 
         See Also:
             :ref:`SSL/TLS security considerations <ssl-security>`

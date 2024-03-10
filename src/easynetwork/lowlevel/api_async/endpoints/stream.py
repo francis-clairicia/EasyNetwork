@@ -59,6 +59,16 @@ class AsyncStreamEndpoint(typed_attr.TypedAttributeProvider, Generic[_T_SentPack
             transport: The data transport to use.
             protocol: The :term:`protocol object` to use.
             max_recv_size: Read buffer size.
+            manual_buffer_allocation: Select whether or not to enable the manual buffer allocation system:
+
+                                      * ``"try"``: (the default) will use the buffer API if the transport and protocol support it,
+                                        and fall back to the default implementation otherwise.
+                                        Emits a :exc:`.ManualBufferAllocationWarning` if only the transport does not support it.
+
+                                      * ``"no"``: does not use the buffer API, even if they both support it.
+
+                                      * ``"force"``: requires the buffer API. Raises :exc:`.UnsupportedOperation` if it fails and
+                                        no warnings are emitted.
         """
 
         if not isinstance(transport, (transports.AsyncStreamReadTransport, transports.AsyncStreamWriteTransport)):

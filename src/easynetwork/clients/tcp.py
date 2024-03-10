@@ -153,6 +153,14 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
             max_recv_size: Read buffer size. If not given, a default reasonable value is used.
             retry_interval: The maximum wait time to wait for a blocking operation before retrying.
                             Set it to :data:`math.inf` to disable this feature.
+            manual_buffer_allocation: Select whether or not to enable the manual buffer allocation system:
+
+                                      * ``"try"``: (the default) will use the buffer API if the protocol supports it,
+                                        and fall back to the default implementation otherwise.
+
+                                      * ``"no"``: does not use the buffer API, even if the protocol object supports it.
+
+                                      * ``"force"``: requires the buffer API. Raises :exc:`.UnsupportedOperation` if it fails.
 
         See Also:
             :ref:`SSL/TLS security considerations <ssl-security>`
