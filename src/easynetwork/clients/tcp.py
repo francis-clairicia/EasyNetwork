@@ -271,6 +271,7 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
                 protocol,
                 max_recv_size=max_recv_size,
                 manual_buffer_allocation=manual_buffer_allocation,
+                manual_buffer_allocation_warning_stacklevel=3,
             )
             self.__socket_proxy = SocketProxy(transport.extra(INETSocketAttribute.socket), lock=self.__send_lock.get)
 

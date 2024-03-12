@@ -562,6 +562,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
                     self.__protocol,
                     max_recv_size=self.__expected_recv_size,
                     manual_buffer_allocation=self.__manual_buffer_allocation,
+                    manual_buffer_allocation_warning_stacklevel=4,
                 )
 
             # If you want coverage.py to work properly, keep this "pass" :)

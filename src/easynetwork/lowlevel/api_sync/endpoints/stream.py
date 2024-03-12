@@ -53,6 +53,7 @@ class StreamEndpoint(typed_attr.TypedAttributeProvider, Generic[_T_SentPacket, _
         max_recv_size: int,
         *,
         manual_buffer_allocation: Literal["try", "no", "force"] = "try",
+        manual_buffer_allocation_warning_stacklevel: int = 2,
     ) -> None:
         """
         Parameters:
@@ -69,6 +70,8 @@ class StreamEndpoint(typed_attr.TypedAttributeProvider, Generic[_T_SentPacket, _
 
                                       * ``"force"``: requires the buffer API. Raises :exc:`.UnsupportedOperation` if it fails and
                                         no warnings are emitted.
+            manual_buffer_allocation_warning_stacklevel: ``stacklevel`` parameter of :func:`warnings.warn` when emitting
+                                                         :exc:`.ManualBufferAllocationWarning`.
         """
 
         if not isinstance(transport, (transports.StreamReadTransport, transports.StreamWriteTransport)):
@@ -77,6 +80,7 @@ class StreamEndpoint(typed_attr.TypedAttributeProvider, Generic[_T_SentPacket, _
             raise ValueError("'max_recv_size' must be a strictly positive integer")
         if manual_buffer_allocation not in ("try", "no", "force"):
             raise ValueError('"manual_buffer_allocation" must be "try", "no" or "force"')
+        manual_buffer_allocation_warning_stacklevel = max(manual_buffer_allocation_warning_stacklevel, 2)
 
         self.__transport: transports.StreamReadTransport | transports.StreamWriteTransport = transport
         self.__eof_sent: bool = False
@@ -94,7 +98,11 @@ class StreamEndpoint(typed_attr.TypedAttributeProvider, Generic[_T_SentPacket, _
                         if not isinstance(transport, transports.BufferedStreamReadTransport):
                             msg = f"The transport implementation {transport!r} does not implement BufferedStreamReadTransport interface"
                             if manual_buffer_allocation == "try":
-                                warnings.warn(msg, category=ManualBufferAllocationWarning, stacklevel=2)
+                                warnings.warn(
+                                    msg,
+                                    category=ManualBufferAllocationWarning,
+                                    stacklevel=manual_buffer_allocation_warning_stacklevel,
+                                )
                             raise UnsupportedOperation(msg)
                         self.__receiver = _BufferedReceiverImpl(transport, buffered_consumer)
                     except UnsupportedOperation:

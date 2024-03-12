@@ -53,6 +53,7 @@ class AsyncStreamEndpoint(typed_attr.TypedAttributeProvider, Generic[_T_SentPack
         max_recv_size: int,
         *,
         manual_buffer_allocation: Literal["try", "no", "force"] = "try",
+        manual_buffer_allocation_warning_stacklevel: int = 2,
     ) -> None:
         """
         Parameters:
@@ -69,6 +70,8 @@ class AsyncStreamEndpoint(typed_attr.TypedAttributeProvider, Generic[_T_SentPack
 
                                       * ``"force"``: requires the buffer API. Raises :exc:`.UnsupportedOperation` if it fails and
                                         no warnings are emitted.
+            manual_buffer_allocation_warning_stacklevel: ``stacklevel`` parameter of :func:`warnings.warn` when emitting
+                                                         :exc:`.ManualBufferAllocationWarning`.
         """
 
         if not isinstance(transport, (transports.AsyncStreamReadTransport, transports.AsyncStreamWriteTransport)):
@@ -77,6 +80,7 @@ class AsyncStreamEndpoint(typed_attr.TypedAttributeProvider, Generic[_T_SentPack
             raise ValueError("'max_recv_size' must be a strictly positive integer")
         if manual_buffer_allocation not in ("try", "no", "force"):
             raise ValueError('"manual_buffer_allocation" must be "try", "no" or "force"')
+        manual_buffer_allocation_warning_stacklevel = max(manual_buffer_allocation_warning_stacklevel, 2)
 
         self.__transport: transports.AsyncStreamReadTransport | transports.AsyncStreamWriteTransport = transport
         self.__send_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently sending data on this endpoint")
@@ -96,7 +100,11 @@ class AsyncStreamEndpoint(typed_attr.TypedAttributeProvider, Generic[_T_SentPack
                         if not isinstance(transport, transports.AsyncBufferedStreamReadTransport):
                             msg = f"The transport implementation {transport!r} does not implement AsyncBufferedStreamReadTransport interface"
                             if manual_buffer_allocation == "try":
-                                warnings.warn(msg, category=ManualBufferAllocationWarning, stacklevel=2)
+                                warnings.warn(
+                                    msg,
+                                    category=ManualBufferAllocationWarning,
+                                    stacklevel=manual_buffer_allocation_warning_stacklevel,
+                                )
                             raise UnsupportedOperation(msg)
                         self.__receiver = _BufferedReceiverImpl(transport, buffered_consumer)
                     except UnsupportedOperation:
