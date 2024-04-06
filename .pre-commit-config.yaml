@@ -9,7 +9,7 @@ ci:
 
 repos:
   - repo: https://github.com/asottile/pyupgrade
-    rev: v3.15.1
+    rev: v3.15.2
     hooks:
       - id: pyupgrade
         args: ['--py311-plus']
@@ -62,7 +62,7 @@ repos:
       - id: isort
         args: ['--filter-files', '--settings-file', 'pyproject.toml']
   - repo: https://github.com/psf/black
-    rev: '24.2.0'
+    rev: '24.3.0'
     hooks:
       - id: black
         args: ['--config', 'pyproject.toml']
@@ -75,7 +75,7 @@ repos:
           'flake8-dunder-all @ git+https://github.com/francis-clairicia/flake8-dunder-all.git@v0.1.0'
         ]
   - repo: https://github.com/PyCQA/bandit
-    rev: '1.7.6'
+    rev: '1.7.8'
     hooks:
       - id: bandit
         args: ['-c', '.bandit.yml']
@@ -86,7 +86,7 @@ repos:
         types: []  # Overwrite with empty in order to fallback to types_or
         types_or: [python, pyi]
   - repo: https://github.com/pdm-project/pdm
-    rev: '2.12.3'
+    rev: '2.13.2'
     hooks:
       - id: pdm-lock-check
       - id: pdm-export
