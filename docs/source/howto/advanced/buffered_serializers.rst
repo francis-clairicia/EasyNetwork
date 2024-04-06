@@ -2,10 +2,6 @@
 How-to — Buffered Serializers
 *****************************
 
-.. note::
-
-   This section assumes that you have read the :doc:`../serializers` page.
-
 .. contents:: Table of Contents
    :local:
 
@@ -176,8 +172,7 @@ At each :keyword:`yield` checkpoint, the endpoint implementation sends to the ge
       If you are relying only on the area that has already been written, you can skip this step (as in the example above).
 
    Growing buffers
-      It is not officially supported to increase/decrease the buffer size during deserialization. But if you want to,
-      remember to reset it to its initial size for consistency.
+      It is not officially supported to increase/decrease the buffer size during deserialization.
 
 .. tip::
 
@@ -185,7 +180,7 @@ At each :keyword:`yield` checkpoint, the endpoint implementation sends to the ge
       :meth:`~.BufferedIncrementalPacketSerializer.buffered_incremental_deserialize` is called *before* the read.
       You can reinitialize the buffer (for example, by filling it to zero) before the first read::
 
-         def buffered_incremental_deserialize(self, buffer: bytearray) -> Generator:
+         def buffered_incremental_deserialize(self, buffer: bytearray) -> Generator[...]:
              for i in range(len(buffer)):
                  buffer[i] = 0
 
