@@ -5,7 +5,7 @@
 groups = ["default", "bandit", "benchmark-servers", "benchmark-servers-deps", "build", "cbor", "coverage", "dev", "doc", "flake8", "format", "micro-benchmark", "msgpack", "mypy", "pre-commit", "sniffio", "test", "tox", "types-msgpack", "uvloop"]
 strategy = ["cross_platform", "inherit_metadata"]
 lock_version = "4.4.1"
-content_hash = "sha256:ebd1f3010f8003bc5af6ba2ff6a263c163a4eb39d5cc1a49be4c1a40b408afa1"
+content_hash = "sha256:dd6742f72e9e81f64d6cb1dc534d3ef331068d75c6f1c1282d2c0563b1dd3662"
 
 [[package]]
 name = "alabaster"

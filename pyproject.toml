@@ -95,7 +95,7 @@ flake8 = [
     "flake8-dunder-all @ git+https://github.com/francis-clairicia/flake8-dunder-all.git@v0.1.0",
 ]
 bandit = [
-    "bandit>=1.7.5,!=1.7.7",
+    "bandit>=1.7.5",
 ]
 test = [
     "pytest~=7.4,>=7.4.2",
