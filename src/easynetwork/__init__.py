@@ -29,6 +29,6 @@ __deprecated__ = False
 __email__ = "clairicia.rcj.francis@gmail.com"
 __license__ = "Apache 2.0"
 __maintainer__ = "FrankySnow9"
-__status__ = "Development"
+__status__ = "Production"
 
 from .version import __version__
