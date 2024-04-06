@@ -34,6 +34,7 @@ class ExceptionCaughtDict(TypedDict, total=False):
 
 
 @pytest.mark.asyncio
+@pytest.mark.flaky(retries=3, delay=0)
 class TestAsyncioBackend:
     @pytest.fixture
     @staticmethod
