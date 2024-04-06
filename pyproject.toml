@@ -95,7 +95,7 @@ flake8 = [
     "flake8-dunder-all @ git+https://github.com/francis-clairicia/flake8-dunder-all.git@v0.1.0",
 ]
 bandit = [
-    "bandit>=1.7.5,!=1.7.7",
+    "bandit>=1.7.5",
 ]
 test = [
     "pytest~=7.4,>=7.4.2",
@@ -221,6 +221,7 @@ warn_no_return = true
 warn_unreachable = true
 no_implicit_reexport = true
 strict_equality = true
+local_partial_types = true
 enable_error_code = ["truthy-bool", "ignore-without-code", "unused-awaitable"]
 
 [[tool.mypy.overrides]]

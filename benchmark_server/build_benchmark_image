@@ -9,7 +9,7 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import build as pyproject_build
 import docker
@@ -26,7 +26,7 @@ SUPPORTED_PYTHON_VERSIONS = [
 def _build_sdist_for_docker_image() -> Path:
     src_dir = ROOT_DIR.parent
     output_dir = ROOT_DIR / "dist"
-    distribution = "sdist"
+    distribution: Literal["sdist"] = "sdist"
     config_settings: dict[str, Any] = {}
 
     print("Building source distribution for docker image...")

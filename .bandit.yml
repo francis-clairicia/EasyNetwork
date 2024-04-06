@@ -9,4 +9,6 @@ skips: [
 ]
 
 assert_used:
-  skips: ['docs/**/*.py']
+  # Since v1.7.7 it is mandatory to add a "./" prefix
+  # (c.f. https://github.com/PyCQA/bandit/issues/1106)
+  skips: ['./docs/**/*.py']
