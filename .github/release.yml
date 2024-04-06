@@ -6,6 +6,9 @@ changelog:
       - pre-commit-ci  # autoupdate PRs: Only affects development
       - dependabot  # dependabot is configured to check github actions' pinned version in workflows
   categories:
+    - title: Breaking changes
+      labels:
+        - breaking-changes
     - title: Bug fixes
       labels:
         - bug
