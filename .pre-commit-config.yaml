@@ -86,7 +86,7 @@ repos:
         types: []  # Overwrite with empty in order to fallback to types_or
         types_or: [python, pyi]
   - repo: https://github.com/pdm-project/pdm
-    rev: '2.13.2'
+    rev: '2.14.0'
     hooks:
       - id: pdm-lock-check
       - id: pdm-export
