@@ -6,8 +6,6 @@ on:
     types:
       - opened
       - synchronize
-      - labeled
-      - unlabeled
     branches:
       - main
     paths:
