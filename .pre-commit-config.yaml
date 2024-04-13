@@ -62,7 +62,7 @@ repos:
       - id: isort
         args: ['--filter-files', '--settings-file', 'pyproject.toml']
   - repo: https://github.com/psf/black
-    rev: '24.3.0'
+    rev: '24.4.0'
     hooks:
       - id: black
         args: ['--config', 'pyproject.toml']
@@ -101,7 +101,7 @@ repos:
       - id: rst-directive-colons
       - id: rst-inline-touching-normal
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: 'v4.5.0'
+    rev: 'v4.6.0'
     hooks:
       - id: mixed-line-ending
         args: [--fix=lf]
