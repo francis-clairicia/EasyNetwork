@@ -34,7 +34,6 @@ from ....exceptions import DatagramProtocolParseError
 from ... import _utils, typed_attr
 from ..._asyncgen import AsyncGenAction, SendAction, ThrowAction
 from ..backend.abc import AsyncBackend, ICondition, ILock, TaskGroup
-from ..backend.factory import current_async_backend
 from ..transports import abc as transports
 
 _T_Address = TypeVar("_T_Address", bound=Hashable)
@@ -67,7 +66,7 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_T_Request,
 
         self.__listener: transports.AsyncDatagramListener[_T_Address] = listener
         self.__protocol: protocol_module.DatagramProtocol[_T_Response, _T_Request] = protocol
-        self.__sendto_lock: ILock = current_async_backend().create_lock()
+        self.__sendto_lock: ILock = listener.backend().create_lock()
         self.__serve_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently receiving datagrams")
 
     def is_closing(self) -> bool:
@@ -84,6 +83,10 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_T_Request,
         Closes the server.
         """
         await self.__listener.aclose()
+
+    @_utils.inherit_doc(transports.AsyncBaseTransport)
+    def backend(self) -> AsyncBackend:
+        return self.__listener.backend()
 
     async def send_packet_to(self, packet: _T_Response, address: _T_Address) -> None:
         """
@@ -112,7 +115,7 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_T_Request,
     ) -> NoReturn:
         with self.__serve_guard:
             listener = self.__listener
-            backend = current_async_backend()
+            backend = listener.backend()
             client_cache: weakref.WeakValueDictionary[_T_Address, _ClientToken[_T_Response, _T_Address]]
             client_cache = weakref.WeakValueDictionary()
             default_context = contextvars.copy_context()

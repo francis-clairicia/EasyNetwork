@@ -53,7 +53,7 @@ You need the host address (domain name or IP) and the port of connection in orde
       .. literalinclude:: ../_include/examples/howto/tcp_clients/basics/api_async/connection_example2.py
          :pyobject: main
          :lineno-match:
-         :emphasize-lines: 5-13
+         :emphasize-lines: 6-14
 
       .. note::
 

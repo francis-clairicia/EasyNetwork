@@ -6,6 +6,7 @@ from typing import Any
 
 from easynetwork.clients import AsyncTCPNetworkClient
 from easynetwork.exceptions import StreamProtocolParseError
+from easynetwork.lowlevel.std_asyncio import AsyncIOBackend
 from easynetwork.protocol import StreamProtocol
 from easynetwork.serializers import JSONSerializer
 
@@ -77,9 +78,10 @@ async def socket_proxy_example(client: AsyncTCPNetworkClient[Any, Any]) -> None:
 async def max_recv_size_example() -> None:
     address = ("remote_address", 12345)
     protocol = StreamProtocol(JSONSerializer())
+    backend = AsyncIOBackend()
 
     # [start]
-    async with AsyncTCPNetworkClient(address, protocol, max_recv_size=1024) as client:
+    async with AsyncTCPNetworkClient(address, protocol, backend, max_recv_size=1024) as client:
         # Only do socket.recv(1024) calls
         packet = await client.recv_packet()
 
@@ -87,9 +89,10 @@ async def max_recv_size_example() -> None:
 async def ssl_default_context_example() -> None:
     address = ("remote_address", 12345)
     protocol = StreamProtocol(JSONSerializer())
+    backend = AsyncIOBackend()
 
     # [start]
-    async with AsyncTCPNetworkClient(address, protocol, ssl=True) as client:
+    async with AsyncTCPNetworkClient(address, protocol, backend, ssl=True) as client:
         await client.send_packet({"data": 42})
 
         packet = await client.recv_packet()

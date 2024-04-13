@@ -37,7 +37,6 @@ from .._typevars import _T_ReceivedPacket, _T_SentPacket
 from ..exceptions import ClientClosedError
 from ..lowlevel import _utils, constants
 from ..lowlevel.api_async.backend.abc import AsyncBackend, CancelScope, ILock
-from ..lowlevel.api_async.backend.factory import current_async_backend
 from ..lowlevel.api_async.endpoints.stream import AsyncStreamEndpoint
 from ..lowlevel.api_async.transports.abc import AsyncStreamTransport
 from ..lowlevel.socket import (
@@ -73,6 +72,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
     """
 
     __slots__ = (
+        "__backend",
         "__endpoint",
         "__protocol",
         "__socket_connector",
@@ -90,6 +90,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         address: tuple[str, int],
         /,
         protocol: StreamProtocol[_T_SentPacket, _T_ReceivedPacket],
+        backend: AsyncBackend,
         *,
         local_address: tuple[str, int] | None = ...,
         happy_eyeballs_delay: float | None = ...,
@@ -109,6 +110,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         socket: _socket.socket,
         /,
         protocol: StreamProtocol[_T_SentPacket, _T_ReceivedPacket],
+        backend: AsyncBackend,
         *,
         ssl: _typing_ssl.SSLContext | bool | None = ...,
         server_hostname: str | None = ...,
@@ -125,6 +127,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         __arg: tuple[str, int] | _socket.socket,
         /,
         protocol: StreamProtocol[_T_SentPacket, _T_ReceivedPacket],
+        backend: AsyncBackend,
         *,
         ssl: _typing_ssl.SSLContext | bool | None = None,
         server_hostname: str | None = None,
@@ -139,6 +142,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         """
         Common Parameters:
             protocol: The :term:`protocol object` to use.
+            backend: The :term:`asynchronous backend interface` to use.
 
         Connection Parameters:
             address: A pair of ``(host, port)`` for connection.
@@ -186,8 +190,9 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
 
         if not isinstance(protocol, StreamProtocol):
             raise TypeError(f"Expected a StreamProtocol object, got {protocol!r}")
+        if not isinstance(backend, AsyncBackend):
+            raise TypeError(f"Expected an AsyncBackend instance, got {backend!r}")
 
-        backend = current_async_backend()
         if max_recv_size is None:
             max_recv_size = constants.DEFAULT_STREAM_BUFSIZE
         if not isinstance(max_recv_size, int) or max_recv_size <= 0:
@@ -195,6 +200,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         if manual_buffer_allocation not in ("try", "no", "force"):
             raise ValueError('"manual_buffer_allocation" must be "try", "no" or "force"')
 
+        self.__backend: AsyncBackend = backend
         self.__endpoint: AsyncStreamEndpoint[_T_SentPacket, _T_ReceivedPacket] | None = None
         self.__socket_proxy: SocketProxy | None = None
         self.__protocol: StreamProtocol[_T_SentPacket, _T_ReceivedPacket] = protocol
@@ -546,6 +552,10 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         remote_address = endpoint.extra(INETSocketAttribute.peername)
         address_family = endpoint.extra(INETSocketAttribute.family)
         return new_socket_address(remote_address, address_family)
+
+    @_utils.inherit_doc(AbstractAsyncNetworkClient)
+    def backend(self) -> AsyncBackend:
+        return self.__backend
 
     async def __ensure_connected(self) -> AsyncStreamEndpoint[_T_SentPacket, _T_ReceivedPacket]:
         async with self.__socket_connector_lock:

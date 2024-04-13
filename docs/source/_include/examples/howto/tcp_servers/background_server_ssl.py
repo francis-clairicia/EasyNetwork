@@ -6,6 +6,7 @@ from collections.abc import AsyncGenerator
 from typing import Any
 
 from easynetwork.clients import AsyncTCPNetworkClient
+from easynetwork.lowlevel.std_asyncio import AsyncIOBackend
 from easynetwork.protocol import StreamProtocol
 from easynetwork.serializers import JSONSerializer
 from easynetwork.servers import AsyncTCPNetworkServer
@@ -30,8 +31,13 @@ class MyRequestHandler(AsyncStreamRequestHandler[dict[str, Any], dict[str, Any]]
         await client.send_packet({"task": current_task.get_name(), "request": request})
 
 
-async def client(host: str, port: int, message: str) -> None:
-    async with AsyncTCPNetworkClient((host, port), JSONProtocol(), ssl=True) as client:
+async def client(host: str, port: int, message: str, backend: AsyncIOBackend) -> None:
+    async with AsyncTCPNetworkClient(
+        (host, port),
+        JSONProtocol(),
+        backend,
+        ssl=True,
+    ) as client:
         await client.send_packet({"message": message})
         response = await client.recv_packet()
         print(f"From server: {response}")
@@ -41,13 +47,21 @@ async def main() -> None:
     host, port = "localhost", 9000
     protocol = JSONProtocol()
     handler = MyRequestHandler()
+    backend = AsyncIOBackend()
 
     ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
     ssl_context.load_cert_chain(
         "/path/to/ssl_cert.pem",
         "/path/to/ssl_key.pem",
     )
-    server = AsyncTCPNetworkServer(host, port, protocol, handler, ssl=ssl_context)
+    server = AsyncTCPNetworkServer(
+        host,
+        port,
+        protocol,
+        handler,
+        backend,
+        ssl=ssl_context,
+    )
 
     async with server:
         is_up_event = asyncio.Event()
@@ -56,9 +70,9 @@ async def main() -> None:
 
         print(f"Server loop running in task: {server_task.get_name()}")
 
-        await client(host, port, "Hello world 1")
-        await client(host, port, "Hello world 2")
-        await client(host, port, "Hello world 3")
+        await client(host, port, "Hello world 1", backend)
+        await client(host, port, "Hello world 2", backend)
+        await client(host, port, "Hello world 3", backend)
 
         await server.shutdown()
 

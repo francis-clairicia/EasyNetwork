@@ -25,7 +25,7 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Generic
 
 from .._typevars import _T_Request, _T_Response
-from ..lowlevel import _utils
+from ..lowlevel.api_async.backend.abc import AsyncBackend
 from ..lowlevel.socket import SocketProxy
 from . import _base
 from .async_udp import AsyncUDPNetworkServer
@@ -52,7 +52,7 @@ class StandaloneUDPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
         port: int,
         protocol: DatagramProtocol[_T_Response, _T_Request],
         request_handler: AsyncDatagramRequestHandler[_T_Request, _T_Response],
-        backend: str = "asyncio",
+        backend: AsyncBackend | None = None,
         *,
         runner_options: Mapping[str, Any] | None = None,
         reuse_port: bool = False,
@@ -63,16 +63,16 @@ class StandaloneUDPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
         For the other arguments, see :class:`.AsyncUDPNetworkServer` documentation.
 
         Parameters:
-            backend: The event loop to use. It defaults to ``asyncio``.
+            backend: The :term:`asynchronous backend interface` to use. It defaults to :mod:`asyncio` implementation.
             runner_options: Options to pass to the :meth:`.AsyncBackend.bootstrap` method.
         """
         super().__init__(
             backend,
-            _utils.make_callback(
-                AsyncUDPNetworkServer,  # type: ignore[arg-type]
+            lambda backend: AsyncUDPNetworkServer(
                 host=host,
                 port=port,
                 protocol=protocol,
+                backend=backend,
                 request_handler=request_handler,
                 reuse_port=reuse_port,
                 logger=logger,

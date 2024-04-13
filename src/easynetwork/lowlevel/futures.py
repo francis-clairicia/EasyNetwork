@@ -28,7 +28,7 @@ from collections.abc import AsyncGenerator, Callable, Iterable
 from typing import TYPE_CHECKING, Any, Generic, ParamSpec, Self, TypeVar
 
 from .api_async.backend import _sniffio_helpers
-from .api_async.backend.factory import current_async_backend
+from .api_async.backend.abc import AsyncBackend
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -66,24 +66,29 @@ class AsyncExecutor(Generic[_T_Executor]):
                 results = [await t.join() for t in tasks]
     """
 
-    __slots__ = ("__executor", "__handle_contexts", "__weakref__")
+    __slots__ = ("__backend", "__executor", "__handle_contexts", "__weakref__")
 
     def __init__(
         self,
         executor: _T_Executor,
+        backend: AsyncBackend,
         *,
         handle_contexts: bool = True,
     ) -> None:
         """
         Parameters:
             executor: The executor instance to wrap.
+            backend: The :term:`asynchronous backend interface` to use.
             handle_contexts: If :data:`True` (the default), contexts (:class:`contextvars.Context`) are properly propagated to
                              workers. Set it to :data:`False` if the executor does not support the use of contexts
                              (e.g. :class:`concurrent.futures.ProcessPoolExecutor`).
         """
         if not isinstance(executor, concurrent.futures.Executor):
             raise TypeError("Invalid executor type")
+        if not isinstance(backend, AsyncBackend):
+            raise TypeError(f"Expected an AsyncBackend instance, got {backend!r}")
 
+        self.__backend: AsyncBackend = backend
         self.__executor: _T_Executor = executor
         self.__handle_contexts: bool = bool(handle_contexts)
 
@@ -127,7 +132,8 @@ class AsyncExecutor(Generic[_T_Executor]):
         """
         func = self._setup_func(func)
         executor = self.__executor
-        return await _result_or_cancel(executor.submit(func, *args, **kwargs))
+        backend = self.__backend
+        return await _result_or_cancel(executor.submit(func, *args, **kwargs), backend)
 
     def map(self, func: Callable[..., _T], *iterables: Iterable[Any]) -> AsyncGenerator[_T, None]:
         """
@@ -153,12 +159,13 @@ class AsyncExecutor(Generic[_T_Executor]):
         """
 
         executor = self.__executor
+        backend = self.__backend
         fs = deque(executor.submit(self._setup_func(func), *args) for args in zip(*iterables))
 
         async def result_iterator() -> AsyncGenerator[_T, None]:
             try:
                 while fs:
-                    yield await _result_or_cancel(fs.popleft())
+                    yield await _result_or_cancel(fs.popleft(), backend)
             finally:
                 for future in fs:
                     future.cancel()
@@ -194,7 +201,7 @@ class AsyncExecutor(Generic[_T_Executor]):
                             has not started running. Any futures that are completed or running won't be cancelled,
                             regardless of the value of `cancel_futures`.
         """
-        await current_async_backend().run_in_thread(self.__executor.shutdown, wait=True, cancel_futures=cancel_futures)
+        await self.__backend.run_in_thread(self.__executor.shutdown, wait=True, cancel_futures=cancel_futures)
 
     def _setup_func(self, func: Callable[_P, _T]) -> Callable[_P, _T]:
         if self.__handle_contexts:
@@ -209,7 +216,7 @@ class AsyncExecutor(Generic[_T_Executor]):
         return self.__executor
 
 
-async def unwrap_future(future: concurrent.futures.Future[_T]) -> _T:
+async def unwrap_future(future: concurrent.futures.Future[_T], backend: AsyncBackend) -> _T:
     """
     Blocks until the future is done, and returns the result.
 
@@ -227,6 +234,7 @@ async def unwrap_future(future: concurrent.futures.Future[_T]) -> _T:
 
     Parameters:
         future: The future object to wait for.
+        backend: The :term:`asynchronous backend interface` to use.
 
     Raises:
         concurrent.futures.CancelledError: the future has been unexpectedly cancelled by an external code
@@ -237,7 +245,6 @@ async def unwrap_future(future: concurrent.futures.Future[_T]) -> _T:
         Whatever returns ``future.result()``
     """
     try:
-        backend = current_async_backend()
         event_loop_thread_id = threading.get_ident()
         done_event = backend.create_event()
 
@@ -272,10 +279,10 @@ async def unwrap_future(future: concurrent.futures.Future[_T]) -> _T:
         del future
 
 
-async def _result_or_cancel(future: concurrent.futures.Future[_T]) -> _T:
+async def _result_or_cancel(future: concurrent.futures.Future[_T], backend: AsyncBackend) -> _T:
     try:
         try:
-            return await unwrap_future(future)
+            return await unwrap_future(future, backend)
         finally:
             future.cancel()
     finally:

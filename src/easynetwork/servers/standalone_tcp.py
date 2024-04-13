@@ -25,7 +25,7 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Generic, Literal
 
 from .._typevars import _T_Request, _T_Response
-from ..lowlevel import _utils
+from ..lowlevel.api_async.backend.abc import AsyncBackend
 from ..lowlevel.socket import SocketProxy
 from . import _base
 from .async_tcp import AsyncTCPNetworkServer
@@ -53,7 +53,7 @@ class StandaloneTCPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
         port: int,
         protocol: StreamProtocol[_T_Response, _T_Request],
         request_handler: AsyncStreamRequestHandler[_T_Request, _T_Response],
-        backend: str = "asyncio",
+        backend: AsyncBackend | None = None,
         *,
         runner_options: Mapping[str, Any] | None = None,
         ssl: _SSLContext | None = None,
@@ -72,17 +72,17 @@ class StandaloneTCPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
         For the other arguments, see :class:`.AsyncTCPNetworkServer` documentation.
 
         Parameters:
-            backend: The event loop to use. It defaults to ``asyncio``.
+            backend: The :term:`asynchronous backend interface` to use. It defaults to :mod:`asyncio` implementation.
             runner_options: Options to pass to the :meth:`.AsyncBackend.bootstrap` method.
         """
         super().__init__(
             backend,
-            _utils.make_callback(
-                AsyncTCPNetworkServer,  # type: ignore[arg-type]
+            lambda backend: AsyncTCPNetworkServer(
                 host=host,
                 port=port,
                 protocol=protocol,
                 request_handler=request_handler,
+                backend=backend,
                 ssl=ssl,
                 ssl_handshake_timeout=ssl_handshake_timeout,
                 ssl_shutdown_timeout=ssl_shutdown_timeout,

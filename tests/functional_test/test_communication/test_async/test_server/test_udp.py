@@ -19,7 +19,6 @@ from easynetwork.servers.handlers import AsyncDatagramClient, AsyncDatagramReque
 import pytest
 import pytest_asyncio
 
-from .....tools import temporary_backend
 from .base import BaseTestAsyncServer
 
 
@@ -246,16 +245,29 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         request_handler_cls: type[AsyncDatagramRequestHandler[str, str]] = getattr(request, "param", MyAsyncUDPRequestHandler)
         return request_handler_cls()
 
+    @pytest.fixture
+    @staticmethod
+    def asyncio_backend() -> AsyncIOBackend:
+        return AsyncIOBackend()
+
     @pytest_asyncio.fixture
     @staticmethod
     async def server(
+        asyncio_backend: AsyncIOBackend,
         request_handler: AsyncDatagramRequestHandler[str, str],
         localhost_ip: str,
         datagram_protocol: DatagramProtocol[str, str],
         caplog: pytest.LogCaptureFixture,
         logger_crash_threshold_level: dict[str, int],
     ) -> AsyncIterator[MyAsyncUDPServer]:
-        async with MyAsyncUDPServer(localhost_ip, 0, datagram_protocol, request_handler, logger=LOGGER) as server:
+        async with MyAsyncUDPServer(
+            localhost_ip,
+            0,
+            datagram_protocol,
+            request_handler,
+            asyncio_backend,
+            logger=LOGGER,
+        ) as server:
             assert not server.get_sockets()
             assert not server.get_addresses()
             caplog.set_level(logging.INFO, LOGGER.name)
@@ -302,12 +314,11 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         request_handler: MyAsyncUDPRequestHandler,
         datagram_protocol: DatagramProtocol[str, str],
     ) -> None:
-        with temporary_backend(NoListenerErrorBackend()):
-            async with MyAsyncUDPServer(None, 0, datagram_protocol, request_handler) as s:
-                with pytest.raises(OSError, match=r"^empty listeners list$"):
-                    await s.serve_forever()
+        async with MyAsyncUDPServer(None, 0, datagram_protocol, request_handler, NoListenerErrorBackend()) as s:
+            with pytest.raises(OSError, match=r"^empty listeners list$"):
+                await s.serve_forever()
 
-                assert not s.get_sockets()
+            assert not s.get_sockets()
 
     @pytest.mark.usefixtures("run_server_and_wait")
     async def test____serve_forever____server_assignment(

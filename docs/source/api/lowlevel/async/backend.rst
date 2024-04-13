@@ -158,15 +158,3 @@ Scheduling From Other Threads
 .. autoclass:: ThreadsPortal
    :members:
    :special-members: __aenter__, __aexit__
-
-
-Backend Factory
-===============
-
-.. todo::
-
-   Document backend factory usage.
-
-.. automodule:: easynetwork.lowlevel.api_async.backend.factory
-   :no-docstring:
-   :members:

@@ -8,8 +8,8 @@ from socket import AI_PASSIVE
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 from easynetwork.lowlevel.api_async.backend.abc import TaskGroup
-from easynetwork.lowlevel.api_async.backend.factory import current_async_backend
 from easynetwork.lowlevel.socket import SocketAttribute
+from easynetwork.lowlevel.std_asyncio.backend import AsyncIOBackend
 from easynetwork.lowlevel.std_asyncio.datagram.endpoint import (
     DatagramEndpoint,
     DatagramEndpointProtocol,
@@ -702,8 +702,12 @@ class TestAsyncioTransportDatagramSocketAdapter(BaseTestAsyncioDatagramTransport
 
     @pytest.fixture
     @classmethod
-    def socket(cls, mock_endpoint: MagicMock) -> AsyncioTransportDatagramSocketAdapter:
-        return AsyncioTransportDatagramSocketAdapter(mock_endpoint)
+    def socket(
+        cls,
+        asyncio_backend: AsyncIOBackend,
+        mock_endpoint: MagicMock,
+    ) -> AsyncioTransportDatagramSocketAdapter:
+        return AsyncioTransportDatagramSocketAdapter(asyncio_backend, mock_endpoint)
 
     async def test____aclose____close_transport_and_wait(
         self,
@@ -767,6 +771,16 @@ class TestAsyncioTransportDatagramSocketAdapter(BaseTestAsyncioDatagramTransport
         # Assert
         mock_endpoint.sendto.assert_awaited_once_with(b"data to send", None)
 
+    async def test____get_backend____returns_linked_instance(
+        self,
+        socket: AsyncioTransportDatagramSocketAdapter,
+        asyncio_backend: AsyncIOBackend,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        assert socket.backend() is asyncio_backend
+
     async def test____extra_attributes____returns_socket_info(
         self,
         socket: AsyncioTransportDatagramSocketAdapter,
@@ -805,10 +819,11 @@ class TestDatagramListenerSocketAdapter(BaseTestAsyncioDatagramTransport):
     @pytest.fixture
     @staticmethod
     def socket(
+        asyncio_backend: AsyncIOBackend,
         mock_asyncio_transport: MagicMock,
         mock_asyncio_protocol: MagicMock,
     ) -> DatagramListenerSocketAdapter:
-        return DatagramListenerSocketAdapter(mock_asyncio_transport, mock_asyncio_protocol)
+        return DatagramListenerSocketAdapter(asyncio_backend, mock_asyncio_transport, mock_asyncio_protocol)
 
     @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing=={p}")
     async def test____aclose____close_transport_and_wait(
@@ -931,6 +946,16 @@ class TestDatagramListenerSocketAdapter(BaseTestAsyncioDatagramTransport):
         mock_asyncio_transport.sendto.assert_called_once_with(b"data to send", address)
         mock_asyncio_protocol.writer_drain.assert_awaited_once_with()
 
+    async def test____get_backend____returns_linked_instance(
+        self,
+        socket: DatagramListenerSocketAdapter,
+        asyncio_backend: AsyncIOBackend,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        assert socket.backend() is asyncio_backend
+
     async def test____extra_attributes____returns_socket_info(
         self,
         socket: DatagramListenerSocketAdapter,
@@ -1027,19 +1052,19 @@ class TestDatagramListenerProtocol:
     @pytest.mark.asyncio
     async def test____serve____called_twice(
         self,
+        asyncio_backend: AsyncIOBackend,
         protocol: DatagramListenerProtocol,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        backend = current_async_backend()
         datagram_received_stub = mocker.async_stub()
 
         # Act & Assert
-        async with backend.create_task_group() as tg:
+        async with asyncio_backend.create_task_group() as tg:
             with pytest.raises(RuntimeError, match=r"^DatagramListenerProtocol.serve\(\) awaited twice"):
                 task = await tg.start(protocol.serve, datagram_received_stub, tg)
                 try:
-                    with backend.timeout(10):
+                    with asyncio_backend.timeout(10):
                         await protocol.serve(datagram_received_stub, tg)
                 finally:
                     task.cancel()
@@ -1047,18 +1072,18 @@ class TestDatagramListenerProtocol:
     @pytest.mark.asyncio
     async def test____serve____datagram_received____start_task(
         self,
+        asyncio_backend: AsyncIOBackend,
         event_loop: asyncio.AbstractEventLoop,
         protocol: DatagramListenerProtocol,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        backend = current_async_backend()
-        serve_scope = backend.move_on_after(10)
+        serve_scope = asyncio_backend.move_on_after(10)
         datagram_received_stub = mocker.async_stub()
         datagram_received_stub.side_effect = lambda *args: serve_scope.cancel()
 
         # Act
-        async with backend.create_task_group() as tg:
+        async with asyncio_backend.create_task_group() as tg:
             with serve_scope:
                 event_loop.call_later(0.1, protocol.datagram_received, b"datagram", ("an_address", 12345))
                 await protocol.serve(datagram_received_stub, tg)
@@ -1069,19 +1094,19 @@ class TestDatagramListenerProtocol:
     @pytest.mark.asyncio
     async def test____serve____datagram_received____start_task_for_datagrams_received_before_serving(
         self,
+        asyncio_backend: AsyncIOBackend,
         protocol: DatagramListenerProtocol,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        backend = current_async_backend()
-        serve_scope = backend.move_on_after(10)
+        serve_scope = asyncio_backend.move_on_after(10)
         datagram_received_stub = mocker.async_stub()
         datagram_received_stub.side_effect = lambda *args: serve_scope.cancel()
         protocol.datagram_received(b"datagram", ("an_address", 12345))
         protocol.datagram_received(b"datagram_2", ("other_address", 54321))
 
         # Act
-        async with backend.create_task_group() as tg:
+        async with asyncio_backend.create_task_group() as tg:
             with serve_scope:
                 await protocol.serve(datagram_received_stub, tg)
 

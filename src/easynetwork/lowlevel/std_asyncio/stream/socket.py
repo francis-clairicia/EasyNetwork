@@ -37,10 +37,13 @@ if TYPE_CHECKING:
 
     from _typeshed import WriteableBuffer
 
+    from ..backend import AsyncIOBackend
+
 
 @final
 class AsyncioTransportStreamSocketAdapter(transports.AsyncStreamTransport, transports.AsyncBufferedStreamReadTransport):
     __slots__ = (
+        "__backend",
         "__transport",
         "__protocol",
         "__socket",
@@ -49,10 +52,12 @@ class AsyncioTransportStreamSocketAdapter(transports.AsyncStreamTransport, trans
 
     def __init__(
         self,
+        backend: AsyncIOBackend,
         transport: asyncio.Transport,
         protocol: StreamReaderBufferedProtocol,
     ) -> None:
         super().__init__()
+        self.__backend: AsyncIOBackend = backend
         self.__transport: asyncio.Transport = transport
         self.__protocol: StreamReaderBufferedProtocol = protocol
         over_ssl: bool = transport.get_extra_info("sslcontext") is not None
@@ -116,6 +121,9 @@ class AsyncioTransportStreamSocketAdapter(transports.AsyncStreamTransport, trans
             raise UnsupportedOperation("transport does not support sending EOF")
         self.__transport.write_eof()
         await TaskUtils.coro_yield()
+
+    def backend(self) -> AsyncIOBackend:
+        return self.__backend
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:

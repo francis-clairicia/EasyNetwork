@@ -27,8 +27,7 @@ from typing import Any
 from ..exceptions import ServerAlreadyRunning, ServerClosedError
 from ..lowlevel import _utils
 from ..lowlevel._lock import ForkSafeLock
-from ..lowlevel.api_async.backend.abc import ThreadsPortal
-from ..lowlevel.api_async.backend.factory import AsyncBackendFactory as _Factory
+from ..lowlevel.api_async.backend.abc import AsyncBackend, ThreadsPortal
 from ..lowlevel.socket import SocketAddress
 from .abc import AbstractAsyncNetworkServer, AbstractNetworkServer, SupportsEventSet
 
@@ -38,7 +37,7 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
         "__server_factory",
         "__default_runner_options",
         "__private_server",
-        "__backend_name",
+        "__backend",
         "__close_lock",
         "__bootstrap_lock",
         "__private_threads_portal",
@@ -48,14 +47,24 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
 
     def __init__(
         self,
-        backend: str,
-        server_factory: Callable[[], AbstractAsyncNetworkServer],
+        backend: AsyncBackend | None,
+        server_factory: Callable[[AsyncBackend], AbstractAsyncNetworkServer],
         *,
         runner_options: Mapping[str, Any] | None = None,
     ) -> None:
         super().__init__()
-        self.__backend_name: str = backend
-        self.__server_factory: Callable[[], AbstractAsyncNetworkServer] = server_factory
+        match backend:
+            case None:
+                from ..lowlevel.std_asyncio.backend import AsyncIOBackend
+
+                backend = AsyncIOBackend()
+            case AsyncBackend():
+                pass
+            case _:
+                raise TypeError(f"Expected an AsyncBackend instance, got {backend!r}")
+
+        self.__backend: AsyncBackend = backend
+        self.__server_factory: Callable[[AsyncBackend], AbstractAsyncNetworkServer] = server_factory
         self.__private_server: AbstractAsyncNetworkServer | None = None
         self.__private_threads_portal: ThreadsPortal | None = None
         self.__is_shutdown = _threading.Event()
@@ -99,7 +108,7 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
 
     @staticmethod
     async def __do_shutdown_with_timeout(server: AbstractAsyncNetworkServer, timeout_delay: float) -> None:
-        with _Factory.current().move_on_after(timeout_delay):
+        with server.backend().move_on_after(timeout_delay):
             await server.shutdown()
 
     def serve_forever(
@@ -126,7 +135,7 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
             else:
                 runner_options = self.__default_runner_options.copy()
 
-        backend = _Factory.get_backend(self.__backend_name)
+        backend = self.__backend
         with contextlib.ExitStack() as server_exit_stack, contextlib.suppress(backend.get_cancelled_exc_class()):
             # locks_stack is used to acquire locks until
             # serve_forever() coroutine creates the thread portal
@@ -155,7 +164,7 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
 
             async def serve_forever() -> None:
                 async with (
-                    self.__server_factory() as self.__private_server,
+                    self.__server_factory(backend) as self.__private_server,
                     backend.create_threads_portal() as self.__private_threads_portal,
                 ):
                     server = self.__private_server

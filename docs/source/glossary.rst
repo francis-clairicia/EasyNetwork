@@ -5,6 +5,11 @@ Glossary
 .. glossary::
    :sorted:
 
+   asynchronous backend interface
+      It bridges the gap between an :term:`asynchronous framework` and EasyNetwork.
+
+      .. seealso:: :doc:`/api/lowlevel/async/backend`
+
    asynchronous framework
       The library which permits you to write asynchronous tasks, such as:
 

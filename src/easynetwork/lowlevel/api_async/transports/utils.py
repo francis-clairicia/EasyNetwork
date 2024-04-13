@@ -18,7 +18,6 @@ from __future__ import annotations
 
 __all__ = ["aclose_forcefully"]
 
-from ..backend.factory import current_async_backend
 from .abc import AsyncBaseTransport
 
 
@@ -29,5 +28,5 @@ async def aclose_forcefully(transport: AsyncBaseTransport) -> None:
     Parameters:
         transport: the transport to close.
     """
-    with current_async_backend().move_on_after(0):
+    with transport.backend().move_on_after(0):
         await transport.aclose()

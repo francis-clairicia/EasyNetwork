@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
-from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.lowlevel.api_async.backend.abc import TaskGroup
@@ -12,8 +11,8 @@ from easynetwork.lowlevel.api_async.transports.abc import AsyncDatagramListener
 import pytest
 import pytest_asyncio
 
-from .....tools import temporary_backend
 from ....base import BaseTestWithDatagramProtocol
+from ...mock_tools import make_transport_mock
 
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
@@ -25,25 +24,16 @@ if TYPE_CHECKING:
 class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
     @pytest.fixture
     @staticmethod
-    def mock_datagram_listener(mocker: MockerFixture) -> MagicMock:
-        mock_datagram_listener = mocker.NonCallableMagicMock(spec=AsyncDatagramListener)
-        mock_datagram_listener.is_closing.return_value = False
-
-        def close_side_effect() -> None:
-            mock_datagram_listener.is_closing.return_value = True
-
-        mock_datagram_listener.aclose.side_effect = close_side_effect
-        return mock_datagram_listener
+    def mock_datagram_listener(mock_backend: MagicMock, mocker: MockerFixture) -> MagicMock:
+        return make_transport_mock(mocker=mocker, spec=AsyncDatagramListener, backend=mock_backend)
 
     @pytest_asyncio.fixture
     @staticmethod
-    async def server(
+    def server(
         mock_datagram_listener: MagicMock,
         mock_datagram_protocol: MagicMock,
-        mock_backend: MagicMock,
-    ) -> AsyncIterator[AsyncDatagramServer[Any, Any, Any]]:
-        with temporary_backend(mock_backend):
-            yield AsyncDatagramServer(mock_datagram_listener, mock_datagram_protocol)
+    ) -> AsyncDatagramServer[Any, Any, Any]:
+        return AsyncDatagramServer(mock_datagram_listener, mock_datagram_protocol)
 
     async def test____dunder_init____invalid_transport(
         self,
@@ -166,6 +156,16 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
         # Assert
         mock_datagram_protocol.make_datagram.assert_called_once_with(mocker.sentinel.packet)
         mock_datagram_listener.send_to.assert_awaited_once_with(b"packet", mocker.sentinel.destination)
+
+    async def test____get_backend____returns_inner_listener_backend(
+        self,
+        server: AsyncDatagramServer[Any, Any, Any],
+        mock_datagram_listener: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        assert server.backend() is mock_datagram_listener.backend()
 
 
 class TestClientData:

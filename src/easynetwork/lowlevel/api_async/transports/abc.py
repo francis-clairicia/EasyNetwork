@@ -34,6 +34,7 @@ from collections.abc import Callable, Coroutine, Iterable
 from typing import TYPE_CHECKING, Any, Generic, NoReturn, TypeVar
 
 from ... import typed_attr
+from ..backend.abc import AsyncBackend
 
 if TYPE_CHECKING:
     from _typeshed import WriteableBuffer
@@ -70,6 +71,14 @@ class AsyncBaseTransport(typed_attr.TypedAttributeProvider, metaclass=ABCMeta):
 
         Returns:
             :data:`True` if the transport is closing.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def backend(self) -> AsyncBackend:
+        """
+        Returns:
+            The backend implementation linked to this transport.
         """
         raise NotImplementedError
 

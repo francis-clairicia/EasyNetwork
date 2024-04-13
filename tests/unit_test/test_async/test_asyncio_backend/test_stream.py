@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 from easynetwork.exceptions import UnsupportedOperation
 from easynetwork.lowlevel.constants import ACCEPT_CAPACITY_ERRNOS, NOT_CONNECTED_SOCKET_ERRNOS
 from easynetwork.lowlevel.socket import SocketAttribute
+from easynetwork.lowlevel.std_asyncio.backend import AsyncIOBackend
 from easynetwork.lowlevel.std_asyncio.stream.listener import (
     AbstractAcceptedSocketFactory,
     AcceptedSocketFactory,
@@ -156,11 +157,12 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket):
     @pytest.fixture
     @staticmethod
     def listener(
+        asyncio_backend: AsyncIOBackend,
         event_loop: asyncio.AbstractEventLoop,
         mock_tcp_listener_socket: MagicMock,
         accepted_socket_factory: MagicMock,
     ) -> ListenerSocketAdapter[Any]:
-        return ListenerSocketAdapter(mock_tcp_listener_socket, event_loop, accepted_socket_factory)
+        return ListenerSocketAdapter(asyncio_backend, mock_tcp_listener_socket, event_loop, accepted_socket_factory)
 
     @staticmethod
     def _make_accept_side_effect(
@@ -178,6 +180,7 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket):
 
     async def test____dunder_init____invalid_socket_type(
         self,
+        asyncio_backend: AsyncIOBackend,
         event_loop: asyncio.AbstractEventLoop,
         mock_udp_socket: MagicMock,
         accepted_socket_factory: MagicMock,
@@ -186,7 +189,7 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket):
 
         # Act & Assert
         with pytest.raises(ValueError, match=r"^A 'SOCK_STREAM' socket is expected$"):
-            _ = ListenerSocketAdapter(mock_udp_socket, event_loop, accepted_socket_factory)
+            _ = ListenerSocketAdapter(asyncio_backend, mock_udp_socket, event_loop, accepted_socket_factory)
 
     async def test____is_closing____default(
         self,
@@ -220,6 +223,7 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket):
     @pytest.mark.parametrize("external_group", [True, False], ids=lambda p: f"external_group=={p}")
     async def test____serve____default(
         self,
+        asyncio_backend: AsyncIOBackend,
         event_loop: asyncio.AbstractEventLoop,
         listener: ListenerSocketAdapter[Any],
         external_group: bool,
@@ -247,7 +251,7 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket):
                 await listener.serve(handler, task_group)
 
         # Assert
-        accepted_socket_factory.connect.assert_awaited_once_with(client_socket, event_loop)
+        accepted_socket_factory.connect.assert_awaited_once_with(asyncio_backend, client_socket, event_loop)
         handler.assert_awaited_once_with(stream)
 
     @pytest.mark.parametrize(
@@ -263,6 +267,7 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket):
     async def test____serve____connect____error_raised(
         self,
         exc: BaseException,
+        asyncio_backend: AsyncIOBackend,
         event_loop: asyncio.AbstractEventLoop,
         listener: ListenerSocketAdapter[Any],
         mock_async_socket: MagicMock,
@@ -285,7 +290,7 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket):
                     await listener.serve(handler, task_group)
 
         # Assert
-        accepted_socket_factory.connect.assert_awaited_once_with(client_socket, event_loop)
+        accepted_socket_factory.connect.assert_awaited_once_with(asyncio_backend, client_socket, event_loop)
         handler.assert_not_awaited()
         client_socket.close.assert_called_once_with()
 
@@ -366,6 +371,16 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket):
         assert len(caplog.records) == 0
         assert exc_info.value is exc
 
+    async def test____get_backend____returns_linked_instance(
+        self,
+        listener: ListenerSocketAdapter[Any],
+        asyncio_backend: AsyncIOBackend,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        assert listener.backend() is asyncio_backend
+
     async def test____extra_attributes____returns_socket_info(
         self,
         listener: ListenerSocketAdapter[Any],
@@ -426,6 +441,7 @@ class TestAcceptedSocketFactory(BaseTestTransportStreamSocket):
 
     async def test____connect____creates_new_stream_socket(
         self,
+        asyncio_backend: AsyncIOBackend,
         accepted_socket: AcceptedSocketFactory,
         event_loop: asyncio.AbstractEventLoop,
         mock_event_loop_connect_accepted_socket: AsyncMock,
@@ -434,7 +450,7 @@ class TestAcceptedSocketFactory(BaseTestTransportStreamSocket):
         # Arrange
 
         # Act
-        socket = await accepted_socket.connect(mock_tcp_socket, event_loop)
+        socket = await accepted_socket.connect(asyncio_backend, mock_tcp_socket, event_loop)
 
         # Assert
         assert isinstance(socket, AsyncioTransportStreamSocketAdapter)
@@ -458,15 +474,17 @@ class TestAsyncioTransportStreamSocketAdapter(BaseTestTransportWithSSL):
     @pytest.fixture
     @staticmethod
     def socket(
+        asyncio_backend: AsyncIOBackend,
         mock_asyncio_transport: MagicMock,
         mock_asyncio_protocol: MagicMock,
     ) -> AsyncioTransportStreamSocketAdapter:
         mock_asyncio_transport.can_write_eof.return_value = True
-        return AsyncioTransportStreamSocketAdapter(mock_asyncio_transport, mock_asyncio_protocol)
+        return AsyncioTransportStreamSocketAdapter(asyncio_backend, mock_asyncio_transport, mock_asyncio_protocol)
 
     @pytest.mark.usefixtures("add_ssl_extra_to_transport")
     async def test____dunder_init____refuse_transports_over_ssl(
         self,
+        asyncio_backend: AsyncIOBackend,
         mock_asyncio_transport: MagicMock,
         mock_asyncio_protocol: MagicMock,
     ) -> None:
@@ -475,7 +493,7 @@ class TestAsyncioTransportStreamSocketAdapter(BaseTestTransportWithSSL):
 
         # Act & Assert
         with pytest.raises(NotImplementedError):
-            _ = AsyncioTransportStreamSocketAdapter(mock_asyncio_transport, mock_asyncio_protocol)
+            _ = AsyncioTransportStreamSocketAdapter(asyncio_backend, mock_asyncio_transport, mock_asyncio_protocol)
 
     @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing=={p}")
     @pytest.mark.parametrize("can_write_eof", [False, True], ids=lambda p: f"can_write_eof=={p}")
@@ -684,6 +702,16 @@ class TestAsyncioTransportStreamSocketAdapter(BaseTestTransportWithSSL):
             with pytest.raises(UnsupportedOperation):
                 await socket.send_eof()
             mock_asyncio_transport.write_eof.assert_not_called()
+
+    async def test____get_backend____returns_linked_instance(
+        self,
+        socket: AsyncioTransportStreamSocketAdapter,
+        asyncio_backend: AsyncIOBackend,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        assert socket.backend() is asyncio_backend
 
     async def test____extra_attributes____returns_socket_info(
         self,

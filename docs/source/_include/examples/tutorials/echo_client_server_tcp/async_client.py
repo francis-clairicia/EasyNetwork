@@ -4,6 +4,7 @@ import asyncio
 import sys
 
 from easynetwork.clients import AsyncTCPNetworkClient
+from easynetwork.lowlevel.std_asyncio import AsyncIOBackend
 
 from json_protocol import JSONProtocol
 
@@ -11,9 +12,11 @@ from json_protocol import JSONProtocol
 async def main() -> None:
     host = "localhost"
     port = 9000
+    protocol = JSONProtocol()
+    backend = AsyncIOBackend()
 
     # Connect to server
-    async with AsyncTCPNetworkClient((host, port), JSONProtocol()) as client:
+    async with AsyncTCPNetworkClient((host, port), protocol, backend) as client:
         # Send data
         request = {"command-line arguments": sys.argv[1:]}
         await client.send_packet(request)

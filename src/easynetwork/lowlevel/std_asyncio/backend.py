@@ -132,7 +132,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
             _utils.make_callback(StreamReaderBufferedProtocol, loop=loop),
             sock=socket,
         )
-        return AsyncioTransportStreamSocketAdapter(transport, protocol)
+        return AsyncioTransportStreamSocketAdapter(self, transport, protocol)
 
     async def create_tcp_listeners(
         self,
@@ -173,7 +173,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
 
         loop = asyncio.get_running_loop()
         factory = AcceptedSocketFactory()
-        return [ListenerSocketAdapter(sock, loop, factory) for sock in sockets]
+        return [ListenerSocketAdapter(self, sock, loop, factory) for sock in sockets]
 
     async def create_udp_endpoint(
         self,
@@ -196,7 +196,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
     async def wrap_connected_datagram_socket(self, socket: _socket.socket) -> AsyncioTransportDatagramSocketAdapter:
         socket.setblocking(False)
         endpoint = await create_datagram_endpoint(sock=socket)
-        return AsyncioTransportDatagramSocketAdapter(endpoint)
+        return AsyncioTransportDatagramSocketAdapter(self, endpoint)
 
     async def create_udp_listeners(
         self,
@@ -235,7 +235,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
         protocol_factory = _utils.make_callback(DatagramListenerProtocol, loop=loop)
 
         listeners = [await loop.create_datagram_endpoint(protocol_factory, sock=sock) for sock in sockets]
-        return [DatagramListenerSocketAdapter(transport, protocol) for transport, protocol in listeners]
+        return [DatagramListenerSocketAdapter(self, transport, protocol) for transport, protocol in listeners]
 
     def create_lock(self) -> asyncio.Lock:
         return asyncio.Lock()

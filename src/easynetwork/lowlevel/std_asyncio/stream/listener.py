@@ -44,16 +44,18 @@ if TYPE_CHECKING:
     import asyncio.trsock
 
     from ...api_async.backend.abc import TaskGroup as AbstractTaskGroup
+    from ..backend import AsyncIOBackend
 
 
 _T_Stream = TypeVar("_T_Stream", bound=transports.AsyncStreamTransport)
 
 
 class ListenerSocketAdapter(transports.AsyncListener[_T_Stream]):
-    __slots__ = ("__socket", "__accepted_socket_factory")
+    __slots__ = ("__backend", "__socket", "__accepted_socket_factory")
 
     def __init__(
         self,
+        backend: AsyncIOBackend,
         socket: _socket.socket,
         loop: asyncio.AbstractEventLoop,
         accepted_socket_factory: AbstractAcceptedSocketFactory[_T_Stream],
@@ -63,6 +65,7 @@ class ListenerSocketAdapter(transports.AsyncListener[_T_Stream]):
         if socket.type != _socket.SOCK_STREAM:
             raise ValueError("A 'SOCK_STREAM' socket is expected")
 
+        self.__backend: AsyncIOBackend = backend
         self.__socket: AsyncSocket = AsyncSocket(socket, loop)
         self.__accepted_socket_factory = accepted_socket_factory
 
@@ -83,7 +86,7 @@ class ListenerSocketAdapter(transports.AsyncListener[_T_Stream]):
 
         async def client_connection_task(client_socket: _socket.socket, task_group: AbstractTaskGroup) -> None:
             try:
-                stream = await connect(client_socket, loop)
+                stream = await connect(self.__backend, client_socket, loop)
             except asyncio.CancelledError:
                 client_socket.close()
                 raise
@@ -128,6 +131,9 @@ class ListenerSocketAdapter(transports.AsyncListener[_T_Stream]):
 
         raise AssertionError("Expected code to be unreachable.")
 
+    def backend(self) -> AsyncIOBackend:
+        return self.__backend
+
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         socket = self.__socket.socket
@@ -142,7 +148,7 @@ class AbstractAcceptedSocketFactory(Generic[_T_Stream]):
         raise NotImplementedError
 
     @abstractmethod
-    async def connect(self, socket: _socket.socket, loop: asyncio.AbstractEventLoop) -> _T_Stream:
+    async def connect(self, backend: AsyncIOBackend, socket: _socket.socket, loop: asyncio.AbstractEventLoop) -> _T_Stream:
         raise NotImplementedError
 
 
@@ -154,6 +160,7 @@ class AcceptedSocketFactory(AbstractAcceptedSocketFactory[AsyncioTransportStream
 
     async def connect(
         self,
+        backend: AsyncIOBackend,
         socket: _socket.socket,
         loop: asyncio.AbstractEventLoop,
     ) -> AsyncioTransportStreamSocketAdapter:
@@ -161,4 +168,4 @@ class AcceptedSocketFactory(AbstractAcceptedSocketFactory[AsyncioTransportStream
             _utils.make_callback(StreamReaderBufferedProtocol, loop=loop),
             socket,
         )
-        return AsyncioTransportStreamSocketAdapter(transport, protocol)
+        return AsyncioTransportStreamSocketAdapter(backend, transport, protocol)

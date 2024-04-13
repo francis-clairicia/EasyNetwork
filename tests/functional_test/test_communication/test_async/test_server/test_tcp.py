@@ -17,7 +17,6 @@ from easynetwork.exceptions import (
     StreamProtocolParseError,
 )
 from easynetwork.lowlevel.api_async.backend.abc import AsyncBackend
-from easynetwork.lowlevel.api_async.backend.factory import current_async_backend
 from easynetwork.lowlevel.socket import SocketAddress, enable_socket_linger
 from easynetwork.lowlevel.std_asyncio._asyncio_utils import create_connection
 from easynetwork.lowlevel.std_asyncio.backend import AsyncIOBackend
@@ -29,7 +28,6 @@ from easynetwork.servers.handlers import AsyncStreamClient, AsyncStreamRequestHa
 import pytest
 import pytest_asyncio
 
-from .....tools import temporary_backend
 from .base import BaseTestAsyncServer
 
 
@@ -91,7 +89,7 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
         if self.milk_handshake:
             await client.send_packet("milk")
         if self.close_all_clients_on_connection:
-            await current_async_backend().sleep(0.1)
+            await self.server.backend().sleep(0.1)
             await client.aclose()
 
     async def on_disconnection(self, client: AsyncStreamClient[str]) -> None:
@@ -191,8 +189,8 @@ class TimeoutContextRequestHandler(AsyncStreamRequestHandler[str, str]):
     request_timeout: float = 1.0
     timeout_on_second_yield: bool = False
 
-    async def service_init(self, exit_stack: contextlib.AsyncExitStack, server: Any) -> None:
-        self.backend = current_async_backend()
+    async def service_init(self, exit_stack: contextlib.AsyncExitStack, server: AsyncTCPNetworkServer[Any, Any]) -> None:
+        self.backend = server.backend()
 
     async def on_connection(self, client: AsyncStreamClient[str]) -> None:
         await client.send_packet("milk")
@@ -358,9 +356,15 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     def ssl_standard_compatible(request: Any) -> bool | None:
         return getattr(request, "param", None)
 
+    @pytest.fixture
+    @staticmethod
+    def asyncio_backend() -> AsyncIOBackend:
+        return AsyncIOBackend()
+
     @pytest_asyncio.fixture
     @staticmethod
     async def server(
+        asyncio_backend: AsyncIOBackend,
         request_handler: MyAsyncTCPRequestHandler,
         localhost_ip: str,
         stream_protocol: StreamProtocol[str, str],
@@ -379,6 +383,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
             0,
             stream_protocol,
             request_handler,
+            asyncio_backend,
             backlog=1,
             ssl=server_ssl_context if use_ssl else None,
             ssl_handshake_timeout=ssl_handshake_timeout,
@@ -458,6 +463,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         log_client_connection: bool,
         request_handler: MyAsyncTCPRequestHandler,
         stream_protocol: StreamProtocol[str, str],
+        asyncio_backend: AsyncIOBackend,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         async with MyAsyncTCPServer(
@@ -465,6 +471,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
             0,
             stream_protocol,
             request_handler,
+            asyncio_backend,
             log_client_connection=log_client_connection,
             logger=LOGGER,
         ) as s:
@@ -509,10 +516,11 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         ssl_parameter: str,
         request_handler: MyAsyncTCPRequestHandler,
         stream_protocol: StreamProtocol[str, str],
+        asyncio_backend: AsyncIOBackend,
     ) -> None:
         kwargs: dict[str, Any] = {ssl_parameter: 30}
         with pytest.raises(ValueError, match=rf"^{ssl_parameter} is only meaningful with ssl$"):
-            _ = MyAsyncTCPServer(None, 0, stream_protocol, request_handler, ssl=None, **kwargs)
+            _ = MyAsyncTCPServer(None, 0, stream_protocol, request_handler, asyncio_backend, ssl=None, **kwargs)
 
     @pytest.mark.parametrize(
         "max_recv_size",
@@ -526,21 +534,21 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         max_recv_size: int,
         request_handler: MyAsyncTCPRequestHandler,
         stream_protocol: StreamProtocol[str, str],
+        asyncio_backend: AsyncIOBackend,
     ) -> None:
         with pytest.raises(ValueError, match=r"^'max_recv_size' must be a strictly positive integer$"):
-            _ = MyAsyncTCPServer(None, 0, stream_protocol, request_handler, max_recv_size=max_recv_size)
+            _ = MyAsyncTCPServer(None, 0, stream_protocol, request_handler, asyncio_backend, max_recv_size=max_recv_size)
 
     async def test____serve_forever____empty_listener_list(
         self,
         request_handler: MyAsyncTCPRequestHandler,
         stream_protocol: StreamProtocol[str, str],
     ) -> None:
-        with temporary_backend(NoListenerErrorBackend()):
-            async with MyAsyncTCPServer(None, 0, stream_protocol, request_handler) as s:
-                with pytest.raises(OSError, match=r"^empty listeners list$"):
-                    await s.serve_forever()
+        async with MyAsyncTCPServer(None, 0, stream_protocol, request_handler, NoListenerErrorBackend()) as s:
+            with pytest.raises(OSError, match=r"^empty listeners list$"):
+                await s.serve_forever()
 
-                assert not s.get_sockets()
+            assert not s.get_sockets()
 
     @pytest.mark.usefixtures("run_server_and_wait")
     async def test____serve_forever____server_assignment(
@@ -1143,6 +1151,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     )
     async def test____serve_forever____suppress_ssl_ragged_eof_errors(
         self,
+        server: MyAsyncTCPServer,
         server_address: tuple[str, int],
         server_ssl_context: ssl.SSLContext,
         client_ssl_context: ssl.SSLContext,
@@ -1155,7 +1164,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
 
         from easynetwork.lowlevel.api_async.transports.tls import AsyncTLSStreamTransport
 
-        transport = await current_async_backend().create_tcp_connection(*server_address)
+        transport = await server.backend().create_tcp_connection(*server_address)
         transport = await AsyncTLSStreamTransport.wrap(
             transport,
             client_ssl_context,

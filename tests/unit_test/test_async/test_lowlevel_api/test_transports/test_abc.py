@@ -14,37 +14,32 @@ if TYPE_CHECKING:
 
 @pytest.mark.asyncio
 class TestAsyncStreamTransport:
-    @pytest.fixture
-    @staticmethod
-    def mock_transport(mocker: MockerFixture) -> MagicMock:
-        return mocker.NonCallableMagicMock(spec=AsyncStreamTransport)
-
     async def test____send_all_from_iterable____concatenates_chunks_and_call_send_all(
         self,
-        mock_transport: MagicMock,
+        mock_stream_socket_adapter: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_transport.send_all.return_value = None
+        mock_stream_socket_adapter.send_all.return_value = None
         chunks: list[bytes | bytearray | memoryview] = [b"a", bytearray(b"b"), memoryview(b"c")]
 
         # Act
-        await AsyncStreamTransport.send_all_from_iterable(mock_transport, chunks)
+        await AsyncStreamTransport.send_all_from_iterable(mock_stream_socket_adapter, chunks)
 
         # Assert
-        assert mock_transport.send_all.await_args_list == list(map(mocker.call, chunks))
+        assert mock_stream_socket_adapter.send_all.await_args_list == list(map(mocker.call, chunks))
 
     async def test____send_all_from_iterable____single_yield____no_copy(
         self,
-        mock_transport: MagicMock,
+        mock_stream_socket_adapter: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
         chunk = mocker.sentinel.chunk
-        mock_transport.send_all.return_value = None
+        mock_stream_socket_adapter.send_all.return_value = None
 
         # Act
-        await AsyncStreamTransport.send_all_from_iterable(mock_transport, iter([chunk]))
+        await AsyncStreamTransport.send_all_from_iterable(mock_stream_socket_adapter, iter([chunk]))
 
         # Assert
-        mock_transport.send_all.assert_awaited_once_with(chunk)
+        mock_stream_socket_adapter.send_all.assert_awaited_once_with(chunk)

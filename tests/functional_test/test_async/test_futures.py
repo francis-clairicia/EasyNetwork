@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from easynetwork.lowlevel.futures import AsyncExecutor, unwrap_future
+from easynetwork.lowlevel.std_asyncio.backend import AsyncIOBackend
 
 import pytest
 import pytest_asyncio
@@ -22,7 +23,7 @@ class TestAsyncExecutor:
     @pytest_asyncio.fixture
     @staticmethod
     async def executor(max_workers: int | None) -> AsyncIterator[AsyncExecutor[concurrent.futures.Executor]]:
-        async with AsyncExecutor(concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)) as executor:
+        async with AsyncExecutor(concurrent.futures.ThreadPoolExecutor(max_workers=max_workers), AsyncIOBackend()) as executor:
             yield executor
 
     async def test____run____submit_and_wait(
@@ -128,19 +129,26 @@ class TestAsyncExecutor:
 
 @pytest.mark.asyncio
 class TestUnwrapFuture:
+    @pytest.fixture
+    @staticmethod
+    def backend() -> AsyncIOBackend:
+        return AsyncIOBackend()
+
     async def test____unwrap_future____wait_until_done(
         self,
+        backend: AsyncIOBackend,
         event_loop: asyncio.AbstractEventLoop,
     ) -> None:
         future: concurrent.futures.Future[int] = concurrent.futures.Future()
         event_loop.call_later(0.5, future.set_result, 42)
 
-        assert await unwrap_future(future) == 42
+        assert await unwrap_future(future, backend) == 42
 
     @pytest.mark.parametrize("future_running", [None, "before", "after"], ids=lambda state: f"future_running=={state}")
     async def test____unwrap_future____cancel_future_if_task_is_cancelled____result(
         self,
         future_running: str | None,
+        backend: AsyncIOBackend,
         event_loop: asyncio.AbstractEventLoop,
     ) -> None:
         future: concurrent.futures.Future[int] = concurrent.futures.Future()
@@ -149,7 +157,7 @@ class TestUnwrapFuture:
             assert future.running()
             event_loop.call_later(0.5, future.set_result, 42)
 
-        task = event_loop.create_task(unwrap_future(future))
+        task = event_loop.create_task(unwrap_future(future, backend))
         await asyncio.sleep(0.1)
 
         if future_running == "after":
@@ -173,6 +181,7 @@ class TestUnwrapFuture:
     async def test____unwrap_future____cancel_future_if_task_is_cancelled____exception(
         self,
         future_running: str | None,
+        backend: AsyncIOBackend,
         event_loop: asyncio.AbstractEventLoop,
     ) -> None:
         expected_error = Exception("error")
@@ -182,7 +191,7 @@ class TestUnwrapFuture:
             assert future.running()
             event_loop.call_later(0.5, future.set_exception, expected_error)
 
-        task = event_loop.create_task(unwrap_future(future))
+        task = event_loop.create_task(unwrap_future(future, backend))
         await asyncio.sleep(0.1)
 
         if future_running == "after":
@@ -204,10 +213,11 @@ class TestUnwrapFuture:
 
     async def test____unwrap_future____future_is_cancelled(
         self,
+        backend: AsyncIOBackend,
         event_loop: asyncio.AbstractEventLoop,
     ) -> None:
         future: concurrent.futures.Future[int] = concurrent.futures.Future()
-        task = event_loop.create_task(unwrap_future(future))
+        task = event_loop.create_task(unwrap_future(future, backend))
 
         event_loop.call_later(0.1, future.cancel)
         await asyncio.wait([task])
@@ -215,27 +225,34 @@ class TestUnwrapFuture:
         assert not task.cancelled()
         assert type(task.exception()) is concurrent.futures.CancelledError
 
-    async def test____unwrap_future____already_done(self) -> None:
+    async def test____unwrap_future____already_done(
+        self,
+        backend: AsyncIOBackend,
+    ) -> None:
         future: concurrent.futures.Future[int] = concurrent.futures.Future()
         future.set_result(42)
 
-        assert await unwrap_future(future) == 42
+        assert await unwrap_future(future, backend) == 42
 
-    async def test____unwrap_future____already_cancelled(self) -> None:
+    async def test____unwrap_future____already_cancelled(
+        self,
+        backend: AsyncIOBackend,
+    ) -> None:
         future: concurrent.futures.Future[int] = concurrent.futures.Future()
         future.cancel()
 
         with pytest.raises(concurrent.futures.CancelledError):
-            await unwrap_future(future)
+            await unwrap_future(future, backend)
 
     async def test____unwrap_future____already_cancelled____task_cancelled_too(
         self,
+        backend: AsyncIOBackend,
         event_loop: asyncio.AbstractEventLoop,
     ) -> None:
         future: concurrent.futures.Future[int] = concurrent.futures.Future()
         future.cancel()
 
-        task = event_loop.create_task(unwrap_future(future))
+        task = event_loop.create_task(unwrap_future(future, backend))
         event_loop.call_soon(task.cancel)
 
         with pytest.raises(asyncio.CancelledError):
@@ -243,11 +260,12 @@ class TestUnwrapFuture:
 
     async def test____unwrap_future____task_cancellation_prevails_over_future_cancellation(
         self,
+        backend: AsyncIOBackend,
         event_loop: asyncio.AbstractEventLoop,
     ) -> None:
         future: concurrent.futures.Future[int] = concurrent.futures.Future()
 
-        task = event_loop.create_task(unwrap_future(future))
+        task = event_loop.create_task(unwrap_future(future, backend))
 
         event_loop.call_soon(future.cancel)
         await asyncio.sleep(0)

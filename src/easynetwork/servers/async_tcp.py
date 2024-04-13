@@ -31,8 +31,9 @@ from ..exceptions import ClientClosedError, ServerAlreadyRunning, ServerClosedEr
 from ..lowlevel import _utils, constants
 from ..lowlevel._asyncgen import AsyncGenAction, SendAction, ThrowAction
 from ..lowlevel._final import runtime_final_class
-from ..lowlevel.api_async.backend.factory import current_async_backend
+from ..lowlevel.api_async.backend.abc import AsyncBackend, CancelScope, IEvent, Task, TaskGroup
 from ..lowlevel.api_async.servers import stream as _stream_server
+from ..lowlevel.api_async.transports.abc import AsyncListener, AsyncStreamTransport
 from ..lowlevel.socket import (
     INETSocketAttribute,
     ISocket,
@@ -50,9 +51,6 @@ from .handlers import AsyncStreamClient, AsyncStreamRequestHandler, INETClientAt
 if TYPE_CHECKING:
     import ssl as _typing_ssl
 
-    from ..lowlevel.api_async.backend.abc import AsyncBackend, CancelScope, IEvent, Task, TaskGroup
-    from ..lowlevel.api_async.transports.abc import AsyncListener, AsyncStreamTransport
-
 
 class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_Response]):
     """
@@ -60,6 +58,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
     """
 
     __slots__ = (
+        "__backend",
         "__servers",
         "__listeners_factory",
         "__listeners_factory_scope",
@@ -81,6 +80,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
         port: int,
         protocol: StreamProtocol[_T_Response, _T_Request],
         request_handler: AsyncStreamRequestHandler[_T_Request, _T_Response],
+        backend: AsyncBackend,
         *,
         ssl: _typing_ssl.SSLContext | None = None,
         ssl_handshake_timeout: float | None = None,
@@ -108,6 +108,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
                   for each interface).
             protocol: The :term:`protocol object` to use.
             request_handler: The request handler to use.
+            backend: The :term:`asynchronous backend interface` to use.
 
         Keyword Arguments:
             ssl: can be set to an :class:`ssl.SSLContext` instance to enable TLS over the accepted connections.
@@ -143,10 +144,10 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
 
         if not isinstance(protocol, StreamProtocol):
             raise TypeError(f"Expected a StreamProtocol object, got {protocol!r}")
+        if not isinstance(backend, AsyncBackend):
+            raise TypeError(f"Expected an AsyncBackend instance, got {backend!r}")
         if not isinstance(request_handler, AsyncStreamRequestHandler):
             raise TypeError(f"Expected an AsyncStreamRequestHandler object, got {request_handler!r}")
-
-        backend = current_async_backend()
 
         if backlog is None:
             backlog = 100
@@ -173,6 +174,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
         if ssl_standard_compatible is None:
             ssl_standard_compatible = True
 
+        self.__backend: AsyncBackend = backend
         self.__listeners_factory: Callable[[], Coroutine[Any, Any, Sequence[AsyncListener[AsyncStreamTransport]]]] | None
         if ssl:
             self.__listeners_factory = _utils.make_callback(
@@ -273,11 +275,11 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
 
     async def __close_servers(self) -> None:
         async with contextlib.AsyncExitStack() as exit_stack:
-            server_close_group = await exit_stack.enter_async_context(current_async_backend().create_task_group())
+            server_close_group = await exit_stack.enter_async_context(self.__backend.create_task_group())
 
             servers, self.__servers = self.__servers, None
             if servers is not None:
-                exit_stack.push_async_callback(current_async_backend().cancel_shielded_coro_yield)
+                exit_stack.push_async_callback(self.__backend.cancel_shielded_coro_yield)
                 for server in servers:
                     exit_stack.callback(server_close_group.start_soon, server.aclose)
                     del server
@@ -290,7 +292,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
             if self.__server_run_scope is not None:
                 self.__server_run_scope.cancel()
 
-            await current_async_backend().cancel_shielded_coro_yield()
+            await self.__backend.cancel_shielded_coro_yield()
 
     @_utils.inherit_doc(AbstractAsyncNetworkServer)
     async def shutdown(self) -> None:
@@ -304,9 +306,9 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
             # Wake up server
             if not self.__is_shutdown.is_set():
                 raise ServerAlreadyRunning("Server is already running")
-            self.__is_shutdown = is_shutdown = current_async_backend().create_event()
+            self.__is_shutdown = is_shutdown = self.__backend.create_event()
             server_exit_stack.callback(is_shutdown.set)
-            self.__server_run_scope = server_exit_stack.enter_context(current_async_backend().open_cancel_scope())
+            self.__server_run_scope = server_exit_stack.enter_context(self.__backend.open_cancel_scope())
 
             def reset_scope() -> None:
                 self.__server_run_scope = None
@@ -321,8 +323,8 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
                 raise ServerClosedError("Closed server")
             listeners: list[AsyncListener[AsyncStreamTransport]] = []
             try:
-                with current_async_backend().open_cancel_scope() as self.__listeners_factory_scope:
-                    await current_async_backend().coro_yield()
+                with self.__backend.open_cancel_scope() as self.__listeners_factory_scope:
+                    await self.__backend.coro_yield()
                     listeners.extend(await self.__listeners_factory())
                 if self.__listeners_factory_scope.cancelled_caught():
                     raise ServerClosedError("Server has been closed during task setup")
@@ -357,7 +359,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
             # Setup task group
             self.__active_tasks = 0
             server_exit_stack.callback(self.__servers_tasks.clear)
-            task_group = await server_exit_stack.enter_async_context(current_async_backend().create_task_group())
+            task_group = await server_exit_stack.enter_async_context(self.__backend.create_task_group())
             server_exit_stack.callback(self.__logger.info, "Server loop break, waiting for remaining tasks...")
             ##################
 
@@ -373,7 +375,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
 
             # Main loop
             try:
-                await current_async_backend().sleep_forever()
+                await self.__backend.sleep_forever()
             finally:
                 reset_scope()
 
@@ -413,7 +415,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
             client_exit_stack.callback(self.__set_socket_linger_if_not_closed, lowlevel_client.extra(INETSocketAttribute.socket))
 
             logger: logging.Logger = self.__logger
-            client = _ConnectedClientAPI(client_address, lowlevel_client)
+            client = _ConnectedClientAPI(self.__backend, client_address, lowlevel_client)
 
             del lowlevel_client
 
@@ -561,6 +563,10 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
             return ()
         return tuple(SocketProxy(server.extra(INETSocketAttribute.socket)) for server in servers)
 
+    @_utils.inherit_doc(AbstractAsyncNetworkServer)
+    def backend(self) -> AsyncBackend:
+        return self.__backend
+
 
 @final
 @runtime_final_class
@@ -576,12 +582,13 @@ class _ConnectedClientAPI(AsyncStreamClient[_T_Response]):
 
     def __init__(
         self,
+        backend: AsyncBackend,
         address: SocketAddress,
         client: _stream_server.AsyncStreamClient[_T_Response],
     ) -> None:
         self.__client: _stream_server.AsyncStreamClient[_T_Response] = client
         self.__closing: bool = False
-        self.__send_lock = current_async_backend().create_lock()
+        self.__send_lock = backend.create_lock()
         self.__proxy: SocketProxy = SocketProxy(client.extra(INETSocketAttribute.socket))
         self.__address: SocketAddress = address
         self.__extra_attributes_cache: Mapping[Any, Callable[[], Any]] | None = None

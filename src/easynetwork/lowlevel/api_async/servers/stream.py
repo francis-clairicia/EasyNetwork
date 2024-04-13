@@ -139,6 +139,10 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_T_Request, _
         """
         await self.__listener.aclose()
 
+    @_utils.inherit_doc(transports.AsyncBaseTransport)
+    def backend(self) -> AsyncBackend:
+        return self.__listener.backend()
+
     async def serve(
         self,
         client_connected_cb: Callable[[AsyncStreamClient[_T_Response]], AsyncGenerator[float | None, _T_Request]],
@@ -155,8 +159,6 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_T_Request, _
     ) -> None:
         if not isinstance(transport, transports.AsyncStreamTransport):
             raise TypeError(f"Expected an AsyncStreamTransport object, got {transport!r}")
-
-        from ..backend.factory import current_async_backend
 
         async with contextlib.AsyncExitStack() as task_exit_stack:
             task_exit_stack.push_async_callback(transports_utils.aclose_forcefully, transport)
@@ -175,7 +177,6 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_T_Request, _
                                 warnings.warn(msg, category=ManualBufferAllocationWarning, stacklevel=1)
                             raise UnsupportedOperation(msg)
                         request_receiver = _BufferedRequestReceiver(
-                            backend=current_async_backend(),
                             transport=transport,
                             consumer=consumer,
                         )
@@ -184,7 +185,6 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_T_Request, _
                             raise
                         consumer = _stream.StreamDataConsumer(self.__protocol)
                         request_receiver = _RequestReceiver(
-                            backend=current_async_backend(),
                             transport=transport,
                             consumer=consumer,
                             max_recv_size=self.__max_recv_size,
@@ -192,7 +192,6 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_T_Request, _
                 case "no":
                     consumer = _stream.StreamDataConsumer(self.__protocol)
                     request_receiver = _RequestReceiver(
-                        backend=current_async_backend(),
                         transport=transport,
                         consumer=consumer,
                         max_recv_size=self.__max_recv_size,
@@ -207,7 +206,7 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_T_Request, _
 
             request_handler_generator = client_connected_cb(client)
 
-            del client_exit_stack, task_exit_stack, client_connected_cb, client, current_async_backend
+            del client_exit_stack, task_exit_stack, client_connected_cb, client
 
             timeout: float | None
             try:
@@ -236,7 +235,6 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_T_Request, _
 
 @dataclasses.dataclass(kw_only=True, eq=False, frozen=True, slots=True)
 class _RequestReceiver(Generic[_T_Request]):
-    backend: AsyncBackend
     transport: transports.AsyncStreamReadTransport
     consumer: _stream.StreamDataConsumer[_T_Request]
     max_recv_size: int
@@ -255,7 +253,7 @@ class _RequestReceiver(Generic[_T_Request]):
             else:
                 return SendAction(request)
 
-            with self.__null_timeout_ctx if timeout is None else self.backend.timeout(timeout):
+            with self.__null_timeout_ctx if timeout is None else self.transport.backend().timeout(timeout):
                 while data := await self.transport.recv(self.max_recv_size):
                     try:
                         request = consumer.next(data)
@@ -271,7 +269,6 @@ class _RequestReceiver(Generic[_T_Request]):
 
 @dataclasses.dataclass(kw_only=True, eq=False, frozen=True, slots=True)
 class _BufferedRequestReceiver(Generic[_T_Request]):
-    backend: AsyncBackend
     transport: transports.AsyncBufferedStreamReadTransport
     consumer: _stream.BufferedStreamDataConsumer[_T_Request]
     __null_timeout_ctx: contextlib.nullcontext[None] = dataclasses.field(init=False, default_factory=contextlib.nullcontext)
@@ -286,7 +283,7 @@ class _BufferedRequestReceiver(Generic[_T_Request]):
             else:
                 return SendAction(request)
 
-            with self.__null_timeout_ctx if timeout is None else self.backend.timeout(timeout):
+            with self.__null_timeout_ctx if timeout is None else self.transport.backend().timeout(timeout):
                 while nbytes := await self.transport.recv_into(consumer.get_write_buffer()):
                     try:
                         request = consumer.next(nbytes)

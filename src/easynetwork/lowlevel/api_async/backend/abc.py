@@ -648,7 +648,7 @@ class AsyncBackend(metaclass=ABCMeta):
 
         would act as the following for :mod:`asyncio`::
 
-            with asyncio.Runner(loop_factory=uvloop.new_event_loop):
+            with asyncio.Runner(loop_factory=uvloop.new_event_loop) as runner:
                 runner.run(coro_func(*args))
 
         Parameters:

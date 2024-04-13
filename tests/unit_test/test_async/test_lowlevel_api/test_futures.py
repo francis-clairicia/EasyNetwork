@@ -2,14 +2,12 @@ from __future__ import annotations
 
 import concurrent.futures
 import contextvars
-from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
 from easynetwork.lowlevel.futures import AsyncExecutor
 
 import pytest
 
-from ....tools import temporary_backend
 from ..._utils import partial_eq
 
 if TYPE_CHECKING:
@@ -38,9 +36,8 @@ class TestAsyncExecutor:
         mock_backend: MagicMock,
         mock_stdlib_executor: MagicMock,
         executor_handle_contexts: bool,
-    ) -> Iterator[AsyncExecutor[concurrent.futures.Executor]]:
-        with temporary_backend(mock_backend):
-            yield AsyncExecutor(mock_stdlib_executor, handle_contexts=executor_handle_contexts)
+    ) -> AsyncExecutor[concurrent.futures.Executor]:
+        return AsyncExecutor(mock_stdlib_executor, mock_backend, handle_contexts=executor_handle_contexts)
 
     @pytest.fixture(autouse=True)
     @staticmethod
@@ -54,14 +51,27 @@ class TestAsyncExecutor:
 
     async def test____dunder_init____invalid_executor(
         self,
+        mock_backend: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
         invalid_executor = mocker.NonCallableMagicMock(spec=object)
 
         # Act & Assert
-        with pytest.raises(TypeError):
-            _ = AsyncExecutor(invalid_executor)
+        with pytest.raises(TypeError, match=r"^Invalid executor type$"):
+            _ = AsyncExecutor(invalid_executor, mock_backend)
+
+    async def test____dunder_init____invalid_backend(
+        self,
+        mock_stdlib_executor: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        invalid_backend = mocker.NonCallableMagicMock(spec=object)
+
+        # Act & Assert
+        with pytest.raises(TypeError, match=r"^Expected an AsyncBackend instance, got .+$"):
+            _ = AsyncExecutor(mock_stdlib_executor, invalid_backend)
 
     async def test____wrapped_property____returned_wrapped_executor_instance(
         self,
@@ -77,6 +87,7 @@ class TestAsyncExecutor:
         self,
         executor: AsyncExecutor[concurrent.futures.Executor],
         executor_handle_contexts: bool,
+        mock_backend: MagicMock,
         mock_stdlib_executor: MagicMock,
         mock_contextvars_copy_context: MagicMock,
         mock_unwrap_future: MagicMock,
@@ -122,7 +133,7 @@ class TestAsyncExecutor:
                 kw2=mocker.sentinel.kw2,
             )
         func.assert_not_called()
-        mock_unwrap_future.assert_awaited_once_with(mock_future)
+        mock_unwrap_future.assert_awaited_once_with(mock_future, mock_backend)
         mock_future.cancel.assert_called_once_with()
         assert result is mocker.sentinel.result
 

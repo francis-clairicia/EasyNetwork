@@ -10,10 +10,12 @@ from easynetwork.lowlevel.api_async.transports.abc import (
     AsyncDatagramTransport,
     AsyncDatagramWriteTransport,
 )
+from easynetwork.lowlevel.std_asyncio.backend import AsyncIOBackend
 
 import pytest
 
 from ....base import BaseTestWithDatagramProtocol
+from ...mock_tools import make_transport_mock
 
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
@@ -25,15 +27,12 @@ if TYPE_CHECKING:
 class TestAsyncDatagramEndpoint(BaseTestWithDatagramProtocol):
     @pytest.fixture(params=[AsyncDatagramReadTransport, AsyncDatagramWriteTransport, AsyncDatagramTransport])
     @staticmethod
-    def mock_datagram_transport(request: pytest.FixtureRequest, mocker: MockerFixture) -> MagicMock:
-        mock_datagram_transport = mocker.NonCallableMagicMock(spec=request.param)
-        mock_datagram_transport.is_closing.return_value = False
-
-        def close_side_effect() -> None:
-            mock_datagram_transport.is_closing.return_value = True
-
-        mock_datagram_transport.aclose.side_effect = close_side_effect
-        return mock_datagram_transport
+    def mock_datagram_transport(
+        asyncio_backend: AsyncIOBackend,
+        request: pytest.FixtureRequest,
+        mocker: MockerFixture,
+    ) -> MagicMock:
+        return make_transport_mock(mocker=mocker, spec=request.param, backend=asyncio_backend)
 
     @pytest.fixture
     @staticmethod
@@ -224,3 +223,13 @@ class TestAsyncDatagramEndpoint(BaseTestWithDatagramProtocol):
 
         # Assert
         assert exc_info.value.__cause__ is expected_error
+
+    async def test____get_backend____returns_inner_transport_backend(
+        self,
+        endpoint: AsyncDatagramEndpoint[Any, Any],
+        mock_datagram_transport: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        assert endpoint.backend() is mock_datagram_transport.backend()
