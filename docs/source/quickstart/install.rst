@@ -36,7 +36,7 @@ Example where the ``cbor`` and ``msgpack`` extensions are installed:
    (.venv) $ pip install "easynetwork[cbor,msgpack]"
 
 
-.. seealso::
+.. todo::
 
-   :doc:`/api/lowlevel/async/backend`
-      See how ``sniffio`` is used.
+   Explain what we do with ``sniffio`` when adding documentation of ``AsyncIOBackend``
+   (because it is *NOT* for ``sniffio.current_async_library()``).
