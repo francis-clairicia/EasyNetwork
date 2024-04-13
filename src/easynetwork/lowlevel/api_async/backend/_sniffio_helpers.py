@@ -16,35 +16,18 @@
 
 from __future__ import annotations
 
-__all__ = ["current_async_library", "setup_sniffio_contextvar"]
+__all__ = ["setup_sniffio_contextvar"]
 
 import contextvars
-import sys
-
-
-def _current_async_library_fallback() -> str:
-    if "asyncio" in sys.modules:
-        import asyncio
-
-        try:
-            asyncio.get_running_loop()
-        except RuntimeError:
-            pass
-        else:
-            return "asyncio"
-    raise RuntimeError("unknown async library, or not in async context")
-
 
 try:
     import sniffio
 except ModuleNotFoundError:
-    current_async_library = _current_async_library_fallback
 
     def setup_sniffio_contextvar(context: contextvars.Context, library_name: str | None, /) -> None:
         pass
 
 else:
-    current_async_library = sniffio.current_async_library
 
     def setup_sniffio_contextvar(context: contextvars.Context, library_name: str | None, /) -> None:
         context.run(sniffio.current_async_library_cvar.set, library_name)
