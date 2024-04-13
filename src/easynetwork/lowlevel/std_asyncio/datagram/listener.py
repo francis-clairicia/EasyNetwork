@@ -37,20 +37,23 @@ if TYPE_CHECKING:
     import asyncio.trsock
 
     from ...api_async.backend.abc import TaskGroup as AbstractTaskGroup
+    from ..backend import AsyncIOBackend
 
 
 @final
 class DatagramListenerSocketAdapter(transports.AsyncDatagramListener[tuple[Any, ...]]):
     __slots__ = (
+        "__backend",
         "__transport",
         "__protocol",
         "__socket",
         "__closing",
     )
 
-    def __init__(self, transport: asyncio.DatagramTransport, protocol: DatagramListenerProtocol) -> None:
+    def __init__(self, backend: AsyncIOBackend, transport: asyncio.DatagramTransport, protocol: DatagramListenerProtocol) -> None:
         super().__init__()
 
+        self.__backend: AsyncIOBackend = backend
         self.__transport: asyncio.DatagramTransport = transport
         self.__protocol: DatagramListenerProtocol = protocol
 
@@ -88,6 +91,9 @@ class DatagramListenerSocketAdapter(transports.AsyncDatagramListener[tuple[Any, 
         assert address is not None, "Address is None"  # nosec assert_used
         self.__transport.sendto(data, address)
         await self.__protocol.writer_drain()
+
+    def backend(self) -> AsyncIOBackend:
+        return self.__backend
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:

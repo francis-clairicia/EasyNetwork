@@ -150,10 +150,11 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
     @pytest_asyncio.fixture
     @staticmethod
     async def client_not_connected(
+        mock_backend: MagicMock,
         remote_address: tuple[str, int],
         mock_stream_protocol: MagicMock,
     ) -> AsyncTCPNetworkClient[Any, Any]:
-        client: AsyncTCPNetworkClient[Any, Any] = AsyncTCPNetworkClient(remote_address, mock_stream_protocol)
+        client: AsyncTCPNetworkClient[Any, Any] = AsyncTCPNetworkClient(remote_address, mock_stream_protocol, mock_backend)
         assert not client.is_connected()
         return client
 
@@ -186,6 +187,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         client: AsyncTCPNetworkClient[Any, Any] = AsyncTCPNetworkClient(
             remote_address,
             protocol=mock_stream_protocol,
+            backend=mock_backend,
             local_address=mocker.sentinel.local_address,
             happy_eyeballs_delay=mocker.sentinel.happy_eyeballs_delay,
         )
@@ -217,7 +219,11 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         # Arrange
 
         # Act
-        client: AsyncTCPNetworkClient[Any, Any] = AsyncTCPNetworkClient(mock_tcp_socket, protocol=mock_stream_protocol)
+        client: AsyncTCPNetworkClient[Any, Any] = AsyncTCPNetworkClient(
+            mock_tcp_socket,
+            protocol=mock_stream_protocol,
+            backend=mock_backend,
+        )
         await client.wait_connected()
 
         # Assert
@@ -234,6 +240,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
     async def test____dunder_init____use_given_socket____error_no_remote_address(
         self,
         mock_tcp_socket: MagicMock,
+        mock_backend: MagicMock,
         mock_stream_protocol: MagicMock,
     ) -> None:
         # Arrange
@@ -241,7 +248,11 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
 
         # Act
         with pytest.raises(OSError) as exc_info:
-            _ = AsyncTCPNetworkClient(mock_tcp_socket, protocol=mock_stream_protocol)
+            _ = AsyncTCPNetworkClient(
+                mock_tcp_socket,
+                protocol=mock_stream_protocol,
+                backend=mock_backend,
+            )
 
         # Assert
         assert exc_info.value.errno == errno.ENOTCONN
@@ -251,6 +262,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
     async def test____dunder_init____use_given_socket____invalid_socket_family(
         self,
         use_ssl: bool,
+        mock_backend: MagicMock,
         mock_tcp_socket: MagicMock,
         mock_stream_protocol: MagicMock,
     ) -> None:
@@ -266,6 +278,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             _ = AsyncTCPNetworkClient(
                 mock_tcp_socket,
                 protocol=mock_stream_protocol,
+                backend=mock_backend,
                 ssl=ssl_context,
                 server_hostname=server_hostname,
             )
@@ -273,6 +286,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
     async def test____dunder_init____invalid_first_argument____invalid_object(
         self,
         mock_stream_protocol: MagicMock,
+        mock_backend: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -283,11 +297,13 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             _ = AsyncTCPNetworkClient(
                 invalid_object,
                 protocol=mock_stream_protocol,
+                backend=mock_backend,
             )
 
     async def test____dunder_init____invalid_first_argument____invalid_host_port_pair(
         self,
         mock_stream_protocol: MagicMock,
+        mock_backend: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -299,6 +315,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             _ = AsyncTCPNetworkClient(
                 (invalid_host, invalid_port),
                 protocol=mock_stream_protocol,
+                backend=mock_backend,
             )
 
     @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
@@ -307,6 +324,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         request: pytest.FixtureRequest,
         use_socket: bool,
         mock_datagram_protocol: MagicMock,
+        mock_backend: MagicMock,
     ) -> None:
         # Arrange
 
@@ -316,11 +334,39 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
                 _ = AsyncTCPNetworkClient(
                     request.getfixturevalue("mock_tcp_socket"),
                     mock_datagram_protocol,
+                    mock_backend,
                 )
             else:
                 _ = AsyncTCPNetworkClient(
                     request.getfixturevalue("remote_address"),
                     mock_datagram_protocol,
+                    mock_backend,
+                )
+
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    async def test____dunder_init____backend____invalid_value(
+        self,
+        request: pytest.FixtureRequest,
+        use_socket: bool,
+        mock_stream_protocol: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        invalid_backend = mocker.NonCallableMagicMock(spec=object)
+
+        # Act & Assert
+        with pytest.raises(TypeError, match=r"^Expected an AsyncBackend instance, got .*$"):
+            if use_socket:
+                _ = AsyncTCPNetworkClient(
+                    request.getfixturevalue("mock_tcp_socket"),
+                    mock_stream_protocol,
+                    invalid_backend,
+                )
+            else:
+                _ = AsyncTCPNetworkClient(
+                    request.getfixturevalue("remote_address"),
+                    mock_stream_protocol,
+                    invalid_backend,
                 )
 
     @pytest.mark.parametrize("max_recv_size", [None, 1, 2**64], ids=lambda p: f"max_recv_size=={p}")
@@ -333,6 +379,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         max_recv_size: int | None,
         use_socket: bool,
         mock_stream_protocol: MagicMock,
+        mock_backend: MagicMock,
     ) -> None:
         # Arrange
         expected_size: int = max_recv_size if max_recv_size is not None else DEFAULT_STREAM_BUFSIZE
@@ -343,12 +390,14 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             client = AsyncTCPNetworkClient(
                 request.getfixturevalue("mock_tcp_socket"),
                 mock_stream_protocol,
+                mock_backend,
                 max_recv_size=max_recv_size,
             )
         else:
             client = AsyncTCPNetworkClient(
                 request.getfixturevalue("remote_address"),
-                protocol=mock_stream_protocol,
+                mock_stream_protocol,
+                mock_backend,
                 max_recv_size=max_recv_size,
             )
         if endpoint_connected:
@@ -365,6 +414,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         max_recv_size: Any,
         use_socket: bool,
         mock_stream_protocol: MagicMock,
+        mock_backend: MagicMock,
     ) -> None:
         # Arrange
 
@@ -374,12 +424,14 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
                 _ = AsyncTCPNetworkClient(
                     request.getfixturevalue("mock_tcp_socket"),
                     mock_stream_protocol,
+                    mock_backend,
                     max_recv_size=max_recv_size,
                 )
             else:
                 _ = AsyncTCPNetworkClient(
                     request.getfixturevalue("remote_address"),
-                    protocol=mock_stream_protocol,
+                    mock_stream_protocol,
+                    mock_backend,
                     max_recv_size=max_recv_size,
                 )
 
@@ -391,6 +443,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         manual_buffer_allocation: Any,
         use_socket: bool,
         mock_stream_protocol: MagicMock,
+        mock_backend: MagicMock,
     ) -> None:
         # Arrange
 
@@ -400,12 +453,14 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
                 _ = AsyncTCPNetworkClient(
                     request.getfixturevalue("mock_tcp_socket"),
                     mock_stream_protocol,
+                    mock_backend,
                     manual_buffer_allocation=manual_buffer_allocation,
                 )
             else:
                 _ = AsyncTCPNetworkClient(
                     request.getfixturevalue("remote_address"),
-                    protocol=mock_stream_protocol,
+                    mock_stream_protocol,
+                    mock_backend,
                     manual_buffer_allocation=manual_buffer_allocation,
                 )
 
@@ -432,6 +487,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             client = AsyncTCPNetworkClient(
                 mock_tcp_socket,
                 protocol=mock_stream_protocol,
+                backend=mock_backend,
                 ssl=mock_ssl_context,
                 server_hostname="server_hostname",
                 ssl_handshake_timeout=mocker.sentinel.ssl_handshake_timeout,
@@ -442,6 +498,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             client = AsyncTCPNetworkClient(
                 remote_address,
                 protocol=mock_stream_protocol,
+                backend=mock_backend,
                 ssl=mock_ssl_context,
                 server_hostname="server_hostname",
                 ssl_handshake_timeout=mocker.sentinel.ssl_handshake_timeout,
@@ -488,6 +545,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         self,
         use_socket: bool,
         remote_address: tuple[str, int],
+        mock_backend: MagicMock,
         mock_tcp_socket: MagicMock,
         mock_stream_protocol: MagicMock,
         mock_ssl_context: MagicMock,
@@ -503,6 +561,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             client = AsyncTCPNetworkClient(
                 mock_tcp_socket,
                 protocol=mock_stream_protocol,
+                backend=mock_backend,
                 ssl=mock_ssl_context,
                 server_hostname="server_hostname",
             )
@@ -510,6 +569,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             client = AsyncTCPNetworkClient(
                 remote_address,
                 protocol=mock_stream_protocol,
+                backend=mock_backend,
                 ssl=mock_ssl_context,
                 server_hostname="server_hostname",
                 local_address=mocker.sentinel.local_address,
@@ -546,6 +606,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         remote_address: tuple[str, int],
         mock_tcp_socket: MagicMock,
         mock_stream_protocol: MagicMock,
+        mock_backend: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -557,6 +618,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
                 _ = AsyncTCPNetworkClient(
                     mock_tcp_socket,
                     protocol=mock_stream_protocol,
+                    backend=mock_backend,
                     ssl=None,
                     **kwargs,
                 )
@@ -564,6 +626,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
                 _ = AsyncTCPNetworkClient(
                     remote_address,
                     protocol=mock_stream_protocol,
+                    backend=mock_backend,
                     ssl=None,
                     **kwargs,
                 )
@@ -573,6 +636,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         self,
         use_socket: bool,
         remote_address: tuple[str, int],
+        mock_backend: MagicMock,
         mock_tcp_socket: MagicMock,
         mock_stream_protocol: MagicMock,
         mock_ssl_context: MagicMock,
@@ -590,6 +654,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             client = AsyncTCPNetworkClient(
                 mock_tcp_socket,
                 protocol=mock_stream_protocol,
+                backend=mock_backend,
                 ssl=mock_ssl_context,
                 server_hostname="",
                 ssl_handshake_timeout=mocker.sentinel.ssl_handshake_timeout,
@@ -600,6 +665,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             client = AsyncTCPNetworkClient(
                 remote_address,
                 protocol=mock_stream_protocol,
+                backend=mock_backend,
                 ssl=mock_ssl_context,
                 server_hostname="",
                 ssl_handshake_timeout=mocker.sentinel.ssl_handshake_timeout,
@@ -639,6 +705,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             _ = AsyncTCPNetworkClient(
                 mock_tcp_socket,
                 protocol=mock_stream_protocol,
+                backend=mock_backend,
                 ssl=mock_ssl_context,
                 server_hostname=None,
                 ssl_handshake_timeout=mocker.sentinel.ssl_handshake_timeout,
@@ -651,6 +718,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         self,
         use_socket: bool,
         remote_address: tuple[str, int],
+        mock_backend: MagicMock,
         mock_tcp_socket: MagicMock,
         mock_stream_protocol: MagicMock,
         mock_ssl_context: MagicMock,
@@ -667,6 +735,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             client = AsyncTCPNetworkClient(
                 mock_tcp_socket,
                 protocol=mock_stream_protocol,
+                backend=mock_backend,
                 ssl=True,
                 server_hostname="server_hostname",
                 ssl_handshake_timeout=mocker.sentinel.ssl_handshake_timeout,
@@ -677,6 +746,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             client = AsyncTCPNetworkClient(
                 remote_address,
                 protocol=mock_stream_protocol,
+                backend=mock_backend,
                 ssl=True,
                 server_hostname="server_hostname",
                 ssl_handshake_timeout=mocker.sentinel.ssl_handshake_timeout,
@@ -704,6 +774,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         self,
         use_socket: bool,
         remote_address: tuple[str, int],
+        mock_backend: MagicMock,
         mock_tcp_socket: MagicMock,
         mock_stream_protocol: MagicMock,
         mock_ssl_context: MagicMock,
@@ -722,6 +793,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             client = AsyncTCPNetworkClient(
                 mock_tcp_socket,
                 protocol=mock_stream_protocol,
+                backend=mock_backend,
                 ssl=True,
                 server_hostname="",
                 ssl_handshake_timeout=mocker.sentinel.ssl_handshake_timeout,
@@ -732,6 +804,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             client = AsyncTCPNetworkClient(
                 remote_address,
                 protocol=mock_stream_protocol,
+                backend=mock_backend,
                 ssl=True,
                 server_hostname="",
                 ssl_handshake_timeout=mocker.sentinel.ssl_handshake_timeout,
@@ -930,6 +1003,16 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
 
         # Assert
         mock_tcp_socket.getpeername.assert_not_called()
+
+    async def test____get_backend____returns_linked_instance(
+        self,
+        client_connected_or_not: AsyncTCPNetworkClient[Any, Any],
+        mock_backend: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        assert client_connected_or_not.backend() is mock_backend
 
     @pytest.mark.usefixtures("setup_producer_mock")
     async def test____send_packet____send_bytes_to_socket(
@@ -1473,6 +1556,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         self,
         remote_address: tuple[str, int],
         ssl_shared_lock: bool | None,
+        mock_backend: MagicMock,
         mock_stream_socket_adapter: MagicMock,
         mock_stream_protocol: MagicMock,
         mock_ssl_context: MagicMock,
@@ -1482,6 +1566,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         client: AsyncTCPNetworkClient[Any, Any] = AsyncTCPNetworkClient(
             remote_address,
             protocol=mock_stream_protocol,
+            backend=mock_backend,
             ssl=mock_ssl_context,
             server_hostname="server_hostname",
             ssl_shared_lock=ssl_shared_lock,

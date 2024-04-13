@@ -257,7 +257,7 @@ class TestAsyncIOBackend:
             partial_eq(StreamReaderBufferedProtocol, loop=event_loop),
             sock=mock_tcp_socket,
         )
-        mock_AsyncioTransportStreamSocketAdapter.assert_called_once_with(mock_asyncio_transport, mock_protocol)
+        mock_AsyncioTransportStreamSocketAdapter.assert_called_once_with(backend, mock_asyncio_transport, mock_protocol)
         assert socket is mocker.sentinel.socket
 
     async def test____wrap_stream_socket____use_asyncio_open_connection(
@@ -288,7 +288,7 @@ class TestAsyncIOBackend:
             partial_eq(StreamReaderBufferedProtocol, loop=event_loop),
             sock=mock_tcp_socket,
         )
-        mock_AsyncioTransportStreamSocketAdapter.assert_called_once_with(mock_asyncio_transport, mock_protocol)
+        mock_AsyncioTransportStreamSocketAdapter.assert_called_once_with(backend, mock_asyncio_transport, mock_protocol)
         assert socket is mocker.sentinel.socket
         mock_tcp_socket.setblocking.assert_called_with(False)
 
@@ -348,7 +348,7 @@ class TestAsyncIOBackend:
             reuse_address=mocker.ANY,  # Determined according to OS
             reuse_port=mocker.sentinel.reuse_port,
         )
-        mock_ListenerSocketAdapter.assert_called_once_with(mock_tcp_socket, event_loop, expected_factory)
+        mock_ListenerSocketAdapter.assert_called_once_with(backend, mock_tcp_socket, event_loop, expected_factory)
         assert listener_sockets == [mocker.sentinel.listener_socket]
 
     @pytest.mark.parametrize("remote_host", [None, ""], ids=repr)
@@ -418,7 +418,7 @@ class TestAsyncIOBackend:
             reuse_port=mocker.sentinel.reuse_port,
         )
         assert mock_ListenerSocketAdapter.call_args_list == [
-            mocker.call(mock_tcp_socket, event_loop, expected_factory) for _ in range(2)
+            mocker.call(backend, mock_tcp_socket, event_loop, expected_factory) for _ in range(2)
         ]
         assert listener_sockets == [mocker.sentinel.listener_socket, mocker.sentinel.listener_socket]
 
@@ -491,7 +491,7 @@ class TestAsyncIOBackend:
             reuse_port=mocker.sentinel.reuse_port,
         )
         assert mock_ListenerSocketAdapter.call_args_list == [
-            mocker.call(mock_tcp_socket, event_loop, expected_factory) for _ in range(2)
+            mocker.call(backend, mock_tcp_socket, event_loop, expected_factory) for _ in range(2)
         ]
         assert listener_sockets == [mocker.sentinel.listener_socket, mocker.sentinel.listener_socket]
 
@@ -621,7 +621,7 @@ class TestAsyncIOBackend:
             family=AF_UNSPEC if socket_family is None else socket_family,
         )
         mock_create_datagram_endpoint.assert_awaited_once_with(sock=mock_udp_socket)
-        mock_AsyncioTransportDatagramSocketAdapter.assert_called_once_with(mock_endpoint)
+        mock_AsyncioTransportDatagramSocketAdapter.assert_called_once_with(backend, mock_endpoint)
 
         assert socket is mocker.sentinel.socket
 
@@ -649,7 +649,7 @@ class TestAsyncIOBackend:
 
         # Assert
         mock_create_datagram_endpoint.assert_awaited_once_with(sock=mock_udp_socket)
-        mock_AsyncioTransportDatagramSocketAdapter.assert_called_once_with(mock_endpoint)
+        mock_AsyncioTransportDatagramSocketAdapter.assert_called_once_with(backend, mock_endpoint)
 
         assert socket is mocker.sentinel.socket
         mock_udp_socket.setblocking.assert_called_with(False)
@@ -721,7 +721,7 @@ class TestAsyncIOBackend:
             partial_eq(DatagramListenerProtocol, loop=event_loop),
             sock=mock_udp_socket,
         )
-        mock_DatagramListenerSocketAdapter.assert_called_once_with(mock_transport, mock_protocol)
+        mock_DatagramListenerSocketAdapter.assert_called_once_with(backend, mock_transport, mock_protocol)
         assert listener_sockets == [mocker.sentinel.listener_socket]
 
     @pytest.mark.parametrize("remote_host", [None, ""], ids=repr)
@@ -803,7 +803,9 @@ class TestAsyncIOBackend:
             )
             for _ in range(2)
         ]
-        assert mock_DatagramListenerSocketAdapter.call_args_list == [mocker.call(mock_transport, mock_protocol) for _ in range(2)]
+        assert mock_DatagramListenerSocketAdapter.call_args_list == [
+            mocker.call(backend, mock_transport, mock_protocol) for _ in range(2)
+        ]
         assert listener_sockets == [mocker.sentinel.listener_socket, mocker.sentinel.listener_socket]
 
     async def test____create_udp_listeners____bind_to_several_hosts(
@@ -887,7 +889,9 @@ class TestAsyncIOBackend:
             )
             for _ in range(2)
         ]
-        assert mock_DatagramListenerSocketAdapter.call_args_list == [mocker.call(mock_transport, mock_protocol) for _ in range(2)]
+        assert mock_DatagramListenerSocketAdapter.call_args_list == [
+            mocker.call(backend, mock_transport, mock_protocol) for _ in range(2)
+        ]
         assert listener_sockets == [mocker.sentinel.listener_socket, mocker.sentinel.listener_socket]
 
     async def test____create_udp_listeners____error_getaddrinfo_returns_empty_list(

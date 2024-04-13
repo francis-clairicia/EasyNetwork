@@ -36,8 +36,7 @@ else:
 
 from ....exceptions import UnsupportedOperation
 from ... import _utils, constants, socket as socket_tools
-from ..backend.abc import TaskGroup
-from ..backend.factory import current_async_backend
+from ..backend.abc import AsyncBackend, TaskGroup
 from . import abc as transports
 from .utils import aclose_forcefully
 
@@ -110,7 +109,7 @@ class AsyncTLSStreamTransport(transports.AsyncStreamTransport, transports.AsyncB
         )
 
         try:
-            with current_async_backend().timeout(handshake_timeout):
+            with transport.backend().timeout(handshake_timeout):
                 await self._retry_ssl_method(ssl_object.do_handshake)
 
             _ = ssl_object.getpeercert()
@@ -130,7 +129,7 @@ class AsyncTLSStreamTransport(transports.AsyncStreamTransport, transports.AsyncB
 
             self.__closing = True
             if self._standard_compatible:
-                with current_async_backend().move_on_after(self._shutdown_timeout) as shutdown_timeout_scope:
+                with self._transport.backend().move_on_after(self._shutdown_timeout) as shutdown_timeout_scope:
                     try:
                         await self._retry_ssl_method(self._ssl_object.unwrap)
                         self._read_bio.write_eof()
@@ -142,6 +141,10 @@ class AsyncTLSStreamTransport(transports.AsyncStreamTransport, transports.AsyncB
                     return
 
             await self._transport.aclose()
+
+    @_utils.inherit_doc(transports.AsyncStreamTransport)
+    def backend(self) -> AsyncBackend:
+        return self._transport.backend()
 
     @_utils.inherit_doc(transports.AsyncStreamTransport)
     async def recv(self, bufsize: int) -> bytes:
@@ -278,7 +281,7 @@ class AsyncTLSListener(transports.AsyncListener[AsyncTLSStreamTransport]):
                     shutdown_timeout=self.__shutdown_timeout,
                     standard_compatible=self.__standard_compatible,
                 )
-            except current_async_backend().get_cancelled_exc_class():
+            except stream.backend().get_cancelled_exc_class():
                 await aclose_forcefully(stream)
                 raise
             except BaseException as exc:
@@ -293,6 +296,10 @@ class AsyncTLSListener(transports.AsyncListener[AsyncTLSStreamTransport]):
                 await handler(stream)
 
         await listener.serve(tls_handler_wrapper, task_group)
+
+    @_utils.inherit_doc(transports.AsyncListener)
+    def backend(self) -> AsyncBackend:
+        return self.__listener.backend()
 
     @property
     @_utils.inherit_doc(transports.AsyncListener)

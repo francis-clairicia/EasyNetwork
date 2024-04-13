@@ -10,7 +10,6 @@ from contextlib import ExitStack
 from typing import TYPE_CHECKING, Any, Literal, Required, TypedDict
 
 from easynetwork.lowlevel.api_async.backend.abc import TaskInfo
-from easynetwork.lowlevel.api_async.backend.factory import AsyncBackendFactory
 from easynetwork.lowlevel.std_asyncio.backend import AsyncIOBackend
 
 import pytest
@@ -54,9 +53,7 @@ class TestAsyncioBackend:
     @pytest.fixture
     @staticmethod
     def backend() -> AsyncIOBackend:
-        backend = AsyncBackendFactory.get_backend("asyncio")
-        assert isinstance(backend, AsyncIOBackend)
-        return backend
+        return AsyncIOBackend()
 
     async def test____cancel_shielded_coro_yield____mute_cancellation(
         self,
@@ -1174,9 +1171,7 @@ class TestAsyncioBackendShieldedCancellation:
     @pytest.fixture
     @staticmethod
     def backend() -> AsyncIOBackend:
-        backend = AsyncBackendFactory.get_backend("asyncio")
-        assert isinstance(backend, AsyncIOBackend)
-        return backend
+        return AsyncIOBackend()
 
     @pytest.fixture(
         params=[

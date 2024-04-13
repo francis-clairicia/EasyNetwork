@@ -1,15 +1,13 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any, final
 
 from easynetwork.clients.abc import AbstractAsyncNetworkClient
+from easynetwork.lowlevel.api_async.backend.abc import AsyncBackend
 from easynetwork.lowlevel.socket import SocketAddress
 
 import pytest
-
-from .....tools import temporary_backend
 
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
@@ -19,11 +17,12 @@ if TYPE_CHECKING:
 
 @final
 class MockAsyncClient(AbstractAsyncNetworkClient[Any, Any]):
-    def __init__(self, mocker: MockerFixture) -> None:
+    def __init__(self, mock_backend: MagicMock, mocker: MockerFixture) -> None:
         super().__init__()
         self.mock_wait_connected = mocker.AsyncMock(return_value=None)
         self.mock_close = mocker.AsyncMock(return_value=None)
         self.mock_recv_packet = mocker.AsyncMock()
+        self.mock_backend = mock_backend
 
     def is_connected(self) -> bool:
         return True
@@ -49,19 +48,16 @@ class MockAsyncClient(AbstractAsyncNetworkClient[Any, Any]):
     async def recv_packet(self) -> Any:
         return await self.mock_recv_packet()
 
+    def backend(self) -> AsyncBackend:
+        return self.mock_backend
+
 
 @pytest.mark.asyncio
 class TestAbstractAsyncNetworkClient:
-    @pytest.fixture(autouse=True)
-    @staticmethod
-    def mock_backend(mock_backend: MagicMock) -> Iterator[MagicMock]:
-        with temporary_backend(mock_backend):
-            yield mock_backend
-
     @pytest.fixture
     @staticmethod
-    def client(mocker: MockerFixture) -> MockAsyncClient:
-        return MockAsyncClient(mocker)
+    def client(mock_backend: MagicMock, mocker: MockerFixture) -> MockAsyncClient:
+        return MockAsyncClient(mock_backend, mocker)
 
     async def test____context____close_client_at_end(self, client: MockAsyncClient) -> None:
         # Arrange

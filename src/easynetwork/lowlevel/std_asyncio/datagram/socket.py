@@ -29,19 +29,22 @@ from ...api_async.transports import abc as transports
 if TYPE_CHECKING:
     import asyncio.trsock
 
+    from ..backend import AsyncIOBackend
     from .endpoint import DatagramEndpoint
 
 
 @final
 class AsyncioTransportDatagramSocketAdapter(transports.AsyncDatagramTransport):
     __slots__ = (
+        "__backend",
         "__endpoint",
         "__socket",
         "__closing",
     )
 
-    def __init__(self, endpoint: DatagramEndpoint) -> None:
+    def __init__(self, backend: AsyncIOBackend, endpoint: DatagramEndpoint) -> None:
         super().__init__()
+        self.__backend: AsyncIOBackend = backend
         self.__endpoint: DatagramEndpoint = endpoint
 
         socket: asyncio.trsock.TransportSocket | None = endpoint.get_extra_info("socket")
@@ -66,6 +69,9 @@ class AsyncioTransportDatagramSocketAdapter(transports.AsyncDatagramTransport):
 
     async def send(self, data: bytes | bytearray | memoryview) -> None:
         await self.__endpoint.sendto(data, None)
+
+    def backend(self) -> AsyncIOBackend:
+        return self.__backend
 
     @property
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:

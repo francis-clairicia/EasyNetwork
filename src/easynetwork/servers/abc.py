@@ -26,6 +26,7 @@ from abc import ABCMeta, abstractmethod
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Protocol, Self
 
+from ..lowlevel.api_async.backend.abc import AsyncBackend
 from ..lowlevel.socket import SocketAddress
 
 if TYPE_CHECKING:
@@ -189,3 +190,11 @@ class AbstractAsyncNetworkServer(metaclass=ABCMeta):
             A sequence of network socket address.
             If the server is not serving (:meth:`is_serving` returns :data:`False`), an empty sequence is returned.
         """
+
+    @abstractmethod
+    def backend(self) -> AsyncBackend:
+        """
+        Returns:
+            The backend implementation linked to this server.
+        """
+        raise NotImplementedError

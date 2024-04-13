@@ -13,12 +13,14 @@ from easynetwork.lowlevel.api_async.transports.abc import (
     AsyncStreamTransport,
     AsyncStreamWriteTransport,
 )
+from easynetwork.lowlevel.std_asyncio.backend import AsyncIOBackend
 from easynetwork.warnings import ManualBufferAllocationWarning
 
 import pytest
 
 from ...._utils import make_async_recv_into_side_effect as make_recv_into_side_effect
 from ....base import BaseTestWithStreamProtocol
+from ...mock_tools import make_transport_mock
 
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
@@ -36,15 +38,12 @@ class TestAsyncStreamEndpoint(BaseTestWithStreamProtocol):
         params=[AsyncStreamReadTransport, AsyncBufferedStreamReadTransport, AsyncStreamWriteTransport, AsyncStreamTransport]
     )
     @staticmethod
-    def mock_stream_transport(request: pytest.FixtureRequest, mocker: MockerFixture) -> MagicMock:
-        mock_stream_transport = mocker.NonCallableMagicMock(spec=request.param)
-        mock_stream_transport.is_closing.return_value = False
-
-        def close_side_effect() -> None:
-            mock_stream_transport.is_closing.return_value = True
-
-        mock_stream_transport.aclose.side_effect = close_side_effect
-        return mock_stream_transport
+    def mock_stream_transport(
+        asyncio_backend: AsyncIOBackend,
+        request: pytest.FixtureRequest,
+        mocker: MockerFixture,
+    ) -> MagicMock:
+        return make_transport_mock(mocker=mocker, spec=request.param, backend=asyncio_backend)
 
     @pytest.fixture
     @staticmethod
@@ -585,6 +584,16 @@ class TestAsyncStreamEndpoint(BaseTestWithStreamProtocol):
 
         # Assert
         mock_stream_transport.recv_into.assert_not_called()
+
+    async def test____get_backend____returns_inner_transport_backend(
+        self,
+        endpoint: AsyncStreamEndpoint[Any, Any],
+        mock_stream_transport: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        assert endpoint.backend() is mock_stream_transport.backend()
 
     # NOTE: The cases where recv_packet() uses transport.recv() or transport.recv_into() when manual_buffer_allocation == "try"
     #       are implicitly tested above, because this is the default behavior.

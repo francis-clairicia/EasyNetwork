@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from easynetwork.lowlevel.std_asyncio import AsyncIOBackend
 from easynetwork.servers import AsyncTCPNetworkServer
 
 from ftp_reply import FTPReply
@@ -16,7 +17,13 @@ class AsyncFTPServer(AsyncTCPNetworkServer[FTPRequest, FTPReply]):
         host: str | Sequence[str] | None = None,
         port: int = 21000,
     ) -> None:
-        super().__init__(host, port, FTPServerProtocol(), FTPRequestHandler())
+        super().__init__(
+            host,
+            port,
+            FTPServerProtocol(),
+            FTPRequestHandler(),
+            AsyncIOBackend(),
+        )
 
 
 if __name__ == "__main__":

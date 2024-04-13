@@ -6,13 +6,21 @@ from typing import TYPE_CHECKING
 
 from easynetwork.lowlevel.api_async.backend.abc import AsyncBackend
 from easynetwork.lowlevel.api_async.transports.abc import AsyncDatagramTransport, AsyncStreamTransport
+from easynetwork.lowlevel.std_asyncio.backend import AsyncIOBackend
 
 import pytest
+
+from .mock_tools import make_transport_mock
 
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
 
     from pytest_mock import MockerFixture
+
+
+@pytest.fixture(scope="package")
+def asyncio_backend() -> AsyncIOBackend:
+    return AsyncIOBackend()
 
 
 class FakeCancellation(BaseException):
@@ -53,21 +61,14 @@ def mock_backend(fake_cancellation_cls: type[BaseException], mocker: MockerFixtu
 
 
 @pytest.fixture
-def mock_stream_socket_adapter_factory(mocker: MockerFixture) -> Callable[[], MagicMock]:
+def mock_stream_socket_adapter_factory(asyncio_backend: AsyncIOBackend, mocker: MockerFixture) -> Callable[[], MagicMock]:
     def factory() -> MagicMock:
-        mock = mocker.NonCallableMagicMock(spec=AsyncStreamTransport)
+        mock = make_transport_mock(mocker=mocker, spec=AsyncStreamTransport, backend=asyncio_backend)
 
         async def sendall_fromiter(iterable_of_data: Iterable[bytes | bytearray | memoryview]) -> None:
             await AsyncStreamTransport.send_all_from_iterable(mock, iterable_of_data)
 
         mock.send_all_from_iterable.side_effect = sendall_fromiter
-
-        def close_side_effect() -> None:
-            mock.is_closing.return_value = True
-
-        mock.aclose.side_effect = close_side_effect
-
-        mock.is_closing.return_value = False
         return mock
 
     return factory
@@ -79,16 +80,9 @@ def mock_stream_socket_adapter(mock_stream_socket_adapter_factory: Callable[[], 
 
 
 @pytest.fixture
-def mock_datagram_socket_adapter_factory(mocker: MockerFixture) -> Callable[[], MagicMock]:
+def mock_datagram_socket_adapter_factory(asyncio_backend: AsyncIOBackend, mocker: MockerFixture) -> Callable[[], MagicMock]:
     def factory() -> MagicMock:
-        mock = mocker.NonCallableMagicMock(spec=AsyncDatagramTransport)
-
-        def close_side_effect() -> None:
-            mock.is_closing.return_value = True
-
-        mock.aclose.side_effect = close_side_effect
-
-        mock.is_closing.return_value = False
+        mock = make_transport_mock(mocker=mocker, spec=AsyncDatagramTransport, backend=asyncio_backend)
         return mock
 
     return factory

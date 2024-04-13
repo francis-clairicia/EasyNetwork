@@ -28,6 +28,7 @@ from ...._typevars import _T_ReceivedPacket, _T_SentPacket
 from ....exceptions import UnsupportedOperation
 from ....warnings import ManualBufferAllocationWarning
 from ... import _stream, _utils, typed_attr
+from ..backend.abc import AsyncBackend
 from ..transports import abc as transports
 
 
@@ -199,6 +200,10 @@ class AsyncStreamEndpoint(typed_attr.TypedAttributeProvider, Generic[_T_SentPack
                 raise UnsupportedOperation("transport does not support receiving data")
 
             return await receiver.receive()
+
+    @_utils.inherit_doc(transports.AsyncBaseTransport)
+    def backend(self) -> AsyncBackend:
+        return self.__transport.backend()
 
     @property
     def max_recv_size(self) -> int:

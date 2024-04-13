@@ -7,6 +7,7 @@ from collections.abc import Callable
 
 from easynetwork.clients import AsyncTCPNetworkClient, AsyncUDPNetworkClient
 from easynetwork.clients.abc import AbstractAsyncNetworkClient
+from easynetwork.lowlevel.std_asyncio import AsyncIOBackend
 from easynetwork.protocol import DatagramProtocol, StreamProtocol
 from easynetwork.serializers.line import StringLineSerializer
 
@@ -14,11 +15,11 @@ logger = logging.getLogger("app")
 
 
 def create_tcp_client(port: int) -> AsyncTCPNetworkClient[str, str]:
-    return AsyncTCPNetworkClient(("localhost", port), StreamProtocol(StringLineSerializer()))
+    return AsyncTCPNetworkClient(("localhost", port), StreamProtocol(StringLineSerializer()), AsyncIOBackend())
 
 
 def create_udp_client(port: int) -> AsyncUDPNetworkClient[str, str]:
-    return AsyncUDPNetworkClient(("localhost", port), DatagramProtocol(StringLineSerializer()))
+    return AsyncUDPNetworkClient(("localhost", port), DatagramProtocol(StringLineSerializer()), AsyncIOBackend())
 
 
 async def main() -> None:

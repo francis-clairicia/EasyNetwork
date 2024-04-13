@@ -4,6 +4,7 @@ import asyncio
 import socket
 
 from easynetwork.clients import AsyncUDPNetworkClient
+from easynetwork.lowlevel.std_asyncio import AsyncIOBackend
 from easynetwork.protocol import DatagramProtocol
 from easynetwork.serializers import JSONSerializer
 
@@ -19,8 +20,9 @@ async def obtain_a_connected_socket() -> socket.socket:
 async def main() -> None:
     protocol = DatagramProtocol(JSONSerializer())
     sock = await obtain_a_connected_socket()
+    backend = AsyncIOBackend()
 
-    async with AsyncUDPNetworkClient(sock, protocol) as client:
+    async with AsyncUDPNetworkClient(sock, protocol, backend) as client:
         print(f"Remote address: {client.get_remote_address()}")
 
         ...

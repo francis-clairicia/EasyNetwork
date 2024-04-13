@@ -24,23 +24,20 @@ import types
 import weakref
 from collections import deque
 from collections.abc import AsyncGenerator, Callable, Coroutine, Mapping, Sequence
-from typing import TYPE_CHECKING, Any, Generic, NoReturn, final
+from typing import Any, Generic, NoReturn, final
 
 from .._typevars import _T_Request, _T_Response
 from ..exceptions import ClientClosedError, ServerAlreadyRunning, ServerClosedError
 from ..lowlevel import _utils
 from ..lowlevel._asyncgen import AsyncGenAction, SendAction, ThrowAction
 from ..lowlevel._final import runtime_final_class
-from ..lowlevel.api_async.backend.factory import current_async_backend
+from ..lowlevel.api_async.backend.abc import AsyncBackend, CancelScope, IEvent, Task, TaskGroup
 from ..lowlevel.api_async.servers import datagram as _datagram_server
 from ..lowlevel.api_async.transports.abc import AsyncDatagramListener
 from ..lowlevel.socket import INETSocketAttribute, SocketAddress, SocketProxy, new_socket_address
 from ..protocol import DatagramProtocol
 from .abc import AbstractAsyncNetworkServer, SupportsEventSet
 from .handlers import AsyncDatagramClient, AsyncDatagramRequestHandler, INETClientAttribute
-
-if TYPE_CHECKING:
-    from ..lowlevel.api_async.backend.abc import CancelScope, IEvent, Task, TaskGroup
 
 
 class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_Response]):
@@ -49,6 +46,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
     """
 
     __slots__ = (
+        "__backend",
         "__servers",
         "__listeners_factory",
         "__listeners_factory_scope",
@@ -66,6 +64,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
         port: int,
         protocol: DatagramProtocol[_T_Response, _T_Request],
         request_handler: AsyncDatagramRequestHandler[_T_Request, _T_Response],
+        backend: AsyncBackend,
         *,
         reuse_port: bool = False,
         logger: logging.Logger | None = None,
@@ -78,6 +77,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
                   for each interface).
             protocol: The :term:`protocol object` to use.
             request_handler: The request handler to use.
+            backend: The :term:`asynchronous backend interface` to use.
 
         Keyword Arguments:
             reuse_port: tells the kernel to allow this endpoint to be bound to the same port as other existing endpoints
@@ -89,11 +89,12 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
 
         if not isinstance(protocol, DatagramProtocol):
             raise TypeError(f"Expected a DatagramProtocol object, got {protocol!r}")
+        if not isinstance(backend, AsyncBackend):
+            raise TypeError(f"Expected an AsyncBackend instance, got {backend!r}")
         if not isinstance(request_handler, AsyncDatagramRequestHandler):
             raise TypeError(f"Expected an AsyncDatagramRequestHandler object, got {request_handler!r}")
 
-        backend = current_async_backend()
-
+        self.__backend: AsyncBackend = backend
         self.__listeners_factory: Callable[[], Coroutine[Any, Any, Sequence[AsyncDatagramListener[tuple[Any, ...]]]]] | None
         self.__listeners_factory = _utils.make_callback(
             backend.create_udp_listeners,
@@ -126,11 +127,11 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
 
     async def __close_servers(self) -> None:
         async with contextlib.AsyncExitStack() as exit_stack:
-            server_close_group = await exit_stack.enter_async_context(current_async_backend().create_task_group())
+            server_close_group = await exit_stack.enter_async_context(self.__backend.create_task_group())
 
             servers, self.__servers = self.__servers, None
             if servers is not None:
-                exit_stack.push_async_callback(current_async_backend().cancel_shielded_coro_yield)
+                exit_stack.push_async_callback(self.__backend.cancel_shielded_coro_yield)
                 for server in servers:
                     exit_stack.callback(server_close_group.start_soon, server.aclose)
                     del server
@@ -143,7 +144,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
             if self.__server_run_scope is not None:
                 self.__server_run_scope.cancel()
 
-            await current_async_backend().cancel_shielded_coro_yield()
+            await self.__backend.cancel_shielded_coro_yield()
 
     @_utils.inherit_doc(AbstractAsyncNetworkServer)
     async def shutdown(self) -> None:
@@ -157,9 +158,9 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
             # Wake up server
             if not self.__is_shutdown.is_set():
                 raise ServerAlreadyRunning("Server is already running")
-            self.__is_shutdown = is_shutdown = current_async_backend().create_event()
+            self.__is_shutdown = is_shutdown = self.__backend.create_event()
             server_exit_stack.callback(is_shutdown.set)
-            self.__server_run_scope = server_exit_stack.enter_context(current_async_backend().open_cancel_scope())
+            self.__server_run_scope = server_exit_stack.enter_context(self.__backend.open_cancel_scope())
 
             def reset_scope() -> None:
                 self.__server_run_scope = None
@@ -174,8 +175,8 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
                 raise ServerClosedError("Closed server")
             listeners: list[AsyncDatagramListener[tuple[Any, ...]]] = []
             try:
-                with current_async_backend().open_cancel_scope() as self.__listeners_factory_scope:
-                    await current_async_backend().coro_yield()
+                with self.__backend.open_cancel_scope() as self.__listeners_factory_scope:
+                    await self.__backend.coro_yield()
                     listeners.extend(await self.__listeners_factory())
                 if self.__listeners_factory_scope.cancelled_caught():
                     raise ServerClosedError("Server has been closed during task setup")
@@ -201,7 +202,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
 
             # Setup task group
             server_exit_stack.callback(self.__servers_tasks.clear)
-            task_group: TaskGroup = await server_exit_stack.enter_async_context(current_async_backend().create_task_group())
+            task_group: TaskGroup = await server_exit_stack.enter_async_context(self.__backend.create_task_group())
             server_exit_stack.callback(self.__logger.info, "Server loop break, waiting for remaining tasks...")
             ##################
 
@@ -222,7 +223,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
 
             # Main loop
             try:
-                await current_async_backend().sleep_forever()
+                await self.__backend.sleep_forever()
             finally:
                 reset_scope()
 
@@ -278,6 +279,10 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
         if (servers := self.__servers) is None:
             return ()
         return tuple(SocketProxy(server.extra(INETSocketAttribute.socket)) for server in servers)
+
+    @_utils.inherit_doc(AbstractAsyncNetworkServer)
+    def backend(self) -> AsyncBackend:
+        return self.__backend
 
 
 @final

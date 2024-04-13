@@ -22,6 +22,19 @@ def mock_asyncio_bootstrap(mocker: MockerFixture) -> MagicMock:
 
 
 class TestStandaloneTCPNetworkServer:
+    def test____dunder_init____backend____invalid_value(
+        self,
+        mock_stream_protocol: MagicMock,
+        mock_stream_request_handler: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        invalid_backend = mocker.NonCallableMagicMock(spec=object)
+
+        # Act & Assert
+        with pytest.raises(TypeError, match=r"^Expected an AsyncBackend instance, got .*$"):
+            _ = StandaloneTCPNetworkServer(None, 0, mock_stream_protocol, mock_stream_request_handler, invalid_backend)
+
     @pytest.mark.parametrize(
         ["init_options", "serve_forever_options"],
         [
@@ -67,6 +80,19 @@ class TestStandaloneTCPNetworkServer:
 
 
 class TestStandaloneUDPNetworkServer:
+    def test____dunder_init____backend____invalid_value(
+        self,
+        mock_datagram_protocol: MagicMock,
+        mock_datagram_request_handler: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        invalid_backend = mocker.NonCallableMagicMock(spec=object)
+
+        # Act & Assert
+        with pytest.raises(TypeError, match=r"^Expected an AsyncBackend instance, got .*$"):
+            _ = StandaloneUDPNetworkServer(None, 0, mock_datagram_protocol, mock_datagram_request_handler, invalid_backend)
+
     @pytest.mark.parametrize(
         ["init_options", "serve_forever_options"],
         [

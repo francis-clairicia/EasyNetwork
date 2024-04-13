@@ -25,6 +25,7 @@ from .... import protocol as protocol_module
 from ...._typevars import _T_ReceivedPacket, _T_SentPacket
 from ....exceptions import DatagramProtocolParseError, UnsupportedOperation
 from ... import _utils, typed_attr
+from ..backend.abc import AsyncBackend
 from ..transports import abc as transports
 
 
@@ -135,6 +136,10 @@ class AsyncDatagramEndpoint(typed_attr.TypedAttributeProvider, Generic[_T_SentPa
                 raise RuntimeError("protocol.build_packet_from_datagram() crashed") from exc
             finally:
                 del datagram
+
+    @_utils.inherit_doc(transports.AsyncBaseTransport)
+    def backend(self) -> AsyncBackend:
+        return self.__transport.backend()
 
     def __supports_read(self, transport: transports.AsyncBaseTransport) -> TypeGuard[transports.AsyncDatagramReadTransport]:
         return self.__is_read_transport

@@ -102,9 +102,10 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
     @staticmethod
     async def client_not_connected(
         mock_udp_socket: MagicMock,
+        mock_backend: MagicMock,
         mock_datagram_protocol: MagicMock,
     ) -> AsyncUDPNetworkClient[Any, Any]:
-        client: AsyncUDPNetworkClient[Any, Any] = AsyncUDPNetworkClient(mock_udp_socket, mock_datagram_protocol)
+        client: AsyncUDPNetworkClient[Any, Any] = AsyncUDPNetworkClient(mock_udp_socket, mock_datagram_protocol, mock_backend)
         assert not client.is_connected()
         return client
 
@@ -135,6 +136,7 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
         client: AsyncUDPNetworkClient[Any, Any] = AsyncUDPNetworkClient(
             remote_address,
             mock_datagram_protocol,
+            mock_backend,
             local_address=mocker.sentinel.local_address,
         )
         await client.wait_connected()
@@ -164,6 +166,7 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
         client: AsyncUDPNetworkClient[Any, Any] = AsyncUDPNetworkClient(
             remote_address,
             mock_datagram_protocol,
+            mock_backend,
             family=socket_family,
             local_address=mocker.sentinel.local_address,
         )
@@ -189,6 +192,7 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
         client: AsyncUDPNetworkClient[Any, Any] = AsyncUDPNetworkClient(
             remote_address,
             mock_datagram_protocol,
+            mock_backend,
             family=AF_UNSPEC,
             local_address=mocker.sentinel.local_address,
         )
@@ -206,6 +210,7 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
         self,
         remote_address: tuple[str, int],
         socket_family: int,
+        mock_backend: MagicMock,
         mock_datagram_protocol: MagicMock,
         mocker: MockerFixture,
     ) -> None:
@@ -216,6 +221,7 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
             _ = AsyncUDPNetworkClient(
                 remote_address,
                 mock_datagram_protocol,
+                mock_backend,
                 family=socket_family,
                 local_address=mocker.sentinel.local_address,
             )
@@ -232,6 +238,7 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
         client: AsyncUDPNetworkClient[Any, Any] = AsyncUDPNetworkClient(
             remote_address,
             mock_datagram_protocol,
+            mock_backend,
             local_address=None,
         )
         await client.wait_connected()
@@ -255,6 +262,7 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
         client: AsyncUDPNetworkClient[Any, Any] = AsyncUDPNetworkClient(
             mock_udp_socket,
             mock_datagram_protocol,
+            mock_backend,
         )
         await client.wait_connected()
 
@@ -273,13 +281,14 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
         self,
         mock_udp_socket: MagicMock,
         mock_datagram_protocol: MagicMock,
+        mock_backend: MagicMock,
     ) -> None:
         # Arrange
         self.configure_socket_mock_to_raise_ENOTCONN(mock_udp_socket)
 
         # Act
         with pytest.raises(OSError) as exc_info:
-            _ = AsyncUDPNetworkClient(mock_udp_socket, mock_datagram_protocol)
+            _ = AsyncUDPNetworkClient(mock_udp_socket, mock_datagram_protocol, mock_backend)
 
         # Assert
         assert exc_info.value.errno == errno.ENOTCONN
@@ -288,6 +297,7 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
         self,
         mock_udp_socket: MagicMock,
         mock_datagram_protocol: MagicMock,
+        mock_backend: MagicMock,
     ) -> None:
         # Arrange
         mock_udp_socket.getsockname.return_value = ("0.0.0.0", 0)
@@ -296,6 +306,7 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
         _ = AsyncUDPNetworkClient(
             mock_udp_socket,
             mock_datagram_protocol,
+            mock_backend,
         )
 
         # Assert
@@ -306,6 +317,7 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
         self,
         mock_udp_socket: MagicMock,
         mock_datagram_protocol: MagicMock,
+        mock_backend: MagicMock,
     ) -> None:
         # Arrange
 
@@ -314,11 +326,13 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
             _ = AsyncUDPNetworkClient(
                 mock_udp_socket,
                 mock_datagram_protocol,
+                mock_backend,
             )
 
     async def test____dunder_init____invalid_first_argument____invalid_object(
         self,
         mock_datagram_protocol: MagicMock,
+        mock_backend: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -329,11 +343,13 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
             _ = AsyncUDPNetworkClient(
                 invalid_object,
                 protocol=mock_datagram_protocol,
+                backend=mock_backend,
             )
 
     async def test____dunder_init____invalid_first_argument____invalid_host_port_pair(
         self,
         mock_datagram_protocol: MagicMock,
+        mock_backend: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
@@ -345,6 +361,7 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
             _ = AsyncUDPNetworkClient(
                 (invalid_host, invalid_port),
                 protocol=mock_datagram_protocol,
+                backend=mock_backend,
             )
 
     @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
@@ -354,6 +371,7 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
         remote_address: tuple[str, int],
         mock_udp_socket: MagicMock,
         mock_stream_protocol: MagicMock,
+        mock_backend: MagicMock,
     ) -> None:
         # Arrange
 
@@ -363,11 +381,39 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
                 _ = AsyncUDPNetworkClient(
                     mock_udp_socket,
                     protocol=mock_stream_protocol,
+                    backend=mock_backend,
                 )
             else:
                 _ = AsyncUDPNetworkClient(
                     remote_address,
                     protocol=mock_stream_protocol,
+                    backend=mock_backend,
+                )
+
+    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
+    async def test____dunder_init____backend____invalid_value(
+        self,
+        request: pytest.FixtureRequest,
+        use_socket: bool,
+        mock_datagram_protocol: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        invalid_backend = mocker.NonCallableMagicMock(spec=object)
+
+        # Act & Assert
+        with pytest.raises(TypeError, match=r"^Expected an AsyncBackend instance, got .*$"):
+            if use_socket:
+                _ = AsyncUDPNetworkClient(
+                    request.getfixturevalue("mock_tcp_socket"),
+                    mock_datagram_protocol,
+                    invalid_backend,
+                )
+            else:
+                _ = AsyncUDPNetworkClient(
+                    request.getfixturevalue("remote_address"),
+                    mock_datagram_protocol,
+                    invalid_backend,
                 )
 
     async def test____is_closing____connection_not_performed_yet(
@@ -549,6 +595,16 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
 
         # Assert
         mock_udp_socket.getpeername.assert_not_called()
+
+    async def test____get_backend____returns_linked_instance(
+        self,
+        client_connected_or_not: AsyncUDPNetworkClient[Any, Any],
+        mock_backend: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        assert client_connected_or_not.backend() is mock_backend
 
     @pytest.mark.usefixtures("setup_protocol_mock")
     async def test____send_packet____send_bytes_to_socket(

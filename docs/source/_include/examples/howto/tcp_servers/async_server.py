@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncGenerator
 
+from easynetwork.lowlevel.std_asyncio import AsyncIOBackend
 from easynetwork.protocol import StreamProtocol
 from easynetwork.servers import AsyncTCPNetworkServer
 from easynetwork.servers.handlers import AsyncStreamClient, AsyncStreamRequestHandler
@@ -35,9 +36,10 @@ async def main() -> None:
     host, port = "localhost", 9000
     protocol = ServerProtocol()
     handler = MyRequestHandler()
+    backend = AsyncIOBackend()
 
     # Create the server, binding to localhost on port 9000
-    async with AsyncTCPNetworkServer(host, port, protocol, handler) as server:
+    async with AsyncTCPNetworkServer(host, port, protocol, handler, backend) as server:
         # Activate the server; this will keep running until you
         # interrupt the program with Ctrl-C
         await server.serve_forever()

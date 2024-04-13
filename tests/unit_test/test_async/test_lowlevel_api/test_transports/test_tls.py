@@ -13,10 +13,12 @@ from easynetwork.lowlevel.api_async.transports.abc import AsyncBufferedStreamRea
 from easynetwork.lowlevel.api_async.transports.tls import AsyncTLSListener, AsyncTLSStreamTransport
 from easynetwork.lowlevel.constants import NOT_CONNECTED_SOCKET_ERRNOS, SSL_SHUTDOWN_TIMEOUT as DEFAULT_SSL_SHUTDOWN_TIMEOUT
 from easynetwork.lowlevel.socket import TLSAttribute
+from easynetwork.lowlevel.std_asyncio.backend import AsyncIOBackend
 
 import pytest
 
 from ...._utils import make_async_recv_into_side_effect as make_recv_into_side_effect
+from ...mock_tools import make_transport_mock
 
 if TYPE_CHECKING:
     from unittest.mock import AsyncMock, MagicMock
@@ -38,20 +40,28 @@ class TestAsyncTLSStreamTransport:
     @pytest.fixture(params=["data", "buffered"])
     @staticmethod
     def mock_wrapped_transport(
+        asyncio_backend: AsyncIOBackend,
         request: pytest.FixtureRequest,
         mock_wrapped_transport_extra_attributes: dict[Any, Callable[[], Any]],
         mocker: MockerFixture,
     ) -> MagicMock:
         match request.param:
             case "data":
-                mock_wrapped_transport = mocker.NonCallableMagicMock(spec=AsyncStreamTransport)
+                mock_wrapped_transport = make_transport_mock(
+                    mocker=mocker,
+                    spec=AsyncStreamTransport,
+                    backend=asyncio_backend,
+                )
             case "buffered":
-                mock_wrapped_transport = mocker.NonCallableMagicMock(spec=_AsyncBufferedStreamTransport)
+                mock_wrapped_transport = make_transport_mock(
+                    mocker=mocker,
+                    spec=_AsyncBufferedStreamTransport,
+                    backend=asyncio_backend,
+                )
             case _:
                 pytest.fail("Invalid fixture param")
 
         mock_wrapped_transport.extra_attributes = mock_wrapped_transport_extra_attributes
-        mock_wrapped_transport.is_closing.return_value = False
         return mock_wrapped_transport
 
     @pytest.fixture(autouse=True)
@@ -203,7 +213,7 @@ class TestAsyncTLSStreamTransport:
         )
         mock_tls_transport_retry.assert_awaited_once_with(mock_ssl_object.do_handshake)
         assert mock_ssl_object.mock_calls == [mocker.call.do_handshake(), mocker.call.getpeercert()]
-        assert not mock_wrapped_transport.mock_calls
+        assert mock_wrapped_transport.mock_calls == [mocker.call.backend()]
         ## Attributes
         assert tls_transport._shutdown_timeout == shutdown_timeout
         assert tls_transport.extra(mocker.sentinel.attr_1) is mocker.sentinel.value_1
@@ -809,23 +819,31 @@ class TestAsyncTLSStreamTransport:
         assert read_bio.eof
         assert write_bio.eof
 
+    async def test____get_backend____returns_inner_transport_backend(
+        self,
+        tls_transport: AsyncTLSStreamTransport,
+        mock_wrapped_transport: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        assert tls_transport.backend() is mock_wrapped_transport.backend()
+
 
 @pytest.mark.asyncio
 class TestAsyncTLSListener:
     @pytest.fixture
     @staticmethod
-    def mock_wrapped_client_transport(mocker: MockerFixture) -> MagicMock:
-        mock_wrapped_client_transport = mocker.NonCallableMagicMock(spec=AsyncStreamTransport)
+    def mock_wrapped_client_transport(asyncio_backend: AsyncIOBackend, mocker: MockerFixture) -> MagicMock:
+        mock_wrapped_client_transport = make_transport_mock(mocker=mocker, spec=AsyncStreamTransport, backend=asyncio_backend)
         mock_wrapped_client_transport.extra_attributes = {}
-        mock_wrapped_client_transport.is_closing.return_value = False
         return mock_wrapped_client_transport
 
     @pytest.fixture
     @staticmethod
-    def mock_tls_transport(mocker: MockerFixture) -> MagicMock:
-        mock_tls_transport = mocker.NonCallableMagicMock(spec=AsyncTLSStreamTransport)
+    def mock_tls_transport(asyncio_backend: AsyncIOBackend, mocker: MockerFixture) -> MagicMock:
+        mock_tls_transport = make_transport_mock(mocker=mocker, spec=AsyncTLSStreamTransport, backend=asyncio_backend)
         mock_tls_transport.extra_attributes = {}
-        mock_tls_transport.is_closing.return_value = False
         return mock_tls_transport
 
     @pytest.fixture
@@ -836,6 +854,7 @@ class TestAsyncTLSListener:
     @pytest.fixture
     @staticmethod
     def mock_wrapped_listener(
+        asyncio_backend: AsyncIOBackend,
         mock_wrapped_listener_extra_attributes: dict[Any, Callable[[], Any]],
         mock_wrapped_client_transport: MagicMock,
         mocker: MockerFixture,
@@ -844,9 +863,8 @@ class TestAsyncTLSListener:
             await handler(mock_wrapped_client_transport)
             raise asyncio.CancelledError
 
-        mock_wrapped_listener = mocker.NonCallableMagicMock(spec=AsyncListener)
+        mock_wrapped_listener = make_transport_mock(mocker=mocker, spec=AsyncListener, backend=asyncio_backend)
         mock_wrapped_listener.extra_attributes = mock_wrapped_listener_extra_attributes
-        mock_wrapped_listener.is_closing.return_value = False
         mock_wrapped_listener.serve.side_effect = serve_side_effect
         return mock_wrapped_listener
 
@@ -934,6 +952,16 @@ class TestAsyncTLSListener:
 
         # Assert
         mock_wrapped_listener.aclose.assert_awaited_once_with()
+
+    async def test____get_backend____returns_inner_listener_backend(
+        self,
+        tls_listener: AsyncTLSListener,
+        mock_wrapped_listener: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act & Assert
+        assert tls_listener.backend() is mock_wrapped_listener.backend()
 
     @pytest.mark.parametrize("external_group", [True, False], ids=lambda p: f"external_group=={p}")
     async def test____serve____wrap_client_stream(
