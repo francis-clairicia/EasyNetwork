@@ -561,13 +561,19 @@ class TestAsyncioBackend:
     async def test____create_task_group____start_and_wait____waiter_cancelled(
         self,
         backend: AsyncIOBackend,
+        mocker: MockerFixture,
     ) -> None:
+        awaited = mocker.async_stub()
+
         async def coroutine(value: int) -> int:
+            await awaited()
             return await asyncio.sleep(0.5, value)
 
-        with backend.move_on_after(0):
-            async with backend.create_task_group() as tg:
+        async with backend.create_task_group() as tg:
+            with backend.move_on_after(0):
                 await tg.start(coroutine, 42, name="compute 42")
+
+        awaited.assert_not_awaited()
 
     async def test____create_task_group____task_cancellation(
         self,

@@ -161,13 +161,18 @@ class TaskGroup(AbstractTaskGroup):
         loop = asyncio.get_running_loop()
         waiter: asyncio.Future[None] = loop.create_future()
 
-        task = Task(self.__asyncio_tg.create_task(self.__task_coroutine(coro_func, args, waiter), name=name))
+        task = self.__asyncio_tg.create_task(self.__task_coroutine(coro_func, args, waiter), name=name)
 
         try:
             await waiter
+        except asyncio.CancelledError:
+            # Cancel the task and wait for it to exit before returning
+            task.cancel()
+            await TaskUtils.cancel_shielded_wait_asyncio_futures({task})
+            raise
         finally:
             del waiter
-        return task
+        return Task(task)
 
     @staticmethod
     async def __task_coroutine(
@@ -175,7 +180,9 @@ class TaskGroup(AbstractTaskGroup):
         args: tuple[*_T_PosArgs],
         waiter: asyncio.Future[None],
     ) -> _T:
-        if not waiter.done():
+        if waiter.done():
+            await asyncio.sleep(0)
+        else:
             waiter.set_result(None)
         del waiter
 
