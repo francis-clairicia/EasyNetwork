@@ -754,7 +754,7 @@ class TestStreamEndpoint(BaseTestWithStreamProtocol):
         # Act & Assert
         with pytest.warns(
             ManualBufferAllocationWarning,
-            match=r"^The transport implementation .+ does not implement BufferedStreamReadTransport interface$",
+            match=r'^The transport implementation .+ does not implement BufferedStreamReadTransport interface\. Consider explicitly setting the "manual_buffer_allocation" strategy to "no"\.$',
         ):
             _ = StreamEndpoint(mock_stream_transport, mock_stream_protocol, max_recv_size, manual_buffer_allocation="try")
 
@@ -794,11 +794,15 @@ class TestStreamEndpoint(BaseTestWithStreamProtocol):
 
         # Act & Assert
         with (
-            pytest.raises(UnsupportedOperation, match=r"^This protocol does not support the buffer API$"),
+            pytest.raises(UnsupportedOperation, match=r"^This protocol does not support the buffer API$") as exc_info,
             warnings.catch_warnings(),
         ):
             warnings.simplefilter("error", ManualBufferAllocationWarning)
             _ = StreamEndpoint(mock_stream_transport, mock_stream_protocol, max_recv_size, manual_buffer_allocation="force")
+
+        assert exc_info.value.__notes__ == [
+            'Consider setting the "manual_buffer_allocation" strategy to "no"',
+        ]
 
     @pytest.mark.parametrize("mock_stream_transport", [StreamReadTransport], indirect=True)
     @pytest.mark.parametrize("stream_protocol_mode", ["buffer"], indirect=True)
@@ -815,8 +819,12 @@ class TestStreamEndpoint(BaseTestWithStreamProtocol):
             pytest.raises(
                 UnsupportedOperation,
                 match=r"^The transport implementation .+ does not implement BufferedStreamReadTransport interface$",
-            ),
+            ) as exc_info,
             warnings.catch_warnings(),
         ):
             warnings.simplefilter("error", ManualBufferAllocationWarning)
             _ = StreamEndpoint(mock_stream_transport, mock_stream_protocol, max_recv_size, manual_buffer_allocation="force")
+
+        assert exc_info.value.__notes__ == [
+            'Consider setting the "manual_buffer_allocation" strategy to "no"',
+        ]

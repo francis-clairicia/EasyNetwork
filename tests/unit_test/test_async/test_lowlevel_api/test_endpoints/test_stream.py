@@ -626,7 +626,7 @@ class TestAsyncStreamEndpoint(BaseTestWithStreamProtocol):
         # Act & Assert
         with pytest.warns(
             ManualBufferAllocationWarning,
-            match=r"^The transport implementation .+ does not implement AsyncBufferedStreamReadTransport interface$",
+            match=r'^The transport implementation .+ does not implement AsyncBufferedStreamReadTransport interface\. Consider explicitly setting the "manual_buffer_allocation" strategy to "no"\.$',
         ):
             _ = AsyncStreamEndpoint(mock_stream_transport, mock_stream_protocol, max_recv_size, manual_buffer_allocation="try")
 
@@ -671,11 +671,15 @@ class TestAsyncStreamEndpoint(BaseTestWithStreamProtocol):
 
         # Act & Assert
         with (
-            pytest.raises(UnsupportedOperation, match=r"^This protocol does not support the buffer API$"),
+            pytest.raises(UnsupportedOperation, match=r"^This protocol does not support the buffer API$") as exc_info,
             warnings.catch_warnings(),
         ):
             warnings.simplefilter("error", ManualBufferAllocationWarning)
             _ = AsyncStreamEndpoint(mock_stream_transport, mock_stream_protocol, max_recv_size, manual_buffer_allocation="force")
+
+        assert exc_info.value.__notes__ == [
+            'Consider setting the "manual_buffer_allocation" strategy to "no"',
+        ]
 
     @pytest.mark.parametrize("mock_stream_transport", [AsyncStreamReadTransport], indirect=True)
     @pytest.mark.parametrize("stream_protocol_mode", ["buffer"], indirect=True)
@@ -692,8 +696,12 @@ class TestAsyncStreamEndpoint(BaseTestWithStreamProtocol):
             pytest.raises(
                 UnsupportedOperation,
                 match=r"^The transport implementation .+ does not implement AsyncBufferedStreamReadTransport interface$",
-            ),
+            ) as exc_info,
             warnings.catch_warnings(),
         ):
             warnings.simplefilter("error", ManualBufferAllocationWarning)
             _ = AsyncStreamEndpoint(mock_stream_transport, mock_stream_protocol, max_recv_size, manual_buffer_allocation="force")
+
+        assert exc_info.value.__notes__ == [
+            'Consider setting the "manual_buffer_allocation" strategy to "no"',
+        ]

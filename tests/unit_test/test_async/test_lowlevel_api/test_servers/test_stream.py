@@ -427,7 +427,13 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
 
         # Act
         async with TaskGroup() as tg:
-            with pytest.raises(asyncio.CancelledError, match=r"^serve_side_effect$"), pytest.warns(ManualBufferAllocationWarning):
+            with (
+                pytest.raises(asyncio.CancelledError, match=r"^serve_side_effect$"),
+                pytest.warns(
+                    ManualBufferAllocationWarning,
+                    match=r'^The transport implementation .+ does not implement AsyncBufferedStreamReadTransport interface\. Consider explicitly setting the "manual_buffer_allocation" strategy to "no"\.$',
+                ),
+            ):
                 await server.serve(client_connected_cb, tg)
 
         # Assert
@@ -501,7 +507,7 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
         # Act
         async with TaskGroup() as tg:
             with (
-                pytest.raises(UnsupportedOperation, match=r"^This protocol does not support the buffer API$"),
+                pytest.raises(UnsupportedOperation, match=r"^This protocol does not support the buffer API$") as exc_info,
                 warnings.catch_warnings(),
             ):
                 warnings.simplefilter("error", ManualBufferAllocationWarning)
@@ -513,6 +519,9 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
         if hasattr(mock_stream_transport, "recv_into"):
             mock_stream_transport.recv_into.assert_not_called()
         packet_received.assert_not_called()
+        assert exc_info.value.__notes__ == [
+            'Consider setting the "manual_buffer_allocation" strategy to "no"',
+        ]
 
     @pytest.mark.parametrize("mock_stream_transport", [AsyncStreamTransport], indirect=True)
     @pytest.mark.parametrize("stream_protocol_mode", ["buffer"], indirect=True)
@@ -546,7 +555,7 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
                 pytest.raises(
                     UnsupportedOperation,
                     match=r"^The transport implementation .+ does not implement AsyncBufferedStreamReadTransport interface$",
-                ),
+                ) as exc_info,
                 warnings.catch_warnings(),
             ):
                 warnings.simplefilter("error", ManualBufferAllocationWarning)
@@ -556,3 +565,6 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
         client_connected_cb.assert_not_called()
         mock_stream_transport.recv.assert_not_called()
         packet_received.assert_not_called()
+        assert exc_info.value.__notes__ == [
+            'Consider setting the "manual_buffer_allocation" strategy to "no"',
+        ]

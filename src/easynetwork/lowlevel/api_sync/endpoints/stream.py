@@ -99,14 +99,15 @@ class StreamEndpoint(typed_attr.TypedAttributeProvider, Generic[_T_SentPacket, _
                             msg = f"The transport implementation {transport!r} does not implement BufferedStreamReadTransport interface"
                             if manual_buffer_allocation == "try":
                                 warnings.warn(
-                                    msg,
+                                    f'{msg}. Consider explicitly setting the "manual_buffer_allocation" strategy to "no".',
                                     category=ManualBufferAllocationWarning,
                                     stacklevel=manual_buffer_allocation_warning_stacklevel,
                                 )
                             raise UnsupportedOperation(msg)
                         self.__receiver = _BufferedReceiverImpl(transport, buffered_consumer)
-                    except UnsupportedOperation:
+                    except UnsupportedOperation as exc:
                         if manual_buffer_allocation == "force":
+                            exc.add_note('Consider setting the "manual_buffer_allocation" strategy to "no"')
                             raise
                         self.__receiver = _DataReceiverImpl(transport, _stream.StreamDataConsumer(protocol), max_recv_size)
                 case "no":
