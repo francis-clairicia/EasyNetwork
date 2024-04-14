@@ -174,14 +174,19 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_T_Request, _
                         if not isinstance(transport, transports.AsyncBufferedStreamReadTransport):
                             msg = f"The transport implementation {transport!r} does not implement AsyncBufferedStreamReadTransport interface"
                             if manual_buffer_allocation == "try":
-                                warnings.warn(msg, category=ManualBufferAllocationWarning, stacklevel=1)
+                                warnings.warn(
+                                    f'{msg}. Consider explicitly setting the "manual_buffer_allocation" strategy to "no".',
+                                    category=ManualBufferAllocationWarning,
+                                    stacklevel=1,
+                                )
                             raise UnsupportedOperation(msg)
                         request_receiver = _BufferedRequestReceiver(
                             transport=transport,
                             consumer=consumer,
                         )
-                    except UnsupportedOperation:
+                    except UnsupportedOperation as exc:
                         if manual_buffer_allocation == "force":
+                            exc.add_note('Consider setting the "manual_buffer_allocation" strategy to "no"')
                             raise
                         consumer = _stream.StreamDataConsumer(self.__protocol)
                         request_receiver = _RequestReceiver(
