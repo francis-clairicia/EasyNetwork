@@ -39,7 +39,12 @@ from ..transports import abc as transports
 _T_Address = TypeVar("_T_Address", bound=Hashable)
 
 
-@dataclasses.dataclass(frozen=True, unsafe_hash=True, slots=True, weakref_slot=True)
+# Python 3.12.3 regression for weakref slots on generics
+# See https://github.com/python/cpython/issues/118033
+# @dataclasses.dataclass(frozen=True, unsafe_hash=True, slots=True, weakref_slot=True)
+
+
+@dataclasses.dataclass(frozen=True, unsafe_hash=True)
 class DatagramClientContext(Generic[_T_Response, _T_Address]):
     address: _T_Address
     server: AsyncDatagramServer[Any, _T_Response, _T_Address]
@@ -261,7 +266,12 @@ class _ClientState(enum.Enum):
     TASK_RUNNING = enum.auto()
 
 
-@dataclasses.dataclass(slots=True, weakref_slot=True)
+# Python 3.12.3 regression for weakref slots on generics
+# See https://github.com/python/cpython/issues/118033
+# @dataclasses.dataclass(slots=True, weakref_slot=True)
+
+
+@dataclasses.dataclass()
 class _ClientToken(Generic[_T_Response, _T_Address]):
     ctx: DatagramClientContext[_T_Response, _T_Address]
     data: _ClientData
