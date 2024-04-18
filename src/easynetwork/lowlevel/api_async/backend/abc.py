@@ -1138,7 +1138,7 @@ class AsyncBackend(metaclass=ABCMeta):
         raise NotImplementedError
 
 
-@dataclasses.dataclass(frozen=True, slots=True, weakref_slot=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class _timeout_scope:
     scope: CancelScope
 
