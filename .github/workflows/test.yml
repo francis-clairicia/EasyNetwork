@@ -51,6 +51,10 @@ jobs:
         python_version: ['3.11', '3.12']
         test_type: [unit, functional]
         include:
+          - python_version: '3.11'
+            tox_py: py311
+          - python_version: '3.12'
+            tox_py: py312
           - test_type: unit
             codecov_flags: >-
               test-unit
@@ -69,7 +73,7 @@ jobs:
           python-version: ${{ matrix.python_version }}
       - name: Launch tests
         timeout-minutes: 20  # Even if 10 minutes is already too big
-        run: tox run -f py$(echo ${{ matrix.python_version }} | tr -d .)-${{ matrix.test_type }} -- -v
+        run: tox run -f ${{ matrix.tox_py }}-${{ matrix.test_type }} -- -v
       - name: Generate coverage report
         if: hashFiles('.coverage.*') != ''  # Rudimentary `file.exists()`
         run: |
