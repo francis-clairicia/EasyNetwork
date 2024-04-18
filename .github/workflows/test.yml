@@ -39,42 +39,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  unit-tests:
-    if: |
-      (github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Bump version:'))
-      && (github.event_name != 'pull_request' || (github.event.pull_request.draft != true && !contains(github.event.pull_request.labels.*.name, 'pr-skip-test')))
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-22.04, windows-2022]
-        python_version: ['3.11', '3.12']
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Setup tox (python ${{ matrix.python_version }})
-        uses: ./.github/actions/setup-tox
-        with:
-          python-version: ${{ matrix.python_version }}
-      - name: Launch tests
-        run: tox run -f py$(echo ${{ matrix.python_version }} | tr -d .)-unit -- -v
-      - name: Generate coverage report
-        if: hashFiles('.coverage.*') != ''  # Rudimentary `file.exists()`
-        run: |
-          tox run -e coverage
-          tox exec -e coverage -- coverage xml
-      - name: Upload coverage to codecov
-        if: hashFiles('coverage.xml') != ''  # Rudimentary `file.exists()`
-        uses: codecov/codecov-action@v4
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          flags: >-  # Mark which lines are covered by which envs
-            test-unit,
-            Py-${{ matrix.python_version }}
-
-  functional-tests:
+  tests:
     if: |
       (github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Bump version:'))
       && (github.event_name != 'pull_request' || (github.event.pull_request.draft != true && !contains(github.event.pull_request.labels.*.name, 'pr-skip-test')))
@@ -84,7 +49,20 @@ jobs:
       matrix:
         os: [ubuntu-22.04, windows-2022, macos-12]
         python_version: ['3.11', '3.12']
+        test_type: [unit, functional]
+        include:
+          - python_version: '3.11'
+            tox_py: py311
+          - python_version: '3.12'
+            tox_py: py312
+          - test_type: unit
+            codecov_flags: >-
+              test-unit
+          - test_type: functional
+            codecov_flags: >-
+              test-functional
 
+    name: ${{ matrix.test_type }} tests (${{ matrix.os }}, ${{ matrix.python_version }})
     steps:
       - uses: actions/checkout@v4
         with:
@@ -95,7 +73,7 @@ jobs:
           python-version: ${{ matrix.python_version }}
       - name: Launch tests
         timeout-minutes: 20  # Even if 10 minutes is already too big
-        run: tox run -f py$(echo ${{ matrix.python_version }} | tr -d .)-functional -- -v
+        run: tox run -f ${{ matrix.tox_py }}-${{ matrix.test_type }} -- -v
       - name: Generate coverage report
         if: hashFiles('.coverage.*') != ''  # Rudimentary `file.exists()`
         run: |
@@ -107,7 +85,7 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           flags: >-  # Mark which lines are covered by which envs
-            test-functional,
+            ${{ matrix.codecov_flags }},
             OS-${{ runner.os }},
             Py-${{ matrix.python_version }}
 
