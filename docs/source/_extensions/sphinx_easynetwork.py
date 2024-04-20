@@ -1,6 +1,13 @@
+"""
+Changelog:
+
+v0.1.0: Initial
+v0.1.1 (current): Fix base is not replaced if the class is generic.
+"""
+
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, get_origin
 
 if TYPE_CHECKING:
     from sphinx.application import Sphinx
@@ -12,7 +19,7 @@ from easynetwork.servers.abc import AbstractNetworkServer
 def _replace_base_in_place(klass: type, bases: list[type], base_to_replace: type, base_to_set_instead: type) -> None:
     if issubclass(klass, base_to_replace):
         for index, base in enumerate(bases):
-            if base is base_to_replace:
+            if get_origin(base) is base_to_replace:
                 bases[index] = base_to_set_instead
 
 
@@ -25,7 +32,7 @@ def setup(app: Sphinx) -> dict[str, Any]:
     app.connect("autodoc-process-bases", autodoc_process_bases)
 
     return {
-        "version": "0.1",
+        "version": "0.1.1",
         "parallel_read_safe": True,
         "parallel_write_safe": True,
     }

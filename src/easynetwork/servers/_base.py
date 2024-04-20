@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""Asynchronous network server module"""
+"""Generic network servers module"""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ import concurrent.futures
 import contextlib
 import threading as _threading
 from collections.abc import Callable, Mapping, Sequence
-from typing import Any
+from typing import Any, Generic, TypeVar
 
 from ..exceptions import ServerAlreadyRunning, ServerClosedError
 from ..lowlevel import _utils
@@ -31,16 +31,20 @@ from ..lowlevel.api_async.backend.abc import AsyncBackend, ThreadsPortal
 from ..lowlevel.socket import SocketAddress
 from .abc import AbstractAsyncNetworkServer, AbstractNetworkServer, SupportsEventSet
 
+_T_Return = TypeVar("_T_Return")
+_T_Default = TypeVar("_T_Default")
+_T_AsyncServer = TypeVar("_T_AsyncServer", bound=AbstractAsyncNetworkServer)
 
-class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
+
+class BaseStandaloneNetworkServerImpl(AbstractNetworkServer, Generic[_T_AsyncServer]):
     __slots__ = (
         "__server_factory",
         "__default_runner_options",
-        "__private_server",
+        "__server",
         "__backend",
         "__close_lock",
         "__bootstrap_lock",
-        "__private_threads_portal",
+        "__threads_portal",
         "__is_shutdown",
         "__is_closed",
     )
@@ -48,7 +52,7 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
     def __init__(
         self,
         backend: AsyncBackend | None,
-        server_factory: Callable[[AsyncBackend], AbstractAsyncNetworkServer],
+        server_factory: Callable[[AsyncBackend], _T_AsyncServer],
         *,
         runner_options: Mapping[str, Any] | None = None,
     ) -> None:
@@ -64,9 +68,9 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
                 raise TypeError(f"Expected an AsyncBackend instance, got {backend!r}")
 
         self.__backend: AsyncBackend = backend
-        self.__server_factory: Callable[[AsyncBackend], AbstractAsyncNetworkServer] = server_factory
-        self.__private_server: AbstractAsyncNetworkServer | None = None
-        self.__private_threads_portal: ThreadsPortal | None = None
+        self.__server_factory: Callable[[AsyncBackend], _T_AsyncServer] = server_factory
+        self.__server: _T_AsyncServer | None = None
+        self.__threads_portal: ThreadsPortal | None = None
         self.__is_shutdown = _threading.Event()
         self.__is_shutdown.set()
         self.__is_closed = _threading.Event()
@@ -74,12 +78,27 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
         self.__bootstrap_lock = ForkSafeLock()
         self.__default_runner_options: dict[str, Any] = dict(runner_options) if runner_options else {}
 
+    def _run_sync_or_else(
+        self,
+        f: Callable[[ThreadsPortal, _T_AsyncServer], _T_Return],
+        default: Callable[[], _T_Default],
+    ) -> _T_Return | _T_Default:
+        with self.__bootstrap_lock.get():
+            if (portal := self.__threads_portal) is not None and (server := self.__server) is not None:
+                with contextlib.suppress(RuntimeError, concurrent.futures.CancelledError):
+                    return f(portal, server)
+        return default()
+
+    def _run_sync_or(
+        self,
+        f: Callable[[ThreadsPortal, _T_AsyncServer], _T_Return],
+        default: _T_Default,
+    ) -> _T_Return | _T_Default:
+        return self._run_sync_or_else(f, lambda: default)
+
     @_utils.inherit_doc(AbstractNetworkServer)
     def is_serving(self) -> bool:
-        if (portal := self._portal) is not None and (server := self._server) is not None:
-            with contextlib.suppress(RuntimeError):
-                return portal.run_sync(server.is_serving)
-        return False
+        return self._run_sync_or(lambda portal, server: portal.run_sync(server.is_serving), False)
 
     @_utils.inherit_doc(AbstractNetworkServer)
     def server_close(self) -> None:
@@ -89,27 +108,28 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
             # Ensure we are not in the interval between the server shutdown and the scheduler shutdown
             stack.callback(self.__is_shutdown.wait)
 
-            if (server := self._server) is not None and (portal := self._portal) is not None:
-                with contextlib.suppress(RuntimeError, concurrent.futures.CancelledError):
-                    portal.run_coroutine(server.server_close)
+            self._run_sync_or(lambda portal, server: portal.run_coroutine(server.server_close), None)
 
     @_utils.inherit_doc(AbstractNetworkServer)
     def shutdown(self, timeout: float | None = None) -> None:
-        if (portal := self._portal) is not None and (server := self._server) is not None:
-            with contextlib.suppress(RuntimeError, concurrent.futures.CancelledError), _utils.ElapsedTime() as elapsed:
-                # If shutdown() have been cancelled, that means the scheduler itself is shutting down, and this is what we want
-                if timeout is None:
-                    portal.run_coroutine(server.shutdown)
-                else:
-                    portal.run_coroutine(self.__do_shutdown_with_timeout, server, timeout)
-            if timeout is not None:
-                timeout = elapsed.recompute_timeout(timeout)
-        self.__is_shutdown.wait(timeout)
+        with self.__bootstrap_lock.get():
+            if (portal := self.__threads_portal) is not None and (server := self.__server) is not None:
 
-    @staticmethod
-    async def __do_shutdown_with_timeout(server: AbstractAsyncNetworkServer, timeout_delay: float) -> None:
-        with server.backend().move_on_after(timeout_delay):
-            await server.shutdown()
+                async def do_shutdown_with_timeout(server: AbstractAsyncNetworkServer, timeout: float) -> None:
+                    with server.backend().move_on_after(timeout):
+                        await server.shutdown()
+
+                with contextlib.suppress(RuntimeError, concurrent.futures.CancelledError), _utils.ElapsedTime() as elapsed:
+                    # If shutdown() have been cancelled, that means the scheduler itself is shutting down,
+                    # and this is what we want
+                    if timeout is None:
+                        portal.run_coroutine(server.shutdown)
+                    else:
+
+                        portal.run_coroutine(do_shutdown_with_timeout, server, timeout)
+                if timeout is not None:
+                    timeout = elapsed.recompute_timeout(timeout)
+        self.__is_shutdown.wait(timeout)
 
     def serve_forever(
         self,
@@ -153,41 +173,27 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer):
             server_exit_stack.callback(self.__is_shutdown.set)
 
             def reset_values() -> None:
-                self.__private_threads_portal = None
-                self.__private_server = None
+                self.__threads_portal = None
+                self.__server = None
 
-            def acquire_bootstrap_lock() -> None:
+            def reacquire_bootstrap_lock_on_shutdown() -> None:
                 locks_stack.enter_context(self.__bootstrap_lock.get())
 
             server_exit_stack.callback(reset_values)
-            server_exit_stack.callback(acquire_bootstrap_lock)
+            server_exit_stack.callback(reacquire_bootstrap_lock_on_shutdown)
 
             async def serve_forever() -> None:
                 async with (
-                    self.__server_factory(backend) as self.__private_server,
-                    backend.create_threads_portal() as self.__private_threads_portal,
+                    self.__server_factory(backend) as self.__server,
+                    backend.create_threads_portal() as self.__threads_portal,
                 ):
-                    server = self.__private_server
                     # Initialization finished; release the locks
                     locks_stack.close()
 
-                    await server.serve_forever(is_up_event=is_up_event)
+                    await self.__server.serve_forever(is_up_event=is_up_event)
 
             backend.bootstrap(serve_forever, runner_options=runner_options)
 
     @_utils.inherit_doc(AbstractNetworkServer)
     def get_addresses(self) -> Sequence[SocketAddress]:
-        if (portal := self._portal) is not None and (server := self._server) is not None:
-            with contextlib.suppress(RuntimeError):
-                return portal.run_sync(server.get_addresses)
-        return ()
-
-    @property
-    def _server(self) -> AbstractAsyncNetworkServer | None:
-        with self.__bootstrap_lock.get():
-            return self.__private_server
-
-    @property
-    def _portal(self) -> ThreadsPortal | None:
-        with self.__bootstrap_lock.get():
-            return self.__private_threads_portal
+        return self._run_sync_or(lambda portal, server: portal.run_sync(server.get_addresses), ())
