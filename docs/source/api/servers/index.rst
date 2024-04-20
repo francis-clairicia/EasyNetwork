@@ -97,3 +97,4 @@ Server implementation tools
    :maxdepth: 1
 
    threads_helper
+   misc
