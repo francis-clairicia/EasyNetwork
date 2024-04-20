@@ -46,6 +46,12 @@ _T_Address = TypeVar("_T_Address", bound=Hashable)
 
 @dataclasses.dataclass(frozen=True, unsafe_hash=True)
 class DatagramClientContext(Generic[_T_Response, _T_Address]):
+    __slots__ = (
+        "address",
+        "server",
+        "__weakref__",
+    )
+
     address: _T_Address
     server: AsyncDatagramServer[Any, _T_Response, _T_Address]
 
@@ -273,6 +279,12 @@ class _ClientState(enum.Enum):
 
 @dataclasses.dataclass()
 class _ClientToken(Generic[_T_Response, _T_Address]):
+    __slots__ = (
+        "ctx",
+        "data",
+        "__weakref__",
+    )
+
     ctx: DatagramClientContext[_T_Response, _T_Address]
     data: _ClientData
 
