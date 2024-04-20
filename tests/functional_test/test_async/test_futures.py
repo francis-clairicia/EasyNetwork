@@ -110,13 +110,12 @@ class TestAsyncExecutor:
     @pytest.mark.parametrize("max_workers", [1], indirect=True, ids=lambda nb: f"max_workers=={nb}")
     async def test____shutdown____cancel_futures(
         self,
-        event_loop: asyncio.AbstractEventLoop,
         executor: AsyncExecutor[concurrent.futures.Executor],
     ) -> None:
-        busy_task = event_loop.create_task(executor.run(time.sleep, 1))
+        busy_task = asyncio.create_task(executor.run(time.sleep, 1))
 
         await asyncio.sleep(0.2)
-        future_cancelled_tasks = [event_loop.create_task(executor.run(time.sleep, 0.1)) for _ in range(10)]
+        future_cancelled_tasks = [asyncio.create_task(executor.run(time.sleep, 0.1)) for _ in range(10)]
 
         await asyncio.sleep(0.1)
         await executor.shutdown(cancel_futures=True)
@@ -137,8 +136,8 @@ class TestUnwrapFuture:
     async def test____unwrap_future____wait_until_done(
         self,
         backend: AsyncIOBackend,
-        event_loop: asyncio.AbstractEventLoop,
     ) -> None:
+        event_loop = asyncio.get_running_loop()
         future: concurrent.futures.Future[int] = concurrent.futures.Future()
         event_loop.call_later(0.5, future.set_result, 42)
 
@@ -149,15 +148,15 @@ class TestUnwrapFuture:
         self,
         future_running: str | None,
         backend: AsyncIOBackend,
-        event_loop: asyncio.AbstractEventLoop,
     ) -> None:
+        event_loop = asyncio.get_running_loop()
         future: concurrent.futures.Future[int] = concurrent.futures.Future()
         if future_running == "before":
             future.set_running_or_notify_cancel()
             assert future.running()
             event_loop.call_later(0.5, future.set_result, 42)
 
-        task = event_loop.create_task(unwrap_future(future, backend))
+        task = asyncio.create_task(unwrap_future(future, backend))
         await asyncio.sleep(0.1)
 
         if future_running == "after":
@@ -182,8 +181,8 @@ class TestUnwrapFuture:
         self,
         future_running: str | None,
         backend: AsyncIOBackend,
-        event_loop: asyncio.AbstractEventLoop,
     ) -> None:
+        event_loop = asyncio.get_running_loop()
         expected_error = Exception("error")
         future: concurrent.futures.Future[int] = concurrent.futures.Future()
         if future_running == "before":
@@ -191,7 +190,7 @@ class TestUnwrapFuture:
             assert future.running()
             event_loop.call_later(0.5, future.set_exception, expected_error)
 
-        task = event_loop.create_task(unwrap_future(future, backend))
+        task = asyncio.create_task(unwrap_future(future, backend))
         await asyncio.sleep(0.1)
 
         if future_running == "after":
@@ -214,10 +213,10 @@ class TestUnwrapFuture:
     async def test____unwrap_future____future_is_cancelled(
         self,
         backend: AsyncIOBackend,
-        event_loop: asyncio.AbstractEventLoop,
     ) -> None:
+        event_loop = asyncio.get_running_loop()
         future: concurrent.futures.Future[int] = concurrent.futures.Future()
-        task = event_loop.create_task(unwrap_future(future, backend))
+        task = asyncio.create_task(unwrap_future(future, backend))
 
         event_loop.call_later(0.1, future.cancel)
         await asyncio.wait([task])
@@ -247,12 +246,12 @@ class TestUnwrapFuture:
     async def test____unwrap_future____already_cancelled____task_cancelled_too(
         self,
         backend: AsyncIOBackend,
-        event_loop: asyncio.AbstractEventLoop,
     ) -> None:
+        event_loop = asyncio.get_running_loop()
         future: concurrent.futures.Future[int] = concurrent.futures.Future()
         future.cancel()
 
-        task = event_loop.create_task(unwrap_future(future, backend))
+        task = asyncio.create_task(unwrap_future(future, backend))
         event_loop.call_soon(task.cancel)
 
         with pytest.raises(asyncio.CancelledError):
@@ -261,11 +260,11 @@ class TestUnwrapFuture:
     async def test____unwrap_future____task_cancellation_prevails_over_future_cancellation(
         self,
         backend: AsyncIOBackend,
-        event_loop: asyncio.AbstractEventLoop,
     ) -> None:
+        event_loop = asyncio.get_running_loop()
         future: concurrent.futures.Future[int] = concurrent.futures.Future()
 
-        task = event_loop.create_task(unwrap_future(future, backend))
+        task = asyncio.create_task(unwrap_future(future, backend))
 
         event_loop.call_soon(future.cancel)
         await asyncio.sleep(0)

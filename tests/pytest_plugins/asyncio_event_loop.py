@@ -73,7 +73,8 @@ def pytest_configure(config: pytest.Config) -> None:
 
 @pytest.hookimpl(trylast=True)
 def pytest_report_header(config: pytest.Config) -> str:
-    return f"asyncio event-loop: {config.getoption(ASYNCIO_EVENT_LOOP_OPTION)}"
+    policy = asyncio.get_event_loop_policy().__class__
+    return f"asyncio event-loop: {config.getoption(ASYNCIO_EVENT_LOOP_OPTION)} ({policy.__module__}.{policy.__qualname__})"
 
 
 def _skip_test_if_uvloop_is_used(config: pytest.Config, item: pytest.Item) -> None:
@@ -91,7 +92,7 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
         _skip_test_if_uvloop_is_used(config, item)
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def event_loop_name(pytestconfig: pytest.Config) -> EventLoop:
     return pytestconfig.getoption(ASYNCIO_EVENT_LOOP_OPTION)
 

@@ -415,7 +415,6 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     @staticmethod
     async def client_factory_no_handshake(
         server_address: tuple[str, int],
-        event_loop: asyncio.AbstractEventLoop,
         use_ssl: bool,
         client_ssl_context: ssl.SSLContext,
     ) -> AsyncIterator[Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]]]:
@@ -423,6 +422,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
             stack.enter_context(contextlib.suppress(OSError))
 
             async def factory() -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+                event_loop = asyncio.get_running_loop()
                 async with asyncio.timeout(30):
                     sock = await create_connection(*server_address, event_loop)
                     reader, writer = await asyncio.open_connection(
@@ -1117,10 +1117,11 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     async def test____serve_forever____ssl_handshake_timeout_error(
         self,
         server_address: tuple[str, int],
-        event_loop: asyncio.AbstractEventLoop,
         caplog: pytest.LogCaptureFixture,
         logger_crash_maximum_nb_lines: dict[str, int],
     ) -> None:
+        event_loop = asyncio.get_running_loop()
+
         caplog.set_level(logging.ERROR, LOGGER.name)
         logger_crash_maximum_nb_lines[LOGGER.name] = 1
         logger_crash_maximum_nb_lines["easynetwork.lowlevel.api_async.transports.tls"] = 1

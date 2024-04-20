@@ -74,10 +74,11 @@ class TestAsyncTCPNetworkClient:
 
     async def test____send_packet____default(
         self,
-        event_loop: asyncio.AbstractEventLoop,
         client: AsyncTCPNetworkClient[str, str],
         server: Socket,
     ) -> None:
+        event_loop = asyncio.get_running_loop()
+
         await client.send_packet("ABCDEF")
         assert await readline(event_loop, server) == b"ABCDEF\n"
 
@@ -96,10 +97,11 @@ class TestAsyncTCPNetworkClient:
 
     async def test____send_eof____close_write_stream(
         self,
-        event_loop: asyncio.AbstractEventLoop,
         client: AsyncTCPNetworkClient[str, str],
         server: Socket,
     ) -> None:
+        event_loop = asyncio.get_running_loop()
+
         await client.send_eof()
         assert await readline(event_loop, server) == b""
         with pytest.raises(RuntimeError):
@@ -116,10 +118,11 @@ class TestAsyncTCPNetworkClient:
 
     async def test____send_eof____idempotent(
         self,
-        event_loop: asyncio.AbstractEventLoop,
         client: AsyncTCPNetworkClient[str, str],
         server: Socket,
     ) -> None:
+        event_loop = asyncio.get_running_loop()
+
         await client.send_eof()
         assert await readline(event_loop, server) == b""
         await client.send_eof()
@@ -127,29 +130,32 @@ class TestAsyncTCPNetworkClient:
 
     async def test____recv_packet____default(
         self,
-        event_loop: asyncio.AbstractEventLoop,
         client: AsyncTCPNetworkClient[str, str],
         server: Socket,
     ) -> None:
+        event_loop = asyncio.get_running_loop()
+
         await event_loop.sock_sendall(server, b"ABCDEF\n")
         assert await client.recv_packet() == "ABCDEF"
 
     async def test____recv_packet____partial(
         self,
-        event_loop: asyncio.AbstractEventLoop,
         client: AsyncTCPNetworkClient[str, str],
         server: Socket,
     ) -> None:
+        event_loop = asyncio.get_running_loop()
+
         await event_loop.sock_sendall(server, b"ABC")
         event_loop.call_later(0.5, server.sendall, b"DEF\n")
         assert await client.recv_packet() == "ABCDEF"
 
     async def test____recv_packet____buffer(
         self,
-        event_loop: asyncio.AbstractEventLoop,
         client: AsyncTCPNetworkClient[str, str],
         server: Socket,
     ) -> None:
+        event_loop = asyncio.get_running_loop()
+
         await event_loop.sock_sendall(server, b"A\nB\nC\nD\n")
         assert await client.recv_packet() == "A"
         assert await client.recv_packet() == "B"
@@ -174,10 +180,11 @@ class TestAsyncTCPNetworkClient:
 
     async def test____recv_packet____eof____shutdown_write_only(
         self,
-        event_loop: asyncio.AbstractEventLoop,
         client: AsyncTCPNetworkClient[str, str],
         server: Socket,
     ) -> None:
+        event_loop = asyncio.get_running_loop()
+
         server.shutdown(SHUT_WR)
         with pytest.raises(ConnectionAbortedError):
             await client.recv_packet()
@@ -192,10 +199,11 @@ class TestAsyncTCPNetworkClient:
 
     async def test____recv_packet____invalid_data(
         self,
-        event_loop: asyncio.AbstractEventLoop,
         client: AsyncTCPNetworkClient[str, str],
         server: Socket,
     ) -> None:
+        event_loop = asyncio.get_running_loop()
+
         await event_loop.sock_sendall(server, "\u00E9\nvalid\n".encode("latin-1"))
         with pytest.raises(StreamProtocolParseError):
             await client.recv_packet()
@@ -211,11 +219,12 @@ class TestAsyncTCPNetworkClient:
     )
     async def test____recv_packet____protocol_crashed(
         self,
-        event_loop: asyncio.AbstractEventLoop,
         is_buffered_protocol: bool,
         client: AsyncTCPNetworkClient[str, str],
         server: Socket,
     ) -> None:
+        event_loop = asyncio.get_running_loop()
+
         expected_pattern: str
         if is_buffered_protocol:
             pytest.xfail("asyncio implementation does not support buffered serializer yet.")
@@ -228,10 +237,11 @@ class TestAsyncTCPNetworkClient:
 
     async def test____iter_received_packets____yields_available_packets_until_eof(
         self,
-        event_loop: asyncio.AbstractEventLoop,
         client: AsyncTCPNetworkClient[str, str],
         server: Socket,
     ) -> None:
+        event_loop = asyncio.get_running_loop()
+
         await event_loop.sock_sendall(server, b"A\nB\nC\nD\nE\nF")
         event_loop.call_soon(server.shutdown, SHUT_WR)
         event_loop.call_soon(server.close)
@@ -239,10 +249,11 @@ class TestAsyncTCPNetworkClient:
 
     async def test____iter_received_packets____yields_available_packets_within_timeout(
         self,
-        event_loop: asyncio.AbstractEventLoop,
         client: AsyncTCPNetworkClient[str, str],
         server: Socket,
     ) -> None:
+        event_loop = asyncio.get_running_loop()
+
         async def send_coro() -> None:
             await event_loop.sock_sendall(server, b"A\n")
             await asyncio.sleep(0.1)
@@ -254,7 +265,7 @@ class TestAsyncTCPNetworkClient:
             await asyncio.sleep(0.5)
             await event_loop.sock_sendall(server, b"E\n")
 
-        send_task = event_loop.create_task(send_coro())
+        send_task = asyncio.create_task(send_coro())
         try:
             assert [p async for p in client.iter_received_packets(timeout=1)] == ["A", "B", "C", "D"]
         finally:

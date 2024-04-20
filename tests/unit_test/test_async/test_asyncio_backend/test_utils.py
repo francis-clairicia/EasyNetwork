@@ -93,11 +93,11 @@ def mock_socket_cls(mock_socket_ipv4: MagicMock, mock_socket_ipv6: MagicMock, mo
 
 @pytest.mark.asyncio
 async def test____ensure_resolved____try_numeric_first(
-    event_loop: asyncio.AbstractEventLoop,
     mock_getaddrinfo: AsyncMock,
     mock_stdlib_socket_getaddrinfo: MagicMock,
 ) -> None:
     # Arrange
+    event_loop = asyncio.get_running_loop()
     expected_result = stream_addrinfo_list(8080, families=[AF_INET])
     mock_stdlib_socket_getaddrinfo.return_value = expected_result
 
@@ -119,11 +119,11 @@ async def test____ensure_resolved____try_numeric_first(
 
 @pytest.mark.asyncio
 async def test____ensure_resolved____try_numeric_first____success_but_return_empty_list(
-    event_loop: asyncio.AbstractEventLoop,
     mock_getaddrinfo: AsyncMock,
     mock_stdlib_socket_getaddrinfo: MagicMock,
 ) -> None:
     # Arrange
+    event_loop = asyncio.get_running_loop()
     mock_stdlib_socket_getaddrinfo.return_value = []
 
     # Act
@@ -144,11 +144,11 @@ async def test____ensure_resolved____try_numeric_first____success_but_return_emp
 
 @pytest.mark.asyncio
 async def test____ensure_resolved____fallback_to_async_getaddrinfo(
-    event_loop: asyncio.AbstractEventLoop,
     mock_getaddrinfo: AsyncMock,
     mock_stdlib_socket_getaddrinfo: MagicMock,
 ) -> None:
     # Arrange
+    event_loop = asyncio.get_running_loop()
     expected_result = stream_addrinfo_list(8080, families=[AF_INET])
     mock_stdlib_socket_getaddrinfo.side_effect = gaierror(EAI_NONAME, "Name or service not known")
     mock_getaddrinfo.return_value = expected_result
@@ -170,11 +170,11 @@ async def test____ensure_resolved____fallback_to_async_getaddrinfo(
 
 @pytest.mark.asyncio
 async def test____ensure_resolved____fallback_to_async_getaddrinfo____success_but_return_empty_list(
-    event_loop: asyncio.AbstractEventLoop,
     mock_getaddrinfo: AsyncMock,
     mock_stdlib_socket_getaddrinfo: MagicMock,
 ) -> None:
     # Arrange
+    event_loop = asyncio.get_running_loop()
     mock_stdlib_socket_getaddrinfo.side_effect = gaierror(EAI_NONAME, "Name or service not known")
     mock_getaddrinfo.return_value = []
 
@@ -195,11 +195,11 @@ async def test____ensure_resolved____fallback_to_async_getaddrinfo____success_bu
 
 @pytest.mark.asyncio
 async def test____ensure_resolved____propagate_unrelated_gaierror(
-    event_loop: asyncio.AbstractEventLoop,
     mock_getaddrinfo: AsyncMock,
     mock_stdlib_socket_getaddrinfo: MagicMock,
 ) -> None:
     # Arrange
+    event_loop = asyncio.get_running_loop()
     mock_stdlib_socket_getaddrinfo.side_effect = gaierror(EAI_BADFLAGS, "Invalid flags")
 
     # Act
@@ -262,7 +262,6 @@ def addrinfo_list_factory(connection_socktype: int) -> _AddrInfoListFactory:
 @pytest.mark.asyncio
 @pytest.mark.parametrize("with_local_address", [False, True], ids=lambda boolean: f"with_local_address=={boolean}")
 async def test____create_connection____default(
-    event_loop: asyncio.AbstractEventLoop,
     create_connection_of_socktype: _CreateConnectionCallable,
     addrinfo_list_factory: _AddrInfoListFactory,
     connection_socktype: int,
@@ -275,6 +274,7 @@ async def test____create_connection____default(
     mocker: MockerFixture,
 ) -> None:
     # Arrange
+    event_loop = asyncio.get_running_loop()
     expected_proto = IPPROTO_TCP if connection_socktype == SOCK_STREAM else IPPROTO_UDP
     remote_host, remote_port = "localhost", 12345
     local_address: tuple[str, int] | None = ("localhost", 11111) if with_local_address else None
@@ -316,7 +316,6 @@ async def test____create_connection____default(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("fail_on", ["socket", "bind", "connect"], ids=lambda fail_on: f"fail_on=={fail_on}")
 async def test____create_connection____first_failed(
-    event_loop: asyncio.AbstractEventLoop,
     fail_on: Literal["socket", "bind", "connect"],
     create_connection_of_socktype: _CreateConnectionCallable,
     addrinfo_list_factory: _AddrInfoListFactory,
@@ -329,6 +328,7 @@ async def test____create_connection____first_failed(
     mocker: MockerFixture,
 ) -> None:
     # Arrange
+    event_loop = asyncio.get_running_loop()
     remote_host, remote_port = "localhost", 12345
     local_address: tuple[str, int] | None = ("localhost", 11111) if fail_on == "bind" else None
 
@@ -390,7 +390,6 @@ async def test____create_connection____first_failed(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("fail_on", ["socket", "bind", "connect"], ids=lambda fail_on: f"fail_on=={fail_on}")
 async def test____create_connection____all_failed(
-    event_loop: asyncio.AbstractEventLoop,
     fail_on: Literal["socket", "bind", "connect"],
     create_connection_of_socktype: _CreateConnectionCallable,
     addrinfo_list_factory: _AddrInfoListFactory,
@@ -403,6 +402,7 @@ async def test____create_connection____all_failed(
     mocker: MockerFixture,
 ) -> None:
     # Arrange
+    event_loop = asyncio.get_running_loop()
     remote_host, remote_port = "localhost", 12345
     local_address: tuple[str, int] | None = ("localhost", 11111) if fail_on == "bind" else None
 
@@ -470,7 +470,6 @@ async def test____create_connection____all_failed(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("fail_on", ["socket", "connect"], ids=lambda fail_on: f"fail_on=={fail_on}")
 async def test____create_connection____unrelated_exception(
-    event_loop: asyncio.AbstractEventLoop,
     fail_on: Literal["socket", "connect"],
     connection_socktype: int,
     create_connection_of_socktype: _CreateConnectionCallable,
@@ -481,6 +480,7 @@ async def test____create_connection____unrelated_exception(
     mock_sock_connect: AsyncMock,
 ) -> None:
     # Arrange
+    event_loop = asyncio.get_running_loop()
     remote_host, remote_port = "localhost", 12345
 
     mock_getaddrinfo.side_effect = [addrinfo_list_factory(remote_port)]
@@ -512,7 +512,6 @@ async def test____create_connection____unrelated_exception(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("fail_on", ["remote_address", "local_address"], ids=lambda fail_on: f"fail_on=={fail_on}")
 async def test____create_connection____getaddrinfo_returned_empty_list(
-    event_loop: asyncio.AbstractEventLoop,
     fail_on: Literal["remote_address", "local_address"],
     create_connection_of_socktype: _CreateConnectionCallable,
     addrinfo_list_factory: _AddrInfoListFactory,
@@ -523,6 +522,7 @@ async def test____create_connection____getaddrinfo_returned_empty_list(
     mock_sock_connect: AsyncMock,
 ) -> None:
     # Arrange
+    event_loop = asyncio.get_running_loop()
     remote_host, remote_port = "localhost", 12345
     local_address: tuple[str, int] = ("localhost", 11111)
 
@@ -547,7 +547,6 @@ async def test____create_connection____getaddrinfo_returned_empty_list(
 
 @pytest.mark.asyncio
 async def test____create_connection____getaddrinfo_return_mismatch(
-    event_loop: asyncio.AbstractEventLoop,
     create_connection_of_socktype: _CreateConnectionCallable,
     addrinfo_list_factory: _AddrInfoListFactory,
     mock_socket_ipv4: MagicMock,
@@ -556,6 +555,7 @@ async def test____create_connection____getaddrinfo_return_mismatch(
     mock_sock_connect: AsyncMock,
 ) -> None:
     # Arrange
+    event_loop = asyncio.get_running_loop()
     remote_host, remote_port = "localhost", 12345
     local_address: tuple[str, int] = ("localhost", 11111)
 
@@ -585,7 +585,6 @@ async def test____create_connection____getaddrinfo_return_mismatch(
 @pytest.mark.parametrize("connection_socktype", [SOCK_STREAM], indirect=True, ids=repr)
 @pytest.mark.flaky(retries=3)
 async def test____create_connection____happy_eyeballs_delay____connect_cancellation(
-    event_loop: asyncio.AbstractEventLoop,
     addrinfo_list_factory: _AddrInfoListFactory,
     mock_socket_cls: MagicMock,
     mock_socket_ipv4: MagicMock,
@@ -595,6 +594,7 @@ async def test____create_connection____happy_eyeballs_delay____connect_cancellat
     mocker: MockerFixture,
 ) -> None:
     # Arrange
+    event_loop = asyncio.get_running_loop()
     timestamps: list[float] = []
     remote_host, remote_port = "localhost", 12345
     mock_getaddrinfo.side_effect = [addrinfo_list_factory(remote_port, families=[AF_INET6, AF_INET])]
@@ -628,7 +628,6 @@ async def test____create_connection____happy_eyeballs_delay____connect_cancellat
 @pytest.mark.asyncio
 @pytest.mark.parametrize("connection_socktype", [SOCK_STREAM], indirect=True, ids=repr)
 async def test____create_connection____happy_eyeballs_delay____connect_too_late(
-    event_loop: asyncio.AbstractEventLoop,
     addrinfo_list_factory: _AddrInfoListFactory,
     mock_socket_cls: MagicMock,
     mock_socket_ipv4: MagicMock,
@@ -638,6 +637,7 @@ async def test____create_connection____happy_eyeballs_delay____connect_too_late(
     mocker: MockerFixture,
 ) -> None:
     # Arrange
+    event_loop = asyncio.get_running_loop()
     remote_host, remote_port = "localhost", 12345
     mock_getaddrinfo.side_effect = [addrinfo_list_factory(remote_port, families=[AF_INET6, AF_INET])]
 
@@ -667,7 +667,6 @@ async def test____create_connection____happy_eyeballs_delay____connect_too_late(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("connection_socktype", [SOCK_STREAM], indirect=True, ids=repr)
 async def test____create_connection____happy_eyeballs_delay____winner_closed_because_of_exception_in_another_task(
-    event_loop: asyncio.AbstractEventLoop,
     addrinfo_list_factory: _AddrInfoListFactory,
     mock_socket_cls: MagicMock,
     mock_socket_ipv4: MagicMock,
@@ -677,6 +676,7 @@ async def test____create_connection____happy_eyeballs_delay____winner_closed_bec
     mocker: MockerFixture,
 ) -> None:
     # Arrange
+    event_loop = asyncio.get_running_loop()
     expected_failure_exception = BaseException("error")
     remote_host, remote_port = "localhost", 12345
     mock_getaddrinfo.side_effect = [addrinfo_list_factory(remote_port, families=[AF_INET6, AF_INET])]
@@ -707,7 +707,6 @@ async def test____create_connection____happy_eyeballs_delay____winner_closed_bec
 @pytest.mark.asyncio
 @pytest.mark.parametrize("connection_socktype", [SOCK_STREAM], indirect=True, ids=repr)
 async def test____create_connection____happy_eyeballs_delay____addrinfo_reordering____prioritize_ipv6_over_ipv4(
-    event_loop: asyncio.AbstractEventLoop,
     addrinfo_list_factory: _AddrInfoListFactory,
     mock_socket_cls: MagicMock,
     mock_socket_ipv6: MagicMock,
@@ -716,6 +715,7 @@ async def test____create_connection____happy_eyeballs_delay____addrinfo_reorderi
     mocker: MockerFixture,
 ) -> None:
     # Arrange
+    event_loop = asyncio.get_running_loop()
     remote_host, remote_port = "localhost", 12345
     mock_getaddrinfo.side_effect = [addrinfo_list_factory(remote_port, families=[AF_INET, AF_INET6])]
 
@@ -738,7 +738,6 @@ async def test____create_connection____happy_eyeballs_delay____addrinfo_reorderi
 @pytest.mark.asyncio
 @pytest.mark.parametrize("connection_socktype", [SOCK_STREAM], indirect=True, ids=repr)
 async def test____create_connection____happy_eyeballs_delay____addrinfo_reordering____interleave_families(
-    event_loop: asyncio.AbstractEventLoop,
     addrinfo_list_factory: _AddrInfoListFactory,
     mock_socket_cls: MagicMock,
     mock_socket_ipv6: MagicMock,
@@ -747,6 +746,7 @@ async def test____create_connection____happy_eyeballs_delay____addrinfo_reorderi
     mocker: MockerFixture,
 ) -> None:
     # Arrange
+    event_loop = asyncio.get_running_loop()
     remote_host, remote_port = "localhost", 12345
     mock_getaddrinfo.side_effect = [
         addrinfo_list_factory(remote_port, families=[AF_INET6, AF_INET6, AF_INET6, AF_INET, AF_INET, AF_INET]),
@@ -920,7 +920,6 @@ def test____open_listener_sockets_from_getaddrinfo_result____ipv6_scope_id_not_p
 @pytest.mark.parametrize("future_cancelled", [False, True], ids=lambda p: f"future_cancelled=={p}")
 async def test____wait_until___event_wakeup(
     waiter: Callable[[SocketType, asyncio.AbstractEventLoop], asyncio.Future[None]],
-    event_loop: asyncio.AbstractEventLoop,
     event_loop_add_event_func_name: str,
     event_loop_remove_event_func_name: str,
     future_cancelled: bool,
@@ -928,6 +927,7 @@ async def test____wait_until___event_wakeup(
     mocker: MockerFixture,
 ) -> None:
     # Arrange
+    event_loop = asyncio.get_running_loop()
     if is_proactor_event_loop(event_loop):
         pytest.skip(f"event_loop.{event_loop_add_event_func_name}() is not supported on asyncio.ProactorEventLoop")
 

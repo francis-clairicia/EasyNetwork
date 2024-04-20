@@ -38,13 +38,13 @@ class CustomException(Exception):
 @pytest.mark.parametrize("remote_address", ["remote_address", None], ids=lambda p: f"remote_address=={p}")
 @pytest.mark.parametrize("reuse_port", [False, True], ids=lambda p: f"reuse_port=={p}")
 async def test____create_datagram_endpoint____return_DatagramEndpoint_instance(
-    event_loop: asyncio.AbstractEventLoop,
     local_address: Any | None,
     remote_address: Any | None,
     reuse_port: bool,
     mocker: MockerFixture,
 ) -> None:
     # Arrange
+    event_loop = asyncio.get_running_loop()
     if local_address is not None:
         local_address = getattr(mocker.sentinel, local_address)
     if remote_address is not None:
@@ -417,11 +417,11 @@ class TestDatagramEndpointProtocol:
     @pytest.mark.asyncio
     async def test____dunder_init____use_running_loop(
         self,
-        event_loop: asyncio.AbstractEventLoop,
         mock_asyncio_recv_queue: MagicMock,
         mock_asyncio_exception_queue: MagicMock,
     ) -> None:
         # Arrange
+        event_loop = asyncio.get_running_loop()
 
         # Act
         protocol = DatagramEndpointProtocol(recv_queue=mock_asyncio_recv_queue, exception_queue=mock_asyncio_exception_queue)
@@ -550,11 +550,11 @@ class TestDatagramEndpointProtocol:
     @pytest.mark.asyncio
     async def test____drain_helper____quick_exit_if_not_paused(
         self,
-        event_loop: asyncio.AbstractEventLoop,
         protocol: DatagramEndpointProtocol,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
+        event_loop = asyncio.get_running_loop()
         assert not protocol._writing_paused()
         mock_create_future: MagicMock = mocker.patch.object(event_loop, "create_future")
 
@@ -994,11 +994,9 @@ class TestDatagramListenerProtocol:
         return protocol
 
     @pytest.mark.asyncio
-    async def test____dunder_init____use_running_loop(
-        self,
-        event_loop: asyncio.AbstractEventLoop,
-    ) -> None:
+    async def test____dunder_init____use_running_loop(self) -> None:
         # Arrange
+        event_loop = asyncio.get_running_loop()
 
         # Act
         protocol = DatagramListenerProtocol()
@@ -1073,11 +1071,11 @@ class TestDatagramListenerProtocol:
     async def test____serve____datagram_received____start_task(
         self,
         asyncio_backend: AsyncIOBackend,
-        event_loop: asyncio.AbstractEventLoop,
         protocol: DatagramListenerProtocol,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
+        event_loop = asyncio.get_running_loop()
         serve_scope = asyncio_backend.move_on_after(10)
         datagram_received_stub = mocker.async_stub()
         datagram_received_stub.side_effect = lambda *args: serve_scope.cancel()
@@ -1166,11 +1164,11 @@ class TestDatagramListenerProtocol:
     @pytest.mark.asyncio
     async def test____drain_helper____quick_exit_if_not_paused(
         self,
-        event_loop: asyncio.AbstractEventLoop,
         protocol: DatagramListenerProtocol,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
+        event_loop = asyncio.get_running_loop()
         assert not protocol._writing_paused()
         mock_create_future: MagicMock = mocker.patch.object(event_loop, "create_future")
 

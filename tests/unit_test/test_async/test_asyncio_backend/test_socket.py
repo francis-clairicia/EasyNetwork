@@ -96,11 +96,10 @@ class BaseTestAsyncSocket:
     @staticmethod
     async def _busy_socket_task(
         coroutine: Coroutine[Any, Any, Any],
-        event_loop: asyncio.AbstractEventLoop,
         mock_socket_method: MagicMock,
     ) -> asyncio.Task[Any]:
         mock_socket_method.reset_mock()
-        accept_task = event_loop.create_task(coroutine)
+        accept_task = asyncio.create_task(coroutine)
         await asyncio.sleep(0)
         async with asyncio.timeout(5):
             while len(mock_socket_method.call_args_list) == 0:
@@ -113,12 +112,11 @@ class MixinTestAsyncSocketBusy(BaseTestAsyncSocket):
     async def test____method____busy(
         self,
         socket_method: Callable[[], Coroutine[Any, Any, Any]],
-        event_loop: asyncio.AbstractEventLoop,
         mock_socket_method: MagicMock,
     ) -> None:
         # Arrange
         with self._set_sock_method_in_blocking_state(mock_socket_method):
-            _ = await self._busy_socket_task(socket_method(), event_loop, mock_socket_method)
+            _ = await self._busy_socket_task(socket_method(), mock_socket_method)
 
         # Act
         with pytest.raises(OSError) as exc_info:
@@ -149,12 +147,11 @@ class MixinTestAsyncSocketBusy(BaseTestAsyncSocket):
         self,
         socket: AsyncSocket,
         socket_method: Callable[[], Coroutine[Any, Any, Any]],
-        event_loop: asyncio.AbstractEventLoop,
         mock_socket_method: MagicMock,
     ) -> None:
         # Arrange
         with self._set_sock_method_in_blocking_state(mock_socket_method):
-            busy_method_task: asyncio.Task[Any] = await self._busy_socket_task(socket_method(), event_loop, mock_socket_method)
+            busy_method_task: asyncio.Task[Any] = await self._busy_socket_task(socket_method(), mock_socket_method)
 
         # Act
         await socket.aclose()
@@ -170,12 +167,11 @@ class MixinTestAsyncSocketBusy(BaseTestAsyncSocket):
         self,
         cancellation_requests: int,
         socket_method: Callable[[], Coroutine[Any, Any, Any]],
-        event_loop: asyncio.AbstractEventLoop,
         mock_socket_method: MagicMock,
     ) -> None:
         # Arrange
         with self._set_sock_method_in_blocking_state(mock_socket_method):
-            busy_method_task: asyncio.Task[Any] = await self._busy_socket_task(socket_method(), event_loop, mock_socket_method)
+            busy_method_task: asyncio.Task[Any] = await self._busy_socket_task(socket_method(), mock_socket_method)
 
         # Act
         for _ in range(cancellation_requests):
@@ -189,12 +185,11 @@ class MixinTestAsyncSocketBusy(BaseTestAsyncSocket):
     async def test____method____raises_CancelledError(
         self,
         socket_method: Callable[[], Coroutine[Any, Any, Any]],
-        event_loop: asyncio.AbstractEventLoop,
         mock_socket_method: MagicMock,
     ) -> None:
         # Arrange
         with self._set_sock_method_in_blocking_state(mock_socket_method):
-            busy_method_task: asyncio.Task[Any] = await self._busy_socket_task(socket_method(), event_loop, mock_socket_method)
+            busy_method_task: asyncio.Task[Any] = await self._busy_socket_task(socket_method(), mock_socket_method)
 
         mock_socket_method.side_effect = asyncio.CancelledError
 
@@ -224,10 +219,10 @@ class TestAsyncSocketCommon(BaseTestAsyncSocket):
 
     async def test____dunder_init____forbids_ssl_sockets(
         self,
-        event_loop: asyncio.AbstractEventLoop,
         mock_ssl_socket: MagicMock,
     ) -> None:
         # Arrange
+        event_loop = asyncio.get_running_loop()
 
         # Act & Assert
         with pytest.raises(TypeError, match=r"^ssl\.SSLSocket instances are forbidden$"):
@@ -262,9 +257,9 @@ class TestAsyncSocketCommon(BaseTestAsyncSocket):
     async def test____loop_property____returns_given_event_loop(
         self,
         socket: AsyncSocket,
-        event_loop: asyncio.AbstractEventLoop,
     ) -> None:
         # Arrange
+        event_loop = asyncio.get_running_loop()
 
         # Act
         socket_loop = socket.loop
@@ -642,13 +637,12 @@ class TestAsyncStreamSocket(MixinTestAsyncSocketBusy, MixinTestSocketSendMSG):
         self,
         shutdown_how: int,
         socket: AsyncSocket,
-        event_loop: asyncio.AbstractEventLoop,
         mock_tcp_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
         with self._set_sock_method_in_blocking_state(mock_tcp_socket.send):
-            _ = await self._busy_socket_task(socket.sendall(b"data"), event_loop, mock_tcp_socket.send)
+            _ = await self._busy_socket_task(socket.sendall(b"data"), mock_tcp_socket.send)
 
         # Act
         await socket.shutdown(shutdown_how)
@@ -679,13 +673,12 @@ class TestAsyncStreamSocket(MixinTestAsyncSocketBusy, MixinTestSocketSendMSG):
         self,
         shutdown_how: int,
         socket: AsyncSocket,
-        event_loop: asyncio.AbstractEventLoop,
         mock_tcp_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
         with self._set_sock_method_in_blocking_state(mock_tcp_socket.recv):
-            _ = await self._busy_socket_task(socket.recv(1024), event_loop, mock_tcp_socket.recv)
+            _ = await self._busy_socket_task(socket.recv(1024), mock_tcp_socket.recv)
 
         # Act
         await socket.shutdown(shutdown_how)
