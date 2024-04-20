@@ -2,17 +2,18 @@
 Servers API
 ***********
 
-Asynchronous network server interfaces
-
-.. currentmodule:: easynetwork.servers
+.. automodule:: easynetwork.servers
 
 .. contents:: Table of Contents
    :local:
 
 ------
 
+Asynchronous Server Objects (``async def``)
+===========================================
+
 Abstract Base Class
-===================
+-------------------
 
 .. autoclass:: easynetwork.servers.abc::AbstractAsyncNetworkServer
    :members:
@@ -22,18 +23,44 @@ Abstract Base Class
 
 
 TCP Implementation
-==================
+------------------
 
 .. autoclass:: AsyncTCPNetworkServer
    :members:
    :inherited-members:
 
 UDP Implementation
-==================
+------------------
 
 .. autoclass:: AsyncUDPNetworkServer
    :members:
    :inherited-members:
+
+
+Synchronous Server Objects
+==========================
+
+Abstract Base Class
+-------------------
+
+.. autoclass:: easynetwork.servers.abc::AbstractNetworkServer
+   :members:
+   :special-members: __enter__, __exit__
+
+TCP Implementation
+------------------
+
+.. autoclass:: StandaloneTCPNetworkServer
+   :members:
+   :inherited-members:
+
+UDP Implementation
+------------------
+
+.. autoclass:: StandaloneUDPNetworkServer
+   :members:
+   :inherited-members:
+
 
 
 Request Handler Interface
@@ -59,3 +86,14 @@ Client API
 .. autoclass:: AsyncDatagramClient
    :members:
    :special-members: __eq__, __hash__
+
+
+------
+
+Server implementation tools
+===========================
+
+.. toctree::
+   :maxdepth: 1
+
+   threads_helper

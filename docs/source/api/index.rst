@@ -5,8 +5,8 @@ API Reference
 .. toctree::
    :maxdepth: 1
 
-   async/index
-   sync/index
+   clients/index
+   servers/index
    serializers/index
    converter
    protocol
