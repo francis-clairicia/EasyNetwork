@@ -20,7 +20,6 @@ __all__ = [
     "StandaloneTCPNetworkServer",
 ]
 
-import contextlib
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Generic, Literal
 
@@ -38,7 +37,10 @@ if TYPE_CHECKING:
     from .handlers import AsyncStreamRequestHandler
 
 
-class StandaloneTCPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[_T_Request, _T_Response]):
+class StandaloneTCPNetworkServer(
+    _base.BaseStandaloneNetworkServerImpl[AsyncTCPNetworkServer[_T_Request, _T_Response]],
+    Generic[_T_Request, _T_Response],
+):
     """
     A network server for TCP connections.
 
@@ -107,9 +109,7 @@ class StandaloneTCPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
 
         Further calls to :meth:`is_serving` will return :data:`False`.
         """
-        if (portal := self._portal) is not None and (server := self._server) is not None:
-            with contextlib.suppress(RuntimeError):
-                portal.run_sync(server.stop_listening)
+        self._run_sync_or(lambda portal, server: portal.run_sync(server.stop_listening), None)
 
     def get_sockets(self) -> Sequence[SocketProxy]:
         """Gets the listeners sockets. Thread-safe.
@@ -119,13 +119,9 @@ class StandaloneTCPNetworkServer(_base.BaseStandaloneNetworkServerImpl, Generic[
 
             If the server is not running, an empty sequence is returned.
         """
-        if (portal := self._portal) is not None and (server := self._server) is not None:
-            with contextlib.suppress(RuntimeError):
-                sockets = portal.run_sync(server.get_sockets)
-                return tuple(SocketProxy(sock, runner=portal.run_sync) for sock in sockets)
-        return ()
-
-    if TYPE_CHECKING:
-
-        @property
-        def _server(self) -> AsyncTCPNetworkServer[_T_Request, _T_Response] | None: ...
+        return self._run_sync_or(
+            lambda portal, server: tuple(
+                SocketProxy(sock, runner=portal.run_sync) for sock in portal.run_sync(server.get_sockets)
+            ),
+            (),
+        )
