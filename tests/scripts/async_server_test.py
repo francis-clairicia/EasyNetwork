@@ -27,6 +27,8 @@ class MyAsyncRequestHandler(AsyncStreamRequestHandler[str, str], AsyncDatagramRe
         request: str = yield
         logger.debug(f"Received {request!r} from {client!r}")
         match request:
+            case "error:":
+                raise RuntimeError("requested error")
             case "wait:":
                 request = (yield) + " after wait"
             case "self_kill:" if isinstance(self.server, AsyncTCPNetworkServer):

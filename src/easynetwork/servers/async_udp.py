@@ -23,13 +23,12 @@ import logging
 import types
 import weakref
 from collections import deque
-from collections.abc import AsyncGenerator, Callable, Coroutine, Mapping, Sequence
+from collections.abc import Callable, Coroutine, Mapping, Sequence
 from typing import Any, Generic, NoReturn, final
 
 from .._typevars import _T_Request, _T_Response
 from ..exceptions import ClientClosedError, ServerAlreadyRunning, ServerClosedError
 from ..lowlevel import _utils
-from ..lowlevel._asyncgen import AsyncGenAction, SendAction, ThrowAction
 from ..lowlevel._final import runtime_final_class
 from ..lowlevel.api_async.backend.abc import AsyncBackend, CancelScope, IEvent, Task, TaskGroup
 from ..lowlevel.api_async.servers import datagram as _datagram_server
@@ -38,6 +37,7 @@ from ..lowlevel.socket import INETSocketAttribute, SocketAddress, SocketProxy, n
 from ..protocol import DatagramProtocol
 from .abc import AbstractAsyncNetworkServer, SupportsEventSet
 from .handlers import AsyncDatagramClient, AsyncDatagramRequestHandler, INETClientAttribute
+from .misc import build_lowlevel_datagram_server_handler
 
 
 class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_Response]):
@@ -209,7 +209,11 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
             # Enable listener
             self.__servers_tasks.extend(
                 [
-                    await task_group.start(server.serve, self.__datagram_received_coroutine, task_group)
+                    await task_group.start(
+                        server.serve,
+                        build_lowlevel_datagram_server_handler(self.__client_initializer, self.__request_handler),
+                        task_group,
+                    )
                     for server in self.__servers
                 ]
             )
@@ -227,36 +231,11 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
             finally:
                 reset_scope()
 
-    async def __datagram_received_coroutine(
+    def __client_initializer(
         self,
         lowlevel_client: _datagram_server.DatagramClientContext[_T_Response, tuple[Any, ...]],
-    ) -> AsyncGenerator[float | None, _T_Request]:
-        with _ClientErrorHandler(lowlevel_client, self.__logger):
-            request_handler_generator = self.__request_handler.handle(_ClientAPI(lowlevel_client))
-            timeout: float | None
-            try:
-                timeout = await anext(request_handler_generator)
-            except StopAsyncIteration:
-                return
-            else:
-                action: AsyncGenAction[_T_Request]
-                while True:
-                    try:
-                        action = SendAction((yield timeout))
-                    except BaseException as exc:
-                        action = ThrowAction(_utils.remove_traceback_frames_in_place(exc, 1))
-                    try:
-                        timeout = await action.asend(request_handler_generator)
-                    except StopAsyncIteration:
-                        return
-                    except BaseException as exc:
-                        # Remove action.asend() frames
-                        _utils.remove_traceback_frames_in_place(exc, 2)
-                        raise
-                    finally:
-                        del action
-            finally:
-                await request_handler_generator.aclose()
+    ) -> _ClientContext:
+        return _ClientContext(lowlevel_client, self.__logger)
 
     @_utils.inherit_doc(AbstractAsyncNetworkServer)
     def get_addresses(self) -> Sequence[SocketAddress]:
@@ -345,7 +324,7 @@ class _ClientAPI(AsyncDatagramClient[_T_Response]):
 
 @final
 @runtime_final_class
-class _ClientErrorHandler:
+class _ClientContext:
     __slots__ = (
         "__lowlevel_client",
         "__logger",
@@ -359,10 +338,10 @@ class _ClientErrorHandler:
         self.__lowlevel_client: _datagram_server.DatagramClientContext[Any, tuple[Any, ...]] = lowlevel_client
         self.__logger: logging.Logger = logger
 
-    def __enter__(self) -> None:
-        return
+    async def __aenter__(self) -> AsyncDatagramClient[_T_Response]:
+        return _ClientAPI(self.__lowlevel_client)
 
-    def __exit__(
+    async def __aexit__(
         self,
         exc_type: type[BaseException] | None,
         exc_val: BaseException | None,
