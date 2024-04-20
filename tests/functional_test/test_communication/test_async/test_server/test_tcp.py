@@ -28,6 +28,7 @@ from easynetwork.servers.handlers import AsyncStreamClient, AsyncStreamRequestHa
 import pytest
 import pytest_asyncio
 
+from .....tools import PlatformMarkers
 from .base import BaseTestAsyncServer
 
 
@@ -578,7 +579,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         assert client_address not in request_handler.connected_clients
 
     # skip Windows for this test, the ECONNRESET will happen on socket.send() or socket.recv()
-    @pytest.mark.xfail('sys.platform == "win32"', reason="socket.getpeername() works by some magic")
+    @PlatformMarkers.skipif_platform_win32_because("socket.getpeername() works by some magic on Windows")
     @pytest.mark.parametrize("socket_family", ["AF_INET"], indirect=True)
     @pytest.mark.parametrize("use_ssl", ["NO_SSL"], indirect=True)
     async def test____serve_forever____accept_client____client_sent_RST_packet_right_after_accept(
