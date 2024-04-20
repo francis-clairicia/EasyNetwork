@@ -313,11 +313,10 @@ class TestClientData:
     @pytest.mark.asyncio
     async def test____datagram_queue____pop_datagram____wait_until_notification(
         self,
-        event_loop: asyncio.AbstractEventLoop,
         client_data: _ClientData,
     ) -> None:
         # Arrange
-        pop_datagram_task = event_loop.create_task(client_data.pop_datagram())
+        pop_datagram_task = asyncio.create_task(client_data.pop_datagram())
         await asyncio.sleep(0.01)
         assert not pop_datagram_task.done()
 

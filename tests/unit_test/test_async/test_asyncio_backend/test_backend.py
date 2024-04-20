@@ -94,11 +94,11 @@ class TestAsyncIOBackend:
 
     async def test____current_time____use_event_loop_time(
         self,
-        event_loop: asyncio.AbstractEventLoop,
         backend: AsyncIOBackend,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
+        event_loop = asyncio.get_running_loop()
         mock_loop_time: MagicMock = mocker.patch.object(event_loop, "time", side_effect=event_loop.time)
 
         # Act
@@ -124,11 +124,11 @@ class TestAsyncIOBackend:
 
     async def test____ignore_cancellation____wrap_awaitable(
         self,
-        event_loop: asyncio.AbstractEventLoop,
         backend: AsyncIOBackend,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
+        event_loop = asyncio.get_running_loop()
         future = event_loop.create_future()
         future.set_result(mocker.sentinel.ret_val)
 
@@ -140,10 +140,10 @@ class TestAsyncIOBackend:
 
     async def test____ignore_cancellation____wrap_awaitable____exception(
         self,
-        event_loop: asyncio.AbstractEventLoop,
         backend: AsyncIOBackend,
     ) -> None:
         # Arrange
+        event_loop = asyncio.get_running_loop()
         error = Exception("Error")
         future = event_loop.create_future()
         future.set_exception(error)
@@ -157,11 +157,11 @@ class TestAsyncIOBackend:
 
     async def test____ignore_cancellation____create_task_failed(
         self,
-        event_loop: asyncio.AbstractEventLoop,
         backend: AsyncIOBackend,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
+        event_loop = asyncio.get_running_loop()
         awaitable = mocker.async_stub()
         awaitable.return_value = None
         task_factory = mocker.stub()
@@ -210,7 +210,6 @@ class TestAsyncIOBackend:
     async def test____create_tcp_connection____use_loop_create_connection(
         self,
         happy_eyeballs_delay: float | None,
-        event_loop: asyncio.AbstractEventLoop,
         local_address: tuple[str, int] | None,
         remote_address: tuple[str, int],
         backend: AsyncIOBackend,
@@ -218,6 +217,7 @@ class TestAsyncIOBackend:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
+        event_loop = asyncio.get_running_loop()
         mock_asyncio_transport = mocker.NonCallableMagicMock(spec=asyncio.Transport)
         mock_protocol = mocker.NonCallableMagicMock(spec=StreamReaderBufferedProtocol)
         mock_AsyncioTransportStreamSocketAdapter: MagicMock = mocker.patch(
@@ -262,12 +262,12 @@ class TestAsyncIOBackend:
 
     async def test____wrap_stream_socket____use_asyncio_open_connection(
         self,
-        event_loop: asyncio.AbstractEventLoop,
         backend: AsyncIOBackend,
         mock_tcp_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
+        event_loop = asyncio.get_running_loop()
         mock_asyncio_transport = mocker.NonCallableMagicMock(spec=asyncio.Transport)
         mock_protocol = mocker.NonCallableMagicMock(spec=StreamReaderBufferedProtocol)
         mock_AsyncioTransportStreamSocketAdapter: MagicMock = mocker.patch(
@@ -294,12 +294,12 @@ class TestAsyncIOBackend:
 
     async def test____create_tcp_listeners____open_listener_sockets(
         self,
-        event_loop: asyncio.AbstractEventLoop,
         backend: AsyncIOBackend,
         mock_tcp_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
+        event_loop = asyncio.get_running_loop()
         remote_host, remote_port = "remote_address", 5000
         addrinfo_list = [
             (
@@ -355,12 +355,12 @@ class TestAsyncIOBackend:
     async def test____create_tcp_listeners____bind_to_any_interfaces(
         self,
         remote_host: str | None,
-        event_loop: asyncio.AbstractEventLoop,
         backend: AsyncIOBackend,
         mock_tcp_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
+        event_loop = asyncio.get_running_loop()
         remote_port = 5000
         addrinfo_list = [
             (
@@ -424,12 +424,12 @@ class TestAsyncIOBackend:
 
     async def test____create_tcp_listeners____bind_to_several_hosts(
         self,
-        event_loop: asyncio.AbstractEventLoop,
         backend: AsyncIOBackend,
         mock_tcp_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
+        event_loop = asyncio.get_running_loop()
         remote_hosts = ["0.0.0.0", "::"]
         remote_port = 5000
         addrinfo_list = [
@@ -497,11 +497,11 @@ class TestAsyncIOBackend:
 
     async def test____create_tcp_listeners____error_getaddrinfo_returns_empty_list(
         self,
-        event_loop: asyncio.AbstractEventLoop,
         backend: AsyncIOBackend,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
+        event_loop = asyncio.get_running_loop()
         remote_host = "remote_address"
         remote_port = 5000
 
@@ -543,11 +543,11 @@ class TestAsyncIOBackend:
 
     async def test____create_tcp_listeners____invalid_backlog(
         self,
-        event_loop: asyncio.AbstractEventLoop,
         backend: AsyncIOBackend,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
+        event_loop = asyncio.get_running_loop()
         remote_host = "remote_address"
         remote_port = 5000
         mock_getaddrinfo = mocker.patch.object(
@@ -582,7 +582,6 @@ class TestAsyncIOBackend:
     @pytest.mark.parametrize("socket_family", [None, AF_INET, AF_INET6], ids=lambda p: f"family=={p}")
     async def test____create_udp_endpoint____use_loop_create_datagram_endpoint(
         self,
-        event_loop: asyncio.AbstractEventLoop,
         local_address: tuple[str, int] | None,
         remote_address: tuple[str, int],
         socket_family: int | None,
@@ -591,6 +590,8 @@ class TestAsyncIOBackend:
         mock_udp_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
+        # Arrange
+        event_loop = asyncio.get_running_loop()
         mock_endpoint = mock_datagram_endpoint_factory()
         mock_AsyncioTransportDatagramSocketAdapter: MagicMock = mocker.patch(
             "easynetwork.lowlevel.std_asyncio.backend.AsyncioTransportDatagramSocketAdapter",
@@ -656,12 +657,12 @@ class TestAsyncIOBackend:
 
     async def test____create_udp_listeners____open_listener_sockets(
         self,
-        event_loop: asyncio.AbstractEventLoop,
         backend: AsyncIOBackend,
         mock_udp_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
+        event_loop = asyncio.get_running_loop()
         remote_host, remote_port = "remote_address", 5000
         addrinfo_list = [
             (
@@ -728,12 +729,12 @@ class TestAsyncIOBackend:
     async def test____create_udp_listeners____bind_to_local_interfaces(
         self,
         remote_host: str | None,
-        event_loop: asyncio.AbstractEventLoop,
         backend: AsyncIOBackend,
         mock_udp_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
+        event_loop = asyncio.get_running_loop()
         remote_port = 5000
         addrinfo_list = [
             (
@@ -810,12 +811,12 @@ class TestAsyncIOBackend:
 
     async def test____create_udp_listeners____bind_to_several_hosts(
         self,
-        event_loop: asyncio.AbstractEventLoop,
         backend: AsyncIOBackend,
         mock_udp_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
+        event_loop = asyncio.get_running_loop()
         remote_hosts = ["127.0.0.1", "::1"]
         remote_port = 5000
         addrinfo_list = [
@@ -896,11 +897,11 @@ class TestAsyncIOBackend:
 
     async def test____create_udp_listeners____error_getaddrinfo_returns_empty_list(
         self,
-        event_loop: asyncio.AbstractEventLoop,
         backend: AsyncIOBackend,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
+        event_loop = asyncio.get_running_loop()
         remote_host = "remote_address"
         remote_port = 5000
         mock_getaddrinfo = mocker.patch.object(
@@ -995,11 +996,11 @@ class TestAsyncIOBackend:
 
     async def test____run_in_thread____use_loop_run_in_executor(
         self,
-        event_loop: asyncio.AbstractEventLoop,
         backend: AsyncIOBackend,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
+        event_loop = asyncio.get_running_loop()
         func_stub = mocker.stub()
         executor_future = event_loop.create_future()
         executor_future.set_result(mocker.sentinel.return_value)

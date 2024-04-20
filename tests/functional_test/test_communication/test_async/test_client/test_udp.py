@@ -283,10 +283,11 @@ class TestAsyncUDPNetworkClientConnection:
     @classmethod
     async def server(
         cls,
-        event_loop: asyncio.AbstractEventLoop,
         localhost_ip: str,
         socket_family: int,
     ) -> AsyncIterator[asyncio.DatagramTransport]:
+        event_loop = asyncio.get_running_loop()
+
         transport, protocol = await event_loop.create_datagram_endpoint(
             lambda: cls.EchoProtocol(event_loop.create_future()),
             local_addr=(localhost_ip, 0),

@@ -181,11 +181,11 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket):
     async def test____dunder_init____invalid_socket_type(
         self,
         asyncio_backend: AsyncIOBackend,
-        event_loop: asyncio.AbstractEventLoop,
         mock_udp_socket: MagicMock,
         accepted_socket_factory: MagicMock,
     ) -> None:
         # Arrange
+        event_loop = asyncio.get_running_loop()
 
         # Act & Assert
         with pytest.raises(ValueError, match=r"^A 'SOCK_STREAM' socket is expected$"):
@@ -224,7 +224,6 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket):
     async def test____serve____default(
         self,
         asyncio_backend: AsyncIOBackend,
-        event_loop: asyncio.AbstractEventLoop,
         listener: ListenerSocketAdapter[Any],
         external_group: bool,
         mock_async_socket: MagicMock,
@@ -235,6 +234,7 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
+        event_loop = asyncio.get_running_loop()
         stream = mock_stream_socket_adapter_factory()
         client_socket = mock_tcp_socket_factory()
         accepted_socket_factory.connect.return_value = stream
@@ -268,7 +268,6 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket):
         self,
         exc: BaseException,
         asyncio_backend: AsyncIOBackend,
-        event_loop: asyncio.AbstractEventLoop,
         listener: ListenerSocketAdapter[Any],
         mock_async_socket: MagicMock,
         accepted_socket_factory: MagicMock,
@@ -278,6 +277,7 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
+        event_loop = asyncio.get_running_loop()
         caplog.set_level(logging.INFO)
         client_socket = mock_tcp_socket_factory()
         accepted_socket_factory.connect.side_effect = exc
@@ -443,11 +443,11 @@ class TestAcceptedSocketFactory(BaseTestTransportStreamSocket):
         self,
         asyncio_backend: AsyncIOBackend,
         accepted_socket: AcceptedSocketFactory,
-        event_loop: asyncio.AbstractEventLoop,
         mock_event_loop_connect_accepted_socket: AsyncMock,
         mock_tcp_socket: MagicMock,
     ) -> None:
         # Arrange
+        event_loop = asyncio.get_running_loop()
 
         # Act
         socket = await accepted_socket.connect(asyncio_backend, mock_tcp_socket, event_loop)
@@ -789,11 +789,9 @@ class TestStreamReaderBufferedProtocol(BaseTestTransportWithSSL):
         return protocol.eof_received()
 
     @pytest.mark.asyncio
-    async def test____dunder_init____use_running_loop(
-        self,
-        event_loop: asyncio.AbstractEventLoop,
-    ) -> None:
+    async def test____dunder_init____use_running_loop(self) -> None:
         # Arrange
+        event_loop = asyncio.get_running_loop()
 
         # Act
         protocol = StreamReaderBufferedProtocol()
@@ -890,12 +888,12 @@ class TestStreamReaderBufferedProtocol(BaseTestTransportWithSSL):
     async def test____receive_data____default(
         self,
         blocking: bool,
-        event_loop: asyncio.AbstractEventLoop,
         protocol: StreamReaderBufferedProtocol,
         mock_asyncio_transport: MagicMock,
         data_receiver: _ProtocolDataReceiver,
     ) -> None:
         # Arrange
+        event_loop = asyncio.get_running_loop()
         if blocking:
             event_loop.call_later(0.5, self.write_in_protocol_buffer, protocol, b"abcdef")
         else:
@@ -930,12 +928,12 @@ class TestStreamReaderBufferedProtocol(BaseTestTransportWithSSL):
     @pytest.mark.asyncio
     async def test____receive_data____buffer_updated_several_times(
         self,
-        event_loop: asyncio.AbstractEventLoop,
         protocol: StreamReaderBufferedProtocol,
         mock_asyncio_transport: MagicMock,
         data_receiver: _ProtocolDataReceiver,
     ) -> None:
         # Arrange
+        event_loop = asyncio.get_running_loop()
         event_loop.call_soon(self.write_in_protocol_buffer, protocol, b"abc")
         event_loop.call_soon(self.write_in_protocol_buffer, protocol, b"def")
 
@@ -969,12 +967,13 @@ class TestStreamReaderBufferedProtocol(BaseTestTransportWithSSL):
         self,
         blocking: bool,
         eof_reason: Literal["eof_received", "connection_lost"],
-        event_loop: asyncio.AbstractEventLoop,
         protocol: StreamReaderBufferedProtocol,
         mock_asyncio_transport: MagicMock,
         data_receiver: _ProtocolDataReceiver,
     ) -> None:
         # Arrange
+        event_loop = asyncio.get_running_loop()
+
         def protocol_eof_handler() -> None:
             match eof_reason:
                 case "eof_received":
@@ -1002,11 +1001,11 @@ class TestStreamReaderBufferedProtocol(BaseTestTransportWithSSL):
     async def test____receive_data____connection_lost_by_unrelated_error(
         self,
         blocking: bool,
-        event_loop: asyncio.AbstractEventLoop,
         protocol: StreamReaderBufferedProtocol,
         data_receiver: _ProtocolDataReceiver,
     ) -> None:
         # Arrange
+        event_loop = asyncio.get_running_loop()
         exception = OSError("Something bad happen")
         if blocking:
             event_loop.call_later(0.5, protocol.connection_lost, exception)
@@ -1022,11 +1021,11 @@ class TestStreamReaderBufferedProtocol(BaseTestTransportWithSSL):
     @pytest.mark.asyncio
     async def test____receive_data____connection_reset(
         self,
-        event_loop: asyncio.AbstractEventLoop,
         protocol: StreamReaderBufferedProtocol,
         data_receiver: _ProtocolDataReceiver,
     ) -> None:
         # Arrange
+        event_loop = asyncio.get_running_loop()
         event_loop.call_soon(self.write_in_protocol_buffer, protocol, b"abc")
         event_loop.call_soon(protocol.connection_lost, None)
 
@@ -1164,12 +1163,12 @@ class TestStreamReaderBufferedProtocol(BaseTestTransportWithSSL):
     async def test____drain_helper____quick_exit_if_not_paused(
         self,
         transport_is_closing: bool,
-        event_loop: asyncio.AbstractEventLoop,
         protocol: StreamReaderBufferedProtocol,
         mock_asyncio_transport: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
+        event_loop = asyncio.get_running_loop()
         assert not protocol._writing_paused()
         mock_create_future: MagicMock = mocker.patch.object(event_loop, "create_future")
         mock_asyncio_transport.is_closing.side_effect = [transport_is_closing]
