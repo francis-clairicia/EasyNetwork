@@ -463,22 +463,24 @@ class TaskUtils:
         task_cancelled: bool = False
         task_cancel_msg: str | None = None
         try:
-            done_event = asyncio.Event()
-            future.add_done_callback(lambda _: done_event.set())
+            if not future.done():
+                done_event = asyncio.Event()
+                future.add_done_callback(lambda _: done_event.set())
 
-            # Open a scope in order to check pending cancellations at the end.
-            with CancelScope():
-                while not done_event.is_set():
-                    try:
-                        await done_event.wait()
-                    except asyncio.CancelledError as exc:
-                        task_cancelled = True
-                        task_cancel_msg = _get_cancelled_error_message(exc)
+                # Open a scope in order to check pending cancellations at the end.
+                with CancelScope():
+                    while not done_event.is_set():
+                        try:
+                            await done_event.wait()
+                        except asyncio.CancelledError as exc:
+                            task_cancelled = True
+                            task_cancel_msg = _get_cancelled_error_message(exc)
 
-                if task_cancelled:
-                    CancelScope._reschedule_delayed_task_cancel(current_task, task_cancel_msg)
-                    if future.cancelled():
-                        await cls.coro_yield()
+                    if task_cancelled:
+                        CancelScope._reschedule_delayed_task_cancel(current_task, task_cancel_msg)
+                        if future.cancelled():
+                            await cls.coro_yield()
+
             return future.result()
         finally:
             del current_task, future
@@ -495,39 +497,32 @@ class TaskUtils:
     async def cancel_shielded_await(cls, coroutine: Awaitable[_T_co]) -> _T_co:
         coroutine = cls.wrap_awaitable(coroutine)
         loop = asyncio.get_running_loop()
-        current_task_context = cls.get_task_context(cls.current_asyncio_task(loop))
+        current_task_context: contextvars.Context | None = cls.get_task_context(cls.current_asyncio_task(loop))
+        context_to_restore: contextvars.Context | None = None
 
-        def copy_future_state(waiter: asyncio.Future[_T_co], task: asyncio.Task[_T_co]) -> None:
-            if waiter.done():
-                raise AssertionError("waiter should not be done")
-            if task.cancelled():
-                waiter.cancel()
-            elif (exc := task.exception()) is not None:
-                waiter.set_exception(exc)
-            else:
-                waiter.set_result(task.result())
+        task: asyncio.Task[_T_co]
+        name = f"shielded task for {coroutine!r}"
 
-        def schedule_task(coroutine: Coroutine[Any, Any, _T_co], waiter: asyncio.Future[_T_co]) -> None:
-            try:
-                task = loop.create_task(coroutine, context=current_task_context)
-            except BaseException as exc:
-                waiter.set_exception(exc)
-                coroutine.close()
-            else:
-                if task.done():  # eager task done
-                    copy_future_state(waiter, task)
-                else:
-                    task.add_done_callback(_utils.prepend_argument(waiter, copy_future_state))
-                    # This task must be unregistered in order not to be cancelled by runner at event loop shutdown
-                    asyncio._unregister_task(task)
+        # NOTE: Exceptionally, do NOT use loop.create_task()
+        #       The task creation must be deterministic, therefore the loop's task factory must not be used.
 
-        waiter: asyncio.Future[_T_co] = loop.create_future()
-        loop.call_soon(schedule_task, coroutine, waiter)
-        del coroutine
+        if current_task_context is None:  # Python == 3.11
+            context_to_restore = contextvars.copy_context()
+            task = asyncio.Task(coroutine, loop=loop, context=context_to_restore, name=name)
+        else:  # Python >= 3.12
+            task = asyncio.Task(coroutine, loop=loop, context=current_task_context, name=name)
+
+        # This task must be unregistered in order not to be cancelled by runner at event loop shutdown
+        asyncio._unregister_task(task)
+
         try:
-            return await cls.cancel_shielded_await_future(waiter)
+            try:
+                return await cls.cancel_shielded_await_future(task)
+            finally:
+                del task
         finally:
-            del waiter
+            if context_to_restore is not None:
+                _restore_current_context_from(context_to_restore)
 
     @classmethod
     def wrap_awaitable(cls, coroutine: Awaitable[_T]) -> Coroutine[Any, Any, _T]:
@@ -577,3 +572,15 @@ def _get_cancelled_error_message(exc: asyncio.CancelledError) -> str | None:
 def _schedule_task_discard(fs: set[asyncio.Future[Any]]) -> None:
     for f in fs:
         f.add_done_callback(fs.discard)
+
+
+# NOTE: This function is used to apply all the contextvar.set() calls made in the given argument.
+#       It WON'T work if you want to reset the *current* context back to a previous state (represented as the argument).
+def _restore_current_context_from(context: contextvars.Context) -> None:
+    for cvar, cvar_value in context.items():
+        try:
+            should_update = cvar.get() != cvar_value
+        except LookupError:
+            should_update = True
+        if should_update:
+            cvar.set(cvar_value)

@@ -155,7 +155,7 @@ class TestAsyncIOBackend:
         # Assert
         assert exc_info.value is error
 
-    async def test____ignore_cancellation____create_task_failed(
+    async def test____ignore_cancellation____does_not_use_task_factory(
         self,
         backend: AsyncIOBackend,
         mocker: MockerFixture,
@@ -170,11 +170,8 @@ class TestAsyncIOBackend:
 
         # Act & Assert
         with temporary_task_factory(event_loop, task_factory):
-            with pytest.raises(Exception) as exc_info:
-                await backend.ignore_cancellation(awaitable())
-
-            assert exc_info.value is exc
-            awaitable.assert_not_awaited()
+            await backend.ignore_cancellation(awaitable())
+            awaitable.assert_awaited_once()
 
     async def test____ignore_cancellation____not_a_coroutine(
         self,

@@ -171,13 +171,7 @@ class TestAsyncioBackend:
     @pytest.mark.parametrize(
         "eager_task_factory",
         [
-            pytest.param(
-                False,
-                marks=pytest.mark.xfail(
-                    sys.version_info < (3, 12),
-                    reason="asyncio.Task.get_context() does not exist before Python 3.12",
-                ),
-            ),
+            pytest.param(False),
             pytest.param(
                 True,
                 marks=pytest.mark.skipif(
@@ -186,9 +180,22 @@ class TestAsyncioBackend:
                 ),
             ),
         ],
+        ids=lambda p: f"eager_task_factory=={p}",
+    )
+    @pytest.mark.parametrize(
+        "default_value_already_overriden",
+        [False, True],
+        ids=lambda p: f"default_value_already_overriden=={p}",
+    )
+    @pytest.mark.parametrize(
+        "contextvar_have_default_value",
+        [False, True],
+        ids=lambda p: f"contextvar_have_default_value=={p}",
     )
     async def test____ignore_cancellation____share_same_context_with_host_task(
         self,
+        default_value_already_overriden: bool,
+        contextvar_have_default_value: bool,
         eager_task_factory: bool,
         backend: AsyncIOBackend,
     ) -> None:
@@ -196,13 +203,18 @@ class TestAsyncioBackend:
         if eager_task_factory:
             event_loop.set_task_factory(getattr(asyncio, "eager_task_factory"))
 
-        cvar_for_test: contextvars.ContextVar[str] = contextvars.ContextVar("cvar_for_test", default="")
+        cvar_for_test: contextvars.ContextVar[str]
+        if contextvar_have_default_value:
+            cvar_for_test = contextvars.ContextVar("cvar_for_test", default="N/A")
+        else:
+            cvar_for_test = contextvars.ContextVar("cvar_for_test")
 
         # coroutine() will be done right after create_task() with eager_task_factory==True
         async def coroutine() -> None:
             cvar_for_test.set("after_in_coroutine")
 
-        cvar_for_test.set("before_in_current_task")
+        if default_value_already_overriden:
+            cvar_for_test.set("before_in_current_task")
         await backend.ignore_cancellation(coroutine())
 
         assert cvar_for_test.get() == "after_in_coroutine"
