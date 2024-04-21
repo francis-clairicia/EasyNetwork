@@ -198,10 +198,16 @@ class TestAsyncioBackend:
         contextvar_have_default_value: bool,
         eager_task_factory: bool,
         backend: AsyncIOBackend,
+        mocker: MockerFixture,
     ) -> None:
         event_loop = asyncio.get_running_loop()
         if eager_task_factory:
             event_loop.set_task_factory(getattr(asyncio, "eager_task_factory"))
+
+        # Do not use default value
+        # 'read_only_var' must be in copied context (for Python 3.11)
+        read_only_var: contextvars.ContextVar[Any] = contextvars.ContextVar("read_only_var")
+        read_only_var.set(mocker.sentinel.read_only_var)
 
         cvar_for_test: contextvars.ContextVar[str]
         if contextvar_have_default_value:
@@ -218,6 +224,7 @@ class TestAsyncioBackend:
         await backend.ignore_cancellation(coroutine())
 
         assert cvar_for_test.get() == "after_in_coroutine"
+        assert read_only_var.get() is mocker.sentinel.read_only_var
 
     async def test____timeout____respected(
         self,
