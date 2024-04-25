@@ -26,7 +26,7 @@ from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Generic, final
 
-from ._typevars import _T_DTOPacket, _T_Packet, _T_ReceivedDTOPacket, _T_ReceivedPacket, _T_SentDTOPacket, _T_SentPacket
+from ._typevars import _T_ReceivedDTOPacket, _T_ReceivedPacket, _T_SentDTOPacket, _T_SentPacket
 from .lowlevel import _utils
 
 
@@ -118,8 +118,8 @@ class StapledPacketConverter(
 
 
 class AbstractPacketConverter(
-    AbstractPacketConverterComposite[_T_Packet, _T_Packet, _T_DTOPacket, _T_DTOPacket],
-    Generic[_T_Packet, _T_DTOPacket],
+    AbstractPacketConverterComposite[_T_SentPacket, _T_SentPacket, _T_SentDTOPacket, _T_SentDTOPacket],
+    Generic[_T_SentPacket, _T_SentDTOPacket],
 ):
     """
     The base class for implementing a :term:`converter`.
@@ -132,10 +132,10 @@ class AbstractPacketConverter(
 
     @abstractmethod
     @_utils.inherit_doc(AbstractPacketConverterComposite)
-    def create_from_dto_packet(self, packet: _T_DTOPacket, /) -> _T_Packet:
+    def create_from_dto_packet(self, packet: _T_SentDTOPacket, /) -> _T_SentPacket:
         raise NotImplementedError
 
     @abstractmethod
     @_utils.inherit_doc(AbstractPacketConverterComposite)
-    def convert_to_dto_packet(self, obj: _T_Packet, /) -> _T_DTOPacket:
+    def convert_to_dto_packet(self, obj: _T_SentPacket, /) -> _T_SentDTOPacket:
         raise NotImplementedError

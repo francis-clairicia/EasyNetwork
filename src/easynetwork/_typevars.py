@@ -18,8 +18,6 @@ from __future__ import annotations
 
 __all__ = [
     "_T_Buffer",
-    "_T_DTOPacket",
-    "_T_Packet",
     "_T_ReceivedDTOPacket",
     "_T_ReceivedPacket",
     "_T_Request",
@@ -36,13 +34,11 @@ else:  # pragma: no cover
     # Needed for sphinx-autodoc
     WriteableBuffer = bytearray | memoryview
 
-_T_DTOPacket = typing.TypeVar("_T_DTOPacket")
 _T_SentDTOPacket = typing.TypeVar("_T_SentDTOPacket")
 _T_ReceivedDTOPacket = typing.TypeVar("_T_ReceivedDTOPacket")
 
 _T_SentPacket = typing.TypeVar("_T_SentPacket")
 _T_ReceivedPacket = typing.TypeVar("_T_ReceivedPacket")
-_T_Packet = typing.TypeVar("_T_Packet")
 
 _T_Request = typing.TypeVar("_T_Request")
 _T_Response = typing.TypeVar("_T_Response")
