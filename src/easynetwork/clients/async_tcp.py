@@ -37,6 +37,7 @@ from .._typevars import _T_ReceivedPacket, _T_SentPacket
 from ..exceptions import ClientClosedError
 from ..lowlevel import _utils, constants
 from ..lowlevel.api_async.backend.abc import AsyncBackend, CancelScope, ILock
+from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendToken, ensure_backend
 from ..lowlevel.api_async.endpoints.stream import AsyncStreamEndpoint
 from ..lowlevel.api_async.transports.abc import AsyncStreamTransport
 from ..lowlevel.socket import (
@@ -90,7 +91,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         address: tuple[str, int],
         /,
         protocol: StreamProtocol[_T_SentPacket, _T_ReceivedPacket],
-        backend: AsyncBackend,
+        backend: AsyncBackend | BuiltinAsyncBackendToken | None = ...,
         *,
         local_address: tuple[str, int] | None = ...,
         happy_eyeballs_delay: float | None = ...,
@@ -110,7 +111,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         socket: _socket.socket,
         /,
         protocol: StreamProtocol[_T_SentPacket, _T_ReceivedPacket],
-        backend: AsyncBackend,
+        backend: AsyncBackend | BuiltinAsyncBackendToken | None = ...,
         *,
         ssl: _typing_ssl.SSLContext | bool | None = ...,
         server_hostname: str | None = ...,
@@ -127,7 +128,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         __arg: tuple[str, int] | _socket.socket,
         /,
         protocol: StreamProtocol[_T_SentPacket, _T_ReceivedPacket],
-        backend: AsyncBackend,
+        backend: AsyncBackend | BuiltinAsyncBackendToken | None = None,
         *,
         ssl: _typing_ssl.SSLContext | bool | None = None,
         server_hostname: str | None = None,
@@ -190,8 +191,8 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
 
         if not isinstance(protocol, StreamProtocol):
             raise TypeError(f"Expected a StreamProtocol object, got {protocol!r}")
-        if not isinstance(backend, AsyncBackend):
-            raise TypeError(f"Expected an AsyncBackend instance, got {backend!r}")
+
+        backend = ensure_backend(backend)
 
         if max_recv_size is None:
             max_recv_size = constants.DEFAULT_STREAM_BUFSIZE

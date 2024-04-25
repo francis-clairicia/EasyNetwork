@@ -4,7 +4,6 @@ import asyncio
 import sys
 
 from easynetwork.clients import AsyncUDPNetworkClient
-from easynetwork.lowlevel.std_asyncio import AsyncIOBackend
 
 from json_protocol import JSONDatagramProtocol
 
@@ -13,10 +12,9 @@ async def main() -> None:
     host = "localhost"
     port = 9000
     protocol = JSONDatagramProtocol()
-    backend = AsyncIOBackend()
 
     # Connect to server
-    async with AsyncUDPNetworkClient((host, port), protocol, backend) as client:
+    async with AsyncUDPNetworkClient((host, port), protocol) as client:
         # Send data
         request = {"command-line arguments": sys.argv[1:]}
         await client.send_packet(request)

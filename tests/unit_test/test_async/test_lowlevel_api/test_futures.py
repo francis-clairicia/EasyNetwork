@@ -70,7 +70,7 @@ class TestAsyncExecutor:
         invalid_backend = mocker.NonCallableMagicMock(spec=object)
 
         # Act & Assert
-        with pytest.raises(TypeError, match=r"^Expected an AsyncBackend instance, got .+$"):
+        with pytest.raises(TypeError, match=r"^Expected either a string literal or a backend instance, got .+$"):
             _ = AsyncExecutor(mock_stdlib_executor, invalid_backend)
 
     async def test____wrapped_property____returned_wrapped_executor_instance(

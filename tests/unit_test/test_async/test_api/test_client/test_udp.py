@@ -402,7 +402,7 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
         invalid_backend = mocker.NonCallableMagicMock(spec=object)
 
         # Act & Assert
-        with pytest.raises(TypeError, match=r"^Expected an AsyncBackend instance, got .*$"):
+        with pytest.raises(TypeError, match=r"^Expected either a string literal or a backend instance, got .*$"):
             if use_socket:
                 _ = AsyncUDPNetworkClient(
                     request.getfixturevalue("mock_tcp_socket"),

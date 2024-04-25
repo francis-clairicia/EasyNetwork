@@ -30,6 +30,7 @@ from ..exceptions import ClientClosedError, ServerAlreadyRunning, ServerClosedEr
 from ..lowlevel import _utils, constants
 from ..lowlevel._final import runtime_final_class
 from ..lowlevel.api_async.backend.abc import AsyncBackend, CancelScope, IEvent, Task, TaskGroup
+from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendToken, ensure_backend
 from ..lowlevel.api_async.servers import stream as _stream_server
 from ..lowlevel.api_async.transports.abc import AsyncListener, AsyncStreamTransport
 from ..lowlevel.socket import (
@@ -79,7 +80,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
         port: int,
         protocol: StreamProtocol[_T_Response, _T_Request],
         request_handler: AsyncStreamRequestHandler[_T_Request, _T_Response],
-        backend: AsyncBackend,
+        backend: AsyncBackend | BuiltinAsyncBackendToken | None = None,
         *,
         ssl: _typing_ssl.SSLContext | None = None,
         ssl_handshake_timeout: float | None = None,
@@ -143,10 +144,10 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
 
         if not isinstance(protocol, StreamProtocol):
             raise TypeError(f"Expected a StreamProtocol object, got {protocol!r}")
-        if not isinstance(backend, AsyncBackend):
-            raise TypeError(f"Expected an AsyncBackend instance, got {backend!r}")
         if not isinstance(request_handler, AsyncStreamRequestHandler):
             raise TypeError(f"Expected an AsyncStreamRequestHandler object, got {request_handler!r}")
+
+        backend = ensure_backend(backend)
 
         if backlog is None:
             backlog = 100

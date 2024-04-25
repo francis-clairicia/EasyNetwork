@@ -31,6 +31,7 @@ from ..exceptions import ClientClosedError, ServerAlreadyRunning, ServerClosedEr
 from ..lowlevel import _utils
 from ..lowlevel._final import runtime_final_class
 from ..lowlevel.api_async.backend.abc import AsyncBackend, CancelScope, IEvent, Task, TaskGroup
+from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendToken, ensure_backend
 from ..lowlevel.api_async.servers import datagram as _datagram_server
 from ..lowlevel.api_async.transports.abc import AsyncDatagramListener
 from ..lowlevel.socket import INETSocketAttribute, SocketAddress, SocketProxy, new_socket_address
@@ -64,7 +65,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
         port: int,
         protocol: DatagramProtocol[_T_Response, _T_Request],
         request_handler: AsyncDatagramRequestHandler[_T_Request, _T_Response],
-        backend: AsyncBackend,
+        backend: AsyncBackend | BuiltinAsyncBackendToken | None = None,
         *,
         reuse_port: bool = False,
         logger: logging.Logger | None = None,
@@ -89,10 +90,10 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
 
         if not isinstance(protocol, DatagramProtocol):
             raise TypeError(f"Expected a DatagramProtocol object, got {protocol!r}")
-        if not isinstance(backend, AsyncBackend):
-            raise TypeError(f"Expected an AsyncBackend instance, got {backend!r}")
         if not isinstance(request_handler, AsyncDatagramRequestHandler):
             raise TypeError(f"Expected an AsyncDatagramRequestHandler object, got {request_handler!r}")
+
+        backend = ensure_backend(backend)
 
         self.__backend: AsyncBackend = backend
         self.__listeners_factory: Callable[[], Coroutine[Any, Any, Sequence[AsyncDatagramListener[tuple[Any, ...]]]]] | None

@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING, Any, Generic, ParamSpec, Self, TypeVar
 
 from .api_async.backend import _sniffio_helpers
 from .api_async.backend.abc import AsyncBackend
+from .api_async.backend.utils import BuiltinAsyncBackendToken, ensure_backend
 
 if TYPE_CHECKING:
     from types import TracebackType
@@ -71,7 +72,7 @@ class AsyncExecutor(Generic[_T_Executor]):
     def __init__(
         self,
         executor: _T_Executor,
-        backend: AsyncBackend,
+        backend: AsyncBackend | BuiltinAsyncBackendToken | None = None,
         *,
         handle_contexts: bool = True,
     ) -> None:
@@ -85,10 +86,8 @@ class AsyncExecutor(Generic[_T_Executor]):
         """
         if not isinstance(executor, concurrent.futures.Executor):
             raise TypeError("Invalid executor type")
-        if not isinstance(backend, AsyncBackend):
-            raise TypeError(f"Expected an AsyncBackend instance, got {backend!r}")
 
-        self.__backend: AsyncBackend = backend
+        self.__backend: AsyncBackend = ensure_backend(backend)
         self.__executor: _T_Executor = executor
         self.__handle_contexts: bool = bool(handle_contexts)
 

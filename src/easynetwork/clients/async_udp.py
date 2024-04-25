@@ -29,6 +29,7 @@ from .._typevars import _T_ReceivedPacket, _T_SentPacket
 from ..exceptions import ClientClosedError
 from ..lowlevel import _utils, constants
 from ..lowlevel.api_async.backend.abc import AsyncBackend, CancelScope, ILock
+from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendToken, ensure_backend
 from ..lowlevel.api_async.endpoints.datagram import AsyncDatagramEndpoint
 from ..lowlevel.api_async.transports.abc import AsyncDatagramTransport
 from ..lowlevel.socket import INETSocketAttribute, SocketAddress, SocketProxy, new_socket_address
@@ -70,7 +71,7 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         address: tuple[str, int],
         /,
         protocol: DatagramProtocol[_T_SentPacket, _T_ReceivedPacket],
-        backend: AsyncBackend,
+        backend: AsyncBackend | BuiltinAsyncBackendToken | None = ...,
         *,
         local_address: tuple[str, int] | None = ...,
         family: int = ...,
@@ -82,7 +83,7 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         socket: _socket.socket,
         /,
         protocol: DatagramProtocol[_T_SentPacket, _T_ReceivedPacket],
-        backend: AsyncBackend,
+        backend: AsyncBackend | BuiltinAsyncBackendToken | None = ...,
     ) -> None: ...
 
     def __init__(
@@ -90,7 +91,7 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         __arg: tuple[str, int] | _socket.socket,
         /,
         protocol: DatagramProtocol[_T_SentPacket, _T_ReceivedPacket],
-        backend: AsyncBackend,
+        backend: AsyncBackend | BuiltinAsyncBackendToken | None = None,
         **kwargs: Any,
     ) -> None:
         """
@@ -114,8 +115,8 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
 
         if not isinstance(protocol, DatagramProtocol):
             raise TypeError(f"Expected a DatagramProtocol object, got {protocol!r}")
-        if not isinstance(backend, AsyncBackend):
-            raise TypeError(f"Expected an AsyncBackend instance, got {backend!r}")
+
+        backend = ensure_backend(backend)
 
         self.__backend: AsyncBackend = backend
         self.__protocol: DatagramProtocol[_T_SentPacket, _T_ReceivedPacket] = protocol

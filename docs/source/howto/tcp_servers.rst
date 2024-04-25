@@ -295,4 +295,4 @@ If you want your client to make an SSL connection, you need to pass an :class:`~
 
 .. literalinclude:: ../_include/examples/howto/tcp_servers/background_server_ssl.py
    :linenos:
-   :emphasize-lines: 39,52-56,63
+   :emphasize-lines: 37,49-53,59

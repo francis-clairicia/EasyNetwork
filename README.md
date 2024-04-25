@@ -58,7 +58,6 @@ import logging
 from collections.abc import AsyncGenerator
 from typing import Any, TypeAlias
 
-from easynetwork.lowlevel.std_asyncio import AsyncIOBackend
 from easynetwork.protocol import StreamProtocol
 from easynetwork.serializers import JSONSerializer
 from easynetwork.servers import AsyncTCPNetworkServer
@@ -101,14 +100,13 @@ async def main() -> None:
     port = 9000
     protocol = JSONProtocol()
     handler = EchoRequestHandler()
-    backend = AsyncIOBackend()
 
     logging.basicConfig(
         level=logging.INFO,
         format="[ %(levelname)s ] [ %(name)s ] %(message)s",
     )
 
-    async with AsyncTCPNetworkServer(host, port, protocol, handler, backend) as server:
+    async with AsyncTCPNetworkServer(host, port, protocol, handler) as server:
         try:
             await server.serve_forever()
         except asyncio.CancelledError:
@@ -154,12 +152,11 @@ if __name__ == "__main__":
 import asyncio
 
 from easynetwork.clients import AsyncTCPNetworkClient
-from easynetwork.lowlevel.std_asyncio import AsyncIOBackend
 
 ...
 
 async def main() -> None:
-    async with AsyncTCPNetworkClient(("localhost", 9000), JSONProtocol(), AsyncIOBackend()) as client:
+    async with AsyncTCPNetworkClient(("localhost", 9000), JSONProtocol()) as client:
         await client.send_packet({"data": {"my_body": ["as json"]}})
         response = await client.recv_packet()  # response should be the sent dictionary
         print(response)  # prints {'data': {'my_body': ['as json']}}

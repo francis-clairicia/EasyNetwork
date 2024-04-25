@@ -57,7 +57,7 @@ class TestAsyncUDPNetworkServer:
         invalid_backend = mocker.NonCallableMagicMock(spec=object)
 
         # Act & Assert
-        with pytest.raises(TypeError, match=r"^Expected an AsyncBackend instance, got .*$"):
+        with pytest.raises(TypeError, match=r"^Expected either a string literal or a backend instance, got .*$"):
             _ = AsyncUDPNetworkServer(None, 0, mock_datagram_protocol, mock_datagram_request_handler, invalid_backend)
 
     async def test____get_backend____returns_linked_instance(
