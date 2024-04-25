@@ -5,7 +5,6 @@ from collections.abc import AsyncGenerator
 from typing import Any
 
 from easynetwork.clients import AsyncUDPNetworkClient
-from easynetwork.lowlevel.std_asyncio import AsyncIOBackend
 from easynetwork.protocol import DatagramProtocol
 from easynetwork.serializers import JSONSerializer
 from easynetwork.servers import AsyncUDPNetworkServer
@@ -30,8 +29,8 @@ class MyRequestHandler(AsyncDatagramRequestHandler[dict[str, Any], dict[str, Any
         await client.send_packet({"task": current_task.get_name(), "request": request})
 
 
-async def client(host: str, port: int, message: str, backend: AsyncIOBackend) -> None:
-    async with AsyncUDPNetworkClient((host, port), JSONProtocol(), backend) as client:
+async def client(host: str, port: int, message: str) -> None:
+    async with AsyncUDPNetworkClient((host, port), JSONProtocol()) as client:
         await client.send_packet({"message": message})
         response = await client.recv_packet()
         print(f"From server: {response}")
@@ -41,14 +40,12 @@ async def main() -> None:
     host, port = "localhost", 9000
     protocol = JSONProtocol()
     handler = MyRequestHandler()
-    backend = AsyncIOBackend()
 
     server = AsyncUDPNetworkServer(
         host,
         port,
         protocol,
         handler,
-        backend,
     )
 
     async with server:
@@ -58,9 +55,9 @@ async def main() -> None:
 
         print(f"Server loop running in task: {server_task.get_name()}")
 
-        await client(host, port, "Hello world 1", backend)
-        await client(host, port, "Hello world 2", backend)
-        await client(host, port, "Hello world 3", backend)
+        await client(host, port, "Hello world 1")
+        await client(host, port, "Hello world 2")
+        await client(host, port, "Hello world 3")
 
         await server.shutdown()
 

@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Any, Generic
 
 from .._typevars import _T_Request, _T_Response
 from ..lowlevel.api_async.backend.abc import AsyncBackend
+from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendToken
 from ..lowlevel.socket import SocketProxy
 from . import _base
 from .async_udp import AsyncUDPNetworkServer
@@ -54,7 +55,7 @@ class StandaloneUDPNetworkServer(
         port: int,
         protocol: DatagramProtocol[_T_Response, _T_Request],
         request_handler: AsyncDatagramRequestHandler[_T_Request, _T_Response],
-        backend: AsyncBackend | None = None,
+        backend: AsyncBackend | BuiltinAsyncBackendToken | None = None,
         *,
         runner_options: Mapping[str, Any] | None = None,
         reuse_port: bool = False,

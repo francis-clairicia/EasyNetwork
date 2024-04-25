@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from easynetwork.lowlevel.std_asyncio import AsyncIOBackend
 from easynetwork.servers import AsyncTCPNetworkServer
 
 from ftp_reply import FTPReply
@@ -22,7 +21,6 @@ class AsyncFTPServer(AsyncTCPNetworkServer[FTPRequest, FTPReply]):
             port,
             FTPServerProtocol(),
             FTPRequestHandler(),
-            AsyncIOBackend(),
         )
 
 

@@ -32,7 +32,7 @@ class TestStandaloneTCPNetworkServer:
         invalid_backend = mocker.NonCallableMagicMock(spec=object)
 
         # Act & Assert
-        with pytest.raises(TypeError, match=r"^Expected an AsyncBackend instance, got .*$"):
+        with pytest.raises(TypeError, match=r"^Expected either a string literal or a backend instance, got .*$"):
             _ = StandaloneTCPNetworkServer(None, 0, mock_stream_protocol, mock_stream_request_handler, invalid_backend)
 
     @pytest.mark.parametrize(
@@ -90,7 +90,7 @@ class TestStandaloneUDPNetworkServer:
         invalid_backend = mocker.NonCallableMagicMock(spec=object)
 
         # Act & Assert
-        with pytest.raises(TypeError, match=r"^Expected an AsyncBackend instance, got .*$"):
+        with pytest.raises(TypeError, match=r"^Expected either a string literal or a backend instance, got .*$"):
             _ = StandaloneUDPNetworkServer(None, 0, mock_datagram_protocol, mock_datagram_request_handler, invalid_backend)
 
     @pytest.mark.parametrize(

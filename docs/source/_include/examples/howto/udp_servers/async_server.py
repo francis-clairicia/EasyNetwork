@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncGenerator
 
-from easynetwork.lowlevel.std_asyncio import AsyncIOBackend
 from easynetwork.protocol import DatagramProtocol
 from easynetwork.servers import AsyncUDPNetworkServer
 from easynetwork.servers.handlers import AsyncDatagramClient, AsyncDatagramRequestHandler
@@ -36,10 +35,9 @@ async def main() -> None:
     host, port = "localhost", 9000
     protocol = ServerProtocol()
     handler = MyRequestHandler()
-    backend = AsyncIOBackend()
 
     # Create the server, binding to localhost on port 9000
-    async with AsyncUDPNetworkServer(host, port, protocol, handler, backend) as server:
+    async with AsyncUDPNetworkServer(host, port, protocol, handler) as server:
         # Activate the server; this will keep running until you
         # interrupt the program with Ctrl-C
         await server.serve_forever()

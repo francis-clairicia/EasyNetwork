@@ -28,6 +28,7 @@ from ..exceptions import ServerAlreadyRunning, ServerClosedError
 from ..lowlevel import _utils
 from ..lowlevel._lock import ForkSafeLock
 from ..lowlevel.api_async.backend.abc import AsyncBackend, ThreadsPortal
+from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendToken, ensure_backend
 from ..lowlevel.socket import SocketAddress
 from .abc import AbstractAsyncNetworkServer, AbstractNetworkServer, SupportsEventSet
 
@@ -51,21 +52,14 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer, Generic[_T_AsyncSer
 
     def __init__(
         self,
-        backend: AsyncBackend | None,
+        backend: AsyncBackend | BuiltinAsyncBackendToken | None,
         server_factory: Callable[[AsyncBackend], _T_AsyncServer],
         *,
         runner_options: Mapping[str, Any] | None = None,
     ) -> None:
         super().__init__()
-        match backend:
-            case None:
-                from ..lowlevel.std_asyncio.backend import AsyncIOBackend
 
-                backend = AsyncIOBackend()
-            case AsyncBackend():
-                pass
-            case _:
-                raise TypeError(f"Expected an AsyncBackend instance, got {backend!r}")
+        backend = ensure_backend("asyncio" if backend is None else backend)
 
         self.__backend: AsyncBackend = backend
         self.__server_factory: Callable[[AsyncBackend], _T_AsyncServer] = server_factory

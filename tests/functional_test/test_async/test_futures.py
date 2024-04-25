@@ -23,7 +23,7 @@ class TestAsyncExecutor:
     @pytest_asyncio.fixture
     @staticmethod
     async def executor(max_workers: int | None) -> AsyncIterator[AsyncExecutor[concurrent.futures.Executor]]:
-        async with AsyncExecutor(concurrent.futures.ThreadPoolExecutor(max_workers=max_workers), AsyncIOBackend()) as executor:
+        async with AsyncExecutor(concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)) as executor:
             yield executor
 
     async def test____run____submit_and_wait(
