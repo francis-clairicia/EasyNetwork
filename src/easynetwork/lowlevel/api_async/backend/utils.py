@@ -29,8 +29,10 @@ from .abc import AsyncBackend
 BuiltinAsyncBackendToken: TypeAlias = Literal["asyncio"]
 
 
-# TODO: Add docstring
 def ensure_backend(backend: AsyncBackend | BuiltinAsyncBackendToken | None) -> AsyncBackend:
+    """
+    TODO: Add docstring
+    """
     if backend is None:
         match _sniffio_helpers.current_async_library():
             case "asyncio" as backend:
