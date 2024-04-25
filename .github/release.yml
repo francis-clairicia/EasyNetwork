@@ -18,6 +18,10 @@ changelog:
     - title: Documentation
       labels:
         - documentation
+      exclude:
+        labels:
+          - integration
+          - development-process
     - title: Dependencies
       labels:
         - dependencies
