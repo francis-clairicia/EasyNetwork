@@ -14,7 +14,7 @@ runs:
       shell: bash
     - uses: pdm-project/setup-pdm@v4
       with:
-        version: '2.14.0'
+        version: '2.15.1'
         python-version: ${{ inputs.python-version }}
         ### setup-pdm cache seems broken. See https://github.com/pdm-project/setup-pdm/issues/43
         # cache: true

@@ -29,7 +29,7 @@ repos:
       - id: isort
         args: ['--filter-files', '--settings-file', 'pyproject.toml']
   - repo: https://github.com/psf/black
-    rev: '24.4.0'
+    rev: '24.4.1'
     hooks:
       - id: black
         args: ['--config', 'pyproject.toml']
@@ -53,7 +53,7 @@ repos:
         types: []  # Overwrite with empty in order to fallback to types_or
         types_or: [python, pyi]
   - repo: https://github.com/pdm-project/pdm
-    rev: '2.14.0'
+    rev: '2.15.1'
     hooks:
       - id: pdm-lock-check
       - id: pdm-export
