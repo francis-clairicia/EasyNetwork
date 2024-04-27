@@ -345,7 +345,7 @@ class TestAsyncIOBackend:
             reuse_address=mocker.ANY,  # Determined according to OS
             reuse_port=mocker.sentinel.reuse_port,
         )
-        mock_ListenerSocketAdapter.assert_called_once_with(backend, mock_tcp_socket, event_loop, expected_factory)
+        mock_ListenerSocketAdapter.assert_called_once_with(backend, mock_tcp_socket, expected_factory)
         assert listener_sockets == [mocker.sentinel.listener_socket]
 
     @pytest.mark.parametrize("remote_host", [None, ""], ids=repr)
@@ -415,7 +415,7 @@ class TestAsyncIOBackend:
             reuse_port=mocker.sentinel.reuse_port,
         )
         assert mock_ListenerSocketAdapter.call_args_list == [
-            mocker.call(backend, mock_tcp_socket, event_loop, expected_factory) for _ in range(2)
+            mocker.call(backend, mock_tcp_socket, expected_factory) for _ in range(2)
         ]
         assert listener_sockets == [mocker.sentinel.listener_socket, mocker.sentinel.listener_socket]
 
@@ -488,7 +488,7 @@ class TestAsyncIOBackend:
             reuse_port=mocker.sentinel.reuse_port,
         )
         assert mock_ListenerSocketAdapter.call_args_list == [
-            mocker.call(backend, mock_tcp_socket, event_loop, expected_factory) for _ in range(2)
+            mocker.call(backend, mock_tcp_socket, expected_factory) for _ in range(2)
         ]
         assert listener_sockets == [mocker.sentinel.listener_socket, mocker.sentinel.listener_socket]
 
