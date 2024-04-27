@@ -173,7 +173,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
 
         loop = asyncio.get_running_loop()
         factory = AcceptedSocketFactory()
-        return [ListenerSocketAdapter(self, sock, loop, factory) for sock in sockets]
+        return [ListenerSocketAdapter(self, sock, factory) for sock in sockets]
 
     async def create_udp_endpoint(
         self,

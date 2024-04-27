@@ -9,7 +9,7 @@ import logging
 import os
 import ssl
 from collections.abc import Callable, Coroutine
-from errno import errorcode as errno_errorcode
+from errno import EBADF, EBUSY, errorcode as errno_errorcode
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 
 from easynetwork.exceptions import UnsupportedOperation
@@ -34,6 +34,7 @@ if TYPE_CHECKING:
 from ....tools import PlatformMarkers
 from ..._utils import partial_eq
 from ...base import BaseTestSocket
+from .base import BaseTestAsyncSocket
 
 
 class BaseTestTransportStreamSocket(BaseTestSocket):
@@ -114,12 +115,7 @@ class BaseTestTransportWithSSL(BaseTestTransportStreamSocket):
 
 
 @pytest.mark.asyncio
-class TestListenerSocketAdapter(BaseTestTransportStreamSocket):
-    @pytest.fixture(autouse=True)
-    @staticmethod
-    def mock_async_socket_cls(mock_async_socket: MagicMock, mocker: MockerFixture) -> MagicMock:
-        return mocker.patch(f"{ListenerSocketAdapter.__module__}.AsyncSocket", return_value=mock_async_socket)
-
+class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestAsyncSocket):
     @pytest.fixture
     @classmethod
     def mock_tcp_listener_socket(
@@ -133,14 +129,12 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket):
 
     @pytest.fixture
     @staticmethod
-    def mock_async_socket(
-        mock_async_socket: MagicMock,
+    def mock_tcp_socket(
         mock_tcp_socket: MagicMock,
         mock_tcp_listener_socket: MagicMock,
     ) -> MagicMock:
-        mock_async_socket.socket = mock_tcp_listener_socket
-        mock_async_socket.accept.return_value = (mock_tcp_socket, ("127.0.0.1", 12345))
-        return mock_async_socket
+        mock_tcp_listener_socket.accept.return_value = (mock_tcp_socket, ("127.0.0.1", 12345))
+        return mock_tcp_socket
 
     @pytest.fixture
     @staticmethod
@@ -158,11 +152,10 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket):
     @staticmethod
     def listener(
         asyncio_backend: AsyncIOBackend,
-        event_loop: asyncio.AbstractEventLoop,
         mock_tcp_listener_socket: MagicMock,
         accepted_socket_factory: MagicMock,
     ) -> ListenerSocketAdapter[Any]:
-        return ListenerSocketAdapter(asyncio_backend, mock_tcp_listener_socket, event_loop, accepted_socket_factory)
+        return ListenerSocketAdapter(asyncio_backend, mock_tcp_listener_socket, accepted_socket_factory)
 
     @staticmethod
     def _make_accept_side_effect(
@@ -185,40 +178,63 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket):
         accepted_socket_factory: MagicMock,
     ) -> None:
         # Arrange
-        event_loop = asyncio.get_running_loop()
 
         # Act & Assert
         with pytest.raises(ValueError, match=r"^A 'SOCK_STREAM' socket is expected$"):
-            _ = ListenerSocketAdapter(asyncio_backend, mock_udp_socket, event_loop, accepted_socket_factory)
+            _ = ListenerSocketAdapter(asyncio_backend, mock_udp_socket, accepted_socket_factory)
 
-    async def test____is_closing____default(
+    async def test____dunder_init____forbids_ssl_sockets(
         self,
-        listener: ListenerSocketAdapter[Any],
-        mock_async_socket: MagicMock,
-        mocker: MockerFixture,
+        asyncio_backend: AsyncIOBackend,
+        mock_ssl_socket: MagicMock,
+        accepted_socket_factory: MagicMock,
     ) -> None:
         # Arrange
-        mock_async_socket.is_closing.return_value = mocker.sentinel.is_closing
+
+        # Act & Assert
+        with pytest.raises(TypeError, match=r"^ssl\.SSLSocket instances are forbidden$"):
+            _ = ListenerSocketAdapter(asyncio_backend, mock_ssl_socket, accepted_socket_factory)
+
+    @pytest.mark.usefixtures("listener")
+    async def test____dunder_init____ensure_non_blocking_socket(
+        self,
+        mock_tcp_listener_socket: MagicMock,
+    ) -> None:
+        # Arrange
 
         # Act
-        state = listener.is_closing()
 
         # Assert
-        assert state is mocker.sentinel.is_closing
-        mock_async_socket.is_closing.assert_called_once_with()
+        mock_tcp_listener_socket.setblocking.assert_called_once_with(False)
 
     async def test____aclose____close_socket(
         self,
         listener: ListenerSocketAdapter[Any],
-        mock_async_socket: MagicMock,
+        mock_tcp_listener_socket: MagicMock,
     ) -> None:
         # Arrange
+        assert not listener.is_closing()
 
         # Act
         await listener.aclose()
 
         # Assert
-        mock_async_socket.aclose.assert_awaited_once_with()
+        assert listener.is_closing()
+        mock_tcp_listener_socket.close.assert_called_once_with()
+
+    async def test____aclose____idempotent(
+        self,
+        listener: ListenerSocketAdapter[Any],
+        mock_tcp_listener_socket: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act
+        for _ in range(5):
+            await listener.aclose()
+
+        # Assert
+        mock_tcp_listener_socket.close.assert_called_once_with()
 
     @pytest.mark.parametrize("external_group", [True, False], ids=lambda p: f"external_group=={p}")
     async def test____serve____default(
@@ -226,7 +242,6 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket):
         asyncio_backend: AsyncIOBackend,
         listener: ListenerSocketAdapter[Any],
         external_group: bool,
-        mock_async_socket: MagicMock,
         accepted_socket_factory: MagicMock,
         handler: AsyncMock,
         mock_tcp_socket_factory: Callable[[], MagicMock],
@@ -234,14 +249,13 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        event_loop = asyncio.get_running_loop()
         stream = mock_stream_socket_adapter_factory()
         client_socket = mock_tcp_socket_factory()
         accepted_socket_factory.connect.return_value = stream
-        mock_async_socket.accept.side_effect = self._make_accept_side_effect(
-            [client_socket, asyncio.CancelledError],
-            mocker,
-            sleep_time=0.1,
+        mocker.patch.object(
+            ListenerSocketAdapter,
+            "raw_accept",
+            side_effect=self._make_accept_side_effect([client_socket, asyncio.CancelledError], mocker, sleep_time=0.1),
         )
 
         # Act
@@ -251,7 +265,7 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket):
                 await listener.serve(handler, task_group)
 
         # Assert
-        accepted_socket_factory.connect.assert_awaited_once_with(asyncio_backend, client_socket, event_loop)
+        accepted_socket_factory.connect.assert_awaited_once_with(asyncio_backend, client_socket)
         handler.assert_awaited_once_with(stream)
 
     @pytest.mark.parametrize(
@@ -269,7 +283,6 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket):
         exc: BaseException,
         asyncio_backend: AsyncIOBackend,
         listener: ListenerSocketAdapter[Any],
-        mock_async_socket: MagicMock,
         accepted_socket_factory: MagicMock,
         handler: AsyncMock,
         mock_tcp_socket_factory: Callable[[], MagicMock],
@@ -277,11 +290,14 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        event_loop = asyncio.get_running_loop()
         caplog.set_level(logging.INFO)
         client_socket = mock_tcp_socket_factory()
         accepted_socket_factory.connect.side_effect = exc
-        mock_async_socket.accept.side_effect = self._make_accept_side_effect([client_socket, asyncio.CancelledError], mocker)
+        mocker.patch.object(
+            ListenerSocketAdapter,
+            "raw_accept",
+            side_effect=self._make_accept_side_effect([client_socket, asyncio.CancelledError], mocker),
+        )
 
         # Act
         with pytest.raises(BaseExceptionGroup) if type(exc) is BaseException else contextlib.nullcontext():
@@ -290,7 +306,7 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket):
                     await listener.serve(handler, task_group)
 
         # Assert
-        accepted_socket_factory.connect.assert_awaited_once_with(asyncio_backend, client_socket, event_loop)
+        accepted_socket_factory.connect.assert_awaited_once_with(asyncio_backend, client_socket)
         handler.assert_not_awaited()
         client_socket.close.assert_called_once_with()
 
@@ -298,7 +314,7 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket):
             case asyncio.CancelledError():
                 assert len(caplog.records) == 0
                 accepted_socket_factory.log_connection_error.assert_not_called()
-            case OSError():
+            case OSError(errno=errno) if errno in NOT_CONNECTED_SOCKET_ERRNOS:
                 # ENOTCONN error should not create a big Traceback error but only a warning (at least)
                 assert len(caplog.records) == 1
                 assert caplog.records[0].levelno == logging.WARNING
@@ -318,15 +334,15 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket):
         self,
         errno_value: int,
         listener: ListenerSocketAdapter[Any],
-        mock_async_socket: MagicMock,
         accepted_socket_factory: MagicMock,
         handler: AsyncMock,
         caplog: pytest.LogCaptureFixture,
+        mocker: MockerFixture,
     ) -> None:
         # Arrange
         caplog.set_level(logging.ERROR)
         accepted_socket_factory.connect.side_effect = AssertionError
-        mock_async_socket.accept.side_effect = OSError(errno_value, os.strerror(errno_value))
+        mocker.patch.object(ListenerSocketAdapter, "raw_accept", side_effect=OSError(errno_value, os.strerror(errno_value)))
 
         # Act
         # It retries every 100 ms, so in 975 ms it will retry at 0, 100, ..., 900
@@ -349,16 +365,16 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket):
     async def test____serve____reraise_other_OSErrors(
         self,
         listener: ListenerSocketAdapter[Any],
-        mock_async_socket: MagicMock,
         accepted_socket_factory: MagicMock,
         handler: AsyncMock,
         caplog: pytest.LogCaptureFixture,
+        mocker: MockerFixture,
     ) -> None:
         # Arrange
         caplog.set_level(logging.ERROR)
         accepted_socket_factory.connect.side_effect = AssertionError
         exc = OSError()
-        mock_async_socket.accept.side_effect = exc
+        mocker.patch.object(ListenerSocketAdapter, "raw_accept", side_effect=exc)
 
         # Act
         async with AsyncIOTaskGroup() as task_group:
@@ -370,6 +386,111 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket):
         handler.assert_not_awaited()
         assert len(caplog.records) == 0
         assert exc_info.value is exc
+
+    async def test____accept____returns_socket(
+        self,
+        listener: ListenerSocketAdapter[Any],
+        mock_tcp_listener_socket: MagicMock,
+        mock_tcp_socket: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act
+        client_socket = await listener.raw_accept()
+
+        # Assert
+        assert client_socket is mock_tcp_socket
+        mock_tcp_listener_socket.accept.assert_called_once_with()
+
+    async def test____accept____busy(
+        self,
+        listener: ListenerSocketAdapter[Any],
+        mock_tcp_listener_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        with self._set_sock_method_in_blocking_state(mock_tcp_listener_socket.accept):
+            _ = await self._busy_socket_task(listener.raw_accept(), mock_tcp_listener_socket.accept)
+
+        # Act
+        with pytest.raises(OSError) as exc_info:
+            await listener.raw_accept()
+
+        # Assert
+        assert exc_info.value.errno == EBUSY
+        mock_tcp_listener_socket.accept.assert_not_called()
+
+    async def test____accept____closed_socket____before_attempt(
+        self,
+        listener: ListenerSocketAdapter[Any],
+        mock_tcp_listener_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        await listener.aclose()
+
+        # Act
+        with pytest.raises(OSError) as exc_info:
+            await listener.raw_accept()
+
+        # Assert
+        assert exc_info.value.errno == EBADF
+        mock_tcp_listener_socket.accept.assert_not_called()
+
+    async def test____accept____closed_socket____during_attempt(
+        self,
+        listener: ListenerSocketAdapter[Any],
+        mock_tcp_listener_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        with self._set_sock_method_in_blocking_state(mock_tcp_listener_socket.accept):
+            busy_method_task = await self._busy_socket_task(listener.raw_accept(), mock_tcp_listener_socket.accept)
+
+        # Act
+        await listener.aclose()
+        with pytest.raises(OSError) as exc_info:
+            await busy_method_task
+
+        # Assert
+        assert exc_info.value.errno == EBADF
+        mock_tcp_listener_socket.accept.assert_not_called()
+
+    @pytest.mark.parametrize("cancellation_requests", [1, 3])
+    async def test____accept____external_cancellation_during_attempt(
+        self,
+        cancellation_requests: int,
+        listener: ListenerSocketAdapter[Any],
+        mock_tcp_listener_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        with self._set_sock_method_in_blocking_state(mock_tcp_listener_socket.accept):
+            busy_method_task = await self._busy_socket_task(listener.raw_accept(), mock_tcp_listener_socket.accept)
+
+        # Act
+        for _ in range(cancellation_requests):
+            busy_method_task.cancel()
+        await asyncio.wait([busy_method_task])
+
+        # Assert
+        assert busy_method_task.cancelled()
+        mock_tcp_listener_socket.accept.assert_not_called()
+
+    async def test____accept____raises_CancelledError(
+        self,
+        listener: ListenerSocketAdapter[Any],
+        mock_tcp_listener_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        with self._set_sock_method_in_blocking_state(mock_tcp_listener_socket.accept):
+            busy_method_task = await self._busy_socket_task(listener.raw_accept(), mock_tcp_listener_socket.accept)
+
+        mock_tcp_listener_socket.accept.side_effect = asyncio.CancelledError
+
+        # Act
+        await asyncio.wait([busy_method_task])
+
+        # Assert
+        mock_tcp_listener_socket.accept.assert_called()
+        assert busy_method_task.cancelled()
+        assert busy_method_task.cancelling() == 0
 
     async def test____get_backend____returns_linked_instance(
         self,
@@ -390,7 +511,9 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket):
         # Arrange
 
         # Act & Assert
-        assert listener.extra(SocketAttribute.socket) is mock_tcp_listener_socket
+        trsock = listener.extra(SocketAttribute.socket)
+        assert isinstance(trsock, asyncio.trsock.TransportSocket)
+        assert getattr(trsock, "_sock") is mock_tcp_listener_socket
         assert listener.extra(SocketAttribute.family) == mock_tcp_listener_socket.family
         assert listener.extra(SocketAttribute.sockname) == ("127.0.0.1", 11111)
         assert listener.extra(SocketAttribute.peername, mocker.sentinel.no_value) is mocker.sentinel.no_value
@@ -450,7 +573,7 @@ class TestAcceptedSocketFactory(BaseTestTransportStreamSocket):
         event_loop = asyncio.get_running_loop()
 
         # Act
-        socket = await accepted_socket.connect(asyncio_backend, mock_tcp_socket, event_loop)
+        socket = await accepted_socket.connect(asyncio_backend, mock_tcp_socket)
 
         # Assert
         assert isinstance(socket, AsyncioTransportStreamSocketAdapter)
