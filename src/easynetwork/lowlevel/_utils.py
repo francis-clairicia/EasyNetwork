@@ -119,6 +119,8 @@ def prepend_argument(
 
 
 def get_callable_name(func: Callable[..., Any]) -> str:
+    while isinstance(func, functools.partial):
+        func = func.func
     qualname: str | None = getattr(func, "__qualname__", None)
     if not qualname:
         qualname = getattr(func, "__name__", None)

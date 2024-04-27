@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import functools
 import itertools
 import math
 import os
@@ -220,6 +221,20 @@ def test____get_callable_name____neither_name_nor_qualname(module: str | None, m
 
     # Assert
     assert name == ""
+
+
+def test____get_callable_name____unwrap_partial(mocker: MockerFixture) -> None:
+    # Arrange
+    func = mocker.stub()
+    func.__name__ = "func"
+    func.__qualname__ = "namespace.func"
+    func.__module__ = "package.module"
+
+    # Act
+    name = get_callable_name(functools.partial(func, mocker.sentinel.arg, kw=mocker.sentinel.kwarg))
+
+    # Assert
+    assert name == "package.module.namespace.func"
 
 
 def test____error_from_errno____returns_OSError(mocker: MockerFixture) -> None:
