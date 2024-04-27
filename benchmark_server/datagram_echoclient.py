@@ -11,6 +11,7 @@ import concurrent.futures
 import gc
 import json
 import multiprocessing
+import multiprocessing.synchronize
 import socket
 import sys
 from typing import Literal, assert_never
@@ -19,6 +20,7 @@ from tool.client import RequestReport, TestReport, WorkerTestReport, dump_report
 
 
 def run_test(
+    barrier: multiprocessing.synchronize.Barrier,
     socket_family: int,
     address: str | tuple[str, int],
     message_size: int,
@@ -43,6 +45,8 @@ def run_test(
         times_per_request: collections.deque[RequestReport] = collections.deque()
 
         from time import perf_counter
+
+        barrier.wait(timeout=1)
 
         current_test_duration = 0.0
         while current_test_duration < duration:
@@ -80,10 +84,16 @@ def main() -> None:
 
     nb_workers: int = args.workers
     message_size: int = args.msize
-    with concurrent.futures.ProcessPoolExecutor(max_workers=nb_workers, mp_context=multiprocessing.get_context("spawn")) as e:
+    mp_context = multiprocessing.get_context("spawn")
+    with (
+        mp_context.Manager() as manager,
+        concurrent.futures.ProcessPoolExecutor(max_workers=nb_workers, mp_context=mp_context) as e,
+    ):
+        barrier: multiprocessing.synchronize.Barrier = manager.Barrier(nb_workers)  # type: ignore[attr-defined]
         workers_list = [
             e.submit(
                 run_test,
+                barrier=barrier,
                 socket_family=SOCKFAMILY,
                 address=SOCKADDR,
                 message_size=message_size,
