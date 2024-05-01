@@ -24,10 +24,11 @@ import collections
 import contextlib
 import dataclasses
 import logging
+import warnings
 from collections.abc import Callable, Coroutine, Mapping
 from typing import TYPE_CHECKING, Any, NoReturn, final
 
-from ... import socket as socket_tools
+from ... import _utils, socket as socket_tools
 from ...api_async.transports import abc as transports
 from .._flow_control import WriteFlowControl
 from ..tasks import TaskGroup as AsyncIOTaskGroup
@@ -58,13 +59,24 @@ class DatagramListenerSocketAdapter(transports.AsyncDatagramListener[tuple[Any, 
         self.__protocol: DatagramListenerProtocol = protocol
 
         socket: asyncio.trsock.TransportSocket | None = transport.get_extra_info("socket")
-        assert socket is not None, "transport must be a socket transport"  # nosec assert_used
+        if socket is None:
+            raise AssertionError("transport must be a socket transport")
 
         self.__socket: asyncio.trsock.TransportSocket = socket
         # asyncio.DatagramTransport.is_closing() can suddently become true if there is something wrong with the socket
         # even if transport.close() was never called.
         # To bypass this side effect, we use our own flag.
         self.__closing: bool = False
+
+    def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
+        try:
+            transport = self.__transport
+        except AttributeError:  # pragma: no cover
+            # Technically possible but not with the common usage because this constructor does not raise.
+            return
+        if not transport.is_closing():
+            _warn(f"unclosed listener {self!r}", ResourceWarning, source=self)
+            transport.close()
 
     def is_closing(self) -> bool:
         return self.__closing

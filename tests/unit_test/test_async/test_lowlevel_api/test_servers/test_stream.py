@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import warnings
-from collections.abc import AsyncGenerator, Awaitable, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from typing import TYPE_CHECKING, Any, Literal, NoReturn
 
 from easynetwork.exceptions import UnsupportedOperation
@@ -22,6 +22,7 @@ from easynetwork.lowlevel.std_asyncio.tasks import TaskGroup
 from easynetwork.warnings import ManualBufferAllocationWarning
 
 import pytest
+import pytest_asyncio
 
 from ...._utils import make_async_recv_into_side_effect as make_recv_into_side_effect, stub_decorator
 from ....base import BaseTestWithStreamProtocol
@@ -157,20 +158,22 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
     def manual_buffer_allocation(request: Any) -> str:
         return getattr(request, "param", "try")
 
-    @pytest.fixture
+    @pytest_asyncio.fixture
     @staticmethod
-    def server(
+    async def server(
         mock_listener: MagicMock,
         mock_stream_protocol: MagicMock,
         max_recv_size: int,
         manual_buffer_allocation: Literal["try", "no", "force"],
-    ) -> AsyncStreamServer[Any, Any]:
-        return AsyncStreamServer(
+    ) -> AsyncIterator[AsyncStreamServer[Any, Any]]:
+        server: AsyncStreamServer[Any, Any] = AsyncStreamServer(
             mock_listener,
             mock_stream_protocol,
             max_recv_size,
             manual_buffer_allocation=manual_buffer_allocation,
         )
+        async with contextlib.aclosing(server):
+            yield server
 
     async def test____dunder_init____invalid_transport(
         self,
@@ -229,6 +232,24 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
                 max_recv_size,
                 manual_buffer_allocation=manual_buffer_allocation,
             )
+
+    async def test____dunder_del____ResourceWarning(
+        self,
+        mock_listener: MagicMock,
+        mock_stream_protocol: MagicMock,
+        max_recv_size: int,
+    ) -> None:
+        # Arrange
+        server: AsyncStreamServer[Any, Any] = AsyncStreamServer(mock_listener, mock_stream_protocol, max_recv_size)
+
+        # Act & Assert
+        with pytest.warns(
+            ResourceWarning,
+            match=r"^unclosed server .+ pointing to .+ \(and cannot be closed synchronously\)$",
+        ):
+            del server
+
+        mock_listener.aclose.assert_not_called()
 
     @pytest.mark.parametrize("listener_closed", [False, True])
     async def test____is_closing____default(

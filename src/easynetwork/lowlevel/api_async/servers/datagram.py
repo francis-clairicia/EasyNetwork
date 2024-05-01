@@ -22,6 +22,7 @@ import contextlib
 import contextvars
 import dataclasses
 import enum
+import warnings
 import weakref
 from collections import deque
 from collections.abc import AsyncGenerator, Callable, Hashable, Mapping
@@ -79,6 +80,15 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_T_Request,
         self.__protocol: protocol_module.DatagramProtocol[_T_Response, _T_Request] = protocol
         self.__sendto_lock: ILock = listener.backend().create_lock()
         self.__serve_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently receiving datagrams")
+
+    def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
+        try:
+            listener = self.__listener
+        except AttributeError:
+            return
+        if not listener.is_closing():
+            msg = f"unclosed server {self!r} pointing to {listener!r} (and cannot be closed synchronously)"
+            _warn(msg, ResourceWarning, source=self)
 
     def is_closing(self) -> bool:
         """

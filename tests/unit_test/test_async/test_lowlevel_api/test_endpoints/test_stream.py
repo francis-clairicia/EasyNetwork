@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import warnings
-from collections.abc import Generator
+from collections.abc import AsyncIterator, Generator
 from typing import TYPE_CHECKING, Any, Literal
 
 from easynetwork.exceptions import IncrementalDeserializeError, StreamProtocolParseError, UnsupportedOperation
@@ -17,6 +17,7 @@ from easynetwork.lowlevel.std_asyncio.backend import AsyncIOBackend
 from easynetwork.warnings import ManualBufferAllocationWarning
 
 import pytest
+import pytest_asyncio
 
 from ...._utils import make_async_recv_into_side_effect as make_recv_into_side_effect
 from ....base import BaseTestWithStreamProtocol
@@ -26,6 +27,8 @@ if TYPE_CHECKING:
     from unittest.mock import MagicMock
 
     from pytest_mock import MockerFixture
+
+    from .....pytest_plugins.async_finalizer import AsyncFinalizer
 
 pytest_mark_ignore_manual_buffer_allocation_warning = pytest.mark.filterwarnings(
     f"ignore::{ManualBufferAllocationWarning.__module__}.{ManualBufferAllocationWarning.__qualname__}",
@@ -50,16 +53,19 @@ class TestAsyncStreamEndpoint(BaseTestWithStreamProtocol):
     def max_recv_size(request: Any) -> int:
         return getattr(request, "param", 256 * 1024)
 
-    @pytest.fixture
+    @pytest_asyncio.fixture
     @staticmethod
-    def endpoint(
+    async def endpoint(
         mock_stream_transport: MagicMock,
         mock_stream_protocol: MagicMock,
         max_recv_size: int,
-    ) -> AsyncStreamEndpoint[Any, Any]:
+    ) -> AsyncIterator[AsyncStreamEndpoint[Any, Any]]:
+        endpoint: AsyncStreamEndpoint[Any, Any]
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", ManualBufferAllocationWarning)
-            return AsyncStreamEndpoint(mock_stream_transport, mock_stream_protocol, max_recv_size)
+            endpoint = AsyncStreamEndpoint(mock_stream_transport, mock_stream_protocol, max_recv_size)
+        async with contextlib.aclosing(endpoint):
+            yield endpoint
 
     @pytest_mark_ignore_manual_buffer_allocation_warning
     async def test____dunder_init____invalid_transport(
@@ -93,6 +99,7 @@ class TestAsyncStreamEndpoint(BaseTestWithStreamProtocol):
     @pytest.mark.parametrize("max_recv_size", [1, 2**16], ids=lambda p: f"max_recv_size=={p}")
     async def test____dunder_init____max_recv_size____valid_value(
         self,
+        async_finalizer: AsyncFinalizer,
         mock_stream_transport: MagicMock,
         mock_stream_protocol: MagicMock,
         max_recv_size: int,
@@ -101,6 +108,7 @@ class TestAsyncStreamEndpoint(BaseTestWithStreamProtocol):
 
         # Act
         endpoint: AsyncStreamEndpoint[Any, Any] = AsyncStreamEndpoint(mock_stream_transport, mock_stream_protocol, max_recv_size)
+        async_finalizer.add_finalizer(endpoint.aclose)
 
         # Assert
         if isinstance(mock_stream_transport, AsyncStreamReadTransport):
@@ -140,6 +148,29 @@ class TestAsyncStreamEndpoint(BaseTestWithStreamProtocol):
                 max_recv_size,
                 manual_buffer_allocation=manual_buffer_allocation,
             )
+
+    async def test____dunder_del____ResourceWarning(
+        self,
+        mock_stream_transport: MagicMock,
+        mock_stream_protocol: MagicMock,
+        max_recv_size: int,
+    ) -> None:
+        # Arrange
+        endpoint: AsyncStreamEndpoint[Any, Any] = AsyncStreamEndpoint(
+            mock_stream_transport,
+            mock_stream_protocol,
+            max_recv_size,
+            manual_buffer_allocation="no",
+        )
+
+        # Act & Assert
+        with pytest.warns(
+            ResourceWarning,
+            match=r"^unclosed endpoint .+ pointing to .+ \(and cannot be closed synchronously\)$",
+        ):
+            del endpoint
+
+        mock_stream_transport.aclose.assert_not_called()
 
     @pytest.mark.parametrize("transport_closed", [False, True])
     async def test____is_closing____default(
@@ -609,9 +640,17 @@ class TestAsyncStreamEndpoint(BaseTestWithStreamProtocol):
         # Arrange
 
         # Act & Assert
+        endpoint: AsyncStreamEndpoint[Any, Any]
         with warnings.catch_warnings():
             warnings.simplefilter("error", ManualBufferAllocationWarning)
-            _ = AsyncStreamEndpoint(mock_stream_transport, mock_stream_protocol, max_recv_size, manual_buffer_allocation="try")
+            endpoint = AsyncStreamEndpoint(
+                mock_stream_transport,
+                mock_stream_protocol,
+                max_recv_size,
+                manual_buffer_allocation="try",
+            )
+
+        await endpoint.aclose()
 
     @pytest.mark.parametrize("mock_stream_transport", [AsyncStreamReadTransport], indirect=True)
     @pytest.mark.parametrize("stream_protocol_mode", ["buffer"], indirect=True)
@@ -624,11 +663,19 @@ class TestAsyncStreamEndpoint(BaseTestWithStreamProtocol):
         # Arrange
 
         # Act & Assert
+        endpoint: AsyncStreamEndpoint[Any, Any]
         with pytest.warns(
             ManualBufferAllocationWarning,
             match=r'^The transport implementation .+ does not implement AsyncBufferedStreamReadTransport interface\. Consider explicitly setting the "manual_buffer_allocation" strategy to "no"\.$',
         ):
-            _ = AsyncStreamEndpoint(mock_stream_transport, mock_stream_protocol, max_recv_size, manual_buffer_allocation="try")
+            endpoint = AsyncStreamEndpoint(
+                mock_stream_transport,
+                mock_stream_protocol,
+                max_recv_size,
+                manual_buffer_allocation="try",
+            )
+
+        await endpoint.aclose()
 
     @pytest.mark.parametrize("mock_stream_transport", [AsyncStreamReadTransport, AsyncBufferedStreamReadTransport], indirect=True)
     async def test____manual_buffer_allocation____disabled(
@@ -652,6 +699,7 @@ class TestAsyncStreamEndpoint(BaseTestWithStreamProtocol):
                 manual_buffer_allocation="no",
             )
         packet = await endpoint.recv_packet()
+        await endpoint.aclose()
 
         # Assert
         mock_stream_transport.recv.assert_awaited_once_with(max_recv_size)

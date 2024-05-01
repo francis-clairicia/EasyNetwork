@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import enum
 import importlib
-from typing import TYPE_CHECKING, Any, assert_never
+from typing import Any, assert_never
 
 import pytest
 
@@ -95,9 +95,3 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 @pytest.fixture(scope="session")
 def event_loop_name(pytestconfig: pytest.Config) -> EventLoop:
     return pytestconfig.getoption(ASYNCIO_EVENT_LOOP_OPTION)
-
-
-if TYPE_CHECKING:
-
-    @pytest.fixture
-    def event_loop(event_loop: asyncio.AbstractEventLoop) -> asyncio.AbstractEventLoop: ...

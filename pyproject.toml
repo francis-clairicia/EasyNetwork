@@ -241,6 +241,9 @@ markers = [
     "unit: marks tests as unit tests",
     "serializer: marks serializers tests",
 ]
+filterwarnings = [
+    "always::ResourceWarning:easynetwork",
+]
 
 [tool.coverage.run]
 branch = true

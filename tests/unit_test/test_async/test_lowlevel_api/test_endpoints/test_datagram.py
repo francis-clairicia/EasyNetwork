@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.exceptions import DatagramProtocolParseError, DeserializeError, UnsupportedOperation
@@ -13,6 +14,7 @@ from easynetwork.lowlevel.api_async.transports.abc import (
 from easynetwork.lowlevel.std_asyncio.backend import AsyncIOBackend
 
 import pytest
+import pytest_asyncio
 
 from ....base import BaseTestWithDatagramProtocol
 from ...mock_tools import make_transport_mock
@@ -34,10 +36,15 @@ class TestAsyncDatagramEndpoint(BaseTestWithDatagramProtocol):
     ) -> MagicMock:
         return make_transport_mock(mocker=mocker, spec=request.param, backend=asyncio_backend)
 
-    @pytest.fixture
+    @pytest_asyncio.fixture
     @staticmethod
-    def endpoint(mock_datagram_transport: MagicMock, mock_datagram_protocol: MagicMock) -> AsyncDatagramEndpoint[Any, Any]:
-        return AsyncDatagramEndpoint(mock_datagram_transport, mock_datagram_protocol)
+    async def endpoint(
+        mock_datagram_transport: MagicMock,
+        mock_datagram_protocol: MagicMock,
+    ) -> AsyncIterator[AsyncDatagramEndpoint[Any, Any]]:
+        endpoint: AsyncDatagramEndpoint[Any, Any] = AsyncDatagramEndpoint(mock_datagram_transport, mock_datagram_protocol)
+        async with contextlib.aclosing(endpoint):
+            yield endpoint
 
     async def test____dunder_init____invalid_transport(
         self,
@@ -62,6 +69,23 @@ class TestAsyncDatagramEndpoint(BaseTestWithDatagramProtocol):
         # Act & Assert
         with pytest.raises(TypeError, match=r"^Expected a DatagramProtocol object, got .*$"):
             _ = AsyncDatagramEndpoint(mock_datagram_transport, mock_invalid_protocol)
+
+    async def test____dunder_del____ResourceWarning(
+        self,
+        mock_datagram_transport: MagicMock,
+        mock_datagram_protocol: MagicMock,
+    ) -> None:
+        # Arrange
+        endpoint: AsyncDatagramEndpoint[Any, Any] = AsyncDatagramEndpoint(mock_datagram_transport, mock_datagram_protocol)
+
+        # Act & Assert
+        with pytest.warns(
+            ResourceWarning,
+            match=r"^unclosed endpoint .+ pointing to .+ \(and cannot be closed synchronously\)$",
+        ):
+            del endpoint
+
+        mock_datagram_transport.aclose.assert_not_called()
 
     @pytest.mark.parametrize("transport_closed", [False, True])
     async def test____is_closing____default(

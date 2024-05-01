@@ -16,6 +16,7 @@ from __future__ import annotations
 
 __all__ = [
     "ElapsedTime",
+    "WarnCallback",
     "adjust_leftover_buffer",
     "check_real_socket_state",
     "check_socket_family",
@@ -307,6 +308,30 @@ def iterate_exceptions(exception: BaseException) -> Iterator[BaseException]:
             yield from iterate_exceptions(exc)
     else:
         yield exception
+
+
+class WarnCallback(Protocol):
+    @overload
+    @abstractmethod
+    def __call__(
+        self,
+        /,
+        message: str,
+        category: type[Warning] | None = None,
+        stacklevel: int = 1,
+        source: Any | None = None,
+    ) -> None: ...
+
+    @overload
+    @abstractmethod
+    def __call__(
+        self,
+        /,
+        message: Warning,
+        category: Any = None,
+        stacklevel: int = 1,
+        source: Any | None = None,
+    ) -> None: ...
 
 
 class ElapsedTime:

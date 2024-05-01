@@ -21,6 +21,7 @@ __all__ = ["AsyncioTransportStreamSocketAdapter"]
 
 import asyncio
 import errno as _errno
+import warnings
 from collections.abc import Callable, Iterable, Mapping
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, final
@@ -57,17 +58,18 @@ class AsyncioTransportStreamSocketAdapter(transports.AsyncStreamTransport, trans
         protocol: StreamReaderBufferedProtocol,
     ) -> None:
         super().__init__()
+
+        over_ssl: bool = transport.get_extra_info("sslcontext") is not None
+        socket: asyncio.trsock.TransportSocket | None = transport.get_extra_info("socket")
+        if socket is None:
+            raise AssertionError("Writer transport must be a socket transport")
+        if over_ssl:
+            raise NotImplementedError(f"{self.__class__.__name__} does not support SSL")
+
+        self.__socket: asyncio.trsock.TransportSocket = socket
         self.__backend: AsyncIOBackend = backend
         self.__transport: asyncio.Transport = transport
         self.__protocol: StreamReaderBufferedProtocol = protocol
-        over_ssl: bool = transport.get_extra_info("sslcontext") is not None
-
-        socket: asyncio.trsock.TransportSocket | None = transport.get_extra_info("socket")
-        assert socket is not None, "Writer transport must be a socket transport"  # nosec assert_used
-        self.__socket: asyncio.trsock.TransportSocket = socket
-
-        if over_ssl:
-            raise NotImplementedError(f"{self.__class__.__name__} does not support SSL")
 
         # asyncio.Transport.is_closing() can suddently become true if there is something wrong with the socket
         # even if transport.close() was never called.
@@ -77,23 +79,29 @@ class AsyncioTransportStreamSocketAdapter(transports.AsyncStreamTransport, trans
         # Disable in-memory byte buffering.
         transport.set_write_buffer_limits(0)
 
+    def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
+        try:
+            closing = self.__closing
+        except AttributeError:
+            closing = False
+        try:
+            transport = self.__transport
+        except AttributeError:
+            transport = None
+        if not closing and transport is not None:
+            _warn(f"unclosed transport {self!r}", ResourceWarning, source=self)
+            transport.close()
+
     async def aclose(self) -> None:
         self.__closing = True
-        if self.__transport.is_closing():
-            # Only wait for it.
+        if not self.__transport.is_closing():
             try:
-                await asyncio.shield(self.__protocol._get_close_waiter())
+                if self.__transport.can_write_eof():
+                    self.__transport.write_eof()
             except OSError:
                 pass
-            return
-
-        try:
-            if self.__transport.can_write_eof():
-                self.__transport.write_eof()
-        except OSError:
-            pass
-        finally:
-            self.__transport.close()
+            finally:
+                self.__transport.close()
         try:
             await asyncio.shield(self.__protocol._get_close_waiter())
         except OSError:

@@ -8,7 +8,7 @@ import contextlib
 import logging
 import os
 import ssl
-from collections.abc import Callable, Coroutine
+from collections.abc import AsyncIterator, Callable, Coroutine
 from errno import EBADF, EBUSY, errorcode as errno_errorcode
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 
@@ -25,6 +25,7 @@ from easynetwork.lowlevel.std_asyncio.stream.socket import AsyncioTransportStrea
 from easynetwork.lowlevel.std_asyncio.tasks import CancelScope, TaskGroup as AsyncIOTaskGroup
 
 import pytest
+import pytest_asyncio
 
 if TYPE_CHECKING:
     from unittest.mock import AsyncMock, MagicMock
@@ -63,6 +64,7 @@ class BaseTestTransportStreamSocket(BaseTestSocket):
     @staticmethod
     def mock_asyncio_transport(asyncio_transport_extra_info: dict[str, Any], mocker: MockerFixture) -> MagicMock:
         mock = mocker.NonCallableMagicMock(spec=asyncio.Transport)
+        mock.can_write_eof.return_value = True
         mock.get_extra_info.side_effect = asyncio_transport_extra_info.get
         mock.is_closing.return_value = False
         return mock
@@ -148,14 +150,20 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestAsyncSock
         handler.return_value = None
         return handler
 
-    @pytest.fixture
+    @pytest_asyncio.fixture
     @staticmethod
-    def listener(
+    async def listener(
         asyncio_backend: AsyncIOBackend,
         mock_tcp_listener_socket: MagicMock,
         accepted_socket_factory: MagicMock,
-    ) -> ListenerSocketAdapter[Any]:
-        return ListenerSocketAdapter(asyncio_backend, mock_tcp_listener_socket, accepted_socket_factory)
+    ) -> AsyncIterator[ListenerSocketAdapter[Any]]:
+        listener: ListenerSocketAdapter[Any] = ListenerSocketAdapter(
+            asyncio_backend,
+            mock_tcp_listener_socket,
+            accepted_socket_factory,
+        )
+        async with contextlib.aclosing(listener):
+            yield listener
 
     @staticmethod
     def _make_accept_side_effect(
@@ -206,6 +214,25 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestAsyncSock
 
         # Assert
         mock_tcp_listener_socket.setblocking.assert_called_once_with(False)
+
+    async def test____dunder_del____ResourceWarning(
+        self,
+        asyncio_backend: AsyncIOBackend,
+        mock_tcp_listener_socket: MagicMock,
+        accepted_socket_factory: MagicMock,
+    ) -> None:
+        # Arrange
+        listener: ListenerSocketAdapter[Any] = ListenerSocketAdapter(
+            asyncio_backend,
+            mock_tcp_listener_socket,
+            accepted_socket_factory,
+        )
+
+        # Act & Assert
+        with pytest.warns(ResourceWarning, match=r"^unclosed listener .+$"):
+            del listener
+
+        mock_tcp_listener_socket.close.assert_called()
 
     async def test____aclose____close_socket(
         self,
@@ -520,16 +547,28 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestAsyncSock
 
 
 @pytest.mark.asyncio
+@pytest.mark.filterwarnings("ignore::ResourceWarning")
 class TestAcceptedSocketFactory(BaseTestTransportStreamSocket):
+    @pytest.fixture
+    @staticmethod
+    def mock_asyncio_protocol(mocker: MockerFixture, event_loop: asyncio.AbstractEventLoop) -> MagicMock:
+        mock = mocker.NonCallableMagicMock(spec=StreamReaderBufferedProtocol)
+        # Currently, _get_close_waiter() is a synchronous function returning a Future, but it will be awaited so this works
+        mock._get_close_waiter = mocker.AsyncMock()
+        mock._get_loop.return_value = event_loop
+        return mock
+
     @pytest.fixture
     @staticmethod
     def mock_event_loop_connect_accepted_socket(
         event_loop: asyncio.AbstractEventLoop,
         mocker: MockerFixture,
         mock_asyncio_transport: MagicMock,
+        mock_asyncio_protocol: MagicMock,
     ) -> AsyncMock:
         async def side_effect(protocol_factory: Callable[[], asyncio.Protocol], sock: Any, *args: Any, **kwargs: Any) -> Any:
-            return mock_asyncio_transport, protocol_factory()
+            protocol_factory()
+            return mock_asyncio_transport, mock_asyncio_protocol
 
         return mocker.patch.object(
             event_loop,
@@ -594,15 +633,16 @@ class TestAsyncioTransportStreamSocketAdapter(BaseTestTransportWithSSL):
         mock._get_loop.return_value = event_loop
         return mock
 
-    @pytest.fixture
+    @pytest_asyncio.fixture
     @staticmethod
-    def socket(
+    async def socket(
         asyncio_backend: AsyncIOBackend,
         mock_asyncio_transport: MagicMock,
         mock_asyncio_protocol: MagicMock,
-    ) -> AsyncioTransportStreamSocketAdapter:
-        mock_asyncio_transport.can_write_eof.return_value = True
-        return AsyncioTransportStreamSocketAdapter(asyncio_backend, mock_asyncio_transport, mock_asyncio_protocol)
+    ) -> AsyncIterator[AsyncioTransportStreamSocketAdapter]:
+        transport = AsyncioTransportStreamSocketAdapter(asyncio_backend, mock_asyncio_transport, mock_asyncio_protocol)
+        async with contextlib.aclosing(transport):
+            yield transport
 
     @pytest.mark.usefixtures("add_ssl_extra_to_transport")
     async def test____dunder_init____refuse_transports_over_ssl(
@@ -612,11 +652,25 @@ class TestAsyncioTransportStreamSocketAdapter(BaseTestTransportWithSSL):
         mock_asyncio_protocol: MagicMock,
     ) -> None:
         # Arrange
-        mock_asyncio_transport.can_write_eof.return_value = True
 
         # Act & Assert
         with pytest.raises(NotImplementedError):
             _ = AsyncioTransportStreamSocketAdapter(asyncio_backend, mock_asyncio_transport, mock_asyncio_protocol)
+
+    async def test____dunder_del____ResourceWarning(
+        self,
+        asyncio_backend: AsyncIOBackend,
+        mock_asyncio_transport: MagicMock,
+        mock_asyncio_protocol: MagicMock,
+    ) -> None:
+        # Arrange
+        transport = AsyncioTransportStreamSocketAdapter(asyncio_backend, mock_asyncio_transport, mock_asyncio_protocol)
+
+        # Act & Assert
+        with pytest.warns(ResourceWarning, match=r"^unclosed transport .+$"):
+            del transport
+
+        mock_asyncio_transport.close.assert_called()
 
     @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing=={p}")
     @pytest.mark.parametrize("can_write_eof", [False, True], ids=lambda p: f"can_write_eof=={p}")
@@ -642,6 +696,7 @@ class TestAsyncioTransportStreamSocketAdapter(BaseTestTransportWithSSL):
 
         # Act
         await socket.aclose()
+        mock_asyncio_protocol._get_close_waiter.side_effect = None
 
         # Assert
         if transport_is_closing:
@@ -673,6 +728,7 @@ class TestAsyncioTransportStreamSocketAdapter(BaseTestTransportWithSSL):
         # Act
         with pytest.raises(asyncio.CancelledError):
             await socket.aclose()
+        mock_asyncio_protocol._get_close_waiter.side_effect = None
 
         # Assert
         if transport_is_closing:
@@ -694,7 +750,6 @@ class TestAsyncioTransportStreamSocketAdapter(BaseTestTransportWithSSL):
         if transport_closed:
             await socket.aclose()
             mock_asyncio_transport.reset_mock()
-        mock_asyncio_transport.is_closing.side_effect = AssertionError
 
         # Act
         state = socket.is_closing()

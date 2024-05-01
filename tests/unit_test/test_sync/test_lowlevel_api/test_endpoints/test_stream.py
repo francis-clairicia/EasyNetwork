@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import math
 import warnings
-from collections.abc import Generator
+from collections.abc import Generator, Iterator
 from typing import TYPE_CHECKING, Any, Literal
 
 from easynetwork.exceptions import IncrementalDeserializeError, StreamProtocolParseError, UnsupportedOperation
@@ -38,7 +38,14 @@ class TestStreamEndpoint(BaseTestWithStreamProtocol):
     def mock_time_perfcounter(mocker: MockerFixture) -> MagicMock:
         return mocker.patch("time.perf_counter", autospec=True, return_value=12345)
 
-    @pytest.fixture(params=[StreamReadTransport, BufferedStreamReadTransport, StreamWriteTransport, StreamTransport])
+    @pytest.fixture(
+        params=[
+            pytest.param(StreamReadTransport, marks=pytest_mark_ignore_manual_buffer_allocation_warning),
+            pytest.param(BufferedStreamReadTransport),
+            pytest.param(StreamWriteTransport),
+            pytest.param(StreamTransport, marks=pytest_mark_ignore_manual_buffer_allocation_warning),
+        ]
+    )
     @staticmethod
     def mock_stream_transport(request: pytest.FixtureRequest, mocker: MockerFixture) -> MagicMock:
         mock_stream_transport = mocker.NonCallableMagicMock(spec=request.param)
@@ -61,10 +68,12 @@ class TestStreamEndpoint(BaseTestWithStreamProtocol):
         mock_stream_transport: MagicMock,
         mock_stream_protocol: MagicMock,
         max_recv_size: int,
-    ) -> StreamEndpoint[Any, Any]:
+    ) -> Iterator[StreamEndpoint[Any, Any]]:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", ManualBufferAllocationWarning)
-            return StreamEndpoint(mock_stream_transport, mock_stream_protocol, max_recv_size)
+            endpoint: StreamEndpoint[Any, Any] = StreamEndpoint(mock_stream_transport, mock_stream_protocol, max_recv_size)
+        with contextlib.closing(endpoint):
+            yield endpoint
 
     @pytest.fixture(
         params=[
@@ -117,7 +126,6 @@ class TestStreamEndpoint(BaseTestWithStreamProtocol):
         with pytest.raises(TypeError, match=r"^Expected a StreamTransport object, got .*$"):
             _ = StreamEndpoint(mock_invalid_transport, mock_stream_protocol, max_recv_size)
 
-    @pytest_mark_ignore_manual_buffer_allocation_warning
     def test____dunder_init____invalid_protocol(
         self,
         mock_stream_transport: MagicMock,
@@ -131,10 +139,10 @@ class TestStreamEndpoint(BaseTestWithStreamProtocol):
         with pytest.raises(TypeError, match=r"^Expected a StreamProtocol object, got .*$"):
             _ = StreamEndpoint(mock_stream_transport, mock_invalid_protocol, max_recv_size)
 
-    @pytest_mark_ignore_manual_buffer_allocation_warning
     @pytest.mark.parametrize("max_recv_size", [1, 2**16], ids=lambda p: f"max_recv_size=={p}")
     def test____dunder_init____max_recv_size____valid_value(
         self,
+        request: pytest.FixtureRequest,
         mock_stream_transport: MagicMock,
         mock_stream_protocol: MagicMock,
         max_recv_size: int,
@@ -142,15 +150,15 @@ class TestStreamEndpoint(BaseTestWithStreamProtocol):
         # Arrange
 
         # Act
-        transport: StreamEndpoint[Any, Any] = StreamEndpoint(mock_stream_transport, mock_stream_protocol, max_recv_size)
+        endpoint: StreamEndpoint[Any, Any] = StreamEndpoint(mock_stream_transport, mock_stream_protocol, max_recv_size)
+        request.addfinalizer(endpoint.close)
 
         # Assert
         if isinstance(mock_stream_transport, StreamReadTransport):
-            assert transport.max_recv_size == max_recv_size
+            assert endpoint.max_recv_size == max_recv_size
         else:
-            assert transport.max_recv_size == 0
+            assert endpoint.max_recv_size == 0
 
-    @pytest_mark_ignore_manual_buffer_allocation_warning
     @pytest.mark.parametrize("max_recv_size", [0, -1, 10.4], ids=lambda p: f"max_recv_size=={p}")
     def test____dunder_init____max_recv_size____invalid_value(
         self,
@@ -182,6 +190,26 @@ class TestStreamEndpoint(BaseTestWithStreamProtocol):
                 max_recv_size,
                 manual_buffer_allocation=manual_buffer_allocation,
             )
+
+    def test____dunder_del____ResourceWarning(
+        self,
+        mock_stream_transport: MagicMock,
+        mock_stream_protocol: MagicMock,
+        max_recv_size: int,
+    ) -> None:
+        # Arrange
+        endpoint: StreamEndpoint[Any, Any] = StreamEndpoint(
+            mock_stream_transport,
+            mock_stream_protocol,
+            max_recv_size,
+            manual_buffer_allocation="no",
+        )
+
+        # Act & Assert
+        with pytest.warns(ResourceWarning, match=r"^unclosed endpoint .+$"):
+            del endpoint
+
+        mock_stream_transport.close.assert_called()
 
     @pytest.mark.parametrize("transport_closed", [False, True])
     def test____is_closed____default(
@@ -739,7 +767,14 @@ class TestStreamEndpoint(BaseTestWithStreamProtocol):
         # Act & Assert
         with warnings.catch_warnings():
             warnings.simplefilter("error", ManualBufferAllocationWarning)
-            _ = StreamEndpoint(mock_stream_transport, mock_stream_protocol, max_recv_size, manual_buffer_allocation="try")
+            endpoint = StreamEndpoint[Any, Any](
+                mock_stream_transport,
+                mock_stream_protocol,
+                max_recv_size,
+                manual_buffer_allocation="try",
+            )
+
+        endpoint.close()
 
     @pytest.mark.parametrize("mock_stream_transport", [StreamReadTransport], indirect=True)
     @pytest.mark.parametrize("stream_protocol_mode", ["buffer"], indirect=True)
@@ -756,7 +791,14 @@ class TestStreamEndpoint(BaseTestWithStreamProtocol):
             ManualBufferAllocationWarning,
             match=r'^The transport implementation .+ does not implement BufferedStreamReadTransport interface\. Consider explicitly setting the "manual_buffer_allocation" strategy to "no"\.$',
         ):
-            _ = StreamEndpoint(mock_stream_transport, mock_stream_protocol, max_recv_size, manual_buffer_allocation="try")
+            endpoint = StreamEndpoint[Any, Any](
+                mock_stream_transport,
+                mock_stream_protocol,
+                max_recv_size,
+                manual_buffer_allocation="try",
+            )
+
+        endpoint.close()
 
     @pytest.mark.parametrize("mock_stream_transport", [StreamReadTransport, BufferedStreamReadTransport], indirect=True)
     def test____manual_buffer_allocation____disabled(
@@ -775,6 +817,7 @@ class TestStreamEndpoint(BaseTestWithStreamProtocol):
             warnings.simplefilter("error", ManualBufferAllocationWarning)
             endpoint = StreamEndpoint(mock_stream_transport, mock_stream_protocol, max_recv_size, manual_buffer_allocation="no")
         packet = endpoint.recv_packet()
+        endpoint.close()
 
         # Assert
         mock_stream_transport.recv.assert_called_once_with(max_recv_size, math.inf)

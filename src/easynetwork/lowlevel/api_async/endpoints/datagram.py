@@ -18,6 +18,7 @@ from __future__ import annotations
 
 __all__ = ["AsyncDatagramEndpoint"]
 
+import warnings
 from collections.abc import Callable, Mapping
 from typing import Any, Generic, TypeGuard
 
@@ -68,6 +69,15 @@ class AsyncDatagramEndpoint(typed_attr.TypedAttributeProvider, Generic[_T_SentPa
         self.__protocol: protocol_module.DatagramProtocol[_T_SentPacket, _T_ReceivedPacket] = protocol
         self.__send_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently sending data on this endpoint")
         self.__recv_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently receving data on this endpoint")
+
+    def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
+        try:
+            transport = self.__transport
+        except AttributeError:
+            return
+        if not transport.is_closing():
+            msg = f"unclosed endpoint {self!r} pointing to {transport!r} (and cannot be closed synchronously)"
+            _warn(msg, ResourceWarning, source=self)
 
     def is_closing(self) -> bool:
         """

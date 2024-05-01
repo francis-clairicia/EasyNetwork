@@ -22,6 +22,7 @@ import contextlib
 import errno as _errno
 import socket as _socket
 import threading
+import warnings
 from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any, Literal, final, overload
 
@@ -282,6 +283,15 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
         except BaseException:
             transport.close()
             raise
+
+    def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
+        try:
+            endpoint = self.__endpoint
+        except AttributeError:
+            return
+        if not endpoint.is_closed():
+            _warn(f"unclosed client {self!r}", ResourceWarning, source=self)
+            endpoint.close()
 
     def __repr__(self) -> str:
         try:

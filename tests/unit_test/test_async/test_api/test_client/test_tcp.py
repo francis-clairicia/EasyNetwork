@@ -4,7 +4,7 @@ import contextlib
 import errno
 import os
 import ssl
-from collections.abc import Generator
+from collections.abc import AsyncIterator, Generator
 from socket import AF_INET6, IPPROTO_TCP, SO_ERROR, SO_KEEPALIVE, SOL_SOCKET, TCP_NODELAY
 from typing import TYPE_CHECKING, Any
 
@@ -24,12 +24,15 @@ if TYPE_CHECKING:
 
     from pytest_mock import MockerFixture
 
+    from .....pytest_plugins.async_finalizer import AsyncFinalizer
+
 from ...._utils import AsyncDummyLock
 from ....base import UNSUPPORTED_FAMILIES
 from .base import BaseTestClient
 
 
 @pytest.mark.asyncio
+@pytest.mark.filterwarnings("ignore::ResourceWarning:easynetwork.lowlevel.api_async.endpoints.stream")
 class TestAsyncTCPNetworkClient(BaseTestClient):
     @pytest.fixture(scope="class", params=["AF_INET", "AF_INET6"])
     @staticmethod
@@ -153,10 +156,11 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         mock_backend: MagicMock,
         remote_address: tuple[str, int],
         mock_stream_protocol: MagicMock,
-    ) -> AsyncTCPNetworkClient[Any, Any]:
+    ) -> AsyncIterator[AsyncTCPNetworkClient[Any, Any]]:
         client: AsyncTCPNetworkClient[Any, Any] = AsyncTCPNetworkClient(remote_address, mock_stream_protocol, mock_backend)
         assert not client.is_connected()
-        return client
+        async with contextlib.aclosing(client):
+            yield client
 
     @pytest_asyncio.fixture
     @staticmethod
@@ -173,6 +177,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
 
     async def test____dunder_init____connect_to_remote(
         self,
+        async_finalizer: AsyncFinalizer,
         remote_address: tuple[str, int],
         mock_tcp_socket: MagicMock,
         mock_backend: MagicMock,
@@ -191,6 +196,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             local_address=mocker.sentinel.local_address,
             happy_eyeballs_delay=mocker.sentinel.happy_eyeballs_delay,
         )
+        async_finalizer.add_finalizer(client.aclose)
         await client.wait_connected()
 
         # Assert
@@ -209,6 +215,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
 
     async def test____dunder_init____use_given_socket(
         self,
+        async_finalizer: AsyncFinalizer,
         mock_tcp_socket: MagicMock,
         mock_backend: MagicMock,
         mock_stream_data_consumer_cls: MagicMock,
@@ -224,6 +231,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             protocol=mock_stream_protocol,
             backend=mock_backend,
         )
+        async_finalizer.add_finalizer(client.aclose)
         await client.wait_connected()
 
         # Assert
@@ -374,6 +382,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
     @pytest.mark.parametrize("endpoint_connected", [False, True], ids=lambda p: f"endpoint_connected=={p}")
     async def test____dunder_init____max_recv_size____valid_value(
         self,
+        async_finalizer: AsyncFinalizer,
         request: pytest.FixtureRequest,
         endpoint_connected: bool,
         max_recv_size: int | None,
@@ -400,6 +409,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
                 mock_backend,
                 max_recv_size=max_recv_size,
             )
+        async_finalizer.add_finalizer(client.aclose)
         if endpoint_connected:
             await client.wait_connected()
 
@@ -467,6 +477,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
     @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
     async def test____dunder_init____ssl(
         self,
+        async_finalizer: AsyncFinalizer,
         use_socket: bool,
         remote_address: tuple[str, int],
         mock_tcp_socket: MagicMock,
@@ -507,6 +518,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
                 local_address=mocker.sentinel.local_address,
                 happy_eyeballs_delay=mocker.sentinel.happy_eyeballs_delay,
             )
+        async_finalizer.add_finalizer(client.aclose)
         await client.wait_connected()
 
         # Assert
@@ -543,6 +555,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
     @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
     async def test____dunder_init____ssl____default_values(
         self,
+        async_finalizer: AsyncFinalizer,
         use_socket: bool,
         remote_address: tuple[str, int],
         mock_backend: MagicMock,
@@ -575,6 +588,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
                 local_address=mocker.sentinel.local_address,
                 happy_eyeballs_delay=mocker.sentinel.happy_eyeballs_delay,
             )
+        async_finalizer.add_finalizer(client.aclose)
         await client.wait_connected()
 
         # Assert
@@ -634,6 +648,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
     @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
     async def test____dunder_init____ssl____server_hostname____do_not_disable_hostname_check_for_external_context(
         self,
+        async_finalizer: AsyncFinalizer,
         use_socket: bool,
         remote_address: tuple[str, int],
         mock_backend: MagicMock,
@@ -674,6 +689,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
                 local_address=mocker.sentinel.local_address,
                 happy_eyeballs_delay=mocker.sentinel.happy_eyeballs_delay,
             )
+        async_finalizer.add_finalizer(client.aclose)
         await client.wait_connected()
 
         # Assert
@@ -716,6 +732,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
     @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
     async def test____dunder_init____ssl____create_default_context(
         self,
+        async_finalizer: AsyncFinalizer,
         use_socket: bool,
         remote_address: tuple[str, int],
         mock_backend: MagicMock,
@@ -755,6 +772,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
                 local_address=mocker.sentinel.local_address,
                 happy_eyeballs_delay=mocker.sentinel.happy_eyeballs_delay,
             )
+        async_finalizer.add_finalizer(client.aclose)
         await client.wait_connected()
 
         # Assert
@@ -772,6 +790,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
     @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
     async def test____dunder_init____ssl____create_default_context____disable_hostname_check(
         self,
+        async_finalizer: AsyncFinalizer,
         use_socket: bool,
         remote_address: tuple[str, int],
         mock_backend: MagicMock,
@@ -813,6 +832,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
                 local_address=mocker.sentinel.local_address,
                 happy_eyeballs_delay=mocker.sentinel.happy_eyeballs_delay,
             )
+        async_finalizer.add_finalizer(client.aclose)
         await client.wait_connected()
 
         # Assert
@@ -827,6 +847,29 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             standard_compatible=mocker.sentinel.ssl_standard_compatible,
         )
         assert mock_ssl_context.check_hostname is False
+
+    async def test____dunder_del____ResourceWarning(
+        self,
+        mock_stream_socket_adapter: MagicMock,
+        mock_stream_protocol: MagicMock,
+        remote_address: tuple[str, int],
+        mock_backend: MagicMock,
+    ) -> None:
+        client: AsyncTCPNetworkClient[Any, Any] = AsyncTCPNetworkClient(
+            remote_address,
+            protocol=mock_stream_protocol,
+            backend=mock_backend,
+        )
+        await client.wait_connected()
+
+        # Act & Assert
+        with pytest.warns(
+            ResourceWarning,
+            match=r"^unclosed client .+ pointing to .+ \(and cannot be closed synchronously\)$",
+        ):
+            del client
+
+        mock_stream_socket_adapter.aclose.assert_not_called()
 
     async def test____is_closing____connection_not_performed_yet(
         self,
@@ -891,11 +934,13 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
         fake_cancellation_cls: type[BaseException],
     ) -> None:
         # Arrange
+        old_side_effect = mock_stream_socket_adapter.aclose.side_effect
         mock_stream_socket_adapter.aclose.side_effect = fake_cancellation_cls
 
         # Act
         with pytest.raises(fake_cancellation_cls):
             await client_connected.aclose()
+        mock_stream_socket_adapter.aclose.side_effect = old_side_effect
 
         # Assert
         mock_stream_socket_adapter.aclose.assert_awaited_once_with()
@@ -1554,6 +1599,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
     @pytest.mark.parametrize("ssl_shared_lock", [None, False, True], ids=lambda p: f"ssl_shared_lock=={p}")
     async def test____special_case____separate_send_and_receive_locks____ssl(
         self,
+        async_finalizer: AsyncFinalizer,
         remote_address: tuple[str, int],
         ssl_shared_lock: bool | None,
         mock_backend: MagicMock,
@@ -1571,6 +1617,7 @@ class TestAsyncTCPNetworkClient(BaseTestClient):
             server_hostname="server_hostname",
             ssl_shared_lock=ssl_shared_lock,
         )
+        async_finalizer.add_finalizer(client.aclose)
         await client.wait_connected()
 
         if ssl_shared_lock is None:

@@ -27,6 +27,7 @@ import asyncio
 import asyncio.base_events
 import errno as _errno
 import socket as _socket
+import warnings
 from typing import TYPE_CHECKING, Any, final
 
 from ... import _utils
@@ -88,13 +89,22 @@ class DatagramEndpoint:
         self.__transport: asyncio.DatagramTransport = transport
         self.__protocol: DatagramEndpointProtocol = protocol
 
-    async def aclose(self) -> None:
-        if self.__transport.is_closing():
-            # Only wait for it.
-            await asyncio.shield(self.__protocol._get_close_waiter())
+    def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
+        try:
+            transport = self.__transport
+        except AttributeError:  # pragma: no cover
+            # Technically possible but not with the common usage because this constructor does not raise.
             return
+        if not transport.is_closing():
+            _warn(f"unclosed endpoint {self!r}", ResourceWarning, source=self)
+            transport.close()
 
-        self.__transport.close()
+    def close_nowait(self) -> None:
+        if not self.__transport.is_closing():
+            self.__transport.close()
+
+    async def aclose(self) -> None:
+        self.close_nowait()
         await asyncio.shield(self.__protocol._get_close_waiter())
 
     def is_closing(self) -> bool:

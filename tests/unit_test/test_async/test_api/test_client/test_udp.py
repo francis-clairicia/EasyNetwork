@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import contextlib
 import errno
 import os
+from collections.abc import AsyncIterator
 from socket import AF_INET6, AF_UNSPEC, SO_ERROR, SOL_SOCKET
 from typing import TYPE_CHECKING, Any
 
@@ -19,11 +21,14 @@ if TYPE_CHECKING:
 
     from pytest_mock import MockerFixture
 
+    from .....pytest_plugins.async_finalizer import AsyncFinalizer
+
 from ....base import UNSUPPORTED_FAMILIES
 from .base import BaseTestClient
 
 
 @pytest.mark.asyncio
+@pytest.mark.filterwarnings("ignore::ResourceWarning:easynetwork.lowlevel.api_async.endpoints.datagram")
 class TestAsyncUDPNetworkClient(BaseTestClient):
     @pytest.fixture(scope="class", params=["AF_INET", "AF_INET6"])
     @staticmethod
@@ -104,10 +109,11 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
         mock_udp_socket: MagicMock,
         mock_backend: MagicMock,
         mock_datagram_protocol: MagicMock,
-    ) -> AsyncUDPNetworkClient[Any, Any]:
+    ) -> AsyncIterator[AsyncUDPNetworkClient[Any, Any]]:
         client: AsyncUDPNetworkClient[Any, Any] = AsyncUDPNetworkClient(mock_udp_socket, mock_datagram_protocol, mock_backend)
         assert not client.is_connected()
-        return client
+        async with contextlib.aclosing(client):
+            yield client
 
     @pytest_asyncio.fixture
     @staticmethod
@@ -124,6 +130,7 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
 
     async def test____dunder_init____with_remote_address(
         self,
+        async_finalizer: AsyncFinalizer,
         remote_address: tuple[str, int],
         mock_udp_socket: MagicMock,
         mock_datagram_protocol: MagicMock,
@@ -139,6 +146,7 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
             mock_backend,
             local_address=mocker.sentinel.local_address,
         )
+        async_finalizer.add_finalizer(client.aclose)
         await client.wait_connected()
 
         # Assert
@@ -154,6 +162,7 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
 
     async def test____dunder_init____with_remote_address____socket_family(
         self,
+        async_finalizer: AsyncFinalizer,
         remote_address: tuple[str, int],
         socket_family: int,
         mock_datagram_protocol: MagicMock,
@@ -170,6 +179,7 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
             family=socket_family,
             local_address=mocker.sentinel.local_address,
         )
+        async_finalizer.add_finalizer(client.aclose)
         await client.wait_connected()
 
         # Assert
@@ -181,6 +191,7 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
 
     async def test____dunder_init____with_remote_address____explicit_AF_UNSPEC(
         self,
+        async_finalizer: AsyncFinalizer,
         remote_address: tuple[str, int],
         mock_datagram_protocol: MagicMock,
         mock_backend: MagicMock,
@@ -196,6 +207,7 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
             family=AF_UNSPEC,
             local_address=mocker.sentinel.local_address,
         )
+        async_finalizer.add_finalizer(client.aclose)
         await client.wait_connected()
 
         # Assert
@@ -228,6 +240,7 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
 
     async def test____dunder_init____with_remote_address____force_local_address(
         self,
+        async_finalizer: AsyncFinalizer,
         remote_address: tuple[str, int],
         mock_datagram_protocol: MagicMock,
         mock_backend: MagicMock,
@@ -241,6 +254,7 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
             mock_backend,
             local_address=None,
         )
+        async_finalizer.add_finalizer(client.aclose)
         await client.wait_connected()
 
         # Assert
@@ -251,6 +265,7 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
 
     async def test____dunder_init____use_given_socket(
         self,
+        async_finalizer: AsyncFinalizer,
         mock_udp_socket: MagicMock,
         mock_datagram_protocol: MagicMock,
         mock_backend: MagicMock,
@@ -264,6 +279,7 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
             mock_datagram_protocol,
             mock_backend,
         )
+        async_finalizer.add_finalizer(client.aclose)
         await client.wait_connected()
 
         # Assert
@@ -295,6 +311,7 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
 
     async def test____dunder_init____use_given_socket____force_local_address(
         self,
+        async_finalizer: AsyncFinalizer,
         mock_udp_socket: MagicMock,
         mock_datagram_protocol: MagicMock,
         mock_backend: MagicMock,
@@ -303,11 +320,12 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
         mock_udp_socket.getsockname.return_value = ("0.0.0.0", 0)
 
         # Act
-        _ = AsyncUDPNetworkClient(
+        client: AsyncUDPNetworkClient[Any, Any] = AsyncUDPNetworkClient(
             mock_udp_socket,
             mock_datagram_protocol,
             mock_backend,
         )
+        async_finalizer.add_finalizer(client.aclose)
 
         # Assert
         mock_udp_socket.bind.assert_called_once_with(("localhost", 0))
@@ -416,6 +434,29 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
                     invalid_backend,
                 )
 
+    async def test____dunder_del____ResourceWarning(
+        self,
+        mock_datagram_socket_adapter: MagicMock,
+        mock_datagram_protocol: MagicMock,
+        remote_address: tuple[str, int],
+        mock_backend: MagicMock,
+    ) -> None:
+        client: AsyncUDPNetworkClient[Any, Any] = AsyncUDPNetworkClient(
+            remote_address,
+            mock_datagram_protocol,
+            mock_backend,
+        )
+        await client.wait_connected()
+
+        # Act & Assert
+        with pytest.warns(
+            ResourceWarning,
+            match=r"^unclosed client .+ pointing to .+ \(and cannot be closed synchronously\)$",
+        ):
+            del client
+
+        mock_datagram_socket_adapter.aclose.assert_not_called()
+
     async def test____is_closing____connection_not_performed_yet(
         self,
         client_not_connected: AsyncUDPNetworkClient[Any, Any],
@@ -479,11 +520,13 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
         fake_cancellation_cls: type[BaseException],
     ) -> None:
         # Arrange
+        old_side_effect = mock_datagram_socket_adapter.aclose.side_effect
         mock_datagram_socket_adapter.aclose.side_effect = fake_cancellation_cls
 
         # Act
         with pytest.raises(fake_cancellation_cls):
             await client_connected.aclose()
+        mock_datagram_socket_adapter.aclose.side_effect = old_side_effect
 
         # Assert
         mock_datagram_socket_adapter.aclose.assert_awaited_once_with()

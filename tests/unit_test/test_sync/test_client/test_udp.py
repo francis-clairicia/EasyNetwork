@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import errno
 import os
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from selectors import EVENT_READ, EVENT_WRITE
 from socket import AF_INET, AF_INET6, AF_UNSPEC, AI_PASSIVE, IPPROTO_UDP, SO_ERROR, SOCK_DGRAM, SOL_SOCKET, AddressFamily
 from typing import TYPE_CHECKING, Any, Literal, assert_never
@@ -126,17 +126,18 @@ class TestUDPNetworkClient(BaseTestClient):
         retry_interval: float,
         mock_udp_socket: MagicMock,
         mock_datagram_protocol: MagicMock,
-    ) -> UDPNetworkClient[Any, Any]:
+    ) -> Iterator[UDPNetworkClient[Any, Any]]:
+        client: UDPNetworkClient[Any, Any]
         try:
             match use_external_socket:
                 case "REMOTE_ADDRESS":
-                    return UDPNetworkClient(
+                    client = UDPNetworkClient(
                         remote_address,
                         protocol=mock_datagram_protocol,
                         retry_interval=retry_interval,
                     )
                 case "EXTERNAL_SOCKET":
-                    return UDPNetworkClient(
+                    client = UDPNetworkClient(
                         mock_udp_socket,
                         protocol=mock_datagram_protocol,
                         retry_interval=retry_interval,
@@ -145,6 +146,9 @@ class TestUDPNetworkClient(BaseTestClient):
                     pytest.fail(f"Invalid fixture param: Got {invalid!r}")
         finally:
             mock_udp_socket.reset_mock()
+
+        with client:
+            yield client
 
     @pytest.fixture(
         params=[
@@ -172,6 +176,7 @@ class TestUDPNetworkClient(BaseTestClient):
 
     def test____dunder_init____create_datagram_endpoint____default(
         self,
+        request: pytest.FixtureRequest,
         remote_address: tuple[str, int],
         mock_udp_socket: MagicMock,
         mock_datagram_protocol: MagicMock,
@@ -181,7 +186,8 @@ class TestUDPNetworkClient(BaseTestClient):
         # Arrange
 
         # Act
-        _ = UDPNetworkClient(remote_address, mock_datagram_protocol)
+        client = UDPNetworkClient[Any, Any](remote_address, mock_datagram_protocol)
+        request.addfinalizer(client.close)
 
         # Assert
         mock_create_udp_socket.assert_called_once_with(remote_address=remote_address)
@@ -196,6 +202,7 @@ class TestUDPNetworkClient(BaseTestClient):
     @pytest.mark.parametrize("reuse_port", [False, True], ids=lambda p: f"reuse_port=={p}")
     def test____dunder_init____create_datagram_endpoint____with_parameters(
         self,
+        request: pytest.FixtureRequest,
         reuse_port: bool,
         socket_family: int,
         local_address: tuple[str, int] | None,
@@ -208,13 +215,14 @@ class TestUDPNetworkClient(BaseTestClient):
         # Arrange
 
         # Act
-        _ = UDPNetworkClient(
+        client = UDPNetworkClient[Any, Any](
             remote_address,
             mock_datagram_protocol,
             family=socket_family,
             local_address=local_address,
             reuse_port=reuse_port,
         )
+        request.addfinalizer(client.close)
 
         # Assert
         mock_create_udp_socket.assert_called_once_with(
@@ -234,6 +242,7 @@ class TestUDPNetworkClient(BaseTestClient):
     @pytest.mark.parametrize("reuse_port", [False, True], ids=lambda p: f"reuse_port=={p}")
     def test____dunder_init____create_datagram_endpoint____with_parameters____explicit_AF_UNSPEC(
         self,
+        request: pytest.FixtureRequest,
         reuse_port: bool,
         local_address: tuple[str, int] | None,
         remote_address: tuple[str, int],
@@ -243,13 +252,14 @@ class TestUDPNetworkClient(BaseTestClient):
         # Arrange
 
         # Act
-        _ = UDPNetworkClient(
+        client = UDPNetworkClient[Any, Any](
             remote_address,
             mock_datagram_protocol,
             family=AF_UNSPEC,
             local_address=local_address,
             reuse_port=reuse_port,
         )
+        request.addfinalizer(client.close)
 
         # Assert
         mock_create_udp_socket.assert_called_once_with(
@@ -281,6 +291,7 @@ class TestUDPNetworkClient(BaseTestClient):
     @pytest.mark.parametrize("bound", [False, True], ids=lambda p: f"bound=={p}")
     def test____dunder_init____use_given_socket____default(
         self,
+        request: pytest.FixtureRequest,
         bound: bool,
         socket_family: int,
         mock_udp_socket: MagicMock,
@@ -293,7 +304,8 @@ class TestUDPNetworkClient(BaseTestClient):
             mock_udp_socket.getsockname.return_value = self.get_resolved_any_addr(socket_family)
 
         # Act
-        _ = UDPNetworkClient(mock_udp_socket, mock_datagram_protocol)
+        client = UDPNetworkClient[Any, Any](mock_udp_socket, mock_datagram_protocol)
+        request.addfinalizer(client.close)
 
         # Assert
         mock_create_udp_socket.assert_not_called()
@@ -402,6 +414,20 @@ class TestUDPNetworkClient(BaseTestClient):
                 protocol=mock_datagram_protocol,
                 retry_interval=retry_interval,
             )
+
+    def test____dunder_del____ResourceWarning(
+        self,
+        mock_udp_socket: MagicMock,
+        mock_datagram_protocol: MagicMock,
+    ) -> None:
+        # Arrange
+        client: UDPNetworkClient[Any, Any] = UDPNetworkClient(mock_udp_socket, mock_datagram_protocol)
+
+        # Act & Assert
+        with pytest.warns(ResourceWarning, match=r"^unclosed client .+$"):
+            del client
+
+        mock_udp_socket.close.assert_called_once_with()
 
     def test____close____default(
         self,
