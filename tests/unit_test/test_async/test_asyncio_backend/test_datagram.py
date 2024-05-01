@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 from collections.abc import AsyncIterator, Callable, Iterator
 from errno import ECONNABORTED
@@ -743,7 +742,7 @@ class TestAsyncioTransportDatagramSocketAdapter(BaseTestAsyncioDatagramTransport
     ) -> AsyncIterator[AsyncioTransportDatagramSocketAdapter]:
         transport = AsyncioTransportDatagramSocketAdapter(asyncio_backend, mock_endpoint)
         try:
-            async with contextlib.aclosing(transport):
+            async with transport:
                 yield transport
         finally:
             mock_endpoint.is_closing.side_effect = None
@@ -880,7 +879,7 @@ class TestDatagramListenerSocketAdapter(BaseTestAsyncioDatagramTransport):
     ) -> AsyncIterator[DatagramListenerSocketAdapter]:
         listener = DatagramListenerSocketAdapter(asyncio_backend, mock_asyncio_transport, mock_asyncio_protocol)
         try:
-            async with contextlib.aclosing(listener):
+            async with listener:
                 yield listener
         finally:
             mock_asyncio_transport.is_closing.side_effect = None

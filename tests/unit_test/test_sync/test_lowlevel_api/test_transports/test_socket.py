@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
 import errno
 import math
 import os
@@ -81,7 +80,7 @@ class TestSocketStreamTransport(MixinTestSocketSendMSG):
     def transport(mock_tcp_socket: MagicMock) -> Iterator[SocketStreamTransport]:
         transport = SocketStreamTransport(mock_tcp_socket, math.inf)
         mock_tcp_socket.reset_mock()
-        with contextlib.closing(transport):
+        with transport:
             yield transport
 
     def test____dunder_init____default(
@@ -616,7 +615,7 @@ class TestSSLStreamTransport:
         mock_tcp_socket.reset_mock()
         mock_ssl_socket.reset_mock()
         mock_transport_retry.reset_mock()
-        with contextlib.closing(transport):
+        with transport:
             yield transport
 
     def test____dunder_init____default(
@@ -1168,7 +1167,7 @@ class TestSocketDatagramTransport:
         else:
             transport = SocketDatagramTransport(mock_udp_socket, math.inf, max_datagram_size=max_datagram_size)
         mock_udp_socket.reset_mock()
-        with contextlib.closing(transport):
+        with transport:
             yield transport
 
     def test____dunder_init____default(

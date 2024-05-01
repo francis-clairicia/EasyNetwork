@@ -162,7 +162,7 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestAsyncSock
             mock_tcp_listener_socket,
             accepted_socket_factory,
         )
-        async with contextlib.aclosing(listener):
+        async with listener:
             yield listener
 
     @staticmethod
@@ -630,7 +630,7 @@ class TestAsyncioTransportStreamSocketAdapter(BaseTestTransportWithSSL):
         mock_asyncio_protocol: MagicMock,
     ) -> AsyncIterator[AsyncioTransportStreamSocketAdapter]:
         transport = AsyncioTransportStreamSocketAdapter(asyncio_backend, mock_asyncio_transport, mock_asyncio_protocol)
-        async with contextlib.aclosing(transport):
+        async with transport:
             yield transport
 
     @pytest.mark.usefixtures("add_ssl_extra_to_transport")

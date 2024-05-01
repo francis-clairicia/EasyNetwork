@@ -7,6 +7,7 @@ Abstract Base Classes
 
 .. automodule:: easynetwork.lowlevel.api_sync.transports.abc
    :members:
+   :special-members: __enter__, __exit__
    :no-docstring:
 
 ``selectors``-based transports

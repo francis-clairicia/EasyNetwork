@@ -31,7 +31,8 @@ __all__ = [
 
 from abc import ABCMeta, abstractmethod
 from collections.abc import Callable, Coroutine, Iterable
-from typing import TYPE_CHECKING, Any, Generic, NoReturn, TypeVar
+from types import TracebackType
+from typing import TYPE_CHECKING, Any, Generic, NoReturn, Self, TypeVar
 
 from ... import typed_attr
 
@@ -50,6 +51,20 @@ class AsyncBaseTransport(typed_attr.TypedAttributeProvider, metaclass=ABCMeta):
     """
 
     __slots__ = ("__weakref__",)
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        """
+        Calls :meth:`aclose`.
+        """
+        await self.aclose()
 
     @abstractmethod
     async def aclose(self) -> None:
