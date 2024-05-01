@@ -23,6 +23,7 @@ import dataclasses
 import errno
 import functools
 import logging
+import warnings
 from collections.abc import Callable, Coroutine, Mapping
 from typing import TYPE_CHECKING, Any, Final, NoReturn, Self, TypeVar, TypeVarTuple
 
@@ -117,6 +118,16 @@ class AsyncTLSStreamTransport(transports.AsyncStreamTransport, transports.AsyncB
             await aclose_forcefully(transport)
             raise
         return self
+
+    def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
+        try:
+            transport = self._transport
+        except AttributeError:  # pragma: no cover
+            # Technically possible but not with the common usage because dataclasses constructor does not raise.
+            return
+        if not transport.is_closing():
+            msg = f"unclosed transport {self!r} pointing to {transport!r} (and cannot be closed synchronously)"
+            _warn(msg, ResourceWarning, source=self)
 
     @_utils.inherit_doc(transports.AsyncStreamTransport)
     def is_closing(self) -> bool:
@@ -252,6 +263,16 @@ class AsyncTLSListener(transports.AsyncListener[AsyncTLSStreamTransport]):
         self.__handshake_timeout: float | None = handshake_timeout
         self.__shutdown_timeout: float | None = shutdown_timeout
         self.__standard_compatible: bool = standard_compatible
+
+    def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
+        try:
+            listener = self.__listener
+        except AttributeError:  # pragma: no cover
+            # Technically possible but not with the common usage because this constructor does not raise.
+            return
+        if not listener.is_closing():
+            msg = f"unclosed listener {self!r} pointing to {listener!r} (and cannot be closed synchronously)"
+            _warn(msg, ResourceWarning, source=self)
 
     @_utils.inherit_doc(transports.AsyncListener)
     def is_closing(self) -> bool:

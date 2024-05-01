@@ -20,10 +20,11 @@ from __future__ import annotations
 __all__ = ["AsyncioTransportDatagramSocketAdapter"]
 
 import asyncio
+import warnings
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any, final
 
-from ... import socket as socket_tools
+from ... import _utils, socket as socket_tools
 from ...api_async.transports import abc as transports
 
 if TYPE_CHECKING:
@@ -48,13 +49,24 @@ class AsyncioTransportDatagramSocketAdapter(transports.AsyncDatagramTransport):
         self.__endpoint: DatagramEndpoint = endpoint
 
         socket: asyncio.trsock.TransportSocket | None = endpoint.get_extra_info("socket")
-        assert socket is not None, "transport must be a socket transport"  # nosec assert_used
+        if socket is None:
+            raise AssertionError("transport must be a socket transport")
 
         self.__socket: asyncio.trsock.TransportSocket = socket
         # asyncio.DatagramTransport.is_closing() can suddently become true if there is something wrong with the socket
         # even if transport.close() was never called.
         # To bypass this side effect, we use our own flag.
         self.__closing: bool = False
+
+    def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
+        try:
+            endpoint = self.__endpoint
+        except AttributeError:  # pragma: no cover
+            # Technically possible but not with the common usage because this constructor does not raise.
+            return
+        if not endpoint.is_closing():
+            _warn(f"unclosed transport {self!r}", ResourceWarning, source=self)
+            endpoint.close_nowait()
 
     async def aclose(self) -> None:
         self.__closing = True

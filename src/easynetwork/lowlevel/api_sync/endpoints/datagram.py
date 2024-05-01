@@ -19,13 +19,14 @@ from __future__ import annotations
 __all__ = ["DatagramEndpoint"]
 
 import math
+import warnings
 from collections.abc import Callable, Mapping
 from typing import Any, Generic, TypeGuard
 
 from .... import protocol as protocol_module
 from ...._typevars import _T_ReceivedPacket, _T_SentPacket
 from ....exceptions import DatagramProtocolParseError, UnsupportedOperation
-from ... import typed_attr
+from ... import _utils, typed_attr
 from ..transports import abc as transports
 
 
@@ -63,12 +64,14 @@ class DatagramEndpoint(typed_attr.TypedAttributeProvider, Generic[_T_SentPacket,
         self.__transport: transports.DatagramReadTransport | transports.DatagramWriteTransport = transport
         self.__protocol: protocol_module.DatagramProtocol[_T_SentPacket, _T_ReceivedPacket] = protocol
 
-    def __del__(self) -> None:
+    def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
         try:
-            if not self.__transport.is_closed():
-                self.close()
+            transport = self.__transport
         except AttributeError:
             return
+        if not transport.is_closed():
+            _warn(f"unclosed endpoint {self!r}", ResourceWarning, source=self)
+            transport.close()
 
     def is_closed(self) -> bool:
         """

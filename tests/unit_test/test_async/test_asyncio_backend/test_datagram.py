@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable, Iterator
 from errno import ECONNABORTED
 from socket import AI_PASSIVE
 from typing import TYPE_CHECKING, Any, Literal, cast
@@ -19,6 +20,7 @@ from easynetwork.lowlevel.std_asyncio.datagram.listener import DatagramListenerP
 from easynetwork.lowlevel.std_asyncio.datagram.socket import AsyncioTransportDatagramSocketAdapter
 
 import pytest
+import pytest_asyncio
 
 if TYPE_CHECKING:
     from unittest.mock import AsyncMock, MagicMock
@@ -112,7 +114,12 @@ class TestDatagramEndpoint:
     @staticmethod
     def mock_asyncio_transport(mocker: MockerFixture) -> MagicMock:
         mock = mocker.NonCallableMagicMock(spec=asyncio.DatagramTransport)
+
+        def close_side_effect() -> None:
+            mock.is_closing.return_value = True
+
         mock.is_closing.return_value = False
+        mock.close.side_effect = close_side_effect
         return mock
 
     @staticmethod
@@ -136,13 +143,40 @@ class TestDatagramEndpoint:
         mock_asyncio_protocol: MagicMock,
         mock_asyncio_recv_queue: MagicMock,
         mock_asyncio_exception_queue: MagicMock,
-    ) -> DatagramEndpoint:
-        return DatagramEndpoint(
+    ) -> Iterator[DatagramEndpoint]:
+        endpoint = DatagramEndpoint(
             mock_asyncio_transport,
             mock_asyncio_protocol,
             recv_queue=mock_asyncio_recv_queue,
             exception_queue=mock_asyncio_exception_queue,
         )
+        try:
+            yield endpoint
+        finally:
+            mock_asyncio_transport.is_closing.side_effect = None
+            endpoint.close_nowait()
+            mock_asyncio_transport.is_closing.return_value = True
+
+    async def test____dunder_del____ResourceWarning(
+        self,
+        mock_asyncio_transport: MagicMock,
+        mock_asyncio_protocol: MagicMock,
+        mock_asyncio_recv_queue: MagicMock,
+        mock_asyncio_exception_queue: MagicMock,
+    ) -> None:
+        # Arrange
+        endpoint = DatagramEndpoint(
+            mock_asyncio_transport,
+            mock_asyncio_protocol,
+            recv_queue=mock_asyncio_recv_queue,
+            exception_queue=mock_asyncio_exception_queue,
+        )
+
+        # Act & Assert
+        with pytest.warns(ResourceWarning, match=r"^unclosed endpoint .+$"):
+            del endpoint
+
+        mock_asyncio_transport.close.assert_called()
 
     @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing=={p}")
     async def test____aclose____close_transport_and_wait(
@@ -700,14 +734,35 @@ class TestAsyncioTransportDatagramSocketAdapter(BaseTestAsyncioDatagramTransport
     def remote_address(cls) -> tuple[Any, ...] | None:
         return ("127.0.0.1", 12345)
 
-    @pytest.fixture
+    @pytest_asyncio.fixture
     @classmethod
-    def socket(
+    async def socket(
         cls,
         asyncio_backend: AsyncIOBackend,
         mock_endpoint: MagicMock,
-    ) -> AsyncioTransportDatagramSocketAdapter:
-        return AsyncioTransportDatagramSocketAdapter(asyncio_backend, mock_endpoint)
+    ) -> AsyncIterator[AsyncioTransportDatagramSocketAdapter]:
+        transport = AsyncioTransportDatagramSocketAdapter(asyncio_backend, mock_endpoint)
+        try:
+            async with contextlib.aclosing(transport):
+                yield transport
+        finally:
+            mock_endpoint.is_closing.side_effect = None
+            mock_endpoint.is_closing.return_value = True
+
+    async def test____dunder_del____ResourceWarning(
+        self,
+        asyncio_backend: AsyncIOBackend,
+        mock_endpoint: MagicMock,
+    ) -> None:
+        # Arrange
+        transport = AsyncioTransportDatagramSocketAdapter(asyncio_backend, mock_endpoint)
+
+        # Act & Assert
+        with pytest.warns(ResourceWarning, match=r"^unclosed transport .+$"):
+            del transport
+
+        mock_endpoint.close_nowait.assert_called()
+        mock_endpoint.aclose.assert_not_called()
 
     async def test____aclose____close_transport_and_wait(
         self,
@@ -721,6 +776,7 @@ class TestAsyncioTransportDatagramSocketAdapter(BaseTestAsyncioDatagramTransport
 
         # Assert
         mock_endpoint.aclose.assert_awaited_once_with()
+        mock_endpoint.close_nowait.assert_not_called()
 
     @pytest.mark.parametrize("transport_closed", [False, True], ids=lambda p: f"transport_closed=={p}")
     async def test____is_closing____return_internal_flag(
@@ -733,7 +789,6 @@ class TestAsyncioTransportDatagramSocketAdapter(BaseTestAsyncioDatagramTransport
         if transport_closed:
             await socket.aclose()
             mock_endpoint.reset_mock()
-        mock_endpoint.is_closing.side_effect = AssertionError
 
         # Act
         state = socket.is_closing()
@@ -816,14 +871,35 @@ class TestDatagramListenerSocketAdapter(BaseTestAsyncioDatagramTransport):
         mock._get_loop.return_value = event_loop
         return mock
 
-    @pytest.fixture
+    @pytest_asyncio.fixture
     @staticmethod
-    def socket(
+    async def socket(
         asyncio_backend: AsyncIOBackend,
         mock_asyncio_transport: MagicMock,
         mock_asyncio_protocol: MagicMock,
-    ) -> DatagramListenerSocketAdapter:
-        return DatagramListenerSocketAdapter(asyncio_backend, mock_asyncio_transport, mock_asyncio_protocol)
+    ) -> AsyncIterator[DatagramListenerSocketAdapter]:
+        listener = DatagramListenerSocketAdapter(asyncio_backend, mock_asyncio_transport, mock_asyncio_protocol)
+        try:
+            async with contextlib.aclosing(listener):
+                yield listener
+        finally:
+            mock_asyncio_transport.is_closing.side_effect = None
+            mock_asyncio_transport.is_closing.return_value = True
+
+    async def test____dunder_del____ResourceWarning(
+        self,
+        asyncio_backend: AsyncIOBackend,
+        mock_asyncio_transport: MagicMock,
+        mock_asyncio_protocol: MagicMock,
+    ) -> None:
+        # Arrange
+        listener = DatagramListenerSocketAdapter(asyncio_backend, mock_asyncio_transport, mock_asyncio_protocol)
+
+        # Act & Assert
+        with pytest.warns(ResourceWarning, match=r"^unclosed listener .+$"):
+            del listener
+
+        mock_asyncio_transport.close.assert_called()
 
     @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing=={p}")
     async def test____aclose____close_transport_and_wait(
@@ -863,6 +939,7 @@ class TestDatagramListenerSocketAdapter(BaseTestAsyncioDatagramTransport):
         # Act
         with pytest.raises(asyncio.CancelledError):
             await socket.aclose()
+        mock_asyncio_protocol._get_close_waiter.side_effect = None
 
         # Assert
         if transport_is_closing:
@@ -884,7 +961,6 @@ class TestDatagramListenerSocketAdapter(BaseTestAsyncioDatagramTransport):
         if transport_closed:
             await socket.aclose()
             mock_asyncio_transport.reset_mock()
-        mock_asyncio_transport.is_closing.side_effect = AssertionError
 
         # Act
         state = socket.is_closing()

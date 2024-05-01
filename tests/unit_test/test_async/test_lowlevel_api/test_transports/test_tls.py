@@ -5,7 +5,7 @@ import contextlib
 import logging
 import os
 import ssl
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from typing import TYPE_CHECKING, Any, NoReturn
 
 from easynetwork.exceptions import UnsupportedOperation
@@ -16,6 +16,7 @@ from easynetwork.lowlevel.socket import TLSAttribute
 from easynetwork.lowlevel.std_asyncio.backend import AsyncIOBackend
 
 import pytest
+import pytest_asyncio
 
 from ...._utils import make_async_recv_into_side_effect as make_recv_into_side_effect
 from ...mock_tools import make_transport_mock
@@ -24,6 +25,8 @@ if TYPE_CHECKING:
     from unittest.mock import AsyncMock, MagicMock
 
     from pytest_mock import MockerFixture
+
+    from .....pytest_plugins.async_finalizer import AsyncFinalizer
 
 
 class _AsyncBufferedStreamTransport(AsyncStreamTransport, AsyncBufferedStreamReadTransport):
@@ -96,17 +99,17 @@ class TestAsyncTLSStreamTransport:
     def shutdown_timeout(request: pytest.FixtureRequest) -> float:
         return getattr(request, "param", 987654321)
 
-    @pytest.fixture
+    @pytest_asyncio.fixture
     @staticmethod
-    def tls_transport(
+    async def tls_transport(
         mock_wrapped_transport: MagicMock,
         mock_ssl_object: MagicMock,
         standard_compatible: bool,
         shutdown_timeout: float,
         read_bio: ssl.MemoryBIO,
         write_bio: ssl.MemoryBIO,
-    ) -> AsyncTLSStreamTransport:
-        return AsyncTLSStreamTransport(
+    ) -> AsyncIterator[AsyncTLSStreamTransport]:
+        trasport = AsyncTLSStreamTransport(
             _transport=mock_wrapped_transport,
             _standard_compatible=standard_compatible,
             _shutdown_timeout=shutdown_timeout,
@@ -114,6 +117,8 @@ class TestAsyncTLSStreamTransport:
             _read_bio=read_bio,
             _write_bio=write_bio,
         )
+        async with contextlib.aclosing(trasport):
+            yield trasport
 
     @pytest.fixture
     @staticmethod
@@ -123,6 +128,7 @@ class TestAsyncTLSStreamTransport:
 
     async def test____wrap____default(
         self,
+        async_finalizer: AsyncFinalizer,
         mock_wrapped_transport: MagicMock,
         mock_wrapped_transport_extra_attributes: dict[Any, Callable[[], Any]],
         mock_tls_transport_retry: AsyncMock,
@@ -138,6 +144,7 @@ class TestAsyncTLSStreamTransport:
         tls_transport = await AsyncTLSStreamTransport.wrap(
             mock_wrapped_transport, mock_ssl_context, server_hostname="server_hostname"
         )
+        async_finalizer.add_finalizer(tls_transport.aclose)
 
         # Assert
         ## Instantiation
@@ -170,6 +177,7 @@ class TestAsyncTLSStreamTransport:
     @pytest.mark.parametrize("shutdown_timeout", [987654321], ids=lambda p: f"shutdown_timeout=={p}")
     async def test____wrap____with_parameters(
         self,
+        async_finalizer: AsyncFinalizer,
         server_hostname: str | None,
         server_side: bool,
         session: Any | None,
@@ -200,6 +208,7 @@ class TestAsyncTLSStreamTransport:
             standard_compatible=standard_compatible,
             session=session,
         )
+        async_finalizer.add_finalizer(tls_transport.aclose)
 
         # Assert
         ## Instantiation
@@ -235,6 +244,7 @@ class TestAsyncTLSStreamTransport:
     @pytest.mark.usefixtures("mock_tls_transport_retry")
     async def test____wrap____server_side____guess_according_to_server_hostname(
         self,
+        async_finalizer: AsyncFinalizer,
         server_hostname: str | None,
         expected_server_side: bool,
         mock_wrapped_transport: MagicMock,
@@ -244,11 +254,12 @@ class TestAsyncTLSStreamTransport:
         # Arrange
 
         # Act
-        _ = await AsyncTLSStreamTransport.wrap(
+        transport = await AsyncTLSStreamTransport.wrap(
             mock_wrapped_transport,
             mock_ssl_context,
             server_hostname=server_hostname,
         )
+        async_finalizer.add_finalizer(transport.aclose)
 
         # Assert
         mock_ssl_context.wrap_bio.assert_called_once_with(
@@ -313,6 +324,23 @@ class TestAsyncTLSStreamTransport:
             _ = await AsyncTLSStreamTransport.wrap(mock_wrapped_transport, mock_ssl_context, server_side=False)
 
         mock_wrapped_transport.aclose.assert_awaited_once_with()
+
+    async def test____dunder_del____ResourceWarning(
+        self,
+        mock_wrapped_transport: MagicMock,
+        mock_ssl_context: MagicMock,
+    ) -> None:
+        # Arrange
+        transport = await AsyncTLSStreamTransport.wrap(mock_wrapped_transport, mock_ssl_context, server_side=False)
+
+        # Act & Assert
+        with pytest.warns(
+            ResourceWarning,
+            match=r"^unclosed transport .+ pointing to .+ \(and cannot be closed synchronously\)$",
+        ):
+            del transport
+
+        mock_wrapped_transport.aclose.assert_not_called()
 
     @pytest.mark.parametrize("standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible=={p}")
     async def test____aclose____close_transport(
@@ -888,22 +916,41 @@ class TestAsyncTLSListener:
     def shutdown_timeout(request: pytest.FixtureRequest) -> float | None:
         return getattr(request, "param", None)
 
-    @pytest.fixture
+    @pytest_asyncio.fixture
     @staticmethod
-    def tls_listener(
+    async def tls_listener(
         mock_wrapped_listener: MagicMock,
         mock_ssl_context: MagicMock,
         standard_compatible: bool,
         handshake_timeout: float | None,
         shutdown_timeout: float | None,
-    ) -> AsyncTLSListener:
-        return AsyncTLSListener(
+    ) -> AsyncIterator[AsyncTLSListener]:
+        listener = AsyncTLSListener(
             mock_wrapped_listener,
             mock_ssl_context,
             handshake_timeout=handshake_timeout,
             shutdown_timeout=shutdown_timeout,
             standard_compatible=standard_compatible,
         )
+        async with contextlib.aclosing(listener):
+            yield listener
+
+    async def test____dunder_del____ResourceWarning(
+        self,
+        mock_wrapped_listener: MagicMock,
+        mock_ssl_context: MagicMock,
+    ) -> None:
+        # Arrange
+        transport = AsyncTLSListener(mock_wrapped_listener, mock_ssl_context)
+
+        # Act & Assert
+        with pytest.warns(
+            ResourceWarning,
+            match=r"^unclosed listener .+ pointing to .+ \(and cannot be closed synchronously\)$",
+        ):
+            del transport
+
+        mock_wrapped_listener.aclose.assert_not_called()
 
     @pytest.mark.parametrize("standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible=={p}")
     async def test____extra_attributes____default(

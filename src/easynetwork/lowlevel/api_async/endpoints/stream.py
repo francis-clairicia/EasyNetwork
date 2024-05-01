@@ -83,11 +83,6 @@ class AsyncStreamEndpoint(typed_attr.TypedAttributeProvider, Generic[_T_SentPack
             raise ValueError('"manual_buffer_allocation" must be "try", "no" or "force"')
         manual_buffer_allocation_warning_stacklevel = max(manual_buffer_allocation_warning_stacklevel, 2)
 
-        self.__transport: transports.AsyncStreamReadTransport | transports.AsyncStreamWriteTransport = transport
-        self.__send_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently sending data on this endpoint")
-        self.__recv_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently receving data on this endpoint")
-        self.__eof_sent: bool = False
-
         self.__sender: _DataSenderImpl[_T_SentPacket] | None = None
         if isinstance(transport, transports.AsyncStreamWriteTransport):
             self.__sender = _DataSenderImpl(transport, _stream.StreamDataProducer(protocol))
@@ -117,6 +112,20 @@ class AsyncStreamEndpoint(typed_attr.TypedAttributeProvider, Generic[_T_SentPack
                     self.__receiver = _DataReceiverImpl(transport, _stream.StreamDataConsumer(protocol), max_recv_size)
                 case _:  # pragma: no cover
                     assert_never(manual_buffer_allocation)
+
+        self.__transport: transports.AsyncStreamReadTransport | transports.AsyncStreamWriteTransport = transport
+        self.__send_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently sending data on this endpoint")
+        self.__recv_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently receving data on this endpoint")
+        self.__eof_sent: bool = False
+
+    def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
+        try:
+            transport = self.__transport
+        except AttributeError:
+            return
+        if not transport.is_closing():
+            msg = f"unclosed endpoint {self!r} pointing to {transport!r} (and cannot be closed synchronously)"
+            _warn(msg, ResourceWarning, source=self)
 
     def is_closing(self) -> bool:
         """

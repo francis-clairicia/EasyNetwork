@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import math
+from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.exceptions import DatagramProtocolParseError, DeserializeError, UnsupportedOperation
@@ -33,8 +34,10 @@ class TestDatagramEndpoint(BaseTestWithDatagramProtocol):
 
     @pytest.fixture
     @staticmethod
-    def endpoint(mock_datagram_transport: MagicMock, mock_datagram_protocol: MagicMock) -> DatagramEndpoint[Any, Any]:
-        return DatagramEndpoint(mock_datagram_transport, mock_datagram_protocol)
+    def endpoint(mock_datagram_transport: MagicMock, mock_datagram_protocol: MagicMock) -> Iterator[DatagramEndpoint[Any, Any]]:
+        endpoint: DatagramEndpoint[Any, Any] = DatagramEndpoint(mock_datagram_transport, mock_datagram_protocol)
+        with contextlib.closing(endpoint):
+            yield endpoint
 
     @pytest.fixture(
         params=[
@@ -97,6 +100,20 @@ class TestDatagramEndpoint(BaseTestWithDatagramProtocol):
         # Act & Assert
         with pytest.raises(TypeError, match=r"^Expected a DatagramProtocol object, got .*$"):
             _ = DatagramEndpoint(mock_datagram_transport, mock_invalid_protocol)
+
+    def test____dunder_del____ResourceWarning(
+        self,
+        mock_datagram_transport: MagicMock,
+        mock_datagram_protocol: MagicMock,
+    ) -> None:
+        # Arrange
+        endpoint: DatagramEndpoint[Any, Any] = DatagramEndpoint(mock_datagram_transport, mock_datagram_protocol)
+
+        # Act & Assert
+        with pytest.warns(ResourceWarning, match=r"^unclosed endpoint .+$"):
+            del endpoint
+
+        mock_datagram_transport.close.assert_called()
 
     @pytest.mark.parametrize("transport_closed", [False, True])
     def test____is_closed____default(

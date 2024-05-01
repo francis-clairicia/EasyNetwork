@@ -22,6 +22,7 @@ import contextlib
 import dataclasses
 import errno as _errno
 import socket as _socket
+import warnings
 from collections.abc import Awaitable, Callable, Iterator
 from typing import TYPE_CHECKING, Any, Literal, final, overload
 
@@ -370,12 +371,21 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
             set_tcp_keepalive(socket_proxy, True)
         return transport, socket_proxy
 
+    def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
+        try:
+            endpoint = self.__endpoint
+        except AttributeError:
+            return
+        if endpoint is not None and not endpoint.is_closing():
+            msg = f"unclosed client {self!r} pointing to {endpoint!r} (and cannot be closed synchronously)"
+            _warn(msg, ResourceWarning, source=self)
+
     def __repr__(self) -> str:
         try:
             endpoint = self.__endpoint
-            if endpoint is None:
-                raise AttributeError
         except AttributeError:
+            endpoint = None
+        if endpoint is None:
             return f"<{type(self).__name__} (partially initialized)>"
         return f"<{type(self).__name__} endpoint={endpoint!r}>"
 

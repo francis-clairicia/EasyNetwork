@@ -124,6 +124,15 @@ class AsyncStreamServer(typed_attr.TypedAttributeProvider, Generic[_T_Request, _
         self.__serve_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently accepting new connections")
         self.__manual_buffer_allocation: Literal["try", "no", "force"] = manual_buffer_allocation
 
+    def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
+        try:
+            listener = self.__listener
+        except AttributeError:
+            return
+        if not listener.is_closing():
+            msg = f"unclosed server {self!r} pointing to {listener!r} (and cannot be closed synchronously)"
+            _warn(msg, ResourceWarning, source=self)
+
     def is_closing(self) -> bool:
         """
         Checks if the server is closed or in the process of being closed.

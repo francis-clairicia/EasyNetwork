@@ -31,6 +31,7 @@ import errno as _errno
 import logging
 import os
 import socket as _socket
+import warnings
 from abc import abstractmethod
 from collections.abc import Callable, Coroutine, Mapping
 from typing import TYPE_CHECKING, Any, Generic, NoReturn, TypeVar, final
@@ -78,6 +79,15 @@ class ListenerSocketAdapter(transports.AsyncListener[_T_Stream]):
         self.__accepted_socket_factory = accepted_socket_factory
         self.__accept_scope: CancelScope | None = None
         self.__serve_guard: _utils.ResourceGuard = _utils.ResourceGuard(f"{self.__class__.__name__}.serve() awaited twice.")
+
+    def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
+        try:
+            socket: _socket.socket | None = self.__socket
+        except AttributeError:
+            return
+        if socket is not None:
+            _warn(f"unclosed listener {self!r}", ResourceWarning, source=self)
+            socket.close()
 
     def is_closing(self) -> bool:
         return self.__socket is None

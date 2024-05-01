@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from collections import deque
+from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.lowlevel.api_async.backend.abc import TaskGroup
@@ -29,11 +31,13 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
 
     @pytest_asyncio.fixture
     @staticmethod
-    def server(
+    async def server(
         mock_datagram_listener: MagicMock,
         mock_datagram_protocol: MagicMock,
-    ) -> AsyncDatagramServer[Any, Any, Any]:
-        return AsyncDatagramServer(mock_datagram_listener, mock_datagram_protocol)
+    ) -> AsyncIterator[AsyncDatagramServer[Any, Any, Any]]:
+        server: AsyncDatagramServer[Any, Any, Any] = AsyncDatagramServer(mock_datagram_listener, mock_datagram_protocol)
+        async with contextlib.aclosing(server):
+            yield server
 
     async def test____dunder_init____invalid_transport(
         self,
@@ -58,6 +62,23 @@ class TestAsyncDatagramServer(BaseTestWithDatagramProtocol):
         # Act & Assert
         with pytest.raises(TypeError, match=r"^Expected a DatagramProtocol object, got .*$"):
             _ = AsyncDatagramServer(mock_datagram_listener, mock_invalid_protocol)
+
+    async def test____dunder_del____ResourceWarning(
+        self,
+        mock_datagram_listener: MagicMock,
+        mock_datagram_protocol: MagicMock,
+    ) -> None:
+        # Arrange
+        server: AsyncDatagramServer[Any, Any, Any] = AsyncDatagramServer(mock_datagram_listener, mock_datagram_protocol)
+
+        # Act & Assert
+        with pytest.warns(
+            ResourceWarning,
+            match=r"^unclosed server .+ pointing to .+ \(and cannot be closed synchronously\)$",
+        ):
+            del server
+
+        mock_datagram_listener.aclose.assert_not_called()
 
     @pytest.mark.parametrize("listener_closed", [False, True])
     async def test____is_closing____default(

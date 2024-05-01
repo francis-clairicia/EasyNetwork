@@ -82,9 +82,6 @@ class StreamEndpoint(typed_attr.TypedAttributeProvider, Generic[_T_SentPacket, _
             raise ValueError('"manual_buffer_allocation" must be "try", "no" or "force"')
         manual_buffer_allocation_warning_stacklevel = max(manual_buffer_allocation_warning_stacklevel, 2)
 
-        self.__transport: transports.StreamReadTransport | transports.StreamWriteTransport = transport
-        self.__eof_sent: bool = False
-
         self.__sender: _DataSenderImpl[_T_SentPacket] | None = None
         if isinstance(transport, transports.StreamWriteTransport):
             self.__sender = _DataSenderImpl(transport, _stream.StreamDataProducer(protocol))
@@ -117,12 +114,17 @@ class StreamEndpoint(typed_attr.TypedAttributeProvider, Generic[_T_SentPacket, _
             if self.__receiver is None:
                 raise AssertionError("self.__receiver should be set.")
 
-    def __del__(self) -> None:
+        self.__transport: transports.StreamReadTransport | transports.StreamWriteTransport = transport
+        self.__eof_sent: bool = False
+
+    def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
         try:
-            if not self.__transport.is_closed():
-                self.close()
+            transport = self.__transport
         except AttributeError:
             return
+        if not transport.is_closed():
+            _warn(f"unclosed endpoint {self!r}", ResourceWarning, source=self)
+            transport.close()
 
     def is_closed(self) -> bool:
         """

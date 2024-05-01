@@ -21,7 +21,7 @@ __all__ = [
     "ensure_backend",
 ]
 
-from typing import Literal, TypeAlias
+from typing import Literal, TypeAlias, cast
 
 from . import _sniffio_helpers
 from .abc import AsyncBackend
@@ -34,11 +34,7 @@ def ensure_backend(backend: AsyncBackend | BuiltinAsyncBackendToken | None) -> A
     TODO: Add docstring
     """
     if backend is None:
-        match _sniffio_helpers.current_async_library():
-            case "asyncio" as backend:
-                pass
-            case unsupported_backend:
-                raise NotImplementedError(unsupported_backend)
+        backend = cast(BuiltinAsyncBackendToken, _sniffio_helpers.current_async_library())
 
     match backend:
         case "asyncio":

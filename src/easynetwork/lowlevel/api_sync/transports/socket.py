@@ -26,6 +26,7 @@ import errno
 import itertools
 import selectors
 import socket
+import warnings
 from collections import ChainMap, deque
 from collections.abc import Callable, Iterable, Mapping
 from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar
@@ -77,6 +78,15 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport, base_selector
             raise ValueError("A 'SOCK_STREAM' socket is expected")
         self.__socket: socket.socket = sock
         self.__socket.setblocking(False)
+
+    def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
+        try:
+            sock: socket.socket = self.__socket
+        except AttributeError:
+            return
+        if sock.fileno() >= 0:
+            _warn(f"unclosed transport {self!r}", ResourceWarning, source=self)
+            sock.close()
 
     @_utils.inherit_doc(base_selector.SelectorStreamTransport)
     def is_closed(self) -> bool:
@@ -203,6 +213,15 @@ class SSLStreamTransport(base_selector.SelectorStreamTransport, base_selector.Se
         self.__ssl_shutdown_timeout: float = shutdown_timeout
         self.__standard_compatible: bool = standard_compatible
 
+    def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
+        try:
+            sock: socket.socket = self.__socket
+        except AttributeError:
+            return
+        if sock.fileno() >= 0:
+            _warn(f"unclosed transport {self!r}", ResourceWarning, source=self)
+            sock.close()
+
     @_utils.inherit_doc(base_selector.SelectorStreamTransport)
     def is_closed(self) -> bool:
         return self.__socket.fileno() < 0
@@ -210,7 +229,7 @@ class SSLStreamTransport(base_selector.SelectorStreamTransport, base_selector.Se
     @_utils.inherit_doc(base_selector.SelectorStreamTransport)
     def close(self) -> None:
         try:
-            if self.__standard_compatible:
+            if self.__standard_compatible and self.__socket.fileno() >= 0:
                 self._retry(lambda: self._try_ssl_method(self.__socket.unwrap), self.__ssl_shutdown_timeout)
         except (OSError, ValueError):
             pass
@@ -287,8 +306,18 @@ class SocketDatagramTransport(base_selector.SelectorDatagramTransport):
         _utils.check_socket_no_ssl(sock)
         if sock.type != socket.SOCK_DGRAM:
             raise ValueError("A 'SOCK_DGRAM' socket is expected")
+
         self.__socket: socket.socket = sock
         self.__socket.setblocking(False)
+
+    def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
+        try:
+            sock: socket.socket = self.__socket
+        except AttributeError:
+            return
+        if sock.fileno() >= 0:
+            _warn(f"unclosed transport {self!r}", ResourceWarning, source=self)
+            sock.close()
 
     @_utils.inherit_doc(base_selector.SelectorDatagramTransport)
     def is_closed(self) -> bool:

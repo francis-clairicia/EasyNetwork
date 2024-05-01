@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import contextlib
 import errno
 import math
 import os
 import ssl
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
 from socket import SHUT_RDWR, SHUT_WR
 from typing import TYPE_CHECKING, Any
 
@@ -32,7 +33,7 @@ if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
 
-def _retry_side_effect(callback: Callable[[], Any], timeout: float) -> tuple[Any, float]:
+def _retry_side_effect(self: Any, callback: Callable[[], Any], timeout: float) -> tuple[Any, float]:
     while True:
         try:
             return callback(), timeout
@@ -44,7 +45,7 @@ class TestSocketStreamTransport(MixinTestSocketSendMSG):
     @pytest.fixture(autouse=True)
     @staticmethod
     def mock_transport_retry(mocker: MockerFixture) -> MagicMock:
-        mock_transport_retry = mocker.patch.object(SocketStreamTransport, "_retry")
+        mock_transport_retry = mocker.patch.object(SocketStreamTransport, "_retry", autospec=True)
         mock_transport_retry.side_effect = _retry_side_effect
         return mock_transport_retry
 
@@ -77,13 +78,15 @@ class TestSocketStreamTransport(MixinTestSocketSendMSG):
 
     @pytest.fixture
     @staticmethod
-    def transport(mock_tcp_socket: MagicMock) -> SocketStreamTransport:
+    def transport(mock_tcp_socket: MagicMock) -> Iterator[SocketStreamTransport]:
         transport = SocketStreamTransport(mock_tcp_socket, math.inf)
         mock_tcp_socket.reset_mock()
-        return transport
+        with contextlib.closing(transport):
+            yield transport
 
     def test____dunder_init____default(
         self,
+        request: pytest.FixtureRequest,
         mock_tcp_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
@@ -92,6 +95,7 @@ class TestSocketStreamTransport(MixinTestSocketSendMSG):
 
         # Act
         transport = SocketStreamTransport(mock_tcp_socket, math.inf, selector_factory=mock_selector_factory)
+        request.addfinalizer(transport.close)
 
         # Assert
         assert transport._retry_interval is math.inf
@@ -124,6 +128,19 @@ class TestSocketStreamTransport(MixinTestSocketSendMSG):
         # Act & Assert
         with pytest.raises(ValueError, match=r"^A 'SOCK_STREAM' socket is expected$"):
             _ = SocketStreamTransport(mock_udp_socket, math.inf)
+
+    def test____dunder_del____ResourceWarning(
+        self,
+        mock_tcp_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        transport = SocketStreamTransport(mock_tcp_socket, math.inf)
+
+        # Act & Assert
+        with pytest.warns(ResourceWarning, match=r"^unclosed transport .+$"):
+            del transport
+
+        mock_tcp_socket.close.assert_called()
 
     @pytest.mark.parametrize(
         ["socket_fileno", "expected_state"],
@@ -300,7 +317,7 @@ class TestSocketStreamTransport(MixinTestSocketSendMSG):
 
         # Assert
         mock_transport_send_all.assert_not_called()
-        mock_transport_retry.assert_called_once_with(mocker.ANY, 123456)
+        mock_transport_retry.assert_called_once_with(transport, mocker.ANY, 123456)
         mock_tcp_socket.sendmsg.assert_called_once()
         assert chunks == [[b"data", b"to", b"send"]]
 
@@ -388,7 +405,7 @@ class TestSocketStreamTransport(MixinTestSocketSendMSG):
 
         # Assert
         mock_transport_send_all.assert_not_called()
-        mock_transport_retry.assert_called_once_with(mocker.ANY, 123456)
+        mock_transport_retry.assert_called_once_with(transport, mocker.ANY, 123456)
         assert mock_tcp_socket.sendmsg.call_count == 2
         assert chunks == [[b"data"]]
 
@@ -542,7 +559,7 @@ class TestSSLStreamTransport:
     @pytest.fixture(autouse=True)
     @staticmethod
     def mock_transport_retry(mocker: MockerFixture) -> MagicMock:
-        mock_transport_retry = mocker.patch.object(SSLStreamTransport, "_retry")
+        mock_transport_retry = mocker.patch.object(SSLStreamTransport, "_retry", autospec=True)
         mock_transport_retry.side_effect = _retry_side_effect
         return mock_transport_retry
 
@@ -586,7 +603,8 @@ class TestSSLStreamTransport:
         mock_tcp_socket: MagicMock,
         mock_ssl_socket: MagicMock,
         mock_ssl_context: MagicMock,
-    ) -> SSLStreamTransport:
+        mock_transport_retry: MagicMock,
+    ) -> Iterator[SSLStreamTransport]:
         transport = SSLStreamTransport(
             mock_tcp_socket,
             mock_ssl_context,
@@ -597,10 +615,13 @@ class TestSSLStreamTransport:
         )
         mock_tcp_socket.reset_mock()
         mock_ssl_socket.reset_mock()
-        return transport
+        mock_transport_retry.reset_mock()
+        with contextlib.closing(transport):
+            yield transport
 
     def test____dunder_init____default(
         self,
+        request: pytest.FixtureRequest,
         mock_tcp_socket: MagicMock,
         mock_ssl_socket: MagicMock,
         mock_ssl_context: MagicMock,
@@ -618,6 +639,7 @@ class TestSSLStreamTransport:
             server_hostname=mocker.sentinel.server_hostname,
             selector_factory=mock_selector_factory,
         )
+        request.addfinalizer(transport.close)
 
         # Assert
         assert transport._retry_interval is math.inf
@@ -647,12 +669,13 @@ class TestSSLStreamTransport:
         mock_ssl_socket.getpeername.assert_called()
         mock_ssl_socket.setblocking.assert_called_once_with(False)
         mock_ssl_socket.settimeout.assert_not_called()
-        mock_transport_retry.assert_called_once_with(mocker.ANY, SSL_HANDSHAKE_TIMEOUT)
+        mock_transport_retry.assert_called_once_with(transport, mocker.ANY, SSL_HANDSHAKE_TIMEOUT)
         assert mock_ssl_socket.do_handshake.call_args_list == [mocker.call() for _ in range(3)]
 
     @pytest.mark.parametrize("standard_compatible", [False, True], ids=lambda p: f"standard_compatible=={p}", indirect=True)
     def test____dunder_init____ssl_context_parameters(
         self,
+        request: pytest.FixtureRequest,
         standard_compatible: bool,
         mock_tcp_socket: MagicMock,
         mock_ssl_context: MagicMock,
@@ -672,6 +695,7 @@ class TestSSLStreamTransport:
             standard_compatible=standard_compatible,
             session=mocker.sentinel.ssl_session,
         )
+        request.addfinalizer(transport.close)
 
         # Assert
         mock_ssl_context.wrap_socket.assert_called_once_with(
@@ -752,6 +776,23 @@ class TestSSLStreamTransport:
         with pytest.raises(RuntimeError, match=r"^stdlib ssl module not available$"):
             _ = SSLStreamTransport(mock_tcp_socket, mock_ssl_context, math.inf)
 
+    def test____dunder_del____ResourceWarning(
+        self,
+        mock_tcp_socket: MagicMock,
+        mock_ssl_socket: MagicMock,
+        mock_ssl_context: MagicMock,
+        mock_transport_retry: MagicMock,
+    ) -> None:
+        # Arrange
+        transport = SSLStreamTransport(mock_tcp_socket, mock_ssl_context, math.inf)
+        mock_transport_retry.reset_mock()
+
+        # Act & Assert
+        with pytest.warns(ResourceWarning, match=r"^unclosed transport .+$"):
+            del transport
+
+        mock_ssl_socket.close.assert_called()
+
     @pytest.mark.parametrize(
         ["socket_fileno", "expected_state"],
         [
@@ -781,7 +822,6 @@ class TestSSLStreamTransport:
     def test____close____default(
         self,
         standard_compatible: bool,
-        socket_fileno: int,
         unwrap_error: type[OSError] | None,
         shutdown_error: type[OSError] | None,
         transport: SSLStreamTransport,
@@ -802,6 +842,7 @@ class TestSSLStreamTransport:
         # Assert
         if standard_compatible:
             assert mock_ssl_socket.mock_calls == [
+                mocker.call.fileno(),
                 mocker.call.unwrap(),
                 mocker.call.fileno(),
                 mocker.call.unwrap(),
@@ -810,7 +851,7 @@ class TestSSLStreamTransport:
                 mocker.call.shutdown(SHUT_RDWR),
                 mocker.call.close(),
             ]
-            mock_transport_retry.assert_called_once_with(mocker.ANY, 987654321)
+            mock_transport_retry.assert_called_once_with(transport, mocker.ANY, 987654321)
         else:
             assert mock_ssl_socket.mock_calls == [
                 mocker.call.shutdown(SHUT_RDWR),
@@ -1121,16 +1162,18 @@ class TestSocketDatagramTransport:
 
     @pytest.fixture
     @staticmethod
-    def transport(mock_udp_socket: MagicMock, max_datagram_size: int | None) -> SocketDatagramTransport:
+    def transport(mock_udp_socket: MagicMock, max_datagram_size: int | None) -> Iterator[SocketDatagramTransport]:
         if max_datagram_size is None:
             transport = SocketDatagramTransport(mock_udp_socket, math.inf)
         else:
             transport = SocketDatagramTransport(mock_udp_socket, math.inf, max_datagram_size=max_datagram_size)
         mock_udp_socket.reset_mock()
-        return transport
+        with contextlib.closing(transport):
+            yield transport
 
     def test____dunder_init____default(
         self,
+        request: pytest.FixtureRequest,
         mock_udp_socket: MagicMock,
         mocker: MockerFixture,
     ) -> None:
@@ -1139,6 +1182,7 @@ class TestSocketDatagramTransport:
 
         # Act
         transport = SocketDatagramTransport(mock_udp_socket, math.inf, selector_factory=mock_selector_factory)
+        request.addfinalizer(transport.close)
 
         # Assert
         assert transport._retry_interval is math.inf
@@ -1154,6 +1198,7 @@ class TestSocketDatagramTransport:
 
     def test____dunder_init____getpeername_raises_OSError(
         self,
+        request: pytest.FixtureRequest,
         mock_udp_socket: MagicMock,
     ) -> None:
         # Arrange
@@ -1161,6 +1206,7 @@ class TestSocketDatagramTransport:
 
         # Act
         transport = SocketDatagramTransport(mock_udp_socket, math.inf)
+        request.addfinalizer(transport.close)
 
         # Assert
         assert transport.extra(SocketAttribute.sockname) == ("local_address", 11111)
@@ -1203,6 +1249,19 @@ class TestSocketDatagramTransport:
         # Act & Assert
         with pytest.raises(ValueError, match=r"^max_datagram_size must not be <= 0$"):
             _ = SocketDatagramTransport(mock_udp_socket, math.inf, max_datagram_size=max_datagram_size)
+
+    def test____dunder_del____ResourceWarning(
+        self,
+        mock_udp_socket: MagicMock,
+    ) -> None:
+        # Arrange
+        transport = SocketDatagramTransport(mock_udp_socket, math.inf)
+
+        # Act & Assert
+        with pytest.warns(ResourceWarning, match=r"^unclosed transport .+$"):
+            del transport
+
+        mock_udp_socket.close.assert_called()
 
     @pytest.mark.parametrize(
         ["socket_fileno", "expected_state"],

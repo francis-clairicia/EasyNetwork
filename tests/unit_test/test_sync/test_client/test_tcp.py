@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import errno
 import os
-from collections.abc import Generator
+from collections.abc import Generator, Iterator
 from selectors import EVENT_READ, EVENT_WRITE
 from socket import AF_INET6, IPPROTO_TCP, SHUT_RDWR, SHUT_WR, SO_KEEPALIVE, SOL_SOCKET, TCP_NODELAY
 from ssl import SSLEOFError, SSLError, SSLErrorNumber, SSLWantReadError, SSLWantWriteError, SSLZeroReturnError
@@ -251,11 +251,12 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         ssl_shared_lock: bool | None,
         mock_selector_register: MagicMock,
         mock_selector_select: MagicMock,
-    ) -> TCPNetworkClient[Any, Any]:
+    ) -> Iterator[TCPNetworkClient[Any, Any]]:
+        client: TCPNetworkClient[Any, Any]
         try:
             match request.param:
                 case "REMOTE_ADDRESS":
-                    return TCPNetworkClient(
+                    client = TCPNetworkClient(
                         remote_address,
                         mock_stream_protocol,
                         ssl=ssl_context,
@@ -267,7 +268,7 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
                         retry_interval=retry_interval,
                     )
                 case "EXTERNAL_SOCKET":
-                    return TCPNetworkClient(
+                    client = TCPNetworkClient(
                         mock_tcp_socket,
                         mock_stream_protocol,
                         ssl=ssl_context,
@@ -285,6 +286,9 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
             mock_ssl_socket.reset_mock()
             mock_selector_register.reset_mock()
             mock_selector_select.reset_mock()
+
+        with client:
+            yield client
 
     @pytest.fixture(
         params=[
@@ -312,6 +316,7 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
 
     def test____dunder_init____connect_to_remote(
         self,
+        request: pytest.FixtureRequest,
         remote_address: tuple[str, int],
         mock_tcp_socket: MagicMock,
         mock_socket_create_connection: MagicMock,
@@ -327,7 +332,7 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         # Arrange
 
         # Act
-        _ = TCPNetworkClient(
+        client = TCPNetworkClient[Any, Any](
             remote_address,
             ssl=ssl_context,
             server_hostname=server_hostname,
@@ -335,6 +340,7 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
             connect_timeout=mocker.sentinel.timeout,
             local_address=mocker.sentinel.local_address,
         )
+        request.addfinalizer(client.close)
 
         # Assert
         mock_stream_data_consumer_cls.assert_called_once_with(mock_stream_protocol)
@@ -381,6 +387,7 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
 
     def test____dunder_init____use_given_socket(
         self,
+        request: pytest.FixtureRequest,
         mock_tcp_socket: MagicMock,
         mock_socket_create_connection: MagicMock,
         mock_stream_data_consumer_cls: MagicMock,
@@ -395,12 +402,13 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         # Arrange
 
         # Act
-        _ = TCPNetworkClient(
+        client = TCPNetworkClient[Any, Any](
             mock_tcp_socket,
             protocol=mock_stream_protocol,
             ssl=ssl_context,
             server_hostname=server_hostname,
         )
+        request.addfinalizer(client.close)
 
         # Assert
         mock_stream_data_consumer_cls.assert_called_once_with(mock_stream_protocol)
@@ -590,6 +598,7 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
     @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
     def test____dunder_init____max_size____valid_value(
         self,
+        request: pytest.FixtureRequest,
         max_recv_size: int | None,
         use_socket: bool,
         remote_address: tuple[str, int],
@@ -619,6 +628,7 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
                 ssl=ssl_context,
                 server_hostname=server_hostname,
             )
+        request.addfinalizer(client.close)
 
         # Assert
         assert client.max_recv_size == expected_size
@@ -766,6 +776,7 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
     @pytest.mark.parametrize("use_ssl", ["USE_SSL"], indirect=True)
     def test____dunder_init____ssl____server_hostname____use_remote_host_by_default(
         self,
+        request: pytest.FixtureRequest,
         remote_address: tuple[str, int],
         mock_ssl_context: MagicMock,
         mock_tcp_socket: MagicMock,
@@ -775,12 +786,13 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         remote_host, _ = remote_address
 
         # Act
-        _ = TCPNetworkClient(
+        client = TCPNetworkClient[Any, Any](
             remote_address,
             protocol=mock_stream_protocol,
             ssl=mock_ssl_context,
             server_hostname=None,
         )
+        request.addfinalizer(client.close)
 
         # Assert
         mock_ssl_context.wrap_socket.assert_called_once_with(
@@ -796,6 +808,7 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
     @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
     def test____dunder_init____ssl____server_hostname____do_not_disable_hostname_check_for_external_context(
         self,
+        request: pytest.FixtureRequest,
         use_socket: bool,
         remote_address: tuple[str, int],
         mock_ssl_context: MagicMock,
@@ -806,20 +819,22 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         assert mock_ssl_context.check_hostname
 
         # Act
+        client: TCPNetworkClient[Any, Any]
         if use_socket:
-            _ = TCPNetworkClient(
+            client = TCPNetworkClient(
                 mock_tcp_socket,
                 protocol=mock_stream_protocol,
                 ssl=mock_ssl_context,
                 server_hostname="",
             )
         else:
-            _ = TCPNetworkClient(
+            client = TCPNetworkClient(
                 remote_address,
                 protocol=mock_stream_protocol,
                 ssl=mock_ssl_context,
                 server_hostname="",
             )
+        request.addfinalizer(client.close)
 
         # Assert
         assert mock_ssl_context.check_hostname is True
@@ -867,6 +882,7 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
     @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
     def test____dunder_init____ssl____create_default_context(
         self,
+        request: pytest.FixtureRequest,
         use_socket: bool,
         remote_address: tuple[str, int],
         mock_ssl_context: MagicMock,
@@ -878,20 +894,22 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         # Arrange
 
         # Act
+        client: TCPNetworkClient[Any, Any]
         if use_socket:
-            _ = TCPNetworkClient(
+            client = TCPNetworkClient(
                 mock_tcp_socket,
                 protocol=mock_stream_protocol,
                 ssl=True,
                 server_hostname=server_hostname,
             )
         else:
-            _ = TCPNetworkClient(
+            client = TCPNetworkClient(
                 remote_address,
                 protocol=mock_stream_protocol,
                 ssl=True,
                 server_hostname=server_hostname,
             )
+        request.addfinalizer(client.close)
 
         # Assert
         mock_ssl_create_default_context.assert_called_once_with()
@@ -908,6 +926,7 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
     @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
     def test____dunder_init____ssl____create_default_context____disable_hostname_check(
         self,
+        request: pytest.FixtureRequest,
         use_socket: bool,
         remote_address: tuple[str, int],
         mock_ssl_context: MagicMock,
@@ -920,20 +939,22 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         assert check_hostname_by_default
 
         # Act
+        client: TCPNetworkClient[Any, Any]
         if use_socket:
-            _ = TCPNetworkClient(
+            client = TCPNetworkClient(
                 mock_tcp_socket,
                 protocol=mock_stream_protocol,
                 ssl=True,
                 server_hostname="",
             )
         else:
-            _ = TCPNetworkClient(
+            client = TCPNetworkClient(
                 remote_address,
                 protocol=mock_stream_protocol,
                 ssl=True,
                 server_hostname="",
             )
+        request.addfinalizer(client.close)
 
         # Assert
         mock_ssl_create_default_context.assert_called_once_with()
@@ -959,6 +980,7 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
     )
     def test____dunder_init____ssl____handshake_timeout(
         self,
+        request: pytest.FixtureRequest,
         ssl_handshake_timeout: float | None,
         socket_fileno: int,
         use_socket: bool,
@@ -979,9 +1001,10 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         mock_ssl_socket.do_handshake.side_effect = [would_block_exception, None]
 
         # Act
+        client: TCPNetworkClient[Any, Any] | None = None
         with pytest.raises(TimeoutError) if expected_timeout == 0 else contextlib.nullcontext():
             if use_socket:
-                _ = TCPNetworkClient(
+                client = TCPNetworkClient(
                     mock_tcp_socket,
                     protocol=mock_stream_protocol,
                     ssl=mock_ssl_context,
@@ -990,7 +1013,7 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
                     retry_interval=retry_interval,
                 )
             else:
-                _ = TCPNetworkClient(
+                client = TCPNetworkClient(
                     remote_address,
                     protocol=mock_stream_protocol,
                     ssl=mock_ssl_context,
@@ -998,6 +1021,8 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
                     ssl_handshake_timeout=ssl_handshake_timeout,
                     retry_interval=retry_interval,
                 )
+        if client is not None:
+            request.addfinalizer(client.close)
 
         # Assert
         if expected_timeout == 0:
@@ -1013,6 +1038,7 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
     @pytest.mark.parametrize("ssl_standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible=={p}")
     def test____dunder_init____ssl____standard_compatible(
         self,
+        request: pytest.FixtureRequest,
         ssl_standard_compatible: bool,
         remote_address: tuple[str, int],
         mock_ssl_context: MagicMock,
@@ -1022,13 +1048,14 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         # Arrange
 
         # Act
-        _ = TCPNetworkClient(
+        client = TCPNetworkClient[Any, Any](
             remote_address,
             protocol=mock_stream_protocol,
             ssl=mock_ssl_context,
             server_hostname="server_hostname",
             ssl_standard_compatible=ssl_standard_compatible,
         )
+        request.addfinalizer(client.close)
 
         # Assert
         mock_ssl_context.wrap_socket.assert_called_once_with(
@@ -1039,6 +1066,21 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
             suppress_ragged_eofs=not ssl_standard_compatible,
             session=None,
         )
+
+    @pytest.mark.parametrize("use_ssl", ["NO_SSL"], indirect=True)
+    def test____dunder_del____ResourceWarning(
+        self,
+        mock_tcp_socket: MagicMock,
+        mock_stream_protocol: MagicMock,
+    ) -> None:
+        # Arrange
+        client: TCPNetworkClient[Any, Any] = TCPNetworkClient(mock_tcp_socket, mock_stream_protocol)
+
+        # Act & Assert
+        with pytest.warns(ResourceWarning, match=r"^unclosed client .+$"):
+            del client
+
+        mock_tcp_socket.close.assert_called_once_with()
 
     def test____close____default(
         self,
