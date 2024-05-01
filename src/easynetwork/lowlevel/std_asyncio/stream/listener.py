@@ -138,23 +138,11 @@ class ListenerSocketAdapter(transports.AsyncListener[_T_Stream]):
             if task_group is None:
                 task_group = await stack.enter_async_context(AsyncIOTaskGroup())
             while True:
+                # Always drop socket reference on loop begin
                 client_socket: _socket.socket | None = None
-                try:
-                    client_socket = await self.raw_accept()
-                except OSError as exc:
-                    if exc.errno in constants.ACCEPT_CAPACITY_ERRNOS:
-                        logger.error(
-                            "accept returned %s (%s); retrying in %s seconds",
-                            _errno.errorcode[exc.errno],
-                            os.strerror(exc.errno),
-                            constants.ACCEPT_CAPACITY_ERROR_SLEEP_TIME,
-                            exc_info=exc,
-                        )
-                        await asyncio.sleep(constants.ACCEPT_CAPACITY_ERROR_SLEEP_TIME)
-                    else:
-                        raise
-                else:
-                    task_group.start_soon(client_connection_task, client_socket, task_group)
+
+                client_socket = await self.raw_accept()
+                task_group.start_soon(client_connection_task, client_socket, task_group)
 
         raise AssertionError("Expected code to be unreachable.")
 
@@ -167,15 +155,29 @@ class ListenerSocketAdapter(transports.AsyncListener[_T_Stream]):
         client_sock: _socket.socket | None = None
         loop = asyncio.get_running_loop()
 
-        with CancelScope() as self.__accept_scope:
+        while True:
             try:
-                client_sock, _ = await loop.sock_accept(listener_sock)
-            finally:
-                self.__accept_scope = None
-
-        if client_sock is None:
-            raise _utils.error_from_errno(_errno.EBADF)
-        return client_sock
+                with CancelScope() as self.__accept_scope:
+                    try:
+                        client_sock, _ = await loop.sock_accept(listener_sock)
+                    finally:
+                        self.__accept_scope = None
+                if client_sock is None:
+                    raise _utils.error_from_errno(_errno.EBADF)
+                return client_sock
+            except OSError as exc:
+                if exc.errno in constants.ACCEPT_CAPACITY_ERRNOS:
+                    logger = logging.getLogger(__name__)
+                    logger.error(
+                        "accept returned %s (%s); retrying in %s seconds",
+                        _errno.errorcode[exc.errno],
+                        os.strerror(exc.errno),
+                        constants.ACCEPT_CAPACITY_ERROR_SLEEP_TIME,
+                        exc_info=exc,
+                    )
+                    await asyncio.sleep(constants.ACCEPT_CAPACITY_ERROR_SLEEP_TIME)
+                else:
+                    raise
 
     def backend(self) -> AsyncIOBackend:
         return self.__backend

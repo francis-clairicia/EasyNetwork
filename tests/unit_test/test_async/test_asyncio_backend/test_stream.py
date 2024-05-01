@@ -357,29 +357,24 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestAsyncSock
     @PlatformMarkers.skipif_platform_win32
     @pytest.mark.parametrize("errno_value", sorted(ACCEPT_CAPACITY_ERRNOS), ids=errno_errorcode.__getitem__)
     @pytest.mark.flaky(retries=3, delay=0.1)
-    async def test____serve____accept_capacity_error(
+    async def test____accept____accept_capacity_error(
         self,
         errno_value: int,
         listener: ListenerSocketAdapter[Any],
-        accepted_socket_factory: MagicMock,
-        handler: AsyncMock,
+        mock_tcp_listener_socket: MagicMock,
         caplog: pytest.LogCaptureFixture,
-        mocker: MockerFixture,
     ) -> None:
         # Arrange
         caplog.set_level(logging.ERROR)
-        accepted_socket_factory.connect.side_effect = AssertionError
-        mocker.patch.object(ListenerSocketAdapter, "raw_accept", side_effect=OSError(errno_value, os.strerror(errno_value)))
+        mock_tcp_listener_socket.accept.side_effect = OSError(errno_value, os.strerror(errno_value))
 
         # Act
         # It retries every 100 ms, so in 975 ms it will retry at 0, 100, ..., 900
         # = 10 times total
         with CancelScope(deadline=asyncio.get_running_loop().time() + 0.975):
-            await listener.serve(handler)
+            await listener.raw_accept()
 
         # Assert
-        accepted_socket_factory.connect.assert_not_awaited()
-        handler.assert_not_awaited()
         assert len(caplog.records) == 10
         for record in caplog.records:
             assert "retrying" in record.message
@@ -389,28 +384,22 @@ class TestListenerSocketAdapter(BaseTestTransportStreamSocket, BaseTestAsyncSock
                 and record.exc_info[1].errno == errno_value
             )
 
-    async def test____serve____reraise_other_OSErrors(
+    async def test____accept____reraise_other_OSErrors(
         self,
         listener: ListenerSocketAdapter[Any],
-        accepted_socket_factory: MagicMock,
-        handler: AsyncMock,
+        mock_tcp_listener_socket: MagicMock,
         caplog: pytest.LogCaptureFixture,
-        mocker: MockerFixture,
     ) -> None:
         # Arrange
         caplog.set_level(logging.ERROR)
-        accepted_socket_factory.connect.side_effect = AssertionError
         exc = OSError()
-        mocker.patch.object(ListenerSocketAdapter, "raw_accept", side_effect=exc)
+        mock_tcp_listener_socket.accept.side_effect = exc
 
         # Act
-        async with AsyncIOTaskGroup() as task_group:
-            with pytest.raises(OSError) as exc_info:
-                await listener.serve(handler, task_group)
+        with pytest.raises(OSError) as exc_info:
+            await listener.raw_accept()
 
         # Assert
-        accepted_socket_factory.connect.assert_not_awaited()
-        handler.assert_not_awaited()
         assert len(caplog.records) == 0
         assert exc_info.value is exc
 
