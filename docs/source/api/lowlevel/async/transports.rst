@@ -7,6 +7,7 @@ Abstract Base Classes
 
 .. automodule:: easynetwork.lowlevel.api_async.transports.abc
    :members:
+   :special-members: __aenter__, __aexit__
    :no-docstring:
 
 SSL/TLS Support

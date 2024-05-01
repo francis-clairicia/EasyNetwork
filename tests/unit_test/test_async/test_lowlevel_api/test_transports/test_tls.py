@@ -109,7 +109,7 @@ class TestAsyncTLSStreamTransport:
         read_bio: ssl.MemoryBIO,
         write_bio: ssl.MemoryBIO,
     ) -> AsyncIterator[AsyncTLSStreamTransport]:
-        trasport = AsyncTLSStreamTransport(
+        transport = AsyncTLSStreamTransport(
             _transport=mock_wrapped_transport,
             _standard_compatible=standard_compatible,
             _shutdown_timeout=shutdown_timeout,
@@ -117,8 +117,8 @@ class TestAsyncTLSStreamTransport:
             _read_bio=read_bio,
             _write_bio=write_bio,
         )
-        async with contextlib.aclosing(trasport):
-            yield trasport
+        async with transport:
+            yield transport
 
     @pytest.fixture
     @staticmethod
@@ -932,7 +932,7 @@ class TestAsyncTLSListener:
             shutdown_timeout=shutdown_timeout,
             standard_compatible=standard_compatible,
         )
-        async with contextlib.aclosing(listener):
+        async with listener:
             yield listener
 
     async def test____dunder_del____ResourceWarning(

@@ -29,7 +29,8 @@ __all__ = [
 
 from abc import ABCMeta, abstractmethod
 from collections.abc import Iterable
-from typing import TYPE_CHECKING
+from types import TracebackType
+from typing import TYPE_CHECKING, Self
 
 from ... import _utils, typed_attr
 
@@ -43,6 +44,15 @@ class BaseTransport(typed_attr.TypedAttributeProvider, metaclass=ABCMeta):
     """
 
     __slots__ = ("__weakref__",)
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None) -> None:
+        """
+        Calls :meth:`close`.
+        """
+        self.close()
 
     @abstractmethod
     def close(self) -> None:
