@@ -23,18 +23,16 @@ import asyncio
 import asyncio.trsock
 import warnings
 from collections.abc import Callable, Mapping
-from typing import TYPE_CHECKING, Any, final
+from typing import Any, final
 
 from ... import _utils, socket as socket_tools
-from ...api_async.transports import abc as transports
+from ...api_async.backend.abc import AsyncBackend
+from ...api_async.transports.abc import AsyncDatagramTransport
 from .endpoint import DatagramEndpoint
-
-if TYPE_CHECKING:
-    from ..backend import AsyncIOBackend
 
 
 @final
-class AsyncioTransportDatagramSocketAdapter(transports.AsyncDatagramTransport):
+class AsyncioTransportDatagramSocketAdapter(AsyncDatagramTransport):
     __slots__ = (
         "__backend",
         "__endpoint",
@@ -42,16 +40,17 @@ class AsyncioTransportDatagramSocketAdapter(transports.AsyncDatagramTransport):
         "__closing",
     )
 
-    def __init__(self, backend: AsyncIOBackend, endpoint: DatagramEndpoint) -> None:
+    def __init__(self, backend: AsyncBackend, endpoint: DatagramEndpoint) -> None:
         super().__init__()
-        self.__backend: AsyncIOBackend = backend
-        self.__endpoint: DatagramEndpoint = endpoint
 
         socket: asyncio.trsock.TransportSocket | None = endpoint.get_extra_info("socket")
         if socket is None:
             raise AssertionError("transport must be a socket transport")
 
+        self.__backend: AsyncBackend = backend
+        self.__endpoint: DatagramEndpoint = endpoint
         self.__socket: asyncio.trsock.TransportSocket = socket
+
         # asyncio.DatagramTransport.is_closing() can suddently become true if there is something wrong with the socket
         # even if transport.close() was never called.
         # To bypass this side effect, we use our own flag.
@@ -81,7 +80,7 @@ class AsyncioTransportDatagramSocketAdapter(transports.AsyncDatagramTransport):
     async def send(self, data: bytes | bytearray | memoryview) -> None:
         await self.__endpoint.sendto(data, None)
 
-    def backend(self) -> AsyncIOBackend:
+    def backend(self) -> AsyncBackend:
         return self.__backend
 
     @property

@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from collections.abc import AsyncIterator, Callable, Iterator
 from errno import ECONNABORTED
 from socket import AI_PASSIVE
 from typing import TYPE_CHECKING, Any, Literal, cast
 
-from easynetwork.lowlevel.api_async.backend.abc import TaskGroup
 from easynetwork.lowlevel.socket import SocketAttribute
 from easynetwork.lowlevel.std_asyncio.backend import AsyncIOBackend
 from easynetwork.lowlevel.std_asyncio.datagram.endpoint import (
@@ -17,6 +17,7 @@ from easynetwork.lowlevel.std_asyncio.datagram.endpoint import (
 )
 from easynetwork.lowlevel.std_asyncio.datagram.listener import DatagramListenerProtocol, DatagramListenerSocketAdapter
 from easynetwork.lowlevel.std_asyncio.datagram.socket import AsyncioTransportDatagramSocketAdapter
+from easynetwork.lowlevel.std_asyncio.tasks import TaskGroup as AsyncIOTaskGroup
 
 import pytest
 import pytest_asyncio
@@ -977,30 +978,20 @@ class TestDatagramListenerSocketAdapter(BaseTestAsyncioDatagramTransport):
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_task_group = mocker.NonCallableMagicMock(spec=TaskGroup)
-        mock_task_group.__aenter__.return_value = mock_task_group
-        mock_task_group.start_soon.return_value = None
-        mock_AsyncIOTaskGroup = mocker.patch(
-            f"{DatagramListenerSocketAdapter.__module__}.AsyncIOTaskGroup",
-            side_effect=[mock_task_group],
-        )
         datagram_received_cb = mocker.async_stub()
         mock_asyncio_protocol.serve.side_effect = asyncio.CancelledError
 
         # Act
-        with pytest.raises(asyncio.CancelledError):
-            if external_group:
-                await socket.serve(datagram_received_cb, mock_task_group)
-            else:
-                await socket.serve(datagram_received_cb)
+        task_group: AsyncIOTaskGroup | None
+        async with AsyncIOTaskGroup() if external_group else contextlib.nullcontext() as task_group:  # type: ignore[attr-defined]
+            with pytest.raises(asyncio.CancelledError):
+                await socket.serve(datagram_received_cb, task_group)
 
         # Assert
         if external_group:
-            mock_AsyncIOTaskGroup.assert_not_called()
-            mock_task_group.__aenter__.assert_not_awaited()
+            mock_asyncio_protocol.serve.assert_awaited_once_with(datagram_received_cb, task_group)
         else:
-            mock_AsyncIOTaskGroup.assert_called_once_with()
-            mock_task_group.__aenter__.assert_awaited_once()
+            mock_asyncio_protocol.serve.assert_awaited_once_with(datagram_received_cb, mocker.ANY)
 
     @pytest.mark.parametrize("transport_is_closing", [False, True], ids=lambda p: f"transport_is_closing=={p}")
     async def test____send_to____write_and_drain(

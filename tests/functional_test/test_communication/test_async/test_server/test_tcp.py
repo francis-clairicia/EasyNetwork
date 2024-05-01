@@ -423,9 +423,8 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
             stack.enter_context(contextlib.suppress(OSError))
 
             async def factory() -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
-                event_loop = asyncio.get_running_loop()
                 async with asyncio.timeout(30):
-                    sock = await create_connection(*server_address, event_loop)
+                    sock = await create_connection(*server_address)
                     reader, writer = await asyncio.open_connection(
                         sock=sock,
                         ssl=client_ssl_context if use_ssl else None,
@@ -1126,7 +1125,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         caplog.set_level(logging.ERROR, LOGGER.name)
         logger_crash_maximum_nb_lines[LOGGER.name] = 1
         logger_crash_maximum_nb_lines["easynetwork.lowlevel.api_async.transports.tls"] = 1
-        with await create_connection(*server_address, event_loop) as socket, pytest.raises(OSError):
+        with await create_connection(*server_address) as socket, pytest.raises(OSError):
             # The SSL handshake expects the client to send the list of encryption algorithms.
             # But we won't, so the server will close the connection after 1 second
             # and raise a TimeoutError or ConnectionAbortedError.

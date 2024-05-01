@@ -246,7 +246,6 @@ class TestAsyncIOBackend:
         # Assert
         mock_own_create_connection.assert_awaited_once_with(
             *remote_address,
-            event_loop,
             happy_eyeballs_delay=expected_happy_eyeballs_delay,
             local_address=local_address,
         )
@@ -588,7 +587,6 @@ class TestAsyncIOBackend:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        event_loop = asyncio.get_running_loop()
         mock_endpoint = mock_datagram_endpoint_factory()
         mock_AsyncioTransportDatagramSocketAdapter: MagicMock = mocker.patch(
             "easynetwork.lowlevel.std_asyncio.backend.AsyncioTransportDatagramSocketAdapter",
@@ -614,7 +612,6 @@ class TestAsyncIOBackend:
         # Assert
         mock_own_create_connection.assert_awaited_once_with(
             *remote_address,
-            event_loop,
             local_address=local_address,
             family=AF_UNSPEC if socket_family is None else socket_family,
         )

@@ -29,19 +29,17 @@ from typing import TYPE_CHECKING, Any, final
 
 from ....exceptions import UnsupportedOperation
 from ... import _utils, socket as socket_tools
-from ...api_async.transports import abc as transports
+from ...api_async.backend.abc import AsyncBackend
+from ...api_async.transports.abc import AsyncBufferedStreamReadTransport, AsyncStreamTransport
 from .._asyncio_utils import add_flowcontrol_defaults
 from .._flow_control import WriteFlowControl
-from ..tasks import TaskUtils
 
 if TYPE_CHECKING:
     from _typeshed import WriteableBuffer
 
-    from ..backend import AsyncIOBackend
-
 
 @final
-class AsyncioTransportStreamSocketAdapter(transports.AsyncStreamTransport, transports.AsyncBufferedStreamReadTransport):
+class AsyncioTransportStreamSocketAdapter(AsyncStreamTransport, AsyncBufferedStreamReadTransport):
     __slots__ = (
         "__backend",
         "__transport",
@@ -52,7 +50,7 @@ class AsyncioTransportStreamSocketAdapter(transports.AsyncStreamTransport, trans
 
     def __init__(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
         transport: asyncio.Transport,
         protocol: StreamReaderBufferedProtocol,
     ) -> None:
@@ -66,7 +64,7 @@ class AsyncioTransportStreamSocketAdapter(transports.AsyncStreamTransport, trans
             raise NotImplementedError(f"{self.__class__.__name__} does not support SSL")
 
         self.__socket: asyncio.trsock.TransportSocket = socket
-        self.__backend: AsyncIOBackend = backend
+        self.__backend: AsyncBackend = backend
         self.__transport: asyncio.Transport = transport
         self.__protocol: StreamReaderBufferedProtocol = protocol
 
@@ -127,9 +125,9 @@ class AsyncioTransportStreamSocketAdapter(transports.AsyncStreamTransport, trans
         if not self.__transport.can_write_eof():
             raise UnsupportedOperation("transport does not support sending EOF")
         self.__transport.write_eof()
-        await TaskUtils.coro_yield()
+        await self.__backend.coro_yield()
 
-    def backend(self) -> AsyncIOBackend:
+    def backend(self) -> AsyncBackend:
         return self.__backend
 
     @property
