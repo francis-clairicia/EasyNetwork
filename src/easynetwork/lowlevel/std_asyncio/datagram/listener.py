@@ -20,6 +20,7 @@ from __future__ import annotations
 __all__ = ["DatagramListenerSocketAdapter"]
 
 import asyncio
+import asyncio.trsock
 import collections
 import contextlib
 import dataclasses
@@ -29,15 +30,13 @@ from collections.abc import Callable, Coroutine, Mapping
 from typing import TYPE_CHECKING, Any, NoReturn, final
 
 from ... import _utils, socket as socket_tools
+from ...api_async.backend.abc import TaskGroup as AbstractTaskGroup
 from ...api_async.transports import abc as transports
 from .._flow_control import WriteFlowControl
 from ..tasks import TaskGroup as AsyncIOTaskGroup
 from .endpoint import _monkeypatch_transport
 
 if TYPE_CHECKING:
-    import asyncio.trsock
-
-    from ...api_async.backend.abc import TaskGroup as AbstractTaskGroup
     from ..backend import AsyncIOBackend
 
 

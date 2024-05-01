@@ -24,13 +24,11 @@ __all__ = [
 
 from abc import ABCMeta, abstractmethod
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Protocol, Self
+from types import TracebackType
+from typing import Protocol, Self
 
 from ..lowlevel.api_async.backend.abc import AsyncBackend
 from ..lowlevel.socket import SocketAddress
-
-if TYPE_CHECKING:
-    from types import TracebackType
 
 
 class SupportsEventSet(Protocol):

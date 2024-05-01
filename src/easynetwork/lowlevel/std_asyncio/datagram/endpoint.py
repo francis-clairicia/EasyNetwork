@@ -25,16 +25,14 @@ __all__ = [
 
 import asyncio
 import asyncio.base_events
+import asyncio.trsock
 import errno as _errno
 import socket as _socket
 import warnings
-from typing import TYPE_CHECKING, Any, final
+from typing import Any, final
 
 from ... import _utils
 from .._flow_control import WriteFlowControl
-
-if TYPE_CHECKING:
-    import asyncio.trsock
 
 
 async def create_datagram_endpoint(

@@ -27,7 +27,8 @@ import math
 import types
 from collections import deque
 from collections.abc import Awaitable, Callable, Coroutine, Generator, Iterable, Iterator
-from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, Self, TypeVar, TypeVarTuple, cast, final
+from types import TracebackType
+from typing import Any, ClassVar, NamedTuple, Self, TypeVar, TypeVarTuple, cast, final
 from weakref import WeakKeyDictionary
 
 from .. import _utils
@@ -38,10 +39,6 @@ from ..api_async.backend.abc import (
     TaskGroup as AbstractTaskGroup,
     TaskInfo,
 )
-
-if TYPE_CHECKING:
-    from types import TracebackType
-
 
 _T = TypeVar("_T")
 _T_co = TypeVar("_T_co", covariant=True)

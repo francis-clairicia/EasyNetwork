@@ -20,15 +20,13 @@ __all__ = ["AbstractAsyncNetworkClient", "AbstractNetworkClient"]
 
 from abc import ABCMeta, abstractmethod
 from collections.abc import AsyncIterator, Iterator
-from typing import TYPE_CHECKING, Generic, Self
+from types import TracebackType
+from typing import Generic, Self
 
 from .._typevars import _T_ReceivedPacket, _T_SentPacket
 from ..lowlevel import _utils
 from ..lowlevel.api_async.backend.abc import AsyncBackend
 from ..lowlevel.socket import SocketAddress
-
-if TYPE_CHECKING:
-    from types import TracebackType
 
 
 class AbstractNetworkClient(Generic[_T_SentPacket, _T_ReceivedPacket], metaclass=ABCMeta):

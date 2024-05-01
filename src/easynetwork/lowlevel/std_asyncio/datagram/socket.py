@@ -20,18 +20,17 @@ from __future__ import annotations
 __all__ = ["AsyncioTransportDatagramSocketAdapter"]
 
 import asyncio
+import asyncio.trsock
 import warnings
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any, final
 
 from ... import _utils, socket as socket_tools
 from ...api_async.transports import abc as transports
+from .endpoint import DatagramEndpoint
 
 if TYPE_CHECKING:
-    import asyncio.trsock
-
     from ..backend import AsyncIOBackend
-    from .endpoint import DatagramEndpoint
 
 
 @final
