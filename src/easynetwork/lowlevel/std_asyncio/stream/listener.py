@@ -34,22 +34,18 @@ import socket as _socket
 import warnings
 from abc import abstractmethod
 from collections.abc import Callable, Coroutine, Mapping
-from typing import TYPE_CHECKING, Any, Generic, NoReturn, TypeVar, final
+from typing import Any, Generic, NoReturn, TypeVar, final
 
 from ... import _utils, constants, socket as socket_tools
-from ...api_async.backend.abc import TaskGroup as AbstractTaskGroup
-from ...api_async.transports import abc as transports
-from ..tasks import CancelScope, TaskGroup as AsyncIOTaskGroup, TaskUtils
+from ...api_async.backend.abc import AsyncBackend, CancelScope, TaskGroup
+from ...api_async.transports.abc import AsyncListener, AsyncStreamTransport
+from ..tasks import TaskUtils
 from .socket import AsyncioTransportStreamSocketAdapter, StreamReaderBufferedProtocol
 
-if TYPE_CHECKING:
-    from ..backend import AsyncIOBackend
+_T_Stream = TypeVar("_T_Stream", bound=AsyncStreamTransport)
 
 
-_T_Stream = TypeVar("_T_Stream", bound=transports.AsyncStreamTransport)
-
-
-class ListenerSocketAdapter(transports.AsyncListener[_T_Stream]):
+class ListenerSocketAdapter(AsyncListener[_T_Stream]):
     __slots__ = (
         "__backend",
         "__socket",
@@ -61,7 +57,7 @@ class ListenerSocketAdapter(transports.AsyncListener[_T_Stream]):
 
     def __init__(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
         socket: _socket.socket,
         accepted_socket_factory: AbstractAcceptedSocketFactory[_T_Stream],
     ) -> None:
@@ -75,7 +71,7 @@ class ListenerSocketAdapter(transports.AsyncListener[_T_Stream]):
 
         self.__socket: _socket.socket | None = socket
         self.__trsock: asyncio.trsock.TransportSocket = asyncio.trsock.TransportSocket(socket)
-        self.__backend: AsyncIOBackend = backend
+        self.__backend: AsyncBackend = backend
         self.__accepted_socket_factory = accepted_socket_factory
         self.__accept_scope: CancelScope | None = None
         self.__serve_guard: _utils.ResourceGuard = _utils.ResourceGuard(f"{self.__class__.__name__}.serve() awaited twice.")
@@ -105,12 +101,12 @@ class ListenerSocketAdapter(transports.AsyncListener[_T_Stream]):
     async def serve(
         self,
         handler: Callable[[_T_Stream], Coroutine[Any, Any, None]],
-        task_group: AbstractTaskGroup | None = None,
+        task_group: TaskGroup | None = None,
     ) -> NoReturn:
         connect = self.__accepted_socket_factory.connect
         logger = logging.getLogger(__name__)
 
-        async def client_connection_task(client_socket: _socket.socket, task_group: AbstractTaskGroup) -> None:
+        async def client_connection_task(client_socket: _socket.socket, task_group: TaskGroup) -> None:
             try:
                 stream = await connect(self.__backend, client_socket)
             except asyncio.CancelledError:
@@ -136,7 +132,7 @@ class ListenerSocketAdapter(transports.AsyncListener[_T_Stream]):
         async with contextlib.AsyncExitStack() as stack:
             stack.enter_context(self.__serve_guard)
             if task_group is None:
-                task_group = await stack.enter_async_context(AsyncIOTaskGroup())
+                task_group = await stack.enter_async_context(self.__backend.create_task_group())
             while True:
                 # Always drop socket reference on loop begin
                 client_socket: _socket.socket | None = None
@@ -157,7 +153,7 @@ class ListenerSocketAdapter(transports.AsyncListener[_T_Stream]):
 
         while True:
             try:
-                with CancelScope() as self.__accept_scope:
+                with self.__backend.open_cancel_scope() as self.__accept_scope:
                     try:
                         client_sock, _ = await loop.sock_accept(listener_sock)
                     finally:
@@ -179,7 +175,7 @@ class ListenerSocketAdapter(transports.AsyncListener[_T_Stream]):
                 else:
                     raise
 
-    def backend(self) -> AsyncIOBackend:
+    def backend(self) -> AsyncBackend:
         return self.__backend
 
     @property
@@ -195,7 +191,7 @@ class AbstractAcceptedSocketFactory(Generic[_T_Stream]):
         raise NotImplementedError
 
     @abstractmethod
-    async def connect(self, backend: AsyncIOBackend, socket: _socket.socket) -> _T_Stream:
+    async def connect(self, backend: AsyncBackend, socket: _socket.socket) -> _T_Stream:
         raise NotImplementedError
 
 
@@ -207,7 +203,7 @@ class AcceptedSocketFactory(AbstractAcceptedSocketFactory[AsyncioTransportStream
 
     async def connect(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
         socket: _socket.socket,
     ) -> AsyncioTransportStreamSocketAdapter:
         loop = asyncio.get_running_loop()

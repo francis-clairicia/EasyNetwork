@@ -111,11 +111,9 @@ class AsyncIOBackend(AbstractAsyncBackend):
         if happy_eyeballs_delay is None:
             happy_eyeballs_delay = _DEFAULT_HAPPY_EYEBALLS_DELAY
 
-        loop = asyncio.get_running_loop()
         socket = await create_connection(
             host,
             port,
-            loop,
             local_address=local_address,
             happy_eyeballs_delay=happy_eyeballs_delay,
         )
@@ -141,7 +139,6 @@ class AsyncIOBackend(AbstractAsyncBackend):
     ) -> Sequence[ListenerSocketAdapter[AsyncioTransportStreamSocketAdapter]]:
         if not isinstance(backlog, int):
             raise TypeError("backlog: Expected an integer")
-        loop = asyncio.get_running_loop()
 
         reuse_address: bool = os.name not in ("nt", "cygwin") and sys.platform != "cygwin"
         hosts: Sequence[str | None]
@@ -158,7 +155,6 @@ class AsyncIOBackend(AbstractAsyncBackend):
             hosts,
             port,
             _socket.SOCK_STREAM,
-            loop,
         )
 
         sockets: list[_socket.socket] = open_listener_sockets_from_getaddrinfo_result(
@@ -168,7 +164,6 @@ class AsyncIOBackend(AbstractAsyncBackend):
             reuse_port=reuse_port,
         )
 
-        loop = asyncio.get_running_loop()
         factory = AcceptedSocketFactory()
         return [ListenerSocketAdapter(self, sock, factory) for sock in sockets]
 
@@ -180,11 +175,9 @@ class AsyncIOBackend(AbstractAsyncBackend):
         local_address: tuple[str, int] | None = None,
         family: int = _socket.AF_UNSPEC,
     ) -> AsyncioTransportDatagramSocketAdapter:
-        loop = asyncio.get_running_loop()
         socket = await create_datagram_connection(
             remote_host,
             remote_port,
-            loop,
             local_address=local_address,
             family=family,
         )
@@ -220,7 +213,6 @@ class AsyncIOBackend(AbstractAsyncBackend):
             hosts,
             port,
             _socket.SOCK_DGRAM,
-            loop,
         )
 
         sockets: list[_socket.socket] = open_listener_sockets_from_getaddrinfo_result(

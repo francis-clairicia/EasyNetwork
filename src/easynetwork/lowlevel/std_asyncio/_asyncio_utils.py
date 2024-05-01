@@ -45,7 +45,6 @@ async def ensure_resolved(
     port: int,
     family: int,
     type: int,
-    loop: asyncio.AbstractEventLoop,
     proto: int = 0,
     flags: int = 0,
 ) -> Sequence[tuple[int, int, int, str, tuple[Any, ...]]]:
@@ -56,6 +55,7 @@ async def ensure_resolved(
     except _socket.gaierror as exc:
         if exc.errno != _socket.EAI_NONAME:
             raise
+        loop = asyncio.get_running_loop()
         info = await loop.getaddrinfo(host, port, family=family, type=type, proto=proto, flags=flags)
     if not info:
         raise OSError(f"getaddrinfo({host!r}) returned empty list")
@@ -66,7 +66,6 @@ async def resolve_local_addresses(
     hosts: Sequence[str | None],
     port: int,
     socktype: int,
-    loop: asyncio.AbstractEventLoop,
 ) -> Sequence[tuple[int, int, int, str, tuple[Any, ...]]]:
     infos: set[tuple[int, int, int, str, tuple[Any, ...]]] = set(
         itertools.chain.from_iterable(
@@ -77,7 +76,6 @@ async def resolve_local_addresses(
                         port,
                         _socket.AF_UNSPEC,
                         socktype,
-                        loop,
                         flags=_socket.AI_PASSIVE | _socket.AI_ADDRCONFIG,
                     )
                     for host in hosts
@@ -90,10 +88,10 @@ async def resolve_local_addresses(
 
 async def _create_connection_impl(
     *,
-    loop: asyncio.AbstractEventLoop,
     remote_addrinfo: Sequence[tuple[int, int, int, str, tuple[Any, ...]]],
     local_addrinfo: Sequence[tuple[int, int, int, str, tuple[Any, ...]]] | None,
 ) -> _socket.socket:
+    loop = asyncio.get_running_loop()
     errors: list[OSError] = []
     for family, socktype, proto, _, remote_sockaddr in remote_addrinfo:
         try:
@@ -188,7 +186,6 @@ def _prioritize_ipv6_over_ipv4(
 
 async def _staggered_race_connection_impl(
     *,
-    loop: asyncio.AbstractEventLoop,
     remote_addrinfo: Sequence[tuple[int, int, int, str, tuple[Any, ...]]],
     local_addrinfo: Sequence[tuple[int, int, int, str, tuple[Any, ...]]] | None,
     happy_eyeballs_delay: float,
@@ -202,7 +199,7 @@ async def _staggered_race_connection_impl(
     async def try_connect(addr: tuple[int, int, int, str, tuple[Any, ...]]) -> None:
         nonlocal winner
         try:
-            socket = await _create_connection_impl(loop=loop, remote_addrinfo=[addr], local_addrinfo=local_addrinfo)
+            socket = await _create_connection_impl(remote_addrinfo=[addr], local_addrinfo=local_addrinfo)
         except* OSError as excgrp:
             errors.extend(excgrp.exceptions)
         else:
@@ -232,9 +229,8 @@ async def _staggered_race_connection_impl(
 async def create_connection(
     host: str,
     port: int,
-    loop: asyncio.AbstractEventLoop,
-    local_address: tuple[str, int] | None = None,
     *,
+    local_address: tuple[str, int] | None = None,
     happy_eyeballs_delay: float = math.inf,
 ) -> _socket.socket:
     remote_addrinfo: Sequence[tuple[int, int, int, str, tuple[Any, ...]]] = await ensure_resolved(
@@ -242,7 +238,6 @@ async def create_connection(
         port,
         family=_socket.AF_UNSPEC,
         type=_socket.SOCK_STREAM,
-        loop=loop,
     )
     local_addrinfo: Sequence[tuple[int, int, int, str, tuple[Any, ...]]] | None = None
     if local_address is not None:
@@ -252,11 +247,9 @@ async def create_connection(
             local_port,
             family=_socket.AF_UNSPEC,
             type=_socket.SOCK_STREAM,
-            loop=loop,
         )
 
     return await _staggered_race_connection_impl(
-        loop=loop,
         remote_addrinfo=remote_addrinfo,
         local_addrinfo=local_addrinfo,
         happy_eyeballs_delay=happy_eyeballs_delay,
@@ -266,7 +259,7 @@ async def create_connection(
 async def create_datagram_connection(
     host: str,
     port: int,
-    loop: asyncio.AbstractEventLoop,
+    *,
     local_address: tuple[str, int] | None = None,
     family: int = _socket.AF_UNSPEC,
 ) -> _socket.socket:
@@ -275,7 +268,6 @@ async def create_datagram_connection(
         port,
         family=family,
         type=_socket.SOCK_DGRAM,
-        loop=loop,
     )
     local_addrinfo: Sequence[tuple[int, int, int, str, tuple[Any, ...]]] | None = None
     if local_address is not None:
@@ -285,11 +277,9 @@ async def create_datagram_connection(
             local_port,
             family=family,
             type=_socket.SOCK_DGRAM,
-            loop=loop,
         )
 
     return await _create_connection_impl(
-        loop=loop,
         remote_addrinfo=remote_addrinfo,
         local_addrinfo=local_addrinfo,
     )

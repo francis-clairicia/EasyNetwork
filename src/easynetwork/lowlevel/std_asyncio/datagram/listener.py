@@ -27,17 +27,13 @@ import dataclasses
 import logging
 import warnings
 from collections.abc import Callable, Coroutine, Mapping
-from typing import TYPE_CHECKING, Any, NoReturn, final
+from typing import Any, NoReturn, final
 
 from ... import _utils, socket as socket_tools
-from ...api_async.backend.abc import TaskGroup as AbstractTaskGroup
+from ...api_async.backend.abc import AsyncBackend, TaskGroup
 from ...api_async.transports import abc as transports
 from .._flow_control import WriteFlowControl
-from ..tasks import TaskGroup as AsyncIOTaskGroup
 from .endpoint import _monkeypatch_transport
-
-if TYPE_CHECKING:
-    from ..backend import AsyncIOBackend
 
 
 @final
@@ -50,18 +46,18 @@ class DatagramListenerSocketAdapter(transports.AsyncDatagramListener[tuple[Any, 
         "__closing",
     )
 
-    def __init__(self, backend: AsyncIOBackend, transport: asyncio.DatagramTransport, protocol: DatagramListenerProtocol) -> None:
+    def __init__(self, backend: AsyncBackend, transport: asyncio.DatagramTransport, protocol: DatagramListenerProtocol) -> None:
         super().__init__()
-
-        self.__backend: AsyncIOBackend = backend
-        self.__transport: asyncio.DatagramTransport = transport
-        self.__protocol: DatagramListenerProtocol = protocol
 
         socket: asyncio.trsock.TransportSocket | None = transport.get_extra_info("socket")
         if socket is None:
             raise AssertionError("transport must be a socket transport")
 
+        self.__backend: AsyncBackend = backend
+        self.__transport: asyncio.DatagramTransport = transport
+        self.__protocol: DatagramListenerProtocol = protocol
         self.__socket: asyncio.trsock.TransportSocket = socket
+
         # asyncio.DatagramTransport.is_closing() can suddently become true if there is something wrong with the socket
         # even if transport.close() was never called.
         # To bypass this side effect, we use our own flag.
@@ -89,11 +85,11 @@ class DatagramListenerSocketAdapter(transports.AsyncDatagramListener[tuple[Any, 
     async def serve(
         self,
         handler: Callable[[bytes, tuple[Any, ...]], Coroutine[Any, Any, None]],
-        task_group: AbstractTaskGroup | None = None,
+        task_group: TaskGroup | None = None,
     ) -> NoReturn:
         async with contextlib.AsyncExitStack() as stack:
             if task_group is None:
-                task_group = await stack.enter_async_context(AsyncIOTaskGroup())
+                task_group = await stack.enter_async_context(self.__backend.create_task_group())
             await self.__protocol.serve(handler, task_group)
 
         raise AssertionError("Expected code to be unreachable.")
@@ -103,7 +99,7 @@ class DatagramListenerSocketAdapter(transports.AsyncDatagramListener[tuple[Any, 
         self.__transport.sendto(data, address)
         await self.__protocol.writer_drain()
 
-    def backend(self) -> AsyncIOBackend:
+    def backend(self) -> AsyncBackend:
         return self.__backend
 
     @property
@@ -115,7 +111,7 @@ class DatagramListenerSocketAdapter(transports.AsyncDatagramListener[tuple[Any, 
 @dataclasses.dataclass(eq=False, frozen=True, slots=True)
 class _DatagramListenerServeContext:
     datagram_handler: Callable[[bytes, tuple[Any, ...]], Coroutine[Any, Any, None]]
-    task_group: AbstractTaskGroup
+    task_group: TaskGroup
     __queue: collections.deque[tuple[bytes, tuple[Any, ...]]] = dataclasses.field(init=False, default_factory=collections.deque)
 
     def handle(self, data: bytes, addr: tuple[Any, ...]) -> None:
@@ -161,7 +157,7 @@ class DatagramListenerProtocol(asyncio.DatagramProtocol):
         assert self.__transport is None, "Transport already set"  # nosec assert_used
         self.__transport = transport
         self.__write_flow = WriteFlowControl(self.__transport, self.__loop)
-        _monkeypatch_transport(transport, self.__loop)
+        _monkeypatch_transport(self.__transport, self.__loop)
 
     def connection_lost(self, exc: Exception | None) -> None:
         self.__connection_lost = True
@@ -190,7 +186,7 @@ class DatagramListenerProtocol(asyncio.DatagramProtocol):
     async def serve(
         self,
         handler: Callable[[bytes, tuple[Any, ...]], Coroutine[Any, Any, None]],
-        task_group: AbstractTaskGroup,
+        task_group: TaskGroup,
     ) -> NoReturn:
         if self.__datagram_serve_ctx is not None:
             raise RuntimeError("DatagramListenerProtocol.serve() awaited twice")
