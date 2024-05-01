@@ -34,12 +34,11 @@ from collections.abc import Callable, Coroutine, Iterable
 from typing import TYPE_CHECKING, Any, Generic, NoReturn, TypeVar
 
 from ... import typed_attr
-from ..backend.abc import AsyncBackend
 
 if TYPE_CHECKING:
     from _typeshed import WriteableBuffer
 
-    from ..backend.abc import TaskGroup
+    from ..backend.abc import AsyncBackend, TaskGroup
 
 _T_co = TypeVar("_T_co", covariant=True)
 _T_Address = TypeVar("_T_Address")

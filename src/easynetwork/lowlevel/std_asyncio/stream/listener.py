@@ -37,12 +37,12 @@ from collections.abc import Callable, Coroutine, Mapping
 from typing import TYPE_CHECKING, Any, Generic, NoReturn, TypeVar, final
 
 from ... import _utils, constants, socket as socket_tools
+from ...api_async.backend.abc import TaskGroup as AbstractTaskGroup
 from ...api_async.transports import abc as transports
 from ..tasks import CancelScope, TaskGroup as AsyncIOTaskGroup, TaskUtils
 from .socket import AsyncioTransportStreamSocketAdapter, StreamReaderBufferedProtocol
 
 if TYPE_CHECKING:
-    from ...api_async.backend.abc import TaskGroup as AbstractTaskGroup
     from ..backend import AsyncIOBackend
 
 

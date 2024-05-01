@@ -33,12 +33,12 @@ import math
 from abc import ABCMeta, abstractmethod
 from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
 from contextlib import AbstractContextManager
+from types import TracebackType
 from typing import TYPE_CHECKING, Any, Generic, NoReturn, ParamSpec, Protocol, Self, TypeVar, TypeVarTuple
 
 if TYPE_CHECKING:
     import concurrent.futures
     import socket as _socket
-    from types import TracebackType
 
     from ..transports import abc as transports
 

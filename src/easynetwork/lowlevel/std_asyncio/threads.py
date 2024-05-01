@@ -25,16 +25,14 @@ import contextlib
 import contextvars
 import inspect
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, ParamSpec, Self, TypeVar, final
+from types import TracebackType
+from typing import ParamSpec, Self, TypeVar, final
 
 from .. import _lock, _utils
 from .._final import runtime_final_class
 from ..api_async.backend import _sniffio_helpers
 from ..api_async.backend.abc import ThreadsPortal as AbstractThreadsPortal
 from .tasks import TaskUtils
-
-if TYPE_CHECKING:
-    from types import TracebackType
 
 _P = ParamSpec("_P")
 _T = TypeVar("_T")

@@ -20,6 +20,7 @@ from __future__ import annotations
 __all__ = ["AsyncioTransportStreamSocketAdapter"]
 
 import asyncio
+import asyncio.trsock
 import errno as _errno
 import warnings
 from collections.abc import Callable, Iterable, Mapping
@@ -34,8 +35,6 @@ from .._flow_control import WriteFlowControl
 from ..tasks import TaskUtils
 
 if TYPE_CHECKING:
-    import asyncio.trsock
-
     from _typeshed import WriteableBuffer
 
     from ..backend import AsyncIOBackend

@@ -20,6 +20,7 @@ __all__ = [
     "StandaloneTCPNetworkServer",
 ]
 
+import logging
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Generic, Literal
 
@@ -27,15 +28,13 @@ from .._typevars import _T_Request, _T_Response
 from ..lowlevel.api_async.backend.abc import AsyncBackend
 from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendToken
 from ..lowlevel.socket import SocketProxy
+from ..protocol import StreamProtocol
 from . import _base
 from .async_tcp import AsyncTCPNetworkServer
+from .handlers import AsyncStreamRequestHandler
 
 if TYPE_CHECKING:
-    import logging
     from ssl import SSLContext as _SSLContext
-
-    from ..protocol import StreamProtocol
-    from .handlers import AsyncStreamRequestHandler
 
 
 class StandaloneTCPNetworkServer(

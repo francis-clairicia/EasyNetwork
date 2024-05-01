@@ -25,14 +25,12 @@ import functools
 import threading
 from collections import deque
 from collections.abc import AsyncGenerator, Callable, Iterable
-from typing import TYPE_CHECKING, Any, Generic, ParamSpec, Self, TypeVar
+from types import TracebackType
+from typing import Any, Generic, ParamSpec, Self, TypeVar
 
 from .api_async.backend import _sniffio_helpers
 from .api_async.backend.abc import AsyncBackend
 from .api_async.backend.utils import BuiltinAsyncBackendToken, ensure_backend
-
-if TYPE_CHECKING:
-    from types import TracebackType
 
 _P = ParamSpec("_P")
 _T = TypeVar("_T")

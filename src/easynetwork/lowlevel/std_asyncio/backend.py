@@ -28,11 +28,11 @@ import os
 import socket as _socket
 import sys
 from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
-from typing import TYPE_CHECKING, Any, NoReturn, ParamSpec, TypeVar, TypeVarTuple
+from typing import Any, NoReturn, ParamSpec, TypeVar, TypeVarTuple
 
 from .. import _utils
 from ..api_async.backend import _sniffio_helpers
-from ..api_async.backend.abc import AsyncBackend as AbstractAsyncBackend, TaskInfo
+from ..api_async.backend.abc import AsyncBackend as AbstractAsyncBackend, ILock, TaskInfo
 from ..constants import HAPPY_EYEBALLS_DELAY as _DEFAULT_HAPPY_EYEBALLS_DELAY
 from ._asyncio_utils import (
     create_connection,
@@ -47,9 +47,6 @@ from .stream.listener import AcceptedSocketFactory, ListenerSocketAdapter
 from .stream.socket import AsyncioTransportStreamSocketAdapter, StreamReaderBufferedProtocol
 from .tasks import CancelScope, TaskGroup, TaskUtils
 from .threads import ThreadsPortal
-
-if TYPE_CHECKING:
-    from ..api_async.backend.abc import ILock
 
 _P = ParamSpec("_P")
 _T = TypeVar("_T")

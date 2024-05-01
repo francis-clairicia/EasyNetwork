@@ -20,21 +20,18 @@ __all__ = [
     "StandaloneUDPNetworkServer",
 ]
 
+import logging
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, Any, Generic
+from typing import Any, Generic
 
 from .._typevars import _T_Request, _T_Response
 from ..lowlevel.api_async.backend.abc import AsyncBackend
 from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendToken
 from ..lowlevel.socket import SocketProxy
+from ..protocol import DatagramProtocol
 from . import _base
 from .async_udp import AsyncUDPNetworkServer
-
-if TYPE_CHECKING:
-    import logging
-
-    from ..protocol import DatagramProtocol
-    from .handlers import AsyncDatagramRequestHandler
+from .handlers import AsyncDatagramRequestHandler
 
 
 class StandaloneUDPNetworkServer(
