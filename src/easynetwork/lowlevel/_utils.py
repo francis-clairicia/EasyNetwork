@@ -144,8 +144,9 @@ def inherit_doc(base_cls: type[Any]) -> Callable[[_T_Func], _T_Func]:
     return decorator
 
 
-def error_from_errno(errno: int) -> OSError:
-    return OSError(errno, os.strerror(errno))
+def error_from_errno(errno: int, msg: str = "{strerror}") -> OSError:
+    msg = msg.format(strerror=os.strerror(errno))
+    return OSError(errno, msg)
 
 
 def missing_extra_deps(extra_name: str, *, feature_name: str = "") -> ModuleNotFoundError:

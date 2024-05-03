@@ -593,7 +593,9 @@ def _address_or_lookup_error(fileno: Callable[[], int], getsockaddr: Callable[[]
         if fileno() < 0:
             from errno import EBADF
 
-            raise OSError(EBADF, os.strerror(EBADF))
+            from ._utils import error_from_errno
+
+            raise error_from_errno(EBADF)
         return getsockaddr()
     except OSError as exc:
         from ..exceptions import TypedAttributeLookupError

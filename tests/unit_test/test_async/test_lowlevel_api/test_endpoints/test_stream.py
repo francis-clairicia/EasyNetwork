@@ -444,7 +444,7 @@ class TestAsyncStreamEndpoint(BaseTestWithStreamProtocol):
         mock_stream_transport.recv.side_effect = [b""]
 
         # Act
-        with pytest.raises(EOFError, match=r"^end-of-stream$"):
+        with pytest.raises(ConnectionAbortedError, match=r" \(end-of-stream\)$"):
             _ = await endpoint.recv_packet()
 
         # Assert
@@ -461,7 +461,7 @@ class TestAsyncStreamEndpoint(BaseTestWithStreamProtocol):
         mock_stream_transport.recv_into.side_effect = make_recv_into_side_effect([b""])
 
         # Act
-        with pytest.raises(EOFError, match=r"^end-of-stream$"):
+        with pytest.raises(ConnectionAbortedError, match=r" \(end-of-stream\)$"):
             _ = await endpoint.recv_packet()
 
         # Assert
@@ -583,13 +583,13 @@ class TestAsyncStreamEndpoint(BaseTestWithStreamProtocol):
     ) -> None:
         # Arrange
         mock_stream_transport.recv.side_effect = [b""]
-        with pytest.raises(EOFError, match=r"^end-of-stream$"):
+        with pytest.raises(ConnectionAbortedError, match=r" \(end-of-stream\)$"):
             _ = await endpoint.recv_packet()
 
         mock_stream_transport.recv.reset_mock()
 
         # Act
-        with pytest.raises(EOFError, match=r"^end-of-stream$"):
+        with pytest.raises(ConnectionAbortedError, match=r" \(end-of-stream\)$"):
             _ = await endpoint.recv_packet()
 
         # Assert
@@ -604,13 +604,13 @@ class TestAsyncStreamEndpoint(BaseTestWithStreamProtocol):
     ) -> None:
         # Arrange
         mock_stream_transport.recv_into.side_effect = make_recv_into_side_effect([b""])
-        with pytest.raises(EOFError, match=r"^end-of-stream$"):
+        with pytest.raises(ConnectionAbortedError, match=r" \(end-of-stream\)$"):
             _ = await endpoint.recv_packet()
 
         mock_stream_transport.recv_into.reset_mock()
 
         # Act
-        with pytest.raises(EOFError, match=r"^end-of-stream$"):
+        with pytest.raises(ConnectionAbortedError, match=r" \(end-of-stream\)$"):
             _ = await endpoint.recv_packet()
 
         # Assert

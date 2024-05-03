@@ -19,6 +19,7 @@ from __future__ import annotations
 __all__ = ["AsyncStreamEndpoint"]
 
 import dataclasses
+import errno as _errno
 import warnings
 from collections.abc import Callable, Mapping
 from typing import Any, Generic, Literal, assert_never
@@ -197,7 +198,7 @@ class AsyncStreamEndpoint(typed_attr.TypedAttributeProvider, Generic[_T_SentPack
         Waits for a new packet to arrive from the remote endpoint.
 
         Raises:
-            EOFError: the read end of the stream is closed.
+            ConnectionAbortedError: the read end of the stream is closed.
             StreamProtocolParseError: invalid data received.
 
         Returns:
@@ -272,7 +273,7 @@ class _DataReceiverImpl(Generic[_T_ReceivedPacket]):
             finally:
                 del chunk
 
-        raise EOFError("end-of-stream")
+        raise _utils.error_from_errno(_errno.ECONNABORTED, "{strerror} (end-of-stream)")
 
 
 @dataclasses.dataclass(slots=True)
@@ -309,4 +310,4 @@ class _BufferedReceiverImpl(Generic[_T_ReceivedPacket]):
             except StopIteration:
                 pass
 
-        raise EOFError("end-of-stream")
+        raise _utils.error_from_errno(_errno.ECONNABORTED, "{strerror} (end-of-stream)")

@@ -522,11 +522,8 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         """
         async with self.__receive_lock:
             endpoint = await self.__ensure_connected()
-            try:
-                with self.__convert_socket_error():
-                    return await endpoint.recv_packet()
-            except EOFError:
-                raise self.__abort() from None
+            with self.__convert_socket_error():
+                return await endpoint.recv_packet()
 
     def get_local_address(self) -> SocketAddress:
         """

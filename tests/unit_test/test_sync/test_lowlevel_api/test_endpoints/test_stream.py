@@ -572,7 +572,7 @@ class TestStreamEndpoint(BaseTestWithStreamProtocol):
         mock_stream_transport.recv.side_effect = [b""]
 
         # Act
-        with pytest.raises(EOFError, match=r"^end-of-stream$"):
+        with pytest.raises(ConnectionAbortedError, match=r" \(end-of-stream\)$"):
             _ = endpoint.recv_packet(timeout=recv_timeout)
 
         # Assert
@@ -590,7 +590,7 @@ class TestStreamEndpoint(BaseTestWithStreamProtocol):
         mock_stream_transport.recv_into.side_effect = make_recv_into_side_effect([b""])
 
         # Act
-        with pytest.raises(EOFError, match=r"^end-of-stream$"):
+        with pytest.raises(ConnectionAbortedError, match=r" \(end-of-stream\)$"):
             _ = endpoint.recv_packet(timeout=recv_timeout)
 
         # Assert
@@ -717,13 +717,13 @@ class TestStreamEndpoint(BaseTestWithStreamProtocol):
     ) -> None:
         # Arrange
         mock_stream_transport.recv.side_effect = [b""]
-        with pytest.raises(EOFError, match=r"^end-of-stream$"):
+        with pytest.raises(ConnectionAbortedError, match=r" \(end-of-stream\)$"):
             _ = endpoint.recv_packet(timeout=recv_timeout)
 
         mock_stream_transport.recv.reset_mock()
 
         # Act
-        with pytest.raises(EOFError, match=r"^end-of-stream$"):
+        with pytest.raises(ConnectionAbortedError, match=r" \(end-of-stream\)$"):
             _ = endpoint.recv_packet(timeout=recv_timeout)
 
         # Assert
@@ -739,13 +739,13 @@ class TestStreamEndpoint(BaseTestWithStreamProtocol):
     ) -> None:
         # Arrange
         mock_stream_transport.recv_into.side_effect = make_recv_into_side_effect([b""])
-        with pytest.raises(EOFError, match=r"^end-of-stream$"):
+        with pytest.raises(ConnectionAbortedError, match=r" \(end-of-stream\)$"):
             _ = endpoint.recv_packet(timeout=recv_timeout)
 
         mock_stream_transport.recv_into.reset_mock()
 
         # Act
-        with pytest.raises(EOFError, match=r"^end-of-stream$"):
+        with pytest.raises(ConnectionAbortedError, match=r" \(end-of-stream\)$"):
             _ = endpoint.recv_packet(timeout=recv_timeout)
 
         # Assert
