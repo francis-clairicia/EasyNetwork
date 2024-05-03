@@ -404,11 +404,8 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
             endpoint = self.__endpoint
             if endpoint.is_closed():
                 raise ClientClosedError("Closed client")
-            try:
-                with self.__convert_socket_error():
-                    return endpoint.recv_packet(timeout=timeout)
-            except EOFError:
-                raise self.__abort() from None
+            with self.__convert_socket_error():
+                return endpoint.recv_packet(timeout=timeout)
 
     @contextlib.contextmanager
     def __convert_socket_error(self) -> Iterator[None]:

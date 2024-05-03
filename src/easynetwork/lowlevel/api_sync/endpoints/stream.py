@@ -209,7 +209,7 @@ class StreamEndpoint(typed_attr.TypedAttributeProvider, Generic[_T_SentPacket, _
 
         Raises:
             TimeoutError: the receive operation does not end up after `timeout` seconds.
-            EOFError: the read end of the stream is closed.
+            ConnectionAbortedError: the read end of the stream is closed.
             StreamProtocolParseError: invalid data received.
 
         Returns:
@@ -287,7 +287,7 @@ class _DataReceiverImpl(Generic[_T_ReceivedPacket]):
                 del chunk
         # Loop break
         if self._eof_reached:
-            raise EOFError("end-of-stream")
+            raise _utils.error_from_errno(_errno.ECONNABORTED, "{strerror} (end-of-stream)")
         raise _utils.error_from_errno(_errno.ETIMEDOUT)
 
 
@@ -331,5 +331,5 @@ class _BufferedReceiverImpl(Generic[_T_ReceivedPacket]):
                     break
         # Loop break
         if self._eof_reached:
-            raise EOFError("end-of-stream")
+            raise _utils.error_from_errno(_errno.ECONNABORTED, "{strerror} (end-of-stream)")
         raise _utils.error_from_errno(_errno.ETIMEDOUT)

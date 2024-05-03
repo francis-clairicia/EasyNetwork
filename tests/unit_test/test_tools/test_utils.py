@@ -252,6 +252,36 @@ def test____error_from_errno____returns_OSError(mocker: MockerFixture) -> None:
     mock_strerror.assert_called_once_with(errno)
 
 
+def test____error_from_errno____strerror_fmt(mocker: MockerFixture) -> None:
+    # Arrange
+    errno: int = 123456
+    mock_strerror = mocker.patch("os.strerror", return_value="errno message")
+
+    # Act
+    exception = error_from_errno(errno, msg="{strerror} + custom message")
+
+    # Assert
+    assert isinstance(exception, OSError)
+    assert exception.errno == errno
+    assert exception.strerror == "errno message + custom message"
+    mock_strerror.assert_called_once_with(errno)
+
+
+def test____error_from_errno____custom_message_only(mocker: MockerFixture) -> None:
+    # Arrange
+    errno: int = 123456
+    mock_strerror = mocker.patch("os.strerror", return_value="errno message")
+
+    # Act
+    exception = error_from_errno(errno, msg="custom message")
+
+    # Assert
+    assert isinstance(exception, OSError)
+    assert exception.errno == errno
+    assert exception.strerror == "custom message"
+    mock_strerror.assert_called_once_with(errno)
+
+
 def test____missing_extra_deps____returns_ModuleNotFoundError() -> None:
     # Arrange
 
