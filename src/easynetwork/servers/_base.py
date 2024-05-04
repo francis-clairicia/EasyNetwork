@@ -119,8 +119,8 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer, Generic[_T_AsyncSer
                     if timeout is None:
                         portal.run_coroutine(server.shutdown)
                     else:
-
                         portal.run_coroutine(do_shutdown_with_timeout, server, timeout)
+
                 if timeout is not None:
                     timeout = elapsed.recompute_timeout(timeout)
         self.__is_shutdown.wait(timeout)
