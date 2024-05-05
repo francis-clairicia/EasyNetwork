@@ -50,7 +50,12 @@ Functions
 Socket Lingering
 ----------------
 
+.. autonamedtuple:: socket_linger
+   :members:
+
 .. autofunction:: get_socket_linger_struct
+
+.. autofunction:: get_socket_linger
 
 .. autofunction:: enable_socket_linger
 

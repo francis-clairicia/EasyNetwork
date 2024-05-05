@@ -191,7 +191,8 @@ sections = ["FUTURE", "STDLIB", "EASYNETWORK", "THIRDPARTY", "FIRSTPARTY", "LOCA
 known_easynetwork = ["easynetwork"]
 add_imports = ["from __future__ import annotations"]
 extend_skip = [
-    "docs/source/conf.py"
+    "docs/source/conf.py",
+    "src/easynetwork/version.py",
 ]
 
 [tool.black]

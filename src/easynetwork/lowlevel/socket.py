@@ -29,10 +29,12 @@ __all__ = [
     "_get_tls_extra",
     "disable_socket_linger",
     "enable_socket_linger",
+    "get_socket_linger",
     "get_socket_linger_struct",
     "new_socket_address",
     "set_tcp_keepalive",
     "set_tcp_nodelay",
+    "socket_linger",
 ]
 
 import contextlib
@@ -499,6 +501,18 @@ else:  # Unix/macOS
     _linger_struct = Struct("@ii")
 
 
+class socket_linger(NamedTuple):
+    """
+    The socket linger tuple returned by :func:`get_socket_linger`.
+    """
+
+    enabled: bool
+    """Linger active"""
+
+    timeout: int
+    """How many seconds to linger for (if active)"""
+
+
 def get_socket_linger_struct() -> Struct:
     """
     Returns a :class:`~struct.Struct` representation of the SO_LINGER structure. See :manpage:`socket(7)` for details.
@@ -508,13 +522,44 @@ def get_socket_linger_struct() -> Struct:
     return _linger_struct
 
 
+def get_socket_linger(sock: SupportsSocketOptions) -> socket_linger:
+    """
+    Gets socket linger.
+
+    This is equivalent to::
+
+        linger_struct = get_socket_linger_struct()
+        (enabled, timeout) = linger_struct.unpack(sock.getsockopt(SOL_SOCKET, SO_LINGER, linger_struct.size))
+
+    ``linger_struct`` is determined by the operating system. See :func:`get_socket_linger_struct` for details.
+
+    See the Unix manual page :manpage:`socket(7)` for details.
+
+    Parameters:
+        sock: The socket.
+
+    Note:
+        Modern operating systems disable it by default.
+
+    See Also:
+        :func:`enable_socket_linger`
+
+        :func:`disable_socket_linger`
+    """
+    enabled: int
+    timeout: int
+    enabled, timeout = _linger_struct.unpack(sock.getsockopt(_socket.SOL_SOCKET, _socket.SO_LINGER, _linger_struct.size))
+    return socket_linger(enabled=bool(enabled), timeout=timeout)
+
+
 def enable_socket_linger(sock: SupportsSocketOptions, timeout: int) -> None:
     """
     Enables socket linger.
 
     This is equivalent to::
 
-        sock.setsockopt(SOL_SOCKET, SO_LINGER, linger_struct)
+        linger_struct = get_socket_linger_struct()
+        sock.setsockopt(SOL_SOCKET, SO_LINGER, linger_struct.pack(1, timeout))
 
     ``linger_struct`` is determined by the operating system. See :func:`get_socket_linger_struct` for details.
 
@@ -522,7 +567,7 @@ def enable_socket_linger(sock: SupportsSocketOptions, timeout: int) -> None:
 
     Parameters:
         sock: The socket.
-        timeout: The linger timeout.
+        timeout: How many seconds to linger for.
 
     Note:
         Modern operating systems disable it by default.
@@ -539,7 +584,8 @@ def disable_socket_linger(sock: SupportsSocketOptions) -> None:
 
     This is equivalent to::
 
-        sock.setsockopt(SOL_SOCKET, SO_LINGER, linger_struct)
+        linger_struct = get_socket_linger_struct()
+        sock.setsockopt(SOL_SOCKET, SO_LINGER, linger_struct.pack(0, 0))
 
     ``linger_struct`` is determined by the operating system. See :func:`get_socket_linger_struct` for details.
 

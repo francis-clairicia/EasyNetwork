@@ -12,10 +12,12 @@ from easynetwork.lowlevel.socket import (
     SocketProxy,
     disable_socket_linger,
     enable_socket_linger,
+    get_socket_linger,
     get_socket_linger_struct,
     new_socket_address,
     set_tcp_keepalive,
     set_tcp_nodelay,
+    socket_linger,
 )
 
 import pytest
@@ -295,6 +297,37 @@ def test____set_tcp_keepalive____setsockopt(
 
     # Assert
     mock_tcp_socket.setsockopt.assert_called_once_with(SOL_SOCKET, SO_KEEPALIVE, state)
+
+
+@pytest.mark.parametrize(
+    ["enabled", "timeout"],
+    [
+        pytest.param(False, 0),
+        pytest.param(True, 0),
+        pytest.param(True, 60),
+    ],
+)
+def test____get_socket_linger____getsockopt(
+    mock_tcp_socket: MagicMock,
+    enabled: bool,
+    timeout: int,
+) -> None:
+    # Arrange
+    linger_struct = get_socket_linger_struct()
+    expected_buffer: bytes = linger_struct.pack(enabled, timeout)
+    mock_tcp_socket.getsockopt.return_value = expected_buffer
+
+    # Act
+    linger = get_socket_linger(mock_tcp_socket)
+
+    # Assert
+    mock_tcp_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_LINGER, linger_struct.size)
+    assert isinstance(linger, socket_linger)
+    if enabled:
+        assert linger.enabled is True
+    else:
+        assert linger.enabled is False
+    assert linger.timeout == timeout
 
 
 @pytest.mark.parametrize("timeout", [0, 60])
