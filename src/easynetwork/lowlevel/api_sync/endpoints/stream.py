@@ -29,15 +29,21 @@ import warnings
 from collections.abc import Callable, Mapping
 from typing import Any, Generic, Literal, assert_never
 
-from .... import protocol as protocol_module
 from ...._typevars import _T_ReceivedPacket, _T_SentPacket
 from ....exceptions import UnsupportedOperation
+from ....protocol import StreamProtocol
 from ....warnings import ManualBufferAllocationWarning
 from ... import _stream, _utils
-from ..transports import abc as transports
+from ..transports.abc import (
+    BaseTransport,
+    BufferedStreamReadTransport,
+    StreamReadTransport,
+    StreamTransport,
+    StreamWriteTransport,
+)
 
 
-class StreamReceiverEndpoint(transports.BaseTransport, Generic[_T_ReceivedPacket]):
+class StreamReceiverEndpoint(BaseTransport, Generic[_T_ReceivedPacket]):
     """
     A read-only communication endpoint based on continuous stream data transport.
     """
@@ -49,8 +55,8 @@ class StreamReceiverEndpoint(transports.BaseTransport, Generic[_T_ReceivedPacket
 
     def __init__(
         self,
-        transport: transports.StreamReadTransport,
-        protocol: protocol_module.StreamProtocol[Any, _T_ReceivedPacket],
+        transport: StreamReadTransport,
+        protocol: StreamProtocol[Any, _T_ReceivedPacket],
         max_recv_size: int,
         *,
         manual_buffer_allocation: Literal["try", "no", "force"] = "try",
@@ -75,7 +81,7 @@ class StreamReceiverEndpoint(transports.BaseTransport, Generic[_T_ReceivedPacket
                                                          :exc:`.ManualBufferAllocationWarning`.
         """
 
-        if not isinstance(transport, transports.StreamReadTransport):
+        if not isinstance(transport, StreamReadTransport):
             raise TypeError(f"Expected a StreamReadTransport object, got {transport!r}")
         _check_max_recv_size_value(max_recv_size)
         _check_manual_buffer_allocation_value(manual_buffer_allocation)
@@ -89,7 +95,7 @@ class StreamReceiverEndpoint(transports.BaseTransport, Generic[_T_ReceivedPacket
             manual_buffer_allocation_warning_stacklevel=manual_buffer_allocation_warning_stacklevel,
         )
 
-        self.__transport: transports.StreamReadTransport = transport
+        self.__transport: StreamReadTransport = transport
 
     def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
         try:
@@ -146,11 +152,12 @@ class StreamReceiverEndpoint(transports.BaseTransport, Generic[_T_ReceivedPacket
         return self.__receiver.max_recv_size
 
     @property
+    @_utils.inherit_doc(BaseTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         return self.__transport.extra_attributes
 
 
-class StreamSenderEndpoint(transports.BaseTransport, Generic[_T_SentPacket]):
+class StreamSenderEndpoint(BaseTransport, Generic[_T_SentPacket]):
     """
     A write-only communication endpoint based on continuous stream data transport.
     """
@@ -162,8 +169,8 @@ class StreamSenderEndpoint(transports.BaseTransport, Generic[_T_SentPacket]):
 
     def __init__(
         self,
-        transport: transports.StreamWriteTransport,
-        protocol: protocol_module.StreamProtocol[_T_SentPacket, Any],
+        transport: StreamWriteTransport,
+        protocol: StreamProtocol[_T_SentPacket, Any],
     ) -> None:
         """
         Parameters:
@@ -171,11 +178,11 @@ class StreamSenderEndpoint(transports.BaseTransport, Generic[_T_SentPacket]):
             protocol: The :term:`protocol object` to use.
         """
 
-        if not isinstance(transport, transports.StreamWriteTransport):
+        if not isinstance(transport, StreamWriteTransport):
             raise TypeError(f"Expected a StreamWriteTransport object, got {transport!r}")
 
         self.__sender: _DataSenderImpl[_T_SentPacket] = _DataSenderImpl(transport, _stream.StreamDataProducer(protocol))
-        self.__transport: transports.StreamReadTransport | transports.StreamWriteTransport = transport
+        self.__transport: StreamReadTransport | StreamWriteTransport = transport
 
     def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
         try:
@@ -229,11 +236,12 @@ class StreamSenderEndpoint(transports.BaseTransport, Generic[_T_SentPacket]):
         return sender.send(packet, timeout)
 
     @property
+    @_utils.inherit_doc(BaseTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         return self.__transport.extra_attributes
 
 
-class StreamEndpoint(transports.BaseTransport, Generic[_T_SentPacket, _T_ReceivedPacket]):
+class StreamEndpoint(BaseTransport, Generic[_T_SentPacket, _T_ReceivedPacket]):
     """
     A full-duplex communication endpoint based on continuous stream data transport.
     """
@@ -247,8 +255,8 @@ class StreamEndpoint(transports.BaseTransport, Generic[_T_SentPacket, _T_Receive
 
     def __init__(
         self,
-        transport: transports.StreamTransport,
-        protocol: protocol_module.StreamProtocol[_T_SentPacket, _T_ReceivedPacket],
+        transport: StreamTransport,
+        protocol: StreamProtocol[_T_SentPacket, _T_ReceivedPacket],
         max_recv_size: int,
         *,
         manual_buffer_allocation: Literal["try", "no", "force"] = "try",
@@ -273,7 +281,7 @@ class StreamEndpoint(transports.BaseTransport, Generic[_T_SentPacket, _T_Receive
                                                          :exc:`.ManualBufferAllocationWarning`.
         """
 
-        if not isinstance(transport, transports.StreamTransport):
+        if not isinstance(transport, StreamTransport):
             raise TypeError(f"Expected a StreamTransport object, got {transport!r}")
         _check_max_recv_size_value(max_recv_size)
         _check_manual_buffer_allocation_value(manual_buffer_allocation)
@@ -288,7 +296,7 @@ class StreamEndpoint(transports.BaseTransport, Generic[_T_SentPacket, _T_Receive
             manual_buffer_allocation_warning_stacklevel=manual_buffer_allocation_warning_stacklevel,
         )
 
-        self.__transport: transports.StreamTransport = transport
+        self.__transport: StreamTransport = transport
         self.__eof_sent: bool = False
 
     def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
@@ -392,13 +400,14 @@ class StreamEndpoint(transports.BaseTransport, Generic[_T_SentPacket, _T_Receive
         return self.__receiver.max_recv_size
 
     @property
+    @_utils.inherit_doc(BaseTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         return self.__transport.extra_attributes
 
 
 @dataclasses.dataclass(slots=True)
 class _DataSenderImpl(Generic[_T_SentPacket]):
-    transport: transports.StreamWriteTransport
+    transport: StreamWriteTransport
     producer: _stream.StreamDataProducer[_T_SentPacket]
 
     def send(self, packet: _T_SentPacket, timeout: float) -> None:
@@ -407,7 +416,7 @@ class _DataSenderImpl(Generic[_T_SentPacket]):
 
 @dataclasses.dataclass(slots=True)
 class _DataReceiverImpl(Generic[_T_ReceivedPacket]):
-    transport: transports.StreamReadTransport
+    transport: StreamReadTransport
     consumer: _stream.StreamDataConsumer[_T_ReceivedPacket]
     max_recv_size: int
     _eof_reached: bool = dataclasses.field(init=False, default=False)
@@ -448,7 +457,7 @@ class _DataReceiverImpl(Generic[_T_ReceivedPacket]):
 
 @dataclasses.dataclass(slots=True)
 class _BufferedReceiverImpl(Generic[_T_ReceivedPacket]):
-    transport: transports.BufferedStreamReadTransport
+    transport: BufferedStreamReadTransport
     consumer: _stream.BufferedStreamDataConsumer[_T_ReceivedPacket]
     _eof_reached: bool = dataclasses.field(init=False, default=False)
 
@@ -491,8 +500,8 @@ class _BufferedReceiverImpl(Generic[_T_ReceivedPacket]):
 
 
 def _get_receiver(
-    transport: transports.StreamReadTransport,
-    protocol: protocol_module.StreamProtocol[Any, _T_ReceivedPacket],
+    transport: StreamReadTransport,
+    protocol: StreamProtocol[Any, _T_ReceivedPacket],
     *,
     max_recv_size: int,
     manual_buffer_allocation: Literal["try", "no", "force"],
@@ -505,7 +514,7 @@ def _get_receiver(
         case "try" | "force":
             try:
                 buffered_consumer = _stream.BufferedStreamDataConsumer(protocol, max_recv_size)
-                if not isinstance(transport, transports.BufferedStreamReadTransport):
+                if not isinstance(transport, BufferedStreamReadTransport):
                     msg = f"The transport implementation {transport!r} does not implement BufferedStreamReadTransport interface"
                     if manual_buffer_allocation == "try":
                         warnings.warn(

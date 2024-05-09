@@ -53,7 +53,7 @@ from ..protocol import StreamProtocol
 from .abc import AbstractAsyncNetworkClient
 
 if TYPE_CHECKING:
-    import ssl as _typing_ssl
+    from ssl import SSLContext
 
 
 @dataclasses.dataclass(kw_only=True, slots=True)
@@ -96,7 +96,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         *,
         local_address: tuple[str, int] | None = ...,
         happy_eyeballs_delay: float | None = ...,
-        ssl: _typing_ssl.SSLContext | bool | None = ...,
+        ssl: SSLContext | bool | None = ...,
         server_hostname: str | None = ...,
         ssl_handshake_timeout: float | None = ...,
         ssl_shutdown_timeout: float | None = ...,
@@ -114,7 +114,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         protocol: StreamProtocol[_T_SentPacket, _T_ReceivedPacket],
         backend: AsyncBackend | BuiltinAsyncBackendToken | None = ...,
         *,
-        ssl: _typing_ssl.SSLContext | bool | None = ...,
+        ssl: SSLContext | bool | None = ...,
         server_hostname: str | None = ...,
         ssl_handshake_timeout: float | None = ...,
         ssl_shutdown_timeout: float | None = ...,
@@ -131,7 +131,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         protocol: StreamProtocol[_T_SentPacket, _T_ReceivedPacket],
         backend: AsyncBackend | BuiltinAsyncBackendToken | None = None,
         *,
-        ssl: _typing_ssl.SSLContext | bool | None = None,
+        ssl: SSLContext | bool | None = None,
         server_hostname: str | None = None,
         ssl_handshake_timeout: float | None = None,
         ssl_shutdown_timeout: float | None = None,
@@ -302,7 +302,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         backend: AsyncBackend,
         host: str,
         port: int,
-        ssl_context: _typing_ssl.SSLContext,
+        ssl_context: SSLContext,
         *,
         server_hostname: str | None,
         ssl_handshake_timeout: float | None,
@@ -334,7 +334,7 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
     async def __wrap_ssl_over_stream_socket_client_side(
         backend: AsyncBackend,
         socket: _socket.socket,
-        ssl_context: _typing_ssl.SSLContext,
+        ssl_context: SSLContext,
         *,
         server_hostname: str,
         ssl_handshake_timeout: float | None,

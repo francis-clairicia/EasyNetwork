@@ -8,14 +8,14 @@ from __future__ import annotations
 
 import os.path
 import sys
-from importlib.metadata import version as get_version
+from importlib.metadata import version as _get_distribution_version
 
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 project = "EasyNetwork"
 copyright = "2024, Francis Clairicia-Rose-Claire-Josephine"
 author = "FrankySnow9"
-release = get_version("easynetwork")
+release = _get_distribution_version("easynetwork")
 version = ".".join(release.split(".")[:3])
 
 # -- General configuration ---------------------------------------------------
@@ -66,7 +66,8 @@ rst_prolog = """
 # -- sphinx.ext.autodoc configuration ----------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/extensions/autodoc.html
 
-autoclass_content = "both"
+autoclass_content = "class"
+autodoc_class_signature = "separated"
 autodoc_member_order = "bysource"
 autodoc_default_options = {
     "undoc-members": None,
@@ -75,22 +76,25 @@ autodoc_default_options = {
     "show-inheritance": None,
 }
 autodoc_preserve_defaults = True
-autodoc_typehints = "description"
+autodoc_typehints = "both"
 autodoc_typehints_description_target = "documented_params"
 autodoc_type_aliases = {
-    "_typing_bz2.BZ2Compressor": "bz2.BZ2Compressor",
-    "_typing_bz2.BZ2Decompressor": "bz2.BZ2Decompressor",
-    "_typing_zlib._Compress": "zlib.Compress",
-    "_typing_zlib._Decompress": "zlib.Decompress",
-    "_typing_pickle.Pickler": "pickle.Pickler",
-    "_typing_pickle.Unpickler": "pickle.Unpickler",
-    "_typing_struct.Struct": "struct.Struct",
-    "_typing_ssl.SSLContext": "ssl.SSLContext",
     "_socket._RetAddress": "typing.Any",
     "_socket.socket": "socket.socket",
+    "BZ2Compressor": "bz2.BZ2Compressor",
+    "BZ2Decompressor": "bz2.BZ2Decompressor",
     "contextvars.Context": "contextvars.Context",
+    "MemoryBIO": "ssl.MemoryBIO",
+    "Pickler": "pickle.Pickler",
     "ReadableBuffer": "bytes | bytearray | memoryview",
+    "SSLContext": "ssl.SSLContext",
+    "SSLSession": "ssl.SSLSession",
+    "SSLSocket": "ssl.SSLSocket",
+    "Struct": "struct.Struct",
+    "Unpickler": "pickle.Unpickler",
     "WriteableBuffer": "bytearray | memoryview",
+    "ZLibCompress": "zlib.Compress",
+    "ZLibDecompress": "zlib.Decompress",
 }
 autodoc_inherit_docstrings = False
 autodoc_mock_imports = [
@@ -148,6 +152,7 @@ html_static_path = [
 ]
 html_css_files = [
     "css/details.css",
+    "css/rtfd.css",
 ]
 
 # -- sphinx-rtd-theme configuration ------------------------------------------
@@ -156,3 +161,13 @@ html_css_files = [
 html_theme_options = {
     "navigation_depth": -1,  # Unlimited
 }
+
+
+# -----------------------------------------------------------------------------
+
+
+def setup(app) -> None:
+    import warnings
+    from sphinx import RemovedInNextVersionWarning
+
+    warnings.filterwarnings("ignore", category=RemovedInNextVersionWarning, module="sphinx_toolbox.more_autodoc.autoprotocol")

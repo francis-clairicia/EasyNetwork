@@ -49,7 +49,7 @@ from .handlers import AsyncStreamClient, AsyncStreamRequestHandler, INETClientAt
 from .misc import build_lowlevel_stream_server_handler
 
 if TYPE_CHECKING:
-    import ssl as _typing_ssl
+    from ssl import SSLContext
 
 
 class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_Response]):
@@ -82,7 +82,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
         request_handler: AsyncStreamRequestHandler[_T_Request, _T_Response],
         backend: AsyncBackend | BuiltinAsyncBackendToken | None = None,
         *,
-        ssl: _typing_ssl.SSLContext | None = None,
+        ssl: SSLContext | None = None,
         ssl_handshake_timeout: float | None = None,
         ssl_shutdown_timeout: float | None = None,
         ssl_standard_compatible: bool | None = None,
@@ -222,7 +222,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
         host: str | Sequence[str] | None,
         port: int,
         backlog: int,
-        ssl_context: _typing_ssl.SSLContext,
+        ssl_context: SSLContext,
         *,
         ssl_handshake_timeout: float | None,
         ssl_shutdown_timeout: float | None,
@@ -399,7 +399,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
     @contextlib.asynccontextmanager
     async def __client_initializer(
         self,
-        lowlevel_client: _stream_server.AsyncStreamClient[_T_Response],
+        lowlevel_client: _stream_server.Client[_T_Response],
     ) -> AsyncIterator[AsyncStreamClient[_T_Response] | None]:
         async with contextlib.AsyncExitStack() as client_exit_stack:
             self.__attach_server()
@@ -422,7 +422,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
             client_exit_stack.callback(self.__set_socket_linger_if_not_closed, lowlevel_client.extra(INETSocketAttribute.socket))
 
             logger: logging.Logger = self.__logger
-            client = _ConnectedClientAPI(self.__backend, client_address, lowlevel_client)
+            client = _ConnectedClientAPI(client_address, lowlevel_client)
 
             del lowlevel_client
 
@@ -516,13 +516,12 @@ class _ConnectedClientAPI(AsyncStreamClient[_T_Response]):
 
     def __init__(
         self,
-        backend: AsyncBackend,
         address: SocketAddress,
-        client: _stream_server.AsyncStreamClient[_T_Response],
+        client: _stream_server.Client[_T_Response],
     ) -> None:
-        self.__client: _stream_server.AsyncStreamClient[_T_Response] = client
+        self.__client: _stream_server.Client[_T_Response] = client
         self.__closing: bool = False
-        self.__send_lock = backend.create_lock()
+        self.__send_lock = client.backend().create_lock()
         self.__proxy: SocketProxy = SocketProxy(client.extra(INETSocketAttribute.socket))
         self.__address: SocketAddress = address
         self.__extra_attributes_cache: Mapping[Any, Callable[[], Any]] | None = None

@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, Literal, NoReturn
 
 from easynetwork.exceptions import UnsupportedOperation
 from easynetwork.lowlevel._stream import StreamDataProducer
-from easynetwork.lowlevel.api_async.servers.stream import AsyncStreamClient, AsyncStreamServer
+from easynetwork.lowlevel.api_async.servers.stream import AsyncStreamServer, Client
 from easynetwork.lowlevel.api_async.transports.abc import (
     AsyncBufferedStreamReadTransport,
     AsyncListener,
@@ -61,13 +61,13 @@ class TestAsyncStreamClient(BaseTestWithStreamProtocol):
         mock_stream_transport: MagicMock,
         mock_stream_protocol: MagicMock,
         client_exit_stack: contextlib.AsyncExitStack,
-    ) -> AsyncStreamClient[Any]:
-        return AsyncStreamClient(mock_stream_transport, StreamDataProducer(mock_stream_protocol), client_exit_stack)
+    ) -> Client[Any]:
+        return Client(mock_stream_transport, StreamDataProducer(mock_stream_protocol), client_exit_stack)
 
     @pytest.mark.parametrize("transport_closed", [False, True])
     async def test____is_closing____default(
         self,
-        client: AsyncStreamClient[Any],
+        client: Client[Any],
         mock_stream_transport: MagicMock,
         transport_closed: bool,
     ) -> None:
@@ -84,7 +84,7 @@ class TestAsyncStreamClient(BaseTestWithStreamProtocol):
 
     async def test____aclose____default(
         self,
-        client: AsyncStreamClient[Any],
+        client: Client[Any],
         mock_stream_transport: MagicMock,
         client_exit_stack: contextlib.AsyncExitStack,
         mocker: MockerFixture,
@@ -103,7 +103,7 @@ class TestAsyncStreamClient(BaseTestWithStreamProtocol):
 
     async def test____extra_attributes____default(
         self,
-        client: AsyncStreamClient[Any],
+        client: Client[Any],
         mock_stream_transport: MagicMock,
         mocker: MockerFixture,
     ) -> None:
@@ -118,7 +118,7 @@ class TestAsyncStreamClient(BaseTestWithStreamProtocol):
 
     async def test____send_packet____send_bytes_to_transport(
         self,
-        client: AsyncStreamClient[Any],
+        client: Client[Any],
         mock_stream_transport: MagicMock,
         mock_stream_protocol: MagicMock,
         mocker: MockerFixture,

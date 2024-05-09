@@ -1,0 +1,4 @@
+/* Force content to use more spaces than default (800px) */
+.wy-nav-content {
+    max-width: 1345px;
+}

@@ -102,6 +102,24 @@ class SelectorBaseTransport(transports.BaseTransport):
         callback: Callable[[], _T_Return],
         timeout: float,
     ) -> tuple[_T_Return, float]:
+        """
+        Calls `callback` without argument and returns the output.
+
+        If the callable raises :class:`WouldBlockOnRead` or :class:`WouldBlockOnWrite`, waits for ``fileno`` to be
+        available for reading or writing respectively, and retries to call the callback.
+
+        Parameters:
+            callback: the function to call.
+            timeout: the maximum amount of seconds to wait for the file descriptor to be available.
+
+        Raises:
+            TimeoutError: timed out
+
+        Returns:
+            a tuple with the result of the callback and the timeout which is deduced from the waited time.
+
+        :meta public:
+        """
         timeout = _utils.validate_timeout_delay(timeout, positive_check=True)
         retry_interval = self._retry_interval
         event: int
@@ -298,7 +316,6 @@ class SelectorDatagramWriteTransport(SelectorBaseTransport, transports.DatagramW
 
         Parameters:
             data: the bytes to send.
-            timeout: the allowed time (in seconds) for blocking operations. Can be set to :data:`math.inf`.
 
         Raises:
             WouldBlockOnRead: the operation would block when reading the pipe.

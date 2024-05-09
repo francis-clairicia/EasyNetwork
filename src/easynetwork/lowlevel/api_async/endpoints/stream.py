@@ -28,16 +28,22 @@ import warnings
 from collections.abc import Callable, Mapping
 from typing import Any, Generic, Literal, assert_never
 
-from .... import protocol as protocol_module
 from ...._typevars import _T_ReceivedPacket, _T_SentPacket
 from ....exceptions import UnsupportedOperation
+from ....protocol import StreamProtocol
 from ....warnings import ManualBufferAllocationWarning
 from ... import _stream, _utils
 from ..backend.abc import AsyncBackend
-from ..transports import abc as transports
+from ..transports.abc import (
+    AsyncBaseTransport,
+    AsyncBufferedStreamReadTransport,
+    AsyncStreamReadTransport,
+    AsyncStreamTransport,
+    AsyncStreamWriteTransport,
+)
 
 
-class AsyncStreamReceiverEndpoint(transports.AsyncBaseTransport, Generic[_T_ReceivedPacket]):
+class AsyncStreamReceiverEndpoint(AsyncBaseTransport, Generic[_T_ReceivedPacket]):
     """
     A read-only communication endpoint based on continuous stream data transport.
     """
@@ -50,8 +56,8 @@ class AsyncStreamReceiverEndpoint(transports.AsyncBaseTransport, Generic[_T_Rece
 
     def __init__(
         self,
-        transport: transports.AsyncStreamReadTransport,
-        protocol: protocol_module.StreamProtocol[Any, _T_ReceivedPacket],
+        transport: AsyncStreamReadTransport,
+        protocol: StreamProtocol[Any, _T_ReceivedPacket],
         max_recv_size: int,
         *,
         manual_buffer_allocation: Literal["try", "no", "force"] = "try",
@@ -76,7 +82,7 @@ class AsyncStreamReceiverEndpoint(transports.AsyncBaseTransport, Generic[_T_Rece
                                                          :exc:`.ManualBufferAllocationWarning`.
         """
 
-        if not isinstance(transport, transports.AsyncStreamReadTransport):
+        if not isinstance(transport, AsyncStreamReadTransport):
             raise TypeError(f"Expected an AsyncStreamReadTransport object, got {transport!r}")
         _check_max_recv_size_value(max_recv_size)
         _check_manual_buffer_allocation_value(manual_buffer_allocation)
@@ -90,7 +96,7 @@ class AsyncStreamReceiverEndpoint(transports.AsyncBaseTransport, Generic[_T_Rece
             manual_buffer_allocation_warning_stacklevel=manual_buffer_allocation_warning_stacklevel,
         )
 
-        self.__transport: transports.AsyncStreamReadTransport = transport
+        self.__transport: AsyncStreamReadTransport = transport
         self.__recv_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently receving data on this endpoint")
 
     def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
@@ -134,7 +140,7 @@ class AsyncStreamReceiverEndpoint(transports.AsyncBaseTransport, Generic[_T_Rece
 
             return await receiver.receive()
 
-    @_utils.inherit_doc(transports.AsyncBaseTransport)
+    @_utils.inherit_doc(AsyncBaseTransport)
     def backend(self) -> AsyncBackend:
         return self.__transport.backend()
 
@@ -144,11 +150,12 @@ class AsyncStreamReceiverEndpoint(transports.AsyncBaseTransport, Generic[_T_Rece
         return self.__receiver.max_recv_size
 
     @property
+    @_utils.inherit_doc(AsyncBaseTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         return self.__transport.extra_attributes
 
 
-class AsyncStreamSenderEndpoint(transports.AsyncBaseTransport, Generic[_T_SentPacket]):
+class AsyncStreamSenderEndpoint(AsyncBaseTransport, Generic[_T_SentPacket]):
     """
     A write-only communication endpoint based on continuous stream data transport.
     """
@@ -161,8 +168,8 @@ class AsyncStreamSenderEndpoint(transports.AsyncBaseTransport, Generic[_T_SentPa
 
     def __init__(
         self,
-        transport: transports.AsyncStreamWriteTransport,
-        protocol: protocol_module.StreamProtocol[_T_SentPacket, Any],
+        transport: AsyncStreamWriteTransport,
+        protocol: StreamProtocol[_T_SentPacket, Any],
     ) -> None:
         """
         Parameters:
@@ -170,12 +177,12 @@ class AsyncStreamSenderEndpoint(transports.AsyncBaseTransport, Generic[_T_SentPa
             protocol: The :term:`protocol object` to use.
         """
 
-        if not isinstance(transport, transports.AsyncStreamWriteTransport):
+        if not isinstance(transport, AsyncStreamWriteTransport):
             raise TypeError(f"Expected an AsyncStreamWriteTransport object, got {transport!r}")
 
         self.__sender: _DataSenderImpl[_T_SentPacket] = _DataSenderImpl(transport, _stream.StreamDataProducer(protocol))
 
-        self.__transport: transports.AsyncStreamWriteTransport = transport
+        self.__transport: AsyncStreamWriteTransport = transport
         self.__send_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently sending data on this endpoint")
 
     def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
@@ -218,16 +225,17 @@ class AsyncStreamSenderEndpoint(transports.AsyncBaseTransport, Generic[_T_SentPa
 
             return await sender.send(packet)
 
-    @_utils.inherit_doc(transports.AsyncBaseTransport)
+    @_utils.inherit_doc(AsyncBaseTransport)
     def backend(self) -> AsyncBackend:
         return self.__transport.backend()
 
     @property
+    @_utils.inherit_doc(AsyncBaseTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         return self.__transport.extra_attributes
 
 
-class AsyncStreamEndpoint(transports.AsyncBaseTransport, Generic[_T_SentPacket, _T_ReceivedPacket]):
+class AsyncStreamEndpoint(AsyncBaseTransport, Generic[_T_SentPacket, _T_ReceivedPacket]):
     """
     A full-duplex communication endpoint based on continuous stream data transport.
     """
@@ -243,8 +251,8 @@ class AsyncStreamEndpoint(transports.AsyncBaseTransport, Generic[_T_SentPacket, 
 
     def __init__(
         self,
-        transport: transports.AsyncStreamTransport,
-        protocol: protocol_module.StreamProtocol[_T_SentPacket, _T_ReceivedPacket],
+        transport: AsyncStreamTransport,
+        protocol: StreamProtocol[_T_SentPacket, _T_ReceivedPacket],
         max_recv_size: int,
         *,
         manual_buffer_allocation: Literal["try", "no", "force"] = "try",
@@ -269,7 +277,7 @@ class AsyncStreamEndpoint(transports.AsyncBaseTransport, Generic[_T_SentPacket, 
                                                          :exc:`.ManualBufferAllocationWarning`.
         """
 
-        if not isinstance(transport, transports.AsyncStreamTransport):
+        if not isinstance(transport, AsyncStreamTransport):
             raise TypeError(f"Expected an AsyncStreamTransport object, got {transport!r}")
         _check_max_recv_size_value(max_recv_size)
         _check_manual_buffer_allocation_value(manual_buffer_allocation)
@@ -284,7 +292,7 @@ class AsyncStreamEndpoint(transports.AsyncBaseTransport, Generic[_T_SentPacket, 
             manual_buffer_allocation_warning_stacklevel=manual_buffer_allocation_warning_stacklevel,
         )
 
-        self.__transport: transports.AsyncStreamTransport = transport
+        self.__transport: AsyncStreamTransport = transport
         self.__send_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently sending data on this endpoint")
         self.__recv_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently receving data on this endpoint")
         self.__eof_sent: bool = False
@@ -369,7 +377,7 @@ class AsyncStreamEndpoint(transports.AsyncBaseTransport, Generic[_T_SentPacket, 
 
             return await receiver.receive()
 
-    @_utils.inherit_doc(transports.AsyncBaseTransport)
+    @_utils.inherit_doc(AsyncBaseTransport)
     def backend(self) -> AsyncBackend:
         return self.__transport.backend()
 
@@ -379,13 +387,14 @@ class AsyncStreamEndpoint(transports.AsyncBaseTransport, Generic[_T_SentPacket, 
         return self.__receiver.max_recv_size
 
     @property
+    @_utils.inherit_doc(AsyncBaseTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         return self.__transport.extra_attributes
 
 
 @dataclasses.dataclass(slots=True)
 class _DataSenderImpl(Generic[_T_SentPacket]):
-    transport: transports.AsyncStreamWriteTransport
+    transport: AsyncStreamWriteTransport
     producer: _stream.StreamDataProducer[_T_SentPacket]
 
     async def send(self, packet: _T_SentPacket) -> None:
@@ -394,7 +403,7 @@ class _DataSenderImpl(Generic[_T_SentPacket]):
 
 @dataclasses.dataclass(slots=True)
 class _DataReceiverImpl(Generic[_T_ReceivedPacket]):
-    transport: transports.AsyncStreamReadTransport
+    transport: AsyncStreamReadTransport
     consumer: _stream.StreamDataConsumer[_T_ReceivedPacket]
     max_recv_size: int
     _eof_reached: bool = dataclasses.field(init=False, default=False)
@@ -429,7 +438,7 @@ class _DataReceiverImpl(Generic[_T_ReceivedPacket]):
 
 @dataclasses.dataclass(slots=True)
 class _BufferedReceiverImpl(Generic[_T_ReceivedPacket]):
-    transport: transports.AsyncBufferedStreamReadTransport
+    transport: AsyncBufferedStreamReadTransport
     consumer: _stream.BufferedStreamDataConsumer[_T_ReceivedPacket]
     _eof_reached: bool = dataclasses.field(init=False, default=False)
 
@@ -465,8 +474,8 @@ class _BufferedReceiverImpl(Generic[_T_ReceivedPacket]):
 
 
 def _get_receiver(
-    transport: transports.AsyncStreamReadTransport,
-    protocol: protocol_module.StreamProtocol[Any, _T_ReceivedPacket],
+    transport: AsyncStreamReadTransport,
+    protocol: StreamProtocol[Any, _T_ReceivedPacket],
     *,
     max_recv_size: int,
     manual_buffer_allocation: Literal["try", "no", "force"],
@@ -479,7 +488,7 @@ def _get_receiver(
         case "try" | "force":
             try:
                 buffered_consumer = _stream.BufferedStreamDataConsumer(protocol, max_recv_size)
-                if not isinstance(transport, transports.AsyncBufferedStreamReadTransport):
+                if not isinstance(transport, AsyncBufferedStreamReadTransport):
                     msg = f"The transport implementation {transport!r} does not implement AsyncBufferedStreamReadTransport interface"
                     if manual_buffer_allocation == "try":
                         warnings.warn(

@@ -27,15 +27,15 @@ import warnings
 from collections.abc import Callable, Mapping
 from typing import Any, Generic
 
-from .... import protocol as protocol_module
 from ...._typevars import _T_ReceivedPacket, _T_SentPacket
 from ....exceptions import DatagramProtocolParseError
+from ....protocol import DatagramProtocol
 from ... import _utils
 from ..backend.abc import AsyncBackend
-from ..transports import abc as transports
+from ..transports.abc import AsyncBaseTransport, AsyncDatagramReadTransport, AsyncDatagramTransport, AsyncDatagramWriteTransport
 
 
-class AsyncDatagramReceiverEndpoint(transports.AsyncBaseTransport, Generic[_T_ReceivedPacket]):
+class AsyncDatagramReceiverEndpoint(AsyncBaseTransport, Generic[_T_ReceivedPacket]):
     """
     A read-only communication endpoint based on unreliable packets of data.
     """
@@ -48,8 +48,8 @@ class AsyncDatagramReceiverEndpoint(transports.AsyncBaseTransport, Generic[_T_Re
 
     def __init__(
         self,
-        transport: transports.AsyncDatagramReadTransport,
-        protocol: protocol_module.DatagramProtocol[Any, _T_ReceivedPacket],
+        transport: AsyncDatagramReadTransport,
+        protocol: DatagramProtocol[Any, _T_ReceivedPacket],
     ) -> None:
         """
         Parameters:
@@ -57,14 +57,14 @@ class AsyncDatagramReceiverEndpoint(transports.AsyncBaseTransport, Generic[_T_Re
             protocol: The :term:`protocol object` to use.
         """
 
-        if not isinstance(transport, transports.AsyncDatagramReadTransport):
+        if not isinstance(transport, AsyncDatagramReadTransport):
             raise TypeError(f"Expected an AsyncDatagramReadTransport object, got {transport!r}")
-        if not isinstance(protocol, protocol_module.DatagramProtocol):
+        if not isinstance(protocol, DatagramProtocol):
             raise TypeError(f"Expected a DatagramProtocol object, got {protocol!r}")
 
         self.__receiver: _DataReceiverImpl[_T_ReceivedPacket] = _DataReceiverImpl(transport, protocol)
 
-        self.__transport: transports.AsyncDatagramReadTransport = transport
+        self.__transport: AsyncDatagramReadTransport = transport
         self.__recv_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently receving data on this endpoint")
 
     def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
@@ -106,16 +106,17 @@ class AsyncDatagramReceiverEndpoint(transports.AsyncBaseTransport, Generic[_T_Re
 
             return await receiver.receive()
 
-    @_utils.inherit_doc(transports.AsyncBaseTransport)
+    @_utils.inherit_doc(AsyncBaseTransport)
     def backend(self) -> AsyncBackend:
         return self.__transport.backend()
 
     @property
+    @_utils.inherit_doc(AsyncBaseTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         return self.__transport.extra_attributes
 
 
-class AsyncDatagramSenderEndpoint(transports.AsyncBaseTransport, Generic[_T_SentPacket]):
+class AsyncDatagramSenderEndpoint(AsyncBaseTransport, Generic[_T_SentPacket]):
     """
     A write-only communication endpoint based on unreliable packets of data.
     """
@@ -128,8 +129,8 @@ class AsyncDatagramSenderEndpoint(transports.AsyncBaseTransport, Generic[_T_Sent
 
     def __init__(
         self,
-        transport: transports.AsyncDatagramWriteTransport,
-        protocol: protocol_module.DatagramProtocol[_T_SentPacket, Any],
+        transport: AsyncDatagramWriteTransport,
+        protocol: DatagramProtocol[_T_SentPacket, Any],
     ) -> None:
         """
         Parameters:
@@ -137,14 +138,14 @@ class AsyncDatagramSenderEndpoint(transports.AsyncBaseTransport, Generic[_T_Sent
             protocol: The :term:`protocol object` to use.
         """
 
-        if not isinstance(transport, transports.AsyncDatagramWriteTransport):
+        if not isinstance(transport, AsyncDatagramWriteTransport):
             raise TypeError(f"Expected an AsyncDatagramWriteTransport object, got {transport!r}")
-        if not isinstance(protocol, protocol_module.DatagramProtocol):
+        if not isinstance(protocol, DatagramProtocol):
             raise TypeError(f"Expected a DatagramProtocol object, got {protocol!r}")
 
         self.__sender: _DataSenderImpl[_T_SentPacket] = _DataSenderImpl(transport, protocol)
 
-        self.__transport: transports.AsyncDatagramWriteTransport = transport
+        self.__transport: AsyncDatagramWriteTransport = transport
         self.__send_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently sending data on this endpoint")
 
     def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
@@ -186,16 +187,17 @@ class AsyncDatagramSenderEndpoint(transports.AsyncBaseTransport, Generic[_T_Sent
 
             await sender.send(packet)
 
-    @_utils.inherit_doc(transports.AsyncBaseTransport)
+    @_utils.inherit_doc(AsyncBaseTransport)
     def backend(self) -> AsyncBackend:
         return self.__transport.backend()
 
     @property
+    @_utils.inherit_doc(AsyncBaseTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         return self.__transport.extra_attributes
 
 
-class AsyncDatagramEndpoint(transports.AsyncBaseTransport, Generic[_T_SentPacket, _T_ReceivedPacket]):
+class AsyncDatagramEndpoint(AsyncBaseTransport, Generic[_T_SentPacket, _T_ReceivedPacket]):
     """
     A full-duplex communication endpoint based on unreliable packets of data.
     """
@@ -210,8 +212,8 @@ class AsyncDatagramEndpoint(transports.AsyncBaseTransport, Generic[_T_SentPacket
 
     def __init__(
         self,
-        transport: transports.AsyncDatagramTransport,
-        protocol: protocol_module.DatagramProtocol[_T_SentPacket, _T_ReceivedPacket],
+        transport: AsyncDatagramTransport,
+        protocol: DatagramProtocol[_T_SentPacket, _T_ReceivedPacket],
     ) -> None:
         """
         Parameters:
@@ -219,15 +221,15 @@ class AsyncDatagramEndpoint(transports.AsyncBaseTransport, Generic[_T_SentPacket
             protocol: The :term:`protocol object` to use.
         """
 
-        if not isinstance(transport, transports.AsyncDatagramTransport):
+        if not isinstance(transport, AsyncDatagramTransport):
             raise TypeError(f"Expected an AsyncDatagramTransport object, got {transport!r}")
-        if not isinstance(protocol, protocol_module.DatagramProtocol):
+        if not isinstance(protocol, DatagramProtocol):
             raise TypeError(f"Expected a DatagramProtocol object, got {protocol!r}")
 
         self.__sender: _DataSenderImpl[_T_SentPacket] = _DataSenderImpl(transport, protocol)
         self.__receiver: _DataReceiverImpl[_T_ReceivedPacket] = _DataReceiverImpl(transport, protocol)
 
-        self.__transport: transports.AsyncDatagramTransport = transport
+        self.__transport: AsyncDatagramTransport = transport
         self.__send_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently sending data on this endpoint")
         self.__recv_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently receving data on this endpoint")
 
@@ -285,19 +287,20 @@ class AsyncDatagramEndpoint(transports.AsyncBaseTransport, Generic[_T_SentPacket
 
             return await receiver.receive()
 
-    @_utils.inherit_doc(transports.AsyncBaseTransport)
+    @_utils.inherit_doc(AsyncBaseTransport)
     def backend(self) -> AsyncBackend:
         return self.__transport.backend()
 
     @property
+    @_utils.inherit_doc(AsyncBaseTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         return self.__transport.extra_attributes
 
 
 @dataclasses.dataclass(slots=True)
 class _DataSenderImpl(Generic[_T_SentPacket]):
-    transport: transports.AsyncDatagramWriteTransport
-    protocol: protocol_module.DatagramProtocol[_T_SentPacket, Any]
+    transport: AsyncDatagramWriteTransport
+    protocol: DatagramProtocol[_T_SentPacket, Any]
 
     async def send(self, packet: _T_SentPacket) -> None:
         try:
@@ -312,8 +315,8 @@ class _DataSenderImpl(Generic[_T_SentPacket]):
 
 @dataclasses.dataclass(slots=True)
 class _DataReceiverImpl(Generic[_T_ReceivedPacket]):
-    transport: transports.AsyncDatagramReadTransport
-    protocol: protocol_module.DatagramProtocol[Any, _T_ReceivedPacket]
+    transport: AsyncDatagramReadTransport
+    protocol: DatagramProtocol[Any, _T_ReceivedPacket]
 
     async def receive(self) -> _T_ReceivedPacket:
         datagram = await self.transport.recv()

@@ -38,11 +38,11 @@ else:
 from ....exceptions import UnsupportedOperation
 from ... import _utils, constants, socket as socket_tools
 from ..backend.abc import AsyncBackend, TaskGroup
-from . import abc as transports
+from .abc import AsyncBufferedStreamReadTransport, AsyncListener, AsyncStreamReadTransport, AsyncStreamTransport
 from .utils import aclose_forcefully
 
 if TYPE_CHECKING:
-    import ssl as _typing_ssl
+    from ssl import MemoryBIO, SSLContext, SSLObject, SSLSession
 
     from _typeshed import WriteableBuffer
 
@@ -51,18 +51,22 @@ _T_Return = TypeVar("_T_Return")
 
 
 @dataclasses.dataclass(repr=False, eq=False, slots=True, kw_only=True)
-class AsyncTLSStreamTransport(transports.AsyncStreamTransport, transports.AsyncBufferedStreamReadTransport):
-    _transport: transports.AsyncStreamTransport
+class AsyncTLSStreamTransport(AsyncStreamTransport, AsyncBufferedStreamReadTransport):
+    """
+    SSL/TLS wrapper for a continuous stream transport.
+    """
+
+    _transport: AsyncStreamTransport
     _standard_compatible: bool
     _shutdown_timeout: float
-    _ssl_object: _typing_ssl.SSLObject
-    _read_bio: _typing_ssl.MemoryBIO
-    _write_bio: _typing_ssl.MemoryBIO
+    _ssl_object: SSLObject
+    _read_bio: MemoryBIO
+    _write_bio: MemoryBIO
     __incoming_reader: _IncomingDataReader = dataclasses.field(init=False)
     __closing: bool = dataclasses.field(init=False, default=False)
 
     def __post_init__(self) -> None:
-        if isinstance(self._transport, transports.AsyncBufferedStreamReadTransport):
+        if isinstance(self._transport, AsyncBufferedStreamReadTransport):
             self.__incoming_reader = _BufferedIncomingDataReader(transport=self._transport)
         else:
             self.__incoming_reader = _IncomingDataReader(transport=self._transport)
@@ -70,16 +74,32 @@ class AsyncTLSStreamTransport(transports.AsyncStreamTransport, transports.AsyncB
     @classmethod
     async def wrap(
         cls,
-        transport: transports.AsyncStreamTransport,
-        ssl_context: _typing_ssl.SSLContext,
+        transport: AsyncStreamTransport,
+        ssl_context: SSLContext,
         *,
         handshake_timeout: float | None = None,
         shutdown_timeout: float | None = None,
         server_side: bool | None = None,
         server_hostname: str | None = None,
         standard_compatible: bool = True,
-        session: _typing_ssl.SSLSession | None = None,
+        session: SSLSession | None = None,
     ) -> Self:
+        """
+        Parameters:
+            transport: The transport to wrap.
+            ssl_context: a :class:`ssl.SSLContext` object to use to create the transport.
+            handshake_timeout: The time in seconds to wait for the TLS handshake to complete before aborting the connection.
+                               ``60.0`` seconds if :data:`None` (default).
+            shutdown_timeout: The time in seconds to wait for the SSL shutdown to complete before aborting the connection.
+                              ``30.0`` seconds if :data:`None` (default).
+            server_side: Indicates whether we are a client or a server for the handshake part. If it is set to :data:`None`,
+                         it is deduced according to `server_hostname`.
+            server_hostname: sets or overrides the hostname that the target server's certificate will be matched against.
+                             If `server_side` is :data:`True`, you must pass a value for `server_hostname`.
+            standard_compatible: If :data:`False`, skip the closing handshake when closing the connection,
+                                 and don't raise an exception if the peer does the same.
+            session: If an SSL session already exits, use it insead.
+        """
         assert _ssl_module is not None, "stdlib ssl module not available"  # nosec assert_used
 
         if server_side is None:
@@ -129,11 +149,11 @@ class AsyncTLSStreamTransport(transports.AsyncStreamTransport, transports.AsyncB
             msg = f"unclosed transport {self!r} pointing to {transport!r} (and cannot be closed synchronously)"
             _warn(msg, ResourceWarning, source=self)
 
-    @_utils.inherit_doc(transports.AsyncStreamTransport)
+    @_utils.inherit_doc(AsyncStreamTransport)
     def is_closing(self) -> bool:
         return self.__closing
 
-    @_utils.inherit_doc(transports.AsyncStreamTransport)
+    @_utils.inherit_doc(AsyncStreamTransport)
     async def aclose(self) -> None:
         with contextlib.ExitStack() as stack:
             stack.callback(self.__incoming_reader.close)
@@ -153,11 +173,11 @@ class AsyncTLSStreamTransport(transports.AsyncStreamTransport, transports.AsyncB
 
             await self._transport.aclose()
 
-    @_utils.inherit_doc(transports.AsyncStreamTransport)
+    @_utils.inherit_doc(AsyncStreamTransport)
     def backend(self) -> AsyncBackend:
         return self._transport.backend()
 
-    @_utils.inherit_doc(transports.AsyncStreamTransport)
+    @_utils.inherit_doc(AsyncStreamTransport)
     async def recv(self, bufsize: int) -> bytes:
         assert _ssl_module is not None, "stdlib ssl module not available"  # nosec assert_used
         try:
@@ -170,7 +190,7 @@ class AsyncTLSStreamTransport(transports.AsyncStreamTransport, transports.AsyncB
                     return b""
             raise
 
-    @_utils.inherit_doc(transports.AsyncBufferedStreamReadTransport)
+    @_utils.inherit_doc(AsyncBufferedStreamReadTransport)
     async def recv_into(self, buffer: WriteableBuffer) -> int:
         assert _ssl_module is not None, "stdlib ssl module not available"  # nosec assert_used
         nbytes = memoryview(buffer).nbytes or 1024
@@ -184,7 +204,7 @@ class AsyncTLSStreamTransport(transports.AsyncStreamTransport, transports.AsyncB
                     return 0
             raise
 
-    @_utils.inherit_doc(transports.AsyncStreamTransport)
+    @_utils.inherit_doc(AsyncStreamTransport)
     async def send_all(self, data: bytes | bytearray | memoryview) -> None:
         assert _ssl_module is not None, "stdlib ssl module not available"  # nosec assert_used
         try:
@@ -192,7 +212,7 @@ class AsyncTLSStreamTransport(transports.AsyncStreamTransport, transports.AsyncB
         except _ssl_module.SSLZeroReturnError as exc:
             raise _utils.error_from_errno(errno.ECONNRESET) from exc
 
-    @_utils.inherit_doc(transports.AsyncStreamTransport)
+    @_utils.inherit_doc(AsyncStreamTransport)
     async def send_eof(self) -> None:
         raise UnsupportedOperation("SSL/TLS API does not support sending EOF.")
 
@@ -230,7 +250,7 @@ class AsyncTLSStreamTransport(transports.AsyncStreamTransport, transports.AsyncB
                 return result
 
     @property
-    @_utils.inherit_doc(transports.AsyncStreamTransport)
+    @_utils.inherit_doc(AsyncStreamTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         return {
             **self._transport.extra_attributes,
@@ -239,7 +259,7 @@ class AsyncTLSStreamTransport(transports.AsyncStreamTransport, transports.AsyncB
         }
 
 
-class AsyncTLSListener(transports.AsyncListener[AsyncTLSStreamTransport]):
+class AsyncTLSListener(AsyncListener[AsyncTLSStreamTransport]):
     __slots__ = (
         "__listener",
         "__ssl_context",
@@ -250,16 +270,16 @@ class AsyncTLSListener(transports.AsyncListener[AsyncTLSStreamTransport]):
 
     def __init__(
         self,
-        listener: transports.AsyncListener[transports.AsyncStreamTransport],
-        ssl_context: _typing_ssl.SSLContext,
+        listener: AsyncListener[AsyncStreamTransport],
+        ssl_context: SSLContext,
         *,
         handshake_timeout: float | None = None,
         shutdown_timeout: float | None = None,
         standard_compatible: bool = True,
     ) -> None:
         super().__init__()
-        self.__listener: transports.AsyncListener[transports.AsyncStreamTransport] = listener
-        self.__ssl_context: _typing_ssl.SSLContext = ssl_context
+        self.__listener: AsyncListener[AsyncStreamTransport] = listener
+        self.__ssl_context: SSLContext = ssl_context
         self.__handshake_timeout: float | None = handshake_timeout
         self.__shutdown_timeout: float | None = shutdown_timeout
         self.__standard_compatible: bool = standard_compatible
@@ -274,15 +294,15 @@ class AsyncTLSListener(transports.AsyncListener[AsyncTLSStreamTransport]):
             msg = f"unclosed listener {self!r} pointing to {listener!r} (and cannot be closed synchronously)"
             _warn(msg, ResourceWarning, source=self)
 
-    @_utils.inherit_doc(transports.AsyncListener)
+    @_utils.inherit_doc(AsyncListener)
     def is_closing(self) -> bool:
         return self.__listener.is_closing()
 
-    @_utils.inherit_doc(transports.AsyncListener)
+    @_utils.inherit_doc(AsyncListener)
     async def aclose(self) -> None:
         return await self.__listener.aclose()
 
-    @_utils.inherit_doc(transports.AsyncListener)
+    @_utils.inherit_doc(AsyncListener)
     async def serve(
         self,
         handler: Callable[[AsyncTLSStreamTransport], Coroutine[Any, Any, None]],
@@ -292,7 +312,7 @@ class AsyncTLSListener(transports.AsyncListener[AsyncTLSStreamTransport]):
         logger = logging.getLogger(__name__)
 
         @functools.wraps(handler)
-        async def tls_handler_wrapper(stream: transports.AsyncStreamTransport, /) -> None:
+        async def tls_handler_wrapper(stream: AsyncStreamTransport, /) -> None:
             try:
                 stream = await AsyncTLSStreamTransport.wrap(
                     stream,
@@ -318,12 +338,12 @@ class AsyncTLSListener(transports.AsyncListener[AsyncTLSStreamTransport]):
 
         await listener.serve(tls_handler_wrapper, task_group)
 
-    @_utils.inherit_doc(transports.AsyncListener)
+    @_utils.inherit_doc(AsyncListener)
     def backend(self) -> AsyncBackend:
         return self.__listener.backend()
 
     @property
-    @_utils.inherit_doc(transports.AsyncListener)
+    @_utils.inherit_doc(AsyncListener)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         return {
             **self.__listener.extra_attributes,
@@ -334,10 +354,10 @@ class AsyncTLSListener(transports.AsyncListener[AsyncTLSStreamTransport]):
 
 @dataclasses.dataclass(kw_only=True, eq=False, slots=True)
 class _IncomingDataReader:
-    transport: transports.AsyncStreamReadTransport
+    transport: AsyncStreamReadTransport
     max_size: Final[int] = 256 * 1024  # 256KiB
 
-    async def readinto(self, read_bio: _typing_ssl.MemoryBIO) -> int:
+    async def readinto(self, read_bio: MemoryBIO) -> int:
         data = await self.transport.recv(self.max_size)
         if data:
             return read_bio.write(data)
@@ -350,7 +370,7 @@ class _IncomingDataReader:
 
 @dataclasses.dataclass(kw_only=True, eq=False, slots=True)
 class _BufferedIncomingDataReader(_IncomingDataReader):
-    transport: transports.AsyncBufferedStreamReadTransport
+    transport: AsyncBufferedStreamReadTransport
     buffer: bytearray | None = dataclasses.field(init=False)
     buffer_view: memoryview = dataclasses.field(init=False)
 
@@ -358,7 +378,7 @@ class _BufferedIncomingDataReader(_IncomingDataReader):
         self.buffer = bytearray(self.max_size)
         self.buffer_view = memoryview(self.buffer)
 
-    async def readinto(self, read_bio: _typing_ssl.MemoryBIO) -> int:
+    async def readinto(self, read_bio: MemoryBIO) -> int:
         buffer = self.buffer_view
         nbytes = await self.transport.recv_into(buffer)
         if nbytes:

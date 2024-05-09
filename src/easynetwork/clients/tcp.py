@@ -51,7 +51,7 @@ from ..protocol import StreamProtocol
 from .abc import AbstractNetworkClient
 
 if TYPE_CHECKING:
-    import ssl as _typing_ssl
+    from ssl import SSLContext
 
 
 class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
@@ -75,7 +75,7 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
         *,
         connect_timeout: float | None = ...,
         local_address: tuple[str, int] | None = ...,
-        ssl: _typing_ssl.SSLContext | bool | None = ...,
+        ssl: SSLContext | bool | None = ...,
         server_hostname: str | None = ...,
         ssl_handshake_timeout: float | None = ...,
         ssl_shutdown_timeout: float | None = ...,
@@ -93,7 +93,7 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
         /,
         protocol: StreamProtocol[_T_SentPacket, _T_ReceivedPacket],
         *,
-        ssl: _typing_ssl.SSLContext | bool | None = ...,
+        ssl: SSLContext | bool | None = ...,
         server_hostname: str | None = ...,
         ssl_handshake_timeout: float | None = ...,
         ssl_shutdown_timeout: float | None = ...,
@@ -110,7 +110,7 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
         /,
         protocol: StreamProtocol[_T_SentPacket, _T_ReceivedPacket],
         *,
-        ssl: _typing_ssl.SSLContext | bool | None = None,
+        ssl: SSLContext | bool | None = None,
         server_hostname: str | None = None,
         ssl_handshake_timeout: float | None = None,
         ssl_shutdown_timeout: float | None = None,

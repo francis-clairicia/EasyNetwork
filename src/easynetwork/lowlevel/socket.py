@@ -63,7 +63,7 @@ from . import typed_attr
 from ._final import runtime_final_class
 
 if TYPE_CHECKING:
-    import ssl as _typing_ssl
+    from ssl import SSLContext, SSLObject, SSLSocket, _PeerCertRetDictType
 
 _P = ParamSpec("_P")
 _T_Return = TypeVar("_T_Return")
@@ -101,10 +101,10 @@ class INETSocketAttribute(SocketAttribute):
 class TLSAttribute(typed_attr.TypedAttributeSet):
     __slots__ = ()
 
-    sslcontext: _typing_ssl.SSLContext = typed_attr.typed_attribute()
+    sslcontext: SSLContext = typed_attr.typed_attribute()
     """:class:`ssl.SSLContext` instance."""
 
-    peercert: _typing_ssl._PeerCertRetDictType = typed_attr.typed_attribute()
+    peercert: _PeerCertRetDictType = typed_attr.typed_attribute()
     """peer certificate; result of :meth:`ssl.SSLSocket.getpeercert`."""
 
     cipher: tuple[str, str, int] = typed_attr.typed_attribute()
@@ -610,7 +610,7 @@ def _get_socket_extra(sock: ISocket, *, wrap_in_proxy: bool = True) -> dict[Any,
     }
 
 
-def _get_tls_extra(ssl_object: _typing_ssl.SSLObject | _typing_ssl.SSLSocket) -> dict[Any, Callable[[], Any]]:
+def _get_tls_extra(ssl_object: SSLObject | SSLSocket) -> dict[Any, Callable[[], Any]]:
     return {
         TLSAttribute.sslcontext: lambda: ssl_object.context,
         TLSAttribute.peercert: lambda: _value_or_lookup_error(ssl_object.getpeercert()),
