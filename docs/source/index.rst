@@ -21,6 +21,7 @@ Welcome to EasyNetwork's documentation!
    ------------
 
    * :github:repo:`Source code <francis-clairicia/EasyNetwork>`
+   * `Release Notes <https://github.com/francis-clairicia/EasyNetwork/releases>`_
    * :ref:`genindex`
    * :ref:`modindex`
 
@@ -29,5 +30,6 @@ Welcome to EasyNetwork's documentation!
       :github:
       :pypi: easynetwork
 
+      Release Notes <https://github.com/francis-clairicia/EasyNetwork/releases>
       genindex
       modindex

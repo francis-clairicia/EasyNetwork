@@ -28,14 +28,14 @@ import warnings
 from collections.abc import Callable, Mapping
 from typing import Any, Generic
 
-from .... import protocol as protocol_module
 from ...._typevars import _T_ReceivedPacket, _T_SentPacket
 from ....exceptions import DatagramProtocolParseError
+from ....protocol import DatagramProtocol
 from ... import _utils
-from ..transports import abc as transports
+from ..transports.abc import BaseTransport, DatagramReadTransport, DatagramTransport, DatagramWriteTransport
 
 
-class DatagramReceiverEndpoint(transports.BaseTransport, Generic[_T_ReceivedPacket]):
+class DatagramReceiverEndpoint(BaseTransport, Generic[_T_ReceivedPacket]):
     """
     A read-only communication endpoint based on unreliable packets of data.
     """
@@ -47,8 +47,8 @@ class DatagramReceiverEndpoint(transports.BaseTransport, Generic[_T_ReceivedPack
 
     def __init__(
         self,
-        transport: transports.DatagramReadTransport,
-        protocol: protocol_module.DatagramProtocol[Any, _T_ReceivedPacket],
+        transport: DatagramReadTransport,
+        protocol: DatagramProtocol[Any, _T_ReceivedPacket],
     ) -> None:
         """
         Parameters:
@@ -56,14 +56,14 @@ class DatagramReceiverEndpoint(transports.BaseTransport, Generic[_T_ReceivedPack
             protocol: The :term:`protocol object` to use.
         """
 
-        if not isinstance(transport, transports.DatagramReadTransport):
+        if not isinstance(transport, DatagramReadTransport):
             raise TypeError(f"Expected a DatagramReadTransport object, got {transport!r}")
-        if not isinstance(protocol, protocol_module.DatagramProtocol):
+        if not isinstance(protocol, DatagramProtocol):
             raise TypeError(f"Expected a DatagramProtocol object, got {protocol!r}")
 
         self.__receiver: _DataReceiverImpl[_T_ReceivedPacket] = _DataReceiverImpl(transport, protocol)
 
-        self.__transport: transports.DatagramReadTransport = transport
+        self.__transport: DatagramReadTransport = transport
 
     def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
         try:
@@ -113,11 +113,12 @@ class DatagramReceiverEndpoint(transports.BaseTransport, Generic[_T_ReceivedPack
         return receiver.receive(timeout)
 
     @property
+    @_utils.inherit_doc(BaseTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         return self.__transport.extra_attributes
 
 
-class DatagramSenderEndpoint(transports.BaseTransport, Generic[_T_SentPacket]):
+class DatagramSenderEndpoint(BaseTransport, Generic[_T_SentPacket]):
     """
     A write-only communication endpoint based on unreliable packets of data.
     """
@@ -129,8 +130,8 @@ class DatagramSenderEndpoint(transports.BaseTransport, Generic[_T_SentPacket]):
 
     def __init__(
         self,
-        transport: transports.DatagramWriteTransport,
-        protocol: protocol_module.DatagramProtocol[_T_SentPacket, Any],
+        transport: DatagramWriteTransport,
+        protocol: DatagramProtocol[_T_SentPacket, Any],
     ) -> None:
         """
         Parameters:
@@ -138,14 +139,14 @@ class DatagramSenderEndpoint(transports.BaseTransport, Generic[_T_SentPacket]):
             protocol: The :term:`protocol object` to use.
         """
 
-        if not isinstance(transport, transports.DatagramWriteTransport):
+        if not isinstance(transport, DatagramWriteTransport):
             raise TypeError(f"Expected a DatagramWriteTransport object, got {transport!r}")
-        if not isinstance(protocol, protocol_module.DatagramProtocol):
+        if not isinstance(protocol, DatagramProtocol):
             raise TypeError(f"Expected a DatagramProtocol object, got {protocol!r}")
 
         self.__sender: _DataSenderImpl[_T_SentPacket] = _DataSenderImpl(transport, protocol)
 
-        self.__transport: transports.DatagramWriteTransport = transport
+        self.__transport: DatagramWriteTransport = transport
 
     def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
         try:
@@ -197,11 +198,12 @@ class DatagramSenderEndpoint(transports.BaseTransport, Generic[_T_SentPacket]):
         return sender.send(packet, timeout)
 
     @property
+    @_utils.inherit_doc(BaseTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         return self.__transport.extra_attributes
 
 
-class DatagramEndpoint(transports.BaseTransport, Generic[_T_SentPacket, _T_ReceivedPacket]):
+class DatagramEndpoint(BaseTransport, Generic[_T_SentPacket, _T_ReceivedPacket]):
     """
     A full-duplex communication endpoint based on unreliable packets of data.
     """
@@ -214,8 +216,8 @@ class DatagramEndpoint(transports.BaseTransport, Generic[_T_SentPacket, _T_Recei
 
     def __init__(
         self,
-        transport: transports.DatagramTransport,
-        protocol: protocol_module.DatagramProtocol[_T_SentPacket, _T_ReceivedPacket],
+        transport: DatagramTransport,
+        protocol: DatagramProtocol[_T_SentPacket, _T_ReceivedPacket],
     ) -> None:
         """
         Parameters:
@@ -223,15 +225,15 @@ class DatagramEndpoint(transports.BaseTransport, Generic[_T_SentPacket, _T_Recei
             protocol: The :term:`protocol object` to use.
         """
 
-        if not isinstance(transport, transports.DatagramTransport):
+        if not isinstance(transport, DatagramTransport):
             raise TypeError(f"Expected a DatagramTransport object, got {transport!r}")
-        if not isinstance(protocol, protocol_module.DatagramProtocol):
+        if not isinstance(protocol, DatagramProtocol):
             raise TypeError(f"Expected a DatagramProtocol object, got {protocol!r}")
 
         self.__sender: _DataSenderImpl[_T_SentPacket] = _DataSenderImpl(transport, protocol)
         self.__receiver: _DataReceiverImpl[_T_ReceivedPacket] = _DataReceiverImpl(transport, protocol)
 
-        self.__transport: transports.DatagramTransport = transport
+        self.__transport: DatagramTransport = transport
 
     def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
         try:
@@ -306,14 +308,15 @@ class DatagramEndpoint(transports.BaseTransport, Generic[_T_SentPacket, _T_Recei
         return receiver.receive(timeout)
 
     @property
+    @_utils.inherit_doc(BaseTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         return self.__transport.extra_attributes
 
 
 @dataclasses.dataclass(slots=True)
 class _DataSenderImpl(Generic[_T_SentPacket]):
-    transport: transports.DatagramWriteTransport
-    protocol: protocol_module.DatagramProtocol[_T_SentPacket, Any]
+    transport: DatagramWriteTransport
+    protocol: DatagramProtocol[_T_SentPacket, Any]
 
     def send(self, packet: _T_SentPacket, timeout: float) -> None:
         try:
@@ -328,8 +331,8 @@ class _DataSenderImpl(Generic[_T_SentPacket]):
 
 @dataclasses.dataclass(slots=True)
 class _DataReceiverImpl(Generic[_T_ReceivedPacket]):
-    transport: transports.DatagramReadTransport
-    protocol: protocol_module.DatagramProtocol[Any, _T_ReceivedPacket]
+    transport: DatagramReadTransport
+    protocol: DatagramProtocol[Any, _T_ReceivedPacket]
 
     def receive(self, timeout: float) -> _T_ReceivedPacket:
         datagram = self.transport.recv(timeout)

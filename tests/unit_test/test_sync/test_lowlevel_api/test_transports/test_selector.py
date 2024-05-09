@@ -57,7 +57,7 @@ class TestSelectorBaseTransport:
     @pytest.fixture
     @staticmethod
     def mock_transport(retry_interval: float, mock_selector: MagicMock, mocker: MockerFixture) -> MagicMock:
-        mock_transport = mocker.NonCallableMagicMock(spec=SelectorStreamTransport)
+        mock_transport = mocker.NonCallableMagicMock(spec=SelectorBaseTransport)
         SelectorBaseTransport.__init__(mock_transport, retry_interval, lambda: mock_selector)
         return mock_transport
 

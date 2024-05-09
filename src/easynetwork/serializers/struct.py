@@ -28,7 +28,7 @@ from ..lowlevel import _utils
 from .base_stream import FixedSizePacketSerializer
 
 if TYPE_CHECKING:
-    import struct as _typing_struct
+    from struct import Struct
 
     from _typeshed import ReadableBuffer, SupportsKeysAndGetItem
 
@@ -84,14 +84,14 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_T_SentDTOPacket, _T_Re
             format: The :class:`struct.Struct` format definition string.
             debug: If :data:`True`, add information to :exc:`.DeserializeError` via the ``error_info`` attribute.
         """
-        from struct import Struct, error
+        import struct as struct_module
 
         if format and format[0] not in _ENDIANNESS_CHARACTERS:
             format = f"!{format}"  # network byte order
-        struct = Struct(format)
+        struct = struct_module.Struct(format)
         super().__init__(struct.size, debug=debug)
-        self.__s: _typing_struct.Struct = struct
-        self.__error_cls = error
+        self.__s: Struct = struct
+        self.__error_cls = struct_module.error
 
     @abstractmethod
     def iter_values(self, packet: _T_SentDTOPacket, /) -> Iterable[Any]:
@@ -180,7 +180,7 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_T_SentDTOPacket, _T_Re
 
     @property
     @final
-    def struct(self) -> _typing_struct.Struct:
+    def struct(self) -> Struct:
         """The underlying :class:`struct.Struct` instance. Read-only attribute."""
         return self.__s
 

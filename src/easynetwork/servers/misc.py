@@ -38,13 +38,13 @@ _T_Address = TypeVar("_T_Address", bound=Hashable)
 
 def build_lowlevel_stream_server_handler(
     initializer: Callable[
-        [_lowlevel_stream_server.AsyncStreamClient[_T_Response]],
+        [_lowlevel_stream_server.Client[_T_Response]],
         AbstractAsyncContextManager[AsyncStreamClient[_T_Response] | None],
     ],
     request_handler: AsyncStreamRequestHandler[_T_Request, _T_Response],
     *,
     logger: logging.Logger | None = None,
-) -> Callable[[_lowlevel_stream_server.AsyncStreamClient[_T_Response]], AsyncGenerator[float | None, _T_Request]]:
+) -> Callable[[_lowlevel_stream_server.Client[_T_Response]], AsyncGenerator[float | None, _T_Request]]:
     """
     Creates an :term:`asynchronous generator` function, usable by :meth:`.AsyncStreamServer.serve`, from
     an :class:`AsyncStreamRequestHandler`.
@@ -64,7 +64,7 @@ def build_lowlevel_stream_server_handler(
         logger = logging.getLogger(__name__)
 
     async def handler(
-        lowlevel_client: _lowlevel_stream_server.AsyncStreamClient[_T_Response], /
+        lowlevel_client: _lowlevel_stream_server.Client[_T_Response], /
     ) -> AsyncGenerator[float | None, _T_Request]:
         async with initializer(lowlevel_client) as client, AsyncExitStack() as request_handler_exit_stack:
             del lowlevel_client

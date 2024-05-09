@@ -34,7 +34,7 @@ from abc import ABCMeta, abstractmethod
 from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
 from contextlib import AbstractContextManager
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, Generic, NoReturn, ParamSpec, Protocol, Self, TypeVar, TypeVarTuple
+from typing import TYPE_CHECKING, Any, Generic, NoReturn, ParamSpec, Protocol, Self, TypeVar, TypeVarTuple, Unpack
 
 if TYPE_CHECKING:
     import concurrent.futures
@@ -451,9 +451,9 @@ class TaskGroup(metaclass=ABCMeta):
     @abstractmethod
     def start_soon(
         self,
-        coro_func: Callable[[*_T_PosArgs], Coroutine[Any, Any, _T]],
+        coro_func: Callable[[Unpack[_T_PosArgs]], Coroutine[Any, Any, _T]],
         /,
-        *args: *_T_PosArgs,
+        *args: Unpack[_T_PosArgs],
         name: str | None = ...,
     ) -> None:
         """
@@ -470,9 +470,9 @@ class TaskGroup(metaclass=ABCMeta):
     @abstractmethod
     async def start(
         self,
-        coro_func: Callable[[*_T_PosArgs], Coroutine[Any, Any, _T]],
+        coro_func: Callable[[Unpack[_T_PosArgs]], Coroutine[Any, Any, _T]],
         /,
-        *args: *_T_PosArgs,
+        *args: Unpack[_T_PosArgs],
         name: str | None = ...,
     ) -> Task[_T]:
         """
@@ -625,8 +625,8 @@ class AsyncBackend(metaclass=ABCMeta):
     @abstractmethod
     def bootstrap(
         self,
-        coro_func: Callable[[*_T_PosArgs], Coroutine[Any, Any, _T]],
-        *args: *_T_PosArgs,
+        coro_func: Callable[[Unpack[_T_PosArgs]], Coroutine[Any, Any, _T]],
+        *args: Unpack[_T_PosArgs],
         runner_options: Mapping[str, Any] | None = ...,
     ) -> _T:
         """

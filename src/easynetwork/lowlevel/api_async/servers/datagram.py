@@ -16,7 +16,7 @@
 
 from __future__ import annotations
 
-__all__ = ["AsyncDatagramServer", "DatagramClientContext"]
+__all__ = ["AsyncDatagramServer"]
 
 import contextlib
 import contextvars
@@ -29,13 +29,13 @@ from collections.abc import AsyncGenerator, Callable, Hashable, Mapping
 from contextlib import AsyncExitStack, ExitStack
 from typing import Any, Generic, NoReturn, TypeVar
 
-from .... import protocol as protocol_module
 from ...._typevars import _T_Request, _T_Response
 from ....exceptions import DatagramProtocolParseError
-from ... import _utils, typed_attr
+from ....protocol import DatagramProtocol
+from ... import _utils
 from ..._asyncgen import AsyncGenAction, SendAction, ThrowAction
 from ..backend.abc import AsyncBackend, ICondition, ILock, TaskGroup
-from ..transports import abc as transports
+from ..transports.abc import AsyncBaseTransport, AsyncDatagramListener
 
 _T_Address = TypeVar("_T_Address", bound=Hashable)
 
@@ -47,6 +47,10 @@ _T_Address = TypeVar("_T_Address", bound=Hashable)
 
 @dataclasses.dataclass(frozen=True, unsafe_hash=True)
 class DatagramClientContext(Generic[_T_Response, _T_Address]):
+    """
+    Contains information about the remote endpoint which sends a datagram.
+    """
+
     __slots__ = (
         "address",
         "server",
@@ -54,30 +58,41 @@ class DatagramClientContext(Generic[_T_Response, _T_Address]):
     )
 
     address: _T_Address
+    """The client address"""
+
     server: AsyncDatagramServer[Any, _T_Response, _T_Address]
+    """The server which receives the datagram."""
 
 
-class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_T_Request, _T_Response, _T_Address]):
+class AsyncDatagramServer(AsyncBaseTransport, Generic[_T_Request, _T_Response, _T_Address]):
+    """
+    Datagram packet listener interface.
+    """
+
     __slots__ = (
         "__listener",
         "__protocol",
         "__sendto_lock",
         "__serve_guard",
-        "__weakref__",
     )
 
     def __init__(
         self,
-        listener: transports.AsyncDatagramListener[_T_Address],
-        protocol: protocol_module.DatagramProtocol[_T_Response, _T_Request],
+        listener: AsyncDatagramListener[_T_Address],
+        protocol: DatagramProtocol[_T_Response, _T_Request],
     ) -> None:
-        if not isinstance(listener, transports.AsyncDatagramListener):
+        """
+        Parameters:
+            listener: the transport implementation to wrap.
+            protocol: The :term:`protocol object` to use.
+        """
+        if not isinstance(listener, AsyncDatagramListener):
             raise TypeError(f"Expected an AsyncDatagramListener object, got {listener!r}")
-        if not isinstance(protocol, protocol_module.DatagramProtocol):
+        if not isinstance(protocol, DatagramProtocol):
             raise TypeError(f"Expected a DatagramProtocol object, got {protocol!r}")
 
-        self.__listener: transports.AsyncDatagramListener[_T_Address] = listener
-        self.__protocol: protocol_module.DatagramProtocol[_T_Response, _T_Request] = protocol
+        self.__listener: AsyncDatagramListener[_T_Address] = listener
+        self.__protocol: DatagramProtocol[_T_Response, _T_Request] = protocol
         self.__sendto_lock: ILock = listener.backend().create_lock()
         self.__serve_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently receiving datagrams")
 
@@ -105,7 +120,7 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_T_Request,
         """
         await self.__listener.aclose()
 
-    @_utils.inherit_doc(transports.AsyncBaseTransport)
+    @_utils.inherit_doc(AsyncBaseTransport)
     def backend(self) -> AsyncBackend:
         return self.__listener.backend()
 
@@ -134,6 +149,25 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_T_Request,
         ],
         task_group: TaskGroup | None = None,
     ) -> NoReturn:
+        """
+        Receive incoming datagrams as they come in and start tasks to handle them.
+
+        Important:
+            There will always be only one active generator per client.
+            All the pending datagrams received while the generator is running are queued.
+
+            This behavior is designed to act like a stream request handler.
+
+        Note:
+            If the generator returns before the first :keyword:`yield` statement, the received datagram is discarded.
+
+            This is useful when a client that you do not expect to see sends something; the datagrams are parsed only when
+            the generator hits a :keyword:`yield` statement.
+
+        Parameters:
+            datagram_received_cb: a callable that will be used to handle each received datagram.
+            task_group: the task group that will be used to start tasks for handling each received datagram.
+        """
         with self.__serve_guard:
             listener = self.__listener
             backend = listener.backend()
@@ -257,7 +291,7 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_T_Request,
     @staticmethod
     def __parse_datagram(
         datagram: bytes,
-        protocol: protocol_module.DatagramProtocol[_T_Response, _T_Request],
+        protocol: DatagramProtocol[_T_Response, _T_Request],
     ) -> AsyncGenAction[_T_Request]:
         try:
             try:
@@ -272,6 +306,7 @@ class AsyncDatagramServer(typed_attr.TypedAttributeProvider, Generic[_T_Request,
             return SendAction(request)
 
     @property
+    @_utils.inherit_doc(AsyncBaseTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         return self.__listener.extra_attributes
 

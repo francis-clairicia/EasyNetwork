@@ -32,7 +32,7 @@ from ..exceptions import DeserializeError
 from .abc import AbstractPacketSerializer
 
 if TYPE_CHECKING:
-    import pickle as _typing_pickle
+    from pickle import Pickler, Unpickler
 
 
 def _get_default_pickler_protocol() -> int:
@@ -78,8 +78,8 @@ class PickleSerializer(AbstractPacketSerializer[Any, Any]):
         pickler_config: PicklerConfig | None = None,
         unpickler_config: UnpicklerConfig | None = None,
         *,
-        pickler_cls: type[_typing_pickle.Pickler] | None = None,
-        unpickler_cls: type[_typing_pickle.Unpickler] | None = None,
+        pickler_cls: type[Pickler] | None = None,
+        unpickler_cls: type[Unpickler] | None = None,
         pickler_optimize: bool = False,
         debug: bool = False,
     ) -> None:
@@ -101,8 +101,8 @@ class PickleSerializer(AbstractPacketSerializer[Any, Any]):
             import pickletools
 
             self.__optimize = pickletools.optimize
-        self.__pickler_cls: Callable[[IO[bytes]], _typing_pickle.Pickler]
-        self.__unpickler_cls: Callable[[IO[bytes]], _typing_pickle.Unpickler]
+        self.__pickler_cls: Callable[[IO[bytes]], pickle.Pickler]
+        self.__unpickler_cls: Callable[[IO[bytes]], pickle.Unpickler]
 
         if pickler_config is None:
             pickler_config = PicklerConfig()

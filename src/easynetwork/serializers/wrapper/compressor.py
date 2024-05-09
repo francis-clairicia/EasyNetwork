@@ -35,8 +35,8 @@ from ..abc import AbstractPacketSerializer, BufferedIncrementalPacketSerializer
 from ..base_stream import _wrap_generic_buffered_incremental_deserialize, _wrap_generic_incremental_deserialize
 
 if TYPE_CHECKING:
-    import bz2 as _typing_bz2
-    import zlib as _typing_zlib
+    from bz2 import BZ2Compressor, BZ2Decompressor
+    from zlib import _Compress as ZLibCompress, _Decompress as ZLibDecompress
 
     from _typeshed import ReadableBuffer
 
@@ -285,14 +285,14 @@ class BZ2CompressorSerializer(AbstractCompressorSerializer[_T_SentDTOPacket, _T_
         self.__decompressor_factory = bz2.BZ2Decompressor
 
     @final
-    def new_compressor_stream(self) -> _typing_bz2.BZ2Compressor:
+    def new_compressor_stream(self) -> BZ2Compressor:
         """
         See :meth:`.AbstractCompressorSerializer.new_compressor_stream` documentation for details.
         """
         return self.__compressor_factory(self.__compresslevel)
 
     @final
-    def new_decompressor_stream(self) -> _typing_bz2.BZ2Decompressor:
+    def new_decompressor_stream(self) -> BZ2Decompressor:
         """
         See :meth:`.AbstractCompressorSerializer.new_decompressor_stream` documentation for details.
         """
@@ -327,14 +327,14 @@ class ZlibCompressorSerializer(AbstractCompressorSerializer[_T_SentDTOPacket, _T
         self.__decompressor_factory = zlib.decompressobj
 
     @final
-    def new_compressor_stream(self) -> _typing_zlib._Compress:
+    def new_compressor_stream(self) -> ZLibCompress:
         """
         See :meth:`.AbstractCompressorSerializer.new_compressor_stream` documentation for details.
         """
         return self.__compressor_factory(self.__compresslevel)
 
     @final
-    def new_decompressor_stream(self) -> _typing_zlib._Decompress:
+    def new_decompressor_stream(self) -> ZLibDecompress:
         """
         See :meth:`.AbstractCompressorSerializer.new_decompressor_stream` documentation for details.
         """

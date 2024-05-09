@@ -44,7 +44,7 @@ from ... import _utils, constants, socket as socket_tools
 from . import base_selector
 
 if TYPE_CHECKING:
-    import ssl as _typing_ssl
+    from ssl import SSLContext, SSLSession, SSLSocket
 
     from _typeshed import WriteableBuffer
 
@@ -62,6 +62,10 @@ def _close_stream_socket(sock: socket.socket) -> None:
 
 
 class SocketStreamTransport(base_selector.SelectorStreamTransport, base_selector.SelectorBufferedStreamReadTransport):
+    """
+    A stream data transport implementation which wraps a stream :class:`~socket.socket`.
+    """
+
     __slots__ = ("__socket",)
 
     def __init__(
@@ -71,6 +75,13 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport, base_selector
         *,
         selector_factory: Callable[[], selectors.BaseSelector] | None = None,
     ) -> None:
+        """
+        Parameters:
+            sock: The :data:`~socket.SOCK_STREAM` socket to wrap.
+            retry_interval: The maximum wait time to wait for a blocking operation before retrying.
+                            Set it to :data:`math.inf` to disable this feature.
+            selector_factory: If given, the callable object to use to create a new :class:`selectors.BaseSelector` instance.
+        """
         super().__init__(retry_interval=retry_interval, selector_factory=selector_factory)
 
         _utils.check_socket_no_ssl(sock)
@@ -162,12 +173,16 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport, base_selector
 
 
 class SSLStreamTransport(base_selector.SelectorStreamTransport, base_selector.SelectorBufferedStreamReadTransport):
+    """
+    A stream data transport implementation which wraps a stream :class:`~socket.socket`.
+    """
+
     __slots__ = ("__socket", "__ssl_shutdown_timeout", "__standard_compatible")
 
     def __init__(
         self,
         sock: socket.socket,
-        ssl_context: _typing_ssl.SSLContext,
+        ssl_context: SSLContext,
         retry_interval: float,
         *,
         handshake_timeout: float | None = None,
@@ -175,9 +190,28 @@ class SSLStreamTransport(base_selector.SelectorStreamTransport, base_selector.Se
         server_side: bool | None = None,
         server_hostname: str | None = None,
         standard_compatible: bool = True,
-        session: _typing_ssl.SSLSession | None = None,
+        session: SSLSession | None = None,
         selector_factory: Callable[[], selectors.BaseSelector] | None = None,
     ) -> None:
+        """
+        Parameters:
+            sock: The :data:`~socket.SOCK_STREAM` socket to wrap.
+            ssl_context: a :class:`ssl.SSLContext` object to use to create the transport.
+            retry_interval: The maximum wait time to wait for a blocking operation before retrying.
+                            Set it to :data:`math.inf` to disable this feature.
+            handshake_timeout: The time in seconds to wait for the TLS handshake to complete before aborting the connection.
+                               ``60.0`` seconds if :data:`None` (default).
+            shutdown_timeout: The time in seconds to wait for the SSL shutdown to complete before aborting the connection.
+                              ``30.0`` seconds if :data:`None` (default).
+            server_side: Indicates whether we are a client or a server for the handshake part. If it is set to :data:`None`,
+                         it is deduced according to `server_hostname`.
+            server_hostname: sets or overrides the hostname that the target server's certificate will be matched against.
+                             If `server_side` is :data:`True`, you must pass a value for `server_hostname`.
+            standard_compatible: If :data:`False`, skip the closing handshake when closing the connection,
+                                 and don't raise an exception if the peer does the same.
+            session: If an SSL session already exits, use it insead.
+            selector_factory: If given, the callable object to use to create a new :class:`selectors.BaseSelector` instance.
+        """
         super().__init__(retry_interval=retry_interval, selector_factory=selector_factory)
 
         if handshake_timeout is None:
@@ -194,7 +228,7 @@ class SSLStreamTransport(base_selector.SelectorStreamTransport, base_selector.Se
             raise ValueError("A 'SOCK_STREAM' socket is expected")
         if server_side is None:
             server_side = not server_hostname
-        self.__socket: _typing_ssl.SSLSocket = ssl_context.wrap_socket(
+        self.__socket: SSLSocket = ssl_context.wrap_socket(
             sock,
             server_side=server_side,
             server_hostname=server_hostname,
@@ -286,6 +320,10 @@ class SSLStreamTransport(base_selector.SelectorStreamTransport, base_selector.Se
 
 
 class SocketDatagramTransport(base_selector.SelectorDatagramTransport):
+    """
+    A datagram transport implementation which wraps a datagram :class:`~socket.socket`.
+    """
+
     __slots__ = ("__socket", "__max_datagram_size")
 
     def __init__(
@@ -296,6 +334,14 @@ class SocketDatagramTransport(base_selector.SelectorDatagramTransport):
         max_datagram_size: int = constants.MAX_DATAGRAM_BUFSIZE,
         selector_factory: Callable[[], selectors.BaseSelector] | None = None,
     ) -> None:
+        """
+        Parameters:
+            sock: The :data:`~socket.SOCK_DGRAM` socket to wrap.
+            retry_interval: The maximum wait time to wait for a blocking operation before retrying.
+                            Set it to :data:`math.inf` to disable this feature.
+            max_datagram_size: The maximum packet size supported by :manpage:`recvfrom(2)` for the current socket.
+            selector_factory: If given, the callable object to use to create a new :class:`selectors.BaseSelector` instance.
+        """
         super().__init__(retry_interval=retry_interval, selector_factory=selector_factory)
 
         if max_datagram_size <= 0:
