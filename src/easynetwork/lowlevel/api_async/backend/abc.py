@@ -453,7 +453,7 @@ class TaskGroup(metaclass=ABCMeta):
         self,
         coro_func: Callable[[Unpack[_T_PosArgs]], Coroutine[Any, Any, _T]],
         /,
-        *args: Unpack[_T_PosArgs],
+        *args: *_T_PosArgs,
         name: str | None = ...,
     ) -> None:
         """
@@ -472,7 +472,7 @@ class TaskGroup(metaclass=ABCMeta):
         self,
         coro_func: Callable[[Unpack[_T_PosArgs]], Coroutine[Any, Any, _T]],
         /,
-        *args: Unpack[_T_PosArgs],
+        *args: *_T_PosArgs,
         name: str | None = ...,
     ) -> Task[_T]:
         """
@@ -626,7 +626,7 @@ class AsyncBackend(metaclass=ABCMeta):
     def bootstrap(
         self,
         coro_func: Callable[[Unpack[_T_PosArgs]], Coroutine[Any, Any, _T]],
-        *args: Unpack[_T_PosArgs],
+        *args: *_T_PosArgs,
         runner_options: Mapping[str, Any] | None = ...,
     ) -> _T:
         """
