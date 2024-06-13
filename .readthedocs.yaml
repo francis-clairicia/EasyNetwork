@@ -6,7 +6,7 @@ build:
     python: "3.11"
   jobs:
     post_create_environment:
-      - pip install --no-cache-dir pdm==2.15.1
+      - pip install --no-cache-dir pdm==2.15.4
       - pdm config check_update false
       - pdm use -f $READTHEDOCS_VIRTUALENV_PATH
     post_install:
