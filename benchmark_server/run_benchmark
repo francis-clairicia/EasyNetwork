@@ -429,6 +429,11 @@ def _compute_latency_upperfence(data: _BenchmarkVariationData) -> float:
     return min(data["latency_q3"] + 1.5 * _compute_latency_iqr(data), data["latency_max"])
 
 
+def _add_date_to_filepath(source: Path, date: datetime.datetime) -> Path:
+    source = Path(os.fspath(source))
+    return source.with_stem(f"{source.stem}_{date.isoformat(timespec='seconds')}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("-D", "--duration", default=30, type=int, help="duration of test in seconds")
@@ -475,6 +480,12 @@ def main() -> None:
         help="path to save benchmark results in HTML format",
     )
     parser.add_argument(
+        "--add-date-to-report-file",
+        dest="report_file_with_date",
+        action="store_true",
+        help="add date of generation to report files given by --save-json or --save-html",
+    )
+    parser.add_argument(
         "--docker-timeout",
         type=int,
         default=5,
@@ -496,6 +507,11 @@ def main() -> None:
     image_tag: str = args.docker_image_tag
     concurrency: int = args.concurrency_level
     payload_size_levels: list[int] = args.payload_size_levels
+    duration: Final[int] = args.duration
+
+    html_output_file: Path | None = args.save_html
+    json_output_file: Path | None = args.save_json
+    report_file_with_date: bool = args.report_file_with_date
 
     variations: list[_BenchmarkVariationDef] = [
         {
@@ -539,8 +555,6 @@ def main() -> None:
             print(" ".join(warmup_cmd))
             subprocess.check_output(warmup_cmd)
             print()
-
-            duration: int = args.duration
 
             benchmark_data: _BenchmarkData = {
                 "name": benchmark["name"],
@@ -589,23 +603,30 @@ def main() -> None:
         print("Benchmark parameter does not match any known suite.")
         sys.exit(1)
 
+    del args
+
     now = datetime.datetime.now()
-    if args.save_json:
+    if json_output_file:
+        if report_file_with_date:
+            json_output_file = _add_date_to_filepath(json_output_file, now)
         benchmark_json_report = {
             "date": now.strftime("%Y-%m-%dT%H:%M:%S%z"),
-            "duration": args.duration,
+            "duration": duration,
             "concurrency_level": concurrency,
             "payload_size_levels": payload_size_levels,
             "benchmarks": benchmarks_data_list,
         }
 
-        with open(args.save_json, "w") as f:
+        with open(json_output_file, "w") as f:
             json.dump(benchmark_json_report, f, indent=4)
 
-        print(f"JSON report written in {args.save_json}")
+        print(f"JSON report written in {json_output_file}")
 
-    if args.save_html:
+    if html_output_file:
         import plotly.graph_objects as go
+
+        if report_file_with_date:
+            html_output_file = _add_date_to_filepath(html_output_file, now)
 
         def _build_rps_bars_figure() -> go.Figure:
             fig = go.Figure(
@@ -658,7 +679,7 @@ def main() -> None:
         ]
 
         benchmark_title = f"Server Performance Benchmark Report ({now.strftime('%c')})"
-        with open(args.save_html, "w") as f:
+        with open(html_output_file, "w") as f:
             print("<!DOCTYPE html>", file=f)
             print("<html>", file=f)
             print("<head>", file=f)
@@ -668,13 +689,13 @@ def main() -> None:
             print("<body>", file=f)
 
             for i, fig in enumerate(figures):
-                fig.update_layout(title=f"{benchmark_title}. Duration: {args.duration}s; Concurrency level: {concurrency}")
+                fig.update_layout(title=f"{benchmark_title}. Duration: {duration}s; Concurrency level: {concurrency}")
                 fig.write_html(f, full_html=False, include_plotlyjs=(i == 0), default_width="95vw", default_height="95vh")
 
             print("</body>", file=f)
             print("</html>", file=f)
 
-        print(f"HTML report written in {args.save_html}")
+        print(f"HTML report written in {html_output_file}")
 
 
 if __name__ == "__main__":
