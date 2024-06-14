@@ -30,7 +30,7 @@ from .base_stream import FixedSizePacketSerializer
 if TYPE_CHECKING:
     from struct import Struct
 
-    from _typeshed import ReadableBuffer, SupportsKeysAndGetItem
+    from _typeshed import SupportsKeysAndGetItem
 
 
 _ENDIANNESS_CHARACTERS: frozenset[str] = frozenset({"@", "=", "<", ">", "!"})
@@ -143,7 +143,7 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_T_SentDTOPacket, _T_Re
         return self.__s.pack(*self.iter_values(packet))
 
     @final
-    def deserialize(self, data: ReadableBuffer) -> _T_ReceivedDTOPacket:
+    def deserialize(self, data: bytes) -> _T_ReceivedDTOPacket:
         """
         Creates a Python object representing the structure from `data`.
 
@@ -170,13 +170,6 @@ class AbstractStructSerializer(FixedSizePacketSerializer[_T_SentDTOPacket, _T_Re
                 raise DeserializeError(msg, error_info={"data": data}) from exc
             raise DeserializeError(msg) from exc
         return self.from_tuple(packet_tuple)
-
-    @final
-    def deserialize_from_buffer(self, data: ReadableBuffer) -> _T_ReceivedDTOPacket:
-        """
-        Calls :meth:`deserialize`.
-        """
-        return self.deserialize(data)
 
     @property
     @final
@@ -347,7 +340,7 @@ class NamedTupleStructSerializer(AbstractStructSerializer[_T_NamedTuple, _T_Name
         if (encoding := self.__encoding) is not None and self.__string_fields:
             string_fields: dict[str, str] = {field: getattr(packet, field) for field in self.__string_fields}
             unicode_errors: str = self.__unicode_errors
-            packet = packet._replace(**{field: value.encode(encoding, unicode_errors) for field, value in string_fields.items()})
+            packet = packet._replace(**{field: bytes(value, encoding, unicode_errors) for field, value in string_fields.items()})
         return packet
 
     @final

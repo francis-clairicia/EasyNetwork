@@ -187,6 +187,8 @@ def main() -> None:
             LOGGER.info(f"Server listening at {', '.join(str(s.getsockname()) for s in server.sockets)}")
             runner.run(server.serve_forever())
         else:
+            if ssl_context:
+                raise OSError("loop.sock_sendall() and loop.sock_recv() do not support SSL")
             runner.run(echo_server(("0.0.0.0", port)))
 
 

@@ -31,12 +31,17 @@ ROOT_DIR: Final[Path] = Path(__file__).parent
 EXPOSED_PORT: Final[int] = 25000
 
 
+class _PingOptions(TypedDict, total=False):
+    ssl: bool
+
+
 class _BenchmarkDef(TypedDict):
     name: str
     title: str
     server: list[str]
     server_address: str | tuple[str, int]
     ping_request: bytes
+    ping_options: NotRequired[_PingOptions]
     client: list[str]
     type: int
 
@@ -79,6 +84,7 @@ _generic_stream_echoclient: Final[list[str]] = [
 _tcp_server_address: Final[tuple[str, int]] = ("127.0.0.1", EXPOSED_PORT)
 _tcp_echoclient: Final[list[str]] = _generic_stream_echoclient + [f"--addr=127.0.0.1:{EXPOSED_PORT}"]
 _tcp_readline_client: Final[list[str]] = _tcp_echoclient + ["--mpr=5"]
+_ssl_over_tcp_echoclient: Final[list[str]] = _tcp_echoclient + ["--ssl"]
 
 _generic_datagram_echoclient: Final[list[str]] = [
     os.fspath(ROOT_DIR / "datagram_echoclient.py"),
@@ -90,6 +96,9 @@ _udp_echoclient: Final[list[str]] = _generic_datagram_echoclient + [f"--addr=127
 
 
 BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
+    ##########################################################################
+    ################################ TCP echo ################################
+    ##########################################################################
     {
         "name": "tcpecho-easynetwork-asyncio",
         "title": "TCP echo server (easynetwork+asyncio)",
@@ -110,6 +119,35 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
         + [
             "/usr/src/servers/easynetwork_tcp_echoserver.py",
             f"--port={EXPOSED_PORT}",
+            "--uvloop",
+        ],
+        "server_address": _tcp_server_address,
+        "ping_request": b"ping\n",
+        "client": _tcp_echoclient,
+        "type": SOCK_STREAM,
+    },
+    {
+        "name": "tcpecho-easynetwork-buffered-asyncio",
+        "title": "TCP echo server (easynetwork+buffered+asyncio)",
+        "server": _python_cmd
+        + [
+            "/usr/src/servers/easynetwork_tcp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+            "--buffered",
+        ],
+        "server_address": _tcp_server_address,
+        "ping_request": b"ping\n",
+        "client": _tcp_echoclient,
+        "type": SOCK_STREAM,
+    },
+    {
+        "name": "tcpecho-easynetwork-buffered-uvloop",
+        "title": "TCP echo server (easynetwork+buffered+uvloop)",
+        "server": _python_cmd
+        + [
+            "/usr/src/servers/easynetwork_tcp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+            "--buffered",
             "--uvloop",
         ],
         "server_address": _tcp_server_address,
@@ -173,6 +211,9 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
         "client": _tcp_echoclient,
         "type": SOCK_STREAM,
     },
+    ##############################################################################
+    ################################ TCP readline ################################
+    ##############################################################################
     {
         "name": "readline-easynetwork-asyncio",
         "title": "TCP readline server (easynetwork+asyncio)",
@@ -195,6 +236,37 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
             "/usr/src/servers/easynetwork_tcp_echoserver.py",
             f"--port={EXPOSED_PORT}",
             "--readline",
+            "--uvloop",
+        ],
+        "server_address": _tcp_server_address,
+        "ping_request": b"ping\n",
+        "client": _tcp_readline_client,
+        "type": SOCK_STREAM,
+    },
+    {
+        "name": "readline-easynetwork-buffered-asyncio",
+        "title": "TCP readline server (easynetwork+buffered+asyncio)",
+        "server": _python_cmd
+        + [
+            "/usr/src/servers/easynetwork_tcp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+            "--readline",
+            "--buffered",
+        ],
+        "server_address": _tcp_server_address,
+        "ping_request": b"ping\n",
+        "client": _tcp_readline_client,
+        "type": SOCK_STREAM,
+    },
+    {
+        "name": "readline-easynetwork-buffered-uvloop",
+        "title": "TCP readline server (easynetwork+buffered+uvloop)",
+        "server": _python_cmd
+        + [
+            "/usr/src/servers/easynetwork_tcp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+            "--readline",
+            "--buffered",
             "--uvloop",
         ],
         "server_address": _tcp_server_address,
@@ -231,6 +303,109 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
         "client": _tcp_readline_client,
         "type": SOCK_STREAM,
     },
+    ###################################################################################
+    ################################ SSL over TCP echo ################################
+    ###################################################################################
+    {
+        "name": "sslecho-easynetwork-asyncio",
+        "title": "TCP+SSL echo server (easynetwork+asyncio)",
+        "server": _python_cmd
+        + [
+            "/usr/src/servers/easynetwork_tcp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+            "--ssl",
+        ],
+        "server_address": _tcp_server_address,
+        "ping_request": b"ping\n",
+        "ping_options": {"ssl": True},
+        "client": _ssl_over_tcp_echoclient,
+        "type": SOCK_STREAM,
+    },
+    {
+        "name": "sslecho-easynetwork-uvloop",
+        "title": "TCP+SSL echo server (easynetwork+uvloop)",
+        "server": _python_cmd
+        + [
+            "/usr/src/servers/easynetwork_tcp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+            "--ssl",
+            "--uvloop",
+        ],
+        "server_address": _tcp_server_address,
+        "ping_request": b"ping\n",
+        "ping_options": {"ssl": True},
+        "client": _ssl_over_tcp_echoclient,
+        "type": SOCK_STREAM,
+    },
+    {
+        "name": "sslecho-easynetwork-buffered-asyncio",
+        "title": "TCP+SSL echo server (easynetwork+buffered+asyncio)",
+        "server": _python_cmd
+        + [
+            "/usr/src/servers/easynetwork_tcp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+            "--ssl",
+            "--buffered",
+        ],
+        "server_address": _tcp_server_address,
+        "ping_request": b"ping\n",
+        "ping_options": {"ssl": True},
+        "client": _ssl_over_tcp_echoclient,
+        "type": SOCK_STREAM,
+    },
+    {
+        "name": "sslecho-easynetwork-buffered-uvloop",
+        "title": "TCP+SSL echo server (easynetwork+buffered+uvloop)",
+        "server": _python_cmd
+        + [
+            "/usr/src/servers/easynetwork_tcp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+            "--ssl",
+            "--buffered",
+            "--uvloop",
+        ],
+        "server_address": _tcp_server_address,
+        "ping_request": b"ping\n",
+        "ping_options": {"ssl": True},
+        "client": _ssl_over_tcp_echoclient,
+        "type": SOCK_STREAM,
+    },
+    {
+        "name": "sslecho-asyncio-streams",
+        "title": "TCP+SSL echo server (asyncio/streams)",
+        "server": _python_cmd
+        + [
+            "/usr/src/servers/asyncio_tcp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+            "--ssl",
+            "--streams",
+        ],
+        "server_address": _tcp_server_address,
+        "ping_request": b"ping\n",
+        "ping_options": {"ssl": True},
+        "client": _ssl_over_tcp_echoclient,
+        "type": SOCK_STREAM,
+    },
+    {
+        "name": "sslecho-uvloop-streams",
+        "title": "TCP+SSL echo server (uvloop/streams)",
+        "server": _python_cmd
+        + [
+            "/usr/src/servers/asyncio_tcp_echoserver.py",
+            f"--port={EXPOSED_PORT}",
+            "--ssl",
+            "--streams",
+            "--uvloop",
+        ],
+        "server_address": _tcp_server_address,
+        "ping_request": b"ping\n",
+        "ping_options": {"ssl": True},
+        "client": _ssl_over_tcp_echoclient,
+        "type": SOCK_STREAM,
+    },
+    ##########################################################################
+    ################################ UDP echo ################################
+    ##########################################################################
     {
         "name": "udpecho-easynetwork-asyncio",
         "title": "UDP echo server (easynetwork+asyncio)",
@@ -330,13 +505,14 @@ def _stop_container(container: Container, timeout: int) -> None:
 
 
 def _start_docker_instance(
+    *,
     client: docker.DockerClient,
     image_tag: str,
     server_cmd: Sequence[str],
     server_address: str | tuple[str, int],
     ping_request: bytes,
+    ping_options: _PingOptions,
     socket_type: int,
-    *,
     timeout: float,
     docker_wait: float,
 ) -> Container:
@@ -391,8 +567,18 @@ def _start_docker_instance(
                     sock.bind(("127.0.0.1", 0))
                 sock.connect(server_address)
                 if socket_type == SOCK_DGRAM:
+                    if ping_options.get("ssl", False):
+                        raise OSError("SSL not supported for SOCK_DGRAM sockets")
                     sock.send(ping_request)
                 else:
+                    if ping_options.get("ssl", False):
+                        import ssl
+
+                        client_context = ssl.create_default_context()
+                        client_context.check_hostname = False
+                        client_context.verify_mode = ssl.CERT_NONE
+                        sock = client_context.wrap_socket(sock, do_handshake_on_connect=True)
+
                     sock.sendall(ping_request)
                 if sock.recv(65536):
                     print("Server is up and running.")
@@ -405,11 +591,12 @@ def _start_docker_instance(
                     sock.shutdown(socket.SHUT_RDWR)
                 except OSError:
                     pass
-                sock.close()
 
                 # There was no errors, unwind all
                 on_error_stack.pop_all()
                 return container
+            finally:
+                sock.close()
 
         logs: bytes | str = container.logs()
         if not isinstance(logs, str):
@@ -535,11 +722,12 @@ def main() -> None:
         server_cmd = benchmark["server"]
         print("  " + " ".join(server_cmd))
         container: Container = _start_docker_instance(
-            client,
-            image_tag,
-            server_cmd,
-            benchmark["server_address"],
-            benchmark["ping_request"],
+            client=client,
+            image_tag=image_tag,
+            server_cmd=server_cmd,
+            server_address=benchmark["server_address"],
+            ping_request=benchmark["ping_request"],
+            ping_options=benchmark.get("ping_options", {}),
             socket_type=benchmark["type"],
             timeout=args.docker_timeout,
             docker_wait=args.docker_wait,
