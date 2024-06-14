@@ -58,6 +58,10 @@ def run_test(
         sock.settimeout(socket_timeout)
         sock.connect(address)
 
+        sock.sendall(b"ping\n")
+        if sock.recv(128) != b"ping\n":
+            raise OSError("socket read")
+
         times_per_request: collections.deque[RequestReport] = collections.deque()
         recv_buf = bytearray(REQSIZE)
 

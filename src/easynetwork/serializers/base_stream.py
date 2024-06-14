@@ -120,15 +120,6 @@ class AutoSeparatedPacketSerializer(BufferedIncrementalPacketSerializer[_T_SentD
         """
         raise NotImplementedError
 
-    def deserialize_from_buffer(self, data: ReadableBuffer, /) -> _T_ReceivedDTOPacket:
-        """
-        Called by :meth:`buffered_incremental_deserialize` and must have the same behavior as :meth:`deserialize`.
-
-        The default implementation creates a :class:`bytes` object from `data` and calls :meth:`deserialize`.
-        """
-        data = bytes(data)
-        return self.deserialize(data)
-
     @final
     def incremental_deserialize(self) -> Generator[None, bytes, tuple[_T_ReceivedDTOPacket, bytes]]:
         """
@@ -169,29 +160,29 @@ class AutoSeparatedPacketSerializer(BufferedIncrementalPacketSerializer[_T_SentD
     @final
     def buffered_incremental_deserialize(self, buffer: bytearray) -> Generator[int, int, tuple[_T_ReceivedDTOPacket, memoryview]]:
         """
-        Yields until `separator` is found and calls :meth:`deserialize_from_buffer` **without** `separator`.
+        Yields until `separator` is found and calls :meth:`deserialize` **without** `separator`.
 
         See :meth:`.BufferedIncrementalPacketSerializer.buffered_incremental_deserialize` documentation for details.
 
         Raises:
             LimitOverrunError: Reached buffer size limit.
-            IncrementalDeserializeError: :meth:`deserialize_from_buffer` raised :exc:`.DeserializeError`.
-            Exception: Any error raised by :meth:`deserialize_from_buffer`.
+            IncrementalDeserializeError: :meth:`deserialize` raised :exc:`.DeserializeError`.
+            Exception: Any error raised by :meth:`deserialize`.
         """
         with memoryview(buffer) as buffer_view:
             sepidx, offset, buflen = yield from _buffered_readuntil(buffer, self.__separator)
             del buffer
 
+            data = bytes(buffer_view[:sepidx])
             remainder: memoryview = buffer_view[offset:buflen]
-            with buffer_view[:sepidx] as data:
-                try:
-                    packet = self.deserialize_from_buffer(data)
-                except DeserializeError as exc:
-                    raise IncrementalDeserializeError(
-                        f"Error when deserializing data: {exc}",
-                        remaining_data=remainder,
-                        error_info=exc.error_info,
-                    ) from exc
+            try:
+                packet = self.deserialize(data)
+            except DeserializeError as exc:
+                raise IncrementalDeserializeError(
+                    f"Error when deserializing data: {exc}",
+                    remaining_data=remainder,
+                    error_info=exc.error_info,
+                ) from exc
             return packet, remainder
 
     @property
@@ -274,15 +265,6 @@ class FixedSizePacketSerializer(BufferedIncrementalPacketSerializer[_T_SentDTOPa
         """
         raise NotImplementedError
 
-    def deserialize_from_buffer(self, data: ReadableBuffer, /) -> _T_ReceivedDTOPacket:
-        """
-        Called by :meth:`buffered_incremental_deserialize` and must have the same behavior as :meth:`deserialize`.
-
-        The default implementation creates a :class:`bytes` object from `data` and calls :meth:`deserialize`.
-        """
-        data = bytes(data)
-        return self.deserialize(data)
-
     @final
     def incremental_deserialize(self) -> Generator[None, bytes, tuple[_T_ReceivedDTOPacket, bytes]]:
         """
@@ -325,13 +307,13 @@ class FixedSizePacketSerializer(BufferedIncrementalPacketSerializer[_T_SentDTOPa
         /,
     ) -> Generator[int, int, tuple[_T_ReceivedDTOPacket, memoryview]]:
         """
-        Yields until there is enough data and calls :meth:`deserialize_from_buffer`.
+        Yields until there is enough data and calls :meth:`deserialize`.
 
         See :meth:`.BufferedIncrementalPacketSerializer.buffered_incremental_deserialize` documentation for details.
 
         Raises:
-            IncrementalDeserializeError: :meth:`deserialize_from_buffer` raised :exc:`.DeserializeError`.
-            Exception: Any error raised by :meth:`deserialize_from_buffer`.
+            IncrementalDeserializeError: :meth:`deserialize` raised :exc:`.DeserializeError`.
+            Exception: Any error raised by :meth:`deserialize`.
         """
         packet_size: int = self.__size
         assert len(buffer) >= packet_size  # nosec assert_used
@@ -340,12 +322,12 @@ class FixedSizePacketSerializer(BufferedIncrementalPacketSerializer[_T_SentDTOPa
         while nread < packet_size:
             nread += yield nread
 
-        data = buffer[:packet_size]
+        data = bytes(buffer[:packet_size])
         remainder = buffer[packet_size:nread]
         del buffer
 
         try:
-            packet = self.deserialize_from_buffer(data)
+            packet = self.deserialize(data)
         except DeserializeError as exc:
             raise IncrementalDeserializeError(
                 f"Error when deserializing data: {exc}",
