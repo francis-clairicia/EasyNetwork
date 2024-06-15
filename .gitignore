@@ -5,6 +5,7 @@
 src/easynetwork/version.py
 
 # Benchmark reports
+.benchmarks
 benchmark_reports
 benchmark*.json
 benchmark*.html

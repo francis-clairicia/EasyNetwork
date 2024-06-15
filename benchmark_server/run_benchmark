@@ -699,6 +699,12 @@ def main() -> None:
     html_output_file: Path | None = args.save_html
     json_output_file: Path | None = args.save_json
     report_file_with_date: bool = args.report_file_with_date
+    if html_output_file:
+        html_output_file = html_output_file.absolute()
+        html_output_file.parent.mkdir(parents=True, exist_ok=True)
+    if json_output_file:
+        json_output_file = json_output_file.absolute()
+        json_output_file.parent.mkdir(parents=True, exist_ok=True)
 
     variations: list[_BenchmarkVariationDef] = [
         {
