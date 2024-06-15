@@ -3,7 +3,6 @@ default_language_version:
 minimum_pre_commit_version: '2.20.0'
 
 ci:
-  skip: [mypy]
   autoupdate_branch: 'pre-commit/autoupdate'
   autoupdate_schedule: quarterly
 
@@ -68,46 +67,3 @@ repos:
       - id: check-json
       - id: check-toml
       - id: check-yaml
-  - repo: local
-    hooks:
-      - id: mypy
-        name: mypy (project)
-        entry: tox run -q -e mypy-full
-        language: system
-        files: ^(src/)
-        types_or: [python, pyi]
-        require_serial: true
-        pass_filenames: false
-      - id: mypy
-        name: mypy (tests)
-        files: ^((src|tests)/)
-        entry: tox run -q -e mypy-test
-        language: system
-        types_or: [python, pyi]
-        require_serial: true
-        pass_filenames: false
-      - id: mypy
-        name: mypy (docs)
-        files: ^((src|docs/source)/)
-        exclude: ^(docs/source/conf.py)$
-        entry: tox run -q -e mypy-docs
-        language: system
-        types_or: [python, pyi]
-        require_serial: true
-        pass_filenames: false
-      - id: mypy
-        name: mypy (benchmark/servers)
-        files: ^((src|benchmark_server)/)
-        entry: tox run -q -e mypy-benchmark_server
-        language: system
-        types_or: [python, pyi]
-        require_serial: true
-        pass_filenames: false
-      - id: mypy
-        name: mypy (benchmark/micro-benchs)
-        files: ^((src|micro_benchmarks)/)
-        entry: tox run -q -e mypy-micro_benchmarks
-        language: system
-        types_or: [python, pyi]
-        require_serial: true
-        pass_filenames: false
