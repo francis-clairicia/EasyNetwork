@@ -27,7 +27,7 @@ jobs:
           name: easynetwork-dist
           path: dist
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@v1.8.14
+        uses: pypa/gh-action-pypi-publish@v1.9.0
 
   build-failure:
     needs: build
