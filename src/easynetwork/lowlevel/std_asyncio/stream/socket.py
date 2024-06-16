@@ -248,8 +248,8 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
             return b""
         if bufsize < 0:
             raise ValueError("'bufsize' must be a positive or null integer")
-        if not self.__buffer_nbytes_written and not self.__eof_reached:
-            await self._wait_for_data("receive_data")
+
+        await self._wait_for_data("receive_data")
 
         nbytes_written = self.__buffer_nbytes_written
         if nbytes_written:
@@ -269,10 +269,10 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
         if self.__connection_lost_exception is not None:
             raise self.__connection_lost_exception.with_traceback(self.__connection_lost_exception_tb)
         with memoryview(buffer).cast("B") as buffer:
-            if not buffer.nbytes:
+            if not buffer:
                 return 0
-            if not self.__buffer_nbytes_written and not self.__eof_reached:
-                await self._wait_for_data("receive_data_into")
+
+            await self._wait_for_data("receive_data_into")
 
             nbytes_written = self.__buffer_nbytes_written
             if nbytes_written:
@@ -294,7 +294,9 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
         if self.__read_waiter is not None:
             raise RuntimeError(f"{requester}() called while another coroutine is already waiting for incoming data")
 
-        assert not self.__eof_reached, "_wait_for_data after EOF"  # nosec assert_used
+        if self.__buffer_nbytes_written or self.__eof_reached:
+            return
+
         assert not self.__read_paused, "transport reading is paused"  # nosec assert_used
 
         if self.__transport is None:

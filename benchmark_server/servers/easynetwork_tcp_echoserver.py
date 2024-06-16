@@ -54,7 +54,8 @@ class LineSerializer(BufferedIncrementalPacketSerializer[bytes, bytes, bytearray
     def buffered_incremental_deserialize(self, buffer: bytearray) -> Generator[int | None, int, tuple[bytes, memoryview]]:
         with memoryview(buffer) as buffer_view:
             _, offset, buflen = yield from _buffered_readuntil(buffer, b"\n")
-            return bytes(buffer[:offset]), buffer_view[offset:buflen]
+            del buffer
+            return bytes(buffer_view[:offset]), buffer_view[offset:buflen]
 
 
 class EchoRequestHandler(AsyncStreamRequestHandler[Any, Any]):
@@ -113,6 +114,7 @@ def create_tcp_server(
         ssl=ssl_context,
         runner_options=asyncio_options,
         manual_buffer_allocation="force" if buffered else "no",
+        max_recv_size=65536,  # Default buffer limit of asyncio streams
     )
 
 
