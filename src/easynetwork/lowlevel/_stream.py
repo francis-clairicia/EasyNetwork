@@ -121,6 +121,7 @@ class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
     __slots__ = (
         "__buffered_receiver",
         "__buffer",
+        "__buffer_view_cache",
         "__exported_write_buffer_view",
         "__buffer_start",
         "__already_written",
@@ -136,8 +137,9 @@ class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
         self.__buffered_receiver: BufferedStreamReceiver[_T_ReceivedPacket, WriteableBuffer] = protocol.buffered_receiver()
         self.__consumer: Generator[int | None, int, tuple[_T_ReceivedPacket, ReadableBuffer]] | None = None
         self.__buffer: WriteableBuffer | None = None
+        self.__buffer_view_cache: memoryview | None = None
         self.__exported_write_buffer_view: memoryview | None = None
-        self.__buffer_start: int | None = None
+        self.__buffer_start: int = 0
         self.__already_written: int = 0
         self.__sizehint: int = buffer_size_hint
 
@@ -174,7 +176,7 @@ class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
         packet: _T_ReceivedPacket
         remaining: ReadableBuffer
         try:
-            self.__buffer_start = consumer.send(nb_updated_bytes)
+            self.__buffer_start = consumer.send(nb_updated_bytes) or 0
         except StopIteration as exc:
             packet, remaining = exc.value
             self.__save_remainder_in_buffer(remaining)
@@ -184,7 +186,7 @@ class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
             raise
         except Exception as exc:
             # Reset buffer, since we do not know if the buffer state is still valid
-            self.__buffer = None
+            self.__buffer_view_cache = self.__buffer = None
             raise RuntimeError("protocol.build_packet_from_buffer() crashed") from exc
         else:
             self.__consumer = consumer
@@ -198,26 +200,26 @@ class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
             whole_buffer = self.__buffered_receiver.create_buffer(self.__sizehint)
             self.__validate_created_buffer(whole_buffer)
             self.__buffer = whole_buffer
+            self.__buffer_view_cache = None  # Ensure buffer view is reset
 
         if self.__consumer is None:
             consumer = self.__buffered_receiver.build_packet_from_buffer(self.__buffer)
             try:
-                self.__buffer_start = next(consumer)
+                self.__buffer_start = next(consumer) or 0
             except StopIteration:
                 raise RuntimeError("protocol.build_packet_from_buffer() did not yield") from None
             except Exception as exc:
                 # Reset buffer, since we do not know if the buffer state is still valid
-                self.__buffer = None
+                self.__buffer_view_cache = self.__buffer = None
                 raise RuntimeError("protocol.build_packet_from_buffer() crashed") from exc
             self.__consumer = consumer
 
-        buffer: memoryview = memoryview(self.__buffer).cast("B")
+        buffer: memoryview | None
+        if (buffer := self.__buffer_view_cache) is None:
+            buffer = memoryview(self.__buffer).cast("B")
+            self.__buffer_view_cache = buffer
 
-        match self.__buffer_start:
-            case None | 0:
-                pass
-            case start_idx:
-                buffer = buffer[start_idx:]
+        buffer = buffer[self.__buffer_start :]
 
         if self.__already_written:
             buffer = buffer[self.__already_written :]
@@ -234,9 +236,7 @@ class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
         if full:
             return bytes(self.__buffer)
         buffer = memoryview(self.__buffer).cast("B")
-        if self.__buffer_start is None:
-            nbytes = self.__already_written
-        elif self.__buffer_start < 0:
+        if self.__buffer_start < 0:
             nbytes = self.__buffer_start + len(buffer) + self.__already_written
         else:
             nbytes = self.__buffer_start + self.__already_written
@@ -244,7 +244,8 @@ class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
 
     def clear(self) -> None:
         self.__release_write_buffer_view()
-        self.__buffer = self.__buffer_start = None
+        self.__buffer_view_cache = self.__buffer = None
+        self.__buffer_start = 0
         self.__already_written = 0
         consumer, self.__consumer = self.__consumer, None
         if consumer is not None:
