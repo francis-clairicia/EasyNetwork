@@ -2,12 +2,11 @@ use std::{
     io,
     net::{ToSocketAddrs, UdpSocket},
     ops::{Deref, DerefMut},
-    path::Path,
     time::Duration,
 };
 
 #[cfg(unix)]
-use std::os::unix::net::UnixDatagram;
+use std::{os::unix::net::UnixDatagram, path::Path};
 
 pub trait ConnectedDatagramEndpoint {
     fn send(&self, buf: &[u8]) -> io::Result<usize>;

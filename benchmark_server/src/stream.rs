@@ -2,12 +2,11 @@ use std::{
     io::{self, Read, Write},
     net::{TcpStream, ToSocketAddrs},
     ops::{Deref, DerefMut},
-    path::Path,
     time::Duration,
 };
 
 #[cfg(unix)]
-use std::os::unix::net::UnixStream;
+use std::{os::unix::net::UnixStream, path::Path};
 
 pub trait Stream: Read + Write {
     fn set_timeout(&self, timeout: Option<Duration>) -> io::Result<()>;
