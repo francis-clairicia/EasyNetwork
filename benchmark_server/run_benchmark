@@ -12,13 +12,14 @@ import datetime
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
 from collections.abc import Sequence
 from pathlib import Path
 from socket import SOCK_DGRAM, SOCK_STREAM
-from typing import TYPE_CHECKING, Final, NotRequired, TypedDict, cast
+from typing import TYPE_CHECKING, Final, NotRequired, TypeAlias, TypedDict, cast
 
 import docker
 import docker.errors
@@ -31,6 +32,9 @@ ROOT_DIR: Final[Path] = Path(__file__).parent
 EXPOSED_PORT: Final[int] = 25000
 
 
+_CommandLine: TypeAlias = tuple[str, ...]
+
+
 class _PingOptions(TypedDict):
     server_address: str | tuple[str, int]
     ping_request: bytes
@@ -41,15 +45,15 @@ class _PingOptions(TypedDict):
 class _BenchmarkDef(TypedDict):
     name: str
     title: str
-    server: list[str]
+    server: _CommandLine
     ping: _PingOptions
-    client: list[str]
+    client: _CommandLine
 
 
 class _BenchmarkVariationDef(TypedDict):
     title: str
     payload_size: int
-    args: list[str]
+    args: _CommandLine
 
 
 class _BenchmarkData(TypedDict):
@@ -74,39 +78,39 @@ class _BenchmarkVariationData(TypedDict):
     transfer: NotRequired[float]
 
 
-_python_cmd: Final[list[str]] = ["python3", "-OO"]
+_python_cmd: Final[_CommandLine] = ("python3", "-OO")
 
 
-def _cargo_run(binary_name: str) -> list[str]:
+def _cargo_run(binary_name: str) -> tuple[str, ...]:
     manifest_path = ROOT_DIR / "Cargo.toml"
 
-    return [
+    return (
         "cargo",
         "run",
         f"--manifest-path={os.fspath(manifest_path)}",
         "--release",
         f"--bin={binary_name}",
         "--",  # <- Needed to pass the following options to the binary arguments
-    ]
+    )
 
 
-_generic_stream_echoclient: Final[list[str]] = [
+_generic_stream_echoclient: Final[_CommandLine] = (
     *_cargo_run("stream_echoclient"),
     "--output-format=json",
-]
+)
 
 _tcp_server_address: Final[tuple[str, int]] = ("127.0.0.1", EXPOSED_PORT)
-_tcp_echoclient: Final[list[str]] = _generic_stream_echoclient + [f"--addr=127.0.0.1:{EXPOSED_PORT}"]
-_tcp_readline_client: Final[list[str]] = _tcp_echoclient + ["--mpr=5"]
-_ssl_over_tcp_echoclient: Final[list[str]] = _tcp_echoclient + ["--ssl"]
+_tcp_echoclient: Final[_CommandLine] = (*_generic_stream_echoclient, f"--addr=127.0.0.1:{EXPOSED_PORT}")
+_tcp_readline_client: Final[_CommandLine] = (*_tcp_echoclient, "--mpr=5")
+_ssl_over_tcp_echoclient: Final[_CommandLine] = (*_tcp_echoclient, "--ssl")
 
-_generic_datagram_echoclient: Final[list[str]] = [
+_generic_datagram_echoclient: Final[_CommandLine] = (
     *_cargo_run("datagram_echoclient"),
     "--output-format=json",
-]
+)
 
 _udp_server_address: Final[tuple[str, int]] = ("127.0.0.1", EXPOSED_PORT)
-_udp_echoclient: Final[list[str]] = _generic_datagram_echoclient + [f"--addr=127.0.0.1:{EXPOSED_PORT}"]
+_udp_echoclient: Final[_CommandLine] = (*_generic_datagram_echoclient, f"--addr=127.0.0.1:{EXPOSED_PORT}")
 
 
 BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
@@ -116,11 +120,11 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
     {
         "name": "tcpecho-easynetwork-asyncio",
         "title": "TCP echo server (easynetwork+asyncio)",
-        "server": _python_cmd
-        + [
+        "server": (
+            *_python_cmd,
             "/usr/src/servers/easynetwork_tcp_echoserver.py",
             f"--port={EXPOSED_PORT}",
-        ],
+        ),
         "ping": {
             "server_address": _tcp_server_address,
             "ping_request": b"ping\n",
@@ -131,12 +135,12 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
     {
         "name": "tcpecho-easynetwork-uvloop",
         "title": "TCP echo server (easynetwork+uvloop)",
-        "server": _python_cmd
-        + [
+        "server": (
+            *_python_cmd,
             "/usr/src/servers/easynetwork_tcp_echoserver.py",
             f"--port={EXPOSED_PORT}",
             "--uvloop",
-        ],
+        ),
         "ping": {
             "server_address": _tcp_server_address,
             "ping_request": b"ping\n",
@@ -147,12 +151,12 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
     {
         "name": "tcpecho-easynetwork-buffered-asyncio",
         "title": "TCP echo server (easynetwork+buffered+asyncio)",
-        "server": _python_cmd
-        + [
+        "server": (
+            *_python_cmd,
             "/usr/src/servers/easynetwork_tcp_echoserver.py",
             f"--port={EXPOSED_PORT}",
             "--buffered",
-        ],
+        ),
         "ping": {
             "server_address": _tcp_server_address,
             "ping_request": b"ping\n",
@@ -163,13 +167,13 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
     {
         "name": "tcpecho-easynetwork-buffered-uvloop",
         "title": "TCP echo server (easynetwork+buffered+uvloop)",
-        "server": _python_cmd
-        + [
+        "server": (
+            *_python_cmd,
             "/usr/src/servers/easynetwork_tcp_echoserver.py",
             f"--port={EXPOSED_PORT}",
             "--buffered",
             "--uvloop",
-        ],
+        ),
         "ping": {
             "server_address": _tcp_server_address,
             "ping_request": b"ping\n",
@@ -180,11 +184,11 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
     {
         "name": "tcpecho-asyncio-sockets",
         "title": "TCP echo server (asyncio/sockets)",
-        "server": _python_cmd
-        + [
+        "server": (
+            *_python_cmd,
             "/usr/src/servers/asyncio_tcp_echoserver.py",
             f"--port={EXPOSED_PORT}",
-        ],
+        ),
         "ping": {
             "server_address": _tcp_server_address,
             "ping_request": b"ping\n",
@@ -195,12 +199,12 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
     {
         "name": "tcpecho-uvloop-sockets",
         "title": "TCP echo server (uvloop/sockets)",
-        "server": _python_cmd
-        + [
+        "server": (
+            *_python_cmd,
             "/usr/src/servers/asyncio_tcp_echoserver.py",
             f"--port={EXPOSED_PORT}",
             "--uvloop",
-        ],
+        ),
         "ping": {
             "server_address": _tcp_server_address,
             "ping_request": b"ping\n",
@@ -211,12 +215,12 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
     {
         "name": "tcpecho-asyncio-streams",
         "title": "TCP echo server (asyncio/streams)",
-        "server": _python_cmd
-        + [
+        "server": (
+            *_python_cmd,
             "/usr/src/servers/asyncio_tcp_echoserver.py",
             f"--port={EXPOSED_PORT}",
             "--streams",
-        ],
+        ),
         "ping": {
             "server_address": _tcp_server_address,
             "ping_request": b"ping\n",
@@ -227,13 +231,13 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
     {
         "name": "tcpecho-uvloop-streams",
         "title": "TCP echo server (uvloop/streams)",
-        "server": _python_cmd
-        + [
+        "server": (
+            *_python_cmd,
             "/usr/src/servers/asyncio_tcp_echoserver.py",
             f"--port={EXPOSED_PORT}",
             "--streams",
             "--uvloop",
-        ],
+        ),
         "ping": {
             "server_address": _tcp_server_address,
             "ping_request": b"ping\n",
@@ -247,12 +251,12 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
     {
         "name": "readline-easynetwork-asyncio",
         "title": "TCP readline server (easynetwork+asyncio)",
-        "server": _python_cmd
-        + [
+        "server": (
+            *_python_cmd,
             "/usr/src/servers/easynetwork_tcp_echoserver.py",
             f"--port={EXPOSED_PORT}",
             "--readline",
-        ],
+        ),
         "ping": {
             "server_address": _tcp_server_address,
             "ping_request": b"ping\n",
@@ -263,13 +267,13 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
     {
         "name": "readline-easynetwork-uvloop",
         "title": "TCP readline server (easynetwork+uvloop)",
-        "server": _python_cmd
-        + [
+        "server": (
+            *_python_cmd,
             "/usr/src/servers/easynetwork_tcp_echoserver.py",
             f"--port={EXPOSED_PORT}",
             "--readline",
             "--uvloop",
-        ],
+        ),
         "ping": {
             "server_address": _tcp_server_address,
             "ping_request": b"ping\n",
@@ -280,13 +284,13 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
     {
         "name": "readline-easynetwork-buffered-asyncio",
         "title": "TCP readline server (easynetwork+buffered+asyncio)",
-        "server": _python_cmd
-        + [
+        "server": (
+            *_python_cmd,
             "/usr/src/servers/easynetwork_tcp_echoserver.py",
             f"--port={EXPOSED_PORT}",
             "--readline",
             "--buffered",
-        ],
+        ),
         "ping": {
             "server_address": _tcp_server_address,
             "ping_request": b"ping\n",
@@ -297,14 +301,14 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
     {
         "name": "readline-easynetwork-buffered-uvloop",
         "title": "TCP readline server (easynetwork+buffered+uvloop)",
-        "server": _python_cmd
-        + [
+        "server": (
+            *_python_cmd,
             "/usr/src/servers/easynetwork_tcp_echoserver.py",
             f"--port={EXPOSED_PORT}",
             "--readline",
             "--buffered",
             "--uvloop",
-        ],
+        ),
         "ping": {
             "server_address": _tcp_server_address,
             "ping_request": b"ping\n",
@@ -315,12 +319,12 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
     {
         "name": "readline-asyncio-streams",
         "title": "TCP readline server (asyncio/streams)",
-        "server": _python_cmd
-        + [
+        "server": (
+            *_python_cmd,
             "/usr/src/servers/asyncio_tcp_echoserver.py",
             f"--port={EXPOSED_PORT}",
             "--readline",
-        ],
+        ),
         "ping": {
             "server_address": _tcp_server_address,
             "ping_request": b"ping\n",
@@ -331,13 +335,13 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
     {
         "name": "readline-uvloop-streams",
         "title": "TCP readline server (uvloop/streams)",
-        "server": _python_cmd
-        + [
+        "server": (
+            *_python_cmd,
             "/usr/src/servers/asyncio_tcp_echoserver.py",
             f"--port={EXPOSED_PORT}",
             "--readline",
             "--uvloop",
-        ],
+        ),
         "ping": {
             "server_address": _tcp_server_address,
             "ping_request": b"ping\n",
@@ -351,12 +355,12 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
     {
         "name": "sslecho-easynetwork-asyncio",
         "title": "TCP+SSL echo server (easynetwork+asyncio)",
-        "server": _python_cmd
-        + [
+        "server": (
+            *_python_cmd,
             "/usr/src/servers/easynetwork_tcp_echoserver.py",
             f"--port={EXPOSED_PORT}",
             "--ssl",
-        ],
+        ),
         "ping": {
             "server_address": _tcp_server_address,
             "ping_request": b"ping\n",
@@ -368,13 +372,13 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
     {
         "name": "sslecho-easynetwork-uvloop",
         "title": "TCP+SSL echo server (easynetwork+uvloop)",
-        "server": _python_cmd
-        + [
+        "server": (
+            *_python_cmd,
             "/usr/src/servers/easynetwork_tcp_echoserver.py",
             f"--port={EXPOSED_PORT}",
             "--ssl",
             "--uvloop",
-        ],
+        ),
         "ping": {
             "server_address": _tcp_server_address,
             "ping_request": b"ping\n",
@@ -386,13 +390,13 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
     {
         "name": "sslecho-easynetwork-buffered-asyncio",
         "title": "TCP+SSL echo server (easynetwork+buffered+asyncio)",
-        "server": _python_cmd
-        + [
+        "server": (
+            *_python_cmd,
             "/usr/src/servers/easynetwork_tcp_echoserver.py",
             f"--port={EXPOSED_PORT}",
             "--ssl",
             "--buffered",
-        ],
+        ),
         "ping": {
             "server_address": _tcp_server_address,
             "ping_request": b"ping\n",
@@ -404,14 +408,14 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
     {
         "name": "sslecho-easynetwork-buffered-uvloop",
         "title": "TCP+SSL echo server (easynetwork+buffered+uvloop)",
-        "server": _python_cmd
-        + [
+        "server": (
+            *_python_cmd,
             "/usr/src/servers/easynetwork_tcp_echoserver.py",
             f"--port={EXPOSED_PORT}",
             "--ssl",
             "--buffered",
             "--uvloop",
-        ],
+        ),
         "ping": {
             "server_address": _tcp_server_address,
             "ping_request": b"ping\n",
@@ -423,13 +427,13 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
     {
         "name": "sslecho-asyncio-streams",
         "title": "TCP+SSL echo server (asyncio/streams)",
-        "server": _python_cmd
-        + [
+        "server": (
+            *_python_cmd,
             "/usr/src/servers/asyncio_tcp_echoserver.py",
             f"--port={EXPOSED_PORT}",
             "--ssl",
             "--streams",
-        ],
+        ),
         "ping": {
             "server_address": _tcp_server_address,
             "ping_request": b"ping\n",
@@ -441,14 +445,14 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
     {
         "name": "sslecho-uvloop-streams",
         "title": "TCP+SSL echo server (uvloop/streams)",
-        "server": _python_cmd
-        + [
+        "server": (
+            *_python_cmd,
             "/usr/src/servers/asyncio_tcp_echoserver.py",
             f"--port={EXPOSED_PORT}",
             "--ssl",
             "--streams",
             "--uvloop",
-        ],
+        ),
         "ping": {
             "server_address": _tcp_server_address,
             "ping_request": b"ping\n",
@@ -463,11 +467,11 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
     {
         "name": "udpecho-easynetwork-asyncio",
         "title": "UDP echo server (easynetwork+asyncio)",
-        "server": _python_cmd
-        + [
+        "server": (
+            *_python_cmd,
             "/usr/src/servers/easynetwork_udp_echoserver.py",
             f"--port={EXPOSED_PORT}",
-        ],
+        ),
         "ping": {
             "server_address": _udp_server_address,
             "ping_request": b"ping",
@@ -478,12 +482,12 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
     {
         "name": "udpecho-easynetwork-uvloop",
         "title": "UDP echo server (easynetwork+uvloop)",
-        "server": _python_cmd
-        + [
+        "server": (
+            *_python_cmd,
             "/usr/src/servers/easynetwork_udp_echoserver.py",
             f"--port={EXPOSED_PORT}",
             "--uvloop",
-        ],
+        ),
         "ping": {
             "server_address": _udp_server_address,
             "ping_request": b"ping",
@@ -494,11 +498,11 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
     {
         "name": "udpecho-asyncio-sockets",
         "title": "UDP echo server (asyncio/sockets)",
-        "server": _python_cmd
-        + [
+        "server": (
+            *_python_cmd,
             "/usr/src/servers/asyncio_udp_echoserver.py",
             f"--port={EXPOSED_PORT}",
-        ],
+        ),
         "ping": {
             "server_address": _udp_server_address,
             "ping_request": b"ping",
@@ -511,12 +515,12 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
     # {
     #     "name": "udpecho-uvloop-sockets",
     #     "title": "UDP echo server (uvloop/sockets)",
-    #     "server": _python_cmd
-    #     + [
+    #     "server": (
+    #         *_python_cmd,
     #         "/usr/src/servers/asyncio_udp_echoserver.py",
     #         f"--port={EXPOSED_PORT}",
     #         "--uvloop",
-    #     ],
+    #     ),
     #     "ping": {
     #         "server_address": _udp_server_address,
     #         "ping_request": b"ping",
@@ -527,12 +531,12 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
     {
         "name": "udpecho-asyncio-streams",
         "title": "UDP echo server (asyncio/streams)",
-        "server": _python_cmd
-        + [
+        "server": (
+            *_python_cmd,
             "/usr/src/servers/asyncio_udp_echoserver.py",
             f"--port={EXPOSED_PORT}",
             "--streams",
-        ],
+        ),
         "ping": {
             "server_address": _udp_server_address,
             "ping_request": b"ping",
@@ -543,13 +547,13 @@ BENCHMARKS_DEF: Final[Sequence[_BenchmarkDef]] = (
     {
         "name": "udpecho-uvloop-streams",
         "title": "UDP echo server (uvloop/streams)",
-        "server": _python_cmd
-        + [
+        "server": (
+            *_python_cmd,
             "/usr/src/servers/asyncio_udp_echoserver.py",
             f"--port={EXPOSED_PORT}",
             "--streams",
             "--uvloop",
-        ],
+        ),
         "ping": {
             "server_address": _udp_server_address,
             "ping_request": b"ping",
@@ -792,12 +796,12 @@ def main() -> None:
         {
             "title": f"{round(msgsize / 1024, 1)}KiB messages, concurrency {concurrency}",
             "payload_size": msgsize,
-            "args": [f"--msize={msgsize}"],
+            "args": (f"--msize={msgsize}",),
         }
         for msgsize in payload_size_levels
     ]
 
-    warmup = ["--msize=1024", "--duration=10", f"--concurrency={concurrency}"]
+    warmup: _CommandLine = ("--msize=1024", "--duration=10", f"--concurrency={concurrency}")
 
     benchmarks_data_list: list[_BenchmarkData] = []
 
@@ -839,9 +843,13 @@ def main() -> None:
                 benchmark_title = f"BENCHMARK: {variation['title']}"
                 print(benchmark_title)
                 print("-" * len(benchmark_title))
-                client_cmd = benchmark["client"] + variation["args"]
-                client_cmd += [f"--duration={duration}", f"--concurrency={concurrency}"]
-                print(" ".join(client_cmd))
+                client_cmd: _CommandLine = (
+                    *benchmark["client"],
+                    *variation["args"],
+                    f"--duration={duration}",
+                    f"--concurrency={concurrency}",
+                )
+                print(shlex.join(client_cmd))
                 output = subprocess.check_output(client_cmd, text=True)
                 data: _BenchmarkVariationData = json.loads(output)
                 _round_all_values(data)
