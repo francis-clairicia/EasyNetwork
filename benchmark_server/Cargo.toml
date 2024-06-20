@@ -1,0 +1,29 @@
+[package]
+name = "benchmark_server"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+doc = false
+doctest = false
+name = "benchmark_server"
+path = "src/lib.rs"
+
+[[bin]]
+doc = false
+doctest = false
+name = "datagram_echoclient"
+path = "src/datagram_echoclient/main.rs"
+
+[[bin]]
+doc = false
+doctest = false
+name = "stream_echoclient"
+path = "src/stream_echoclient/main.rs"
+
+[dependencies]
+clap = { version = "4.5.7", features = ["derive"] }
+native-tls = "0.2.12"
+serde = { version = "1.0.203", features = ["derive"] }
+serde_json = "1.0.117"
+statrs = "0.17.1"

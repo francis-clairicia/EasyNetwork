@@ -84,27 +84,27 @@ def dump_report(report: TestReport, *, show_transfer: bool = True) -> ReportDict
 
     latency_nb_low_outliers = sum(v < latency_lowerfence for v in latency_stats)
     latency_nb_high_outliers = sum(v > latency_upperfence for v in latency_stats)
-    latency_percent_low_outliers = latency_nb_low_outliers / len(latency_stats)
-    latency_percent_high_outliers = latency_nb_high_outliers / len(latency_stats)
+    latency_percent_low_outliers = 100 * latency_nb_low_outliers / len(latency_stats)
+    latency_percent_high_outliers = 100 * latency_nb_high_outliers / len(latency_stats)
 
     data: ReportDict = {
         "messages": nb_messages,
-        "latency_min": round(latency_min, 3),
-        "latency_max": round(latency_max, 3),
-        "latency_mean": round(latency_mean, 3),
-        "latency_stdev": round(latency_stdev, 3),
-        "latency_q1": round(latency_first_quartile, 3),
-        "latency_median": round(latency_median, 3),
-        "latency_q3": round(latency_third_quartile, 3),
+        "latency_min": latency_min,
+        "latency_max": latency_max,
+        "latency_mean": latency_mean,
+        "latency_stdev": latency_stdev,
+        "latency_q1": latency_first_quartile,
+        "latency_median": latency_median,
+        "latency_q3": latency_third_quartile,
         "latency_nb_low_outliers": latency_nb_low_outliers,
         "latency_nb_high_outliers": latency_nb_high_outliers,
-        "latency_percent_low_outliers": round(latency_percent_low_outliers * 100, 2),
-        "latency_percent_high_outliers": round(latency_percent_high_outliers * 100, 2),
+        "latency_percent_low_outliers": latency_percent_low_outliers,
+        "latency_percent_high_outliers": latency_percent_high_outliers,
         "rps": rps,
     }
 
     if show_transfer:
-        data["transfer"] = round((nb_messages * message_size / (1024 * 1024)) / duration, 2)
+        data["transfer"] = (nb_messages * message_size / (1024 * 1024)) / duration
 
     return data
 
@@ -115,18 +115,18 @@ def print_report(report: TestReport, *, show_transfer: bool = True) -> None:
     print("Report:")
     print(f"{result['messages']} (of {report.message_size / 1024:.2f} KiB size) in {report.duration()} seconds")
     print("Latency:")
-    print(f"- min {result['latency_min']}ms")
-    print(f"- max {result['latency_max']}ms")
-    print(f"- mean {result['latency_mean']}ms")
-    print(f"- std {result['latency_stdev']}ms ({100 * result['latency_stdev'] / result['latency_mean']:.2f}%)")
+    print(f"- min {result['latency_min']:.3f}ms")
+    print(f"- max {result['latency_max']:.3f}ms")
+    print(f"- mean {result['latency_mean']:.3f}ms")
+    print(f"- std {result['latency_stdev']:.3f}ms ({100 * result['latency_stdev'] / result['latency_mean']:.2f}%)")
     latency_distribution = [
         (25, result["latency_q1"]),
         (50, result["latency_median"]),
         (75, result["latency_q3"]),
     ]
-    print(f"- distribution: {'; '.join(f'{percent}% under {time}ms' for percent, time in latency_distribution)}")
-    print(f"- number of low outliers: {result['latency_nb_low_outliers']} ({result['latency_percent_low_outliers']}%)")
-    print(f"- number of high outliers: {result['latency_nb_high_outliers']} ({result['latency_percent_high_outliers']}%)")
+    print(f"- distribution: {'; '.join(f'{percent}% under {time:.3f}ms' for percent, time in latency_distribution)}")
+    print(f"- number of low outliers: {result['latency_nb_low_outliers']:.3f} ({result['latency_percent_low_outliers']:.2f}%)")
+    print(f"- number of high outliers: {result['latency_nb_high_outliers']:.3f} ({result['latency_percent_high_outliers']:.2f}%)")
     print(f"{result['rps']} requests/sec")
     if "transfer" in result:
-        print(f"{result['transfer']} MiB/sec")
+        print(f"{result['transfer']:.2f} MiB/sec")
