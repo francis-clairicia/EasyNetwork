@@ -6,12 +6,11 @@ use std::{
     time::{Duration, Instant},
 };
 
-use benchmark_server::report::{Report, RequestReport, TestReport};
+use benchmark_server::{
+    report::{Report, RequestReport, TestReport},
+    stream::StreamClient,
+};
 use clap::{Parser, ValueEnum};
-
-mod client;
-
-use client::StreamClient;
 
 #[derive(Debug, Parser, Clone)]
 struct Args {

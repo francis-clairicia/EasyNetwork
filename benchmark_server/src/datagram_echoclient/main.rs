@@ -6,12 +6,11 @@ use std::{
     time::{Duration, Instant},
 };
 
-use benchmark_server::report::{Report, RequestReport, TestReport};
+use benchmark_server::{
+    datagram::DatagramClient,
+    report::{Report, RequestReport, TestReport},
+};
 use clap::{Parser, ValueEnum};
-
-mod client;
-
-use client::DatagramClient;
 
 #[derive(Debug, Parser, Clone)]
 struct Args {
