@@ -48,6 +48,15 @@ repos:
       - id: pdm-export
         name: pdm-export benchmark-servers-deps
         args: ['--dev', '--group', 'benchmark-servers-deps', '--format', 'requirements', '--without-hashes', '--output', 'benchmark_server/servers/requirements.txt']
+  - repo: https://github.com/doublify/pre-commit-rust
+    rev: 'v1.0'
+    hooks:
+      - id: fmt
+        name: cargo fmt (benchmarks)
+        args: ["--manifest-path", "./benchmark_server/Cargo.toml", "--"]
+      - id: clippy
+        name: cargo clippy (benchmarks)
+        args: ["--manifest-path", "./benchmark_server/Cargo.toml", "--", "-D", "warnings"]
   - repo: https://github.com/pre-commit/pygrep-hooks
     rev: 'v1.10.0'
     hooks:
