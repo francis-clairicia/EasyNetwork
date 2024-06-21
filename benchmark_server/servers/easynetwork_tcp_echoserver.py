@@ -11,8 +11,7 @@ from typing import Any
 
 from easynetwork.protocol import StreamProtocol
 from easynetwork.serializers.abc import BufferedIncrementalPacketSerializer
-from easynetwork.serializers.base_stream import _buffered_readuntil
-from easynetwork.serializers.tools import GeneratorStreamReader
+from easynetwork.serializers.base_stream import AutoSeparatedPacketSerializer
 from easynetwork.servers.handlers import AsyncStreamClient, AsyncStreamRequestHandler
 from easynetwork.servers.standalone_tcp import StandaloneTCPNetworkServer
 
@@ -36,26 +35,17 @@ class NoSerializer(BufferedIncrementalPacketSerializer[bytes, bytes, memoryview]
         return bytes(buffer[:offset]), b""
 
 
-class LineSerializer(BufferedIncrementalPacketSerializer[bytes, bytes, bytearray]):
+class LineSerializer(AutoSeparatedPacketSerializer[bytes, bytes]):
     __slots__ = ()
 
-    def incremental_serialize(self, packet: bytes) -> Generator[bytes, None, None]:
-        yield packet
+    def __init__(self) -> None:
+        super().__init__(separator=b"\n", incremental_serialize_check_separator=False, limit=65536)
 
-    def incremental_deserialize(self) -> Generator[None, bytes, tuple[bytes, bytes]]:
-        reader = GeneratorStreamReader()
-        packet = yield from reader.read_until(b"\n", limit=65536)
-        remainder = reader.read_all()
-        return packet, remainder
+    def serialize(self, packet: bytes) -> bytes:
+        return packet
 
-    def create_deserializer_buffer(self, sizehint: int) -> bytearray:
-        return bytearray(sizehint)
-
-    def buffered_incremental_deserialize(self, buffer: bytearray) -> Generator[int | None, int, tuple[bytes, memoryview]]:
-        with memoryview(buffer) as buffer_view:
-            _, offset, buflen = yield from _buffered_readuntil(buffer, b"\n")
-            del buffer
-            return bytes(buffer_view[:offset]), buffer_view[offset:buflen]
+    def deserialize(self, data: bytes) -> bytes:
+        return data
 
 
 class EchoRequestHandler(AsyncStreamRequestHandler[Any, Any]):
