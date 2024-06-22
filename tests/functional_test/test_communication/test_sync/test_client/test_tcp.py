@@ -11,7 +11,7 @@ from typing import Any
 from easynetwork.clients.tcp import TCPNetworkClient
 from easynetwork.exceptions import ClientClosedError, StreamProtocolParseError
 from easynetwork.lowlevel.socket import IPv4SocketAddress, IPv6SocketAddress
-from easynetwork.protocol import StreamProtocol
+from easynetwork.protocol import AnyStreamProtocolType
 
 import pytest
 
@@ -44,7 +44,7 @@ class TestTCPNetworkClient:
     @staticmethod
     def client(
         socket_pair: tuple[Socket, Socket],
-        stream_protocol: StreamProtocol[str, str],
+        stream_protocol: AnyStreamProtocolType[str, str],
     ) -> Iterator[TCPNetworkClient[str, str]]:
         with TCPNetworkClient(socket_pair[1], stream_protocol) as client:
             client.socket.setsockopt(IPPROTO_TCP, TCP_NODELAY, 1)
@@ -303,7 +303,7 @@ class TestTCPNetworkClientConnection:
         self,
         localhost_ip: str,
         remote_address: tuple[str, int],
-        stream_protocol: StreamProtocol[str, str],
+        stream_protocol: AnyStreamProtocolType[str, str],
     ) -> None:
         # Arrange
 
@@ -339,7 +339,7 @@ class TestSSLOverTCPNetworkClient:
     def test____dunder_init____handshake_and_shutdown(
         self,
         remote_address: tuple[str, int],
-        stream_protocol: StreamProtocol[str, str],
+        stream_protocol: AnyStreamProtocolType[str, str],
         client_ssl_context: ssl.SSLContext,
     ) -> None:
         # Arrange
@@ -357,7 +357,7 @@ class TestSSLOverTCPNetworkClient:
     def test____dunder_init____use_default_context(
         self,
         remote_address: tuple[str, int],
-        stream_protocol: StreamProtocol[str, str],
+        stream_protocol: AnyStreamProtocolType[str, str],
         client_ssl_context: ssl.SSLContext,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
@@ -377,7 +377,7 @@ class TestSSLOverTCPNetworkClient:
     def test____dunder_init____use_default_context____disable_hostname_check(
         self,
         remote_address: tuple[str, int],
-        stream_protocol: StreamProtocol[str, str],
+        stream_protocol: AnyStreamProtocolType[str, str],
         client_ssl_context: ssl.SSLContext,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
@@ -401,7 +401,7 @@ class TestSSLOverTCPNetworkClient:
     def test____dunder_init____no_ssl_module(
         self,
         remote_address: tuple[str, int],
-        stream_protocol: StreamProtocol[str, str],
+        stream_protocol: AnyStreamProtocolType[str, str],
         client_ssl_context: ssl.SSLContext,
     ) -> None:
         # Arrange
@@ -418,7 +418,7 @@ class TestSSLOverTCPNetworkClient:
     def test____send_eof____not_supported(
         self,
         remote_address: tuple[str, int],
-        stream_protocol: StreamProtocol[str, str],
+        stream_protocol: AnyStreamProtocolType[str, str],
         client_ssl_context: ssl.SSLContext,
     ) -> None:
         # Arrange

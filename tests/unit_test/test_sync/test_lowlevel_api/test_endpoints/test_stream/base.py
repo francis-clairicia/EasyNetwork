@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Any, Literal
 from easynetwork.exceptions import IncrementalDeserializeError, StreamProtocolParseError
 from easynetwork.lowlevel.api_sync.transports.abc import BufferedStreamReadTransport
 from easynetwork.lowlevel.typed_attr import TypedAttributeProvider
-from easynetwork.warnings import ManualBufferAllocationWarning
 
 import pytest
 
@@ -19,11 +18,6 @@ if TYPE_CHECKING:
     from unittest.mock import MagicMock
 
     from pytest_mock import MockerFixture
-
-
-pytest_mark_ignore_manual_buffer_allocation_warning = pytest.mark.filterwarnings(
-    f"ignore::{ManualBufferAllocationWarning.__module__}.{ManualBufferAllocationWarning.__qualname__}",
-)
 
 
 class BaseEndpointTests(BaseTestWithStreamProtocol):
@@ -431,7 +425,7 @@ class BaseEndpointReceiveTests(BaseEndpointTests):
         endpoint: SupportsReceiving,
         recv_timeout: float | None,
         mock_stream_transport: MagicMock,
-        mock_buffered_stream_receiver: MagicMock,
+        mock_stream_protocol: MagicMock,
     ) -> None:
         # Arrange
         mock_stream_transport.recv_into.side_effect = make_recv_into_side_effect([b"packet\n"])
@@ -441,7 +435,7 @@ class BaseEndpointReceiveTests(BaseEndpointTests):
             yield
             raise expected_error
 
-        mock_buffered_stream_receiver.build_packet_from_buffer.side_effect = side_effect
+        mock_stream_protocol.build_packet_from_buffer.side_effect = side_effect
 
         # Act
         with pytest.raises(StreamProtocolParseError) as exc_info:
@@ -489,7 +483,7 @@ class BaseEndpointReceiveTests(BaseEndpointTests):
         endpoint: SupportsReceiving,
         recv_timeout: float | None,
         mock_stream_transport: MagicMock,
-        mock_buffered_stream_receiver: MagicMock,
+        mock_stream_protocol: MagicMock,
     ) -> None:
         # Arrange
         mock_stream_transport.recv_into.side_effect = make_recv_into_side_effect([b"packet_1\n", b"packet_2\n"])
@@ -502,7 +496,7 @@ class BaseEndpointReceiveTests(BaseEndpointTests):
             yield
             raise expected_error
 
-        mock_buffered_stream_receiver.build_packet_from_buffer.side_effect = side_effect
+        mock_stream_protocol.build_packet_from_buffer.side_effect = side_effect
 
         # Act
         with pytest.raises(RuntimeError, match=r"^protocol\.build_packet_from_buffer\(\) crashed$") as exc_info:

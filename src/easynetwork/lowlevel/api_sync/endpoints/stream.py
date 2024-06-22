@@ -27,12 +27,11 @@ import errno as _errno
 import math
 import warnings
 from collections.abc import Callable, Mapping
-from typing import Any, Generic, Literal, assert_never
+from typing import Any, Generic, assert_never
 
 from ...._typevars import _T_ReceivedPacket, _T_SentPacket
 from ....exceptions import UnsupportedOperation
-from ....protocol import StreamProtocol
-from ....warnings import ManualBufferAllocationWarning
+from ....protocol import AnyStreamProtocolType
 from ... import _stream, _utils
 from ..transports.abc import (
     BaseTransport,
@@ -56,43 +55,24 @@ class StreamReceiverEndpoint(BaseTransport, Generic[_T_ReceivedPacket]):
     def __init__(
         self,
         transport: StreamReadTransport,
-        protocol: StreamProtocol[Any, _T_ReceivedPacket],
+        protocol: AnyStreamProtocolType[Any, _T_ReceivedPacket],
         max_recv_size: int,
-        *,
-        manual_buffer_allocation: Literal["try", "no", "force"] = "try",
-        manual_buffer_allocation_warning_stacklevel: int = 2,
     ) -> None:
         """
         Parameters:
             transport: The data transport to use.
             protocol: The :term:`protocol object` to use.
             max_recv_size: Read buffer size.
-            manual_buffer_allocation: Select whether or not to enable the manual buffer allocation system:
-
-                                      * ``"try"``: (the default) will use the buffer API if the transport and protocol support it,
-                                        and fall back to the default implementation otherwise.
-                                        Emits a :exc:`.ManualBufferAllocationWarning` if only the transport does not support it.
-
-                                      * ``"no"``: does not use the buffer API, even if they both support it.
-
-                                      * ``"force"``: requires the buffer API. Raises :exc:`.UnsupportedOperation` if it fails and
-                                        no warnings are emitted.
-            manual_buffer_allocation_warning_stacklevel: ``stacklevel`` parameter of :func:`warnings.warn` when emitting
-                                                         :exc:`.ManualBufferAllocationWarning`.
         """
 
         if not isinstance(transport, StreamReadTransport):
             raise TypeError(f"Expected a StreamReadTransport object, got {transport!r}")
         _check_max_recv_size_value(max_recv_size)
-        _check_manual_buffer_allocation_value(manual_buffer_allocation)
-        manual_buffer_allocation_warning_stacklevel = max(manual_buffer_allocation_warning_stacklevel, 2)
 
         self.__receiver: _DataReceiverImpl[_T_ReceivedPacket] | _BufferedReceiverImpl[_T_ReceivedPacket] = _get_receiver(
             transport=transport,
             protocol=protocol,
             max_recv_size=max_recv_size,
-            manual_buffer_allocation=manual_buffer_allocation,
-            manual_buffer_allocation_warning_stacklevel=manual_buffer_allocation_warning_stacklevel,
         )
 
         self.__transport: StreamReadTransport = transport
@@ -170,7 +150,7 @@ class StreamSenderEndpoint(BaseTransport, Generic[_T_SentPacket]):
     def __init__(
         self,
         transport: StreamWriteTransport,
-        protocol: StreamProtocol[_T_SentPacket, Any],
+        protocol: AnyStreamProtocolType[_T_SentPacket, Any],
     ) -> None:
         """
         Parameters:
@@ -256,44 +236,25 @@ class StreamEndpoint(BaseTransport, Generic[_T_SentPacket, _T_ReceivedPacket]):
     def __init__(
         self,
         transport: StreamTransport,
-        protocol: StreamProtocol[_T_SentPacket, _T_ReceivedPacket],
+        protocol: AnyStreamProtocolType[_T_SentPacket, _T_ReceivedPacket],
         max_recv_size: int,
-        *,
-        manual_buffer_allocation: Literal["try", "no", "force"] = "try",
-        manual_buffer_allocation_warning_stacklevel: int = 2,
     ) -> None:
         """
         Parameters:
             transport: The data transport to use.
             protocol: The :term:`protocol object` to use.
             max_recv_size: Read buffer size.
-            manual_buffer_allocation: Select whether or not to enable the manual buffer allocation system:
-
-                                      * ``"try"``: (the default) will use the buffer API if the transport and protocol support it,
-                                        and fall back to the default implementation otherwise.
-                                        Emits a :exc:`.ManualBufferAllocationWarning` if only the transport does not support it.
-
-                                      * ``"no"``: does not use the buffer API, even if they both support it.
-
-                                      * ``"force"``: requires the buffer API. Raises :exc:`.UnsupportedOperation` if it fails and
-                                        no warnings are emitted.
-            manual_buffer_allocation_warning_stacklevel: ``stacklevel`` parameter of :func:`warnings.warn` when emitting
-                                                         :exc:`.ManualBufferAllocationWarning`.
         """
 
         if not isinstance(transport, StreamTransport):
             raise TypeError(f"Expected a StreamTransport object, got {transport!r}")
         _check_max_recv_size_value(max_recv_size)
-        _check_manual_buffer_allocation_value(manual_buffer_allocation)
-        manual_buffer_allocation_warning_stacklevel = max(manual_buffer_allocation_warning_stacklevel, 2)
 
         self.__sender: _DataSenderImpl[_T_SentPacket] = _DataSenderImpl(transport, _stream.StreamDataProducer(protocol))
         self.__receiver: _DataReceiverImpl[_T_ReceivedPacket] | _BufferedReceiverImpl[_T_ReceivedPacket] = _get_receiver(
             transport=transport,
             protocol=protocol,
             max_recv_size=max_recv_size,
-            manual_buffer_allocation=manual_buffer_allocation,
-            manual_buffer_allocation_warning_stacklevel=manual_buffer_allocation_warning_stacklevel,
         )
 
         self.__transport: StreamTransport = transport
@@ -501,45 +462,27 @@ class _BufferedReceiverImpl(Generic[_T_ReceivedPacket]):
 
 def _get_receiver(
     transport: StreamReadTransport,
-    protocol: StreamProtocol[Any, _T_ReceivedPacket],
+    protocol: AnyStreamProtocolType[Any, _T_ReceivedPacket],
     *,
     max_recv_size: int,
-    manual_buffer_allocation: Literal["try", "no", "force"],
-    manual_buffer_allocation_warning_stacklevel: int,
 ) -> _DataReceiverImpl[_T_ReceivedPacket] | _BufferedReceiverImpl[_T_ReceivedPacket]:
-    # Always exclude this function frame.
-    manual_buffer_allocation_warning_stacklevel += 1
+    from ....protocol import BufferedStreamProtocol, StreamProtocol
 
-    match manual_buffer_allocation:
-        case "try" | "force":
-            try:
-                buffered_consumer = _stream.BufferedStreamDataConsumer(protocol, max_recv_size)
-                if not isinstance(transport, BufferedStreamReadTransport):
-                    msg = f"The transport implementation {transport!r} does not implement BufferedStreamReadTransport interface"
-                    if manual_buffer_allocation == "try":
-                        warnings.warn(
-                            f'{msg}. Consider explicitly setting the "manual_buffer_allocation" strategy to "no".',
-                            category=ManualBufferAllocationWarning,
-                            stacklevel=manual_buffer_allocation_warning_stacklevel,
-                        )
-                    raise UnsupportedOperation(msg)
-                return _BufferedReceiverImpl(transport, buffered_consumer)
-            except UnsupportedOperation as exc:
-                if manual_buffer_allocation == "force":
-                    exc.add_note('Consider setting the "manual_buffer_allocation" strategy to "no"')
-                    raise
-                return _DataReceiverImpl(transport, _stream.StreamDataConsumer(protocol), max_recv_size)
-        case "no":
+    _stream._check_any_protocol(protocol)
+
+    match protocol:
+        case BufferedStreamProtocol():
+            buffered_consumer = _stream.BufferedStreamDataConsumer(protocol, max_recv_size)
+            if not isinstance(transport, BufferedStreamReadTransport):
+                msg = f"The transport implementation {transport!r} does not implement BufferedStreamReadTransport interface"
+                raise UnsupportedOperation(msg)
+            return _BufferedReceiverImpl(transport, buffered_consumer)
+        case StreamProtocol():
             return _DataReceiverImpl(transport, _stream.StreamDataConsumer(protocol), max_recv_size)
         case _:  # pragma: no cover
-            assert_never(manual_buffer_allocation)
+            assert_never(protocol)
 
 
 def _check_max_recv_size_value(max_recv_size: int) -> None:
     if not isinstance(max_recv_size, int) or max_recv_size <= 0:
         raise ValueError("'max_recv_size' must be a strictly positive integer")
-
-
-def _check_manual_buffer_allocation_value(manual_buffer_allocation: Literal["try", "no", "force"]) -> None:
-    if manual_buffer_allocation not in ("try", "no", "force"):
-        raise ValueError('"manual_buffer_allocation" must be "try", "no" or "force"')

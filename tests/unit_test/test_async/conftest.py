@@ -29,9 +29,14 @@ class FakeCancellation(BaseException):
 
 @pytest.fixture(scope="module", autouse=True)
 def __mute_socket_getaddrinfo(module_mocker: MockerFixture) -> None:
-    from socket import EAI_NONAME, gaierror
+    from socket import EAI_NONAME, gaierror, getaddrinfo
 
-    module_mocker.patch("socket.getaddrinfo", autospec=True, side_effect=gaierror(EAI_NONAME, "Name or service not known"))
+    module_mocker.patch(
+        "socket.getaddrinfo",
+        autospec=True,
+        wraps=getaddrinfo,
+        side_effect=gaierror(EAI_NONAME, "Name or service not known"),
+    )
 
 
 @pytest.fixture(autouse=True)

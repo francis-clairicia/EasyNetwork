@@ -22,13 +22,13 @@ __all__ = [
 
 import logging
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, Any, Generic, Literal
+from typing import TYPE_CHECKING, Any, Generic
 
 from .._typevars import _T_Request, _T_Response
 from ..lowlevel.api_async.backend.abc import AsyncBackend
 from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendToken
 from ..lowlevel.socket import SocketProxy
-from ..protocol import StreamProtocol
+from ..protocol import AnyStreamProtocolType
 from . import _base
 from .async_tcp import AsyncTCPNetworkServer
 from .handlers import AsyncStreamRequestHandler
@@ -53,7 +53,7 @@ class StandaloneTCPNetworkServer(
         self,
         host: str | None | Sequence[str],
         port: int,
-        protocol: StreamProtocol[_T_Response, _T_Request],
+        protocol: AnyStreamProtocolType[_T_Response, _T_Request],
         request_handler: AsyncStreamRequestHandler[_T_Request, _T_Response],
         backend: AsyncBackend | BuiltinAsyncBackendToken | None = None,
         *,
@@ -65,7 +65,6 @@ class StandaloneTCPNetworkServer(
         backlog: int | None = None,
         reuse_port: bool = False,
         max_recv_size: int | None = None,
-        manual_buffer_allocation: Literal["try", "no", "force"] = "try",
         log_client_connection: bool | None = None,
         logger: logging.Logger | None = None,
         **kwargs: Any,
@@ -92,7 +91,6 @@ class StandaloneTCPNetworkServer(
                 backlog=backlog,
                 reuse_port=reuse_port,
                 max_recv_size=max_recv_size,
-                manual_buffer_allocation=manual_buffer_allocation,
                 log_client_connection=log_client_connection,
                 logger=logger,
                 **kwargs,

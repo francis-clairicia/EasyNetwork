@@ -7,18 +7,12 @@ from functools import partial
 from socket import AF_INET, AF_INET6, SOCK_DGRAM, SOCK_STREAM, has_ipv6 as HAS_IPV6, socket as Socket
 from typing import Any
 
-from easynetwork.protocol import DatagramProtocol, StreamProtocol
+from easynetwork.protocol import AnyStreamProtocolType, BufferedStreamProtocol, DatagramProtocol, StreamProtocol
 
 import pytest
 import trustme
 
-from .serializer import (
-    BadSerializeStringSerializer,
-    BufferedStringSerializer,
-    NotGoodBufferedStringSerializer,
-    NotGoodStringSerializer,
-    StringSerializer,
-)
+from .serializer import BadSerializeStringSerializer, NotGoodStringSerializer, StringSerializer
 
 _FAMILY_TO_LOCALHOST: dict[int, str] = {
     AF_INET: "127.0.0.1",
@@ -68,43 +62,33 @@ def udp_socket_factory(socket_factory: Callable[[int], Socket]) -> Callable[[], 
 
 
 @pytest.fixture(params=["data"])
-def one_shot_serializer(request: pytest.FixtureRequest) -> StringSerializer:
+def datagram_protocol(request: pytest.FixtureRequest) -> DatagramProtocol[str, str]:
     match request.param:
         case "data":
-            return StringSerializer()
+            return DatagramProtocol(StringSerializer())
         case "invalid":
-            return NotGoodStringSerializer()
+            return DatagramProtocol(NotGoodStringSerializer())
         case "bad_serialize":
-            return BadSerializeStringSerializer()
+            return DatagramProtocol(BadSerializeStringSerializer())
         case _:
             pytest.fail("Invalid parameter")
 
 
 @pytest.fixture(params=["data", "buffered"])
-def incremental_serializer(request: pytest.FixtureRequest) -> StringSerializer:
+def stream_protocol(request: pytest.FixtureRequest) -> AnyStreamProtocolType[str, str]:
     match request.param:
         case "data":
-            return StringSerializer()
+            return StreamProtocol(StringSerializer())
         case "buffered":
-            return BufferedStringSerializer()
+            return BufferedStreamProtocol(StringSerializer())
         case "invalid":
-            return NotGoodStringSerializer()
+            return StreamProtocol(NotGoodStringSerializer())
         case "invalid_buffered":
-            return NotGoodBufferedStringSerializer()
+            return BufferedStreamProtocol(NotGoodStringSerializer())
         case "bad_serialize":
-            return BadSerializeStringSerializer()
+            return StreamProtocol(BadSerializeStringSerializer())
         case _:
             pytest.fail("Invalid parameter")
-
-
-@pytest.fixture
-def stream_protocol(incremental_serializer: StringSerializer) -> StreamProtocol[str, str]:
-    return StreamProtocol(incremental_serializer)
-
-
-@pytest.fixture
-def datagram_protocol(one_shot_serializer: StringSerializer) -> DatagramProtocol[str, str]:
-    return DatagramProtocol(one_shot_serializer)
 
 
 # Origin: https://gist.github.com/4325783, by Geert Jansen.  Public domain.

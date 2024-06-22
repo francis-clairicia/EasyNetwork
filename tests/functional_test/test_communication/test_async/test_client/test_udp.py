@@ -149,7 +149,7 @@ class TestAsyncUDPNetworkClient:
         with pytest.raises(ClientClosedError):
             await client.send_packet("ABCDEF")
 
-    @pytest.mark.parametrize("one_shot_serializer", [pytest.param("bad_serialize", id="serializer_crash")], indirect=True)
+    @pytest.mark.parametrize("datagram_protocol", [pytest.param("bad_serialize", id="serializer_crash")], indirect=True)
     async def test____send_packet____protocol_crashed(
         self,
         client: AsyncUDPNetworkClient[str, str],
@@ -185,7 +185,7 @@ class TestAsyncUDPNetworkClient:
             async with asyncio.timeout(3):
                 await client.recv_packet()
 
-    @pytest.mark.parametrize("one_shot_serializer", [pytest.param("invalid", id="serializer_crash")], indirect=True)
+    @pytest.mark.parametrize("datagram_protocol", [pytest.param("invalid", id="serializer_crash")], indirect=True)
     async def test____recv_packet____protocol_crashed(
         self,
         client: AsyncUDPNetworkClient[str, str],

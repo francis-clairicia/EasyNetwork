@@ -4,8 +4,6 @@ from collections.abc import Generator
 from socket import AF_INET, AF_INET6, socket as Socket
 from typing import TYPE_CHECKING, Any
 
-from easynetwork.exceptions import UnsupportedOperation
-
 import pytest
 
 from ._utils import get_all_socket_families
@@ -116,10 +114,13 @@ class MixinTestSocketSendMSG:
 class BaseTestWithStreamProtocol:
     @pytest.fixture
     @staticmethod
-    def mock_buffered_stream_receiver(
-        mock_buffered_stream_receiver: MagicMock,
+    def mock_buffered_stream_protocol(
+        mock_buffered_stream_protocol: MagicMock,
         mocker: MockerFixture,
     ) -> MagicMock:
+        def generate_chunks_side_effect(packet: Any) -> Generator[bytes, None, None]:
+            yield str(packet).removeprefix("sentinel.").encode("ascii") + b"\n"
+
         def build_packet_from_buffer_side_effect(buffer: memoryview) -> Generator[None, int, tuple[Any, bytes]]:
             chunk: bytes = b""
             while True:
@@ -131,8 +132,9 @@ class BaseTestWithStreamProtocol:
                 data, chunk = chunk.split(b"\n", 1)
                 return getattr(mocker.sentinel, data.decode(encoding="ascii")), chunk
 
-        mock_buffered_stream_receiver.build_packet_from_buffer.side_effect = build_packet_from_buffer_side_effect
-        return mock_buffered_stream_receiver
+        mock_buffered_stream_protocol.generate_chunks.side_effect = generate_chunks_side_effect
+        mock_buffered_stream_protocol.build_packet_from_buffer.side_effect = build_packet_from_buffer_side_effect
+        return mock_buffered_stream_protocol
 
     @pytest.fixture(params=["data", "buffer"])
     @staticmethod
@@ -145,7 +147,7 @@ class BaseTestWithStreamProtocol:
     def mock_stream_protocol(
         stream_protocol_mode: str,
         mock_stream_protocol: MagicMock,
-        mock_buffered_stream_receiver: MagicMock,
+        mock_buffered_stream_protocol: MagicMock,
         mocker: MockerFixture,
     ) -> MagicMock:
         def generate_chunks_side_effect(packet: Any) -> Generator[bytes, None, None]:
@@ -162,19 +164,16 @@ class BaseTestWithStreamProtocol:
 
         mock_stream_protocol.generate_chunks.side_effect = generate_chunks_side_effect
         mock_stream_protocol.build_packet_from_chunks.side_effect = build_packet_from_chunks_side_effect
+        mock_buffered_stream_protocol.into_data_protocol.side_effect = None
+        mock_buffered_stream_protocol.into_data_protocol.return_value = mock_stream_protocol
 
         match stream_protocol_mode:
             case "data":
-                mock_stream_protocol.buffered_receiver.side_effect = UnsupportedOperation(
-                    "This protocol does not support the buffer API"
-                )
+                return mock_stream_protocol
             case "buffer":
-                mock_stream_protocol.buffered_receiver.side_effect = None
-                mock_stream_protocol.buffered_receiver.return_value = mock_buffered_stream_receiver
+                return mock_buffered_stream_protocol
             case _:
                 pytest.fail(f'"stream_protocol_mode": Invalid parameter, got {stream_protocol_mode!r}')
-
-        return mock_stream_protocol
 
 
 class BaseTestWithDatagramProtocol:

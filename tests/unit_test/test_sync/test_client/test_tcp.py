@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import errno
 import os
-from collections.abc import Generator, Iterator
+from collections.abc import Iterator
 from selectors import EVENT_READ, EVENT_WRITE
 from socket import AF_INET6, IPPROTO_TCP, SHUT_RDWR, SHUT_WR, SO_KEEPALIVE, SOL_SOCKET, TCP_NODELAY
 from ssl import SSLEOFError, SSLError, SSLErrorNumber, SSLWantReadError, SSLWantWriteError, SSLZeroReturnError
@@ -28,11 +28,11 @@ if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
 from ..._utils import DummyLock
-from ...base import UNSUPPORTED_FAMILIES, MixinTestSocketSendMSG
+from ...base import UNSUPPORTED_FAMILIES, BaseTestWithStreamProtocol, MixinTestSocketSendMSG
 from .base import BaseTestClient
 
 
-class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
+class TestTCPNetworkClient(BaseTestClient, BaseTestWithStreamProtocol, MixinTestSocketSendMSG):
     @pytest.fixture(scope="class", params=["AF_INET", "AF_INET6"])
     @staticmethod
     def socket_family(request: Any) -> Any:
@@ -138,8 +138,13 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
 
     @pytest.fixture
     @staticmethod
-    def mock_stream_data_consumer(mocker: MockerFixture) -> MagicMock:
-        return mocker.NonCallableMagicMock(spec=StreamDataConsumer)
+    def stream_protocol_mode(request: pytest.FixtureRequest) -> str:
+        return "data"
+
+    @pytest.fixture
+    @staticmethod
+    def mock_stream_data_consumer(mock_stream_protocol: MagicMock, mocker: MockerFixture) -> MagicMock:
+        return mocker.NonCallableMagicMock(spec=StreamDataConsumer, wraps=StreamDataConsumer(mock_stream_protocol))
 
     @pytest.fixture(autouse=True)
     @staticmethod
@@ -174,40 +179,6 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         cls.set_remote_address_to_socket_mock(mock_tcp_socket, socket_family, global_remote_address)
         cls.set_remote_address_to_socket_mock(mock_ssl_socket, socket_family, global_remote_address)
         return global_remote_address
-
-    @pytest.fixture  # DO NOT set autouse=True
-    @staticmethod
-    def setup_producer_mock(mock_stream_protocol: MagicMock) -> None:
-        def generate_chunks_side_effect(packet: Any) -> Generator[bytes, None, None]:
-            yield str(packet).removeprefix("sentinel.").encode("ascii") + b"\n"
-
-        mock_stream_protocol.generate_chunks.side_effect = generate_chunks_side_effect
-
-    @pytest.fixture  # DO NOT set autouse=True
-    @staticmethod
-    def setup_consumer_mock(mock_stream_data_consumer: MagicMock, mocker: MockerFixture) -> None:
-        bytes_buffer: bytes = b""
-
-        sentinel = mocker.sentinel
-
-        def next_side_effect(chunk: bytes | None) -> Any:
-            nonlocal bytes_buffer
-            if chunk is not None:
-                bytes_buffer += chunk
-            data, separator, bytes_buffer = bytes_buffer.partition(b"\n")
-            if not separator:
-                assert not bytes_buffer
-                bytes_buffer = data
-                raise StopIteration
-            return getattr(sentinel, data.decode("ascii"))
-
-        def get_buffer_side_effect() -> memoryview:
-            nonlocal bytes_buffer
-
-            return memoryview(bytes_buffer)
-
-        mock_stream_data_consumer.next.side_effect = next_side_effect
-        mock_stream_data_consumer.get_buffer.side_effect = get_buffer_side_effect
 
     @pytest.fixture
     @staticmethod
@@ -564,13 +535,12 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         mock_tcp_socket: MagicMock,
         mock_datagram_protocol: MagicMock,
         ssl_context: MagicMock | None,
-        mock_ssl_socket: MagicMock,
         server_hostname: Any | None,
     ) -> None:
         # Arrange
 
-        # Act
-        with pytest.raises(TypeError, match=r"^Expected a StreamProtocol object, got .*$"):
+        # Act & Assert
+        with pytest.raises(TypeError, match=r"^Expected a StreamProtocol or a BufferedStreamProtocol object, got .*$"):
             if use_socket:
                 _ = TCPNetworkClient(
                     mock_tcp_socket,
@@ -585,14 +555,6 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
                     ssl=ssl_context,
                     server_hostname=server_hostname,
                 )
-
-        # Assert
-        if ssl_context:
-            mock_ssl_socket.close.assert_called_once()
-            mock_tcp_socket.close.assert_not_called()
-        else:
-            mock_tcp_socket.close.assert_called_once()
-            mock_ssl_socket.close.assert_not_called()
 
     @pytest.mark.parametrize("max_recv_size", [None, 1, 2**64], ids=lambda p: f"max_recv_size=={p}")
     @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
@@ -664,39 +626,6 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
                     max_recv_size=max_recv_size,
                     ssl=ssl_context,
                     server_hostname=server_hostname,
-                )
-
-    @pytest.mark.parametrize("manual_buffer_allocation", ["unknown", ""], ids=lambda p: f"manual_buffer_allocation=={p!r}")
-    @pytest.mark.parametrize("use_socket", [False, True], ids=lambda p: f"use_socket=={p}")
-    def test____dunder_init____manual_buffer_allocation____invalid_value(
-        self,
-        manual_buffer_allocation: Any,
-        use_socket: bool,
-        remote_address: tuple[str, int],
-        mock_tcp_socket: MagicMock,
-        mock_stream_protocol: MagicMock,
-        ssl_context: MagicMock | None,
-        server_hostname: Any | None,
-    ) -> None:
-        # Arrange
-
-        # Act & Assert
-        with pytest.raises(ValueError, match=r'^"manual_buffer_allocation" must be "try", "no" or "force"$'):
-            if use_socket:
-                _ = TCPNetworkClient(
-                    mock_tcp_socket,
-                    protocol=mock_stream_protocol,
-                    ssl=ssl_context,
-                    server_hostname=server_hostname,
-                    manual_buffer_allocation=manual_buffer_allocation,
-                )
-            else:
-                _ = TCPNetworkClient(
-                    remote_address,
-                    protocol=mock_stream_protocol,
-                    ssl=ssl_context,
-                    server_hostname=server_hostname,
-                    manual_buffer_allocation=manual_buffer_allocation,
                 )
 
     @pytest.mark.parametrize("retry_interval", [0, -12.34])
@@ -1322,7 +1251,6 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         mock_used_socket.fileno.assert_called_once_with()
         assert fd == -1
 
-    @pytest.mark.usefixtures("setup_producer_mock")
     def test____send_packet____send_bytes_to_socket(
         self,
         client: TCPNetworkClient[Any, Any],
@@ -1347,7 +1275,6 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         mock_used_socket_send.assert_called_once_with(b"packet\n")
         mock_used_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_ERROR)
 
-    @pytest.mark.usefixtures("setup_producer_mock")
     def test____send_packet____blocking_operation(
         self,
         client: TCPNetworkClient[Any, Any],
@@ -1392,7 +1319,6 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
             assert mock_used_socket_send.call_args_list == [mocker.call(b"packet\n")]
             mock_used_socket.getsockopt.assert_not_called()
 
-    @pytest.mark.usefixtures("setup_producer_mock")
     def test____send_packet____raise_error_saved_in_SO_ERROR_option(
         self,
         client: TCPNetworkClient[Any, Any],
@@ -1421,7 +1347,6 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         mock_used_socket_send.assert_called_once_with(b"packet\n")
         mock_used_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_ERROR)
 
-    @pytest.mark.usefixtures("setup_producer_mock")
     def test____send_packet____closed_client_error(
         self,
         client: TCPNetworkClient[Any, Any],
@@ -1447,7 +1372,6 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         mock_used_socket_send.assert_not_called()
         mock_used_socket.getsockopt.assert_not_called()
 
-    @pytest.mark.usefixtures("setup_producer_mock")
     @pytest.mark.parametrize("use_ssl", ["USE_SSL"], indirect=True)
     @pytest.mark.parametrize("ssl_eof_error", [SSLEOFError])
     def test____send_packet____ssl____eof_error(
@@ -1475,7 +1399,6 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         mock_used_socket_send.assert_called_once_with(b"packet\n")
         mock_used_socket.getsockopt.assert_not_called()
 
-    @pytest.mark.usefixtures("setup_producer_mock")
     def test____send_packet____convert_connection_errors(
         self,
         client: TCPNetworkClient[Any, Any],
@@ -1500,7 +1423,6 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         mock_used_socket_send.assert_called_once_with(b"packet\n")
         mock_used_socket.getsockopt.assert_not_called()
 
-    @pytest.mark.usefixtures("setup_producer_mock")
     @pytest.mark.parametrize("closed_socket_errno", sorted(CLOSED_SOCKET_ERRNOS), ids=errno.errorcode.__getitem__)
     def test____send_packet____convert_closed_socket_errors(
         self,
@@ -1527,7 +1449,6 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         mock_used_socket_send.assert_called_once_with(b"packet\n")
         mock_used_socket.getsockopt.assert_not_called()
 
-    @pytest.mark.usefixtures("setup_producer_mock")
     @pytest.mark.parametrize("use_ssl", ["USE_SSL"], indirect=True)
     def test____send_packet____ssl____unrelated_ssl_error(
         self,
@@ -1554,7 +1475,6 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         mock_used_socket_send.assert_called_once_with(b"packet\n")
         mock_used_socket.getsockopt.assert_not_called()
 
-    @pytest.mark.usefixtures("setup_producer_mock")
     @pytest.mark.parametrize("use_ssl", ["NO_SSL"], indirect=True)
     def test____send_eof____shutdown_socket(
         self,
@@ -1577,7 +1497,6 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         mock_stream_protocol.generate_chunks.assert_not_called()
         mock_used_socket_send.assert_not_called()
 
-    @pytest.mark.usefixtures("setup_producer_mock")
     @pytest.mark.parametrize("use_ssl", ["NO_SSL"], indirect=True)
     def test____send_eof____closed_client(
         self,
@@ -1595,7 +1514,6 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         # Assert
         mock_used_socket.shutdown.assert_not_called()
 
-    @pytest.mark.usefixtures("setup_producer_mock")
     @pytest.mark.parametrize("use_ssl", ["NO_SSL"], indirect=True)
     def test____send_eof____idempotent(
         self,
@@ -1612,7 +1530,6 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         # Assert
         mock_used_socket.shutdown.assert_called_once_with(SHUT_WR)
 
-    @pytest.mark.usefixtures("setup_producer_mock")
     @pytest.mark.parametrize("use_ssl", ["USE_SSL"], indirect=True)
     def test____send_eof____ssl____operation_not_supported(
         self,
@@ -1635,7 +1552,6 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         mock_stream_protocol.generate_chunks.assert_called()
         mock_used_socket_send.assert_called()
 
-    @pytest.mark.usefixtures("setup_consumer_mock")
     def test____recv_packet____blocking_or_not____receive_bytes_from_socket(
         self,
         client: TCPNetworkClient[Any, Any],
@@ -1664,7 +1580,6 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         assert packet is mocker.sentinel.packet
 
     @pytest.mark.parametrize("recv_timeout", [None, float("+inf"), 123456789], indirect=True)  # Do not test with timeout==0
-    @pytest.mark.usefixtures("setup_consumer_mock")
     def test____recv_packet____blocking____partial_data(
         self,
         client: TCPNetworkClient[Any, Any],
@@ -1695,7 +1610,6 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         ],
         indirect=True,
     )
-    @pytest.mark.usefixtures("setup_consumer_mock")
     def test____recv_packet____non_blocking____partial_data(
         self,
         client: TCPNetworkClient[Any, Any],
@@ -1730,7 +1644,6 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         mock_used_socket.settimeout.assert_not_called()
         mock_used_socket.setblocking.assert_not_called()
 
-    @pytest.mark.usefixtures("setup_consumer_mock")
     def test____recv_packet____blocking_or_not____extra_data(
         self,
         client: TCPNetworkClient[Any, Any],
@@ -1758,7 +1671,6 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         assert packet_1 is mocker.sentinel.packet_1
         assert packet_2 is mocker.sentinel.packet_2
 
-    @pytest.mark.usefixtures("setup_consumer_mock")
     def test____recv_packet____blocking_or_not____eof_error____default(
         self,
         client: TCPNetworkClient[Any, Any],
@@ -1779,7 +1691,6 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         mock_used_socket.recv.assert_called_once_with(DEFAULT_STREAM_BUFSIZE)
         mock_stream_data_consumer.next.assert_called_once_with(None)
 
-    @pytest.mark.usefixtures("setup_consumer_mock")
     def test____recv_packet____blocking_or_not____eof_error____convert_connection_errors(
         self,
         client: TCPNetworkClient[Any, Any],
@@ -1800,7 +1711,6 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         mock_used_socket.recv.assert_called_once_with(DEFAULT_STREAM_BUFSIZE)
         mock_stream_data_consumer.next.assert_called_once_with(None)
 
-    @pytest.mark.usefixtures("setup_consumer_mock")
     @pytest.mark.parametrize("closed_socket_errno", sorted(CLOSED_SOCKET_ERRNOS), ids=errno.errorcode.__getitem__)
     def test____recv_packet____blocking_or_not____eof_error____convert_closed_socket_errors(
         self,
@@ -1823,7 +1733,6 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         mock_used_socket.recv.assert_called_once_with(DEFAULT_STREAM_BUFSIZE)
         mock_stream_data_consumer.next.assert_called_once_with(None)
 
-    @pytest.mark.usefixtures("setup_consumer_mock")
     def test____recv_packet____blocking_or_not____protocol_parse_error(
         self,
         client: TCPNetworkClient[Any, Any],
@@ -1851,7 +1760,6 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         assert mock_stream_data_consumer.next.call_args_list == [mocker.call(None), mocker.call(b"packet\n")]
         assert exception is expected_error
 
-    @pytest.mark.usefixtures("setup_consumer_mock")
     def test____recv_packet____blocking_or_not____closed_client_error(
         self,
         client: TCPNetworkClient[Any, Any],
@@ -1877,7 +1785,6 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         mock_stream_data_consumer.next.assert_not_called()
         mock_used_socket.recv.assert_not_called()
 
-    @pytest.mark.usefixtures("setup_consumer_mock")
     @pytest.mark.parametrize("use_ssl", ["USE_SSL"], indirect=True)
     @pytest.mark.parametrize("ssl_eof_error", [SSLEOFError, SSLZeroReturnError])
     def test____recv_packet____blocking_or_not____ssl____eof_error(
@@ -1901,7 +1808,6 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         mock_used_socket.recv.assert_called_once_with(DEFAULT_STREAM_BUFSIZE)
         mock_stream_data_consumer.next.assert_called_once_with(None)
 
-    @pytest.mark.usefixtures("setup_consumer_mock")
     @pytest.mark.parametrize("use_ssl", ["USE_SSL"], indirect=True)
     def test____recv_packet____blocking_or_not____ssl____unrelated_ssl_error(
         self,
@@ -1931,7 +1837,6 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
             pytest.param(123456789, id="strictly positive timeout"),
         ],
     )
-    @pytest.mark.usefixtures("setup_consumer_mock")
     def test____recv_packet____timeout(
         self,
         client: TCPNetworkClient[Any, Any],
@@ -1970,7 +1875,6 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         ],
     )
     @pytest.mark.parametrize("max_recv_size", [3], indirect=True)  # Needed for timeout==0
-    @pytest.mark.usefixtures("setup_consumer_mock")
     def test____iter_received_packets____yields_available_packets_with_given_timeout(
         self,
         client: TCPNetworkClient[Any, Any],
@@ -2013,7 +1917,6 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         assert packets == [mocker.sentinel.packet_1, mocker.sentinel.packet_2]
 
     @pytest.mark.parametrize("max_recv_size", [3], indirect=True)  # Needed for timeout==0
-    @pytest.mark.usefixtures("setup_consumer_mock")
     def test____iter_received_packets____yields_available_packets_until_eof(
         self,
         client: TCPNetworkClient[Any, Any],
@@ -2045,7 +1948,6 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         assert packets == [mocker.sentinel.packet_1, mocker.sentinel.packet_2]
 
     @pytest.mark.parametrize("max_recv_size", [3], indirect=True)  # Needed for timeout==0
-    @pytest.mark.usefixtures("setup_consumer_mock")
     def test____iter_received_packets____yields_available_packets_until_error(
         self,
         client: TCPNetworkClient[Any, Any],
@@ -2076,7 +1978,6 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         ]
         assert packets == [mocker.sentinel.packet_1, mocker.sentinel.packet_2]
 
-    @pytest.mark.usefixtures("setup_consumer_mock")
     def test____iter_received_packets____protocol_parse_error(
         self,
         client: TCPNetworkClient[Any, Any],
@@ -2097,7 +1998,6 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         assert exception is mock_stream_data_consumer.next.side_effect
 
     @pytest.mark.parametrize("several_generators", [False, True], ids=lambda t: f"several_generators=={t}")
-    @pytest.mark.usefixtures("setup_consumer_mock")
     def test____iter_received_packets____avoid_unnecessary_socket_recv_call(
         self,
         client: TCPNetworkClient[Any, Any],
@@ -2129,7 +2029,6 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         assert packet_1 is mocker.sentinel.packet_1
         assert packet_2 is mocker.sentinel.packet_2
 
-    @pytest.mark.usefixtures("setup_consumer_mock")
     def test____iter_received_packets____closed_client_during_iteration(
         self,
         client: TCPNetworkClient[Any, Any],
@@ -2149,7 +2048,6 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         with pytest.raises(StopIteration):
             _ = next(iterator)
 
-    @pytest.mark.usefixtures("setup_producer_mock", "setup_consumer_mock")
     def test____special_case____send_packet____eof_error____still_try_socket_send(
         self,
         client: TCPNetworkClient[Any, Any],
@@ -2171,7 +2069,6 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         mock_used_socket.settimeout.assert_not_called()
         mock_used_socket_send.assert_called_with(b"packet\n")
 
-    @pytest.mark.usefixtures("setup_consumer_mock")
     def test____special_case____recv_packet____blocking_or_not____eof_error____do_not_try_socket_recv_on_next_call(
         self,
         client: TCPNetworkClient[Any, Any],
@@ -2194,7 +2091,6 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         mock_used_socket.settimeout.assert_not_called()
         mock_used_socket.setblocking.assert_not_called()
 
-    @pytest.mark.usefixtures("setup_producer_mock", "setup_consumer_mock")
     @pytest.mark.parametrize("use_ssl", ["NO_SSL"], indirect=True)
     def test____special_case____separate_send_and_receive_locks(
         self,
@@ -2220,7 +2116,6 @@ class TestTCPNetworkClient(BaseTestClient, MixinTestSocketSendMSG):
         mock_stream_protocol.generate_chunks.assert_called_with(mocker.sentinel.packet)
         mock_used_socket_send.assert_called_with(b"packet\n")
 
-    @pytest.mark.usefixtures("setup_producer_mock", "setup_consumer_mock")
     @pytest.mark.parametrize("use_ssl", ["USE_SSL"], indirect=True)
     @pytest.mark.parametrize("ssl_shared_lock", [None, False, True], indirect=True, ids=lambda p: f"ssl_shared_lock=={p}")
     def test____special_case____separate_send_and_receive_locks____ssl(

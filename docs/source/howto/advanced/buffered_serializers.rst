@@ -76,6 +76,16 @@ to keep a server running with acceptable performance.
 
 ------
 
+Usage
+=====
+
+For the serializers that support this API, you must use :class:`.BufferedStreamProtocol` instead of :class:`.StreamProtocol`:
+
+.. literalinclude:: ../../_include/examples/howto/protocols/usage/buffered_stream_protocol.py
+   :pyobject: main
+   :linenos:
+   :emphasize-lines: 3
+
 Writing A Buffered Serializer
 =============================
 
@@ -172,7 +182,7 @@ At each :keyword:`yield` checkpoint, the endpoint implementation sends to the ge
       If you are relying only on the area that has already been written, you can skip this step (as in the example above).
 
    Growing buffers
-      It is not officially supported to increase/decrease the buffer size during deserialization.
+      It is not supported to increase/decrease the buffer size during deserialization.
 
 .. tip::
 

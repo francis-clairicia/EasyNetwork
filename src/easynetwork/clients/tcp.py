@@ -24,7 +24,7 @@ import socket as _socket
 import threading
 import warnings
 from collections.abc import Iterator
-from typing import TYPE_CHECKING, Any, Literal, final, overload
+from typing import TYPE_CHECKING, Any, final, overload
 
 try:
     import ssl
@@ -47,7 +47,7 @@ from ..lowlevel.socket import (
     set_tcp_keepalive,
     set_tcp_nodelay,
 )
-from ..protocol import StreamProtocol
+from ..protocol import AnyStreamProtocolType
 from .abc import AbstractNetworkClient
 
 if TYPE_CHECKING:
@@ -71,7 +71,7 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
         self,
         address: tuple[str, int],
         /,
-        protocol: StreamProtocol[_T_SentPacket, _T_ReceivedPacket],
+        protocol: AnyStreamProtocolType[_T_SentPacket, _T_ReceivedPacket],
         *,
         connect_timeout: float | None = ...,
         local_address: tuple[str, int] | None = ...,
@@ -83,7 +83,6 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
         ssl_shared_lock: bool | None = ...,
         max_recv_size: int | None = ...,
         retry_interval: float = ...,
-        manual_buffer_allocation: Literal["try", "no", "force"] = ...,
     ) -> None: ...
 
     @overload
@@ -91,7 +90,7 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
         self,
         socket: _socket.socket,
         /,
-        protocol: StreamProtocol[_T_SentPacket, _T_ReceivedPacket],
+        protocol: AnyStreamProtocolType[_T_SentPacket, _T_ReceivedPacket],
         *,
         ssl: SSLContext | bool | None = ...,
         server_hostname: str | None = ...,
@@ -101,14 +100,13 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
         ssl_shared_lock: bool | None = ...,
         max_recv_size: int | None = ...,
         retry_interval: float = ...,
-        manual_buffer_allocation: Literal["try", "no", "force"] = ...,
     ) -> None: ...
 
     def __init__(
         self,
         __arg: _socket.socket | tuple[str, int],
         /,
-        protocol: StreamProtocol[_T_SentPacket, _T_ReceivedPacket],
+        protocol: AnyStreamProtocolType[_T_SentPacket, _T_ReceivedPacket],
         *,
         ssl: SSLContext | bool | None = None,
         server_hostname: str | None = None,
@@ -118,7 +116,6 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
         ssl_shared_lock: bool | None = None,
         max_recv_size: int | None = None,
         retry_interval: float = 1.0,
-        manual_buffer_allocation: Literal["try", "no", "force"] = "try",
         **kwargs: Any,
     ) -> None:
         """
@@ -154,19 +151,15 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
             max_recv_size: Read buffer size. If not given, a default reasonable value is used.
             retry_interval: The maximum wait time to wait for a blocking operation before retrying.
                             Set it to :data:`math.inf` to disable this feature.
-            manual_buffer_allocation: Select whether or not to enable the manual buffer allocation system:
-
-                                      * ``"try"``: (the default) will use the buffer API if the protocol supports it,
-                                        and fall back to the default implementation otherwise.
-
-                                      * ``"no"``: does not use the buffer API, even if the protocol object supports it.
-
-                                      * ``"force"``: requires the buffer API. Raises :exc:`.UnsupportedOperation` if it fails.
 
         See Also:
             :ref:`SSL/TLS security considerations <ssl-security>`
         """
         super().__init__()
+
+        from ..lowlevel._stream import _check_any_protocol
+
+        _check_any_protocol(protocol)
 
         if max_recv_size is None:
             max_recv_size = constants.DEFAULT_STREAM_BUFSIZE
@@ -271,8 +264,6 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
                 transport,
                 protocol,
                 max_recv_size=max_recv_size,
-                manual_buffer_allocation=manual_buffer_allocation,
-                manual_buffer_allocation_warning_stacklevel=3,
             )
             self.__socket_proxy = SocketProxy(transport.extra(INETSocketAttribute.socket), lock=self.__send_lock.get)
 

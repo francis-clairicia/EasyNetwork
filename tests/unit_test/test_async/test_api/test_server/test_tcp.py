@@ -32,7 +32,7 @@ class TestAsyncTCPNetworkServer:
         # Arrange
 
         # Act & Assert
-        with pytest.raises(TypeError, match=r"^Expected a StreamProtocol object, got .*$"):
+        with pytest.raises(TypeError, match=r"^Expected a StreamProtocol or a BufferedStreamProtocol object, got .*$"):
             _ = AsyncTCPNetworkServer(None, 0, mock_datagram_protocol, mock_stream_request_handler, mock_backend)
 
     async def test____dunder_init____request_handler____invalid_value(
@@ -46,27 +46,6 @@ class TestAsyncTCPNetworkServer:
         # Act & Assert
         with pytest.raises(TypeError, match=r"^Expected an AsyncStreamRequestHandler object, got .*$"):
             _ = AsyncTCPNetworkServer(None, 0, mock_stream_protocol, mock_datagram_request_handler, mock_backend)
-
-    @pytest.mark.parametrize("manual_buffer_allocation", ["unknown", ""], ids=lambda p: f"manual_buffer_allocation=={p!r}")
-    async def test____dunder_init____manual_buffer_allocation____invalid_value(
-        self,
-        manual_buffer_allocation: Any,
-        mock_stream_protocol: MagicMock,
-        mock_stream_request_handler: MagicMock,
-        mock_backend: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act & Assert
-        with pytest.raises(ValueError, match=r'^"manual_buffer_allocation" must be "try", "no" or "force"$'):
-            _ = AsyncTCPNetworkServer(
-                None,
-                0,
-                mock_stream_protocol,
-                mock_stream_request_handler,
-                mock_backend,
-                manual_buffer_allocation=manual_buffer_allocation,
-            )
 
     async def test____dunder_init____backend____invalid_value(
         self,

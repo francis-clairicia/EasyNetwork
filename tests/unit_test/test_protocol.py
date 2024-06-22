@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Generator
+from collections.abc import Generator
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.exceptions import (
@@ -9,10 +9,9 @@ from easynetwork.exceptions import (
     IncrementalDeserializeError,
     PacketConversionError,
     StreamProtocolParseError,
-    UnsupportedOperation,
 )
-from easynetwork.protocol import BufferedStreamReceiver, DatagramProtocol, StreamProtocol
-from easynetwork.serializers.abc import AbstractIncrementalPacketSerializer, BufferedIncrementalPacketSerializer
+from easynetwork.protocol import AnyStreamProtocolType, BufferedStreamProtocol, DatagramProtocol, StreamProtocol
+from easynetwork.serializers.abc import AbstractIncrementalPacketSerializer
 
 import pytest
 
@@ -189,7 +188,7 @@ class TestDatagramProtocol:
         assert not hasattr(exception, "sender_address")
 
 
-class TestStreamProtocol:
+class _BaseTestAnyStreamProtocol:
     sentinel: Any
 
     @pytest.fixture(autouse=True)
@@ -198,31 +197,13 @@ class TestStreamProtocol:
         yield
         del self.sentinel
 
-    @pytest.fixture
-    @staticmethod
-    def mock_buffered_receiver(mocker: MockerFixture) -> MagicMock:
-        return mocker.NonCallableMagicMock(spec=BufferedStreamReceiver)
-
-    @pytest.fixture(autouse=True)
-    @staticmethod
-    def mock_buffered_receiver_cls(mocker: MockerFixture, mock_buffered_receiver: MagicMock) -> MagicMock:
-        return mocker.patch("easynetwork.protocol.BufferedStreamReceiver", return_value=mock_buffered_receiver)
-
-    @pytest.fixture
-    @staticmethod
-    def protocol_without_converter(mock_incremental_serializer: MagicMock) -> StreamProtocol[Any, Any]:
-        return StreamProtocol(mock_incremental_serializer, None)
-
-    @pytest.fixture
-    @staticmethod
-    def protocol_with_converter(mock_incremental_serializer: MagicMock, mock_converter: MagicMock) -> StreamProtocol[Any, Any]:
-        return StreamProtocol(mock_incremental_serializer, mock_converter)
-
     @pytest.fixture(params=["with_converter", "without_converter"])
     @staticmethod
     def protocol(
-        request: Any, protocol_with_converter: StreamProtocol[Any, Any], protocol_without_converter: StreamProtocol[Any, Any]
-    ) -> StreamProtocol[Any, Any]:
+        request: Any,
+        protocol_with_converter: AnyStreamProtocolType[Any, Any],
+        protocol_without_converter: AnyStreamProtocolType[Any, Any],
+    ) -> AnyStreamProtocolType[Any, Any]:
         match request.param:
             case "with_converter":
                 return protocol_with_converter
@@ -235,6 +216,56 @@ class TestStreamProtocol:
         yield self.sentinel.chunk_a
         yield self.sentinel.chunk_b
         yield self.sentinel.chunk_c
+
+    def test____generate_chunk____without_converter(
+        self,
+        protocol_without_converter: AnyStreamProtocolType[Any, Any],
+        mock_incremental_serializer: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_incremental_serialize_func: MagicMock = mock_incremental_serializer.incremental_serialize
+        mock_incremental_serialize_func.side_effect = self.generate_chunk_side_effect
+
+        # Act
+        chunks: list[Any] = list(protocol_without_converter.generate_chunks(mocker.sentinel.packet))
+
+        # Assert
+        mock_incremental_serialize_func.assert_called_once_with(mocker.sentinel.packet)
+        assert chunks == [mocker.sentinel.chunk_a, mocker.sentinel.chunk_b, mocker.sentinel.chunk_c]
+
+    def test____generate_chunk____with_converter(
+        self,
+        protocol_with_converter: AnyStreamProtocolType[Any, Any],
+        mock_incremental_serializer: MagicMock,
+        mock_converter: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_incremental_serialize_func: MagicMock = mock_incremental_serializer.incremental_serialize
+        mock_incremental_serialize_func.side_effect = self.generate_chunk_side_effect
+        mock_convert_func: MagicMock = mock_converter.convert_to_dto_packet
+        mock_convert_func.return_value = mocker.sentinel.dto_packet
+
+        # Act
+        chunks: list[Any] = list(protocol_with_converter.generate_chunks(mocker.sentinel.packet))
+
+        # Assert
+        mock_convert_func.assert_called_once_with(mocker.sentinel.packet)
+        mock_incremental_serialize_func.assert_called_once_with(mocker.sentinel.dto_packet)
+        assert chunks == [mocker.sentinel.chunk_a, mocker.sentinel.chunk_b, mocker.sentinel.chunk_c]
+
+
+class TestStreamProtocol(_BaseTestAnyStreamProtocol):
+    @pytest.fixture
+    @staticmethod
+    def protocol_without_converter(mock_incremental_serializer: MagicMock) -> StreamProtocol[Any, Any]:
+        return StreamProtocol(mock_incremental_serializer, None)
+
+    @pytest.fixture
+    @staticmethod
+    def protocol_with_converter(mock_incremental_serializer: MagicMock, mock_converter: MagicMock) -> StreamProtocol[Any, Any]:
+        return StreamProtocol(mock_incremental_serializer, mock_converter)
 
     def build_packet_from_chunks_side_effect(self) -> Generator[None, bytes, tuple[Any, bytes]]:
         data = yield
@@ -266,81 +297,6 @@ class TestStreamProtocol:
         # Act & Assert
         with pytest.raises(TypeError, match=r"^Expected a converter instance, got .+$"):
             StreamProtocol(mock_incremental_serializer, mock_not_converter)
-
-    def test____generate_chunk____without_converter(
-        self,
-        protocol_without_converter: StreamProtocol[Any, Any],
-        mock_incremental_serializer: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        mock_incremental_serialize_func: MagicMock = mock_incremental_serializer.incremental_serialize
-        mock_incremental_serialize_func.side_effect = self.generate_chunk_side_effect
-
-        # Act
-        chunks: list[Any] = list(protocol_without_converter.generate_chunks(mocker.sentinel.packet))
-
-        # Assert
-        mock_incremental_serialize_func.assert_called_once_with(mocker.sentinel.packet)
-        assert chunks == [mocker.sentinel.chunk_a, mocker.sentinel.chunk_b, mocker.sentinel.chunk_c]
-
-    def test____generate_chunk____with_converter(
-        self,
-        protocol_with_converter: StreamProtocol[Any, Any],
-        mock_incremental_serializer: MagicMock,
-        mock_converter: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        mock_incremental_serialize_func: MagicMock = mock_incremental_serializer.incremental_serialize
-        mock_incremental_serialize_func.side_effect = self.generate_chunk_side_effect
-        mock_convert_func: MagicMock = mock_converter.convert_to_dto_packet
-        mock_convert_func.return_value = mocker.sentinel.dto_packet
-
-        # Act
-        chunks: list[Any] = list(protocol_with_converter.generate_chunks(mocker.sentinel.packet))
-
-        # Assert
-        mock_convert_func.assert_called_once_with(mocker.sentinel.packet)
-        mock_incremental_serialize_func.assert_called_once_with(mocker.sentinel.dto_packet)
-        assert chunks == [mocker.sentinel.chunk_a, mocker.sentinel.chunk_b, mocker.sentinel.chunk_c]
-
-    def test____buffered_receiver____return_instance____without_converter(
-        self,
-        protocol_without_converter: StreamProtocol[Any, Any],
-        mock_incremental_serializer: MagicMock,
-        mock_buffered_receiver: MagicMock,
-        mock_buffered_receiver_cls: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act & Assert
-        if isinstance(mock_incremental_serializer, BufferedIncrementalPacketSerializer):
-            buffered_receiver = protocol_without_converter.buffered_receiver()
-            assert buffered_receiver is mock_buffered_receiver
-            mock_buffered_receiver_cls.assert_called_once_with(mock_incremental_serializer, converter=None)
-        else:
-            with pytest.raises(UnsupportedOperation):
-                protocol_without_converter.buffered_receiver()
-
-    def test____buffered_receiver____return_instance____with_converter(
-        self,
-        protocol_with_converter: StreamProtocol[Any, Any],
-        mock_incremental_serializer: MagicMock,
-        mock_buffered_receiver: MagicMock,
-        mock_converter: MagicMock,
-        mock_buffered_receiver_cls: MagicMock,
-    ) -> None:
-        # Arrange
-
-        # Act & Assert
-        if isinstance(mock_incremental_serializer, BufferedIncrementalPacketSerializer):
-            buffered_receiver = protocol_with_converter.buffered_receiver()
-            assert buffered_receiver is mock_buffered_receiver
-            mock_buffered_receiver_cls.assert_called_once_with(mock_incremental_serializer, converter=mock_converter)
-        else:
-            with pytest.raises(UnsupportedOperation):
-                protocol_with_converter.buffered_receiver()
 
     def test____build_packet_from_chunks____without_converter(
         self,
@@ -466,54 +422,24 @@ class TestStreamProtocol:
         assert exception.__cause__ is mock_convert_func.side_effect
 
 
-class TestBufferedStreamReceiver:
-    sentinel: Any
+class TestBufferedStreamProtocol(_BaseTestAnyStreamProtocol):
+    @pytest.fixture
+    @staticmethod
+    def mock_incremental_serializer(mock_buffered_incremental_serializer: MagicMock) -> MagicMock:
+        return mock_buffered_incremental_serializer
 
     @pytest.fixture
     @staticmethod
-    def mock_incremental_serializer_factory(mocker: MockerFixture) -> Callable[[], Any]:
-        def factory() -> Callable[[], Any]:
-            mock_incremental_serializer = mocker.NonCallableMagicMock(spec=BufferedIncrementalPacketSerializer)
-
-            mock_incremental_serializer.create_deserializer_buffer.side_effect = lambda sizehint: memoryview(bytearray(sizehint))
-
-            return mock_incremental_serializer
-
-        return factory
-
-    @pytest.fixture(autouse=True)
-    def _bind_mocker_sentinel(self, mocker: MockerFixture) -> Generator[None, None, None]:
-        self.sentinel = mocker.sentinel
-        yield
-        del self.sentinel
-
-    @pytest.fixture
-    @staticmethod
-    def protocol_without_converter(mock_incremental_serializer: MagicMock) -> BufferedStreamReceiver[Any, memoryview]:
-        return BufferedStreamReceiver(mock_incremental_serializer, None)
+    def protocol_without_converter(mock_incremental_serializer: MagicMock) -> BufferedStreamProtocol[Any, Any, memoryview]:
+        return BufferedStreamProtocol(mock_incremental_serializer, None)
 
     @pytest.fixture
     @staticmethod
     def protocol_with_converter(
         mock_incremental_serializer: MagicMock,
         mock_converter: MagicMock,
-    ) -> BufferedStreamReceiver[Any, memoryview]:
-        return BufferedStreamReceiver(mock_incremental_serializer, mock_converter)
-
-    @pytest.fixture(params=["with_converter", "without_converter"])
-    @staticmethod
-    def protocol(
-        request: Any,
-        protocol_with_converter: BufferedStreamReceiver[Any, Any],
-        protocol_without_converter: BufferedStreamReceiver[Any, Any],
-    ) -> BufferedStreamReceiver[Any, Any]:
-        match request.param:
-            case "with_converter":
-                return protocol_with_converter
-            case "without_converter":
-                return protocol_without_converter
-            case _:
-                raise AssertionError("Invalid param")
+    ) -> BufferedStreamProtocol[Any, Any, memoryview]:
+        return BufferedStreamProtocol(mock_incremental_serializer, mock_converter)
 
     def build_packet_from_buffer_side_effect(
         self,
@@ -535,14 +461,14 @@ class TestBufferedStreamReceiver:
 
         # Act & Assert
         with pytest.raises(TypeError, match=r"^Expected a buffered incremental serializer instance, got .+$"):
-            BufferedStreamReceiver(mock_not_serializer)
+            BufferedStreamProtocol(mock_not_serializer)
 
     def test____dunder_init____invalid_serializer____not_incremental(self, mock_serializer: MagicMock) -> None:
         # Arrange
 
         # Act & Assert
         with pytest.raises(TypeError, match=r"^Expected a buffered incremental serializer instance, got .+$"):
-            BufferedStreamReceiver(mock_serializer)
+            BufferedStreamProtocol(mock_serializer)
 
     def test____dunder_init____invalid_serializer____not_buffered(self, mocker: MockerFixture) -> None:
         # Arrange
@@ -550,7 +476,7 @@ class TestBufferedStreamReceiver:
 
         # Act & Assert
         with pytest.raises(TypeError, match=r"^Expected a buffered incremental serializer instance, got .+$"):
-            BufferedStreamReceiver(mock_incremental_serializer)
+            BufferedStreamProtocol(mock_incremental_serializer)
 
     def test____dunder_init____invalid_converter(self, mock_incremental_serializer: MagicMock, mocker: MockerFixture) -> None:
         # Arrange
@@ -558,11 +484,36 @@ class TestBufferedStreamReceiver:
 
         # Act & Assert
         with pytest.raises(TypeError, match=r"^Expected a converter instance, got .+$"):
-            BufferedStreamReceiver(mock_incremental_serializer, mock_not_converter)
+            BufferedStreamProtocol(mock_incremental_serializer, mock_not_converter)
+
+    def test____into_data_protocol____create_a_new_StreamProtocol_object(
+        self,
+        protocol: BufferedStreamProtocol[Any, Any, memoryview],
+        protocol_with_converter: BufferedStreamProtocol[Any, Any, memoryview],
+        protocol_without_converter: BufferedStreamProtocol[Any, Any, memoryview],
+        mock_incremental_serializer: MagicMock,
+        mock_converter: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_protocol_cls = mocker.patch(f"{StreamProtocol.__module__}.StreamProtocol", autospec=True, wraps=StreamProtocol)
+
+        # Act
+        new_protocol = protocol.into_data_protocol()
+
+        # Assert
+        if protocol is protocol_with_converter:
+            mock_protocol_cls.assert_called_once_with(mock_incremental_serializer, converter=mock_converter)
+        elif protocol is protocol_without_converter:
+            mock_protocol_cls.assert_called_once_with(mock_incremental_serializer, converter=None)
+        else:
+            pytest.fail(f"{protocol=!r} is ???")
+
+        assert isinstance(new_protocol, StreamProtocol)
 
     def test____create_buffer____create_deserializer_buffer(
         self,
-        protocol: BufferedStreamReceiver[Any, memoryview],
+        protocol: BufferedStreamProtocol[Any, Any, memoryview],
         mock_incremental_serializer: MagicMock,
     ) -> None:
         # Arrane
@@ -577,7 +528,7 @@ class TestBufferedStreamReceiver:
 
     def test____build_packet_from_buffer____without_converter(
         self,
-        protocol_without_converter: BufferedStreamReceiver[Any, memoryview],
+        protocol_without_converter: BufferedStreamProtocol[Any, Any, memoryview],
         mock_incremental_serializer: MagicMock,
         mocker: MockerFixture,
     ) -> None:
@@ -600,7 +551,7 @@ class TestBufferedStreamReceiver:
 
     def test____build_packet_from_buffer____with_converter(
         self,
-        protocol_with_converter: BufferedStreamReceiver[Any, memoryview],
+        protocol_with_converter: BufferedStreamProtocol[Any, Any, memoryview],
         mock_incremental_serializer: MagicMock,
         mock_converter: MagicMock,
         mocker: MockerFixture,
@@ -627,7 +578,7 @@ class TestBufferedStreamReceiver:
 
     def test____build_packet_from_buffer____deserialize_error(
         self,
-        protocol: BufferedStreamReceiver[Any, memoryview],
+        protocol: BufferedStreamProtocol[Any, Any, memoryview],
         mock_incremental_serializer: MagicMock,
         mock_converter: MagicMock,
     ) -> None:
@@ -656,7 +607,7 @@ class TestBufferedStreamReceiver:
 
     def test____build_packet_from_buffer____wrong_deserialize_error(
         self,
-        protocol: BufferedStreamReceiver[Any, memoryview],
+        protocol: BufferedStreamProtocol[Any, Any, memoryview],
         mock_incremental_serializer: MagicMock,
         mock_converter: MagicMock,
     ) -> None:
@@ -685,7 +636,7 @@ class TestBufferedStreamReceiver:
 
     def test____build_packet_from_buffer____conversion_error(
         self,
-        protocol_with_converter: BufferedStreamReceiver[Any, memoryview],
+        protocol_with_converter: BufferedStreamProtocol[Any, Any, memoryview],
         mock_incremental_serializer: MagicMock,
         mock_converter: MagicMock,
         mocker: MockerFixture,
