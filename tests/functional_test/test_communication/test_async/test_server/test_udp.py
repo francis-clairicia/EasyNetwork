@@ -400,7 +400,7 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
 
     @pytest.mark.parametrize("mute_thrown_exception", [False, True])
     @pytest.mark.parametrize("request_handler", [ErrorInRequestHandler], indirect=True)
-    @pytest.mark.parametrize("one_shot_serializer", [pytest.param("invalid", id="serializer_crash")], indirect=True)
+    @pytest.mark.parametrize("datagram_protocol", [pytest.param("invalid", id="serializer_crash")], indirect=True)
     async def test____serve_forever____internal_error(
         self,
         mute_thrown_exception: bool,
@@ -457,7 +457,7 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         else:
             assert type(caplog.records[1].exc_info[1]) is RandomError
 
-    @pytest.mark.parametrize("one_shot_serializer", [pytest.param("bad_serialize", id="serializer_crash")], indirect=True)
+    @pytest.mark.parametrize("datagram_protocol", [pytest.param("bad_serialize", id="serializer_crash")], indirect=True)
     async def test____serve_forever____unexpected_error_during_response_serialization(
         self,
         client_factory: Callable[[], Awaitable[DatagramEndpoint]],

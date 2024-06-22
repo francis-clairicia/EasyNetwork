@@ -21,7 +21,7 @@ from easynetwork.lowlevel.socket import SocketAddress, enable_socket_linger
 from easynetwork.lowlevel.std_asyncio._asyncio_utils import create_connection
 from easynetwork.lowlevel.std_asyncio.backend import AsyncIOBackend
 from easynetwork.lowlevel.std_asyncio.stream.listener import ListenerSocketAdapter
-from easynetwork.protocol import StreamProtocol
+from easynetwork.protocol import AnyStreamProtocolType
 from easynetwork.servers.async_tcp import AsyncTCPNetworkServer
 from easynetwork.servers.handlers import AsyncStreamClient, AsyncStreamRequestHandler, INETClientAttribute
 
@@ -368,7 +368,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         asyncio_backend: AsyncIOBackend,
         request_handler: MyAsyncTCPRequestHandler,
         localhost_ip: str,
-        stream_protocol: StreamProtocol[str, str],
+        stream_protocol: AnyStreamProtocolType[str, str],
         use_ssl: bool,
         server_ssl_context: ssl.SSLContext,
         ssl_handshake_timeout: float | None,
@@ -462,7 +462,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         host: str | None,
         log_client_connection: bool,
         request_handler: MyAsyncTCPRequestHandler,
-        stream_protocol: StreamProtocol[str, str],
+        stream_protocol: AnyStreamProtocolType[str, str],
         asyncio_backend: AsyncIOBackend,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
@@ -515,7 +515,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         self,
         ssl_parameter: str,
         request_handler: MyAsyncTCPRequestHandler,
-        stream_protocol: StreamProtocol[str, str],
+        stream_protocol: AnyStreamProtocolType[str, str],
         asyncio_backend: AsyncIOBackend,
     ) -> None:
         kwargs: dict[str, Any] = {ssl_parameter: 30}
@@ -533,7 +533,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         self,
         max_recv_size: int,
         request_handler: MyAsyncTCPRequestHandler,
-        stream_protocol: StreamProtocol[str, str],
+        stream_protocol: AnyStreamProtocolType[str, str],
         asyncio_backend: AsyncIOBackend,
     ) -> None:
         with pytest.raises(ValueError, match=r"^'max_recv_size' must be a strictly positive integer$"):
@@ -542,7 +542,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     async def test____serve_forever____empty_listener_list(
         self,
         request_handler: MyAsyncTCPRequestHandler,
-        stream_protocol: StreamProtocol[str, str],
+        stream_protocol: AnyStreamProtocolType[str, str],
     ) -> None:
         async with MyAsyncTCPServer(None, 0, stream_protocol, request_handler, NoListenerErrorBackend()) as s:
             with pytest.raises(OSError, match=r"^empty listeners list$"):
@@ -747,7 +747,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
     @pytest.mark.parametrize("read_on_connection", [False, True], ids=lambda p: f"read_on_connection=={p}")
     @pytest.mark.parametrize("request_handler", [ErrorInRequestHandler], indirect=True)
     @pytest.mark.parametrize(
-        "incremental_serializer",
+        "stream_protocol",
         [
             pytest.param("invalid", id="serializer_crash"),
             pytest.param("invalid_buffered", id="buffered_serializer_crash"),
@@ -820,7 +820,7 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         else:
             assert type(caplog.records[1].exc_info[1]) is RandomError
 
-    @pytest.mark.parametrize("incremental_serializer", [pytest.param("bad_serialize", id="serializer_crash")], indirect=True)
+    @pytest.mark.parametrize("stream_protocol", [pytest.param("bad_serialize", id="serializer_crash")], indirect=True)
     async def test____serve_forever____unexpected_error_during_response_serialization(
         self,
         client_factory_no_handshake: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],

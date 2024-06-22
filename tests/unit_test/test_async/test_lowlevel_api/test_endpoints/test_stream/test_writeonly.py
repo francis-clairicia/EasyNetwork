@@ -59,7 +59,7 @@ class TestAsyncStreamSenderEndpoint(BaseAsyncEndpointSendTests):
         mock_invalid_protocol = mocker.NonCallableMagicMock(spec=object)
 
         # Act & Assert
-        with pytest.raises(TypeError, match=r"^Expected a StreamProtocol object, got .*$"):
+        with pytest.raises(TypeError, match=r"^Expected a StreamProtocol or a BufferedStreamProtocol object, got .*$"):
             _ = AsyncStreamSenderEndpoint(mock_stream_transport, mock_invalid_protocol)
 
     async def test____dunder_del____ResourceWarning(

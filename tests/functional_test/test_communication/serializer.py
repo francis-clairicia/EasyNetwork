@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from typing import Final
 
 from easynetwork.exceptions import DeserializeError, IncrementalDeserializeError
-from easynetwork.serializers.abc import AbstractIncrementalPacketSerializer, BufferedIncrementalPacketSerializer
+from easynetwork.serializers.abc import BufferedIncrementalPacketSerializer
 
 
-class StringSerializer(AbstractIncrementalPacketSerializer[str, str]):
+class StringSerializer(BufferedIncrementalPacketSerializer[str, str, bytearray]):
     """
     Serializer to use in order to test clients and servers
     """
 
     __slots__ = ()
+
+    MIN_SIZE: Final[int] = 8 * 1024
 
     encoding: str = "ascii"
 
@@ -51,12 +54,6 @@ class StringSerializer(AbstractIncrementalPacketSerializer[str, str]):
         except UnicodeError as exc:
             raise IncrementalDeserializeError(str(exc), remainder) from exc
 
-
-class BufferedStringSerializer(StringSerializer, BufferedIncrementalPacketSerializer[str, str, bytearray]):
-    __slots__ = ()
-
-    MIN_SIZE: int = 8 * 1024
-
     def create_deserializer_buffer(self, sizehint: int) -> bytearray:
         return bytearray(max(sizehint, self.MIN_SIZE))
 
@@ -90,10 +87,6 @@ class NotGoodStringSerializer(StringSerializer):
     def incremental_deserialize(self) -> Generator[None, bytes, tuple[str, bytes]]:
         yield
         raise SystemError("CRASH")
-
-
-class NotGoodBufferedStringSerializer(NotGoodStringSerializer, BufferedStringSerializer):
-    __slots__ = ()
 
     def buffered_incremental_deserialize(self, write_buffer: bytearray) -> Generator[int, int, tuple[str, bytearray]]:
         yield 0

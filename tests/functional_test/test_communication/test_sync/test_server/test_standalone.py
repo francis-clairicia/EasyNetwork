@@ -7,7 +7,7 @@ from collections.abc import AsyncGenerator, Iterator
 
 from easynetwork.exceptions import ServerAlreadyRunning, ServerClosedError
 from easynetwork.lowlevel.std_asyncio import AsyncIOBackend
-from easynetwork.protocol import DatagramProtocol, StreamProtocol
+from easynetwork.protocol import AnyStreamProtocolType, DatagramProtocol
 from easynetwork.servers.abc import AbstractNetworkServer
 from easynetwork.servers.handlers import AsyncBaseClientInterface, AsyncDatagramRequestHandler, AsyncStreamRequestHandler
 from easynetwork.servers.standalone_tcp import StandaloneTCPNetworkServer
@@ -114,7 +114,7 @@ class BaseTestStandaloneNetworkServer:
 class TestStandaloneTCPNetworkServer(BaseTestStandaloneNetworkServer):
     @pytest.fixture
     @staticmethod
-    def server(stream_protocol: StreamProtocol[str, str]) -> StandaloneTCPNetworkServer[str, str]:
+    def server(stream_protocol: AnyStreamProtocolType[str, str]) -> StandaloneTCPNetworkServer[str, str]:
         return StandaloneTCPNetworkServer(None, 0, stream_protocol, EchoRequestHandler(), AsyncIOBackend())
 
     @pytest.fixture

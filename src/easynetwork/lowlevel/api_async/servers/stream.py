@@ -22,11 +22,10 @@ import contextlib
 import dataclasses
 import warnings
 from collections.abc import AsyncGenerator, Callable, Mapping
-from typing import Any, Generic, Literal, NoReturn, assert_never
+from typing import Any, Generic, NoReturn, assert_never
 
 from ...._typevars import _T_Request, _T_Response
-from ....exceptions import UnsupportedOperation
-from ....protocol import StreamProtocol
+from ....protocol import AnyStreamProtocolType
 from ....warnings import ManualBufferAllocationWarning
 from ... import _stream, _utils
 from ..._asyncgen import AsyncGenAction, SendAction, ThrowAction
@@ -56,15 +55,16 @@ class Client(AsyncBaseTransport, Generic[_T_Response]):
 
     def __init__(
         self,
-        transport: AsyncStreamWriteTransport,
-        producer: _stream.StreamDataProducer[_T_Response],
-        exit_stack: contextlib.AsyncExitStack,
+        *,
+        _transport: AsyncStreamWriteTransport,
+        _producer: _stream.StreamDataProducer[_T_Response],
+        _exit_stack: contextlib.AsyncExitStack,
     ) -> None:
         super().__init__()
 
-        self.__transport: AsyncStreamWriteTransport = transport
-        self.__producer: _stream.StreamDataProducer[_T_Response] = producer
-        self.__exit_stack: contextlib.AsyncExitStack = exit_stack
+        self.__transport: AsyncStreamWriteTransport = _transport
+        self.__producer: _stream.StreamDataProducer[_T_Response] = _producer
+        self.__exit_stack: contextlib.AsyncExitStack = _exit_stack
         self.__send_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently sending data on this endpoint")
 
     def is_closing(self) -> bool:
@@ -117,47 +117,34 @@ class AsyncStreamServer(AsyncBaseTransport, Generic[_T_Request, _T_Response]):
         "__protocol",
         "__max_recv_size",
         "__serve_guard",
-        "__manual_buffer_allocation",
     )
 
     def __init__(
         self,
         listener: AsyncListener[AsyncStreamTransport],
-        protocol: StreamProtocol[_T_Response, _T_Request],
+        protocol: AnyStreamProtocolType[_T_Response, _T_Request],
         max_recv_size: int,
-        *,
-        manual_buffer_allocation: Literal["try", "no", "force"] = "try",
     ) -> None:
         """
         Parameters:
             listener: the transport implementation to wrap.
             protocol: The :term:`protocol object` to use.
             max_recv_size: Read buffer size.
-            manual_buffer_allocation: Select whether or not to enable the manual buffer allocation system:
-
-                                      * ``"try"``: (the default) will use the buffer API if the transport and protocol support it,
-                                        and fall back to the default implementation otherwise.
-                                        Emits a :exc:`.ManualBufferAllocationWarning` if only the transport does not support it.
-
-                                      * ``"no"``: does not use the buffer API, even if they both support it.
-
-                                      * ``"force"``: requires the buffer API. Raises :exc:`.UnsupportedOperation` if it fails and
-                                        no warnings are emitted.
         """
+        from ....lowlevel._stream import _check_any_protocol
+
         if not isinstance(listener, AsyncListener):
             raise TypeError(f"Expected an AsyncListener object, got {listener!r}")
-        if not isinstance(protocol, StreamProtocol):
-            raise TypeError(f"Expected a StreamProtocol object, got {protocol!r}")
+
+        _check_any_protocol(protocol)
+
         if not isinstance(max_recv_size, int) or max_recv_size <= 0:
             raise ValueError("'max_recv_size' must be a strictly positive integer")
-        if manual_buffer_allocation not in ("try", "no", "force"):
-            raise ValueError('"manual_buffer_allocation" must be "try", "no" or "force"')
 
         self.__listener: AsyncListener[AsyncStreamTransport] = listener
-        self.__protocol: StreamProtocol[_T_Response, _T_Request] = protocol
+        self.__protocol: AnyStreamProtocolType[_T_Response, _T_Request] = protocol
         self.__max_recv_size: int = max_recv_size
         self.__serve_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently accepting new connections")
-        self.__manual_buffer_allocation: Literal["try", "no", "force"] = manual_buffer_allocation
 
     def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
         try:
@@ -211,6 +198,8 @@ class AsyncStreamServer(AsyncBaseTransport, Generic[_T_Request, _T_Response]):
         if not isinstance(transport, AsyncStreamTransport):
             raise TypeError(f"Expected an AsyncStreamTransport object, got {transport!r}")
 
+        from ....protocol import BufferedStreamProtocol, StreamProtocol
+
         async with contextlib.AsyncExitStack() as task_exit_stack:
             task_exit_stack.push_async_callback(transports_utils.aclose_forcefully, transport)
 
@@ -218,45 +207,45 @@ class AsyncStreamServer(AsyncBaseTransport, Generic[_T_Request, _T_Response]):
             consumer: _stream.StreamDataConsumer[_T_Request] | _stream.BufferedStreamDataConsumer[_T_Request]
 
             request_receiver: _RequestReceiver[_T_Request] | _BufferedRequestReceiver[_T_Request]
-            match self.__manual_buffer_allocation:
-                case "try" | "force" as manual_buffer_allocation:
-                    try:
+            match self.__protocol:
+                case BufferedStreamProtocol():
+                    if isinstance(transport, AsyncBufferedStreamReadTransport):
                         consumer = _stream.BufferedStreamDataConsumer(self.__protocol, self.__max_recv_size)
-                        if not isinstance(transport, AsyncBufferedStreamReadTransport):
-                            msg = f"The transport implementation {transport!r} does not implement AsyncBufferedStreamReadTransport interface"
-                            if manual_buffer_allocation == "try":
-                                _warn_msg = f'{msg}. Consider explicitly setting the "manual_buffer_allocation" strategy to "no".'
-                                warnings.warn(_warn_msg, category=ManualBufferAllocationWarning, stacklevel=1)
-                                del _warn_msg
-                            raise UnsupportedOperation(msg)
                         request_receiver = _BufferedRequestReceiver(
                             transport=transport,
                             consumer=consumer,
                         )
-                    except UnsupportedOperation as exc:
-                        if manual_buffer_allocation == "force":
-                            exc.add_note('Consider setting the "manual_buffer_allocation" strategy to "no"')
-                            raise
-                        consumer = _stream.StreamDataConsumer(self.__protocol)
+                    else:
+                        _warn_msg = f"The transport implementation {transport!r} does not implement AsyncBufferedStreamReadTransport interface."
+                        _warn_msg = f"{_warn_msg} Consider using StreamProtocol instead of BufferedStreamProtocol."
+                        warnings.warn(_warn_msg, category=ManualBufferAllocationWarning, stacklevel=1)
+                        del _warn_msg
+                        consumer = _stream.StreamDataConsumer(self.__protocol.into_data_protocol())
                         request_receiver = _RequestReceiver(
                             transport=transport,
                             consumer=consumer,
                             max_recv_size=self.__max_recv_size,
                         )
-                case "no":
+                case StreamProtocol():
                     consumer = _stream.StreamDataConsumer(self.__protocol)
                     request_receiver = _RequestReceiver(
                         transport=transport,
                         consumer=consumer,
                         max_recv_size=self.__max_recv_size,
                     )
-                case manual_buffer_allocation:  # pragma: no cover
-                    assert_never(manual_buffer_allocation)
+                case _:  # pragma: no cover
+                    assert_never(self.__protocol)
 
             client_exit_stack = await task_exit_stack.enter_async_context(contextlib.AsyncExitStack())
             client_exit_stack.callback(consumer.clear)
 
-            request_handler_generator = client_connected_cb(Client(transport, producer, client_exit_stack))
+            request_handler_generator = client_connected_cb(
+                Client(
+                    _transport=transport,
+                    _producer=producer,
+                    _exit_stack=client_exit_stack,
+                )
+            )
 
             del client_exit_stack, task_exit_stack, client_connected_cb
 

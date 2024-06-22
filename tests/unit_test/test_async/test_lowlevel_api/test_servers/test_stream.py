@@ -6,9 +6,8 @@ import asyncio
 import contextlib
 import warnings
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
-from typing import TYPE_CHECKING, Any, Literal, NoReturn
+from typing import TYPE_CHECKING, Any, NoReturn
 
-from easynetwork.exceptions import UnsupportedOperation
 from easynetwork.lowlevel._stream import StreamDataProducer
 from easynetwork.lowlevel.api_async.servers.stream import AsyncStreamServer, Client
 from easynetwork.lowlevel.api_async.transports.abc import (
@@ -62,7 +61,11 @@ class TestAsyncStreamClient(BaseTestWithStreamProtocol):
         mock_stream_protocol: MagicMock,
         client_exit_stack: contextlib.AsyncExitStack,
     ) -> Client[Any]:
-        return Client(mock_stream_transport, StreamDataProducer(mock_stream_protocol), client_exit_stack)
+        return Client(
+            _transport=mock_stream_transport,
+            _producer=StreamDataProducer(mock_stream_protocol),
+            _exit_stack=client_exit_stack,
+        )
 
     @pytest.mark.parametrize("transport_closed", [False, True])
     async def test____is_closing____default(
@@ -153,24 +156,17 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
     def max_recv_size(request: Any) -> int:
         return getattr(request, "param", 256 * 1024)
 
-    @pytest.fixture
-    @staticmethod
-    def manual_buffer_allocation(request: Any) -> str:
-        return getattr(request, "param", "try")
-
     @pytest_asyncio.fixture
     @staticmethod
     async def server(
         mock_listener: MagicMock,
         mock_stream_protocol: MagicMock,
         max_recv_size: int,
-        manual_buffer_allocation: Literal["try", "no", "force"],
     ) -> AsyncIterator[AsyncStreamServer[Any, Any]]:
         server: AsyncStreamServer[Any, Any] = AsyncStreamServer(
             mock_listener,
             mock_stream_protocol,
             max_recv_size,
-            manual_buffer_allocation=manual_buffer_allocation,
         )
         async with contextlib.aclosing(server):
             yield server
@@ -198,7 +194,7 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
         mock_invalid_protocol = mocker.NonCallableMagicMock(spec=object)
 
         # Act & Assert
-        with pytest.raises(TypeError, match=r"^Expected a StreamProtocol object, got .*$"):
+        with pytest.raises(TypeError, match=r"^Expected a StreamProtocol or a BufferedStreamProtocol object, got .*$"):
             _ = AsyncStreamServer(mock_listener, mock_invalid_protocol, max_recv_size)
 
     @pytest.mark.parametrize("max_recv_size", [0, -1, 10.4], ids=lambda p: f"max_recv_size=={p}")
@@ -213,25 +209,6 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
         # Act & Assert
         with pytest.raises(ValueError, match=r"^'max_recv_size' must be a strictly positive integer$"):
             _ = AsyncStreamServer(mock_listener, mock_stream_protocol, max_recv_size)
-
-    @pytest.mark.parametrize("manual_buffer_allocation", ["unknown", ""], ids=lambda p: f"manual_buffer_allocation=={p!r}")
-    async def test____dunder_init____manual_buffer_allocation____invalid_value(
-        self,
-        mock_listener: MagicMock,
-        mock_stream_protocol: MagicMock,
-        max_recv_size: int,
-        manual_buffer_allocation: Any,
-    ) -> None:
-        # Arrange
-
-        # Act & Assert
-        with pytest.raises(ValueError, match=r'^"manual_buffer_allocation" must be "try", "no" or "force"$'):
-            _ = AsyncStreamServer(
-                mock_listener,
-                mock_stream_protocol,
-                max_recv_size,
-                manual_buffer_allocation=manual_buffer_allocation,
-            )
 
     async def test____dunder_del____ResourceWarning(
         self,
@@ -347,7 +324,6 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
 
     @pytest.mark.parametrize("mock_stream_transport", [_AsyncBufferedStreamTransport], indirect=True)
     @pytest.mark.parametrize("stream_protocol_mode", ["buffer"], indirect=True)
-    @pytest.mark.parametrize("manual_buffer_allocation", ["try", "force"], indirect=True)
     async def test____manual_buffer_allocation____is_available(
         self,
         server: AsyncStreamServer[Any, Any],
@@ -382,48 +358,9 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
         mock_stream_transport.recv.assert_not_called()
         packet_received.assert_called_once_with(mocker.sentinel.packet)
 
-    @pytest.mark.parametrize("mock_stream_transport", [AsyncStreamTransport, _AsyncBufferedStreamTransport], indirect=True)
-    @pytest.mark.parametrize("stream_protocol_mode", ["data"], indirect=True)
-    @pytest.mark.parametrize("manual_buffer_allocation", ["try"], indirect=True)
-    async def test____manual_buffer_allocation____try____but_stream_protocol_does_not_support_it(
-        self,
-        server: AsyncStreamServer[Any, Any],
-        mock_stream_transport: MagicMock,
-        mock_listener: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        mock_stream_transport.recv.side_effect = [b"packet\n"]
-
-        async def serve_side_effect(handler: Callable[[Any], Awaitable[None]], task_group: Any) -> NoReturn:
-            await handler(mock_stream_transport)
-            raise asyncio.CancelledError("serve_side_effect")
-
-        packet_received = mocker.stub()
-
-        @stub_decorator(mocker)
-        async def client_connected_cb(_: Any) -> AsyncGenerator[None, Any]:
-            packet = yield
-            packet_received(packet)
-
-        mock_listener.serve.side_effect = serve_side_effect
-
-        # Act
-        async with TaskGroup() as tg:
-            with pytest.raises(asyncio.CancelledError, match=r"^serve_side_effect$"), warnings.catch_warnings():
-                warnings.simplefilter("error", ManualBufferAllocationWarning)
-                await server.serve(client_connected_cb, tg)
-
-        # Assert
-        mock_stream_transport.recv.assert_awaited_once()
-        if hasattr(mock_stream_transport, "recv_into"):
-            mock_stream_transport.recv_into.assert_not_called()
-        packet_received.assert_called_once_with(mocker.sentinel.packet)
-
     @pytest.mark.parametrize("mock_stream_transport", [AsyncStreamTransport], indirect=True)
     @pytest.mark.parametrize("stream_protocol_mode", ["buffer"], indirect=True)
-    @pytest.mark.parametrize("manual_buffer_allocation", ["try"], indirect=True)
-    async def test____manual_buffer_allocation____try____but_stream_transport_does_not_support_it(
+    async def test____manual_buffer_allocation____but_stream_transport_does_not_support_it(
         self,
         server: AsyncStreamServer[Any, Any],
         mock_stream_transport: MagicMock,
@@ -452,7 +389,7 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
                 pytest.raises(asyncio.CancelledError, match=r"^serve_side_effect$"),
                 pytest.warns(
                     ManualBufferAllocationWarning,
-                    match=r'^The transport implementation .+ does not implement AsyncBufferedStreamReadTransport interface\. Consider explicitly setting the "manual_buffer_allocation" strategy to "no"\.$',
+                    match=r"^The transport implementation .+ does not implement AsyncBufferedStreamReadTransport interface\. Consider using StreamProtocol instead of BufferedStreamProtocol\.$",
                 ),
             ):
                 await server.serve(client_connected_cb, tg)
@@ -462,8 +399,7 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
         packet_received.assert_called_once_with(mocker.sentinel.packet)
 
     @pytest.mark.parametrize("mock_stream_transport", [AsyncStreamTransport, _AsyncBufferedStreamTransport], indirect=True)
-    @pytest.mark.parametrize("stream_protocol_mode", ["data", "buffer"], indirect=True)
-    @pytest.mark.parametrize("manual_buffer_allocation", ["no"], indirect=True)
+    @pytest.mark.parametrize("stream_protocol_mode", ["data"], indirect=True)
     async def test____manual_buffer_allocation____disabled(
         self,
         server: AsyncStreamServer[Any, Any],
@@ -498,94 +434,3 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
         if hasattr(mock_stream_transport, "recv_into"):
             mock_stream_transport.recv_into.assert_not_called()
         packet_received.assert_called_once_with(mocker.sentinel.packet)
-
-    @pytest.mark.parametrize("mock_stream_transport", [AsyncStreamTransport, _AsyncBufferedStreamTransport], indirect=True)
-    @pytest.mark.parametrize("stream_protocol_mode", ["data"], indirect=True)
-    @pytest.mark.parametrize("manual_buffer_allocation", ["force"], indirect=True)
-    async def test____manual_buffer_allocation____force____but_stream_protocol_does_not_support_it(
-        self,
-        server: AsyncStreamServer[Any, Any],
-        mock_stream_transport: MagicMock,
-        mock_listener: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        mock_stream_transport.recv.side_effect = [b"packet\n"]
-
-        async def serve_side_effect(handler: Callable[[Any], Awaitable[None]], task_group: Any) -> NoReturn:
-            await handler(mock_stream_transport)
-            raise asyncio.CancelledError("serve_side_effect")
-
-        packet_received = mocker.stub()
-
-        @stub_decorator(mocker)
-        async def client_connected_cb(_: Any) -> AsyncGenerator[None, Any]:
-            packet = yield
-            packet_received(packet)
-
-        mock_listener.serve.side_effect = serve_side_effect
-
-        # Act
-        async with TaskGroup() as tg:
-            with (
-                pytest.raises(UnsupportedOperation, match=r"^This protocol does not support the buffer API$") as exc_info,
-                warnings.catch_warnings(),
-            ):
-                warnings.simplefilter("error", ManualBufferAllocationWarning)
-                await server.serve(client_connected_cb, tg)
-
-        # Assert
-        client_connected_cb.assert_not_called()
-        mock_stream_transport.recv.assert_not_called()
-        if hasattr(mock_stream_transport, "recv_into"):
-            mock_stream_transport.recv_into.assert_not_called()
-        packet_received.assert_not_called()
-        assert exc_info.value.__notes__ == [
-            'Consider setting the "manual_buffer_allocation" strategy to "no"',
-        ]
-
-    @pytest.mark.parametrize("mock_stream_transport", [AsyncStreamTransport], indirect=True)
-    @pytest.mark.parametrize("stream_protocol_mode", ["buffer"], indirect=True)
-    @pytest.mark.parametrize("manual_buffer_allocation", ["force"], indirect=True)
-    async def test____manual_buffer_allocation____force____but_stream_transport_does_not_support_it(
-        self,
-        server: AsyncStreamServer[Any, Any],
-        mock_stream_transport: MagicMock,
-        mock_listener: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        mock_stream_transport.recv.side_effect = [b"packet\n"]
-
-        async def serve_side_effect(handler: Callable[[Any], Awaitable[None]], task_group: Any) -> NoReturn:
-            await handler(mock_stream_transport)
-            raise asyncio.CancelledError("serve_side_effect")
-
-        packet_received = mocker.stub()
-
-        @stub_decorator(mocker)
-        async def client_connected_cb(_: Any) -> AsyncGenerator[None, Any]:
-            packet = yield
-            packet_received(packet)
-
-        mock_listener.serve.side_effect = serve_side_effect
-
-        # Act
-        async with TaskGroup() as tg:
-            with (
-                pytest.raises(
-                    UnsupportedOperation,
-                    match=r"^The transport implementation .+ does not implement AsyncBufferedStreamReadTransport interface$",
-                ) as exc_info,
-                warnings.catch_warnings(),
-            ):
-                warnings.simplefilter("error", ManualBufferAllocationWarning)
-                await server.serve(client_connected_cb, tg)
-
-        # Assert
-        client_connected_cb.assert_not_called()
-        mock_stream_transport.recv.assert_not_called()
-        packet_received.assert_not_called()
-        assert exc_info.value.__notes__ == [
-            'Consider setting the "manual_buffer_allocation" strategy to "no"',
-        ]

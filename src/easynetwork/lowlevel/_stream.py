@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 __all__ = [
+    "BufferedStreamDataConsumer",
     "StreamDataConsumer",
     "StreamDataProducer",
 ]
@@ -26,7 +27,7 @@ from typing import TYPE_CHECKING, Any, Generic, final
 
 from .._typevars import _T_ReceivedPacket, _T_SentPacket
 from ..exceptions import StreamProtocolParseError
-from ..protocol import BufferedStreamReceiver, StreamProtocol
+from ..protocol import AnyStreamProtocolType, BufferedStreamProtocol, StreamProtocol
 from ._final import runtime_final_class
 
 if TYPE_CHECKING:
@@ -38,10 +39,10 @@ if TYPE_CHECKING:
 class StreamDataProducer(Generic[_T_SentPacket]):
     __slots__ = ("__protocol",)
 
-    def __init__(self, protocol: StreamProtocol[_T_SentPacket, Any]) -> None:
+    def __init__(self, protocol: AnyStreamProtocolType[_T_SentPacket, Any]) -> None:
         super().__init__()
-        _check_protocol(protocol)
-        self.__protocol: StreamProtocol[_T_SentPacket, Any] = protocol
+        _check_any_protocol(protocol)
+        self.__protocol: AnyStreamProtocolType[_T_SentPacket, Any] = protocol
 
     def generate(self, packet: _T_SentPacket) -> Generator[bytes, None, None]:
         try:
@@ -119,7 +120,7 @@ class StreamDataConsumer(Generic[_T_ReceivedPacket]):
 @runtime_final_class
 class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
     __slots__ = (
-        "__buffered_receiver",
+        "__protocol",
         "__buffer",
         "__buffer_view_cache",
         "__exported_write_buffer_view",
@@ -129,12 +130,12 @@ class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
         "__consumer",
     )
 
-    def __init__(self, protocol: StreamProtocol[Any, _T_ReceivedPacket], buffer_size_hint: int) -> None:
+    def __init__(self, protocol: BufferedStreamProtocol[Any, _T_ReceivedPacket, Any], buffer_size_hint: int) -> None:
         super().__init__()
-        _check_protocol(protocol)
+        _check_buffered_protocol(protocol)
         if not isinstance(buffer_size_hint, int) or buffer_size_hint <= 0:
             raise ValueError(f"{buffer_size_hint=!r}")
-        self.__buffered_receiver: BufferedStreamReceiver[_T_ReceivedPacket, WriteableBuffer] = protocol.buffered_receiver()
+        self.__protocol: BufferedStreamProtocol[Any, _T_ReceivedPacket, WriteableBuffer] = protocol
         self.__consumer: Generator[int | None, int, tuple[_T_ReceivedPacket, ReadableBuffer]] | None = None
         self.__buffer: WriteableBuffer | None = None
         self.__buffer_view_cache: memoryview | None = None
@@ -197,13 +198,13 @@ class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
             return self.__exported_write_buffer_view
 
         if self.__buffer is None:
-            whole_buffer = self.__buffered_receiver.create_buffer(self.__sizehint)
+            whole_buffer = self.__protocol.create_buffer(self.__sizehint)
             self.__validate_created_buffer(whole_buffer)
             self.__buffer = whole_buffer
             self.__buffer_view_cache = None  # Ensure buffer view is reset
 
         if self.__consumer is None:
-            consumer = self.__buffered_receiver.build_packet_from_buffer(self.__buffer)
+            consumer = self.__protocol.build_packet_from_buffer(self.__buffer)
             try:
                 self.__buffer_start = next(consumer) or 0
             except StopIteration:
@@ -288,3 +289,13 @@ class BufferedStreamDataConsumer(Generic[_T_ReceivedPacket]):
 def _check_protocol(p: StreamProtocol[Any, Any]) -> None:
     if not isinstance(p, StreamProtocol):
         raise TypeError(f"Expected a StreamProtocol object, got {p!r}")
+
+
+def _check_buffered_protocol(p: BufferedStreamProtocol[Any, Any, Any]) -> None:
+    if not isinstance(p, BufferedStreamProtocol):
+        raise TypeError(f"Expected a BufferedStreamProtocol object, got {p!r}")
+
+
+def _check_any_protocol(p: AnyStreamProtocolType[Any, Any]) -> None:
+    if not isinstance(p, (StreamProtocol, BufferedStreamProtocol)):
+        raise TypeError(f"Expected a StreamProtocol or a BufferedStreamProtocol object, got {p!r}")

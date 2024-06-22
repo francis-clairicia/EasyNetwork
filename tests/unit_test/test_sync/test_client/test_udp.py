@@ -22,11 +22,11 @@ if TYPE_CHECKING:
     from pytest_mock import MockerFixture
 
 from ..._utils import datagram_addrinfo_list
-from ...base import UNSUPPORTED_FAMILIES
+from ...base import UNSUPPORTED_FAMILIES, BaseTestWithDatagramProtocol
 from .base import BaseTestClient
 
 
-class TestUDPNetworkClient(BaseTestClient):
+class TestUDPNetworkClient(BaseTestClient, BaseTestWithDatagramProtocol):
     @pytest.fixture(scope="class", params=["AF_INET", "AF_INET6"])
     @staticmethod
     def socket_family(request: Any) -> Any:
@@ -93,20 +93,6 @@ class TestUDPNetworkClient(BaseTestClient):
         del mock_udp_socket.sendto
         del mock_udp_socket.sendall
         del mock_udp_socket.recvfrom
-
-    @pytest.fixture  # DO NOT set autouse=True
-    @staticmethod
-    def setup_protocol_mock(mock_datagram_protocol: MagicMock, mocker: MockerFixture) -> None:
-        sentinel = mocker.sentinel
-
-        def make_datagram_side_effect(packet: Any) -> bytes:
-            return str(packet).encode("ascii").removeprefix(b"sentinel.")
-
-        def build_packet_from_datagram_side_effect(data: bytes) -> Any:
-            return getattr(sentinel, data.decode("ascii"))
-
-        mock_datagram_protocol.make_datagram.side_effect = make_datagram_side_effect
-        mock_datagram_protocol.build_packet_from_datagram.side_effect = build_packet_from_datagram_side_effect
 
     @pytest.fixture(params=["REMOTE_ADDRESS", "EXTERNAL_SOCKET"])
     @staticmethod
@@ -536,7 +522,6 @@ class TestUDPNetworkClient(BaseTestClient):
         mock_udp_socket.fileno.assert_called_once()
         assert fd == -1
 
-    @pytest.mark.usefixtures("setup_protocol_mock")
     def test____send_packet____send_bytes_to_socket(
         self,
         client: UDPNetworkClient[Any, Any],
@@ -559,7 +544,6 @@ class TestUDPNetworkClient(BaseTestClient):
         mock_datagram_protocol.make_datagram.assert_called_once_with(mocker.sentinel.packet)
         mock_udp_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_ERROR)
 
-    @pytest.mark.usefixtures("setup_protocol_mock")
     def test____send_packet____send_bytes_to_socket____blocking_operation(
         self,
         client: UDPNetworkClient[Any, Any],
@@ -597,7 +581,6 @@ class TestUDPNetworkClient(BaseTestClient):
             mock_datagram_protocol.make_datagram.assert_called_once_with(mocker.sentinel.packet)
             mock_udp_socket.getsockopt.assert_not_called()
 
-    @pytest.mark.usefixtures("setup_protocol_mock")
     def test____send_packet____raise_error_saved_in_SO_ERROR_option(
         self,
         client: UDPNetworkClient[Any, Any],
@@ -622,7 +605,6 @@ class TestUDPNetworkClient(BaseTestClient):
         mock_datagram_protocol.make_datagram.assert_called_once_with(mocker.sentinel.packet)
         mock_udp_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_ERROR)
 
-    @pytest.mark.usefixtures("setup_protocol_mock")
     def test____send_packet____closed_client_error(
         self,
         client: UDPNetworkClient[Any, Any],
@@ -646,7 +628,6 @@ class TestUDPNetworkClient(BaseTestClient):
         mock_datagram_protocol.make_datagram.assert_not_called()
         mock_udp_socket.getsockopt.assert_not_called()
 
-    @pytest.mark.usefixtures("setup_protocol_mock")
     @pytest.mark.parametrize("closed_socket_errno", sorted(CLOSED_SOCKET_ERRNOS), ids=errno.errorcode.__getitem__)
     def test____send_packet____convert_closed_socket_errors(
         self,
@@ -672,7 +653,6 @@ class TestUDPNetworkClient(BaseTestClient):
         mock_datagram_protocol.make_datagram.assert_called_once_with(mocker.sentinel.packet)
         mock_udp_socket.getsockopt.assert_not_called()
 
-    @pytest.mark.usefixtures("setup_protocol_mock")
     def test____recv_packet____blocking_or_not____receive_bytes_from_socket(
         self,
         client: UDPNetworkClient[Any, Any],
@@ -700,7 +680,6 @@ class TestUDPNetworkClient(BaseTestClient):
         mock_datagram_protocol.build_packet_from_datagram.assert_called_once_with(b"packet")
         assert packet is mocker.sentinel.packet
 
-    @pytest.mark.usefixtures("setup_protocol_mock")
     def test____recv_packet____blocking_or_not____protocol_parse_error(
         self,
         client: UDPNetworkClient[Any, Any],
@@ -722,7 +701,6 @@ class TestUDPNetworkClient(BaseTestClient):
         mock_datagram_protocol.build_packet_from_datagram.assert_called_once_with(b"packet")
         assert exc_info.value is expected_error
 
-    @pytest.mark.usefixtures("setup_protocol_mock")
     def test____recv_packet____blocking_or_not____closed_client_error(
         self,
         client: UDPNetworkClient[Any, Any],
@@ -748,7 +726,6 @@ class TestUDPNetworkClient(BaseTestClient):
         mock_udp_socket.recv.assert_not_called()
         mock_datagram_protocol.build_packet_from_datagram.assert_not_called()
 
-    @pytest.mark.usefixtures("setup_protocol_mock")
     @pytest.mark.parametrize("closed_socket_errno", sorted(CLOSED_SOCKET_ERRNOS), ids=errno.errorcode.__getitem__)
     def test____recv_packet____blocking_or_not____convert_closed_socket_errors(
         self,
@@ -782,7 +759,6 @@ class TestUDPNetworkClient(BaseTestClient):
             pytest.param(123456789, id="strictly positive timeout"),
         ],
     )
-    @pytest.mark.usefixtures("setup_protocol_mock")
     def test____recv_packet____no_block____timeout(
         self,
         client: UDPNetworkClient[Any, Any],
@@ -819,7 +795,6 @@ class TestUDPNetworkClient(BaseTestClient):
             pytest.param(123456789, id="strictly positive timeout"),
         ],
     )
-    @pytest.mark.usefixtures("setup_protocol_mock")
     def test____iter_received_packets____yields_available_packets_with_given_timeout(
         self,
         client: UDPNetworkClient[Any, Any],
@@ -847,7 +822,6 @@ class TestUDPNetworkClient(BaseTestClient):
             mocker.sentinel.packet_2,
         ]
 
-    @pytest.mark.usefixtures("setup_protocol_mock")
     def test____iter_received_packets____yields_available_packets_until_error(
         self,
         client: UDPNetworkClient[Any, Any],
@@ -873,7 +847,6 @@ class TestUDPNetworkClient(BaseTestClient):
             mocker.sentinel.packet_2,
         ]
 
-    @pytest.mark.usefixtures("setup_protocol_mock")
     def test____iter_received_packets____closed_client_during_iteration(
         self,
         client: UDPNetworkClient[Any, Any],

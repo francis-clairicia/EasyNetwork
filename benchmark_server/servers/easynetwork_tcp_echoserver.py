@@ -9,7 +9,7 @@ import sys
 from collections.abc import AsyncGenerator, Generator
 from typing import Any
 
-from easynetwork.protocol import StreamProtocol
+from easynetwork.protocol import BufferedStreamProtocol, StreamProtocol
 from easynetwork.serializers.abc import BufferedIncrementalPacketSerializer
 from easynetwork.serializers.base_stream import AutoSeparatedPacketSerializer
 from easynetwork.servers.handlers import AsyncStreamClient, AsyncStreamRequestHandler
@@ -91,11 +91,14 @@ def create_tcp_server(
         print("with buffered serializer")
     if context_reuse:
         print("with context reuse")
-    protocol: StreamProtocol[Any, Any]
+
+    protocol: StreamProtocol[Any, Any] | BufferedStreamProtocol[Any, Any, Any]
     if readline:
-        protocol = StreamProtocol(LineSerializer())
+        protocol = BufferedStreamProtocol(LineSerializer())
     else:
-        protocol = StreamProtocol(NoSerializer())
+        protocol = BufferedStreamProtocol(NoSerializer())
+    if not buffered:
+        protocol = protocol.into_data_protocol()
     return StandaloneTCPNetworkServer(
         None,
         port,
@@ -103,7 +106,6 @@ def create_tcp_server(
         EchoRequestHandlerInnerLoop() if context_reuse else EchoRequestHandler(),
         ssl=ssl_context,
         runner_options=asyncio_options,
-        manual_buffer_allocation="force" if buffered else "no",
         max_recv_size=65536,  # Default buffer limit of asyncio streams
     )
 

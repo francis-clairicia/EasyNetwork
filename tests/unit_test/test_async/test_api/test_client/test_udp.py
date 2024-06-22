@@ -23,13 +23,13 @@ if TYPE_CHECKING:
 
     from .....pytest_plugins.async_finalizer import AsyncFinalizer
 
-from ....base import UNSUPPORTED_FAMILIES
+from ....base import UNSUPPORTED_FAMILIES, BaseTestWithDatagramProtocol
 from .base import BaseTestClient
 
 
 @pytest.mark.asyncio
 @pytest.mark.filterwarnings("ignore::ResourceWarning:easynetwork.lowlevel.api_async.endpoints.datagram")
-class TestAsyncUDPNetworkClient(BaseTestClient):
+class TestAsyncUDPNetworkClient(BaseTestClient, BaseTestWithDatagramProtocol):
     @pytest.fixture(scope="class", params=["AF_INET", "AF_INET6"])
     @staticmethod
     def socket_family(request: Any) -> Any:
@@ -88,20 +88,6 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
 
         mock_datagram_socket_adapter.extra_attributes = _get_socket_extra(mock_udp_socket, wrap_in_proxy=False)
         mock_datagram_socket_adapter.extra.side_effect = TypedAttributeProvider.extra.__get__(mock_datagram_socket_adapter)
-
-    @pytest.fixture  # DO NOT set autouse=True
-    @staticmethod
-    def setup_protocol_mock(mock_datagram_protocol: MagicMock, mocker: MockerFixture) -> None:
-        sentinel = mocker.sentinel
-
-        def make_datagram_side_effect(packet: Any) -> bytes:
-            return str(packet).encode("ascii").removeprefix(b"sentinel.")
-
-        def build_packet_from_datagram_side_effect(data: bytes) -> Any:
-            return getattr(sentinel, data.decode("ascii"))
-
-        mock_datagram_protocol.make_datagram.side_effect = make_datagram_side_effect
-        mock_datagram_protocol.build_packet_from_datagram.side_effect = build_packet_from_datagram_side_effect
 
     @pytest_asyncio.fixture
     @staticmethod
@@ -649,7 +635,6 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
         # Act & Assert
         assert client_connected_or_not.backend() is mock_backend
 
-    @pytest.mark.usefixtures("setup_protocol_mock")
     async def test____send_packet____send_bytes_to_socket(
         self,
         client_connected_or_not: AsyncUDPNetworkClient[Any, Any],
@@ -668,7 +653,6 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
         mock_datagram_protocol.make_datagram.assert_called_once_with(mocker.sentinel.packet)
         mock_udp_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_ERROR)
 
-    @pytest.mark.usefixtures("setup_protocol_mock")
     async def test____send_packet____raise_error_saved_in_SO_ERROR_option(
         self,
         client_connected_or_not: AsyncUDPNetworkClient[Any, Any],
@@ -690,7 +674,6 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
         mock_datagram_protocol.make_datagram.assert_called_once_with(mocker.sentinel.packet)
         mock_udp_socket.getsockopt.assert_called_once_with(SOL_SOCKET, SO_ERROR)
 
-    @pytest.mark.usefixtures("setup_protocol_mock")
     async def test____send_packet____closed_client_error(
         self,
         client_connected_or_not: AsyncUDPNetworkClient[Any, Any],
@@ -712,7 +695,6 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
         mock_datagram_protocol.make_datagram.assert_not_called()
         mock_udp_socket.getsockopt.assert_not_called()
 
-    @pytest.mark.usefixtures("setup_protocol_mock")
     async def test____send_packet____unexpected_socket_close(
         self,
         client_connected_or_not: AsyncUDPNetworkClient[Any, Any],
@@ -733,7 +715,6 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
         mock_datagram_protocol.make_datagram.assert_not_called()
         mock_udp_socket.getsockopt.assert_not_called()
 
-    @pytest.mark.usefixtures("setup_protocol_mock")
     @pytest.mark.parametrize("closed_socket_errno", sorted(CLOSED_SOCKET_ERRNOS), ids=errno.errorcode.__getitem__)
     async def test____send_packet____convert_closed_socket_error(
         self,
@@ -756,7 +737,6 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
         mock_datagram_protocol.make_datagram.assert_called_once()
         mock_udp_socket.getsockopt.assert_not_called()
 
-    @pytest.mark.usefixtures("setup_protocol_mock")
     async def test____recv_packet____receive_bytes_from_socket(
         self,
         client_connected_or_not: AsyncUDPNetworkClient[Any, Any],
@@ -775,7 +755,6 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
         mock_datagram_protocol.build_packet_from_datagram.assert_called_once_with(b"packet")
         assert packet is mocker.sentinel.packet
 
-    @pytest.mark.usefixtures("setup_protocol_mock")
     async def test____recv_packet____protocol_parse_error(
         self,
         client_connected_or_not: AsyncUDPNetworkClient[Any, Any],
@@ -795,7 +774,6 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
         mock_datagram_socket_adapter.recv.assert_awaited_once_with()
         mock_datagram_protocol.build_packet_from_datagram.assert_called_once_with(b"packet")
 
-    @pytest.mark.usefixtures("setup_protocol_mock")
     async def test____recv_packet____closed_client_error(
         self,
         client_connected_or_not: AsyncUDPNetworkClient[Any, Any],
@@ -814,7 +792,6 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
         mock_datagram_socket_adapter.recv.assert_not_awaited()
         mock_datagram_protocol.build_packet_from_datagram.assert_not_called()
 
-    @pytest.mark.usefixtures("setup_protocol_mock")
     async def test____recv_packet____unexpected_socket_close(
         self,
         client_connected_or_not: AsyncUDPNetworkClient[Any, Any],
@@ -832,7 +809,6 @@ class TestAsyncUDPNetworkClient(BaseTestClient):
         mock_datagram_socket_adapter.recv.assert_not_awaited()
         mock_datagram_protocol.build_packet_from_datagram.assert_not_called()
 
-    @pytest.mark.usefixtures("setup_protocol_mock")
     @pytest.mark.parametrize("closed_socket_errno", sorted(CLOSED_SOCKET_ERRNOS), ids=errno.errorcode.__getitem__)
     async def test____recv_packet____convert_closed_socket_error(
         self,
