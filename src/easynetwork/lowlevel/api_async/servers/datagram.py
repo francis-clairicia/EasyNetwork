@@ -185,13 +185,10 @@ class AsyncDatagramServer(AsyncBaseTransport, Generic[_T_Request, _T_Response, _
                         client = client_cache[address]
                     except KeyError:
                         client_cache[address] = client = _ClientToken(DatagramClientContext(address, self), _ClientData(backend))
-                        new_client_task = True
-                    else:
-                        new_client_task = client.data.state is None
 
                     await client.data.push_datagram(datagram)
 
-                    if new_client_task:
+                    if client.data.state is None:
                         del datagram
                         client.data.mark_pending()
                         await self.__client_coroutine(datagram_received_cb, client, task_group, default_context)
