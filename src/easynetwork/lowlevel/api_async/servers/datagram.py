@@ -26,7 +26,7 @@ import warnings
 import weakref
 from collections import deque
 from collections.abc import AsyncGenerator, Callable, Hashable, Mapping
-from contextlib import AsyncExitStack, ExitStack
+from contextlib import AsyncExitStack
 from typing import Any, Generic, NoReturn, TypeVar
 
 from ...._typevars import _T_Request, _T_Response
@@ -185,15 +185,13 @@ class AsyncDatagramServer(AsyncBaseTransport, Generic[_T_Request, _T_Response, _
                         client = client_cache[address]
                     except KeyError:
                         client_cache[address] = client = _ClientToken(DatagramClientContext(address, self), _ClientData(backend))
-                        new_client_task = True
-                    else:
-                        new_client_task = client.data.state is None
 
-                    if new_client_task:
+                    await client.data.push_datagram(datagram)
+
+                    if client.data.state is None:
+                        del datagram
                         client.data.mark_pending()
-                        await self.__client_coroutine(datagram_received_cb, datagram, client, task_group, default_context)
-                    else:
-                        await client.data.push_datagram(datagram)
+                        await self.__client_coroutine(datagram_received_cb, client, task_group, default_context)
 
                 await listener.serve(handler, task_group)
 
@@ -204,63 +202,67 @@ class AsyncDatagramServer(AsyncBaseTransport, Generic[_T_Request, _T_Response, _
         datagram_received_cb: Callable[
             [DatagramClientContext[_T_Response, _T_Address]], AsyncGenerator[float | None, _T_Request]
         ],
-        datagram: bytes,
         client: _ClientToken[_T_Response, _T_Address],
         task_group: TaskGroup,
         default_context: contextvars.Context,
     ) -> None:
-        client_data = client.data
-        async with client_data.task_lock:
-            with ExitStack() as exit_stack:
-                #####################################################################################################
-                # CRITICAL SECTION
-                # This block must not have any asynchronous function calls
-                # or add any asynchronous callbacks/contexts to the exit stack.
-                client_data.mark_running()
-                exit_stack.callback(
-                    self.__on_task_done,
+        async with client.data.task_lock:
+            client.data.mark_running()
+            try:
+                await self.__client_coroutine_inner_loop(
+                    request_handler_generator=datagram_received_cb(client.ctx),
+                    client_data=client.data,
+                )
+            finally:
+                self.__on_task_done(
                     datagram_received_cb=datagram_received_cb,
                     client=client,
                     task_group=task_group,
                     default_context=default_context,
                 )
-                #####################################################################################################
 
-                request_handler_generator = datagram_received_cb(client.ctx)
-                timeout: float | None
+    async def __client_coroutine_inner_loop(
+        self,
+        *,
+        request_handler_generator: AsyncGenerator[float | None, _T_Request],
+        client_data: _ClientData,
+    ) -> None:
+        timeout: float | None
+        datagram: bytes = client_data.pop_datagram_no_wait()
+        try:
+            # Ignore sent timeout here, we already have the datagram.
+            await anext(request_handler_generator)
+        except StopAsyncIteration:
+            return
+        else:
+            action: AsyncGenAction[_T_Request] | None
+            action = self.__parse_datagram(datagram, self.__protocol)
+            try:
+                timeout = await action.asend(request_handler_generator)
+            except StopAsyncIteration:
+                return
+            finally:
+                action = None
 
+            del datagram
+            null_timeout_ctx = contextlib.nullcontext()
+            while True:
                 try:
-                    # Ignore sent timeout here, we already have the datagram.
-                    await anext(request_handler_generator)
-                except StopAsyncIteration:
-                    return
-                else:
-                    action: AsyncGenAction[_T_Request] = self.__parse_datagram(datagram, self.__protocol)
-                    try:
-                        timeout = await action.asend(request_handler_generator)
-                    except StopAsyncIteration:
-                        return
-                    finally:
-                        del action
-
-                    del datagram
-                    while True:
-                        try:
-                            with contextlib.nullcontext() if timeout is None else client_data.backend.timeout(timeout):
-                                datagram = await client_data.pop_datagram()
-
-                            action = self.__parse_datagram(datagram, self.__protocol)
-                            del datagram
-                        except BaseException as exc:
-                            action = ThrowAction(exc)
-                        try:
-                            timeout = await action.asend(request_handler_generator)
-                        except StopAsyncIteration:
-                            break
-                        finally:
-                            del action
+                    with null_timeout_ctx if timeout is None else client_data.backend.timeout(timeout):
+                        datagram = await client_data.pop_datagram()
+                    action = self.__parse_datagram(datagram, self.__protocol)
+                except BaseException as exc:
+                    action = ThrowAction(exc)
                 finally:
-                    await request_handler_generator.aclose()
+                    datagram = b""
+                try:
+                    timeout = await action.asend(request_handler_generator)
+                except StopAsyncIteration:
+                    break
+                finally:
+                    action = None
+        finally:
+            await request_handler_generator.aclose()
 
     def __on_task_done(
         self,
@@ -272,9 +274,7 @@ class AsyncDatagramServer(AsyncBaseTransport, Generic[_T_Request, _T_Response, _
         default_context: contextvars.Context,
     ) -> None:
         client.data.mark_done()
-        try:
-            pending_datagram = client.data.pop_datagram_no_wait()
-        except IndexError:
+        if client.data.queue_is_empty():
             return
 
         client.data.mark_pending()
@@ -282,7 +282,6 @@ class AsyncDatagramServer(AsyncBaseTransport, Generic[_T_Request, _T_Response, _
             task_group.start_soon,
             self.__client_coroutine,
             datagram_received_cb,
-            pending_datagram,
             client,
             task_group,
             default_context,
@@ -347,8 +346,8 @@ class _ClientData:
         self.__backend: AsyncBackend = backend
         self.__task_lock: ILock = backend.create_lock()
         self.__state: _ClientState | None = None
-        self._queue_condition: ICondition | None = None
-        self._datagram_queue: deque[bytes] | None = None
+        self._queue_condition: ICondition = backend.create_condition_var()
+        self._datagram_queue: deque[bytes] = deque()
 
     @property
     def backend(self) -> AsyncBackend:
@@ -362,21 +361,20 @@ class _ClientData:
     def state(self) -> _ClientState | None:
         return self.__state
 
+    def queue_is_empty(self) -> bool:
+        return not self._datagram_queue
+
     async def push_datagram(self, datagram: bytes) -> None:
-        self.__ensure_queue().append(datagram)
-        if (queue_condition := self._queue_condition) is not None:
-            async with queue_condition:
-                queue_condition.notify()
+        self._datagram_queue.append(datagram)
+        async with (queue_condition := self._queue_condition):
+            queue_condition.notify()
 
     def pop_datagram_no_wait(self) -> bytes:
-        if not (queue := self._datagram_queue):
-            raise IndexError("pop from an empty deque")
-        return queue.popleft()
+        return self._datagram_queue.popleft()
 
     async def pop_datagram(self) -> bytes:
-        queue_condition = self.__ensure_queue_condition_var()
-        async with queue_condition:
-            queue = self.__ensure_queue()
+        async with (queue_condition := self._queue_condition):
+            queue = self._datagram_queue
             while not queue:
                 await queue_condition.wait()
             return queue.popleft()
@@ -395,16 +393,6 @@ class _ClientData:
         if self.__state is not _ClientState.TASK_PENDING:
             self.handle_inconsistent_state_error()
         self.__state = _ClientState.TASK_RUNNING
-
-    def __ensure_queue(self) -> deque[bytes]:
-        if (queue := self._datagram_queue) is None:
-            self._datagram_queue = queue = deque()
-        return queue
-
-    def __ensure_queue_condition_var(self) -> ICondition:
-        if (cond := self._queue_condition) is None:
-            self._queue_condition = cond = self.__backend.create_condition_var()
-        return cond
 
     @staticmethod
     def handle_inconsistent_state_error() -> NoReturn:

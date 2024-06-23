@@ -29,7 +29,7 @@ from typing import TypeVar
 
 from .._typevars import _T_Request, _T_Response
 from ..lowlevel import _utils
-from ..lowlevel._asyncgen import AsyncGenAction, SendAction, ThrowAction
+from ..lowlevel._asyncgen import AsyncGenAction
 from ..lowlevel.api_async.servers import datagram as _lowlevel_datagram_server, stream as _lowlevel_stream_server
 from .handlers import AsyncDatagramClient, AsyncDatagramRequestHandler, AsyncStreamClient, AsyncStreamRequestHandler
 
@@ -62,6 +62,8 @@ def build_lowlevel_stream_server_handler(
 
     if logger is None:
         logger = logging.getLogger(__name__)
+
+    from ..lowlevel._asyncgen import SendAction, ThrowAction
 
     async def handler(
         lowlevel_client: _lowlevel_stream_server.Client[_T_Response], /
@@ -178,6 +180,8 @@ def build_lowlevel_datagram_server_handler(
     Returns:
         an :term:`asynchronous generator` function.
     """
+
+    from ..lowlevel._asyncgen import SendAction, ThrowAction
 
     async def handler(
         lowlevel_client: _lowlevel_datagram_server.DatagramClientContext[_T_Response, _T_Address], /

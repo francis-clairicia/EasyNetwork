@@ -206,10 +206,6 @@ class TestClientData:
     def get_client_state(client_data: _ClientData) -> _ClientState | None:
         return client_data.state
 
-    @staticmethod
-    def get_client_queue(client_data: _ClientData) -> deque[bytes] | None:
-        return client_data._datagram_queue
-
     def test____dunder_init____default(
         self,
         client_data: _ClientData,
@@ -219,8 +215,6 @@ class TestClientData:
         # Act & Assert
         assert isinstance(client_data.task_lock, asyncio.Lock)
         assert client_data.state is None
-        assert client_data._datagram_queue is None
-        assert client_data._queue_condition is None
 
     def test____client_state____regular_state_transition(
         self,
@@ -279,7 +273,6 @@ class TestClientData:
         client_data: _ClientData,
     ) -> None:
         # Arrange
-        assert self.get_client_queue(client_data) is None
 
         # Act
         await client_data.push_datagram(b"datagram_1")
@@ -287,8 +280,6 @@ class TestClientData:
         await client_data.push_datagram(b"datagram_3")
 
         # Assert
-        assert client_data._datagram_queue is not None
-        assert client_data._queue_condition is None
         assert list(client_data._datagram_queue) == [b"datagram_1", b"datagram_2", b"datagram_3"]
 
     @pytest.mark.asyncio
@@ -313,19 +304,12 @@ class TestClientData:
 
         # Assert
         assert len(client_data._datagram_queue) == 0
-        if no_wait:
-            assert client_data._queue_condition is None
-        else:
-            assert client_data._queue_condition is not None
 
-    @pytest.mark.parametrize("queue", [deque(), None], ids=lambda p: f"queue=={p!r}")
     def test____datagram_queue____pop_datagram_no_wait____empty_list(
         self,
-        queue: deque[bytes] | None,
         client_data: _ClientData,
     ) -> None:
         # Arrange
-        client_data._datagram_queue = queue
 
         # Act & Assert
         with pytest.raises(IndexError):
