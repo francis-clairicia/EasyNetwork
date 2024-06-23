@@ -216,10 +216,7 @@ class AsyncStreamServer(AsyncBaseTransport, Generic[_T_Request, _T_Response]):
                             consumer=consumer,
                         )
                     else:
-                        _warn_msg = f"The transport implementation {transport!r} does not implement AsyncBufferedStreamReadTransport interface."
-                        _warn_msg = f"{_warn_msg} Consider using StreamProtocol instead of BufferedStreamProtocol."
-                        warnings.warn(_warn_msg, category=ManualBufferAllocationWarning, stacklevel=1)
-                        del _warn_msg
+                        self.__manual_buffer_allocation_warning(transport)
                         consumer = _stream.StreamDataConsumer(self.__protocol.into_data_protocol())
                         request_receiver = _RequestReceiver(
                             transport=transport,
@@ -247,27 +244,34 @@ class AsyncStreamServer(AsyncBaseTransport, Generic[_T_Request, _T_Response]):
                 )
             )
 
-            del client_exit_stack, task_exit_stack, client_connected_cb
-
             timeout: float | None
             try:
                 timeout = await anext(request_handler_generator)
             except StopAsyncIteration:
                 return
             else:
-                while True:
-                    try:
+                try:
+                    action: AsyncGenAction[_T_Request] | None
+                    while True:
                         action = await request_receiver.next(timeout)
-                    except StopAsyncIteration:
-                        break
-                    try:
-                        timeout = await action.asend(request_handler_generator)
-                    except StopAsyncIteration:
-                        break
-                    finally:
-                        del action
+                        try:
+                            timeout = await action.asend(request_handler_generator)
+                        finally:
+                            action = None
+                except StopAsyncIteration:
+                    return
             finally:
                 await request_handler_generator.aclose()
+
+    @staticmethod
+    def __manual_buffer_allocation_warning(transport: AsyncStreamTransport) -> None:
+        _warn_msg = " ".join(
+            [
+                f"The transport implementation {transport!r} does not implement AsyncBufferedStreamReadTransport interface.",
+                "Consider using StreamProtocol instead of BufferedStreamProtocol.",
+            ]
+        )
+        warnings.warn(_warn_msg, category=ManualBufferAllocationWarning, stacklevel=2)
 
     @property
     @_utils.inherit_doc(AsyncBaseTransport)
@@ -275,63 +279,65 @@ class AsyncStreamServer(AsyncBaseTransport, Generic[_T_Request, _T_Response]):
         return self.__listener.extra_attributes
 
 
-@dataclasses.dataclass(kw_only=True, eq=False, frozen=True, slots=True)
+@dataclasses.dataclass(kw_only=True, eq=False, slots=True)
 class _RequestReceiver(Generic[_T_Request]):
     transport: AsyncStreamReadTransport
     consumer: _stream.StreamDataConsumer[_T_Request]
     max_recv_size: int
     __null_timeout_ctx: contextlib.nullcontext[None] = dataclasses.field(init=False, default_factory=contextlib.nullcontext)
+    __backend: AsyncBackend = dataclasses.field(init=False)
 
     def __post_init__(self) -> None:
         assert self.max_recv_size > 0, f"{self.max_recv_size=}"  # nosec assert_used
+        self.__backend = self.transport.backend()
 
     async def next(self, timeout: float | None) -> AsyncGenAction[_T_Request]:
         try:
             consumer = self.consumer
-            try:
-                request = consumer.next(None)
-            except StopIteration:
-                pass
-            else:
-                return SendAction(request)
-
-            with self.__null_timeout_ctx if timeout is None else self.transport.backend().timeout(timeout):
-                while data := await self.transport.recv(self.max_recv_size):
+            with self.__null_timeout_ctx if timeout is None else self.__backend.timeout(timeout):
+                data: bytes | None = None
+                while True:
                     try:
                         request = consumer.next(data)
                     except StopIteration:
-                        continue
+                        pass
+                    else:
+                        return SendAction(request)
                     finally:
-                        del data
-                    return SendAction(request)
+                        data = None
+                    data = await self.transport.recv(self.max_recv_size)
+                    if not data:
+                        break
         except BaseException as exc:
             return ThrowAction(exc)
         raise StopAsyncIteration
 
 
-@dataclasses.dataclass(kw_only=True, eq=False, frozen=True, slots=True)
+@dataclasses.dataclass(kw_only=True, eq=False, slots=True)
 class _BufferedRequestReceiver(Generic[_T_Request]):
     transport: AsyncBufferedStreamReadTransport
     consumer: _stream.BufferedStreamDataConsumer[_T_Request]
     __null_timeout_ctx: contextlib.nullcontext[None] = dataclasses.field(init=False, default_factory=contextlib.nullcontext)
+    __backend: AsyncBackend = dataclasses.field(init=False)
+
+    def __post_init__(self) -> None:
+        self.__backend = self.transport.backend()
 
     async def next(self, timeout: float | None) -> AsyncGenAction[_T_Request]:
         try:
             consumer = self.consumer
-            try:
-                request = consumer.next(None)
-            except StopIteration:
-                pass
-            else:
-                return SendAction(request)
-
-            with self.__null_timeout_ctx if timeout is None else self.transport.backend().timeout(timeout):
-                while nbytes := await self.transport.recv_into(consumer.get_write_buffer()):
+            with self.__null_timeout_ctx if timeout is None else self.__backend.timeout(timeout):
+                nbytes: int | None = None
+                while True:
                     try:
                         request = consumer.next(nbytes)
                     except StopIteration:
-                        continue
-                    return SendAction(request)
+                        pass
+                    else:
+                        return SendAction(request)
+                    nbytes = await self.transport.recv_into(consumer.get_write_buffer())
+                    if not nbytes:
+                        break
         except BaseException as exc:
             return ThrowAction(exc)
         raise StopAsyncIteration

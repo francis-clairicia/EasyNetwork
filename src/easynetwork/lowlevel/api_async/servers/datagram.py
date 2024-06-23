@@ -235,30 +235,33 @@ class AsyncDatagramServer(AsyncBaseTransport, Generic[_T_Request, _T_Response, _
                 except StopAsyncIteration:
                     return
                 else:
-                    action: AsyncGenAction[_T_Request] = self.__parse_datagram(datagram, self.__protocol)
+                    action: AsyncGenAction[_T_Request] | None
+                    action = self.__parse_datagram(datagram, self.__protocol)
                     try:
                         timeout = await action.asend(request_handler_generator)
                     except StopAsyncIteration:
                         return
                     finally:
-                        del action
+                        action = None
 
                     del datagram
-                    while True:
-                        try:
-                            with contextlib.nullcontext() if timeout is None else client_data.backend.timeout(timeout):
-                                datagram = await client_data.pop_datagram()
-
-                            action = self.__parse_datagram(datagram, self.__protocol)
-                            del datagram
-                        except BaseException as exc:
-                            action = ThrowAction(exc)
-                        try:
-                            timeout = await action.asend(request_handler_generator)
-                        except StopAsyncIteration:
-                            break
-                        finally:
-                            del action
+                    null_timeout_ctx = contextlib.nullcontext()
+                    try:
+                        while True:
+                            try:
+                                with null_timeout_ctx if timeout is None else client_data.backend.timeout(timeout):
+                                    datagram = await client_data.pop_datagram()
+                                action = self.__parse_datagram(datagram, self.__protocol)
+                            except BaseException as exc:
+                                action = ThrowAction(exc)
+                            finally:
+                                datagram = b""
+                            try:
+                                timeout = await action.asend(request_handler_generator)
+                            finally:
+                                action = None
+                    except StopAsyncIteration:
+                        pass
                 finally:
                     await request_handler_generator.aclose()
 
