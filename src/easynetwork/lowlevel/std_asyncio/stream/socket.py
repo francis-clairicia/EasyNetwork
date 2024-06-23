@@ -287,8 +287,8 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
                     buffer[:nbytes_written] = protocol_buffer_written
                     self.__buffer_nbytes_written = 0
 
-        self._maybe_resume_transport()
-        return nbytes_written
+            self._maybe_resume_transport()
+            return nbytes_written
 
     async def _wait_for_data(self, requester: str) -> None:
         if self.__read_waiter is not None:
