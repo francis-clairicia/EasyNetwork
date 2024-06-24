@@ -112,15 +112,9 @@ class DatagramListenerSocketAdapter(transports.AsyncDatagramListener[tuple[Any, 
 class _DatagramListenerServeContext:
     datagram_handler: Callable[[bytes, tuple[Any, ...]], Coroutine[Any, Any, None]]
     task_group: TaskGroup
-    __queue: collections.deque[tuple[bytes, tuple[Any, ...]]] = dataclasses.field(init=False, default_factory=collections.deque)
 
     def handle(self, data: bytes, addr: tuple[Any, ...]) -> None:
-        self.__queue.append((data, addr))
-        self.task_group.start_soon(self.__datagram_handler_task)
-
-    async def __datagram_handler_task(self) -> None:
-        data, addr = self.__queue.popleft()
-        await self.datagram_handler(data, addr)
+        self.task_group.start_soon(self.datagram_handler, data, addr)
 
 
 class DatagramListenerProtocol(asyncio.DatagramProtocol):

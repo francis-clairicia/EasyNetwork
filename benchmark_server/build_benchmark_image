@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 from pathlib import Path
 from typing import Any, Literal
 
@@ -28,6 +29,8 @@ def _build_sdist_for_docker_image() -> Path:
     output_dir = ROOT_DIR / "dist"
     distribution: Literal["sdist"] = "sdist"
     config_settings: dict[str, Any] = {}
+
+    shutil.rmtree(output_dir, ignore_errors=True)
 
     print("Building source distribution for docker image...")
     with pyproject_build.env.DefaultIsolatedEnv() as env:
@@ -65,6 +68,7 @@ def main() -> None:
         help="Built image tag",
     )
     parser.add_argument(
+        "-p",
         "--python-version",
         default=SUPPORTED_PYTHON_VERSIONS[-1],
         choices=list(SUPPORTED_PYTHON_VERSIONS),

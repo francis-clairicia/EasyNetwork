@@ -268,19 +268,35 @@ class TestClientData:
         assert self.get_client_state(client_data) is _ClientState.TASK_RUNNING
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("notify", [True, False], ids=lambda p: f"notify=={p}")
     async def test____datagram_queue____push_datagram(
         self,
+        notify: bool,
         client_data: _ClientData,
+        mocker: MockerFixture,
     ) -> None:
         # Arrange
+        queue_condition = mocker.NonCallableMagicMock(
+            spec=client_data._queue_condition,
+            wraps=client_data._queue_condition,
+            **{
+                "__aenter__.side_effect": client_data._queue_condition.__aenter__,
+                "__aexit__.side_effect": client_data._queue_condition.__aexit__,
+            },
+        )
+        client_data._queue_condition = queue_condition
 
         # Act
-        await client_data.push_datagram(b"datagram_1")
-        await client_data.push_datagram(b"datagram_2")
-        await client_data.push_datagram(b"datagram_3")
+        await client_data.push_datagram(b"datagram_1", notify=notify)
+        await client_data.push_datagram(b"datagram_2", notify=notify)
+        await client_data.push_datagram(b"datagram_3", notify=notify)
 
         # Assert
         assert list(client_data._datagram_queue) == [b"datagram_1", b"datagram_2", b"datagram_3"]
+        if notify:
+            assert queue_condition.notify.call_count == 3
+        else:
+            queue_condition.notify.assert_not_called()
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("no_wait", [False, True], ids=lambda p: f"no_wait=={p}")
@@ -326,7 +342,7 @@ class TestClientData:
         assert not pop_datagram_task.done()
 
         # Act
-        await client_data.push_datagram(b"datagram_1")
+        await client_data.push_datagram(b"datagram_1", notify=True)
 
         # Assert
         assert (await pop_datagram_task) == b"datagram_1"
