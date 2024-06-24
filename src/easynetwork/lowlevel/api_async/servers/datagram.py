@@ -185,8 +185,11 @@ class AsyncDatagramServer(AsyncBaseTransport, Generic[_T_Request, _T_Response, _
                         client = client_cache[address]
                     except KeyError:
                         client_cache[address] = client = _ClientToken(DatagramClientContext(address, self), _ClientData(backend))
+                        notify = False
+                    else:
+                        notify = True
 
-                    await client.data.push_datagram(datagram)
+                    await client.data.push_datagram(datagram, notify=notify)
 
                     if client.data.state is None:
                         del datagram
@@ -364,10 +367,11 @@ class _ClientData:
     def queue_is_empty(self) -> bool:
         return not self._datagram_queue
 
-    async def push_datagram(self, datagram: bytes) -> None:
+    async def push_datagram(self, datagram: bytes, *, notify: bool) -> None:
         self._datagram_queue.append(datagram)
-        async with (queue_condition := self._queue_condition):
-            queue_condition.notify()
+        if notify:
+            async with (queue_condition := self._queue_condition):
+                queue_condition.notify()
 
     def pop_datagram_no_wait(self) -> bytes:
         return self._datagram_queue.popleft()
