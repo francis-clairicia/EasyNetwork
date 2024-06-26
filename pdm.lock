@@ -5,7 +5,7 @@
 groups = ["default", "bandit", "benchmark-servers", "benchmark-servers-deps", "build", "cbor", "coverage", "dev", "doc", "flake8", "format", "micro-benchmark", "msgpack", "mypy", "pre-commit", "sniffio", "test", "tox", "types-msgpack", "uvloop"]
 strategy = ["cross_platform", "inherit_metadata"]
 lock_version = "4.4.1"
-content_hash = "sha256:587367a5635b20aecac94f859fd4d111f08958e86c2e0435885a6d190c6f42ab"
+content_hash = "sha256:48f7b54532436d27d82bef28d7f08413ef63a76b82cc1e9ed3c07a400ee7c02e"
 
 [[package]]
 name = "alabaster"
@@ -1439,14 +1439,13 @@ files = [
 name = "pytest-retry"
 version = "1.6.3"
 requires_python = ">=3.9"
+git = "https://github.com/str0zzapreti/pytest-retry.git"
+ref = "bb465fff6f01f3f90a77229468f7e08a3bdbce20"
+revision = "bb465fff6f01f3f90a77229468f7e08a3bdbce20"
 summary = "Adds the ability to retry flaky tests in CI environments"
 groups = ["test"]
 dependencies = [
     "pytest>=7.0.0",
-]
-files = [
-    {file = "pytest_retry-1.6.3-py3-none-any.whl", hash = "sha256:e96f7df77ee70b0838d1085f9c3b8b5b7d74bf8947a0baf32e2b8c71b27683c8"},
-    {file = "pytest_retry-1.6.3.tar.gz", hash = "sha256:36ccfa11c8c8f9ddad5e20375182146d040c20c4a791745139c5a99ddf1b557d"},
 ]
 
 [[package]]
