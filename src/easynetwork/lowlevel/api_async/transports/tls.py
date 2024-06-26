@@ -362,7 +362,7 @@ class _IncomingDataReader:
         self.buffer_view = memoryview(self.buffer)
 
     async def readinto(self, read_bio: MemoryBIO) -> int:
-        if nbytes := await self.transport.recv_into(buffer := self.buffer_view):
+        if (nbytes := await self.transport.recv_into(buffer := self.buffer_view)) > 0:
             return read_bio.write(buffer[:nbytes])
         read_bio.write_eof()
         return 0
