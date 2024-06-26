@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING, Any
 
 from easynetwork.lowlevel.api_sync.transports.base_selector import (
     SelectorBaseTransport,
-    SelectorBufferedStreamReadTransport,
     SelectorDatagramTransport,
     SelectorStreamTransport,
     WouldBlockOnRead,
@@ -17,6 +16,8 @@ from easynetwork.lowlevel.api_sync.transports.base_selector import (
 )
 
 import pytest
+
+from ...._utils import make_recv_noblock_into_side_effect
 
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
@@ -358,7 +359,7 @@ class TestSelectorStreamTransport:
     @pytest.fixture
     @staticmethod
     def mock_transport(mocker: MockerFixture) -> MagicMock:
-        return mocker.NonCallableMagicMock(spec=SelectorStreamTransport)
+        return mocker.NonCallableMagicMock(spec=SelectorStreamTransport, **{"_retry.side_effect": _retry_side_effect})
 
     def test____recv____call_noblock_within_retry(
         self,
@@ -366,7 +367,6 @@ class TestSelectorStreamTransport:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_transport._retry.side_effect = _retry_side_effect
         mock_transport.recv_noblock.side_effect = [
             WouldBlockOnRead(mocker.sentinel.fd),
             WouldBlockOnWrite(mocker.sentinel.fd),
@@ -387,7 +387,6 @@ class TestSelectorStreamTransport:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_transport._retry.side_effect = _retry_side_effect
         mock_transport.send_noblock.side_effect = [
             WouldBlockOnRead(mocker.sentinel.fd),
             WouldBlockOnWrite(mocker.sentinel.fd),
@@ -402,20 +401,12 @@ class TestSelectorStreamTransport:
         assert mock_transport.send_noblock.call_args_list == [mocker.call(mocker.sentinel.data) for _ in range(3)]
         assert sent is mocker.sentinel.nb_sent_bytes
 
-
-class TestSelectorBufferedStreamReadTransport:
-    @pytest.fixture
-    @staticmethod
-    def mock_transport(mocker: MockerFixture) -> MagicMock:
-        return mocker.NonCallableMagicMock(spec=SelectorBufferedStreamReadTransport)
-
     def test____recv_into____call_noblock_within_retry(
         self,
         mock_transport: MagicMock,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_transport._retry.side_effect = _retry_side_effect
         mock_transport.recv_noblock_into.side_effect = [
             WouldBlockOnRead(mocker.sentinel.fd),
             WouldBlockOnWrite(mocker.sentinel.fd),
@@ -423,19 +414,83 @@ class TestSelectorBufferedStreamReadTransport:
         ]
 
         # Act
-        nbytes = SelectorBufferedStreamReadTransport.recv_into(mock_transport, mocker.sentinel.buffer, mocker.sentinel.timeout)
+        nbytes = SelectorStreamTransport.recv_into(mock_transport, mocker.sentinel.buffer, mocker.sentinel.timeout)
 
         # Assert
         mock_transport._retry.assert_called_once_with(mocker.ANY, mocker.sentinel.timeout)
         assert mock_transport.recv_noblock_into.call_args_list == [mocker.call(mocker.sentinel.buffer) for _ in range(3)]
         assert nbytes is mocker.sentinel.nb_bytes_written
 
+    def test____recv_noblock____default(
+        self,
+        mock_transport: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_transport.recv_noblock_into.side_effect = make_recv_noblock_into_side_effect(b"value")
+
+        # Act
+        data = SelectorStreamTransport.recv_noblock(mock_transport, 128)
+
+        # Assert
+        assert type(data) is bytes
+        assert data == b"value"
+        mock_transport.recv_noblock_into.assert_called_once_with(mocker.ANY)
+        mock_transport.recv_into.assert_not_called()
+
+    def test____recv_noblock____null_bufsize(
+        self,
+        mock_transport: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_transport.recv_noblock_into.side_effect = make_recv_noblock_into_side_effect(b"never")
+
+        # Act & Assert
+        data = SelectorStreamTransport.recv_noblock(mock_transport, 0)
+
+        # Assert
+        assert type(data) is bytes
+        assert len(data) == 0
+        mock_transport.recv_noblock_into.assert_not_called()
+        mock_transport.recv_into.assert_not_called()
+
+    def test____recv_noblock____invalid_bufsize_value(
+        self,
+        mock_transport: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_transport.recv_noblock_into.side_effect = make_recv_noblock_into_side_effect(b"never")
+
+        # Act & Assert
+        with pytest.raises(ValueError, match=r"^'bufsize' must be a positive or null integer$"):
+            SelectorStreamTransport.recv_noblock(mock_transport, -1)
+
+        # Assert
+        mock_transport.recv_noblock_into.assert_not_called()
+        mock_transport.recv_into.assert_not_called()
+
+    def test____recv_noblock____invalid_recv_into_return_value(
+        self,
+        mock_transport: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_transport.recv_noblock_into.side_effect = [-1]
+
+        # Act & Assert
+        with pytest.raises(RuntimeError, match=r"^transport\.recv_noblock_into\(\) returned a negative value$"):
+            SelectorStreamTransport.recv_noblock(mock_transport, 128)
+
+        # Assert
+        mock_transport.recv_noblock_into.assert_called_once_with(mocker.ANY)
+        mock_transport.recv_into.assert_not_called()
+
 
 class TestSelectorDatagramTransport:
     @pytest.fixture
     @staticmethod
     def mock_transport(mocker: MockerFixture) -> MagicMock:
-        return mocker.NonCallableMagicMock(spec=SelectorDatagramTransport)
+        return mocker.NonCallableMagicMock(spec=SelectorDatagramTransport, **{"_retry.side_effect": _retry_side_effect})
 
     def test____recv____call_noblock_within_retry(
         self,
@@ -443,7 +498,6 @@ class TestSelectorDatagramTransport:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_transport._retry.side_effect = _retry_side_effect
         mock_transport.recv_noblock.side_effect = [
             WouldBlockOnRead(mocker.sentinel.fd),
             WouldBlockOnWrite(mocker.sentinel.fd),
@@ -464,7 +518,6 @@ class TestSelectorDatagramTransport:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        mock_transport._retry.side_effect = _retry_side_effect
         mock_transport.send_noblock.side_effect = [
             WouldBlockOnRead(mocker.sentinel.fd),
             WouldBlockOnWrite(mocker.sentinel.fd),

@@ -92,13 +92,16 @@ def create_tcp_server(
     if context_reuse:
         print("with context reuse")
 
+    serializer: BufferedIncrementalPacketSerializer[Any, Any, Any]
     protocol: StreamProtocol[Any, Any] | BufferedStreamProtocol[Any, Any, Any]
     if readline:
-        protocol = BufferedStreamProtocol(LineSerializer())
+        serializer = LineSerializer()
     else:
-        protocol = BufferedStreamProtocol(NoSerializer())
-    if not buffered:
-        protocol = protocol.into_data_protocol()
+        serializer = NoSerializer()
+    if buffered:
+        protocol = BufferedStreamProtocol(serializer)
+    else:
+        protocol = StreamProtocol(serializer)
     return StandaloneTCPNetworkServer(
         None,
         port,

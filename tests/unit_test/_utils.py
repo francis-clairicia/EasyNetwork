@@ -219,6 +219,15 @@ def make_recv_into_side_effect(to_write: bytes | list[bytes]) -> Callable[[bytea
     return recv_into_side_effect
 
 
+def make_recv_noblock_into_side_effect(to_write: bytes | list[bytes]) -> Callable[[bytearray | memoryview], int]:
+    write_in_buffer = __make_write_in_buffer_side_effect(to_write)
+
+    def recv_into_side_effect(buffer: bytearray | memoryview) -> int:
+        return write_in_buffer(buffer)
+
+    return recv_into_side_effect
+
+
 def make_async_recv_into_side_effect(to_write: bytes | list[bytes]) -> Callable[[bytearray | memoryview], Awaitable[int]]:
     write_in_buffer = __make_write_in_buffer_side_effect(to_write)
 

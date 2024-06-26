@@ -157,13 +157,6 @@ class BufferedStreamProtocol(Generic[_T_SentPacket, _T_ReceivedPacket, _T_Buffer
         self.__serializer: BufferedIncrementalPacketSerializer[Any, Any, _T_Buffer] = serializer
         self.__converter: AbstractPacketConverterComposite[_T_SentPacket, _T_ReceivedPacket, Any, Any] | None = converter
 
-    def into_data_protocol(self) -> StreamProtocol[_T_SentPacket, _T_ReceivedPacket]:
-        """
-        Returns:
-            a valid :class:`StreamProtocol` from this protocol object.
-        """
-        return StreamProtocol(self.__serializer, converter=self.__converter)
-
     def create_buffer(self, sizehint: int) -> _T_Buffer:
         """
         Called to allocate a new receive buffer.

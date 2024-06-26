@@ -6,6 +6,8 @@ from easynetwork.lowlevel.api_sync.transports.abc import StreamTransport
 
 import pytest
 
+from ...._utils import make_recv_into_side_effect
+
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
 
@@ -33,6 +35,66 @@ class TestStreamTransport:
         # This is a workaround to use assert_called_with()
         mock_transport.send = lambda data, timeout: mock_transport_send(bytes(data), timeout)
         return mock_transport_send
+
+    def test____recv____default(
+        self,
+        mock_transport: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_transport.recv_into.side_effect = make_recv_into_side_effect(b"value")
+
+        # Act
+        data = StreamTransport.recv(mock_transport, 128, 123456879)
+
+        # Assert
+        assert type(data) is bytes
+        assert data == b"value"
+        mock_transport.recv_into.assert_called_once_with(mocker.ANY, 123456879)
+
+    def test____recv____null_bufsize(
+        self,
+        mock_transport: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_transport.recv_into.side_effect = make_recv_into_side_effect(b"never")
+
+        # Act & Assert
+        data = StreamTransport.recv(mock_transport, 0, 123456879)
+
+        # Assert
+        assert type(data) is bytes
+        assert len(data) == 0
+        mock_transport.recv_into.assert_not_called()
+
+    def test____recv____invalid_bufsize_value(
+        self,
+        mock_transport: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_transport.recv_into.side_effect = make_recv_into_side_effect(b"never")
+
+        # Act & Assert
+        with pytest.raises(ValueError, match=r"^'bufsize' must be a positive or null integer$"):
+            StreamTransport.recv(mock_transport, -1, 123456879)
+
+        # Assert
+        mock_transport.recv_into.assert_not_called()
+
+    def test____recv____invalid_recv_into_return_value(
+        self,
+        mock_transport: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_transport.recv_into.side_effect = [-1]
+
+        # Act & Assert
+        with pytest.raises(RuntimeError, match=r"^transport\.recv_into\(\) returned a negative value$"):
+            StreamTransport.recv(mock_transport, 128, 123456879)
+
+        # Assert
+        mock_transport.recv_into.assert_called_once_with(mocker.ANY, 123456879)
 
     @pytest.mark.parametrize("data", [b"packet\n", b""], ids=repr)
     def test____send_all____one_shot_call(

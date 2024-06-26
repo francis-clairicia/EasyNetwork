@@ -164,8 +164,6 @@ class BaseTestWithStreamProtocol:
 
         mock_stream_protocol.generate_chunks.side_effect = generate_chunks_side_effect
         mock_stream_protocol.build_packet_from_chunks.side_effect = build_packet_from_chunks_side_effect
-        mock_buffered_stream_protocol.into_data_protocol.side_effect = None
-        mock_buffered_stream_protocol.into_data_protocol.return_value = mock_stream_protocol
 
         match stream_protocol_mode:
             case "data":

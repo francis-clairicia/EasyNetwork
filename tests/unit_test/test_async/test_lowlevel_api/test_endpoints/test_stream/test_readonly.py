@@ -3,9 +3,8 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
-from easynetwork.exceptions import UnsupportedOperation
 from easynetwork.lowlevel.api_async.endpoints.stream import AsyncStreamReceiverEndpoint
-from easynetwork.lowlevel.api_async.transports.abc import AsyncBufferedStreamReadTransport, AsyncStreamReadTransport
+from easynetwork.lowlevel.api_async.transports.abc import AsyncStreamReadTransport
 from easynetwork.lowlevel.std_asyncio.backend import AsyncIOBackend
 
 import pytest
@@ -23,20 +22,13 @@ if TYPE_CHECKING:
 
 
 class TestAsyncStreamReceiverEndpoint(BaseAsyncEndpointReceiveTests):
-    @pytest.fixture(params=["recv_data", "recv_buffer"])
+    @pytest.fixture
     @staticmethod
     def mock_stream_transport(
         asyncio_backend: AsyncIOBackend,
-        request: pytest.FixtureRequest,
         mocker: MockerFixture,
     ) -> MagicMock:
-        match request.param:
-            case "recv_data":
-                return make_transport_mock(mocker=mocker, spec=AsyncStreamReadTransport, backend=asyncio_backend)
-            case "recv_buffer":
-                return make_transport_mock(mocker=mocker, spec=AsyncBufferedStreamReadTransport, backend=asyncio_backend)
-            case _:
-                pytest.fail("Invalid stream transport parameter")
+        return make_transport_mock(mocker=mocker, spec=AsyncStreamReadTransport, backend=asyncio_backend)
 
     @pytest_asyncio.fixture
     @staticmethod
@@ -46,10 +38,7 @@ class TestAsyncStreamReceiverEndpoint(BaseAsyncEndpointReceiveTests):
         max_recv_size: int,
     ) -> AsyncIterator[AsyncStreamReceiverEndpoint[Any]]:
         endpoint: AsyncStreamReceiverEndpoint[Any]
-        try:
-            endpoint = AsyncStreamReceiverEndpoint(mock_stream_transport, mock_stream_protocol, max_recv_size)
-        except UnsupportedOperation:
-            pytest.skip("Skip unsupported combination")
+        endpoint = AsyncStreamReceiverEndpoint(mock_stream_transport, mock_stream_protocol, max_recv_size)
         async with endpoint:
             yield endpoint
 
@@ -79,7 +68,6 @@ class TestAsyncStreamReceiverEndpoint(BaseAsyncEndpointReceiveTests):
         with pytest.raises(TypeError, match=r"^Expected a StreamProtocol or a BufferedStreamProtocol object, got .*$"):
             _ = AsyncStreamReceiverEndpoint(mock_stream_transport, mock_invalid_protocol, max_recv_size)
 
-    @pytest.mark.parametrize("mock_stream_transport", ["recv_buffer"], indirect=True)
     @pytest.mark.parametrize("max_recv_size", [1, 2**16], ids=lambda p: f"max_recv_size=={p}")
     async def test____dunder_init____max_recv_size____valid_value(
         self,
@@ -112,7 +100,6 @@ class TestAsyncStreamReceiverEndpoint(BaseAsyncEndpointReceiveTests):
         with pytest.raises(ValueError, match=r"^'max_recv_size' must be a strictly positive integer$"):
             _ = AsyncStreamReceiverEndpoint(mock_stream_transport, mock_stream_protocol, max_recv_size)
 
-    @pytest.mark.parametrize("mock_stream_transport", ["recv_buffer"], indirect=True)
     async def test____dunder_del____ResourceWarning(
         self,
         mock_stream_transport: MagicMock,
@@ -134,24 +121,3 @@ class TestAsyncStreamReceiverEndpoint(BaseAsyncEndpointReceiveTests):
             del endpoint
 
         mock_stream_transport.aclose.assert_not_called()
-
-    @pytest.mark.parametrize("mock_stream_transport", ["recv_data"], indirect=True)
-    @pytest.mark.parametrize("stream_protocol_mode", ["buffer"], indirect=True)
-    async def test____manual_buffer_allocation____but_stream_transport_does_not_support_it(
-        self,
-        mock_stream_transport: MagicMock,
-        mock_stream_protocol: MagicMock,
-        max_recv_size: int,
-    ) -> None:
-        # Arrange
-
-        # Act & Assert
-        with pytest.raises(
-            UnsupportedOperation,
-            match=r"^The transport implementation .+ does not implement AsyncBufferedStreamReadTransport interface$",
-        ):
-            _ = AsyncStreamReceiverEndpoint(
-                mock_stream_transport,
-                mock_stream_protocol,
-                max_recv_size,
-            )

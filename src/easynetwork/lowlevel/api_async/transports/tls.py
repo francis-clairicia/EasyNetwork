@@ -38,7 +38,7 @@ else:
 from ....exceptions import UnsupportedOperation
 from ... import _utils, constants, socket as socket_tools
 from ..backend.abc import AsyncBackend, TaskGroup
-from .abc import AsyncBufferedStreamReadTransport, AsyncListener, AsyncStreamReadTransport, AsyncStreamTransport
+from .abc import AsyncListener, AsyncStreamReadTransport, AsyncStreamTransport
 from .utils import aclose_forcefully
 
 if TYPE_CHECKING:
@@ -51,7 +51,7 @@ _T_Return = TypeVar("_T_Return")
 
 
 @dataclasses.dataclass(repr=False, eq=False, slots=True, kw_only=True)
-class AsyncTLSStreamTransport(AsyncStreamTransport, AsyncBufferedStreamReadTransport):
+class AsyncTLSStreamTransport(AsyncStreamTransport):
     """
     SSL/TLS wrapper for a continuous stream transport.
     """
@@ -66,10 +66,7 @@ class AsyncTLSStreamTransport(AsyncStreamTransport, AsyncBufferedStreamReadTrans
     __closing: bool = dataclasses.field(init=False, default=False)
 
     def __post_init__(self) -> None:
-        if isinstance(self._transport, AsyncBufferedStreamReadTransport):
-            self.__incoming_reader = _BufferedIncomingDataReader(transport=self._transport)
-        else:
-            self.__incoming_reader = _IncomingDataReader(transport=self._transport)
+        self.__incoming_reader = _IncomingDataReader(transport=self._transport)
 
     @classmethod
     async def wrap(
@@ -190,7 +187,7 @@ class AsyncTLSStreamTransport(AsyncStreamTransport, AsyncBufferedStreamReadTrans
                     return b""
             raise
 
-    @_utils.inherit_doc(AsyncBufferedStreamReadTransport)
+    @_utils.inherit_doc(AsyncStreamTransport)
     async def recv_into(self, buffer: WriteableBuffer) -> int:
         assert _ssl_module is not None, "stdlib ssl module not available"  # nosec assert_used
         nbytes = memoryview(buffer).nbytes or 1024
@@ -357,20 +354,6 @@ class _IncomingDataReader:
     transport: AsyncStreamReadTransport
     max_size: Final[int] = 256 * 1024  # 256KiB
 
-    async def readinto(self, read_bio: MemoryBIO) -> int:
-        data = await self.transport.recv(self.max_size)
-        if data:
-            return read_bio.write(data)
-        read_bio.write_eof()
-        return 0
-
-    def close(self) -> None:
-        pass
-
-
-@dataclasses.dataclass(kw_only=True, eq=False, slots=True)
-class _BufferedIncomingDataReader(_IncomingDataReader):
-    transport: AsyncBufferedStreamReadTransport
     buffer: bytearray | None = dataclasses.field(init=False)
     buffer_view: memoryview = dataclasses.field(init=False)
 
@@ -379,9 +362,7 @@ class _BufferedIncomingDataReader(_IncomingDataReader):
         self.buffer_view = memoryview(self.buffer)
 
     async def readinto(self, read_bio: MemoryBIO) -> int:
-        buffer = self.buffer_view
-        nbytes = await self.transport.recv_into(buffer)
-        if nbytes:
+        if (nbytes := await self.transport.recv_into(buffer := self.buffer_view)) > 0:
             return read_bio.write(buffer[:nbytes])
         read_bio.write_eof()
         return 0

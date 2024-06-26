@@ -18,7 +18,6 @@ from __future__ import annotations
 
 __all__ = [
     "AsyncBaseTransport",
-    "AsyncBufferedStreamReadTransport",
     "AsyncDatagramListener",
     "AsyncDatagramReadTransport",
     "AsyncDatagramTransport",
@@ -104,7 +103,6 @@ class AsyncStreamReadTransport(AsyncBaseTransport):
 
     __slots__ = ()
 
-    @abstractmethod
     async def recv(self, bufsize: int) -> bytes:
         """
         Read and return up to `bufsize` bytes.
@@ -120,15 +118,16 @@ class AsyncStreamReadTransport(AsyncBaseTransport):
 
             If `bufsize` is greater than zero and an empty byte buffer is returned, this indicates an EOF.
         """
-        raise NotImplementedError
+        if bufsize == 0:
+            return b""
+        if bufsize < 0:
+            raise ValueError("'bufsize' must be a positive or null integer")
 
-
-class AsyncBufferedStreamReadTransport(AsyncStreamReadTransport):
-    """
-    An asynchronous continuous stream data reader transport that supports externally allocated buffers.
-    """
-
-    __slots__ = ()
+        with memoryview(bytearray(bufsize)) as buffer:
+            nbytes = await self.recv_into(buffer)
+            if nbytes < 0:
+                raise RuntimeError("transport.recv_into() returned a negative value")
+            return bytes(buffer[:nbytes])
 
     @abstractmethod
     async def recv_into(self, buffer: WriteableBuffer) -> int:

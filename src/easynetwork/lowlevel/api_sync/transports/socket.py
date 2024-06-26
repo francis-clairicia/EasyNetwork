@@ -61,7 +61,7 @@ def _close_stream_socket(sock: socket.socket) -> None:
         sock.close()
 
 
-class SocketStreamTransport(base_selector.SelectorStreamTransport, base_selector.SelectorBufferedStreamReadTransport):
+class SocketStreamTransport(base_selector.SelectorStreamTransport):
     """
     A stream data transport implementation which wraps a stream :class:`~socket.socket`.
     """
@@ -114,7 +114,7 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport, base_selector
         except (BlockingIOError, InterruptedError):
             raise base_selector.WouldBlockOnRead(self.__socket.fileno()) from None
 
-    @_utils.inherit_doc(base_selector.SelectorBufferedStreamReadTransport)
+    @_utils.inherit_doc(base_selector.SelectorStreamTransport)
     def recv_noblock_into(self, buffer: WriteableBuffer) -> int:
         try:
             return self.__socket.recv_into(buffer)
@@ -172,7 +172,7 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport, base_selector
         return socket_tools._get_socket_extra(socket)
 
 
-class SSLStreamTransport(base_selector.SelectorStreamTransport, base_selector.SelectorBufferedStreamReadTransport):
+class SSLStreamTransport(base_selector.SelectorStreamTransport):
     """
     A stream data transport implementation which wraps a stream :class:`~socket.socket`.
     """
@@ -277,7 +277,7 @@ class SSLStreamTransport(base_selector.SelectorStreamTransport, base_selector.Se
         except _ssl_module.SSLZeroReturnError if _ssl_module else ():
             return b""
 
-    @_utils.inherit_doc(base_selector.SelectorBufferedStreamReadTransport)
+    @_utils.inherit_doc(base_selector.SelectorStreamTransport)
     def recv_noblock_into(self, buffer: WriteableBuffer) -> int:
         try:
             return self._try_ssl_method(self.__socket.recv_into, buffer)

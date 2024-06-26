@@ -30,16 +30,9 @@ from collections.abc import Callable, Mapping
 from typing import Any, Generic, assert_never
 
 from ...._typevars import _T_ReceivedPacket, _T_SentPacket
-from ....exceptions import UnsupportedOperation
 from ....protocol import AnyStreamProtocolType
 from ... import _stream, _utils
-from ..transports.abc import (
-    BaseTransport,
-    BufferedStreamReadTransport,
-    StreamReadTransport,
-    StreamTransport,
-    StreamWriteTransport,
-)
+from ..transports.abc import BaseTransport, StreamReadTransport, StreamTransport, StreamWriteTransport
 
 
 class StreamReceiverEndpoint(BaseTransport, Generic[_T_ReceivedPacket]):
@@ -418,7 +411,7 @@ class _DataReceiverImpl(Generic[_T_ReceivedPacket]):
 
 @dataclasses.dataclass(slots=True)
 class _BufferedReceiverImpl(Generic[_T_ReceivedPacket]):
-    transport: BufferedStreamReadTransport
+    transport: StreamReadTransport
     consumer: _stream.BufferedStreamDataConsumer[_T_ReceivedPacket]
     _eof_reached: bool = dataclasses.field(init=False, default=False)
 
@@ -472,11 +465,7 @@ def _get_receiver(
 
     match protocol:
         case BufferedStreamProtocol():
-            buffered_consumer = _stream.BufferedStreamDataConsumer(protocol, max_recv_size)
-            if not isinstance(transport, BufferedStreamReadTransport):
-                msg = f"The transport implementation {transport!r} does not implement BufferedStreamReadTransport interface"
-                raise UnsupportedOperation(msg)
-            return _BufferedReceiverImpl(transport, buffered_consumer)
+            return _BufferedReceiverImpl(transport, _stream.BufferedStreamDataConsumer(protocol, max_recv_size))
         case StreamProtocol():
             return _DataReceiverImpl(transport, _stream.StreamDataConsumer(protocol), max_recv_size)
         case _:  # pragma: no cover
