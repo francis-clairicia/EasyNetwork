@@ -10,12 +10,7 @@ from typing import TYPE_CHECKING, Any, NoReturn
 
 from easynetwork.lowlevel._stream import StreamDataProducer
 from easynetwork.lowlevel.api_async.servers.stream import AsyncStreamServer, Client
-from easynetwork.lowlevel.api_async.transports.abc import (
-    AsyncBufferedStreamReadTransport,
-    AsyncListener,
-    AsyncStreamTransport,
-    AsyncStreamWriteTransport,
-)
+from easynetwork.lowlevel.api_async.transports.abc import AsyncListener, AsyncStreamTransport, AsyncStreamWriteTransport
 from easynetwork.lowlevel.std_asyncio.backend import AsyncIOBackend
 from easynetwork.lowlevel.std_asyncio.tasks import TaskGroup
 from easynetwork.warnings import ManualBufferAllocationWarning
@@ -31,10 +26,6 @@ if TYPE_CHECKING:
     from unittest.mock import MagicMock
 
     from pytest_mock import MockerFixture
-
-
-class _AsyncBufferedStreamTransport(AsyncStreamTransport, AsyncBufferedStreamReadTransport):
-    __slots__ = ()
 
 
 @pytest.mark.asyncio
@@ -146,10 +137,10 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
     def mock_listener(mock_backend: MagicMock, mocker: MockerFixture) -> MagicMock:
         return make_transport_mock(mocker=mocker, spec=AsyncListener, backend=mock_backend)
 
-    @pytest.fixture(params=[AsyncStreamTransport, _AsyncBufferedStreamTransport])
+    @pytest.fixture
     @staticmethod
-    def mock_stream_transport(request: pytest.FixtureRequest, mock_backend: MagicMock, mocker: MockerFixture) -> MagicMock:
-        return make_transport_mock(mocker=mocker, spec=request.param, backend=mock_backend)
+    def mock_stream_transport(mock_backend: MagicMock, mocker: MockerFixture) -> MagicMock:
+        return make_transport_mock(mocker=mocker, spec=AsyncStreamTransport, backend=mock_backend)
 
     @pytest.fixture
     @staticmethod
@@ -322,7 +313,6 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
         # Act & Assert
         assert server.backend() is mock_listener.backend()
 
-    @pytest.mark.parametrize("mock_stream_transport", [_AsyncBufferedStreamTransport], indirect=True)
     @pytest.mark.parametrize("stream_protocol_mode", ["buffer"], indirect=True)
     async def test____manual_buffer_allocation____is_available(
         self,
@@ -358,47 +348,6 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
         mock_stream_transport.recv.assert_not_called()
         packet_received.assert_called_once_with(mocker.sentinel.packet)
 
-    @pytest.mark.parametrize("mock_stream_transport", [AsyncStreamTransport], indirect=True)
-    @pytest.mark.parametrize("stream_protocol_mode", ["buffer"], indirect=True)
-    async def test____manual_buffer_allocation____but_stream_transport_does_not_support_it(
-        self,
-        server: AsyncStreamServer[Any, Any],
-        mock_stream_transport: MagicMock,
-        mock_listener: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        mock_stream_transport.recv.side_effect = [b"packet\n"]
-
-        async def serve_side_effect(handler: Callable[[Any], Awaitable[None]], task_group: Any) -> NoReturn:
-            await handler(mock_stream_transport)
-            raise asyncio.CancelledError("serve_side_effect")
-
-        packet_received = mocker.stub()
-
-        @stub_decorator(mocker)
-        async def client_connected_cb(_: Any) -> AsyncGenerator[None, Any]:
-            packet = yield
-            packet_received(packet)
-
-        mock_listener.serve.side_effect = serve_side_effect
-
-        # Act
-        async with TaskGroup() as tg:
-            with (
-                pytest.raises(asyncio.CancelledError, match=r"^serve_side_effect$"),
-                pytest.warns(
-                    ManualBufferAllocationWarning,
-                    match=r"^The transport implementation .+ does not implement AsyncBufferedStreamReadTransport interface\. Consider using StreamProtocol instead of BufferedStreamProtocol\.$",
-                ),
-            ):
-                await server.serve(client_connected_cb, tg)
-
-        # Assert
-        mock_stream_transport.recv.assert_awaited_once()
-        packet_received.assert_called_once_with(mocker.sentinel.packet)
-
-    @pytest.mark.parametrize("mock_stream_transport", [AsyncStreamTransport, _AsyncBufferedStreamTransport], indirect=True)
     @pytest.mark.parametrize("stream_protocol_mode", ["data"], indirect=True)
     async def test____manual_buffer_allocation____disabled(
         self,
@@ -431,6 +380,5 @@ class TestAsyncStreamServer(BaseTestWithStreamProtocol):
 
         # Assert
         mock_stream_transport.recv.assert_awaited_once()
-        if hasattr(mock_stream_transport, "recv_into"):
-            mock_stream_transport.recv_into.assert_not_called()
+        mock_stream_transport.recv_into.assert_not_called()
         packet_received.assert_called_once_with(mocker.sentinel.packet)

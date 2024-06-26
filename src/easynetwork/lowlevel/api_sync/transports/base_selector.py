@@ -18,7 +18,6 @@ from __future__ import annotations
 
 __all__ = [
     "SelectorBaseTransport",
-    "SelectorBufferedStreamReadTransport",
     "SelectorDatagramReadTransport",
     "SelectorDatagramTransport",
     "SelectorDatagramWriteTransport",
@@ -169,7 +168,6 @@ class SelectorStreamReadTransport(SelectorBaseTransport, transports.StreamReadTr
 
     __slots__ = ()
 
-    @abstractmethod
     def recv_noblock(self, bufsize: int) -> bytes:
         """
         Read and return up to `bufsize` bytes.
@@ -187,7 +185,16 @@ class SelectorStreamReadTransport(SelectorBaseTransport, transports.StreamReadTr
 
             If `bufsize` is greater than zero and an empty byte buffer is returned, this indicates an EOF.
         """
-        raise NotImplementedError
+        if bufsize == 0:
+            return b""
+        if bufsize < 0:
+            raise ValueError("'bufsize' must be a positive or null integer")
+
+        with memoryview(bytearray(bufsize)) as buffer:
+            nbytes = self.recv_noblock_into(buffer)
+            if nbytes < 0:
+                raise RuntimeError("transport.recv_noblock_into() returned a negative value")
+            return bytes(buffer[:nbytes])
 
     def recv(self, bufsize: int, timeout: float) -> bytes:
         """
@@ -196,15 +203,6 @@ class SelectorStreamReadTransport(SelectorBaseTransport, transports.StreamReadTr
         The default implementation will retry to call :meth:`recv_noblock` until it succeeds under the given `timeout`.
         """
         return self._retry(lambda: self.recv_noblock(bufsize), timeout)[0]
-
-
-class SelectorBufferedStreamReadTransport(SelectorStreamReadTransport, transports.BufferedStreamReadTransport):
-    """
-    A continuous stream data reader transport using the :mod:`selectors` module for blocking operations polling
-    that supports externally allocated buffers.
-    """
-
-    __slots__ = ()
 
     @abstractmethod
     def recv_noblock_into(self, buffer: WriteableBuffer) -> int:

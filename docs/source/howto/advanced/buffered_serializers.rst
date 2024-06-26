@@ -96,8 +96,6 @@ its :meth:`~.BufferedIncrementalPacketSerializer.create_deserializer_buffer` and
 .. note::
 
    You still need to implement :class:`.AbstractIncrementalPacketSerializer` methods.
-   Writing input directly to an external object that implements the :ref:`buffer protocol <bufferobjects>` is not supported by
-   all transport layer implementations.
 
 Let's see how we can use it for ``MyJSONSerializer`` (from :doc:`../serializers`):
 

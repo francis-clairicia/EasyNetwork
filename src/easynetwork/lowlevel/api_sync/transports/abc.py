@@ -18,7 +18,6 @@ from __future__ import annotations
 
 __all__ = [
     "BaseTransport",
-    "BufferedStreamReadTransport",
     "DatagramReadTransport",
     "DatagramTransport",
     "DatagramWriteTransport",
@@ -79,7 +78,6 @@ class StreamReadTransport(BaseTransport):
 
     __slots__ = ()
 
-    @abstractmethod
     def recv(self, bufsize: int, timeout: float) -> bytes:
         """
         Read and return up to `bufsize` bytes.
@@ -98,15 +96,16 @@ class StreamReadTransport(BaseTransport):
 
             If `bufsize` is greater than zero and an empty byte buffer is returned, this indicates an EOF.
         """
-        raise NotImplementedError
+        if bufsize == 0:
+            return b""
+        if bufsize < 0:
+            raise ValueError("'bufsize' must be a positive or null integer")
 
-
-class BufferedStreamReadTransport(StreamReadTransport):
-    """
-    A continuous stream data reader transport that supports externally allocated buffers.
-    """
-
-    __slots__ = ()
+        with memoryview(bytearray(bufsize)) as buffer:
+            nbytes = self.recv_into(buffer, timeout)
+            if nbytes < 0:
+                raise RuntimeError("transport.recv_into() returned a negative value")
+            return bytes(buffer[:nbytes])
 
     @abstractmethod
     def recv_into(self, buffer: WriteableBuffer, timeout: float) -> int:

@@ -5,7 +5,6 @@ from collections.abc import Generator
 from typing import TYPE_CHECKING, Any, Literal
 
 from easynetwork.exceptions import IncrementalDeserializeError, StreamProtocolParseError
-from easynetwork.lowlevel.api_sync.transports.abc import BufferedStreamReadTransport
 from easynetwork.lowlevel.typed_attr import TypedAttributeProvider
 
 import pytest
@@ -182,26 +181,23 @@ class BaseEndpointReceiveTests(BaseEndpointTests):
     ) -> None:
         # Arrange
         mock_stream_transport.recv.side_effect = [b"packet\n"]
-        if hasattr(mock_stream_transport, "recv_into"):
-            mock_stream_transport.recv_into.side_effect = make_recv_into_side_effect([b"packet\n"])
+        mock_stream_transport.recv_into.side_effect = make_recv_into_side_effect([b"packet\n"])
 
         # Act
         packet = endpoint.recv_packet(timeout=recv_timeout)
 
         # Assert
-        if issubclass(mock_stream_transport.__class__, BufferedStreamReadTransport):
-            if stream_protocol_mode == "buffer":
-                mock_stream_transport.recv_into.assert_called_once_with(mocker.ANY, expected_recv_timeout)
-                mock_stream_transport.recv.assert_not_called()
-            else:
-                mock_stream_transport.recv.assert_called_once_with(max_recv_size, expected_recv_timeout)
-                mock_stream_transport.recv_into.assert_not_called()
+        if stream_protocol_mode == "buffer":
+            mock_stream_transport.recv_into.assert_called_once_with(mocker.ANY, expected_recv_timeout)
+            mock_stream_transport.recv.assert_not_called()
         else:
             mock_stream_transport.recv.assert_called_once_with(max_recv_size, expected_recv_timeout)
-            assert packet is mocker.sentinel.packet
+            mock_stream_transport.recv_into.assert_not_called()
+
+        assert packet is mocker.sentinel.packet
 
     @pytest.mark.parametrize("recv_timeout", [None, math.inf, 123456789], indirect=True)  # Do not test with timeout==0
-    @pytest.mark.parametrize("mock_stream_transport", ["recv_data"], indirect=True)
+    @pytest.mark.parametrize("stream_protocol_mode", ["data"], indirect=True)
     def test____recv_packet____blocking____partial_data(
         self,
         endpoint: SupportsReceiving,
@@ -222,7 +218,6 @@ class BaseEndpointReceiveTests(BaseEndpointTests):
         assert packet is mocker.sentinel.packet
 
     @pytest.mark.parametrize("recv_timeout", [None, math.inf, 123456789], indirect=True)  # Do not test with timeout==0
-    @pytest.mark.parametrize("mock_stream_transport", ["recv_buffer"], indirect=True)
     @pytest.mark.parametrize("stream_protocol_mode", ["buffer"], indirect=True)
     def test____recv_packet____buffered____blocking____partial_data(
         self,
@@ -253,7 +248,7 @@ class BaseEndpointReceiveTests(BaseEndpointTests):
         ],
         indirect=True,
     )
-    @pytest.mark.parametrize("mock_stream_transport", ["recv_data"], indirect=True)
+    @pytest.mark.parametrize("stream_protocol_mode", ["data"], indirect=True)
     def test____recv_packet____non_blocking____partial_data(
         self,
         endpoint: SupportsReceiving,
@@ -289,7 +284,6 @@ class BaseEndpointReceiveTests(BaseEndpointTests):
         ],
         indirect=True,
     )
-    @pytest.mark.parametrize("mock_stream_transport", ["recv_buffer"], indirect=True)
     @pytest.mark.parametrize("stream_protocol_mode", ["buffer"], indirect=True)
     def test____recv_packet____buffered____non_blocking____partial_data(
         self,
@@ -317,7 +311,7 @@ class BaseEndpointReceiveTests(BaseEndpointTests):
 
             mock_stream_transport.recv_into.assert_called_once_with(mocker.ANY, expected_recv_timeout)
 
-    @pytest.mark.parametrize("mock_stream_transport", ["recv_data"], indirect=True)
+    @pytest.mark.parametrize("stream_protocol_mode", ["data"], indirect=True)
     def test____recv_packet____blocking_or_not____extra_data(
         self,
         endpoint: SupportsReceiving,
@@ -337,7 +331,6 @@ class BaseEndpointReceiveTests(BaseEndpointTests):
         assert packet_1 is mocker.sentinel.packet_1
         assert packet_2 is mocker.sentinel.packet_2
 
-    @pytest.mark.parametrize("mock_stream_transport", ["recv_buffer"], indirect=True)
     @pytest.mark.parametrize("stream_protocol_mode", ["buffer"], indirect=True)
     def test____recv_packet____buffered____blocking_or_not____extra_data(
         self,
@@ -358,7 +351,7 @@ class BaseEndpointReceiveTests(BaseEndpointTests):
         assert packet_1 is mocker.sentinel.packet_1
         assert packet_2 is mocker.sentinel.packet_2
 
-    @pytest.mark.parametrize("mock_stream_transport", ["recv_data"], indirect=True)
+    @pytest.mark.parametrize("stream_protocol_mode", ["data"], indirect=True)
     def test____recv_packet____blocking_or_not____eof_error(
         self,
         endpoint: SupportsReceiving,
@@ -375,7 +368,6 @@ class BaseEndpointReceiveTests(BaseEndpointTests):
         # Assert
         mock_stream_transport.recv.assert_called_once()
 
-    @pytest.mark.parametrize("mock_stream_transport", ["recv_buffer"], indirect=True)
     @pytest.mark.parametrize("stream_protocol_mode", ["buffer"], indirect=True)
     def test____recv_packet____buffered____blocking_or_not____eof_error(
         self,
@@ -393,7 +385,7 @@ class BaseEndpointReceiveTests(BaseEndpointTests):
         # Assert
         mock_stream_transport.recv_into.assert_called_once()
 
-    @pytest.mark.parametrize("mock_stream_transport", ["recv_data"], indirect=True)
+    @pytest.mark.parametrize("stream_protocol_mode", ["data"], indirect=True)
     def test____recv_packet____blocking_or_not____protocol_parse_error(
         self,
         endpoint: SupportsReceiving,
@@ -418,7 +410,6 @@ class BaseEndpointReceiveTests(BaseEndpointTests):
         # Assert
         assert exc_info.value is expected_error
 
-    @pytest.mark.parametrize("mock_stream_transport", ["recv_buffer"], indirect=True)
     @pytest.mark.parametrize("stream_protocol_mode", ["buffer"], indirect=True)
     def test____recv_packet____buffered____blocking_or_not____protocol_parse_error(
         self,
@@ -444,7 +435,7 @@ class BaseEndpointReceiveTests(BaseEndpointTests):
         # Assert
         assert exc_info.value is expected_error
 
-    @pytest.mark.parametrize("mock_stream_transport", ["recv_data"], indirect=True)
+    @pytest.mark.parametrize("stream_protocol_mode", ["data"], indirect=True)
     @pytest.mark.parametrize("before_transport_reading", [False, True], ids=lambda p: f"before_transport_reading=={p}")
     def test____recv_packet____blocking_or_not____protocol_crashed(
         self,
@@ -474,7 +465,6 @@ class BaseEndpointReceiveTests(BaseEndpointTests):
         # Assert
         assert exc_info.value.__cause__ is expected_error
 
-    @pytest.mark.parametrize("mock_stream_transport", ["recv_buffer"], indirect=True)
     @pytest.mark.parametrize("stream_protocol_mode", ["buffer"], indirect=True)
     @pytest.mark.parametrize("before_transport_reading", [False, True], ids=lambda p: f"before_transport_reading=={p}")
     def test____recv_packet____buffered____blocking_or_not____protocol_crashed(
@@ -505,7 +495,7 @@ class BaseEndpointReceiveTests(BaseEndpointTests):
         # Assert
         assert exc_info.value.__cause__ is expected_error
 
-    @pytest.mark.parametrize("mock_stream_transport", ["recv_data"], indirect=True)
+    @pytest.mark.parametrize("stream_protocol_mode", ["data"], indirect=True)
     def test____special_case____recv_packet____blocking_or_not____eof_error____do_not_try_socket_recv_on_next_call(
         self,
         endpoint: SupportsReceiving,
@@ -526,7 +516,6 @@ class BaseEndpointReceiveTests(BaseEndpointTests):
         # Assert
         mock_stream_transport.recv.assert_not_called()
 
-    @pytest.mark.parametrize("mock_stream_transport", ["recv_buffer"], indirect=True)
     @pytest.mark.parametrize("stream_protocol_mode", ["buffer"], indirect=True)
     def test____special_case____recv_packet____buffered____blocking_or_not____eof_error____do_not_try_socket_recv_on_next_call(
         self,

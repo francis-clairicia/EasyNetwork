@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 import os
 import ssl
@@ -9,7 +8,7 @@ from collections.abc import AsyncIterator, Callable
 from typing import TYPE_CHECKING, Any, NoReturn
 
 from easynetwork.exceptions import UnsupportedOperation
-from easynetwork.lowlevel.api_async.transports.abc import AsyncBufferedStreamReadTransport, AsyncListener, AsyncStreamTransport
+from easynetwork.lowlevel.api_async.transports.abc import AsyncListener, AsyncStreamTransport
 from easynetwork.lowlevel.api_async.transports.tls import AsyncTLSListener, AsyncTLSStreamTransport
 from easynetwork.lowlevel.constants import NOT_CONNECTED_SOCKET_ERRNOS, SSL_SHUTDOWN_TIMEOUT as DEFAULT_SSL_SHUTDOWN_TIMEOUT
 from easynetwork.lowlevel.socket import TLSAttribute
@@ -29,10 +28,6 @@ if TYPE_CHECKING:
     from .....pytest_plugins.async_finalizer import AsyncFinalizer
 
 
-class _AsyncBufferedStreamTransport(AsyncStreamTransport, AsyncBufferedStreamReadTransport):
-    __slots__ = ()
-
-
 @pytest.mark.asyncio
 class TestAsyncTLSStreamTransport:
     @pytest.fixture
@@ -40,30 +35,14 @@ class TestAsyncTLSStreamTransport:
     def mock_wrapped_transport_extra_attributes() -> dict[Any, Callable[[], Any]]:
         return {}
 
-    @pytest.fixture(params=["data", "buffered"])
+    @pytest.fixture
     @staticmethod
     def mock_wrapped_transport(
         asyncio_backend: AsyncIOBackend,
-        request: pytest.FixtureRequest,
         mock_wrapped_transport_extra_attributes: dict[Any, Callable[[], Any]],
         mocker: MockerFixture,
     ) -> MagicMock:
-        match request.param:
-            case "data":
-                mock_wrapped_transport = make_transport_mock(
-                    mocker=mocker,
-                    spec=AsyncStreamTransport,
-                    backend=asyncio_backend,
-                )
-            case "buffered":
-                mock_wrapped_transport = make_transport_mock(
-                    mocker=mocker,
-                    spec=_AsyncBufferedStreamTransport,
-                    backend=asyncio_backend,
-                )
-            case _:
-                pytest.fail("Invalid fixture param")
-
+        mock_wrapped_transport = make_transport_mock(mocker=mocker, spec=AsyncStreamTransport, backend=asyncio_backend)
         mock_wrapped_transport.extra_attributes = mock_wrapped_transport_extra_attributes
         return mock_wrapped_transport
 
@@ -736,9 +715,7 @@ class TestAsyncTLSStreamTransport:
     ) -> None:
         # Arrange
         mock_wrapped_transport.send_all.return_value = None
-        mock_wrapped_transport.recv.side_effect = [b"encrypted-received-data\n"]
-        with contextlib.suppress(AttributeError):
-            mock_wrapped_transport.recv_into.side_effect = make_recv_into_side_effect([b"encrypted-received-data\n"])
+        mock_wrapped_transport.recv_into.side_effect = make_recv_into_side_effect([b"encrypted-received-data\n"])
 
         def ssl_object_method_side_effect() -> Any:
             write_bio.write(pending_write)
@@ -757,11 +734,8 @@ class TestAsyncTLSStreamTransport:
             assert mock_wrapped_transport.send_all.await_args_list == [mocker.call(pending_write) for _ in range(2)]
         else:
             mock_wrapped_transport.send_all.assert_not_called()
-        if hasattr(mock_wrapped_transport, "recv_into"):
-            mock_wrapped_transport.recv_into.assert_awaited_once_with(mocker.ANY)
-            mock_wrapped_transport.recv.assert_not_called()
-        else:
-            mock_wrapped_transport.recv.assert_awaited_once_with(mocker.ANY)
+        mock_wrapped_transport.recv_into.assert_awaited_once_with(mocker.ANY)
+        mock_wrapped_transport.recv.assert_not_called()
         assert result == b"decrypted-received-data"
 
     async def test____retry____SSLWantReadError____unexpected_eof(
@@ -774,9 +748,7 @@ class TestAsyncTLSStreamTransport:
     ) -> None:
         # Arrange
         mock_wrapped_transport.send_all.return_value = None
-        mock_wrapped_transport.recv.side_effect = [b""]
-        with contextlib.suppress(AttributeError):
-            mock_wrapped_transport.recv_into.side_effect = make_recv_into_side_effect([b""])
+        mock_wrapped_transport.recv_into.side_effect = make_recv_into_side_effect([b""])
 
         def ssl_object_method_side_effect() -> Any:
             if not (data := read_bio.read()):
@@ -805,9 +777,7 @@ class TestAsyncTLSStreamTransport:
     ) -> None:
         # Arrange
         mock_wrapped_transport.send_all.return_value = None
-        mock_wrapped_transport.recv.side_effect = BrokenPipeError()
-        with contextlib.suppress(AttributeError):
-            mock_wrapped_transport.recv_into.side_effect = BrokenPipeError()
+        mock_wrapped_transport.recv_into.side_effect = BrokenPipeError()
 
         def ssl_object_method_side_effect() -> Any:
             if not (data := read_bio.read()):

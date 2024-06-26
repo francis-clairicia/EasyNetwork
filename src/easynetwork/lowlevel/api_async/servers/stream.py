@@ -26,14 +26,12 @@ from typing import Any, Generic, NoReturn, assert_never
 
 from ...._typevars import _T_Request, _T_Response
 from ....protocol import AnyStreamProtocolType
-from ....warnings import ManualBufferAllocationWarning
 from ... import _stream, _utils
 from ..._asyncgen import AsyncGenAction, SendAction, ThrowAction
 from ..backend.abc import AsyncBackend, TaskGroup
 from ..transports import utils as transports_utils
 from ..transports.abc import (
     AsyncBaseTransport,
-    AsyncBufferedStreamReadTransport,
     AsyncListener,
     AsyncStreamReadTransport,
     AsyncStreamTransport,
@@ -209,20 +207,11 @@ class AsyncStreamServer(AsyncBaseTransport, Generic[_T_Request, _T_Response]):
             request_receiver: _RequestReceiver[_T_Request] | _BufferedRequestReceiver[_T_Request]
             match self.__protocol:
                 case BufferedStreamProtocol():
-                    if isinstance(transport, AsyncBufferedStreamReadTransport):
-                        consumer = _stream.BufferedStreamDataConsumer(self.__protocol, self.__max_recv_size)
-                        request_receiver = _BufferedRequestReceiver(
-                            transport=transport,
-                            consumer=consumer,
-                        )
-                    else:
-                        self.__manual_buffer_allocation_warning(transport)
-                        consumer = _stream.StreamDataConsumer(self.__protocol.into_data_protocol())
-                        request_receiver = _RequestReceiver(
-                            transport=transport,
-                            consumer=consumer,
-                            max_recv_size=self.__max_recv_size,
-                        )
+                    consumer = _stream.BufferedStreamDataConsumer(self.__protocol, self.__max_recv_size)
+                    request_receiver = _BufferedRequestReceiver(
+                        transport=transport,
+                        consumer=consumer,
+                    )
                 case StreamProtocol():
                     consumer = _stream.StreamDataConsumer(self.__protocol)
                     request_receiver = _RequestReceiver(
@@ -262,16 +251,6 @@ class AsyncStreamServer(AsyncBaseTransport, Generic[_T_Request, _T_Response]):
                     return
             finally:
                 await request_handler_generator.aclose()
-
-    @staticmethod
-    def __manual_buffer_allocation_warning(transport: AsyncStreamTransport) -> None:
-        _warn_msg = " ".join(
-            [
-                f"The transport implementation {transport!r} does not implement AsyncBufferedStreamReadTransport interface.",
-                "Consider using StreamProtocol instead of BufferedStreamProtocol.",
-            ]
-        )
-        warnings.warn(_warn_msg, category=ManualBufferAllocationWarning, stacklevel=2)
 
     @property
     @_utils.inherit_doc(AsyncBaseTransport)
@@ -315,7 +294,7 @@ class _RequestReceiver(Generic[_T_Request]):
 
 @dataclasses.dataclass(kw_only=True, eq=False, slots=True)
 class _BufferedRequestReceiver(Generic[_T_Request]):
-    transport: AsyncBufferedStreamReadTransport
+    transport: AsyncStreamReadTransport
     consumer: _stream.BufferedStreamDataConsumer[_T_Request]
     __null_timeout_ctx: contextlib.nullcontext[None] = dataclasses.field(init=False, default_factory=contextlib.nullcontext)
     __backend: AsyncBackend = dataclasses.field(init=False)

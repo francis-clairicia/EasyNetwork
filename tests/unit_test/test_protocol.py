@@ -486,31 +486,6 @@ class TestBufferedStreamProtocol(_BaseTestAnyStreamProtocol):
         with pytest.raises(TypeError, match=r"^Expected a converter instance, got .+$"):
             BufferedStreamProtocol(mock_incremental_serializer, mock_not_converter)
 
-    def test____into_data_protocol____create_a_new_StreamProtocol_object(
-        self,
-        protocol: BufferedStreamProtocol[Any, Any, memoryview],
-        protocol_with_converter: BufferedStreamProtocol[Any, Any, memoryview],
-        protocol_without_converter: BufferedStreamProtocol[Any, Any, memoryview],
-        mock_incremental_serializer: MagicMock,
-        mock_converter: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        mock_protocol_cls = mocker.patch(f"{StreamProtocol.__module__}.StreamProtocol", autospec=True, wraps=StreamProtocol)
-
-        # Act
-        new_protocol = protocol.into_data_protocol()
-
-        # Assert
-        if protocol is protocol_with_converter:
-            mock_protocol_cls.assert_called_once_with(mock_incremental_serializer, converter=mock_converter)
-        elif protocol is protocol_without_converter:
-            mock_protocol_cls.assert_called_once_with(mock_incremental_serializer, converter=None)
-        else:
-            pytest.fail(f"{protocol=!r} is ???")
-
-        assert isinstance(new_protocol, StreamProtocol)
-
     def test____create_buffer____create_deserializer_buffer(
         self,
         protocol: BufferedStreamProtocol[Any, Any, memoryview],

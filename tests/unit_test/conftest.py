@@ -224,14 +224,12 @@ def mock_stream_protocol(mock_stream_protocol_factory: Callable[[], Any]) -> Any
 
 @pytest.fixture
 def mock_buffered_stream_protocol_factory(
-    mock_stream_protocol_factory: Callable[[], Any],
     mocker: MockerFixture,
 ) -> Callable[[], Any]:
     return lambda: mocker.NonCallableMagicMock(
         spec=BufferedStreamProtocol,
         **{
             "create_buffer.side_effect": lambda sizehint: memoryview(bytearray(sizehint)),
-            "into_data_protocol.side_effect": mock_buffered_stream_protocol_factory,
         },
     )
 

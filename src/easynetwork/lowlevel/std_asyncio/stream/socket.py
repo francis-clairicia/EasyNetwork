@@ -30,7 +30,7 @@ from typing import TYPE_CHECKING, Any, final
 from ....exceptions import UnsupportedOperation
 from ... import _utils, socket as socket_tools
 from ...api_async.backend.abc import AsyncBackend
-from ...api_async.transports.abc import AsyncBufferedStreamReadTransport, AsyncStreamTransport
+from ...api_async.transports.abc import AsyncStreamTransport
 from .._asyncio_utils import add_flowcontrol_defaults
 from .._flow_control import WriteFlowControl
 
@@ -39,7 +39,7 @@ if TYPE_CHECKING:
 
 
 @final
-class AsyncioTransportStreamSocketAdapter(AsyncStreamTransport, AsyncBufferedStreamReadTransport):
+class AsyncioTransportStreamSocketAdapter(AsyncStreamTransport):
     __slots__ = (
         "__backend",
         "__transport",
