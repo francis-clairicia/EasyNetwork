@@ -550,10 +550,10 @@ class TestAsyncTLSStreamTransport:
         with pytest.raises(ssl.SSLError):
             _ = await tls_transport.recv_into(buffer)
 
+    @pytest.mark.usefixtures("mock_tls_transport_retry")
     async def test____send_all____default(
         self,
         tls_transport: AsyncTLSStreamTransport,
-        mock_tls_transport_retry: AsyncMock,
         mock_ssl_object: MagicMock,
     ) -> None:
         # Arrange
@@ -563,13 +563,51 @@ class TestAsyncTLSStreamTransport:
         await tls_transport.send_all(b"decrypted-data")
 
         # Assert
-        mock_tls_transport_retry.assert_awaited_once_with(mock_ssl_object.write, b"decrypted-data")
         mock_ssl_object.write.assert_called_once_with(b"decrypted-data")
 
+    @pytest.mark.usefixtures("mock_tls_transport_retry")
+    async def test____send_all____partial_data(
+        self,
+        tls_transport: AsyncTLSStreamTransport,
+        mock_ssl_object: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        data = b"decrypted-data"
+        mock_ssl_object.write.side_effect = [len(data) - 4, 4]
+
+        # Act
+        await tls_transport.send_all(data)
+
+        # Assert
+        assert mock_ssl_object.write.mock_calls == [
+            mocker.call(b"decrypted-data"),
+            mocker.call(b"data"),
+        ]
+
+    @pytest.mark.usefixtures("mock_tls_transport_retry")
+    async def test____send_all____properly_handle_views_with_different_size(
+        self,
+        tls_transport: AsyncTLSStreamTransport,
+        mock_ssl_object: MagicMock,
+    ) -> None:
+        # Arrange
+        import array
+
+        data = array.array("I", [42, 56])
+
+        mock_ssl_object.write.side_effect = lambda data: memoryview(data).nbytes
+
+        # Act
+        await tls_transport.send_all(memoryview(data))
+
+        # Assert
+        mock_ssl_object.write.assert_called_once_with(memoryview(data).cast("B"))
+
+    @pytest.mark.usefixtures("mock_tls_transport_retry")
     async def test____send_all____null_buffer(
         self,
         tls_transport: AsyncTLSStreamTransport,
-        mock_tls_transport_retry: AsyncMock,
         mock_ssl_object: MagicMock,
     ) -> None:
         # Arrange
@@ -579,7 +617,6 @@ class TestAsyncTLSStreamTransport:
         await tls_transport.send_all(b"")
 
         # Assert
-        mock_tls_transport_retry.assert_awaited_once_with(mock_ssl_object.write, b"")
         mock_ssl_object.write.assert_called_once_with(b"")
 
     @pytest.mark.parametrize("standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible=={p}")
@@ -623,6 +660,47 @@ class TestAsyncTLSStreamTransport:
         # Act & Assert
         with pytest.raises(ssl.SSLError):
             await tls_transport.send_all(b"decrypted-data")
+
+    @pytest.mark.usefixtures("mock_tls_transport_retry")
+    async def test____send_all_from_iterable____default(
+        self,
+        tls_transport: AsyncTLSStreamTransport,
+        mock_ssl_object: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_ssl_object.write.side_effect = lambda data: memoryview(data).nbytes
+
+        # Act
+        await tls_transport.send_all_from_iterable([b"decrypted-data-1", b"decrypted-data-2"])
+
+        # Assert
+        assert mock_ssl_object.write.mock_calls == [
+            mocker.call(b"decrypted-data-1"),
+            mocker.call(b"decrypted-data-2"),
+        ]
+
+    @pytest.mark.usefixtures("mock_tls_transport_retry")
+    async def test____send_all_from_iterable____partial_data(
+        self,
+        tls_transport: AsyncTLSStreamTransport,
+        mock_ssl_object: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        data_list = [b"decrypted-data-1", b"decrypted-data-2"]
+        mock_ssl_object.write.side_effect = [len(data_list[0]) - 4, 4, len(data_list[1]) - 6, 6]
+
+        # Act
+        await tls_transport.send_all_from_iterable(data_list)
+
+        # Assert
+        assert mock_ssl_object.write.mock_calls == [
+            mocker.call(b"decrypted-data-1"),
+            mocker.call(b"ta-1"),
+            mocker.call(b"decrypted-data-2"),
+            mocker.call(b"data-2"),
+        ]
 
     async def test____send_eof____default(
         self,
