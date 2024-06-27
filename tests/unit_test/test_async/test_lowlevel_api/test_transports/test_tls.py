@@ -379,6 +379,37 @@ class TestAsyncTLSStreamTransport:
         assert not write_bio.eof
         mock_wrapped_transport.aclose.assert_awaited_once_with()
 
+    @pytest.mark.parametrize("standard_compatible", [True], indirect=True, ids=lambda p: f"standard_compatible=={p}")
+    async def test____aclose____mask_unwrap_error(
+        self,
+        tls_transport: AsyncTLSStreamTransport,
+        mock_tls_transport_retry: AsyncMock,
+        mock_wrapped_transport: MagicMock,
+        mock_ssl_object: MagicMock,
+        read_bio: ssl.MemoryBIO,
+        write_bio: ssl.MemoryBIO,
+    ) -> None:
+        # Arrange
+        async def retry_side_effect(ssl_object_method: Callable[..., Any], *args: Any) -> Any:
+            try:
+                return ssl_object_method(*args)
+            except ssl.SSLError:
+                read_bio.write_eof()
+                write_bio.write_eof()
+                raise
+
+        mock_tls_transport_retry.side_effect = retry_side_effect
+        mock_ssl_object.unwrap.side_effect = ssl.SSLError()
+
+        # Act
+        await tls_transport.aclose()
+
+        # Assert
+        mock_tls_transport_retry.assert_awaited_once_with(mock_ssl_object.unwrap)
+        assert read_bio.eof
+        assert write_bio.eof
+        mock_wrapped_transport.aclose.assert_awaited_once_with()
+
     async def test____recv____default(
         self,
         tls_transport: AsyncTLSStreamTransport,

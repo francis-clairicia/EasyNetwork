@@ -154,6 +154,8 @@ class AsyncTLSStreamTransport(AsyncStreamTransport):
 
     @_utils.inherit_doc(AsyncStreamTransport)
     async def aclose(self) -> None:
+        assert _ssl_module is not None, "stdlib ssl module not available"  # nosec assert_used
+
         with contextlib.ExitStack() as stack:
             stack.callback(self.__incoming_reader.close)
             stack.callback(self.__data_to_send.clear)
@@ -162,9 +164,13 @@ class AsyncTLSStreamTransport(AsyncStreamTransport):
             if self._standard_compatible:
                 with self._transport.backend().move_on_after(self._shutdown_timeout) as shutdown_timeout_scope:
                     try:
-                        await self._retry_ssl_method(self._ssl_object.unwrap)
-                        self._read_bio.write_eof()
-                        self._write_bio.write_eof()
+                        try:
+                            await self._retry_ssl_method(self._ssl_object.unwrap)
+                        except _ssl_module.SSLError:
+                            pass
+                        else:
+                            self._read_bio.write_eof()
+                            self._write_bio.write_eof()
                     except BaseException:
                         await aclose_forcefully(self._transport)
                         raise
