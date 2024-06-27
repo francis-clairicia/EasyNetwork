@@ -273,8 +273,9 @@ class AsyncStreamEndpoint(AsyncBaseTransport, Generic[_T_SentPacket, _T_Received
         """
         Closes the endpoint.
         """
-        await self.__transport.aclose()
-        self.__receiver.clear()
+        with self.__send_guard:
+            await self.__transport.aclose()
+            self.__receiver.clear()
 
     async def send_packet(self, packet: _T_SentPacket) -> None:
         """

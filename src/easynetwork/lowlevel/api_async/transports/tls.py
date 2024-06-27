@@ -63,9 +63,9 @@ class AsyncTLSStreamTransport(AsyncStreamTransport):
     _ssl_object: SSLObject
     _read_bio: MemoryBIO
     _write_bio: MemoryBIO
+    _data_deque: deque[memoryview] = dataclasses.field(init=False, default_factory=deque)
     __incoming_reader: _IncomingDataReader = dataclasses.field(init=False)
     __closing: bool = dataclasses.field(init=False, default=False)
-    __data_to_send: deque[memoryview] = dataclasses.field(init=False, default_factory=deque)
 
     def __post_init__(self) -> None:
         self.__incoming_reader = _IncomingDataReader(transport=self._transport)
@@ -160,7 +160,7 @@ class AsyncTLSStreamTransport(AsyncStreamTransport):
         already_closing = self.__closing
         with contextlib.ExitStack() as stack:
             stack.callback(self.__incoming_reader.close)
-            stack.callback(self.__data_to_send.clear)
+            stack.callback(self._data_deque.clear)
 
             self.__closing = True
             if not already_closing and self._standard_compatible and not self._transport.is_closing():
@@ -215,7 +215,7 @@ class AsyncTLSStreamTransport(AsyncStreamTransport):
     async def send_all(self, data: bytes | bytearray | memoryview) -> None:
         if self.__closing:
             raise _utils.error_from_errno(errno.ECONNABORTED)
-        self.__data_to_send.append(memoryview(data))
+        self._data_deque.append(memoryview(data))
         del data
         return await self.__flush_data_to_send()
 
@@ -223,14 +223,14 @@ class AsyncTLSStreamTransport(AsyncStreamTransport):
     async def send_all_from_iterable(self, iterable_of_data: Iterable[bytes | bytearray | memoryview]) -> None:
         if self.__closing:
             raise _utils.error_from_errno(errno.ECONNABORTED)
-        self.__data_to_send.extend(map(memoryview, iterable_of_data))
+        self._data_deque.extend(map(memoryview, iterable_of_data))
         del iterable_of_data
         return await self.__flush_data_to_send()
 
     async def __flush_data_to_send(self) -> None:
         assert _ssl_module is not None, "stdlib ssl module not available"  # nosec assert_used
         try:
-            await self._retry_ssl_method(self.__write_all_to_ssl_object, self._ssl_object, self.__data_to_send)
+            await self._retry_ssl_method(self.__write_all_to_ssl_object, self._ssl_object, self._data_deque)
         except _ssl_module.SSLZeroReturnError as exc:
             raise _utils.error_from_errno(errno.ECONNRESET) from exc
 
@@ -291,11 +291,6 @@ class AsyncTLSStreamTransport(AsyncStreamTransport):
             **socket_tools._get_tls_extra(self._ssl_object),
             socket_tools.TLSAttribute.standard_compatible: lambda: self._standard_compatible,
         }
-
-    if __debug__:
-
-        def _test__data_queue(self) -> list[bytes]:
-            return list(map(bytes, self.__data_to_send))
 
 
 class AsyncTLSListener(AsyncListener[AsyncTLSStreamTransport]):

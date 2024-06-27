@@ -78,8 +78,9 @@ class Client(AsyncBaseTransport, Generic[_T_Response]):
         """
         Closes the endpoint.
         """
-        await self.__transport.aclose()
-        await self.__exit_stack.aclose()
+        with self.__send_guard:
+            await self.__transport.aclose()
+            await self.__exit_stack.aclose()
 
     async def send_packet(self, packet: _T_Response) -> None:
         """

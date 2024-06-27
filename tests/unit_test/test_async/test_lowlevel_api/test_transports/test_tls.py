@@ -740,7 +740,7 @@ class TestAsyncTLSStreamTransport:
 
         mock_ssl_object.write.assert_not_called()
         mock_tls_transport_retry.assert_not_awaited()
-        assert tls_transport._test__data_queue() == []
+        assert len(tls_transport._data_deque) == 0
 
     @pytest.mark.usefixtures("mock_tls_transport_retry")
     async def test____send_all_from_iterable____default(
@@ -801,7 +801,7 @@ class TestAsyncTLSStreamTransport:
 
         mock_ssl_object.write.assert_not_called()
         mock_tls_transport_retry.assert_not_awaited()
-        assert tls_transport._test__data_queue() == []
+        assert len(tls_transport._data_deque) == 0
 
     async def test____send_eof____default(
         self,
