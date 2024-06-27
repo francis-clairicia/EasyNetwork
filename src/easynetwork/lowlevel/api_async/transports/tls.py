@@ -134,6 +134,7 @@ class AsyncTLSStreamTransport(AsyncStreamTransport):
 
             _ = ssl_object.getpeercert()
         except BaseException:
+            self.__closing = True
             await aclose_forcefully(transport)
             raise
         return self
@@ -156,21 +157,21 @@ class AsyncTLSStreamTransport(AsyncStreamTransport):
     async def aclose(self) -> None:
         assert _ssl_module is not None, "stdlib ssl module not available"  # nosec assert_used
 
+        already_closing = self.__closing
         with contextlib.ExitStack() as stack:
             stack.callback(self.__incoming_reader.close)
             stack.callback(self.__data_to_send.clear)
 
             self.__closing = True
-            if self._standard_compatible:
+            if not already_closing and self._standard_compatible and not self._transport.is_closing():
                 with self._transport.backend().move_on_after(self._shutdown_timeout) as shutdown_timeout_scope:
                     try:
                         try:
                             await self._retry_ssl_method(self._ssl_object.unwrap)
-                        except _ssl_module.SSLError:
+                        except OSError:
                             pass
-                        else:
-                            self._read_bio.write_eof()
-                            self._write_bio.write_eof()
+                        self._read_bio.write_eof()
+                        self._write_bio.write_eof()
                     except BaseException:
                         await aclose_forcefully(self._transport)
                         raise
@@ -212,13 +213,15 @@ class AsyncTLSStreamTransport(AsyncStreamTransport):
 
     @_utils.inherit_doc(AsyncStreamTransport)
     async def send_all(self, data: bytes | bytearray | memoryview) -> None:
-        self.__data_to_send.append(memoryview(data))
+        if not self.__closing:
+            self.__data_to_send.append(memoryview(data))
         del data
         return await self.__flush_data_to_send()
 
     @_utils.inherit_doc(AsyncStreamTransport)
     async def send_all_from_iterable(self, iterable_of_data: Iterable[bytes | bytearray | memoryview]) -> None:
-        self.__data_to_send.extend(map(memoryview, iterable_of_data))
+        if not self.__closing:
+            self.__data_to_send.extend(map(memoryview, iterable_of_data))
         del iterable_of_data
         return await self.__flush_data_to_send()
 
@@ -251,6 +254,8 @@ class AsyncTLSStreamTransport(AsyncStreamTransport):
         *args: *_T_PosArgs,
     ) -> _T_Return:
         assert _ssl_module is not None, "stdlib ssl module not available"  # nosec assert_used
+        if self.__closing:
+            raise _utils.error_from_errno(errno.ECONNABORTED)
         while True:
             try:
                 result = ssl_object_method(*args)
@@ -286,6 +291,11 @@ class AsyncTLSStreamTransport(AsyncStreamTransport):
             **socket_tools._get_tls_extra(self._ssl_object),
             socket_tools.TLSAttribute.standard_compatible: lambda: self._standard_compatible,
         }
+
+    if __debug__:
+
+        def _test__data_queue(self) -> list[bytes]:
+            return list(map(bytes, self.__data_to_send))
 
 
 class AsyncTLSListener(AsyncListener[AsyncTLSStreamTransport]):
