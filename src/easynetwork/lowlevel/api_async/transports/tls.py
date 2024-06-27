@@ -156,6 +156,7 @@ class AsyncTLSStreamTransport(AsyncStreamTransport):
     async def aclose(self) -> None:
         with contextlib.ExitStack() as stack:
             stack.callback(self.__incoming_reader.close)
+            stack.callback(self.__data_to_send.clear)
 
             self.__closing = True
             if self._standard_compatible:
