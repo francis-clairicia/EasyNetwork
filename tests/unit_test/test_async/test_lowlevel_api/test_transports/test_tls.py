@@ -102,8 +102,12 @@ class TestAsyncTLSStreamTransport:
     @pytest.fixture
     @staticmethod
     def mock_tls_transport_retry(mocker: MockerFixture) -> AsyncMock:
-        side_effect: Callable[..., Any] = lambda ssl_object_method, *args: ssl_object_method(*args)
-        return mocker.patch.object(AsyncTLSStreamTransport, "_retry_ssl_method", side_effect=side_effect)
+        return mocker.patch.object(
+            AsyncTLSStreamTransport,
+            "_retry_ssl_method",
+            autospec=True,
+            wraps=AsyncTLSStreamTransport._retry_ssl_method,
+        )
 
     async def test____wrap____default(
         self,
@@ -135,7 +139,7 @@ class TestAsyncTLSStreamTransport:
             server_hostname="server_hostname",
             session=None,
         )
-        mock_tls_transport_retry.assert_awaited_once_with(mock_ssl_object.do_handshake)
+        mock_tls_transport_retry.assert_awaited_once_with(tls_transport, mock_ssl_object.do_handshake)
         assert mock_ssl_object.mock_calls == [mocker.call.do_handshake(), mocker.call.getpeercert()]
         ## Attributes
         assert tls_transport._shutdown_timeout == DEFAULT_SSL_SHUTDOWN_TIMEOUT
@@ -199,7 +203,7 @@ class TestAsyncTLSStreamTransport:
             server_hostname=server_hostname,
             session=session,
         )
-        mock_tls_transport_retry.assert_awaited_once_with(mock_ssl_object.do_handshake)
+        mock_tls_transport_retry.assert_awaited_once_with(tls_transport, mock_ssl_object.do_handshake)
         assert mock_ssl_object.mock_calls == [mocker.call.do_handshake(), mocker.call.getpeercert()]
         assert mock_wrapped_transport.mock_calls == [mocker.call.backend()]
         ## Attributes
@@ -257,7 +261,7 @@ class TestAsyncTLSStreamTransport:
         mock_ssl_object: MagicMock,
     ) -> None:
         # Arrange
-        async def retry_side_effect(ssl_object_method: Callable[..., Any], *args: Any) -> Any:
+        async def retry_side_effect(self: AsyncTLSStreamTransport, ssl_object_method: Callable[..., Any], *args: Any) -> Any:
             await asyncio.sleep(5)
             return ssl_object_method(*args)
 
@@ -325,7 +329,6 @@ class TestAsyncTLSStreamTransport:
     async def test____aclose____close_transport(
         self,
         tls_transport: AsyncTLSStreamTransport,
-        mock_tls_transport_retry: AsyncMock,
         mock_wrapped_transport: MagicMock,
         mock_ssl_object: MagicMock,
         standard_compatible: bool,
@@ -341,16 +344,43 @@ class TestAsyncTLSStreamTransport:
         # Assert
         assert tls_transport.is_closing()
         if standard_compatible:
-            mock_tls_transport_retry.assert_awaited_once_with(mock_ssl_object.unwrap)
             mock_ssl_object.unwrap.assert_called_once_with()
             assert read_bio.eof
             assert write_bio.eof
         else:
-            mock_tls_transport_retry.assert_not_called()
             mock_ssl_object.unwrap.assert_not_called()
             assert not read_bio.eof
             assert not write_bio.eof
         mock_wrapped_transport.aclose.assert_awaited_once_with()
+
+    @pytest.mark.parametrize("standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible=={p}")
+    async def test____aclose____idempotent(
+        self,
+        tls_transport: AsyncTLSStreamTransport,
+        mock_wrapped_transport: MagicMock,
+        mock_ssl_object: MagicMock,
+        standard_compatible: bool,
+        read_bio: ssl.MemoryBIO,
+        write_bio: ssl.MemoryBIO,
+    ) -> None:
+        # Arrange
+        assert not tls_transport.is_closing()
+        await tls_transport.aclose()
+        assert tls_transport.is_closing()
+
+        # Act
+        await tls_transport.aclose()
+
+        # Assert
+        if standard_compatible:
+            mock_ssl_object.unwrap.assert_called_once_with()
+            assert read_bio.eof
+            assert write_bio.eof
+        else:
+            mock_ssl_object.unwrap.assert_not_called()
+            assert not read_bio.eof
+            assert not write_bio.eof
+        assert mock_wrapped_transport.aclose.await_count == 2
 
     @pytest.mark.parametrize("standard_compatible", [True], indirect=True, ids=lambda p: f"standard_compatible=={p}")
     @pytest.mark.parametrize("shutdown_timeout", [1], indirect=True, ids=lambda p: f"shutdown_timeout=={p}")
@@ -364,7 +394,7 @@ class TestAsyncTLSStreamTransport:
         write_bio: ssl.MemoryBIO,
     ) -> None:
         # Arrange
-        async def retry_side_effect(ssl_object_method: Callable[..., Any], *args: Any) -> Any:
+        async def retry_side_effect(self: AsyncTLSStreamTransport, ssl_object_method: Callable[..., Any], *args: Any) -> Any:
             await asyncio.sleep(5)
             return ssl_object_method(*args)
 
@@ -374,9 +404,40 @@ class TestAsyncTLSStreamTransport:
         await tls_transport.aclose()
 
         # Assert
-        mock_tls_transport_retry.assert_awaited_once_with(mock_ssl_object.unwrap)
+        mock_tls_transport_retry.assert_awaited_once_with(tls_transport, mock_ssl_object.unwrap)
         assert not read_bio.eof
         assert not write_bio.eof
+        mock_wrapped_transport.aclose.assert_awaited_once_with()
+
+    @pytest.mark.parametrize("standard_compatible", [True], indirect=True, ids=lambda p: f"standard_compatible=={p}")
+    async def test____aclose____mask_unwrap_error(
+        self,
+        tls_transport: AsyncTLSStreamTransport,
+        mock_tls_transport_retry: AsyncMock,
+        mock_wrapped_transport: MagicMock,
+        mock_ssl_object: MagicMock,
+        read_bio: ssl.MemoryBIO,
+        write_bio: ssl.MemoryBIO,
+    ) -> None:
+        # Arrange
+        async def retry_side_effect(self: AsyncTLSStreamTransport, ssl_object_method: Callable[..., Any], *args: Any) -> Any:
+            try:
+                return ssl_object_method(*args)
+            except ssl.SSLError:
+                read_bio.write_eof()
+                write_bio.write_eof()
+                raise
+
+        mock_tls_transport_retry.side_effect = retry_side_effect
+        mock_ssl_object.unwrap.side_effect = ssl.SSLError()
+
+        # Act
+        await tls_transport.aclose()
+
+        # Assert
+        mock_tls_transport_retry.assert_awaited_once_with(tls_transport, mock_ssl_object.unwrap)
+        assert read_bio.eof
+        assert write_bio.eof
         mock_wrapped_transport.aclose.assert_awaited_once_with()
 
     async def test____recv____default(
@@ -393,7 +454,7 @@ class TestAsyncTLSStreamTransport:
 
         # Assert
         assert data == b"decrypted-data"
-        mock_tls_transport_retry.assert_awaited_once_with(mock_ssl_object.read, 123456)
+        mock_tls_transport_retry.assert_awaited_once_with(tls_transport, mock_ssl_object.read, 123456)
         mock_ssl_object.read.assert_called_once_with(123456)
 
     async def test____recv____null_buffer(
@@ -410,7 +471,7 @@ class TestAsyncTLSStreamTransport:
 
         # Assert
         assert data == b""
-        mock_tls_transport_retry.assert_awaited_once_with(mock_ssl_object.read, 0)
+        mock_tls_transport_retry.assert_awaited_once_with(tls_transport, mock_ssl_object.read, 0)
         mock_ssl_object.read.assert_called_once_with(0)
 
     @pytest.mark.parametrize("standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible=={p}")
@@ -477,7 +538,7 @@ class TestAsyncTLSStreamTransport:
 
         # Assert
         assert nbytes == 42
-        mock_tls_transport_retry.assert_awaited_once_with(mock_ssl_object.read, 1234, buffer)
+        mock_tls_transport_retry.assert_awaited_once_with(tls_transport, mock_ssl_object.read, 1234, buffer)
         mock_ssl_object.read.assert_called_once_with(1234, buffer)
 
     async def test____recv_into____null_buffer(
@@ -495,7 +556,7 @@ class TestAsyncTLSStreamTransport:
 
         # Assert
         assert nbytes == 0
-        mock_tls_transport_retry.assert_awaited_once_with(mock_ssl_object.read, 1024, buffer)
+        mock_tls_transport_retry.assert_awaited_once_with(tls_transport, mock_ssl_object.read, 1024, buffer)
         mock_ssl_object.read.assert_called_once_with(1024, buffer)
 
     @pytest.mark.parametrize("standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible=={p}")
@@ -550,10 +611,10 @@ class TestAsyncTLSStreamTransport:
         with pytest.raises(ssl.SSLError):
             _ = await tls_transport.recv_into(buffer)
 
+    @pytest.mark.usefixtures("mock_tls_transport_retry")
     async def test____send_all____default(
         self,
         tls_transport: AsyncTLSStreamTransport,
-        mock_tls_transport_retry: AsyncMock,
         mock_ssl_object: MagicMock,
     ) -> None:
         # Arrange
@@ -563,13 +624,51 @@ class TestAsyncTLSStreamTransport:
         await tls_transport.send_all(b"decrypted-data")
 
         # Assert
-        mock_tls_transport_retry.assert_awaited_once_with(mock_ssl_object.write, b"decrypted-data")
         mock_ssl_object.write.assert_called_once_with(b"decrypted-data")
 
+    @pytest.mark.usefixtures("mock_tls_transport_retry")
+    async def test____send_all____partial_data(
+        self,
+        tls_transport: AsyncTLSStreamTransport,
+        mock_ssl_object: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        data = b"decrypted-data"
+        mock_ssl_object.write.side_effect = [len(data) - 4, 4]
+
+        # Act
+        await tls_transport.send_all(data)
+
+        # Assert
+        assert mock_ssl_object.write.mock_calls == [
+            mocker.call(b"decrypted-data"),
+            mocker.call(b"data"),
+        ]
+
+    @pytest.mark.usefixtures("mock_tls_transport_retry")
+    async def test____send_all____properly_handle_views_with_different_size(
+        self,
+        tls_transport: AsyncTLSStreamTransport,
+        mock_ssl_object: MagicMock,
+    ) -> None:
+        # Arrange
+        import array
+
+        data = array.array("I", [42, 56])
+
+        mock_ssl_object.write.side_effect = lambda data: memoryview(data).nbytes
+
+        # Act
+        await tls_transport.send_all(memoryview(data))
+
+        # Assert
+        mock_ssl_object.write.assert_called_once_with(memoryview(data).cast("B"))
+
+    @pytest.mark.usefixtures("mock_tls_transport_retry")
     async def test____send_all____null_buffer(
         self,
         tls_transport: AsyncTLSStreamTransport,
-        mock_tls_transport_retry: AsyncMock,
         mock_ssl_object: MagicMock,
     ) -> None:
         # Arrange
@@ -579,7 +678,6 @@ class TestAsyncTLSStreamTransport:
         await tls_transport.send_all(b"")
 
         # Assert
-        mock_tls_transport_retry.assert_awaited_once_with(mock_ssl_object.write, b"")
         mock_ssl_object.write.assert_called_once_with(b"")
 
     @pytest.mark.parametrize("standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible=={p}")
@@ -623,6 +721,87 @@ class TestAsyncTLSStreamTransport:
         # Act & Assert
         with pytest.raises(ssl.SSLError):
             await tls_transport.send_all(b"decrypted-data")
+
+    @pytest.mark.parametrize("standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible=={p}")
+    async def test____send_all____closed_transport(
+        self,
+        tls_transport: AsyncTLSStreamTransport,
+        mock_tls_transport_retry: AsyncMock,
+        mock_ssl_object: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_ssl_object.unwrap.return_value = None
+        await tls_transport.aclose()
+        mock_tls_transport_retry.reset_mock()
+
+        # Act & Assert
+        with pytest.raises(ConnectionAbortedError):
+            await tls_transport.send_all(b"decrypted-data")
+
+        mock_ssl_object.write.assert_not_called()
+        mock_tls_transport_retry.assert_not_awaited()
+        assert len(tls_transport._data_deque) == 0
+
+    @pytest.mark.usefixtures("mock_tls_transport_retry")
+    async def test____send_all_from_iterable____default(
+        self,
+        tls_transport: AsyncTLSStreamTransport,
+        mock_ssl_object: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        mock_ssl_object.write.side_effect = lambda data: memoryview(data).nbytes
+
+        # Act
+        await tls_transport.send_all_from_iterable([b"decrypted-data-1", b"decrypted-data-2"])
+
+        # Assert
+        assert mock_ssl_object.write.mock_calls == [
+            mocker.call(b"decrypted-data-1"),
+            mocker.call(b"decrypted-data-2"),
+        ]
+
+    @pytest.mark.usefixtures("mock_tls_transport_retry")
+    async def test____send_all_from_iterable____partial_data(
+        self,
+        tls_transport: AsyncTLSStreamTransport,
+        mock_ssl_object: MagicMock,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        data_list = [b"decrypted-data-1", b"decrypted-data-2"]
+        mock_ssl_object.write.side_effect = [len(data_list[0]) - 4, 4, len(data_list[1]) - 6, 6]
+
+        # Act
+        await tls_transport.send_all_from_iterable(data_list)
+
+        # Assert
+        assert mock_ssl_object.write.mock_calls == [
+            mocker.call(b"decrypted-data-1"),
+            mocker.call(b"ta-1"),
+            mocker.call(b"decrypted-data-2"),
+            mocker.call(b"data-2"),
+        ]
+
+    @pytest.mark.parametrize("standard_compatible", [False, True], indirect=True, ids=lambda p: f"standard_compatible=={p}")
+    async def test____send_all_from_iterable____closed_transport(
+        self,
+        tls_transport: AsyncTLSStreamTransport,
+        mock_tls_transport_retry: AsyncMock,
+        mock_ssl_object: MagicMock,
+    ) -> None:
+        # Arrange
+        mock_ssl_object.unwrap.return_value = None
+        await tls_transport.aclose()
+        mock_tls_transport_retry.reset_mock()
+
+        # Act & Assert
+        with pytest.raises(ConnectionAbortedError):
+            await tls_transport.send_all_from_iterable([b"decrypted-data-1", b"decrypted-data-2"])
+
+        mock_ssl_object.write.assert_not_called()
+        mock_tls_transport_retry.assert_not_awaited()
+        assert len(tls_transport._data_deque) == 0
 
     async def test____send_eof____default(
         self,

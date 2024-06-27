@@ -24,7 +24,8 @@ import errno
 import functools
 import logging
 import warnings
-from collections.abc import Callable, Coroutine, Mapping
+from collections import deque
+from collections.abc import Callable, Coroutine, Iterable, Mapping
 from typing import TYPE_CHECKING, Any, Final, NoReturn, Self, TypeVar, TypeVarTuple
 
 try:
@@ -62,6 +63,7 @@ class AsyncTLSStreamTransport(AsyncStreamTransport):
     _ssl_object: SSLObject
     _read_bio: MemoryBIO
     _write_bio: MemoryBIO
+    _data_deque: deque[memoryview] = dataclasses.field(init=False, default_factory=deque)
     __incoming_reader: _IncomingDataReader = dataclasses.field(init=False)
     __closing: bool = dataclasses.field(init=False, default=False)
 
@@ -132,6 +134,7 @@ class AsyncTLSStreamTransport(AsyncStreamTransport):
 
             _ = ssl_object.getpeercert()
         except BaseException:
+            self.__closing = True
             await aclose_forcefully(transport)
             raise
         return self
@@ -152,14 +155,21 @@ class AsyncTLSStreamTransport(AsyncStreamTransport):
 
     @_utils.inherit_doc(AsyncStreamTransport)
     async def aclose(self) -> None:
+        assert _ssl_module is not None, "stdlib ssl module not available"  # nosec assert_used
+
+        already_closing = self.__closing
         with contextlib.ExitStack() as stack:
             stack.callback(self.__incoming_reader.close)
+            stack.callback(self._data_deque.clear)
 
             self.__closing = True
-            if self._standard_compatible:
+            if not already_closing and self._standard_compatible and not self._transport.is_closing():
                 with self._transport.backend().move_on_after(self._shutdown_timeout) as shutdown_timeout_scope:
                     try:
-                        await self._retry_ssl_method(self._ssl_object.unwrap)
+                        try:
+                            await self._retry_ssl_method(self._ssl_object.unwrap)
+                        except OSError:
+                            pass
                         self._read_bio.write_eof()
                         self._write_bio.write_eof()
                     except BaseException:
@@ -203,11 +213,38 @@ class AsyncTLSStreamTransport(AsyncStreamTransport):
 
     @_utils.inherit_doc(AsyncStreamTransport)
     async def send_all(self, data: bytes | bytearray | memoryview) -> None:
+        if self.__closing:
+            raise _utils.error_from_errno(errno.ECONNABORTED)
+        self._data_deque.append(memoryview(data))
+        del data
+        return await self.__flush_data_to_send()
+
+    @_utils.inherit_doc(AsyncStreamTransport)
+    async def send_all_from_iterable(self, iterable_of_data: Iterable[bytes | bytearray | memoryview]) -> None:
+        if self.__closing:
+            raise _utils.error_from_errno(errno.ECONNABORTED)
+        self._data_deque.extend(map(memoryview, iterable_of_data))
+        del iterable_of_data
+        return await self.__flush_data_to_send()
+
+    async def __flush_data_to_send(self) -> None:
         assert _ssl_module is not None, "stdlib ssl module not available"  # nosec assert_used
         try:
-            await self._retry_ssl_method(self._ssl_object.write, data)
+            await self._retry_ssl_method(self.__write_all_to_ssl_object, self._ssl_object, self._data_deque)
         except _ssl_module.SSLZeroReturnError as exc:
             raise _utils.error_from_errno(errno.ECONNRESET) from exc
+
+    @staticmethod
+    def __write_all_to_ssl_object(ssl_object: SSLObject, write_backlog: deque[memoryview]) -> None:
+        while write_backlog:
+            data = write_backlog[0]
+            if data.itemsize != 1:
+                write_backlog[0] = data = data.cast("B")
+            sent = ssl_object.write(data)
+            if sent < len(data):
+                write_backlog[0] = data[sent:]
+            else:
+                del write_backlog[0]
 
     @_utils.inherit_doc(AsyncStreamTransport)
     async def send_eof(self) -> None:

@@ -38,6 +38,7 @@ from ..lowlevel.socket import (
     ISocket,
     SocketAddress,
     SocketProxy,
+    TLSAttribute,
     enable_socket_linger,
     new_socket_address,
     set_tcp_keepalive,
@@ -405,7 +406,15 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
             client_exit_stack.enter_context(self.__suppress_and_log_remaining_exception(client_address=client_address))
             # If the socket was not closed gracefully, (i.e. client.aclose() failed )
             # tell the OS to immediately abort the connection when calling socket.socket.close()
-            client_exit_stack.callback(self.__set_socket_linger_if_not_closed, lowlevel_client.extra(INETSocketAttribute.socket))
+            # NOTE: Do not set this option if SSL/TLS is enabled
+            if lowlevel_client.extra(TLSAttribute.sslcontext, None) is None:
+                client_exit_stack.callback(
+                    self.__set_socket_linger_if_not_closed,
+                    lowlevel_client.extra(INETSocketAttribute.socket),
+                )
+            elif lowlevel_client.extra(TLSAttribute.standard_compatible, False):
+                # We expect a TLS close handshake, so we must (try to) properly close the transport before
+                await client_exit_stack.enter_async_context(contextlib.aclosing(lowlevel_client))
 
             logger: logging.Logger = self.__logger
             client = _ConnectedClientAPI(client_address, lowlevel_client)
