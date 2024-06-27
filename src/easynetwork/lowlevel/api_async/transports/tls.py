@@ -213,15 +213,17 @@ class AsyncTLSStreamTransport(AsyncStreamTransport):
 
     @_utils.inherit_doc(AsyncStreamTransport)
     async def send_all(self, data: bytes | bytearray | memoryview) -> None:
-        if not self.__closing:
-            self.__data_to_send.append(memoryview(data))
+        if self.__closing:
+            raise _utils.error_from_errno(errno.ECONNABORTED)
+        self.__data_to_send.append(memoryview(data))
         del data
         return await self.__flush_data_to_send()
 
     @_utils.inherit_doc(AsyncStreamTransport)
     async def send_all_from_iterable(self, iterable_of_data: Iterable[bytes | bytearray | memoryview]) -> None:
-        if not self.__closing:
-            self.__data_to_send.extend(map(memoryview, iterable_of_data))
+        if self.__closing:
+            raise _utils.error_from_errno(errno.ECONNABORTED)
+        self.__data_to_send.extend(map(memoryview, iterable_of_data))
         del iterable_of_data
         return await self.__flush_data_to_send()
 
@@ -254,8 +256,6 @@ class AsyncTLSStreamTransport(AsyncStreamTransport):
         *args: *_T_PosArgs,
     ) -> _T_Return:
         assert _ssl_module is not None, "stdlib ssl module not available"  # nosec assert_used
-        if self.__closing:
-            raise _utils.error_from_errno(errno.ECONNABORTED)
         while True:
             try:
                 result = ssl_object_method(*args)
