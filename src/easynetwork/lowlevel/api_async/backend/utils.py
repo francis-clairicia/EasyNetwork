@@ -12,12 +12,12 @@
 # limitations under the License.
 #
 #
-"""Helper module for async backend"""
+"""Helper module for async backend."""
 
 from __future__ import annotations
 
 __all__ = [
-    "BuiltinAsyncBackendToken",
+    "BuiltinAsyncBackendLiteral",
     "ensure_backend",
 ]
 
@@ -26,15 +26,34 @@ from typing import Literal, TypeAlias, cast
 from . import _sniffio_helpers
 from .abc import AsyncBackend
 
-BuiltinAsyncBackendToken: TypeAlias = Literal["asyncio"]
+BuiltinAsyncBackendLiteral: TypeAlias = Literal["asyncio"]
 
 
-def ensure_backend(backend: AsyncBackend | BuiltinAsyncBackendToken | None) -> AsyncBackend:
+def ensure_backend(backend: AsyncBackend | BuiltinAsyncBackendLiteral | None) -> AsyncBackend:
     """
-    TODO: Add docstring
+    Obtain an interface for the give `backend`.
+
+    * If `backend` is already an :class:`AsyncBackend`, this object is returned.
+
+    * If `backend` is a string token and matches one of the built-in implementation, a new object is returned.
+
+       * Currently, only ``"asyncio"`` is recognized.
+
+    * If :data:`None`, the function tries to guess the library currently used.
+
+       * Needs ``sniffio`` feature to have extended researches, otherwise only :mod:`asyncio` is recognized.
+
+    See Also:
+
+        :ref:`optional-dependencies`
+            Explains how to install ``sniffio`` extra.
+
+    Raises:
+        NotImplementedError: the current asynchronous library is not implemented.
+        RuntimeError: unknown async library, or not in async context
     """
     if backend is None:
-        backend = cast(BuiltinAsyncBackendToken, _sniffio_helpers.current_async_library())
+        backend = cast(BuiltinAsyncBackendLiteral, _sniffio_helpers.current_async_library())
 
     match backend:
         case "asyncio":

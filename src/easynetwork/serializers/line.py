@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""string line packet serializer module"""
+"""String line packet serializer module."""
 
 from __future__ import annotations
 

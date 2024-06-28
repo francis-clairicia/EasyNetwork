@@ -9,7 +9,7 @@ from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from typing import TYPE_CHECKING, Any, NoReturn
 
 from easynetwork.lowlevel._stream import StreamDataProducer
-from easynetwork.lowlevel.api_async.servers.stream import AsyncStreamServer, Client
+from easynetwork.lowlevel.api_async.servers.stream import AsyncStreamServer, ConnectedStreamClient
 from easynetwork.lowlevel.api_async.transports.abc import AsyncListener, AsyncStreamTransport, AsyncStreamWriteTransport
 from easynetwork.lowlevel.std_asyncio.backend import AsyncIOBackend
 from easynetwork.lowlevel.std_asyncio.tasks import TaskGroup
@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 
 
 @pytest.mark.asyncio
-class TestAsyncStreamClient(BaseTestWithStreamProtocol):
+class TestConnectedStreamClient(BaseTestWithStreamProtocol):
     @pytest.fixture
     @staticmethod
     def mock_stream_transport(asyncio_backend: AsyncIOBackend, mocker: MockerFixture) -> MagicMock:
@@ -51,8 +51,8 @@ class TestAsyncStreamClient(BaseTestWithStreamProtocol):
         mock_stream_transport: MagicMock,
         mock_stream_protocol: MagicMock,
         client_exit_stack: contextlib.AsyncExitStack,
-    ) -> Client[Any]:
-        return Client(
+    ) -> ConnectedStreamClient[Any]:
+        return ConnectedStreamClient(
             _transport=mock_stream_transport,
             _producer=StreamDataProducer(mock_stream_protocol),
             _exit_stack=client_exit_stack,
@@ -61,7 +61,7 @@ class TestAsyncStreamClient(BaseTestWithStreamProtocol):
     @pytest.mark.parametrize("transport_closed", [False, True])
     async def test____is_closing____default(
         self,
-        client: Client[Any],
+        client: ConnectedStreamClient[Any],
         mock_stream_transport: MagicMock,
         transport_closed: bool,
     ) -> None:
@@ -78,7 +78,7 @@ class TestAsyncStreamClient(BaseTestWithStreamProtocol):
 
     async def test____aclose____default(
         self,
-        client: Client[Any],
+        client: ConnectedStreamClient[Any],
         mock_stream_transport: MagicMock,
         client_exit_stack: contextlib.AsyncExitStack,
         mocker: MockerFixture,
@@ -97,7 +97,7 @@ class TestAsyncStreamClient(BaseTestWithStreamProtocol):
 
     async def test____extra_attributes____default(
         self,
-        client: Client[Any],
+        client: ConnectedStreamClient[Any],
         mock_stream_transport: MagicMock,
         mocker: MockerFixture,
     ) -> None:
@@ -112,7 +112,7 @@ class TestAsyncStreamClient(BaseTestWithStreamProtocol):
 
     async def test____send_packet____send_bytes_to_transport(
         self,
-        client: Client[Any],
+        client: ConnectedStreamClient[Any],
         mock_stream_transport: MagicMock,
         mock_stream_protocol: MagicMock,
         mocker: MockerFixture,

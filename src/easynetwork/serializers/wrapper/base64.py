@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""base64 encoder serializer module"""
+"""base64 encoder serializer module."""
 
 from __future__ import annotations
 

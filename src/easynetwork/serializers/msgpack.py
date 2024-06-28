@@ -12,7 +12,15 @@
 # limitations under the License.
 #
 #
-"""msgpack-based network packet serializer module"""
+"""``MessagePack``-based network packet serializer module.
+
+The `MessagePack <https://msgpack.org/>`_ is an alternative representation of the ``JSON`` data models.
+
+See Also:
+
+    :ref:`optional-dependencies`
+        Explains how to install ``msgpack`` extra.
+"""
 
 from __future__ import annotations
 

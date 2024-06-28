@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""Asynchronous network server module"""
+"""Server implementation tools module for thread management."""
 
 from __future__ import annotations
 
@@ -78,7 +78,7 @@ class NetworkServerThread(_threading.Thread):
         """
         Wait until the thread terminates.
 
-        This calls the server's :meth:`~AbstractNetworkServer.shutdown` method and then the default `~threading.Thread.join`
+        This calls the server's :meth:`~AbstractNetworkServer.shutdown` method and then the default :meth:`~threading.Thread.join`
         method.
 
         Parameters:

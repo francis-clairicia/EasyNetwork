@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""EasyNetwork's packet converters module"""
+"""EasyNetwork's packet converters module."""
 
 from __future__ import annotations
 

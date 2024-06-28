@@ -134,7 +134,7 @@ class PacketConversionError(Exception):
         super().__init__(message)
 
         self.error_info: Any = error_info
-        """Additional error data"""
+        """Additional error data."""
 
 
 class BaseProtocolParseError(Exception):

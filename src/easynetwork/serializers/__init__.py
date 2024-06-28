@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""EasyNetwork's packet serializers module"""
+"""EasyNetwork's packet serializers module."""
 
 from __future__ import annotations
 

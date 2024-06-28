@@ -2,7 +2,7 @@
 Pickle Serializer
 *****************
 
-.. currentmodule:: easynetwork.serializers
+.. automodule:: easynetwork.serializers.pickle
 
 .. warning::
 
@@ -17,8 +17,6 @@ Pickle Serializer
 
 Configuration
 =============
-
-.. currentmodule:: easynetwork.serializers.pickle
 
 .. autoclass:: PicklerConfig
    :members:

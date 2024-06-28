@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""Asynchronous backend engine module"""
+"""Asynchronous backend engine module."""
 
 from __future__ import annotations
 

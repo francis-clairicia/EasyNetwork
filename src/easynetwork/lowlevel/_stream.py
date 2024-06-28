@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""Stream network packet serializer handler module"""
+"""Stream network packet serializer handler module."""
 
 from __future__ import annotations
 

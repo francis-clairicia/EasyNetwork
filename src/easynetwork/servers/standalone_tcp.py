@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""Asynchronous network server module"""
+"""TCP Network server implementation module."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Any, Generic
 
 from .._typevars import _T_Request, _T_Response
 from ..lowlevel.api_async.backend.abc import AsyncBackend
-from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendToken
+from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendLiteral
 from ..lowlevel.socket import SocketProxy
 from ..protocol import AnyStreamProtocolType
 from . import _base
@@ -55,7 +55,7 @@ class StandaloneTCPNetworkServer(
         port: int,
         protocol: AnyStreamProtocolType[_T_Response, _T_Request],
         request_handler: AsyncStreamRequestHandler[_T_Request, _T_Response],
-        backend: AsyncBackend | BuiltinAsyncBackendToken | None = None,
+        backend: AsyncBackend | BuiltinAsyncBackendLiteral | None = None,
         *,
         runner_options: Mapping[str, Any] | None = None,
         ssl: _SSLContext | None = None,

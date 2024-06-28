@@ -2,7 +2,7 @@
 String Serializer
 *****************
 
-.. currentmodule:: easynetwork.serializers
+.. automodule:: easynetwork.serializers.line
 
 .. autoclass:: StringLineSerializer
    :members:

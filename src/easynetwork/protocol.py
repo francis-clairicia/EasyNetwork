@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""Communication protocol objects module"""
+"""Communication protocol objects module."""
 
 from __future__ import annotations
 

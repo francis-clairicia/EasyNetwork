@@ -26,7 +26,7 @@ Here is the full list:
 
 * Asynchronous I/O extensions:
 
-   * ``sniffio``: Installs the version supported and tested of :github:repo:`sniffio <python-trio/sniffio>`.
+   * ``sniffio``: Installs the version supported and tested of :github:repo:`sniffio <python-trio/sniffio>`, used by :func:`.ensure_backend`.
 
 
 Example where the ``cbor`` and ``msgpack`` extensions are installed:
@@ -34,8 +34,3 @@ Example where the ``cbor`` and ``msgpack`` extensions are installed:
 .. code-block:: console
 
    (.venv) $ pip install "easynetwork[cbor,msgpack]"
-
-
-.. todo::
-
-   Explain what we do with ``sniffio`` when adding documentation of ``AsyncIOBackend``

@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""Asynchronous network server module"""
+"""UDP Network client implementation module."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ from typing import Any, Generic
 
 from .._typevars import _T_Request, _T_Response
 from ..lowlevel.api_async.backend.abc import AsyncBackend
-from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendToken
+from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendLiteral
 from ..lowlevel.socket import SocketProxy
 from ..protocol import DatagramProtocol
 from . import _base
@@ -52,7 +52,7 @@ class StandaloneUDPNetworkServer(
         port: int,
         protocol: DatagramProtocol[_T_Response, _T_Request],
         request_handler: AsyncDatagramRequestHandler[_T_Request, _T_Response],
-        backend: AsyncBackend | BuiltinAsyncBackendToken | None = None,
+        backend: AsyncBackend | BuiltinAsyncBackendLiteral | None = None,
         *,
         runner_options: Mapping[str, Any] | None = None,
         reuse_port: bool = False,

@@ -2,6 +2,8 @@
 Asynchronous Backend Engine API
 *******************************
 
+.. automodule:: easynetwork.lowlevel.api_async.backend
+
 .. contents:: Table of Contents
    :local:
    :depth: 1
@@ -20,7 +22,6 @@ Backend Interface
 =================
 
 .. automodule:: easynetwork.lowlevel.api_async.backend.abc
-   :no-docstring:
 
 .. autoclass:: AsyncBackend
 
@@ -158,3 +159,11 @@ Scheduling From Other Threads
 .. autoclass:: ThreadsPortal
    :members:
    :special-members: __aenter__, __aexit__
+
+
+Useful tools
+============
+
+.. automodule:: easynetwork.lowlevel.api_async.backend.utils
+   :no-docstring:
+   :members:

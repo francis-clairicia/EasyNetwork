@@ -2,12 +2,12 @@
 Structure Serializer
 ********************
 
-.. currentmodule:: easynetwork.serializers
+.. automodule:: easynetwork.serializers.struct
 
 .. autoclass:: StructSerializer
    :members:
 
-.. autotypevar:: easynetwork.serializers.struct::_T_NamedTuple
+.. autotypevar:: _T_NamedTuple
    :noindex:
 
 .. autoclass:: NamedTupleStructSerializer
@@ -15,8 +15,6 @@ Structure Serializer
 
 Abstract Structure Interface
 ============================
-
-.. currentmodule:: easynetwork.serializers.struct
 
 .. autoclass:: AbstractStructSerializer
    :members:

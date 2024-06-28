@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""Asynchronous backend engine bindings with concurrent.futures module"""
+"""Asynchronous backend engine bindings with ``concurrent.futures`` module."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ from typing import Any, Generic, ParamSpec, Self, TypeVar
 
 from .api_async.backend import _sniffio_helpers
 from .api_async.backend.abc import AsyncBackend
-from .api_async.backend.utils import BuiltinAsyncBackendToken, ensure_backend
+from .api_async.backend.utils import BuiltinAsyncBackendLiteral, ensure_backend
 
 _P = ParamSpec("_P")
 _T = TypeVar("_T")
@@ -70,7 +70,7 @@ class AsyncExecutor(Generic[_T_Executor]):
     def __init__(
         self,
         executor: _T_Executor,
-        backend: AsyncBackend | BuiltinAsyncBackendToken | None = None,
+        backend: AsyncBackend | BuiltinAsyncBackendLiteral | None = None,
         *,
         handle_contexts: bool = True,
     ) -> None:

@@ -12,11 +12,11 @@
 # limitations under the License.
 #
 #
-"""Low-level asynchronous stream servers module"""
+"""Low-level asynchronous stream servers module."""
 
 from __future__ import annotations
 
-__all__ = ["AsyncStreamServer"]
+__all__ = ["AsyncStreamServer", "ConnectedStreamClient"]
 
 import contextlib
 import dataclasses
@@ -39,7 +39,7 @@ from ..transports.abc import (
 )
 
 
-class Client(AsyncBaseTransport, Generic[_T_Response]):
+class ConnectedStreamClient(AsyncBaseTransport, Generic[_T_Response]):
     """
     Write-end of the connected client.
     """
@@ -175,7 +175,7 @@ class AsyncStreamServer(AsyncBaseTransport, Generic[_T_Request, _T_Response]):
 
     async def serve(
         self,
-        client_connected_cb: Callable[[Client[_T_Response]], AsyncGenerator[float | None, _T_Request]],
+        client_connected_cb: Callable[[ConnectedStreamClient[_T_Response]], AsyncGenerator[float | None, _T_Request]],
         task_group: TaskGroup | None = None,
     ) -> NoReturn:
         """
@@ -191,7 +191,7 @@ class AsyncStreamServer(AsyncBaseTransport, Generic[_T_Request, _T_Response]):
 
     async def __client_coroutine(
         self,
-        client_connected_cb: Callable[[Client[_T_Response]], AsyncGenerator[float | None, _T_Request]],
+        client_connected_cb: Callable[[ConnectedStreamClient[_T_Response]], AsyncGenerator[float | None, _T_Request]],
         transport: AsyncStreamTransport,
     ) -> None:
         if not isinstance(transport, AsyncStreamTransport):
@@ -227,7 +227,7 @@ class AsyncStreamServer(AsyncBaseTransport, Generic[_T_Request, _T_Response]):
             client_exit_stack.callback(consumer.clear)
 
             request_handler_generator = client_connected_cb(
-                Client(
+                ConnectedStreamClient(
                     _transport=transport,
                     _producer=producer,
                     _exit_stack=client_exit_stack,

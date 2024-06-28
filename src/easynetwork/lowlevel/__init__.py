@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""EasyNetwork's low-level API module"""
+"""EasyNetwork's low-level API module."""
 
 from __future__ import annotations
 

@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""Low-level asynchronous endpoints module"""
+"""Low-level asynchronous endpoints module."""
 
 from __future__ import annotations
 

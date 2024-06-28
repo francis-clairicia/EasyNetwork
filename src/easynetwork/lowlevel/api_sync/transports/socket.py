@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""Low-level transports module"""
+"""Transport implementations module wrapping sockets."""
 
 from __future__ import annotations
 

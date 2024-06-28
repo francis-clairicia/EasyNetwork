@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""struct.Struct-based network packet serializer module"""
+"""Network packet serializer module based on structures."""
 
 from __future__ import annotations
 

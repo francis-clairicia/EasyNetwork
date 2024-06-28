@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""Network client interfaces definition module"""
+"""Network client interfaces definition module."""
 
 from __future__ import annotations
 

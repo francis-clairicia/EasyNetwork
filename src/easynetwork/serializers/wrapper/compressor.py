@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""Data compressor serializer module"""
+"""Data compressor serializer module."""
 
 from __future__ import annotations
 

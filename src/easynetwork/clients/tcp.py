@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""TCP Network client implementation module"""
+"""TCP Network client implementation module."""
 
 from __future__ import annotations
 
