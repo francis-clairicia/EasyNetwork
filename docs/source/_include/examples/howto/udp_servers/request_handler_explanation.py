@@ -145,6 +145,7 @@ class TimeoutYieldedRequestHandler(AsyncDatagramRequestHandler[Request, Response
     ) -> AsyncGenerator[float | None, Request]:
         # It is *never* useful to have a timeout for the 1st datagram
         # because the datagram is already in the queue.
+        # The yielded value is simply ignored.
         request: Request = yield None
 
         ...

@@ -12,7 +12,10 @@
 # limitations under the License.
 #
 #
-"""Low-level asynchronous transports module"""
+"""Low-level asynchronous SSL transports module.
+
+To use this module, the standard :mod:`ssl` module must be available.
+"""
 
 from __future__ import annotations
 
@@ -246,8 +249,13 @@ class AsyncTLSStreamTransport(AsyncStreamTransport):
             else:
                 del write_backlog[0]
 
-    @_utils.inherit_doc(AsyncStreamTransport)
     async def send_eof(self) -> None:
+        """
+        Closes the write end of the stream after the buffered write data is flushed.
+
+        Raises:
+            UnsupportedOperation: SSL/TLS API does not support sending EOF (for now).
+        """
         raise UnsupportedOperation("SSL/TLS API does not support sending EOF.")
 
     async def _retry_ssl_method(

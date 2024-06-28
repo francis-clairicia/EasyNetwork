@@ -2,15 +2,13 @@
 JSON Serializer
 ***************
 
-.. currentmodule:: easynetwork.serializers
+.. automodule:: easynetwork.serializers.json
 
 .. autoclass:: JSONSerializer
    :members:
 
 Configuration
 =============
-
-.. currentmodule:: easynetwork.serializers.json
 
 .. autoclass:: JSONEncoderConfig
    :members:

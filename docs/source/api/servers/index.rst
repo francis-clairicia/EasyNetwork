@@ -9,30 +9,28 @@ Servers API
 
 ------
 
-Asynchronous Server Objects (``async def``)
-===========================================
+Abstract Base Classes
+=====================
 
-Abstract Base Class
--------------------
-
-.. autoclass:: easynetwork.servers.abc::AbstractAsyncNetworkServer
+.. automodule:: easynetwork.servers.abc
    :members:
    :special-members: __aenter__, __aexit__
 
-.. autoprotocol:: easynetwork.servers.abc::SupportsEventSet
 
+Asynchronous Server Objects (``async def``)
+===========================================
 
 TCP Implementation
 ------------------
 
-.. autoclass:: AsyncTCPNetworkServer
+.. automodule:: easynetwork.servers.async_tcp
    :members:
    :inherited-members:
 
 UDP Implementation
 ------------------
 
-.. autoclass:: AsyncUDPNetworkServer
+.. automodule:: easynetwork.servers.async_udp
    :members:
    :inherited-members:
 
@@ -40,33 +38,25 @@ UDP Implementation
 Synchronous Server Objects
 ==========================
 
-Abstract Base Class
--------------------
-
-.. autoclass:: easynetwork.servers.abc::AbstractNetworkServer
-   :members:
-   :special-members: __enter__, __exit__
-
 TCP Implementation
 ------------------
 
-.. autoclass:: StandaloneTCPNetworkServer
+.. automodule:: easynetwork.servers.standalone_tcp
    :members:
    :inherited-members:
 
 UDP Implementation
 ------------------
 
-.. autoclass:: StandaloneUDPNetworkServer
+.. automodule:: easynetwork.servers.standalone_udp
    :members:
    :inherited-members:
-
 
 
 Request Handler Interface
 =========================
 
-.. currentmodule:: easynetwork.servers.handlers
+.. automodule:: easynetwork.servers.handlers
 
 .. autoclass:: AsyncStreamRequestHandler
    :members:

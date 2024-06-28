@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""Low-level transports module"""
+"""Low-level transports module."""
 
 from __future__ import annotations
 

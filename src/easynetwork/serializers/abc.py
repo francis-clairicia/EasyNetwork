@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""Network packet serializer base classes module"""
+"""Network packet serializer base classes module."""
 
 from __future__ import annotations
 

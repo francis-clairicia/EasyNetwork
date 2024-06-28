@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""Low-level asynchronous endpoints module"""
+"""Low-level asynchronous endpoints module for datagram-based communication."""
 
 from __future__ import annotations
 

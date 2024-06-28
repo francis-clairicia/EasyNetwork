@@ -12,7 +12,15 @@
 # limitations under the License.
 #
 #
-"""cbor-based network packet serializer module"""
+"""``cbor``-based network packet serializer module.
+
+The `CBOR <https://cbor.io>`_ is an alternative representation of the ``JSON`` data models.
+
+See Also:
+
+    :ref:`optional-dependencies`
+        Explains how to install ``cbor`` extra.
+"""
 
 from __future__ import annotations
 

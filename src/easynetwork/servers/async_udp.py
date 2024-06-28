@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""Asynchronous network server module"""
+"""Asynchronous UDP Network client implementation module."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ from ..exceptions import ClientClosedError, ServerAlreadyRunning, ServerClosedEr
 from ..lowlevel import _utils
 from ..lowlevel._final import runtime_final_class
 from ..lowlevel.api_async.backend.abc import AsyncBackend, CancelScope, IEvent, Task, TaskGroup
-from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendToken, ensure_backend
+from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendLiteral, ensure_backend
 from ..lowlevel.api_async.servers import datagram as _datagram_server
 from ..lowlevel.api_async.transports.abc import AsyncDatagramListener
 from ..lowlevel.socket import INETSocketAttribute, SocketAddress, SocketProxy, new_socket_address
@@ -65,7 +65,7 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
         port: int,
         protocol: DatagramProtocol[_T_Response, _T_Request],
         request_handler: AsyncDatagramRequestHandler[_T_Request, _T_Response],
-        backend: AsyncBackend | BuiltinAsyncBackendToken | None = None,
+        backend: AsyncBackend | BuiltinAsyncBackendLiteral | None = None,
         *,
         reuse_port: bool = False,
         logger: logging.Logger | None = None,

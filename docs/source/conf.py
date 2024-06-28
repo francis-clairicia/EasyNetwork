@@ -52,10 +52,15 @@ highlight_language = "python3"
 manpages_url = "https://manpages.debian.org/{path}"
 
 templates_path = []
-exclude_patterns = ["_include", "_extensions", "_static"]
+exclude_patterns = [
+    "_include",
+    "_extensions",
+    "_static",
+    "_build",  # <- Created by readthedocs.io
+]
 
 rst_prolog = """
-.. ifconfig:: '.dev' in release or html_context.get('current_version') == 'latest'
+.. ifconfig:: html_context.get('current_version') == 'latest'
 
    .. warning::
 
@@ -70,7 +75,7 @@ autoclass_content = "class"
 autodoc_class_signature = "separated"
 autodoc_member_order = "bysource"
 autodoc_default_options = {
-    "undoc-members": None,
+    "undoc-members": None,  # TODO: To remove when all the project have docstrings
     "member-order": "bysource",
     "no-value": None,
     "show-inheritance": None,
@@ -86,13 +91,14 @@ autodoc_type_aliases = {
     "contextvars.Context": "contextvars.Context",
     "MemoryBIO": "ssl.MemoryBIO",
     "Pickler": "pickle.Pickler",
-    "ReadableBuffer": "bytes | bytearray | memoryview",
+    "ReadableBuffer": "bytes | bytearray | memoryview | collections.abc.Buffer",
     "SSLContext": "ssl.SSLContext",
+    "SSLObject": "ssl.SSLObject",
     "SSLSession": "ssl.SSLSession",
     "SSLSocket": "ssl.SSLSocket",
     "Struct": "struct.Struct",
     "Unpickler": "pickle.Unpickler",
-    "WriteableBuffer": "bytearray | memoryview",
+    "WriteableBuffer": "bytearray | memoryview | collections.abc.Buffer",
     "ZLibCompress": "zlib.Compress",
     "ZLibDecompress": "zlib.Decompress",
 }

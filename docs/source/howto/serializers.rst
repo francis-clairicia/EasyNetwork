@@ -244,7 +244,7 @@ At each :keyword:`yield` checkpoint, the endpoint implementation sends to the ge
       The proposal to enhance the API and syntax of generators, making them usable as simple coroutines.
 
    :pep:`380` — Syntax for Delegating to a Subgenerator
-      The proposal to introduce the ``yield_from`` syntax, making delegation to subgenerators easy.
+      The proposal to introduce the ``yield from`` syntax, making delegation to subgenerators easy.
 
 
 Parsing Error

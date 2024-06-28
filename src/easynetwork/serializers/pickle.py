@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""pickle-based packet serializer module"""
+"""``pickle``-based packet serializer module."""
 
 from __future__ import annotations
 

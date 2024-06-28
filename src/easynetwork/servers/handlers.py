@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""Asynchronous network servers' request handler base classes module"""
+"""Asynchronous network servers' request handler base classes module."""
 
 from __future__ import annotations
 

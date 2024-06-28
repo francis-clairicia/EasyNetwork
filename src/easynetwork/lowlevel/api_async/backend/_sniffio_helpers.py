@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""Helper module for sniffio integration"""
+"""Helper module for sniffio integration."""
 
 from __future__ import annotations
 

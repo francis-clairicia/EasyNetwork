@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""Common type variables for EasyNetwork's classes"""
+"""Common type variables for EasyNetwork's classes."""
 
 from __future__ import annotations
 
@@ -30,9 +30,6 @@ import typing
 
 if typing.TYPE_CHECKING:
     from _typeshed import WriteableBuffer
-else:  # pragma: no cover
-    # Needed for sphinx-autodoc
-    WriteableBuffer = bytearray | memoryview
 
 _T_SentDTOPacket = typing.TypeVar("_T_SentDTOPacket")
 _T_ReceivedDTOPacket = typing.TypeVar("_T_ReceivedDTOPacket")

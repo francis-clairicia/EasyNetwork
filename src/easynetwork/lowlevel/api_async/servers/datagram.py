@@ -12,11 +12,11 @@
 # limitations under the License.
 #
 #
-"""Low-level asynchronous datagram servers module"""
+"""Low-level asynchronous datagram servers module."""
 
 from __future__ import annotations
 
-__all__ = ["AsyncDatagramServer"]
+__all__ = ["AsyncDatagramServer", "DatagramClientContext"]
 
 import contextlib
 import contextvars
@@ -58,7 +58,7 @@ class DatagramClientContext(Generic[_T_Response, _T_Address]):
     )
 
     address: _T_Address
-    """The client address"""
+    """The client address."""
 
     server: AsyncDatagramServer[Any, _T_Response, _T_Address]
     """The server which receives the datagram."""

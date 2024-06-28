@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""Low-level synchronous API module"""
+"""Low-level synchronous API module."""
 
 from __future__ import annotations
 

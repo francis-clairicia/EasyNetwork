@@ -12,7 +12,10 @@
 # limitations under the License.
 #
 #
-"""Low-level transports module"""
+""":mod:`selectors` transports module.
+
+Here are abstract base classes which use :mod:`selectors` module to perform I/O polling.
+"""
 
 from __future__ import annotations
 
@@ -104,8 +107,8 @@ class SelectorBaseTransport(transports.BaseTransport):
         """
         Calls `callback` without argument and returns the output.
 
-        If the callable raises :class:`WouldBlockOnRead` or :class:`WouldBlockOnWrite`, waits for ``fileno`` to be
-        available for reading or writing respectively, and retries to call the callback.
+        If the callable raises :class:`WouldBlockOnRead` or :class:`WouldBlockOnWrite`, waits for
+        :attr:`~.WouldBlockOnRead.fileno` to be available for reading or writing respectively, and retries to call the callback.
 
         Parameters:
             callback: the function to call.

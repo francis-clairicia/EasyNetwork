@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""Asynchronous network server module"""
+"""Asynchronous TCP Network server implementation module."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ from ..exceptions import ClientClosedError, ServerAlreadyRunning, ServerClosedEr
 from ..lowlevel import _utils, constants
 from ..lowlevel._final import runtime_final_class
 from ..lowlevel.api_async.backend.abc import AsyncBackend, CancelScope, IEvent, Task, TaskGroup
-from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendToken, ensure_backend
+from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendLiteral, ensure_backend
 from ..lowlevel.api_async.servers import stream as _stream_server
 from ..lowlevel.api_async.transports.abc import AsyncListener, AsyncStreamTransport
 from ..lowlevel.socket import (
@@ -80,7 +80,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
         port: int,
         protocol: AnyStreamProtocolType[_T_Response, _T_Request],
         request_handler: AsyncStreamRequestHandler[_T_Request, _T_Response],
-        backend: AsyncBackend | BuiltinAsyncBackendToken | None = None,
+        backend: AsyncBackend | BuiltinAsyncBackendLiteral | None = None,
         *,
         ssl: SSLContext | None = None,
         ssl_handshake_timeout: float | None = None,
@@ -386,7 +386,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
     @contextlib.asynccontextmanager
     async def __client_initializer(
         self,
-        lowlevel_client: _stream_server.Client[_T_Response],
+        lowlevel_client: _stream_server.ConnectedStreamClient[_T_Response],
     ) -> AsyncIterator[AsyncStreamClient[_T_Response] | None]:
         async with contextlib.AsyncExitStack() as client_exit_stack:
             self.__attach_server()
@@ -512,9 +512,9 @@ class _ConnectedClientAPI(AsyncStreamClient[_T_Response]):
     def __init__(
         self,
         address: SocketAddress,
-        client: _stream_server.Client[_T_Response],
+        client: _stream_server.ConnectedStreamClient[_T_Response],
     ) -> None:
-        self.__client: _stream_server.Client[_T_Response] = client
+        self.__client: _stream_server.ConnectedStreamClient[_T_Response] = client
         self.__closing: bool = False
         self.__send_lock = client.backend().create_lock()
         self.__proxy: SocketProxy = SocketProxy(client.extra(INETSocketAttribute.socket))

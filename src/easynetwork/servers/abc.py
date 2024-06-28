@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""Asynchronous network server module"""
+"""Network server interfaces definition module."""
 
 from __future__ import annotations
 

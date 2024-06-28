@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""Generic network servers module"""
+"""Generic network servers module."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ from ..exceptions import ServerAlreadyRunning, ServerClosedError
 from ..lowlevel import _utils
 from ..lowlevel._lock import ForkSafeLock
 from ..lowlevel.api_async.backend.abc import AsyncBackend, ThreadsPortal
-from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendToken, ensure_backend
+from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendLiteral, ensure_backend
 from ..lowlevel.socket import SocketAddress
 from .abc import AbstractAsyncNetworkServer, AbstractNetworkServer, SupportsEventSet
 
@@ -52,7 +52,7 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer, Generic[_T_AsyncSer
 
     def __init__(
         self,
-        backend: AsyncBackend | BuiltinAsyncBackendToken | None,
+        backend: AsyncBackend | BuiltinAsyncBackendLiteral | None,
         server_factory: Callable[[AsyncBackend], _T_AsyncServer],
         *,
         runner_options: Mapping[str, Any] | None = None,

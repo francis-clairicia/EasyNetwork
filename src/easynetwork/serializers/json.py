@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""json-based packet serializer module"""
+"""``json``-based packet serializer module."""
 
 from __future__ import annotations
 

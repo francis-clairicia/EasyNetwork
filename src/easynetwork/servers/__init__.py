@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""Network server module"""
+"""Network server module."""
 
 from __future__ import annotations
 

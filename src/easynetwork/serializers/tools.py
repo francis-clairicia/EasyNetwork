@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""Serializer implementation tools module"""
+"""Serializer implementation tools module."""
 
 from __future__ import annotations
 

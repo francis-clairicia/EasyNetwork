@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""Asynchronous network client module"""
+"""Asynchronous UDP Network client implementation module."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ from .._typevars import _T_ReceivedPacket, _T_SentPacket
 from ..exceptions import ClientClosedError
 from ..lowlevel import _utils, constants
 from ..lowlevel.api_async.backend.abc import AsyncBackend, CancelScope, ILock
-from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendToken, ensure_backend
+from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendLiteral, ensure_backend
 from ..lowlevel.api_async.endpoints.datagram import AsyncDatagramEndpoint
 from ..lowlevel.api_async.transports.abc import AsyncDatagramTransport
 from ..lowlevel.socket import INETSocketAttribute, SocketAddress, SocketProxy, new_socket_address
@@ -72,7 +72,7 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         address: tuple[str, int],
         /,
         protocol: DatagramProtocol[_T_SentPacket, _T_ReceivedPacket],
-        backend: AsyncBackend | BuiltinAsyncBackendToken | None = ...,
+        backend: AsyncBackend | BuiltinAsyncBackendLiteral | None = ...,
         *,
         local_address: tuple[str, int] | None = ...,
         family: int = ...,
@@ -84,7 +84,7 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         socket: _socket.socket,
         /,
         protocol: DatagramProtocol[_T_SentPacket, _T_ReceivedPacket],
-        backend: AsyncBackend | BuiltinAsyncBackendToken | None = ...,
+        backend: AsyncBackend | BuiltinAsyncBackendLiteral | None = ...,
     ) -> None: ...
 
     def __init__(
@@ -92,7 +92,7 @@ class AsyncUDPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         __arg: tuple[str, int] | _socket.socket,
         /,
         protocol: DatagramProtocol[_T_SentPacket, _T_ReceivedPacket],
-        backend: AsyncBackend | BuiltinAsyncBackendToken | None = None,
+        backend: AsyncBackend | BuiltinAsyncBackendLiteral | None = None,
         **kwargs: Any,
     ) -> None:
         """

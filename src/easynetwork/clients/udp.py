@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""UDP Network client implementation module"""
+"""UDP Network client implementation module."""
 
 from __future__ import annotations
 

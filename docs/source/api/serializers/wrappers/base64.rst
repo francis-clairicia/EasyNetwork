@@ -2,7 +2,7 @@
 Base64 Encoder Serializer
 *************************
 
-.. currentmodule:: easynetwork.serializers.wrapper
+.. automodule:: easynetwork.serializers.wrapper.base64
 
 .. autoclass:: Base64EncoderSerializer
    :members:

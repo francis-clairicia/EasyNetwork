@@ -9,28 +9,28 @@ Clients API
 
 ------
 
-Asynchronous Client Objects (``async def``)
-===========================================
+Abstract Base Classes
+=====================
 
-Abstract Base Class
--------------------
-
-.. autoclass:: easynetwork.clients.abc::AbstractAsyncNetworkClient
+.. automodule:: easynetwork.clients.abc
    :members:
    :special-members: __aenter__, __aexit__
 
 
+Asynchronous Client Objects (``async def``)
+===========================================
+
 TCP Implementation
 ------------------
 
-.. autoclass:: AsyncTCPNetworkClient
+.. automodule:: easynetwork.clients.async_tcp
    :members:
    :inherited-members:
 
 UDP Implementation
 ------------------
 
-.. autoclass:: AsyncUDPNetworkClient
+.. automodule:: easynetwork.clients.async_udp
    :members:
    :inherited-members:
 
@@ -38,24 +38,16 @@ UDP Implementation
 Synchronous Client Objects
 ==========================
 
-Abstract Base Class
--------------------
-
-.. autoclass:: easynetwork.clients.abc::AbstractNetworkClient
-   :members:
-   :special-members: __enter__, __exit__
-
-
 TCP Implementation
 ------------------
 
-.. autoclass:: TCPNetworkClient
+.. automodule:: easynetwork.clients.tcp
    :members:
    :inherited-members:
 
 UDP Implementation
 ------------------
 
-.. autoclass:: UDPNetworkClient
+.. automodule:: easynetwork.clients.udp
    :members:
    :inherited-members:

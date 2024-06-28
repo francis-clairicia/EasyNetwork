@@ -122,7 +122,7 @@ Cancellation And Timeouts
          :pyobject: TimeoutYieldedRequestHandler.handle
          :dedent:
          :linenos:
-         :emphasize-lines: 4,15-17
+         :emphasize-lines: 4,16-18
 
    .. tab:: Using ``with``
 

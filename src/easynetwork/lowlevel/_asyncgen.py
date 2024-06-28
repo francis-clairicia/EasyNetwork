@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""Async generators helper module"""
+"""Async generators helper module."""
 
 from __future__ import annotations
 

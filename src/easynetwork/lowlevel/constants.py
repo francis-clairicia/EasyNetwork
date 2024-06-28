@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""EasyNetwork's constants module"""
+"""EasyNetwork's constants module."""
 
 from __future__ import annotations
 

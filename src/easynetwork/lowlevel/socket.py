@@ -12,7 +12,7 @@
 # limitations under the License.
 #
 #
-"""Network socket module"""
+"""Network socket helper module."""
 
 from __future__ import annotations
 
@@ -119,7 +119,7 @@ class TLSAttribute(typed_attr.TypedAttributeSet):
     """:data:`True` if this stream does (and expects) a closing TLS handshake when the stream is being closed."""
 
     tls_version: str = typed_attr.typed_attribute()
-    """the TLS protocol version (e.g. TLSv1.2)"""
+    """the TLS protocol version (e.g. TLSv1.2)."""
 
 
 class IPv4SocketAddress(NamedTuple):
@@ -155,7 +155,6 @@ class IPv6SocketAddress(NamedTuple):
 
 
 SocketAddress: TypeAlias = IPv4SocketAddress | IPv6SocketAddress
-"""Alias for :class:`IPv4SocketAddress` | :class:`IPv6SocketAddress`"""
 
 
 @overload
@@ -507,10 +506,10 @@ class socket_linger(NamedTuple):
     """
 
     enabled: bool
-    """Linger active"""
+    """Linger active."""
 
     timeout: int
-    """How many seconds to linger for (if active)"""
+    """How many seconds to linger for (if active)."""
 
 
 def get_socket_linger_struct() -> Struct:
