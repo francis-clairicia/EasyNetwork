@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from easynetwork.lowlevel._asyncio.backend import AsyncIOBackend
 from easynetwork.lowlevel.api_async.backend import _sniffio_helpers
+from easynetwork.lowlevel.api_async.backend._asyncio.backend import AsyncIOBackend
 from easynetwork.lowlevel.api_async.backend.utils import ensure_backend
 
 import pytest

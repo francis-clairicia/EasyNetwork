@@ -29,9 +29,9 @@ import warnings
 from collections.abc import Callable, Coroutine, Mapping
 from typing import Any, NoReturn, final
 
-from ... import _utils, socket as socket_tools
-from ...api_async.backend.abc import AsyncBackend, TaskGroup
-from ...api_async.transports import abc as transports
+from ..... import _utils, socket as socket_tools
+from ....transports import abc as transports
+from ...abc import AsyncBackend, TaskGroup
 from .._flow_control import WriteFlowControl
 from .endpoint import _monkeypatch_transport
 

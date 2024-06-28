@@ -57,7 +57,7 @@ def ensure_backend(backend: AsyncBackend | BuiltinAsyncBackendLiteral | None) ->
 
     match backend:
         case "asyncio":
-            from ..._asyncio.backend import AsyncIOBackend
+            from ._asyncio.backend import AsyncIOBackend
 
             return AsyncIOBackend()
         case AsyncBackend():

@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator, Callable
 from typing import TYPE_CHECKING, Any, NoReturn
 
 from easynetwork.exceptions import UnsupportedOperation
-from easynetwork.lowlevel._asyncio.backend import AsyncIOBackend
+from easynetwork.lowlevel.api_async.backend._asyncio.backend import AsyncIOBackend
 from easynetwork.lowlevel.api_async.transports.abc import AsyncListener, AsyncStreamTransport
 from easynetwork.lowlevel.api_async.transports.tls import AsyncTLSListener, AsyncTLSStreamTransport
 from easynetwork.lowlevel.constants import NOT_CONNECTED_SOCKET_ERRNOS, SSL_SHUTDOWN_TIMEOUT as DEFAULT_SSL_SHUTDOWN_TIMEOUT

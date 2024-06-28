@@ -31,7 +31,7 @@ import socket as _socket
 import warnings
 from typing import Any, final
 
-from ... import _utils
+from ..... import _utils
 from .._flow_control import WriteFlowControl
 
 

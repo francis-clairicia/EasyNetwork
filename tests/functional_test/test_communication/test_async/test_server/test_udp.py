@@ -8,9 +8,9 @@ from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, 
 from typing import Any
 
 from easynetwork.exceptions import BaseProtocolParseError, ClientClosedError, DatagramProtocolParseError, DeserializeError
-from easynetwork.lowlevel._asyncio.backend import AsyncIOBackend
-from easynetwork.lowlevel._asyncio.datagram.endpoint import DatagramEndpoint, create_datagram_endpoint
-from easynetwork.lowlevel._asyncio.datagram.listener import DatagramListenerSocketAdapter
+from easynetwork.lowlevel.api_async.backend._asyncio.backend import AsyncIOBackend
+from easynetwork.lowlevel.api_async.backend._asyncio.datagram.endpoint import DatagramEndpoint, create_datagram_endpoint
+from easynetwork.lowlevel.api_async.backend._asyncio.datagram.listener import DatagramListenerSocketAdapter
 from easynetwork.lowlevel.socket import SocketAddress
 from easynetwork.protocol import DatagramProtocol
 from easynetwork.servers.async_udp import AsyncUDPNetworkServer

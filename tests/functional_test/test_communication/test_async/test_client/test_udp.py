@@ -7,7 +7,7 @@ from socket import AF_INET, socket as Socket
 
 from easynetwork.clients.async_udp import AsyncUDPNetworkClient
 from easynetwork.exceptions import ClientClosedError, DatagramProtocolParseError
-from easynetwork.lowlevel._asyncio.datagram.endpoint import DatagramEndpoint, create_datagram_endpoint
+from easynetwork.lowlevel.api_async.backend._asyncio.datagram.endpoint import DatagramEndpoint, create_datagram_endpoint
 from easynetwork.lowlevel.socket import IPv4SocketAddress, IPv6SocketAddress, SocketProxy
 from easynetwork.protocol import DatagramProtocol
 

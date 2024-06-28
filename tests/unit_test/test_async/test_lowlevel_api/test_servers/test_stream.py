@@ -8,9 +8,9 @@ import warnings
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from typing import TYPE_CHECKING, Any, NoReturn
 
-from easynetwork.lowlevel._asyncio.backend import AsyncIOBackend
-from easynetwork.lowlevel._asyncio.tasks import TaskGroup
 from easynetwork.lowlevel._stream import StreamDataProducer
+from easynetwork.lowlevel.api_async.backend._asyncio.backend import AsyncIOBackend
+from easynetwork.lowlevel.api_async.backend._asyncio.tasks import TaskGroup
 from easynetwork.lowlevel.api_async.servers.stream import AsyncStreamServer, ConnectedStreamClient
 from easynetwork.lowlevel.api_async.transports.abc import AsyncListener, AsyncStreamTransport, AsyncStreamWriteTransport
 from easynetwork.warnings import ManualBufferAllocationWarning

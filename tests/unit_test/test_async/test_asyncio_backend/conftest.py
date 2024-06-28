@@ -4,7 +4,7 @@ import asyncio
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from easynetwork.lowlevel._asyncio.datagram.endpoint import DatagramEndpoint
+from easynetwork.lowlevel.api_async.backend._asyncio.datagram.endpoint import DatagramEndpoint
 
 import pytest
 

@@ -36,9 +36,9 @@ from abc import abstractmethod
 from collections.abc import Callable, Coroutine, Mapping
 from typing import Any, Generic, NoReturn, TypeVar, final
 
-from ... import _utils, constants, socket as socket_tools
-from ...api_async.backend.abc import AsyncBackend, CancelScope, TaskGroup
-from ...api_async.transports.abc import AsyncListener, AsyncStreamTransport
+from ..... import _utils, constants, socket as socket_tools
+from ....transports.abc import AsyncListener, AsyncStreamTransport
+from ...abc import AsyncBackend, CancelScope, TaskGroup
 from ..tasks import TaskUtils
 from .socket import AsyncioTransportStreamSocketAdapter, StreamReaderBufferedProtocol
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
-from easynetwork.lowlevel._asyncio.backend import AsyncIOBackend
+from easynetwork.lowlevel.api_async.backend._asyncio.backend import AsyncIOBackend
 from easynetwork.lowlevel.api_async.endpoints.stream import AsyncStreamSenderEndpoint
 from easynetwork.lowlevel.api_async.transports.abc import AsyncStreamWriteTransport
 

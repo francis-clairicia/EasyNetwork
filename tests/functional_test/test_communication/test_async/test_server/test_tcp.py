@@ -16,9 +16,9 @@ from easynetwork.exceptions import (
     IncrementalDeserializeError,
     StreamProtocolParseError,
 )
-from easynetwork.lowlevel._asyncio._asyncio_utils import create_connection
-from easynetwork.lowlevel._asyncio.backend import AsyncIOBackend
-from easynetwork.lowlevel._asyncio.stream.listener import ListenerSocketAdapter
+from easynetwork.lowlevel.api_async.backend._asyncio._asyncio_utils import create_connection
+from easynetwork.lowlevel.api_async.backend._asyncio.backend import AsyncIOBackend
+from easynetwork.lowlevel.api_async.backend._asyncio.stream.listener import ListenerSocketAdapter
 from easynetwork.lowlevel.api_async.backend.abc import AsyncBackend
 from easynetwork.lowlevel.socket import SocketAddress, enable_socket_linger
 from easynetwork.protocol import AnyStreamProtocolType
