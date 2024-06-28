@@ -4,9 +4,9 @@ import asyncio
 from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING
 
+from easynetwork.lowlevel._asyncio.backend import AsyncIOBackend
 from easynetwork.lowlevel.api_async.backend.abc import AsyncBackend
 from easynetwork.lowlevel.api_async.transports.abc import AsyncDatagramTransport, AsyncStreamTransport
-from easynetwork.lowlevel.std_asyncio.backend import AsyncIOBackend
 
 import pytest
 
@@ -51,7 +51,7 @@ def fake_cancellation_cls() -> type[BaseException]:
 
 @pytest.fixture
 def mock_backend(fake_cancellation_cls: type[BaseException], mocker: MockerFixture) -> MagicMock:
-    from easynetwork.lowlevel.std_asyncio.tasks import CancelScope, TaskGroup
+    from easynetwork.lowlevel._asyncio.tasks import CancelScope, TaskGroup
 
     from .._utils import AsyncDummyLock
 

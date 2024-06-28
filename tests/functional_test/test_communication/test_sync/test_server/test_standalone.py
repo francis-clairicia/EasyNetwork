@@ -6,7 +6,6 @@ import time
 from collections.abc import AsyncGenerator, Iterator
 
 from easynetwork.exceptions import ServerAlreadyRunning, ServerClosedError
-from easynetwork.lowlevel.std_asyncio import AsyncIOBackend
 from easynetwork.protocol import AnyStreamProtocolType, DatagramProtocol
 from easynetwork.servers.abc import AbstractNetworkServer
 from easynetwork.servers.handlers import AsyncBaseClientInterface, AsyncDatagramRequestHandler, AsyncStreamRequestHandler
@@ -115,7 +114,7 @@ class TestStandaloneTCPNetworkServer(BaseTestStandaloneNetworkServer):
     @pytest.fixture
     @staticmethod
     def server(stream_protocol: AnyStreamProtocolType[str, str]) -> StandaloneTCPNetworkServer[str, str]:
-        return StandaloneTCPNetworkServer(None, 0, stream_protocol, EchoRequestHandler(), AsyncIOBackend())
+        return StandaloneTCPNetworkServer(None, 0, stream_protocol, EchoRequestHandler(), "asyncio")
 
     @pytest.fixture
     @staticmethod
@@ -156,7 +155,7 @@ class TestStandaloneUDPNetworkServer(BaseTestStandaloneNetworkServer):
     @pytest.fixture
     @staticmethod
     def server(datagram_protocol: DatagramProtocol[str, str]) -> StandaloneUDPNetworkServer[str, str]:
-        return StandaloneUDPNetworkServer("localhost", 0, datagram_protocol, EchoRequestHandler(), AsyncIOBackend())
+        return StandaloneUDPNetworkServer("localhost", 0, datagram_protocol, EchoRequestHandler(), "asyncio")
 
     def test____socket_property____server_is_not_running(self, server: StandaloneUDPNetworkServer[str, str]) -> None:
         with server:

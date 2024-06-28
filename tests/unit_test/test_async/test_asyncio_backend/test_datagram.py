@@ -8,16 +8,12 @@ from errno import ECONNABORTED
 from socket import AI_PASSIVE
 from typing import TYPE_CHECKING, Any, Literal, cast
 
+from easynetwork.lowlevel._asyncio.backend import AsyncIOBackend
+from easynetwork.lowlevel._asyncio.datagram.endpoint import DatagramEndpoint, DatagramEndpointProtocol, create_datagram_endpoint
+from easynetwork.lowlevel._asyncio.datagram.listener import DatagramListenerProtocol, DatagramListenerSocketAdapter
+from easynetwork.lowlevel._asyncio.datagram.socket import AsyncioTransportDatagramSocketAdapter
+from easynetwork.lowlevel._asyncio.tasks import TaskGroup as AsyncIOTaskGroup
 from easynetwork.lowlevel.socket import SocketAttribute
-from easynetwork.lowlevel.std_asyncio.backend import AsyncIOBackend
-from easynetwork.lowlevel.std_asyncio.datagram.endpoint import (
-    DatagramEndpoint,
-    DatagramEndpointProtocol,
-    create_datagram_endpoint,
-)
-from easynetwork.lowlevel.std_asyncio.datagram.listener import DatagramListenerProtocol, DatagramListenerSocketAdapter
-from easynetwork.lowlevel.std_asyncio.datagram.socket import AsyncioTransportDatagramSocketAdapter
-from easynetwork.lowlevel.std_asyncio.tasks import TaskGroup as AsyncIOTaskGroup
 
 import pytest
 import pytest_asyncio

@@ -9,8 +9,8 @@ from concurrent.futures import CancelledError as FutureCancelledError, wait as w
 from contextlib import ExitStack
 from typing import TYPE_CHECKING, Any, Literal, Required, TypedDict
 
+from easynetwork.lowlevel._asyncio.backend import AsyncIOBackend
 from easynetwork.lowlevel.api_async.backend.abc import TaskInfo
-from easynetwork.lowlevel.std_asyncio.backend import AsyncIOBackend
 
 import pytest
 
@@ -1226,7 +1226,7 @@ class TestAsyncioBackendShieldedCancellation:
             case "run_in_thread":
                 return lambda: backend.run_in_thread(time.sleep, 0.1)
             case "cancel_shielded_wait_asyncio_futures":
-                from easynetwork.lowlevel.std_asyncio.tasks import TaskUtils
+                from easynetwork.lowlevel._asyncio.tasks import TaskUtils
 
                 async def cancel_shielded_wait_asyncio_futures() -> None:
                     loop = asyncio.get_running_loop()

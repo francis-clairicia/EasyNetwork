@@ -26,8 +26,7 @@ from socket import (
 )
 from typing import TYPE_CHECKING, Any, Literal, Protocol as TypingProtocol, assert_never, cast
 
-from easynetwork.lowlevel._utils import error_from_errno
-from easynetwork.lowlevel.std_asyncio._asyncio_utils import (
+from easynetwork.lowlevel._asyncio._asyncio_utils import (
     create_connection,
     create_datagram_connection,
     ensure_resolved,
@@ -35,7 +34,8 @@ from easynetwork.lowlevel.std_asyncio._asyncio_utils import (
     wait_until_readable,
     wait_until_writable,
 )
-from easynetwork.lowlevel.std_asyncio.tasks import TaskUtils
+from easynetwork.lowlevel._asyncio.tasks import TaskUtils
+from easynetwork.lowlevel._utils import error_from_errno
 
 import pytest
 
