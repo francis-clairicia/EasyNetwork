@@ -31,14 +31,9 @@ from types import TracebackType
 from typing import Any, ClassVar, NamedTuple, Self, TypeVar, TypeVarTuple, cast, final
 from weakref import WeakKeyDictionary
 
-from .. import _utils
-from .._final import runtime_final_class
-from ..api_async.backend.abc import (
-    CancelScope as AbstractCancelScope,
-    Task as AbstractTask,
-    TaskGroup as AbstractTaskGroup,
-    TaskInfo,
-)
+from .... import _utils
+from ...._final import runtime_final_class
+from ..abc import CancelScope as AbstractCancelScope, Task as AbstractTask, TaskGroup as AbstractTaskGroup, TaskInfo
 
 _T = TypeVar("_T")
 _T_co = TypeVar("_T_co", covariant=True)

@@ -27,10 +27,10 @@ from collections.abc import Callable, Iterable, Mapping
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, final
 
-from ....exceptions import UnsupportedOperation
-from ... import _utils, socket as socket_tools
-from ...api_async.backend.abc import AsyncBackend
-from ...api_async.transports.abc import AsyncStreamTransport
+from ......exceptions import UnsupportedOperation
+from ..... import _utils, socket as socket_tools
+from ....transports.abc import AsyncStreamTransport
+from ...abc import AsyncBackend
 from .._asyncio_utils import add_flowcontrol_defaults
 from .._flow_control import WriteFlowControl
 

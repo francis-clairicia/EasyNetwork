@@ -4,8 +4,8 @@ import asyncio
 from collections.abc import Coroutine
 from typing import TYPE_CHECKING, Any
 
+from easynetwork.lowlevel.api_async.backend._asyncio.tasks import Task, TaskUtils
 from easynetwork.lowlevel.api_async.backend.abc import TaskInfo
-from easynetwork.lowlevel.std_asyncio.tasks import Task, TaskUtils
 
 import pytest
 

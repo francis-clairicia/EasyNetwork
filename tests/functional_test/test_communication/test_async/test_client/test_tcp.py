@@ -9,7 +9,6 @@ from socket import AF_INET, IPPROTO_TCP, SHUT_WR, TCP_NODELAY, socket as Socket
 from easynetwork.clients.async_tcp import AsyncTCPNetworkClient
 from easynetwork.exceptions import ClientClosedError, StreamProtocolParseError
 from easynetwork.lowlevel.socket import IPv4SocketAddress, IPv6SocketAddress, SocketProxy
-from easynetwork.lowlevel.std_asyncio.backend import AsyncIOBackend
 from easynetwork.protocol import AnyStreamProtocolType
 
 import pytest
@@ -40,19 +39,13 @@ class TestAsyncTCPNetworkClient:
         server.setblocking(False)
         return server
 
-    @pytest.fixture
-    @staticmethod
-    def asyncio_backend() -> AsyncIOBackend:
-        return AsyncIOBackend()
-
     @pytest_asyncio.fixture
     @staticmethod
     async def client(
-        asyncio_backend: AsyncIOBackend,
         socket_pair: tuple[Socket, Socket],
         stream_protocol: AnyStreamProtocolType[str, str],
     ) -> AsyncIterator[AsyncTCPNetworkClient[str, str]]:
-        async with AsyncTCPNetworkClient(socket_pair[1], stream_protocol, asyncio_backend) as client:
+        async with AsyncTCPNetworkClient(socket_pair[1], stream_protocol, "asyncio") as client:
             assert client.is_connected()
             yield client
 
@@ -320,18 +313,12 @@ class TestAsyncTCPNetworkClientConnection:
     def remote_address(server: asyncio.Server) -> tuple[str, int]:
         return server.sockets[0].getsockname()[:2]
 
-    @pytest.fixture
-    @staticmethod
-    def asyncio_backend() -> AsyncIOBackend:
-        return AsyncIOBackend()
-
     async def test____dunder_init____connect_to_server(
         self,
-        asyncio_backend: AsyncIOBackend,
         remote_address: tuple[str, int],
         stream_protocol: AnyStreamProtocolType[str, str],
     ) -> None:
-        async with AsyncTCPNetworkClient(remote_address, stream_protocol, asyncio_backend) as client:
+        async with AsyncTCPNetworkClient(remote_address, stream_protocol, "asyncio") as client:
             assert client.is_connected()
             await client.send_packet("Test")
             assert await client.recv_packet() == "Test"
@@ -341,12 +328,11 @@ class TestAsyncTCPNetworkClientConnection:
         localhost_ip: str,
         remote_address: tuple[str, int],
         stream_protocol: AnyStreamProtocolType[str, str],
-        asyncio_backend: AsyncIOBackend,
     ) -> None:
         async with AsyncTCPNetworkClient(
             remote_address,
             stream_protocol,
-            asyncio_backend,
+            "asyncio",
             local_address=(localhost_ip, 0),
         ) as client:
             await client.send_packet("Test")
@@ -356,11 +342,8 @@ class TestAsyncTCPNetworkClientConnection:
         self,
         remote_address: tuple[str, int],
         stream_protocol: AnyStreamProtocolType[str, str],
-        asyncio_backend: AsyncIOBackend,
     ) -> None:
-        async with contextlib.aclosing(
-            AsyncTCPNetworkClient(remote_address, stream_protocol, asyncio_backend),
-        ) as client:
+        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol, "asyncio")) as client:
             assert not client.is_connected()
             await client.wait_connected()
             assert client.is_connected()
@@ -371,9 +354,8 @@ class TestAsyncTCPNetworkClientConnection:
         self,
         remote_address: tuple[str, int],
         stream_protocol: AnyStreamProtocolType[str, str],
-        asyncio_backend: AsyncIOBackend,
     ) -> None:
-        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol, asyncio_backend)) as client:
+        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol, "asyncio")) as client:
             await asyncio.gather(*[client.wait_connected() for _ in range(5)])
             assert client.is_connected()
 
@@ -381,9 +363,8 @@ class TestAsyncTCPNetworkClientConnection:
         self,
         remote_address: tuple[str, int],
         stream_protocol: AnyStreamProtocolType[str, str],
-        asyncio_backend: AsyncIOBackend,
     ) -> None:
-        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol, asyncio_backend)) as client:
+        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol, "asyncio")) as client:
             assert not client.is_connected()
             assert not client.is_closing()
             await client.wait_connected()
@@ -394,9 +375,8 @@ class TestAsyncTCPNetworkClientConnection:
         self,
         remote_address: tuple[str, int],
         stream_protocol: AnyStreamProtocolType[str, str],
-        asyncio_backend: AsyncIOBackend,
     ) -> None:
-        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol, asyncio_backend)) as client:
+        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol, "asyncio")) as client:
             await client.aclose()
             with pytest.raises(ClientClosedError):
                 await client.wait_connected()
@@ -405,9 +385,8 @@ class TestAsyncTCPNetworkClientConnection:
         self,
         remote_address: tuple[str, int],
         stream_protocol: AnyStreamProtocolType[str, str],
-        asyncio_backend: AsyncIOBackend,
     ) -> None:
-        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol, asyncio_backend)) as client:
+        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol, "asyncio")) as client:
             with pytest.raises(AttributeError):
                 _ = client.socket
 
@@ -419,9 +398,8 @@ class TestAsyncTCPNetworkClientConnection:
         self,
         remote_address: tuple[str, int],
         stream_protocol: AnyStreamProtocolType[str, str],
-        asyncio_backend: AsyncIOBackend,
     ) -> None:
-        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol, asyncio_backend)) as client:
+        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol, "asyncio")) as client:
             with pytest.raises(OSError):
                 _ = client.get_local_address()
 
@@ -433,9 +411,8 @@ class TestAsyncTCPNetworkClientConnection:
         self,
         remote_address: tuple[str, int],
         stream_protocol: AnyStreamProtocolType[str, str],
-        asyncio_backend: AsyncIOBackend,
     ) -> None:
-        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol, asyncio_backend)) as client:
+        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol, "asyncio")) as client:
             with pytest.raises(OSError):
                 _ = client.get_remote_address()
 
@@ -447,9 +424,8 @@ class TestAsyncTCPNetworkClientConnection:
         self,
         remote_address: tuple[str, int],
         stream_protocol: AnyStreamProtocolType[str, str],
-        asyncio_backend: AsyncIOBackend,
     ) -> None:
-        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol, asyncio_backend)) as client:
+        async with contextlib.aclosing(AsyncTCPNetworkClient(remote_address, stream_protocol, "asyncio")) as client:
             assert not client.is_connected()
 
             await client.send_packet("Connected")
@@ -487,16 +463,10 @@ class TestAsyncSSLOverTCPNetworkClient:
     def remote_address(server: asyncio.Server) -> tuple[str, int]:
         return server.sockets[0].getsockname()[:2]
 
-    @pytest.fixture
-    @staticmethod
-    def asyncio_backend() -> AsyncIOBackend:
-        return AsyncIOBackend()
-
     async def test____dunder_init____handshake_and_shutdown(
         self,
         remote_address: tuple[str, int],
         stream_protocol: AnyStreamProtocolType[str, str],
-        asyncio_backend: AsyncIOBackend,
         client_ssl_context: ssl.SSLContext,
     ) -> None:
         # Arrange
@@ -505,7 +475,7 @@ class TestAsyncSSLOverTCPNetworkClient:
         async with AsyncTCPNetworkClient(
             remote_address,
             stream_protocol,
-            asyncio_backend,
+            "asyncio",
             ssl=client_ssl_context,
             server_hostname="test.example.com",
         ) as client:
@@ -517,7 +487,6 @@ class TestAsyncSSLOverTCPNetworkClient:
         remote_address: tuple[str, int],
         stream_protocol: AnyStreamProtocolType[str, str],
         client_ssl_context: ssl.SSLContext,
-        asyncio_backend: AsyncIOBackend,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         # Arrange
@@ -527,7 +496,7 @@ class TestAsyncSSLOverTCPNetworkClient:
         async with AsyncTCPNetworkClient(
             remote_address,
             stream_protocol,
-            asyncio_backend,
+            "asyncio",
             ssl=True,
             server_hostname="test.example.com",
         ) as client:
@@ -539,7 +508,6 @@ class TestAsyncSSLOverTCPNetworkClient:
         remote_address: tuple[str, int],
         stream_protocol: AnyStreamProtocolType[str, str],
         client_ssl_context: ssl.SSLContext,
-        asyncio_backend: AsyncIOBackend,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         # Arrange
@@ -551,7 +519,7 @@ class TestAsyncSSLOverTCPNetworkClient:
         async with AsyncTCPNetworkClient(
             remote_address,
             stream_protocol,
-            asyncio_backend,
+            "asyncio",
             ssl=True,
             server_hostname="",
         ) as client:
@@ -564,7 +532,6 @@ class TestAsyncSSLOverTCPNetworkClient:
         self,
         remote_address: tuple[str, int],
         stream_protocol: AnyStreamProtocolType[str, str],
-        asyncio_backend: AsyncIOBackend,
         client_ssl_context: ssl.SSLContext,
     ) -> None:
         # Arrange
@@ -574,7 +541,7 @@ class TestAsyncSSLOverTCPNetworkClient:
             _ = AsyncTCPNetworkClient(
                 remote_address,
                 stream_protocol,
-                asyncio_backend,
+                "asyncio",
                 ssl=client_ssl_context,
                 server_hostname="test.example.com",
             )
@@ -583,7 +550,6 @@ class TestAsyncSSLOverTCPNetworkClient:
         self,
         remote_address: tuple[str, int],
         stream_protocol: AnyStreamProtocolType[str, str],
-        asyncio_backend: AsyncIOBackend,
         client_ssl_context: ssl.SSLContext,
     ) -> None:
         # Arrange
@@ -592,7 +558,7 @@ class TestAsyncSSLOverTCPNetworkClient:
         async with AsyncTCPNetworkClient(
             remote_address,
             stream_protocol,
-            asyncio_backend,
+            "asyncio",
             ssl=client_ssl_context,
             server_hostname="test.example.com",
         ) as client:

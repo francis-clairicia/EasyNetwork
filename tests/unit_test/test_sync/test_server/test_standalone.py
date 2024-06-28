@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, Any
 
-from easynetwork.lowlevel.std_asyncio import AsyncIOBackend
+from easynetwork.lowlevel.api_async.backend._asyncio.backend import AsyncIOBackend
 from easynetwork.servers.standalone_tcp import StandaloneTCPNetworkServer
 from easynetwork.servers.standalone_udp import StandaloneUDPNetworkServer
 

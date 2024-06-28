@@ -17,6 +17,4 @@
 
 from __future__ import annotations
 
-__all__ = ["AsyncIOBackend"]  # type: list[str]
-
-from .backend import AsyncIOBackend
+__all__ = []  # type: list[str]

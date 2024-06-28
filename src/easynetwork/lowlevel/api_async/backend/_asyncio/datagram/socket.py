@@ -25,9 +25,9 @@ import warnings
 from collections.abc import Callable, Mapping
 from typing import Any, final
 
-from ... import _utils, socket as socket_tools
-from ...api_async.backend.abc import AsyncBackend
-from ...api_async.transports.abc import AsyncDatagramTransport
+from ..... import _utils, socket as socket_tools
+from ....transports.abc import AsyncDatagramTransport
+from ...abc import AsyncBackend
 from .endpoint import DatagramEndpoint
 
 

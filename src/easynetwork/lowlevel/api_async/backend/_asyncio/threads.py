@@ -28,10 +28,10 @@ from collections.abc import Awaitable, Callable
 from types import TracebackType
 from typing import ParamSpec, Self, TypeVar, final
 
-from .. import _lock, _utils
-from .._final import runtime_final_class
-from ..api_async.backend import _sniffio_helpers
-from ..api_async.backend.abc import ThreadsPortal as AbstractThreadsPortal
+from .... import _lock, _utils
+from ...._final import runtime_final_class
+from .. import _sniffio_helpers
+from ..abc import ThreadsPortal as AbstractThreadsPortal
 from .tasks import TaskUtils
 
 _P = ParamSpec("_P")

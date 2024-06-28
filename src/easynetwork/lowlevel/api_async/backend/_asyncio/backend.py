@@ -30,10 +30,10 @@ import sys
 from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
 from typing import Any, NoReturn, ParamSpec, TypeVar, TypeVarTuple
 
-from .. import _utils
-from ..api_async.backend import _sniffio_helpers
-from ..api_async.backend.abc import AsyncBackend as AbstractAsyncBackend, ILock, TaskInfo
-from ..constants import HAPPY_EYEBALLS_DELAY as _DEFAULT_HAPPY_EYEBALLS_DELAY
+from .... import _utils
+from ....constants import HAPPY_EYEBALLS_DELAY as _DEFAULT_HAPPY_EYEBALLS_DELAY
+from .. import _sniffio_helpers
+from ..abc import AsyncBackend as AbstractAsyncBackend, ILock, TaskInfo
 from ._asyncio_utils import (
     create_connection,
     create_datagram_connection,

@@ -3,9 +3,9 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
+from easynetwork.lowlevel.api_async.backend._asyncio.backend import AsyncIOBackend
 from easynetwork.lowlevel.api_async.endpoints.datagram import AsyncDatagramEndpoint
 from easynetwork.lowlevel.api_async.transports.abc import AsyncDatagramTransport
-from easynetwork.lowlevel.std_asyncio.backend import AsyncIOBackend
 
 import pytest
 import pytest_asyncio

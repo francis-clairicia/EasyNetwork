@@ -13,16 +13,19 @@ from errno import EBADF, EBUSY, errorcode as errno_errorcode
 from typing import TYPE_CHECKING, Any, Literal, TypeAlias
 
 from easynetwork.exceptions import UnsupportedOperation
-from easynetwork.lowlevel.constants import ACCEPT_CAPACITY_ERRNOS, NOT_CONNECTED_SOCKET_ERRNOS
-from easynetwork.lowlevel.socket import SocketAttribute
-from easynetwork.lowlevel.std_asyncio.backend import AsyncIOBackend
-from easynetwork.lowlevel.std_asyncio.stream.listener import (
+from easynetwork.lowlevel.api_async.backend._asyncio.backend import AsyncIOBackend
+from easynetwork.lowlevel.api_async.backend._asyncio.stream.listener import (
     AbstractAcceptedSocketFactory,
     AcceptedSocketFactory,
     ListenerSocketAdapter,
 )
-from easynetwork.lowlevel.std_asyncio.stream.socket import AsyncioTransportStreamSocketAdapter, StreamReaderBufferedProtocol
-from easynetwork.lowlevel.std_asyncio.tasks import CancelScope, TaskGroup as AsyncIOTaskGroup
+from easynetwork.lowlevel.api_async.backend._asyncio.stream.socket import (
+    AsyncioTransportStreamSocketAdapter,
+    StreamReaderBufferedProtocol,
+)
+from easynetwork.lowlevel.api_async.backend._asyncio.tasks import CancelScope, TaskGroup as AsyncIOTaskGroup
+from easynetwork.lowlevel.constants import ACCEPT_CAPACITY_ERRNOS, NOT_CONNECTED_SOCKET_ERRNOS
+from easynetwork.lowlevel.socket import SocketAttribute
 
 import pytest
 import pytest_asyncio
