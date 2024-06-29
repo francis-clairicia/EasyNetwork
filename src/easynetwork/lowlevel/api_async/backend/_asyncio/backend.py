@@ -19,8 +19,6 @@ from __future__ import annotations
 
 __all__ = ["AsyncIOBackend"]
 
-import asyncio
-import asyncio.base_events
 import contextvars
 import functools
 import math
@@ -32,21 +30,9 @@ from typing import Any, NoReturn, ParamSpec, TypeVar, TypeVarTuple
 
 from .... import _utils
 from ....constants import HAPPY_EYEBALLS_DELAY as _DEFAULT_HAPPY_EYEBALLS_DELAY
+from ...transports.abc import AsyncDatagramListener, AsyncDatagramTransport, AsyncListener, AsyncStreamTransport
 from .. import _sniffio_helpers
-from ..abc import AsyncBackend as AbstractAsyncBackend, ILock, TaskInfo
-from ._asyncio_utils import (
-    create_connection,
-    create_datagram_connection,
-    open_listener_sockets_from_getaddrinfo_result,
-    resolve_local_addresses,
-)
-from .datagram.endpoint import create_datagram_endpoint
-from .datagram.listener import DatagramListenerSocketAdapter
-from .datagram.socket import AsyncioTransportDatagramSocketAdapter
-from .stream.listener import AcceptedSocketFactory, ListenerSocketAdapter
-from .stream.socket import AsyncioTransportStreamSocketAdapter, StreamReaderBufferedProtocol
-from .tasks import CancelScope, TaskGroup, TaskUtils
-from .threads import ThreadsPortal
+from ..abc import AsyncBackend as AbstractAsyncBackend, CancelScope, ICondition, IEvent, ILock, TaskGroup, TaskInfo, ThreadsPortal
 
 _P = ParamSpec("_P")
 _T = TypeVar("_T")
@@ -55,7 +41,23 @@ _T_PosArgs = TypeVarTuple("_T_PosArgs")
 
 
 class AsyncIOBackend(AbstractAsyncBackend):
-    __slots__ = ()
+    __slots__ = (
+        "__asyncio",
+        "__coro_yield",
+        "__cancel_shielded_coro_yield",
+        "__cancel_shielded_await",
+    )
+
+    def __init__(self) -> None:
+        import asyncio
+
+        from .tasks import TaskUtils
+
+        self.__asyncio = asyncio
+
+        self.__coro_yield = TaskUtils.coro_yield
+        self.__cancel_shielded_coro_yield = TaskUtils.cancel_shielded_coro_yield
+        self.__cancel_shielded_await = TaskUtils.cancel_shielded_await
 
     def bootstrap(
         self,
@@ -63,40 +65,46 @@ class AsyncIOBackend(AbstractAsyncBackend):
         *args: *_T_PosArgs,
         runner_options: Mapping[str, Any] | None = None,
     ) -> _T:
-        with asyncio.Runner(**(runner_options or {})) as runner:
+        with self.__asyncio.Runner(**(runner_options or {})) as runner:
             return runner.run(coro_func(*args))
 
     async def coro_yield(self) -> None:
-        await TaskUtils.coro_yield()
+        await self.__coro_yield()
 
     async def cancel_shielded_coro_yield(self) -> None:
-        await TaskUtils.cancel_shielded_coro_yield()
+        await self.__cancel_shielded_coro_yield()
 
     def get_cancelled_exc_class(self) -> type[BaseException]:
-        return asyncio.CancelledError
+        return self.__asyncio.CancelledError
 
     async def ignore_cancellation(self, coroutine: Awaitable[_T_co]) -> _T_co:
-        return await TaskUtils.cancel_shielded_await(coroutine)
+        return await self.__cancel_shielded_await(coroutine)
 
     def open_cancel_scope(self, *, deadline: float = math.inf) -> CancelScope:
+        from .tasks import CancelScope
+
         return CancelScope(deadline=deadline)
 
     def current_time(self) -> float:
-        loop = asyncio.get_running_loop()
+        loop = self.__asyncio.get_running_loop()
         return loop.time()
 
     async def sleep(self, delay: float) -> None:
-        await asyncio.sleep(delay)
+        await self.__asyncio.sleep(delay)
 
     async def sleep_forever(self) -> NoReturn:
-        loop = asyncio.get_running_loop()
+        loop = self.__asyncio.get_running_loop()
         await loop.create_future()
         raise AssertionError("await an unused future cannot end in any other way than by cancellation")
 
     def create_task_group(self) -> TaskGroup:
+        from .tasks import TaskGroup
+
         return TaskGroup()
 
     def get_current_task(self) -> TaskInfo:
+        from .tasks import TaskUtils
+
         current_task = TaskUtils.current_asyncio_task()
         return TaskUtils.create_task_info(current_task)
 
@@ -107,9 +115,11 @@ class AsyncIOBackend(AbstractAsyncBackend):
         *,
         local_address: tuple[str, int] | None = None,
         happy_eyeballs_delay: float | None = None,
-    ) -> AsyncioTransportStreamSocketAdapter:
+    ) -> AsyncStreamTransport:
         if happy_eyeballs_delay is None:
             happy_eyeballs_delay = _DEFAULT_HAPPY_EYEBALLS_DELAY
+
+        from ._asyncio_utils import create_connection
 
         socket = await create_connection(
             host,
@@ -120,9 +130,11 @@ class AsyncIOBackend(AbstractAsyncBackend):
 
         return await self.wrap_stream_socket(socket)
 
-    async def wrap_stream_socket(self, socket: _socket.socket) -> AsyncioTransportStreamSocketAdapter:
+    async def wrap_stream_socket(self, socket: _socket.socket) -> AsyncStreamTransport:
+        from .stream.socket import AsyncioTransportStreamSocketAdapter, StreamReaderBufferedProtocol
+
         socket.setblocking(False)
-        loop = asyncio.get_running_loop()
+        loop = self.__asyncio.get_running_loop()
         transport, protocol = await loop.create_connection(
             _utils.make_callback(StreamReaderBufferedProtocol, loop=loop),
             sock=socket,
@@ -136,9 +148,12 @@ class AsyncIOBackend(AbstractAsyncBackend):
         backlog: int,
         *,
         reuse_port: bool = False,
-    ) -> Sequence[ListenerSocketAdapter[AsyncioTransportStreamSocketAdapter]]:
+    ) -> Sequence[AsyncListener[AsyncStreamTransport]]:
         if not isinstance(backlog, int):
             raise TypeError("backlog: Expected an integer")
+
+        from ._asyncio_utils import open_listener_sockets_from_getaddrinfo_result, resolve_local_addresses
+        from .stream.listener import AcceptedSocketFactory, ListenerSocketAdapter
 
         reuse_address: bool = os.name not in ("nt", "cygwin") and sys.platform != "cygwin"
         hosts: Sequence[str | None]
@@ -165,7 +180,8 @@ class AsyncIOBackend(AbstractAsyncBackend):
         )
 
         factory = AcceptedSocketFactory()
-        return [ListenerSocketAdapter(self, sock, factory) for sock in sockets]
+        listeners = [ListenerSocketAdapter(self, sock, factory) for sock in sockets]
+        return listeners
 
     async def create_udp_endpoint(
         self,
@@ -174,7 +190,9 @@ class AsyncIOBackend(AbstractAsyncBackend):
         *,
         local_address: tuple[str, int] | None = None,
         family: int = _socket.AF_UNSPEC,
-    ) -> AsyncioTransportDatagramSocketAdapter:
+    ) -> AsyncDatagramTransport:
+        from ._asyncio_utils import create_datagram_connection
+
         socket = await create_datagram_connection(
             remote_host,
             remote_port,
@@ -183,7 +201,10 @@ class AsyncIOBackend(AbstractAsyncBackend):
         )
         return await self.wrap_connected_datagram_socket(socket)
 
-    async def wrap_connected_datagram_socket(self, socket: _socket.socket) -> AsyncioTransportDatagramSocketAdapter:
+    async def wrap_connected_datagram_socket(self, socket: _socket.socket) -> AsyncDatagramTransport:
+        from .datagram.endpoint import create_datagram_endpoint
+        from .datagram.socket import AsyncioTransportDatagramSocketAdapter
+
         socket.setblocking(False)
         endpoint = await create_datagram_endpoint(sock=socket)
         return AsyncioTransportDatagramSocketAdapter(self, endpoint)
@@ -194,10 +215,11 @@ class AsyncIOBackend(AbstractAsyncBackend):
         port: int,
         *,
         reuse_port: bool = False,
-    ) -> Sequence[DatagramListenerSocketAdapter]:
-        from .datagram.listener import DatagramListenerProtocol
+    ) -> Sequence[AsyncDatagramListener[tuple[Any, ...]]]:
+        from ._asyncio_utils import open_listener_sockets_from_getaddrinfo_result, resolve_local_addresses
+        from .datagram.listener import DatagramListenerProtocol, DatagramListenerSocketAdapter
 
-        loop = asyncio.get_running_loop()
+        loop = self.__asyncio.get_running_loop()
 
         hosts: Sequence[str | None]
         if host == "" or host is None:
@@ -226,21 +248,23 @@ class AsyncIOBackend(AbstractAsyncBackend):
         listeners = [await loop.create_datagram_endpoint(protocol_factory, sock=sock) for sock in sockets]
         return [DatagramListenerSocketAdapter(self, transport, protocol) for transport, protocol in listeners]
 
-    def create_lock(self) -> asyncio.Lock:
-        return asyncio.Lock()
+    def create_lock(self) -> ILock:
+        return self.__asyncio.Lock()
 
-    def create_event(self) -> asyncio.Event:
-        return asyncio.Event()
+    def create_event(self) -> IEvent:
+        return self.__asyncio.Event()
 
-    def create_condition_var(self, lock: ILock | None = None) -> asyncio.Condition:
+    def create_condition_var(self, lock: ILock | None = None) -> ICondition:
         if lock is not None:
-            assert isinstance(lock, asyncio.Lock)  # nosec assert_used
+            assert isinstance(lock, self.__asyncio.Lock)  # nosec assert_used
 
-        return asyncio.Condition(lock)
+        return self.__asyncio.Condition(lock)
 
     async def run_in_thread(self, func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
-        loop = asyncio.get_running_loop()
+        loop = self.__asyncio.get_running_loop()
         ctx = contextvars.copy_context()
+
+        from .tasks import TaskUtils
 
         _sniffio_helpers.setup_sniffio_contextvar(ctx, None)
 
@@ -251,4 +275,6 @@ class AsyncIOBackend(AbstractAsyncBackend):
             del future
 
     def create_threads_portal(self) -> ThreadsPortal:
+        from .threads import ThreadsPortal
+
         return ThreadsPortal()
