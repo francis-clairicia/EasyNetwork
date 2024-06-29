@@ -152,7 +152,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
         if not isinstance(backlog, int):
             raise TypeError("backlog: Expected an integer")
 
-        from ._asyncio_utils import open_listener_sockets_from_getaddrinfo_result, resolve_local_addresses
+        from ._asyncio_utils import resolve_local_addresses
         from .stream.listener import AcceptedSocketFactory, ListenerSocketAdapter
 
         reuse_address: bool = os.name not in ("nt", "cygwin") and sys.platform != "cygwin"
@@ -172,7 +172,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
             _socket.SOCK_STREAM,
         )
 
-        sockets: list[_socket.socket] = open_listener_sockets_from_getaddrinfo_result(
+        sockets: list[_socket.socket] = _utils.open_listener_sockets_from_getaddrinfo_result(
             infos,
             backlog=backlog,
             reuse_address=reuse_address,
@@ -216,7 +216,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
         *,
         reuse_port: bool = False,
     ) -> Sequence[AsyncDatagramListener[tuple[Any, ...]]]:
-        from ._asyncio_utils import open_listener_sockets_from_getaddrinfo_result, resolve_local_addresses
+        from ._asyncio_utils import resolve_local_addresses
         from .datagram.listener import DatagramListenerProtocol, DatagramListenerSocketAdapter
 
         loop = self.__asyncio.get_running_loop()
@@ -237,7 +237,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
             _socket.SOCK_DGRAM,
         )
 
-        sockets: list[_socket.socket] = open_listener_sockets_from_getaddrinfo_result(
+        sockets: list[_socket.socket] = _utils.open_listener_sockets_from_getaddrinfo_result(
             infos,
             backlog=None,
             reuse_address=False,
