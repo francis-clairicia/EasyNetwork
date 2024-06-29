@@ -102,3 +102,24 @@ class WriteFlowControl:
                     waiter.set_exception(_utils.error_from_errno(self.__connection_lost_errno))
                 else:
                     waiter.set_exception(exc)
+
+
+# Taken from asyncio library (https://github.com/python/cpython/tree/v3.12.0/Lib/asyncio)
+def add_flowcontrol_defaults(high: int | None, low: int | None, kb: int) -> tuple[int, int]:  # pragma: no cover
+    if high is None:
+        if low is None:
+            hi = kb * 1024
+        else:
+            lo = low
+            hi = 4 * lo
+    else:
+        hi = high
+    if low is None:
+        lo = hi // 4
+    else:
+        lo = low
+
+    if not hi >= lo >= 0:
+        raise ValueError(f"high ({hi!r}) must be >= low ({lo!r}) must be >= 0")
+
+    return hi, lo

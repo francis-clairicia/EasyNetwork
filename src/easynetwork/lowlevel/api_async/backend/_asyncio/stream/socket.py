@@ -31,8 +31,7 @@ from ......exceptions import UnsupportedOperation
 from ..... import _utils, socket as socket_tools
 from ....transports.abc import AsyncStreamTransport
 from ...abc import AsyncBackend
-from .._asyncio_utils import add_flowcontrol_defaults
-from .._flow_control import WriteFlowControl
+from .._flow_control import WriteFlowControl, add_flowcontrol_defaults
 
 if TYPE_CHECKING:
     from _typeshed import WriteableBuffer
