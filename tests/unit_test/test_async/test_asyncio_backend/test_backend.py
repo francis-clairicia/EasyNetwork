@@ -4,7 +4,7 @@ import asyncio
 import contextvars
 from collections.abc import Callable, Coroutine, Sequence
 from socket import AF_INET, AF_INET6, AF_UNSPEC, AI_ADDRCONFIG, AI_PASSIVE, IPPROTO_TCP, IPPROTO_UDP, SOCK_DGRAM, SOCK_STREAM
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
 from easynetwork.lowlevel.api_async.backend._asyncio.backend import AsyncIOBackend
 from easynetwork.lowlevel.api_async.backend._asyncio.datagram.listener import DatagramListenerProtocol
@@ -20,6 +20,9 @@ if TYPE_CHECKING:
     from unittest.mock import AsyncMock, MagicMock
 
     from pytest_mock import MockerFixture
+
+
+_ASYNCIO_BACKEND_MODULE: Final[str] = "easynetwork.lowlevel.api_async.backend._asyncio"
 
 
 class TestAsyncIOBackendSync:
@@ -218,7 +221,7 @@ class TestAsyncIOBackend:
         mock_asyncio_transport = mocker.NonCallableMagicMock(spec=asyncio.Transport)
         mock_protocol = mocker.NonCallableMagicMock(spec=StreamReaderBufferedProtocol)
         mock_AsyncioTransportStreamSocketAdapter: MagicMock = mocker.patch(
-            "easynetwork.lowlevel.api_async.backend._asyncio.backend.AsyncioTransportStreamSocketAdapter",
+            f"{_ASYNCIO_BACKEND_MODULE}.stream.socket.AsyncioTransportStreamSocketAdapter",
             return_value=mocker.sentinel.socket,
         )
         mock_event_loop_create_connection: AsyncMock = mocker.patch.object(
@@ -228,7 +231,7 @@ class TestAsyncIOBackend:
             return_value=(mock_asyncio_transport, mock_protocol),
         )
         mock_own_create_connection: AsyncMock = mocker.patch(
-            "easynetwork.lowlevel.api_async.backend._asyncio.backend.create_connection",
+            f"{_ASYNCIO_BACKEND_MODULE}._asyncio_utils.create_connection",
             new_callable=mocker.AsyncMock,
             return_value=mock_tcp_socket,
         )
@@ -268,7 +271,7 @@ class TestAsyncIOBackend:
         mock_asyncio_transport = mocker.NonCallableMagicMock(spec=asyncio.Transport)
         mock_protocol = mocker.NonCallableMagicMock(spec=StreamReaderBufferedProtocol)
         mock_AsyncioTransportStreamSocketAdapter: MagicMock = mocker.patch(
-            "easynetwork.lowlevel.api_async.backend._asyncio.backend.AsyncioTransportStreamSocketAdapter",
+            f"{_ASYNCIO_BACKEND_MODULE}.stream.socket.AsyncioTransportStreamSocketAdapter",
             return_value=mocker.sentinel.socket,
         )
         mock_event_loop_create_connection: AsyncMock = mocker.patch.object(
@@ -315,11 +318,11 @@ class TestAsyncIOBackend:
             return_value=addrinfo_list,
         )
         mock_open_listeners = mocker.patch(
-            "easynetwork.lowlevel.api_async.backend._asyncio.backend.open_listener_sockets_from_getaddrinfo_result",
+            f"{_ASYNCIO_BACKEND_MODULE}._asyncio_utils.open_listener_sockets_from_getaddrinfo_result",
             return_value=[mock_tcp_socket],
         )
         mock_ListenerSocketAdapter: MagicMock = mocker.patch(
-            "easynetwork.lowlevel.api_async.backend._asyncio.backend.ListenerSocketAdapter",
+            f"{_ASYNCIO_BACKEND_MODULE}.stream.listener.ListenerSocketAdapter",
             return_value=mocker.sentinel.listener_socket,
         )
         expected_factory: AbstractAcceptedSocketFactory[Any] = AcceptedSocketFactory()
@@ -384,11 +387,11 @@ class TestAsyncIOBackend:
             return_value=addrinfo_list,
         )
         mock_open_listeners = mocker.patch(
-            "easynetwork.lowlevel.api_async.backend._asyncio.backend.open_listener_sockets_from_getaddrinfo_result",
+            f"{_ASYNCIO_BACKEND_MODULE}._asyncio_utils.open_listener_sockets_from_getaddrinfo_result",
             return_value=[mock_tcp_socket, mock_tcp_socket],
         )
         mock_ListenerSocketAdapter: MagicMock = mocker.patch(
-            "easynetwork.lowlevel.api_async.backend._asyncio.backend.ListenerSocketAdapter",
+            f"{_ASYNCIO_BACKEND_MODULE}.stream.listener.ListenerSocketAdapter",
             return_value=mocker.sentinel.listener_socket,
         )
         expected_factory: AbstractAcceptedSocketFactory[Any] = AcceptedSocketFactory()
@@ -454,11 +457,11 @@ class TestAsyncIOBackend:
             side_effect=[[info] for info in addrinfo_list],
         )
         mock_open_listeners = mocker.patch(
-            "easynetwork.lowlevel.api_async.backend._asyncio.backend.open_listener_sockets_from_getaddrinfo_result",
+            f"{_ASYNCIO_BACKEND_MODULE}._asyncio_utils.open_listener_sockets_from_getaddrinfo_result",
             return_value=[mock_tcp_socket, mock_tcp_socket],
         )
         mock_ListenerSocketAdapter: MagicMock = mocker.patch(
-            "easynetwork.lowlevel.api_async.backend._asyncio.backend.ListenerSocketAdapter",
+            f"{_ASYNCIO_BACKEND_MODULE}.stream.listener.ListenerSocketAdapter",
             return_value=mocker.sentinel.listener_socket,
         )
         expected_factory: AbstractAcceptedSocketFactory[Any] = AcceptedSocketFactory()
@@ -511,11 +514,11 @@ class TestAsyncIOBackend:
             return_value=[],
         )
         mock_open_listeners = mocker.patch(
-            "easynetwork.lowlevel.api_async.backend._asyncio.backend.open_listener_sockets_from_getaddrinfo_result",
+            f"{_ASYNCIO_BACKEND_MODULE}._asyncio_utils.open_listener_sockets_from_getaddrinfo_result",
             side_effect=AssertionError,
         )
         mock_ListenerSocketAdapter: MagicMock = mocker.patch(
-            "easynetwork.lowlevel.api_async.backend._asyncio.backend.ListenerSocketAdapter",
+            f"{_ASYNCIO_BACKEND_MODULE}.stream.listener.ListenerSocketAdapter",
             side_effect=AssertionError,
         )
 
@@ -556,11 +559,11 @@ class TestAsyncIOBackend:
             return_value=[],
         )
         mock_open_listeners = mocker.patch(
-            "easynetwork.lowlevel.api_async.backend._asyncio.backend.open_listener_sockets_from_getaddrinfo_result",
+            f"{_ASYNCIO_BACKEND_MODULE}._asyncio_utils.open_listener_sockets_from_getaddrinfo_result",
             side_effect=AssertionError,
         )
         mock_ListenerSocketAdapter: MagicMock = mocker.patch(
-            "easynetwork.lowlevel.api_async.backend._asyncio.backend.ListenerSocketAdapter",
+            f"{_ASYNCIO_BACKEND_MODULE}.stream.listener.ListenerSocketAdapter",
             side_effect=AssertionError,
         )
 
@@ -592,16 +595,16 @@ class TestAsyncIOBackend:
         # Arrange
         mock_endpoint = mock_datagram_endpoint_factory()
         mock_AsyncioTransportDatagramSocketAdapter: MagicMock = mocker.patch(
-            "easynetwork.lowlevel.api_async.backend._asyncio.backend.AsyncioTransportDatagramSocketAdapter",
+            f"{_ASYNCIO_BACKEND_MODULE}.datagram.socket.AsyncioTransportDatagramSocketAdapter",
             return_value=mocker.sentinel.socket,
         )
         mock_create_datagram_endpoint: AsyncMock = mocker.patch(
-            "easynetwork.lowlevel.api_async.backend._asyncio.backend.create_datagram_endpoint",
+            f"{_ASYNCIO_BACKEND_MODULE}.datagram.endpoint.create_datagram_endpoint",
             new_callable=mocker.AsyncMock,
             return_value=mock_endpoint,
         )
         mock_own_create_connection: AsyncMock = mocker.patch(
-            "easynetwork.lowlevel.api_async.backend._asyncio.backend.create_datagram_connection",
+            f"{_ASYNCIO_BACKEND_MODULE}._asyncio_utils.create_datagram_connection",
             new_callable=mocker.AsyncMock,
             return_value=mock_udp_socket,
         )
@@ -633,11 +636,11 @@ class TestAsyncIOBackend:
         # Arrange
         mock_endpoint = mock_datagram_endpoint_factory()
         mock_AsyncioTransportDatagramSocketAdapter: MagicMock = mocker.patch(
-            "easynetwork.lowlevel.api_async.backend._asyncio.backend.AsyncioTransportDatagramSocketAdapter",
+            f"{_ASYNCIO_BACKEND_MODULE}.datagram.socket.AsyncioTransportDatagramSocketAdapter",
             return_value=mocker.sentinel.socket,
         )
         mock_create_datagram_endpoint: AsyncMock = mocker.patch(
-            "easynetwork.lowlevel.api_async.backend._asyncio.backend.create_datagram_endpoint",
+            f"{_ASYNCIO_BACKEND_MODULE}.datagram.endpoint.create_datagram_endpoint",
             new_callable=mocker.AsyncMock,
             return_value=mock_endpoint,
         )
@@ -679,7 +682,7 @@ class TestAsyncIOBackend:
             return_value=addrinfo_list,
         )
         mock_open_listeners = mocker.patch(
-            "easynetwork.lowlevel.api_async.backend._asyncio.backend.open_listener_sockets_from_getaddrinfo_result",
+            f"{_ASYNCIO_BACKEND_MODULE}._asyncio_utils.open_listener_sockets_from_getaddrinfo_result",
             return_value=[mock_udp_socket],
         )
         mock_create_datagram_endpoint: AsyncMock = mocker.patch.object(
@@ -689,7 +692,7 @@ class TestAsyncIOBackend:
             return_value=(mock_transport, mock_protocol),
         )
         mock_DatagramListenerSocketAdapter: MagicMock = mocker.patch(
-            "easynetwork.lowlevel.api_async.backend._asyncio.backend.DatagramListenerSocketAdapter",
+            f"{_ASYNCIO_BACKEND_MODULE}.datagram.listener.DatagramListenerSocketAdapter",
             return_value=mocker.sentinel.listener_socket,
         )
 
@@ -758,7 +761,7 @@ class TestAsyncIOBackend:
             return_value=addrinfo_list,
         )
         mock_open_listeners = mocker.patch(
-            "easynetwork.lowlevel.api_async.backend._asyncio.backend.open_listener_sockets_from_getaddrinfo_result",
+            f"{_ASYNCIO_BACKEND_MODULE}._asyncio_utils.open_listener_sockets_from_getaddrinfo_result",
             return_value=[mock_udp_socket, mock_udp_socket],
         )
         mock_create_datagram_endpoint: AsyncMock = mocker.patch.object(
@@ -768,7 +771,7 @@ class TestAsyncIOBackend:
             return_value=(mock_transport, mock_protocol),
         )
         mock_DatagramListenerSocketAdapter: MagicMock = mocker.patch(
-            "easynetwork.lowlevel.api_async.backend._asyncio.backend.DatagramListenerSocketAdapter",
+            f"{_ASYNCIO_BACKEND_MODULE}.datagram.listener.DatagramListenerSocketAdapter",
             return_value=mocker.sentinel.listener_socket,
         )
 
@@ -841,7 +844,7 @@ class TestAsyncIOBackend:
             return_value=addrinfo_list,
         )
         mock_open_listeners = mocker.patch(
-            "easynetwork.lowlevel.api_async.backend._asyncio.backend.open_listener_sockets_from_getaddrinfo_result",
+            f"{_ASYNCIO_BACKEND_MODULE}._asyncio_utils.open_listener_sockets_from_getaddrinfo_result",
             return_value=[mock_udp_socket, mock_udp_socket],
         )
         mock_create_datagram_endpoint: AsyncMock = mocker.patch.object(
@@ -851,7 +854,7 @@ class TestAsyncIOBackend:
             return_value=(mock_transport, mock_protocol),
         )
         mock_DatagramListenerSocketAdapter: MagicMock = mocker.patch(
-            "easynetwork.lowlevel.api_async.backend._asyncio.backend.DatagramListenerSocketAdapter",
+            f"{_ASYNCIO_BACKEND_MODULE}.datagram.listener.DatagramListenerSocketAdapter",
             return_value=mocker.sentinel.listener_socket,
         )
 
@@ -908,7 +911,7 @@ class TestAsyncIOBackend:
             return_value=[],
         )
         mock_open_listeners = mocker.patch(
-            "easynetwork.lowlevel.api_async.backend._asyncio.backend.open_listener_sockets_from_getaddrinfo_result",
+            f"{_ASYNCIO_BACKEND_MODULE}._asyncio_utils.open_listener_sockets_from_getaddrinfo_result",
             side_effect=AssertionError,
         )
         mock_create_datagram_endpoint: AsyncMock = mocker.patch.object(
@@ -918,7 +921,7 @@ class TestAsyncIOBackend:
             side_effect=AssertionError,
         )
         mock_DatagramListenerSocketAdapter: MagicMock = mocker.patch(
-            "easynetwork.lowlevel.api_async.backend._asyncio.backend.DatagramListenerSocketAdapter",
+            f"{_ASYNCIO_BACKEND_MODULE}.datagram.listener.DatagramListenerSocketAdapter",
             side_effect=AssertionError,
         )
 
