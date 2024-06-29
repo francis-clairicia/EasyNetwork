@@ -62,14 +62,14 @@ sniffio = [
 
 [tool.pdm.dev-dependencies]
 dev = [
-    "bump2version>=1.0.1",
-    "hatch>=1.8",
+    "bump2version>=1.0.1,<2",
+    "hatch>=1.8,<2",
 ]
 build = [
-    "build>=1.0.3",
+    "build>=1.0.3,<2",
 ]
 pre-commit = [
-    "pre-commit>=2.20.0",
+    "pre-commit>=3.7.0,<4",
 ]
 uvloop = [
     "uvloop~=0.19.0; os_name=='posix'",
@@ -79,7 +79,7 @@ tox = [
     "tox-pdm~=0.7.2",
 ]
 format = [
-    "isort!=5.11.0,>=5.10.1",
+    "isort>=5.13.1,<6",
     "black>=22.6.0",
 ]
 mypy = [
@@ -89,17 +89,17 @@ types-msgpack = [
     "msgpack-types>=0.2.0",
 ]
 flake8 = [
-    "flake8>=6.0",
+    "flake8>=7.0,<8",
     "flake8-dunder-all @ git+https://github.com/francis-clairicia/flake8-dunder-all.git@v0.1.0",
 ]
 bandit = [
-    "bandit>=1.7.5",
+    "bandit>=1.7.5,<2",
 ]
 test = [
     "pytest~=7.4,>=7.4.2",
     "pytest-xdist~=3.3",
     "pytest-mock~=3.10",
-    "pytest-cov~=4.0",
+    "pytest-cov~=5.0",
     "pytest-asyncio~=0.23.5",
     "trove-classifiers>=2023.11.9",
     "trustme~=1.0",
@@ -127,7 +127,7 @@ benchmark-servers = [
     "plotly~=5.18",
 ]
 benchmark-servers-deps = [
-    "uvloop~=0.19.0; os_name=='posix'",
+    "easynetwork[uvloop]",
     "asyncio-dgram~=2.1",
 ]
 
