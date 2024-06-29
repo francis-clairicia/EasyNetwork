@@ -286,6 +286,67 @@ def set_reuseport(sock: SupportsSocketOptions) -> None:
             raise ValueError("reuse_port not supported by socket module, SO_REUSEPORT defined but not implemented.") from None
 
 
+def open_listener_sockets_from_getaddrinfo_result(
+    infos: Iterable[tuple[int, int, int, str, tuple[Any, ...]]],
+    *,
+    backlog: int | None,
+    reuse_address: bool,
+    reuse_port: bool,
+) -> list[_socket.socket]:
+    sockets: list[_socket.socket] = []
+    reuse_address = reuse_address and hasattr(_socket, "SO_REUSEADDR")
+    with contextlib.ExitStack() as _whole_context_stack:
+        errors: list[OSError] = []
+        _whole_context_stack.callback(errors.clear)
+
+        socket_exit_stack = _whole_context_stack.enter_context(contextlib.ExitStack())
+
+        for af, socktype, proto, _, sa in infos:
+            try:
+                sock = socket_exit_stack.enter_context(contextlib.closing(_socket.socket(af, socktype, proto)))
+            except OSError:
+                # Assume it's a bad family/type/protocol combination.
+                continue
+            sockets.append(sock)
+            if reuse_address:
+                try:
+                    sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, True)
+                except OSError:
+                    # Will fail later on bind()
+                    pass
+            if reuse_port:
+                set_reuseport(sock)
+            # Disable IPv4/IPv6 dual stack support (enabled by
+            # default on Linux) which makes a single socket
+            # listen on both address families.
+            if af == _socket.AF_INET6:
+                if hasattr(_socket, "IPPROTO_IPV6"):
+                    sock.setsockopt(_socket.IPPROTO_IPV6, _socket.IPV6_V6ONLY, True)
+                if "%" in sa[0]:
+                    addr, scope_id = sa[0].split("%", 1)
+                    sa = (addr, sa[1], 0, int(scope_id))
+            try:
+                sock.bind(sa)
+            except OSError as exc:
+                errors.append(
+                    OSError(
+                        exc.errno, f"error while attempting to bind to address {sa!r}: {exc.strerror.lower()}"
+                    ).with_traceback(exc.__traceback__)
+                )
+                continue
+            if backlog is not None:
+                sock.listen(backlog)
+
+        if errors:
+            # No need to call errors.clear(), this is done by exit stack
+            raise ExceptionGroup("Error when trying to create listeners", errors)
+
+        # There were no errors, therefore do not close the sockets
+        socket_exit_stack.pop_all()
+
+    return sockets
+
+
 def exception_with_notes(exc: _T_Exception, notes: str | Iterable[str]) -> _T_Exception:
     if isinstance(notes, str):
         notes = (notes,)
