@@ -1,6 +1,6 @@
 default_language_version:
   python: python3.11
-minimum_pre_commit_version: '2.20.0'
+minimum_pre_commit_version: '3.7.0'
 
 ci:
   skip: [
@@ -27,7 +27,7 @@ repos:
       - id: black
         args: ['--config', 'pyproject.toml']
   - repo: https://github.com/PyCQA/flake8
-    rev: '7.0.0'
+    rev: '7.1.0'
     hooks:
       - id: flake8
         args: ['--config', '.flake8']
@@ -46,7 +46,7 @@ repos:
         types: []  # Overwrite with empty in order to fallback to types_or
         types_or: [python, pyi]
   - repo: https://github.com/pdm-project/pdm
-    rev: '2.15.4'
+    rev: '2.16.1'
     hooks:
       - id: pdm-lock-check
       - id: pdm-export
@@ -57,9 +57,11 @@ repos:
     hooks:
       - id: fmt
         name: cargo fmt (benchmarks)
+        files: ^(benchmark_server/)
         args: ["--manifest-path", "./benchmark_server/Cargo.toml", "--"]
       - id: clippy
         name: cargo clippy (benchmarks)
+        files: ^(benchmark_server/)
         args: ["--manifest-path", "./benchmark_server/Cargo.toml", "--", "-D", "warnings"]
   - repo: https://github.com/pre-commit/pygrep-hooks
     rev: 'v1.10.0'
