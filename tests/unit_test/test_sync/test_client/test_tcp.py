@@ -27,7 +27,6 @@ if TYPE_CHECKING:
 
     from pytest_mock import MockerFixture
 
-from ..._utils import DummyLock
 from ...base import UNSUPPORTED_FAMILIES, BaseTestWithStreamProtocol, MixinTestSocketSendMSG
 from .base import BaseTestClient
 
@@ -197,11 +196,6 @@ class TestTCPNetworkClient(BaseTestClient, BaseTestWithStreamProtocol, MixinTest
 
     @pytest.fixture
     @staticmethod
-    def ssl_shared_lock(request: Any) -> bool | None:
-        return getattr(request, "param", None)
-
-    @pytest.fixture
-    @staticmethod
     def retry_interval(request: Any) -> float:
         return getattr(request, "param", float("+inf"))
 
@@ -219,7 +213,6 @@ class TestTCPNetworkClient(BaseTestClient, BaseTestWithStreamProtocol, MixinTest
         mock_stream_protocol: MagicMock,
         ssl_context: MagicMock | None,
         server_hostname: Any | None,
-        ssl_shared_lock: bool | None,
         mock_selector_register: MagicMock,
         mock_selector_select: MagicMock,
     ) -> Iterator[TCPNetworkClient[Any, Any]]:
@@ -235,7 +228,6 @@ class TestTCPNetworkClient(BaseTestClient, BaseTestWithStreamProtocol, MixinTest
                         max_recv_size=max_recv_size,
                         ssl_shutdown_timeout=ssl_shutdown_timeout,
                         ssl_standard_compatible=ssl_standard_compatible,
-                        ssl_shared_lock=ssl_shared_lock,
                         retry_interval=retry_interval,
                     )
                 case "EXTERNAL_SOCKET":
@@ -247,7 +239,6 @@ class TestTCPNetworkClient(BaseTestClient, BaseTestWithStreamProtocol, MixinTest
                         max_recv_size=max_recv_size,
                         ssl_shutdown_timeout=ssl_shutdown_timeout,
                         ssl_standard_compatible=ssl_standard_compatible,
-                        ssl_shared_lock=ssl_shared_lock,
                         retry_interval=retry_interval,
                     )
                 case invalid:
@@ -670,7 +661,6 @@ class TestTCPNetworkClient(BaseTestClient, BaseTestWithStreamProtocol, MixinTest
             "ssl_handshake_timeout",
             "ssl_shutdown_timeout",
             "ssl_standard_compatible",
-            "ssl_shared_lock",
         ],
     )
     def test____dunder_init____ssl____useless_parameter_if_no_context(
@@ -2117,11 +2107,9 @@ class TestTCPNetworkClient(BaseTestClient, BaseTestWithStreamProtocol, MixinTest
         mock_used_socket_send.assert_called_with(b"packet\n")
 
     @pytest.mark.parametrize("use_ssl", ["USE_SSL"], indirect=True)
-    @pytest.mark.parametrize("ssl_shared_lock", [None, False, True], indirect=True, ids=lambda p: f"ssl_shared_lock=={p}")
     def test____special_case____separate_send_and_receive_locks____ssl(
         self,
         client: TCPNetworkClient[Any, Any],
-        ssl_shared_lock: bool | None,
         mock_used_socket: MagicMock,
         mock_used_socket_send: MagicMock,
         mock_stream_protocol: MagicMock,
@@ -2129,12 +2117,9 @@ class TestTCPNetworkClient(BaseTestClient, BaseTestWithStreamProtocol, MixinTest
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        if ssl_shared_lock is None:
-            ssl_shared_lock = True  # Should be true by default
 
         def during_select() -> None:
-            with pytest.raises(DummyLock.WouldBlock) if ssl_shared_lock else contextlib.nullcontext():
-                client.send_packet(mocker.sentinel.packet)
+            client.send_packet(mocker.sentinel.packet)
 
         mock_used_socket.recv.side_effect = [SSLWantReadError, b""]
         self.selector_action_during_select(mock_selector_select, mocker, during_select)
@@ -2144,9 +2129,5 @@ class TestTCPNetworkClient(BaseTestClient, BaseTestWithStreamProtocol, MixinTest
             _ = client.recv_packet()
 
         # Assert
-        if ssl_shared_lock:
-            mock_stream_protocol.generate_chunks.assert_not_called()
-            mock_used_socket_send.assert_not_called()
-        else:
-            mock_stream_protocol.generate_chunks.assert_called_with(mocker.sentinel.packet)
-            mock_used_socket_send.assert_called_with(b"packet\n")
+        mock_stream_protocol.generate_chunks.assert_called_with(mocker.sentinel.packet)
+        mock_used_socket_send.assert_called_with(b"packet\n")

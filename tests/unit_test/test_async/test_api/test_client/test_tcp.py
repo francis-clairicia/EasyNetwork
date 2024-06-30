@@ -26,7 +26,6 @@ if TYPE_CHECKING:
 
     from .....pytest_plugins.async_finalizer import AsyncFinalizer
 
-from ...._utils import AsyncDummyLock
 from ....base import UNSUPPORTED_FAMILIES, BaseTestWithStreamProtocol
 from .base import BaseTestClient
 
@@ -558,7 +557,6 @@ class TestAsyncTCPNetworkClient(BaseTestClient, BaseTestWithStreamProtocol):
             "ssl_handshake_timeout",
             "ssl_shutdown_timeout",
             "ssl_standard_compatible",
-            "ssl_shared_lock",
         ],
     )
     async def test____dunder_init____ssl____useless_parameter_if_no_context(
@@ -1518,12 +1516,10 @@ class TestAsyncTCPNetworkClient(BaseTestClient, BaseTestWithStreamProtocol):
         mock_stream_socket_adapter.send_all_from_iterable.assert_called()
         mock_stream_socket_adapter.send_all.assert_called_with(b"packet\n")
 
-    @pytest.mark.parametrize("ssl_shared_lock", [None, False, True], ids=lambda p: f"ssl_shared_lock=={p}")
     async def test____special_case____separate_send_and_receive_locks____ssl(
         self,
         async_finalizer: AsyncFinalizer,
         remote_address: tuple[str, int],
-        ssl_shared_lock: bool | None,
         mock_backend: MagicMock,
         mock_stream_socket_adapter: MagicMock,
         mock_stream_protocol: MagicMock,
@@ -1537,17 +1533,12 @@ class TestAsyncTCPNetworkClient(BaseTestClient, BaseTestWithStreamProtocol):
             backend=mock_backend,
             ssl=mock_ssl_context,
             server_hostname="server_hostname",
-            ssl_shared_lock=ssl_shared_lock,
         )
         async_finalizer.add_finalizer(client.aclose)
         await client.wait_connected()
 
-        if ssl_shared_lock is None:
-            ssl_shared_lock = True  # Should be true by default
-
         async def recv_side_effect(bufsize: int) -> bytes:
-            with pytest.raises(AsyncDummyLock.AcquireFailed) if ssl_shared_lock else contextlib.nullcontext():
-                await client.send_packet(mocker.sentinel.packet)
+            await client.send_packet(mocker.sentinel.packet)
             return b""
 
         mock_stream_socket_adapter.recv = mocker.MagicMock(side_effect=recv_side_effect)
@@ -1557,11 +1548,6 @@ class TestAsyncTCPNetworkClient(BaseTestClient, BaseTestWithStreamProtocol):
             _ = await client.recv_packet()
 
         # Assert
-        if ssl_shared_lock:
-            mock_stream_protocol.generate_chunks.assert_not_called()
-            mock_stream_socket_adapter.send_all_from_iterable.assert_not_called()
-            mock_stream_socket_adapter.send_all.assert_not_called()
-        else:
-            mock_stream_protocol.generate_chunks.assert_called_with(mocker.sentinel.packet)
-            mock_stream_socket_adapter.send_all_from_iterable.assert_called()
-            mock_stream_socket_adapter.send_all.assert_called_with(b"packet\n")
+        mock_stream_protocol.generate_chunks.assert_called_with(mocker.sentinel.packet)
+        mock_stream_socket_adapter.send_all_from_iterable.assert_called()
+        mock_stream_socket_adapter.send_all.assert_called_with(b"packet\n")

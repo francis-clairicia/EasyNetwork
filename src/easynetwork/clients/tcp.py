@@ -80,7 +80,6 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
         ssl_handshake_timeout: float | None = ...,
         ssl_shutdown_timeout: float | None = ...,
         ssl_standard_compatible: bool | None = ...,
-        ssl_shared_lock: bool | None = ...,
         max_recv_size: int | None = ...,
         retry_interval: float = ...,
     ) -> None: ...
@@ -97,7 +96,6 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
         ssl_handshake_timeout: float | None = ...,
         ssl_shutdown_timeout: float | None = ...,
         ssl_standard_compatible: bool | None = ...,
-        ssl_shared_lock: bool | None = ...,
         max_recv_size: int | None = ...,
         retry_interval: float = ...,
     ) -> None: ...
@@ -113,7 +111,6 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
         ssl_handshake_timeout: float | None = None,
         ssl_shutdown_timeout: float | None = None,
         ssl_standard_compatible: bool | None = None,
-        ssl_shared_lock: bool | None = None,
         max_recv_size: int | None = None,
         retry_interval: float = 1.0,
         **kwargs: Any,
@@ -146,8 +143,6 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
                                   ``30.0`` seconds if :data:`None` (default).
             ssl_standard_compatible: if :data:`False`, skip the closing handshake when closing the connection,
                                      and don't raise an exception if the peer does the same.
-            ssl_shared_lock: If :data:`True` (the default), :meth:`send_packet` and :meth:`recv_packet` uses
-                             the same lock instance.
             max_recv_size: Read buffer size. If not given, a default reasonable value is used.
             retry_interval: The maximum wait time to wait for a blocking operation before retrying.
                             Set it to :data:`math.inf` to disable this feature.
@@ -175,12 +170,6 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
 
         if ssl_standard_compatible is not None and not ssl:
             raise ValueError("ssl_standard_compatible is only meaningful with ssl")
-
-        if ssl_shared_lock is not None and not ssl:
-            raise ValueError("ssl_shared_lock is only meaningful with ssl")
-
-        if ssl_shared_lock is None:
-            ssl_shared_lock = True
 
         if ssl_standard_compatible is None:
             ssl_standard_compatible = True
@@ -251,13 +240,8 @@ class TCPNetworkClient(AbstractNetworkClient[_T_SentPacket, _T_ReceivedPacket]):
         finally:
             del socket
 
-        assert ssl_shared_lock is not None  # nosec assert_used
-
-        if ssl and ssl_shared_lock:
-            self.__send_lock = self.__receive_lock = _lock.ForkSafeLock(threading.Lock)
-        else:
-            self.__send_lock = _lock.ForkSafeLock(threading.Lock)
-            self.__receive_lock = _lock.ForkSafeLock(threading.Lock)
+        self.__send_lock = _lock.ForkSafeLock(threading.Lock)
+        self.__receive_lock = _lock.ForkSafeLock(threading.Lock)
 
         try:
             self.__endpoint = StreamEndpoint(
