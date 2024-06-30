@@ -130,7 +130,12 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport):
 
     @_utils.inherit_doc(base_selector.SelectorStreamTransport)
     def send_all_from_iterable(self, iterable_of_data: Iterable[bytes | bytearray | memoryview], timeout: float) -> None:
-        if constants.SC_IOV_MAX <= 0 or not _utils.supports_socket_sendmsg(self.__socket):
+        if constants.SC_IOV_MAX <= 0:
+            return super().send_all_from_iterable(iterable_of_data, timeout)
+
+        socket = self.__socket
+        socket_fileno = self.__socket.fileno
+        if not _utils.supports_socket_sendmsg(socket):
             return super().send_all_from_iterable(iterable_of_data, timeout)
 
         buffers: deque[memoryview] = deque(map(memoryview, iterable_of_data))
@@ -138,9 +143,9 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport):
 
         def try_sendmsg() -> int:
             try:
-                return self.__socket.sendmsg(itertools.islice(buffers, constants.SC_IOV_MAX))
+                return socket.sendmsg(itertools.islice(buffers, constants.SC_IOV_MAX))
             except (BlockingIOError, InterruptedError):
-                raise base_selector.WouldBlockOnWrite(self.__socket.fileno()) from None
+                raise base_selector.WouldBlockOnWrite(socket_fileno()) from None
 
         while buffers:
             sent, timeout = self._retry(try_sendmsg, timeout)
