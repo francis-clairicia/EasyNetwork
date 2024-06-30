@@ -100,7 +100,6 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         ssl_handshake_timeout: float | None = ...,
         ssl_shutdown_timeout: float | None = ...,
         ssl_standard_compatible: bool | None = ...,
-        ssl_shared_lock: bool | None = ...,
         max_recv_size: int | None = ...,
     ) -> None: ...
 
@@ -117,7 +116,6 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         ssl_handshake_timeout: float | None = ...,
         ssl_shutdown_timeout: float | None = ...,
         ssl_standard_compatible: bool | None = ...,
-        ssl_shared_lock: bool | None = ...,
         max_recv_size: int | None = ...,
     ) -> None: ...
 
@@ -133,7 +131,6 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         ssl_handshake_timeout: float | None = None,
         ssl_shutdown_timeout: float | None = None,
         ssl_standard_compatible: bool | None = None,
-        ssl_shared_lock: bool | None = None,
         max_recv_size: int | None = None,
         **kwargs: Any,
     ) -> None:
@@ -167,8 +164,6 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
                                   ``30.0`` seconds if :data:`None` (default).
             ssl_standard_compatible: if :data:`False`, skip the closing handshake when closing the connection,
                                      and don't raise an exception if the peer does the same.
-            ssl_shared_lock: If :data:`True` (the default), :meth:`send_packet` and :meth:`recv_packet` uses
-                             the same lock instance.
             max_recv_size: Read buffer size. If not given, a default reasonable value is used.
 
         See Also:
@@ -213,12 +208,6 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
 
             if ssl_standard_compatible is not None:
                 raise ValueError("ssl_standard_compatible is only meaningful with ssl")
-
-            if ssl_shared_lock is not None:
-                raise ValueError("ssl_shared_lock is only meaningful with ssl")
-
-        if ssl_shared_lock is None:
-            ssl_shared_lock = True
 
         if ssl_standard_compatible is None:
             ssl_standard_compatible = True
@@ -270,15 +259,9 @@ class AsyncTCPNetworkClient(AbstractAsyncNetworkClient[_T_SentPacket, _T_Receive
         )
         self.__socket_connector_lock: ILock = backend.create_lock()
 
-        assert ssl_shared_lock is not None  # nosec assert_used
+        self.__receive_lock: ILock = backend.create_lock()
+        self.__send_lock: ILock = backend.create_lock()
 
-        self.__receive_lock: ILock
-        self.__send_lock: ILock
-        if ssl and ssl_shared_lock:
-            self.__send_lock = self.__receive_lock = backend.create_lock()
-        else:
-            self.__receive_lock = backend.create_lock()
-            self.__send_lock = backend.create_lock()
         self.__expected_recv_size: int = max_recv_size
 
     @staticmethod

@@ -385,34 +385,3 @@ Concurrency And Multithreading
       * :meth:`~.AsyncTCPNetworkClient.send_packet` and :meth:`~.AsyncTCPNetworkClient.recv_packet` do not share the same lock instance.
 
       * :meth:`~.AsyncTCPNetworkClient.aclose` will not wait for :meth:`~.AsyncTCPNetworkClient.recv_packet`.
-
-
-SSL/TLS Concurrency Considerations
-----------------------------------
-
-For safety, concurrent calls to ``send_packet()`` and ``recv_packet()`` are "disabled" by default when using SSL.
-In fact, they share the same synchronization lock.
-
-If you need this feature after all, you can pass ``ssl_shared_lock=False`` at object creation.
-
-.. danger::
-
-   But you don't need it, do you?
-
-.. tabs::
-
-   .. group-tab:: Synchronous
-
-      .. literalinclude:: ../_include/examples/howto/tcp_clients/concurrency/ssl_shared_lock.py
-         :pyobject: ssl_shared_lock_for_sync_client
-         :start-after: [start]
-         :dedent:
-         :linenos:
-
-   .. group-tab:: Asynchronous
-
-      .. literalinclude:: ../_include/examples/howto/tcp_clients/concurrency/ssl_shared_lock.py
-         :pyobject: ssl_shared_lock_for_async_client
-         :start-after: [start]
-         :dedent:
-         :linenos:
