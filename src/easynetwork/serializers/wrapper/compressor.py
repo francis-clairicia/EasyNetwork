@@ -42,28 +42,61 @@ if TYPE_CHECKING:
 
 
 class CompressorInterface(Protocol, metaclass=abc.ABCMeta):
+    """A compressor object."""
+
     @abc.abstractmethod
     def compress(self, data: ReadableBuffer, /) -> bytes:
+        """
+        Provide data to the compressor object.
+
+        Returns:
+            a chunk of compressed data if possible, or an empty byte string otherwise.
+        """
         raise NotImplementedError
 
     @abc.abstractmethod
     def flush(self) -> bytes:
+        """
+        Finish the compression process.
+
+        The compressor object may not be used after this method has been called.
+
+        Returns:
+            the compressed data left in internal buffers.
+        """
         raise NotImplementedError
 
 
 class DecompressorInterface(Protocol, metaclass=abc.ABCMeta):
+    """A decompressor object."""
+
     @abc.abstractmethod
     def decompress(self, data: ReadableBuffer, /) -> bytes:
+        """
+        Decompress `data` (a :term:`bytes-like object`).
+
+        Some of data may be buffered internally, for use in later calls to :meth:`decompress`.
+        The returned data should be concatenated with the output of any previous calls to :meth:`decompress`.
+
+        Returns:
+            uncompressed data as bytes.
+        """
         raise NotImplementedError
 
     @property
     @abc.abstractmethod
     def eof(self) -> bool:
+        """:data:`True` if the end-of-stream marker has been reached."""
         raise NotImplementedError
 
     @property
     @abc.abstractmethod
     def unused_data(self) -> bytes:
+        """
+        Data found after the end of the compressed stream.
+
+        If this attribute is accessed before the end of the stream has been reached, its value will be ``b''``.
+        """
         raise NotImplementedError
 
 

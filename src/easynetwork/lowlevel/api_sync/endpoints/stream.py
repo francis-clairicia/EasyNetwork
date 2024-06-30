@@ -32,10 +32,10 @@ from typing import Any, Generic, assert_never
 from ...._typevars import _T_ReceivedPacket, _T_SentPacket
 from ....protocol import AnyStreamProtocolType
 from ... import _stream, _utils
-from ..transports.abc import BaseTransport, StreamReadTransport, StreamTransport, StreamWriteTransport
+from ..transports import abc as _transports
 
 
-class StreamReceiverEndpoint(BaseTransport, Generic[_T_ReceivedPacket]):
+class StreamReceiverEndpoint(_transports.BaseTransport, Generic[_T_ReceivedPacket]):
     """
     A read-only communication endpoint based on continuous stream data transport.
     """
@@ -47,7 +47,7 @@ class StreamReceiverEndpoint(BaseTransport, Generic[_T_ReceivedPacket]):
 
     def __init__(
         self,
-        transport: StreamReadTransport,
+        transport: _transports.StreamReadTransport,
         protocol: AnyStreamProtocolType[Any, _T_ReceivedPacket],
         max_recv_size: int,
     ) -> None:
@@ -58,7 +58,7 @@ class StreamReceiverEndpoint(BaseTransport, Generic[_T_ReceivedPacket]):
             max_recv_size: Read buffer size.
         """
 
-        if not isinstance(transport, StreamReadTransport):
+        if not isinstance(transport, _transports.StreamReadTransport):
             raise TypeError(f"Expected a StreamReadTransport object, got {transport!r}")
         _check_max_recv_size_value(max_recv_size)
 
@@ -68,7 +68,7 @@ class StreamReceiverEndpoint(BaseTransport, Generic[_T_ReceivedPacket]):
             max_recv_size=max_recv_size,
         )
 
-        self.__transport: StreamReadTransport = transport
+        self.__transport: _transports.StreamReadTransport = transport
 
     def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
         try:
@@ -125,12 +125,12 @@ class StreamReceiverEndpoint(BaseTransport, Generic[_T_ReceivedPacket]):
         return self.__receiver.max_recv_size
 
     @property
-    @_utils.inherit_doc(BaseTransport)
+    @_utils.inherit_doc(_transports.BaseTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         return self.__transport.extra_attributes
 
 
-class StreamSenderEndpoint(BaseTransport, Generic[_T_SentPacket]):
+class StreamSenderEndpoint(_transports.BaseTransport, Generic[_T_SentPacket]):
     """
     A write-only communication endpoint based on continuous stream data transport.
     """
@@ -142,7 +142,7 @@ class StreamSenderEndpoint(BaseTransport, Generic[_T_SentPacket]):
 
     def __init__(
         self,
-        transport: StreamWriteTransport,
+        transport: _transports.StreamWriteTransport,
         protocol: AnyStreamProtocolType[_T_SentPacket, Any],
     ) -> None:
         """
@@ -151,11 +151,11 @@ class StreamSenderEndpoint(BaseTransport, Generic[_T_SentPacket]):
             protocol: The :term:`protocol object` to use.
         """
 
-        if not isinstance(transport, StreamWriteTransport):
+        if not isinstance(transport, _transports.StreamWriteTransport):
             raise TypeError(f"Expected a StreamWriteTransport object, got {transport!r}")
 
         self.__sender: _DataSenderImpl[_T_SentPacket] = _DataSenderImpl(transport, _stream.StreamDataProducer(protocol))
-        self.__transport: StreamReadTransport | StreamWriteTransport = transport
+        self.__transport: _transports.StreamWriteTransport = transport
 
     def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
         try:
@@ -209,12 +209,12 @@ class StreamSenderEndpoint(BaseTransport, Generic[_T_SentPacket]):
         return sender.send(packet, timeout)
 
     @property
-    @_utils.inherit_doc(BaseTransport)
+    @_utils.inherit_doc(_transports.BaseTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         return self.__transport.extra_attributes
 
 
-class StreamEndpoint(BaseTransport, Generic[_T_SentPacket, _T_ReceivedPacket]):
+class StreamEndpoint(_transports.BaseTransport, Generic[_T_SentPacket, _T_ReceivedPacket]):
     """
     A full-duplex communication endpoint based on continuous stream data transport.
     """
@@ -228,7 +228,7 @@ class StreamEndpoint(BaseTransport, Generic[_T_SentPacket, _T_ReceivedPacket]):
 
     def __init__(
         self,
-        transport: StreamTransport,
+        transport: _transports.StreamTransport,
         protocol: AnyStreamProtocolType[_T_SentPacket, _T_ReceivedPacket],
         max_recv_size: int,
     ) -> None:
@@ -239,7 +239,7 @@ class StreamEndpoint(BaseTransport, Generic[_T_SentPacket, _T_ReceivedPacket]):
             max_recv_size: Read buffer size.
         """
 
-        if not isinstance(transport, StreamTransport):
+        if not isinstance(transport, _transports.StreamTransport):
             raise TypeError(f"Expected a StreamTransport object, got {transport!r}")
         _check_max_recv_size_value(max_recv_size)
 
@@ -250,7 +250,7 @@ class StreamEndpoint(BaseTransport, Generic[_T_SentPacket, _T_ReceivedPacket]):
             max_recv_size=max_recv_size,
         )
 
-        self.__transport: StreamTransport = transport
+        self.__transport: _transports.StreamTransport = transport
         self.__eof_sent: bool = False
 
     def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
@@ -354,14 +354,14 @@ class StreamEndpoint(BaseTransport, Generic[_T_SentPacket, _T_ReceivedPacket]):
         return self.__receiver.max_recv_size
 
     @property
-    @_utils.inherit_doc(BaseTransport)
+    @_utils.inherit_doc(_transports.BaseTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         return self.__transport.extra_attributes
 
 
 @dataclasses.dataclass(slots=True)
 class _DataSenderImpl(Generic[_T_SentPacket]):
-    transport: StreamWriteTransport
+    transport: _transports.StreamWriteTransport
     producer: _stream.StreamDataProducer[_T_SentPacket]
 
     def send(self, packet: _T_SentPacket, timeout: float) -> None:
@@ -370,7 +370,7 @@ class _DataSenderImpl(Generic[_T_SentPacket]):
 
 @dataclasses.dataclass(slots=True)
 class _DataReceiverImpl(Generic[_T_ReceivedPacket]):
-    transport: StreamReadTransport
+    transport: _transports.StreamReadTransport
     consumer: _stream.StreamDataConsumer[_T_ReceivedPacket]
     max_recv_size: int
     _eof_reached: bool = dataclasses.field(init=False, default=False)
@@ -411,7 +411,7 @@ class _DataReceiverImpl(Generic[_T_ReceivedPacket]):
 
 @dataclasses.dataclass(slots=True)
 class _BufferedReceiverImpl(Generic[_T_ReceivedPacket]):
-    transport: StreamReadTransport
+    transport: _transports.StreamReadTransport
     consumer: _stream.BufferedStreamDataConsumer[_T_ReceivedPacket]
     _eof_reached: bool = dataclasses.field(init=False, default=False)
 
@@ -454,7 +454,7 @@ class _BufferedReceiverImpl(Generic[_T_ReceivedPacket]):
 
 
 def _get_receiver(
-    transport: StreamReadTransport,
+    transport: _transports.StreamReadTransport,
     protocol: AnyStreamProtocolType[Any, _T_ReceivedPacket],
     *,
     max_recv_size: int,
