@@ -75,20 +75,19 @@ autoclass_content = "class"
 autodoc_class_signature = "separated"
 autodoc_member_order = "bysource"
 autodoc_default_options = {
-    "undoc-members": None,  # TODO: To remove when all the project have docstrings
-    "member-order": "bysource",
     "no-value": None,
     "show-inheritance": None,
 }
 autodoc_preserve_defaults = True
 autodoc_typehints = "both"
 autodoc_typehints_description_target = "documented_params"
+autodoc_typehints_format = "short"
 autodoc_type_aliases = {
-    "_socket._RetAddress": "typing.Any",
+    "_RetAddress": "typing.Any",
     "_socket.socket": "socket.socket",
     "BZ2Compressor": "bz2.BZ2Compressor",
     "BZ2Decompressor": "bz2.BZ2Decompressor",
-    "contextvars.Context": "contextvars.Context",
+    "Context": "contextvars.Context",
     "MemoryBIO": "ssl.MemoryBIO",
     "Pickler": "pickle.Pickler",
     "ReadableBuffer": "bytes | bytearray | memoryview | collections.abc.Buffer",

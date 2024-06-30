@@ -63,6 +63,7 @@ from . import typed_attr
 from ._final import runtime_final_class
 
 if TYPE_CHECKING:
+    from socket import _RetAddress
     from ssl import SSLContext, SSLObject, SSLSocket, _PeerCertRetDictType
 
 _P = ParamSpec("_P")
@@ -70,6 +71,8 @@ _T_Return = TypeVar("_T_Return")
 
 
 class SocketAttribute(typed_attr.TypedAttributeSet):
+    """Typed attributes which can be used on an endpoint or a transport."""
+
     __slots__ = ()
 
     socket: ISocket = typed_attr.typed_attribute()
@@ -78,14 +81,16 @@ class SocketAttribute(typed_attr.TypedAttributeSet):
     family: int = typed_attr.typed_attribute()
     """the socket's family, as returned by :attr:`socket.socket.family`."""
 
-    sockname: _socket._RetAddress = typed_attr.typed_attribute()
+    sockname: _RetAddress = typed_attr.typed_attribute()
     """the socket's own address, result of :meth:`socket.socket.getsockname`."""
 
-    peername: _socket._RetAddress = typed_attr.typed_attribute()
+    peername: _RetAddress = typed_attr.typed_attribute()
     """the remote address to which the socket is connected, result of :meth:`socket.socket.getpeername`."""
 
 
 class INETSocketAttribute(SocketAttribute):
+    """Typed attributes which can be used on an endpoint or a transport."""
+
     __slots__ = ()
 
     family: Literal[_socket.AddressFamily.AF_INET, _socket.AddressFamily.AF_INET6]
@@ -99,6 +104,8 @@ class INETSocketAttribute(SocketAttribute):
 
 
 class TLSAttribute(typed_attr.TypedAttributeSet):
+    """Typed attributes which can be used on an endpoint or a transport."""
+
     __slots__ = ()
 
     sslcontext: SSLContext = typed_attr.typed_attribute()
@@ -210,6 +217,10 @@ def new_socket_address(addr: tuple[Any, ...], family: int) -> SocketAddress:
 
 @runtime_checkable
 class SupportsSocketOptions(Protocol):
+    """
+    Interface for an object which support getting and setting socket options.
+    """
+
     @overload
     @abstractmethod
     def getsockopt(self, level: int, optname: int, /) -> int: ...
@@ -243,6 +254,10 @@ class SupportsSocketOptions(Protocol):
 
 @runtime_checkable
 class ISocket(SupportsSocketOptions, Protocol):
+    """
+    Interface for an object which mirrors a :class:`~socket.socket`.
+    """
+
     @abstractmethod
     def fileno(self) -> int:
         """
@@ -258,14 +273,14 @@ class ISocket(SupportsSocketOptions, Protocol):
         ...
 
     @abstractmethod
-    def getpeername(self) -> _socket._RetAddress:
+    def getpeername(self) -> _RetAddress:
         """
         Similar to :meth:`socket.socket.getpeername`.
         """
         ...
 
     @abstractmethod
-    def getsockname(self) -> _socket._RetAddress:
+    def getsockname(self) -> _RetAddress:
         """
         Similar to :meth:`socket.socket.getsockname`.
         """
@@ -416,13 +431,13 @@ class SocketProxy:
         """
         return self.__execute(self.__socket.setsockopt, *args)  # type: ignore[arg-type]
 
-    def getpeername(self) -> _socket._RetAddress:
+    def getpeername(self) -> _RetAddress:
         """
         Calls :meth:`ISocket.getpeername`.
         """
         return self.__execute(self.__socket.getpeername)
 
-    def getsockname(self) -> _socket._RetAddress:
+    def getsockname(self) -> _RetAddress:
         """
         Calls :meth:`ISocket.getsockname`.
         """

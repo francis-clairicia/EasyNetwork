@@ -307,3 +307,4 @@ class StreamProtocol(Generic[_T_SentPacket, _T_ReceivedPacket]):
 AnyStreamProtocolType: TypeAlias = (
     StreamProtocol[_T_SentPacket, _T_ReceivedPacket] | BufferedStreamProtocol[_T_SentPacket, _T_ReceivedPacket, Any]
 )
+"""Type alias for any connection-oriented stream :term:`protocol object` classes."""

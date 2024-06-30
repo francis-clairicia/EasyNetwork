@@ -302,6 +302,10 @@ class AsyncTLSStreamTransport(AsyncStreamTransport):
 
 
 class AsyncTLSListener(AsyncListener[AsyncTLSStreamTransport]):
+    """
+    Listener with SSL/TLS wrapper for a continuous stream transport.
+    """
+
     __slots__ = (
         "__listener",
         "__ssl_context",

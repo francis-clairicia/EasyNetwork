@@ -26,7 +26,6 @@ import warnings
 import weakref
 from collections import deque
 from collections.abc import AsyncGenerator, Callable, Hashable, Mapping
-from contextlib import AsyncExitStack
 from typing import Any, Generic, NoReturn, TypeVar
 
 from ...._typevars import _T_Request, _T_Response
@@ -35,7 +34,7 @@ from ....protocol import DatagramProtocol
 from ... import _utils
 from ..._asyncgen import AsyncGenAction, SendAction, ThrowAction
 from ..backend.abc import AsyncBackend, ICondition, ILock, TaskGroup
-from ..transports.abc import AsyncBaseTransport, AsyncDatagramListener
+from ..transports import abc as _transports
 
 _T_Address = TypeVar("_T_Address", bound=Hashable)
 
@@ -64,7 +63,7 @@ class DatagramClientContext(Generic[_T_Response, _T_Address]):
     """The server which receives the datagram."""
 
 
-class AsyncDatagramServer(AsyncBaseTransport, Generic[_T_Request, _T_Response, _T_Address]):
+class AsyncDatagramServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T_Response, _T_Address]):
     """
     Datagram packet listener interface.
     """
@@ -78,7 +77,7 @@ class AsyncDatagramServer(AsyncBaseTransport, Generic[_T_Request, _T_Response, _
 
     def __init__(
         self,
-        listener: AsyncDatagramListener[_T_Address],
+        listener: _transports.AsyncDatagramListener[_T_Address],
         protocol: DatagramProtocol[_T_Response, _T_Request],
     ) -> None:
         """
@@ -86,12 +85,12 @@ class AsyncDatagramServer(AsyncBaseTransport, Generic[_T_Request, _T_Response, _
             listener: the transport implementation to wrap.
             protocol: The :term:`protocol object` to use.
         """
-        if not isinstance(listener, AsyncDatagramListener):
+        if not isinstance(listener, _transports.AsyncDatagramListener):
             raise TypeError(f"Expected an AsyncDatagramListener object, got {listener!r}")
         if not isinstance(protocol, DatagramProtocol):
             raise TypeError(f"Expected a DatagramProtocol object, got {protocol!r}")
 
-        self.__listener: AsyncDatagramListener[_T_Address] = listener
+        self.__listener: _transports.AsyncDatagramListener[_T_Address] = listener
         self.__protocol: DatagramProtocol[_T_Response, _T_Request] = protocol
         self.__sendto_lock: ILock = listener.backend().create_lock()
         self.__serve_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently receiving datagrams")
@@ -120,7 +119,7 @@ class AsyncDatagramServer(AsyncBaseTransport, Generic[_T_Request, _T_Response, _
         """
         await self.__listener.aclose()
 
-    @_utils.inherit_doc(AsyncBaseTransport)
+    @_utils.inherit_doc(_transports.AsyncBaseTransport)
     def backend(self) -> AsyncBackend:
         return self.__listener.backend()
 
@@ -175,7 +174,7 @@ class AsyncDatagramServer(AsyncBaseTransport, Generic[_T_Request, _T_Response, _
             client_cache = weakref.WeakValueDictionary()
             default_context = contextvars.copy_context()
 
-            async with AsyncExitStack() as stack:
+            async with contextlib.AsyncExitStack() as stack:
                 if task_group is None:
                     task_group = await stack.enter_async_context(backend.create_task_group())
 
@@ -308,7 +307,7 @@ class AsyncDatagramServer(AsyncBaseTransport, Generic[_T_Request, _T_Response, _
             return SendAction(request)
 
     @property
-    @_utils.inherit_doc(AsyncBaseTransport)
+    @_utils.inherit_doc(_transports.AsyncBaseTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         return self.__listener.extra_attributes
 

@@ -27,6 +27,7 @@ from . import _sniffio_helpers
 from .abc import AsyncBackend
 
 BuiltinAsyncBackendLiteral: TypeAlias = Literal["asyncio"]
+"""Supported asynchronous framework names."""
 
 
 def ensure_backend(backend: AsyncBackend | BuiltinAsyncBackendLiteral | None) -> AsyncBackend:

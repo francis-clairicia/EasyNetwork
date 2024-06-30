@@ -32,10 +32,10 @@ from ...._typevars import _T_ReceivedPacket, _T_SentPacket
 from ....protocol import AnyStreamProtocolType
 from ... import _stream, _utils
 from ..backend.abc import AsyncBackend
-from ..transports.abc import AsyncBaseTransport, AsyncStreamReadTransport, AsyncStreamTransport, AsyncStreamWriteTransport
+from ..transports import abc as _transports
 
 
-class AsyncStreamReceiverEndpoint(AsyncBaseTransport, Generic[_T_ReceivedPacket]):
+class AsyncStreamReceiverEndpoint(_transports.AsyncBaseTransport, Generic[_T_ReceivedPacket]):
     """
     A read-only communication endpoint based on continuous stream data transport.
     """
@@ -48,7 +48,7 @@ class AsyncStreamReceiverEndpoint(AsyncBaseTransport, Generic[_T_ReceivedPacket]
 
     def __init__(
         self,
-        transport: AsyncStreamReadTransport,
+        transport: _transports.AsyncStreamReadTransport,
         protocol: AnyStreamProtocolType[Any, _T_ReceivedPacket],
         max_recv_size: int,
     ) -> None:
@@ -59,7 +59,7 @@ class AsyncStreamReceiverEndpoint(AsyncBaseTransport, Generic[_T_ReceivedPacket]
             max_recv_size: Read buffer size.
         """
 
-        if not isinstance(transport, AsyncStreamReadTransport):
+        if not isinstance(transport, _transports.AsyncStreamReadTransport):
             raise TypeError(f"Expected an AsyncStreamReadTransport object, got {transport!r}")
         _check_max_recv_size_value(max_recv_size)
 
@@ -69,7 +69,7 @@ class AsyncStreamReceiverEndpoint(AsyncBaseTransport, Generic[_T_ReceivedPacket]
             max_recv_size=max_recv_size,
         )
 
-        self.__transport: AsyncStreamReadTransport = transport
+        self.__transport: _transports.AsyncStreamReadTransport = transport
         self.__recv_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently receving data on this endpoint")
 
     def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
@@ -113,7 +113,7 @@ class AsyncStreamReceiverEndpoint(AsyncBaseTransport, Generic[_T_ReceivedPacket]
 
             return await receiver.receive()
 
-    @_utils.inherit_doc(AsyncBaseTransport)
+    @_utils.inherit_doc(_transports.AsyncBaseTransport)
     def backend(self) -> AsyncBackend:
         return self.__transport.backend()
 
@@ -123,12 +123,12 @@ class AsyncStreamReceiverEndpoint(AsyncBaseTransport, Generic[_T_ReceivedPacket]
         return self.__receiver.max_recv_size
 
     @property
-    @_utils.inherit_doc(AsyncBaseTransport)
+    @_utils.inherit_doc(_transports.AsyncBaseTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         return self.__transport.extra_attributes
 
 
-class AsyncStreamSenderEndpoint(AsyncBaseTransport, Generic[_T_SentPacket]):
+class AsyncStreamSenderEndpoint(_transports.AsyncBaseTransport, Generic[_T_SentPacket]):
     """
     A write-only communication endpoint based on continuous stream data transport.
     """
@@ -141,7 +141,7 @@ class AsyncStreamSenderEndpoint(AsyncBaseTransport, Generic[_T_SentPacket]):
 
     def __init__(
         self,
-        transport: AsyncStreamWriteTransport,
+        transport: _transports.AsyncStreamWriteTransport,
         protocol: AnyStreamProtocolType[_T_SentPacket, Any],
     ) -> None:
         """
@@ -150,12 +150,12 @@ class AsyncStreamSenderEndpoint(AsyncBaseTransport, Generic[_T_SentPacket]):
             protocol: The :term:`protocol object` to use.
         """
 
-        if not isinstance(transport, AsyncStreamWriteTransport):
+        if not isinstance(transport, _transports.AsyncStreamWriteTransport):
             raise TypeError(f"Expected an AsyncStreamWriteTransport object, got {transport!r}")
 
         self.__sender: _DataSenderImpl[_T_SentPacket] = _DataSenderImpl(transport, _stream.StreamDataProducer(protocol))
 
-        self.__transport: AsyncStreamWriteTransport = transport
+        self.__transport: _transports.AsyncStreamWriteTransport = transport
         self.__send_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently sending data on this endpoint")
 
     def __del__(self, *, _warn: _utils.WarnCallback = warnings.warn) -> None:
@@ -198,17 +198,17 @@ class AsyncStreamSenderEndpoint(AsyncBaseTransport, Generic[_T_SentPacket]):
 
             return await sender.send(packet)
 
-    @_utils.inherit_doc(AsyncBaseTransport)
+    @_utils.inherit_doc(_transports.AsyncBaseTransport)
     def backend(self) -> AsyncBackend:
         return self.__transport.backend()
 
     @property
-    @_utils.inherit_doc(AsyncBaseTransport)
+    @_utils.inherit_doc(_transports.AsyncBaseTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         return self.__transport.extra_attributes
 
 
-class AsyncStreamEndpoint(AsyncBaseTransport, Generic[_T_SentPacket, _T_ReceivedPacket]):
+class AsyncStreamEndpoint(_transports.AsyncBaseTransport, Generic[_T_SentPacket, _T_ReceivedPacket]):
     """
     A full-duplex communication endpoint based on continuous stream data transport.
     """
@@ -224,7 +224,7 @@ class AsyncStreamEndpoint(AsyncBaseTransport, Generic[_T_SentPacket, _T_Received
 
     def __init__(
         self,
-        transport: AsyncStreamTransport,
+        transport: _transports.AsyncStreamTransport,
         protocol: AnyStreamProtocolType[_T_SentPacket, _T_ReceivedPacket],
         max_recv_size: int,
     ) -> None:
@@ -235,7 +235,7 @@ class AsyncStreamEndpoint(AsyncBaseTransport, Generic[_T_SentPacket, _T_Received
             max_recv_size: Read buffer size.
         """
 
-        if not isinstance(transport, AsyncStreamTransport):
+        if not isinstance(transport, _transports.AsyncStreamTransport):
             raise TypeError(f"Expected an AsyncStreamTransport object, got {transport!r}")
         _check_max_recv_size_value(max_recv_size)
 
@@ -246,7 +246,7 @@ class AsyncStreamEndpoint(AsyncBaseTransport, Generic[_T_SentPacket, _T_Received
             max_recv_size=max_recv_size,
         )
 
-        self.__transport: AsyncStreamTransport = transport
+        self.__transport: _transports.AsyncStreamTransport = transport
         self.__send_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently sending data on this endpoint")
         self.__recv_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently receving data on this endpoint")
         self.__eof_sent: bool = False
@@ -332,7 +332,7 @@ class AsyncStreamEndpoint(AsyncBaseTransport, Generic[_T_SentPacket, _T_Received
 
             return await receiver.receive()
 
-    @_utils.inherit_doc(AsyncBaseTransport)
+    @_utils.inherit_doc(_transports.AsyncBaseTransport)
     def backend(self) -> AsyncBackend:
         return self.__transport.backend()
 
@@ -342,14 +342,14 @@ class AsyncStreamEndpoint(AsyncBaseTransport, Generic[_T_SentPacket, _T_Received
         return self.__receiver.max_recv_size
 
     @property
-    @_utils.inherit_doc(AsyncBaseTransport)
+    @_utils.inherit_doc(_transports.AsyncBaseTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         return self.__transport.extra_attributes
 
 
 @dataclasses.dataclass(slots=True)
 class _DataSenderImpl(Generic[_T_SentPacket]):
-    transport: AsyncStreamWriteTransport
+    transport: _transports.AsyncStreamWriteTransport
     producer: _stream.StreamDataProducer[_T_SentPacket]
 
     async def send(self, packet: _T_SentPacket) -> None:
@@ -358,7 +358,7 @@ class _DataSenderImpl(Generic[_T_SentPacket]):
 
 @dataclasses.dataclass(slots=True)
 class _DataReceiverImpl(Generic[_T_ReceivedPacket]):
-    transport: AsyncStreamReadTransport
+    transport: _transports.AsyncStreamReadTransport
     consumer: _stream.StreamDataConsumer[_T_ReceivedPacket]
     max_recv_size: int
     _eof_reached: bool = dataclasses.field(init=False, default=False)
@@ -393,7 +393,7 @@ class _DataReceiverImpl(Generic[_T_ReceivedPacket]):
 
 @dataclasses.dataclass(slots=True)
 class _BufferedReceiverImpl(Generic[_T_ReceivedPacket]):
-    transport: AsyncStreamReadTransport
+    transport: _transports.AsyncStreamReadTransport
     consumer: _stream.BufferedStreamDataConsumer[_T_ReceivedPacket]
     _eof_reached: bool = dataclasses.field(init=False, default=False)
 
@@ -429,7 +429,7 @@ class _BufferedReceiverImpl(Generic[_T_ReceivedPacket]):
 
 
 def _get_receiver(
-    transport: AsyncStreamReadTransport,
+    transport: _transports.AsyncStreamReadTransport,
     protocol: AnyStreamProtocolType[Any, _T_ReceivedPacket],
     *,
     max_recv_size: int,

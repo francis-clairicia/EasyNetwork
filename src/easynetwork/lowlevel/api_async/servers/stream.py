@@ -29,17 +29,10 @@ from ....protocol import AnyStreamProtocolType
 from ... import _stream, _utils
 from ..._asyncgen import AsyncGenAction, SendAction, ThrowAction
 from ..backend.abc import AsyncBackend, TaskGroup
-from ..transports import utils as transports_utils
-from ..transports.abc import (
-    AsyncBaseTransport,
-    AsyncListener,
-    AsyncStreamReadTransport,
-    AsyncStreamTransport,
-    AsyncStreamWriteTransport,
-)
+from ..transports import abc as _transports, utils as _transports_utils
 
 
-class ConnectedStreamClient(AsyncBaseTransport, Generic[_T_Response]):
+class ConnectedStreamClient(_transports.AsyncBaseTransport, Generic[_T_Response]):
     """
     Write-end of the connected client.
     """
@@ -54,13 +47,13 @@ class ConnectedStreamClient(AsyncBaseTransport, Generic[_T_Response]):
     def __init__(
         self,
         *,
-        _transport: AsyncStreamWriteTransport,
+        _transport: _transports.AsyncStreamWriteTransport,
         _producer: _stream.StreamDataProducer[_T_Response],
         _exit_stack: contextlib.AsyncExitStack,
     ) -> None:
         super().__init__()
 
-        self.__transport: AsyncStreamWriteTransport = _transport
+        self.__transport: _transports.AsyncStreamWriteTransport = _transport
         self.__producer: _stream.StreamDataProducer[_T_Response] = _producer
         self.__exit_stack: contextlib.AsyncExitStack = _exit_stack
         self.__send_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently sending data on this endpoint")
@@ -96,17 +89,17 @@ class ConnectedStreamClient(AsyncBaseTransport, Generic[_T_Response]):
         with self.__send_guard:
             await self.__transport.send_all_from_iterable(self.__producer.generate(packet))
 
-    @_utils.inherit_doc(AsyncBaseTransport)
+    @_utils.inherit_doc(_transports.AsyncBaseTransport)
     def backend(self) -> AsyncBackend:
         return self.__transport.backend()
 
     @property
-    @_utils.inherit_doc(AsyncBaseTransport)
+    @_utils.inherit_doc(_transports.AsyncBaseTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         return self.__transport.extra_attributes
 
 
-class AsyncStreamServer(AsyncBaseTransport, Generic[_T_Request, _T_Response]):
+class AsyncStreamServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T_Response]):
     """
     Stream listener interface.
     """
@@ -120,7 +113,7 @@ class AsyncStreamServer(AsyncBaseTransport, Generic[_T_Request, _T_Response]):
 
     def __init__(
         self,
-        listener: AsyncListener[AsyncStreamTransport],
+        listener: _transports.AsyncListener[_transports.AsyncStreamTransport],
         protocol: AnyStreamProtocolType[_T_Response, _T_Request],
         max_recv_size: int,
     ) -> None:
@@ -132,7 +125,7 @@ class AsyncStreamServer(AsyncBaseTransport, Generic[_T_Request, _T_Response]):
         """
         from ....lowlevel._stream import _check_any_protocol
 
-        if not isinstance(listener, AsyncListener):
+        if not isinstance(listener, _transports.AsyncListener):
             raise TypeError(f"Expected an AsyncListener object, got {listener!r}")
 
         _check_any_protocol(protocol)
@@ -140,7 +133,7 @@ class AsyncStreamServer(AsyncBaseTransport, Generic[_T_Request, _T_Response]):
         if not isinstance(max_recv_size, int) or max_recv_size <= 0:
             raise ValueError("'max_recv_size' must be a strictly positive integer")
 
-        self.__listener: AsyncListener[AsyncStreamTransport] = listener
+        self.__listener: _transports.AsyncListener[_transports.AsyncStreamTransport] = listener
         self.__protocol: AnyStreamProtocolType[_T_Response, _T_Request] = protocol
         self.__max_recv_size: int = max_recv_size
         self.__serve_guard: _utils.ResourceGuard = _utils.ResourceGuard("another task is currently accepting new connections")
@@ -169,7 +162,7 @@ class AsyncStreamServer(AsyncBaseTransport, Generic[_T_Request, _T_Response]):
         """
         await self.__listener.aclose()
 
-    @_utils.inherit_doc(AsyncBaseTransport)
+    @_utils.inherit_doc(_transports.AsyncBaseTransport)
     def backend(self) -> AsyncBackend:
         return self.__listener.backend()
 
@@ -192,15 +185,15 @@ class AsyncStreamServer(AsyncBaseTransport, Generic[_T_Request, _T_Response]):
     async def __client_coroutine(
         self,
         client_connected_cb: Callable[[ConnectedStreamClient[_T_Response]], AsyncGenerator[float | None, _T_Request]],
-        transport: AsyncStreamTransport,
+        transport: _transports.AsyncStreamTransport,
     ) -> None:
-        if not isinstance(transport, AsyncStreamTransport):
+        if not isinstance(transport, _transports.AsyncStreamTransport):
             raise TypeError(f"Expected an AsyncStreamTransport object, got {transport!r}")
 
         from ....protocol import BufferedStreamProtocol, StreamProtocol
 
         async with contextlib.AsyncExitStack() as task_exit_stack:
-            task_exit_stack.push_async_callback(transports_utils.aclose_forcefully, transport)
+            task_exit_stack.push_async_callback(_transports_utils.aclose_forcefully, transport)
 
             producer = _stream.StreamDataProducer(self.__protocol)
             consumer: _stream.StreamDataConsumer[_T_Request] | _stream.BufferedStreamDataConsumer[_T_Request]
@@ -254,14 +247,14 @@ class AsyncStreamServer(AsyncBaseTransport, Generic[_T_Request, _T_Response]):
                 await request_handler_generator.aclose()
 
     @property
-    @_utils.inherit_doc(AsyncBaseTransport)
+    @_utils.inherit_doc(_transports.AsyncBaseTransport)
     def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
         return self.__listener.extra_attributes
 
 
 @dataclasses.dataclass(kw_only=True, eq=False, slots=True)
 class _RequestReceiver(Generic[_T_Request]):
-    transport: AsyncStreamReadTransport
+    transport: _transports.AsyncStreamReadTransport
     consumer: _stream.StreamDataConsumer[_T_Request]
     max_recv_size: int
     __null_timeout_ctx: contextlib.nullcontext[None] = dataclasses.field(init=False, default_factory=contextlib.nullcontext)
@@ -295,7 +288,7 @@ class _RequestReceiver(Generic[_T_Request]):
 
 @dataclasses.dataclass(kw_only=True, eq=False, slots=True)
 class _BufferedRequestReceiver(Generic[_T_Request]):
-    transport: AsyncStreamReadTransport
+    transport: _transports.AsyncStreamReadTransport
     consumer: _stream.BufferedStreamDataConsumer[_T_Request]
     __null_timeout_ctx: contextlib.nullcontext[None] = dataclasses.field(init=False, default_factory=contextlib.nullcontext)
     __backend: AsyncBackend = dataclasses.field(init=False)

@@ -28,20 +28,17 @@ __all__ = [
     "ThreadsPortal",
 ]
 
+import concurrent.futures
 import dataclasses
 import math
+import socket as _socket
 from abc import ABCMeta, abstractmethod
 from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
 from contextlib import AbstractContextManager
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, Generic, NoReturn, ParamSpec, Protocol, Self, TypeVar, TypeVarTuple, Unpack
+from typing import Any, Generic, NoReturn, ParamSpec, Protocol, Self, TypeVar, TypeVarTuple, Unpack
 
-if TYPE_CHECKING:
-    import concurrent.futures
-    import socket as _socket
-
-    from ..transports import abc as transports
-
+from ..transports import abc as _transports
 
 _P = ParamSpec("_P")
 _T = TypeVar("_T")
@@ -901,7 +898,7 @@ class AsyncBackend(metaclass=ABCMeta):
         *,
         local_address: tuple[str, int] | None = ...,
         happy_eyeballs_delay: float | None = ...,
-    ) -> transports.AsyncStreamTransport:
+    ) -> _transports.AsyncStreamTransport:
         """
         Opens a connection using the TCP/IP protocol.
 
@@ -921,7 +918,7 @@ class AsyncBackend(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    async def wrap_stream_socket(self, socket: _socket.socket) -> transports.AsyncStreamTransport:
+    async def wrap_stream_socket(self, socket: _socket.socket) -> _transports.AsyncStreamTransport:
         """
         Wraps an already connected :data:`~socket.SOCK_STREAM` socket into an asynchronous stream socket.
 
@@ -949,7 +946,7 @@ class AsyncBackend(metaclass=ABCMeta):
         backlog: int,
         *,
         reuse_port: bool = ...,
-    ) -> Sequence[transports.AsyncListener[transports.AsyncStreamTransport]]:
+    ) -> Sequence[_transports.AsyncListener[_transports.AsyncStreamTransport]]:
         """
         Opens listener sockets for TCP connections.
 
@@ -986,7 +983,7 @@ class AsyncBackend(metaclass=ABCMeta):
         *,
         local_address: tuple[str, int] | None = ...,
         family: int = ...,
-    ) -> transports.AsyncDatagramTransport:
+    ) -> _transports.AsyncDatagramTransport:
         """
         Opens an endpoint using the UDP protocol.
 
@@ -1004,7 +1001,7 @@ class AsyncBackend(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    async def wrap_connected_datagram_socket(self, socket: _socket.socket) -> transports.AsyncDatagramTransport:
+    async def wrap_connected_datagram_socket(self, socket: _socket.socket) -> _transports.AsyncDatagramTransport:
         """
         Wraps an already connected :data:`~socket.SOCK_DGRAM` socket into an asynchronous datagram socket.
 
@@ -1031,7 +1028,7 @@ class AsyncBackend(metaclass=ABCMeta):
         port: int,
         *,
         reuse_port: bool = ...,
-    ) -> Sequence[transports.AsyncDatagramListener[tuple[Any, ...]]]:
+    ) -> Sequence[_transports.AsyncDatagramListener[tuple[Any, ...]]]:
         """
         Opens UDP endpoints.
 
