@@ -10,7 +10,7 @@ import threading
 from collections import deque
 from collections.abc import Callable
 from errno import EINVAL, ENOTCONN, errorcode as errno_errorcode
-from socket import SO_ERROR, SOL_SOCKET, SocketType
+from socket import SO_ERROR, SOL_SOCKET
 from typing import TYPE_CHECKING, Any
 
 from easynetwork.exceptions import BusyResourceError
@@ -368,12 +368,31 @@ def test____check_socket_family____invalid_family(socket_family: int) -> None:
         check_socket_family(socket_family)
 
 
-def test____supports_socket_sendmsg____checks_socket_type(mock_socket_factory: Callable[[], MagicMock]) -> None:
+def test____supports_socket_sendmsg____have_sendmsg_method(
+    mock_socket_factory: Callable[[], MagicMock],
+    mocker: MockerFixture,
+) -> None:
     # Arrange
     mock_socket = mock_socket_factory()
+    mock_socket.sendmsg = mocker.MagicMock(
+        spec=lambda *args: None,
+        side_effect=lambda buffers, *args: sum(map(len, map(memoryview, buffers))),
+    )
 
     # Act & Assert
-    assert supports_socket_sendmsg(mock_socket) is hasattr(SocketType, "sendmsg")
+    assert supports_socket_sendmsg(mock_socket)
+
+
+def test____supports_socket_sendmsg____dont_have_sendmsg_method(
+    mock_socket_factory: Callable[[], MagicMock],
+    mocker: MockerFixture,
+) -> None:
+    # Arrange
+    mock_socket = mock_socket_factory()
+    del mock_socket.sendmsg
+
+    # Act & Assert
+    assert not supports_socket_sendmsg(mock_socket)
 
 
 def test____is_ssl_socket____regular_socket(mock_socket_factory: Callable[[], MagicMock]) -> None:
@@ -528,6 +547,21 @@ def test____adjust_leftover_buffer____partial_buffer_remove() -> None:
 
     # Assert
     assert list(buffers) == list(map(memoryview, [b"e", b"fgh"]))
+
+
+def test____adjust_leftover_buffer____handle_view_with_different_item_sizes() -> None:
+    # Arrange
+    import array
+
+    item = array.array("i", [56, 23, 45, -4])
+
+    buffers: deque[memoryview] = deque(map(memoryview, [item]))
+
+    # Act
+    adjust_leftover_buffer(buffers, item.itemsize * 2)
+
+    # Assert
+    assert list(buffers) == list(map(memoryview, [bytes(item[2:])]))
 
 
 def test____is_socket_connected____getpeername_returns(mock_tcp_socket: MagicMock) -> None:

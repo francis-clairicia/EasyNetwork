@@ -202,7 +202,7 @@ class StreamWriteTransport(BaseTransport):
             ValueError: Negative `timeout`.
             TimeoutError: Operation timed out.
         """
-        for data in iterable_of_data:
+        for data in list(iterable_of_data):
             with _utils.ElapsedTime() as elapsed:
                 self.send_all(data, timeout)
             timeout = elapsed.recompute_timeout(timeout)

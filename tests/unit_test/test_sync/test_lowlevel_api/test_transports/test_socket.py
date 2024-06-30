@@ -564,6 +564,13 @@ class TestSSLStreamTransport:
 
     @pytest.fixture
     @staticmethod
+    def mock_transport_send_all(mocker: MockerFixture) -> MagicMock:
+        mock_transport_send_all = mocker.patch.object(SSLStreamTransport, "send_all", spec=lambda data, timeout: None)
+        mock_transport_send_all.return_value = None
+        return mock_transport_send_all
+
+    @pytest.fixture
+    @staticmethod
     def socket_fileno(request: pytest.FixtureRequest) -> int:
         return getattr(request, "param", 12345)
 
@@ -1047,6 +1054,19 @@ class TestSSLStreamTransport:
         mock_ssl_socket.send.assert_called_once_with(mocker.sentinel.data)
         mock_ssl_socket.fileno.assert_not_called()
         assert exc_info.value.errno == errno.ECONNRESET
+
+    def test____send_all_from_iterable____concatenate_data(
+        self,
+        transport: SSLStreamTransport,
+        mock_transport_send_all: MagicMock,
+    ) -> None:
+        # Arrange
+
+        # Act
+        transport.send_all_from_iterable(iter([b"data", b" to ", b"send"]), 123456)
+
+        # Assert
+        mock_transport_send_all.assert_called_once_with(b"data to send", 123456)
 
     def test____send_eof____default(
         self,

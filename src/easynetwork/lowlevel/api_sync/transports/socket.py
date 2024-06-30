@@ -130,19 +130,15 @@ class SocketStreamTransport(base_selector.SelectorStreamTransport):
 
     @_utils.inherit_doc(base_selector.SelectorStreamTransport)
     def send_all_from_iterable(self, iterable_of_data: Iterable[bytes | bytearray | memoryview], timeout: float) -> None:
-        _sock = self.__socket
-        if constants.SC_IOV_MAX <= 0 or not _utils.supports_socket_sendmsg(_sock):
+        if constants.SC_IOV_MAX <= 0 or not _utils.supports_socket_sendmsg(self.__socket):
             return super().send_all_from_iterable(iterable_of_data, timeout)
 
-        buffers: deque[memoryview] = deque(memoryview(data).cast("B") for data in iterable_of_data)
+        buffers: deque[memoryview] = deque(map(memoryview, iterable_of_data))
         del iterable_of_data
-
-        sock_sendmsg = _sock.sendmsg
-        del _sock
 
         def try_sendmsg() -> int:
             try:
-                return sock_sendmsg(itertools.islice(buffers, constants.SC_IOV_MAX))
+                return self.__socket.sendmsg(itertools.islice(buffers, constants.SC_IOV_MAX))
             except (BlockingIOError, InterruptedError):
                 raise base_selector.WouldBlockOnWrite(self.__socket.fileno()) from None
 
@@ -290,6 +286,13 @@ class SSLStreamTransport(base_selector.SelectorStreamTransport):
             return self._try_ssl_method(self.__socket.send, data)
         except _ssl_module.SSLZeroReturnError if _ssl_module else () as exc:
             raise _utils.error_from_errno(errno.ECONNRESET) from exc
+
+    @_utils.inherit_doc(base_selector.SelectorStreamTransport)
+    def send_all_from_iterable(self, iterable_of_data: Iterable[bytes | bytearray | memoryview], timeout: float) -> None:
+        # Send a whole chunk to minimize TLS exchanges
+        data = b"".join(iterable_of_data)
+        del iterable_of_data
+        return self.send_all(data, timeout)
 
     @_utils.inherit_doc(base_selector.SelectorStreamTransport)
     def send_eof(self) -> None:

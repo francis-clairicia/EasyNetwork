@@ -50,7 +50,7 @@ import time
 from abc import abstractmethod
 from collections import deque
 from collections.abc import Callable, Iterable, Iterator
-from typing import TYPE_CHECKING, Any, Concatenate, Final, ParamSpec, Protocol, Self, TypeGuard, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Concatenate, ParamSpec, Protocol, Self, TypeGuard, TypeVar, overload
 
 try:
     import ssl as _ssl
@@ -180,9 +180,6 @@ def check_real_socket_state(socket: ISocket) -> None:
         raise error_from_errno(errno)
 
 
-_HAS_SENDMSG: Final[bool] = hasattr(_socket.socket, "sendmsg")
-
-
 class _SupportsSocketSendMSG(Protocol):
     @abstractmethod
     def sendmsg(self, buffers: Iterable[ReadableBuffer], /) -> int: ...
@@ -190,7 +187,7 @@ class _SupportsSocketSendMSG(Protocol):
 
 def supports_socket_sendmsg(sock: _socket.socket) -> TypeGuard[_SupportsSocketSendMSG]:
     assert isinstance(sock, _socket.SocketType)  # nosec assert_used
-    return _HAS_SENDMSG
+    return hasattr(sock, "sendmsg")
 
 
 def is_ssl_socket(socket: _socket.socket) -> TypeGuard[_SSLSocket]:
@@ -236,6 +233,8 @@ def iter_bytes(b: bytes | bytearray | memoryview) -> Iterator[bytes]:
 def adjust_leftover_buffer(buffers: deque[memoryview], nbytes: int) -> None:
     while nbytes > 0:
         b = buffers.popleft()
+        if b.itemsize != 1:
+            b = b.cast("B")
         b_len = len(b)
         if b_len <= nbytes:
             nbytes -= b_len
@@ -277,13 +276,13 @@ def ensure_datagram_socket_bound(sock: _socket.socket) -> None:
 
 
 def set_reuseport(sock: SupportsSocketOptions) -> None:
-    if not hasattr(_socket, "SO_REUSEPORT"):
-        raise ValueError("reuse_port not supported by socket module")
-    else:
+    if hasattr(_socket, "SO_REUSEPORT"):
         try:
             sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEPORT, True)
         except OSError:
             raise ValueError("reuse_port not supported by socket module, SO_REUSEPORT defined but not implemented.") from None
+    else:
+        raise ValueError("reuse_port not supported by socket module")
 
 
 def open_listener_sockets_from_getaddrinfo_result(
