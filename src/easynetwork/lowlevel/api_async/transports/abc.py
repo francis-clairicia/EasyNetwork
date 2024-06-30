@@ -173,7 +173,7 @@ class AsyncStreamWriteTransport(AsyncBaseTransport):
         Parameters:
             iterable_of_data: An :term:`iterable` yielding the bytes to send.
         """
-        for data in iterable_of_data:
+        for data in list(iterable_of_data):
             await self.send_all(data)
 
 

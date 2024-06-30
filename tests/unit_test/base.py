@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator
-from socket import AF_INET, AF_INET6, socket as Socket
+from socket import AF_INET, AF_INET6
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -101,14 +101,6 @@ class MixinTestSocketSendMSG:
             value = 1024
         monkeypatch.setattr("easynetwork.lowlevel.constants.SC_IOV_MAX", value)
         return value
-
-    @pytest.fixture(autouse=True)
-    @staticmethod
-    def supports_socket_sendmsg(mocker: MockerFixture) -> None:
-        def supports_socket_sendmsg(sock: Socket) -> bool:
-            return hasattr(sock, "sendmsg")
-
-        mocker.patch("easynetwork.lowlevel._utils.supports_socket_sendmsg", supports_socket_sendmsg)
 
 
 class BaseTestWithStreamProtocol:
