@@ -72,7 +72,7 @@ to keep a server running with acceptable performance.
 
 .. important::
 
-   I want to point out that it's not about speed, it's about improving global performance by minimizing memory footprint over time.
+   I want to point out that it's not about speed. It may slow the server down a bit, but it will be more robust.
 
 ------
 
@@ -97,7 +97,7 @@ its :meth:`~.BufferedIncrementalPacketSerializer.create_deserializer_buffer` and
 
    You still need to implement :class:`.AbstractIncrementalPacketSerializer` methods.
 
-Let's see how we can use it for ``MyJSONSerializer`` (from :doc:`../serializers`):
+Let's see how we can use it for ``MyJSONSerializer`` (from :doc:`./serializers`):
 
 .. collapse:: Click here to expand/collapse the full code
 

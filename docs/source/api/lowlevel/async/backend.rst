@@ -23,7 +23,7 @@ Backend Interface
 
 .. automodule:: easynetwork.lowlevel.api_async.backend.abc
 
-.. I don't understand why __new__ and __init__ is shown here o_0
+.. I don't understand why __new__ and __init__ are shown here o_0
 .. autoclass:: AsyncBackend
    :exclude-members: __new__, __init__
 

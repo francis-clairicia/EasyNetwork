@@ -6,22 +6,25 @@
 
 from __future__ import annotations
 
-import os.path
+import os
+import pathlib
 import sys
-from importlib.metadata import version as _get_distribution_version
+from easynetwork import __version__
 
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 project = "EasyNetwork"
 copyright = "2024, Francis Clairicia-Rose-Claire-Josephine"
 author = "FrankySnow9"
-release = _get_distribution_version("easynetwork")
+release = __version__
 version = ".".join(release.split(".")[:3])
+
+del __version__
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
-sys.path.append(os.path.abspath(os.path.join(os.curdir, "_extensions")))
+sys.path.append(os.fspath(pathlib.Path(__file__).parent / "_extensions"))
 
 extensions = [
     # Built-in

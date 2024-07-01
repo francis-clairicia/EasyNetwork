@@ -10,21 +10,16 @@ How-to — Serializers
 The Basics
 ==========
 
-Where Are They Used?
---------------------
-
 A :term:`serializer` is used by a :term:`protocol object`:
 
 * :class:`.DatagramProtocol`: accepts any :term:`serializer` object.
 
 * :class:`.StreamProtocol`: accepts :term:`incremental serializer` objects only.
 
-Which Ones Are Already Available?
----------------------------------
+.. seealso::
 
-Several serializers are provided in the :mod:`easynetwork.serializers` module. Do not hesitate to use them.
-
-If nothing fits your needs, you can implement your own serializer.
+   :doc:`../protocols`
+      Describes where and when a :term:`protocol object` is used.
 
 
 Writing A One-Shot Serializer
@@ -35,15 +30,15 @@ Writing A One-Shot Serializer
 
 .. seealso::
 
-   :mod:`easynetwork.serializers.wrapper` module
-      The full list of available wrappers for serializers.
+   :doc:`./serializer_combinations`
+      This page explains possible workarounds which uses serializer wrappers.
 
 To write a :term:`one-shot serializer`, you must create a subclass of :class:`~.AbstractPacketSerializer` and override
 its :meth:`~.AbstractPacketSerializer.serialize` and :meth:`~.AbstractPacketSerializer.deserialize` methods.
 
 A naive implementation of :class:`.JSONSerializer` should look something like this:
 
-.. literalinclude:: ../_include/examples/howto/serializers/one_shot_serializer/example1.py
+.. literalinclude:: ../../_include/examples/howto/serializers/one_shot_serializer/example1.py
    :linenos:
 
 
@@ -53,7 +48,7 @@ Parsing Error
 The :meth:`~.AbstractPacketSerializer.deserialize` function must raise a :exc:`.DeserializeError` to indicate that a parsing error
 was "expected" so that the received data is considered invalid.
 
-.. literalinclude:: ../_include/examples/howto/serializers/one_shot_serializer/example2.py
+.. literalinclude:: ../../_include/examples/howto/serializers/one_shot_serializer/example2.py
    :linenos:
    :emphasize-lines: 6,19,22-23
 
@@ -72,7 +67,8 @@ Therefore, the object should only store additional configuration used for serial
 
 For example:
 
-.. literalinclude:: ../_include/examples/howto/serializers/one_shot_serializer/example3.py
+.. literalinclude:: ../../_include/examples/howto/serializers/one_shot_serializer/example3.py
+   :pyobject: MyJSONSerializer
    :linenos:
 
 .. warning::
@@ -85,7 +81,7 @@ For example:
 
 
 Using A One-Shot Serializer
-===========================
+---------------------------
 
 You must pass the :term:`serializer` to the appropriate :term:`protocol object` that is expected by the endpoint class:
 
@@ -93,13 +89,13 @@ You must pass the :term:`serializer` to the appropriate :term:`protocol object` 
 
    .. group-tab:: DatagramProtocol
 
-      .. literalinclude:: ../_include/examples/howto/serializers/one_shot_serializer/example4_datagram.py
+      .. literalinclude:: ../../_include/examples/howto/serializers/one_shot_serializer/example4_datagram.py
          :pyobject: main
          :linenos:
 
    .. group-tab:: StreamProtocol
 
-      .. literalinclude:: ../_include/examples/howto/serializers/one_shot_serializer/example4_stream.py
+      .. literalinclude:: ../../_include/examples/howto/serializers/one_shot_serializer/example4_stream.py
          :pyobject: main
          :linenos:
 
@@ -134,7 +130,7 @@ In these cases you can use the base classes in :mod:`easynetwork.serializers.bas
 
 Let's say that for the incremental part, we consider each line received to be a JSON object, separated by ``\r\n``:
 
-.. literalinclude:: ../_include/examples/howto/serializers/incremental_serializer/example1.py
+.. literalinclude:: ../../_include/examples/howto/serializers/incremental_serializer/example1.py
    :linenos:
    :emphasize-lines: 7,13,15
 
@@ -154,10 +150,12 @@ Option 2: From Scratch
 
 Let's see how we can get by without using the :class:`.AutoSeparatedPacketSerializer`:
 
-.. literalinclude:: ../_include/examples/howto/serializers/incremental_serializer/example2.py
-   :linenos:
+.. collapse:: Click here to expand/collapse the full code
 
-This adds a lot of code! Let's take a closer look at the implementation.
+   .. literalinclude:: ../../_include/examples/howto/serializers/incremental_serializer/example2.py
+      :linenos:
+      :emphasize-lines: 8,14,22-28,39-
+
 
 Code Mutualization
 ^^^^^^^^^^^^^^^^^^
@@ -165,7 +163,7 @@ Code Mutualization
 To avoid duplication of code between the one-shot part and the incremental part,
 the serialization/deserialization part of the code goes to a private method.
 
-.. literalinclude:: ../_include/examples/howto/serializers/incremental_serializer/example2.py
+.. literalinclude:: ../../_include/examples/howto/serializers/incremental_serializer/example2.py
    :start-at: def _dump
    :end-at: return json.loads
    :dedent:
@@ -173,7 +171,7 @@ the serialization/deserialization part of the code goes to a private method.
 
 And now ``serialize()`` and ``deserialize()`` use them instead:
 
-.. literalinclude:: ../_include/examples/howto/serializers/incremental_serializer/example2.py
+.. literalinclude:: ../../_include/examples/howto/serializers/incremental_serializer/example2.py
    :start-at: def serialize
    :end-at: raise DeserializeError
    :dedent:
@@ -187,7 +185,7 @@ The Purpose Of ``incremental_serialize()``
 (or at least return a :term:`generator iterator`) that yields all the parts of the serialized packet.
 It must also add any useful metadata to help :meth:`~.AbstractIncrementalPacketSerializer.incremental_deserialize` find the end of the packet.
 
-.. literalinclude:: ../_include/examples/howto/serializers/incremental_serializer/example2.py
+.. literalinclude:: ../../_include/examples/howto/serializers/incremental_serializer/example2.py
    :pyobject: MyJSONSerializer.incremental_serialize
    :dedent:
    :lineno-match:
@@ -219,7 +217,7 @@ superfluous trailing bytes that was useless.
 
 At each :keyword:`yield` checkpoint, the endpoint implementation sends to the generator the data received from the remote endpoint.
 
-.. literalinclude:: ../_include/examples/howto/serializers/incremental_serializer/example2.py
+.. literalinclude:: ../../_include/examples/howto/serializers/incremental_serializer/example2.py
    :pyobject: MyJSONSerializer.incremental_deserialize
    :dedent:
    :lineno-match:
@@ -253,7 +251,7 @@ Parsing Error
 The :meth:`~.AbstractIncrementalPacketSerializer.incremental_deserialize` function must raise an :exc:`.IncrementalDeserializeError`
 to indicate that a parsing error was "expected" so that the received data is considered invalid.
 
-.. literalinclude:: ../_include/examples/howto/serializers/incremental_serializer/example2.py
+.. literalinclude:: ../../_include/examples/howto/serializers/incremental_serializer/example2.py
    :pyobject: MyJSONSerializer.incremental_deserialize
    :dedent:
    :lineno-match:
@@ -269,3 +267,17 @@ to indicate that a parsing error was "expected" so that the received data is con
 
    :exc:`.IncrementalDeserializeError` needs the possible valid remainder, that is not the root cause of the error.
    In the example, even if ``data`` is an invalid JSON object, all bytes after the ``\r\n`` token (in ``remainder``) are not lost.
+
+
+Using An Incremental Serializer
+-------------------------------
+
+Now our :term:`serializer` can be used with a stream :term:`protocol object`:
+
+.. tabs::
+
+   .. group-tab:: StreamProtocol
+
+      .. literalinclude:: ../../_include/examples/howto/serializers/incremental_serializer/example3_stream.py
+         :pyobject: main
+         :linenos:
