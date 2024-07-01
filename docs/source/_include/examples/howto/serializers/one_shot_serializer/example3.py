@@ -12,16 +12,14 @@ ReceivedPacket: TypeAlias = Any
 
 class MyJSONSerializer(AbstractPacketSerializer[SentPacket, ReceivedPacket]):
     def __init__(self, *, ensure_ascii: bool = True) -> None:
-        self._ensure_ascii: bool = ensure_ascii
-
         self._encoding: str
-        if self._ensure_ascii:
+        if ensure_ascii:
             self._encoding = "ascii"
         else:
             self._encoding = "utf-8"
 
     def serialize(self, packet: SentPacket) -> bytes:
-        document = json.dumps(packet, ensure_ascii=self._ensure_ascii)
+        document = json.dumps(packet, ensure_ascii=(self._encoding == "ascii"))
         return document.encode(self._encoding)
 
     def deserialize(self, data: bytes) -> ReceivedPacket:

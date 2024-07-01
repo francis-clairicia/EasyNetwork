@@ -59,6 +59,23 @@ or create a subclass:
 Usage
 =====
 
+Choose The Serializer
+---------------------
+
+Several serializers are provided in the :mod:`easynetwork.serializers` module. Do not hesitate to use them.
+
+.. seealso::
+
+   :doc:`advanced/serializers`
+      If nothing fits your needs, you can implement your own serializer.
+
+   :doc:`advanced/serializer_combinations`
+      Not all serializers are suitable for all protocol objects. This page explains possible workarounds.
+
+
+Instantiation
+-------------
+
 The :term:`protocol objects <protocol object>` are requested by endpoint and server implementations to handle the data sent and received:
 
 .. tabs::
@@ -152,6 +169,7 @@ This :term:`converter` can now be used in our :term:`protocol object`:
 .. literalinclude:: ../_include/examples/howto/protocols/simple_converter/example2.py
    :pyobject: PersonProtocol
    :linenos:
+   :emphasize-lines: 1,4,6
 
 .. note::
 

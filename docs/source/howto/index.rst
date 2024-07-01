@@ -6,7 +6,6 @@ How-to Guide
    :maxdepth: 1
 
    protocols
-   serializers
    tcp_clients
    udp_clients
    tcp_servers

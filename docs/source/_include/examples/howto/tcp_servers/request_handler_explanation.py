@@ -117,7 +117,7 @@ class ErrorHandlingInRequestHandler(AsyncStreamRequestHandler[Request, Response]
                 await client.aclose()
                 raise
         except Exception:
-            # Most likely a bug in EasyNetwork code. Log the error.
+            # Runtime error. Log the error.
             traceback.print_exc()
 
             await client.send_packet(InternalError())
