@@ -48,15 +48,7 @@ impl Default for OutputFormat {
 fn client_from_args(args: &Args) -> io::Result<DatagramClient> {
     let client = {
         if args.addr.starts_with("file://") {
-            #[cfg(not(unix))]
-            {
-                Err(io::Error::other("UNIX stream not supported"))
-            }
-
-            #[cfg(unix)]
-            {
-                DatagramClient::unix(args.addr.trim_start_matches("file://"))?
-            }
+            DatagramClient::unix(args.addr.trim_start_matches("file://"))?
         } else {
             DatagramClient::udp(&args.addr)?
         }

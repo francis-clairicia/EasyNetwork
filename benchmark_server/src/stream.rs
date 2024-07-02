@@ -2,11 +2,12 @@ use std::{
     io::{self, Read, Write},
     net::{TcpStream, ToSocketAddrs},
     ops::{Deref, DerefMut},
+    path::Path,
     time::Duration,
 };
 
 #[cfg(unix)]
-use std::{os::unix::net::UnixStream, path::Path};
+use std::os::unix::net::UnixStream;
 
 pub trait Stream: Read + Write {
     fn set_timeout(&self, timeout: Option<Duration>) -> io::Result<()>;
@@ -59,6 +60,11 @@ impl StreamClient {
         let socket = UnixStream::connect(path)?;
 
         Ok(Self { inner: Box::new(socket) })
+    }
+
+    #[cfg(not(unix))]
+    pub fn unix<P: AsRef<Path>>(_path: P) -> io::Result<Self> {
+        Err(io::Error::other("UNIX stream not supported"))
     }
 
     pub fn start_tls(self) -> io::Result<Self> {
