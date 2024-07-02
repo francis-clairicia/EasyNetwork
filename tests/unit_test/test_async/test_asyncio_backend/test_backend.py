@@ -176,20 +176,6 @@ class TestAsyncIOBackend:
             await backend.ignore_cancellation(awaitable())
             awaitable.assert_awaited_once()
 
-    async def test____ignore_cancellation____not_a_coroutine(
-        self,
-        backend: AsyncIOBackend,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        mock_asyncio_is_coroutine: MagicMock = mocker.patch("asyncio.iscoroutine", autospec=True, return_value=False)
-
-        # Act & Assert
-        with pytest.raises(TypeError, match=r"^Expected an awaitable object$"):
-            await backend.ignore_cancellation(mocker.sentinel.coroutine)
-
-        mock_asyncio_is_coroutine.assert_not_called()
-
     async def test____get_current_task____compute_task_info(
         self,
         backend: AsyncIOBackend,

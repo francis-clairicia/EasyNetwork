@@ -264,15 +264,10 @@ class AsyncIOBackend(AbstractAsyncBackend):
         loop = self.__asyncio.get_running_loop()
         ctx = contextvars.copy_context()
 
-        from .tasks import TaskUtils
-
         _sniffio_helpers.setup_sniffio_contextvar(ctx, None)
 
-        future = loop.run_in_executor(None, functools.partial(ctx.run, func, *args, **kwargs))
-        try:
-            return await TaskUtils.cancel_shielded_await_future(future)
-        finally:
-            del future
+        cb = functools.partial(ctx.run, func, *args, **kwargs)
+        return await self.__cancel_shielded_await(loop.run_in_executor(None, cb))
 
     def create_threads_portal(self) -> ThreadsPortal:
         from .threads import ThreadsPortal
