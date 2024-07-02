@@ -2,11 +2,12 @@ use std::{
     io,
     net::{ToSocketAddrs, UdpSocket},
     ops::{Deref, DerefMut},
+    path::Path,
     time::Duration,
 };
 
 #[cfg(unix)]
-use std::{os::unix::net::UnixDatagram, path::Path};
+use std::os::unix::net::UnixDatagram;
 
 pub trait ConnectedDatagramEndpoint {
     fn send(&self, buf: &[u8]) -> io::Result<usize>;
@@ -81,6 +82,11 @@ impl DatagramClient {
         socket.connect(path)?;
 
         Ok(Self { inner: Box::new(socket) })
+    }
+
+    #[cfg(not(unix))]
+    pub fn unix<P: AsRef<Path>>(_path: P) -> io::Result<Self> {
+        Err(io::Error::other("UNIX datagram not supported"))
     }
 
     pub fn recv_owned(&mut self, bufsize: usize) -> io::Result<Vec<u8>> {

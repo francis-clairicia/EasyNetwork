@@ -54,15 +54,7 @@ impl Default for OutputFormat {
 fn client_from_args(args: &Args) -> io::Result<StreamClient> {
     let mut client = {
         if args.addr.starts_with("file://") {
-            #[cfg(not(unix))]
-            {
-                Err(io::Error::other("UNIX stream not supported"))
-            }
-
-            #[cfg(unix)]
-            {
-                StreamClient::unix(args.addr.trim_start_matches("file://"))?
-            }
+            StreamClient::unix(args.addr.trim_start_matches("file://"))?
         } else {
             StreamClient::tcp(&args.addr)?
         }
