@@ -68,7 +68,7 @@ class ThreadsPortal(AbstractThreadsPortal):
                 self.__loop = None
 
             while self.__call_soon_waiters:
-                await TaskUtils.cancel_shielded_wait_asyncio_futures(self.__call_soon_waiters)
+                await TaskUtils.cancel_shielded_await(asyncio.wait(self.__call_soon_waiters))
             await self.__task_group.__aexit__(exc_type, exc_val, exc_tb)
         finally:
             del self, exc_val, exc_tb

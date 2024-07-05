@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextvars
-import sys
 import time
 from collections.abc import Awaitable, Callable, Iterator
 from concurrent.futures import CancelledError as FutureCancelledError, wait as wait_concurrent_futures
@@ -107,7 +105,15 @@ class TestAsyncioBackend:
         backend: AsyncIOBackend,
     ) -> None:
         event_loop = asyncio.get_running_loop()
-        task: asyncio.Task[int] = asyncio.create_task(backend.ignore_cancellation(asyncio.sleep(0.5, 42)))
+        checkpoints: list[int] = []
+
+        async def coroutine() -> int:
+            for i in range(2):
+                await asyncio.sleep(0.25)
+                checkpoints.append(i)
+            return 42
+
+        task: asyncio.Task[int] = asyncio.create_task(backend.ignore_cancellation(coroutine()))
 
         for i in range(3):
             for _ in range(3):
@@ -115,16 +121,24 @@ class TestAsyncioBackend:
 
         assert await task == 42
         assert task.cancelling() > 0
+        assert checkpoints == [0, 1]
 
+    @pytest.mark.parametrize("direct_raise", [False, True], ids=lambda p: f"direct_raise=={p}")
     async def test____ignore_cancellation____exception_raised_in_task(
         self,
+        direct_raise: bool,
         backend: AsyncIOBackend,
     ) -> None:
         event_loop = asyncio.get_running_loop()
         exception = Exception("error")
 
         async def coroutine() -> None:
-            raise exception
+            if direct_raise:
+                raise exception
+
+            f = event_loop.create_future()
+            event_loop.call_later(0.5, f.set_exception, exception)
+            await f
 
         task: asyncio.Task[None] = asyncio.create_task(backend.ignore_cancellation(coroutine()))
 
@@ -138,93 +152,76 @@ class TestAsyncioBackend:
         assert task.exception() is exception
         assert exc_info.value is exception
 
-    async def test____ignore_cancellation____task_does_not_appear_in_registered_tasks(
+    async def test____ignore_cancellation____runs_in_current_task(
         self,
         backend: AsyncIOBackend,
     ) -> None:
-        async def coroutine() -> bool:
-            task = asyncio.current_task()
-            assert task not in asyncio.all_tasks()
-            return True
-
-        task: asyncio.Task[bool] = asyncio.create_task(backend.ignore_cancellation(coroutine()))
-
-        assert await task is True
-
-    async def test____ignore_cancellation____coroutine_cancelled_itself(
-        self,
-        backend: AsyncIOBackend,
-    ) -> None:
-        async def self_cancellation() -> None:
+        async def coroutine() -> asyncio.Task[Any]:
             task = asyncio.current_task()
             assert task is not None
-            task.cancel()
-            await asyncio.sleep(0)
+            return task
+
+        assert (await backend.ignore_cancellation(coroutine())) is asyncio.current_task()
+
+    async def test____ignore_cancellation____remove_future_blocking_flag_like_default_implementation(
+        self,
+        backend: AsyncIOBackend,
+    ) -> None:
+        event_loop = asyncio.get_running_loop()
+
+        async def coroutine() -> None:
+            f = event_loop.create_future()
+            event_loop.call_later(0.5, f.set_result, None)
+            await f
+            assert f._asyncio_future_blocking is False
+
+        await backend.ignore_cancellation(coroutine())
+
+    async def test____ignore_cancellation____forbid_await_itself_like_default_implementation(
+        self,
+        backend: AsyncIOBackend,
+    ) -> None:
+        async def coroutine() -> None:
+            task = asyncio.current_task()
+            assert task is not None
+            await task
+
+        with pytest.raises(RuntimeError, match=r"^Task cannot await on itself: .+$"):
+            await backend.ignore_cancellation(coroutine())
+
+    @pytest.mark.parametrize("with_delay", [False, True], ids=lambda p: f"with_delay=={p}")
+    @pytest.mark.parametrize("cancel_method", ["fut_cancel", "raise"], ids=lambda p: f"cancel_method=={p}")
+    async def test____ignore_cancellation____coroutine_cancelled_itself(
+        self,
+        cancel_method: Literal["fut_cancel", "raise"],
+        with_delay: bool,
+        backend: AsyncIOBackend,
+    ) -> None:
+        event_loop = asyncio.get_running_loop()
+
+        def cancel_future(f: asyncio.Future[Any]) -> None:
+            match cancel_method:
+                case "fut_cancel":
+                    f.cancel(msg="message")
+                    assert f.cancelled()
+                case "raise":
+                    f.set_exception(asyncio.CancelledError("message"))
+                    assert f.done() and not f.cancelled()
+
+        async def self_cancellation() -> None:
+            f = event_loop.create_future()
+            if with_delay:
+                event_loop.call_later(0.5, cancel_future, f)
+            else:
+                cancel_future(f)
+            await f
             raise AssertionError
 
         task = asyncio.create_task(backend.ignore_cancellation(self_cancellation()))
 
-        with pytest.raises(asyncio.CancelledError):
+        with pytest.raises(asyncio.CancelledError, match=r"^message$"):
             await task
         assert task.cancelled()
-
-    @pytest.mark.parametrize(
-        "eager_task_factory",
-        [
-            pytest.param(False),
-            pytest.param(
-                True,
-                marks=pytest.mark.skipif(
-                    sys.version_info < (3, 12),
-                    reason="asyncio.eager_task_factory does not exist before Python 3.12",
-                ),
-            ),
-        ],
-        ids=lambda p: f"eager_task_factory=={p}",
-    )
-    @pytest.mark.parametrize(
-        "default_value_already_overriden",
-        [False, True],
-        ids=lambda p: f"default_value_already_overriden=={p}",
-    )
-    @pytest.mark.parametrize(
-        "contextvar_have_default_value",
-        [False, True],
-        ids=lambda p: f"contextvar_have_default_value=={p}",
-    )
-    async def test____ignore_cancellation____share_same_context_with_host_task(
-        self,
-        default_value_already_overriden: bool,
-        contextvar_have_default_value: bool,
-        eager_task_factory: bool,
-        backend: AsyncIOBackend,
-        mocker: MockerFixture,
-    ) -> None:
-        event_loop = asyncio.get_running_loop()
-        if eager_task_factory:
-            event_loop.set_task_factory(getattr(asyncio, "eager_task_factory"))
-
-        # Do not use default value
-        # 'read_only_var' must be in copied context (for Python 3.11)
-        read_only_var: contextvars.ContextVar[Any] = contextvars.ContextVar("read_only_var")
-        read_only_var.set(mocker.sentinel.read_only_var)
-
-        cvar_for_test: contextvars.ContextVar[str]
-        if contextvar_have_default_value:
-            cvar_for_test = contextvars.ContextVar("cvar_for_test", default="N/A")
-        else:
-            cvar_for_test = contextvars.ContextVar("cvar_for_test")
-
-        # coroutine() will be done right after create_task() with eager_task_factory==True
-        async def coroutine() -> None:
-            cvar_for_test.set("after_in_coroutine")
-
-        if default_value_already_overriden:
-            cvar_for_test.set("before_in_current_task")
-        await backend.ignore_cancellation(coroutine())
-
-        assert cvar_for_test.get() == "after_in_coroutine"
-        assert read_only_var.get() is mocker.sentinel.read_only_var
 
     async def test____timeout____respected(
         self,
@@ -1209,6 +1206,7 @@ class TestAsyncioBackendShieldedCancellation:
         params=[
             "cancel_shielded_coro_yield",
             "ignore_cancellation",
+            "ignore_cancellation(coro_yield)",
             "run_in_thread",
             "cancel_shielded_wait_asyncio_futures",
         ]
@@ -1223,6 +1221,8 @@ class TestAsyncioBackendShieldedCancellation:
                 return backend.cancel_shielded_coro_yield
             case "ignore_cancellation":
                 return lambda: backend.ignore_cancellation(backend.sleep(0.1))
+            case "ignore_cancellation(coro_yield)":
+                return lambda: backend.ignore_cancellation(backend.coro_yield())
             case "run_in_thread":
                 return lambda: backend.run_in_thread(time.sleep, 0.1)
             case "cancel_shielded_wait_asyncio_futures":
@@ -1233,7 +1233,7 @@ class TestAsyncioBackendShieldedCancellation:
                     futures = [loop.create_future() for _ in range(3)]
                     for i, f in enumerate(futures, start=1):
                         loop.call_later(0.1 * i, f.set_result, None)
-                    await TaskUtils.cancel_shielded_wait_asyncio_futures(futures)
+                    await TaskUtils.cancel_shielded_await(asyncio.wait(futures))
 
                 return cancel_shielded_wait_asyncio_futures
             case _:
@@ -1504,17 +1504,16 @@ class TestAsyncioBackendShieldedCancellation:
 
         await asyncio.create_task(coroutine())
 
-    async def test____ignore_cancellation____do_not_reschedule_if_inner_task_cancelled_itself(
+    async def test____ignore_cancellation____do_not_reschedule_if_inner_task_raises_CancelledError(
         self,
         backend: AsyncIOBackend,
     ) -> None:
         event_loop = asyncio.get_running_loop()
 
         async def self_cancellation() -> None:
-            task = asyncio.current_task()
-            assert task is not None
-            event_loop.call_later(0.5, task.cancel)
-            await backend.sleep_forever()
+            f = event_loop.create_future()
+            event_loop.call_later(0.5, f.cancel)
+            await f
 
         checkpoints: list[str] = []
 

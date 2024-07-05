@@ -20,13 +20,11 @@ from __future__ import annotations
 __all__ = ["CancelScope", "Task", "TaskGroup", "TaskUtils"]
 
 import asyncio
-import contextvars
 import enum
-import inspect
 import math
 import types
 from collections import deque
-from collections.abc import Awaitable, Callable, Coroutine, Generator, Iterable, Iterator
+from collections.abc import Awaitable, Callable, Coroutine, Generator, Iterator
 from types import TracebackType
 from typing import Any, ClassVar, NamedTuple, Self, TypeVar, TypeVarTuple, cast, final
 from weakref import WeakKeyDictionary
@@ -79,19 +77,17 @@ class Task(AbstractTask[_T_co]):
         task = self.__t
         if task.done():
             return
+
+        waiter = asyncio.Event()
+
+        def on_task_done(task: asyncio.Task[Any]) -> None:
+            waiter.set()
+
+        task.add_done_callback(on_task_done)
         try:
-            waiter = asyncio.Event()
-
-            def on_task_done(task: asyncio.Task[Any]) -> None:
-                waiter.set()
-
-            task.add_done_callback(on_task_done)
-            try:
-                await waiter.wait()
-            finally:
-                task.remove_done_callback(on_task_done)
+            await waiter.wait()
         finally:
-            del task, self  # This is needed to avoid circular reference with raised exception
+            task.remove_done_callback(on_task_done)
 
     async def join(self) -> _T_co:
         task = self.__t
@@ -153,18 +149,18 @@ class TaskGroup(AbstractTaskGroup):
         loop = asyncio.get_running_loop()
         waiter: asyncio.Future[None] = loop.create_future()
 
-        task = self.__asyncio_tg.create_task(self.__task_coroutine(coro_func, args, waiter), name=name)
+        task = Task(self.__asyncio_tg.create_task(self.__task_coroutine(coro_func, args, waiter), name=name))
 
         try:
             await waiter
         except asyncio.CancelledError:
             # Cancel the task and wait for it to exit before returning
             task.cancel()
-            await TaskUtils.cancel_shielded_wait_asyncio_futures({task})
+            await TaskUtils.cancel_shielded_await(task.wait())
             raise
         finally:
             del waiter
-        return Task(task)
+        return task
 
     @staticmethod
     async def __task_coroutine(
@@ -296,11 +292,7 @@ class CancelScope(AbstractCancelScope):
                 delayed_task_cancel.handle.cancel()
                 delayed_task_cancel = None
 
-        for parent_scope in self._inner_to_outer_task_scopes(host_task):
-            if parent_scope.__cancel_called:
-                if parent_scope.__cancel_handle is None:
-                    parent_scope.__deliver_cancellation()
-                break
+        self._check_pending_cancellation(host_task)
 
         return self.__cancelled_caught
 
@@ -370,16 +362,11 @@ class CancelScope(AbstractCancelScope):
 
     @classmethod
     def _current_task_scope(cls, task: asyncio.Task[Any]) -> CancelScope | None:
-        try:
-            return cls.__current_task_scope_dict[task][0]
-        except LookupError:
-            return None
+        return next(cls._inner_to_outer_task_scopes(task), None)
 
     @classmethod
     def _inner_to_outer_task_scopes(cls, task: asyncio.Task[Any]) -> Iterator[CancelScope]:
-        if cls._current_task_scope(task) is None:
-            return iter(())
-        return iter(cls.__current_task_scope_dict[task])
+        return iter(cls.__current_task_scope_dict.get(task, ()))
 
     @classmethod
     def _reschedule_delayed_task_cancel(cls, task: asyncio.Task[Any], cancel_msg: str | None) -> asyncio.Handle:
@@ -389,6 +376,14 @@ class CancelScope(AbstractCancelScope):
         cls.__delayed_task_cancel_dict[task] = _DelayedCancel(task_cancel_handle, cancel_msg)
         task.get_loop().call_soon(cls.__delayed_task_cancel_dict.pop, task, None)
         return task_cancel_handle
+
+    @classmethod
+    def _check_pending_cancellation(cls, host_task: asyncio.Task[Any]) -> None:
+        for parent_scope in cls._inner_to_outer_task_scopes(host_task):
+            if parent_scope.__cancel_called:
+                if parent_scope.__cancel_handle is None:
+                    parent_scope.__deliver_cancellation()
+                break
 
     @staticmethod
     def __cancel_task_unless_done(task: asyncio.Task[Any], cancel_msg: str | None) -> None:
@@ -424,61 +419,6 @@ class TaskUtils:
         yield
 
     @classmethod
-    async def cancel_shielded_wait_asyncio_futures(cls, fs: Iterable[asyncio.Future[Any]]) -> asyncio.Handle | None:
-        fs = set(fs)
-        current_task: asyncio.Task[Any] = cls.current_asyncio_task()
-        task_cancelled: bool = False
-        task_cancel_msg: str | None = None
-
-        try:
-            _schedule_task_discard(fs)
-            # Open a scope in order to check pending cancellations at the end.
-            with CancelScope():
-                while fs:
-                    try:
-                        await asyncio.wait(fs)
-                    except asyncio.CancelledError as exc:
-                        task_cancelled = True
-                        task_cancel_msg = _get_cancelled_error_message(exc)
-
-                if task_cancelled:
-                    return CancelScope._reschedule_delayed_task_cancel(current_task, task_cancel_msg)
-            return None
-        finally:
-            del current_task, fs
-            task_cancel_msg = None
-
-    @classmethod
-    async def cancel_shielded_await_future(cls, future: asyncio.Future[_T_co]) -> _T_co:
-        loop = asyncio.get_running_loop()
-        current_task: asyncio.Task[Any] = cls.current_asyncio_task(loop)
-        task_cancelled: bool = False
-        task_cancel_msg: str | None = None
-        try:
-            if not future.done():
-                done_event = asyncio.Event()
-                future.add_done_callback(lambda _: done_event.set())
-
-                # Open a scope in order to check pending cancellations at the end.
-                with CancelScope():
-                    while not done_event.is_set():
-                        try:
-                            await done_event.wait()
-                        except asyncio.CancelledError as exc:
-                            task_cancelled = True
-                            task_cancel_msg = _get_cancelled_error_message(exc)
-
-                    if task_cancelled:
-                        CancelScope._reschedule_delayed_task_cancel(current_task, task_cancel_msg)
-                        if future.cancelled():
-                            await cls.coro_yield()
-
-            return future.result()
-        finally:
-            del current_task, future
-            task_cancel_msg = None
-
-    @classmethod
     async def cancel_shielded_coro_yield(cls) -> None:
         try:
             await cls.coro_yield()
@@ -486,54 +426,85 @@ class TaskUtils:
             CancelScope._reschedule_delayed_task_cancel(cls.current_asyncio_task(), _get_cancelled_error_message(exc))
 
     @classmethod
-    async def cancel_shielded_await(cls, coroutine: Awaitable[_T_co]) -> _T_co:
-        coroutine = cls.wrap_awaitable(coroutine)
-        loop = asyncio.get_running_loop()
-        current_task_context: contextvars.Context | None = cls.get_task_context(cls.current_asyncio_task(loop))
-        context_to_restore: contextvars.Context | None = None
-
-        task: asyncio.Task[_T_co]
-        name = f"shielded task for {coroutine!r}"
-
-        # NOTE: Exceptionally, do NOT use loop.create_task()
-        #       The task creation must be deterministic, therefore the loop's task factory must not be used.
-
-        if current_task_context is None:  # Python == 3.11
-            context_to_restore = contextvars.copy_context()
-            task = asyncio.Task(coroutine, loop=loop, context=context_to_restore, name=name)
-        else:  # Python >= 3.12
-            task = asyncio.Task(coroutine, loop=loop, context=current_task_context, name=name)
-
-        # This task must be unregistered in order not to be cancelled by runner at event loop shutdown
-        asyncio._unregister_task(task)
-
-        try:
-            try:
-                return await cls.cancel_shielded_await_future(task)
-            finally:
-                del task
-        finally:
-            if context_to_restore is not None:
-                _restore_current_context_from(context_to_restore)
+    def cancel_shielded_await(cls, awaitable: Awaitable[_T], /) -> Awaitable[_T]:
+        return cast(Awaitable[_T], cls.__cancel_shielded_await(awaitable))
 
     @classmethod
-    def wrap_awaitable(cls, coroutine: Awaitable[_T]) -> Coroutine[Any, Any, _T]:
-        if not inspect.isawaitable(coroutine):
-            raise TypeError("Expected an awaitable object")
-
-        if not isinstance(coroutine, Coroutine):
-
-            async def coro_wrapper(coroutine: Awaitable[_T]) -> _T:
+    @types.coroutine
+    def __cancel_shielded_await(cls, awaitable: Awaitable[_T], /) -> Generator[Any, Any, _T]:
+        current_task: asyncio.Task[Any] = cls.current_asyncio_task()
+        coroutine = awaitable.__await__()
+        try:
+            to_yield: asyncio.Future[Any] | None = coroutine.send(None)
+        except StopIteration as exc:
+            # Fast path.
+            return exc.value
+        except BaseException as exc:
+            _utils.remove_traceback_frames_in_place(exc, 1)
+            raise
+        else:
+            exc_to_throw: BaseException | None = None
+            last_cancellation: asyncio.CancelledError | None = None
+            while True:
                 try:
-                    return await coroutine
+                    if to_yield is None:
+                        try:
+                            yield None
+                        except asyncio.CancelledError as exc:
+                            last_cancellation = exc.with_traceback(None)
+                    elif asyncio.isfuture(to_yield):
+                        cls.__verify_yielded_future(to_yield, current_task)
+                        while not to_yield.done():
+                            try:
+                                yield from asyncio.shield(to_yield)
+                            except asyncio.CancelledError as exc:
+                                last_cancellation = exc.with_traceback(None)
+                        try:
+                            to_yield.result()
+                        except asyncio.CancelledError:
+                            # inner future raises CancelledError, do not reschedule pending one.
+                            last_cancellation = None
+                            raise
+                    else:
+                        raise AssertionError(f"Task would get bad yield: {to_yield!r}")
+                except GeneratorExit:  # pragma: no cover
+                    raise
                 except BaseException as exc:
+                    exc_to_throw = _utils.remove_traceback_frames_in_place(exc, 1)
+                finally:
+                    del to_yield  # pragma: no branch
+
+                if last_cancellation is not None:
+                    CancelScope._reschedule_delayed_task_cancel(
+                        current_task,
+                        _get_cancelled_error_message(last_cancellation),
+                    )
+                last_cancellation = None
+                try:
+                    if exc_to_throw is None:
+                        to_yield = coroutine.send(None)
+                    else:
+                        to_yield = coroutine.throw(exc_to_throw)
+                except StopIteration as exc:
+                    CancelScope._check_pending_cancellation(current_task)
+                    return exc.value
+                except BaseException as exc:
+                    CancelScope._check_pending_cancellation(current_task)
                     _utils.remove_traceback_frames_in_place(exc, 1)
                     raise
+                finally:
+                    exc_to_throw = None
+        finally:
+            coroutine.close()
+            del current_task, coroutine, awaitable
 
-            coroutine = coro_wrapper(coroutine)
-            del coro_wrapper
+    @classmethod
+    def __verify_yielded_future(cls, future: asyncio.Future[Any], current_task: asyncio.Task[Any]) -> None:
+        # Reset blocking flag, because this future will not be sent directly to asyncio.Task
+        future._asyncio_future_blocking = False
 
-        return coroutine
+        if future is current_task:
+            raise RuntimeError(f"Task cannot await on itself: {current_task!r}")
 
     @classmethod
     def create_task_info(cls, task: asyncio.Task[Any]) -> TaskInfo:
@@ -543,36 +514,11 @@ class TaskUtils:
     def compute_task_name_from_func(cls, func: Callable[..., Any]) -> str:
         return _utils.get_callable_name(func) or repr(func)
 
-    @classmethod
-    def get_task_context(cls, task: asyncio.Task[Any]) -> contextvars.Context | None:
-        try:
-            get_context: Callable[[], contextvars.Context] = getattr(task, "get_context")
-        except AttributeError:
-            return None
-        return get_context()
-
 
 def _get_cancelled_error_message(exc: asyncio.CancelledError) -> str | None:
     msg: str | None
     if exc.args:
-        msg = exc.args[0]
+        msg = str(exc.args[0])
     else:
         msg = None
     return msg
-
-
-def _schedule_task_discard(fs: set[asyncio.Future[Any]]) -> None:
-    for f in fs:
-        f.add_done_callback(fs.discard)
-
-
-# NOTE: This function is used to apply all the contextvar.set() calls made in the given argument.
-#       It WON'T work if you want to reset the *current* context back to a previous state (represented as the argument).
-def _restore_current_context_from(context: contextvars.Context) -> None:
-    for cvar, cvar_value in context.items():
-        try:
-            should_update = cvar.get() != cvar_value
-        except LookupError:
-            should_update = True
-        if should_update:
-            cvar.set(cvar_value)
