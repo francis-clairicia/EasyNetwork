@@ -292,11 +292,7 @@ class CancelScope(AbstractCancelScope):
                 delayed_task_cancel.handle.cancel()
                 delayed_task_cancel = None
 
-        for parent_scope in self._inner_to_outer_task_scopes(host_task):
-            if parent_scope.__cancel_called:
-                if parent_scope.__cancel_handle is None:
-                    parent_scope.__deliver_cancellation()
-                break
+        self._check_pending_cancellation(host_task)
 
         return self.__cancelled_caught
 
@@ -366,16 +362,11 @@ class CancelScope(AbstractCancelScope):
 
     @classmethod
     def _current_task_scope(cls, task: asyncio.Task[Any]) -> CancelScope | None:
-        try:
-            return cls.__current_task_scope_dict[task][0]
-        except LookupError:
-            return None
+        return next(cls._inner_to_outer_task_scopes(task), None)
 
     @classmethod
     def _inner_to_outer_task_scopes(cls, task: asyncio.Task[Any]) -> Iterator[CancelScope]:
-        if cls._current_task_scope(task) is None:
-            return iter(())
-        return iter(cls.__current_task_scope_dict[task])
+        return iter(cls.__current_task_scope_dict.get(task, ()))
 
     @classmethod
     def _reschedule_delayed_task_cancel(cls, task: asyncio.Task[Any], cancel_msg: str | None) -> asyncio.Handle:
@@ -385,6 +376,14 @@ class CancelScope(AbstractCancelScope):
         cls.__delayed_task_cancel_dict[task] = _DelayedCancel(task_cancel_handle, cancel_msg)
         task.get_loop().call_soon(cls.__delayed_task_cancel_dict.pop, task, None)
         return task_cancel_handle
+
+    @classmethod
+    def _check_pending_cancellation(cls, host_task: asyncio.Task[Any]) -> None:
+        for parent_scope in cls._inner_to_outer_task_scopes(host_task):
+            if parent_scope.__cancel_called:
+                if parent_scope.__cancel_handle is None:
+                    parent_scope.__deliver_cancellation()
+                break
 
     @staticmethod
     def __cancel_task_unless_done(task: asyncio.Task[Any], cancel_msg: str | None) -> None:
@@ -487,8 +486,10 @@ class TaskUtils:
                     else:
                         to_yield = coroutine.throw(exc_to_throw)
                 except StopIteration as exc:
+                    CancelScope._check_pending_cancellation(current_task)
                     return exc.value
                 except BaseException as exc:
+                    CancelScope._check_pending_cancellation(current_task)
                     _utils.remove_traceback_frames_in_place(exc, 1)
                     raise
                 finally:
