@@ -41,40 +41,40 @@ _T_PosArgs = TypeVarTuple("_T_PosArgs")
 @final
 @runtime_final_class
 class Task(AbstractTask[_T_co]):
-    __slots__ = ("__t", "__h")
+    __slots__ = ("__task", "__h")
 
     def __init__(self, task: asyncio.Task[_T_co]) -> None:
-        self.__t: asyncio.Task[_T_co] = task
+        self.__task: asyncio.Task[_T_co] = task
         self.__h: int | None = None
 
     def __repr__(self) -> str:
-        return f"<Task({self.__t})>"
+        return f"<Task({self.__task})>"
 
     def __hash__(self) -> int:
         if (h := self.__h) is None:
-            self.__h = h = hash((self.__class__, self.__t, 0xFF))
+            self.__h = h = hash((self.__class__, self.__task, 0xFF))
         return h
 
     def __eq__(self, other: object, /) -> bool:
         if not isinstance(other, Task):
             return NotImplemented
-        return self.__t == other.__t
+        return self.__task == other.__task
 
     @property
     def info(self) -> TaskInfo:
-        return TaskUtils.create_task_info(self.__t)
+        return TaskUtils.create_task_info(self.__task)
 
     def done(self) -> bool:
-        return self.__t.done()
+        return self.__task.done()
 
     def cancel(self) -> bool:
-        return self.__t.cancel()
+        return self.__task.cancel()
 
     def cancelled(self) -> bool:
-        return self.__t.cancelled()
+        return self.__task.cancelled()
 
     async def wait(self) -> None:
-        task = self.__t
+        task = self.__task
         if task.done():
             return
 
@@ -90,18 +90,16 @@ class Task(AbstractTask[_T_co]):
             task.remove_done_callback(on_task_done)
 
     async def join(self) -> _T_co:
-        task = self.__t
         try:
-            return await asyncio.shield(task)
+            return await asyncio.shield(self.__task)
         finally:
-            del task, self  # This is needed to avoid circular reference with raised exception
+            del self  # This is needed to avoid circular reference with raised exception
 
     async def join_or_cancel(self) -> _T_co:
-        task = self.__t
         try:
-            return await task
+            return await self.__task
         finally:
-            del task, self  # This is needed to avoid circular reference with raised exception
+            del self  # This is needed to avoid circular reference with raised exception
 
 
 @final
@@ -128,7 +126,7 @@ class TaskGroup(AbstractTaskGroup):
         try:
             await type(asyncio_tg).__aexit__(asyncio_tg, exc_type, exc_val, exc_tb)
         finally:
-            del exc_val, exc_tb, self
+            del exc_val, exc_tb, asyncio_tg, self
 
     def start_soon(
         self,
@@ -164,7 +162,7 @@ class TaskGroup(AbstractTaskGroup):
 
     @staticmethod
     async def __task_coroutine(
-        coro_func: Callable[[*_T_PosArgs], Coroutine[Any, Any, _T]],
+        coro_func: Callable[[*_T_PosArgs], Awaitable[_T]],
         args: tuple[*_T_PosArgs],
         waiter: asyncio.Future[None],
     ) -> _T:
@@ -174,11 +172,16 @@ class TaskGroup(AbstractTaskGroup):
             waiter.set_result(None)
         del waiter
 
+        coroutine = coro_func(*args)
+        del coro_func, args
+
         try:
-            return await coro_func(*args)
+            return await coroutine
         except BaseException as exc:
             _utils.remove_traceback_frames_in_place(exc, 1)
             raise
+        finally:
+            del coroutine
 
 
 class _ScopeState(enum.Enum):
