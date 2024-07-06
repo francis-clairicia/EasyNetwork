@@ -87,7 +87,7 @@ fn start_workers(args: &Args) -> io::Result<std::sync::mpsc::Receiver<RequestRep
 
         std::thread::spawn(move || {
             client.write_all(b"ping\n").unwrap();
-            if client.read_owned(128).unwrap() != b"ping\n" {
+            if *client.read_owned(128).unwrap() != *b"ping\n" {
                 panic!("socket read")
             }
 

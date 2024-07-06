@@ -1,4 +1,4 @@
-use std::{fmt, time::Duration};
+use std::{collections::LinkedList, fmt, time::Duration};
 
 use serde::Serialize;
 
@@ -22,7 +22,7 @@ impl RequestReport {
 
 #[derive(Debug, Clone)]
 pub struct TestReport {
-    times_per_request: Vec<RequestReport>,
+    times_per_request: LinkedList<RequestReport>,
     duration: Duration,
     messages_per_request: usize,
     message_size: usize,
@@ -40,7 +40,7 @@ impl TestReport {
 
     #[inline]
     pub fn add(&mut self, report: RequestReport) {
-        self.times_per_request.push(report);
+        self.times_per_request.push_back(report);
     }
 
     #[inline]
@@ -199,23 +199,12 @@ struct DistributionDisplay<'d>(&'d [(u8, f64)]);
 
 impl fmt::Display for DistributionDisplay<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        #[inline(always)]
-        fn write_single_distribution(f: &mut fmt::Formatter<'_>, percent: u8, time: f64) -> fmt::Result {
-            write!(f, "{percent}% under {time:.3}ms")
-        }
+        let distributions: Vec<String> = self
+            .0
+            .iter()
+            .map(|(percent, time)| format!("{percent}% under {time:.3}ms"))
+            .collect();
 
-        let mut iter = self.0.iter();
-
-        match iter.next() {
-            Some(&(percent, time)) => write_single_distribution(f, percent, time)?,
-            None => return Ok(()),
-        };
-
-        for &(percent, time) in iter {
-            write!(f, "; ")?;
-            write_single_distribution(f, percent, time)?;
-        }
-
-        Ok(())
+        write!(f, "{}", distributions.join("; "))
     }
 }

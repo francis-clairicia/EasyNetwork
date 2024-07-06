@@ -55,16 +55,19 @@ impl StreamClient {
         Ok(Self { inner: Box::new(socket) })
     }
 
-    #[cfg(unix)]
     pub fn unix<P: AsRef<Path>>(path: P) -> io::Result<Self> {
-        let socket = UnixStream::connect(path)?;
+        #[cfg(unix)]
+        {
+            let socket = UnixStream::connect(path)?;
 
-        Ok(Self { inner: Box::new(socket) })
-    }
+            Ok(Self { inner: Box::new(socket) })
+        }
 
-    #[cfg(not(unix))]
-    pub fn unix<P: AsRef<Path>>(_path: P) -> io::Result<Self> {
-        Err(io::Error::other("UNIX stream not supported"))
+        #[cfg(not(unix))]
+        {
+            drop(path);
+            Err(io::Error::other("UNIX stream not supported"))
+        }
     }
 
     pub fn start_tls(self) -> io::Result<Self> {
@@ -81,13 +84,13 @@ impl StreamClient {
         })
     }
 
-    pub fn read_owned(&mut self, bufsize: usize) -> io::Result<Vec<u8>> {
-        let mut buffer: Vec<u8> = vec![0; bufsize];
+    pub fn read_owned(&mut self, max_size: usize) -> io::Result<Box<[u8]>> {
+        let mut buffer: Vec<u8> = vec![0; max_size];
         if !buffer.is_empty() {
             let bufsize = self.read(&mut buffer)?;
-            buffer = buffer[..bufsize].to_owned();
+            buffer.truncate(bufsize);
         }
-        Ok(buffer)
+        Ok(buffer.into_boxed_slice())
     }
 }
 
