@@ -31,7 +31,6 @@ from typing import Any, NoReturn, ParamSpec, TypeVar, TypeVarTuple
 from .... import _utils
 from ....constants import HAPPY_EYEBALLS_DELAY as _DEFAULT_HAPPY_EYEBALLS_DELAY
 from ...transports.abc import AsyncDatagramListener, AsyncDatagramTransport, AsyncListener, AsyncStreamTransport
-from .. import _sniffio_helpers
 from ..abc import AsyncBackend as AbstractAsyncBackend, CancelScope, ICondition, IEvent, ILock, TaskGroup, TaskInfo, ThreadsPortal
 
 _P = ParamSpec("_P")
@@ -65,8 +64,14 @@ class AsyncIOBackend(AbstractAsyncBackend):
         *args: *_T_PosArgs,
         runner_options: Mapping[str, Any] | None = None,
     ) -> _T:
-        with self.__asyncio.Runner(**(runner_options or {})) as runner:
-            return runner.run(coro_func(*args))
+        from sniffio import thread_local
+
+        old_name, thread_local.name = thread_local.name, "asyncio"
+        try:
+            with self.__asyncio.Runner(**(runner_options or {})) as runner:
+                return runner.run(coro_func(*args))
+        finally:
+            thread_local.name = old_name
 
     async def coro_yield(self) -> None:
         await self.__coro_yield()
@@ -261,10 +266,12 @@ class AsyncIOBackend(AbstractAsyncBackend):
         return self.__asyncio.Condition(lock)
 
     async def run_in_thread(self, func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+        import sniffio
+
         loop = self.__asyncio.get_running_loop()
         ctx = contextvars.copy_context()
 
-        _sniffio_helpers.setup_sniffio_contextvar(ctx, None)
+        ctx.run(sniffio.current_async_library_cvar.set, None)
 
         cb = functools.partial(ctx.run, func, *args, **kwargs)
         return await self.__cancel_shielded_await(loop.run_in_executor(None, cb))

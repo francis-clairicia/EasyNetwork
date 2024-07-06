@@ -51,7 +51,13 @@ repos:
       - id: pdm-lock-check
       - id: pdm-export
         name: pdm-export benchmark-servers-deps
-        args: ['--dev', '--group', 'benchmark-servers-deps', '--format', 'requirements', '--without-hashes', '--output', 'benchmark_server/servers/requirements.txt']
+        args: [
+          '--dev',
+          '--group=benchmark-servers-deps',
+          '--format=requirements',
+          '--without-hashes',
+          '--output=benchmark_server/servers/requirements.txt'
+        ]
   - repo: https://github.com/doublify/pre-commit-rust
     rev: 'v1.0'
     hooks:

@@ -218,8 +218,7 @@ class TestAsyncTCPNetworkClient:
 
         expected_pattern: str
         if is_buffered_protocol:
-            pytest.xfail("asyncio implementation does not support buffered serializer yet.")
-            # expected_pattern = r"^protocol\.build_packet_from_buffer\(\) crashed$"
+            expected_pattern = r"^protocol\.build_packet_from_buffer\(\) crashed$"
         else:
             expected_pattern = r"^protocol\.build_packet_from_chunks\(\) crashed$"
         await event_loop.sock_sendall(server, b"ABCDEF\n")

@@ -11,6 +11,7 @@ from easynetwork.lowlevel.futures import AsyncExecutor, unwrap_future
 
 import pytest
 import pytest_asyncio
+import sniffio
 
 
 @pytest.mark.asyncio
@@ -35,13 +36,10 @@ class TestAsyncExecutor:
 
         assert await executor.run(thread_fn, 42) == 42
 
-    @pytest.mark.feature_sniffio
     async def test____run____sniffio_contextvar_reset(
         self,
         executor: AsyncExecutor[concurrent.futures.Executor],
     ) -> None:
-        import sniffio
-
         sniffio.current_async_library_cvar.set("asyncio")
 
         def callback() -> str | None:
@@ -82,12 +80,10 @@ class TestAsyncExecutor:
 
         assert results == [42, 42, 42]
 
-    @pytest.mark.feature_sniffio
     async def test____map____sniffio_contextvar_reset(
         self,
         executor: AsyncExecutor[concurrent.futures.Executor],
     ) -> None:
-        import sniffio
 
         sniffio.current_async_library_cvar.set("asyncio")
 

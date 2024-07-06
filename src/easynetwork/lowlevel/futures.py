@@ -28,7 +28,8 @@ from collections.abc import AsyncGenerator, Callable, Iterable
 from types import TracebackType
 from typing import Any, Generic, ParamSpec, Self, TypeVar
 
-from .api_async.backend import _sniffio_helpers
+import sniffio
+
 from .api_async.backend.abc import AsyncBackend
 from .api_async.backend.utils import BuiltinAsyncBackendLiteral, ensure_backend
 
@@ -203,7 +204,7 @@ class AsyncExecutor(Generic[_T_Executor]):
     def _setup_func(self, func: Callable[_P, _T]) -> Callable[_P, _T]:
         if self.__handle_contexts:
             ctx = contextvars.copy_context()
-            _sniffio_helpers.setup_sniffio_contextvar(ctx, None)
+            ctx.run(sniffio.current_async_library_cvar.set, None)
             func = functools.partial(ctx.run, func)
         return func
 

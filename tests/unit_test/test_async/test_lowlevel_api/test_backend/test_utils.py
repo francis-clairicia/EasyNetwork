@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from easynetwork.lowlevel.api_async.backend import _sniffio_helpers
 from easynetwork.lowlevel.api_async.backend._asyncio.backend import AsyncIOBackend
 from easynetwork.lowlevel.api_async.backend.utils import ensure_backend
 
@@ -16,7 +15,7 @@ if TYPE_CHECKING:
 
 @pytest.fixture
 def mock_current_async_library(mocker: MockerFixture) -> MagicMock:
-    return mocker.patch(f"{_sniffio_helpers.__name__}.current_async_library", autospec=True)
+    return mocker.patch("sniffio.current_async_library", autospec=True)
 
 
 def test____ensure_backend____valid_string_literal(mock_current_async_library: MagicMock) -> None:
