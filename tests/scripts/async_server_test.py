@@ -22,8 +22,6 @@ class MyAsyncRequestHandler(AsyncStreamRequestHandler[str, str], AsyncDatagramRe
         self.server = server
 
     async def handle(self, client: AsyncBaseClientInterface[str]) -> AsyncGenerator[None, str]:
-        from easynetwork.servers.async_tcp import AsyncTCPNetworkServer
-
         request: str = yield
         logger.debug(f"Received {request!r} from {client!r}")
         match request:
@@ -31,8 +29,8 @@ class MyAsyncRequestHandler(AsyncStreamRequestHandler[str, str], AsyncDatagramRe
                 raise RuntimeError("requested error")
             case "wait:":
                 request = (yield) + " after wait"
-            case "self_kill:" if isinstance(self.server, AsyncTCPNetworkServer):
-                self.server.stop_listening()
+            case "self_kill:":
+                await self.server.server_close()
                 await client.send_packet("stop_listening() done")
                 return
         await client.send_packet(request.upper())

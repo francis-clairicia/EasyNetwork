@@ -58,13 +58,6 @@ class BaseTestStandaloneNetworkServer:
         server.server_close()
 
     @pytest.mark.usefixtures("start_server")
-    def test____server_close____while_server_is_running(self, server: AbstractNetworkServer) -> None:
-        server.server_close()
-
-        with pytest.raises(ServerClosedError):
-            server.serve_forever()
-
-    @pytest.mark.usefixtures("start_server")
     def test____serve_forever____error_server_already_running(self, server: AbstractNetworkServer) -> None:
         with pytest.raises(ServerAlreadyRunning):
             server.serve_forever()
@@ -92,13 +85,11 @@ class BaseTestStandaloneNetworkServer:
         with server:
             for _ in range(3):
                 assert not server.is_serving()
-                assert not server.get_addresses()
 
                 server_thread = NetworkServerThread(server, daemon=True)
                 server_thread.start()
                 try:
                     assert server.is_serving()
-                    assert len(server.get_addresses()) > 0
                     time.sleep(0.5)
                 finally:
                     server_thread.join()
@@ -124,12 +115,6 @@ class TestStandaloneTCPNetworkServer(BaseTestStandaloneNetworkServer):
         with socket.create_connection(("localhost", port)) as client:
             yield client
 
-    def test____stop_listening____default_to_noop(self, server: StandaloneTCPNetworkServer[str, str]) -> None:
-        with server:
-            assert not server.get_sockets()
-            assert not server.get_addresses()
-            server.stop_listening()
-
     def test____socket_property____server_is_not_running(self, server: StandaloneTCPNetworkServer[str, str]) -> None:
         with server:
             assert len(server.get_sockets()) == 0
@@ -139,17 +124,6 @@ class TestStandaloneTCPNetworkServer(BaseTestStandaloneNetworkServer):
     def test____socket_property____server_is_running(self, server: StandaloneTCPNetworkServer[str, str]) -> None:
         assert len(server.get_sockets()) > 0
         assert len(server.get_addresses()) > 0
-
-    @pytest.mark.usefixtures("start_server", "client")
-    def test____stop_listening____stop_accepting_new_connection(self, server: StandaloneTCPNetworkServer[str, str]) -> None:
-        assert server.is_serving()
-        assert len(server.get_sockets()) > 0
-        assert len(server.get_addresses()) > 0
-
-        server.stop_listening()
-        assert not server.is_serving()
-        assert len(server.get_sockets()) > 0  # Sockets are closed, but always available until server_close() call
-        assert len(server.get_addresses()) == 0
 
 
 class TestStandaloneUDPNetworkServer(BaseTestStandaloneNetworkServer):

@@ -21,16 +21,15 @@ __all__ = ["AsyncTCPNetworkServer"]
 import contextlib
 import logging
 import weakref
-from collections import deque
 from collections.abc import AsyncIterator, Callable, Coroutine, Iterator, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Generic, NoReturn, final
 
 from .._typevars import _T_Request, _T_Response
-from ..exceptions import ClientClosedError, ServerAlreadyRunning, ServerClosedError
+from ..exceptions import ClientClosedError
 from ..lowlevel import _utils, constants
 from ..lowlevel._final import runtime_final_class
-from ..lowlevel.api_async.backend.abc import AsyncBackend, CancelScope, IEvent, Task, TaskGroup
-from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendLiteral, ensure_backend
+from ..lowlevel.api_async.backend.abc import AsyncBackend, TaskGroup
+from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendLiteral
 from ..lowlevel.api_async.servers import stream as _stream_server
 from ..lowlevel.api_async.transports.abc import AsyncListener, AsyncStreamTransport
 from ..lowlevel.socket import (
@@ -45,7 +44,7 @@ from ..lowlevel.socket import (
     set_tcp_nodelay,
 )
 from ..protocol import AnyStreamProtocolType
-from .abc import AbstractAsyncNetworkServer, SupportsEventSet
+from . import _base
 from .handlers import AsyncStreamClient, AsyncStreamRequestHandler, INETClientAttribute
 from .misc import build_lowlevel_stream_server_handler
 
@@ -53,25 +52,20 @@ if TYPE_CHECKING:
     from ssl import SSLContext
 
 
-class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_Response]):
+class AsyncTCPNetworkServer(
+    _base.BaseAsyncNetworkServerImpl[_stream_server.AsyncStreamServer[_T_Request, _T_Response], SocketAddress],
+    Generic[_T_Request, _T_Response],
+):
     """
     An asynchronous network server for TCP connections.
     """
 
     __slots__ = (
-        "__backend",
-        "__servers",
         "__listeners_factory",
-        "__listeners_factory_scope",
         "__protocol",
         "__request_handler",
-        "__is_shutdown",
         "__max_recv_size",
-        "__servers_tasks",
-        "__server_run_scope",
-        "__active_tasks",
         "__client_connection_log_level",
-        "__logger",
     )
 
     def __init__(
@@ -129,7 +123,13 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
         See Also:
             :ref:`SSL/TLS security considerations <ssl-security>`
         """
-        super().__init__()
+        super().__init__(
+            backend=backend,
+            servers_factory=type(self).__activate_listeners,
+            initialize_service=type(self).__initialize_service,
+            lowlevel_serve=type(self).__lowlevel_serve,
+            logger=logger or logging.getLogger(__name__),
+        )
 
         from ..lowlevel._stream import _check_any_protocol
 
@@ -138,7 +138,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
         if not isinstance(request_handler, AsyncStreamRequestHandler):
             raise TypeError(f"Expected an AsyncStreamRequestHandler object, got {request_handler!r}")
 
-        backend = ensure_backend(backend)
+        backend = self.backend()
 
         if backlog is None:
             backlog = 100
@@ -163,8 +163,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
         if ssl_standard_compatible is None:
             ssl_standard_compatible = True
 
-        self.__backend: AsyncBackend = backend
-        self.__listeners_factory: Callable[[], Coroutine[Any, Any, Sequence[AsyncListener[AsyncStreamTransport]]]] | None
+        self.__listeners_factory: Callable[[], Coroutine[Any, Any, Sequence[AsyncListener[AsyncStreamTransport]]]]
         if ssl:
             self.__listeners_factory = _utils.make_callback(
                 self.__create_ssl_over_tcp_listeners,
@@ -186,23 +185,15 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
                 backlog=backlog,
                 reuse_port=reuse_port,
             )
-        self.__listeners_factory_scope: CancelScope | None = None
-        self.__server_run_scope: CancelScope | None = None
 
-        self.__servers: tuple[_stream_server.AsyncStreamServer[_T_Request, _T_Response], ...] | None = None
         self.__protocol: AnyStreamProtocolType[_T_Response, _T_Request] = protocol
         self.__request_handler: AsyncStreamRequestHandler[_T_Request, _T_Response] = request_handler
-        self.__is_shutdown: IEvent = backend.create_event()
-        self.__is_shutdown.set()
         self.__max_recv_size: int = max_recv_size
-        self.__servers_tasks: deque[Task[NoReturn]] = deque()
-        self.__logger: logging.Logger = logger or logging.getLogger(__name__)
         self.__client_connection_log_level: int
         if log_client_connection:
             self.__client_connection_log_level = logging.INFO
         else:
             self.__client_connection_log_level = logging.DEBUG
-        self.__active_tasks: int = 0
 
     @staticmethod
     async def __create_ssl_over_tcp_listeners(
@@ -236,152 +227,33 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
             for listener in listeners
         ]
 
-    @_utils.inherit_doc(AbstractAsyncNetworkServer)
-    def is_serving(self) -> bool:
-        return self.__servers is not None and all(not server.is_closing() for server in self.__servers)
-
-    def stop_listening(self) -> None:
-        """
-        Schedules the shutdown of all listener sockets.
-
-        After that, all new connections will be refused, but the server will continue to run and handle
-        previously accepted connections.
-
-        Further calls to :meth:`is_serving` will return :data:`False`.
-        """
-        with contextlib.ExitStack() as exit_stack:
-            for listener_task in self.__servers_tasks:
-                exit_stack.callback(listener_task.cancel)
-                del listener_task
-
-    @_utils.inherit_doc(AbstractAsyncNetworkServer)
-    async def server_close(self) -> None:
-        if self.__listeners_factory_scope is not None:
-            self.__listeners_factory_scope.cancel()
-        self.__listeners_factory = None
-        await self.__close_servers()
-
-    async def __close_servers(self) -> None:
-        async with contextlib.AsyncExitStack() as exit_stack:
-            server_close_group = await exit_stack.enter_async_context(self.__backend.create_task_group())
-
-            servers, self.__servers = self.__servers, None
-            if servers is not None:
-                exit_stack.push_async_callback(self.__backend.cancel_shielded_coro_yield)
-                for server in servers:
-                    exit_stack.callback(server_close_group.start_soon, server.aclose)
-                    del server
-
-            for server_task in self.__servers_tasks:
-                server_task.cancel()
-                exit_stack.push_async_callback(server_task.wait)
-                del server_task
-
-            if self.__server_run_scope is not None:
-                self.__server_run_scope.cancel()
-
-            await self.__backend.cancel_shielded_coro_yield()
-
-    @_utils.inherit_doc(AbstractAsyncNetworkServer)
-    async def shutdown(self) -> None:
-        if self.__server_run_scope is not None:
-            self.__server_run_scope.cancel()
-        await self.__is_shutdown.wait()
-
-    @_utils.inherit_doc(AbstractAsyncNetworkServer)
-    async def serve_forever(self, *, is_up_event: SupportsEventSet | None = None) -> None:
-        async with contextlib.AsyncExitStack() as server_exit_stack:
-            # Wake up server
-            if not self.__is_shutdown.is_set():
-                raise ServerAlreadyRunning("Server is already running")
-            self.__is_shutdown = is_shutdown = self.__backend.create_event()
-            server_exit_stack.callback(is_shutdown.set)
-            self.__server_run_scope = server_exit_stack.enter_context(self.__backend.open_cancel_scope())
-
-            def reset_scope() -> None:
-                self.__server_run_scope = None
-
-            server_exit_stack.callback(reset_scope)
-            ################
-
-            # Bind and activate
-            assert self.__servers is None  # nosec assert_used
-            assert self.__listeners_factory_scope is None  # nosec assert_used
-            if self.__listeners_factory is None:
-                raise ServerClosedError("Closed server")
-            listeners: list[AsyncListener[AsyncStreamTransport]] = []
-            try:
-                with self.__backend.open_cancel_scope() as self.__listeners_factory_scope:
-                    await self.__backend.coro_yield()
-                    listeners.extend(await self.__listeners_factory())
-                if self.__listeners_factory_scope.cancelled_caught():
-                    raise ServerClosedError("Server has been closed during task setup")
-            finally:
-                self.__listeners_factory_scope = None
-            if not listeners:
-                raise OSError("empty listeners list")
-            self.__servers = tuple(
-                _stream_server.AsyncStreamServer(
-                    listener,
-                    self.__protocol,
-                    max_recv_size=self.__max_recv_size,
-                )
-                for listener in listeners
+    async def __activate_listeners(self) -> list[_stream_server.AsyncStreamServer[_T_Request, _T_Response]]:
+        return [
+            _stream_server.AsyncStreamServer(
+                listener,
+                self.__protocol,
+                max_recv_size=self.__max_recv_size,
             )
-            del listeners
-            ###################
+            for listener in await self.__listeners_factory()
+        ]
 
-            # Final teardown
-            server_exit_stack.callback(self.__logger.info, "Server stopped")
-            server_exit_stack.push_async_callback(self.__close_servers)
-            ################
+    async def __initialize_service(self, server_exit_stack: contextlib.AsyncExitStack) -> None:
+        await self.__request_handler.service_init(
+            await server_exit_stack.enter_async_context(contextlib.AsyncExitStack()),
+            weakref.proxy(self),
+        )
 
-            # Initialize request handler
-            await self.__request_handler.service_init(
-                await server_exit_stack.enter_async_context(contextlib.AsyncExitStack()),
-                weakref.proxy(self),
-            )
-            ############################
-
-            # Setup task group
-            self.__active_tasks = 0
-            server_exit_stack.callback(self.__servers_tasks.clear)
-            task_group = await server_exit_stack.enter_async_context(self.__backend.create_task_group())
-            server_exit_stack.callback(self.__logger.info, "Server loop break, waiting for remaining tasks...")
-            ##################
-
-            # Enable listener
-            self.__servers_tasks.extend([await task_group.start(self.__serve, server, task_group) for server in self.__servers])
-            self.__logger.info("Start serving at %s", ", ".join(map(str, self.get_addresses())))
-            #################
-
-            # Server is up
-            if is_up_event is not None:
-                is_up_event.set()
-            ##############
-
-            # Main loop
-            try:
-                await self.__backend.sleep_forever()
-            finally:
-                reset_scope()
-
-    async def __serve(
+    async def __lowlevel_serve(
         self,
         server: _stream_server.AsyncStreamServer[_T_Request, _T_Response],
         task_group: TaskGroup,
     ) -> NoReturn:
-        self.__attach_server()
-        try:
-            async with contextlib.aclosing(server):
-                handler = build_lowlevel_stream_server_handler(
-                    self.__client_initializer,
-                    self.__request_handler,
-                    logger=self.__logger,
-                )
-                await server.serve(handler, task_group)
-        finally:
-            self.__detach_server()
+        handler = build_lowlevel_stream_server_handler(
+            self.__client_initializer,
+            self.__request_handler,
+            logger=self.logger,
+        )
+        await server.serve(handler, task_group)
 
     @contextlib.asynccontextmanager
     async def __client_initializer(
@@ -389,15 +261,14 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
         lowlevel_client: _stream_server.ConnectedStreamClient[_T_Response],
     ) -> AsyncIterator[AsyncStreamClient[_T_Response] | None]:
         async with contextlib.AsyncExitStack() as client_exit_stack:
-            self.__attach_server()
-            client_exit_stack.callback(self.__detach_server)
+            client_exit_stack.enter_context(self._bind_server())
 
             client_address = lowlevel_client.extra(INETSocketAttribute.peername, None)
             if client_address is None:
                 # The remote host closed the connection before starting the task.
                 # See this test for details:
                 # test____serve_forever____accept_client____client_sent_RST_packet_right_after_accept
-                self.__logger.warning("A client connection was interrupted just after listener.accept()")
+                self.logger.warning("A client connection was interrupted just after listener.accept()")
                 yield None
                 return
 
@@ -416,7 +287,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
                 # We expect a TLS close handshake, so we must (try to) properly close the transport before
                 await client_exit_stack.enter_async_context(contextlib.aclosing(lowlevel_client))
 
-            logger: logging.Logger = self.__logger
+            logger: logging.Logger = self.logger
             client = _ConnectedClientAPI(client_address, lowlevel_client)
 
             del lowlevel_client
@@ -431,16 +302,6 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
                 _utils.remove_traceback_frames_in_place(exc, 1)
                 raise
 
-    def __attach_server(self) -> None:
-        self.__active_tasks += 1
-
-    def __detach_server(self) -> None:
-        self.__active_tasks -= 1
-        if self.__active_tasks < 0:
-            raise AssertionError("self.__active_tasks < 0")
-        if not self.__active_tasks and self.__server_run_scope is not None:
-            self.__server_run_scope.cancel()
-
     @staticmethod
     def __set_socket_linger_if_not_closed(socket: ISocket) -> None:
         with contextlib.suppress(OSError):
@@ -454,7 +315,7 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
                 yield
             except* ClientClosedError as excgrp:
                 _utils.remove_traceback_frames_in_place(excgrp, 1)  # Removes the 'yield' frame just above
-                self.__logger.warning(
+                self.logger.warning(
                     "There have been attempts to do operation on closed client %s",
                     client_address,
                     exc_info=excgrp,
@@ -466,18 +327,18 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
                 pass
         except Exception as exc:
             _utils.remove_traceback_frames_in_place(exc, 1)  # Removes the 'yield' frame just above
-            self.__logger.error("-" * 40)
-            self.__logger.error("Exception occurred during processing of request from %s", client_address, exc_info=exc)
-            self.__logger.error("-" * 40)
+            self.logger.error("-" * 40)
+            self.logger.error("Exception occurred during processing of request from %s", client_address, exc_info=exc)
+            self.logger.error("-" * 40)
 
-    @_utils.inherit_doc(AbstractAsyncNetworkServer)
+    @_utils.inherit_doc(_base.BaseAsyncNetworkServerImpl)
     def get_addresses(self) -> Sequence[SocketAddress]:
-        if (servers := self.__servers) is None:
-            return ()
-        return tuple(
-            new_socket_address(server.extra(INETSocketAttribute.sockname), server.extra(INETSocketAttribute.family))
-            for server in servers
-            if not server.is_closing()
+        return self._with_lowlevel_servers(
+            lambda servers: tuple(
+                new_socket_address(server.extra(INETSocketAttribute.sockname), server.extra(INETSocketAttribute.family))
+                for server in servers
+                if not server.is_closing()
+            )
         )
 
     def get_sockets(self) -> Sequence[SocketProxy]:
@@ -488,13 +349,9 @@ class AsyncTCPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
 
             If the server is not running, an empty sequence is returned.
         """
-        if (servers := self.__servers) is None:
-            return ()
-        return tuple(SocketProxy(server.extra(INETSocketAttribute.socket)) for server in servers)
-
-    @_utils.inherit_doc(AbstractAsyncNetworkServer)
-    def backend(self) -> AsyncBackend:
-        return self.__backend
+        return self._with_lowlevel_servers(
+            lambda servers: tuple(SocketProxy(server.extra(INETSocketAttribute.socket)) for server in servers)
+        )
 
 
 @final

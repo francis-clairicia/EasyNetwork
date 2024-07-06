@@ -27,7 +27,7 @@ from typing import Any, Generic
 from .._typevars import _T_Request, _T_Response
 from ..lowlevel.api_async.backend.abc import AsyncBackend
 from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendLiteral
-from ..lowlevel.socket import SocketProxy
+from ..lowlevel.socket import SocketAddress, SocketProxy
 from ..protocol import DatagramProtocol
 from . import _base
 from .async_udp import AsyncUDPNetworkServer
@@ -80,6 +80,16 @@ class StandaloneUDPNetworkServer(
             ),
             runner_options=runner_options,
         )
+
+    def get_addresses(self) -> Sequence[SocketAddress]:
+        """
+        Returns all interfaces to which the server is bound. Thread-safe.
+
+        Returns:
+            A sequence of network socket address.
+            If the server is not serving (:meth:`is_serving` returns :data:`False`), an empty sequence is returned.
+        """
+        return self._run_sync_or(lambda portal, server: portal.run_sync(server.get_addresses), ())
 
     def get_sockets(self) -> Sequence[SocketProxy]:
         """Gets the listeners sockets. Thread-safe.

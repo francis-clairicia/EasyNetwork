@@ -17,6 +17,7 @@ from easynetwork.exceptions import BusyResourceError
 from easynetwork.lowlevel._final import runtime_final_class
 from easynetwork.lowlevel._utils import (
     ElapsedTime,
+    Flag,
     ResourceGuard,
     adjust_leftover_buffer,
     check_real_socket_state,
@@ -806,6 +807,22 @@ def test____iterate_exceptions____recursive_yield_exceptions_in_group() -> None:
 
     # Assert
     assert all_exceptions == list(itertools.chain(sub_excgrp1.exceptions, sub_excgrp2.exceptions))
+
+
+def test____Flag___set_and_reset() -> None:
+    # Arrange
+    flag = Flag()
+    assert not flag.is_set()
+
+    # Act & Assert
+    flag.set()
+    assert flag.is_set()
+    flag.set()
+    assert flag.is_set()
+    flag.clear()
+    assert not flag.is_set()
+    flag.clear()
+    assert not flag.is_set()
 
 
 def test____ElapsedTime____catch_elapsed_time(mocker: MockerFixture) -> None:

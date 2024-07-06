@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Any, Generic
 from .._typevars import _T_Request, _T_Response
 from ..lowlevel.api_async.backend.abc import AsyncBackend
 from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendLiteral
-from ..lowlevel.socket import SocketProxy
+from ..lowlevel.socket import SocketAddress, SocketProxy
 from ..protocol import AnyStreamProtocolType
 from . import _base
 from .async_tcp import AsyncTCPNetworkServer
@@ -98,16 +98,15 @@ class StandaloneTCPNetworkServer(
             runner_options=runner_options,
         )
 
-    def stop_listening(self) -> None:
+    def get_addresses(self) -> Sequence[SocketAddress]:
         """
-        Schedules the shutdown of all listener sockets. Thread-safe.
+        Returns all interfaces to which the server is bound. Thread-safe.
 
-        After that, all new connections will be refused, but the server will continue to run and handle
-        previously accepted connections.
-
-        Further calls to :meth:`is_serving` will return :data:`False`.
+        Returns:
+            A sequence of network socket address.
+            If the server is not serving (:meth:`is_serving` returns :data:`False`), an empty sequence is returned.
         """
-        self._run_sync_or(lambda portal, server: portal.run_sync(server.stop_listening), None)
+        return self._run_sync_or(lambda portal, server: portal.run_sync(server.get_addresses), ())
 
     def get_sockets(self) -> Sequence[SocketProxy]:
         """Gets the listeners sockets. Thread-safe.

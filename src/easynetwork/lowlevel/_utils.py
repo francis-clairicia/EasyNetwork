@@ -16,6 +16,7 @@ from __future__ import annotations
 
 __all__ = [
     "ElapsedTime",
+    "Flag",
     "WarnCallback",
     "adjust_leftover_buffer",
     "check_real_socket_state",
@@ -393,6 +394,22 @@ class WarnCallback(Protocol):
         stacklevel: int = 1,
         source: Any | None = None,
     ) -> None: ...
+
+
+class Flag:
+    __slots__ = ("__value", "__weakref__")
+
+    def __init__(self) -> None:
+        self.__value: bool = False
+
+    def is_set(self) -> bool:
+        return self.__value
+
+    def set(self) -> None:
+        self.__value = True
+
+    def clear(self) -> None:
+        self.__value = False
 
 
 class ElapsedTime:
