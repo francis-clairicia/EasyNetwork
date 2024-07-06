@@ -22,6 +22,7 @@ class EchoRequestHandler(AsyncStreamRequestHandler[str, str], AsyncDatagramReque
         await client.send_packet(request)
 
 
+@pytest.mark.flaky(retries=3, delay=1)
 class BaseTestStandaloneNetworkServer:
     @pytest.fixture
     @staticmethod

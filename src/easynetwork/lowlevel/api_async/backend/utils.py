@@ -23,7 +23,8 @@ __all__ = [
 
 from typing import Literal, TypeAlias, cast
 
-from . import _sniffio_helpers
+import sniffio
+
 from .abc import AsyncBackend
 
 BuiltinAsyncBackendLiteral: TypeAlias = Literal["asyncio"]
@@ -34,27 +35,20 @@ def ensure_backend(backend: AsyncBackend | BuiltinAsyncBackendLiteral | None) ->
     """
     Obtain an interface for the give `backend`.
 
-    * If `backend` is already an :class:`AsyncBackend`, this object is returned.
+    * If `backend` is already an :class:`.AsyncBackend`, this object is returned.
 
     * If `backend` is a string token and matches one of the built-in implementation, a new object is returned.
 
        * Currently, only ``"asyncio"`` is recognized.
 
-    * If :data:`None`, the function tries to guess the library currently used.
-
-       * Needs ``sniffio`` feature to have extended researches, otherwise only :mod:`asyncio` is recognized.
-
-    See Also:
-
-        :ref:`optional-dependencies`
-            Explains how to install ``sniffio`` extra.
+    * If :data:`None`, the function tries to guess the library currently used with :mod:`sniffio`.
 
     Raises:
         NotImplementedError: the current asynchronous library is not implemented.
         RuntimeError: unknown async library, or not in async context
     """
     if backend is None:
-        backend = cast(BuiltinAsyncBackendLiteral, _sniffio_helpers.current_async_library())
+        backend = cast(BuiltinAsyncBackendLiteral, sniffio.current_async_library())
 
     match backend:
         case "asyncio":

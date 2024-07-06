@@ -30,7 +30,6 @@ from typing import ParamSpec, Self, TypeVar, final
 
 from .... import _lock, _utils
 from ...._final import runtime_final_class
-from .. import _sniffio_helpers
 from ..abc import ThreadsPortal as AbstractThreadsPortal
 from .tasks import TaskUtils
 
@@ -128,6 +127,8 @@ class ThreadsPortal(AbstractThreadsPortal):
         return self.run_sync(schedule_task)
 
     def run_sync_soon(self, func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> concurrent.futures.Future[_T]:
+        import sniffio
+
         def callback() -> None:
             waiter.set_result(None)
             if not future.set_running_or_notify_cancel():
@@ -151,7 +152,7 @@ class ThreadsPortal(AbstractThreadsPortal):
             waiter = self.__register_waiter(self.__call_soon_waiters, loop)
 
         ctx = contextvars.copy_context()
-        _sniffio_helpers.setup_sniffio_contextvar(ctx, "asyncio")
+        ctx.run(sniffio.current_async_library_cvar.set, "asyncio")
 
         future: concurrent.futures.Future[_T] = concurrent.futures.Future()
 

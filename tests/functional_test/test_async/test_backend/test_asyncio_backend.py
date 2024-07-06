@@ -11,6 +11,7 @@ from easynetwork.lowlevel.api_async.backend._asyncio.backend import AsyncIOBacke
 from easynetwork.lowlevel.api_async.backend.abc import TaskInfo
 
 import pytest
+import sniffio
 
 from ....tools import temporary_exception_handler
 
@@ -28,6 +29,28 @@ class ExceptionCaughtDict(TypedDict, total=False):
     handle: asyncio.Handle
     protocol: asyncio.BaseProtocol
     transport: asyncio.BaseTransport
+
+
+@pytest.mark.flaky(retries=3, delay=0)
+class TestAsyncioBackendBootstrap:
+    @pytest.fixture
+    @staticmethod
+    def backend() -> AsyncIOBackend:
+        return AsyncIOBackend()
+
+    def test____bootstrap____sniffio_thread_local_reset(
+        self,
+        backend: AsyncIOBackend,
+    ) -> None:
+        assert sniffio.thread_local.name is None
+
+        async def main() -> str | None:
+            return sniffio.thread_local.name
+
+        thread_local_inner = backend.bootstrap(main)
+
+        assert thread_local_inner == "asyncio"
+        assert sniffio.thread_local.name is None
 
 
 @pytest.mark.asyncio
@@ -715,10 +738,7 @@ class TestAsyncioBackend:
 
         assert not task.cancelled()
 
-    @pytest.mark.feature_sniffio
     async def test____run_in_thread____sniffio_contextvar_reset(self, backend: AsyncIOBackend) -> None:
-        import sniffio
-
         sniffio.current_async_library_cvar.set("asyncio")
 
         def callback() -> str | None:
@@ -773,7 +793,7 @@ class TestAsyncioBackend:
                 assert asyncio.get_running_loop() is not event_loop
                 return threads_portal.run_coroutine(coroutine, 42)
 
-            return backend.bootstrap(main)
+            return asyncio.run(main())
 
         async with backend.create_threads_portal() as threads_portal:
             assert await backend.run_in_thread(thread) == 42
@@ -845,13 +865,10 @@ class TestAsyncioBackend:
         async with backend.create_threads_portal() as threads_portal:
             assert await backend.run_in_thread(thread) == 54
 
-    @pytest.mark.feature_sniffio
     async def test____create_threads_portal____run_coroutine_from_thread____sniffio_contextvar_reset(
         self,
         backend: AsyncIOBackend,
     ) -> None:
-        import sniffio
-
         sniffio.current_async_library_cvar.set("main")
 
         async def coroutine() -> str | None:
@@ -910,7 +927,7 @@ class TestAsyncioBackend:
                 assert asyncio.get_running_loop() is not event_loop
                 return threads_portal.run_sync(not_threadsafe_func, 42)
 
-            return backend.bootstrap(main)
+            return asyncio.run(main())
 
         async with backend.create_threads_portal() as threads_portal:
             assert await backend.run_in_thread(thread) == 42
@@ -978,13 +995,10 @@ class TestAsyncioBackend:
         async with backend.create_threads_portal() as threads_portal:
             await backend.run_in_thread(thread)
 
-    @pytest.mark.feature_sniffio
     async def test____create_threads_portal____run_sync_from_thread_in_event_loop____sniffio_contextvar_reset(
         self,
         backend: AsyncIOBackend,
     ) -> None:
-        import sniffio
-
         sniffio.current_async_library_cvar.set("main")
 
         def callback() -> str | None:
