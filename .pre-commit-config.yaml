@@ -52,7 +52,6 @@ repos:
       - id: pdm-export
         name: pdm-export benchmark-servers-deps
         args: [
-          '--no-default',
           '--dev',
           '--group=benchmark-servers-deps',
           '--format=requirements',
