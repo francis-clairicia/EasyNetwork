@@ -148,7 +148,6 @@ class AbstractAsyncNetworkServer(metaclass=ABCMeta):
         Raises:
             ServerClosedError: The server is closed.
             ServerAlreadyRunning: Another task already called :meth:`serve_forever`.
-            ServerNotActivated: :meth:`server_activate` must be used before calling :meth:`serve_forever`.
         """
         raise NotImplementedError
 
@@ -165,8 +164,6 @@ class AbstractAsyncNetworkServer(metaclass=ABCMeta):
         Opens all listeners.
 
         This method MUST be idempotent. Further calls to :meth:`is_listening` will return :data:`True`.
-
-        To stop and close the listeners, you can use :meth:`stop_listening`.
 
         Raises:
             ServerClosedError: The server is closed.
