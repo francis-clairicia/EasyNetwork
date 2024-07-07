@@ -101,17 +101,17 @@ class BaseTestAsyncServer:
 
     async def test____serve_forever____shutdown_during_setup(
         self,
-        server: AbstractAsyncNetworkServer,
+        server_not_activated: AbstractAsyncNetworkServer,
         enable_eager_tasks: bool,
     ) -> None:
         event = asyncio.Event()
         async with asyncio.TaskGroup() as tg:
-            _ = tg.create_task(server.serve_forever(is_up_event=event))
+            _ = tg.create_task(server_not_activated.serve_forever(is_up_event=event))
             if not enable_eager_tasks:
                 await asyncio.sleep(0)
             assert not event.is_set()
             async with asyncio.timeout(1):
-                await server.shutdown()
+                await server_not_activated.shutdown()
             assert not event.is_set()
 
     async def test____serve_forever____without_is_up_event(
