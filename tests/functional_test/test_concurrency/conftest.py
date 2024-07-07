@@ -49,6 +49,7 @@ def _run_server(server: AbstractNetworkServer) -> None:
 
 
 def _retrieve_server_address(server: AbstractNetworkServer) -> tuple[str, int]:
+    assert isinstance(server, (StandaloneTCPNetworkServer, StandaloneUDPNetworkServer))
     address = server.get_addresses()[0]
     if isinstance(address, IPv4SocketAddress):
         return "127.0.0.1", address.port

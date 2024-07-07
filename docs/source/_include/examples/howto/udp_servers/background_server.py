@@ -60,6 +60,7 @@ async def main() -> None:
         await client(host, port, "Hello world 3")
 
         await server.shutdown()
+        await server_task
 
 
 if __name__ == "__main__":

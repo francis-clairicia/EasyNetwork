@@ -96,6 +96,11 @@ class BaseTestAsyncServer:
     ) -> None:
         await run_server.wait()
         await server.server_close()
+        await asyncio.sleep(0.5)
+
+        # There is no client so the server loop should stop by itself
+        assert not server.is_serving()
+        assert not server.is_listening()
 
     @pytest.mark.usefixtures("run_server")
     async def test____serve_forever____error_already_running(self, server: AbstractAsyncNetworkServer) -> None:
@@ -109,37 +114,17 @@ class BaseTestAsyncServer:
 
     async def test____serve_forever____shutdown_during_setup(
         self,
-        server: AbstractAsyncNetworkServer,
+        server_not_activated: AbstractAsyncNetworkServer,
         enable_eager_tasks: bool,
     ) -> None:
         event = asyncio.Event()
         async with asyncio.TaskGroup() as tg:
-            _ = tg.create_task(server.serve_forever(is_up_event=event))
+            _ = tg.create_task(server_not_activated.serve_forever(is_up_event=event))
             if not enable_eager_tasks:
                 await asyncio.sleep(0)
             assert not event.is_set()
             async with asyncio.timeout(1):
-                await server.shutdown()
-            assert not event.is_set()
-
-    async def test____serve_forever____server_close_during_setup(
-        self,
-        server: AbstractAsyncNetworkServer,
-        enable_eager_tasks: bool,
-    ) -> None:
-        event = asyncio.Event()
-
-        async def serve() -> None:
-            with pytest.raises(ServerClosedError):
-                await server.serve_forever(is_up_event=event)
-
-        async with asyncio.TaskGroup() as tg:
-            _ = tg.create_task(serve())
-            if not enable_eager_tasks:
-                await asyncio.sleep(0)
-            assert not event.is_set()
-            async with asyncio.timeout(1):
-                await server.server_close()
+                await server_not_activated.shutdown()
             assert not event.is_set()
 
     async def test____serve_forever____without_is_up_event(
@@ -166,3 +151,21 @@ class BaseTestAsyncServer:
             await run_server.wait()
 
         await asyncio.gather(*[server.shutdown() for _ in range(10)])
+
+    async def test____server_activate____server_close_during_activation(
+        self,
+        server_not_activated: AbstractAsyncNetworkServer,
+        enable_eager_tasks: bool,
+    ) -> None:
+        async def serve() -> None:
+            with pytest.raises(ServerClosedError):
+                await server_not_activated.server_activate()
+
+        async with asyncio.TaskGroup() as tg:
+            _ = tg.create_task(serve())
+            if not enable_eager_tasks:
+                await asyncio.sleep(0)
+            assert not server_not_activated.is_listening()
+            async with asyncio.timeout(1):
+                await server_not_activated.server_close()
+            assert not server_not_activated.is_listening()

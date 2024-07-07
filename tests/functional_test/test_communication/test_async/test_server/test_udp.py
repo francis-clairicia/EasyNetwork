@@ -252,6 +252,34 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
 
     @pytest_asyncio.fixture
     @staticmethod
+    async def server_not_activated(
+        asyncio_backend: AsyncIOBackend,
+        request_handler: AsyncDatagramRequestHandler[str, str],
+        localhost_ip: str,
+        datagram_protocol: DatagramProtocol[str, str],
+        caplog: pytest.LogCaptureFixture,
+        logger_crash_threshold_level: dict[str, int],
+    ) -> AsyncIterator[MyAsyncUDPServer]:
+        server = MyAsyncUDPServer(
+            localhost_ip,
+            0,
+            datagram_protocol,
+            request_handler,
+            asyncio_backend,
+            logger=LOGGER,
+        )
+        try:
+            assert not server.is_listening()
+            assert not server.get_sockets()
+            assert not server.get_addresses()
+            caplog.set_level(logging.INFO, LOGGER.name)
+            logger_crash_threshold_level[LOGGER.name] = logging.WARNING
+            yield server
+        finally:
+            await server.server_close()
+
+    @pytest_asyncio.fixture
+    @staticmethod
     async def server(
         asyncio_backend: AsyncIOBackend,
         request_handler: AsyncDatagramRequestHandler[str, str],
@@ -268,8 +296,9 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
             asyncio_backend,
             logger=LOGGER,
         ) as server:
-            assert not server.get_sockets()
-            assert not server.get_addresses()
+            assert server.is_listening()
+            assert server.get_sockets()
+            assert server.get_addresses()
             caplog.set_level(logging.INFO, LOGGER.name)
             logger_crash_threshold_level[LOGGER.name] = logging.WARNING
             yield server
@@ -314,11 +343,14 @@ class TestAsyncUDPNetworkServer(BaseTestAsyncServer):
         request_handler: MyAsyncUDPRequestHandler,
         datagram_protocol: DatagramProtocol[str, str],
     ) -> None:
-        async with MyAsyncUDPServer(None, 0, datagram_protocol, request_handler, NoListenerErrorBackend()) as s:
+        s = MyAsyncUDPServer(None, 0, datagram_protocol, request_handler, NoListenerErrorBackend())
+        try:
             with pytest.raises(OSError, match=r"^empty listeners list$"):
                 await s.serve_forever()
 
             assert not s.get_sockets()
+        finally:
+            await s.server_close()
 
     @pytest.mark.usefixtures("run_server_and_wait")
     async def test____serve_forever____server_assignment(

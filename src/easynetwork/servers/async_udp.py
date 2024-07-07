@@ -22,41 +22,40 @@ import contextlib
 import logging
 import types
 import weakref
-from collections import deque
 from collections.abc import Callable, Coroutine, Mapping, Sequence
 from typing import Any, Generic, NoReturn, final
 
 from .._typevars import _T_Request, _T_Response
-from ..exceptions import ClientClosedError, ServerAlreadyRunning, ServerClosedError
+from ..exceptions import ClientClosedError
 from ..lowlevel import _utils
 from ..lowlevel._final import runtime_final_class
-from ..lowlevel.api_async.backend.abc import AsyncBackend, CancelScope, IEvent, Task, TaskGroup
-from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendLiteral, ensure_backend
+from ..lowlevel.api_async.backend.abc import AsyncBackend, TaskGroup
+from ..lowlevel.api_async.backend.utils import BuiltinAsyncBackendLiteral
 from ..lowlevel.api_async.servers import datagram as _datagram_server
 from ..lowlevel.api_async.transports.abc import AsyncDatagramListener
 from ..lowlevel.socket import INETSocketAttribute, SocketAddress, SocketProxy, new_socket_address
 from ..protocol import DatagramProtocol
-from .abc import AbstractAsyncNetworkServer, SupportsEventSet
+from . import _base
 from .handlers import AsyncDatagramClient, AsyncDatagramRequestHandler, INETClientAttribute
 from .misc import build_lowlevel_datagram_server_handler
 
 
-class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_Response]):
+class AsyncUDPNetworkServer(
+    _base.BaseAsyncNetworkServerImpl[
+        _datagram_server.AsyncDatagramServer[_T_Request, _T_Response, tuple[Any, ...]],
+        SocketAddress,
+    ],
+    Generic[_T_Request, _T_Response],
+):
     """
     An asynchronous network server for UDP communication.
     """
 
     __slots__ = (
-        "__backend",
-        "__servers",
         "__listeners_factory",
-        "__listeners_factory_scope",
         "__protocol",
         "__request_handler",
-        "__is_shutdown",
-        "__servers_tasks",
-        "__server_run_scope",
-        "__logger",
+        "__service_available",
     )
 
     def __init__(
@@ -86,166 +85,73 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
                         This option is not supported on Windows.
             logger: If given, the logger instance to use.
         """
-        super().__init__()
+        super().__init__(
+            backend=backend,
+            servers_factory=type(self).__activate_listeners,
+            initialize_service=type(self).__initialize_service,
+            lowlevel_serve=type(self).__lowlevel_serve,
+            logger=logger or logging.getLogger(__name__),
+        )
 
         if not isinstance(protocol, DatagramProtocol):
             raise TypeError(f"Expected a DatagramProtocol object, got {protocol!r}")
         if not isinstance(request_handler, AsyncDatagramRequestHandler):
             raise TypeError(f"Expected an AsyncDatagramRequestHandler object, got {request_handler!r}")
 
-        backend = ensure_backend(backend)
+        backend = self.backend()
 
-        self.__backend: AsyncBackend = backend
-        self.__listeners_factory: Callable[[], Coroutine[Any, Any, Sequence[AsyncDatagramListener[tuple[Any, ...]]]]] | None
+        self.__listeners_factory: Callable[[], Coroutine[Any, Any, Sequence[AsyncDatagramListener[tuple[Any, ...]]]]]
         self.__listeners_factory = _utils.make_callback(
             backend.create_udp_listeners,
             host,
             port,
             reuse_port=reuse_port,
         )
-        self.__listeners_factory_scope: CancelScope | None = None
-        self.__server_run_scope: CancelScope | None = None
 
-        self.__servers: tuple[_datagram_server.AsyncDatagramServer[_T_Request, _T_Response, tuple[Any, ...]], ...] | None
-        self.__servers = None
         self.__protocol: DatagramProtocol[_T_Response, _T_Request] = protocol
         self.__request_handler: AsyncDatagramRequestHandler[_T_Request, _T_Response] = request_handler
-        self.__is_shutdown: IEvent = backend.create_event()
-        self.__is_shutdown.set()
-        self.__servers_tasks: deque[Task[NoReturn]] = deque()
-        self.__logger: logging.Logger = logger or logging.getLogger(__name__)
+        self.__service_available = _utils.Flag()
 
-    @_utils.inherit_doc(AbstractAsyncNetworkServer)
-    def is_serving(self) -> bool:
-        return self.__servers is not None and all(not server.is_closing() for server in self.__servers)
-
-    @_utils.inherit_doc(AbstractAsyncNetworkServer)
-    async def server_close(self) -> None:
-        if self.__listeners_factory_scope is not None:
-            self.__listeners_factory_scope.cancel()
-        self.__listeners_factory = None
-        await self.__close_servers()
-
-    async def __close_servers(self) -> None:
-        async with contextlib.AsyncExitStack() as exit_stack:
-            server_close_group = await exit_stack.enter_async_context(self.__backend.create_task_group())
-
-            servers, self.__servers = self.__servers, None
-            if servers is not None:
-                exit_stack.push_async_callback(self.__backend.cancel_shielded_coro_yield)
-                for server in servers:
-                    exit_stack.callback(server_close_group.start_soon, server.aclose)
-                    del server
-
-            for server_task in self.__servers_tasks:
-                server_task.cancel()
-                exit_stack.push_async_callback(server_task.wait)
-                del server_task
-
-            if self.__server_run_scope is not None:
-                self.__server_run_scope.cancel()
-
-            await self.__backend.cancel_shielded_coro_yield()
-
-    @_utils.inherit_doc(AbstractAsyncNetworkServer)
-    async def shutdown(self) -> None:
-        if self.__server_run_scope is not None:
-            self.__server_run_scope.cancel()
-        await self.__is_shutdown.wait()
-
-    @_utils.inherit_doc(AbstractAsyncNetworkServer)
-    async def serve_forever(self, *, is_up_event: SupportsEventSet | None = None) -> None:
-        async with contextlib.AsyncExitStack() as server_exit_stack:
-            # Wake up server
-            if not self.__is_shutdown.is_set():
-                raise ServerAlreadyRunning("Server is already running")
-            self.__is_shutdown = is_shutdown = self.__backend.create_event()
-            server_exit_stack.callback(is_shutdown.set)
-            self.__server_run_scope = server_exit_stack.enter_context(self.__backend.open_cancel_scope())
-
-            def reset_scope() -> None:
-                self.__server_run_scope = None
-
-            server_exit_stack.callback(reset_scope)
-            ################
-
-            # Bind and activate
-            assert self.__servers is None  # nosec assert_used
-            assert self.__listeners_factory_scope is None  # nosec assert_used
-            if self.__listeners_factory is None:
-                raise ServerClosedError("Closed server")
-            listeners: list[AsyncDatagramListener[tuple[Any, ...]]] = []
-            try:
-                with self.__backend.open_cancel_scope() as self.__listeners_factory_scope:
-                    await self.__backend.coro_yield()
-                    listeners.extend(await self.__listeners_factory())
-                if self.__listeners_factory_scope.cancelled_caught():
-                    raise ServerClosedError("Server has been closed during task setup")
-            finally:
-                self.__listeners_factory_scope = None
-            if not listeners:
-                raise OSError("empty listeners list")
-            self.__servers = tuple(_datagram_server.AsyncDatagramServer(listener, self.__protocol) for listener in listeners)
-            del listeners
-            ###################
-
-            # Final teardown
-            server_exit_stack.callback(self.__logger.info, "Server stopped")
-            ################
-
-            # Initialize request handler
-            await self.__request_handler.service_init(
-                await server_exit_stack.enter_async_context(contextlib.AsyncExitStack()),
-                weakref.proxy(self),
+    async def __activate_listeners(self) -> list[_datagram_server.AsyncDatagramServer[_T_Request, _T_Response, tuple[Any, ...]]]:
+        return [
+            _datagram_server.AsyncDatagramServer(
+                listener,
+                self.__protocol,
             )
-            server_exit_stack.push_async_callback(self.__close_servers)
-            ############################
+            for listener in await self.__listeners_factory()
+        ]
 
-            # Setup task group
-            server_exit_stack.callback(self.__servers_tasks.clear)
-            task_group: TaskGroup = await server_exit_stack.enter_async_context(self.__backend.create_task_group())
-            server_exit_stack.callback(self.__logger.info, "Server loop break, waiting for remaining tasks...")
-            ##################
+    async def __initialize_service(self, server_exit_stack: contextlib.AsyncExitStack) -> None:
+        await self.__request_handler.service_init(
+            await server_exit_stack.enter_async_context(contextlib.AsyncExitStack()),
+            weakref.proxy(self),
+        )
 
-            # Enable listener
-            self.__servers_tasks.extend(
-                [
-                    await task_group.start(
-                        server.serve,
-                        build_lowlevel_datagram_server_handler(self.__client_initializer, self.__request_handler),
-                        task_group,
-                    )
-                    for server in self.__servers
-                ]
-            )
-            self.__logger.info("Start serving at %s", ", ".join(map(str, self.get_addresses())))
-            #################
+        self.__service_available.set()
+        server_exit_stack.callback(self.__service_available.clear)
 
-            # Server is up
-            if is_up_event is not None:
-                is_up_event.set()
-            ##############
-
-            # Main loop
-            try:
-                await self.__backend.sleep_forever()
-            finally:
-                reset_scope()
+    async def __lowlevel_serve(
+        self,
+        server: _datagram_server.AsyncDatagramServer[_T_Request, _T_Response, tuple[Any, ...]],
+        task_group: TaskGroup,
+    ) -> NoReturn:
+        handler = build_lowlevel_datagram_server_handler(self.__client_initializer, self.__request_handler)
+        await server.serve(handler, task_group)
 
     def __client_initializer(
         self,
         lowlevel_client: _datagram_server.DatagramClientContext[_T_Response, tuple[Any, ...]],
     ) -> _ClientContext:
-        return _ClientContext(lowlevel_client, self.__logger)
+        return _ClientContext(lowlevel_client, self.__service_available, self.logger)
 
-    @_utils.inherit_doc(AbstractAsyncNetworkServer)
+    @_utils.inherit_doc(_base.BaseAsyncNetworkServerImpl)
     def get_addresses(self) -> Sequence[SocketAddress]:
-        if (servers := self.__servers) is None:
-            return ()
-        return tuple(
-            new_socket_address(server.extra(INETSocketAttribute.sockname), server.extra(INETSocketAttribute.family))
-            for server in servers
-            if not server.is_closing()
+        return self._with_lowlevel_servers(
+            lambda servers: tuple(
+                new_socket_address(server.extra(INETSocketAttribute.sockname), server.extra(INETSocketAttribute.family))
+                for server in servers
+                if not server.is_closing()
+            )
         )
 
     def get_sockets(self) -> Sequence[SocketProxy]:
@@ -256,13 +162,9 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
 
             If the server is not running, an empty sequence is returned.
         """
-        if (servers := self.__servers) is None:
-            return ()
-        return tuple(SocketProxy(server.extra(INETSocketAttribute.socket)) for server in servers)
-
-    @_utils.inherit_doc(AbstractAsyncNetworkServer)
-    def backend(self) -> AsyncBackend:
-        return self.__backend
+        return self._with_lowlevel_servers(
+            lambda servers: tuple(SocketProxy(server.extra(INETSocketAttribute.socket)) for server in servers)
+        )
 
 
 @final
@@ -270,15 +172,21 @@ class AsyncUDPNetworkServer(AbstractAsyncNetworkServer, Generic[_T_Request, _T_R
 class _ClientAPI(AsyncDatagramClient[_T_Response]):
     __slots__ = (
         "__context",
+        "__service_available",
         "__h",
         "__extra_attributes_cache",
     )
 
-    def __init__(self, context: _datagram_server.DatagramClientContext[_T_Response, tuple[Any, ...]]) -> None:
+    def __init__(
+        self,
+        context: _datagram_server.DatagramClientContext[_T_Response, tuple[Any, ...]],
+        service_available: _utils.Flag,
+    ) -> None:
         super().__init__()
         self.__context: _datagram_server.DatagramClientContext[_T_Response, tuple[Any, ...]] = context
         self.__h: int | None = None
         self.__extra_attributes_cache: Mapping[Any, Callable[[], Any]] | None = None
+        self.__service_available: _utils.Flag = service_available
 
     def __repr__(self) -> str:
         return f"<client with address {self.__context.address} at {id(self):#x}>"
@@ -294,12 +202,19 @@ class _ClientAPI(AsyncDatagramClient[_T_Response]):
         return self.__context == other.__context
 
     def is_closing(self) -> bool:
-        return self.__context.server.is_closing()
+        return self.__is_closing(self.__service_available, self.__context.server)
+
+    @staticmethod
+    def __is_closing(
+        service_available: _utils.Flag,
+        server: _datagram_server.AsyncDatagramServer[Any, _T_Response, tuple[Any, ...]],
+    ) -> bool:
+        return (not service_available.is_set()) or server.is_closing()
 
     async def send_packet(self, packet: _T_Response, /) -> None:
         server = self.__context.server
         address = self.__context.address
-        if server.is_closing():
+        if self.__is_closing(self.__service_available, server):
             raise ClientClosedError("Closed client")
         await server.send_packet_to(packet, address)
 
@@ -328,19 +243,22 @@ class _ClientAPI(AsyncDatagramClient[_T_Response]):
 class _ClientContext:
     __slots__ = (
         "__lowlevel_client",
+        "__service_available",
         "__logger",
     )
 
     def __init__(
         self,
         lowlevel_client: _datagram_server.DatagramClientContext[Any, tuple[Any, ...]],
+        service_available: _utils.Flag,
         logger: logging.Logger,
     ) -> None:
         self.__lowlevel_client: _datagram_server.DatagramClientContext[Any, tuple[Any, ...]] = lowlevel_client
+        self.__service_available: _utils.Flag = service_available
         self.__logger: logging.Logger = logger
 
     async def __aenter__(self) -> AsyncDatagramClient[_T_Response]:
-        return _ClientAPI(self.__lowlevel_client)
+        return _ClientAPI(self.__lowlevel_client, self.__service_available)
 
     async def __aexit__(
         self,

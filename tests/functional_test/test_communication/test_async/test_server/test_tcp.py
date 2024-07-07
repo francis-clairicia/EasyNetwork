@@ -7,7 +7,7 @@ import logging
 import ssl
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Sequence
 from socket import IPPROTO_TCP, TCP_NODELAY
-from typing import Any, Literal
+from typing import Any
 from weakref import WeakValueDictionary
 
 from easynetwork.exceptions import (
@@ -134,7 +134,7 @@ class MyAsyncTCPRequestHandler(AsyncStreamRequestHandler[str, str]):
             case "__os_error__":
                 raise OSError("Server issue.")
             case "__stop_listening__":
-                self.server.stop_listening()
+                await self.server.server_close()
                 await client.send_packet("successfully stop listening")
             case "__wait__":
                 while True:
@@ -364,6 +364,35 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
 
     @pytest_asyncio.fixture
     @staticmethod
+    async def server_not_activated(
+        asyncio_backend: AsyncIOBackend,
+        request_handler: MyAsyncTCPRequestHandler,
+        localhost_ip: str,
+        stream_protocol: AnyStreamProtocolType[str, str],
+        caplog: pytest.LogCaptureFixture,
+        logger_crash_threshold_level: dict[str, int],
+    ) -> AsyncIterator[MyAsyncTCPServer]:
+        server = MyAsyncTCPServer(
+            localhost_ip,
+            0,
+            stream_protocol,
+            request_handler,
+            asyncio_backend,
+            backlog=1,
+            logger=LOGGER,
+        )
+        try:
+            assert not server.is_listening()
+            assert not server.get_sockets()
+            assert not server.get_addresses()
+            caplog.set_level(logging.INFO, LOGGER.name)
+            logger_crash_threshold_level[LOGGER.name] = logging.WARNING
+            yield server
+        finally:
+            await server.server_close()
+
+    @pytest_asyncio.fixture
+    @staticmethod
     async def server(
         asyncio_backend: AsyncIOBackend,
         request_handler: MyAsyncTCPRequestHandler,
@@ -391,8 +420,9 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
             ssl_standard_compatible=ssl_standard_compatible,
             logger=LOGGER,
         ) as server:
-            assert not server.get_sockets()
-            assert not server.get_addresses()
+            assert server.is_listening()
+            assert server.get_sockets()
+            assert server.get_addresses()
             caplog.set_level(logging.INFO, LOGGER.name)
             logger_crash_threshold_level[LOGGER.name] = logging.WARNING
             yield server
@@ -544,11 +574,14 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         request_handler: MyAsyncTCPRequestHandler,
         stream_protocol: AnyStreamProtocolType[str, str],
     ) -> None:
-        async with MyAsyncTCPServer(None, 0, stream_protocol, request_handler, NoListenerErrorBackend()) as s:
+        s = MyAsyncTCPServer(None, 0, stream_protocol, request_handler, NoListenerErrorBackend())
+        try:
             with pytest.raises(OSError, match=r"^empty listeners list$"):
-                await s.serve_forever()
+                await s.server_activate()
 
             assert not s.get_sockets()
+        finally:
+            await s.server_close()
 
     @pytest.mark.usefixtures("run_server_and_wait")
     async def test____serve_forever____server_assignment(
@@ -624,22 +657,14 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         # (c.f. https://stackoverflow.com/a/31835137)
         assert tcp_nodelay_state != 0
 
-    @pytest.mark.parametrize("action", ["shutdown", "server_close"])
-    async def test____serve_forever____close_during_loop____kill_client_tasks(
+    async def test____serve_forever____shutdown_during_loop____kill_client_tasks(
         self,
-        action: Literal["shutdown", "server_close"],
         server: MyAsyncTCPServer,
         client_factory: Callable[[], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]],
     ) -> None:
         reader, _ = await client_factory()
 
-        match action:
-            case "shutdown":
-                await server.shutdown()
-            case "server_close":
-                await server.server_close()
-            case _:
-                pytest.fail("Invalid argument")
+        await server.shutdown()
         await asyncio.sleep(0.3)
 
         with contextlib.suppress(ConnectionError):
@@ -941,9 +966,9 @@ class TestAsyncTCPNetworkServer(BaseTestAsyncServer):
         writer.write(b"__stop_listening__\n")
 
         assert await reader.readline() == b"successfully stop listening\n"
+        await asyncio.sleep(0.1)
 
         assert not server.is_serving()
-        await asyncio.sleep(0.1)
 
         with pytest.raises(ExceptionGroup) as exc_info:
             await client_factory()

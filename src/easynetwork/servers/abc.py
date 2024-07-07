@@ -23,12 +23,10 @@ __all__ = [
 ]
 
 from abc import ABCMeta, abstractmethod
-from collections.abc import Sequence
 from types import TracebackType
 from typing import Protocol, Self
 
 from ..lowlevel.api_async.backend.abc import AsyncBackend
-from ..lowlevel.socket import SocketAddress
 
 
 class SupportsEventSet(Protocol):
@@ -108,17 +106,6 @@ class AbstractNetworkServer(metaclass=ABCMeta):
         """
         raise NotImplementedError
 
-    @abstractmethod
-    def get_addresses(self) -> Sequence[SocketAddress]:
-        """
-        Returns all interfaces to which the server is bound. Thread-safe.
-
-        Returns:
-            A sequence of network socket address.
-            If the server is not serving (:meth:`is_serving` returns :data:`False`), an empty sequence is returned.
-        """
-        raise NotImplementedError
-
 
 class AbstractAsyncNetworkServer(metaclass=ABCMeta):
     """
@@ -128,6 +115,8 @@ class AbstractAsyncNetworkServer(metaclass=ABCMeta):
     __slots__ = ("__weakref__",)
 
     async def __aenter__(self) -> Self:
+        """Calls :meth:`server_activate`."""
+        await self.server_activate()
         return self
 
     async def __aexit__(
@@ -142,7 +131,7 @@ class AbstractAsyncNetworkServer(metaclass=ABCMeta):
     @abstractmethod
     def is_serving(self) -> bool:
         """
-        Checks whether the server is up and accepting new clients.
+        Checks whether the server is up (:meth:`is_listening` returns :data:`True`) and accepting new clients.
         """
         raise NotImplementedError
 
@@ -151,12 +140,33 @@ class AbstractAsyncNetworkServer(metaclass=ABCMeta):
         """
         Starts the server's main loop.
 
+        Further calls to :meth:`is_serving` will return :data:`True` until the loop is stopped.
+
         Parameters:
             is_up_event: If given, will be triggered when the server is ready to accept new clients.
 
         Raises:
             ServerClosedError: The server is closed.
             ServerAlreadyRunning: Another task already called :meth:`serve_forever`.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def is_listening(self) -> bool:
+        """
+        Checks whether the server is up.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    async def server_activate(self) -> None:
+        """
+        Opens all listeners.
+
+        This method MUST be idempotent. Further calls to :meth:`is_listening` will return :data:`True`.
+
+        Raises:
+            ServerClosedError: The server is closed.
         """
         raise NotImplementedError
 
@@ -178,16 +188,6 @@ class AbstractAsyncNetworkServer(metaclass=ABCMeta):
             Do not call this method in the :meth:`serve_forever` task; it will cause a deadlock.
         """
         raise NotImplementedError
-
-    @abstractmethod
-    def get_addresses(self) -> Sequence[SocketAddress]:
-        """
-        Returns all interfaces to which the server is bound.
-
-        Returns:
-            A sequence of network socket address.
-            If the server is not serving (:meth:`is_serving` returns :data:`False`), an empty sequence is returned.
-        """
 
     @abstractmethod
     def backend(self) -> AsyncBackend:
