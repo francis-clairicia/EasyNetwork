@@ -46,6 +46,14 @@ class BaseTestStandaloneNetworkServer:
             server.shutdown()
 
     @pytest.mark.usefixtures("start_server")
+    def test____server_close____while_server_is_running(self, server: AbstractNetworkServer) -> None:
+        server.server_close()
+        time.sleep(0.5)
+
+        # There is no client so the server loop should stop by itself
+        assert not server.is_serving()
+
+    @pytest.mark.usefixtures("start_server")
     def test____shutdown____while_server_is_running(self, server: AbstractNetworkServer) -> None:
         assert server.is_serving()
 

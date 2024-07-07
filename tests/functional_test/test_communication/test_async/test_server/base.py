@@ -89,6 +89,19 @@ class BaseTestAsyncServer:
         await server.server_close()
         await server.server_close()
 
+    async def test____server_close____while_server_is_running(
+        self,
+        server: AbstractAsyncNetworkServer,
+        run_server: asyncio.Event,
+    ) -> None:
+        await run_server.wait()
+        await server.server_close()
+        await asyncio.sleep(0.5)
+
+        # There is no client so the server loop should stop by itself
+        assert not server.is_serving()
+        assert not server.is_listening()
+
     @pytest.mark.usefixtures("run_server")
     async def test____serve_forever____error_already_running(self, server: AbstractAsyncNetworkServer) -> None:
         with pytest.raises(ServerAlreadyRunning):

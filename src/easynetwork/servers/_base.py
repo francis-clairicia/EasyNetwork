@@ -37,7 +37,9 @@ from .abc import AbstractAsyncNetworkServer, AbstractNetworkServer, SupportsEven
 
 
 class _SupportsAclose(Protocol):
+    @abstractmethod
     def is_closing(self) -> bool: ...
+    @abstractmethod
     def aclose(self) -> Awaitable[object]: ...
 
 
@@ -115,10 +117,6 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer, Generic[_T_AsyncSer
     def server_close(self) -> None:
         with self.__close_lock.get(), contextlib.ExitStack() as stack:
             stack.callback(self.__is_closed.set)
-
-            # Ensure we are not in the interval between the server shutdown and the scheduler shutdown
-            stack.callback(self.__is_shutdown.wait)
-
             self._run_sync_or(lambda portal, server: portal.run_coroutine(server.server_close), None)
 
     @_utils.inherit_doc(AbstractNetworkServer)
@@ -171,12 +169,12 @@ class BaseStandaloneNetworkServerImpl(AbstractNetworkServer, Generic[_T_AsyncSer
             # locks_stack is used to acquire locks until
             # serve_forever() coroutine creates the thread portal
             locks_stack = server_exit_stack.enter_context(contextlib.ExitStack())
-            locks_stack.enter_context(self.__close_lock.get())
-            locks_stack.enter_context(self.__bootstrap_lock.get())
 
+            locks_stack.enter_context(self.__close_lock.get())
             if self.__is_closed.is_set():
                 raise ServerClosedError("Closed server")
 
+            locks_stack.enter_context(self.__bootstrap_lock.get())
             if not self.__is_shutdown.is_set():
                 raise ServerAlreadyRunning("Server is already running")
 
