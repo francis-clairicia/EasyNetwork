@@ -318,7 +318,8 @@ class CancelScope(metaclass=ABCMeta):
     """
     A temporary scope opened by a task that can be used by other tasks to control its execution time.
 
-    Unlike trio's CancelScope, there is no "shielded" scopes; you must use :meth:`AsyncBackend.ignore_cancellation`.
+    Warning:
+        Unlike trio's ``CancelScope``, there is no "shielded" scopes; you must use :meth:`AsyncBackend.ignore_cancellation`.
     """
 
     __slots__ = ("__weakref__",)
@@ -706,11 +707,7 @@ class AsyncBackend(metaclass=ABCMeta):
 
             res = await something()
 
-        `except` that if the coroutine containing it is cancelled, the Task running in ``something()`` is not cancelled.
-
-        Important:
-            Depending on the implementation, the coroutine may or may not be executed in the same :class:`contextvars.Context`.
-
+        `except` that if the coroutine containing it is cancelled, the task running in ``something()`` is not cancelled.
         """
         raise NotImplementedError
 
