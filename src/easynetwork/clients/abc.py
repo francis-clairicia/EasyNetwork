@@ -24,7 +24,6 @@ from types import TracebackType
 from typing import Generic, Self
 
 from .._typevars import _T_ReceivedPacket, _T_SentPacket
-from ..lowlevel import _utils
 from ..lowlevel.api_async.backend.abc import AsyncBackend
 
 
@@ -146,15 +145,9 @@ class AbstractNetworkClient(Generic[_T_SentPacket, _T_ReceivedPacket], metaclass
         Yields:
             the received packet.
         """
-        while True:
-            try:
-                with _utils.ElapsedTime() as elapsed:
-                    packet = self.recv_packet(timeout=timeout)
-            except OSError:
-                return
-            yield packet
-            if timeout is not None:
-                timeout = elapsed.recompute_timeout(timeout)
+        from ._iter import ClientRecvIterator
+
+        return ClientRecvIterator(self, timeout)
 
     @abstractmethod
     def fileno(self) -> int:
@@ -293,7 +286,7 @@ class AbstractAsyncNetworkClient(Generic[_T_SentPacket, _T_ReceivedPacket], meta
         """
         raise NotImplementedError
 
-    async def iter_received_packets(self, *, timeout: float | None = 0) -> AsyncIterator[_T_ReceivedPacket]:
+    def iter_received_packets(self, *, timeout: float | None = 0) -> AsyncIterator[_T_ReceivedPacket]:
         """
         Returns an :term:`asynchronous iterator` that waits for a new packet to arrive from the remote endpoint.
 
@@ -318,20 +311,9 @@ class AbstractAsyncNetworkClient(Generic[_T_SentPacket, _T_ReceivedPacket], meta
         Yields:
             the received packet.
         """
+        from ._iter import AsyncClientRecvIterator
 
-        if timeout is None:
-            timeout = float("inf")
-
-        timeout_after = self.backend().timeout
-
-        while True:
-            try:
-                with timeout_after(timeout), _utils.ElapsedTime() as elapsed:
-                    packet = await self.recv_packet()
-            except OSError:
-                return
-            yield packet
-            timeout = elapsed.recompute_timeout(timeout)
+        return AsyncClientRecvIterator(self, timeout)
 
     @abstractmethod
     def backend(self) -> AsyncBackend:
