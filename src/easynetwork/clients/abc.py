@@ -26,7 +26,6 @@ from typing import Generic, Self
 from .._typevars import _T_ReceivedPacket, _T_SentPacket
 from ..lowlevel import _utils
 from ..lowlevel.api_async.backend.abc import AsyncBackend
-from ..lowlevel.socket import SocketAddress
 
 
 class AbstractNetworkClient(Generic[_T_SentPacket, _T_ReceivedPacket], metaclass=ABCMeta):
@@ -69,32 +68,6 @@ class AbstractNetworkClient(Generic[_T_SentPacket, _T_ReceivedPacket], metaclass
         The remote end will receive no more data (after queued data is flushed).
 
         Can be safely called multiple times.
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    def get_local_address(self) -> SocketAddress:
-        """
-        Returns the local socket IP address.
-
-        Raises:
-            ClientClosedError: the client object is closed.
-
-        Returns:
-            the client's local address.
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    def get_remote_address(self) -> SocketAddress:
-        """
-        Returns the remote socket IP address.
-
-        Raises:
-            ClientClosedError: the client object is closed.
-
-        Returns:
-            the client's remote address.
         """
         raise NotImplementedError
 
@@ -186,7 +159,7 @@ class AbstractNetworkClient(Generic[_T_SentPacket, _T_ReceivedPacket], metaclass
     @abstractmethod
     def fileno(self) -> int:
         """
-        Returns the socket's file descriptor, or ``-1`` if client (or socket) is closed.
+        Returns the client's file descriptor, or ``-1`` if client is closed.
 
         Returns:
             the opened file descriptor.
@@ -280,38 +253,6 @@ class AbstractAsyncNetworkClient(Generic[_T_SentPacket, _T_ReceivedPacket], meta
             If :meth:`aclose` is cancelled, the client is closed abruptly.
 
         Can be safely called multiple times.
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    def get_local_address(self) -> SocketAddress:
-        """
-        Returns the local socket IP address.
-
-        If :meth:`wait_connected` was not called, an :exc:`OSError` may occurr.
-
-        Raises:
-            ClientClosedError: the client object is closed.
-            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
-
-        Returns:
-            the client's local address.
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    def get_remote_address(self) -> SocketAddress:
-        """
-        Returns the remote socket IP address.
-
-        If :meth:`wait_connected` was not called, an :exc:`OSError` may occurr.
-
-        Raises:
-            ClientClosedError: the client object is closed.
-            OSError: unrelated OS error occurred. You should check :attr:`OSError.errno`.
-
-        Returns:
-            the client's remote address.
         """
         raise NotImplementedError
 
