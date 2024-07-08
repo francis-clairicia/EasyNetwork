@@ -26,12 +26,7 @@ Writing A One-Shot Serializer
 =============================
 
 :term:`One-shot serializers <one-shot serializer>` are the easiest piece of code to write. They can be used directly on
-:class:`.DatagramProtocol` instances, and you can use a :term:`serializer wrapper` to use the :class:`.StreamProtocol` class.
-
-.. seealso::
-
-   :doc:`./serializer_combinations`
-      This page explains possible workarounds which uses serializer wrappers.
+:class:`.DatagramProtocol` instances.
 
 To write a :term:`one-shot serializer`, you must create a subclass of :class:`~.AbstractPacketSerializer` and override
 its :meth:`~.AbstractPacketSerializer.serialize` and :meth:`~.AbstractPacketSerializer.deserialize` methods.
@@ -95,15 +90,18 @@ You must pass the :term:`serializer` to the appropriate :term:`protocol object` 
 
    .. group-tab:: StreamProtocol
 
-      .. literalinclude:: ../../_include/examples/howto/serializers/one_shot_serializer/example4_stream.py
-         :pyobject: main
-         :linenos:
+      A :term:`one-shot serializer` cannot be used with a :class:`.StreamProtocol` instance.
 
-.. note::
+      .. seealso::
 
-   Using a :term:`serializer wrapper` means that the transferred data can be completely different from the original output.
+         :doc:`./serializer_combinations`
+            This page explains possible workarounds which uses serializer wrappers.
 
-   If this is important to you, don't choose one of them lightly.
+      .. note::
+
+         Using a :term:`serializer wrapper` means that the transferred data can be completely different from the original output.
+
+         If this is important to you, don't choose one of them lightly.
 
 
 Writing An Incremental Serializer
