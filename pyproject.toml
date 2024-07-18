@@ -127,7 +127,7 @@ benchmark-servers = [
 ]
 benchmark-servers-deps = [
     "easynetwork[uvloop]",
-    "asyncio-dgram~=2.1",
+    "asyncio-dgram==2.1.2",
 ]
 
 ############################ hatchling configuration ############################
