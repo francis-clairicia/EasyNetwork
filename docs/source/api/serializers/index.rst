@@ -18,6 +18,14 @@ Serializers
    cbor
    msgpack
 
+.. seealso::
+
+   :doc:`/howto/protocols`
+      Describes where and when a :term:`serializer` is used.
+
+   :doc:`/howto/advanced/serializers`
+      Describes how to create your own serializer.
+
 -----
 
 .. automodule:: easynetwork.serializers.wrapper
@@ -29,6 +37,11 @@ Serializers
 
    wrappers/base64
    wrappers/compressor
+
+.. seealso::
+
+   :doc:`/howto/advanced/serializer_combinations`
+      Describes where and when a :term:`serializer wrapper` is used.
 
 -----
 

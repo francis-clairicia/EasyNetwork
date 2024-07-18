@@ -51,3 +51,10 @@ UDP Implementation
 .. automodule:: easynetwork.clients.udp
    :members:
    :inherited-members:
+
+-----
+
+.. seealso::
+
+   :doc:`/howto/tcp_clients` and :doc:`/howto/udp_clients`
+      Describes what can be done with the clients.
