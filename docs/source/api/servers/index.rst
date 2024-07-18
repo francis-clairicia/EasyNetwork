@@ -88,3 +88,13 @@ Server implementation tools
 
    threads_helper
    misc
+
+-----
+
+.. seealso::
+
+   :doc:`/howto/tcp_servers` and :doc:`/howto/udp_servers`
+      Describes what can be done with the servers.
+
+   :doc:`/howto/advanced/standalone_servers`
+      Explains the case of stand-alone servers.
