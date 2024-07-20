@@ -34,6 +34,11 @@ Glossary
 
       .. seealso:: :class:`.StapledPacketConverter` class.
 
+   composite serializer
+      A :term:`serializer wrapper` that processes different data formats in input and output.
+
+      .. seealso:: :class:`.StapledPacketSerializer` class.
+
    converter
       An interface responsible for bridging the gap between the Python objects manipulated by the application/software
       and the :term:`data transfer objects <data transfer object>` handled by the :term:`serializer`.
@@ -97,7 +102,7 @@ Glossary
         if supported by the underlying transport layer.
 
    serializer wrapper
-      A :term:`serializer` that transforms data coming from another :term:`serializer`.
+      A :term:`serializer` that (potentially) transforms data coming from another :term:`serializer`.
 
       Example:
 

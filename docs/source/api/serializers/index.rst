@@ -11,6 +11,7 @@ Serializers
    :caption: Built-In Serializers
 
    abc
+   composite
    json
    pickle
    line
