@@ -34,6 +34,11 @@ Glossary
 
       .. seealso:: :class:`.StapledPacketConverter` class.
 
+   composite serializer
+      A :term:`serializer` that processes different objects in input and output.
+
+      .. seealso:: :class:`.StapledPacketSerializer` class.
+
    converter
       An interface responsible for bridging the gap between the Python objects manipulated by the application/software
       and the :term:`data transfer objects <data transfer object>` handled by the :term:`serializer`.

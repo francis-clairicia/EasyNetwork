@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 __all__ = [
+    "StapledBufferedIncrementalPacketSerializer",
     "StapledIncrementalPacketSerializer",
     "StapledPacketSerializer",
 ]
@@ -88,19 +89,42 @@ class StapledPacketSerializer(AbstractPacketSerializer[_T_SentDTOPacket, _T_Rece
         self.__received_packet_serializer = received_packet_serializer
         return self
 
-    def serialize(self, packet: _T_SentDTOPacket) -> bytes:
-        return self.sent_packet_serializer.serialize(packet)
-
-    def deserialize(self, data: bytes) -> _T_ReceivedDTOPacket:
-        return self.received_packet_serializer.deserialize(data)
-
     @property
     def sent_packet_serializer(self) -> AbstractPacketSerializer[_T_SentDTOPacket, Any]:
+        """Sent packet serializer."""
         return self.__sent_packet_serializer
 
     @property
     def received_packet_serializer(self) -> AbstractPacketSerializer[Any, _T_ReceivedDTOPacket]:
+        """Received packet serializer."""
         return self.__received_packet_serializer
+
+    def serialize(self, packet: _T_SentDTOPacket) -> bytes:
+        """
+        Calls ``self.sent_packet_serializer.serialize(packet)``.
+
+        Parameters:
+            packet: The Python object to serialize.
+
+        Returns:
+            a byte sequence.
+        """
+        return self.sent_packet_serializer.serialize(packet)
+
+    def deserialize(self, data: bytes) -> _T_ReceivedDTOPacket:
+        """
+        Calls ``self.received_packet_serializer.deserialize(data)``.
+
+        Parameters:
+            data: The byte sequence to deserialize.
+
+        Raises:
+            DeserializeError: An unrelated deserialization error occurred.
+
+        Returns:
+            the deserialized Python object.
+        """
+        return self.received_packet_serializer.deserialize(data)
 
 
 @final
@@ -109,6 +133,10 @@ class StapledIncrementalPacketSerializer(  # type: ignore[misc]
     AbstractIncrementalPacketSerializer[_T_SentDTOPacket, _T_ReceivedDTOPacket],
     Generic[_T_SentDTOPacket, _T_ReceivedDTOPacket],
 ):
+    """
+    A :term:`composite serializer` that merges two incremental serializers.
+    """
+
     __slots__ = ()
 
     if TYPE_CHECKING:
@@ -133,19 +161,38 @@ class StapledIncrementalPacketSerializer(  # type: ignore[misc]
             received_packet_serializer: AbstractIncrementalPacketSerializer[Any, _T_ReceivedDTOPacket],
         ) -> Self: ...
 
-    def incremental_serialize(self, packet: _T_SentDTOPacket) -> Generator[bytes, None, None]:
-        return self.sent_packet_serializer.incremental_serialize(packet)
-
-    def incremental_deserialize(self) -> Generator[None, bytes, tuple[_T_ReceivedDTOPacket, bytes]]:
-        return self.received_packet_serializer.incremental_deserialize()
-
-    if TYPE_CHECKING:
-
         @property
         def sent_packet_serializer(self) -> AbstractIncrementalPacketSerializer[_T_SentDTOPacket, Any]: ...
 
         @property
         def received_packet_serializer(self) -> AbstractIncrementalPacketSerializer[Any, _T_ReceivedDTOPacket]: ...
+
+    def incremental_serialize(self, packet: _T_SentDTOPacket) -> Generator[bytes, None, None]:
+        """
+        Calls ``self.sent_packet_serializer.incremental_serialize(packet)``.
+
+        Parameters:
+            packet: The Python object to serialize.
+
+        Yields:
+            all the parts of the :term:`packet`.
+        """
+        return self.sent_packet_serializer.incremental_serialize(packet)
+
+    def incremental_deserialize(self) -> Generator[None, bytes, tuple[_T_ReceivedDTOPacket, bytes]]:
+        """
+        Calls ``self.received_packet_serializer.incremental_deserialize()``.
+
+        Raises:
+            IncrementalDeserializeError: An unrelated deserialization error occurred.
+
+        Yields:
+            :data:`None` until the whole :term:`packet` has been deserialized.
+
+        Returns:
+            a tuple with the deserialized Python object and the unused trailing data.
+        """
+        return self.received_packet_serializer.incremental_deserialize()
 
 
 @final
@@ -154,6 +201,10 @@ class StapledBufferedIncrementalPacketSerializer(  # type: ignore[misc]
     BufferedIncrementalPacketSerializer[_T_SentDTOPacket, _T_ReceivedDTOPacket, _T_Buffer],
     Generic[_T_SentDTOPacket, _T_ReceivedDTOPacket, _T_Buffer],
 ):
+    """
+    A :term:`composite serializer` that merges two incremental serializers with manual control of the receive buffer.
+    """
+
     __slots__ = ()
 
     if TYPE_CHECKING:
@@ -164,19 +215,47 @@ class StapledBufferedIncrementalPacketSerializer(  # type: ignore[misc]
             received_packet_serializer: BufferedIncrementalPacketSerializer[Any, _T_ReceivedDTOPacket, _T_Buffer],
         ) -> Self: ...
 
+        @property
+        def sent_packet_serializer(self) -> AbstractIncrementalPacketSerializer[_T_SentDTOPacket, Any]: ...
+
+        @property
+        def received_packet_serializer(self) -> BufferedIncrementalPacketSerializer[Any, _T_ReceivedDTOPacket, _T_Buffer]: ...
+
     def create_deserializer_buffer(self, sizehint: int) -> _T_Buffer:
+        """
+        Calls ``self.received_packet_serializer.create_deserializer_buffer(sizehint)``.
+
+        Parameters:
+            sizehint: the recommended size (in bytes) for the returned buffer.
+                      It is acceptable to return smaller or larger buffers than what `sizehint` suggests.
+
+        Returns:
+            an object implementing the :ref:`buffer protocol <bufferobjects>`. It is an error to return a buffer with a zero size.
+        """
         return self.received_packet_serializer.create_deserializer_buffer(sizehint)
 
     def buffered_incremental_deserialize(
         self,
         buffer: _T_Buffer,
     ) -> Generator[int | None, int, tuple[_T_ReceivedDTOPacket, ReadableBuffer]]:
+        """
+        Calls ``self.received_packet_serializer.buffered_incremental_deserialize(buffer)``.
+
+        Parameters:
+            buffer: The buffer allocated by :meth:`create_deserializer_buffer`.
+
+        Raises:
+            IncrementalDeserializeError: An unrelated deserialization error occurred.
+
+        Yields:
+            until the whole :term:`packet` has been deserialized.
+
+        Returns:
+            a tuple with the deserialized Python object and the unused trailing data.
+
+            The remainder can be a :class:`memoryview` pointing to `buffer` or an external :term:`bytes-like object`.
+        """
         return self.received_packet_serializer.buffered_incremental_deserialize(buffer)
-
-    if TYPE_CHECKING:
-
-        @property
-        def received_packet_serializer(self) -> BufferedIncrementalPacketSerializer[Any, _T_ReceivedDTOPacket, _T_Buffer]: ...
 
 
 runtime_final_class(StapledPacketSerializer)
