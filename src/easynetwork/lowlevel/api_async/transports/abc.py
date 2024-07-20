@@ -173,8 +173,11 @@ class AsyncStreamWriteTransport(AsyncBaseTransport):
         Parameters:
             iterable_of_data: An :term:`iterable` yielding the bytes to send.
         """
-        for data in list(iterable_of_data):
-            await self.send_all(data)
+
+        # By default, all chunks are concatenated and sent once.
+        data = b"".join(iterable_of_data)
+        del iterable_of_data
+        await self.send_all(data)
 
 
 class AsyncStreamTransport(AsyncStreamWriteTransport, AsyncStreamReadTransport):

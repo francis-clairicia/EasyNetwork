@@ -424,12 +424,9 @@ class TestSocketStreamTransport(MixinTestSocketSendMSG):
 
         # Assert
         mock_transport_retry.assert_not_called()
-        assert mock_transport_send_all.call_args_list == list(
-            map(
-                lambda data: mocker.call(data, mocker.ANY),
-                [b"data", b"to", b"send"],
-            )
-        )
+        assert mock_transport_send_all.call_args_list == [
+            mocker.call(b"".join([b"data", b"to", b"send"]), mocker.ANY),
+        ]
 
     @pytest.mark.parametrize("SC_IOV_MAX", [-1, 0], ids=lambda p: f"SC_IOV_MAX=={p}", indirect=True)
     def test____send_all_from_iterable____fallback_to_send_all____sendmsg_available_but_no_defined_limit(
@@ -448,12 +445,9 @@ class TestSocketStreamTransport(MixinTestSocketSendMSG):
         # Assert
         mock_transport_retry.assert_not_called()
         mock_tcp_socket.sendmsg.assert_not_called()
-        assert mock_transport_send_all.call_args_list == list(
-            map(
-                lambda data: mocker.call(data, mocker.ANY),
-                [b"data", b"to", b"send"],
-            )
-        )
+        assert mock_transport_send_all.call_args_list == [
+            mocker.call(b"".join([b"data", b"to", b"send"]), mocker.ANY),
+        ]
 
     @pytest.mark.parametrize(
         "os_error",

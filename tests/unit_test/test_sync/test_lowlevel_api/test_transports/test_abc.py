@@ -169,10 +169,6 @@ class TestStreamTransport:
         mock_time_perfcounter.side_effect = [
             now,
             now + 5,
-            now + 5,
-            now + 8,
-            now + 8,
-            now + 14,
         ]
         timeout: float = 123456789
         mock_transport.send_all.return_value = None
@@ -183,22 +179,5 @@ class TestStreamTransport:
 
         # Assert
         assert mock_transport.send_all.call_args_list == [
-            mocker.call(b"a", timeout),
-            mocker.call(bytearray(b"b"), timeout - 5),
-            mocker.call(memoryview(b"c"), timeout - 8),
+            mocker.call(b"abc", timeout),
         ]
-
-    def test____send_all_from_iterable____single_yield____no_copy(
-        self,
-        mock_transport: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        chunk = mocker.sentinel.chunk
-        mock_transport.send_all.return_value = None
-
-        # Act
-        StreamTransport.send_all_from_iterable(mock_transport, iter([chunk]), 123456789)
-
-        # Assert
-        mock_transport.send_all.assert_called_once_with(chunk, 123456789)
