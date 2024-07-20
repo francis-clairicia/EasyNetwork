@@ -89,19 +89,4 @@ class TestAsyncStreamTransport:
         await AsyncStreamTransport.send_all_from_iterable(mock_stream_socket_adapter, chunks)
 
         # Assert
-        assert mock_stream_socket_adapter.send_all.await_args_list == list(map(mocker.call, chunks))
-
-    async def test____send_all_from_iterable____single_yield____no_copy(
-        self,
-        mock_stream_socket_adapter: MagicMock,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        chunk = mocker.sentinel.chunk
-        mock_stream_socket_adapter.send_all.return_value = None
-
-        # Act
-        await AsyncStreamTransport.send_all_from_iterable(mock_stream_socket_adapter, iter([chunk]))
-
-        # Assert
-        mock_stream_socket_adapter.send_all.assert_awaited_once_with(chunk)
+        assert mock_stream_socket_adapter.send_all.await_args_list == [mocker.call(b"abc")]
