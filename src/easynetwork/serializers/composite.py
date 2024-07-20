@@ -134,7 +134,7 @@ class StapledPacketSerializer(AbstractPacketSerializer[_T_SentDTOPacket, _T_Rece
 
 @final
 class StapledIncrementalPacketSerializer(  # type: ignore[misc]
-    StapledPacketSerializer[_T_SentDTOPacket, _T_ReceivedDTOPacket],  # type: ignore[misc]
+    StapledPacketSerializer[_T_SentDTOPacket, _T_ReceivedDTOPacket],  # pyright: ignore
     AbstractIncrementalPacketSerializer[_T_SentDTOPacket, _T_ReceivedDTOPacket],
     Generic[_T_SentDTOPacket, _T_ReceivedDTOPacket],
 ):
@@ -202,7 +202,7 @@ class StapledIncrementalPacketSerializer(  # type: ignore[misc]
 
 @final
 class StapledBufferedIncrementalPacketSerializer(  # type: ignore[misc]
-    StapledIncrementalPacketSerializer[_T_SentDTOPacket, _T_ReceivedDTOPacket],  # type: ignore[misc]
+    StapledIncrementalPacketSerializer[_T_SentDTOPacket, _T_ReceivedDTOPacket],  # pyright: ignore
     BufferedIncrementalPacketSerializer[_T_SentDTOPacket, _T_ReceivedDTOPacket, _T_Buffer],
     Generic[_T_SentDTOPacket, _T_ReceivedDTOPacket, _T_Buffer],
 ):

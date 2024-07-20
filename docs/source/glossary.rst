@@ -35,7 +35,7 @@ Glossary
       .. seealso:: :class:`.StapledPacketConverter` class.
 
    composite serializer
-      A :term:`serializer wrapper` that processes different objects in input and output.
+      A :term:`serializer wrapper` that processes different data formats in input and output.
 
       .. seealso:: :class:`.StapledPacketSerializer` class.
 
