@@ -15,3 +15,10 @@ Composite Serializers
 .. autoclass:: StapledBufferedIncrementalPacketSerializer
    :members:
    :inherited-members:
+
+-----
+
+.. seealso::
+
+   :doc:`/howto/advanced/serializer_composition`
+      Describes where and when a :term:`composite serializer` is used.

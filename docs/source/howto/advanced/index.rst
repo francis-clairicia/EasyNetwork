@@ -8,4 +8,5 @@ Advanced Guide
    serializers
    buffered_serializers
    serializer_combinations
+   serializer_composition
    standalone_servers

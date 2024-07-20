@@ -99,6 +99,11 @@ class StapledPacketSerializer(AbstractPacketSerializer[_T_SentDTOPacket, _T_Rece
         """Received packet serializer."""
         return self.__received_packet_serializer
 
+    def __repr__(self) -> str:
+        sent_packet_serializer = self.sent_packet_serializer
+        received_packet_serializer = self.received_packet_serializer
+        return f"{self.__class__.__name__}({sent_packet_serializer=!r}, {received_packet_serializer=!r})"
+
     def serialize(self, packet: _T_SentDTOPacket) -> bytes:
         """
         Calls ``self.sent_packet_serializer.serialize(packet)``.

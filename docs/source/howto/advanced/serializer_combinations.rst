@@ -1,5 +1,5 @@
 ********************************
-How-to — Serializer combinations
+How-to — Serializer Combinations
 ********************************
 
 .. contents:: Table of Contents
