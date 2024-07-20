@@ -85,7 +85,7 @@ class StapledPacketSerializer(AbstractPacketSerializer[_T_SentDTOPacket, _T_Rece
                 self = super().__new__(cls)
 
         self.__sent_packet_serializer = sent_packet_serializer
-        self.__received_packet_serializer = sent_packet_serializer
+        self.__received_packet_serializer = received_packet_serializer
         return self
 
     def serialize(self, packet: _T_SentDTOPacket) -> bytes:
