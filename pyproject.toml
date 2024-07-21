@@ -56,6 +56,9 @@ cbor = [
 msgpack = [
     "msgpack>=1.0.7,<2",
 ]
+trio = [
+    "trio>=0.26,<1",
+]
 
 ############################ pdm configuration ############################
 
@@ -87,6 +90,9 @@ mypy = [
 types-msgpack = [
     "msgpack-types>=0.2.0",
 ]
+types-trio = [
+    "trio-typing[mypy]>=0.10.0",
+]
 flake8 = [
     "flake8>=7.0,<8",
     "flake8-dunder-all @ git+https://github.com/francis-clairicia/flake8-dunder-all.git@v0.1.0",
@@ -105,6 +111,9 @@ test = [
     # "pytest-retry~=1.6",
     # Temporary use VCS to get the modifications added on main (c.f. https://github.com/str0zzapreti/pytest-retry/pull/39)
     "pytest-retry @ git+https://github.com/str0zzapreti/pytest-retry.git@bb465fff6f01f3f90a77229468f7e08a3bdbce20",
+]
+test-trio = [
+    "pytest-trio~=0.8.0",
 ]
 coverage = [
     "coverage~=7.0",
@@ -222,7 +231,7 @@ local_partial_types = true
 enable_error_code = ["truthy-bool", "ignore-without-code", "unused-awaitable"]
 
 [[tool.mypy.overrides]]
-module = ["docker.*", "plotly.*", "pytest_benchmark.*"]
+module = ["docker.*", "plotly.*", "pytest_benchmark.*", "pytest_trio.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

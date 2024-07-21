@@ -24,6 +24,23 @@ def _auto_add_feature_marker(item: pytest.Item) -> None:
         item.add_marker(pytest.mark.feature)
 
 
+def __has_marker(item: pytest.Item, name: str) -> bool:
+    return item.get_closest_marker(name) is not None
+
+
+def __has_feature_marker(item: pytest.Item, name: str) -> bool:
+    return __has_marker(item, f"feature_{name}")
+
+
+def _ensure_trio_marker_consistency(item: pytest.Item) -> None:
+    if __has_feature_marker(item, "trio"):
+        if item.config.pluginmanager.has_plugin("trio") and not __has_marker(item, "trio"):
+            item.add_marker(pytest.mark.trio)
+    elif __has_marker(item, "trio"):
+        item.add_marker(pytest.mark.feature_trio)
+
+
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     for item in items:
+        _ensure_trio_marker_consistency(item)
         _auto_add_feature_marker(item)
