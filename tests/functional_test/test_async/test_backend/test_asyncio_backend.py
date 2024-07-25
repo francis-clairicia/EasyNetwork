@@ -519,6 +519,69 @@ class TestAsyncioBackend:
                 stack.close()
             stack.pop_all()
 
+    async def test____gather____no_parameters(
+        self,
+        backend: AsyncIOBackend,
+    ) -> None:
+        result: list[int] = await backend.gather()
+        assert result == []
+
+    async def test____gather____concurrent_await(
+        self,
+        backend: AsyncIOBackend,
+    ) -> None:
+        async def coroutine(value: int) -> int:
+            return await asyncio.sleep(0.5, value)
+
+        with backend.timeout(0.6):
+            result = await backend.gather(
+                coroutine(42),
+                coroutine(54),
+            )
+
+        assert result == [42, 54]
+
+    async def test____gather____concurrent_await____exception_raises(
+        self,
+        backend: AsyncIOBackend,
+    ) -> None:
+        async def coroutine(value: int) -> int:
+            return await backend.ignore_cancellation(asyncio.sleep(0.5, value))
+
+        async def coroutine_error(exception: Exception) -> int:
+            await backend.ignore_cancellation(asyncio.sleep(0.5))
+            raise exception
+
+        with pytest.raises(ExceptionGroup) as exc_info:
+            await backend.gather(
+                coroutine(42),
+                coroutine_error(ValueError("conversion error")),
+                coroutine(54),
+                coroutine_error(KeyError("unknown")),
+            )
+
+        assert len(exc_info.value.exceptions) == 2
+        assert isinstance(exc_info.value.exceptions[0], ValueError)
+        assert isinstance(exc_info.value.exceptions[1], KeyError)
+
+    async def test____gather____duplicate_awaitable(
+        self,
+        backend: AsyncIOBackend,
+        mocker: MockerFixture,
+    ) -> None:
+        awaited = mocker.async_stub()
+
+        async def coroutine(value: int) -> int:
+            await awaited()
+            return await asyncio.sleep(0.5, value)
+
+        awaitable = coroutine(42)
+
+        result = await backend.gather(awaitable, awaitable, awaitable)
+
+        assert result == [42, 42, 42]
+        awaited.assert_awaited_once()
+
     async def test____create_task_group____start_soon(
         self,
         backend: AsyncIOBackend,

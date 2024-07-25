@@ -862,6 +862,55 @@ class AsyncBackend(metaclass=ABCMeta):
         """
         return await self.sleep(max(deadline - self.current_time(), 0))
 
+    async def gather(self, *coroutines: Awaitable[_T_co]) -> list[_T_co]:
+        """
+        Run awaitable objects in the `coroutines` sequence concurrently.
+
+        Parameters:
+            coroutines: any awaitable object.
+
+        Returns:
+            If all awaitables are completed successfully, the result is an aggregate list of returned values.
+            The order of result values corresponds to the order of awaitables in `coroutines`.
+
+        Raises:
+            ExceptionGroup: If one or more awaitable(s) fails.
+        """
+
+        if not coroutines:
+            # Fast path.
+            return []
+
+        from ..._utils import remove_traceback_frames_in_place
+
+        async def _await(coro: Awaitable[_T_co]) -> _T_co:
+            try:
+                return await coro
+            except BaseException as exc:
+                remove_traceback_frames_in_place(exc, 1)
+                raise
+            finally:
+                del coro
+
+        coro_to_task: dict[Awaitable[_T_co], Task[_T_co]] = {}
+
+        children: list[Task[_T_co]] = []
+
+        async with self.create_task_group() as task_group:
+            for coro in coroutines:
+                if coro in coro_to_task:
+                    task = coro_to_task[coro]
+                else:
+                    task = await self.ignore_cancellation(task_group.start(_await, coro))
+                    coro_to_task[coro] = task
+                children.append(task)
+
+            coro_to_task.clear()
+
+        # task_group should raise an ExceptionGroup if one of the coroutine raises an exception
+        # At this point, all the tasks should be done and join() would neither block nor raise.
+        return [await child.join() for child in children]
+
     @abstractmethod
     def create_task_group(self) -> TaskGroup:
         """

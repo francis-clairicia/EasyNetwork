@@ -66,6 +66,8 @@ Shielding From Task Cancellation
 Creating Concurrent Tasks
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
+.. automethod:: AsyncBackend.gather
+
 .. automethod:: AsyncBackend.create_task_group
 
 .. autoclass:: TaskGroup
