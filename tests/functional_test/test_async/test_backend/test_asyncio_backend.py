@@ -723,7 +723,7 @@ class TestAsyncioBackend:
         except* FutureException:
             pass
 
-    async def test____run_in_thread____cannot_be_cancelled(
+    async def test____run_in_thread____cannot_be_cancelled_by_default(
         self,
         backend: AsyncIOBackend,
     ) -> None:
@@ -737,6 +737,19 @@ class TestAsyncioBackend:
         await task
 
         assert not task.cancelled()
+
+    async def test____run_in_thread____abandon_on_cancel(
+        self,
+        backend: AsyncIOBackend,
+    ) -> None:
+        event_loop = asyncio.get_running_loop()
+        task = asyncio.create_task(backend.run_in_thread(time.sleep, 0.5, abandon_on_cancel=True))
+        event_loop.call_later(0.1, task.cancel)
+
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        assert task.cancelled()
 
     async def test____run_in_thread____sniffio_contextvar_reset(self, backend: AsyncIOBackend) -> None:
         sniffio.current_async_library_cvar.set("asyncio")

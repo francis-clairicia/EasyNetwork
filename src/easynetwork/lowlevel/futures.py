@@ -199,7 +199,8 @@ class AsyncExecutor(Generic[_T_Executor]):
                             has not started running. Any futures that are completed or running won't be cancelled,
                             regardless of the value of `cancel_futures`.
         """
-        await self.__backend.run_in_thread(self.__executor.shutdown, wait=True, cancel_futures=cancel_futures)
+        shutdown_callback = functools.partial(self.__executor.shutdown, wait=True, cancel_futures=cancel_futures)
+        await self.__backend.run_in_thread(shutdown_callback)
 
     def _setup_func(self, func: Callable[_P, _T]) -> Callable[_P, _T]:
         if self.__handle_contexts:
