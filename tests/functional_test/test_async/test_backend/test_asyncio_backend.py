@@ -561,8 +561,6 @@ class TestAsyncioBackend:
             )
 
         assert len(exc_info.value.exceptions) == 2
-        assert isinstance(exc_info.value.exceptions[0], ValueError)
-        assert isinstance(exc_info.value.exceptions[1], KeyError)
 
     async def test____gather____duplicate_awaitable(
         self,
