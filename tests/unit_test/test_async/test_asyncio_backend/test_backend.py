@@ -980,8 +980,10 @@ class TestAsyncIOBackend:
         mock_Condition.assert_called_once_with(mock_lock)
         assert condition is mocker.sentinel.condition_var
 
+    @pytest.mark.parametrize("abandon_on_cancel", [False, True], ids=lambda p: f"abandon_on_cancel=={p}")
     async def test____run_in_thread____use_loop_run_in_executor(
         self,
+        abandon_on_cancel: bool,
         backend: AsyncIOBackend,
         mocker: MockerFixture,
     ) -> None:
@@ -999,8 +1001,7 @@ class TestAsyncIOBackend:
             func_stub,
             mocker.sentinel.arg1,
             mocker.sentinel.arg2,
-            kw1=mocker.sentinel.kwargs1,
-            kw2=mocker.sentinel.kwargs2,
+            abandon_on_cancel=abandon_on_cancel,
         )
 
         # Assert
@@ -1012,8 +1013,6 @@ class TestAsyncIOBackend:
                 func_stub,
                 mocker.sentinel.arg1,
                 mocker.sentinel.arg2,
-                kw1=mocker.sentinel.kwargs1,
-                kw2=mocker.sentinel.kwargs2,
             ),
         )
         func_stub.assert_not_called()

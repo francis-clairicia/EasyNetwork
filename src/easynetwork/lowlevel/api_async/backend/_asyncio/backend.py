@@ -265,7 +265,13 @@ class AsyncIOBackend(AbstractAsyncBackend):
 
         return self.__asyncio.Condition(lock)
 
-    async def run_in_thread(self, func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+    async def run_in_thread(
+        self,
+        func: Callable[[*_T_PosArgs], _T],
+        /,
+        *args: *_T_PosArgs,
+        abandon_on_cancel: bool = False,
+    ) -> _T:
         import sniffio
 
         loop = self.__asyncio.get_running_loop()
@@ -273,8 +279,11 @@ class AsyncIOBackend(AbstractAsyncBackend):
 
         ctx.run(sniffio.current_async_library_cvar.set, None)
 
-        cb = functools.partial(ctx.run, func, *args, **kwargs)
-        return await self.__cancel_shielded_await(loop.run_in_executor(None, cb))
+        cb = functools.partial(ctx.run, func, *args)
+        if abandon_on_cancel:
+            return await loop.run_in_executor(None, cb)
+        else:
+            return await self.__cancel_shielded_await(loop.run_in_executor(None, cb))
 
     def create_threads_portal(self) -> ThreadsPortal:
         from .threads import ThreadsPortal
