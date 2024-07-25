@@ -1140,6 +1140,6 @@ class _timeout_scope:
         return self.scope.__enter__()
 
     def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None) -> None:
-        cancelled_caught = self.scope.__exit__(exc_type, exc_val, exc_tb)
-        if cancelled_caught:
+        self.scope.__exit__(exc_type, exc_val, exc_tb)
+        if self.scope.cancelled_caught():
             raise TimeoutError("timed out")

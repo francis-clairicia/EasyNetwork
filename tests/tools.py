@@ -5,16 +5,19 @@ import contextlib
 import importlib
 import sys
 import time
-from collections.abc import Generator, Iterator
-from typing import TYPE_CHECKING, Any, Literal, TypeAlias, TypeVar, assert_never, final
+from collections.abc import Callable, Generator, Iterator
+from typing import TYPE_CHECKING, Any, Literal, TypeAlias, TypeVar, TypeVarTuple, assert_never, final
 
 import pytest
 
 if TYPE_CHECKING:
+    import trio
     from _typeshed import WriteableBuffer
 
 _T_contra = TypeVar("_T_contra", contravariant=True)
 _V_co = TypeVar("_V_co", covariant=True)
+
+_T_Args = TypeVarTuple("_T_Args")
 
 
 def _make_skipif_platform(platform: str, reason: str) -> pytest.MarkDecorator:
@@ -170,3 +173,42 @@ def temporary_task_factory(
         stack.callback(event_loop.set_task_factory, event_loop.get_task_factory())
         event_loop.set_task_factory(task_factory)
         yield
+
+
+def call_later_with_nursery(
+    nursery: trio.Nursery,
+    seconds: float,
+    func: Callable[[*_T_Args], Any],
+    /,
+    *args: *_T_Args,
+) -> trio.CancelScope:
+    from trio import CancelScope, sleep
+
+    scope = CancelScope()
+
+    async def in_nursery_task() -> None:
+        with scope:
+            await sleep(seconds)
+            func(*args)
+
+    nursery.start_soon(in_nursery_task)
+    return scope
+
+
+def call_soon_with_nursery(
+    nursery: trio.Nursery,
+    func: Callable[[*_T_Args], Any],
+    /,
+    *args: *_T_Args,
+) -> trio.CancelScope:
+    from trio import CancelScope
+
+    scope = CancelScope()
+
+    async def in_nursery_task() -> None:
+        with scope:
+            if not scope.cancel_called:
+                func(*args)
+
+    nursery.start_soon(in_nursery_task)
+    return scope

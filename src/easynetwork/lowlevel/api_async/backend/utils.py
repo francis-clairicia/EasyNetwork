@@ -19,27 +19,53 @@ from __future__ import annotations
 __all__ = [
     "BuiltinAsyncBackendLiteral",
     "ensure_backend",
+    "new_builtin_backend",
 ]
 
-from typing import Literal, TypeAlias, cast
+from typing import Literal, TypeAlias, assert_never, cast
 
 import sniffio
 
 from .abc import AsyncBackend
 
-BuiltinAsyncBackendLiteral: TypeAlias = Literal["asyncio"]
+BuiltinAsyncBackendLiteral: TypeAlias = Literal["asyncio", "trio"]
 """Supported asynchronous framework names."""
+
+
+def new_builtin_backend(name: BuiltinAsyncBackendLiteral) -> AsyncBackend:
+    """
+    Obtain an interface for the given `backend`.
+
+    Here is the list of the supported libraries:
+
+    * ``"asyncio"``
+
+    * ``"trio"``
+    """
+    match name:
+        case "asyncio":
+            from ._asyncio.backend import AsyncIOBackend
+
+            return AsyncIOBackend()
+        case "trio":
+            from ._trio.backend import TrioBackend
+
+            return TrioBackend()
+        case str():
+            raise NotImplementedError(name)
+        case _:  # pragma: no cover
+            assert_never(name)
 
 
 def ensure_backend(backend: AsyncBackend | BuiltinAsyncBackendLiteral | None) -> AsyncBackend:
     """
-    Obtain an interface for the give `backend`.
+    Obtain an interface for the given `backend`.
 
     * If `backend` is already an :class:`.AsyncBackend`, this object is returned.
 
     * If `backend` is a string token and matches one of the built-in implementation, a new object is returned.
 
-       * Currently, only ``"asyncio"`` is recognized.
+       * See also :func:`new_builtin_backend`.
 
     * If :data:`None`, the function tries to guess the library currently used with :mod:`sniffio`.
 
@@ -51,13 +77,9 @@ def ensure_backend(backend: AsyncBackend | BuiltinAsyncBackendLiteral | None) ->
         backend = cast(BuiltinAsyncBackendLiteral, sniffio.current_async_library())
 
     match backend:
-        case "asyncio":
-            from ._asyncio.backend import AsyncIOBackend
-
-            return AsyncIOBackend()
         case AsyncBackend():
             return backend
         case str():
-            raise NotImplementedError(backend)
+            return new_builtin_backend(backend)
         case _:
             raise TypeError(f"Expected either a string literal or a backend instance, got {backend!r}")

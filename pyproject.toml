@@ -58,6 +58,7 @@ msgpack = [
 ]
 trio = [
     "trio>=0.26,<1",
+    "outcome~=1.3",
 ]
 
 ############################ pdm configuration ############################
@@ -89,9 +90,6 @@ mypy = [
 ]
 types-msgpack = [
     "msgpack-types>=0.2.0",
-]
-types-trio = [
-    "trio-typing[mypy]>=0.10.0",
 ]
 flake8 = [
     "flake8>=7.0,<8",

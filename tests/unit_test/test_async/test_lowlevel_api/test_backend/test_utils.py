@@ -3,7 +3,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from easynetwork.lowlevel.api_async.backend._asyncio.backend import AsyncIOBackend
-from easynetwork.lowlevel.api_async.backend.utils import ensure_backend
+from easynetwork.lowlevel.api_async.backend._trio.backend import TrioBackend
+from easynetwork.lowlevel.api_async.backend.abc import AsyncBackend
+from easynetwork.lowlevel.api_async.backend.utils import BuiltinAsyncBackendLiteral, ensure_backend, new_builtin_backend
 
 import pytest
 
@@ -18,14 +20,25 @@ def mock_current_async_library(mocker: MockerFixture) -> MagicMock:
     return mocker.patch("sniffio.current_async_library", autospec=True)
 
 
-def test____ensure_backend____valid_string_literal(mock_current_async_library: MagicMock) -> None:
+@pytest.mark.parametrize(
+    ["name", "expected_type"],
+    [
+        pytest.param("asyncio", AsyncIOBackend, id="asyncio"),
+        pytest.param("trio", TrioBackend, id="trio", marks=pytest.mark.feature_trio),
+    ],
+)
+def test____ensure_backend____valid_string_literal(
+    name: BuiltinAsyncBackendLiteral,
+    expected_type: type[AsyncBackend],
+    mock_current_async_library: MagicMock,
+) -> None:
     # Arrange
 
     # Act
-    backend = ensure_backend("asyncio")
+    backend = ensure_backend(name)
 
     # Assert
-    assert isinstance(backend, AsyncIOBackend)
+    assert isinstance(backend, expected_type)
     mock_current_async_library.assert_not_called()
 
 
@@ -54,28 +67,67 @@ def test____ensure_backend____invalid_string_literal(mock_current_async_library:
     # Arrange
 
     # Act & Assert
-    with pytest.raises(NotImplementedError, match=r"^trio$"):
-        _ = ensure_backend("trio")  # type: ignore[arg-type]
+    with pytest.raises(NotImplementedError, match=r"^curio$"):
+        _ = ensure_backend("curio")  # type: ignore[arg-type]
     mock_current_async_library.assert_not_called()
 
 
-def test____ensure_backend____None____current_async_library_is_supported(mock_current_async_library: MagicMock) -> None:
+@pytest.mark.parametrize(
+    ["name", "expected_type"],
+    [
+        pytest.param("asyncio", AsyncIOBackend, id="asyncio"),
+        pytest.param("trio", TrioBackend, id="trio", marks=pytest.mark.feature_trio),
+    ],
+)
+def test____ensure_backend____None____current_async_library_is_supported(
+    name: BuiltinAsyncBackendLiteral,
+    expected_type: type[AsyncBackend],
+    mock_current_async_library: MagicMock,
+) -> None:
     # Arrange
-    mock_current_async_library.return_value = "asyncio"
+    mock_current_async_library.return_value = name
 
     # Act
     backend = ensure_backend(None)
 
     # Assert
-    assert isinstance(backend, AsyncIOBackend)
+    assert isinstance(backend, expected_type)
     mock_current_async_library.assert_called_once()
 
 
 def test____ensure_backend____None____current_async_library_is_not_supported(mock_current_async_library: MagicMock) -> None:
     # Arrange
-    mock_current_async_library.return_value = "trio"
+    mock_current_async_library.return_value = "curio"
 
     # Act & Assert
-    with pytest.raises(NotImplementedError, match=r"^trio$"):
+    with pytest.raises(NotImplementedError, match=r"^curio$"):
         _ = ensure_backend(None)
     mock_current_async_library.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    ["name", "expected_type"],
+    [
+        pytest.param("asyncio", AsyncIOBackend, id="asyncio"),
+        pytest.param("trio", TrioBackend, id="trio", marks=pytest.mark.feature_trio),
+    ],
+)
+def test____new_builtin_backend____valid_string_literal(
+    name: BuiltinAsyncBackendLiteral,
+    expected_type: type[AsyncBackend],
+) -> None:
+    # Arrange
+
+    # Act
+    backend = new_builtin_backend(name)
+
+    # Assert
+    assert isinstance(backend, expected_type)
+
+
+def test____new_builtin_backend____invalid_string_literal() -> None:
+    # Arrange
+
+    # Act & Assert
+    with pytest.raises(NotImplementedError, match=r"^curio$"):
+        _ = ensure_backend("curio")  # type: ignore[arg-type]

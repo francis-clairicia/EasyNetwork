@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 from collections.abc import Awaitable, Callable, Iterator
 from concurrent.futures import CancelledError as FutureCancelledError, wait as wait_concurrent_futures
@@ -710,7 +711,7 @@ class TestAsyncioBackend:
 
         event_loop.call_later(0.1, set_future_result)
 
-        try:
+        with pytest.raises(ExceptionGroup) if task_state == "exception" else contextlib.nullcontext() as exc_info:
             async with backend.create_task_group() as task_group:
                 task = await task_group.start(coroutine)
 
@@ -720,8 +721,9 @@ class TestAsyncioBackend:
                 # Must not yield if task is already done
                 async with asyncio.timeout(0):
                     await task.wait()
-        except* FutureException:
-            pass
+
+        if exc_info is not None:
+            assert isinstance(exc_info.value.exceptions[0], FutureException)
 
     async def test____run_in_thread____cannot_be_cancelled(
         self,
