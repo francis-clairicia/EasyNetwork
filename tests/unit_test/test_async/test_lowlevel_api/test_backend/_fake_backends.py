@@ -79,13 +79,11 @@ class BaseFakeBackend(AsyncBackend):
     def create_condition_var(self, *args: Any, **kwargs: Any) -> Any:
         raise NotImplementedError
 
+    @no_type_check
     async def run_in_thread(self, *args: Any, **kwargs: Any) -> Any:
         raise NotImplementedError
 
     def create_threads_portal(self) -> Any:
-        raise NotImplementedError
-
-    async def wait_future(self, *args: Any, **kwargs: Any) -> Any:
         raise NotImplementedError
 
 

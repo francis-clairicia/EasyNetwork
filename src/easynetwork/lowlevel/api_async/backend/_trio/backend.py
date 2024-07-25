@@ -19,16 +19,14 @@ from __future__ import annotations
 
 __all__ = ["TrioBackend"]
 
-import functools
 import math
 import socket as _socket
 from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
-from typing import Any, NoReturn, ParamSpec, TypeVar, TypeVarTuple
+from typing import Any, NoReturn, TypeVar, TypeVarTuple
 
 from ...transports.abc import AsyncDatagramListener, AsyncDatagramTransport, AsyncListener, AsyncStreamTransport
 from ..abc import AsyncBackend as AbstractAsyncBackend, CancelScope, ICondition, IEvent, ILock, TaskGroup, TaskInfo, ThreadsPortal
 
-_P = ParamSpec("_P")
 _T = TypeVar("_T")
 _T_co = TypeVar("_T_co", covariant=True)
 _T_PosArgs = TypeVarTuple("_T_PosArgs")
@@ -151,9 +149,14 @@ class TrioBackend(AbstractAsyncBackend):
 
         return self.__trio.Condition(lock)
 
-    async def run_in_thread(self, func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
-        cb = functools.partial(func, *args, **kwargs)
-        return await self.__trio.to_thread.run_sync(cb)
+    async def run_in_thread(
+        self,
+        func: Callable[[*_T_PosArgs], _T],
+        /,
+        *args: *_T_PosArgs,
+        abandon_on_cancel: bool = False,
+    ) -> _T:
+        return await self.__trio.to_thread.run_sync(func, *args, abandon_on_cancel=abandon_on_cancel)
 
     def create_threads_portal(self) -> ThreadsPortal:
         from .threads import ThreadsPortal

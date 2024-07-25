@@ -631,7 +631,7 @@ class TestTrioBackend:
         if exc_info is not None:
             assert isinstance(exc_info.value.exceptions[0], FutureException)
 
-    async def test____run_in_thread____cannot_be_cancelled(
+    async def test____run_in_thread____cannot_be_cancelled_by_default(
         self,
         backend: TrioBackend,
         nursery: Nursery,
@@ -646,6 +646,17 @@ class TestTrioBackend:
             await backend.run_in_thread(time.sleep, 0.5)
 
         assert not scope.cancelled_caught
+
+    async def test____run_in_thread____abandon_on_cancel(
+        self,
+        backend: TrioBackend,
+    ) -> None:
+        import trio
+
+        with trio.move_on_after(0.1) as scope:
+            await backend.run_in_thread(time.sleep, 0.5, abandon_on_cancel=True)
+
+        assert scope.cancelled_caught
 
     async def test____run_in_thread____sniffio_contextvar_reset(self, backend: TrioBackend) -> None:
         sniffio.current_async_library_cvar.set("trio")

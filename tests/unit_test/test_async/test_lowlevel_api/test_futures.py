@@ -238,7 +238,9 @@ class TestAsyncExecutor:
 
         # Assert
         mock_stdlib_executor.shutdown.assert_not_called()
-        mock_backend.run_in_thread.assert_awaited_once_with(mock_stdlib_executor.shutdown, wait=True, cancel_futures=False)
+        mock_backend.run_in_thread.assert_awaited_once_with(
+            partial_eq(mock_stdlib_executor.shutdown, wait=True, cancel_futures=False)
+        )
 
     @pytest.mark.parametrize("cancel_futures", [False, True])
     async def test____shutdown____shutdown_executor____cancel_futures(
@@ -257,9 +259,7 @@ class TestAsyncExecutor:
         # Assert
         mock_stdlib_executor.shutdown.assert_not_called()
         mock_backend.run_in_thread.assert_awaited_once_with(
-            mock_stdlib_executor.shutdown,
-            wait=True,
-            cancel_futures=cancel_futures,
+            partial_eq(mock_stdlib_executor.shutdown, wait=True, cancel_futures=cancel_futures)
         )
 
     async def test____context_manager____shutdown_executor_at_end(
@@ -280,4 +280,6 @@ class TestAsyncExecutor:
 
         # Assert
         mock_stdlib_executor.shutdown.assert_not_called()
-        mock_backend.run_in_thread.assert_awaited_once_with(mock_stdlib_executor.shutdown, wait=True, cancel_futures=False)
+        mock_backend.run_in_thread.assert_awaited_once_with(
+            partial_eq(mock_stdlib_executor.shutdown, wait=True, cancel_futures=False)
+        )

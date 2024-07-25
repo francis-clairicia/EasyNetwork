@@ -1134,7 +1134,13 @@ class AsyncBackend(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    async def run_in_thread(self, func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+    async def run_in_thread(
+        self,
+        func: Callable[[*_T_PosArgs], _T],
+        /,
+        *args: *_T_PosArgs,
+        abandon_on_cancel: bool = ...,
+    ) -> _T:
         """
         Executes a synchronous function in a worker thread.
 
@@ -1145,7 +1151,11 @@ class AsyncBackend(metaclass=ABCMeta):
 
         Cancellation handling:
             Because there is no way to "cancel" an arbitrary function call in an OS thread,
-            once the job is started, any cancellation requests will be discarded.
+            once the job is started:
+
+            * If `abandon_on_cancel` is False (the default), any cancellation requests will be discarded.
+
+            * If `abandon_on_cancel` is True, the task will notify the thread to stop (if possible) then will bail out.
 
         Warning:
             Due to the current coroutine implementation, `func` should not raise a :exc:`StopIteration`.
@@ -1153,14 +1163,15 @@ class AsyncBackend(metaclass=ABCMeta):
 
         Parameters:
             func: A synchronous function.
-            args: Positional arguments to be passed to `func`.
-            kwargs: Keyword arguments to be passed to `func`.
+            args: Positional arguments to be passed to `func`. If you need to pass keyword arguments,
+                  then use :func:`functools.partial`.
+            abandon_on_cancel: Whether or not to abort task on cancellation request.
 
         Raises:
-            Exception: Whatever ``func(*args, **kwargs)`` raises.
+            Exception: Whatever ``func(*args)`` raises.
 
         Returns:
-            Whatever ``func(*args, **kwargs)`` returns.
+            Whatever ``func(*args)`` returns.
         """
         raise NotImplementedError
 
