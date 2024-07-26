@@ -104,6 +104,13 @@ Timeouts
 Networking
 ----------
 
+DNS
+^^^
+
+.. automethod:: AsyncBackend.getaddrinfo
+
+.. automethod:: AsyncBackend.getnameinfo
+
 Opening Network Connections
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

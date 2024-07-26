@@ -92,6 +92,27 @@ class TrioBackend(AbstractAsyncBackend):
         current_task = self.__trio.lowlevel.current_task()
         return TaskUtils.create_task_info(current_task)
 
+    async def getaddrinfo(
+        self,
+        host: bytes | str | None,
+        port: bytes | str | int | None,
+        family: int = 0,
+        type: int = 0,
+        proto: int = 0,
+        flags: int = 0,
+    ) -> Sequence[tuple[int, int, int, str, tuple[str, int] | tuple[str, int, int, int]]]:
+        return await self.__trio.socket.getaddrinfo(
+            host,
+            port,
+            family=family,
+            type=type,
+            proto=proto,
+            flags=flags,
+        )
+
+    async def getnameinfo(self, sockaddr: tuple[str, int] | tuple[str, int, int, int], flags: int = 0) -> tuple[str, str]:
+        return await self.__trio.socket.getnameinfo(sockaddr, flags)
+
     async def create_tcp_connection(
         self,
         host: str,

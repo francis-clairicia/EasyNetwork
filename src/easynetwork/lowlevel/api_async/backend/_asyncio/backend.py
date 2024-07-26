@@ -44,11 +44,13 @@ class AsyncIOBackend(AbstractAsyncBackend):
         "__coro_yield",
         "__cancel_shielded_coro_yield",
         "__cancel_shielded_await",
+        "__dns_resolver",
     )
 
     def __init__(self) -> None:
         import asyncio
 
+        from .dns_resolver import AsyncIODNSResolver
         from .tasks import TaskUtils
 
         self.__asyncio = asyncio
@@ -56,6 +58,8 @@ class AsyncIOBackend(AbstractAsyncBackend):
         self.__coro_yield = TaskUtils.coro_yield
         self.__cancel_shielded_coro_yield = TaskUtils.cancel_shielded_coro_yield
         self.__cancel_shielded_await = TaskUtils.cancel_shielded_await
+
+        self.__dns_resolver = AsyncIODNSResolver()
 
     def bootstrap(
         self,
@@ -112,6 +116,31 @@ class AsyncIOBackend(AbstractAsyncBackend):
         current_task = TaskUtils.current_asyncio_task()
         return TaskUtils.create_task_info(current_task)
 
+    async def getaddrinfo(
+        self,
+        host: bytes | str | None,
+        port: bytes | str | int | None,
+        family: int = 0,
+        type: int = 0,
+        proto: int = 0,
+        flags: int = 0,
+    ) -> Sequence[tuple[int, int, int, str, tuple[str, int] | tuple[str, int, int, int]]]:
+        loop = self.__asyncio.get_running_loop()
+
+        return await loop.getaddrinfo(
+            host,
+            port,
+            family=family,
+            type=type,
+            proto=proto,
+            flags=flags,
+        )
+
+    async def getnameinfo(self, sockaddr: tuple[str, int] | tuple[str, int, int, int], flags: int = 0) -> tuple[str, str]:
+        loop = self.__asyncio.get_running_loop()
+
+        return await loop.getnameinfo(sockaddr, flags)
+
     async def create_tcp_connection(
         self,
         host: str,
@@ -123,9 +152,8 @@ class AsyncIOBackend(AbstractAsyncBackend):
         if happy_eyeballs_delay is None:
             happy_eyeballs_delay = _DEFAULT_HAPPY_EYEBALLS_DELAY
 
-        from ._asyncio_utils import create_connection
-
-        socket = await create_connection(
+        socket = await self.__dns_resolver.create_stream_connection(
+            self,
             host,
             port,
             local_address=local_address,
@@ -156,7 +184,6 @@ class AsyncIOBackend(AbstractAsyncBackend):
         if not isinstance(backlog, int):
             raise TypeError("backlog: Expected an integer")
 
-        from ._asyncio_utils import resolve_local_addresses
         from .stream.listener import AcceptedSocketFactory, ListenerSocketAdapter
 
         reuse_address: bool = os.name not in ("nt", "cygwin") and sys.platform != "cygwin"
@@ -170,7 +197,8 @@ class AsyncIOBackend(AbstractAsyncBackend):
 
         del host
 
-        infos: Sequence[tuple[int, int, int, str, tuple[Any, ...]]] = await resolve_local_addresses(
+        infos: Sequence[tuple[int, int, int, str, tuple[Any, ...]]] = await self.__dns_resolver.resolve_listener_addresses(
+            self,
             hosts,
             port,
             _socket.SOCK_STREAM,
@@ -195,9 +223,8 @@ class AsyncIOBackend(AbstractAsyncBackend):
         local_address: tuple[str, int] | None = None,
         family: int = _socket.AF_UNSPEC,
     ) -> AsyncDatagramTransport:
-        from ._asyncio_utils import create_datagram_connection
-
-        socket = await create_datagram_connection(
+        socket = await self.__dns_resolver.create_datagram_connection(
+            self,
             remote_host,
             remote_port,
             local_address=local_address,
@@ -220,7 +247,6 @@ class AsyncIOBackend(AbstractAsyncBackend):
         *,
         reuse_port: bool = False,
     ) -> Sequence[AsyncDatagramListener[tuple[Any, ...]]]:
-        from ._asyncio_utils import resolve_local_addresses
         from .datagram.listener import DatagramListenerProtocol, DatagramListenerSocketAdapter
 
         loop = self.__asyncio.get_running_loop()
@@ -235,7 +261,8 @@ class AsyncIOBackend(AbstractAsyncBackend):
 
         del host
 
-        infos: Sequence[tuple[int, int, int, str, tuple[Any, ...]]] = await resolve_local_addresses(
+        infos: Sequence[tuple[int, int, int, str, tuple[Any, ...]]] = await self.__dns_resolver.resolve_listener_addresses(
+            self,
             hosts,
             port,
             _socket.SOCK_DGRAM,

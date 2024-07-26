@@ -3,11 +3,12 @@ from __future__ import annotations
 import asyncio
 import contextvars
 from collections.abc import Callable, Coroutine, Sequence
-from socket import AF_INET, AF_INET6, AF_UNSPEC, AI_ADDRCONFIG, AI_PASSIVE, IPPROTO_TCP, IPPROTO_UDP, SOCK_DGRAM, SOCK_STREAM
+from socket import AF_INET, AF_INET6, AF_UNSPEC, IPPROTO_TCP, IPPROTO_UDP, SOCK_DGRAM, SOCK_STREAM
 from typing import TYPE_CHECKING, Any, Final
 
 from easynetwork.lowlevel.api_async.backend._asyncio.backend import AsyncIOBackend
 from easynetwork.lowlevel.api_async.backend._asyncio.datagram.listener import DatagramListenerProtocol
+from easynetwork.lowlevel.api_async.backend._asyncio.dns_resolver import AsyncIODNSResolver
 from easynetwork.lowlevel.api_async.backend._asyncio.stream.listener import AbstractAcceptedSocketFactory, AcceptedSocketFactory
 from easynetwork.lowlevel.api_async.backend._asyncio.stream.socket import StreamReaderBufferedProtocol
 
@@ -192,6 +193,65 @@ class TestAsyncIOBackend:
         assert task_info.name == current_task.get_name()
         assert task_info.coro is current_task.get_coro()
 
+    async def test____getaddrinfo____use_loop_getaddrinfo(
+        self,
+        backend: AsyncIOBackend,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        event_loop = asyncio.get_running_loop()
+        mock_loop_getaddrinfo = mocker.patch.object(
+            event_loop,
+            "getaddrinfo",
+            new_callable=mocker.AsyncMock,
+            return_value=mocker.sentinel.addrinfo_list,
+        )
+
+        # Act
+        addrinfo_list = await backend.getaddrinfo(
+            host=mocker.sentinel.host,
+            port=mocker.sentinel.port,
+            family=mocker.sentinel.family,
+            type=mocker.sentinel.type,
+            proto=mocker.sentinel.proto,
+            flags=mocker.sentinel.flags,
+        )
+
+        # Assert
+        assert addrinfo_list is mocker.sentinel.addrinfo_list
+        mock_loop_getaddrinfo.assert_awaited_once_with(
+            mocker.sentinel.host,
+            mocker.sentinel.port,
+            family=mocker.sentinel.family,
+            type=mocker.sentinel.type,
+            proto=mocker.sentinel.proto,
+            flags=mocker.sentinel.flags,
+        )
+
+    async def test____getnameinfo____use_loop_getnameinfo(
+        self,
+        backend: AsyncIOBackend,
+        mocker: MockerFixture,
+    ) -> None:
+        # Arrange
+        event_loop = asyncio.get_running_loop()
+        mock_loop_getnameinfo = mocker.patch.object(
+            event_loop,
+            "getnameinfo",
+            new_callable=mocker.AsyncMock,
+            return_value=mocker.sentinel.resolved_addr,
+        )
+
+        # Act
+        resolved_addr = await backend.getnameinfo(
+            sockaddr=mocker.sentinel.sockaddr,
+            flags=mocker.sentinel.flags,
+        )
+
+        # Assert
+        assert resolved_addr is mocker.sentinel.resolved_addr
+        mock_loop_getnameinfo.assert_awaited_once_with(mocker.sentinel.sockaddr, mocker.sentinel.flags)
+
     @pytest.mark.parametrize("happy_eyeballs_delay", [None, 42], ids=lambda p: f"happy_eyeballs_delay=={p}")
     async def test____create_tcp_connection____use_loop_create_connection(
         self,
@@ -216,8 +276,9 @@ class TestAsyncIOBackend:
             new_callable=mocker.AsyncMock,
             return_value=(mock_asyncio_transport, mock_protocol),
         )
-        mock_own_create_connection: AsyncMock = mocker.patch(
-            f"{_ASYNCIO_BACKEND_MODULE}._asyncio_utils.create_connection",
+        mock_own_create_connection: AsyncMock = mocker.patch.object(
+            AsyncIODNSResolver,
+            "create_stream_connection",
             new_callable=mocker.AsyncMock,
             return_value=mock_tcp_socket,
         )
@@ -235,6 +296,7 @@ class TestAsyncIOBackend:
 
         # Assert
         mock_own_create_connection.assert_awaited_once_with(
+            backend,
             *remote_address,
             happy_eyeballs_delay=expected_happy_eyeballs_delay,
             local_address=local_address,
@@ -286,7 +348,6 @@ class TestAsyncIOBackend:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        event_loop = asyncio.get_running_loop()
         remote_host, remote_port = "remote_address", 5000
         addrinfo_list = [
             (
@@ -297,9 +358,9 @@ class TestAsyncIOBackend:
                 (remote_host, remote_port),
             )
         ]
-        mock_getaddrinfo = mocker.patch.object(
-            event_loop,
-            "getaddrinfo",
+        mock_resolve_listener_addresses = mocker.patch.object(
+            AsyncIODNSResolver,
+            "resolve_listener_addresses",
             new_callable=mocker.AsyncMock,
             return_value=addrinfo_list,
         )
@@ -322,16 +383,14 @@ class TestAsyncIOBackend:
         )
 
         # Assert
-        mock_getaddrinfo.assert_awaited_once_with(
-            remote_host,
+        mock_resolve_listener_addresses.assert_awaited_once_with(
+            backend,
+            [remote_host],
             remote_port,
-            family=AF_UNSPEC,
-            type=SOCK_STREAM,
-            proto=0,
-            flags=AI_PASSIVE | AI_ADDRCONFIG,
+            SOCK_STREAM,
         )
         mock_open_listeners.assert_called_once_with(
-            sorted(set(addrinfo_list)),
+            addrinfo_list,
             backlog=123456789,
             reuse_address=mocker.ANY,  # Determined according to OS
             reuse_port=mocker.sentinel.reuse_port,
@@ -348,7 +407,6 @@ class TestAsyncIOBackend:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        event_loop = asyncio.get_running_loop()
         remote_port = 5000
         addrinfo_list = [
             (
@@ -366,9 +424,9 @@ class TestAsyncIOBackend:
                 ("::", remote_port),
             ),
         ]
-        mock_getaddrinfo = mocker.patch.object(
-            event_loop,
-            "getaddrinfo",
+        mock_resolve_listener_addresses = mocker.patch.object(
+            AsyncIODNSResolver,
+            "resolve_listener_addresses",
             new_callable=mocker.AsyncMock,
             return_value=addrinfo_list,
         )
@@ -391,16 +449,14 @@ class TestAsyncIOBackend:
         )
 
         # Assert
-        mock_getaddrinfo.assert_awaited_once_with(
-            None,
+        mock_resolve_listener_addresses.assert_awaited_once_with(
+            backend,
+            [None],
             remote_port,
-            family=AF_UNSPEC,
-            type=SOCK_STREAM,
-            proto=0,
-            flags=AI_PASSIVE | AI_ADDRCONFIG,
+            SOCK_STREAM,
         )
         mock_open_listeners.assert_called_once_with(
-            sorted(set(addrinfo_list)),
+            addrinfo_list,
             backlog=123456789,
             reuse_address=mocker.ANY,  # Determined according to OS
             reuse_port=mocker.sentinel.reuse_port,
@@ -417,7 +473,6 @@ class TestAsyncIOBackend:
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        event_loop = asyncio.get_running_loop()
         remote_hosts = ["0.0.0.0", "::"]
         remote_port = 5000
         addrinfo_list = [
@@ -436,11 +491,11 @@ class TestAsyncIOBackend:
                 ("::", remote_port),
             ),
         ]
-        mock_getaddrinfo = mocker.patch.object(
-            event_loop,
-            "getaddrinfo",
+        mock_resolve_listener_addresses = mocker.patch.object(
+            AsyncIODNSResolver,
+            "resolve_listener_addresses",
             new_callable=mocker.AsyncMock,
-            side_effect=[[info] for info in addrinfo_list],
+            return_value=addrinfo_list,
         )
         mock_open_listeners = mocker.patch(
             "easynetwork.lowlevel._utils.open_listener_sockets_from_getaddrinfo_result",
@@ -461,19 +516,14 @@ class TestAsyncIOBackend:
         )
 
         # Assert
-        assert mock_getaddrinfo.await_args_list == [
-            mocker.call(
-                host,
-                remote_port,
-                family=AF_UNSPEC,
-                type=SOCK_STREAM,
-                proto=0,
-                flags=AI_PASSIVE | AI_ADDRCONFIG,
-            )
-            for host in remote_hosts
-        ]
+        mock_resolve_listener_addresses.assert_awaited_once_with(
+            backend,
+            remote_hosts,
+            remote_port,
+            SOCK_STREAM,
+        )
         mock_open_listeners.assert_called_once_with(
-            sorted(set(addrinfo_list)),
+            addrinfo_list,
             backlog=123456789,
             reuse_address=mocker.ANY,  # Determined according to OS
             reuse_port=mocker.sentinel.reuse_port,
@@ -483,66 +533,19 @@ class TestAsyncIOBackend:
         ]
         assert listener_sockets == [mocker.sentinel.listener_socket, mocker.sentinel.listener_socket]
 
-    async def test____create_tcp_listeners____error_getaddrinfo_returns_empty_list(
-        self,
-        backend: AsyncIOBackend,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        event_loop = asyncio.get_running_loop()
-        remote_host = "remote_address"
-        remote_port = 5000
-
-        mock_getaddrinfo = mocker.patch.object(
-            event_loop,
-            "getaddrinfo",
-            new_callable=mocker.AsyncMock,
-            return_value=[],
-        )
-        mock_open_listeners = mocker.patch(
-            "easynetwork.lowlevel._utils.open_listener_sockets_from_getaddrinfo_result",
-            side_effect=AssertionError,
-        )
-        mock_ListenerSocketAdapter: MagicMock = mocker.patch(
-            f"{_ASYNCIO_BACKEND_MODULE}.stream.listener.ListenerSocketAdapter",
-            side_effect=AssertionError,
-        )
-
-        # Act
-        with pytest.raises(OSError, match=r"getaddrinfo\('remote_address'\) returned empty list"):
-            await backend.create_tcp_listeners(
-                remote_host,
-                remote_port,
-                backlog=123456789,
-                reuse_port=mocker.sentinel.reuse_port,
-            )
-
-        # Assert
-        mock_getaddrinfo.assert_awaited_once_with(
-            remote_host,
-            remote_port,
-            family=AF_UNSPEC,
-            type=SOCK_STREAM,
-            proto=0,
-            flags=AI_PASSIVE | AI_ADDRCONFIG,
-        )
-        mock_open_listeners.assert_not_called()
-        mock_ListenerSocketAdapter.assert_not_called()
-
     async def test____create_tcp_listeners____invalid_backlog(
         self,
         backend: AsyncIOBackend,
         mocker: MockerFixture,
     ) -> None:
         # Arrange
-        event_loop = asyncio.get_running_loop()
         remote_host = "remote_address"
         remote_port = 5000
-        mock_getaddrinfo = mocker.patch.object(
-            event_loop,
-            "getaddrinfo",
+        mock_resolve_listener_addresses = mocker.patch.object(
+            AsyncIODNSResolver,
+            "resolve_listener_addresses",
             new_callable=mocker.AsyncMock,
-            return_value=[],
+            side_effect=AssertionError,
         )
         mock_open_listeners = mocker.patch(
             "easynetwork.lowlevel._utils.open_listener_sockets_from_getaddrinfo_result",
@@ -563,7 +566,7 @@ class TestAsyncIOBackend:
             )
 
         # Assert
-        mock_getaddrinfo.assert_not_called()
+        mock_resolve_listener_addresses.assert_not_called()
         mock_open_listeners.assert_not_called()
         mock_ListenerSocketAdapter.assert_not_called()
 
@@ -589,8 +592,9 @@ class TestAsyncIOBackend:
             new_callable=mocker.AsyncMock,
             return_value=mock_endpoint,
         )
-        mock_own_create_connection: AsyncMock = mocker.patch(
-            f"{_ASYNCIO_BACKEND_MODULE}._asyncio_utils.create_datagram_connection",
+        mock_own_create_connection: AsyncMock = mocker.patch.object(
+            AsyncIODNSResolver,
+            "create_datagram_connection",
             new_callable=mocker.AsyncMock,
             return_value=mock_udp_socket,
         )
@@ -603,6 +607,7 @@ class TestAsyncIOBackend:
 
         # Assert
         mock_own_create_connection.assert_awaited_once_with(
+            backend,
             *remote_address,
             local_address=local_address,
             family=AF_UNSPEC if socket_family is None else socket_family,
@@ -661,9 +666,9 @@ class TestAsyncIOBackend:
         ]
         mock_transport = mocker.NonCallableMagicMock(spec=asyncio.DatagramTransport)
         mock_protocol = mocker.NonCallableMagicMock(spec=DatagramListenerProtocol)
-        mock_getaddrinfo = mocker.patch.object(
-            event_loop,
-            "getaddrinfo",
+        mock_resolve_listener_addresses = mocker.patch.object(
+            AsyncIODNSResolver,
+            "resolve_listener_addresses",
             new_callable=mocker.AsyncMock,
             return_value=addrinfo_list,
         )
@@ -690,16 +695,14 @@ class TestAsyncIOBackend:
         )
 
         # Assert
-        mock_getaddrinfo.assert_awaited_once_with(
-            remote_host,
+        mock_resolve_listener_addresses.assert_awaited_once_with(
+            backend,
+            [remote_host],
             remote_port,
-            family=AF_UNSPEC,
-            type=SOCK_DGRAM,
-            proto=0,
-            flags=AI_PASSIVE | AI_ADDRCONFIG,
+            SOCK_DGRAM,
         )
         mock_open_listeners.assert_called_once_with(
-            sorted(set(addrinfo_list)),
+            addrinfo_list,
             backlog=None,
             reuse_address=False,
             reuse_port=mocker.sentinel.reuse_port,
@@ -740,9 +743,9 @@ class TestAsyncIOBackend:
         ]
         mock_transport = mocker.NonCallableMagicMock(spec=asyncio.DatagramTransport)
         mock_protocol = mocker.NonCallableMagicMock(spec=DatagramListenerProtocol)
-        mock_getaddrinfo = mocker.patch.object(
-            event_loop,
-            "getaddrinfo",
+        mock_resolve_listener_addresses = mocker.patch.object(
+            AsyncIODNSResolver,
+            "resolve_listener_addresses",
             new_callable=mocker.AsyncMock,
             return_value=addrinfo_list,
         )
@@ -769,16 +772,14 @@ class TestAsyncIOBackend:
         )
 
         # Assert
-        mock_getaddrinfo.assert_awaited_once_with(
-            None,
+        mock_resolve_listener_addresses.assert_awaited_once_with(
+            backend,
+            [None],
             remote_port,
-            family=AF_UNSPEC,
-            type=SOCK_DGRAM,
-            proto=0,
-            flags=AI_PASSIVE | AI_ADDRCONFIG,
+            SOCK_DGRAM,
         )
         mock_open_listeners.assert_called_once_with(
-            sorted(set(addrinfo_list)),
+            addrinfo_list,
             backlog=None,
             reuse_address=False,
             reuse_port=mocker.sentinel.reuse_port,
@@ -823,9 +824,9 @@ class TestAsyncIOBackend:
         ]
         mock_transport = mocker.NonCallableMagicMock(spec=asyncio.DatagramTransport)
         mock_protocol = mocker.NonCallableMagicMock(spec=DatagramListenerProtocol)
-        mock_getaddrinfo = mocker.patch.object(
-            event_loop,
-            "getaddrinfo",
+        mock_resolve_listener_addresses = mocker.patch.object(
+            AsyncIODNSResolver,
+            "resolve_listener_addresses",
             new_callable=mocker.AsyncMock,
             return_value=addrinfo_list,
         )
@@ -852,19 +853,14 @@ class TestAsyncIOBackend:
         )
 
         # Assert
-        assert mock_getaddrinfo.await_args_list == [
-            mocker.call(
-                host,
-                remote_port,
-                family=AF_UNSPEC,
-                type=SOCK_DGRAM,
-                proto=0,
-                flags=AI_PASSIVE | AI_ADDRCONFIG,
-            )
-            for host in remote_hosts
-        ]
+        mock_resolve_listener_addresses.assert_awaited_once_with(
+            backend,
+            remote_hosts,
+            remote_port,
+            SOCK_DGRAM,
+        )
         mock_open_listeners.assert_called_once_with(
-            sorted(set(addrinfo_list)),
+            addrinfo_list,
             backlog=None,
             reuse_address=False,
             reuse_port=mocker.sentinel.reuse_port,
@@ -880,57 +876,6 @@ class TestAsyncIOBackend:
             mocker.call(backend, mock_transport, mock_protocol) for _ in range(2)
         ]
         assert listener_sockets == [mocker.sentinel.listener_socket, mocker.sentinel.listener_socket]
-
-    async def test____create_udp_listeners____error_getaddrinfo_returns_empty_list(
-        self,
-        backend: AsyncIOBackend,
-        mocker: MockerFixture,
-    ) -> None:
-        # Arrange
-        event_loop = asyncio.get_running_loop()
-        remote_host = "remote_address"
-        remote_port = 5000
-        mock_getaddrinfo = mocker.patch.object(
-            event_loop,
-            "getaddrinfo",
-            new_callable=mocker.AsyncMock,
-            return_value=[],
-        )
-        mock_open_listeners = mocker.patch(
-            "easynetwork.lowlevel._utils.open_listener_sockets_from_getaddrinfo_result",
-            side_effect=AssertionError,
-        )
-        mock_create_datagram_endpoint: AsyncMock = mocker.patch.object(
-            event_loop,
-            "create_datagram_endpoint",
-            new_callable=mocker.AsyncMock,
-            side_effect=AssertionError,
-        )
-        mock_DatagramListenerSocketAdapter: MagicMock = mocker.patch(
-            f"{_ASYNCIO_BACKEND_MODULE}.datagram.listener.DatagramListenerSocketAdapter",
-            side_effect=AssertionError,
-        )
-
-        # Act
-        with pytest.raises(OSError, match=r"getaddrinfo\('remote_address'\) returned empty list"):
-            await backend.create_udp_listeners(
-                remote_host,
-                remote_port,
-                reuse_port=mocker.sentinel.reuse_port,
-            )
-
-        # Assert
-        mock_getaddrinfo.assert_awaited_once_with(
-            remote_host,
-            remote_port,
-            family=AF_UNSPEC,
-            type=SOCK_DGRAM,
-            proto=0,
-            flags=AI_PASSIVE | AI_ADDRCONFIG,
-        )
-        mock_open_listeners.assert_not_called()
-        mock_create_datagram_endpoint.assert_not_called()
-        mock_DatagramListenerSocketAdapter.assert_not_called()
 
     async def test____create_lock____use_asyncio_Lock_class(
         self,

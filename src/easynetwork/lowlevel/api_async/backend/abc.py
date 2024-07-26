@@ -936,6 +936,38 @@ class AsyncBackend(metaclass=ABCMeta):
         """
         raise NotImplementedError
 
+    async def getaddrinfo(
+        self,
+        host: bytes | str | None,
+        port: bytes | str | int | None,
+        family: int = 0,
+        type: int = 0,
+        proto: int = 0,
+        flags: int = 0,
+    ) -> Sequence[tuple[int, int, int, str, tuple[str, int] | tuple[str, int, int, int]]]:
+        """
+        Asynchronous version of :func:`socket.getaddrinfo`.
+        """
+        from ..._utils import make_callback
+
+        getaddrinfo = make_callback(_socket.getaddrinfo, host, port, family=family, type=type, proto=proto, flags=flags)
+
+        return await self.run_in_thread(getaddrinfo, abandon_on_cancel=True)
+
+    async def getnameinfo(
+        self,
+        sockaddr: tuple[str, int] | tuple[str, int, int, int],
+        flags: int = 0,
+    ) -> tuple[str, str]:
+        """
+        Asynchronous version of :func:`socket.getnameinfo`.
+        """
+        from ..._utils import make_callback
+
+        getnameinfo = make_callback(_socket.getnameinfo, sockaddr, flags)
+
+        return await self.run_in_thread(getnameinfo, abandon_on_cancel=True)
+
     @abstractmethod
     async def create_tcp_connection(
         self,
