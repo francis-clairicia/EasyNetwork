@@ -11,7 +11,7 @@ from collections import deque
 from collections.abc import Callable
 from errno import EINVAL, ENOTCONN, errorcode as errno_errorcode
 from socket import SO_ERROR, SOL_SOCKET
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from easynetwork.exceptions import BusyResourceError
 from easynetwork.lowlevel._final import runtime_final_class
@@ -41,6 +41,7 @@ from easynetwork.lowlevel._utils import (
     replace_kwargs,
     set_reuseport,
     supports_socket_sendmsg,
+    validate_listener_hosts,
     validate_timeout_delay,
 )
 from easynetwork.lowlevel.constants import NOT_CONNECTED_SOCKET_ERRNOS
@@ -721,6 +722,45 @@ def test____set_reuseport____not_supported____defined_but_not_implemented(
 
     # Assert
     mock_tcp_socket.setsockopt.assert_called_once_with(SOL_SOCKET, SO_REUSEPORT, True)
+
+
+@pytest.mark.parametrize("host", ["", None], ids=repr)
+def test____validate_listener_hosts____any_address(host: Literal[""] | None) -> None:
+    # Arrange
+
+    # Act
+    host_list = validate_listener_hosts(host)
+
+    # Assert
+    assert host_list == [None]
+
+
+def test____validate_listener_hosts____single_address() -> None:
+    # Arrange
+
+    # Act
+    host_list = validate_listener_hosts("local_address")
+
+    # Assert
+    assert host_list == ["local_address"]
+
+
+def test____validate_listener_hosts____sequence_of_addresses() -> None:
+    # Arrange
+
+    # Act
+    host_list = validate_listener_hosts(["local_address_1", "local_address_2"])
+
+    # Assert
+    assert host_list == ["local_address_1", "local_address_2"]
+
+
+def test____validate_listener_hosts____mix_is_forbidden() -> None:
+    # Arrange
+
+    # Act & Assert
+    with pytest.raises(TypeError):
+        validate_listener_hosts(["local_address_1", None])  # type: ignore[list-item]
 
 
 def test____exception_with_notes____one_note() -> None:

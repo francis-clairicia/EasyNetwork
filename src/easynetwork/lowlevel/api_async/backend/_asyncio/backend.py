@@ -187,13 +187,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
         from .stream.listener import AcceptedSocketFactory, ListenerSocketAdapter
 
         reuse_address: bool = os.name not in ("nt", "cygwin") and sys.platform != "cygwin"
-        hosts: Sequence[str | None]
-        if host == "" or host is None:
-            hosts = [None]
-        elif isinstance(host, str):
-            hosts = [host]
-        else:
-            hosts = host
+        hosts: Sequence[str | None] = _utils.validate_listener_hosts(host)
 
         del host
 
@@ -251,13 +245,7 @@ class AsyncIOBackend(AbstractAsyncBackend):
 
         loop = self.__asyncio.get_running_loop()
 
-        hosts: Sequence[str | None]
-        if host == "" or host is None:
-            hosts = [None]
-        elif isinstance(host, str):
-            hosts = [host]
-        else:
-            hosts = host
+        hosts: Sequence[str | None] = _utils.validate_listener_hosts(host)
 
         del host
 

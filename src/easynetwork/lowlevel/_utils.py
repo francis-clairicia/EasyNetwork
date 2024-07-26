@@ -32,11 +32,13 @@ __all__ = [
     "lock_with_timeout",
     "make_callback",
     "missing_extra_deps",
+    "open_listener_sockets_from_getaddrinfo_result",
     "prepend_argument",
     "remove_traceback_frames_in_place",
     "replace_kwargs",
     "set_reuseport",
     "supports_socket_sendmsg",
+    "validate_listener_hosts",
     "validate_timeout_delay",
 ]
 
@@ -50,7 +52,7 @@ import threading
 import time
 from abc import abstractmethod
 from collections import deque
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from typing import TYPE_CHECKING, Any, Concatenate, ParamSpec, Protocol, Self, TypeGuard, TypeVar, overload
 
 try:
@@ -284,6 +286,18 @@ def set_reuseport(sock: SupportsSocketOptions) -> None:
             raise ValueError("reuse_port not supported by socket module, SO_REUSEPORT defined but not implemented.") from None
     else:
         raise ValueError("reuse_port not supported by socket module")
+
+
+def validate_listener_hosts(host: str | Sequence[str] | None) -> list[str | None]:
+    match host:
+        case "" | None:
+            return [None]
+        case str():
+            return [host]
+        case _ if all(isinstance(h, str) for h in host):
+            return list(host)
+        case _:
+            raise TypeError(host)
 
 
 def open_listener_sockets_from_getaddrinfo_result(
