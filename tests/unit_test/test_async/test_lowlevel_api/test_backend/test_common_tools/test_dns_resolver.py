@@ -52,9 +52,11 @@ def dns_resolver(event_loop: asyncio.AbstractEventLoop, mocker: MockerFixture) -
     return MockedDNSResolver(event_loop, mocker)
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def mock_stdlib_socket_getaddrinfo(mocker: MockerFixture) -> MagicMock:
-    return mocker.patch("socket.getaddrinfo")
+    from socket import EAI_NONAME, gaierror
+
+    return mocker.patch("socket.getaddrinfo", autospec=True, side_effect=gaierror(EAI_NONAME, "Name or service not known"))
 
 
 @pytest.fixture
@@ -93,6 +95,7 @@ async def test____ensure_resolved____try_numeric_first(
 ) -> None:
     # Arrange
     expected_result = stream_addrinfo_list(8080, families=[AF_INET])
+    mock_stdlib_socket_getaddrinfo.side_effect = None
     mock_stdlib_socket_getaddrinfo.return_value = expected_result
 
     # Act
@@ -126,6 +129,7 @@ async def test____ensure_resolved____try_numeric_first____success_but_return_emp
     mock_stdlib_socket_getaddrinfo: MagicMock,
 ) -> None:
     # Arrange
+    mock_stdlib_socket_getaddrinfo.side_effect = None
     mock_stdlib_socket_getaddrinfo.return_value = []
 
     # Act
