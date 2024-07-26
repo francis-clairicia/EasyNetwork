@@ -9,6 +9,8 @@ from easynetwork.lowlevel.api_async.backend.utils import BuiltinAsyncBackendLite
 
 import pytest
 
+from ...._utils import mock_import_module_not_found
+
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
 
@@ -131,3 +133,21 @@ def test____new_builtin_backend____invalid_string_literal() -> None:
     # Act & Assert
     with pytest.raises(NotImplementedError, match=r"^curio$"):
         _ = ensure_backend("curio")  # type: ignore[arg-type]
+
+
+def test____new_builtin_backend_____trio_dependency_missing(mocker: MockerFixture) -> None:
+    # Arrange
+    mock_import = mock_import_module_not_found({"trio"}, mocker)
+
+    # Act
+    with pytest.raises(ModuleNotFoundError) as exc_info:
+        try:
+            _ = new_builtin_backend("trio")
+        finally:
+            mocker.stop(mock_import)
+
+    # Assert
+    mock_import.assert_any_call("trio", mocker.ANY, mocker.ANY, None, 0)
+    assert exc_info.value.args[0] == "trio dependencies are missing. Consider adding 'trio' extra"
+    assert exc_info.value.__notes__ == ['example: pip install "easynetwork[trio]"']
+    assert isinstance(exc_info.value.__cause__, ModuleNotFoundError)

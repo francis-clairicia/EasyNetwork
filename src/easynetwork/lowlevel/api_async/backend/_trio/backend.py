@@ -24,6 +24,7 @@ import socket as _socket
 from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
 from typing import Any, NoReturn, TypeVar, TypeVarTuple
 
+from .... import _utils
 from ...transports.abc import AsyncDatagramListener, AsyncDatagramTransport, AsyncListener, AsyncStreamTransport
 from ..abc import AsyncBackend as AbstractAsyncBackend, CancelScope, ICondition, IEvent, ILock, TaskGroup, TaskInfo, ThreadsPortal
 
@@ -36,7 +37,10 @@ class TrioBackend(AbstractAsyncBackend):
     __slots__ = ("__trio",)
 
     def __init__(self) -> None:
-        import trio
+        try:
+            import trio
+        except ModuleNotFoundError as exc:
+            raise _utils.missing_extra_deps("trio") from exc
 
         self.__trio = trio
 
