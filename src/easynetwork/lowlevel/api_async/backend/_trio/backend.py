@@ -20,11 +20,14 @@ from __future__ import annotations
 __all__ = ["TrioBackend"]
 
 import math
+import os
 import socket as _socket
+import sys
 from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
 from typing import Any, NoReturn, TypeVar, TypeVarTuple
 
 from .... import _utils
+from ....constants import HAPPY_EYEBALLS_DELAY as _DEFAULT_HAPPY_EYEBALLS_DELAY
 from ...transports.abc import AsyncDatagramListener, AsyncDatagramTransport, AsyncListener, AsyncStreamTransport
 from ..abc import AsyncBackend as AbstractAsyncBackend, CancelScope, ICondition, IEvent, ILock, TaskGroup, TaskInfo, ThreadsPortal
 
@@ -34,7 +37,10 @@ _T_PosArgs = TypeVarTuple("_T_PosArgs")
 
 
 class TrioBackend(AbstractAsyncBackend):
-    __slots__ = ("__trio",)
+    __slots__ = (
+        "__trio",
+        "__dns_resolver",
+    )
 
     def __init__(self) -> None:
         try:
@@ -42,7 +48,10 @@ class TrioBackend(AbstractAsyncBackend):
         except ModuleNotFoundError as exc:
             raise _utils.missing_extra_deps("trio") from exc
 
+        from .dns_resolver import TrioDNSResolver
+
         self.__trio = trio
+        self.__dns_resolver = TrioDNSResolver()
 
     def bootstrap(
         self,
@@ -125,10 +134,27 @@ class TrioBackend(AbstractAsyncBackend):
         local_address: tuple[str, int] | None = None,
         happy_eyeballs_delay: float | None = None,
     ) -> AsyncStreamTransport:
-        raise NotImplementedError
+        if happy_eyeballs_delay is None:
+            happy_eyeballs_delay = _DEFAULT_HAPPY_EYEBALLS_DELAY
+
+        socket = await self.__dns_resolver.create_stream_connection(
+            self,
+            host,
+            port,
+            local_address=local_address,
+            happy_eyeballs_delay=happy_eyeballs_delay,
+        )
+
+        return await self.wrap_stream_socket(socket)
 
     async def wrap_stream_socket(self, socket: _socket.socket) -> AsyncStreamTransport:
-        raise NotImplementedError
+        from .stream.socket import TrioStreamSocketAdapter
+
+        _utils.check_socket_no_ssl(socket)
+        trio_socket = self.__trio.socket.from_stdlib_socket(socket)
+        trio_stream = self.__trio.SocketStream(trio_socket)
+
+        return TrioStreamSocketAdapter(self, trio_stream)
 
     async def create_tcp_listeners(
         self,
@@ -138,7 +164,32 @@ class TrioBackend(AbstractAsyncBackend):
         *,
         reuse_port: bool = False,
     ) -> Sequence[AsyncListener[AsyncStreamTransport]]:
-        raise NotImplementedError
+        from .stream.listener import TrioListenerSocketAdapter
+
+        reuse_address: bool = os.name not in ("nt", "cygwin") and sys.platform != "cygwin"
+        hosts: Sequence[str | None] = _utils.validate_listener_hosts(host)
+
+        del host
+
+        infos: Sequence[tuple[int, int, int, str, tuple[Any, ...]]] = await self.__dns_resolver.resolve_listener_addresses(
+            self,
+            hosts,
+            port,
+            _socket.SOCK_STREAM,
+        )
+
+        sockets: list[_socket.socket] = _utils.open_listener_sockets_from_getaddrinfo_result(
+            infos,
+            backlog=backlog,
+            reuse_address=reuse_address,
+            reuse_port=reuse_port,
+        )
+
+        listeners = [
+            TrioListenerSocketAdapter(self, self.__trio.SocketListener(sock))
+            for sock in map(self.__trio.socket.from_stdlib_socket, sockets)
+        ]
+        return listeners
 
     async def create_udp_endpoint(
         self,
@@ -148,10 +199,22 @@ class TrioBackend(AbstractAsyncBackend):
         local_address: tuple[str, int] | None = None,
         family: int = _socket.AF_UNSPEC,
     ) -> AsyncDatagramTransport:
-        raise NotImplementedError
+        socket = await self.__dns_resolver.create_datagram_connection(
+            self,
+            remote_host,
+            remote_port,
+            local_address=local_address,
+            family=family,
+        )
+        return await self.wrap_connected_datagram_socket(socket)
 
     async def wrap_connected_datagram_socket(self, socket: _socket.socket) -> AsyncDatagramTransport:
-        raise NotImplementedError
+        from .datagram.socket import TrioDatagramSocketAdapter
+
+        _utils.check_socket_no_ssl(socket)
+        trio_socket = self.__trio.socket.from_stdlib_socket(socket)
+
+        return TrioDatagramSocketAdapter(self, trio_socket)
 
     async def create_udp_listeners(
         self,
@@ -160,7 +223,30 @@ class TrioBackend(AbstractAsyncBackend):
         *,
         reuse_port: bool = False,
     ) -> Sequence[AsyncDatagramListener[tuple[Any, ...]]]:
-        raise NotImplementedError
+        from .datagram.listener import TrioDatagramListenerSocketAdapter
+
+        hosts: Sequence[str | None] = _utils.validate_listener_hosts(host)
+
+        del host
+
+        infos: Sequence[tuple[int, int, int, str, tuple[Any, ...]]] = await self.__dns_resolver.resolve_listener_addresses(
+            self,
+            hosts,
+            port,
+            _socket.SOCK_DGRAM,
+        )
+
+        sockets: list[_socket.socket] = _utils.open_listener_sockets_from_getaddrinfo_result(
+            infos,
+            backlog=None,
+            reuse_address=False,
+            reuse_port=reuse_port,
+        )
+
+        listeners = [
+            TrioDatagramListenerSocketAdapter(self, sock) for sock in map(self.__trio.socket.from_stdlib_socket, sockets)
+        ]
+        return listeners
 
     def create_lock(self) -> ILock:
         return self.__trio.Lock()

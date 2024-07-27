@@ -133,7 +133,7 @@ benchmark-servers = [
     "plotly~=5.18",
 ]
 benchmark-servers-deps = [
-    "easynetwork[uvloop]",
+    "easynetwork[uvloop, trio]",
     "asyncio-dgram==2.1.2",
 ]
 

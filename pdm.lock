@@ -5,7 +5,7 @@
 groups = ["default", "bandit", "benchmark-servers", "benchmark-servers-deps", "build", "cbor", "coverage", "dev", "doc", "flake8", "format", "micro-benchmark", "msgpack", "mypy", "pre-commit", "test", "test-trio", "tox", "trio", "types-msgpack", "uvloop"]
 strategy = ["cross_platform", "inherit_metadata"]
 lock_version = "4.4.2"
-content_hash = "sha256:5126c7cad42f005a845350833e18da2615821be9f385afdc07550307909cce7c"
+content_hash = "sha256:2146760187db05141fd8cf8be7dd1ef03fb5ea3bb60078b832e1898d184bd97f"
 
 [[package]]
 name = "alabaster"
@@ -81,7 +81,7 @@ name = "attrs"
 version = "23.2.0"
 requires_python = ">=3.7"
 summary = "Classes Without Boilerplate"
-groups = ["test-trio", "trio"]
+groups = ["benchmark-servers-deps", "test-trio", "trio"]
 files = [
     {file = "attrs-23.2.0-py3-none-any.whl", hash = "sha256:99b87a485a5820b23b879f04c2305b44b951b502fd64be915879d77a7e8fc6f1"},
     {file = "attrs-23.2.0.tar.gz", hash = "sha256:935dc3b529c262f6cf76e50877d35a4bd3c1de194fd41f47a2b7ae8f19971f30"},
@@ -291,7 +291,7 @@ name = "cffi"
 version = "1.16.0"
 requires_python = ">=3.8"
 summary = "Foreign Function Interface for Python calling C code."
-groups = ["dev", "test", "test-trio", "trio"]
+groups = ["benchmark-servers-deps", "dev", "test", "test-trio", "trio"]
 dependencies = [
     "pycparser",
 ]
@@ -818,7 +818,7 @@ name = "idna"
 version = "3.7"
 requires_python = ">=3.5"
 summary = "Internationalized Domain Names in Applications (IDNA)"
-groups = ["benchmark-servers", "dev", "doc", "test", "test-trio", "trio"]
+groups = ["benchmark-servers", "benchmark-servers-deps", "dev", "doc", "test", "test-trio", "trio"]
 files = [
     {file = "idna-3.7-py3-none-any.whl", hash = "sha256:82fee1fc78add43492d3a1898bfa6d8a904cc97d8427f683ed8e798d07761aa0"},
     {file = "idna-3.7.tar.gz", hash = "sha256:028ff3aadf0609c1fd278d8ea3089299412a7a8b9bd005dd08b9f8285bcb5cfc"},
@@ -1142,7 +1142,7 @@ name = "outcome"
 version = "1.3.0.post0"
 requires_python = ">=3.7"
 summary = "Capture the outcome of Python function calls."
-groups = ["test-trio", "trio"]
+groups = ["benchmark-servers-deps", "test-trio", "trio"]
 dependencies = [
     "attrs>=19.2.0",
 ]
@@ -1288,7 +1288,7 @@ name = "pycparser"
 version = "2.22"
 requires_python = ">=3.8"
 summary = "C parser in Python"
-groups = ["dev", "test", "test-trio", "trio"]
+groups = ["benchmark-servers-deps", "dev", "test", "test-trio", "trio"]
 files = [
     {file = "pycparser-2.22-py3-none-any.whl", hash = "sha256:c3702b6d3dd8c7abc1afa565d7e63d53a1d0bd86cdc24edd75470f4de499cfcc"},
     {file = "pycparser-2.22.tar.gz", hash = "sha256:491c8be9c040f5390f5bf44a5b07752bd07f56edf992381b05c701439eec10f6"},
@@ -1689,7 +1689,7 @@ files = [
 name = "sortedcontainers"
 version = "2.4.0"
 summary = "Sorted Containers -- Sorted List, Sorted Dict, Sorted Set"
-groups = ["test-trio", "trio"]
+groups = ["benchmark-servers-deps", "test-trio", "trio"]
 files = [
     {file = "sortedcontainers-2.4.0-py2.py3-none-any.whl", hash = "sha256:a163dcaede0f1c021485e957a39245190e74249897e2ae4b2aa38595db237ee0"},
     {file = "sortedcontainers-2.4.0.tar.gz", hash = "sha256:25caa5a06cc30b6b83d11423433f65d1f9d76c4c6a0c90e3379eaa43b9bfdb88"},
@@ -2033,7 +2033,7 @@ name = "trio"
 version = "0.26.0"
 requires_python = ">=3.8"
 summary = "A friendly Python library for async concurrency and I/O"
-groups = ["test-trio", "trio"]
+groups = ["benchmark-servers-deps", "test-trio", "trio"]
 dependencies = [
     "attrs>=23.2.0",
     "cffi>=1.14; os_name == \"nt\" and implementation_name != \"pypy\"",
