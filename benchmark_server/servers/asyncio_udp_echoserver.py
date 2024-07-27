@@ -28,7 +28,6 @@ async def echo_server(address: tuple[str, int]) -> NoReturn:
 
         while True:
             datagram, addr = await loop.sock_recvfrom(sock, 65536)
-            LOGGER.info(f"Connection from {addr}")
             task_group.create_task(_echo_datagram_client(loop, sock, datagram, addr))
 
     raise AssertionError("unreachable")
@@ -52,7 +51,6 @@ async def echo_server_stream(address: tuple[str, int]) -> NoReturn:
         task_group = await stack.enter_async_context(asyncio.TaskGroup())
         while True:
             datagram, addr = await stream.recv()
-            LOGGER.info(f"Connection from {addr}")
             task_group.create_task(_echo_datagram_client_stream(stream, datagram, addr))
 
     raise AssertionError("unreachable")
