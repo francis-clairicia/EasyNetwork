@@ -63,7 +63,7 @@ def build_lowlevel_stream_server_handler(
     if logger is None:
         logger = logging.getLogger(__name__)
 
-    from ..lowlevel._asyncgen import SendAction, ThrowAction
+    from ..lowlevel._asyncgen import SendAction, ThrowAction, anext_without_asyncgen_hook
 
     async def handler(
         lowlevel_client: _lowlevel_stream_server.ConnectedStreamClient[_T_Response], /
@@ -82,7 +82,7 @@ def build_lowlevel_stream_server_handler(
             _on_connection_hook = request_handler.on_connection(client)
             if isinstance(_on_connection_hook, AsyncGenerator):
                 try:
-                    timeout = await anext(_on_connection_hook)
+                    timeout = await anext_without_asyncgen_hook(_on_connection_hook)
                 except StopAsyncIteration:
                     pass
                 else:
@@ -128,7 +128,7 @@ def build_lowlevel_stream_server_handler(
             while not client_is_closing():
                 request_handler_generator = new_request_handler(client)
                 try:
-                    timeout = await anext(request_handler_generator)
+                    timeout = await anext_without_asyncgen_hook(request_handler_generator)
                 except StopAsyncIteration:
                     return
                 else:
@@ -181,7 +181,7 @@ def build_lowlevel_datagram_server_handler(
         an :term:`asynchronous generator` function.
     """
 
-    from ..lowlevel._asyncgen import SendAction, ThrowAction
+    from ..lowlevel._asyncgen import SendAction, ThrowAction, anext_without_asyncgen_hook
 
     async def handler(
         lowlevel_client: _lowlevel_datagram_server.DatagramClientContext[_T_Response, _T_Address], /
@@ -196,7 +196,7 @@ def build_lowlevel_datagram_server_handler(
             request_handler_generator = request_handler.handle(client)
             timeout: float | None
             try:
-                timeout = await anext(request_handler_generator)
+                timeout = await anext_without_asyncgen_hook(request_handler_generator)
             except StopAsyncIteration:
                 return
             else:

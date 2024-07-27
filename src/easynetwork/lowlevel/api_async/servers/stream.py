@@ -27,7 +27,7 @@ from typing import Any, Generic, NoReturn, assert_never
 from ...._typevars import _T_Request, _T_Response
 from ....protocol import AnyStreamProtocolType
 from ... import _stream, _utils
-from ..._asyncgen import AsyncGenAction, SendAction, ThrowAction
+from ..._asyncgen import AsyncGenAction, SendAction, ThrowAction, anext_without_asyncgen_hook
 from ..backend.abc import AsyncBackend, TaskGroup
 from ..transports import abc as _transports, utils as _transports_utils
 
@@ -229,7 +229,7 @@ class AsyncStreamServer(_transports.AsyncBaseTransport, Generic[_T_Request, _T_R
 
             timeout: float | None
             try:
-                timeout = await anext(request_handler_generator)
+                timeout = await anext_without_asyncgen_hook(request_handler_generator)
             except StopAsyncIteration:
                 return
             else:
