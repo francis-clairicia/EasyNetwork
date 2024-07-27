@@ -8,8 +8,8 @@ from concurrent.futures import CancelledError as FutureCancelledError, wait as w
 from contextlib import ExitStack
 from typing import TYPE_CHECKING, Any, Literal, Required, TypedDict
 
-from easynetwork.lowlevel.api_async.backend._asyncio.backend import AsyncIOBackend
-from easynetwork.lowlevel.api_async.backend.abc import TaskInfo
+from easynetwork.lowlevel.api_async.backend.abc import AsyncBackend, TaskInfo
+from easynetwork.lowlevel.api_async.backend.utils import new_builtin_backend
 
 import pytest
 import sniffio
@@ -34,14 +34,14 @@ class ExceptionCaughtDict(TypedDict, total=False):
 
 @pytest.mark.flaky(retries=3, delay=0)
 class TestAsyncioBackendBootstrap:
-    @pytest.fixture
+    @pytest.fixture(scope="class")
     @staticmethod
-    def backend() -> AsyncIOBackend:
-        return AsyncIOBackend()
+    def backend() -> AsyncBackend:
+        return new_builtin_backend("asyncio")
 
     def test____bootstrap____sniffio_thread_local_reset(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         assert sniffio.thread_local.name is None
 
@@ -72,14 +72,14 @@ class TestAsyncioBackend:
         with temporary_exception_handler(event_loop, handler_stub):
             yield event_loop_exceptions_caught
 
-    @pytest.fixture
+    @pytest.fixture(scope="class")
     @staticmethod
-    def backend() -> AsyncIOBackend:
-        return AsyncIOBackend()
+    def backend() -> AsyncBackend:
+        return new_builtin_backend("asyncio")
 
     async def test____cancel_shielded_coro_yield____mute_cancellation(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         task: asyncio.Task[None] = asyncio.create_task(backend.cancel_shielded_coro_yield())
 
@@ -95,7 +95,7 @@ class TestAsyncioBackend:
     async def test____cancel_shielded_coro_yield____cancel_at_the_next_checkpoint(
         self,
         cancel_message: str | None,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         test_list: list[str] = []
 
@@ -126,7 +126,7 @@ class TestAsyncioBackend:
 
     async def test____ignore_cancellation____always_continue_on_cancellation(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         event_loop = asyncio.get_running_loop()
         checkpoints: list[int] = []
@@ -151,7 +151,7 @@ class TestAsyncioBackend:
     async def test____ignore_cancellation____exception_raised_in_task(
         self,
         direct_raise: bool,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         event_loop = asyncio.get_running_loop()
         exception = Exception("error")
@@ -178,7 +178,7 @@ class TestAsyncioBackend:
 
     async def test____ignore_cancellation____runs_in_current_task(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         async def coroutine() -> asyncio.Task[Any]:
             task = asyncio.current_task()
@@ -189,7 +189,7 @@ class TestAsyncioBackend:
 
     async def test____ignore_cancellation____remove_future_blocking_flag_like_default_implementation(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         event_loop = asyncio.get_running_loop()
 
@@ -203,7 +203,7 @@ class TestAsyncioBackend:
 
     async def test____ignore_cancellation____forbid_await_itself_like_default_implementation(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         async def coroutine() -> None:
             task = asyncio.current_task()
@@ -219,7 +219,7 @@ class TestAsyncioBackend:
         self,
         cancel_method: Literal["fut_cancel", "raise"],
         with_delay: bool,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         event_loop = asyncio.get_running_loop()
 
@@ -249,14 +249,14 @@ class TestAsyncioBackend:
 
     async def test____timeout____respected(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         with backend.timeout(1):
             assert await asyncio.sleep(0.5, 42) == 42
 
     async def test____timeout____timeout_error(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         with pytest.raises(TimeoutError):
             with backend.timeout(0.25):
@@ -264,7 +264,7 @@ class TestAsyncioBackend:
 
     async def test____timeout____cancellation(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         event_loop = asyncio.get_running_loop()
 
@@ -280,7 +280,7 @@ class TestAsyncioBackend:
 
     async def test____timeout_at____respected(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         event_loop = asyncio.get_running_loop()
 
@@ -289,7 +289,7 @@ class TestAsyncioBackend:
 
     async def test____timeout_at____timeout_error(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         event_loop = asyncio.get_running_loop()
 
@@ -299,7 +299,7 @@ class TestAsyncioBackend:
 
     async def test____timeout_at____cancellation(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         event_loop = asyncio.get_running_loop()
 
@@ -315,7 +315,7 @@ class TestAsyncioBackend:
 
     async def test____move_on_after____respected(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         with backend.move_on_after(1) as scope:
             assert await asyncio.sleep(0.5, 42) == 42
@@ -324,7 +324,7 @@ class TestAsyncioBackend:
 
     async def test____move_on_after____timeout_error(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         with backend.move_on_after(0.25) as scope:
             await asyncio.sleep(0.5, 42)
@@ -333,7 +333,7 @@ class TestAsyncioBackend:
 
     async def test____move_on_after____cancellation(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         event_loop = asyncio.get_running_loop()
 
@@ -349,7 +349,7 @@ class TestAsyncioBackend:
 
     async def test____move_on_at____respected(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         event_loop = asyncio.get_running_loop()
 
@@ -360,7 +360,7 @@ class TestAsyncioBackend:
 
     async def test____move_on_at____timeout_error(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         event_loop = asyncio.get_running_loop()
 
@@ -371,7 +371,7 @@ class TestAsyncioBackend:
 
     async def test____move_on_at____cancellation(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         event_loop = asyncio.get_running_loop()
 
@@ -387,7 +387,7 @@ class TestAsyncioBackend:
 
     async def test____sleep_forever____sleep_until_cancellation(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         event_loop = asyncio.get_running_loop()
 
@@ -400,7 +400,7 @@ class TestAsyncioBackend:
 
     async def test____open_cancel_scope____unbound_cancel_scope____cancel_when_entering(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         async def coroutine() -> None:
             current_task = asyncio.current_task()
@@ -424,7 +424,7 @@ class TestAsyncioBackend:
 
     async def test____open_cancel_scope____unbound_cancel_scope____deadline_scheduled_when_entering(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         event_loop = asyncio.get_running_loop()
 
@@ -448,7 +448,7 @@ class TestAsyncioBackend:
 
     async def test____open_cancel_scope____overwrite_defined_deadline(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         async def coroutine() -> None:
             current_task = asyncio.current_task()
@@ -468,14 +468,14 @@ class TestAsyncioBackend:
 
     async def test____open_cancel_scope____invalid_deadline(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         with pytest.raises(ValueError):
             _ = backend.open_cancel_scope(deadline=float("nan"))
 
     async def test____open_cancel_scope____context_reuse(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         with backend.open_cancel_scope() as scope:
             with pytest.raises(RuntimeError, match=r"^CancelScope entered twice$"):
@@ -488,14 +488,14 @@ class TestAsyncioBackend:
 
     async def test____open_cancel_scope____context_exit_before_enter(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         with pytest.raises(RuntimeError, match=r"^This cancel scope is not active$"), ExitStack() as stack:
             stack.push(backend.open_cancel_scope())
 
     async def test____open_cancel_scope____task_misnesting(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         async def coroutine() -> ExitStack:
             stack = ExitStack()
@@ -508,7 +508,7 @@ class TestAsyncioBackend:
 
     async def test____open_cancel_scope____scope_misnesting(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         stack = ExitStack()
         stack.enter_context(backend.open_cancel_scope())
@@ -521,14 +521,14 @@ class TestAsyncioBackend:
 
     async def test____gather____no_parameters(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         result: list[int] = await backend.gather()
         assert result == []
 
     async def test____gather____concurrent_await(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         async def coroutine(value: int) -> int:
             return await asyncio.sleep(0.5, value)
@@ -543,7 +543,7 @@ class TestAsyncioBackend:
 
     async def test____gather____concurrent_await____exception_raises(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         async def coroutine(value: int) -> int:
             return await backend.ignore_cancellation(asyncio.sleep(0.5, value))
@@ -564,7 +564,7 @@ class TestAsyncioBackend:
 
     async def test____gather____duplicate_awaitable(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
         mocker: MockerFixture,
     ) -> None:
         awaited = mocker.async_stub()
@@ -582,7 +582,7 @@ class TestAsyncioBackend:
 
     async def test____create_task_group____start_soon(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         tasks: list[TaskInfo] = []
 
@@ -598,7 +598,7 @@ class TestAsyncioBackend:
 
     async def test____create_task_group____start_soon____set_name(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         tasks: list[TaskInfo] = []
 
@@ -615,7 +615,7 @@ class TestAsyncioBackend:
 
     async def test____create_task_group____start_and_wait(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         tasks: list[TaskInfo] = []
 
@@ -651,7 +651,7 @@ class TestAsyncioBackend:
 
     async def test____create_task_group____start_and_wait____set_name(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         async def coroutine(value: int) -> int:
             return await asyncio.sleep(0.5, value)
@@ -665,7 +665,7 @@ class TestAsyncioBackend:
 
     async def test____create_task_group____start_and_wait____waiter_cancelled(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
         mocker: MockerFixture,
     ) -> None:
         awaited = mocker.async_stub()
@@ -682,7 +682,7 @@ class TestAsyncioBackend:
 
     async def test____create_task_group____task_cancellation(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         async def coroutine(value: int) -> int:
             return await asyncio.sleep(0.5, value)
@@ -712,7 +712,7 @@ class TestAsyncioBackend:
     async def test____create_task_group____task_join_cancel_shielding(
         self,
         join_method: Literal["join", "join_or_cancel", "wait"],
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         event_loop = asyncio.get_running_loop()
 
@@ -748,7 +748,7 @@ class TestAsyncioBackend:
     async def test____create_task_group____task_wait(
         self,
         task_state: Literal["result", "exception", "cancelled"],
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         event_loop = asyncio.get_running_loop()
         future: asyncio.Future[None] = event_loop.create_future()
@@ -788,7 +788,7 @@ class TestAsyncioBackend:
 
     async def test____run_in_thread____cannot_be_cancelled_by_default(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         event_loop = asyncio.get_running_loop()
         task = asyncio.create_task(backend.run_in_thread(time.sleep, 0.5))
@@ -803,7 +803,7 @@ class TestAsyncioBackend:
 
     async def test____run_in_thread____abandon_on_cancel(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         event_loop = asyncio.get_running_loop()
         task = asyncio.create_task(backend.run_in_thread(time.sleep, 0.5, abandon_on_cancel=True))
@@ -814,7 +814,7 @@ class TestAsyncioBackend:
 
         assert task.cancelled()
 
-    async def test____run_in_thread____sniffio_contextvar_reset(self, backend: AsyncIOBackend) -> None:
+    async def test____run_in_thread____sniffio_contextvar_reset(self, backend: AsyncBackend) -> None:
         sniffio.current_async_library_cvar.set("asyncio")
 
         def callback() -> str | None:
@@ -828,7 +828,7 @@ class TestAsyncioBackend:
 
     async def test____create_threads_portal____run_coroutine_from_thread(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         event_loop = asyncio.get_running_loop()
         threads_portal = backend.create_threads_portal()
@@ -856,7 +856,7 @@ class TestAsyncioBackend:
 
     async def test____create_threads_portal____run_coroutine_from_thread____can_be_called_from_other_event_loop(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         event_loop = asyncio.get_running_loop()
 
@@ -877,7 +877,7 @@ class TestAsyncioBackend:
     @pytest.mark.parametrize("exception_cls", [Exception, BaseException])
     async def test____create_threads_portal____run_coroutine_from_thread____exception_raised(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
         exception_cls: type[BaseException],
         event_loop_exceptions_caught: list[ExceptionCaughtDict],
     ) -> None:
@@ -910,7 +910,7 @@ class TestAsyncioBackend:
 
     async def test____create_threads_portal____run_coroutine_from_thread____coroutine_cancelled(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         async def coroutine(value: int) -> int:
             task = asyncio.current_task()
@@ -928,7 +928,7 @@ class TestAsyncioBackend:
 
     async def test____create_threads_portal____run_coroutine_from_thread____explicit_concurrent_future_Cancelled(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         async def coroutine(value: int) -> int:
             raise FutureCancelledError()
@@ -943,7 +943,7 @@ class TestAsyncioBackend:
 
     async def test____create_threads_portal____run_coroutine_from_thread____sniffio_contextvar_reset(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         sniffio.current_async_library_cvar.set("main")
 
@@ -962,7 +962,7 @@ class TestAsyncioBackend:
 
     async def test____create_threads_portal____run_sync_from_thread_in_event_loop(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         event_loop = asyncio.get_running_loop()
         threads_portal = backend.create_threads_portal()
@@ -990,7 +990,7 @@ class TestAsyncioBackend:
 
     async def test____create_threads_portal____run_sync_from_thread_in_event_loop____can_be_called_from_other_event_loop(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         event_loop = asyncio.get_running_loop()
 
@@ -1011,7 +1011,7 @@ class TestAsyncioBackend:
     @pytest.mark.parametrize("exception_cls", [Exception, BaseException])
     async def test____create_threads_portal____run_sync_from_thread_in_event_loop____exception_raised(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
         exception_cls: type[BaseException],
         event_loop_exceptions_caught: list[ExceptionCaughtDict],
     ) -> None:
@@ -1042,7 +1042,7 @@ class TestAsyncioBackend:
 
     async def test____create_threads_portal____run_sync_from_thread_in_event_loop____explicit_concurrent_future_Cancelled(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         def not_threadsafe_func(value: int) -> int:
             raise FutureCancelledError()
@@ -1057,7 +1057,7 @@ class TestAsyncioBackend:
 
     async def test____create_threads_portal____run_sync_from_thread_in_event_loop____async_function_given(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         async def coroutine() -> None:
             raise AssertionError("Should not be called")
@@ -1073,7 +1073,7 @@ class TestAsyncioBackend:
 
     async def test____create_threads_portal____run_sync_from_thread_in_event_loop____sniffio_contextvar_reset(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         sniffio.current_async_library_cvar.set("main")
 
@@ -1092,7 +1092,7 @@ class TestAsyncioBackend:
 
     async def test____create_threads_portal____run_sync_soon____future_cancelled_before_call(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
         mocker: MockerFixture,
     ) -> None:
         event_loop = asyncio.get_running_loop()
@@ -1117,7 +1117,7 @@ class TestAsyncioBackend:
 
     async def test____create_threads_portal____run_coroutine_soon____future_cancelled(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         def thread() -> None:
             future = threads_portal.run_coroutine_soon(asyncio.sleep, 1)
@@ -1136,7 +1136,7 @@ class TestAsyncioBackend:
     async def test____create_threads_portal____run_coroutine_soon____future_cancelled____cancellation_ignored(
         self,
         value: int | Exception,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
         event_loop_exceptions_caught: list[ExceptionCaughtDict],
         mocker: MockerFixture,
     ) -> None:
@@ -1180,7 +1180,7 @@ class TestAsyncioBackend:
 
     async def test____create_threads_portal____run_coroutine_soon____future_cancelled_before_await(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         event_loop = asyncio.get_running_loop()
         checkpoints: list[str] = []
@@ -1218,7 +1218,7 @@ class TestAsyncioBackend:
     @pytest.mark.skipif(not hasattr(asyncio, "eager_task_factory"), reason="asyncio.eager_task_factory not implemented")
     async def test____create_threads_portal____run_coroutine_soon____eager_task(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         event_loop = asyncio.get_running_loop()
         event_loop.set_task_factory(getattr(asyncio, "eager_task_factory"))
@@ -1236,7 +1236,7 @@ class TestAsyncioBackend:
 
     async def test____create_threads_portal____context_exit____wait_scheduled_call_soon(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
         mocker: MockerFixture,
     ) -> None:
         event_loop = asyncio.get_running_loop()
@@ -1257,7 +1257,7 @@ class TestAsyncioBackend:
 
     async def test____create_threads_portal____context_exit____wait_scheduled_call_soon_for_coroutine(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
         mocker: MockerFixture,
     ) -> None:
         event_loop = asyncio.get_running_loop()
@@ -1278,7 +1278,7 @@ class TestAsyncioBackend:
 
     async def test____create_threads_portal____entered_twice(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         async with backend.create_threads_portal() as threads_portal:
             with pytest.raises(RuntimeError, match=r"ThreadsPortal entered twice\."):
@@ -1287,10 +1287,10 @@ class TestAsyncioBackend:
 
 @pytest.mark.asyncio
 class TestAsyncioBackendShieldedCancellation:
-    @pytest.fixture
+    @pytest.fixture(scope="class")
     @staticmethod
-    def backend() -> AsyncIOBackend:
-        return AsyncIOBackend()
+    def backend() -> AsyncBackend:
+        return new_builtin_backend("asyncio")
 
     @pytest.fixture(
         params=[
@@ -1304,7 +1304,7 @@ class TestAsyncioBackendShieldedCancellation:
     @staticmethod
     def cancel_shielded_coroutine(
         request: pytest.FixtureRequest,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> Callable[[], Awaitable[Any]]:
         match getattr(request, "param"):
             case "cancel_shielded_coro_yield":
@@ -1332,7 +1332,7 @@ class TestAsyncioBackendShieldedCancellation:
     async def test____cancel_shielded_coroutine____do_not_cancel_at_timeout_end(
         self,
         cancel_shielded_coroutine: Callable[[], Awaitable[Any]],
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         checkpoints: list[str] = []
 
@@ -1355,7 +1355,7 @@ class TestAsyncioBackendShieldedCancellation:
     async def test____cancel_shielded_coroutine____cancel_at_timeout_end_if_nested(
         self,
         cancel_shielded_coroutine: Callable[[], Awaitable[Any]],
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         checkpoints: list[str] = []
 
@@ -1390,7 +1390,7 @@ class TestAsyncioBackendShieldedCancellation:
     async def test____timeout____cancel_at_timeout_end_if_task_cancellation_were_already_delayed(
         self,
         cancel_shielded_coroutine: Callable[[], Awaitable[Any]],
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         event_loop = asyncio.get_running_loop()
         checkpoints: list[str] = []
@@ -1420,7 +1420,7 @@ class TestAsyncioBackendShieldedCancellation:
     async def test____cancel_shielded_coroutine____cancel_at_timeout_end_if_task_cancellation_does_not_come_from_scope(
         self,
         cancel_shielded_coroutine: Callable[[], Awaitable[Any]],
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         event_loop = asyncio.get_running_loop()
         checkpoints: list[str] = []
@@ -1447,7 +1447,7 @@ class TestAsyncioBackendShieldedCancellation:
 
     async def test____cancel_shielded_coroutine____scope_cancellation_edge_case_1(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         async def coroutine() -> None:
             current_task = asyncio.current_task()
@@ -1470,7 +1470,7 @@ class TestAsyncioBackendShieldedCancellation:
 
     async def test____cancel_shielded_coroutine____scope_cancellation_edge_case_2(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         async def coroutine() -> None:
             current_task = asyncio.current_task()
@@ -1496,7 +1496,7 @@ class TestAsyncioBackendShieldedCancellation:
 
     async def test____cancel_shielded_coroutine____scope_cancellation_edge_case_3(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         async def coroutine() -> None:
             current_task = asyncio.current_task()
@@ -1515,7 +1515,7 @@ class TestAsyncioBackendShieldedCancellation:
 
     async def test____cancel_shielded_coroutine____scope_cancellation_edge_case_4(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         async def coroutine() -> None:
             current_task = asyncio.current_task()
@@ -1534,7 +1534,7 @@ class TestAsyncioBackendShieldedCancellation:
 
     async def test____cancel_shielded_coroutine____scope_cancellation_edge_case_5(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         async def coroutine() -> None:
             current_task = asyncio.current_task()
@@ -1564,7 +1564,7 @@ class TestAsyncioBackendShieldedCancellation:
 
     async def test____cancel_shielded_coroutine____scope_cancellation_edge_case_6(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         async def coroutine() -> None:
             current_task = asyncio.current_task()
@@ -1596,7 +1596,7 @@ class TestAsyncioBackendShieldedCancellation:
 
     async def test____ignore_cancellation____do_not_reschedule_if_inner_task_raises_CancelledError(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         event_loop = asyncio.get_running_loop()
 
@@ -1625,7 +1625,7 @@ class TestAsyncioBackendShieldedCancellation:
 
     async def test____ignore_cancellation____reschedule_erased_cancel_from_parent(
         self,
-        backend: AsyncIOBackend,
+        backend: AsyncBackend,
     ) -> None:
         checkpoints: list[str] = []
 

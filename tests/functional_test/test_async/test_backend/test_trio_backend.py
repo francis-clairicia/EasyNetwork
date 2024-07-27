@@ -5,8 +5,8 @@ import contextlib
 import time
 from typing import TYPE_CHECKING, Literal
 
-from easynetwork.lowlevel.api_async.backend._trio.backend import TrioBackend
-from easynetwork.lowlevel.api_async.backend.abc import Task, TaskInfo
+from easynetwork.lowlevel.api_async.backend.abc import AsyncBackend, Task, TaskInfo
+from easynetwork.lowlevel.api_async.backend.utils import new_builtin_backend
 
 import pytest
 import sniffio
@@ -19,15 +19,15 @@ if TYPE_CHECKING:
 
 
 @pytest.mark.feature_trio
-class TestAsyncioBackendBootstrap:
-    @pytest.fixture
+class TestTrioBackendBootstrap:
+    @pytest.fixture(scope="class")
     @staticmethod
-    def backend() -> TrioBackend:
-        return TrioBackend()
+    def backend() -> AsyncBackend:
+        return new_builtin_backend("trio")
 
     def test____bootstrap____sniffio_thread_local_reset(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         assert sniffio.thread_local.name is None
 
@@ -44,14 +44,14 @@ class TestAsyncioBackendBootstrap:
 @pytest.mark.flaky(retries=3, delay=0)
 class TestTrioBackend:
 
-    @pytest.fixture
+    @pytest.fixture(scope="class")
     @staticmethod
-    def backend() -> TrioBackend:
-        return TrioBackend()
+    def backend() -> AsyncBackend:
+        return new_builtin_backend("trio")
 
     async def test____cancel_shielded_coro_yield____mute_cancellation(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         import trio
 
@@ -63,7 +63,7 @@ class TestTrioBackend:
 
     async def test____ignore_cancellation____always_continue_on_cancellation(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         import trio
 
@@ -85,7 +85,7 @@ class TestTrioBackend:
 
     async def test____ignore_cancellation____runs_in_current_task(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         import trio
 
@@ -96,7 +96,7 @@ class TestTrioBackend:
 
     async def test____timeout____respected(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         import trio
 
@@ -105,7 +105,7 @@ class TestTrioBackend:
 
     async def test____timeout____timeout_error(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         import trio
 
@@ -115,7 +115,7 @@ class TestTrioBackend:
 
     async def test____timeout____cancellation(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         import trio
 
@@ -127,7 +127,7 @@ class TestTrioBackend:
 
     async def test____timeout_at____respected(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         import trio
 
@@ -136,7 +136,7 @@ class TestTrioBackend:
 
     async def test____timeout_at____timeout_error(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         import trio
 
@@ -146,7 +146,7 @@ class TestTrioBackend:
 
     async def test____timeout_at____cancellation(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         import trio
 
@@ -158,7 +158,7 @@ class TestTrioBackend:
 
     async def test____move_on_after____respected(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         import trio
 
@@ -169,7 +169,7 @@ class TestTrioBackend:
 
     async def test____move_on_after____timeout_error(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         import trio
 
@@ -180,7 +180,7 @@ class TestTrioBackend:
 
     async def test____move_on_after____cancellation(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         import trio
 
@@ -193,7 +193,7 @@ class TestTrioBackend:
 
     async def test____move_on_at____respected(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         import trio
 
@@ -204,7 +204,7 @@ class TestTrioBackend:
 
     async def test____move_on_at____timeout_error(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         import trio
 
@@ -215,7 +215,7 @@ class TestTrioBackend:
 
     async def test____move_on_at____cancellation(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         import trio
 
@@ -228,7 +228,7 @@ class TestTrioBackend:
 
     async def test____sleep_forever____sleep_until_cancellation(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         import trio
 
@@ -237,7 +237,7 @@ class TestTrioBackend:
 
     async def test____open_cancel_scope____unbound_cancel_scope____cancel_when_entering(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         scope = backend.open_cancel_scope()
         scope.cancel()
@@ -253,7 +253,7 @@ class TestTrioBackend:
 
     async def test____open_cancel_scope____overwrite_defined_deadline(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         with backend.move_on_after(1) as scope:
             await backend.sleep(0.5)
@@ -267,21 +267,21 @@ class TestTrioBackend:
 
     async def test____open_cancel_scope____invalid_deadline(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         with pytest.raises(ValueError):
             _ = backend.open_cancel_scope(deadline=float("nan"))
 
     async def test____gather____no_parameters(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         result: list[int] = await backend.gather()
         assert result == []
 
     async def test____gather____concurrent_await(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         import trio
 
@@ -299,7 +299,7 @@ class TestTrioBackend:
 
     async def test____gather____concurrent_await____exception_raises(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         import trio
 
@@ -325,7 +325,7 @@ class TestTrioBackend:
 
     async def test____gather____duplicate_awaitable(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
         mocker: MockerFixture,
     ) -> None:
         import trio
@@ -346,7 +346,7 @@ class TestTrioBackend:
 
     async def test____create_task_group____start_soon(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         import trio
 
@@ -366,7 +366,7 @@ class TestTrioBackend:
 
     async def test____create_task_group____start_soon____not_entered(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         import trio
 
@@ -389,7 +389,7 @@ class TestTrioBackend:
 
     async def test____create_task_group____start_soon____set_name(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         import trio
 
@@ -409,7 +409,7 @@ class TestTrioBackend:
 
     async def test____create_task_group____start_and_wait(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         import trio
 
@@ -448,7 +448,7 @@ class TestTrioBackend:
 
     async def test____create_task_group____start_and_wait____not_entered(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         import trio
 
@@ -471,7 +471,7 @@ class TestTrioBackend:
 
     async def test____create_task_group____start_and_wait____set_name(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         import trio
 
@@ -488,7 +488,7 @@ class TestTrioBackend:
 
     async def test____create_task_group____task_cancellation(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         import trio
 
@@ -525,7 +525,7 @@ class TestTrioBackend:
     async def test____create_task_group____task_join_cancel_shielding(
         self,
         join_method: Literal["join", "join_or_cancel", "wait"],
-        backend: TrioBackend,
+        backend: AsyncBackend,
         nursery: Nursery,
     ) -> None:
         import trio
@@ -559,7 +559,7 @@ class TestTrioBackend:
 
     async def test____create_task_group____task_join_erase_cancel(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
         nursery: Nursery,
     ) -> None:
         import trio
@@ -586,7 +586,7 @@ class TestTrioBackend:
     async def test____create_task_group____task_wait(
         self,
         task_state: Literal["result", "exception", "cancelled"],
-        backend: TrioBackend,
+        backend: AsyncBackend,
         nursery: Nursery,
     ) -> None:
         import outcome
@@ -631,7 +631,7 @@ class TestTrioBackend:
 
     async def test____run_in_thread____cannot_be_cancelled_by_default(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
         nursery: Nursery,
     ) -> None:
         import trio
@@ -647,7 +647,7 @@ class TestTrioBackend:
 
     async def test____run_in_thread____abandon_on_cancel(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         import trio
 
@@ -656,7 +656,7 @@ class TestTrioBackend:
 
         assert scope.cancelled_caught
 
-    async def test____run_in_thread____sniffio_contextvar_reset(self, backend: TrioBackend) -> None:
+    async def test____run_in_thread____sniffio_contextvar_reset(self, backend: AsyncBackend) -> None:
         sniffio.current_async_library_cvar.set("trio")
 
         def callback() -> str | None:
@@ -670,7 +670,7 @@ class TestTrioBackend:
 
     async def test____create_threads_portal____run_coroutine_from_thread(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         import trio
 
@@ -701,7 +701,7 @@ class TestTrioBackend:
 
     async def test____create_threads_portal____run_coroutine_from_thread____can_be_called_from_other_event_loop(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         import trio
 
@@ -725,7 +725,7 @@ class TestTrioBackend:
 
     async def test____create_threads_portal____run_coroutine_from_thread____coroutine_cancelled(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         import outcome
         import trio
@@ -746,7 +746,7 @@ class TestTrioBackend:
     @pytest.mark.parametrize("exception_cls", [Exception, BaseException])
     async def test____create_threads_portal____run_coroutine_from_thread____exception_raised(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
         exception_cls: type[BaseException],
     ) -> None:
         expected_exception = exception_cls("Why not?")
@@ -776,7 +776,7 @@ class TestTrioBackend:
 
     async def test____create_threads_portal____run_coroutine_from_thread____explicit_concurrent_future_Cancelled(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         async def coroutine(value: int) -> int:
             raise concurrent.futures.CancelledError()
@@ -791,7 +791,7 @@ class TestTrioBackend:
 
     async def test____create_threads_portal____run_coroutine_from_thread____sniffio_contextvar_reset(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         sniffio.current_async_library_cvar.set("main")
 
@@ -810,7 +810,7 @@ class TestTrioBackend:
 
     async def test____create_threads_portal____run_sync_from_thread_in_event_loop(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         import trio
 
@@ -840,7 +840,7 @@ class TestTrioBackend:
 
     async def test____create_threads_portal____run_sync_from_thread_in_event_loop____can_be_called_from_other_event_loop(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         import trio
 
@@ -863,7 +863,7 @@ class TestTrioBackend:
     @pytest.mark.parametrize("exception_cls", [Exception, BaseException])
     async def test____create_threads_portal____run_sync_from_thread_in_event_loop____exception_raised(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
         exception_cls: type[BaseException],
     ) -> None:
         expected_exception = exception_cls("Why not?")
@@ -884,7 +884,7 @@ class TestTrioBackend:
 
     async def test____create_threads_portal____run_sync_from_thread_in_event_loop____explicit_concurrent_future_Cancelled(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         def not_threadsafe_func(value: int) -> int:
             raise concurrent.futures.CancelledError()
@@ -899,7 +899,7 @@ class TestTrioBackend:
 
     async def test____create_threads_portal____run_sync_from_thread_in_event_loop____async_function_given(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         async def coroutine() -> None:
             raise AssertionError("Should not be called")
@@ -915,7 +915,7 @@ class TestTrioBackend:
 
     async def test____create_threads_portal____run_sync_from_thread_in_event_loop____sniffio_contextvar_reset(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         sniffio.current_async_library_cvar.set("main")
 
@@ -934,7 +934,7 @@ class TestTrioBackend:
 
     async def test____create_threads_portal____run_sync_soon____future_cancelled_before_call(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
         mocker: MockerFixture,
     ) -> None:
         import trio
@@ -961,7 +961,7 @@ class TestTrioBackend:
 
     async def test____create_threads_portal____run_coroutine_soon____future_cancelled(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         def thread() -> None:
             future = threads_portal.run_coroutine_soon(backend.sleep, 1)
@@ -980,7 +980,7 @@ class TestTrioBackend:
     async def test____create_threads_portal____run_coroutine_soon____future_cancelled____cancellation_ignored(
         self,
         value: int | Exception,
-        backend: TrioBackend,
+        backend: AsyncBackend,
         mocker: MockerFixture,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
@@ -1036,7 +1036,7 @@ class TestTrioBackend:
 
     async def test____create_threads_portal____entered_twice(
         self,
-        backend: TrioBackend,
+        backend: AsyncBackend,
     ) -> None:
         async with backend.create_threads_portal() as threads_portal:
             with pytest.raises(RuntimeError, match=r"ThreadsPortal entered twice\."):

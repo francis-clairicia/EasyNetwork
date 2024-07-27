@@ -21,6 +21,8 @@ __all__ = ["TrioDNSResolver"]
 
 import socket as _socket
 
+import trio.socket
+
 from .._common.dns_resolver import BaseAsyncDNSResolver
 
 
@@ -28,8 +30,6 @@ class TrioDNSResolver(BaseAsyncDNSResolver):
     __slots__ = ()
 
     async def connect_socket(self, socket: _socket.socket, address: tuple[str, int] | tuple[str, int, int, int]) -> None:
-        import trio.socket
-
         # TL;DR: Why not directly use trio.socket.socket() function?
         # When giving a fileno, it tries to guess the real family, type and proto of the file descriptor
         # by calling getsockopt(). This extra operation is useless here.

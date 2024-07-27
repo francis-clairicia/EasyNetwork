@@ -24,17 +24,14 @@ import copy
 import math
 from collections.abc import Awaitable, Callable, Coroutine
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, Generic, Self, TypeVar, TypeVarTuple, final
+from typing import Any, Generic, Self, TypeVar, TypeVarTuple, final
+
+import outcome
+import trio
 
 from .... import _utils
 from ...._final import runtime_final_class
 from ..abc import CancelScope as AbstractCancelScope, Task as AbstractTask, TaskGroup as AbstractTaskGroup, TaskInfo
-
-if TYPE_CHECKING:
-    from outcome import Outcome
-    from trio import CancelScope as _TrioCancelScope, Nursery as _TrioNursery, TaskStatus
-    from trio.lowlevel import Task as _TrioTask
-
 
 _T = TypeVar("_T")
 _T_co = TypeVar("_T_co", covariant=True)
@@ -50,9 +47,9 @@ class Task(AbstractTask[_T_co]):
         "__outcome",
     )
 
-    def __init__(self, *, task: _TrioTask, scope: _TrioCancelScope, outcome: _OutcomeCell[_T_co]) -> None:
-        self.__task: _TrioTask = task
-        self.__scope: _TrioCancelScope = scope
+    def __init__(self, *, task: trio.lowlevel.Task, scope: trio.CancelScope, outcome: _OutcomeCell[_T_co]) -> None:
+        self.__task: trio.lowlevel.Task = task
+        self.__scope: trio.CancelScope = scope
         self.__outcome: _OutcomeCell[_T_co] = outcome
 
     def __repr__(self) -> str:
@@ -72,9 +69,6 @@ class Task(AbstractTask[_T_co]):
         return False
 
     def cancelled(self) -> bool:
-        import outcome
-        import trio
-
         match self.__outcome.peek():
             case outcome.Error(trio.Cancelled()):
                 return True
@@ -95,8 +89,6 @@ class Task(AbstractTask[_T_co]):
             del outcome, self  # This is needed to avoid circular reference with raised exception
 
     async def join_or_cancel(self) -> _T_co:
-        import trio
-
         try:
             outcome = await self.__outcome.get()
         except trio.Cancelled:
@@ -122,8 +114,6 @@ class TaskGroup(AbstractTaskGroup):
 
     def __init__(self) -> None:
         super().__init__()
-
-        import trio
 
         self.__nursery_ctx: contextlib.AbstractAsyncContextManager[trio.Nursery] = trio.open_nursery(strict_exception_groups=True)
         self.__nursery: trio.Nursery | None = None
@@ -173,7 +163,7 @@ class TaskGroup(AbstractTaskGroup):
 
         return await nursery.start(self.__task_coroutine, coro_func, args, name=name)
 
-    def __check_nursery_started(self) -> _TrioNursery:
+    def __check_nursery_started(self) -> trio.Nursery:
         if (n := self.__nursery) is None:
             raise RuntimeError("TaskGroup not started")
         return n
@@ -183,11 +173,8 @@ class TaskGroup(AbstractTaskGroup):
         coro_func: Callable[[*_T_PosArgs], Awaitable[_T]],
         args: tuple[*_T_PosArgs],
         *,
-        task_status: TaskStatus[Task[_T]],
+        task_status: trio.TaskStatus[Task[_T]],
     ) -> None:
-        import outcome
-        import trio
-
         with trio.CancelScope() as scope:
 
             coroutine = coro_func(*args)
@@ -223,8 +210,6 @@ class CancelScope(AbstractCancelScope):
     def __init__(self, *, deadline: float = math.inf) -> None:
         super().__init__()
         self.__validate_deadline(deadline)
-
-        import trio
 
         self.__scope: trio.CancelScope = trio.CancelScope(deadline=deadline)
 
@@ -266,7 +251,7 @@ class CancelScope(AbstractCancelScope):
 class TaskUtils:
 
     @classmethod
-    def create_task_info(cls, task: _TrioTask) -> TaskInfo:
+    def create_task_info(cls, task: trio.lowlevel.Task) -> TaskInfo:
         return TaskInfo(id(task), task.name, task.coro)
 
     @classmethod
@@ -281,29 +266,25 @@ class _OutcomeCell(Generic[_T_co]):
     )
 
     def __init__(self) -> None:
-        self.__result: Outcome[_T_co] | None = None
-        self.__waiting_tasks: set[_TrioTask] = set()
+        self.__result: outcome.Outcome[_T_co] | None = None
+        self.__waiting_tasks: set[trio.lowlevel.Task] = set()
 
-    def peek(self) -> Outcome[_T_co] | None:
+    def peek(self) -> outcome.Outcome[_T_co] | None:
         return self.__result
 
-    def get_nowait(self) -> Outcome[_T_co]:
+    def get_nowait(self) -> outcome.Outcome[_T_co]:
         if (result := self.__result) is None:
-            import trio
-
             raise trio.WouldBlock
         return result
 
-    async def get(self) -> Outcome[_T_co]:
-        import trio
-
+    async def get(self) -> outcome.Outcome[_T_co]:
         await trio.lowlevel.checkpoint_if_cancelled()
         try:
-            outcome = self.get_nowait()
+            result = self.get_nowait()
         except trio.WouldBlock:
             pass
         else:
-            return outcome
+            return result
 
         task = trio.lowlevel.current_task()
         self.__waiting_tasks.add(task)
@@ -314,16 +295,13 @@ class _OutcomeCell(Generic[_T_co]):
 
         return await trio.lowlevel.wait_task_rescheduled(abort_fn)
 
-    def set(self, outcome: Outcome[_T_co]) -> None:
+    def set(self, result: outcome.Outcome[_T_co]) -> None:
         if self.__result is not None:
             raise AssertionError("Already set to a value")
 
-        import trio
-        from outcome import Value
-
-        self.__result = outcome
+        self.__result = result
 
         for task in self.__waiting_tasks:
-            trio.lowlevel.reschedule(task, Value(outcome))
+            trio.lowlevel.reschedule(task, outcome.Value(result))
 
         self.__waiting_tasks.clear()

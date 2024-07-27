@@ -24,18 +24,17 @@ import contextlib
 import contextvars
 import functools
 import inspect
+import threading
 from collections.abc import Awaitable, Callable
 from types import TracebackType
-from typing import TYPE_CHECKING, ParamSpec, Self, TypeVar, final
+from typing import ParamSpec, Self, TypeVar, final
+
+import trio
 
 from .... import _lock, _utils
 from ...._final import runtime_final_class
 from ..abc import ThreadsPortal as AbstractThreadsPortal
 from .tasks import TaskGroup, TaskUtils
-
-if TYPE_CHECKING:
-    from trio.lowlevel import TrioToken
-
 
 _P = ParamSpec("_P")
 _T = TypeVar("_T")
@@ -50,13 +49,11 @@ class ThreadsPortal(AbstractThreadsPortal):
         super().__init__()
 
         self.__lock = _lock.ForkSafeLock()
-        self.__trio_token: TrioToken | None = None
+        self.__trio_token: trio.lowlevel.TrioToken | None = None
         self.__task_group: TaskGroup = TaskGroup()
         self.__run_sync_soon_waiter = _PortalRunSyncSoonWaiter()
 
     async def __aenter__(self) -> Self:
-        import trio
-
         if self.__trio_token is not None:
             raise RuntimeError("ThreadsPortal entered twice.")
         await self.__task_group.__aenter__()
@@ -69,8 +66,6 @@ class ThreadsPortal(AbstractThreadsPortal):
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        import trio
-
         try:
             with self.__lock.get():
                 self.__trio_token = None
@@ -88,11 +83,10 @@ class ThreadsPortal(AbstractThreadsPortal):
         *args: _P.args,
         **kwargs: _P.kwargs,
     ) -> concurrent.futures.Future[_T]:
-        import trio
 
         future: concurrent.futures.Future[_T] = concurrent.futures.Future()
 
-        def on_fut_done(payload: tuple[TrioToken, trio.CancelScope], future: concurrent.futures.Future[_T]) -> None:
+        def on_fut_done(payload: tuple[trio.lowlevel.TrioToken, trio.CancelScope], future: concurrent.futures.Future[_T]) -> None:
             if future.cancelled():
                 with contextlib.suppress(RuntimeError):
                     trio_token, cancel_scope = payload
@@ -140,7 +134,6 @@ class ThreadsPortal(AbstractThreadsPortal):
 
     def run_sync_soon(self, func: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> concurrent.futures.Future[_T]:
         import sniffio
-        import trio
 
         run_sync_soon_waiter = self.__run_sync_soon_waiter
         future: concurrent.futures.Future[_T] = concurrent.futures.Future()
@@ -172,7 +165,7 @@ class ThreadsPortal(AbstractThreadsPortal):
         trio_token.run_sync_soon(functools.partial(ctx.run, callback))
         return future
 
-    def __check_current_token(self) -> TrioToken:
+    def __check_current_token(self) -> trio.lowlevel.TrioToken:
         trio_token = self.__trio_token
         if trio_token is None:
             raise RuntimeError("ThreadsPortal not running.")
@@ -181,9 +174,7 @@ class ThreadsPortal(AbstractThreadsPortal):
         return trio_token
 
     @staticmethod
-    def __is_in_this_loop_thread(trio_token: TrioToken) -> bool:
-        import trio
-
+    def __is_in_this_loop_thread(trio_token: trio.lowlevel.TrioToken) -> bool:
         try:
             current_trio_token = trio.lowlevel.current_trio_token()
         except RuntimeError:
@@ -195,10 +186,6 @@ class _PortalRunSyncSoonWaiter:
     __slots__ = ("__done", "__thread_lock", "__waiter_count", "__closing")
 
     def __init__(self) -> None:
-        import threading
-
-        import trio
-
         self.__done: trio.Event = trio.Event()
         self.__thread_lock = _lock.ForkSafeLock(threading.Lock)
         self.__waiter_count: int = 0

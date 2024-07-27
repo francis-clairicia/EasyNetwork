@@ -4,13 +4,13 @@ import socket
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING
 
-from easynetwork.lowlevel.api_async.backend._trio.dns_resolver import TrioDNSResolver
-
 import pytest
 
 from ....fixtures.trio import trio_fixture
 
 if TYPE_CHECKING:
+    from easynetwork.lowlevel.api_async.backend._trio.dns_resolver import TrioDNSResolver
+
     from trio import SocketListener, SocketStream
 
 
@@ -39,6 +39,8 @@ class TestTrioDNSResolver:
     @pytest.fixture
     @staticmethod
     def dns_resolver() -> TrioDNSResolver:
+        from easynetwork.lowlevel.api_async.backend._trio.dns_resolver import TrioDNSResolver
+
         return TrioDNSResolver()
 
     async def test____connect_socket____works(
