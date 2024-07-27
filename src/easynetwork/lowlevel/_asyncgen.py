@@ -19,9 +19,12 @@ from __future__ import annotations
 __all__ = []  # type: list[str]
 
 import dataclasses
+import sys
 from abc import ABCMeta, abstractmethod
 from collections.abc import AsyncGenerator
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, Protocol, TypeVar
+
+from . import _utils
 
 _T_Send = TypeVar("_T_Send")
 _T_Yield = TypeVar("_T_Yield")
@@ -57,3 +60,36 @@ class ThrowAction(AsyncGenAction[Any]):
                     return await generator.athrow(self.exception)
         finally:
             del generator, self  # Needed to avoid circular reference with raised exception
+
+
+class _GetAsyncGenHooks(Protocol):
+    @staticmethod
+    @abstractmethod
+    def __call__() -> sys._asyncgen_hooks: ...
+
+
+class _SetAsyncGenHooks(Protocol):
+    @staticmethod
+    @abstractmethod
+    def __call__(firstiter: sys._AsyncgenHook = ..., finalizer: sys._AsyncgenHook = ...) -> None: ...
+
+
+async def anext_without_asyncgen_hook(
+    agen: AsyncGenerator[_T_Yield, Any],
+    /,
+    *,
+    _get_asyncgen_hooks: _GetAsyncGenHooks = sys.get_asyncgen_hooks,
+    _set_asyncgen_hooks: _SetAsyncGenHooks = sys.set_asyncgen_hooks,
+) -> _T_Yield:
+    previous_firstiter_hook = _get_asyncgen_hooks().firstiter
+    _set_asyncgen_hooks(firstiter=None)
+    try:
+        anext_coroutine = anext(agen)
+    finally:
+        _set_asyncgen_hooks(firstiter=previous_firstiter_hook)
+        previous_firstiter_hook = None
+    try:
+        return await anext_coroutine
+    except BaseException as exc:
+        _utils.remove_traceback_frames_in_place(exc, 1)
+        raise
