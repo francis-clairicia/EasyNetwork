@@ -32,6 +32,7 @@ from ..... import _utils, socket as socket_tools
 from ....transports.abc import AsyncStreamTransport
 from ...abc import AsyncBackend
 from .._flow_control import WriteFlowControl, add_flowcontrol_defaults
+from ..tasks import TaskUtils
 
 if TYPE_CHECKING:
     from _typeshed import WriteableBuffer
@@ -248,7 +249,7 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
         if bufsize < 0:
             raise ValueError("'bufsize' must be a positive or null integer")
 
-        await self._wait_for_data("receive_data")
+        blocked: bool = await self._wait_for_data("receive_data")
 
         nbytes_written = self.__buffer_nbytes_written
         if nbytes_written:
@@ -262,6 +263,8 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
         else:
             data = b""
         self._maybe_resume_transport()
+        if not blocked:
+            await TaskUtils.cancel_shielded_coro_yield()
         return data
 
     async def receive_data_into(self, buffer: WriteableBuffer, /) -> int:
@@ -271,7 +274,7 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
             if not buffer:
                 return 0
 
-            await self._wait_for_data("receive_data_into")
+            blocked: bool = await self._wait_for_data("receive_data_into")
 
             nbytes_written = self.__buffer_nbytes_written
             if nbytes_written:
@@ -287,14 +290,16 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
                     self.__buffer_nbytes_written = 0
 
             self._maybe_resume_transport()
+            if not blocked:
+                await TaskUtils.cancel_shielded_coro_yield()
             return nbytes_written
 
-    async def _wait_for_data(self, requester: str) -> None:
+    async def _wait_for_data(self, requester: str) -> bool:
         if self.__read_waiter is not None:
             raise RuntimeError(f"{requester}() called while another coroutine is already waiting for incoming data")
 
         if self.__buffer_nbytes_written or self.__eof_reached:
-            return
+            return False
 
         assert not self.__read_paused, "transport reading is paused"  # nosec assert_used
 
@@ -309,6 +314,7 @@ class StreamReaderBufferedProtocol(asyncio.BufferedProtocol):
             self.__read_waiter = None
         if self.__connection_lost_exception is not None:
             raise self.__connection_lost_exception.with_traceback(self.__connection_lost_exception_tb)
+        return True
 
     def _wakeup_read_waiter(self, exc: Exception | None) -> None:
         if (waiter := self.__read_waiter) is not None:

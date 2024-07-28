@@ -275,6 +275,8 @@ class _RequestReceiver(Generic[_T_Request]):
                     except StopIteration:
                         pass
                     else:
+                        if data is None:
+                            await self.__backend.cancel_shielded_coro_yield()
                         return SendAction(request)
                     finally:
                         data = None
@@ -307,6 +309,8 @@ class _BufferedRequestReceiver(Generic[_T_Request]):
                     except StopIteration:
                         pass
                     else:
+                        if nbytes is None:
+                            await self.__backend.cancel_shielded_coro_yield()
                         return SendAction(request)
                     nbytes = await self.transport.recv_into(consumer.get_write_buffer())
                     if not nbytes:
