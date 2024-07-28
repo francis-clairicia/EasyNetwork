@@ -96,6 +96,7 @@ class TestAsyncTLSStreamTransport:
             _read_bio=read_bio,
             _write_bio=write_bio,
         )
+        mock_wrapped_transport.reset_mock()
         async with transport:
             yield transport
 
@@ -205,7 +206,7 @@ class TestAsyncTLSStreamTransport:
         )
         mock_tls_transport_retry.assert_awaited_once_with(tls_transport, mock_ssl_object.do_handshake)
         assert mock_ssl_object.mock_calls == [mocker.call.do_handshake(), mocker.call.getpeercert()]
-        assert mock_wrapped_transport.mock_calls == [mocker.call.backend()]
+        assert mock_wrapped_transport.mock_calls == [mocker.call.backend(), mocker.call.backend()]
         ## Attributes
         assert tls_transport._shutdown_timeout == shutdown_timeout
         assert tls_transport.extra(mocker.sentinel.attr_1) is mocker.sentinel.value_1
@@ -380,7 +381,7 @@ class TestAsyncTLSStreamTransport:
             mock_ssl_object.unwrap.assert_not_called()
             assert not read_bio.eof
             assert not write_bio.eof
-        assert mock_wrapped_transport.aclose.await_count == 2
+        mock_wrapped_transport.aclose.assert_awaited_once()
 
     @pytest.mark.parametrize("standard_compatible", [True], indirect=True, ids=lambda p: f"standard_compatible=={p}")
     @pytest.mark.parametrize("shutdown_timeout", [1], indirect=True, ids=lambda p: f"shutdown_timeout=={p}")
