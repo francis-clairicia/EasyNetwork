@@ -144,9 +144,6 @@ class TaskGroup(AbstractTaskGroup):
     ) -> None:
         nursery = self.__check_nursery_started()
 
-        if name is None:
-            name = TaskUtils.compute_task_name_from_func(coro_func)
-
         nursery.start_soon(coro_func, *args, name=name)
 
     async def start(
