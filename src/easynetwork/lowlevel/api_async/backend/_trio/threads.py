@@ -104,7 +104,6 @@ class ThreadsPortal(AbstractThreadsPortal):
 
             logger.error("\n".join(log_lines), exc_info=exc)
 
-        @trio.lowlevel.enable_ki_protection
         async def coroutine() -> None:
             with trio.CancelScope() as scope:
                 try:
@@ -205,6 +204,7 @@ class _PortalRunSyncSoonWaiter:
                 raise AssertionError("currently closed")
             self.__waiter_count += 1
 
+    @trio.lowlevel.enable_ki_protection
     def detach_in_trio_thread(self) -> None:
         with self.__thread_lock.get():
             self.__waiter_count -= 1
